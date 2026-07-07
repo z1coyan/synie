@@ -19,8 +19,11 @@ defmodule SynieCore.Config do
   def repo_config(env, vars) when env in [:dev, :test] do
     config =
       case env_value(vars, "DATABASE_URL") do
-        nil -> split_repo_config(env, vars)
-        database_url -> [url: database_url, pool_size: integer_env!(vars, "POOL_SIZE", @default_pool_size)]
+        nil ->
+          split_repo_config(env, vars)
+
+        database_url ->
+          [url: database_url, pool_size: integer_env!(vars, "POOL_SIZE", @default_pool_size)]
       end
 
     maybe_put_test_pool(env, config)
@@ -59,7 +62,9 @@ defmodule SynieCore.Config do
     }
   end
 
-  defp maybe_put_test_pool(:test, config), do: Keyword.put(config, :pool, Ecto.Adapters.SQL.Sandbox)
+  defp maybe_put_test_pool(:test, config),
+    do: Keyword.put(config, :pool, Ecto.Adapters.SQL.Sandbox)
+
   defp maybe_put_test_pool(_env, config), do: config
 
   defp required_env!(vars, name) do
