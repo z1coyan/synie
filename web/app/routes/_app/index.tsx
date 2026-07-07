@@ -31,7 +31,7 @@ function DashboardPage() {
 
       <section className="mt-8">
         <h2 className="text-sm font-medium text-ink-500">快捷入口</h2>
-        <div className="mt-3 grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {shortcuts.map((m) => (
             <Link
               key={m.key}
