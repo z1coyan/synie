@@ -11,5 +11,7 @@ defmodule SynieCore do
     resource SynieCore.Authz.Role
     resource SynieCore.Authz.UserRole
     resource SynieCore.Authz.RolePermission
+    resource SynieCore.Authz.UserCompany
+    resource SynieCore.Org.Company
   end
 end

@@ -2,7 +2,8 @@ defmodule SynieCore.AuthzFixtures do
   @moduledoc "权限相关测试夹具。内部路径统一 `authorize?: false`。"
 
   alias SynieCore.Accounts.User
-  alias SynieCore.Authz.{Role, RolePermission, UserRole}
+  alias SynieCore.Authz.{Role, RolePermission, UserCompany, UserRole}
+  alias SynieCore.Org.Company
 
   def user!(attrs \\ %{}) do
     attrs =
@@ -37,6 +38,24 @@ defmodule SynieCore.AuthzFixtures do
   def assign!(user, role) do
     UserRole
     |> Ash.Changeset.for_create(:create, %{user_id: user.id, role_id: role.id})
+    |> Ash.create!(authorize?: false)
+  end
+
+  def company!(attrs \\ %{}) do
+    attrs =
+      Map.merge(
+        %{code: "co_#{System.unique_integer([:positive])}", name: "测试公司"},
+        attrs
+      )
+
+    Company
+    |> Ash.Changeset.for_create(:create, attrs)
+    |> Ash.create!(authorize?: false)
+  end
+
+  def grant_company!(user, company) do
+    UserCompany
+    |> Ash.Changeset.for_create(:create, %{user_id: user.id, company_id: company.id})
     |> Ash.create!(authorize?: false)
   end
 end
