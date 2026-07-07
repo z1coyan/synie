@@ -93,7 +93,7 @@ sys_user_company  user_id, company_id
 - 授权**挂用户不挂角色**:"张三负责 A、B 两家公司"是人的属性,角色描述职能(销售员/会计),两者正交。
 - **可见性语义:显式授权,默认不可见(fail-closed)**。用户必须被授予某公司才能看到该公司数据;新用户默认看不到任何业务数据。跨公司管理人员用 `sys_user.all_companies` 布尔覆盖。漏配置的后果是"看不到"而非"越权看到"。
 - 读取:filter check 追加 `company_id in ^actor.company_ids`(被过滤的行静默不可见,不报错)。
-- 写入:changeset 校验 `company_id` 在可用公司范围内,越权返回 Forbidden。
+- 写入:changeset 校验 `company_id` 在可用公司范围内,越权返回校验错误(见「三、错误处理」)。
 
 ### 部门维度(留槽,不实现)
 
