@@ -1,10 +1,17 @@
+import { getToken } from './auth'
+
 export async function gqlFetch<TData = unknown>(
   query: string,
   variables?: Record<string, unknown>
 ): Promise<TData> {
+  const token = getToken()
+
   const res = await fetch('/graphql', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ query, variables }),
   })
 

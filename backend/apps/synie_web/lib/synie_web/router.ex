@@ -8,6 +8,7 @@ defmodule SynieWeb.Router do
       json_decoder: Jason
     )
 
+    plug(SynieWeb.Plugs.GraphqlContext)
     plug(AshGraphql.Plug)
   end
 

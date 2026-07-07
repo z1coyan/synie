@@ -1,4 +1,44 @@
+@import "@fontsource/noto-serif-sc/400.css";
+@import "@fontsource/noto-serif-sc/600.css";
 @import "tailwindcss";
 @plugin "./hero.ts";
-@source "../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
+@source "./node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
 @custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-brand: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong",
+    "SimSun", serif;
+  --color-ink-900: #0a1e3f;
+  --color-ink-800: #12305e;
+  --color-ink-500: #3a5f96;
+  --color-porcelain: #fafaf7;
+  --color-gilt: #c9a15a;
+  --color-jade: #5f9ea0;
+}
+
+/* 登录页左栏「资源经纬」节点的呼吸光 */
+@keyframes node-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.node-breathe {
+  animation: node-breathe 5s ease-in-out infinite;
+}
+
+.node-breathe-late {
+  animation: node-breathe 5s ease-in-out 2.2s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-breathe,
+  .node-breathe-late {
+    animation: none;
+    opacity: 0.8;
+  }
+}

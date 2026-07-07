@@ -10,3 +10,6 @@ config :synie_web, SynieWeb.Endpoint,
   server: false
 
 config :logger, level: :warning
+
+# 测试中降低 pbkdf2 轮数,加快涉及密码哈希的用例
+config :pbkdf2_elixir, rounds: 1

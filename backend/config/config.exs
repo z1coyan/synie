@@ -1,10 +1,11 @@
 import Config
 
-config :synie_core, ash_domains: [SynieCore]
+config :synie_core,
+  ash_domains: [SynieCore],
+  ecto_repos: [SynieCore.Repo]
 
 config :synie_web,
-  namespace: SynieWeb,
-  ecto_repos: [SynieCore.Repo]
+  namespace: SynieWeb
 
 config :synie_web, SynieWeb.Endpoint,
   url: [host: "localhost"],

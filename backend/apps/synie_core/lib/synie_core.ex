@@ -7,5 +7,6 @@ defmodule SynieCore do
 
   resources do
     resource SynieCore.Resources.Hello
+    resource SynieCore.Accounts.User
   end
 end

@@ -1,0 +1,25 @@
+# Dev database for the Synie backend.
+# Matches backend/.env (PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE/POOL_SIZE).
+# Run from backend/:  docker compose up -d
+# Then `mix phx.server` on the host connects to localhost:5440.
+services:
+  db:
+    image: postgres:17
+    container_name: synie_db
+    environment:
+      POSTGRES_USER: ${PGUSER:-postgres}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-postgres}
+      POSTGRES_DB: ${PGDATABASE:-synie_dev}
+    ports:
+      - "${PGPORT:-5440}:5432"
+    volumes:
+      - synie_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${PGUSER:-postgres}", "-d", "${PGDATABASE:-synie_dev}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  synie_pgdata:
