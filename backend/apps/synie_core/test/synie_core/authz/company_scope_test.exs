@@ -57,19 +57,25 @@ defmodule SynieCore.Authz.CompanyScopeTest do
 
     assert {:ok, _} =
              Doc
-             |> Ash.Changeset.for_create(:create, %{title: "ok", company_id: @co_a}, actor: a_user)
+             |> Ash.Changeset.for_create(:create, %{title: "ok", company_id: @co_a},
+               actor: a_user
+             )
              |> Ash.create()
 
     assert {:error, %Ash.Error.Invalid{}} =
              Doc
-             |> Ash.Changeset.for_create(:create, %{title: "bad", company_id: @co_b}, actor: a_user)
+             |> Ash.Changeset.for_create(:create, %{title: "bad", company_id: @co_b},
+               actor: a_user
+             )
              |> Ash.create()
   end
 
   test "写入:all_companies 可在任意公司创建" do
     assert {:ok, _} =
              Doc
-             |> Ash.Changeset.for_create(:create, %{title: "any", company_id: @co_b}, actor: actor(%{all_companies: true}))
+             |> Ash.Changeset.for_create(:create, %{title: "any", company_id: @co_b},
+               actor: actor(%{all_companies: true})
+             )
              |> Ash.create()
   end
 

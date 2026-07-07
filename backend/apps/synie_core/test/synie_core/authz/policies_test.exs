@@ -46,12 +46,20 @@ defmodule SynieCore.Authz.PoliciesTest do
 
     assert {:ok, _} =
              Role
-             |> Ash.Changeset.for_create(:create, %{code: "r_#{System.unique_integer([:positive])}", name: "新角色"}, actor: can)
+             |> Ash.Changeset.for_create(
+               :create,
+               %{code: "r_#{System.unique_integer([:positive])}", name: "新角色"},
+               actor: can
+             )
              |> Ash.create()
 
     assert {:error, %Ash.Error.Forbidden{}} =
              Role
-             |> Ash.Changeset.for_create(:create, %{code: "r_#{System.unique_integer([:positive])}", name: "新角色"}, actor: cannot)
+             |> Ash.Changeset.for_create(
+               :create,
+               %{code: "r_#{System.unique_integer([:positive])}", name: "新角色"},
+               actor: cannot
+             )
              |> Ash.create()
   end
 

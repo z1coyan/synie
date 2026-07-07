@@ -21,7 +21,10 @@ defmodule SynieWeb.SchemaAuthzTest do
 
     role =
       Role
-      |> Ash.Changeset.for_create(:create, %{code: "r_#{System.unique_integer([:positive])}", name: "角色"})
+      |> Ash.Changeset.for_create(:create, %{
+        code: "r_#{System.unique_integer([:positive])}",
+        name: "角色"
+      })
       |> Ash.create!(authorize?: false)
 
     Enum.each(permissions, fn code ->

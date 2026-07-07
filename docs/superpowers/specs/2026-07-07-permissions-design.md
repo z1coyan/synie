@@ -102,7 +102,7 @@ sys_user_company  user_id, company_id
 ## 三、错误处理
 
 - 功能权限不足:Ash `Forbidden` → GraphQL error,前端统一提示。
-- 数据权限:读取走 filter(结果集收窄,不报错);写入越权报 Forbidden。
+- 数据权限:读取走 filter(结果集收窄,不报错);写入越权返回校验错误(Ash.Error.Invalid,字段级消息「无权在该公司下操作数据」)。
 
 ## 四、测试
 

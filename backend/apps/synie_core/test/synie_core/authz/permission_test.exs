@@ -35,6 +35,7 @@ defmodule SynieCore.Authz.PermissionTest do
   end
 
   test "默认动作集为 10 个" do
-    assert Permission.default_actions() == ~w(create delete update read print import export batch_delete batch_update batch_print)
+    assert Permission.default_actions() ==
+             ~w(create delete update read print import export batch_delete batch_update batch_print)
   end
 end

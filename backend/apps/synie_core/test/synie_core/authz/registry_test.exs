@@ -7,7 +7,9 @@ defmodule SynieCore.Authz.RegistryTest do
     prefixes = Registry.catalog() |> Enum.map(& &1.prefix) |> Enum.sort()
 
     assert prefixes ==
-             Enum.sort(~w(sys.role sys.user_role sys.role_permission sys.user_company org.company))
+             Enum.sort(
+               ~w(sys.role sys.user_role sys.role_permission sys.user_company org.company)
+             )
   end
 
   test "all_codes 展开为 前缀:动作" do
@@ -30,7 +32,9 @@ defmodule SynieCore.Authz.RegistryTest do
     actor = %Actor{user_id: "x", permissions: MapSet.new(["org.*"])}
 
     assert Enum.sort(Registry.granted_codes(actor)) ==
-             Enum.sort(~w(org.company:create org.company:read org.company:update org.company:delete))
+             Enum.sort(
+               ~w(org.company:create org.company:read org.company:update org.company:delete)
+             )
   end
 
   test "super_admin 得到全部权限码" do
