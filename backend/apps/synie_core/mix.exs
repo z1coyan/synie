@@ -27,7 +27,8 @@ defmodule SynieCore.MixProject do
   defp deps do
     [
       {:ash, "~> 3.29"},
-      {:ash_postgres, "~> 2.10"}
+      {:ash_postgres, "~> 2.10"},
+      {:ash_graphql, "~> 1.9"}
     ]
   end
 end

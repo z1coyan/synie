@@ -26,3 +26,4 @@ config :synie_web, SynieWeb.Endpoint,
   live_view: [signing_salt: "synie_salt"]
 
 config :phoenix, :json_library, Jason
+import_config "#{config_env()}.exs"
