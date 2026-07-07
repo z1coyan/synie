@@ -70,6 +70,59 @@ cd web
 bun install
 ```
 
+## HeroUI Pro
+
+前端使用 [HeroUI Pro](https://heroui.pro)：`@heroui/react` v3（基础组件）+ `@heroui-pro/react`（Pro 组件：图表、DataGrid、AppLayout、AI 界面等），要求 React 19 + Tailwind v4。规范见 `web/AGENTS.md`。
+
+### Token
+
+从 [Pro dashboard](https://heroui.pro/dashboard) 获取，放在仓库根目录 `.env`（已 gitignore，模板见 `.env.example`）：
+
+- `HEROUI_PERSONAL_TOKEN`：个人 token，本地 MCP / skills 安装用。
+- `HEROUI_AUTH_TOKEN`：CI/CD token，流水线与非交互安装用（如 GitHub Actions `env: HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}`）。
+
+两个 token 均不得提交或写入代码。
+
+### Pro 包安装机制
+
+`@heroui-pro/react` 在公共 npm 上只是一个壳，真正的组件代码由 postinstall 按 license 从 CDN 下载。`web/package.json` 的 `trustedDependencies` 已允许 bun 执行该 postinstall。新环境 `bun install` 后如果 Pro 组件缺失（`node_modules/@heroui-pro/react` 只有几十 KB），带 token 重跑一次：
+
+```bash
+cd web
+HEROUI_AUTH_TOKEN=xxx node node_modules/@heroui-pro/react/dist/postinstall/index.js
+```
+
+或本地一次性 GitHub 授权（180 天有效）：`bunx heroui-pro@latest login`。
+
+### 安装 Agent Skills（本地一次性）
+
+```bash
+set -a; source .env; set +a
+curl -fsSL https://heroui.pro/docs/install -o /tmp/heroui-install.sh
+bash /tmp/heroui-install.sh heroui-react-pro
+bash /tmp/heroui-install.sh heroui-pro-design-taste
+```
+
+安装脚本会自动检测本机的 Claude Code / Cursor 等工具并把 skill 解压到对应目录（如 `~/.claude/skills/`）。
+
+### MCP server
+
+在项目根目录创建 `.mcp.json`（Claude Code 会从环境变量展开 token，需先在 shell 中导出 `HEROUI_PERSONAL_TOKEN`）：
+
+```json
+{
+  "mcpServers": {
+    "heroui-pro": {
+      "type": "http",
+      "url": "https://mcp.heroui.pro/mcp",
+      "headers": {
+        "x-heroui-personal-token": "${HEROUI_PERSONAL_TOKEN}"
+      }
+    }
+  }
+}
+```
+
 ## 本地启动
 
 需要两个终端。

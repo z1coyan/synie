@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { addToast, Button, Card, CardBody, CardHeader, Spinner } from '@heroui/react'
+import { Button, Card, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { clearToken, getToken } from '~/lib/auth'
 
@@ -47,29 +47,32 @@ function HomeComponent() {
   useEffect(() => {
     if (data && !data.me) {
       clearToken()
-      addToast({ title: '登录状态已失效,请重新登录', color: 'warning' })
+      toast.warning('登录状态已失效,请重新登录')
       navigate({ to: '/login', replace: true })
     }
   }, [data, navigate])
 
   const logout = () => {
     clearToken()
-    addToast({ title: '已退出登录', color: 'default' })
+    toast('已退出登录')
     navigate({ to: '/login' })
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-8 bg-porcelain">
       <Card className="max-w-md w-full">
-        <CardHeader className="flex justify-between items-center">
+        <Card.Header className="flex flex-row justify-between items-center">
           <span className="text-xl font-semibold">Synie 企业资源管理系统</span>
-          <Button size="sm" variant="light" onPress={logout}>
+          <Button size="sm" variant="ghost" onPress={logout}>
             退出登录
           </Button>
-        </CardHeader>
-        <CardBody>
+        </Card.Header>
+        <Card.Content>
           {isLoading ? (
-            <Spinner label="加载中…" />
+            <div className="flex items-center gap-3">
+              <Spinner size="sm" />
+              <span className="text-sm">加载中…</span>
+            </div>
           ) : error ? (
             <div className="text-danger">
               加载失败:{error instanceof Error ? error.message : String(error)}
@@ -81,7 +84,7 @@ function HomeComponent() {
           ) : (
             <p className="text-sm">登录状态已失效,请退出后重新登录。</p>
           )}
-        </CardBody>
+        </Card.Content>
       </Card>
     </div>
   )

@@ -6,7 +6,7 @@ import {
   HeadContent,
   Scripts,
 } from '@tanstack/react-router'
-import { HeroUIProvider, ToastProvider } from '@heroui/react'
+import { Toast } from '@heroui/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import '../../app.css'
@@ -28,11 +28,9 @@ function RootComponent() {
   return (
     <RootDocument>
       <QueryClientProvider client={queryClient}>
-        <HeroUIProvider>
-          <ToastProvider placement="top-center" />
-          <BootSplash />
-          <Outlet />
-        </HeroUIProvider>
+        <Toast.Provider placement="top" />
+        <BootSplash />
+        <Outlet />
       </QueryClientProvider>
     </RootDocument>
   )

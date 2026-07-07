@@ -2,7 +2,14 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
-import { addToast, Button, Input } from '@heroui/react'
+import {
+  Button,
+  Input,
+  InputGroup,
+  Label,
+  TextField,
+  toast,
+} from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { getToken, setToken } from '~/lib/auth'
 
@@ -53,17 +60,12 @@ function LoginPage() {
       gqlFetch<LoginData>(LOGIN_MUTATION, { username, password }),
     onSuccess: (data) => {
       setToken(data.login.token)
-      addToast({
-        title: `欢迎回来,${data.login.user.name ?? data.login.user.username}`,
-        color: 'success',
-      })
+      toast.success(`欢迎回来,${data.login.user.name ?? data.login.user.username}`)
       navigate({ to: '/' })
     },
     onError: (error) => {
-      addToast({
-        title: '登录失败',
+      toast.danger('登录失败', {
         description: error instanceof Error ? error.message : '请稍后再试',
-        color: 'danger',
       })
     },
   })
@@ -131,44 +133,45 @@ function LoginPage() {
           <p className="mt-3 text-sm text-ink-500">请使用企业账号登录</p>
 
           <form onSubmit={handleSubmit} className="mt-10 flex flex-col gap-5">
-            <Input
-              label="用户名"
-              variant="bordered"
-              radius="sm"
-              autoFocus
-              autoComplete="username"
+            <TextField
               value={username}
-              onValueChange={setUsername}
+              onChange={setUsername}
               isDisabled={login.isPending}
-            />
-            <Input
-              label="密码"
-              variant="bordered"
-              radius="sm"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="current-password"
+            >
+              <Label>用户名</Label>
+              <Input autoFocus autoComplete="username" className="rounded-sm" />
+            </TextField>
+            <TextField
               value={password}
-              onValueChange={setPassword}
+              onChange={setPassword}
               isDisabled={login.isPending}
-              endContent={
-                <button
-                  type="button"
-                  className="self-center whitespace-nowrap text-xs text-ink-500 hover:text-ink-900 focus:outline-none"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? '隐藏密码' : '显示密码'}
-                >
-                  {showPassword ? '隐藏' : '显示'}
-                </button>
-              }
-            />
+            >
+              <Label>密码</Label>
+              <InputGroup className="rounded-sm">
+                <InputGroup.Input
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                />
+                <InputGroup.Suffix className="pr-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-xs text-ink-500 hover:text-ink-900"
+                    onPress={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                  >
+                    {showPassword ? '隐藏' : '显示'}
+                  </Button>
+                </InputGroup.Suffix>
+              </InputGroup>
+            </TextField>
 
             <Button
               type="submit"
-              radius="sm"
               size="lg"
-              isLoading={login.isPending}
+              isPending={login.isPending}
               isDisabled={!username || !password}
-              className="mt-2 bg-ink-900 text-porcelain tracking-[0.4em] data-[hover=true]:bg-ink-800"
+              className="mt-2 w-full rounded-sm bg-ink-900 text-porcelain tracking-[0.4em] hover:bg-ink-800"
             >
               {login.isPending ? '正在登录' : '登 录'}
             </Button>
