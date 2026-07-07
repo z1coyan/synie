@@ -4,7 +4,8 @@ defmodule SynieCore.Org.Company do
   use Ash.Resource,
     domain: SynieCore,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshGraphql.Resource]
+    extensions: [AshGraphql.Resource],
+    authorizers: [Ash.Policy.Authorizer]
 
   postgres do
     table "sys_company"
@@ -13,6 +14,16 @@ defmodule SynieCore.Org.Company do
 
   graphql do
     type :sys_company
+  end
+
+  policies do
+    bypass actor_attribute_equals(:super_admin, true) do
+      authorize_if always()
+    end
+
+    policy always() do
+      authorize_if SynieCore.Authz.Checks.HasPermission
+    end
   end
 
   def permission_prefix, do: "org.company"
