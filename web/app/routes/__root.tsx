@@ -5,6 +5,11 @@ import {
   HeadContent,
   Scripts,
 } from '@tanstack/react-router'
+import { HeroUIProvider } from '@heroui/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import '../../app.css'
+
+const queryClient = new QueryClient()
 
 export const Route = createRootRoute({
   head: () => ({
@@ -20,14 +25,18 @@ export const Route = createRootRoute({
 function RootComponent() {
   return (
     <RootDocument>
-      <Outlet />
+      <QueryClientProvider client={queryClient}>
+        <HeroUIProvider>
+          <Outlet />
+        </HeroUIProvider>
+      </QueryClientProvider>
     </RootDocument>
   )
 }
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html>
+    <html lang="en">
       <head>
         <HeadContent />
       </head>

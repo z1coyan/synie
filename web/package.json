@@ -9,10 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tanstack/react-start": "^1.0.0",
+    "@heroui/react": "2.8.10",
+    "@tailwindcss/postcss": "^4.3.2",
+    "@tanstack/react-query": "^5.101.2",
     "@tanstack/react-router": "^1.0.0",
+    "@tanstack/react-start": "^1.0.0",
+    "framer-motion": "^12.42.2",
+    "postcss": "^8.5.16",
     "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "react-dom": "^18.3.0",
+    "tailwindcss": "^4.3.2"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.2.0",
