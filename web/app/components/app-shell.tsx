@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import {
+  Accordion,
   Avatar,
   Breadcrumbs,
   Button,
@@ -187,27 +188,36 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
             </Drawer.Header>
             <Drawer.Body>
               <nav aria-label="全部菜单">
-                {menuModules.map((m) => (
-                  <div key={m.key} className="mt-5 first:mt-1">
-                    <p className="flex items-center gap-2 px-1 pb-2 text-[11px] tracking-[0.2em] text-ink-500/60">
-                      <m.icon className="h-3.5 w-3.5" />
-                      {m.label}
-                    </p>
-                    <ul className="flex flex-col gap-1">
-                      {m.groups
-                        .flatMap((g) => g.items)
-                        .map((it) => (
-                          <li key={it.path}>
-                            <MenuLink
-                              item={it}
-                              pathname={pathname}
-                              onNavigate={() => setMenuOpen(false)}
-                            />
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                ))}
+                <Accordion hideSeparator defaultExpandedKeys={[activeModule.key]}>
+                  {menuModules.map((m) => (
+                    <Accordion.Item key={m.key} id={m.key}>
+                      <Accordion.Heading>
+                        <Accordion.Trigger className="text-sm">
+                          <m.icon className="mr-3 h-4 w-4 shrink-0 text-ink-500/70" />
+                          {m.label}
+                          <Accordion.Indicator />
+                        </Accordion.Trigger>
+                      </Accordion.Heading>
+                      <Accordion.Panel>
+                        <Accordion.Body className="pt-0">
+                          <ul className="flex flex-col gap-1">
+                            {m.groups
+                              .flatMap((g) => g.items)
+                              .map((it) => (
+                                <li key={it.path}>
+                                  <MenuLink
+                                    item={it}
+                                    pathname={pathname}
+                                    onNavigate={() => setMenuOpen(false)}
+                                  />
+                                </li>
+                              ))}
+                          </ul>
+                        </Accordion.Body>
+                      </Accordion.Panel>
+                    </Accordion.Item>
+                  ))}
+                </Accordion>
               </nav>
             </Drawer.Body>
           </Drawer.Dialog>
