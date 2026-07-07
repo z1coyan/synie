@@ -5,12 +5,12 @@
 
 ## 目标
 
-封装一个 `SynieDataGrid` React 组件:传入 Ash 资源名(即 GraphQL 查询名),自动渲染重型业务表格——每列服务端排序/筛选、offset 分页、行选择;并根据**当前用户对该资源的权限**自动配置标准动作:新增、编辑、删除、打印、批量删除、批量导入、批量导出、批量打印。
+封装一个 `SynieDataGrid` React 组件:传入 Ash 资源名(即 GraphQL 查询名),自动渲染重型业务表格——每列服务端排序/筛选、offset 分页、行选择;并根据**当前用户对该资源的权限**自动配置标准动作(新增、编辑、删除、打印、批量删除、批量导入、批量导出、批量打印)以及资源自声明的扩展工作流动作(审核、反审核、关闭等)。
 
 ## 非目标
 
 - 增/改表单不泛化:grid 只负责按权限显示按钮,表单由页面在回调里提供。
-- 除 destroy 外,grid 不生成 mutation(导入、打印的业务形态由回调承接)。
+- grid 只对「无表单入参、仅吃记录 id」的动作内建 mutation(destroy 与扩展工作流动作);导入、打印及任何需要表单的动作由回调承接。
 - 不做列级权限(字段脱敏/隐藏等 ACL 落地后再议)。
 - 不为此引入前端测试框架。
 - 跨页全选:v1 全选 = 当前页全选(DataGrid `selectedKeys: "all"` 的原生语义),批量动作作用于当前页选中行。
@@ -48,13 +48,27 @@ Ash 资源 (graphql 块暴露 list 查询 + destroy mutation, read action 开 of
 - `sortable` / `filterable`:布尔
 - `enumOptions`:enum 类型的取值列表(含 label)
 
-**capabilities**:字符串枚举列表,取值:
+**capabilities**:字符串列表,当前用户被授予的能力 key。分两层:
+
+- **标准能力**(固定,grid 内置其 UI 位置与默认行为):
 
 ```
 create | update | destroy | bulkDestroy | import | export | print | bulkPrint
 ```
 
+- **扩展能力**(资源相关的工作流动作,如审核/反审核/关闭/作废):key 即动作名(`audit`、`unaudit`、`close`……),开放集合,与 ACL 权限点 `资源:动作` 命名天然对齐。
+
 「查」(read)不在能力集里:能看到表格页本身就是 read 权限的体现,由菜单/路由和服务端查询 policy 门控,不是表格内的动作按钮。
+
+**extendedActions**:扩展动作的描述符列表(与 capabilities 独立返回;grid 只渲染 key ∈ capabilities 的项):
+
+```
+{ key: "audit", label: "审核", scope: "row" | "bulk" | "both",
+  mutation: "auditSysOrder",   # AshGraphql mutation 字段名
+  isDanger: false }
+```
+
+来源:白名单每个资源条目旁显式声明(动作在 Ash 里是自定义 update action,经 `graphql do` 块暴露成 mutation;label/scope/isDanger 反射不出来,声明是必要的,也就几行)。声明与实际暴露的 mutation 不一致时,gridMeta 测试会抓住。
 
 权限架构未落地前的 stub:已登录即返回全部能力(当前只有 admin)。**接口即契约**——未来权限系统落地只改 resolver 内部:CRUD 类走 Ash policy 检查(`Ash.can?`),import/export/print 等非 Ash 原生动作走 ACL 权限点(如 `sys_user:export`)。前端不感知这次切换。
 
@@ -84,6 +98,9 @@ create | update | destroy | bulkDestroy | import | export | print | bulkPrint
   onImport={(ctx) => ...}                 // import:工具栏「导入」,ctx 含 refetch
   onPrint={(rows) => ...}                 // print/bulkPrint:可选,覆盖默认打印视图
 
+  // 扩展动作(审核/关闭等)默认内建执行;需要表单(如审核意见)时按 key 覆盖
+  actionHandlers={{ audit: (rows, { refetch }) => ... }}
+
   // 追加自定义动作(在标准动作之外),capability 字段可选,填了则按能力集门控
   bulkActions={[{ key: "disable", label: "批量停用", isDanger: true, capability: "update",
                   onAction: (rows, { refetch }) => ... }]}
@@ -104,6 +121,7 @@ create | update | destroy | bulkDestroy | import | export | print | bulkPrint
 | `import` | 工具栏「导入」 | 无(纯回调,模板/校验/错误行反馈业务相关) | `onImport` |
 | `print` | 行内「打印」 | **内建默认**:该行按列定义渲染打印视图 → `window.print()` | `onPrint` |
 | `bulkPrint` | ActionBar「批量打印」 | 同上,选中行渲染打印视图 | `onPrint` |
+| 扩展动作(审核/反审核/关闭…) | 行内菜单及/或 ActionBar(按 `scope`) | **内建**:确认框 → 描述符声明的 mutation(仅记录 id 入参,批量则逐条)→ refetch | `actionHandlers[key]` |
 
 - 内建批量删除为前端逐条 destroy。ponytail: 逐条循环,量大或需事务性时后端加 Ash bulk action 再切。
 - 内建导出为前端循环拉页。ponytail: 数据量大(万行级)时改后端流式导出。
@@ -124,11 +142,11 @@ create | update | destroy | bulkDestroy | import | export | print | bulkPrint
 
 - gridMeta 或行查询失败 → 表格错误态(封装层自建,DataGrid 无错误态 prop)。
 - 白名单外资源名 → 明确 GraphQL 错误,不静默。
-- 内建 destroy 失败 → 错误提示,不 refetch;批量删除部分失败 → 汇总提示成功/失败条数后 refetch。
+- 内建 mutation(destroy/扩展动作)失败 → 错误提示,不 refetch;批量执行部分失败 → 汇总提示成功/失败条数后 refetch。服务端 policy 拒绝(权限在会话中途被收走)同样落入此错误路径——capabilities 只是 UI 显隐,真正的权限校验永远在服务端。
 
 ## 测试
 
-- 后端 ExUnit:gridMeta resolver(sys_user 返回预期列与 stub 能力集);一条带 filter + sort + 分页的 GraphQL 查询;一条 destroy mutation。核心逻辑都在后端。
+- 后端 ExUnit:gridMeta resolver(sys_user 返回预期列与 stub 能力集);一条带 filter + sort + 分页的 GraphQL 查询;一条 destroy mutation;extendedActions 声明的 mutation 字段确实存在于 schema(一致性校验)。核心逻辑都在后端。
 - 前端:试点页手动验收。
 
 ## 试点
@@ -140,4 +158,5 @@ create | update | destroy | bulkDestroy | import | export | print | bulkPrint
 1. master 上未提交的账户/登录工作先提交(试点依赖 sys_user 资源与登录)。
 2. 系统至少再有 1-2 张真实业务表(避免为单表过度设计)。
 3. 权限架构方向确定(不必完成——capabilities 接口已隔离,但 ACL 权限点命名规范最好先定,如 `资源:动作`)。
-4. 安装 `@heroui-pro/react`(token 在根 `.env`);heroui-pro MCP 已可用(2026-07-07 已接通)。
+4. **web 先升级 HeroUI v3**:当前 web 是 `@heroui/react` 2.8.10(v2),而 `@heroui-pro/react`(DataGrid/ActionBar/EmptyState 所在)与 Pro MCP/skills 均为 v3-only,样式系统不同(v2 provider+数字色阶 vs v3 BEM+oklch),不可共存照抄。升级是独立于本设计的一项前置工程。
+5. 安装 `@heroui-pro/react`(token 在根 `.env`);heroui-pro MCP 已可用(2026-07-07 已接通)。
