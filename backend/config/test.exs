@@ -9,8 +9,4 @@ config :synie_web, SynieWeb.Endpoint,
   secret_key_base: "synie_test_secret_key_base_for_test_only_not_for_prod",
   server: false
 
-config :synie_core, SynieCore.Repo,
-  pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: 10
-
 config :logger, level: :warning

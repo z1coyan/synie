@@ -1,14 +1,8 @@
 import Config
 
+config :synie_core, SynieCore.Repo, SynieCore.Config.repo_config(config_env())
+
 if config_env() == :prod do
-  database_url =
-    System.get_env("DATABASE_URL") ||
-      raise "DATABASE_URL is missing"
-
-  config :synie_core, SynieCore.Repo,
-    url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
-
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
       raise "SECRET_KEY_BASE is missing"
