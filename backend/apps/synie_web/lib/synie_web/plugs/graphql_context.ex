@@ -1,7 +1,7 @@
 defmodule SynieWeb.Plugs.GraphqlContext do
   @moduledoc """
-  从 `Authorization: Bearer <token>` 解析当前用户,
-  写入 Absinthe context(`current_user`)并设置 Ash actor。
+  从 `Authorization: Bearer <token>` 解析当前用户,构建权限 actor,
+  写入 Absinthe context(`current_user`、`actor`)并设置 Ash actor。
   """
 
   @behaviour Plug
@@ -18,9 +18,11 @@ defmodule SynieWeb.Plugs.GraphqlContext do
         conn
 
       user ->
+        actor = SynieCore.Authz.build_actor(user)
+
         conn
-        |> Ash.PlugHelpers.set_actor(user)
-        |> Absinthe.Plug.put_options(context: %{current_user: user})
+        |> Ash.PlugHelpers.set_actor(actor)
+        |> Absinthe.Plug.put_options(context: %{current_user: user, actor: actor})
     end
   end
 
