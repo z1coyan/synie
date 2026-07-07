@@ -1,18 +1,7 @@
 defmodule SynieCore do
-  @moduledoc """
-  Documentation for `SynieCore`.
-  """
+  use Ash.Domain
 
-  @doc """
-  Hello world.
-
-  ## Examples
-
-      iex> SynieCore.hello()
-      :world
-
-  """
-  def hello do
-    :world
+  resources do
+    resource SynieCore.Resources.Hello
   end
 end
