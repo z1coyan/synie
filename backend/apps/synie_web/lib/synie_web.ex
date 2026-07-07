@@ -1,18 +1,20 @@
 defmodule SynieWeb do
-  @moduledoc """
-  Documentation for `SynieWeb`.
-  """
+  @moduledoc false
 
-  @doc """
-  Hello world.
+  def html do
+    quote do
+      use Phoenix.Component
+      import Phoenix.HTML
+    end
+  end
 
-  ## Examples
+  def controller do
+    quote do
+      use Phoenix.Controller, formats: [:html, :json]
+    end
+  end
 
-      iex> SynieWeb.hello()
-      :world
-
-  """
-  def hello do
-    :world
+  defmacro __using__(which) when is_atom(which) do
+    apply(__MODULE__, which, [])
   end
 end

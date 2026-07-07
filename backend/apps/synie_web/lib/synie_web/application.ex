@@ -1,6 +1,4 @@
 defmodule SynieWeb.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
   @moduledoc false
 
   use Application
@@ -8,13 +6,22 @@ defmodule SynieWeb.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # Starts a worker by calling: SynieWeb.Worker.start_link(arg)
-      # {SynieWeb.Worker, arg}
+      {Phoenix.PubSub, name: SynieWeb.PubSub},
+      SynieWeb.Endpoint
     ]
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
     opts = [strategy: :one_for_one, name: SynieWeb.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  @impl true
+  def config_change(changed, removed, _new) do
+    changed
+    |> Enum.concat(removed)
+    |> Enum.each(fn {app, _} ->
+      Application.put_env(app, :changed, true)
+    end)
+
+    :ok
   end
 end

@@ -26,7 +26,15 @@ defmodule SynieWeb.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:synie_core, in_umbrella: true}
+      {:synie_core, in_umbrella: true},
+      {:phoenix, "~> 1.7"},
+      {:phoenix_html, "~> 4.0"},
+      {:plug_cowboy, "~> 2.7"},
+      {:jason, "~> 1.4"},
+      {:ash_graphql, "~> 1.9"},
+      {:ash_authentication, "~> 4.0"},
+      {:ash_authentication_phoenix, "~> 2.0"},
+      {:bandit, "~> 1.5"}
     ]
   end
 end
