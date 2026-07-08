@@ -33,7 +33,7 @@ interface FieldOverride {
 }
 ```
 
-自动规则：`insertedAt/updatedAt` view 显示、create/edit 剔除；`id` 三态都不显示（与表格过滤 id 对齐）。
+自动规则：`insertedAt/updatedAt` view 显示（默认 cols 6，桌面并排一行）、create/edit 剔除；`id` 三态都不显示（与表格过滤 id 对齐）。
 
 ## 字段编辑语义（edit 三值）
 

@@ -57,6 +57,12 @@ eq(
 )
 eq(resolveFields(cols, 'view', [], {}).some((f) => f.name === 'insertedAt'), true, 'view 保留时间戳系统字段')
 eq(resolveFields(cols, 'view', [], {}).some((f) => f.name === 'id'), false, 'id 三态都不显示')
+eq(resolveFields(cols, 'view', [], {}).find((f) => f.name === 'insertedAt')!.cols, 6, '时间戳默认半宽并排')
+eq(
+  resolveFields(cols, 'view', [], { insertedAt: { cols: 12 } }).find((f) => f.name === 'insertedAt')!.cols,
+  12,
+  '时间戳 cols override 仍生效'
+)
 eq(createFields[0].edit, 'createOnly', 'override edit 生效')
 eq(createFields[0].required, true, 'override required 生效')
 eq(createFields.find((f) => f.name === 'name')!.cols, 6, 'override cols 生效')

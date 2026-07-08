@@ -62,7 +62,8 @@ export function resolveFields(
         name: c.name,
         label: o.label ?? c.label,
         // 非整数四舍五入,下界 1、上限 12(直接写死 col-span 类名,越界会漏渲染栅格)
-        cols: Math.min(12, Math.max(1, Math.round(o.cols ?? 12))),
+        // 时间戳系统字段默认半宽:创建/更新时间在桌面并排一行
+        cols: Math.min(12, Math.max(1, Math.round(o.cols ?? (SYSTEM_FIELDS.includes(c.name) ? 6 : 12)))),
         required: o.required ?? false,
         edit: o.edit ?? 'editable',
         placeholder: o.placeholder,
