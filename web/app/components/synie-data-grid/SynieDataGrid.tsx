@@ -1,9 +1,10 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
-import { Button, Chip, ListBox, Pagination, Spinner } from '@heroui/react'
+import { Button, Chip, CloseButton, ListBox, Pagination, SearchField, Spinner } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
 import { gqlFetch } from '~/lib/graphql'
+import { ColumnFilterButton } from './filter-popover'
 import { useGridMeta } from './meta'
 import { buildFilterLiteral, buildRowQuery, toSortLiteral } from './query'
 import type { ActionContext, BulkAction, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
@@ -71,7 +72,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     [meta.data, exclude]
   )
 
-  const filterLiteral = meta.data ? buildFilterLiteral(filters, search, meta.data.columns) : null
+  // 搜索/筛选列用组件内已排除 id/exclude 的 columns,被 exclude 隐藏的列不应参与搜索
+  const filterLiteral = meta.data ? buildFilterLiteral(filters, search, columns) : null
   const sortLiteral = toSortLiteral(sort)
 
   const rowsQuery = useQuery({
@@ -97,14 +99,34 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     () =>
       columns.map((col, i) => ({
         id: col.name,
-        header: overrides[col.name]?.label ?? col.label,
+        // 函数式 header:DataGrid 自身按 allowsSorting 包裹排序箭头,这里只出文本+筛选按钮
+        header: () => (
+          <span className="inline-flex items-center gap-1">
+            {overrides[col.name]?.label ?? col.label}
+            {col.filterable && (
+              <ColumnFilterButton
+                column={col}
+                filter={filters[col.name]}
+                onChange={(f) => {
+                  setFilters((prev) => {
+                    const next = { ...prev }
+                    if (f === null) delete next[col.name]
+                    else next[col.name] = f
+                    return next
+                  })
+                  setPage(1)
+                }}
+              />
+            )}
+          </span>
+        ),
         // RAC Table 要求至少一列 isRowHeader(行的无障碍名称);缺失会在并发渲染中反复抛可恢复错误
         isRowHeader: i === 0,
         allowsSorting: col.sortable,
         width: overrides[col.name]?.width,
         cell: (row: Row) => overrides[col.name]?.render?.(row[col.name], row) ?? defaultCell(col, row[col.name]),
       })),
-    [columns, overrides]
+    [columns, overrides, filters]
   )
 
   const sortDescriptor: DataGridSortDescriptor | undefined = sort
@@ -138,7 +160,62 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* 工具栏:Task 5 加搜索/筛选,Task 6 加动作按钮 */}
+      {/* 工具栏:搜索 + Task 6 动作按钮 */}
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchField
+          aria-label="搜索"
+          value={search}
+          onChange={(v) => {
+            setSearch(v)
+            setPage(1)
+          }}
+          className="w-64"
+        >
+          <SearchField.Group>
+            <SearchField.SearchIcon />
+            <SearchField.Input placeholder="搜索…" />
+            <SearchField.ClearButton />
+          </SearchField.Group>
+        </SearchField>
+        <div className="ml-auto flex items-center gap-2">{/* Task 6: 动作按钮 */}</div>
+      </div>
+
+      {/* 活跃筛选 Chips */}
+      {Object.keys(filters).length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {Object.keys(filters).map((name) => {
+            const col = columns.find((c) => c.name === name)
+            return (
+              <Chip key={name} size="sm" className="pr-1">
+                <Chip.Label>{col?.label ?? name}</Chip.Label>
+                <CloseButton
+                  aria-label={`清除 ${col?.label ?? name} 筛选`}
+                  className="h-4 w-4 [&_svg]:size-3"
+                  onPress={() => {
+                    setFilters((prev) => {
+                      const next = { ...prev }
+                      delete next[name]
+                      return next
+                    })
+                    setPage(1)
+                  }}
+                />
+              </Chip>
+            )
+          })}
+          <Button
+            size="sm"
+            variant="ghost"
+            onPress={() => {
+              setFilters({})
+              setPage(1)
+            }}
+          >
+            清除全部
+          </Button>
+        </div>
+      )}
+
       <DataGrid
         aria-label={`${resource} 数据表格`}
         data={rows}
