@@ -9,6 +9,12 @@
 - 尽可能使用组件库已有的组件进行开发而不是自己使用html+tailwindcss搭建
 - 表单/筛选控件一律用 HeroUI(Pro) 现成组件（日期用 DatePicker/DateRangePicker、数值用 NumberField、下拉用 Select 等），不要包装浏览器原生 input；有已封装的业务组件时优先复用业务组件
 
+## 业务数据页标准组件
+
+- 数据列表一律用 `SynieDataGrid`（`~/components/synie-data-grid/`）；数据详情、新增、编辑一律用 `SynieRecordDrawer`（`~/components/synie-record-drawer/`）三态抽屉，不要自造表格或表单。
+- 字段行为（必填/只读 `edit`/条件显隐 `visible`/栅格 `cols`/默认值）通过 `fields` override 声明，提交 mutation 写在页面 `onSubmit` 回调；接入范例见 `routes/_app/system/roles.tsx`。
+- 组件能力不够时先扩组件再用，不要在页面里绕过它手搭。
+
 ## 移动端适配
 
 - 所有页面需考虑移动端适配，桌面/移动断点统一为 `lg`（1024px）。
