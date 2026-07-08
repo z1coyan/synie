@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { parseDate } from '@internationalized/date'
 import {
   Button,
@@ -68,11 +68,34 @@ const COL_SPAN: Record<number, string> = {
   12: 'lg:col-span-12',
 }
 
+// 非法日期串回落 null,不让整个抽屉崩掉
+const safeParseDate = (v: unknown) => {
+  if (typeof v !== 'string' || !v) return null
+  try {
+    return parseDate(v)
+  } catch {
+    return null
+  }
+}
+
 export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const { resource, mode, isOpen, row, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
   const meta = useGridMeta(resource)
 
-  const fields = resolveFields(meta.data?.columns ?? [], mode, exclude, props.fields)
+  // 关闭动画期间冻结最后一次打开时的内容:onOpenChange(false) 后父级常把 mode 回落
+  // 'view'、row 置 undefined,若渲染路径跟着实时切换,会在 Sheet 退出动画播放期间把
+  // 详情/表单闪变成空态。isOpen 为 true 时把 { mode, row } 存入 ref;isOpen 为 false 时
+  // 渲染改读 ref 里的快照(从未打开过则退回当前 props)。
+  // values 重建 effect 与 save() 继续用实际 props——它们只在 isOpen 为 true 时工作,不受影响。
+  const lastOpenRef = useRef<{ mode: DrawerMode; row?: Row | null } | null>(null)
+  if (isOpen) {
+    lastOpenRef.current = { mode, row }
+  }
+  const frozen = isOpen ? null : lastOpenRef.current
+  const renderMode = frozen ? frozen.mode : mode
+  const renderRow = frozen ? frozen.row : row
+
+  const fields = resolveFields(meta.data?.columns ?? [], renderMode, exclude, props.fields)
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
 
@@ -86,8 +109,8 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mode, row, meta.data])
 
-  const shown = visibleFields(fields, mode === 'view' ? ((row ?? {}) as Record<string, unknown>) : values)
-  const title = mode === 'create' ? `新增${label}` : mode === 'edit' ? `编辑${label}` : `${label}详情`
+  const shown = visibleFields(fields, renderMode === 'view' ? ((renderRow ?? {}) as Record<string, unknown>) : values)
+  const title = renderMode === 'create' ? `新增${label}` : renderMode === 'edit' ? `编辑${label}` : `${label}详情`
 
   const save = async () => {
     if (!props.onSubmit || mode === 'view') return
@@ -138,13 +161,13 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
                   {shown.map((f) => (
                     <div key={f.name} className={COL_SPAN[f.cols]}>
-                      {mode === 'view' ? (
-                        <ViewField field={f} row={row ?? ({ id: '' } as Row)} />
+                      {renderMode === 'view' ? (
+                        <ViewField field={f} row={renderRow ?? ({ id: '' } as Row)} />
                       ) : (
                         <FieldInput
                           field={f}
                           value={values[f.name]}
-                          isDisabled={isFieldDisabled(f, mode) || saving}
+                          isDisabled={isFieldDisabled(f, renderMode) || saving}
                           onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v }))}
                         />
                       )}
@@ -244,7 +267,7 @@ function FieldInput({
         <DatePicker
           isDisabled={isDisabled}
           isRequired={field.required}
-          value={typeof value === 'string' && value ? parseDate(value) : null}
+          value={safeParseDate(value)}
           onChange={(v) => onChange(v ? v.toString() : null)}
         >
           <Label>{field.label}</Label>

@@ -62,6 +62,8 @@ eq(createFields.find((f) => f.name === 'name')!.cols, 6, 'override cols 生效')
 eq(createFields.find((f) => f.name === 'name')!.label, '名称', 'override label 生效')
 eq(createFields.find((f) => f.name === 'seq')!.cols, 12, '默认 cols=12')
 eq(resolveFields(cols, 'create', [], { seq: { cols: 99 } }).find((f) => f.name === 'seq')!.cols, 12, 'cols 上限 12')
+eq(resolveFields(cols, 'create', [], { seq: { cols: 0 } }).find((f) => f.name === 'seq')!.cols, 1, 'cols 下界 1')
+eq(resolveFields(cols, 'create', [], { seq: { cols: 6.4 } }).find((f) => f.name === 'seq')!.cols, 6, 'cols 非整数取整')
 
 // —— isFieldDisabled 三值 × create/edit ——
 const fOf = (edit?: 'editable' | 'createOnly' | 'readOnly') =>
