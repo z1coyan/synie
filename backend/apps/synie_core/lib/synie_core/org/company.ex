@@ -5,7 +5,8 @@ defmodule SynieCore.Org.Company do
     domain: SynieCore,
     data_layer: AshPostgres.DataLayer,
     extensions: [AshGraphql.Resource],
-    authorizers: [Ash.Policy.Authorizer]
+    authorizers: [Ash.Policy.Authorizer],
+    fragments: [SynieCore.Audit.Fragment]
 
   postgres do
     table "bas_company"
@@ -30,7 +31,7 @@ defmodule SynieCore.Org.Company do
   def permission_actions, do: ~w(create read update delete)
 
   actions do
-    defaults [:read, :destroy]
+    defaults [:read]
 
     create :create do
       accept [:code, :name, :short_name, :parent_id]
@@ -38,6 +39,12 @@ defmodule SynieCore.Org.Company do
 
     update :update do
       accept [:name, :short_name, :parent_id]
+      require_atomic? false
+    end
+
+    destroy :destroy do
+      primary? true
+      require_atomic? false
     end
   end
 

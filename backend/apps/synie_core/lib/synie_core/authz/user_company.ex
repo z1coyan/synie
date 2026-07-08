@@ -10,7 +10,8 @@ defmodule SynieCore.Authz.UserCompany do
     domain: SynieCore,
     data_layer: AshPostgres.DataLayer,
     extensions: [AshGraphql.Resource],
-    authorizers: [Ash.Policy.Authorizer]
+    authorizers: [Ash.Policy.Authorizer],
+    fragments: [SynieCore.Audit.Fragment]
 
   postgres do
     table "sys_user_company"
@@ -35,10 +36,15 @@ defmodule SynieCore.Authz.UserCompany do
   def permission_actions, do: ~w(create read delete)
 
   actions do
-    defaults [:read, :destroy]
+    defaults [:read]
 
     create :create do
       accept [:user_id, :company_id]
+    end
+
+    destroy :destroy do
+      primary? true
+      require_atomic? false
     end
   end
 
