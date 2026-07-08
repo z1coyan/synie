@@ -6,7 +6,8 @@ defmodule SynieCore.Accounts.User do
   use Ash.Resource,
     domain: SynieCore,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshGraphql.Resource]
+    extensions: [AshGraphql.Resource],
+    fragments: [SynieCore.Audit.Fragment]
 
   postgres do
     table "sys_user"
@@ -38,6 +39,7 @@ defmodule SynieCore.Accounts.User do
 
     update :set_super_admin do
       accept []
+      require_atomic? false
 
       change set_attribute(:super_admin, true)
     end

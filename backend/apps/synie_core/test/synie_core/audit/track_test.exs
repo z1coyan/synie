@@ -1,6 +1,8 @@
 defmodule SynieCore.Audit.TrackTest do
   use ExUnit.Case, async: true
 
+  import SynieCore.AuthzFixtures
+
   alias SynieCore.Audit.Log
   alias SynieCore.Authz.Actor
   alias SynieCore.Base.Currency
@@ -90,5 +92,35 @@ defmodule SynieCore.Audit.TrackTest do
     assert_raise Ash.Error.Invalid, fn -> currency!(%{iso_code: "usd"}) end
 
     assert Ash.read!(Log, authorize?: false) == []
+  end
+
+  test "sensitive 属性记录为 [FILTERED]" do
+    user = user!()
+
+    assert [log] = logs_for(user.id)
+    assert log.resource == "sys_user"
+    assert log.action_name == "register"
+    assert log.changes["hashed_password"] == %{"to" => "[FILTERED]"}
+  end
+
+  test "带 company_id 的资源日志冗余公司标识" do
+    user = user!()
+    company = company!()
+    uc = grant_company!(user, company)
+
+    assert [log] = logs_for(uc.id)
+    assert log.resource == "sys_user_company"
+    assert log.company_id == company.id
+  end
+
+  test "非 public 属性变更(set_super_admin)可审计" do
+    user = user!()
+
+    user
+    |> Ash.Changeset.for_update(:set_super_admin, %{})
+    |> Ash.update!(authorize?: false)
+
+    assert [log] = Enum.filter(logs_for(user.id), &(&1.action_type == "update"))
+    assert log.changes["super_admin"] == %{"from" => false, "to" => true}
   end
 end
