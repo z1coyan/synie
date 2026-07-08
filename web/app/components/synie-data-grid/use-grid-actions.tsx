@@ -42,6 +42,7 @@ export function useGridActions(opts: {
   meta: GridMeta | undefined
   refetch: () => void
   clearSelection: () => void
+  onView?: (row: Row) => void
   onCreate?: () => void
   onEdit?: (row: Row) => void
   onImport?: (ctx: ActionContext) => void
@@ -107,6 +108,9 @@ export function useGridActions(opts: {
 
   // 行内菜单
   const rowMenuFor = (row: Row): ResolvedAction[] => [
+    ...(opts.onView
+      ? [{ key: 'view', label: '查看', isDanger: false, run: () => opts.onView!(row) }]
+      : []),
     ...(can('update') && opts.onEdit
       ? [{ key: 'edit', label: '编辑', isDanger: false, run: () => opts.onEdit!(row) }]
       : []),

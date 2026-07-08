@@ -27,6 +27,8 @@ export interface SynieDataGridProps {
   resource: string
   exclude?: string[]
   overrides?: Record<string, ColumnOverride>
+  /** 传了就在行内菜单第一项显示「查看」(打开详情抽屉) */
+  onView?: (row: Row) => void
   onCreate?: () => void
   onEdit?: (row: Row) => void
   onImport?: (ctx: ActionContext) => void
@@ -198,6 +200,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     meta: meta.data,
     refetch: () => rowsQuery.refetch(),
     clearSelection: () => setSelection(new Set()),
+    onView: props.onView,
     onCreate: props.onCreate,
     onEdit: props.onEdit,
     onImport: props.onImport,
