@@ -116,6 +116,7 @@ export const menuModules: MenuModule[] = [
           { label: '用户管理', path: '/system/users' },
           { label: '部门管理', path: '/system/depts' },
           { label: '角色权限', path: '/system/roles' },
+          { label: '公司管理', path: '/system/companies' },
         ],
       },
       {
