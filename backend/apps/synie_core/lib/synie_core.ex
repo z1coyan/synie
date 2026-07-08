@@ -4,8 +4,8 @@ defmodule SynieCore do
 
   graphql do
     queries do
-      # paginate_with: nil —— 系统资源规模小,直接返回扁平列表,不做分页包装
-      list SynieCore.Authz.Role, :sys_roles, :read, paginate_with: nil
+      # sys_roles 已上数据表格,开 offset 分页;其余系统资源规模小仍为扁平列表
+      list SynieCore.Authz.Role, :sys_roles, :read, paginate_with: :offset
       list SynieCore.Authz.UserRole, :sys_user_roles, :read, paginate_with: nil
       list SynieCore.Authz.RolePermission, :sys_role_permissions, :read, paginate_with: nil
       list SynieCore.Authz.UserCompany, :sys_user_companies, :read, paginate_with: nil

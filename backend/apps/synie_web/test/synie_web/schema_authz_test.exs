@@ -48,7 +48,7 @@ defmodule SynieWeb.SchemaAuthzTest do
   test "无 sys.role:read 权限查询 sysRoles 报错" do
     actor = Authz.build_actor(user_with!([]))
 
-    result = run!("query { sysRoles { id } }", actor)
+    result = run!("query { sysRoles { results { id } } }", actor)
 
     assert result[:errors] != nil and result[:errors] != []
   end
@@ -56,9 +56,9 @@ defmodule SynieWeb.SchemaAuthzTest do
   test "拥有 sys.role:read 可查询 sysRoles" do
     actor = Authz.build_actor(user_with!(["sys.role:read"]))
 
-    result = run!("query { sysRoles { id code } }", actor)
+    result = run!("query { sysRoles { results { id code } } }", actor)
 
-    assert %{data: %{"sysRoles" => roles}} = result
+    assert %{data: %{"sysRoles" => %{"results" => roles}}} = result
     assert is_list(roles) and roles != []
   end
 

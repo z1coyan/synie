@@ -30,7 +30,17 @@ defmodule SynieCore.Authz.Role do
   def permission_actions, do: ~w(create read update delete)
 
   actions do
-    defaults [:read, :destroy]
+    defaults [:destroy]
+
+    read :read do
+      primary? true
+
+      pagination offset?: true,
+                 countable: true,
+                 required?: false,
+                 default_limit: 20,
+                 max_page_size: 200
+    end
 
     create :create do
       accept [:code, :name, :enabled]
@@ -48,22 +58,25 @@ defmodule SynieCore.Authz.Role do
       allow_nil? false
       public? true
       constraints max_length: 64
+      description "角色编码"
     end
 
     attribute :name, :string do
       allow_nil? false
       public? true
       constraints max_length: 64
+      description "角色名称"
     end
 
     attribute :enabled, :boolean do
       allow_nil? false
       public? true
       default true
+      description "启用"
     end
 
-    create_timestamp :inserted_at
-    update_timestamp :updated_at
+    create_timestamp :inserted_at, public?: true, description: "创建时间"
+    update_timestamp :updated_at, public?: true, description: "更新时间"
   end
 
   identities do
