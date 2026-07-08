@@ -6,6 +6,7 @@ import type { Selection } from 'react-aria-components'
 import { gqlFetch } from '~/lib/graphql'
 import { downloadCsv, fetchAllRows, toCsv } from './csv'
 import { ColumnFilterButton } from './filter-popover'
+import { cellText } from './format'
 import { useGridMeta } from './meta'
 import { printRows } from './print'
 import { buildFilterLiteral, buildRowQuery, toSortLiteral } from './query'
@@ -143,7 +144,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     const id = toast(`正在导出…`, { isLoading: true, timeout: 0 })
     try {
       const all = await fetchAllRows(resource, columns, filterLiteral, sortLiteral)
-      downloadCsv(`${resource}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(columns, all))
+      // 传 cellText:CSV 单元格与表格/打印视图同一套格式化(是/否、本地化时间、enum label)
+      downloadCsv(`${resource}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(columns, all, cellText))
       toast.close(id)
       toast.success(`已导出 ${all.length} 条`)
     } catch (e) {
@@ -154,8 +156,16 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     }
   }
 
-  const handlePrintRows = (rowsToPrint: Row[]) =>
-    props.onPrint ? props.onPrint(rowsToPrint) : printRows(columns, rowsToPrint, `${resource} 打印`)
+  const handlePrintRows = (rowsToPrint: Row[]) => {
+    if (props.onPrint) {
+      props.onPrint(rowsToPrint)
+      return
+    }
+    // 弹窗被浏览器拦截时必须有反馈(非幂等操作 Toast 守则)
+    if (!printRows(columns, rowsToPrint, `${resource} 打印`)) {
+      toast.danger('打印视图打开失败', { description: '请检查浏览器弹窗拦截设置' })
+    }
+  }
 
   const actions = useGridActions({
     meta: meta.data,

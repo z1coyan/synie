@@ -1,6 +1,7 @@
 // bun app/components/synie-data-grid/grid-checks.ts 可直接运行的纯函数自检
 import { buildFilterLiteral, buildRowQuery, toSortLiteral } from './query'
 import { toCsv } from './csv'
+import { cellText } from './format'
 import type { GridColumnMeta, Row } from './types'
 
 const cols: GridColumnMeta[] = [
@@ -77,6 +78,17 @@ eq(
   toCsv([{ name: 'code', label: '编码' }, { name: 'name', label: '名称' }], rows),
   '编码,名称\r\n"a,b","含""引号"""',
   'CSV 转义'
+)
+
+// 带 cellText 格式化器:boolean 列导出为 是/否(与表格/打印视图一致),而非裸 true/false
+eq(
+  toCsv(
+    cols.filter((c) => c.name === 'code' || c.name === 'enabled'),
+    rows,
+    cellText
+  ),
+  '编码,启用\r\n"a,b",是',
+  'CSV 格式化器 boolean→是'
 )
 
 console.log('grid-checks ok')
