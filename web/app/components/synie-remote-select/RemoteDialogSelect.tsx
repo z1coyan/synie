@@ -39,7 +39,8 @@ export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
             className="min-w-0 flex-1 justify-between"
             isDisabled={props.isDisabled}
             onPress={() => {
-              setDraft(selectedRow ? [selectedRow] : [])
+              // 反查未返回时用占位行播种,表格勾选态仍对得上当前值
+              setDraft(props.value != null ? [known.get(props.value) ?? ({ id: props.value } as Row)] : [])
               setOpen(true)
             }}
           >

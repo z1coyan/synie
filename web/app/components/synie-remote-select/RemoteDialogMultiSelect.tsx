@@ -24,8 +24,8 @@ export function RemoteDialogMultiSelect(props: RemoteDialogMultiSelectProps) {
   const labelOf = (row: Row) => optionLabel(src, row)
 
   const openDialog = () => {
-    // 草稿从当前值起步:已知行进草稿,未知 id 丢弃(确认时等于清掉了查不到的值,符合直觉)
-    setDraft(props.value.map((id) => known.get(id)).filter((r): r is Row => r != null))
+    // 草稿从当前值起步;反查未返回的 id 用占位行保住(面板经 optionLabel 兜底显示截断 id),确认不丢数据
+    setDraft(props.value.map((id) => known.get(id) ?? ({ id } as Row)))
     setOpen(true)
   }
 
