@@ -21,6 +21,10 @@
   --color-porcelain: #fafaf7;
   --color-gilt: #c9a15a;
   --color-jade: #5f9ea0;
+
+    /* Border Radius */
+  --radius: 0.125rem;
+  --field-radius: 0.75rem;
 }
 
 /* 登录页左栏「资源经纬」节点的呼吸光 */

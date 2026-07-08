@@ -7,6 +7,7 @@ import viteReact from '@vitejs/plugin-react'
 export default defineConfig({
   server: {
     port: 3000,
+    allowedHosts: ['home-n5pro', '.ts.net'],
     proxy: {
       '/graphql': {
         target: 'http://localhost:4000',

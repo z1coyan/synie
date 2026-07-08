@@ -164,7 +164,7 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
           </div>
         </header>
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-8 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full px-4 pb-16 pt-8 sm:px-6 lg:px-8">
             {children}
           </div>
         </main>
