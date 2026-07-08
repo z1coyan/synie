@@ -67,6 +67,8 @@ defmodule SynieCore.Audit.Log do
         :company_id,
         :changes
       ]
+
+      validate {SynieCore.Authz.Validations.CompanyAccessible, []}
     end
   end
 
