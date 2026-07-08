@@ -55,7 +55,8 @@ eq(
   ['code', 'name', 'seq', 'price', 'enabled', 'dueOn', 'happenedAt', 'counterpartyType', 'customerId'],
   'create 剔除 id/insertedAt 系统字段与 exclude'
 )
-eq(resolveFields(cols, 'view', [], {}).some((f) => f.name === 'insertedAt'), true, 'view 保留系统字段')
+eq(resolveFields(cols, 'view', [], {}).some((f) => f.name === 'insertedAt'), true, 'view 保留时间戳系统字段')
+eq(resolveFields(cols, 'view', [], {}).some((f) => f.name === 'id'), false, 'id 三态都不显示')
 eq(createFields[0].edit, 'createOnly', 'override edit 生效')
 eq(createFields[0].required, true, 'override required 生效')
 eq(createFields.find((f) => f.name === 'name')!.cols, 6, 'override cols 生效')

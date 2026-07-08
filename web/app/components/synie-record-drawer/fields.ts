@@ -43,8 +43,8 @@ export interface ResolvedField {
   input?: (p: FieldInputProps) => ReactNode
 }
 
-/** 系统字段:view 显示,create/edit 剔除。下轮 GridMeta 扩表单元数据后由后端 accept 列表推导 */
-const SYSTEM_FIELDS = ['id', 'insertedAt', 'updatedAt']
+/** 时间戳系统字段:view 显示,create/edit 剔除;id 三态都不显示(与表格过滤 id 对齐)。下轮 GridMeta 扩表单元数据后由后端 accept 列表推导 */
+const SYSTEM_FIELDS = ['insertedAt', 'updatedAt']
 
 export function resolveFields(
   columns: GridColumnMeta[],
@@ -53,7 +53,7 @@ export function resolveFields(
   overrides: Record<string, FieldOverride> = {}
 ): ResolvedField[] {
   return columns
-    .filter((c) => !exclude.includes(c.name))
+    .filter((c) => c.name !== 'id' && !exclude.includes(c.name))
     .filter((c) => mode === 'view' || !SYSTEM_FIELDS.includes(c.name))
     .map((c) => {
       const o = overrides[c.name] ?? {}
