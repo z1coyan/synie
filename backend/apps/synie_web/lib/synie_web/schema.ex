@@ -18,6 +18,35 @@ defmodule SynieWeb.Schema do
     field :actions, non_null(list_of(non_null(:string)))
   end
 
+  object :grid_enum_option do
+    field :value, non_null(:string)
+    field :label, non_null(:string)
+  end
+
+  object :grid_column do
+    field :name, non_null(:string)
+    field :type, non_null(:string)
+    field :label, non_null(:string)
+    field :sortable, non_null(:boolean)
+    field :filterable, non_null(:boolean)
+    field :enum_options, list_of(non_null(:grid_enum_option))
+  end
+
+  object :grid_action do
+    field :key, non_null(:string)
+    field :label, non_null(:string)
+    field :scope, non_null(:string)
+    field :mutation, non_null(:string)
+    field :is_danger, non_null(:boolean)
+  end
+
+  object :grid_meta do
+    field :columns, non_null(list_of(non_null(:grid_column)))
+    field :capabilities, non_null(list_of(non_null(:string)))
+    field :extended_actions, non_null(list_of(non_null(:grid_action)))
+    field :destroy_mutation, :string
+  end
+
   query do
     field :me, :session_user do
       resolve(fn _args, %{context: context} ->
@@ -37,6 +66,14 @@ defmodule SynieWeb.Schema do
     field :permission_catalog, non_null(list_of(non_null(:permission_group))) do
       resolve(fn _args, _resolution ->
         {:ok, SynieCore.Authz.Registry.catalog()}
+      end)
+    end
+
+    field :grid_meta, non_null(:grid_meta) do
+      arg(:resource, non_null(:string))
+
+      resolve(fn %{resource: name}, %{context: context} ->
+        SynieWeb.GridMeta.resolve(name, context[:actor])
       end)
     end
   end

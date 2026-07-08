@@ -143,4 +143,94 @@ defmodule SynieWeb.SchemaGridTest do
       assert %{data: %{"destroySysRole" => %{"result" => %{"id" => _}}}} = result
     end
   end
+
+  defp super_actor do
+    %Authz.Actor{
+      user_id: Ash.UUID.generate(),
+      username: "root",
+      super_admin: true,
+      all_companies: true,
+      permissions: MapSet.new(),
+      company_ids: []
+    }
+  end
+
+  # 注意:defp 与模块属性放 describe 外(ExUnit 不允许在 describe 内定义函数)
+  @meta_query """
+  query ($resource: String!) {
+    gridMeta(resource: $resource) {
+      columns { name type label sortable filterable enumOptions { value label } }
+      capabilities
+      extendedActions { key label scope mutation isDanger }
+      destroyMutation
+    }
+  }
+  """
+
+  defp run_meta!(actor, resource \\ "sysRoles") do
+    {:ok, result} =
+      Absinthe.run(@meta_query, SynieWeb.Schema,
+        context: %{actor: actor},
+        variables: %{"resource" => resource}
+      )
+
+    result
+  end
+
+  describe "gridMeta" do
+    test "反射 Role 列定义(名称/类型/中文标签)" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor())
+
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+      assert %{"type" => "string", "label" => "角色编码"} = by_name["code"]
+      assert %{"type" => "boolean", "label" => "启用"} = by_name["enabled"]
+      assert %{"type" => "datetime", "label" => "创建时间"} = by_name["insertedAt"]
+      assert by_name["id"]["type"] == "string"
+    end
+
+    test "super_admin 拿到全部能力(不含 read),destroyMutation 正确" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor())
+
+      assert Enum.sort(meta["capabilities"]) == ["create", "delete", "update"]
+      refute "read" in meta["capabilities"]
+      assert meta["destroyMutation"] == "destroySysRole"
+      assert meta["extendedActions"] == []
+    end
+
+    test "capabilities 随授权变化" do
+      no_perm = Authz.build_actor(user_with!([]))
+      assert %{data: %{"gridMeta" => %{"capabilities" => []}}} = run_meta!(no_perm)
+
+      update_only = Authz.build_actor(user_with!(["sys.role:update"]))
+      assert %{data: %{"gridMeta" => %{"capabilities" => ["update"]}}} = run_meta!(update_only)
+    end
+
+    test "未登录 actor 能力为空但列可见" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(nil)
+      assert meta["capabilities"] == []
+      assert meta["columns"] != []
+    end
+
+    test "白名单外资源报错" do
+      result = run_meta!(super_actor(), "sysUsers")
+      assert result[:errors] != nil and result[:errors] != []
+    end
+
+    test "白名单资源的 grid_actions 与权限动作、schema mutation 一致" do
+      mutation_fields =
+        Absinthe.Schema.lookup_type(SynieWeb.Schema, :mutation).fields
+        |> Map.keys()
+        |> Enum.map(&Absinthe.Utils.camelize(to_string(&1), lower: true))
+
+      for {_name, module} <- SynieWeb.GridMeta.resources(),
+          function_exported?(module, :grid_actions, 0),
+          action <- module.grid_actions() do
+        assert action.key in module.permission_actions(),
+               "#{inspect(module)} 的扩展动作 #{action.key} 未声明在 permission_actions/0"
+
+        assert action.mutation in mutation_fields,
+               "#{inspect(module)} 的扩展动作 mutation #{action.mutation} 不存在于 schema"
+      end
+    end
+  end
 end
