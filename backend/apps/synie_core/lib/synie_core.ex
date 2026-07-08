@@ -10,6 +10,8 @@ defmodule SynieCore do
       list SynieCore.Authz.RolePermission, :sys_role_permissions, :read, paginate_with: nil
       list SynieCore.Authz.UserCompany, :sys_user_companies, :read, paginate_with: nil
       list SynieCore.Org.Company, :sys_companies, :read, paginate_with: nil
+      list SynieCore.Base.Unit, :sys_units, :read, paginate_with: nil
+      list SynieCore.Base.Currency, :sys_currencies, :read, paginate_with: nil
     end
 
     mutations do
@@ -29,6 +31,14 @@ defmodule SynieCore do
 
       create SynieCore.Authz.UserCompany, :create_sys_user_company, :create
       destroy SynieCore.Authz.UserCompany, :destroy_sys_user_company, :destroy
+
+      create SynieCore.Base.Unit, :create_sys_unit, :create
+      update SynieCore.Base.Unit, :update_sys_unit, :update
+      destroy SynieCore.Base.Unit, :destroy_sys_unit, :destroy
+
+      create SynieCore.Base.Currency, :create_sys_currency, :create
+      update SynieCore.Base.Currency, :update_sys_currency, :update
+      destroy SynieCore.Base.Currency, :destroy_sys_currency, :destroy
     end
   end
 
@@ -40,5 +50,7 @@ defmodule SynieCore do
     resource SynieCore.Authz.RolePermission
     resource SynieCore.Authz.UserCompany
     resource SynieCore.Org.Company
+    resource SynieCore.Base.Unit
+    resource SynieCore.Base.Currency
   end
 end
