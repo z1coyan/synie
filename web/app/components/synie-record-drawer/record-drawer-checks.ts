@@ -166,6 +166,11 @@ const createSubmitted = collectValues(
 eq(createSubmitted.code, 'a', 'createOnly 创建态进 payload')
 eq('price' in createSubmitted, false, 'readOnly 创建态不进 payload')
 
+// —— collectValues:fk 空串归 null(全裁剪退化 TextField 清空时提交 '',GraphQL uuid 不吃空串);非 fk string 字段 '' 不受影响 ——
+const fkSubmitted = collectValues(resolveFields([parentCol, col('name', 'string')], 'edit', [], {}), { parentId: '', name: '' }, 'edit')
+eq(fkSubmitted.parentId, null, 'fk 空串归 null')
+eq(fkSubmitted.name, '', '非 fk string 字段空串保持空串')
+
 // —— missingRequired:只查当前可见且可编辑;false/0 不算空 ——
 const reqFields = resolveFields(cols, 'create', [], {
   code: { required: true },

@@ -139,7 +139,9 @@ export function collectValues(
   const out: Record<string, unknown> = {}
   for (const f of visibleFields(fields, values)) {
     if (isFieldDisabled(f, mode)) continue
-    out[f.name] = values[f.name] ?? null
+    const v = values[f.name] ?? null
+    // fk 全裁剪退化 TextField 被清空时草稿是 '' 而非 null;GraphQL uuid 类型不吃空串,归 null
+    out[f.name] = f.col.type === 'fk' && v === '' ? null : v
   }
   return out
 }
