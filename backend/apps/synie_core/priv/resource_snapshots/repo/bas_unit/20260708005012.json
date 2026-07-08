@@ -103,12 +103,12 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "AFDE5434135B92085FF330697889B3FE44F2BC285967AD5E054E85BFF00DCC8D",
+  "hash": "AD3C196DC5AF1E2C6AE724614E51A914777B94AB02CA7E1D5D77684AD9E35365",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "sys_unit_unique_base_per_type_index",
+      "index_name": "bas_unit_unique_base_per_type_index",
       "keys": [
         {
           "type": "atom",
@@ -122,7 +122,7 @@
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "sys_unit_unique_symbol_index",
+      "index_name": "bas_unit_unique_symbol_index",
       "keys": [
         {
           "type": "atom",
@@ -141,5 +141,5 @@
   },
   "repo": "Elixir.SynieCore.Repo",
   "schema": null,
-  "table": "sys_unit"
+  "table": "bas_unit"
 }

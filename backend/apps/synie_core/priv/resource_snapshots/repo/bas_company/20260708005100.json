@@ -21,6 +21,18 @@
       "references": null,
       "scale": null,
       "size": null,
+      "source": "code",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
       "source": "name",
       "type": "text"
     },
@@ -33,19 +45,7 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "iso_code",
-      "type": "text"
-    },
-    {
-      "allow_nil?": true,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "symbol",
+      "source": "short_name",
       "type": "text"
     },
     {
@@ -71,6 +71,37 @@
       "size": null,
       "source": "updated_at",
       "type": "utc_datetime_usec"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": {
+        "deferrable": false,
+        "destination_attribute": "id",
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null,
+        "index?": false,
+        "match_type": null,
+        "match_with": null,
+        "multitenancy": {
+          "attribute": null,
+          "global": null,
+          "strategy": null
+        },
+        "name": "bas_company_parent_id_fkey",
+        "on_delete": null,
+        "on_update": null,
+        "primary_key?": true,
+        "schema": "public",
+        "table": "bas_company"
+      },
+      "scale": null,
+      "size": null,
+      "source": "parent_id",
+      "type": "uuid"
     }
   ],
   "base_filter": null,
@@ -79,19 +110,19 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "626059B44BDF20376A3F66960B182B14A9FF619FF7E64EDD6DE969671999BD05",
+  "hash": "FB9ADB2467CB2C3E4BB17BD18CDDF9751103BAA2934284F6E75B96FF2FDBC823",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "sys_currency_unique_iso_code_index",
+      "index_name": "bas_company_unique_code_index",
       "keys": [
         {
           "type": "atom",
-          "value": "iso_code"
+          "value": "code"
         }
       ],
-      "name": "unique_iso_code",
+      "name": "unique_code",
       "nils_distinct?": true,
       "where": null
     }
@@ -103,5 +134,5 @@
   },
   "repo": "Elixir.SynieCore.Repo",
   "schema": null,
-  "table": "sys_currency"
+  "table": "bas_company"
 }

@@ -7,7 +7,7 @@ defmodule SynieCore.Base.UnitType do
 end
 
 defmodule SynieCore.Base.Unit do
-  @moduledoc "计量单位,对应 `sys_unit` 表。每类型一个基准单位(ratio=1),其余单位按 ratio 换算到基准单位(如 kg 为基准时 g=0.001)。"
+  @moduledoc "计量单位,对应 `bas_unit` 表。每类型一个基准单位(ratio=1),其余单位按 ratio 换算到基准单位(如 kg 为基准时 g=0.001)。"
 
   use Ash.Resource,
     domain: SynieCore,
@@ -16,7 +16,7 @@ defmodule SynieCore.Base.Unit do
     authorizers: [Ash.Policy.Authorizer]
 
   postgres do
-    table "sys_unit"
+    table "bas_unit"
     repo SynieCore.Repo
 
     identity_wheres_to_sql unique_base_per_type: "is_base = true"

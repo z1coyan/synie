@@ -1,5 +1,5 @@
 defmodule SynieCore.Org.Company do
-  @moduledoc "公司(ERPNext 式多公司,单库),对应 `sys_company` 表,树形结构支持集团/合并视角。"
+  @moduledoc "公司(ERPNext 式多公司,单库),对应 `bas_company` 表,树形结构支持集团/合并视角。"
 
   use Ash.Resource,
     domain: SynieCore,
@@ -8,7 +8,7 @@ defmodule SynieCore.Org.Company do
     authorizers: [Ash.Policy.Authorizer]
 
   postgres do
-    table "sys_company"
+    table "bas_company"
     repo SynieCore.Repo
   end
 

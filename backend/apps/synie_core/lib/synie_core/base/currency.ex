@@ -1,5 +1,5 @@
 defmodule SynieCore.Base.Currency do
-  @moduledoc "货币,对应 `sys_currency` 表。iso_code 为 ISO 4217 三位大写字母编码,创建后不可改。"
+  @moduledoc "货币,对应 `bas_currency` 表。iso_code 为 ISO 4217 三位大写字母编码,创建后不可改。"
 
   use Ash.Resource,
     domain: SynieCore,
@@ -8,7 +8,7 @@ defmodule SynieCore.Base.Currency do
     authorizers: [Ash.Policy.Authorizer]
 
   postgres do
-    table "sys_currency"
+    table "bas_currency"
     repo SynieCore.Repo
   end
 

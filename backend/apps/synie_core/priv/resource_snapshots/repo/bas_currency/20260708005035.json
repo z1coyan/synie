@@ -21,7 +21,7 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "code",
+      "source": "name",
       "type": "text"
     },
     {
@@ -33,7 +33,19 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "name",
+      "source": "iso_code",
+      "type": "text"
+    },
+    {
+      "allow_nil?": true,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "symbol",
       "type": "text"
     },
     {
@@ -59,37 +71,6 @@
       "size": null,
       "source": "updated_at",
       "type": "utc_datetime_usec"
-    },
-    {
-      "allow_nil?": true,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": {
-        "deferrable": false,
-        "destination_attribute": "id",
-        "destination_attribute_default": null,
-        "destination_attribute_generated": null,
-        "index?": false,
-        "match_type": null,
-        "match_with": null,
-        "multitenancy": {
-          "attribute": null,
-          "global": null,
-          "strategy": null
-        },
-        "name": "sys_company_parent_id_fkey",
-        "on_delete": null,
-        "on_update": null,
-        "primary_key?": true,
-        "schema": "public",
-        "table": "sys_company"
-      },
-      "scale": null,
-      "size": null,
-      "source": "parent_id",
-      "type": "uuid"
     }
   ],
   "base_filter": null,
@@ -98,19 +79,19 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "0137F24E5EA732999173FC6EDC5989C8A88BDEE8BFE5EADD41B9F5EF04056628",
+  "hash": "06EA3022690D3A3BB3F9262F35DBD1A65089CB7875A6AADEF8B6FB539CDCF510",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "sys_company_unique_code_index",
+      "index_name": "bas_currency_unique_iso_code_index",
       "keys": [
         {
           "type": "atom",
-          "value": "code"
+          "value": "iso_code"
         }
       ],
-      "name": "unique_code",
+      "name": "unique_iso_code",
       "nils_distinct?": true,
       "where": null
     }
@@ -122,5 +103,5 @@
   },
   "repo": "Elixir.SynieCore.Repo",
   "schema": null,
-  "table": "sys_company"
+  "table": "bas_currency"
 }

@@ -14,42 +14,6 @@
     },
     {
       "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "code",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "name",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "short_name",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
       "default": "fragment(\"(now() AT TIME ZONE 'utc')\")",
       "generated?": false,
       "precision": null,
@@ -62,18 +26,6 @@
     },
     {
       "allow_nil?": false,
-      "default": "fragment(\"(now() AT TIME ZONE 'utc')\")",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "updated_at",
-      "type": "utc_datetime_usec"
-    },
-    {
-      "allow_nil?": true,
       "default": "nil",
       "generated?": false,
       "precision": null,
@@ -91,16 +43,47 @@
           "global": null,
           "strategy": null
         },
-        "name": "sys_company_parent_id_fkey",
+        "name": "sys_user_company_user_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
         "schema": "public",
-        "table": "sys_company"
+        "table": "sys_user"
       },
       "scale": null,
       "size": null,
-      "source": "parent_id",
+      "source": "user_id",
+      "type": "uuid"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": {
+        "deferrable": false,
+        "destination_attribute": "id",
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null,
+        "index?": false,
+        "match_type": null,
+        "match_with": null,
+        "multitenancy": {
+          "attribute": null,
+          "global": null,
+          "strategy": null
+        },
+        "name": "sys_user_company_company_id_fkey",
+        "on_delete": null,
+        "on_update": null,
+        "primary_key?": true,
+        "schema": "public",
+        "table": "bas_company"
+      },
+      "scale": null,
+      "size": null,
+      "source": "company_id",
       "type": "uuid"
     }
   ],
@@ -110,19 +93,23 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "52E570AFB2C32EF04B7C26CF23398BFABA5DD4A48B0CF919C18690C365889A87",
+  "hash": "EE7D08F4A584C29856F50B9590622E1FF4BBCDA275ACAF10D9D48D933AA67911",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "sys_company_unique_code_index",
+      "index_name": "sys_user_company_unique_user_company_index",
       "keys": [
         {
           "type": "atom",
-          "value": "code"
+          "value": "user_id"
+        },
+        {
+          "type": "atom",
+          "value": "company_id"
         }
       ],
-      "name": "unique_code",
+      "name": "unique_user_company",
       "nils_distinct?": true,
       "where": null
     }
@@ -134,5 +121,5 @@
   },
   "repo": "Elixir.SynieCore.Repo",
   "schema": null,
-  "table": "sys_company"
+  "table": "sys_user_company"
 }
