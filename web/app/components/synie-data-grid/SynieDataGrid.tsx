@@ -1,11 +1,13 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
-import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, Spinner } from '@heroui/react'
+import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, Spinner, toast } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
 import { gqlFetch } from '~/lib/graphql'
+import { downloadCsv, fetchAllRows, toCsv } from './csv'
 import { ColumnFilterButton } from './filter-popover'
 import { useGridMeta } from './meta'
+import { printRows } from './print'
 import { buildFilterLiteral, buildRowQuery, toSortLiteral } from './query'
 import type { ActionContext, BulkAction, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
 import { useGridActions } from './use-grid-actions'
@@ -134,6 +136,27 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     ? { column: sort.column, direction: sort.direction }
     : undefined
 
+  const [exporting, setExporting] = useState(false)
+
+  const handleExport = async () => {
+    setExporting(true)
+    const id = toast(`正在导出…`, { isLoading: true, timeout: 0 })
+    try {
+      const all = await fetchAllRows(resource, columns, filterLiteral, sortLiteral)
+      downloadCsv(`${resource}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(columns, all))
+      toast.close(id)
+      toast.success(`已导出 ${all.length} 条`)
+    } catch (e) {
+      toast.close(id)
+      toast.danger('导出失败', { description: (e as Error).message })
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handlePrintRows = (rowsToPrint: Row[]) =>
+    props.onPrint ? props.onPrint(rowsToPrint) : printRows(columns, rowsToPrint, `${resource} 打印`)
+
   const actions = useGridActions({
     meta: meta.data,
     refetch: () => rowsQuery.refetch(),
@@ -141,10 +164,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     onCreate: props.onCreate,
     onEdit: props.onEdit,
     onImport: props.onImport,
+    onExport: handleExport,
+    onPrintRows: handlePrintRows,
     actionHandlers: props.actionHandlers,
     bulkActions: props.bulkActions,
     rowActions: props.rowActions,
-    // onExport / onPrintRows 在 Task 7 接
   })
 
   // 行内动作列:仅当至少一行有可用动作时才拼接(避免空 Dropdown 占位列)。
@@ -237,6 +261,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
               key={a.key}
               size="sm"
               variant={a.key === 'create' ? 'primary' : 'secondary'}
+              isPending={a.key === 'export' ? exporting : undefined}
               onPress={() => a.run([])}
             >
               {a.label}
