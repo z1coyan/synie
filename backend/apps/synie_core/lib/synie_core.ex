@@ -12,6 +12,7 @@ defmodule SynieCore do
       list SynieCore.Org.Company, :bas_companies, :read, paginate_with: nil
       list SynieCore.Base.Unit, :bas_units, :read, paginate_with: nil
       list SynieCore.Base.Currency, :bas_currencies, :read, paginate_with: nil
+      list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
     end
 
     mutations do
@@ -52,5 +53,6 @@ defmodule SynieCore do
     resource SynieCore.Org.Company
     resource SynieCore.Base.Unit
     resource SynieCore.Base.Currency
+    resource SynieCore.Audit.Log
   end
 end
