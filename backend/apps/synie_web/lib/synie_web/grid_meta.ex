@@ -84,7 +84,9 @@ defmodule SynieWeb.GridMeta do
 
     module
     |> Ash.Resource.Info.relationships()
-    |> Enum.filter(&(&1.type == :belongs_to))
+    # 关系非 public 时对应 attribute 若仍 public,会产出 ref 但 GraphQL schema 无此 relation
+    # 字段;前端据 ref 拼查询会请求一个 schema 里不存在的字段,整行查询报错,故一并过滤
+    |> Enum.filter(&(&1.type == :belongs_to && &1.public?))
     |> Enum.reduce(%{}, fn rel, acc ->
       with {:ok, resource_name} <- Map.fetch(module_names, rel.destination),
            true <- Authz.has_permission?(actor, "#{rel.destination.permission_prefix()}:read") do
