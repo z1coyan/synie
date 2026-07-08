@@ -7,6 +7,7 @@
 - 前端所有非幂等请求都要有回馈，使用Hero UI的Toast作为反馈组件
 - 所有请求均要进行错误处理，有合适的报错信息方便排查
 - 尽可能使用组件库已有的组件进行开发而不是自己使用html+tailwindcss搭建
+- 表单/筛选控件一律用 HeroUI(Pro) 现成组件（日期用 DatePicker/DateRangePicker、数值用 NumberField、下拉用 Select 等），不要包装浏览器原生 input；有已封装的业务组件时优先复用业务组件
 
 ## 移动端适配
 

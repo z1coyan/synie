@@ -1,5 +1,5 @@
 // bun app/components/synie-data-grid/grid-checks.ts 可直接运行的纯函数自检
-import { buildFilterLiteral, buildRowQuery, toSortLiteral } from './query'
+import { buildFilterLiteral, buildRowQuery, dayEnd, dayStart, toSortLiteral } from './query'
 import { toCsv } from './csv'
 import { cellText } from './format'
 import type { GridColumnMeta, Row } from './types'
@@ -24,18 +24,38 @@ eq(toSortLiteral({ column: 'insertedAt', direction: 'descending' }), '[{field: I
 eq(toSortLiteral(null), null, '空排序')
 
 eq(
-  buildFilterLiteral({ name: { kind: 'text', contains: '采购' } }, '', cols),
+  buildFilterLiteral({ name: { kind: 'text', op: 'contains', value: '采购' } }, '', cols),
   '{name: {contains: "采购"}}',
   '单列 contains'
 )
 eq(
+  buildFilterLiteral({ name: { kind: 'text', op: 'notContains', value: '采购' } }, '', cols),
+  '{not: [{name: {contains: "采购"}}]}',
+  'notContains 走 not 组合子'
+)
+eq(
+  buildFilterLiteral({ name: { kind: 'text', op: 'notEq', value: 'a' } }, '', cols),
+  '{name: {notEq: "a"}}',
+  'notEq'
+)
+eq(
   buildFilterLiteral(
-    { enabled: { kind: 'bool', eq: true }, insertedAt: { kind: 'range', gte: '2026-01-01T00:00:00Z' } },
+    { enabled: { kind: 'bool', eq: true }, insertedAt: { kind: 'date', op: 'between', gte: '2026-01-01', lte: '2026-01-31' } },
     'x',
     cols
   ),
-  '{and: [{enabled: {eq: true}}, {insertedAt: {greaterThanOrEqual: "2026-01-01T00:00:00Z"}}, {or: [{code: {contains: "x"}}, {name: {contains: "x"}}]}]}',
-  '组合筛选+搜索'
+  `{and: [{enabled: {eq: true}}, {insertedAt: {greaterThanOrEqual: "${dayStart('2026-01-01')}", lessThanOrEqual: "${dayEnd('2026-01-31')}"}}, {or: [{code: {contains: "x"}}, {name: {contains: "x"}}]}]}`,
+  '组合筛选+搜索,datetime 区间换算日界'
+)
+eq(
+  buildFilterLiteral({ insertedAt: { kind: 'date', op: 'eq', value: '2026-01-05' } }, '', cols),
+  `{insertedAt: {greaterThanOrEqual: "${dayStart('2026-01-05')}", lessThanOrEqual: "${dayEnd('2026-01-05')}"}}`,
+  'datetime 等于展开为当天区间'
+)
+eq(
+  buildFilterLiteral({ insertedAt: { kind: 'date', op: 'before', value: '2026-01-05' } }, '', cols),
+  `{insertedAt: {lessThan: "${dayStart('2026-01-05')}"}}`,
+  'datetime 之前取日始'
 )
 eq(buildFilterLiteral({}, '', cols), null, '空筛选')
 
@@ -68,14 +88,39 @@ eq(
   'enum 白名单过滤非法值'
 )
 eq(
-  buildFilterLiteral({ seq: { kind: 'range', gte: '10', lte: 'abc' } }, '', extraCols),
+  buildFilterLiteral({ seq: { kind: 'number', op: 'between', gte: '10', lte: 'abc' } }, '', extraCols),
   '{seq: {greaterThanOrEqual: 10}}',
-  '数值 range 非法端跳过'
+  '数值区间非法端跳过'
 )
 eq(
-  buildFilterLiteral({ seq: { kind: 'range', gte: '0x10' } }, '', extraCols),
+  buildFilterLiteral({ seq: { kind: 'number', op: 'between', gte: '0x10' } }, '', extraCols),
   '{seq: {greaterThanOrEqual: 16}}',
-  '数值 range token 归一化(0x10 → 16)'
+  '数值 token 归一化(0x10 → 16)'
+)
+eq(
+  buildFilterLiteral({ seq: { kind: 'number', op: 'gt', value: '5' } }, '', extraCols),
+  '{seq: {greaterThan: 5}}',
+  '数值单操作符'
+)
+eq(
+  buildFilterLiteral({ seq: { kind: 'number', op: 'eq', value: 'abc' } }, '', extraCols),
+  null,
+  '数值非法值整体跳过'
+)
+
+// 纯 date 列(非 datetime)直接比日期字符串,不换算日界
+const dateCols: GridColumnMeta[] = [
+  { name: 'dueOn', type: 'date', label: '截止日', sortable: true, filterable: true, enumOptions: null },
+]
+eq(
+  buildFilterLiteral({ dueOn: { kind: 'date', op: 'eq', value: '2026-01-05' } }, '', dateCols),
+  '{dueOn: {eq: "2026-01-05"}}',
+  'date 列等于直接比字符串'
+)
+eq(
+  buildFilterLiteral({ dueOn: { kind: 'date', op: 'after', value: '2026-01-05' } }, '', dateCols),
+  '{dueOn: {greaterThan: "2026-01-05"}}',
+  'date 列之后'
 )
 
 const rows: Row[] = [{ id: '1', code: 'a,b', name: '含"引号"', enabled: true }]

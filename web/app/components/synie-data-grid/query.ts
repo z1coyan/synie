@@ -12,12 +12,33 @@ export function toSortLiteral(sort: SortState | null): string | null {
 
 const str = (v: string) => JSON.stringify(v)
 
+// 数值不带引号内联,过 Number() 归一化再转回字符串:封掉 "0x10"/" 10 " 等 Number 可解析但 GraphQL 字面量非法的写法;非法值返回 null
+const numLit = (v: string) => (Number.isFinite(Number(v)) ? String(Number(v)) : null)
+
+// datetime 列存的是 UTC 瞬时,筛选值是本地日期 YYYY-MM-DD:取本地日界转 ISO
+export const dayStart = (d: string) => new Date(`${d}T00:00:00`).toISOString()
+export const dayEnd = (d: string) => new Date(`${d}T23:59:59.999`).toISOString()
+
 function columnClause(name: string, filter: FilterState[string], columns: GridColumnMeta[]): string | null {
   const col = columns.find((c) => c.name === name)
   if (!col) return null
   switch (filter.kind) {
-    case 'text':
-      return filter.contains ? `{${name}: {contains: ${str(filter.contains)}}}` : null
+    case 'text': {
+      if (!filter.value) return null
+      const v = str(filter.value)
+      switch (filter.op) {
+        case 'contains':
+          return `{${name}: {contains: ${v}}}`
+        // AshGraphql 无 notContains 操作符,用 not 组合子包 contains
+        case 'notContains':
+          return `{not: [{${name}: {contains: ${v}}}]}`
+        case 'eq':
+          return `{${name}: {eq: ${v}}}`
+        case 'notEq':
+          return `{${name}: {notEq: ${v}}}`
+      }
+      break
+    }
     case 'bool':
       return `{${name}: {eq: ${filter.eq}}}`
     case 'enum': {
@@ -27,16 +48,42 @@ function columnClause(name: string, filter: FilterState[string], columns: GridCo
         ? `{${name}: {in: [${allowed.map((v) => v.toUpperCase()).join(', ')}]}}`
         : null
     }
-    case 'range': {
-      const parts: string[] = []
-      const numeric = col.type === 'integer' || col.type === 'decimal'
-      // 数值列不带引号内联,须 Number.isFinite 校验;非法值跳过该端,两端都非法则整个子句为 null
-      const valid = (v: string) => !numeric || Number.isFinite(Number(v))
-      // 数值路径过 Number() 归一化再转回字符串:封掉 "0x10"/" 10 " 等 Number 可解析但 GraphQL 字面量非法的写法
-      const lit = (v: string) => (numeric ? String(Number(v)) : str(v))
-      if (filter.gte && valid(filter.gte)) parts.push(`greaterThanOrEqual: ${lit(filter.gte)}`)
-      if (filter.lte && valid(filter.lte)) parts.push(`lessThanOrEqual: ${lit(filter.lte)}`)
-      return parts.length > 0 ? `{${name}: {${parts.join(', ')}}}` : null
+    case 'number': {
+      if (filter.op === 'between') {
+        const parts: string[] = []
+        const g = filter.gte ? numLit(filter.gte) : null
+        const l = filter.lte ? numLit(filter.lte) : null
+        if (g !== null) parts.push(`greaterThanOrEqual: ${g}`)
+        if (l !== null) parts.push(`lessThanOrEqual: ${l}`)
+        return parts.length > 0 ? `{${name}: {${parts.join(', ')}}}` : null
+      }
+      const v = filter.value ? numLit(filter.value) : null
+      if (v === null) return null
+      const field = { eq: 'eq', gt: 'greaterThan', lt: 'lessThan', gte: 'greaterThanOrEqual', lte: 'lessThanOrEqual' }[filter.op]
+      return `{${name}: {${field}: ${v}}}`
+    }
+    case 'date': {
+      const dt = col.type === 'datetime'
+      // date 列直接比日期字符串;datetime 列把日期换算成当天的起止瞬时
+      const lo = (v: string) => str(dt ? dayStart(v) : v)
+      const hi = (v: string) => str(dt ? dayEnd(v) : v)
+      if (filter.op === 'between') {
+        const parts: string[] = []
+        if (filter.gte) parts.push(`greaterThanOrEqual: ${lo(filter.gte)}`)
+        if (filter.lte) parts.push(`lessThanOrEqual: ${hi(filter.lte)}`)
+        return parts.length > 0 ? `{${name}: {${parts.join(', ')}}}` : null
+      }
+      if (!filter.value) return null
+      switch (filter.op) {
+        case 'eq':
+          return dt
+            ? `{${name}: {greaterThanOrEqual: ${lo(filter.value)}, lessThanOrEqual: ${hi(filter.value)}}}`
+            : `{${name}: {eq: ${str(filter.value)}}}`
+        case 'before':
+          return `{${name}: {lessThan: ${lo(filter.value)}}}`
+        case 'after':
+          return `{${name}: {greaterThan: ${hi(filter.value)}}}`
+      }
     }
   }
 }

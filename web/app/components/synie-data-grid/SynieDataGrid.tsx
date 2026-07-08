@@ -5,7 +5,7 @@ import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, Search
 import type { Selection } from 'react-aria-components'
 import { gqlFetch } from '~/lib/graphql'
 import { downloadCsv, fetchAllRows, toCsv } from './csv'
-import { ColumnFilterButton } from './filter-popover'
+import { ColumnFilterButton, filterSummary } from './filter-popover'
 import { cellText } from './format'
 import { useGridMeta } from './meta'
 import { printRows } from './print'
@@ -17,6 +17,8 @@ export interface ColumnOverride {
   render?: (value: unknown, row: Row) => ReactNode
   label?: string
   width?: number
+  /** 不传时数值列(integer/decimal)默认右对齐 */
+  align?: 'start' | 'center' | 'end'
 }
 
 export interface SynieDataGridProps {
@@ -108,9 +110,12 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     () =>
       columns.map((col, i) => ({
         id: col.name,
-        // 函数式 header:DataGrid 自身按 allowsSorting 包裹排序箭头,这里只出文本+筛选按钮
+        align: overrides[col.name]?.align ?? (col.type === 'integer' || col.type === 'decimal' ? 'end' : undefined),
+        // 筛选按钮绝对定位吸右,右侧留出内边距防止列名/排序箭头滑到按钮下面(右对齐列尤甚)
+        headerClassName: col.filterable ? 'pe-9' : undefined,
+        // 函数式 header:DataGrid 自身按 allowsSorting 在文本后接排序箭头;筛选按钮脱离文档流吸在单元格右缘
         header: () => (
-          <span className="inline-flex items-center gap-1">
+          <>
             {overrides[col.name]?.label ?? col.label}
             {col.filterable && (
               <ColumnFilterButton
@@ -127,7 +132,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
                 }}
               />
             )}
-          </span>
+          </>
         ),
         // RAC Table 要求至少一列 isRowHeader(行的无障碍名称);缺失会在并发渲染中反复抛可恢复错误
         isRowHeader: i === 0,
@@ -288,11 +293,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       {/* 活跃筛选 Chips */}
       {Object.keys(filters).length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          {Object.keys(filters).map((name) => {
+          {Object.entries(filters).map(([name, f]) => {
             const col = columns.find((c) => c.name === name)
             return (
               <Chip key={name} size="sm" className="pr-1">
-                <Chip.Label>{col?.label ?? name}</Chip.Label>
+                <Chip.Label>{col ? `${col.label} ${filterSummary(col, f)}` : name}</Chip.Label>
                 <CloseButton
                   aria-label={`清除 ${col?.label ?? name} 筛选`}
                   className="h-4 w-4 [&_svg]:size-3"

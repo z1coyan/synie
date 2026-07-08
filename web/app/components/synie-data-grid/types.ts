@@ -52,11 +52,19 @@ export interface BulkAction extends ActionBase {
   onAction: (rows: Row[], ctx: ActionContext) => void
 }
 
+export type TextOp = 'contains' | 'notContains' | 'eq' | 'notEq'
+export type NumberOp = 'eq' | 'gt' | 'lt' | 'gte' | 'lte'
+export type DateOp = 'eq' | 'before' | 'after'
+
+/** number/date 的区间取 gte/lte,单值操作符取 value;日期值一律 YYYY-MM-DD,datetime 列的日界换算在 query.ts */
 export type ColumnFilter =
-  | { kind: 'text'; contains: string }
+  | { kind: 'text'; op: TextOp; value: string }
   | { kind: 'bool'; eq: boolean }
   | { kind: 'enum'; values: string[] }
-  | { kind: 'range'; gte?: string; lte?: string }
+  | { kind: 'number'; op: NumberOp; value: string }
+  | { kind: 'number'; op: 'between'; gte?: string; lte?: string }
+  | { kind: 'date'; op: DateOp; value: string }
+  | { kind: 'date'; op: 'between'; gte?: string; lte?: string }
 
 /** key 为列名(camelCase) */
 export type FilterState = Record<string, ColumnFilter>

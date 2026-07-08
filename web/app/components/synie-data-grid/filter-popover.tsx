@@ -1,8 +1,67 @@
 import { useState } from 'react'
-import { Button, Checkbox, Input, Label, Popover, Switch } from '@heroui/react'
-import type { ColumnFilter, GridColumnMeta } from './types'
+import { parseDate } from '@internationalized/date'
+import {
+  Button,
+  Calendar,
+  Checkbox,
+  DateField,
+  DatePicker,
+  DateRangePicker,
+  Input,
+  ListBox,
+  NumberField,
+  Popover,
+  RangeCalendar,
+  Select,
+  Switch,
+} from '@heroui/react'
+import type { ColumnFilter, DateOp, GridColumnMeta, NumberOp, TextOp } from './types'
 
-/** 列头筛选按钮:按列类型出控件,受控于 FilterState */
+const TEXT_OPS: [TextOp, string][] = [
+  ['contains', '包含'],
+  ['notContains', '不包含'],
+  ['eq', '等于'],
+  ['notEq', '不等于'],
+]
+const NUMBER_OPS: [NumberOp | 'between', string][] = [
+  ['eq', '等于'],
+  ['gt', '大于'],
+  ['lt', '小于'],
+  ['gte', '大于等于'],
+  ['lte', '小于等于'],
+  ['between', '区间'],
+]
+const DATE_OPS: [DateOp | 'between', string][] = [
+  ['eq', '等于'],
+  ['before', '之前'],
+  ['after', '之后'],
+  ['between', '区间'],
+]
+
+const TEXT_OP_LABEL: Record<TextOp, string> = { contains: '包含', notContains: '不包含', eq: '=', notEq: '≠' }
+const NUMBER_OP_LABEL: Record<NumberOp, string> = { eq: '=', gt: '>', lt: '<', gte: '≥', lte: '≤' }
+const DATE_OP_LABEL: Record<DateOp, string> = { eq: '', before: '早于', after: '晚于' }
+
+/** 活跃筛选 Chip 的摘要文案,如「包含 采购」「≥ 10」「2026-01-01 ~ 2026-01-31」 */
+export function filterSummary(col: GridColumnMeta, f: ColumnFilter): string {
+  switch (f.kind) {
+    case 'text':
+      return `${TEXT_OP_LABEL[f.op]} ${f.value}`
+    case 'bool':
+      return f.eq ? '是' : '否'
+    case 'enum':
+      return (col.enumOptions ?? [])
+        .filter((o) => f.values.includes(o.value))
+        .map((o) => o.label)
+        .join('、')
+    case 'number':
+      return f.op === 'between' ? `${f.gte ?? ''} ~ ${f.lte ?? ''}` : `${NUMBER_OP_LABEL[f.op]} ${f.value}`
+    case 'date':
+      return f.op === 'between' ? `${f.gte ?? ''} ~ ${f.lte ?? ''}` : `${DATE_OP_LABEL[f.op]} ${f.value}`.trim()
+  }
+}
+
+/** 列头筛选按钮:绝对定位吸在表头单元格右缘(th 自带 relative),不随列对齐方式移动 */
 export function ColumnFilterButton({
   column,
   filter,
@@ -22,12 +81,12 @@ export function ColumnFilterButton({
         size="sm"
         variant="ghost"
         aria-label={`筛选 ${column.label}`}
-        className={active ? 'text-accent' : 'text-muted'}
+        className={`absolute end-1 top-1/2 h-6 w-6 min-w-6 -translate-y-1/2 ${active ? 'text-accent' : 'text-muted'}`}
       >
         <FilterIcon />
       </Button>
-      <Popover.Content placement="bottom" className="max-w-72">
-        <Popover.Dialog className="flex flex-col gap-3 p-1">
+      <Popover.Content placement="bottom" className="w-72">
+        <Popover.Dialog className="flex flex-col gap-3 p-3">
           <Popover.Heading className="text-sm font-medium">{column.label}</Popover.Heading>
           <FilterControl column={column} filter={filter} onChange={onChange} />
           {active && (
@@ -98,56 +157,234 @@ function FilterControl({
           })}
         </div>
       )
+    case 'integer':
+    case 'decimal':
+      return <NumberFilter filter={filter?.kind === 'number' ? filter : undefined} onChange={onChange} />
     case 'date':
     case 'datetime':
-    case 'integer':
-    case 'decimal': {
-      const isDate = column.type === 'date' || column.type === 'datetime'
-      const range: { gte?: string; lte?: string } = filter?.kind === 'range' ? filter : {}
-      const update = (patch: { gte?: string; lte?: string }) => {
-        const next = { kind: 'range' as const, gte: range.gte, lte: range.lte, ...patch }
-        onChange(next.gte || next.lte ? next : null)
-      }
-      // 后端 datetime 需要完整 ISO;<input type="date"> 是本地日期语义:取本地日界,转成 UTC 瞬时
-      const toIso = (v: string, end: boolean) => {
-        if (!v || column.type !== 'datetime') return v
-        // 无 Z 后缀按本地时区解析,toISOString 输出正确的 UTC 瞬时
-        return new Date(`${v}T${end ? '23:59:59.999' : '00:00:00'}`).toISOString()
-      }
-      // 回显:datetime 把 UTC 瞬时还原成本地日期;date 列本身就是 YYYY-MM-DD;数值列原样(slice 会截断长数值)
-      const display = (v: string | undefined) => {
-        if (!v) return ''
-        // sv-SE locale 输出 YYYY-MM-DD 格式
-        return column.type === 'datetime' ? new Date(v).toLocaleDateString('sv-SE') : v
-      }
-      return (
-        <div className="flex flex-col gap-2">
-          <Label className="text-xs text-muted">起</Label>
-          <Input
-            type={isDate ? 'date' : 'number'}
-            value={display(range.gte)}
-            onChange={(e) => update({ gte: toIso(e.target.value, false) || undefined })}
-          />
-          <Label className="text-xs text-muted">止</Label>
-          <Input
-            type={isDate ? 'date' : 'number'}
-            value={display(range.lte)}
-            onChange={(e) => update({ lte: toIso(e.target.value, true) || undefined })}
-          />
-        </div>
-      )
-    }
+      return <DateFilter filter={filter?.kind === 'date' ? filter : undefined} onChange={onChange} />
     default:
-      return (
-        <Input
-          placeholder="包含…"
-          value={filter?.kind === 'text' ? filter.contains : ''}
-          onChange={(e) =>
-            onChange(e.target.value ? { kind: 'text', contains: e.target.value } : null)
-          }
-        />
-      )
+      return <TextFilter filter={filter?.kind === 'text' ? filter : undefined} onChange={onChange} />
   }
+}
+
+/** 操作符下拉:弹层内嵌表单控件按设计规范用 secondary 变体 */
+function OpSelect<K extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: K
+  options: [K, string][]
+  onChange: (v: K) => void
+}) {
+  return (
+    <Select aria-label="筛选方式" variant="secondary" value={value} onChange={(v) => v != null && onChange(v as K)}>
+      <Select.Trigger>
+        <Select.Value />
+        <Select.Indicator />
+      </Select.Trigger>
+      <Select.Popover>
+        <ListBox>
+          {options.map(([k, label]) => (
+            <ListBox.Item key={k} id={k} textValue={label}>
+              {label}
+              <ListBox.ItemIndicator />
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </Select.Popover>
+    </Select>
+  )
+}
+
+function TextFilter({
+  filter,
+  onChange,
+}: {
+  filter: Extract<ColumnFilter, { kind: 'text' }> | undefined
+  onChange: (f: ColumnFilter | null) => void
+}) {
+  // 操作符本身不构成筛选,值为空时不发请求;弹层关闭即卸载,重开时从 filter 回填
+  const [op, setOp] = useState<TextOp>(filter?.op ?? 'contains')
+  const value = filter?.value ?? ''
+  const emit = (o: TextOp, v: string) => onChange(v ? { kind: 'text', op: o, value: v } : null)
+  return (
+    <div className="flex flex-col gap-2">
+      <OpSelect
+        value={op}
+        options={TEXT_OPS}
+        onChange={(o) => {
+          setOp(o)
+          emit(o, value)
+        }}
+      />
+      <Input placeholder="筛选值…" value={value} onChange={(e) => emit(op, e.target.value)} />
+    </div>
+  )
+}
+
+function NumberFilter({
+  filter,
+  onChange,
+}: {
+  filter: Extract<ColumnFilter, { kind: 'number' }> | undefined
+  onChange: (f: ColumnFilter | null) => void
+}) {
+  const [op, setOp] = useState<NumberOp | 'between'>(filter?.op ?? 'eq')
+  const single = filter && filter.op !== 'between' ? filter.value : ''
+  const range = filter?.op === 'between' ? filter : undefined
+
+  const emitSingle = (o: NumberOp, v: string) => onChange(v ? { kind: 'number', op: o, value: v } : null)
+  const emitRange = (patch: { gte?: string; lte?: string }) => {
+    const next = { gte: range?.gte, lte: range?.lte, ...patch }
+    onChange(next.gte || next.lte ? { kind: 'number', op: 'between', gte: next.gte, lte: next.lte } : null)
+  }
+
+  const numberInput = (value: string, onValue: (v: string) => void, label: string) => (
+    <NumberField
+      aria-label={label}
+      variant="secondary"
+      value={value === '' ? NaN : Number(value)}
+      onChange={(n) => onValue(Number.isFinite(n) ? String(n) : '')}
+    >
+      <NumberField.Group>
+        <NumberField.Input placeholder={label} />
+      </NumberField.Group>
+    </NumberField>
+  )
+
+  return (
+    <div className="flex flex-col gap-2">
+      <OpSelect
+        value={op}
+        options={NUMBER_OPS}
+        onChange={(o) => {
+          setOp(o)
+          // 单值↔区间字段形状不同,值带不过去:切到区间保留已有区间,否则清空等新值
+          if (o === 'between') onChange(range ? { kind: 'number', op: 'between', gte: range.gte, lte: range.lte } : null)
+          else emitSingle(o, single)
+        }}
+      />
+      {op === 'between' ? (
+        <div className="flex items-center gap-2">
+          {numberInput(range?.gte ?? '', (v) => emitRange({ gte: v || undefined }), '起')}
+          <span className="text-muted">~</span>
+          {numberInput(range?.lte ?? '', (v) => emitRange({ lte: v || undefined }), '止')}
+        </div>
+      ) : (
+        numberInput(single, (v) => emitSingle(op, v), '筛选值')
+      )}
+    </div>
+  )
+}
+
+function DateFilter({
+  filter,
+  onChange,
+}: {
+  filter: Extract<ColumnFilter, { kind: 'date' }> | undefined
+  onChange: (f: ColumnFilter | null) => void
+}) {
+  const [op, setOp] = useState<DateOp | 'between'>(filter?.op ?? 'eq')
+  const single = filter && filter.op !== 'between' && filter.value ? parseDate(filter.value) : null
+  const range =
+    filter?.op === 'between' && filter.gte && filter.lte
+      ? { start: parseDate(filter.gte), end: parseDate(filter.lte) }
+      : null
+
+  return (
+    <div className="flex flex-col gap-2">
+      <OpSelect
+        value={op}
+        options={DATE_OPS}
+        onChange={(o) => {
+          setOp(o)
+          if (o === 'between') onChange(filter?.op === 'between' ? filter : null)
+          else onChange(single ? { kind: 'date', op: o, value: single.toString() } : null)
+        }}
+      />
+      {op === 'between' ? (
+        <DateRangePicker
+          aria-label="日期区间"
+          value={range}
+          onChange={(r) =>
+            onChange(r ? { kind: 'date', op: 'between', gte: r.start.toString(), lte: r.end.toString() } : null)
+          }
+        >
+          <DateField.Group fullWidth variant="secondary">
+            <DateField.Input slot="start">{(segment) => <DateField.Segment segment={segment} />}</DateField.Input>
+            <DateRangePicker.RangeSeparator />
+            <DateField.Input slot="end">{(segment) => <DateField.Segment segment={segment} />}</DateField.Input>
+            <DateField.Suffix>
+              <DateRangePicker.Trigger>
+                <DateRangePicker.TriggerIndicator />
+              </DateRangePicker.Trigger>
+            </DateField.Suffix>
+          </DateField.Group>
+          <DateRangePicker.Popover>
+            <RangeCalendar aria-label="日期区间">
+              <RangeCalendar.Header>
+                <RangeCalendar.YearPickerTrigger>
+                  <RangeCalendar.YearPickerTriggerHeading />
+                  <RangeCalendar.YearPickerTriggerIndicator />
+                </RangeCalendar.YearPickerTrigger>
+                <RangeCalendar.NavButton slot="previous" />
+                <RangeCalendar.NavButton slot="next" />
+              </RangeCalendar.Header>
+              <RangeCalendar.Grid>
+                <RangeCalendar.GridHeader>
+                  {(day) => <RangeCalendar.HeaderCell>{day}</RangeCalendar.HeaderCell>}
+                </RangeCalendar.GridHeader>
+                <RangeCalendar.GridBody>{(date) => <RangeCalendar.Cell date={date} />}</RangeCalendar.GridBody>
+              </RangeCalendar.Grid>
+              <RangeCalendar.YearPickerGrid>
+                <RangeCalendar.YearPickerGridBody>
+                  {({ year }) => <RangeCalendar.YearPickerCell year={year} />}
+                </RangeCalendar.YearPickerGridBody>
+              </RangeCalendar.YearPickerGrid>
+            </RangeCalendar>
+          </DateRangePicker.Popover>
+        </DateRangePicker>
+      ) : (
+        <DatePicker
+          aria-label="日期"
+          value={single}
+          onChange={(v) => onChange(v ? { kind: 'date', op: op as DateOp, value: v.toString() } : null)}
+        >
+          <DateField.Group fullWidth variant="secondary">
+            <DateField.Input>{(segment) => <DateField.Segment segment={segment} />}</DateField.Input>
+            <DateField.Suffix>
+              <DatePicker.Trigger>
+                <DatePicker.TriggerIndicator />
+              </DatePicker.Trigger>
+            </DateField.Suffix>
+          </DateField.Group>
+          <DatePicker.Popover>
+            <Calendar aria-label="日期">
+              <Calendar.Header>
+                <Calendar.YearPickerTrigger>
+                  <Calendar.YearPickerTriggerHeading />
+                  <Calendar.YearPickerTriggerIndicator />
+                </Calendar.YearPickerTrigger>
+                <Calendar.NavButton slot="previous" />
+                <Calendar.NavButton slot="next" />
+              </Calendar.Header>
+              <Calendar.Grid>
+                <Calendar.GridHeader>{(day) => <Calendar.HeaderCell>{day}</Calendar.HeaderCell>}</Calendar.GridHeader>
+                <Calendar.GridBody>{(date) => <Calendar.Cell date={date} />}</Calendar.GridBody>
+              </Calendar.Grid>
+              <Calendar.YearPickerGrid>
+                <Calendar.YearPickerGridBody>
+                  {({ year }) => <Calendar.YearPickerCell year={year} />}
+                </Calendar.YearPickerGridBody>
+              </Calendar.YearPickerGrid>
+            </Calendar>
+          </DatePicker.Popover>
+        </DatePicker>
+      )}
+    </div>
+  )
 }
 
 function FilterIcon() {
