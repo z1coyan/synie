@@ -35,6 +35,12 @@ defmodule SynieCore.Accounts.User do
 
       filter expr(username == ^arg(:username))
     end
+
+    update :set_super_admin do
+      accept []
+
+      change set_attribute(:super_admin, true)
+    end
   end
 
   attributes do
@@ -54,6 +60,16 @@ defmodule SynieCore.Accounts.User do
     attribute :hashed_password, :string do
       allow_nil? false
       sensitive? true
+    end
+
+    attribute :super_admin, :boolean do
+      allow_nil? false
+      default false
+    end
+
+    attribute :all_companies, :boolean do
+      allow_nil? false
+      default false
     end
 
     create_timestamp :inserted_at
