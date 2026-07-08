@@ -7,6 +7,7 @@ import { gqlFetch } from '~/lib/graphql'
 import { downloadCsv, fetchAllRows, toCsv } from './csv'
 import { ColumnFilterButton, filterSummary } from './filter-popover'
 import { cellText } from './format'
+import { mergePick } from './pick'
 import { useGridMeta } from './meta'
 import { printRows } from './print'
 import { buildFilterLiteral, buildRowQuery, nextSort, toSortLiteral } from './query'
@@ -36,6 +37,10 @@ export interface SynieDataGridProps {
   actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
   bulkActions?: BulkAction[]
   rowActions?: RowAction[]
+  /** 选择器模式:表格作为弹窗选择器主体,隐藏动作/批量条,选中受控且跨页累积 */
+  pick?: 'single' | 'multiple'
+  pickedRows?: Row[]
+  onPickChange?: (rows: Row[]) => void
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
@@ -87,6 +92,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const { resource, exclude = EMPTY_EXCLUDE, overrides = EMPTY_OVERRIDES } = props
 
   const meta = useGridMeta(resource)
+  const pickMode = props.pick != null
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [sort, setSort] = useState<SortState | null>(null)
@@ -208,8 +214,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     onCreate: props.onCreate,
     onEdit: props.onEdit,
     onImport: props.onImport,
-    onExport: handleExport,
-    onPrintRows: handlePrintRows,
+    onExport: pickMode ? undefined : handleExport,
+    onPrintRows: pickMode ? undefined : handlePrintRows,
     actionHandlers: props.actionHandlers,
     bulkActions: props.bulkActions,
     rowActions: props.rowActions,
@@ -218,7 +224,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   // 行内动作列:仅当至少一行有可用动作时才拼接(避免空 Dropdown 占位列)。
   // 注意不能直接 push 进 memo 出来的 gridColumns——它在依赖不变时跨渲染复用同一数组引用,
   // 重复 push 会在每次重渲染后越叠越多;这里用 concat 生成新数组规避。
-  const hasRowMenu = rows.some((r) => actions.rowMenuFor(r).length > 0)
+  const hasRowMenu = !pickMode && rows.some((r) => actions.rowMenuFor(r).length > 0)
   const columnsWithActions: DataGridColumn<Row>[] = hasRowMenu
     ? [
         ...gridColumns,
@@ -252,7 +258,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     : gridColumns
 
   // 有 bulk 动作才开选择模式(否则勾选框无意义)
-  const hasBulkActions = actions.bulkBarActions.length > 0
+  const hasBulkActions = !pickMode && actions.bulkBarActions.length > 0
   const picked = selectedRows(selection, rows)
 
   if (meta.isPending || (rowsQuery.isPending && !rowsQuery.data)) {
@@ -347,10 +353,14 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         data={rows}
         columns={columnsWithActions}
         getRowId={getRowId}
-        selectionMode={hasBulkActions ? 'multiple' : 'none'}
-        showSelectionCheckboxes={hasBulkActions}
-        selectedKeys={selection}
-        onSelectionChange={setSelection}
+        selectionMode={pickMode ? props.pick : hasBulkActions ? 'multiple' : 'none'}
+        showSelectionCheckboxes={pickMode ? props.pick === 'multiple' : hasBulkActions}
+        selectedKeys={pickMode ? new Set((props.pickedRows ?? []).map((r) => r.id)) : selection}
+        onSelectionChange={
+          pickMode
+            ? (sel: Selection) => props.onPickChange?.(mergePick(props.pickedRows ?? [], rows, sel, props.pick!))
+            : setSelection
+        }
         sortDescriptor={sortDescriptor}
         onSortChange={(d) => {
           setSort((prev) => nextSort(prev, String(d.column), d.direction))

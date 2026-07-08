@@ -2,7 +2,9 @@
 import { buildFilterLiteral, buildRowQuery, dayEnd, dayStart, nextSort, toSortLiteral } from './query'
 import { toCsv } from './csv'
 import { cellText } from './format'
+import { mergePick } from './pick'
 import type { GridColumnMeta, Row } from './types'
+import type { Selection } from 'react-aria-components'
 
 const cols: GridColumnMeta[] = [
   { name: 'code', type: 'string', label: '编码', sortable: true, filterable: true, enumOptions: null, ref: null },
@@ -182,5 +184,19 @@ const fkRow = { id: 'x', parentId: uuid1, parent: { id: uuid1, name: '集团总�
 eq(cellText(fkCol, uuid1, fkRow), '集团总部', 'fk cellText 读 join label')
 eq(cellText(fkCol, uuid1, { id: 'x', parent: null } as unknown as Row), '11111111', 'join 缺失退回截断 id')
 eq(cellText(fkCol, null, { id: 'x' } as unknown as Row), '', 'fk 空值为空串')
+
+// —— picker 跨页累积选中 ——
+const r = (id: string): Row => ({ id }) as Row
+const page1 = [r('a'), r('b')]
+const page2 = [r('c'), r('d')]
+eq(mergePick([], page1, new Set(['a']) as Selection, 'multiple').map((x) => x.id), ['a'], '多选:本页勾选')
+eq(mergePick([r('a')], page1, new Set(['a', 'b']) as Selection, 'multiple').map((x) => x.id), ['a', 'b'], '多选:本页追加')
+eq(mergePick([r('a')], page2, new Set(['a', 'c']) as Selection, 'multiple').map((x) => x.id), ['a', 'c'], '多选:翻页保留非本页选中')
+eq(mergePick([r('a'), r('c')], page1, new Set(['c']) as Selection, 'multiple').map((x) => x.id), ['c'], '多选:本页取消勾选被移除')
+eq(mergePick([r('a')], page1, 'all', 'multiple').map((x) => x.id), ['a', 'b'], '多选:全选=本页全选')
+eq(mergePick([], page1, new Set(['b']) as Selection, 'single').map((x) => x.id), ['b'], '单选:点行选中')
+eq(mergePick([r('b')], page1, new Set() as Selection, 'single').map((x) => x.id), [], '单选:同页取消清空')
+eq(mergePick([r('b')], page2, new Set(['b']) as Selection, 'single').map((x) => x.id), ['b'], '单选:翻页保留')
+eq(mergePick([r('b')], page2, new Set(['c']) as Selection, 'single').map((x) => x.id), ['c'], '单选:换页改选替换')
 
 console.log('grid-checks ok')
