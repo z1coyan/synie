@@ -40,6 +40,8 @@ function AppLayout() {
   const { data } = useQuery({
     queryKey: ['me'],
     queryFn: () => gqlFetch<MeData>(ME_QUERY),
+    // 没 token 时不发请求,避免把 me:null 缓存下来误判成登录态失效
+    enabled: !!getToken(),
   })
 
   // beforeLoad 在 SSR 首屏时读不到 localStorage,客户端再兜底一次
