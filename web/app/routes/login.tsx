@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Button,
   Input,
@@ -44,6 +44,7 @@ export const Route = createFileRoute('/login')({
 
 function LoginPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -60,6 +61,8 @@ function LoginPage() {
       gqlFetch<LoginData>(LOGIN_MUTATION, { username, password }),
     onSuccess: (data) => {
       setToken(data.login.token)
+      // 清掉登录前可能缓存的 me:null,否则回到布局会被误判为登录态失效
+      queryClient.removeQueries({ queryKey: ['me'] })
       toast.success(`欢迎回来,${data.login.user.name ?? data.login.user.username}`)
       navigate({ to: '/' })
     },

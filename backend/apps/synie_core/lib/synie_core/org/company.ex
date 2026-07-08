@@ -1,19 +1,20 @@
 defmodule SynieCore.Org.Company do
-  @moduledoc "公司(ERPNext 式多公司,单库),对应 `sys_company` 表,树形结构支持集团/合并视角。"
+  @moduledoc "公司(ERPNext 式多公司,单库),对应 `bas_company` 表,树形结构支持集团/合并视角。"
 
   use Ash.Resource,
     domain: SynieCore,
     data_layer: AshPostgres.DataLayer,
     extensions: [AshGraphql.Resource],
-    authorizers: [Ash.Policy.Authorizer]
+    authorizers: [Ash.Policy.Authorizer],
+    fragments: [SynieCore.Audit.Fragment]
 
   postgres do
-    table "sys_company"
+    table "bas_company"
     repo SynieCore.Repo
   end
 
   graphql do
-    type :sys_company
+    type :bas_company
   end
 
   policies do
@@ -30,30 +31,43 @@ defmodule SynieCore.Org.Company do
   def permission_actions, do: ~w(create read update delete)
 
   actions do
-    defaults [:read, :destroy]
+    defaults [:read]
 
     create :create do
-      accept [:code, :name, :parent_id]
+      accept [:code, :name, :short_name, :parent_id]
     end
 
     update :update do
-      accept [:name, :parent_id]
+      accept [:name, :short_name, :parent_id]
+      require_atomic? false
+    end
+
+    destroy :destroy do
+      primary? true
+      require_atomic? false
     end
   end
 
   attributes do
     uuid_primary_key :id
 
+    # 公司编号:手动输入,固定两位英文字母,创建后不可改
     attribute :code, :string do
       allow_nil? false
       public? true
-      constraints max_length: 64
+      constraints match: ~r/^[A-Za-z]{2}$/
     end
 
     attribute :name, :string do
       allow_nil? false
       public? true
       constraints max_length: 128
+    end
+
+    attribute :short_name, :string do
+      allow_nil? false
+      public? true
+      constraints max_length: 32
     end
 
     create_timestamp :inserted_at

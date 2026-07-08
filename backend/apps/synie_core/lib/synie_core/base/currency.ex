@@ -1,5 +1,5 @@
-defmodule SynieCore.Authz.UserRole do
-  @moduledoc "用户-角色关联,对应 `sys_user_role` 表。"
+defmodule SynieCore.Base.Currency do
+  @moduledoc "货币,对应 `bas_currency` 表。iso_code 为 ISO 4217 三位大写字母编码,创建后不可改。"
 
   use Ash.Resource,
     domain: SynieCore,
@@ -9,12 +9,12 @@ defmodule SynieCore.Authz.UserRole do
     fragments: [SynieCore.Audit.Fragment]
 
   postgres do
-    table "sys_user_role"
+    table "bas_currency"
     repo SynieCore.Repo
   end
 
   graphql do
-    type :sys_user_role
+    type :bas_currency
   end
 
   policies do
@@ -27,14 +27,19 @@ defmodule SynieCore.Authz.UserRole do
     end
   end
 
-  def permission_prefix, do: "sys.user_role"
-  def permission_actions, do: ~w(create read delete)
+  def permission_prefix, do: "base.currency"
+  def permission_actions, do: ~w(create read update delete)
 
   actions do
     defaults [:read]
 
     create :create do
-      accept [:user_id, :role_id]
+      accept [:name, :iso_code, :symbol]
+    end
+
+    update :update do
+      accept [:name, :symbol]
+      require_atomic? false
     end
 
     destroy :destroy do
@@ -46,26 +51,28 @@ defmodule SynieCore.Authz.UserRole do
   attributes do
     uuid_primary_key :id
 
+    attribute :name, :string do
+      allow_nil? false
+      public? true
+      constraints max_length: 64
+    end
+
+    attribute :iso_code, :string do
+      allow_nil? false
+      public? true
+      constraints match: ~r/^[A-Z]{3}$/
+    end
+
+    attribute :symbol, :string do
+      public? true
+      constraints max_length: 8
+    end
+
     create_timestamp :inserted_at
-  end
-
-  relationships do
-    belongs_to :user, SynieCore.Accounts.User do
-      allow_nil? false
-      public? true
-      attribute_public? true
-      attribute_writable? true
-    end
-
-    belongs_to :role, SynieCore.Authz.Role do
-      allow_nil? false
-      public? true
-      attribute_public? true
-      attribute_writable? true
-    end
+    update_timestamp :updated_at
   end
 
   identities do
-    identity :unique_user_role, [:user_id, :role_id]
+    identity :unique_iso_code, [:iso_code]
   end
 end

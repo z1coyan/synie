@@ -9,7 +9,10 @@ defmodule SynieCore do
       list SynieCore.Authz.UserRole, :sys_user_roles, :read, paginate_with: nil
       list SynieCore.Authz.RolePermission, :sys_role_permissions, :read, paginate_with: nil
       list SynieCore.Authz.UserCompany, :sys_user_companies, :read, paginate_with: nil
-      list SynieCore.Org.Company, :sys_companies, :read, paginate_with: nil
+      list SynieCore.Org.Company, :bas_companies, :read, paginate_with: nil
+      list SynieCore.Base.Unit, :bas_units, :read, paginate_with: nil
+      list SynieCore.Base.Currency, :bas_currencies, :read, paginate_with: nil
+      list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
     end
 
     mutations do
@@ -23,12 +26,20 @@ defmodule SynieCore do
       create SynieCore.Authz.RolePermission, :create_sys_role_permission, :create
       destroy SynieCore.Authz.RolePermission, :destroy_sys_role_permission, :destroy
 
-      create SynieCore.Org.Company, :create_sys_company, :create
-      update SynieCore.Org.Company, :update_sys_company, :update
-      destroy SynieCore.Org.Company, :destroy_sys_company, :destroy
+      create SynieCore.Org.Company, :create_bas_company, :create
+      update SynieCore.Org.Company, :update_bas_company, :update
+      destroy SynieCore.Org.Company, :destroy_bas_company, :destroy
 
       create SynieCore.Authz.UserCompany, :create_sys_user_company, :create
       destroy SynieCore.Authz.UserCompany, :destroy_sys_user_company, :destroy
+
+      create SynieCore.Base.Unit, :create_bas_unit, :create
+      update SynieCore.Base.Unit, :update_bas_unit, :update
+      destroy SynieCore.Base.Unit, :destroy_bas_unit, :destroy
+
+      create SynieCore.Base.Currency, :create_bas_currency, :create
+      update SynieCore.Base.Currency, :update_bas_currency, :update
+      destroy SynieCore.Base.Currency, :destroy_bas_currency, :destroy
     end
   end
 
@@ -40,5 +51,8 @@ defmodule SynieCore do
     resource SynieCore.Authz.RolePermission
     resource SynieCore.Authz.UserCompany
     resource SynieCore.Org.Company
+    resource SynieCore.Base.Unit
+    resource SynieCore.Base.Currency
+    resource SynieCore.Audit.Log
   end
 end

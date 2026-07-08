@@ -5,7 +5,8 @@ defmodule SynieCore.Authz.Role do
     domain: SynieCore,
     data_layer: AshPostgres.DataLayer,
     extensions: [AshGraphql.Resource],
-    authorizers: [Ash.Policy.Authorizer]
+    authorizers: [Ash.Policy.Authorizer],
+    fragments: [SynieCore.Audit.Fragment]
 
   postgres do
     table "sys_role"
@@ -30,8 +31,6 @@ defmodule SynieCore.Authz.Role do
   def permission_actions, do: ~w(create read update delete batch_delete export print batch_print)
 
   actions do
-    defaults [:destroy]
-
     read :read do
       primary? true
 
@@ -48,6 +47,12 @@ defmodule SynieCore.Authz.Role do
 
     update :update do
       accept [:name, :enabled]
+      require_atomic? false
+    end
+
+    destroy :destroy do
+      primary? true
+      require_atomic? false
     end
   end
 
