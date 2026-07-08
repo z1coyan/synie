@@ -35,7 +35,8 @@
 
 - create:仅 `to`(全部写入字段)
 - update:仅变更字段,含 `from`/`to`;无实际变更(no-op)不落日志
-- destroy:仅 `from`,存删除前全部公开属性(快照,作为追溯与手工恢复依据)
+- destroy:仅 `from`,存删除前全部属性快照(作为追溯与手工恢复依据)
+- 覆盖范围为全部属性(含非 public,如 `sys_user.super_admin`),仅跳过主键与时间戳
 - `sensitive? true` 的属性(如密码哈希)一律不落值,记为 `"[FILTERED]"`
 
 ## 写入:一个全局 Change
@@ -66,7 +67,7 @@ use Ash.Resource,
 ## 查询与权限
 
 - GraphQL:`Audit.Log` 暴露只读 query(AshGraphql 标准 filter/sort/分页),详情页过滤 `resource + record_id`,全局页按时间/actor/resource 过滤,同一 query 两处复用
-- 权限码:`permission_prefix "system.audit_log"`,`permission_actions ~w(read)`,policies 照 Test.Doc 样板(super_admin bypass + HasPermission)
+- 权限码:`permission_prefix "sys.audit_log"`(跟随仓库 `sys.` 惯例),`permission_actions ~w(read)`,policies 照 Test.Doc 样板(super_admin bypass + HasPermission)
 - 多公司 fail-closed:`company_id` 非空的日志套 CompanyScope 过滤;`company_id` 为空(全局资源)仅需权限码即可见
 
 ## 已知约束
