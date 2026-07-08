@@ -42,6 +42,16 @@ const EMPTY_EXCLUDE: string[] = []
 const EMPTY_OVERRIDES: Record<string, ColumnOverride> = {}
 const getRowId = (r: Row) => r.id
 
+/** trailing 防抖:值停稳 ms 后才透出,打字期间不触发下游查询 */
+function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms)
+    return () => clearTimeout(t)
+  }, [value, ms])
+  return debounced
+}
+
 export function selectedRows(selection: Selection, rows: Row[]): Row[] {
   // DataGrid 的 "all" 语义 = 当前页全选(spec 非目标:不做跨页全选)
   if (selection === 'all') return rows
@@ -79,7 +89,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   )
 
   // 搜索/筛选列用组件内已排除 id/exclude 的 columns,被 exclude 隐藏的列不应参与搜索
-  const filterLiteral = meta.data ? buildFilterLiteral(filters, search, columns) : null
+  // 对派生的 filter 字面量整体防抖:一处覆盖搜索框+各列筛选输入的连续敲键,UI(chips/输入框)仍即时
+  const filterLiteral = useDebounced(meta.data ? buildFilterLiteral(filters, search, columns) : null, 300)
   const sortLiteral = toSortLiteral(sort)
 
   const rowsQuery = useQuery({
