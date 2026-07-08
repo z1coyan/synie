@@ -11,6 +11,7 @@ import { useGridMeta } from './meta'
 import { printRows } from './print'
 import { buildFilterLiteral, buildRowQuery, toSortLiteral } from './query'
 import type { ActionContext, BulkAction, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
+import { useDraft } from './use-debounced'
 import { useGridActions } from './use-grid-actions'
 
 export interface ColumnOverride {
@@ -42,14 +43,18 @@ const EMPTY_EXCLUDE: string[] = []
 const EMPTY_OVERRIDES: Record<string, ColumnOverride> = {}
 const getRowId = (r: Row) => r.id
 
-/** trailing 防抖:值停稳 ms 后才透出,打字期间不触发下游查询 */
-function useDebounced<T>(value: T, ms: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), ms)
-    return () => clearTimeout(t)
-  }, [value, ms])
-  return debounced
+/** 搜索框草稿化:打字即时回显,停稳 300ms 才提交给父级,避免每键重渲染整表+发请求 */
+function GridSearch({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [draft, setDraft] = useDraft(value, onCommit)
+  return (
+    <SearchField aria-label="搜索" value={draft} onChange={setDraft} className="w-64">
+      <SearchField.Group>
+        <SearchField.SearchIcon />
+        <SearchField.Input placeholder="搜索…" />
+        <SearchField.ClearButton />
+      </SearchField.Group>
+    </SearchField>
+  )
 }
 
 export function selectedRows(selection: Selection, rows: Row[]): Row[] {
@@ -89,8 +94,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   )
 
   // 搜索/筛选列用组件内已排除 id/exclude 的 columns,被 exclude 隐藏的列不应参与搜索
-  // 对派生的 filter 字面量整体防抖:一处覆盖搜索框+各列筛选输入的连续敲键,UI(chips/输入框)仍即时
-  const filterLiteral = useDebounced(meta.data ? buildFilterLiteral(filters, search, columns) : null, 300)
+  // 防抖在输入源头(useDraft:搜索框/筛选草稿),这里拿到的已是停稳值,离散操作(勾选/日期/清除)即时生效
+  const filterLiteral = meta.data ? buildFilterLiteral(filters, search, columns) : null
   const sortLiteral = toSortLiteral(sort)
 
   const rowsQuery = useQuery({
@@ -271,21 +276,13 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     <div className="flex flex-col gap-3">
       {/* 工具栏:搜索 + Task 6 动作按钮 */}
       <div className="flex flex-wrap items-center gap-3">
-        <SearchField
-          aria-label="搜索"
+        <GridSearch
           value={search}
-          onChange={(v) => {
+          onCommit={(v) => {
             setSearch(v)
             setPage(1)
           }}
-          className="w-64"
-        >
-          <SearchField.Group>
-            <SearchField.SearchIcon />
-            <SearchField.Input placeholder="搜索…" />
-            <SearchField.ClearButton />
-          </SearchField.Group>
-        </SearchField>
+        />
         <div className="ml-auto flex items-center gap-2">
           {actions.toolbarActions.map((a) => (
             <Button

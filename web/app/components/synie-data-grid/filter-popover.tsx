@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import { parseDate } from '@internationalized/date'
 import {
   Button,
@@ -16,6 +16,20 @@ import {
   Switch,
 } from '@heroui/react'
 import type { ColumnFilter, DateOp, GridColumnMeta, NumberOp, TextOp } from './types'
+import { useDraft } from './use-debounced'
+
+// 弹层 DOM 上 portal 到了表格外,但 React 合成事件仍沿组件树冒泡回可排序的 <th>:
+// 表格的 usePress/键盘导航会拦截指针与方向键,导致输入框无法划选、焦点被抢。
+// 在 Dialog 层截断冒泡;Escape 放行给上层 Popover 做关闭。
+const stopBubble = {
+  onKeyDown: (e: KeyboardEvent) => e.key !== 'Escape' && e.stopPropagation(),
+  onKeyUp: (e: KeyboardEvent) => e.key !== 'Escape' && e.stopPropagation(),
+  onPointerDown: (e: PointerEvent) => e.stopPropagation(),
+  onPointerUp: (e: PointerEvent) => e.stopPropagation(),
+  onMouseDown: (e: MouseEvent) => e.stopPropagation(),
+  onMouseUp: (e: MouseEvent) => e.stopPropagation(),
+  onClick: (e: MouseEvent) => e.stopPropagation(),
+}
 
 const TEXT_OPS: [TextOp, string][] = [
   ['contains', '包含'],
@@ -86,7 +100,7 @@ export function ColumnFilterButton({
         <FilterIcon />
       </Button>
       <Popover.Content placement="bottom" className="w-72">
-        <Popover.Dialog className="flex flex-col gap-3 p-3">
+        <Popover.Dialog className="flex flex-col gap-3 p-3" {...stopBubble}>
           <Popover.Heading className="text-sm font-medium">{column.label}</Popover.Heading>
           <FilterControl column={column} filter={filter} onChange={onChange} />
           {active && (
@@ -207,8 +221,9 @@ function TextFilter({
 }) {
   // 操作符本身不构成筛选,值为空时不发请求;弹层关闭即卸载,重开时从 filter 回填
   const [op, setOp] = useState<TextOp>(filter?.op ?? 'contains')
-  const value = filter?.value ?? ''
   const emit = (o: TextOp, v: string) => onChange(v ? { kind: 'text', op: o, value: v } : null)
+  // 草稿即时回显,停稳才提交:打字期间不重渲染整表
+  const [draft, setDraft] = useDraft(filter?.value ?? '', (v) => emit(op, v))
   return (
     <div className="flex flex-col gap-2">
       <OpSelect
@@ -216,10 +231,10 @@ function TextFilter({
         options={TEXT_OPS}
         onChange={(o) => {
           setOp(o)
-          emit(o, value)
+          emit(o, draft)
         }}
       />
-      <Input placeholder="筛选值…" value={value} onChange={(e) => emit(op, e.target.value)} />
+      <Input placeholder="筛选值…" value={draft} onChange={(e) => setDraft(e.target.value)} />
     </div>
   )
 }
@@ -240,6 +255,17 @@ function NumberFilter({
     const next = { gte: range?.gte, lte: range?.lte, ...patch }
     onChange(next.gte || next.lte ? { kind: 'number', op: 'between', gte: next.gte, lte: next.lte } : null)
   }
+
+  // 三个草稿都无条件声明(hooks 顺序);commit 里再按当前 op 门控,防止切换操作符后旧草稿停稳误提交
+  const [draftSingle, setDraftSingle] = useDraft(single, (v) => {
+    if (op !== 'between') emitSingle(op, v)
+  })
+  const [draftGte, setDraftGte] = useDraft(range?.gte ?? '', (v) => {
+    if (op === 'between') emitRange({ gte: v || undefined })
+  })
+  const [draftLte, setDraftLte] = useDraft(range?.lte ?? '', (v) => {
+    if (op === 'between') emitRange({ lte: v || undefined })
+  })
 
   const numberInput = (value: string, onValue: (v: string) => void, label: string) => (
     <NumberField
@@ -263,17 +289,17 @@ function NumberFilter({
           setOp(o)
           // 单值↔区间字段形状不同,值带不过去:切到区间保留已有区间,否则清空等新值
           if (o === 'between') onChange(range ? { kind: 'number', op: 'between', gte: range.gte, lte: range.lte } : null)
-          else emitSingle(o, single)
+          else emitSingle(o, draftSingle)
         }}
       />
       {op === 'between' ? (
         <div className="flex items-center gap-2">
-          {numberInput(range?.gte ?? '', (v) => emitRange({ gte: v || undefined }), '起')}
+          {numberInput(draftGte, setDraftGte, '起')}
           <span className="text-muted">~</span>
-          {numberInput(range?.lte ?? '', (v) => emitRange({ lte: v || undefined }), '止')}
+          {numberInput(draftLte, setDraftLte, '止')}
         </div>
       ) : (
-        numberInput(single, (v) => emitSingle(op, v), '筛选值')
+        numberInput(draftSingle, setDraftSingle, '筛选值')
       )}
     </div>
   )
