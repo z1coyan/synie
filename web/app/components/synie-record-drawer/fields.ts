@@ -114,7 +114,8 @@ export function initialValues(fields: ResolvedField[], row: Row | null | undefin
   return out
 }
 
-const isEmpty = (v: unknown) => v == null || v === ''
+// 纯空格视为空；false/0 不算空
+const isEmpty = (v: unknown) => v == null || (typeof v === 'string' && v.trim() === '')
 
 /** 提交 payload:仅收当前可见且当前 mode 可编辑的字段;undefined 归 null */
 export function collectValues(

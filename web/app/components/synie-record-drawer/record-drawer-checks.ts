@@ -159,6 +159,11 @@ eq(
   '空串缺失;0/false 不算空;readOnly 与隐藏的 required 不拦'
 )
 eq(
+  missingRequired(reqFields, { code: '   ', seq: 0, enabled: false, counterpartyType: 'supplier' }, 'create'),
+  ['L:code'],
+  '纯空格视为空'
+)
+eq(
   missingRequired(reqFields, { code: 'a', seq: 1, enabled: false, counterpartyType: 'customer' }, 'create'),
   ['L:customerId'],
   '条件字段显形后必填生效'
