@@ -1,0 +1,186 @@
+import { useState, type ReactNode } from 'react'
+import { AlertDialog, Button, toast } from '@heroui/react'
+import { gqlFetch } from '~/lib/graphql'
+import type { ActionContext, BulkAction, GridActionMeta, GridMeta, Row, RowAction } from './types'
+
+export interface ResolvedAction {
+  key: string
+  label: string
+  isDanger: boolean
+  run: (rows: Row[]) => void
+}
+
+interface PendingConfirm {
+  label: string
+  isDanger: boolean
+  rows: Row[]
+  execute: (rows: Row[]) => Promise<void>
+}
+
+/** 逐条执行仅吃 id 的 mutation(destroy/扩展工作流动作)。 */
+// ponytail: 前端逐条循环,量大或需事务性时后端加 Ash bulk action 再切
+async function runIdMutation(mutation: string, ids: string[]): Promise<{ ok: number; fail: number }> {
+  let ok = 0
+  let fail = 0
+  for (const id of ids) {
+    try {
+      const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
+        `mutation ($id: ID!) { ${mutation}(id: $id) { errors { message } } }`,
+        { id }
+      )
+      const errors = data[mutation]?.errors
+      if (errors && errors.length > 0) fail += 1
+      else ok += 1
+    } catch {
+      fail += 1
+    }
+  }
+  return { ok, fail }
+}
+
+export function useGridActions(opts: {
+  meta: GridMeta | undefined
+  refetch: () => void
+  clearSelection: () => void
+  onCreate?: () => void
+  onEdit?: (row: Row) => void
+  onImport?: (ctx: ActionContext) => void
+  onExport?: () => void
+  onPrintRows?: (rows: Row[]) => void
+  actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
+  bulkActions?: BulkAction[]
+  rowActions?: RowAction[]
+}) {
+  const { meta, refetch, clearSelection } = opts
+  const [pending, setPending] = useState<PendingConfirm | null>(null)
+  const [running, setRunning] = useState(false)
+
+  const can = (capability?: string) =>
+    !capability || (meta?.capabilities ?? []).includes(capability)
+  const ctx: ActionContext = { refetch }
+
+  const confirmThenMutate = (label: string, isDanger: boolean, mutation: string) => (rows: Row[]) =>
+    setPending({
+      label,
+      isDanger,
+      rows,
+      execute: async (rs) => {
+        const { ok, fail } = await runIdMutation(mutation, rs.map((r) => r.id))
+        if (fail === 0) toast.success(`${label}成功(${ok} 条)`)
+        else toast.danger(`${label}部分失败`, { description: `成功 ${ok} 条,失败 ${fail} 条` })
+        if (ok > 0) {
+          refetch()
+          clearSelection()
+        }
+      },
+    })
+
+  // 扩展动作:默认内建确认+mutation,actionHandlers[key] 覆盖
+  const extendedAction = (a: GridActionMeta): ResolvedAction => ({
+    key: a.key,
+    label: a.label,
+    isDanger: a.isDanger,
+    run: opts.actionHandlers?.[a.key]
+      ? (rows) => opts.actionHandlers![a.key](rows, ctx)
+      : confirmThenMutate(a.label, a.isDanger, a.mutation),
+  })
+
+  const extended = (scope: 'row' | 'bulk') =>
+    (meta?.extendedActions ?? [])
+      .filter((a) => can(a.key) && (a.scope === scope || a.scope === 'both'))
+      .map(extendedAction)
+
+  // 工具栏:新增/导入/导出(print 由行内与批量承载)
+  const toolbarActions: ResolvedAction[] = [
+    ...(can('create') && opts.onCreate
+      ? [{ key: 'create', label: '新增', isDanger: false, run: () => opts.onCreate!() }]
+      : []),
+    ...(can('import') && opts.onImport
+      ? [{ key: 'import', label: '导入', isDanger: false, run: () => opts.onImport!(ctx) }]
+      : []),
+    ...(can('export') && opts.onExport
+      ? [{ key: 'export', label: '导出', isDanger: false, run: () => opts.onExport!() }]
+      : []),
+  ]
+
+  // 行内菜单
+  const rowMenuFor = (row: Row): ResolvedAction[] => [
+    ...(can('update') && opts.onEdit
+      ? [{ key: 'edit', label: '编辑', isDanger: false, run: () => opts.onEdit!(row) }]
+      : []),
+    ...(can('print') && opts.onPrintRows
+      ? [{ key: 'print', label: '打印', isDanger: false, run: () => opts.onPrintRows!([row]) }]
+      : []),
+    ...extended('row'),
+    ...(opts.rowActions ?? [])
+      .filter((a) => can(a.capability))
+      .map((a) => ({
+        key: a.key,
+        label: a.label,
+        isDanger: a.isDanger ?? false,
+        run: () => a.onAction(row, ctx),
+      })),
+    ...(can('delete') && meta?.destroyMutation
+      ? [{ key: 'delete', label: '删除', isDanger: true, run: confirmThenMutate('删除', true, meta.destroyMutation) }]
+      : []),
+  ]
+
+  // 批量条
+  const bulkBarActions: ResolvedAction[] = [
+    ...(can('batch_print') && opts.onPrintRows
+      ? [{ key: 'batch_print', label: '批量打印', isDanger: false, run: (rows: Row[]) => opts.onPrintRows!(rows) }]
+      : []),
+    ...extended('bulk'),
+    ...(opts.bulkActions ?? [])
+      .filter((a) => can(a.capability))
+      .map((a) => ({
+        key: a.key,
+        label: a.label,
+        isDanger: a.isDanger ?? false,
+        run: (rows: Row[]) => a.onAction(rows, ctx),
+      })),
+    ...(can('batch_delete') && meta?.destroyMutation
+      ? [{ key: 'batch_delete', label: '批量删除', isDanger: true, run: confirmThenMutate('批量删除', true, meta.destroyMutation) }]
+      : []),
+  ]
+
+  const ConfirmDialog = (): ReactNode => (
+    <AlertDialog.Backdrop isOpen={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
+      <AlertDialog.Container>
+        <AlertDialog.Dialog className="sm:max-w-[400px]">
+          {pending && (
+            <>
+              <AlertDialog.Header>
+                <AlertDialog.Icon status={pending.isDanger ? 'danger' : 'accent'} />
+                <AlertDialog.Heading>确认{pending.label}?</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body>
+                <p>将对 {pending.rows.length} 条记录执行「{pending.label}」,此操作不可撤销。</p>
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <Button slot="close" variant="tertiary" isDisabled={running}>取消</Button>
+                <Button
+                  variant={pending.isDanger ? 'danger' : 'primary'}
+                  isPending={running}
+                  onPress={async () => {
+                    setRunning(true)
+                    try {
+                      await pending.execute(pending.rows)
+                    } finally {
+                      setRunning(false)
+                      setPending(null)
+                    }
+                  }}
+                >
+                  确认
+                </Button>
+              </AlertDialog.Footer>
+            </>
+          )}
+        </AlertDialog.Dialog>
+      </AlertDialog.Container>
+    </AlertDialog.Backdrop>
+  )
+
+  return { toolbarActions, rowMenuFor, bulkBarActions, ConfirmDialog }
+}

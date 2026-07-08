@@ -1,13 +1,14 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
-import { Button, Chip, CloseButton, ListBox, Pagination, SearchField, Spinner } from '@heroui/react'
+import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
+import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, Spinner } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
 import { gqlFetch } from '~/lib/graphql'
 import { ColumnFilterButton } from './filter-popover'
 import { useGridMeta } from './meta'
 import { buildFilterLiteral, buildRowQuery, toSortLiteral } from './query'
 import type { ActionContext, BulkAction, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
+import { useGridActions } from './use-grid-actions'
 
 export interface ColumnOverride {
   render?: (value: unknown, row: Row) => ReactNode
@@ -133,6 +134,59 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     ? { column: sort.column, direction: sort.direction }
     : undefined
 
+  const actions = useGridActions({
+    meta: meta.data,
+    refetch: () => rowsQuery.refetch(),
+    clearSelection: () => setSelection(new Set()),
+    onCreate: props.onCreate,
+    onEdit: props.onEdit,
+    onImport: props.onImport,
+    actionHandlers: props.actionHandlers,
+    bulkActions: props.bulkActions,
+    rowActions: props.rowActions,
+    // onExport / onPrintRows 在 Task 7 接
+  })
+
+  // 行内动作列:仅当至少一行有可用动作时才拼接(避免空 Dropdown 占位列)。
+  // 注意不能直接 push 进 memo 出来的 gridColumns——它在依赖不变时跨渲染复用同一数组引用,
+  // 重复 push 会在每次重渲染后越叠越多;这里用 concat 生成新数组规避。
+  const hasRowMenu = rows.some((r) => actions.rowMenuFor(r).length > 0)
+  const columnsWithActions: DataGridColumn<Row>[] = hasRowMenu
+    ? [
+        ...gridColumns,
+        {
+          id: '__actions',
+          header: '',
+          pinned: 'end',
+          width: 56,
+          cell: (row: Row) => {
+            const items = actions.rowMenuFor(row)
+            if (items.length === 0) return null
+            return (
+              <Dropdown>
+                <Button isIconOnly size="sm" variant="ghost" aria-label="行操作">
+                  <EllipsisIcon />
+                </Button>
+                <Dropdown.Popover placement="bottom end">
+                  <Dropdown.Menu onAction={(key) => items.find((a) => a.key === key)?.run([row])}>
+                    {items.map((a) => (
+                      <Dropdown.Item key={a.key} id={a.key} textValue={a.label} variant={a.isDanger ? 'danger' : undefined}>
+                        <Label>{a.label}</Label>
+                      </Dropdown.Item>
+                    ))}
+                  </Dropdown.Menu>
+                </Dropdown.Popover>
+              </Dropdown>
+            )
+          },
+        },
+      ]
+    : gridColumns
+
+  // 有 bulk 动作才开选择模式(否则勾选框无意义)
+  const hasBulkActions = actions.bulkBarActions.length > 0
+  const picked = selectedRows(selection, rows)
+
   if (meta.isPending || (rowsQuery.isPending && !rowsQuery.data)) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -177,7 +231,18 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
-        <div className="ml-auto flex items-center gap-2">{/* Task 6: 动作按钮 */}</div>
+        <div className="ml-auto flex items-center gap-2">
+          {actions.toolbarActions.map((a) => (
+            <Button
+              key={a.key}
+              size="sm"
+              variant={a.key === 'create' ? 'primary' : 'secondary'}
+              onPress={() => a.run([])}
+            >
+              {a.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       {/* 活跃筛选 Chips */}
@@ -219,10 +284,10 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       <DataGrid
         aria-label={`${resource} 数据表格`}
         data={rows}
-        columns={gridColumns}
+        columns={columnsWithActions}
         getRowId={getRowId}
-        selectionMode="multiple"
-        showSelectionCheckboxes
+        selectionMode={hasBulkActions ? 'multiple' : 'none'}
+        showSelectionCheckboxes={hasBulkActions}
         selectedKeys={selection}
         onSelectionChange={setSelection}
         sortDescriptor={sortDescriptor}
@@ -272,6 +337,33 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           <Pager page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       </div>
+
+      <ActionBar isOpen={picked.length > 0 && hasBulkActions} aria-label="批量操作">
+        <ActionBar.Prefix>
+          <Chip size="sm">{picked.length}</Chip>
+        </ActionBar.Prefix>
+        <Separator />
+        <ActionBar.Content>
+          {actions.bulkBarActions.map((a) => (
+            <Button
+              key={a.key}
+              size="sm"
+              variant={a.isDanger ? 'danger-soft' : 'ghost'}
+              onPress={() => a.run(picked)}
+            >
+              <span className="action-bar__label">{a.label}</span>
+            </Button>
+          ))}
+        </ActionBar.Content>
+        <Separator />
+        <ActionBar.Suffix>
+          <Button isIconOnly size="sm" variant="ghost" aria-label="取消选择" onPress={() => setSelection(new Set())}>
+            <XIcon />
+          </Button>
+        </ActionBar.Suffix>
+      </ActionBar>
+
+      <actions.ConfirmDialog />
     </div>
   )
 }
@@ -315,5 +407,21 @@ function Pager({ page, totalPages, onChange }: { page: number; totalPages: numbe
         </Pagination.Item>
       </Pagination.Content>
     </Pagination>
+  )
+}
+
+function EllipsisIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor" aria-hidden>
+      <circle cx="8" cy="3" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="8" cy="13" r="1.5" />
+    </svg>
+  )
+}
+
+function XIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </svg>
   )
 }
