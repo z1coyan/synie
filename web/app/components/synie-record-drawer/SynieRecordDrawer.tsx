@@ -15,7 +15,7 @@ import {
   TextField,
   toast,
 } from '@heroui/react'
-import { Sheet } from '@heroui-pro/react'
+import { EmptyState, Sheet } from '@heroui-pro/react'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
 import type { Row } from '../synie-data-grid/types'
@@ -121,6 +121,19 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                 <div className="flex h-32 items-center justify-center">
                   <Spinner />
                 </div>
+              ) : meta.isError ? (
+                // GridMeta 加载失败:展示报错并可重试(与 SynieDataGrid 同一套失败态)
+                <EmptyState size="md" className="h-64 justify-center">
+                  <EmptyState.Header>
+                    <EmptyState.Title>数据加载失败</EmptyState.Title>
+                    <EmptyState.Description>{(meta.error as Error).message}</EmptyState.Description>
+                  </EmptyState.Header>
+                  <EmptyState.Content>
+                    <Button variant="secondary" onPress={() => meta.refetch()}>
+                      重试
+                    </Button>
+                  </EmptyState.Content>
+                </EmptyState>
               ) : (
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
                   {shown.map((f) => (
@@ -155,7 +168,8 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                       取消
                     </Button>
                   </Sheet.Close>
-                  <Button onPress={save} isPending={saving}>
+                  {/* 元数据失败时字段集为空,禁止提交空 payload */}
+                  <Button onPress={save} isPending={saving} isDisabled={meta.isError}>
                     保存
                   </Button>
                 </>
