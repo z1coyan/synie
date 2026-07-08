@@ -27,16 +27,20 @@ defmodule SynieWeb.GridMeta do
   # 公开仅供白名单 resolve/2 内部调用与测试直接反射(如 GridDoc 测试资源);不构成对外 API。
   def build(module, actor) do
     refs = fk_refs(module, actor)
+    rel_descriptions = rel_descriptions(module)
 
     %{
-      columns: module |> Ash.Resource.Info.public_attributes() |> Enum.map(&column(&1, refs)),
+      columns:
+        module
+        |> Ash.Resource.Info.public_attributes()
+        |> Enum.map(&column(&1, refs, rel_descriptions)),
       capabilities: capabilities(module, actor),
       extended_actions: extended_actions(module),
       destroy_mutation: destroy_mutation(module)
     }
   end
 
-  defp column(attr, refs) do
+  defp column(attr, refs, rel_descriptions) do
     case Map.fetch(refs, attr.name) do
       {:ok, ref} ->
         %{
@@ -55,13 +59,22 @@ defmodule SynieWeb.GridMeta do
         %{
           name: camelize(attr.name),
           type: type_name(attr.type),
-          label: attr.description || to_string(attr.name),
+          # FK 列走退化路径(无权限/白名单外)时 label 也要中文,兜底关系 description
+          label: attr.description || rel_descriptions[attr.name] || to_string(attr.name),
           sortable: true,
           filterable: filterable?(attr.type),
           enum_options: enum_options(attr.type),
           ref: nil
         }
     end
+  end
+
+  # 关系 description 与权限无关,退化路径的列 label 也要有中文兜底
+  defp rel_descriptions(module) do
+    module
+    |> Ash.Resource.Info.relationships()
+    |> Enum.filter(&(&1.type == :belongs_to))
+    |> Map.new(&{&1.source_attribute, &1.description})
   end
 
   # belongs_to → fk 元数据。fail-closed:目标资源不在白名单、或 actor 无目标资源 read 权限,

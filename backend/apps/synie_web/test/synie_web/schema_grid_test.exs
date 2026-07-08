@@ -314,7 +314,8 @@ defmodule SynieWeb.SchemaGridTest do
       assert %{data: %{"gridMeta" => meta}} = run_meta!(actor, "basCompanies")
       by_name = Map.new(meta["columns"], &{&1["name"], &1})
 
-      assert %{"type" => "string", "filterable" => false, "ref" => nil} = by_name["parentId"]
+      assert %{"type" => "string", "label" => "上级公司", "filterable" => false, "ref" => nil} =
+               by_name["parentId"]
     end
 
     test "无 belongs_to 的资源所有列 ref 为空" do
