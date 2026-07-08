@@ -9,7 +9,8 @@ defmodule SynieWeb.GridMeta do
   alias SynieCore.Authz
 
   @resources %{
-    "sysRoles" => SynieCore.Authz.Role
+    "sysRoles" => SynieCore.Authz.Role,
+    "basCompanies" => SynieCore.Org.Company
   }
 
   @spec resolve(String.t(), Authz.Actor.t() | nil) :: {:ok, map()} | {:error, String.t()}
@@ -25,23 +26,70 @@ defmodule SynieWeb.GridMeta do
   @doc false
   # 公开仅供白名单 resolve/2 内部调用与测试直接反射(如 GridDoc 测试资源);不构成对外 API。
   def build(module, actor) do
+    refs = fk_refs(module, actor)
+
     %{
-      columns: module |> Ash.Resource.Info.public_attributes() |> Enum.map(&column/1),
+      columns: module |> Ash.Resource.Info.public_attributes() |> Enum.map(&column(&1, refs)),
       capabilities: capabilities(module, actor),
       extended_actions: extended_actions(module),
       destroy_mutation: destroy_mutation(module)
     }
   end
 
-  defp column(attr) do
-    %{
-      name: camelize(attr.name),
-      type: type_name(attr.type),
-      label: attr.description || to_string(attr.name),
-      sortable: true,
-      filterable: filterable?(attr.type),
-      enum_options: enum_options(attr.type)
-    }
+  defp column(attr, refs) do
+    case Map.fetch(refs, attr.name) do
+      {:ok, ref} ->
+        %{
+          name: camelize(attr.name),
+          type: "fk",
+          # belongs_to 的 FK attribute 一般没有 description,兜底用关系上的 description
+          label: attr.description || ref.label || to_string(attr.name),
+          # uuid 排序无意义;筛选走 eq/in(不走 contains,见 filterable?/1 注释)
+          sortable: false,
+          filterable: true,
+          enum_options: nil,
+          ref: %{resource: ref.resource, relation: ref.relation, label_field: ref.label_field}
+        }
+
+      :error ->
+        %{
+          name: camelize(attr.name),
+          type: type_name(attr.type),
+          label: attr.description || to_string(attr.name),
+          sortable: true,
+          filterable: filterable?(attr.type),
+          enum_options: enum_options(attr.type),
+          ref: nil
+        }
+    end
+  end
+
+  # belongs_to → fk 元数据。fail-closed:目标资源不在白名单、或 actor 无目标资源 read 权限,
+  # 都不产出 ref,该列退化为普通 uuid 列(string/不可筛),前端表单退 TextField。
+  defp fk_refs(module, actor) do
+    module_names = Map.new(@resources, fn {name, mod} -> {mod, name} end)
+
+    module
+    |> Ash.Resource.Info.relationships()
+    |> Enum.filter(&(&1.type == :belongs_to))
+    |> Enum.reduce(%{}, fn rel, acc ->
+      with {:ok, resource_name} <- Map.fetch(module_names, rel.destination),
+           true <- Authz.has_permission?(actor, "#{rel.destination.permission_prefix()}:read") do
+        Map.put(acc, rel.source_attribute, %{
+          resource: resource_name,
+          relation: camelize(rel.name),
+          label_field: camelize(display_field(rel.destination)),
+          label: rel.description
+        })
+      else
+        _ -> acc
+      end
+    end)
+  end
+
+  # 显示字段约定:资源实现 display_field/0 覆盖,默认 :name
+  defp display_field(module) do
+    if function_exported?(module, :display_field, 0), do: module.display_field(), else: :name
   end
 
   # AshGraphql 的 contains 筛选只对 string/ci_string 生成;uuid 与裸 atom(非枚举,无 values/0)

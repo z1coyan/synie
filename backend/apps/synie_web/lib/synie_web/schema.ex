@@ -23,6 +23,12 @@ defmodule SynieWeb.Schema do
     field :label, non_null(:string)
   end
 
+  object :grid_column_ref do
+    field :resource, non_null(:string)
+    field :relation, non_null(:string)
+    field :label_field, non_null(:string)
+  end
+
   object :grid_column do
     field :name, non_null(:string)
     field :type, non_null(:string)
@@ -30,6 +36,7 @@ defmodule SynieWeb.Schema do
     field :sortable, non_null(:boolean)
     field :filterable, non_null(:boolean)
     field :enum_options, list_of(non_null(:grid_enum_option))
+    field :ref, :grid_column_ref
   end
 
   object :grid_action do

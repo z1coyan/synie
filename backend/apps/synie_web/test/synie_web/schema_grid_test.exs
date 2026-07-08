@@ -40,6 +40,12 @@ defmodule SynieWeb.SchemaGridTest do
     user
   end
 
+  defp company!(code, name, parent_id \\ nil) do
+    SynieCore.Org.Company
+    |> Ash.Changeset.for_create(:create, %{code: code, name: name, short_name: name, parent_id: parent_id})
+    |> Ash.create!(authorize?: false)
+  end
+
   defp roles!(specs) do
     Enum.map(specs, fn {code, name, enabled} ->
       Role
@@ -180,7 +186,7 @@ defmodule SynieWeb.SchemaGridTest do
   @meta_query """
   query ($resource: String!) {
     gridMeta(resource: $resource) {
-      columns { name type label sortable filterable enumOptions { value label } }
+      columns { name type label sortable filterable enumOptions { value label } ref { resource relation labelField } }
       capabilities
       extendedActions { key label scope mutation isDanger }
       destroyMutation
@@ -285,6 +291,62 @@ defmodule SynieWeb.SchemaGridTest do
     test "super_admin:capabilities 拿到 audit 与 close(不含 read)" do
       built = SynieWeb.GridMeta.build(SynieWeb.Test.GridDoc, super_actor())
       assert built.capabilities == ["audit", "close"]
+    end
+  end
+
+  describe "gridMeta 外键 ref" do
+    test "有目标 read 权限:parentId 为 fk 列并携带 ref" do
+      actor = Authz.build_actor(user_with!(["org.company:read"]))
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(actor, "basCompanies")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      assert %{
+               "type" => "fk",
+               "label" => "上级公司",
+               "sortable" => false,
+               "filterable" => true,
+               "ref" => %{"resource" => "basCompanies", "relation" => "parent", "labelField" => "name"}
+             } = by_name["parentId"]
+    end
+
+    test "无目标 read 权限:退化为 uuid 列(string/不可筛/无 ref)" do
+      actor = Authz.build_actor(user_with!(["sys.role:read"]))
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(actor, "basCompanies")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      assert %{"type" => "string", "filterable" => false, "ref" => nil} = by_name["parentId"]
+    end
+
+    test "无 belongs_to 的资源所有列 ref 为空" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor())
+      assert Enum.all?(meta["columns"], &(&1["ref"] == nil))
+    end
+  end
+
+  describe "basCompanies 行查询" do
+    test "offset 分页 + parent join + parentId/id in 筛选" do
+      actor = Authz.build_actor(user_with!(["org.company:read"]))
+      parent = company!("AA", "集团总部")
+      _child = company!("AB", "华东子公司", parent.id)
+      _other = company!("AC", "独立公司")
+
+      result =
+        run!(
+          ~s|query { basCompanies(limit: 10, offset: 0, filter: {parentId: {in: ["#{parent.id}"]}}) { count results { id name parent { id name } } } }|,
+          actor
+        )
+
+      assert %{data: %{"basCompanies" => %{"count" => 1, "results" => [row]}}} = result
+      assert row["name"] == "华东子公司"
+      assert row["parent"]["name"] == "集团总部"
+
+      by_id =
+        run!(
+          ~s|query { basCompanies(filter: {id: {in: ["#{parent.id}"]}}) { results { id name } } }|,
+          actor
+        )
+
+      assert %{data: %{"basCompanies" => %{"results" => [%{"name" => "集团总部"}]}}} = by_id
     end
   end
 end

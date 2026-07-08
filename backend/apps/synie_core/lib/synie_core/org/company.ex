@@ -56,18 +56,21 @@ defmodule SynieCore.Org.Company do
       allow_nil? false
       public? true
       constraints match: ~r/^[A-Za-z]{2}$/
+      description "公司编号"
     end
 
     attribute :name, :string do
       allow_nil? false
       public? true
       constraints max_length: 128
+      description "公司名称"
     end
 
     attribute :short_name, :string do
       allow_nil? false
       public? true
       constraints max_length: 32
+      description "公司简称"
     end
 
     create_timestamp :inserted_at
@@ -79,6 +82,7 @@ defmodule SynieCore.Org.Company do
       public? true
       attribute_public? true
       attribute_writable? true
+      description "上级公司"
     end
   end
 

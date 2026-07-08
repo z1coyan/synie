@@ -9,7 +9,7 @@ defmodule SynieCore do
       list SynieCore.Authz.UserRole, :sys_user_roles, :read, paginate_with: nil
       list SynieCore.Authz.RolePermission, :sys_role_permissions, :read, paginate_with: nil
       list SynieCore.Authz.UserCompany, :sys_user_companies, :read, paginate_with: nil
-      list SynieCore.Org.Company, :bas_companies, :read, paginate_with: nil
+      list SynieCore.Org.Company, :bas_companies, :read, paginate_with: :offset
       list SynieCore.Base.Unit, :bas_units, :read, paginate_with: nil
       list SynieCore.Base.Currency, :bas_currencies, :read, paginate_with: nil
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
