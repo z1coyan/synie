@@ -38,6 +38,18 @@ defmodule SynieCore.Org.CompanyTest do
     end
   end
 
+  test "公司上级不能选自身" do
+    company = company!()
+
+    result =
+      company
+      |> Ash.Changeset.for_update(:update, %{parent_id: company.id})
+      |> Ash.update(authorize?: false)
+
+    assert {:error, error} = result
+    assert Exception.message(error) =~ "上级公司不能选择自身"
+  end
+
   test "用户授权公司,不能重复授权" do
     user = user!()
     company = company!()

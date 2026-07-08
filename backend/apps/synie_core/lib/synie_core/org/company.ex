@@ -40,6 +40,18 @@ defmodule SynieCore.Org.Company do
     update :update do
       accept [:name, :short_name, :parent_id]
       require_atomic? false
+
+      # 只挡自引用(parent_id 设为自身 id 会让树遍历死循环);两节点以上成环检测留跟进,
+      # 需要额外查库才能判断,权衡后本轮先堵最常见的误操作路径(试点页 UI 正常可触发)
+      validate fn changeset, _context ->
+        parent_id = Ash.Changeset.get_attribute(changeset, :parent_id)
+
+        if parent_id && parent_id == changeset.data.id do
+          {:error, field: :parent_id, message: "上级公司不能选择自身"}
+        else
+          :ok
+        end
+      end
     end
 
     destroy :destroy do
