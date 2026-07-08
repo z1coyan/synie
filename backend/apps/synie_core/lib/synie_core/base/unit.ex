@@ -23,7 +23,7 @@ defmodule SynieCore.Base.Unit do
   end
 
   graphql do
-    type :sys_unit
+    type :bas_unit
   end
 
   policies do

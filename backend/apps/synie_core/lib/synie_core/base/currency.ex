@@ -13,7 +13,7 @@ defmodule SynieCore.Base.Currency do
   end
 
   graphql do
-    type :sys_currency
+    type :bas_currency
   end
 
   policies do

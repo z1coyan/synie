@@ -13,7 +13,7 @@ defmodule SynieCore.Org.Company do
   end
 
   graphql do
-    type :sys_company
+    type :bas_company
   end
 
   policies do
