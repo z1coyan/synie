@@ -18,14 +18,15 @@ defmodule SynieCore.Authz.RegistryTest do
     assert "sys.role:create" in codes
     assert "sys.role:delete" in codes
     assert "org.company:update" in codes
-    refute "sys.role:print" in codes
+    refute "sys.role:import" in codes
   end
 
   test "granted_codes 将通配展开为具体码" do
     actor = %Actor{user_id: "x", permissions: MapSet.new(["sys.role:*"])}
 
     assert Enum.sort(Registry.granted_codes(actor)) ==
-             Enum.sort(~w(sys.role:create sys.role:read sys.role:update sys.role:delete))
+             Enum.sort(~w(sys.role:create sys.role:read sys.role:update sys.role:delete
+                  sys.role:batch_delete sys.role:export sys.role:print sys.role:batch_print))
   end
 
   test "granted_codes 域通配展开" do

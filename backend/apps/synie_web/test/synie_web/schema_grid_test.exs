@@ -191,7 +191,9 @@ defmodule SynieWeb.SchemaGridTest do
     test "super_admin 拿到全部能力(不含 read),destroyMutation 正确" do
       assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor())
 
-      assert Enum.sort(meta["capabilities"]) == ["create", "delete", "update"]
+      assert Enum.sort(meta["capabilities"]) ==
+               ["batch_delete", "batch_print", "create", "delete", "export", "print", "update"]
+
       refute "read" in meta["capabilities"]
       assert meta["destroyMutation"] == "destroySysRole"
       assert meta["extendedActions"] == []

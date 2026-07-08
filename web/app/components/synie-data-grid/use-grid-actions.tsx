@@ -66,7 +66,9 @@ export function useGridActions(opts: {
       rows,
       execute: async (rs) => {
         const { ok, fail } = await runIdMutation(mutation, rs.map((r) => r.id))
+        // 三分支:全部成功 / 整批失败(下方 ok>0 门控自然不 refetch)/ 部分失败
         if (fail === 0) toast.success(`${label}成功(${ok} 条)`)
+        else if (ok === 0) toast.danger(`${label}失败`, { description: `共 ${fail} 条均未执行成功` })
         else toast.danger(`${label}部分失败`, { description: `成功 ${ok} 条,失败 ${fail} 条` })
         if (ok > 0) {
           refetch()

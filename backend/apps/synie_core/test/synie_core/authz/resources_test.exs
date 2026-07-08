@@ -64,7 +64,10 @@ defmodule SynieCore.Authz.ResourcesTest do
 
   test "资源声明了权限前缀与动作集" do
     assert SynieCore.Authz.Role.permission_prefix() == "sys.role"
-    assert SynieCore.Authz.Role.permission_actions() == ~w(create read update delete)
+
+    assert SynieCore.Authz.Role.permission_actions() ==
+             ~w(create read update delete batch_delete export print batch_print)
+
     assert SynieCore.Authz.UserRole.permission_prefix() == "sys.user_role"
     assert SynieCore.Authz.RolePermission.permission_prefix() == "sys.role_permission"
   end
