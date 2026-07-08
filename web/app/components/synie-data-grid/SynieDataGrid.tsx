@@ -30,6 +30,11 @@ export interface SynieDataGridProps {
 
 const PAGE_SIZES = [10, 20, 50, 100]
 
+// 模块级稳定默认值:默认参数若写成内联 []/{}, 不传 props 时每次渲染都是新引用,useMemo 永远失效
+const EMPTY_EXCLUDE: string[] = []
+const EMPTY_OVERRIDES: Record<string, ColumnOverride> = {}
+const getRowId = (r: Row) => r.id
+
 export function selectedRows(selection: Selection, rows: Row[]): Row[] {
   // DataGrid 的 "all" 语义 = 当前页全选(spec 非目标:不做跨页全选)
   if (selection === 'all') return rows
@@ -51,7 +56,7 @@ function defaultCell(col: GridColumnMeta, value: unknown): ReactNode {
 }
 
 export function SynieDataGrid(props: SynieDataGridProps) {
-  const { resource, exclude = [], overrides = {} } = props
+  const { resource, exclude = EMPTY_EXCLUDE, overrides = EMPTY_OVERRIDES } = props
 
   const meta = useGridMeta(resource)
   const [page, setPage] = useState(1)
@@ -90,9 +95,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   const gridColumns: DataGridColumn<Row>[] = useMemo(
     () =>
-      columns.map((col) => ({
+      columns.map((col, i) => ({
         id: col.name,
         header: overrides[col.name]?.label ?? col.label,
+        // RAC Table 要求至少一列 isRowHeader(行的无障碍名称);缺失会在并发渲染中反复抛可恢复错误
+        isRowHeader: i === 0,
         allowsSorting: col.sortable,
         width: overrides[col.name]?.width,
         cell: (row: Row) => overrides[col.name]?.render?.(row[col.name], row) ?? defaultCell(col, row[col.name]),
@@ -136,7 +143,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         aria-label={`${resource} 数据表格`}
         data={rows}
         columns={gridColumns}
-        getRowId={(r) => r.id}
+        getRowId={getRowId}
         selectionMode="multiple"
         showSelectionCheckboxes
         selectedKeys={selection}
