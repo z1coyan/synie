@@ -18,7 +18,11 @@ import {
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
-import type { Row } from '../synie-data-grid/types'
+import type { GridColumnMeta, Row } from '../synie-data-grid/types'
+import { RemoteDialogSelect } from '../synie-remote-select/RemoteDialogSelect'
+import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
+import { resolveSource, type RemoteSourceConfig } from '../synie-remote-select/remote-query'
+import { useRemoteRecords } from '../synie-remote-select/use-remote'
 import {
   collectValues,
   initialValues,
@@ -166,6 +170,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                       ) : (
                         <FieldInput
                           field={f}
+                          row={renderRow}
                           value={values[f.name]}
                           isDisabled={isFieldDisabled(f, renderMode) || saving}
                           onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v }))}
@@ -207,8 +212,18 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
 
 /** view 态字段:label + 与表格同一套格式化(cellText) */
 function ViewField({ field, row }: { field: ResolvedField; row: Row }) {
+  if (field.col.type === 'fk' && field.col.ref && !field.render) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="text-sm text-muted">{field.label}</span>
+        <div className="text-sm">
+          <FkText col={field.col} row={row} />
+        </div>
+      </div>
+    )
+  }
   const value = row[field.name]
-  const text = cellText(field.col, value)
+  const text = cellText(field.col, value, row)
   return (
     <div className="flex flex-col gap-1">
       <span className="text-sm text-muted">{field.label}</span>
@@ -219,19 +234,53 @@ function ViewField({ field, row }: { field: ResolvedField; row: Row }) {
   )
 }
 
+/** view 态外键文本:行数据有 join 直接用;否则按 id 反查;都拿不到显示截断 id */
+function FkText({ col, row }: { col: GridColumnMeta; row: Row }) {
+  const ref = col.ref!
+  const id = row[col.name] == null ? null : String(row[col.name])
+  const rel = (row[ref.relation] as Row | null | undefined) ?? null
+  const src = resolveSource({}, ref)
+  const resolved = useRemoteRecords(src, rel || !id ? [] : [id])
+  if (!id) return <span className="text-muted">—</span>
+  const target = rel ?? resolved.data?.[0]
+  return <>{target?.[ref.labelField] != null ? String(target[ref.labelField]) : id.slice(0, 8)}</>
+}
+
 /** 表单控件按列类型分发(filter-popover 先例);override.input 优先 */
 function FieldInput({
   field,
+  row,
   value,
   isDisabled,
   onChange,
 }: {
   field: ResolvedField
+  row?: Row | null
   value: unknown
   isDisabled: boolean
   onChange: (v: unknown) => void
 }) {
   if (field.input) return <>{field.input({ value, onChange, isDisabled })}</>
+
+  // fk 列:ref(权限裁剪后)或页面 remote.resource 提供数据源;都没有则落到 default TextField(fail-closed)
+  if (field.col.type === 'fk') {
+    const ref = field.col.ref
+    const cfg = { resource: ref?.resource, labelField: ref?.labelField, ...field.remote }
+    if (cfg.resource) {
+      const rel = ref && row ? ((row[ref.relation] as Row | null | undefined) ?? null) : null
+      const common = {
+        ...(cfg as RemoteSourceConfig & { resource: string }),
+        label: field.label,
+        value: value == null || value === '' ? null : String(value),
+        onChange: (id: string | null) => onChange(id),
+        isDisabled,
+        isRequired: field.required,
+        placeholder: field.placeholder,
+        initialRows: rel ? [rel] : undefined,
+      }
+      return field.picker === 'dialog' ? <RemoteDialogSelect {...common} /> : <RemoteSelect {...common} />
+    }
+  }
 
   switch (field.col.type) {
     case 'boolean':

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { GridColumnMeta, Row } from '../synie-data-grid/types'
+import type { RemoteSourceConfig } from '../synie-remote-select/remote-query'
 
 export type DrawerMode = 'view' | 'create' | 'edit'
 export type FieldEdit = 'editable' | 'createOnly' | 'readOnly'
@@ -27,6 +28,10 @@ export interface FieldOverride {
   render?: (value: unknown, row: Row) => ReactNode
   /** 表单控件替换(外键本轮用 TextField 顶,下轮换 RemoteSelect) */
   input?: (p: FieldInputProps) => ReactNode
+  /** fk 控件形态:默认 'select'(下拉);'dialog' 弹窗表格选择 */
+  picker?: 'select' | 'dialog'
+  /** fk 数据源定制(searchFields/renderItem/renderValue/filter…);resource 缺省取列 ref */
+  remote?: Partial<RemoteSourceConfig>
 }
 
 export interface ResolvedField {
@@ -41,6 +46,8 @@ export interface ResolvedField {
   visible?: (values: Record<string, unknown>) => boolean
   render?: (value: unknown, row: Row) => ReactNode
   input?: (p: FieldInputProps) => ReactNode
+  picker?: 'select' | 'dialog'
+  remote?: Partial<RemoteSourceConfig>
 }
 
 /** 时间戳系统字段:view 显示,create/edit 剔除;id 三态都不显示(与表格过滤 id 对齐)。下轮 GridMeta 扩表单元数据后由后端 accept 列表推导 */
@@ -71,6 +78,8 @@ export function resolveFields(
         visible: o.visible,
         render: o.render,
         input: o.input,
+        picker: o.picker,
+        remote: o.remote,
       }
     })
 }
@@ -107,6 +116,8 @@ export function initialValues(fields: ResolvedField[], row: Row | null | undefin
         out[f.name] = row ? (raw ? String(raw).slice(0, 10) : null) : (f.defaultValue ?? null)
         break
       case 'enum':
+      case 'fk':
+        // fk 值语义同 enum:id 串或 null,空不得归一为空串(GraphQL uuid 不吃空串)
         out[f.name] = row ? (raw == null ? null : String(raw)) : (f.defaultValue ?? null)
         break
       default:

@@ -19,6 +19,16 @@ const col = (name: string, type: GridColumnMeta['type'], enumOptions: GridColumn
   ref: null,
 })
 
+const parentCol: GridColumnMeta = {
+  name: 'parentId',
+  type: 'fk',
+  label: '上级公司',
+  sortable: false,
+  filterable: true,
+  enumOptions: null,
+  ref: { resource: 'basCompanies', relation: 'parent', labelField: 'name' },
+}
+
 const cols: GridColumnMeta[] = [
   col('id', 'string'),
   col('code', 'string'),
@@ -33,6 +43,7 @@ const cols: GridColumnMeta[] = [
     { value: 'supplier', label: '供应商' },
   ]),
   col('customerId', 'string'),
+  parentCol,
   col('supplierId', 'string'),
   col('insertedAt', 'datetime'),
 ]
@@ -53,7 +64,7 @@ const createFields = resolveFields(cols, 'create', ['supplierId'], {
 })
 eq(
   createFields.map((f) => f.name),
-  ['code', 'name', 'seq', 'price', 'enabled', 'dueOn', 'happenedAt', 'counterpartyType', 'customerId'],
+  ['code', 'name', 'seq', 'price', 'enabled', 'dueOn', 'happenedAt', 'counterpartyType', 'customerId', 'parentId'],
   'create 剔除 id/insertedAt 系统字段与 exclude'
 )
 eq(resolveFields(cols, 'view', [], {}).some((f) => f.name === 'insertedAt'), true, 'view 保留时间戳系统字段')
@@ -177,6 +188,24 @@ eq(
   missingRequired(reqFields, { code: 'a', seq: 1, enabled: false, counterpartyType: 'customer' }, 'create'),
   ['L:customerId'],
   '条件字段显形后必填生效'
+)
+
+// —— fk 字段:初值归一 + picker/remote 透传 ——
+const fkFields = resolveFields([parentCol], 'create', [], {
+  parentId: { picker: 'dialog', remote: { searchFields: ['name', 'code'] } },
+})
+eq(fkFields[0].picker, 'dialog', 'picker 透传')
+eq(fkFields[0].remote?.searchFields, ['name', 'code'], 'remote 透传')
+eq(initialValues(fkFields, null).parentId, null, 'create fk 初值 null')
+eq(
+  initialValues(resolveFields([parentCol], 'edit', [], {}), { id: '1', parentId: 'u-1' } as unknown as Row).parentId,
+  'u-1',
+  'edit fk 从行数据取 id'
+)
+eq(
+  initialValues(resolveFields([parentCol], 'edit', [], {}), { id: '1', parentId: null } as unknown as Row).parentId,
+  null,
+  'edit fk 空保持 null(不得归一为空串)'
 )
 
 console.log('record-drawer-checks ok')
