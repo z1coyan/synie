@@ -9,7 +9,7 @@ import { ColumnFilterButton, filterSummary } from './filter-popover'
 import { cellText } from './format'
 import { useGridMeta } from './meta'
 import { printRows } from './print'
-import { buildFilterLiteral, buildRowQuery, toSortLiteral } from './query'
+import { buildFilterLiteral, buildRowQuery, nextSort, toSortLiteral } from './query'
 import type { ActionContext, BulkAction, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
 import { useDraft } from './use-debounced'
 import { useGridActions } from './use-grid-actions'
@@ -159,9 +159,10 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     [columns, overrides, filters]
   )
 
-  const sortDescriptor: DataGridSortDescriptor | undefined = sort
-    ? { column: sort.column, direction: sort.direction }
-    : undefined
+  // 取消排序必须传 null 而非 undefined:undefined 会让 DataGrid 退回非受控内部状态,残留首次点击存下的旧描述符
+  const sortDescriptor = (sort ? { column: sort.column, direction: sort.direction } : null) as unknown as
+    | DataGridSortDescriptor
+    | undefined
 
   const [exporting, setExporting] = useState(false)
 
@@ -345,7 +346,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         onSelectionChange={setSelection}
         sortDescriptor={sortDescriptor}
         onSortChange={(d) => {
-          setSort({ column: String(d.column), direction: d.direction })
+          setSort((prev) => nextSort(prev, String(d.column), d.direction))
           setPage(1)
         }}
         renderEmptyState={() => (

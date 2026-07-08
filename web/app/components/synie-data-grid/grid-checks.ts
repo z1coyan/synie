@@ -1,5 +1,5 @@
 // bun app/components/synie-data-grid/grid-checks.ts 可直接运行的纯函数自检
-import { buildFilterLiteral, buildRowQuery, dayEnd, dayStart, toSortLiteral } from './query'
+import { buildFilterLiteral, buildRowQuery, dayEnd, dayStart, nextSort, toSortLiteral } from './query'
 import { toCsv } from './csv'
 import { cellText } from './format'
 import type { GridColumnMeta, Row } from './types'
@@ -22,6 +22,20 @@ function eq(actual: unknown, expected: unknown, label: string) {
 
 eq(toSortLiteral({ column: 'insertedAt', direction: 'descending' }), '[{field: INSERTED_AT, order: DESC}]', 'sort 字面量')
 eq(toSortLiteral(null), null, '空排序')
+
+// 三态排序循环:顺序 → 逆序 → 取消;换列从顺序重新开始
+eq(nextSort(null, 'code', 'ascending'), { column: 'code', direction: 'ascending' }, '首次点击顺序')
+eq(
+  nextSort({ column: 'code', direction: 'ascending' }, 'code', 'descending'),
+  { column: 'code', direction: 'descending' },
+  '再点逆序'
+)
+eq(nextSort({ column: 'code', direction: 'descending' }, 'code', 'ascending'), null, '三点取消排序')
+eq(
+  nextSort({ column: 'code', direction: 'descending' }, 'name', 'ascending'),
+  { column: 'name', direction: 'ascending' },
+  '换列重新顺序'
+)
 
 eq(
   buildFilterLiteral({ name: { kind: 'text', op: 'contains', value: '采购' } }, '', cols),

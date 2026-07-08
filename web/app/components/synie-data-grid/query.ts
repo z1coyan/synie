@@ -10,6 +10,12 @@ export function toSortLiteral(sort: SortState | null): string | null {
   return `[{field: ${toSortField(sort.column)}, order: ${sort.direction === 'descending' ? 'DESC' : 'ASC'}}]`
 }
 
+/** 表头点击三态循环:RAC 原生只在顺/逆序间切换,同列逆序后再点(回绕成顺序)视为第三态「取消排序」 */
+export function nextSort(prev: SortState | null, column: string, direction: SortState['direction']): SortState | null {
+  if (prev && prev.column === column && prev.direction === 'descending' && direction === 'ascending') return null
+  return { column, direction }
+}
+
 const str = (v: string) => JSON.stringify(v)
 
 // 数值不带引号内联,过 Number() 归一化再转回字符串:封掉 "0x10"/" 10 " 等 Number 可解析但 GraphQL 字面量非法的写法;非法值返回 null
