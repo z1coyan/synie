@@ -32,7 +32,8 @@ function columnClause(name: string, filter: FilterState[string], columns: GridCo
       const numeric = col.type === 'integer' || col.type === 'decimal'
       // 数值列不带引号内联,须 Number.isFinite 校验;非法值跳过该端,两端都非法则整个子句为 null
       const valid = (v: string) => !numeric || Number.isFinite(Number(v))
-      const lit = (v: string) => (numeric ? v : str(v))
+      // 数值路径过 Number() 归一化再转回字符串:封掉 "0x10"/" 10 " 等 Number 可解析但 GraphQL 字面量非法的写法
+      const lit = (v: string) => (numeric ? String(Number(v)) : str(v))
       if (filter.gte && valid(filter.gte)) parts.push(`greaterThanOrEqual: ${lit(filter.gte)}`)
       if (filter.lte && valid(filter.lte)) parts.push(`lessThanOrEqual: ${lit(filter.lte)}`)
       return parts.length > 0 ? `{${name}: {${parts.join(', ')}}}` : null

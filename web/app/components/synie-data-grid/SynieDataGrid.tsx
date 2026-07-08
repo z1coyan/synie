@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
 import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, Spinner, toast } from '@heroui/react'
@@ -98,6 +98,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const rows = rowsQuery.data?.results ?? []
   const count = rowsQuery.data?.count ?? 0
   const totalPages = Math.max(1, Math.ceil(count / pageSize))
+
+  // 批量删除清空最后一页后 count 缩小、totalPages 跟着变小,但 page 仍停在越界空页——收敛回最后一页
+  useEffect(() => {
+    if (rowsQuery.data && page > totalPages) setPage(totalPages)
+  }, [rowsQuery.data, page, totalPages])
 
   const gridColumns: DataGridColumn<Row>[] = useMemo(
     () =>
@@ -398,7 +403,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         </ActionBar.Suffix>
       </ActionBar>
 
-      <actions.ConfirmDialog />
+      {actions.confirmDialog}
     </div>
   )
 }

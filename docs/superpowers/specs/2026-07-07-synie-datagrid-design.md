@@ -123,6 +123,7 @@ capabilities 只管前端按钮显隐;真正的权限校验永远在服务端 As
 | `batch_print` | ActionBar「批量打印」 | 同上,选中行渲染打印视图 | `onPrint` |
 | 扩展动作(审核/反审核/关闭…) | 行内菜单及/或 ActionBar(按 `scope`) | **内建**:确认框 → 描述符声明的 mutation(仅记录 id 入参,批量则逐条)→ refetch | `actionHandlers[key]` |
 
+- 批量码(`batch_*`)只叠加在基础码之上:前端 `batch_delete` 按钮要求同时持有 `batch_delete` 与 `delete` 才显示(服务端逐条校验的是基础码)。
 - 内建批量执行为前端逐条 mutation。ponytail: 逐条循环,量大或需事务性时后端加 Ash bulk action 再切。
 - 内建导出为前端循环拉页。ponytail: 数据量大(万行级)时改后端流式导出。
 - 打印默认视图是兜底;正式单据模板(如打印凭证)通过 `onPrint` 走业务实现。

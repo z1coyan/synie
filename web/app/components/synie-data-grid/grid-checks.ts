@@ -72,6 +72,11 @@ eq(
   '{seq: {greaterThanOrEqual: 10}}',
   '数值 range 非法端跳过'
 )
+eq(
+  buildFilterLiteral({ seq: { kind: 'range', gte: '0x10' } }, '', extraCols),
+  '{seq: {greaterThanOrEqual: 16}}',
+  '数值 range token 归一化(0x10 → 16)'
+)
 
 const rows: Row[] = [{ id: '1', code: 'a,b', name: '含"引号"', enabled: true }]
 eq(

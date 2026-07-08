@@ -41,15 +41,20 @@ function RolesPage() {
     }
     setSaving(true)
     try {
-      const data = form.id
-        ? await gqlFetch<{ updateSysRole: { errors: { message: string }[] | null } }>(UPDATE_ROLE, {
-            id: form.id,
-            input: { name: form.name, enabled: form.enabled },
-          })
-        : await gqlFetch<{ createSysRole: { errors: { message: string }[] | null } }>(CREATE_ROLE, {
-            input: { code: form.code, name: form.name, enabled: form.enabled },
-          })
-      const errors = Object.values(data)[0]?.errors
+      // 更新/创建两支返回不同字段名,各自取 errors 而非 Object.values(data)[0](那样会退化为 any)
+      let errors: { message: string }[] | null
+      if (form.id) {
+        const data = await gqlFetch<{ updateSysRole: { errors: { message: string }[] | null } }>(UPDATE_ROLE, {
+          id: form.id,
+          input: { name: form.name, enabled: form.enabled },
+        })
+        errors = data.updateSysRole.errors
+      } else {
+        const data = await gqlFetch<{ createSysRole: { errors: { message: string }[] | null } }>(CREATE_ROLE, {
+          input: { code: form.code, name: form.name, enabled: form.enabled },
+        })
+        errors = data.createSysRole.errors
+      }
       if (errors && errors.length > 0) {
         toast.danger('保存失败', { description: errors.map((e) => e.message).join('; ') })
         return

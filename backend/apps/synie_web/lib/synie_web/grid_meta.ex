@@ -22,7 +22,9 @@ defmodule SynieWeb.GridMeta do
 
   def resources, do: @resources
 
-  defp build(module, actor) do
+  @doc false
+  # 公开仅供白名单 resolve/2 内部调用与测试直接反射(如 GridDoc 测试资源);不构成对外 API。
+  def build(module, actor) do
     %{
       columns: module |> Ash.Resource.Info.public_attributes() |> Enum.map(&column/1),
       capabilities: capabilities(module, actor),
@@ -37,10 +39,15 @@ defmodule SynieWeb.GridMeta do
       type: type_name(attr.type),
       label: attr.description || to_string(attr.name),
       sortable: true,
-      filterable: true,
+      filterable: filterable?(attr.type),
       enum_options: enum_options(attr.type)
     }
   end
+
+  # AshGraphql 的 contains 筛选只对 string/ci_string 生成;uuid 与裸 atom(非枚举,无 values/0)
+  # 若仍标 filterable,跨列搜索/该列筛选会拼出后端不存在的算子,导致整个查询报错。
+  # type 映射仍按 string 处理(展示不受影响),sortable 也不变。
+  defp filterable?(type), do: type not in [Ash.Type.UUID, Ash.Type.Atom]
 
   defp capabilities(module, actor) do
     prefix = module.permission_prefix()

@@ -141,12 +141,15 @@ export function useGridActions(opts: {
         isDanger: a.isDanger ?? false,
         run: (rows: Row[]) => a.onAction(rows, ctx),
       })),
-    ...(can('batch_delete') && meta?.destroyMutation
+    // 批量码叠加在基础码之上:服务端逐条按 delete 校验,只授 batch_delete 不授 delete 会全拒
+    ...(can('batch_delete') && can('delete') && meta?.destroyMutation
       ? [{ key: 'batch_delete', label: '批量删除', isDanger: true, run: confirmThenMutate('批量删除', true, meta.destroyMutation) }]
       : []),
   ]
 
-  const ConfirmDialog = (): ReactNode => (
+  // 渲染为已成型元素而非组件函数:若写成 `const ConfirmDialog = () => (...)` 再 `<actions.ConfirmDialog />`,
+  // 每次渲染都产生新的组件类型,导致弹窗子树整体卸载重建(交互中焦点丢失、退出动画失效)。
+  const confirmDialog: ReactNode = (
     <AlertDialog.Backdrop isOpen={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
       <AlertDialog.Container>
         <AlertDialog.Dialog className="sm:max-w-[400px]">
@@ -184,5 +187,5 @@ export function useGridActions(opts: {
     </AlertDialog.Backdrop>
   )
 
-  return { toolbarActions, rowMenuFor, bulkBarActions, ConfirmDialog }
+  return { toolbarActions, rowMenuFor, bulkBarActions, confirmDialog }
 }

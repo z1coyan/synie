@@ -155,6 +155,27 @@ defmodule SynieWeb.SchemaGridTest do
     }
   end
 
+  # GridMeta.build/2 扩展动作机制测试用:手工构造 actor,权限 MapSet 直填,不经 DB 夹具
+  defp no_perm_actor do
+    %Authz.Actor{
+      user_id: Ash.UUID.generate(),
+      permissions: MapSet.new(),
+      super_admin: false,
+      all_companies: false,
+      company_ids: []
+    }
+  end
+
+  defp actor_with_permissions(codes) do
+    %Authz.Actor{
+      user_id: Ash.UUID.generate(),
+      permissions: MapSet.new(codes),
+      super_admin: false,
+      all_companies: false,
+      company_ids: []
+    }
+  end
+
   # 注意:defp 与模块属性放 describe 外(ExUnit 不允许在 describe 内定义函数)
   @meta_query """
   query ($resource: String!) {
@@ -186,6 +207,9 @@ defmodule SynieWeb.SchemaGridTest do
       assert %{"type" => "boolean", "label" => "启用"} = by_name["enabled"]
       assert %{"type" => "datetime", "label" => "创建时间"} = by_name["insertedAt"]
       assert by_name["id"]["type"] == "string"
+
+      # uuid 列:type 仍映射 string(展示不受影响),但 AshGraphql 不为 UUID 生成 contains,filterable 须为 false
+      assert by_name["id"]["filterable"] == false
     end
 
     test "super_admin 拿到全部能力(不含 read),destroyMutation 正确" do
@@ -233,6 +257,34 @@ defmodule SynieWeb.SchemaGridTest do
         assert action.mutation in mutation_fields,
                "#{inspect(module)} 的扩展动作 mutation #{action.mutation} 不存在于 schema"
       end
+    end
+  end
+
+  describe "GridMeta.build 扩展动作机制" do
+    # 纯反射 + 权限判定,不需要 DB 行;用 test/support/grid_doc.ex 的 GridDoc 资源验证
+    # extended_actions 的传导与 capabilities 的授权过滤(白名单资源现均无扩展动作,机制此前空转)
+
+    test "无权限 actor:capabilities 为空" do
+      built = SynieWeb.GridMeta.build(SynieWeb.Test.GridDoc, no_perm_actor())
+      assert built.capabilities == []
+    end
+
+    test "授权 test.grid_doc:audit:capabilities 命中 audit,extended_actions 原样返回两个描述符" do
+      actor = actor_with_permissions(["test.grid_doc:audit"])
+      built = SynieWeb.GridMeta.build(SynieWeb.Test.GridDoc, actor)
+
+      assert built.capabilities == ["audit"]
+
+      assert [
+               %{key: "audit", label: "审核", scope: "row", is_danger: false},
+               %{key: "close", label: "关闭", scope: "both", is_danger: true}
+             ] =
+               Enum.map(built.extended_actions, &Map.take(&1, [:key, :label, :scope, :is_danger]))
+    end
+
+    test "super_admin:capabilities 拿到 audit 与 close(不含 read)" do
+      built = SynieWeb.GridMeta.build(SynieWeb.Test.GridDoc, super_actor())
+      assert built.capabilities == ["audit", "close"]
     end
   end
 end
