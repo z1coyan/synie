@@ -108,21 +108,30 @@ function FilterControl({
         const next = { kind: 'range' as const, gte: range.gte, lte: range.lte, ...patch }
         onChange(next.gte || next.lte ? next : null)
       }
-      // 后端 datetime 需要完整 ISO;日期输入按当天起止补全
-      const toIso = (v: string, end: boolean) =>
-        v && column.type === 'datetime' ? `${v}T${end ? '23:59:59' : '00:00:00'}Z` : v
+      // 后端 datetime 需要完整 ISO;<input type="date"> 是本地日期语义:取本地日界,转成 UTC 瞬时
+      const toIso = (v: string, end: boolean) => {
+        if (!v || column.type !== 'datetime') return v
+        // 无 Z 后缀按本地时区解析,toISOString 输出正确的 UTC 瞬时
+        return new Date(`${v}T${end ? '23:59:59.999' : '00:00:00'}`).toISOString()
+      }
+      // 回显:datetime 把 UTC 瞬时还原成本地日期;date 列本身就是 YYYY-MM-DD;数值列原样(slice 会截断长数值)
+      const display = (v: string | undefined) => {
+        if (!v) return ''
+        // sv-SE locale 输出 YYYY-MM-DD 格式
+        return column.type === 'datetime' ? new Date(v).toLocaleDateString('sv-SE') : v
+      }
       return (
         <div className="flex flex-col gap-2">
           <Label className="text-xs text-muted">起</Label>
           <Input
             type={isDate ? 'date' : 'number'}
-            value={range.gte?.slice(0, 10) ?? ''}
+            value={display(range.gte)}
             onChange={(e) => update({ gte: toIso(e.target.value, false) || undefined })}
           />
           <Label className="text-xs text-muted">止</Label>
           <Input
             type={isDate ? 'date' : 'number'}
-            value={range.lte?.slice(0, 10) ?? ''}
+            value={display(range.lte)}
             onChange={(e) => update({ lte: toIso(e.target.value, true) || undefined })}
           />
         </div>
