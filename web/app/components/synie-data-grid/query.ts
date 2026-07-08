@@ -20,17 +20,21 @@ function columnClause(name: string, filter: FilterState[string], columns: GridCo
       return filter.contains ? `{${name}: {contains: ${str(filter.contains)}}}` : null
     case 'bool':
       return `{${name}: {eq: ${filter.eq}}}`
-    case 'enum':
-      // AshGraphql 枚举字面量为大写 token,不带引号
-      return filter.values.length > 0
-        ? `{${name}: {in: [${filter.values.map((v) => v.toUpperCase()).join(', ')}]}}`
+    case 'enum': {
+      // AshGraphql 枚举字面量为大写 token,不带引号;先按 enumOptions 白名单过滤,防止任意串裸拼进查询
+      const allowed = filter.values.filter((v) => col.enumOptions?.some((o) => o.value === v))
+      return allowed.length > 0
+        ? `{${name}: {in: [${allowed.map((v) => v.toUpperCase()).join(', ')}]}}`
         : null
+    }
     case 'range': {
       const parts: string[] = []
       const numeric = col.type === 'integer' || col.type === 'decimal'
+      // 数值列不带引号内联,须 Number.isFinite 校验;非法值跳过该端,两端都非法则整个子句为 null
+      const valid = (v: string) => !numeric || Number.isFinite(Number(v))
       const lit = (v: string) => (numeric ? v : str(v))
-      if (filter.gte) parts.push(`greaterThanOrEqual: ${lit(filter.gte)}`)
-      if (filter.lte) parts.push(`lessThanOrEqual: ${lit(filter.lte)}`)
+      if (filter.gte && valid(filter.gte)) parts.push(`greaterThanOrEqual: ${lit(filter.gte)}`)
+      if (filter.lte && valid(filter.lte)) parts.push(`lessThanOrEqual: ${lit(filter.lte)}`)
       return parts.length > 0 ? `{${name}: {${parts.join(', ')}}}` : null
     }
   }

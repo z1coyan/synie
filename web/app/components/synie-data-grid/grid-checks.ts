@@ -44,6 +44,34 @@ eq(
   '行查询'
 )
 
+// enum 白名单 + 数值 range 校验(修复:非法值不得裸拼进查询串)
+const extraCols: GridColumnMeta[] = [
+  ...cols,
+  {
+    name: 'status',
+    type: 'enum',
+    label: '状态',
+    sortable: true,
+    filterable: true,
+    enumOptions: [
+      { value: 'active', label: '启用' },
+      { value: 'disabled', label: '停用' },
+    ],
+  },
+  { name: 'seq', type: 'integer', label: '序号', sortable: true, filterable: true, enumOptions: null },
+]
+
+eq(
+  buildFilterLiteral({ status: { kind: 'enum', values: ['active', 'hacked) { x }'] } }, '', extraCols),
+  '{status: {in: [ACTIVE]}}',
+  'enum 白名单过滤非法值'
+)
+eq(
+  buildFilterLiteral({ seq: { kind: 'range', gte: '10', lte: 'abc' } }, '', extraCols),
+  '{seq: {greaterThanOrEqual: 10}}',
+  '数值 range 非法端跳过'
+)
+
 const rows: Row[] = [{ id: '1', code: 'a,b', name: '含"引号"', enabled: true }]
 eq(
   toCsv([{ name: 'code', label: '编码' }, { name: 'name', label: '名称' }], rows),

@@ -27,7 +27,8 @@ export async function fetchAllRows(
     const data = await gqlFetch<Record<string, { count: number; results: Row[] }>>(query)
     const page = data[resource]
     rows.push(...page.results)
-    offset += EXPORT_PAGE
+    // 按实际返回行数推进:Ash 会把超出 max_page_size 的 limit 静默钳制,固定步进 EXPORT_PAGE 会跳行丢数据
+    offset += page.results.length
     if (rows.length >= page.count || page.results.length === 0) return rows
   }
 }
