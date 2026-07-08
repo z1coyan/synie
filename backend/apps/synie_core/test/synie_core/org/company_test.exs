@@ -8,18 +8,33 @@ defmodule SynieCore.Org.CompanyTest do
   end
 
   test "创建公司树" do
-    group = company!(%{code: "group", name: "集团"})
-    sub = company!(%{code: "sub_a", name: "子公司A", parent_id: group.id})
+    group = company!(%{code: "gr", name: "集团", short_name: "集团"})
+    sub = company!(%{code: "sa", name: "子公司A", short_name: "子A", parent_id: group.id})
 
     assert sub.parent_id == group.id
+    assert sub.short_name == "子A"
     assert is_nil(group.parent_id)
   end
 
   test "公司 code 唯一" do
-    company!(%{code: "dup_co"})
+    company!(%{code: "dp"})
 
     assert_raise Ash.Error.Invalid, fn ->
-      company!(%{code: "dup_co"})
+      company!(%{code: "dp"})
+    end
+  end
+
+  test "公司 code 必须两位英文字母" do
+    for bad <- ["abc", "a", "a1", "中文"] do
+      assert_raise Ash.Error.Invalid, fn ->
+        company!(%{code: bad})
+      end
+    end
+  end
+
+  test "公司简称必填" do
+    assert_raise Ash.Error.Invalid, fn ->
+      company!(%{short_name: nil})
     end
   end
 

@@ -1,5 +1,5 @@
-defmodule SynieCore.Org.Company do
-  @moduledoc "公司(ERPNext 式多公司,单库),对应 `bas_company` 表,树形结构支持集团/合并视角。"
+defmodule SynieCore.Base.Currency do
+  @moduledoc "货币,对应 `bas_currency` 表。iso_code 为 ISO 4217 三位大写字母编码,创建后不可改。"
 
   use Ash.Resource,
     domain: SynieCore,
@@ -8,12 +8,12 @@ defmodule SynieCore.Org.Company do
     authorizers: [Ash.Policy.Authorizer]
 
   postgres do
-    table "bas_company"
+    table "bas_currency"
     repo SynieCore.Repo
   end
 
   graphql do
-    type :bas_company
+    type :bas_currency
   end
 
   policies do
@@ -26,56 +26,46 @@ defmodule SynieCore.Org.Company do
     end
   end
 
-  def permission_prefix, do: "org.company"
+  def permission_prefix, do: "base.currency"
   def permission_actions, do: ~w(create read update delete)
 
   actions do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:code, :name, :short_name, :parent_id]
+      accept [:name, :iso_code, :symbol]
     end
 
     update :update do
-      accept [:name, :short_name, :parent_id]
+      accept [:name, :symbol]
     end
   end
 
   attributes do
     uuid_primary_key :id
 
-    # 公司编号:手动输入,固定两位英文字母,创建后不可改
-    attribute :code, :string do
-      allow_nil? false
-      public? true
-      constraints match: ~r/^[A-Za-z]{2}$/
-    end
-
     attribute :name, :string do
       allow_nil? false
       public? true
-      constraints max_length: 128
+      constraints max_length: 64
     end
 
-    attribute :short_name, :string do
+    attribute :iso_code, :string do
       allow_nil? false
       public? true
-      constraints max_length: 32
+      constraints match: ~r/^[A-Z]{3}$/
+    end
+
+    attribute :symbol, :string do
+      public? true
+      constraints max_length: 8
     end
 
     create_timestamp :inserted_at
     update_timestamp :updated_at
   end
 
-  relationships do
-    belongs_to :parent, __MODULE__ do
-      public? true
-      attribute_public? true
-      attribute_writable? true
-    end
-  end
-
   identities do
-    identity :unique_code, [:code]
+    identity :unique_iso_code, [:iso_code]
   end
 end
