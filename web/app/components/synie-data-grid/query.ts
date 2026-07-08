@@ -1,5 +1,8 @@
 import type { FilterState, GridColumnMeta, SortState } from './types'
 
+/** 手拼查询字面量的 uuid 白名单(fk 筛选/回显反查共用):非法串一律剔除,防注入 */
+export const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+
 /** camelCase → SNAKE 大写(AshGraphql sort field 枚举值) */
 export function toSortField(column: string): string {
   return column.replace(/([A-Z])/g, '_$1').toUpperCase()
@@ -53,6 +56,10 @@ function columnClause(name: string, filter: FilterState[string], columns: GridCo
       return allowed.length > 0
         ? `{${name}: {in: [${allowed.map((v) => v.toUpperCase()).join(', ')}]}}`
         : null
+    }
+    case 'fk': {
+      const ids = filter.values.filter((v) => UUID_RE.test(v))
+      return ids.length > 0 ? `{${name}: {in: [${ids.map(str).join(', ')}]}}` : null
     }
     case 'number': {
       if (filter.op === 'between') {
@@ -123,7 +130,10 @@ export function buildRowQuery(
   opts: { limit: number; offset: number; sortLiteral: string | null; filterLiteral: string | null }
 ): string {
   const names = columns.map((c) => c.name)
-  const fields = (names.includes('id') ? names : ['id', ...names]).join(' ')
+  const scalar = names.includes('id') ? names : ['id', ...names]
+  // fk 列带 join:relation { id labelField },单元格/详情显示 label 零额外请求
+  const joins = columns.filter((c) => c.ref).map((c) => `${c.ref!.relation} { id ${c.ref!.labelField} }`)
+  const fields = [...scalar, ...joins].join(' ')
   const args = [`limit: ${opts.limit}`, `offset: ${opts.offset}`]
   if (opts.sortLiteral) args.push(`sort: ${opts.sortLiteral}`)
   if (opts.filterLiteral) args.push(`filter: ${opts.filterLiteral}`)

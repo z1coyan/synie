@@ -16,6 +16,7 @@ const col = (name: string, type: GridColumnMeta['type'], enumOptions: GridColumn
   sortable: true,
   filterable: true,
   enumOptions,
+  ref: null,
 })
 
 const cols: GridColumnMeta[] = [

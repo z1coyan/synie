@@ -1,8 +1,14 @@
-export type GridColumnType = 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime' | 'enum'
+export type GridColumnType = 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime' | 'enum' | 'fk'
 
 export interface GridEnumOption {
   value: string
   label: string
+}
+
+export interface GridColumnRef {
+  resource: string
+  relation: string
+  labelField: string
 }
 
 export interface GridColumnMeta {
@@ -12,6 +18,7 @@ export interface GridColumnMeta {
   sortable: boolean
   filterable: boolean
   enumOptions: GridEnumOption[] | null
+  ref: GridColumnRef | null
 }
 
 export interface GridActionMeta {
@@ -65,6 +72,7 @@ export type ColumnFilter =
   | { kind: 'number'; op: 'between'; gte?: string; lte?: string }
   | { kind: 'date'; op: DateOp; value: string }
   | { kind: 'date'; op: 'between'; gte?: string; lte?: string }
+  | { kind: 'fk'; values: string[]; labels: string[] }
 
 /** key 为列名(camelCase) */
 export type FilterState = Record<string, ColumnFilter>

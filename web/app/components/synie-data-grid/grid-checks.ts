@@ -5,10 +5,10 @@ import { cellText } from './format'
 import type { GridColumnMeta, Row } from './types'
 
 const cols: GridColumnMeta[] = [
-  { name: 'code', type: 'string', label: '编码', sortable: true, filterable: true, enumOptions: null },
-  { name: 'name', type: 'string', label: '名称', sortable: true, filterable: true, enumOptions: null },
-  { name: 'enabled', type: 'boolean', label: '启用', sortable: true, filterable: true, enumOptions: null },
-  { name: 'insertedAt', type: 'datetime', label: '创建时间', sortable: true, filterable: true, enumOptions: null },
+  { name: 'code', type: 'string', label: '编码', sortable: true, filterable: true, enumOptions: null, ref: null },
+  { name: 'name', type: 'string', label: '名称', sortable: true, filterable: true, enumOptions: null, ref: null },
+  { name: 'enabled', type: 'boolean', label: '启用', sortable: true, filterable: true, enumOptions: null, ref: null },
+  { name: 'insertedAt', type: 'datetime', label: '创建时间', sortable: true, filterable: true, enumOptions: null, ref: null },
 ]
 
 function eq(actual: unknown, expected: unknown, label: string) {
@@ -92,8 +92,9 @@ const extraCols: GridColumnMeta[] = [
       { value: 'active', label: '启用' },
       { value: 'disabled', label: '停用' },
     ],
+    ref: null,
   },
-  { name: 'seq', type: 'integer', label: '序号', sortable: true, filterable: true, enumOptions: null },
+  { name: 'seq', type: 'integer', label: '序号', sortable: true, filterable: true, enumOptions: null, ref: null },
 ]
 
 eq(
@@ -124,7 +125,7 @@ eq(
 
 // 纯 date 列(非 datetime)直接比日期字符串,不换算日界
 const dateCols: GridColumnMeta[] = [
-  { name: 'dueOn', type: 'date', label: '截止日', sortable: true, filterable: true, enumOptions: null },
+  { name: 'dueOn', type: 'date', label: '截止日', sortable: true, filterable: true, enumOptions: null, ref: null },
 ]
 eq(
   buildFilterLiteral({ dueOn: { kind: 'date', op: 'eq', value: '2026-01-05' } }, '', dateCols),
@@ -154,5 +155,32 @@ eq(
   '编码,启用\r\n"a,b",是',
   'CSV 格式化器 boolean→是'
 )
+
+// —— fk 筛选(uuid 白名单)与行查询 join ——
+const uuid1 = '11111111-1111-1111-1111-111111111111'
+const fkCol: GridColumnMeta = {
+  name: 'parentId',
+  type: 'fk',
+  label: '上级公司',
+  sortable: false,
+  filterable: true,
+  enumOptions: null,
+  ref: { resource: 'basCompanies', relation: 'parent', labelField: 'name' },
+}
+eq(
+  buildFilterLiteral({ parentId: { kind: 'fk', values: [uuid1, 'DROP TABLE'], labels: ['集团'] } }, '', [fkCol]),
+  `{parentId: {in: ["${uuid1}"]}}`,
+  'fk 筛选:合法 uuid 进 in,非法串剔除'
+)
+eq(buildFilterLiteral({ parentId: { kind: 'fk', values: ['nope'], labels: [] } }, '', [fkCol]), null, 'fk 全非法为 null')
+eq(
+  buildRowQuery('basCompanies', [fkCol], { limit: 10, offset: 0, sortLiteral: null, filterLiteral: null }),
+  'query { basCompanies(limit: 10, offset: 0) { count results { id parentId parent { id name } } } }',
+  'fk 行查询带 join'
+)
+const fkRow = { id: 'x', parentId: uuid1, parent: { id: uuid1, name: '集团总部' } } as unknown as Row
+eq(cellText(fkCol, uuid1, fkRow), '集团总部', 'fk cellText 读 join label')
+eq(cellText(fkCol, uuid1, { id: 'x', parent: null } as unknown as Row), '11111111', 'join 缺失退回截断 id')
+eq(cellText(fkCol, null, { id: 'x' } as unknown as Row), '', 'fk 空值为空串')
 
 console.log('grid-checks ok')

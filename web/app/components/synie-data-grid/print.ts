@@ -13,7 +13,7 @@ export function printRows(columns: GridColumnMeta[], rows: Row[], title: string)
   if (!win) return false
   const head = columns.map((c) => `<th>${esc(c.label)}</th>`).join('')
   const body = rows
-    .map((r) => `<tr>${columns.map((c) => `<td>${esc(cellText(c, r[c.name]))}</td>`).join('')}</tr>`)
+    .map((r) => `<tr>${columns.map((c) => `<td>${esc(cellText(c, r[c.name], r))}</td>`).join('')}</tr>`)
     .join('')
   win.document.write(`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title>

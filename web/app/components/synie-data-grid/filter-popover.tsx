@@ -72,6 +72,8 @@ export function filterSummary(col: GridColumnMeta, f: ColumnFilter): string {
       return f.op === 'between' ? `${f.gte ?? ''} ~ ${f.lte ?? ''}` : `${NUMBER_OP_LABEL[f.op]} ${f.value}`
     case 'date':
       return f.op === 'between' ? `${f.gte ?? ''} ~ ${f.lte ?? ''}` : `${DATE_OP_LABEL[f.op]} ${f.value}`.trim()
+    case 'fk':
+      return f.labels.join('、')
   }
 }
 
