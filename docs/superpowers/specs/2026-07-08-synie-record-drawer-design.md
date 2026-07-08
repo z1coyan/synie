@@ -4,7 +4,7 @@
 
 ## 组件形态
 
-`web/app/components/synie-record-drawer/`，外壳 `@heroui-pro/react` Sheet `placement="right"`（移动端 `w-full`，桌面 `sm:max-w-md` 起步）。
+`web/app/components/synie-record-drawer/`，外壳 `@heroui-pro/react` Sheet `placement="right"`（移动端 `w-full`，桌面 `lg:w-[480px]` 起步，断点统一 `lg`）。
 
 ```ts
 interface SynieRecordDrawerProps {
@@ -24,7 +24,8 @@ interface FieldOverride {
   cols?: number                     // 1–12，默认 12（一行一个）
   required?: boolean
   edit?: 'editable' | 'createOnly' | 'readOnly'   // 默认 'editable'
-  placeholder?: string              // readOnly 创建态占位提示，如"保存后自动生成"
+  placeholder?: string              // 输入占位；readOnly 创建态用作"保存后自动生成"类提示
+  defaultValue?: unknown            // create 态初值（如 enabled 默认 true）；不填按类型取 ''/false/null
   visible?: (values: Record<string, unknown>) => boolean   // 条件字段，默认恒真
   render?: (value: unknown, row: Row) => ReactNode          // view 态自定义渲染
   input?: (p: { value: unknown; onChange: (v: unknown) => void; isDisabled: boolean }) => ReactNode
@@ -56,7 +57,7 @@ interface FieldOverride {
 
 ## 布局
 
-`grid grid-cols-1 sm:grid-cols-12 gap-4`，每字段 `sm:col-span-{cols}`，默认 12。移动端（<sm）无条件单列，cols 只在桌面生效。Tailwind v4 JIT 扫不到动态类名，cols 1–12 用静态映射表。
+`grid grid-cols-1 lg:grid-cols-12 gap-4`，每字段 `lg:col-span-{cols}`，默认 12。移动端（<lg，项目守则统一断点 1024px）无条件单列，cols 只在桌面生效。Tailwind v4 JIT 扫不到动态类名，cols 1–12 用静态映射表。
 
 ## 控件分发与详情渲染
 
