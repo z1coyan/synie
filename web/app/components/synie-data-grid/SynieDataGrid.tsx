@@ -65,7 +65,11 @@ export function selectedRows(selection: Selection, rows: Row[]): Row[] {
   return rows.filter((r) => selection.has(r.id))
 }
 
-function defaultCell(col: GridColumnMeta, value: unknown): ReactNode {
+function defaultCell(col: GridColumnMeta, value: unknown, row: Row): ReactNode {
+  if (col.type === 'fk' && col.ref) {
+    const text = cellText(col, value, row)
+    return text || <span className="text-muted">—</span>
+  }
   if (value == null || value === '') return <span className="text-muted">—</span>
   switch (col.type) {
     case 'boolean':
@@ -156,7 +160,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         isRowHeader: i === 0,
         allowsSorting: col.sortable,
         width: overrides[col.name]?.width,
-        cell: (row: Row) => overrides[col.name]?.render?.(row[col.name], row) ?? defaultCell(col, row[col.name]),
+        cell: (row: Row) => overrides[col.name]?.render?.(row[col.name], row) ?? defaultCell(col, row[col.name], row),
       })),
     [columns, overrides, filters]
   )

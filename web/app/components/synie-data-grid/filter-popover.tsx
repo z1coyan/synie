@@ -15,7 +15,8 @@ import {
   Select,
   Switch,
 } from '@heroui/react'
-import type { ColumnFilter, DateOp, GridColumnMeta, NumberOp, TextOp } from './types'
+import { RemoteMultiSelect } from '../synie-remote-select/RemoteMultiSelect'
+import type { ColumnFilter, DateOp, GridColumnMeta, GridColumnRef, NumberOp, TextOp } from './types'
 import { useDraft } from './use-debounced'
 
 // 弹层 DOM 上 portal 到了表格外,但 React 合成事件仍沿组件树冒泡回可排序的 <th>:
@@ -173,6 +174,11 @@ function FilterControl({
           })}
         </div>
       )
+    case 'fk':
+      // ref 为 null 时后端已标 filterable=false,不会走到这里;防御性放空
+      return column.ref ? (
+        <FkFilter colRef={column.ref} filter={filter?.kind === 'fk' ? filter : undefined} onChange={onChange} />
+      ) : null
     case 'integer':
     case 'decimal':
       return <NumberFilter filter={filter?.kind === 'number' ? filter : undefined} onChange={onChange} />
@@ -211,6 +217,37 @@ function OpSelect<K extends string>({
         </ListBox>
       </Select.Popover>
     </Select>
+  )
+}
+
+function FkFilter({
+  colRef,
+  filter,
+  onChange,
+}: {
+  colRef: GridColumnRef
+  filter: Extract<ColumnFilter, { kind: 'fk' }> | undefined
+  onChange: (f: ColumnFilter | null) => void
+}) {
+  return (
+    <RemoteMultiSelect
+      resource={colRef.resource}
+      labelField={colRef.labelField}
+      value={filter?.values ?? []}
+      placeholder="选择筛选值…"
+      onChange={(ids, rows) => {
+        if (ids.length === 0) return onChange(null)
+        const byId = new Map(rows.map((r) => [r.id, r]))
+        onChange({
+          kind: 'fk',
+          values: ids,
+          labels: ids.map((id) => {
+            const r = byId.get(id)
+            return r && r[colRef.labelField] != null ? String(r[colRef.labelField]) : id.slice(0, 8)
+          }),
+        })
+      }}
+    />
   )
 }
 
