@@ -8,3 +8,9 @@
 - 带 `company_id` 的资源:所有能写 `company_id` 的动作(含 update)都要挂 `CompanyAccessible` 校验。
 - 公司数据权限 fail-closed:`sys_user_company` 显式授权才可见;`all_companies`/`super_admin` 例外。
 - `authorize?: false` 仅限受信内部路径(actor 构建、seeds、测试夹具)。
+## 审计
+
+- 新可写资源默认接审计:`use Ash.Resource` 加 `fragments: [SynieCore.Audit.Fragment]`。
+- 受审计资源的每个 update/destroy 动作加 `require_atomic? false`;显式声明的 destroy 需 `primary? true`。
+- 受审计资源批量操作用 `strategy: :stream`(`:atomic` 会绕过审计)。
+- 敏感字段必须标 `sensitive? true`,否则值明文进审计日志。
