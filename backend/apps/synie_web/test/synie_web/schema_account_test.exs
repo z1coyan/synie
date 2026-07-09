@@ -74,10 +74,10 @@ defmodule SynieWeb.SchemaAccountTest do
 
     assert %{data: %{"initBasAccountFromTemplate" => 70}} = init
 
-    # 根层:parentId 为空 + 公司过滤,带 childrenCount(前端据此显示展开箭头)
+    # 根层:parentId 为空 + 公司过滤,带 hasChildren(前端据此显示展开箭头)
     roots =
       run!(
-        ~s|query { basAccounts(filter: {parentId: {isNil: true}, companyId: {eq: "#{co.id}"}}, sort: [{field: CODE, order: ASC}]) { count results { id code name childrenCount } } }|,
+        ~s|query { basAccounts(filter: {parentId: {isNil: true}, companyId: {eq: "#{co.id}"}}, sort: [{field: CODE, order: ASC}]) { count results { id code name hasChildren } } }|,
         actor
       )
 
@@ -85,7 +85,7 @@ defmodule SynieWeb.SchemaAccountTest do
     assert length(root_rows) == 5
     asset = Enum.find(root_rows, &(&1["code"] == "1"))
     assert asset["name"] == "资产"
-    assert asset["childrenCount"] > 0
+    assert asset["hasChildren"] == true
 
     # 子层:按 parentId eq 拉直接子科目(前端展开时的懒加载请求)
     children =

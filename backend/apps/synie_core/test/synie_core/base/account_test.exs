@@ -30,8 +30,8 @@ defmodule SynieCore.Base.AccountTest do
     root = account!(%{code: "1", name: "资产", direction: :debit, is_group: true, company_id: co.id})
     account!(%{code: "1001", name: "库存现金", direction: :debit, parent_id: root.id, company_id: co.id})
 
-    root = Ash.get!(Account, root.id, load: [:children_count], authorize?: false)
-    assert root.children_count == 1
+    root = Ash.get!(Account, root.id, load: [:has_children], authorize?: false)
+    assert root.has_children == true
   end
 
   test "编码同公司唯一,跨公司可重复", %{company: co} do

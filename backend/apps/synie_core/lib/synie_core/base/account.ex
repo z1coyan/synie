@@ -222,11 +222,12 @@ defmodule SynieCore.Base.Account do
     end
   end
 
-  aggregates do
-    # 前端树形懒加载靠它判断是否显示展开箭头
-    count :children_count, :children do
+  calculations do
+    # 有无下级:前端树形懒加载据此显示展开箭头。用 exists 表达式(编译为 SQL EXISTS 子查询,可内联),
+    # 不用 count 聚合——自引用 has_many 的 count 聚合在本 ash_postgres 版本会走"load parent record"策略并报错
+    calculate :has_children, :boolean, expr(exists(children, true)) do
       public? true
-      description "下级科目数"
+      description "有下级科目"
     end
   end
 

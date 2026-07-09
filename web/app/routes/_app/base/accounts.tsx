@@ -159,8 +159,8 @@ function AccountsPage() {
           <SynieDataGrid
             key={`${companyId}-${reloadKey}`}
             resource="basAccounts"
-            exclude={['parentId', 'companyId', 'childrenCount']}
-            tree={{ sort: { field: 'code', order: 'ASC' } }}
+            exclude={['parentId', 'companyId', 'hasChildren']}
+            tree={{ hasChildrenField: 'hasChildren', sort: { field: 'code', order: 'ASC' } }}
             fixedFilter={{ companyId: { eq: companyId } }}
             onView={(row) => setDrawer({ mode: 'view', row })}
             onCreate={() => setDrawer({ mode: 'create', row: null })}
