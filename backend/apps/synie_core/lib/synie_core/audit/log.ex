@@ -75,6 +75,9 @@ defmodule SynieCore.Audit.Log do
   attributes do
     uuid_primary_key :id
 
+    # 声明在最前:GridMeta 列序即属性声明序,审计日志按惯例时间列在首
+    create_timestamp :inserted_at, public?: true, description: "操作时间"
+
     attribute :resource, :string do
       allow_nil? false
       public? true
@@ -125,7 +128,5 @@ defmodule SynieCore.Audit.Log do
       public? true
       description "变更内容"
     end
-
-    create_timestamp :inserted_at, public?: true, description: "操作时间"
   end
 end
