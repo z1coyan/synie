@@ -21,25 +21,15 @@ interface SyniePermissionSheetProps {
   roleName: string                  // 标题「配置权限:{roleName}」
   isOpen: boolean
   onOpenChange: (open: boolean) => void
+  readOnly?: boolean                // 页面按 myPermissions 判后传入
 }
 ```
 
 外壳 `@heroui-pro/react` Sheet `placement="right"`,`w-full lg:w-[720px]`(比记录抽屉宽,矩阵需要宽度;断点统一 `lg`)。
 
-## 入口:SynieDataGrid 扩 extraRowActions
+## 入口:SynieDataGrid 现成 rowActions
 
-本轮唯一的通用组件扩展。现有 grid_actions 是后端 mutation 型;这个是前端回调型,追加进行菜单,两者并存:
-
-```ts
-interface ExtraRowAction {
-  key: string
-  label: string
-  onAction: (row: Row) => void
-  visible?: boolean                 // 页面按 myPermissions 判后传入,默认 true
-}
-```
-
-角色页传「配置权限」打开 Sheet。
+SynieDataGrid 已支持页面级自定义行动作(`rowActions?: RowAction[]`,use-grid-actions 渲染进行菜单),零组件改动。角色页按 myPermissions 判定后传入「配置权限」动作打开 Sheet(RowAction 自带的 `capability` 门控走的是本资源 meta capabilities,跨资源码用不上,由页面条件传入代替)。
 
 ## 数据流与勾选初态
 
@@ -50,8 +40,7 @@ interface ExtraRowAction {
 ## 矩阵布局
 
 - 按域分组(域标题行),每个资源一行。
-- 列 = 8 个标准动作码固定列(create/read/update/delete/batch_delete/export/print/batch_print),资源不具备的动作格显示「—」。
-- 工作流等非标动作追加在行尾。
+- 列 = catalog 中出现过的动作并集,按规范顺序排(后端 `Permission.default_actions` 的 10 码:create/read/update/delete/print/import/export/batch_delete/batch_update/batch_print),非标动作(工作流码)排尾;资源不具备的动作格显示「—」。
 - 中文标签查 `permission-labels.ts` 三个映射表,漏码原样显示英文(同 logs.tsx 模式)。
 - 整域/整资源全选 v1 不做,列跟进项。
 
@@ -67,7 +56,7 @@ interface ExtraRowAction {
 
 ## 门控
 
-按 `myPermissions` 判(前端有无全局缓存 plan 阶段确认,没有则组件/页面内拉):
+按 `myPermissions` 判(前端目前零使用、无全局缓存,由角色页在挂载时拉一次,入口显隐与 `readOnly` 都由页面判定后传入):
 
 - 无 `sys.role_permission:read`:行菜单不显示「配置权限」。
 - `sys.role_permission:create` 与 `delete` 需同时具备才可编辑,缺任一则矩阵只读、保存钮不出。
