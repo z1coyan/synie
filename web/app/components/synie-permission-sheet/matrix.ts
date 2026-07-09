@@ -16,7 +16,7 @@ export interface MatrixDiff {
   toDestroyIds: string[] // 需删除的 sys_role_permission 行 id
 }
 
-/** 展示规范序 = 后端 Permission.default_actions;catalog 出现的非标动作(工作流码)排尾 */
+/** 展示顺序(动作全集与后端 Permission.default_actions 一致,顺序为前端展示序);catalog 出现的非标动作(工作流码)排尾 */
 export const CANONICAL_ACTIONS = [
   'create', 'read', 'update', 'delete', 'print', 'import',
   'export', 'batch_delete', 'batch_update', 'batch_print',

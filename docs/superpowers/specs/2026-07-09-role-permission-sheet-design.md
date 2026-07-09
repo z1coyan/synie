@@ -40,7 +40,7 @@ SynieDataGrid 已支持页面级自定义行动作(`rowActions?: RowAction[]`,us
 ## 矩阵布局
 
 - 按域分组(域标题行),每个资源一行。
-- 列 = catalog 中出现过的动作并集,按规范顺序排(后端 `Permission.default_actions` 的 10 码:create/read/update/delete/print/import/export/batch_delete/batch_update/batch_print),非标动作(工作流码)排尾;资源不具备的动作格显示「—」。
+- 列 = catalog 中出现过的动作并集(动作集合来自后端 `Permission.default_actions` 的 10 码:create/read/update/delete/print/import/export/batch_delete/batch_update/batch_print),顺序为前端展示序,非标动作(工作流码)排尾;资源不具备的动作格显示「—」。
 - 中文标签查 `permission-labels.ts` 三个映射表,漏码原样显示英文(同 logs.tsx 模式)。
 - 整域/整资源全选 v1 不做,列跟进项。
 

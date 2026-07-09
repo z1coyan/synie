@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Checkbox, Spinner, Table, toast } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { gqlFetch } from '~/lib/graphql'
@@ -16,16 +16,17 @@ export interface SyniePermissionSheetProps {
 }
 
 interface Loaded {
+  roleId: string
   catalog: CatalogGroup[]
   rows: GrantedRow[]
 }
 
-// roleId 为服务端签发的 uuid,内插进查询串(同 remote-query.ts 的 filter 先例)。
+// roleId 内插进查询串,JSON.stringify 转义(同 remote-query.ts buildOptionsQuery/buildByIdQuery 的转义先例)。
 // list 统一 offset 分页(backend/CLAUDE.md);limit 200 = max_page_size,权限行数量级远小于此,一页取足。
 const loadQuery = (roleId: string) => `
   query {
     permissionCatalog { prefix actions }
-    sysRolePermissions(filter: { roleId: { eq: "${roleId}" } }, limit: 200, offset: 0) {
+    sysRolePermissions(filter: { roleId: { eq: ${JSON.stringify(roleId)} } }, limit: 200, offset: 0) {
       count
       results { id permission }
     }
@@ -51,6 +52,14 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
   const [saving, setSaving] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
 
+  // 关闭动画期间冻结最后一次打开时的角色名:onOpenChange(false) 后父级常把 roleName 跟着
+  // 置空(见 roles.tsx 的 setPermRole(null)),若标题实时跟 props,会在 Sheet 退出动画播放期间
+  // 闪成「配置权限:」空名。isOpen 为 true 时把 roleName 存入 ref;isOpen 为 false 时标题改读
+  // ref 里的快照(从未打开过则退回当前 props),同 SynieRecordDrawer 的 lastOpenRef 模式。
+  const lastRoleNameRef = useRef(props.roleName)
+  if (isOpen) lastRoleNameRef.current = props.roleName
+  const displayRoleName = isOpen ? props.roleName : lastRoleNameRef.current
+
   // 打开/换角色/手动重试时重拉;关闭时保留旧数据无碍(重开必然重拉)
   useEffect(() => {
     if (!isOpen || !roleId) return
@@ -63,8 +72,15 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
     }>(loadQuery(roleId))
       .then((res) => {
         if (cancelled) return
-        setData({ catalog: res.permissionCatalog, rows: res.sysRolePermissions.results })
-        setChecked(initialChecked(res.permissionCatalog, res.sysRolePermissions.results))
+        const { count, results } = res.sysRolePermissions
+        // limit 200 = max_page_size;count 超出已取回行数说明单页被截断,若照常渲染会把没
+        // 取到的授权行当成"未授予"展示,勾选/保存都会 fail-open 地把它们错误回收掉。
+        if (count > results.length) {
+          setError('权限行数超出单页容量(200),请联系开发处理')
+          return
+        }
+        setData({ roleId, catalog: res.permissionCatalog, rows: results })
+        setChecked(initialChecked(res.permissionCatalog, results))
       })
       .catch((e) => {
         if (!cancelled) setError((e as Error).message)
@@ -73,6 +89,12 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
       cancelled = true
     }
   }, [isOpen, roleId, reloadKey])
+
+  // 换角色时 props.roleId 先于 setData(null) 生效的那一帧,data 仍是上一个角色的:isOpen 为
+  // true 时用 data.roleId === roleId 兜底,不匹配就当未加载(走 Spinner 分支),避免闪出上一
+  // 角色的勾选;不在渲染期 setState,effect 稍后会自然把 data 重置为 null 再重拉。isOpen 为
+  // false(退场动画中)时 roleId 常同步被父级置空,不做该校验,沿用旧数据保持画面不闪空。
+  const loaded = isOpen ? (data && data.roleId === roleId ? data : null) : data
 
   const toggle = (code: string, selected: boolean) =>
     setChecked((prev) => {
@@ -83,8 +105,8 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
     })
 
   const save = async () => {
-    if (!data || !roleId) return
-    const diff = buildDiff(data.catalog, data.rows, checked)
+    if (!loaded || !roleId) return
+    const diff = buildDiff(loaded.catalog, loaded.rows, checked)
     if (diff.toCreate.length === 0 && diff.toDestroyIds.length === 0) {
       props.onOpenChange(false)
       return
@@ -105,14 +127,15 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
         }
       }),
       ...diff.toDestroyIds.map(async (id) => {
+        const code = loaded.rows.find((r) => r.id === id)?.permission ?? id
         try {
           const res = await gqlFetch<{ destroySysRolePermission: { errors: { message: string }[] | null } }>(
             DESTROY,
             { id }
           )
-          if (res.destroySysRolePermission.errors?.length) failed.push(`删除失败(行 ${id})`)
+          if (res.destroySysRolePermission.errors?.length) failed.push(`回收失败:${code}`)
         } catch {
-          failed.push(`删除失败(行 ${id})`)
+          failed.push(`回收失败:${code}`)
         }
       }),
     ])
@@ -126,7 +149,7 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
     }
   }
 
-  const columns = data ? actionColumns(data.catalog) : []
+  const columns = loaded ? actionColumns(loaded.catalog) : []
 
   return (
     <Sheet isOpen={isOpen} onOpenChange={props.onOpenChange} placement="right">
@@ -135,7 +158,7 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
           <Sheet.Dialog className="h-full">
             <Sheet.CloseTrigger />
             <Sheet.Header>
-              <Sheet.Heading>配置权限:{props.roleName}</Sheet.Heading>
+              <Sheet.Heading>配置权限:{displayRoleName}</Sheet.Heading>
             </Sheet.Header>
             <Sheet.Body>
               {error ? (
@@ -150,13 +173,13 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
                     </Button>
                   </EmptyState.Content>
                 </EmptyState>
-              ) : !data ? (
+              ) : !loaded ? (
                 <div className="flex h-32 items-center justify-center">
                   <Spinner />
                 </div>
               ) : (
                 <div className="flex flex-col gap-6">
-                  {groupByDomain(data.catalog).map((bucket) => (
+                  {groupByDomain(loaded.catalog).map((bucket) => (
                     <section key={bucket.domain}>
                       <h3 className="mb-2 text-sm font-medium text-ink-500">{domainLabel(bucket.domain)}</h3>
                       <Table>
@@ -213,7 +236,7 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
                 </Button>
               </Sheet.Close>
               {!props.readOnly && (
-                <Button onPress={save} isPending={saving} isDisabled={!data}>
+                <Button onPress={save} isPending={saving} isDisabled={!loaded}>
                   保存
                 </Button>
               )}
