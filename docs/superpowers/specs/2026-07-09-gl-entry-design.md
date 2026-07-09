@@ -69,7 +69,7 @@
 | `idx` | 行号,integer |
 | `account_id` | → bas_account,非空 |
 | `currency_id` | 币种 = 科目币种,保存行时从科目复制,不可手改 |
-| `debit` / `credit` | 借/贷金额,CHECK 同 gl_entry |
+| `debit` / `credit` | 借/贷金额,CHECK 放宽为非负且**至多**一边 > 0(草稿行允许 0/0 逐步录入);"恰一边 > 0"在审核时校验 |
 | `party_type` / `party_id` | 对手类型(供应商/客户)与对手 id,多态,可空、同空同有 |
 | `remarks` | 行备注,可空 |
 
@@ -77,7 +77,7 @@
 - create/update/destroy 均校验父凭证必须处于草稿态。
 - 接审计 Fragment。
 
-`party_type` 枚举(`SynieCore.Acc.PartyType`:supplier 供应商 / customer 客户)由行与分录共用;供应商/客户主数据资源尚不存在,`party_id` 先为裸 uuid,主数据落地后接 RemoteSelect 与校验。**该列必须第一天存在**:应收/应付科目入账缺 party 是回填数据之痛,不是加列之痛。
+`party_type` 枚举(`SynieCore.Acc.PartyType`:supplier 供应商 / customer 客户)由行与分录共用。客户/供应商主数据已落地(`sal_customers` / `pur_supplier`),行保存时按 `party_type` 查对应表做存在性校验;多态引用无真外键,DB 层只保证与 `party_type` 同空同有。
 
 ## 过账机制
 
@@ -110,5 +110,4 @@ draft ──audit──▶ audited ──cancel──▶ cancelled(终态)
 - 公司本位币字段与多币种(汇率、原币/本位币双金额列);当前金额一律视为本位币,币种字段仅标识
 - 报表:试算平衡、科目余额表、明细账页面
 - 凭证打印视图(按 voucher 分组渲染分录即可,无需物理凭证中间层)
-- 供应商/客户主数据及 party 真实引用校验
 - 前端凭证录入页与分录查询页
