@@ -2,6 +2,8 @@
 export const DOMAIN_LABELS: Record<string, string> = {
   sys: '系统',
   base: '基础资料',
+  sales: '销售',
+  purchase: '采购',
 }
 
 export const RESOURCE_LABELS: Record<string, string> = {
@@ -13,6 +15,8 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'base.unit': '计量单位',
   'base.currency': '币种',
   'base.account': '会计科目',
+  'sales.customer': '客户',
+  'purchase.supplier': '供应商',
 }
 
 export const ACTION_LABELS: Record<string, string> = {

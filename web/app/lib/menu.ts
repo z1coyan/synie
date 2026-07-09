@@ -102,6 +102,13 @@ export const menuModules: MenuModule[] = [
           { label: '库存查询', path: '/scm/inventory' },
         ],
       },
+      {
+        label: '往来单位',
+        items: [
+          { label: '客户管理', path: '/scm/customers' },
+          { label: '供应商管理', path: '/scm/suppliers' },
+        ],
+      },
     ],
   },
   {

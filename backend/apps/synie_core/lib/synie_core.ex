@@ -14,6 +14,8 @@ defmodule SynieCore do
       list SynieCore.Base.Unit, :bas_units, :read, paginate_with: :offset
       list SynieCore.Base.Currency, :bas_currencies, :read, paginate_with: :offset
       list SynieCore.Base.Account, :bas_accounts, :read, paginate_with: :offset
+      list SynieCore.Sales.Customer, :sal_customers, :read, paginate_with: :offset
+      list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
     end
 
@@ -51,6 +53,14 @@ defmodule SynieCore do
       update SynieCore.Base.Account, :update_bas_account, :update
       destroy SynieCore.Base.Account, :destroy_bas_account, :destroy
       action SynieCore.Base.Account, :init_bas_account_from_template, :init_from_template
+
+      create SynieCore.Sales.Customer, :create_sal_customer, :create
+      update SynieCore.Sales.Customer, :update_sal_customer, :update
+      destroy SynieCore.Sales.Customer, :destroy_sal_customer, :destroy
+
+      create SynieCore.Purchase.Supplier, :create_pur_supplier, :create
+      update SynieCore.Purchase.Supplier, :update_pur_supplier, :update
+      destroy SynieCore.Purchase.Supplier, :destroy_pur_supplier, :destroy
     end
   end
 
@@ -64,6 +74,8 @@ defmodule SynieCore do
     resource SynieCore.Base.Unit
     resource SynieCore.Base.Currency
     resource SynieCore.Base.Account
+    resource SynieCore.Sales.Customer
+    resource SynieCore.Purchase.Supplier
     resource SynieCore.Audit.Log
   end
 end
