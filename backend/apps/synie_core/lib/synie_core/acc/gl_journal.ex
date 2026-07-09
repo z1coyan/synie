@@ -37,6 +37,8 @@ defmodule SynieCore.Acc.GlJournal do
     authorizers: [Ash.Policy.Authorizer],
     fragments: [SynieCore.Audit.Fragment]
 
+  require Ash.Query
+
   postgres do
     table "acc_gl_journal"
     repo SynieCore.Repo
@@ -103,6 +105,72 @@ defmodule SynieCore.Acc.GlJournal do
       require_atomic? false
 
       validate {SynieCore.Acc.JournalDraft, []}
+    end
+
+    update :audit do
+      accept []
+      require_atomic? false
+
+      validate fn changeset, _context ->
+        if changeset.data.status == :draft, do: :ok, else: {:error, message: "仅草稿凭证可审核"}
+      end
+
+      validate fn changeset, _context ->
+        case SynieCore.Acc.GL.validate_entries(
+               changeset.data.company_id,
+               __MODULE__.load_line_entries(changeset.data.id)
+             ) do
+          :ok -> :ok
+          {:error, msg} -> {:error, message: msg}
+        end
+      end
+
+      change fn changeset, context ->
+        changeset
+        |> Ash.Changeset.force_change_attribute(:status, :audited)
+        |> Ash.Changeset.force_change_attribute(:submitted_at, DateTime.utc_now())
+        |> then(fn cs ->
+          case context.actor do
+            %SynieCore.Authz.Actor{user_id: user_id} ->
+              Ash.Changeset.force_change_attribute(cs, :submitted_by_id, user_id)
+
+            _ ->
+              cs
+          end
+        end)
+        |> Ash.Changeset.after_action(fn _changeset, journal ->
+          SynieCore.Acc.GL.post!(
+            %{
+              voucher_type: "acc.gl_journal",
+              voucher_id: journal.id,
+              voucher_no: journal.voucher_no,
+              company_id: journal.company_id,
+              posting_date: journal.posting_date
+            },
+            __MODULE__.load_line_entries(journal.id)
+          )
+
+          {:ok, journal}
+        end)
+      end
+    end
+
+    update :cancel do
+      accept []
+      require_atomic? false
+
+      validate fn changeset, _context ->
+        if changeset.data.status == :audited, do: :ok, else: {:error, message: "仅已审核凭证可取消"}
+      end
+
+      change fn changeset, _context ->
+        changeset
+        |> Ash.Changeset.force_change_attribute(:status, :cancelled)
+        |> Ash.Changeset.after_action(fn _changeset, journal ->
+          SynieCore.Acc.GL.cancel!("acc.gl_journal", journal.id)
+          {:ok, journal}
+        end)
+      end
     end
   end
 
@@ -183,5 +251,17 @@ defmodule SynieCore.Acc.GlJournal do
 
   identities do
     identity :unique_voucher_no_per_company, [:company_id, :voucher_no]
+  end
+
+  @doc false
+  # 读凭证全部行并转成 GL entries 形状(audit 的校验与过账共用)
+  def load_line_entries(journal_id) do
+    SynieCore.Acc.GlJournalLine
+    |> Ash.Query.filter(journal_id == ^journal_id)
+    |> Ash.Query.sort(idx: :asc)
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(
+      &Map.take(&1, [:account_id, :currency_id, :debit, :credit, :party_type, :party_id, :remarks])
+    )
   end
 end

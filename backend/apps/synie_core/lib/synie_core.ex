@@ -73,6 +73,8 @@ defmodule SynieCore do
       create SynieCore.Acc.GlJournal, :create_acc_gl_journal, :create
       update SynieCore.Acc.GlJournal, :update_acc_gl_journal, :update
       destroy SynieCore.Acc.GlJournal, :destroy_acc_gl_journal, :destroy
+      update SynieCore.Acc.GlJournal, :audit_acc_gl_journal, :audit
+      update SynieCore.Acc.GlJournal, :cancel_acc_gl_journal, :cancel
 
       create SynieCore.Acc.GlJournalLine, :create_acc_gl_journal_line, :create
       update SynieCore.Acc.GlJournalLine, :update_acc_gl_journal_line, :update
