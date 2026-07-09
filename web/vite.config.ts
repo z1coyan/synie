@@ -13,6 +13,11 @@ export default defineConfig({
         // BACKEND_PORT 可覆盖,供 worktree 并行起服务时指向自己的后端
         target: `http://localhost:${process.env.BACKEND_PORT || 4000}`,
         changeOrigin: true
+      },
+      // 文件上传/下载 REST 端点
+      '/api': {
+        target: `http://localhost:${process.env.BACKEND_PORT || 4000}`,
+        changeOrigin: true
       }
     },
     fs: {

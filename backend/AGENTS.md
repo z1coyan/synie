@@ -15,6 +15,11 @@
 
 - list 查询统一 `paginate_with: :offset`(read action 声明 `pagination offset?: true, countable: true`),不留扁平列表——前端 DataGrid/RemoteSelect 都按 `count`/`results` 结构消费。
 
+## 文件/附件
+
+- 业务表挂附件零改动:走 `sys_attachment`(owner_type = graphql type 名 + owner_id);单文件字段直接加 `xxx_file_id` FK → `sys_file`。
+- 文件字节走 REST `POST/GET /api/files`(multipart/二进制不过 GraphQL);存储后端在 runtime.exs `:synie_core, :storages` 配置,新后端实现 `SynieCore.Storage.Adapter`。
+
 ## 审计
 
 - 新可写资源默认接审计:`use Ash.Resource` 加 `fragments: [SynieCore.Audit.Fragment]`。

@@ -17,6 +17,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'base.account': '会计科目',
   'sales.customer': '客户',
   'purchase.supplier': '供应商',
+  'sys.file': '附件',
 }
 
 export const ACTION_LABELS: Record<string, string> = {

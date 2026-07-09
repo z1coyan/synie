@@ -12,6 +12,26 @@ defmodule SynieWeb.Router do
     plug(AshGraphql.Plug)
   end
 
+  pipeline :api do
+    plug(Plug.Parsers,
+      parsers: [:urlencoded, :multipart, :json],
+      pass: ["*/*"],
+      json_decoder: Jason,
+      # 上传大小上限
+      length: 50_000_000
+    )
+
+    # 复用 Bearer → actor 解析;Absinthe context 部分对 REST 无害
+    plug(SynieWeb.Plugs.GraphqlContext)
+  end
+
+  scope "/api", SynieWeb do
+    pipe_through [:api]
+
+    post("/files", FileController, :create)
+    get("/files/:id", FileController, :show)
+  end
+
   scope "/graphql" do
     pipe_through [:graphql]
 

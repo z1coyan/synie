@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
+import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -53,6 +54,13 @@ function CustomersPage() {
           name: { required: true, placeholder: '客户全称' },
           shortName: { placeholder: '如 华为' },
         }}
+        extraContent={(mode, row) => (
+          <SynieAttachmentPanel
+            ownerType="sal_customer"
+            ownerId={row?.id as string | undefined}
+            readonly={mode === 'view'}
+          />
+        )}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
           let errors: { message: string }[] | null

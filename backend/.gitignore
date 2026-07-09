@@ -21,3 +21,6 @@ erl_crash.dump
 
 .env
 
+
+# 本地文件存储(dev 默认落点)
+/uploads/

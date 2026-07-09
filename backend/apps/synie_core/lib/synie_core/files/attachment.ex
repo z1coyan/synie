@@ -1,0 +1,107 @@
+defmodule SynieCore.Files.Attachment do
+  @moduledoc """
+  业务记录-文件关联,对应 `sys_attachment` 表。
+  业务表零改动:靠 `owner_type`(graphql type 名)+ `owner_id` 多态引用,
+  `category` 区分一张单据上的多组附件槽位。
+  """
+
+  use Ash.Resource,
+    domain: SynieCore,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshGraphql.Resource],
+    authorizers: [Ash.Policy.Authorizer],
+    fragments: [SynieCore.Audit.Fragment]
+
+  postgres do
+    table "sys_attachment"
+    repo SynieCore.Repo
+
+    custom_indexes do
+      index [:owner_type, :owner_id]
+    end
+  end
+
+  graphql do
+    type :sys_attachment
+  end
+
+  policies do
+    bypass actor_attribute_equals(:super_admin, true) do
+      authorize_if always()
+    end
+
+    # 附件是文件的关联维度,不设独立权限点,全部跟随 sys.file
+    policy action(:read) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "read"}
+    end
+
+    policy action(:create) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "create"}
+    end
+
+    policy action(:destroy) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "delete"}
+    end
+  end
+
+  def permission_prefix, do: "sys.file"
+  def permission_actions, do: []
+
+  actions do
+    read :read do
+      primary? true
+
+      pagination offset?: true,
+                 countable: true,
+                 required?: false,
+                 default_limit: 20,
+                 max_page_size: 200
+    end
+
+    create :create do
+      accept [:file_id, :owner_type, :owner_id, :category]
+    end
+
+    destroy :destroy do
+      primary? true
+      require_atomic? false
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+
+    attribute :owner_type, :string do
+      allow_nil? false
+      public? true
+      constraints max_length: 64
+      description "宿主资源标识(graphql type 名,如 sal_customer)"
+    end
+
+    attribute :owner_id, :uuid do
+      allow_nil? false
+      public? true
+      description "宿主记录 id"
+    end
+
+    attribute :category, :string do
+      allow_nil? false
+      public? true
+      default "default"
+      constraints max_length: 32
+      description "业务槽位(如 contract/invoice)"
+    end
+
+    create_timestamp :inserted_at, public?: true, description: "挂接时间"
+  end
+
+  relationships do
+    belongs_to :file, SynieCore.Files.File do
+      allow_nil? false
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "文件对象"
+    end
+  end
+end
