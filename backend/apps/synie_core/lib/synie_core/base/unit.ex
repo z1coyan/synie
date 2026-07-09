@@ -1,7 +1,8 @@
 defmodule SynieCore.Base.UnitType do
   @moduledoc "单位类型:长度/面积/重量/数量。"
 
-  use Ash.Type.Enum, values: [:length, :area, :weight, :quantity]
+  use Ash.Type.Enum,
+    values: [length: "长度", area: "面积", weight: "重量", quantity: "数量"]
 
   def graphql_type(_), do: :unit_type
 end
@@ -80,33 +81,38 @@ defmodule SynieCore.Base.Unit do
     attribute :unit_type, SynieCore.Base.UnitType do
       allow_nil? false
       public? true
+      description "单位类型"
     end
 
     attribute :is_base, :boolean do
       allow_nil? false
       public? true
       default false
+      description "基准单位"
     end
 
     attribute :name, :string do
       allow_nil? false
       public? true
       constraints max_length: 32
+      description "单位名称"
     end
 
     attribute :symbol, :string do
       allow_nil? false
       public? true
       constraints max_length: 16
+      description "单位符号"
     end
 
     attribute :ratio, :decimal do
       allow_nil? false
       public? true
+      description "换算比例"
     end
 
-    create_timestamp :inserted_at
-    update_timestamp :updated_at
+    create_timestamp :inserted_at, public?: true, description: "创建时间"
+    update_timestamp :updated_at, public?: true, description: "更新时间"
   end
 
   identities do

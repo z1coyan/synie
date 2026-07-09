@@ -1,5 +1,6 @@
 import type { ComponentType, SVGProps } from 'react'
 import {
+  IconDatabase,
   IconGrid,
   IconLandmark,
   IconPackage,
@@ -104,6 +105,23 @@ export const menuModules: MenuModule[] = [
     ],
   },
   {
+    key: 'base',
+    label: '基础数据',
+    description: '公司、货币与计量单位等主数据',
+    icon: IconDatabase,
+    entry: '/system/companies',
+    groups: [
+      {
+        label: '主数据',
+        items: [
+          { label: '公司管理', path: '/system/companies' },
+          { label: '货币管理', path: '/base/currencies' },
+          { label: '单位管理', path: '/base/units' },
+        ],
+      },
+    ],
+  },
+  {
     key: 'system',
     label: '系统管理',
     description: '用户、权限与审计',
@@ -116,7 +134,6 @@ export const menuModules: MenuModule[] = [
           { label: '用户管理', path: '/system/users' },
           { label: '部门管理', path: '/system/depts' },
           { label: '角色权限', path: '/system/roles' },
-          { label: '公司管理', path: '/system/companies' },
         ],
       },
       {

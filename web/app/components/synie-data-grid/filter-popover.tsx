@@ -157,6 +157,9 @@ function FilterControl({
             return (
               <Checkbox
                 key={o.value}
+                // 弹层 DOM 已 portal 但 React 上下文仍在表格树内,Table 的 CheckboxContext
+                // 只认 slot="selection";slot={null} 退出该上下文,否则渲染即抛错
+                slot={null}
                 isSelected={checked}
                 onChange={(sel) => {
                   const next = sel ? [...values, o.value] : values.filter((v) => v !== o.value)

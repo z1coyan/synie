@@ -11,6 +11,8 @@ defmodule SynieWeb.GridMeta do
   @resources %{
     "sysRoles" => SynieCore.Authz.Role,
     "basCompanies" => SynieCore.Org.Company,
+    "basCurrencies" => SynieCore.Base.Currency,
+    "basUnits" => SynieCore.Base.Unit,
     "sysAuditLogs" => SynieCore.Audit.Log
   }
 
@@ -169,8 +171,9 @@ defmodule SynieWeb.GridMeta do
 
   defp enum_options(type) do
     if enum_type?(type) do
+      # value 用 AshGraphql 线上 token(大写):行值、筛选字面量、mutation 输入三处才能直接相等比较
       Enum.map(type.values(), fn value ->
-        %{value: to_string(value), label: enum_label(type, value)}
+        %{value: value |> to_string() |> String.upcase(), label: enum_label(type, value)}
       end)
     end
   end

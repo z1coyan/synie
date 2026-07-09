@@ -63,21 +63,24 @@ defmodule SynieCore.Base.Currency do
       allow_nil? false
       public? true
       constraints max_length: 64
+      description "货币名称"
     end
 
     attribute :iso_code, :string do
       allow_nil? false
       public? true
       constraints match: ~r/^[A-Z]{3}$/
+      description "ISO 编码"
     end
 
     attribute :symbol, :string do
       public? true
       constraints max_length: 8
+      description "符号"
     end
 
-    create_timestamp :inserted_at
-    update_timestamp :updated_at
+    create_timestamp :inserted_at, public?: true, description: "创建时间"
+    update_timestamp :updated_at, public?: true, description: "更新时间"
   end
 
   identities do
