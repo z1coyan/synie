@@ -172,6 +172,13 @@ defmodule SynieCore.Acc.GlJournal do
       attribute_public? true
       description "提交人"
     end
+
+    has_many :lines, SynieCore.Acc.GlJournalLine do
+      destination_attribute :journal_id
+      sort idx: :asc
+      public? true
+      description "分录行"
+    end
   end
 
   identities do

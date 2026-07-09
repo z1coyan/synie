@@ -20,6 +20,7 @@ defmodule SynieCore do
       list SynieCore.Files.Attachment, :sys_attachments, :read, paginate_with: :offset
       list SynieCore.Acc.GlEntry, :acc_gl_entries, :read, paginate_with: :offset
       list SynieCore.Acc.GlJournal, :acc_gl_journals, :read, paginate_with: :offset
+      list SynieCore.Acc.GlJournalLine, :acc_gl_journal_lines, :read, paginate_with: :offset
     end
 
     mutations do
@@ -72,6 +73,10 @@ defmodule SynieCore do
       create SynieCore.Acc.GlJournal, :create_acc_gl_journal, :create
       update SynieCore.Acc.GlJournal, :update_acc_gl_journal, :update
       destroy SynieCore.Acc.GlJournal, :destroy_acc_gl_journal, :destroy
+
+      create SynieCore.Acc.GlJournalLine, :create_acc_gl_journal_line, :create
+      update SynieCore.Acc.GlJournalLine, :update_acc_gl_journal_line, :update
+      destroy SynieCore.Acc.GlJournalLine, :destroy_acc_gl_journal_line, :destroy
     end
   end
 
@@ -89,6 +94,7 @@ defmodule SynieCore do
     resource SynieCore.Purchase.Supplier
     resource SynieCore.Acc.GlEntry
     resource SynieCore.Acc.GlJournal
+    resource SynieCore.Acc.GlJournalLine
     resource SynieCore.Audit.Log
     resource SynieCore.Files.File
     resource SynieCore.Files.Attachment
