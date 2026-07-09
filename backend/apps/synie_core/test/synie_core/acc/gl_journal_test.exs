@@ -80,4 +80,15 @@ defmodule SynieCore.Acc.GlJournalTest do
     assert_raise Ash.Error.Invalid, fn -> Ash.destroy!(audited, authorize?: false) end
     assert :ok = Ash.destroy!(draft, authorize?: false)
   end
+
+  test "无公司数据权限不能改凭证(CompanyScope)", %{company: co} do
+    draft = journal!(base_attrs(co), authorize?: false)
+    outsider = actor(company_ids: [])
+
+    assert_raise Ash.Error.Forbidden, fn ->
+      draft
+      |> Ash.Changeset.for_update(:update, %{remarks: "备注"})
+      |> Ash.update!(actor: outsider)
+    end
+  end
 end

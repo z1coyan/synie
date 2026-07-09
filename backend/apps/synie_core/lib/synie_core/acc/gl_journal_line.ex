@@ -152,7 +152,7 @@ defmodule SynieCore.Acc.GlJournalLine do
       authorize_if SynieCore.Authz.Checks.HasPermission
     end
 
-    policy action_type(:read) do
+    policy action_type([:read, :update, :destroy]) do
       authorize_if SynieCore.Authz.Checks.CompanyScope
     end
   end

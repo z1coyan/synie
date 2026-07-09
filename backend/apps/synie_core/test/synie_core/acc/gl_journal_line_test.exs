@@ -48,6 +48,13 @@ defmodule SynieCore.Acc.GlJournalLineTest do
     |> Ash.create!()
   end
 
+  defp actor(overrides) do
+    struct!(
+      %Actor{user_id: Ash.UUID.generate(), permissions: MapSet.new(["acc.gl_journal:*"])},
+      overrides
+    )
+  end
+
   defp base_attrs(journal, account) do
     %{journal_id: journal.id, idx: 1, account_id: account.id, debit: Decimal.new("100")}
   end
@@ -123,14 +130,33 @@ defmodule SynieCore.Acc.GlJournalLineTest do
   end
 
   test "无公司授权不能往该公司凭证加行(CompanyAccessible)", ctx do
-    outsider =
-      struct!(
-        %Actor{user_id: Ash.UUID.generate(), permissions: MapSet.new(["acc.gl_journal:*"])},
-        company_ids: []
-      )
+    outsider = actor(company_ids: [])
 
     assert_raise Ash.Error.Invalid, fn ->
       line!(base_attrs(ctx.journal, ctx.account), actor: outsider)
     end
+  end
+
+  test "无公司数据权限不能改/删行(CompanyScope);有权限则可改", ctx do
+    line = line!(base_attrs(ctx.journal, ctx.account), authorize?: false)
+    outsider = actor(company_ids: [])
+    insider = actor(company_ids: [ctx.company.id])
+
+    assert_raise Ash.Error.Forbidden, fn ->
+      line
+      |> Ash.Changeset.for_update(:update, %{debit: Decimal.new("1")})
+      |> Ash.update!(actor: outsider)
+    end
+
+    assert_raise Ash.Error.Forbidden, fn ->
+      Ash.destroy!(line, actor: outsider)
+    end
+
+    updated =
+      line
+      |> Ash.Changeset.for_update(:update, %{debit: Decimal.new("1")})
+      |> Ash.update!(actor: insider)
+
+    assert Decimal.equal?(updated.debit, Decimal.new("1"))
   end
 end
