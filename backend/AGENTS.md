@@ -8,6 +8,8 @@
 - 带 `company_id` 的资源:所有能写 `company_id` 的动作(含 update)都要挂 `CompanyAccessible` 校验。
 - 公司数据权限 fail-closed:`sys_user_company` 显式授权才可见;`all_companies`/`super_admin` 例外。
 - `authorize?: false` 仅限受信内部路径(actor 构建、seeds、测试夹具)。
+- 新资源/新动作必须同步补前端中文标签:权限矩阵 `web/app/components/synie-permission-sheet/permission-labels.ts`、操作日志 `web/app/routes/_app/system/logs.tsx`(漏了原样显英文码)。
+- `permission_actions` 只列用户视角的独立能力;衍生动作不设新权限点,策略里用 `{HasPermission, as: "create"}` 复用既有码(如科目模板初始化=批量新增)。
 
 ## GraphQL
 

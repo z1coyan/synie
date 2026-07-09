@@ -131,8 +131,8 @@ defmodule SynieCore.Base.AccountTest do
              |> Ash.run_action()
   end
 
-  test "资源声明了权限前缀" do
+  test "资源声明了权限前缀;模板初始化复用 create 不占独立权限点" do
     assert Account.permission_prefix() == "base.account"
-    assert "init_from_template" in Account.permission_actions()
+    assert Account.permission_actions() == ~w(create read update delete)
   end
 end

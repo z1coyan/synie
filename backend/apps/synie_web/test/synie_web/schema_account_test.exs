@@ -63,7 +63,8 @@ defmodule SynieWeb.SchemaAccountTest do
 
   test "从模板初始化后按父子两级懒加载查询" do
     co = company!()
-    actor = Authz.build_actor(user_with!(["base.account:*"], [co]))
+    # 只授 create/read:初始化复用 create 权限码({HasPermission, as: "create"}),无独立权限点
+    actor = Authz.build_actor(user_with!(["base.account:create", "base.account:read"], [co]))
 
     # 初始化(小企业准则 70 条),泛型 action 直接返回 Int
     init =
@@ -110,5 +111,18 @@ defmodule SynieWeb.SchemaAccountTest do
 
     assert %{errors: [%{message: msg} | _]} = result
     assert msg =~ "无权"
+  end
+
+  test "只有 read 权限不能初始化(需 create)" do
+    co = company!()
+    actor = Authz.build_actor(user_with!(["base.account:read"], [co]))
+
+    result =
+      run!(
+        ~s|mutation { initBasAccountFromTemplate(input: {companyId: "#{co.id}", template: SMALL}) }|,
+        actor
+      )
+
+    assert result[:errors] != nil and result[:errors] != []
   end
 end

@@ -13,6 +13,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'base.company': '公司',
   'base.unit': '计量单位',
   'base.currency': '币种',
+  'base.account': '会计科目',
 }
 
 export const ACTION_LABELS: Record<string, string> = {

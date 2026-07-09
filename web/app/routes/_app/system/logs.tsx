@@ -21,6 +21,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   bas_company: '公司',
   bas_currency: '货币',
   bas_unit: '计量单位',
+  bas_account: '会计科目',
 }
 
 // id 列展示原始 uuid 无阅读价值,记录名称/操作人已够定位;需要按 id 排查时直接查库

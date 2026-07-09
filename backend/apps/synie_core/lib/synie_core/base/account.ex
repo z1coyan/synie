@@ -82,8 +82,13 @@ defmodule SynieCore.Base.Account do
       authorize_if always()
     end
 
-    policy always() do
+    policy action_type([:read, :create, :update, :destroy]) do
       authorize_if SynieCore.Authz.Checks.HasPermission
+    end
+
+    # 模板初始化本质是批量新增:复用 create 权限码,不设独立权限点(权限矩阵零噪音)
+    policy action(:init_from_template) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "create"}
     end
 
     # 公司维度 fail-closed;update/destroy 取数走 read,同样被此过滤兜住
@@ -93,7 +98,7 @@ defmodule SynieCore.Base.Account do
   end
 
   def permission_prefix, do: "base.account"
-  def permission_actions, do: ~w(create read update delete init_from_template)
+  def permission_actions, do: ~w(create read update delete)
 
   actions do
     read :read do
