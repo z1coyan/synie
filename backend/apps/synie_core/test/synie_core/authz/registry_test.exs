@@ -8,7 +8,7 @@ defmodule SynieCore.Authz.RegistryTest do
 
     assert prefixes ==
              Enum.sort(
-               ~w(sys.role sys.user_role sys.role_permission sys.user_company sys.audit_log base.company base.unit base.currency)
+               ~w(sys.role sys.user_role sys.role_permission sys.user_company sys.audit_log base.company base.unit base.currency base.account)
              )
   end
 
@@ -34,7 +34,7 @@ defmodule SynieCore.Authz.RegistryTest do
 
     codes = Registry.granted_codes(actor)
 
-    for resource <- ~w(company unit currency), action <- ~w(create read update delete) do
+    for resource <- ~w(company unit currency account), action <- ~w(create read update delete) do
       assert "base.#{resource}:#{action}" in codes
     end
 

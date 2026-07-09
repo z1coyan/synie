@@ -10,7 +10,7 @@ import { cellText } from './format'
 import { mergePick } from './pick'
 import { useGridMeta } from './meta'
 import { printRows } from './print'
-import { buildFilterLiteral, buildRowQuery, nextSort, toSortLiteral } from './query'
+import { buildFilterLiteral, buildRowQuery, mergeFilterLiterals, nextSort, toGqlLiteral, toSortField, toSortLiteral } from './query'
 import type { ActionContext, BulkAction, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
 import { useDraft } from './use-debounced'
 import { useGridActions } from './use-grid-actions'
@@ -21,6 +21,15 @@ export interface ColumnOverride {
   width?: number
   /** 不传时数值列(integer/decimal)默认右对齐 */
   align?: 'start' | 'center' | 'end'
+}
+
+export interface TreeOptions {
+  /** 父引用列名,默认 'parentId' */
+  parentField?: string
+  /** 判断有无子节点的列名(值 >0 出展开箭头),默认 'childrenCount' */
+  hasChildrenField?: string
+  /** 每层取数排序,如 { field: 'code', order: 'ASC' } */
+  sort?: { field: string; order: 'ASC' | 'DESC' }
 }
 
 export interface SynieDataGridProps {
@@ -41,9 +50,21 @@ export interface SynieDataGridProps {
   pick?: 'single' | 'multiple'
   pickedRows?: Row[]
   onPickChange?: (rows: Row[]) => void
+  /** 树形懒加载模式:按需逐层拉子节点,隐藏分页、禁用列排序;用户输入搜索/列筛选时自动退回平铺分页,清空恢复 */
+  tree?: TreeOptions
+  /** 恒定并进查询 filter 的条件(如 { companyId: { eq: id } }),不进列筛选 UI,平铺/树形都生效 */
+  fixedFilter?: Record<string, unknown>
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
+const TREE_LEVEL_LIMIT = 200 // ponytail: 每层上限200,超了再做层内加载更多
+
+// 树形懒加载占位子行:DataGrid 只在 getChildren 返回非空数组时渲染 chevron(内部 hasChildItems =
+// children.length > 0,返回 undefined/[] 都不出箭头),所以「有子但未加载」的节点先塞一个占位行,
+// 展开后请求落地再替换成真实子行;占位行以 id 前缀识别,渲染为「加载中…」
+const LOADING_ROW_PREFIX = '__treeLoading:'
+const loadingRowFor = (parentId: string): Row => ({ id: `${LOADING_ROW_PREFIX}${parentId}` })
+const isLoadingRow = (row: Row) => row.id.startsWith(LOADING_ROW_PREFIX)
 
 // 模块级稳定默认值:默认参数若写成内联 []/{}, 不传 props 时每次渲染都是新引用,useMemo 永远失效
 const EMPTY_EXCLUDE: string[] = []
@@ -105,21 +126,52 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     [meta.data, exclude]
   )
 
+  // 树形:用户一旦搜索/筛选就退回平铺分页(树与筛选语义冲突,避免命中子节点却父节点被滤掉的孤儿),清空恢复
+  const treeMode = props.tree != null
+  const userQuerying = search.trim() !== '' || Object.keys(filters).length > 0
+  const treeActive = treeMode && !userQuerying
+  const parentField = props.tree?.parentField ?? 'parentId'
+  const hasChildrenField = props.tree?.hasChildrenField ?? 'childrenCount'
+  const treeSortLiteral = props.tree?.sort
+    ? `[{field: ${toSortField(props.tree.sort.field)}, order: ${props.tree.sort.order}}]`
+    : null
+  const treeExtraFields = treeMode ? [parentField, hasChildrenField] : undefined
+
+  const [expanded, setExpanded] = useState<Selection>(new Set())
+  const [childrenByParent, setChildrenByParent] = useState<Map<string, Row[]>>(new Map())
+  const [loadingParents, setLoadingParents] = useState<Set<string>>(new Set())
+
   // 搜索/筛选列用组件内已排除 id/exclude 的 columns,被 exclude 隐藏的列不应参与搜索
   // 防抖在输入源头(useDraft:搜索框/筛选草稿),这里拿到的已是停稳值,离散操作(勾选/日期/清除)即时生效
-  const filterLiteral = meta.data ? buildFilterLiteral(filters, search, columns) : null
+  const userFilterLiteral = meta.data ? buildFilterLiteral(filters, search, columns) : null
+  // fixedFilter 是组件受信条件(如公司过滤),平铺/树形都恒定并入,不进列筛选 UI
+  const fixedFilterLiteral = props.fixedFilter ? toGqlLiteral(props.fixedFilter) : null
   const sortLiteral = toSortLiteral(sort)
 
+  // 树形激活:只查根层(parentField isNil)、一次取满一层、按 tree.sort 排;否则常规分页
+  const effectiveFilterLiteral = treeActive
+    ? mergeFilterLiterals([`{${parentField}: {isNil: true}}`, fixedFilterLiteral])
+    : mergeFilterLiterals([userFilterLiteral, fixedFilterLiteral])
+  const effectiveSortLiteral = treeActive ? treeSortLiteral : sortLiteral
+
+  // 切公司(fixedFilter 变)或进出树形时,已加载的子层缓存与展开态失效,重置
+  useEffect(() => {
+    setExpanded(new Set())
+    setChildrenByParent(new Map())
+    setLoadingParents(new Set())
+  }, [fixedFilterLiteral, treeActive])
+
   const rowsQuery = useQuery({
-    queryKey: ['gridRows', resource, page, pageSize, sortLiteral, filterLiteral],
+    queryKey: ['gridRows', resource, treeActive, page, pageSize, effectiveSortLiteral, effectiveFilterLiteral],
     enabled: !!meta.data,
     placeholderData: keepPreviousData,
     queryFn: () => {
       const query = buildRowQuery(resource, columns, {
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-        sortLiteral,
-        filterLiteral,
+        limit: treeActive ? TREE_LEVEL_LIMIT : pageSize,
+        offset: treeActive ? 0 : (page - 1) * pageSize,
+        sortLiteral: effectiveSortLiteral,
+        filterLiteral: effectiveFilterLiteral,
+        extraFields: treeExtraFields,
       })
       return gqlFetch<Record<string, { count: number; results: Row[] }>>(query).then((d) => d[resource])
     },
@@ -128,6 +180,50 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const rows = rowsQuery.data?.results ?? []
   const count = rowsQuery.data?.count ?? 0
   const totalPages = Math.max(1, Math.ceil(count / pageSize))
+
+  // 展开某节点时按 parentField eq 拉它的直接子层,结果进缓存;getChildren 从缓存读,折叠不清缓存
+  const fetchChildren = (parentId: string) => {
+    setLoadingParents((prev) => new Set(prev).add(parentId))
+    const childFilterLiteral = mergeFilterLiterals([
+      `{${parentField}: {eq: ${JSON.stringify(parentId)}}}`,
+      fixedFilterLiteral,
+    ])
+    const query = buildRowQuery(resource, columns, {
+      limit: TREE_LEVEL_LIMIT,
+      offset: 0,
+      sortLiteral: treeSortLiteral,
+      filterLiteral: childFilterLiteral,
+      extraFields: treeExtraFields,
+    })
+    gqlFetch<Record<string, { count: number; results: Row[] }>>(query)
+      .then((d) => setChildrenByParent((prev) => new Map(prev).set(parentId, d[resource].results)))
+      .catch((e) => toast.danger('加载下级失败', { description: (e as Error).message }))
+      .finally(() =>
+        setLoadingParents((prev) => {
+          const next = new Set(prev)
+          next.delete(parentId)
+          return next
+        })
+      )
+  }
+
+  // childrenCount>0 但未加载 → 返回占位行让 chevron 出现;展开时 onExpandedChange 落地真实子层
+  const treeGetChildren = (row: Row): Row[] | undefined => {
+    if (isLoadingRow(row)) return undefined
+    if (Number(row[hasChildrenField] ?? 0) <= 0) return undefined
+    const loaded = childrenByParent.get(row.id)
+    if (loaded) return loaded.length > 0 ? loaded : undefined
+    return [loadingRowFor(row.id)]
+  }
+
+  const handleExpandedChange = (keys: Selection) => {
+    setExpanded(keys)
+    if (keys === 'all') return
+    for (const key of keys) {
+      const id = String(key)
+      if (!childrenByParent.has(id) && !loadingParents.has(id)) fetchChildren(id)
+    }
+  }
 
   // 批量删除清空最后一页后 count 缩小、totalPages 跟着变小,但 page 仍停在越界空页——收敛回最后一页
   useEffect(() => {
@@ -164,11 +260,16 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         ),
         // RAC Table 要求至少一列 isRowHeader(行的无障碍名称);缺失会在并发渲染中反复抛可恢复错误
         isRowHeader: i === 0,
-        allowsSorting: col.sortable,
+        // 树形激活时列排序无意义(单层懒加载),整表禁用排序入口
+        allowsSorting: treeActive ? false : col.sortable,
         width: overrides[col.name]?.width,
-        cell: (row: Row) => overrides[col.name]?.render?.(row[col.name], row) ?? defaultCell(col, row[col.name], row),
+        cell: (row: Row) => {
+          // 懒加载占位行只有 id:首列显示「加载中…」,其余列空
+          if (isLoadingRow(row)) return i === 0 ? <span className="text-muted">加载中…</span> : null
+          return overrides[col.name]?.render?.(row[col.name], row) ?? defaultCell(col, row[col.name], row)
+        },
       })),
-    [columns, overrides, filters]
+    [columns, overrides, filters, treeActive]
   )
 
   // 取消排序必须传 null 而非 undefined:undefined 会让 DataGrid 退回非受控内部状态,残留首次点击存下的旧描述符
@@ -182,7 +283,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     setExporting(true)
     const id = toast(`正在导出…`, { isLoading: true, timeout: 0 })
     try {
-      const all = await fetchAllRows(resource, columns, filterLiteral, sortLiteral)
+      const all = await fetchAllRows(resource, columns, effectiveFilterLiteral, effectiveSortLiteral)
       // 传 cellText:CSV 单元格与表格/打印视图同一套格式化(是/否、本地化时间、enum label)
       downloadCsv(`${resource}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(columns, all, cellText))
       toast.close(id)
@@ -234,6 +335,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           pinned: 'end',
           width: 56,
           cell: (row: Row) => {
+            if (isLoadingRow(row)) return null
             const items = actions.rowMenuFor(row)
             if (items.length === 0) return null
             return (
@@ -353,6 +455,9 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         data={rows}
         columns={columnsWithActions}
         getRowId={getRowId}
+        getChildren={treeActive ? treeGetChildren : undefined}
+        expandedKeys={treeActive ? expanded : undefined}
+        onExpandedChange={treeActive ? handleExpandedChange : undefined}
         selectionMode={pickMode ? props.pick : hasBulkActions ? 'multiple' : 'none'}
         showSelectionCheckboxes={pickMode ? props.pick === 'multiple' : hasBulkActions}
         selectedKeys={pickMode ? new Set((props.pickedRows ?? []).map((r) => r.id)) : selection}
@@ -361,11 +466,15 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             ? (sel: Selection) => props.onPickChange?.(mergePick(props.pickedRows ?? [], rows, sel, props.pick!))
             : setSelection
         }
-        sortDescriptor={sortDescriptor}
-        onSortChange={(d) => {
-          setSort((prev) => nextSort(prev, String(d.column), d.direction))
-          setPage(1)
-        }}
+        sortDescriptor={treeActive ? undefined : sortDescriptor}
+        onSortChange={
+          treeActive
+            ? undefined
+            : (d) => {
+                setSort((prev) => nextSort(prev, String(d.column), d.direction))
+                setPage(1)
+              }
+        }
         renderEmptyState={() => (
           <EmptyState size="sm" className="py-10">
             <EmptyState.Header>
@@ -377,37 +486,40 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         contentClassName="min-w-[720px]"
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-sm text-muted">共 {count} 条</span>
-        <div className="flex items-center gap-3">
-          <InlineSelect
-            aria-label="每页条数"
-            value={String(pageSize)}
-            onChange={(v) => {
-              if (v != null) {
-                setPageSize(Number(v))
-                setPage(1)
-              }
-            }}
-          >
-            <InlineSelect.Trigger>
-              <InlineSelect.Value />
-              <InlineSelect.Indicator />
-            </InlineSelect.Trigger>
-            <InlineSelect.Popover className="w-[120px]">
-              <ListBox>
-                {PAGE_SIZES.map((n) => (
-                  <ListBox.Item key={n} id={String(n)} textValue={`${n} 条/页`}>
-                    {n} 条/页
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </InlineSelect.Popover>
-          </InlineSelect>
-          <Pager page={page} totalPages={totalPages} onChange={setPage} />
+      {/* 树形懒加载下总数/分页无意义,隐藏整条分页栏 */}
+      {!treeActive && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-sm text-muted">共 {count} 条</span>
+          <div className="flex items-center gap-3">
+            <InlineSelect
+              aria-label="每页条数"
+              value={String(pageSize)}
+              onChange={(v) => {
+                if (v != null) {
+                  setPageSize(Number(v))
+                  setPage(1)
+                }
+              }}
+            >
+              <InlineSelect.Trigger>
+                <InlineSelect.Value />
+                <InlineSelect.Indicator />
+              </InlineSelect.Trigger>
+              <InlineSelect.Popover className="w-[120px]">
+                <ListBox>
+                  {PAGE_SIZES.map((n) => (
+                    <ListBox.Item key={n} id={String(n)} textValue={`${n} 条/页`}>
+                      {n} 条/页
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </InlineSelect.Popover>
+            </InlineSelect>
+            <Pager page={page} totalPages={totalPages} onChange={setPage} />
+          </div>
         </div>
-      </div>
+      )}
 
       <ActionBar isOpen={picked.length > 0 && hasBulkActions} aria-label="批量操作">
         <ActionBar.Prefix>

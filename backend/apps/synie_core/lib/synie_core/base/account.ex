@@ -1,0 +1,236 @@
+defmodule SynieCore.Base.AccountDirection do
+  @moduledoc "科目余额方向:借/贷。"
+
+  use Ash.Type.Enum, values: [debit: "借", credit: "贷"]
+
+  def graphql_type(_), do: :account_direction
+end
+
+defmodule SynieCore.Base.AccountTemplateKey do
+  @moduledoc "科目表初始化模板,与 `SynieCore.Base.AccountTemplates.entries/1` 的参数一致。"
+
+  use Ash.Type.Enum,
+    values: [cas: "企业会计准则", small: "小企业会计准则", intl: "国际通用(精简)"]
+
+  def graphql_type(_), do: :bas_account_template
+end
+
+defmodule SynieCore.Base.AccountParent do
+  @moduledoc "校验上级科目:不能选自身,且必须属于同一公司(跨公司挂父节点会破坏公司内的树)。"
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    parent_id = Ash.Changeset.get_attribute(changeset, :parent_id)
+
+    cond do
+      is_nil(parent_id) ->
+        :ok
+
+      changeset.data.id && parent_id == changeset.data.id ->
+        {:error, field: :parent_id, message: "上级科目不能选择自身"}
+
+      true ->
+        check_same_company(changeset, parent_id)
+    end
+  end
+
+  # 与 Company 同权衡:两节点以上成环检测留跟进,本轮只堵 UI 可触发的误操作
+  defp check_same_company(changeset, parent_id) do
+    company_id = Ash.Changeset.get_attribute(changeset, :company_id)
+
+    case Ash.get(SynieCore.Base.Account, parent_id, authorize?: false) do
+      {:ok, %{company_id: ^company_id}} -> :ok
+      {:ok, _} -> {:error, field: :parent_id, message: "上级科目必须属于同一公司"}
+      {:error, _} -> {:error, field: :parent_id, message: "上级科目不存在"}
+    end
+  end
+end
+
+defmodule SynieCore.Base.Account do
+  @moduledoc """
+  会计科目,对应 `bas_account` 表。
+
+  科目直接挂公司(ERPNext 式):每个公司一棵科目树,编码同公司内唯一。
+  会计要素本身也是科目(根节点,parent 为空),由初始化模板决定要素个数
+  (企业会计准则 6 类/小企业会计准则与国际 5 类),不在代码里写死类别枚举。
+  """
+
+  use Ash.Resource,
+    domain: SynieCore,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshGraphql.Resource],
+    authorizers: [Ash.Policy.Authorizer],
+    fragments: [SynieCore.Audit.Fragment],
+    # 主 read 上的兜底排序(code 升序)是有意为之,树形每层取数依赖此序
+    primary_read_warning?: false
+
+  require Ash.Query
+
+  postgres do
+    table "bas_account"
+    repo SynieCore.Repo
+  end
+
+  graphql do
+    type :bas_account
+  end
+
+  policies do
+    bypass actor_attribute_equals(:super_admin, true) do
+      authorize_if always()
+    end
+
+    policy always() do
+      authorize_if SynieCore.Authz.Checks.HasPermission
+    end
+
+    # 公司维度 fail-closed;update/destroy 取数走 read,同样被此过滤兜住
+    policy action_type(:read) do
+      authorize_if SynieCore.Authz.Checks.CompanyScope
+    end
+  end
+
+  def permission_prefix, do: "base.account"
+  def permission_actions, do: ~w(create read update delete init_from_template)
+
+  actions do
+    read :read do
+      primary? true
+
+      pagination offset?: true,
+                 countable: true,
+                 required?: false,
+                 default_limit: 20,
+                 max_page_size: 200
+
+      # 兜底排序:未显式传 sort 时按编码升序,树形每层取数依赖此序
+      prepare build(sort: [code: :asc])
+    end
+
+    create :create do
+      accept [:code, :name, :direction, :is_group, :active, :parent_id, :company_id, :currency_id]
+
+      validate {SynieCore.Authz.Validations.CompanyAccessible, []}
+      validate {SynieCore.Base.AccountParent, []}
+    end
+
+    update :update do
+      # 不接受 company_id:科目不允许换公司(树与编码唯一性都以公司为界)
+      accept [:code, :name, :direction, :is_group, :active, :parent_id, :currency_id]
+      require_atomic? false
+
+      validate {SynieCore.Base.AccountParent, []}
+    end
+
+    destroy :destroy do
+      primary? true
+      require_atomic? false
+
+      validate fn changeset, _context ->
+        exists? =
+          __MODULE__
+          |> Ash.Query.filter(parent_id == ^changeset.data.id)
+          |> Ash.exists?(authorize?: false)
+
+        if exists? do
+          {:error, message: "存在下级科目,不能删除"}
+        else
+          :ok
+        end
+      end
+    end
+
+    # 从模板整套初始化公司科目表,返回创建条数;目标公司必须尚无科目
+    action :init_from_template, :integer do
+      transaction? true
+
+      argument :company_id, :uuid, allow_nil?: false
+      argument :template, SynieCore.Base.AccountTemplateKey, allow_nil?: false
+
+      run SynieCore.Base.AccountInit
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+
+    attribute :code, :string do
+      allow_nil? false
+      public? true
+      constraints max_length: 32
+      description "科目编码"
+    end
+
+    attribute :name, :string do
+      allow_nil? false
+      public? true
+      constraints max_length: 128
+      description "科目名称"
+    end
+
+    attribute :direction, SynieCore.Base.AccountDirection do
+      allow_nil? false
+      public? true
+      description "余额方向"
+    end
+
+    attribute :is_group, :boolean do
+      allow_nil? false
+      public? true
+      default false
+      description "汇总科目"
+    end
+
+    attribute :active, :boolean do
+      allow_nil? false
+      public? true
+      default true
+      description "启用"
+    end
+
+    create_timestamp :inserted_at, public?: true, description: "创建时间"
+    update_timestamp :updated_at, public?: true, description: "更新时间"
+  end
+
+  relationships do
+    belongs_to :parent, __MODULE__ do
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "上级科目"
+    end
+
+    belongs_to :company, SynieCore.Base.Company do
+      allow_nil? false
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "公司"
+    end
+
+    belongs_to :currency, SynieCore.Base.Currency do
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "币种"
+    end
+
+    has_many :children, __MODULE__ do
+      destination_attribute :parent_id
+    end
+  end
+
+  aggregates do
+    # 前端树形懒加载靠它判断是否显示展开箭头
+    count :children_count, :children do
+      public? true
+      description "下级科目数"
+    end
+  end
+
+  identities do
+    identity :unique_code_per_company, [:company_id, :code]
+  end
+end

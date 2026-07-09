@@ -12,6 +12,7 @@ defmodule SynieCore do
       list SynieCore.Base.Company, :bas_companies, :read, paginate_with: :offset
       list SynieCore.Base.Unit, :bas_units, :read, paginate_with: :offset
       list SynieCore.Base.Currency, :bas_currencies, :read, paginate_with: :offset
+      list SynieCore.Base.Account, :bas_accounts, :read, paginate_with: :offset
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
     end
 
@@ -40,6 +41,11 @@ defmodule SynieCore do
       create SynieCore.Base.Currency, :create_bas_currency, :create
       update SynieCore.Base.Currency, :update_bas_currency, :update
       destroy SynieCore.Base.Currency, :destroy_bas_currency, :destroy
+
+      create SynieCore.Base.Account, :create_bas_account, :create
+      update SynieCore.Base.Account, :update_bas_account, :update
+      destroy SynieCore.Base.Account, :destroy_bas_account, :destroy
+      action SynieCore.Base.Account, :init_bas_account_from_template, :init_from_template
     end
   end
 
@@ -52,6 +58,7 @@ defmodule SynieCore do
     resource SynieCore.Base.Company
     resource SynieCore.Base.Unit
     resource SynieCore.Base.Currency
+    resource SynieCore.Base.Account
     resource SynieCore.Audit.Log
   end
 end

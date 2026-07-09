@@ -115,6 +115,7 @@ export const menuModules: MenuModule[] = [
         label: '主数据',
         items: [
           { label: '公司管理', path: '/system/companies' },
+          { label: '科目表', path: '/base/accounts' },
           { label: '货币管理', path: '/base/currencies' },
           { label: '单位管理', path: '/base/units' },
         ],

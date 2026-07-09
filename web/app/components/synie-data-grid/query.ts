@@ -124,13 +124,33 @@ export function buildFilterLiteral(
   return `{and: [${clauses.join(', ')}]}`
 }
 
+/** JS 对象 → GraphQL 输入字面量(键不带引号)。只用于组件 props 传入的受信条件(fixedFilter),字符串值经 JSON 转义 */
+export function toGqlLiteral(value: unknown): string {
+  if (value == null) return 'null'
+  if (typeof value === 'string') return JSON.stringify(value)
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) return `[${value.map(toGqlLiteral).join(', ')}]`
+  return `{${Object.entries(value as Record<string, unknown>)
+    .map(([k, v]) => `${k}: ${toGqlLiteral(v)}`)
+    .join(', ')}}`
+}
+
+/** 多个 filter 字面量按 and 合并;null/空项剔除,全空返回 null */
+export function mergeFilterLiterals(literals: (string | null)[]): string | null {
+  const parts = literals.filter((l): l is string => !!l)
+  if (parts.length === 0) return null
+  if (parts.length === 1) return parts[0]
+  return `{and: [${parts.join(', ')}]}`
+}
+
 export function buildRowQuery(
   resource: string,
   columns: GridColumnMeta[],
-  opts: { limit: number; offset: number; sortLiteral: string | null; filterLiteral: string | null }
+  opts: { limit: number; offset: number; sortLiteral: string | null; filterLiteral: string | null; extraFields?: string[] }
 ): string {
   const names = columns.map((c) => c.name)
-  const scalar = names.includes('id') ? names : ['id', ...names]
+  // extraFields:列以外还要取回的标量字段(树形模式的 parentId/childrenCount),Set 去重
+  const scalar = [...new Set(['id', ...names, ...(opts.extraFields ?? [])])]
   // fk 列带 join:relation { id labelField },单元格/详情显示 label 零额外请求
   const joins = columns.filter((c) => c.ref).map((c) => `${c.ref!.relation} { id ${c.ref!.labelField} }`)
   const fields = [...scalar, ...joins].join(' ')
