@@ -6,18 +6,31 @@ defmodule SynieCore.Acc.GlJournalLine.SyncJournal do
 
   use Ash.Resource.Change
 
+  require Ash.Query
+
   @impl true
   def change(changeset, _opts, _context) do
     journal_id =
       Ash.Changeset.get_attribute(changeset, :journal_id) || changeset.data.journal_id
 
-    case journal_id && Ash.get(SynieCore.Acc.GlJournal, journal_id, authorize?: false) do
+    # 凭证粒度锁,串行化行编辑与审核:FOR UPDATE 阻塞到并发审核事务提交后再读最新状态
+    result =
+      journal_id &&
+        (SynieCore.Acc.GlJournal
+         |> Ash.Query.filter(id == ^journal_id)
+         |> Ash.Query.lock("FOR UPDATE")
+         |> Ash.read_one(authorize?: false))
+
+    case result do
       {:ok, %{status: :draft} = journal} ->
         if changeset.action_type == :create do
           Ash.Changeset.force_change_attribute(changeset, :company_id, journal.company_id)
         else
           changeset
         end
+
+      {:ok, nil} ->
+        Ash.Changeset.add_error(changeset, field: :journal_id, message: "凭证不存在")
 
       {:ok, _journal} ->
         Ash.Changeset.add_error(changeset, field: :journal_id, message: "仅草稿凭证可编辑分录行")

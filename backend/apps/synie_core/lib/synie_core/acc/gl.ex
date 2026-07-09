@@ -100,7 +100,7 @@ defmodule SynieCore.Acc.GL do
   end
 
   defp check_accounts(company_id, entries) do
-    ids = entries |> Enum.map(& &1.account_id) |> Enum.uniq()
+    ids = entries |> Enum.map(& &1[:account_id]) |> Enum.uniq()
 
     accounts =
       Account

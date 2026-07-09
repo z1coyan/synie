@@ -116,6 +116,10 @@ defmodule SynieCore.Acc.GlJournal do
       end
 
       validate fn changeset, _context ->
+        # 凭证粒度锁,串行化行编辑与审核:先锁凭证行再读行集,与行编辑侧的
+        # SyncJournal 互斥,避免 READ COMMITTED 下读到并发事务未提交的行改动
+        __MODULE__.lock_journal(changeset.data.id)
+
         case SynieCore.Acc.GL.validate_entries(
                changeset.data.company_id,
                __MODULE__.load_line_entries(changeset.data.id)
@@ -251,6 +255,15 @@ defmodule SynieCore.Acc.GlJournal do
 
   identities do
     identity :unique_voucher_no_per_company, [:company_id, :voucher_no]
+  end
+
+  @doc false
+  # 凭证粒度锁:FOR UPDATE 锁住凭证行本身,串行化行编辑(SyncJournal)与审核
+  def lock_journal(journal_id) do
+    __MODULE__
+    |> Ash.Query.filter(id == ^journal_id)
+    |> Ash.Query.lock("FOR UPDATE")
+    |> Ash.read_one(authorize?: false)
   end
 
   @doc false
