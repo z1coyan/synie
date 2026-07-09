@@ -10,7 +10,8 @@ export default defineConfig({
     allowedHosts: ['home-n5pro', '.ts.net'],
     proxy: {
       '/graphql': {
-        target: 'http://localhost:4000',
+        // BACKEND_PORT 可覆盖,供 worktree 并行起服务时指向自己的后端
+        target: `http://localhost:${process.env.BACKEND_PORT || 4000}`,
         changeOrigin: true
       }
     },
