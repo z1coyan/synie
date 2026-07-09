@@ -33,7 +33,7 @@ SynieDataGrid 已支持页面级自定义行动作(`rowActions?: RowAction[]`,us
 
 ## 数据流与勾选初态
 
-打开 Sheet 时并发拉 `permissionCatalog` + `sysRolePermissions`(按 roleId 过滤;无分页,权限行数量级小)。
+打开 Sheet 时并发拉 `permissionCatalog` + `sysRolePermissions`(按 roleId 过滤;按项目统一约定走 offset 分页 `count`/`results` 结构,一页 `limit: 200`(即 max_page_size)取足——权限行数量级小)。
 
 勾选初态:对 catalog 展开的每个码 `prefix:action`,granted 行中存在精确码或通配覆盖即勾上。通配匹配语义与后端 `SynieCore.Authz.Registry` 对齐(granted `X:*` 覆盖 `X:` 下所有动作;granted `X.*` 覆盖前缀 `X.` 的所有码),checks 里放前后端对齐用例。
 

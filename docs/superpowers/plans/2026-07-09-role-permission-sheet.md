@@ -366,11 +366,15 @@ interface Loaded {
   rows: GrantedRow[]
 }
 
-// roleId 为服务端签发的 uuid,内插进查询串(同 remote-query.ts 的 filter 先例)
+// roleId 为服务端签发的 uuid,内插进查询串(同 remote-query.ts 的 filter 先例)。
+// list 统一 offset 分页(backend/CLAUDE.md);limit 200 = max_page_size,权限行数量级远小于此,一页取足。
 const loadQuery = (roleId: string) => `
   query {
     permissionCatalog { prefix actions }
-    sysRolePermissions(filter: { roleId: { eq: "${roleId}" } }) { id permission }
+    sysRolePermissions(filter: { roleId: { eq: "${roleId}" } }, limit: 200, offset: 0) {
+      count
+      results { id permission }
+    }
   }
 `
 
@@ -399,11 +403,14 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
     let cancelled = false
     setData(null)
     setError(null)
-    gqlFetch<{ permissionCatalog: CatalogGroup[]; sysRolePermissions: GrantedRow[] }>(loadQuery(roleId))
+    gqlFetch<{
+      permissionCatalog: CatalogGroup[]
+      sysRolePermissions: { count: number; results: GrantedRow[] }
+    }>(loadQuery(roleId))
       .then((res) => {
         if (cancelled) return
-        setData({ catalog: res.permissionCatalog, rows: res.sysRolePermissions })
-        setChecked(initialChecked(res.permissionCatalog, res.sysRolePermissions))
+        setData({ catalog: res.permissionCatalog, rows: res.sysRolePermissions.results })
+        setChecked(initialChecked(res.permissionCatalog, res.sysRolePermissions.results))
       })
       .catch((e) => {
         if (!cancelled) setError((e as Error).message)
