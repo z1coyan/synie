@@ -19,6 +19,7 @@ defmodule SynieCore do
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
       list SynieCore.Files.Attachment, :sys_attachments, :read, paginate_with: :offset
       list SynieCore.Acc.GlEntry, :acc_gl_entries, :read, paginate_with: :offset
+      list SynieCore.Acc.GlJournal, :acc_gl_journals, :read, paginate_with: :offset
     end
 
     mutations do
@@ -67,6 +68,10 @@ defmodule SynieCore do
       # 文件的创建走 REST 上传端点(multipart 不过 GraphQL),这里只注册删除与解挂
       destroy SynieCore.Files.File, :destroy_sys_file, :destroy
       destroy SynieCore.Files.Attachment, :destroy_sys_attachment, :destroy
+
+      create SynieCore.Acc.GlJournal, :create_acc_gl_journal, :create
+      update SynieCore.Acc.GlJournal, :update_acc_gl_journal, :update
+      destroy SynieCore.Acc.GlJournal, :destroy_acc_gl_journal, :destroy
     end
   end
 
@@ -83,6 +88,7 @@ defmodule SynieCore do
     resource SynieCore.Sales.Customer
     resource SynieCore.Purchase.Supplier
     resource SynieCore.Acc.GlEntry
+    resource SynieCore.Acc.GlJournal
     resource SynieCore.Audit.Log
     resource SynieCore.Files.File
     resource SynieCore.Files.Attachment
