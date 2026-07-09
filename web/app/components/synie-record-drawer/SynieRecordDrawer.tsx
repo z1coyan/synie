@@ -242,8 +242,8 @@ function ViewField({ field, row }: { field: ResolvedField; row: Row }) {
   )
 }
 
-/** view 态外键文本:行数据有 join 直接用;否则按 id 反查;都拿不到显示截断 id */
-function FkText({ col, row }: { col: GridColumnMeta; row: Row }) {
+/** view 态外键文本:行数据有 join 直接用;否则按 id 反查;都拿不到显示截断 id(SynieEditableTable 复用) */
+export function FkText({ col, row }: { col: GridColumnMeta; row: Row }) {
   const ref = col.ref!
   const id = row[col.name] == null ? null : String(row[col.name])
   const rel = (row[ref.relation] as Row | null | undefined) ?? null
