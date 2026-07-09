@@ -78,45 +78,54 @@ defmodule SynieCore.Audit.Log do
     attribute :resource, :string do
       allow_nil? false
       public? true
+      description "资源"
     end
 
     attribute :record_id, :uuid do
       allow_nil? false
       public? true
+      description "记录ID"
     end
 
     # 记录展示名(资源的 name 属性),记录删除后仍可显示
     attribute :record_label, :string do
       public? true
+      description "记录名称"
     end
 
     attribute :action_type, :string do
       allow_nil? false
       public? true
+      description "操作类型"
     end
 
     attribute :action_name, :string do
       allow_nil? false
       public? true
+      description "动作"
     end
 
     attribute :actor_id, :uuid do
       public? true
+      description "操作人ID"
     end
 
     attribute :actor_name, :string do
       public? true
+      description "操作人"
     end
 
     attribute :company_id, :uuid do
       public? true
+      description "公司ID"
     end
 
     attribute :changes, :map do
       allow_nil? false
       public? true
+      description "变更内容"
     end
 
-    create_timestamp :inserted_at
+    create_timestamp :inserted_at, public?: true, description: "操作时间"
   end
 end
