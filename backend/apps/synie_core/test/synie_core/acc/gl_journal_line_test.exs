@@ -129,6 +129,20 @@ defmodule SynieCore.Acc.GlJournalLineTest do
     assert_raise Ash.Error.Invalid, ~r/草稿/, fn -> Ash.destroy!(line, authorize?: false) end
   end
 
+  test "before_action 复检关闭竞态:构建期见草稿、事务内凭证已非草稿则拒绝", ctx do
+    line = line!(base_attrs(ctx.journal, ctx.account), authorize?: false)
+
+    # 构建期(此时凭证仍是草稿)先拿到有效 changeset,模拟并发审核抢先一步
+    changeset = line |> Ash.Changeset.for_update(:update, %{debit: Decimal.new("1")})
+
+    # 模拟另一并发事务已把凭证改为非草稿并提交:直接改库,绕过动作校验
+    Ash.Seed.update!(ctx.journal, %{status: :audited})
+
+    assert_raise Ash.Error.Invalid, ~r/仅草稿凭证可编辑分录行/, fn ->
+      Ash.update!(changeset, authorize?: false)
+    end
+  end
+
   test "无公司授权不能往该公司凭证加行(CompanyAccessible)", ctx do
     outsider = actor(company_ids: [])
 

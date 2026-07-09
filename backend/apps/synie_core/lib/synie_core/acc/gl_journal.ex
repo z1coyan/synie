@@ -111,15 +111,13 @@ defmodule SynieCore.Acc.GlJournal do
       accept []
       require_atomic? false
 
+      # 构建期预检(用户体验,普通读即可):此时在动作事务之外,无需也不能加锁。
+      # 权威复检在下方 change 的 before_action 钩子内(事务内 FOR UPDATE 重读)完成。
       validate fn changeset, _context ->
         if changeset.data.status == :draft, do: :ok, else: {:error, message: "仅草稿凭证可审核"}
       end
 
       validate fn changeset, _context ->
-        # 凭证粒度锁,串行化行编辑与审核:先锁凭证行再读行集,与行编辑侧的
-        # SyncJournal 互斥,避免 READ COMMITTED 下读到并发事务未提交的行改动
-        __MODULE__.lock_journal(changeset.data.id)
-
         case SynieCore.Acc.GL.validate_entries(
                changeset.data.company_id,
                __MODULE__.load_line_entries(changeset.data.id)
@@ -142,7 +140,25 @@ defmodule SynieCore.Acc.GlJournal do
               cs
           end
         end)
+        |> Ash.Changeset.before_action(fn cs ->
+          # 权威复检:before_action 在动作事务内执行,FOR UPDATE 持锁到事务提交,
+          # 借此串行化审核与行编辑/并发审核——关闭双审核竞态(构建期预检看到的状态可能已过期)
+          case __MODULE__.lock_journal(cs.data.id) do
+            {:ok, %{status: :draft}} ->
+              case SynieCore.Acc.GL.validate_entries(
+                     cs.data.company_id,
+                     __MODULE__.load_line_entries(cs.data.id)
+                   ) do
+                :ok -> cs
+                {:error, msg} -> Ash.Changeset.add_error(cs, message: msg)
+              end
+
+            _ ->
+              Ash.Changeset.add_error(cs, message: "仅草稿凭证可审核")
+          end
+        end)
         |> Ash.Changeset.after_action(fn _changeset, journal ->
+          # 最后防线:事务内重读行并复检后过账(纵深防御,正常流程不应触发)
           SynieCore.Acc.GL.post!(
             %{
               voucher_type: "acc.gl_journal",
@@ -163,6 +179,7 @@ defmodule SynieCore.Acc.GlJournal do
       accept []
       require_atomic? false
 
+      # 构建期预检(用户体验),权威复检在 before_action 钩子内
       validate fn changeset, _context ->
         if changeset.data.status == :audited, do: :ok, else: {:error, message: "仅已审核凭证可取消"}
       end
@@ -170,6 +187,13 @@ defmodule SynieCore.Acc.GlJournal do
       change fn changeset, _context ->
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :cancelled)
+        |> Ash.Changeset.before_action(fn cs ->
+          # 权威复检:事务内 FOR UPDATE 重读,关闭双取消竞态(与审核同根因)
+          case __MODULE__.lock_journal(cs.data.id) do
+            {:ok, %{status: :audited}} -> cs
+            _ -> Ash.Changeset.add_error(cs, message: "仅已审核凭证可取消")
+          end
+        end)
         |> Ash.Changeset.after_action(fn _changeset, journal ->
           SynieCore.Acc.GL.cancel!("acc.gl_journal", journal.id)
           {:ok, journal}
@@ -258,7 +282,8 @@ defmodule SynieCore.Acc.GlJournal do
   end
 
   @doc false
-  # 凭证粒度锁:FOR UPDATE 锁住凭证行本身,串行化行编辑(SyncJournal)与审核
+  # 凭证粒度锁:FOR UPDATE 锁住凭证行本身;仅在 before_action 钩子内调用才有效——
+  # before_action 在动作事务内执行,锁持有到事务提交,借此串行化行编辑/审核/取消
   def lock_journal(journal_id) do
     __MODULE__
     |> Ash.Query.filter(id == ^journal_id)

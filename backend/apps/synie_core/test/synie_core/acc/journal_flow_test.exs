@@ -110,6 +110,22 @@ defmodule SynieCore.Acc.JournalFlowTest do
     end
   end
 
+  test "before_action 复检关闭双审核竞态:构建期见草稿、事务内已非草稿则拒绝", ctx do
+    line!(ctx.journal, 1, ctx.cash, :debit, "1")
+    line!(ctx.journal, 2, ctx.sales, :credit, "1")
+
+    # 构建期(此时凭证仍是草稿)先拿到有效 changeset,模拟并发审核的第二个请求
+    changeset = ctx.journal |> Ash.Changeset.for_update(:audit, %{}, authorize?: false)
+
+    # 模拟另一并发事务已先行审核并提交:直接改库,绕过动作校验
+    Ash.Seed.update!(ctx.journal, %{status: :audited})
+
+    assert_raise Ash.Error.Invalid, ~r/仅草稿凭证可审核/, fn -> Ash.update!(changeset) end
+
+    # 被拒的第二次审核未过账(before_action 复检在事务内拦住,after_action 未执行)
+    assert entries(ctx.journal) == []
+  end
+
   test "取消:分录标记作废,凭证终态;草稿不可取消", ctx do
     line!(ctx.journal, 1, ctx.cash, :debit, "8")
     line!(ctx.journal, 2, ctx.sales, :credit, "8")

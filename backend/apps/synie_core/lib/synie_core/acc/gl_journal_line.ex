@@ -2,6 +2,11 @@ defmodule SynieCore.Acc.GlJournalLine.SyncJournal do
   @moduledoc """
   行与父凭证同步:凭证必须存在且草稿态(增删改行的前提);
   create 时把凭证 company_id 冗余到行(数据权限按公司过滤依赖此列)。
+
+  构建期预检仅为友好报错(此时在动作事务之外,加锁不生效,故用普通读);
+  create 时顺带回填 company_id——CompanyAccessible 的声明顺序依赖它,必须在构建期完成。
+  权威复检在 before_action 钩子内进行:before_action 在动作事务内执行,FOR UPDATE
+  持锁到事务提交,借此串行化行编辑与审核/取消,关闭构建期预检看到 stale 状态的竞态窗口。
   """
 
   use Ash.Resource.Change
@@ -10,34 +15,59 @@ defmodule SynieCore.Acc.GlJournalLine.SyncJournal do
 
   @impl true
   def change(changeset, _opts, _context) do
-    journal_id =
-      Ash.Changeset.get_attribute(changeset, :journal_id) || changeset.data.journal_id
+    journal_id = changeset_journal_id(changeset)
 
-    # 凭证粒度锁,串行化行编辑与审核:FOR UPDATE 阻塞到并发审核事务提交后再读最新状态
-    result =
-      journal_id &&
-        (SynieCore.Acc.GlJournal
-         |> Ash.Query.filter(id == ^journal_id)
-         |> Ash.Query.lock("FOR UPDATE")
-         |> Ash.read_one(authorize?: false))
+    changeset =
+      case read_journal(journal_id) do
+        {:ok, %{status: :draft} = journal} ->
+          if changeset.action_type == :create do
+            Ash.Changeset.force_change_attribute(changeset, :company_id, journal.company_id)
+          else
+            changeset
+          end
 
-    case result do
-      {:ok, %{status: :draft} = journal} ->
-        if changeset.action_type == :create do
-          Ash.Changeset.force_change_attribute(changeset, :company_id, journal.company_id)
-        else
-          changeset
-        end
+        {:ok, nil} ->
+          Ash.Changeset.add_error(changeset, field: :journal_id, message: "凭证不存在")
 
-      {:ok, nil} ->
-        Ash.Changeset.add_error(changeset, field: :journal_id, message: "凭证不存在")
+        {:ok, _journal} ->
+          Ash.Changeset.add_error(changeset, field: :journal_id, message: "仅草稿凭证可编辑分录行")
 
-      {:ok, _journal} ->
-        Ash.Changeset.add_error(changeset, field: :journal_id, message: "仅草稿凭证可编辑分录行")
+        _ ->
+          Ash.Changeset.add_error(changeset, field: :journal_id, message: "凭证不存在")
+      end
 
-      _ ->
-        Ash.Changeset.add_error(changeset, field: :journal_id, message: "凭证不存在")
-    end
+    Ash.Changeset.before_action(changeset, fn cs ->
+      case lock_journal(changeset_journal_id(cs)) do
+        {:ok, %{status: :draft}} ->
+          cs
+
+        {:ok, nil} ->
+          Ash.Changeset.add_error(cs, field: :journal_id, message: "凭证不存在")
+
+        _ ->
+          Ash.Changeset.add_error(cs, field: :journal_id, message: "仅草稿凭证可编辑分录行")
+      end
+    end)
+  end
+
+  defp changeset_journal_id(changeset),
+    do: Ash.Changeset.get_attribute(changeset, :journal_id) || changeset.data.journal_id
+
+  defp read_journal(nil), do: {:ok, nil}
+
+  defp read_journal(journal_id) do
+    SynieCore.Acc.GlJournal
+    |> Ash.Query.filter(id == ^journal_id)
+    |> Ash.read_one(authorize?: false)
+  end
+
+  defp lock_journal(nil), do: {:ok, nil}
+
+  defp lock_journal(journal_id) do
+    SynieCore.Acc.GlJournal
+    |> Ash.Query.filter(id == ^journal_id)
+    |> Ash.Query.lock("FOR UPDATE")
+    |> Ash.read_one(authorize?: false)
   end
 end
 
