@@ -13,7 +13,7 @@ defmodule SynieWeb.SchemaAuthzTest do
   defp user_with!(permissions) do
     user =
       User
-      |> Ash.Changeset.for_create(:register, %{
+      |> Ash.Changeset.for_create(:create, %{
         username: "u_#{System.unique_integer([:positive])}",
         password: "secret123"
       })

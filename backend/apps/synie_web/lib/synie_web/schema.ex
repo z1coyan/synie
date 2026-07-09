@@ -18,6 +18,17 @@ defmodule SynieWeb.Schema do
     field :actions, non_null(list_of(non_null(:string)))
   end
 
+  # 明文密码仅在创建/重置的响应里出现一次,后端只存哈希,事后不可再查
+  object :sys_user_with_password do
+    field :id, non_null(:id)
+    field :username, non_null(:string)
+    field :password, non_null(:string)
+  end
+
+  object :reset_password_result do
+    field :password, non_null(:string)
+  end
+
   object :grid_enum_option do
     field :value, non_null(:string)
     field :label, non_null(:string)
@@ -100,7 +111,62 @@ defmodule SynieWeb.Schema do
         end
       end)
     end
+
+    field :create_sys_user, non_null(:sys_user_with_password) do
+      arg(:username, non_null(:string))
+      arg(:name, :string)
+
+      resolve(fn args, %{context: context} ->
+        password = SynieCore.Accounts.generate_password()
+
+        SynieCore.Accounts.User
+        |> Ash.Changeset.for_create(:create, Map.put(args, :password, password),
+          actor: context[:actor]
+        )
+        |> Ash.create()
+        |> case do
+          {:ok, user} ->
+            {:ok, %{id: user.id, username: to_string(user.username), password: password}}
+
+          {:error, error} ->
+            {:error, mutation_error(error)}
+        end
+      end)
+    end
+
+    field :reset_sys_user_password, non_null(:reset_password_result) do
+      arg(:id, non_null(:id))
+
+      resolve(fn %{id: id}, %{context: context} ->
+        actor = context[:actor]
+        password = SynieCore.Accounts.generate_password()
+
+        with {:ok, user} <- Ash.get(SynieCore.Accounts.User, id, actor: actor),
+             {:ok, _user} <-
+               user
+               |> Ash.Changeset.for_update(:reset_password, %{password: password}, actor: actor)
+               |> Ash.update() do
+          {:ok, %{password: password}}
+        else
+          {:error, error} -> {:error, mutation_error(error)}
+        end
+      end)
+    end
   end
+
+  defp mutation_error(%Ash.Error.Forbidden{}), do: "无权限执行该操作"
+
+  defp mutation_error(%{errors: errors}) when is_list(errors),
+    do: Enum.map_join(errors, "; ", &sub_error_message/1)
+
+  defp mutation_error(error), do: Exception.message(error)
+
+  # 字段类子错误自带 field/message,优先用它;Exception.message 会带 Bread Crumbs 等内部噪音
+  defp sub_error_message(%{field: field, message: message})
+       when not is_nil(field) and is_binary(message),
+       do: "#{field} #{message}"
+
+  defp sub_error_message(error), do: Exception.message(error)
 
   defp session_user(nil), do: nil
 

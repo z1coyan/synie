@@ -13,7 +13,7 @@ defmodule SynieCore.AuthzFixtures do
       )
 
     User
-    |> Ash.Changeset.for_create(:register, attrs)
+    |> Ash.Changeset.for_create(:create, attrs)
     |> Ash.create!(authorize?: false)
   end
 

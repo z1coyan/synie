@@ -5,6 +5,7 @@ export const DOMAIN_LABELS: Record<string, string> = {
 }
 
 export const RESOURCE_LABELS: Record<string, string> = {
+  'sys.user': '用户',
   'sys.role': '角色',
   'sys.user_role': '用户角色',
   'sys.role_permission': '角色权限',

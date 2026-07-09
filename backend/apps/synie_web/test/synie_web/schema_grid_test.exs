@@ -13,7 +13,7 @@ defmodule SynieWeb.SchemaGridTest do
   defp user_with!(permissions) do
     user =
       User
-      |> Ash.Changeset.for_create(:register, %{
+      |> Ash.Changeset.for_create(:create, %{
         username: "u_#{System.unique_integer([:positive])}",
         password: "secret123"
       })
@@ -244,7 +244,7 @@ defmodule SynieWeb.SchemaGridTest do
     end
 
     test "白名单外资源报错" do
-      result = run_meta!(super_actor(), "sysUsers")
+      result = run_meta!(super_actor(), "sysNotARealResource")
       assert result[:errors] != nil and result[:errors] != []
     end
   end

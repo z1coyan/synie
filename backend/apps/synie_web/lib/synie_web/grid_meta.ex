@@ -9,6 +9,7 @@ defmodule SynieWeb.GridMeta do
   alias SynieCore.Authz
 
   @resources %{
+    "sysUsers" => SynieCore.Accounts.User,
     "sysRoles" => SynieCore.Authz.Role,
     "basCompanies" => SynieCore.Base.Company,
     "basCurrencies" => SynieCore.Base.Currency,

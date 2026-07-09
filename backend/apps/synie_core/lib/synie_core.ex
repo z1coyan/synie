@@ -5,6 +5,7 @@ defmodule SynieCore do
   graphql do
     queries do
       # 约定:list 查询一律 offset 分页,不留扁平列表(见 backend/AGENTS.md)
+      list SynieCore.Accounts.User, :sys_users, :read, paginate_with: :offset
       list SynieCore.Authz.Role, :sys_roles, :read, paginate_with: :offset
       list SynieCore.Authz.UserRole, :sys_user_roles, :read, paginate_with: :offset
       list SynieCore.Authz.RolePermission, :sys_role_permissions, :read, paginate_with: :offset
@@ -17,6 +18,10 @@ defmodule SynieCore do
     end
 
     mutations do
+      # 用户的 create / 重置密码走 schema.ex 手写 mutation(需要一次性返回明文密码)
+      update SynieCore.Accounts.User, :update_sys_user, :update
+      destroy SynieCore.Accounts.User, :destroy_sys_user, :destroy
+
       create SynieCore.Authz.Role, :create_sys_role, :create
       update SynieCore.Authz.Role, :update_sys_role, :update
       destroy SynieCore.Authz.Role, :destroy_sys_role, :destroy

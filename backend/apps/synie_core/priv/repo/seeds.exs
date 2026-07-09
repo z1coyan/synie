@@ -19,7 +19,7 @@ user =
   else
     created =
       User
-      |> Ash.Changeset.for_create(:register, %{
+      |> Ash.Changeset.for_create(:create, %{
         username: username,
         name: "系统管理员",
         password: "admin123"

@@ -99,7 +99,7 @@ defmodule SynieCore.Audit.TrackTest do
 
     assert [log] = logs_for(user.id)
     assert log.resource == "sys_user"
-    assert log.action_name == "register"
+    assert log.action_name == "create"
     assert log.changes["hashed_password"] == %{"to" => "[FILTERED]"}
   end
 

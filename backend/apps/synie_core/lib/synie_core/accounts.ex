@@ -11,10 +11,11 @@ defmodule SynieCore.Accounts do
   """
   @spec authenticate(String.t(), String.t()) :: {:ok, User.t()} | {:error, :invalid_credentials}
   def authenticate(username, password) when is_binary(username) and is_binary(password) do
+    # actor 尚未建立(登录中),受信内部路径
     user =
       User
       |> Ash.Query.for_read(:by_username, %{username: username})
-      |> Ash.read_one!()
+      |> Ash.read_one!(authorize?: false)
 
     cond do
       is_nil(user) ->
@@ -32,9 +33,16 @@ defmodule SynieCore.Accounts do
   @doc "按主键取用户,不存在时返回 `nil`。"
   @spec get_user(String.t()) :: User.t() | nil
   def get_user(id) do
-    case Ash.get(User, id) do
+    # 每请求 actor 构建入口,受信内部路径
+    case Ash.get(User, id, authorize?: false) do
       {:ok, user} -> user
       {:error, _} -> nil
     end
+  end
+
+  @doc "生成随机初始密码(URL-safe Base64,16 字符),明文只随创建/重置响应返回一次。"
+  @spec generate_password() :: String.t()
+  def generate_password do
+    :crypto.strong_rand_bytes(12) |> Base.url_encode64(padding: false)
   end
 end

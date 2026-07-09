@@ -10,11 +10,11 @@ defmodule SynieCore.AccountsTest do
 
   defp register!(attrs) do
     User
-    |> Ash.Changeset.for_create(:register, attrs)
-    |> Ash.create!()
+    |> Ash.Changeset.for_create(:create, attrs)
+    |> Ash.create!(authorize?: false)
   end
 
-  test "register 会把密码哈希后存入 hashed_password" do
+  test "create 会把密码哈希后存入 hashed_password" do
     user = register!(%{username: "alice", name: "Alice", password: "secret123"})
 
     assert String.starts_with?(user.hashed_password, "$pbkdf2-")

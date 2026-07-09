@@ -9,7 +9,12 @@ export const Route = createFileRoute('/_app/system/logs')({
   component: LogsPage,
 })
 
-const ACTION_LABELS: Record<string, string> = { create: '创建', update: '更新', destroy: '删除' }
+const ACTION_LABELS: Record<string, string> = {
+  create: '创建',
+  update: '更新',
+  destroy: '删除',
+  reset_password: '重置密码',
+}
 
 // 值为 Track 落库的 GraphQL type 名;新资源接审计后在此补中文,漏了则原样显示英文
 const RESOURCE_LABELS: Record<string, string> = {

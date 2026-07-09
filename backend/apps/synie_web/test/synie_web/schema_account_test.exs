@@ -29,7 +29,7 @@ defmodule SynieWeb.SchemaAccountTest do
   defp user_with!(permissions, companies) do
     user =
       User
-      |> Ash.Changeset.for_create(:register, %{username: "u_#{uniq()}", password: "secret123"})
+      |> Ash.Changeset.for_create(:create, %{username: "u_#{uniq()}", password: "secret123"})
       |> Ash.create!(authorize?: false)
 
     role =
