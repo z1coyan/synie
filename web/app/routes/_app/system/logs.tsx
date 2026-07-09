@@ -14,6 +14,8 @@ const ACTION_LABELS: Record<string, string> = {
   update: '更新',
   destroy: '删除',
   reset_password: '重置密码',
+  audit: '审核',
+  cancel: '取消',
 }
 
 // 值为 Track 落库的 GraphQL type 名;新资源接审计后在此补中文,漏了则原样显示英文
@@ -31,6 +33,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   pur_supplier: '供应商',
   sys_file: '附件文件',
   sys_attachment: '附件关联',
+  acc_gl_journal: '会计凭证',
+  acc_gl_journal_line: '凭证分录行',
 }
 
 // id 列展示原始 uuid 无阅读价值,记录名称/操作人已够定位;需要按 id 排查时直接查库

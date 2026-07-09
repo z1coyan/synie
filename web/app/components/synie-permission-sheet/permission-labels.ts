@@ -4,6 +4,7 @@ export const DOMAIN_LABELS: Record<string, string> = {
   base: '基础资料',
   sales: '销售',
   purchase: '采购',
+  acc: '财务',
 }
 
 export const RESOURCE_LABELS: Record<string, string> = {
@@ -18,6 +19,8 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'sales.customer': '客户',
   'purchase.supplier': '供应商',
   'sys.file': '附件',
+  'acc.gl_entry': '总账分录',
+  'acc.gl_journal': '会计凭证',
 }
 
 export const ACTION_LABELS: Record<string, string> = {
@@ -31,6 +34,8 @@ export const ACTION_LABELS: Record<string, string> = {
   batch_delete: '批量删除',
   batch_update: '批量更新',
   batch_print: '批量打印',
+  audit: '审核',
+  cancel: '取消',
 }
 
 export const domainLabel = (d: string) => DOMAIN_LABELS[d] ?? d
