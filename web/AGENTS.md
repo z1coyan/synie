@@ -14,7 +14,7 @@
 - 数据列表一律用 `SynieDataGrid`（`~/components/synie-data-grid/`）；数据详情、新增、编辑一律用 `SynieRecordDrawer`（`~/components/synie-record-drawer/`）三态抽屉，不要自造表格或表单。
 - 字段行为（必填/只读 `edit`/条件显隐 `visible`/栅格 `cols`/默认值）通过 `fields` override 声明，提交 mutation 写在页面 `onSubmit` 回调；接入范例见 `routes/_app/system/roles.tsx`。
 - 组件能力不够时先扩组件再用，不要在页面里绕过它手搭。
-- 记录附件用 `SynieAttachmentPanel`（`~/components/synie-attachment-panel/`）挂 SynieRecordDrawer 的 `extraContent`，传 ownerType（graphql type 名）/ownerId；文件上传下载封装在 `~/lib/files.ts`（REST `/api/files`）。
+- 一切文件上传/下载必须走 `~/lib/files.ts`（REST `/api/files`），不要在页面自写 fetch/FormData；记录附件 UI 一律用 `SynieAttachmentPanel`（`~/components/synie-attachment-panel/`）挂 SynieRecordDrawer 的 `extraContent`，传 ownerType（graphql type 名）/ownerId。
 
 ## 移动端适配
 

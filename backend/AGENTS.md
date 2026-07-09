@@ -17,6 +17,7 @@
 
 ## 文件/附件
 
+- 一切文件/附件能力必须走统一文件接口:元数据只存 `sys_file`/`sys_attachment`,读写只经 `SynieCore.Files`(上传编排)与 `SynieCore.Storage` 门面;禁止业务代码直接读写磁盘、自建文件表或另开上传端点。
 - 业务表挂附件零改动:走 `sys_attachment`(owner_type = graphql type 名 + owner_id);单文件字段直接加 `xxx_file_id` FK → `sys_file`。
 - 文件字节走 REST `POST/GET /api/files`(multipart/二进制不过 GraphQL);存储后端在 runtime.exs `:synie_core, :storages` 配置,新后端实现 `SynieCore.Storage.Adapter`。
 
