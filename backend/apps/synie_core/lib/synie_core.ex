@@ -4,14 +4,14 @@ defmodule SynieCore do
 
   graphql do
     queries do
-      # sys_roles 已上数据表格,开 offset 分页;其余系统资源规模小仍为扁平列表
+      # 约定:list 查询一律 offset 分页,不留扁平列表(见 backend/AGENTS.md)
       list SynieCore.Authz.Role, :sys_roles, :read, paginate_with: :offset
-      list SynieCore.Authz.UserRole, :sys_user_roles, :read, paginate_with: nil
-      list SynieCore.Authz.RolePermission, :sys_role_permissions, :read, paginate_with: nil
-      list SynieCore.Authz.UserCompany, :sys_user_companies, :read, paginate_with: nil
+      list SynieCore.Authz.UserRole, :sys_user_roles, :read, paginate_with: :offset
+      list SynieCore.Authz.RolePermission, :sys_role_permissions, :read, paginate_with: :offset
+      list SynieCore.Authz.UserCompany, :sys_user_companies, :read, paginate_with: :offset
       list SynieCore.Org.Company, :bas_companies, :read, paginate_with: :offset
-      list SynieCore.Base.Unit, :bas_units, :read, paginate_with: nil
-      list SynieCore.Base.Currency, :bas_currencies, :read, paginate_with: nil
+      list SynieCore.Base.Unit, :bas_units, :read, paginate_with: :offset
+      list SynieCore.Base.Currency, :bas_currencies, :read, paginate_with: :offset
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
     end
 
