@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { parseDate } from '@internationalized/date'
 import {
   Button,
@@ -54,6 +54,11 @@ export interface SynieRecordDrawerProps {
   onEdit?: () => void
   /** Sheet.Content 宽度样式 */
   contentClassName?: string
+  /**
+   * meta 列之外的附加内容(如多对多关联控件),渲染在字段栅格末尾、占满整行;
+   * 状态由页面自持,提交在页面 onSubmit 里自行处理。入参是冻结后的 mode/row(退场动画期间不闪)。
+   */
+  extraContent?: (mode: DrawerMode, row?: Row | null) => ReactNode
 }
 
 // Tailwind v4 JIT 扫不到动态拼接类名,1-12 静态映射
@@ -178,6 +183,9 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                       )}
                     </div>
                   ))}
+                  {props.extraContent && (
+                    <div className="lg:col-span-12">{props.extraContent(renderMode, renderRow)}</div>
+                  )}
                 </div>
               )}
             </Sheet.Body>

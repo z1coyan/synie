@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Button, Modal, Spinner, toast } from '@heroui/react'
+import { Button, Modal, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -28,15 +28,23 @@ const RESET_PASSWORD = `
     resetSysUserPassword(id: $id) { password }
   }
 `
-// 用户已授角色:limit 200 与 max_page_size 对齐,超出即截断,fail-closed 拒绝编辑(同 PermissionSheet)
-const userRolesQuery = (userId: string) => `
+
+// 用户当前角色/公司关联:limit 200 与 max_page_size 对齐,超出即截断,fail-closed 拒绝编辑
+const userJoinsQuery = (userId: string) => {
+  const uid = JSON.stringify(userId)
+  return `
   query {
-    sysUserRoles(filter: { userId: { eq: ${JSON.stringify(userId)} } }, limit: 200, offset: 0) {
+    sysUserRoles(filter: { userId: { eq: ${uid} } }, limit: 200, offset: 0) {
       count
       results { id roleId role { name } }
     }
+    sysUserCompanies(filter: { userId: { eq: ${uid} } }, limit: 200, offset: 0) {
+      count
+      results { id companyId company { name } }
+    }
   }
 `
+}
 const CREATE_USER_ROLE = `
   mutation ($input: CreateSysUserRoleInput!) {
     createSysUserRole(input: $input) { result { id } errors { message } }
@@ -47,6 +55,63 @@ const DESTROY_USER_ROLE = `
     destroySysUserRole(id: $id) { errors { message } }
   }
 `
+const CREATE_USER_COMPANY = `
+  mutation ($input: CreateSysUserCompanyInput!) {
+    createSysUserCompany(input: $input) { result { id } errors { message } }
+  }
+`
+const DESTROY_USER_COMPANY = `
+  mutation ($id: ID!) {
+    destroySysUserCompany(id: $id) { errors { message } }
+  }
+`
+
+/** 一条已存在的关联行:id 是关联表主键,targetId 是角色/公司 id */
+type JoinRow = { id: string; targetId: string; name: string }
+
+// ponytail: 逐条并发、聚合报错;量大或需事务性时后端加 bulk action 再切
+async function syncJoins(opts: {
+  userId: string
+  baseline: JoinRow[]
+  selected: string[]
+  names: Map<string, string>
+  createMutation: string
+  destroyMutation: string
+  createInput: (targetId: string) => Record<string, string>
+  kind: string
+}): Promise<string[]> {
+  const have = new Set(opts.baseline.map((r) => r.targetId))
+  const want = new Set(opts.selected)
+  const failed: string[] = []
+  const nameOf = (id: string) => opts.names.get(id) ?? id.slice(0, 8)
+  await Promise.all([
+    ...opts.selected
+      .filter((t) => !have.has(t))
+      .map(async (t) => {
+        try {
+          const res = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(opts.createMutation, {
+            input: { userId: opts.userId, ...opts.createInput(t) },
+          })
+          if (Object.values(res)[0].errors?.length) failed.push(`${opts.kind}添加失败:${nameOf(t)}`)
+        } catch {
+          failed.push(`${opts.kind}添加失败:${nameOf(t)}`)
+        }
+      }),
+    ...opts.baseline
+      .filter((r) => !want.has(r.targetId))
+      .map(async (r) => {
+        try {
+          const res = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(opts.destroyMutation, {
+            id: r.id,
+          })
+          if (Object.values(res)[0].errors?.length) failed.push(`${opts.kind}移除失败:${nameOf(r.targetId)}`)
+        } catch {
+          failed.push(`${opts.kind}移除失败:${nameOf(r.targetId)}`)
+        }
+      }),
+  ])
+  return failed
+}
 
 // ponytail: execCommand 已废弃,但 HTTP 环境(如 Tailscale IP 访问)下 clipboard API 不可用,只有这条路
 function legacyCopy(text: string) {
@@ -61,153 +126,13 @@ function legacyCopy(text: string) {
   if (!ok) throw new Error('execCommand copy failed')
 }
 
-// 分配角色弹窗:打开拉当前授权回显,保存按勾选 diff 逐条增删 sys_user_role
-function AssignRolesModal(props: { user: Row | null; canWrite: boolean; onClose: () => void }) {
-  const { user, canWrite, onClose } = props
-  const [loaded, setLoaded] = useState<{ userId: string; rows: { id: string; roleId: string }[] } | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<string[]>([])
-  const [names, setNames] = useState<Map<string, string>>(new Map())
-  const [saving, setSaving] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
-
-  // 关闭动画期间父级已把 user 置空,标题读最后一次打开的快照(同 PermissionSheet 的 lastOpenRef 模式)
-  const lastUserRef = useRef(user)
-  if (user) lastUserRef.current = user
-  const display = user ?? lastUserRef.current
-
-  useEffect(() => {
-    if (!user) return
-    let cancelled = false
-    setLoaded(null)
-    setError(null)
-    gqlFetch<{
-      sysUserRoles: { count: number; results: { id: string; roleId: string; role: { name: string } | null }[] }
-    }>(userRolesQuery(String(user.id)))
-      .then((res) => {
-        if (cancelled) return
-        const { count, results } = res.sysUserRoles
-        // 单页截断时未取回的授权行会被当成"未勾选",保存会错误回收,直接拒绝编辑
-        if (count > results.length) {
-          setError('角色行数超出单页容量(200),请联系开发处理')
-          return
-        }
-        setLoaded({ userId: String(user.id), rows: results.map(({ id, roleId }) => ({ id, roleId })) })
-        setSelected(results.map((r) => r.roleId))
-        setNames(new Map(results.map((r) => [r.roleId, r.role?.name ?? r.roleId.slice(0, 8)])))
-      })
-      .catch((e) => {
-        if (!cancelled) setError((e as Error).message)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [user, reloadKey])
-
-  // 换用户时上一个用户的数据还没被 effect 清掉的那一帧,当未加载走 Spinner(同 PermissionSheet)
-  const ready = loaded && user && loaded.userId === String(user.id) ? loaded : null
-
-  const save = async () => {
-    if (!user || !ready) return
-    const have = new Map(ready.rows.map((r) => [r.roleId, r.id]))
-    const want = new Set(selected)
-    const toCreate = selected.filter((roleId) => !have.has(roleId))
-    const toDestroy = ready.rows.filter((r) => !want.has(r.roleId))
-    if (toCreate.length === 0 && toDestroy.length === 0) {
-      onClose()
-      return
-    }
-    setSaving(true)
-    const failed: string[] = []
-    const nameOf = (roleId: string) => names.get(roleId) ?? roleId.slice(0, 8)
-    // ponytail: 前端逐条并发、聚合报错,同 PermissionSheet;量大或需事务性时后端加 bulk action 再切
-    await Promise.all([
-      ...toCreate.map(async (roleId) => {
-        try {
-          const res = await gqlFetch<{ createSysUserRole: { errors: { message: string }[] | null } }>(
-            CREATE_USER_ROLE,
-            { input: { userId: user.id, roleId } }
-          )
-          if (res.createSysUserRole.errors?.length) failed.push(`添加失败:${nameOf(roleId)}`)
-        } catch {
-          failed.push(`添加失败:${nameOf(roleId)}`)
-        }
-      }),
-      ...toDestroy.map(async (r) => {
-        try {
-          const res = await gqlFetch<{ destroySysUserRole: { errors: { message: string }[] | null } }>(
-            DESTROY_USER_ROLE,
-            { id: r.id }
-          )
-          if (res.destroySysUserRole.errors?.length) failed.push(`移除失败:${nameOf(r.roleId)}`)
-        } catch {
-          failed.push(`移除失败:${nameOf(r.roleId)}`)
-        }
-      }),
-    ])
-    setSaving(false)
-    if (failed.length > 0) {
-      toast.danger('角色保存部分失败', { description: failed.join('、') })
-      setReloadKey((k) => k + 1) // 重拉真实授权态,弹窗不关
-    } else {
-      toast.success('角色已保存')
-      onClose()
-    }
-  }
-
+/** view 态的关联展示:与 ViewField 同一套样式 */
+function JoinText({ label, items }: { label: string; items: string[] }) {
   return (
-    <Modal.Backdrop isOpen={user !== null} onOpenChange={(open) => !open && onClose()}>
-      <Modal.Container>
-        <Modal.Dialog>
-          <Modal.Header>
-            <Modal.Heading>分配角色:{String(display?.username ?? '')}</Modal.Heading>
-          </Modal.Header>
-          <Modal.Body>
-            {error ? (
-              <div className="flex items-center gap-3">
-                <p className="flex-1 text-sm text-danger">{error}</p>
-                <Button size="sm" variant="secondary" onPress={() => setReloadKey((k) => k + 1)}>
-                  重试
-                </Button>
-              </div>
-            ) : !ready ? (
-              <div className="flex justify-center py-6">
-                <Spinner />
-              </div>
-            ) : (
-              <>
-                <RemoteMultiSelect
-                  resource="sysRoles"
-                  label="角色"
-                  placeholder="搜索并选择角色…"
-                  value={selected}
-                  isDisabled={!canWrite || saving}
-                  onChange={(ids, rows) => {
-                    setSelected(ids)
-                    setNames((prev) => {
-                      const next = new Map(prev)
-                      for (const r of rows) if (r.name != null) next.set(r.id, String(r.name))
-                      return next
-                    })
-                  }}
-                />
-                {!canWrite && <p className="mt-2 text-xs text-ink-500">当前账号无角色分配写权限,仅可查看。</p>}
-              </>
-            )}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onPress={onClose}>
-              取消
-            </Button>
-            {canWrite && (
-              <Button isPending={saving} isDisabled={!ready} onPress={save}>
-                保存
-              </Button>
-            )}
-          </Modal.Footer>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+    <div className="flex flex-col gap-1">
+      <span className="text-sm text-muted">{label}</span>
+      <div className="text-sm">{items.length > 0 ? items.join('、') : <span className="text-muted">—</span>}</div>
+    </div>
   )
 }
 
@@ -219,7 +144,11 @@ function UsersPage() {
   const [oneTime, setOneTime] = useState<{ username: string; password: string } | null>(null)
   const [resetTarget, setResetTarget] = useState<Row | null>(null)
   const [resetting, setResetting] = useState(false)
-  const [roleTarget, setRoleTarget] = useState<Row | null>(null)
+  // 角色/公司关联草稿:打开抽屉时装载基线,提交时按选中集 diff 增删
+  const [joins, setJoins] = useState<{ roles: JoinRow[]; companies: JoinRow[] } | null>(null)
+  const [roleSel, setRoleSel] = useState<string[]>([])
+  const [companySel, setCompanySel] = useState<string[]>([])
+  const [names, setNames] = useState<Map<string, string>>(new Map())
 
   // 重置密码入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
   useEffect(() => {
@@ -229,8 +158,59 @@ function UsersPage() {
   }, [])
 
   const canReset = myPerms.has('sys.user:update')
-  const canViewRoles = myPerms.has('sys.user_role:read')
-  const canWriteRoles = myPerms.has('sys.user_role:create') && myPerms.has('sys.user_role:delete')
+
+  const mergeNames = (rows: Row[]) =>
+    setNames((prev) => {
+      const next = new Map(prev)
+      for (const r of rows) if (r.name != null) next.set(r.id, String(r.name))
+      return next
+    })
+
+  // 先拉关联再开抽屉,避免表单已开、回显未到的中间态
+  const openDrawer = async (mode: DrawerMode, row: Row | null) => {
+    if (mode === 'create' || !row) {
+      setJoins({ roles: [], companies: [] })
+      setRoleSel([])
+      setCompanySel([])
+      setNames(new Map())
+      setDrawer({ mode: 'create', row: null })
+      return
+    }
+    try {
+      const d = await gqlFetch<{
+        sysUserRoles: { count: number; results: { id: string; roleId: string; role: { name: string } | null }[] }
+        sysUserCompanies: {
+          count: number
+          results: { id: string; companyId: string; company: { name: string } | null }[]
+        }
+      }>(userJoinsQuery(String(row.id)))
+      // 单页截断时未取回的关联会被当成"未勾选",保存会错误回收,直接拒开
+      if (
+        d.sysUserRoles.count > d.sysUserRoles.results.length ||
+        d.sysUserCompanies.count > d.sysUserCompanies.results.length
+      ) {
+        toast.danger('用户关联行数超出单页容量(200),请联系开发处理')
+        return
+      }
+      const roles = d.sysUserRoles.results.map((r) => ({
+        id: r.id,
+        targetId: r.roleId,
+        name: r.role?.name ?? r.roleId.slice(0, 8),
+      }))
+      const companies = d.sysUserCompanies.results.map((c) => ({
+        id: c.id,
+        targetId: c.companyId,
+        name: c.company?.name ?? c.companyId.slice(0, 8),
+      }))
+      setJoins({ roles, companies })
+      setRoleSel(roles.map((r) => r.targetId))
+      setCompanySel(companies.map((c) => c.targetId))
+      setNames(new Map([...roles, ...companies].map((r) => [r.targetId, r.name])))
+      setDrawer({ mode, row })
+    } catch (e) {
+      toast.danger('用户角色/公司加载失败', { description: (e as Error).message })
+    }
+  }
 
   const doReset = async () => {
     if (!resetTarget) return
@@ -272,19 +252,12 @@ function UsersPage() {
         <SynieDataGrid
           key={reloadKey}
           resource="sysUsers"
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => void openDrawer('view', row)}
+          onCreate={() => void openDrawer('create', null)}
+          onEdit={(row) => void openDrawer('edit', row)}
           rowActions={
-            canViewRoles || canReset
-              ? [
-                  ...(canViewRoles
-                    ? [{ key: 'assign-roles', label: '分配角色', onAction: (row: Row) => setRoleTarget(row) }]
-                    : []),
-                  ...(canReset
-                    ? [{ key: 'reset-password', label: '重置密码', onAction: (row: Row) => setResetTarget(row) }]
-                    : []),
-                ]
+            canReset
+              ? [{ key: 'reset-password', label: '重置密码', onAction: (row) => setResetTarget(row) }]
               : undefined
           }
         />
@@ -301,14 +274,52 @@ function UsersPage() {
           username: { required: true, edit: 'createOnly', placeholder: '如 zhangsan' },
           name: { placeholder: '如 张三' },
         }}
+        extraContent={(mode) =>
+          joins && (
+            <div className="grid grid-cols-1 gap-4">
+              {mode === 'view' ? (
+                <>
+                  <JoinText label="角色" items={joins.roles.map((r) => r.name)} />
+                  <JoinText label="可访问公司" items={joins.companies.map((c) => c.name)} />
+                </>
+              ) : (
+                <>
+                  <RemoteMultiSelect
+                    resource="sysRoles"
+                    label="角色"
+                    placeholder="搜索并选择角色…"
+                    value={roleSel}
+                    initialRows={joins.roles.map((r) => ({ id: r.targetId, name: r.name }))}
+                    onChange={(ids, rows) => {
+                      setRoleSel(ids)
+                      mergeNames(rows)
+                    }}
+                  />
+                  <RemoteMultiSelect
+                    resource="basCompanies"
+                    label="可访问公司"
+                    placeholder="搜索并选择公司…"
+                    value={companySel}
+                    initialRows={joins.companies.map((c) => ({ id: c.targetId, name: c.name }))}
+                    onChange={(ids, rows) => {
+                      setCompanySel(ids)
+                      mergeNames(rows)
+                    }}
+                  />
+                </>
+              )}
+            </div>
+          )
+        }
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
+          let userId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{ createSysUser: { username: string; password: string } }>(CREATE_USER, {
-              username: values.username,
-              name: (values.name as string) || null,
-            })
-            toast.success('用户已创建')
+            const data = await gqlFetch<{ createSysUser: { id: string; username: string; password: string } }>(
+              CREATE_USER,
+              { username: values.username, name: (values.name as string) || null }
+            )
+            userId = data.createSysUser.id
             setOneTime({ username: data.createSysUser.username, password: data.createSysUser.password })
           } else {
             const data = await gqlFetch<{ updateSysUser: { errors: { message: string }[] | null } }>(UPDATE_USER, {
@@ -317,14 +328,39 @@ function UsersPage() {
             })
             const errors = data.updateSysUser.errors
             if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
-            toast.success('用户已更新')
+            userId = String(drawer!.row!.id)
+          }
+          // 用户已落库,关联同步失败只提示不回滚(重开抽屉可见真实状态,可再改再存)
+          const failed = [
+            ...(await syncJoins({
+              userId,
+              baseline: joins?.roles ?? [],
+              selected: roleSel,
+              names,
+              createMutation: CREATE_USER_ROLE,
+              destroyMutation: DESTROY_USER_ROLE,
+              createInput: (roleId) => ({ roleId }),
+              kind: '角色',
+            })),
+            ...(await syncJoins({
+              userId,
+              baseline: joins?.companies ?? [],
+              selected: companySel,
+              names,
+              createMutation: CREATE_USER_COMPANY,
+              destroyMutation: DESTROY_USER_COMPANY,
+              createInput: (companyId) => ({ companyId }),
+              kind: '公司',
+            })),
+          ]
+          if (failed.length > 0) {
+            toast.danger('角色/公司保存部分失败', { description: failed.join('、') })
+          } else {
+            toast.success(mode === 'create' ? '用户已创建' : '用户已更新')
           }
           setReloadKey((k) => k + 1)
         }}
       />
-
-      {/* 分配角色 */}
-      <AssignRolesModal user={roleTarget} canWrite={canWriteRoles} onClose={() => setRoleTarget(null)} />
 
       {/* 重置确认 */}
       <Modal.Backdrop isOpen={resetTarget !== null} onOpenChange={(open) => !open && setResetTarget(null)}>

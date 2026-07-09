@@ -16,6 +16,8 @@ defmodule SynieCore.Authz.Registry do
     |> Enum.flat_map(&Ash.Domain.Info.resources/1)
     |> Enum.filter(&permission_source?/1)
     |> Enum.map(&%{prefix: &1.permission_prefix(), actions: &1.permission_actions()})
+    # 复用他人权限码的资源(如 UserRole/UserCompany 跟随 sys.user)actions 为空,不进目录
+    |> Enum.reject(&(&1.actions == []))
   end
 
   @doc "全部具体权限码。"

@@ -7,9 +7,7 @@ export const DOMAIN_LABELS: Record<string, string> = {
 export const RESOURCE_LABELS: Record<string, string> = {
   'sys.user': '用户',
   'sys.role': '角色',
-  'sys.user_role': '用户角色',
   'sys.role_permission': '角色权限',
-  'sys.user_company': '用户公司',
   'sys.audit_log': '操作日志',
   'base.company': '公司',
   'base.unit': '计量单位',

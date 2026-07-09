@@ -22,13 +22,24 @@ defmodule SynieCore.Authz.UserRole do
       authorize_if always()
     end
 
-    policy always() do
-      authorize_if SynieCore.Authz.Checks.HasPermission
+    # 角色分配视为用户管理的一部分,不设独立权限点:读跟随 sys.user:read,
+    # 增删跟随 sys.user:update(建用户顺手分配也允许 sys.user:create)
+    policy action(:read) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "read"}
+    end
+
+    policy action(:create) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "update"}
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "create"}
+    end
+
+    policy action(:destroy) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "update"}
     end
   end
 
-  def permission_prefix, do: "sys.user_role"
-  def permission_actions, do: ~w(create read delete)
+  def permission_prefix, do: "sys.user"
+  def permission_actions, do: []
 
   actions do
     read :read do

@@ -68,7 +68,9 @@ defmodule SynieCore.Authz.ResourcesTest do
     assert SynieCore.Authz.Role.permission_actions() ==
              ~w(create read update delete batch_delete export print batch_print)
 
-    assert SynieCore.Authz.UserRole.permission_prefix() == "sys.user_role"
+    # UserRole 复用 sys.user 权限码,不设独立权限点
+    assert SynieCore.Authz.UserRole.permission_prefix() == "sys.user"
+    assert SynieCore.Authz.UserRole.permission_actions() == []
     assert SynieCore.Authz.RolePermission.permission_prefix() == "sys.role_permission"
   end
 end

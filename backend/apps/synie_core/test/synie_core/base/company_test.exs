@@ -62,6 +62,8 @@ defmodule SynieCore.Base.CompanyTest do
 
   test "资源声明了权限前缀" do
     assert SynieCore.Base.Company.permission_prefix() == "base.company"
-    assert SynieCore.Authz.UserCompany.permission_prefix() == "sys.user_company"
+    # UserCompany 复用 sys.user 权限码,不设独立权限点
+    assert SynieCore.Authz.UserCompany.permission_prefix() == "sys.user"
+    assert SynieCore.Authz.UserCompany.permission_actions() == []
   end
 end
