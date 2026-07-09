@@ -1,4 +1,4 @@
-defmodule SynieCore.Org.CompanyTest do
+defmodule SynieCore.Base.CompanyTest do
   use ExUnit.Case, async: true
 
   import SynieCore.AuthzFixtures
@@ -61,7 +61,7 @@ defmodule SynieCore.Org.CompanyTest do
   end
 
   test "资源声明了权限前缀" do
-    assert SynieCore.Org.Company.permission_prefix() == "org.company"
+    assert SynieCore.Base.Company.permission_prefix() == "base.company"
     assert SynieCore.Authz.UserCompany.permission_prefix() == "sys.user_company"
   end
 end

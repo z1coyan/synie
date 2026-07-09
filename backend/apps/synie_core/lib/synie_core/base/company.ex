@@ -1,4 +1,4 @@
-defmodule SynieCore.Org.Company do
+defmodule SynieCore.Base.Company do
   @moduledoc "公司(ERPNext 式多公司,单库),对应 `bas_company` 表,树形结构支持集团/合并视角。"
 
   use Ash.Resource,
@@ -27,7 +27,7 @@ defmodule SynieCore.Org.Company do
     end
   end
 
-  def permission_prefix, do: "org.company"
+  def permission_prefix, do: "base.company"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

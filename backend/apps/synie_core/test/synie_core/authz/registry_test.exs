@@ -8,7 +8,7 @@ defmodule SynieCore.Authz.RegistryTest do
 
     assert prefixes ==
              Enum.sort(
-               ~w(sys.role sys.user_role sys.role_permission sys.user_company sys.audit_log org.company base.unit base.currency)
+               ~w(sys.role sys.user_role sys.role_permission sys.user_company sys.audit_log base.company base.unit base.currency)
              )
   end
 
@@ -17,7 +17,7 @@ defmodule SynieCore.Authz.RegistryTest do
 
     assert "sys.role:create" in codes
     assert "sys.role:delete" in codes
-    assert "org.company:update" in codes
+    assert "base.company:update" in codes
     refute "sys.role:import" in codes
   end
 
@@ -30,12 +30,15 @@ defmodule SynieCore.Authz.RegistryTest do
   end
 
   test "granted_codes 域通配展开" do
-    actor = %Actor{user_id: "x", permissions: MapSet.new(["org.*"])}
+    actor = %Actor{user_id: "x", permissions: MapSet.new(["base.*"])}
 
-    assert Enum.sort(Registry.granted_codes(actor)) ==
-             Enum.sort(
-               ~w(org.company:create org.company:read org.company:update org.company:delete)
-             )
+    codes = Registry.granted_codes(actor)
+
+    for resource <- ~w(company unit currency), action <- ~w(create read update delete) do
+      assert "base.#{resource}:#{action}" in codes
+    end
+
+    refute Enum.any?(codes, &String.starts_with?(&1, "sys."))
   end
 
   test "super_admin 得到全部权限码" do

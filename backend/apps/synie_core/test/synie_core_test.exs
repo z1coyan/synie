@@ -1,8 +1,16 @@
 defmodule SynieCoreTest do
   use ExUnit.Case
 
-  test "SynieCore is an Ash Domain exposing the Hello resource" do
+  test "SynieCore 域注册了全部业务资源" do
     resources = SynieCore |> Ash.Domain.Info.resources()
-    assert SynieCore.Resources.Hello in resources
+
+    for resource <- [
+          SynieCore.Accounts.User,
+          SynieCore.Authz.Role,
+          SynieCore.Base.Company,
+          SynieCore.Audit.Log
+        ] do
+      assert resource in resources
+    end
   end
 end

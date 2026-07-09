@@ -70,7 +70,7 @@ defmodule SynieCore.Authz.UserCompany do
       attribute_writable? true
     end
 
-    belongs_to :company, SynieCore.Org.Company do
+    belongs_to :company, SynieCore.Base.Company do
       allow_nil? false
       public? true
       attribute_public? true

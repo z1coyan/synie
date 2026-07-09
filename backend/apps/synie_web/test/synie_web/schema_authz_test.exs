@@ -82,7 +82,7 @@ defmodule SynieWeb.SchemaAuthzTest do
     assert %{data: %{"myPermissions" => codes}} = result
     assert "sys.role:read" in codes
     assert "sys.role:delete" in codes
-    refute "org.company:read" in codes
+    refute "base.company:read" in codes
   end
 
   test "未登录 myPermissions 返回空列表" do

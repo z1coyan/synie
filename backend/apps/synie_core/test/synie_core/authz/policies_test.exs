@@ -23,7 +23,7 @@ defmodule SynieCore.Authz.PoliciesTest do
   end
 
   test "无对应权限的 actor 被拒绝" do
-    actor = actor_with(["org.company:read"])
+    actor = actor_with(["base.company:read"])
 
     assert {:error, %Ash.Error.Forbidden{}} = Ash.read(Role, actor: actor)
   end

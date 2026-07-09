@@ -41,7 +41,7 @@ defmodule SynieWeb.SchemaGridTest do
   end
 
   defp company!(code, name, parent_id \\ nil) do
-    SynieCore.Org.Company
+    SynieCore.Base.Company
     |> Ash.Changeset.for_create(:create, %{code: code, name: name, short_name: name, parent_id: parent_id})
     |> Ash.create!(authorize?: false)
   end
@@ -327,7 +327,7 @@ defmodule SynieWeb.SchemaGridTest do
 
   describe "gridMeta 外键 ref" do
     test "有目标 read 权限:parentId 为 fk 列并携带 ref" do
-      actor = Authz.build_actor(user_with!(["org.company:read"]))
+      actor = Authz.build_actor(user_with!(["base.company:read"]))
       assert %{data: %{"gridMeta" => meta}} = run_meta!(actor, "basCompanies")
       by_name = Map.new(meta["columns"], &{&1["name"], &1})
 
@@ -357,7 +357,7 @@ defmodule SynieWeb.SchemaGridTest do
 
   describe "basCompanies 行查询" do
     test "offset 分页 + parent join + parentId/id in 筛选" do
-      actor = Authz.build_actor(user_with!(["org.company:read"]))
+      actor = Authz.build_actor(user_with!(["base.company:read"]))
       parent = company!("AA", "集团总部")
       _child = company!("AB", "华东子公司", parent.id)
       _other = company!("AC", "独立公司")

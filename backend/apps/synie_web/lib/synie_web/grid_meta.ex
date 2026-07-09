@@ -10,7 +10,7 @@ defmodule SynieWeb.GridMeta do
 
   @resources %{
     "sysRoles" => SynieCore.Authz.Role,
-    "basCompanies" => SynieCore.Org.Company,
+    "basCompanies" => SynieCore.Base.Company,
     "basCurrencies" => SynieCore.Base.Currency,
     "basUnits" => SynieCore.Base.Unit,
     "sysAuditLogs" => SynieCore.Audit.Log

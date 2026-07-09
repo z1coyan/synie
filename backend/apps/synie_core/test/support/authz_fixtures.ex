@@ -3,7 +3,7 @@ defmodule SynieCore.AuthzFixtures do
 
   alias SynieCore.Accounts.User
   alias SynieCore.Authz.{Role, RolePermission, UserCompany, UserRole}
-  alias SynieCore.Org.Company
+  alias SynieCore.Base.Company
 
   def user!(attrs \\ %{}) do
     attrs =
