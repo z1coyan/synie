@@ -154,12 +154,13 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     : mergeFilterLiterals([userFilterLiteral, fixedFilterLiteral])
   const effectiveSortLiteral = treeActive ? treeSortLiteral : sortLiteral
 
-  // 切公司(fixedFilter 变)或进出树形时,已加载的子层缓存与展开态失效,重置
+  // 切公司(fixedFilter 变)时已加载的子层缓存与展开态失效,重置;
+  // 筛选进出(treeActive 翻转)不重置——清空筛选回树形时保留原展开状态
   useEffect(() => {
     setExpanded(new Set())
     setChildrenByParent(new Map())
     setLoadingParents(new Set())
-  }, [fixedFilterLiteral, treeActive])
+  }, [fixedFilterLiteral])
 
   const rowsQuery = useQuery({
     queryKey: ['gridRows', resource, treeActive, page, pageSize, effectiveSortLiteral, effectiveFilterLiteral],
@@ -209,6 +210,9 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   // childrenCount>0 但未加载 → 返回占位行让 chevron 出现;展开时 onExpandedChange 落地真实子层
   const treeGetChildren = (row: Row): Row[] | undefined => {
+    // 筛选回退平铺期间行不带子层(不出箭头);getChildren 本身保持传入,
+    // 结构性 props 恒定才不会让 DataGrid 重建表头、打断筛选弹窗输入
+    if (userQuerying) return undefined
     if (isLoadingRow(row)) return undefined
     if (Number(row[hasChildrenField] ?? 0) <= 0) return undefined
     const loaded = childrenByParent.get(row.id)
@@ -260,8 +264,9 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         ),
         // RAC Table 要求至少一列 isRowHeader(行的无障碍名称);缺失会在并发渲染中反复抛可恢复错误
         isRowHeader: i === 0,
-        // 树形激活时列排序无意义(单层懒加载),整表禁用排序入口
-        allowsSorting: treeActive ? false : col.sortable,
+        // 树形页面列排序无意义(单层懒加载),整表禁用排序入口。
+        // 用恒定的 treeMode 而非 treeActive:筛选回退平铺时列定义不得翻转,否则表头重建打断筛选输入
+        allowsSorting: treeMode ? false : col.sortable,
         width: overrides[col.name]?.width,
         cell: (row: Row) => {
           // 懒加载占位行只有 id:首列显示「加载中…」,其余列空
@@ -269,7 +274,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           return overrides[col.name]?.render?.(row[col.name], row) ?? defaultCell(col, row[col.name], row)
         },
       })),
-    [columns, overrides, filters, treeActive]
+    [columns, overrides, filters, treeMode]
   )
 
   // 取消排序必须传 null 而非 undefined:undefined 会让 DataGrid 退回非受控内部状态,残留首次点击存下的旧描述符
@@ -455,9 +460,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         data={rows}
         columns={columnsWithActions}
         getRowId={getRowId}
-        getChildren={treeActive ? treeGetChildren : undefined}
-        expandedKeys={treeActive ? expanded : undefined}
-        onExpandedChange={treeActive ? handleExpandedChange : undefined}
+        /* 树形页面结构性 props 恒定(getChildren/expandedKeys 始终传入),筛选回退只换数据源;
+           treeActive 翻转若连带翻转这些 props,DataGrid 会在树/平铺集合间整体重建并卸载表头筛选弹窗 */
+        getChildren={treeMode ? treeGetChildren : undefined}
+        expandedKeys={treeMode ? expanded : undefined}
+        onExpandedChange={treeMode ? handleExpandedChange : undefined}
         selectionMode={pickMode ? props.pick : hasBulkActions ? 'multiple' : 'none'}
         showSelectionCheckboxes={pickMode ? props.pick === 'multiple' : hasBulkActions}
         selectedKeys={pickMode ? new Set((props.pickedRows ?? []).map((r) => r.id)) : selection}
@@ -466,9 +473,9 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             ? (sel: Selection) => props.onPickChange?.(mergePick(props.pickedRows ?? [], rows, sel, props.pick!))
             : setSelection
         }
-        sortDescriptor={treeActive ? undefined : sortDescriptor}
+        sortDescriptor={treeMode ? undefined : sortDescriptor}
         onSortChange={
-          treeActive
+          treeMode
             ? undefined
             : (d) => {
                 setSort((prev) => nextSort(prev, String(d.column), d.direction))
