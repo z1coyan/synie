@@ -10,7 +10,8 @@ defmodule SynieWeb.GridMeta do
 
   @resources %{
     "sysRoles" => SynieCore.Authz.Role,
-    "basCompanies" => SynieCore.Org.Company
+    "basCompanies" => SynieCore.Org.Company,
+    "sysAuditLogs" => SynieCore.Audit.Log
   }
 
   @spec resolve(String.t(), Authz.Actor.t() | nil) :: {:ok, map()} | {:error, String.t()}
@@ -61,7 +62,8 @@ defmodule SynieWeb.GridMeta do
           type: type_name(attr.type),
           # FK 列走退化路径(无权限/白名单外)时 label 也要中文,兜底关系 description
           label: attr.description || rel_descriptions[attr.name] || to_string(attr.name),
-          sortable: true,
+          # map(jsonb)列排序合法但语义无意义,不给排序入口
+          sortable: attr.type != Ash.Type.Map,
           filterable: filterable?(attr.type),
           enum_options: enum_options(attr.type),
           ref: nil
@@ -107,10 +109,10 @@ defmodule SynieWeb.GridMeta do
     if function_exported?(module, :display_field, 0), do: module.display_field(), else: :name
   end
 
-  # AshGraphql 的 contains 筛选只对 string/ci_string 生成;uuid 与裸 atom(非枚举,无 values/0)
-  # 若仍标 filterable,跨列搜索/该列筛选会拼出后端不存在的算子,导致整个查询报错。
-  # type 映射仍按 string 处理(展示不受影响),sortable 也不变。
-  defp filterable?(type), do: type not in [Ash.Type.UUID, Ash.Type.Atom]
+  # AshGraphql 的 contains 筛选只对 string/ci_string 生成;uuid、裸 atom(非枚举,无 values/0)
+  # 与 map(json_string 标量)若仍标 filterable,跨列搜索/该列筛选会拼出后端不存在的算子,
+  # 导致整个查询报错。type 映射仍按 string 处理(展示不受影响)。
+  defp filterable?(type), do: type not in [Ash.Type.UUID, Ash.Type.Atom, Ash.Type.Map]
 
   defp capabilities(module, actor) do
     prefix = module.permission_prefix()

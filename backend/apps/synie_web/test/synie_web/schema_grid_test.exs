@@ -247,7 +247,38 @@ defmodule SynieWeb.SchemaGridTest do
       result = run_meta!(super_actor(), "sysUsers")
       assert result[:errors] != nil and result[:errors] != []
     end
+  end
 
+  describe "sysAuditLogs 接入" do
+    test "gridMeta:map 列不可筛不可排,时间列公开,只读无能力" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor(), "sysAuditLogs")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      # map(jsonb)列:AshGraphql 不生成 contains,若标 filterable 跨列搜索会拼出非法算子炸整页查询
+      assert %{"label" => "变更内容", "filterable" => false, "sortable" => false} = by_name["changes"]
+      assert %{"type" => "datetime", "label" => "操作时间"} = by_name["insertedAt"]
+      assert meta["capabilities"] == []
+      assert meta["destroyMutation"] == nil
+    end
+
+    test "行查询:contains 筛选命中审计行,changes 以 JSON 串返回" do
+      roles!([{"al_a", "审计源角色", true}])
+      actor = Authz.build_actor(user_with!(["sys.audit_log:read"]))
+
+      result =
+        run!(
+          ~s|query { sysAuditLogs(limit: 10, offset: 0, filter: {resource: {contains: "sys_role"}}) { count results { actionType changes insertedAt } } }|,
+          actor
+        )
+
+      assert %{data: %{"sysAuditLogs" => %{"results" => rows}}} = result
+      # contains 也会命中 sys_role_permission/sys_user_role 等夹具行,按变更内容定位目标行
+      changes_list = Enum.map(rows, &Jason.decode!(&1["changes"]))
+      assert Enum.any?(changes_list, &match?(%{"code" => %{"to" => "al_a"}}, &1))
+    end
+  end
+
+  describe "grid_actions 一致性" do
     test "白名单资源的 grid_actions 与权限动作、schema mutation 一致" do
       mutation_fields =
         Absinthe.Schema.lookup_type(SynieWeb.Schema, :mutation).fields
