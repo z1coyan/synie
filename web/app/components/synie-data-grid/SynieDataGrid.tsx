@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
 import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, Spinner, toast } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
-import { gqlFetch } from '~/lib/graphql'
+import { gqlFetch, isForbidden } from '~/lib/graphql'
 import { downloadCsv, fetchAllRows, toCsv } from './csv'
 import { ColumnFilterButton, filterSummary } from './filter-popover'
 import { cellText } from './format'
@@ -378,6 +378,17 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   if (meta.isError || rowsQuery.isError) {
     const err = (meta.error ?? rowsQuery.error) as Error
+    // 无权限单独成态:醒目提示且不给重试(重试对权限问题无意义)
+    if (isForbidden(err)) {
+      return (
+        <EmptyState size="md" className="h-64 justify-center">
+          <EmptyState.Header>
+            <EmptyState.Title className="text-danger">无权限访问</EmptyState.Title>
+            <EmptyState.Description>当前账号没有查看这些数据的权限,请联系管理员分配。</EmptyState.Description>
+          </EmptyState.Header>
+        </EmptyState>
+      )
+    }
     return (
       <EmptyState size="md" className="h-64 justify-center">
         <EmptyState.Header>

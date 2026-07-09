@@ -28,6 +28,19 @@ const RESET_PASSWORD = `
   }
 `
 
+// ponytail: execCommand 已废弃,但 HTTP 环境(如 Tailscale IP 访问)下 clipboard API 不可用,只有这条路
+function legacyCopy(text: string) {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  const ok = document.execCommand('copy')
+  document.body.removeChild(ta)
+  if (!ok) throw new Error('execCommand copy failed')
+}
+
 function UsersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -66,10 +79,13 @@ function UsersPage() {
   const copyPassword = async () => {
     if (!oneTime) return
     try {
-      await navigator.clipboard.writeText(oneTime.password)
+      if (window.isSecureContext && navigator.clipboard) {
+        await navigator.clipboard.writeText(oneTime.password)
+      } else {
+        legacyCopy(oneTime.password)
+      }
       toast.success('已复制到剪贴板')
     } catch {
-      // 非 https 环境剪贴板 API 不可用,密码文本本身可手动选中复制
       toast.danger('复制失败,请手动选中密码复制')
     }
   }
