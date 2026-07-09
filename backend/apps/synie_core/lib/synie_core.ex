@@ -18,6 +18,7 @@ defmodule SynieCore do
       list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
       list SynieCore.Files.Attachment, :sys_attachments, :read, paginate_with: :offset
+      list SynieCore.Acc.GlEntry, :acc_gl_entries, :read, paginate_with: :offset
     end
 
     mutations do
@@ -81,6 +82,7 @@ defmodule SynieCore do
     resource SynieCore.Base.Account
     resource SynieCore.Sales.Customer
     resource SynieCore.Purchase.Supplier
+    resource SynieCore.Acc.GlEntry
     resource SynieCore.Audit.Log
     resource SynieCore.Files.File
     resource SynieCore.Files.Attachment
