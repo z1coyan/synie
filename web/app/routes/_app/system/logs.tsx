@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { CodeBlock } from '@heroui-pro/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -9,6 +10,18 @@ export const Route = createFileRoute('/_app/system/logs')({
 })
 
 const ACTION_LABELS: Record<string, string> = { create: '创建', update: '更新', destroy: '删除' }
+
+// 值为 Track 落库的 GraphQL type 名;新资源接审计后在此补中文,漏了则原样显示英文
+const RESOURCE_LABELS: Record<string, string> = {
+  sys_role: '角色',
+  sys_user: '用户',
+  sys_user_role: '用户角色',
+  sys_role_permission: '角色权限',
+  sys_user_company: '用户公司授权',
+  bas_company: '公司',
+  bas_currency: '货币',
+  bas_unit: '计量单位',
+}
 
 // id 列展示原始 uuid 无阅读价值,记录名称/操作人已够定位;需要按 id 排查时直接查库
 const EXCLUDE = ['recordId', 'actorId', 'companyId']
@@ -29,14 +42,8 @@ function safeJsonParse(v: string): unknown {
   }
 }
 
-const fmtVal = (v: unknown): string => {
-  if (v == null) return '空'
-  if (typeof v === 'boolean') return v ? '是' : '否'
-  if (typeof v === 'object') return JSON.stringify(v)
-  return String(v)
-}
-
 const actionLabel = (value: unknown) => ACTION_LABELS[String(value)] ?? String(value)
+const resourceLabel = (value: unknown) => RESOURCE_LABELS[String(value)] ?? String(value)
 
 function changesSummary(value: unknown) {
   const changes = parseChanges(value)
@@ -44,29 +51,27 @@ function changesSummary(value: unknown) {
   return count > 0 ? `${count} 项变更` : <span className="text-muted">—</span>
 }
 
-/** 抽屉详情:逐字段 旧值 → 新值(create 只有 to,destroy 只有 from) */
-function ChangesDetail({ value }: { value: unknown }) {
+/** 抽屉详情:变更 JSON 代码块(带复制) */
+function ChangesJson({ value }: { value: unknown }) {
   const changes = parseChanges(value)
-  const entries = changes ? Object.entries(changes) : []
-  if (entries.length === 0) return <span className="text-muted">—</span>
+  if (!changes || Object.keys(changes).length === 0) return <span className="text-muted">—</span>
+  const code = JSON.stringify(changes, null, 2)
   return (
-    <div className="flex flex-col gap-1.5">
-      {entries.map(([field, c]) => (
-        <div key={field} className="text-sm">
-          <span className="font-medium">{field}</span>
-          <span className="text-muted">:</span>{' '}
-          {'from' in c && <span className="text-muted line-through">{fmtVal(c.from)}</span>}
-          {'from' in c && 'to' in c && <span className="text-muted"> → </span>}
-          {'to' in c && <span>{fmtVal(c.to)}</span>}
-        </div>
-      ))}
-    </div>
+    <CodeBlock>
+      <CodeBlock.Header>
+        <span className="text-muted text-xs uppercase">json</span>
+        <CodeBlock.CopyButton code={code} />
+      </CodeBlock.Header>
+      <CodeBlock.Code code={code} language="json" />
+    </CodeBlock>
   )
 }
 
 // 模块级稳定引用:内联对象会让 SynieDataGrid 的列 memo 每次渲染失效
 const GRID_OVERRIDES: Record<string, ColumnOverride> = {
+  resource: { render: resourceLabel },
   actionType: { render: actionLabel },
+  actionName: { render: actionLabel },
   changes: { render: changesSummary },
 }
 
@@ -97,9 +102,10 @@ function LogsPage() {
         row={row}
         exclude={EXCLUDE}
         fields={{
+          resource: { render: resourceLabel },
           actionType: { render: actionLabel, cols: 6 },
-          actionName: { cols: 6 },
-          changes: { render: (v) => <ChangesDetail value={v} /> },
+          actionName: { render: actionLabel, cols: 6 },
+          changes: { render: (v) => <ChangesJson value={v} /> },
         }}
       />
     </>
