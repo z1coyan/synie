@@ -31,7 +31,15 @@ defmodule SynieCore.Authz.UserRole do
   def permission_actions, do: ~w(create read delete)
 
   actions do
-    defaults [:read]
+    read :read do
+      primary? true
+
+      pagination offset?: true,
+                 countable: true,
+                 required?: false,
+                 default_limit: 20,
+                 max_page_size: 200
+    end
 
     create :create do
       accept [:user_id, :role_id]

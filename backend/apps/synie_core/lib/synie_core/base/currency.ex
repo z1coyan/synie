@@ -31,7 +31,15 @@ defmodule SynieCore.Base.Currency do
   def permission_actions, do: ~w(create read update delete)
 
   actions do
-    defaults [:read]
+    read :read do
+      primary? true
+
+      pagination offset?: true,
+                 countable: true,
+                 required?: false,
+                 default_limit: 20,
+                 max_page_size: 200
+    end
 
     create :create do
       accept [:name, :iso_code, :symbol]
