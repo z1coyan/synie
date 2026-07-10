@@ -252,9 +252,21 @@ function JournalsPage() {
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
+        // 分录行表 7 列,默认 480px 太挤,凭证抽屉加宽(移动端仍全宽)
+        contentClassName="w-full lg:w-[880px]"
         // 公司由页面顶部选定(提交时注入);状态/提交时间/编写人/提交人是系统内部字段,不给用户看;
-        // 借贷合计是行聚合(只在表格展示),不进表单
-        exclude={['companyId', 'status', 'submittedAt', 'createdById', 'submittedById', 'debitTotal', 'creditTotal']}
+        // 借贷合计是行聚合(只在表格展示),不进表单;创建/更新时间表格已隐藏,行数据不带,view 态只会显示占位
+        exclude={[
+          'companyId',
+          'status',
+          'submittedAt',
+          'createdById',
+          'submittedById',
+          'debitTotal',
+          'creditTotal',
+          'insertedAt',
+          'updatedAt',
+        ]}
         fields={{
           voucherNo: { required: true, placeholder: '如 PZ202601001' },
           date: { required: true, cols: 6 },
@@ -269,6 +281,8 @@ function JournalsPage() {
             items={lines}
             onChange={setLines}
             readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT')}
+            // 行表单金额/对手双列排布,默认 420px 局促,加宽一档
+            drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
             exclude={['journalId', 'companyId']}
             columns={['idx', 'accountId', 'debit', 'credit', 'partyType', 'partyId', 'remarks']}
             fields={{
