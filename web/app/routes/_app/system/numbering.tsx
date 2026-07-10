@@ -1,10 +1,17 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { toast } from '@heroui/react'
+import { useQuery } from '@tanstack/react-query'
+import { Label, ListBox, Select, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
-import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
+import {
+  SegmentsEditor,
+  segmentsPreview,
+  type NumberSegment,
+} from '~/components/synie-numbering-segments/SegmentsEditor'
+import { resourceLabel } from '~/components/synie-permission-sheet/permission-labels'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -12,6 +19,9 @@ export const Route = createFileRoute('/_app/system/numbering')({
   component: NumberingPage,
 })
 
+const NUMBERABLE_QUERY = `
+  query { numberableResources { prefix grid } }
+`
 const CREATE_RULE = `
   mutation ($input: CreateSysNumberingRuleInput!) {
     createSysNumberingRule(input: $input) { result { id } errors { message } }
@@ -35,6 +45,42 @@ const UPDATE_COUNTER = `
   }
 `
 
+interface NumberableResource {
+  prefix: string
+  grid: string
+}
+
+/**
+ * segments 经 GraphQL 走 [JsonString!](每段一个 JSON 串);编辑草稿里是对象数组;
+ * RecordDrawer 初值把串数组 String() 成逗号拼接串——join(',') 可无损地用 [..] 包回数组,一并归一
+ */
+function parseSegments(v: unknown): NumberSegment[] {
+  if (Array.isArray(v)) {
+    return v
+      .map((item) => {
+        if (typeof item !== 'string') return item as NumberSegment
+        try {
+          return JSON.parse(item) as NumberSegment
+        } catch {
+          return null
+        }
+      })
+      .filter((s): s is NumberSegment => s != null)
+  }
+  if (typeof v === 'string' && v !== '') {
+    // 读取值是整串 JSON 数组;兜底再试 [..] 包裹(串数组被 String() 逗号拼接的形态)
+    for (const candidate of [v, `[${v}]`]) {
+      try {
+        const arr = JSON.parse(candidate)
+        if (Array.isArray(arr)) return arr as NumberSegment[]
+      } catch {
+        // 换下一种形态
+      }
+    }
+  }
+  return []
+}
+
 /** 计数器只有 update:值有变的行逐个保存,收集错误文案(带范围键定位)不中途抛出 */
 async function persistCounters(current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
@@ -52,13 +98,33 @@ async function persistCounters(current: Row[], snapshot: Row[]): Promise<string[
   return errors
 }
 
-const GRID_COLUMNS = ['code', 'name', 'format', 'seqPadding', 'resetPeriod', 'perCompany', 'enabled']
+const GRID_COLUMNS = ['resource', 'name', 'segments', 'perCompany', 'enabled']
+
+const GRID_OVERRIDES = {
+  resource: { render: (v) => resourceLabel(String(v ?? '')) },
+  segments: {
+    label: '规则预览',
+    render: (v) => <span className="font-mono text-xs">{segmentsPreview(parseSegments(v))}</span>,
+  },
+} satisfies Record<string, ColumnOverride>
 
 function NumberingPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [counters, setCounters] = useState<Row[]>([])
   const [countersSnapshot, setCountersSnapshot] = useState<Row[]>([])
   const [reloadKey, setReloadKey] = useState(0)
+
+  // 可编号资源清单:后端反射 create action 挂了 AutoNumber 的资源,建规则即绑定
+  const numberables = useQuery({
+    queryKey: ['numberableResources'],
+    queryFn: () =>
+      gqlFetch<{ numberableResources: NumberableResource[] }>(NUMBERABLE_QUERY).then(
+        (d) => d.numberableResources
+      ),
+    staleTime: 5 * 60_000,
+  })
+  const gridFor = (prefix: unknown): string | null =>
+    numberables.data?.find((n) => n.prefix === prefix)?.grid ?? null
 
   // 打开抽屉:create 清空;view/edit 按规则 id 拉计数器(快照留作提交时 diff 基准)
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
@@ -84,9 +150,9 @@ function NumberingPage() {
     <>
       <h1 className="font-brand text-3xl tracking-wide">编号规则</h1>
       <p className="mt-2 text-sm text-ink-500">
-        单据自动编号:格式模板支持 {'{company}'}(公司编码)、{'{YYYY}'} {'{YY}'} {'{MM}'} {'{DD}'}
-        (取号日期)与 {'{seq}'}(序号)占位;规则标识与业务单据约定对应(如会计凭证为
-        acc.gl_journal),计数器由取号自动创建,可在此调整当前序号。
+        单据自动编号:规则绑定单据,编号由「固定文本 + 单据字段 + 序号」拼装(序号只能一段,
+        日期字段可选格式);单据保存时编号留空即自动取号。计数按「渲染后的文本 + 是否按公司」
+        自然分组——日期变了序号自动从头计;计数器由取号自动创建,可在规则里调整当前序号。
       </p>
 
       <div className="mt-6">
@@ -94,6 +160,7 @@ function NumberingPage() {
           key={reloadKey}
           resource="sysNumberingRules"
           columns={GRID_COLUMNS}
+          overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer('edit', row)}
@@ -107,14 +174,56 @@ function NumberingPage() {
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
-        // 计数器子表默认 480px 局促,加宽一档(移动端仍全宽)
-        contentClassName="w-full lg:w-[560px]"
+        // 段组装器/计数器子表默认 480px 局促,加宽一档(移动端仍全宽)
+        contentClassName="w-full lg:w-[640px]"
         fields={{
-          code: { required: true, edit: 'createOnly', placeholder: '如 acc.gl_journal' },
-          name: { required: true, placeholder: '如 记账凭证' },
-          format: { required: true, placeholder: '如 记{company}-{YYYY}{MM}-{seq}' },
-          seqPadding: { required: true, defaultValue: 4, cols: 6 },
-          resetPeriod: { required: true, defaultValue: 'MONTHLY', cols: 6 },
+          resource: {
+            required: true,
+            edit: 'createOnly',
+            // 改绑定资源则已选字段段失效,一并清空(仅 create 态可改)
+            effects: () => ({ segments: [] }),
+            render: (value) => resourceLabel(String(value ?? '')),
+            input: ({ value, onChange, isDisabled }) => (
+              <Select
+                isDisabled={isDisabled}
+                isRequired
+                placeholder="选择要自动编号的单据…"
+                value={value == null ? null : String(value)}
+                onChange={(v) => onChange(v)}
+              >
+                <Label>绑定单据</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {(numberables.data ?? []).map((n) => (
+                      <ListBox.Item key={n.prefix} id={n.prefix} textValue={resourceLabel(n.prefix)}>
+                        {resourceLabel(n.prefix)}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            ),
+          },
+          name: { required: true, placeholder: '如 记账凭证编号' },
+          segments: {
+            required: true,
+            render: (value) => (
+              <span className="font-mono text-sm">{segmentsPreview(parseSegments(value)) || '—'}</span>
+            ),
+            input: ({ value, onChange, isDisabled, values }) => (
+              <SegmentsEditor
+                grid={gridFor(values.resource)}
+                value={parseSegments(value)}
+                onChange={onChange}
+                isDisabled={isDisabled}
+              />
+            ),
+          },
           perCompany: { defaultValue: true, cols: 6 },
           enabled: { defaultValue: true, cols: 6 },
         }}
@@ -139,10 +248,16 @@ function NumberingPage() {
           )
         }
         onSubmit={async (values, mode) => {
+          const segments = parseSegments(values.segments)
+          if (segments.length === 0 || !segments.some((s) => s.type === 'seq')) {
+            throw new Error('编号段不能为空,且必须包含一个序号段')
+          }
+          const input = { ...values, segments: segments.map((s) => JSON.stringify(s)) }
+
           if (mode === 'create') {
             const data = await gqlFetch<{
               createSysNumberingRule: { errors: { message: string }[] | null }
-            }>(CREATE_RULE, { input: values })
+            }>(CREATE_RULE, { input })
             if (data.createSysNumberingRule.errors?.length) {
               throw new Error(data.createSysNumberingRule.errors.map((e) => e.message).join('; '))
             }
@@ -150,7 +265,7 @@ function NumberingPage() {
           } else {
             const data = await gqlFetch<{
               updateSysNumberingRule: { errors: { message: string }[] | null }
-            }>(UPDATE_RULE, { id: drawer!.row!.id, input: values })
+            }>(UPDATE_RULE, { id: drawer!.row!.id, input })
             if (data.updateSysNumberingRule.errors?.length) {
               throw new Error(data.updateSysNumberingRule.errors.map((e) => e.message).join('; '))
             }

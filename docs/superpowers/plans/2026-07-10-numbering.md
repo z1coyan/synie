@@ -1,6 +1,8 @@
 # 自动编号模块实施计划
 
 > Spec:`docs/superpowers/specs/2026-07-10-numbering-design.md`。本计划由同一会话直接执行(后台自主任务),按任务顺序 TDD、频繁提交。
+>
+> **v2 重构(同日,依据用户评审)**:去掉重置周期(计数 key=渲染后非 seq 段文本+按公司,日期变了自然重头);规则显式绑定资源(permission_prefix,每资源仅一条启用,`numberableResources` 反射 AutoNumber 挂载);模板字符串改为段列表 + 前端 SegmentsEditor 点选组装(字段/外键一级字段/日期格式全由 gridMeta 反射)。migration 原地重做(PR 未合,历史保持单迁移)。坑:AshGraphql `attribute_types segments: :json_string` 对 `{:array, :map}` **输入类型是 [JsonString!](每段一串)、输出是整串 JSON**,前端按此不对称契约收发。
 
 **目标:** 可配置的单据自动编号(规则 + 计数器 + 取号 API),凭证首接,页面可管理规则与当前序号。
 
