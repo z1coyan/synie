@@ -128,6 +128,27 @@ defmodule SynieCore.NumberingTest do
                Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
     end
 
+    test "通用性:绑定另一资源(供应商)零改动即可取号,字段纯反射解析" do
+      rule!(%{
+        resource: "purchase.supplier",
+        per_company: false,
+        segments: [
+          %{"type" => "text", "value" => "GYS-"},
+          %{"type" => "field", "field" => "short_name"},
+          %{"type" => "text", "value" => "-"},
+          %{"type" => "seq", "padding" => 3}
+        ]
+      })
+
+      cs =
+        SynieCore.Purchase.Supplier
+        |> Ash.Changeset.new()
+        |> Ash.Changeset.force_change_attributes(%{short_name: "京泰"})
+
+      assert {:ok, "GYS-京泰-001"} = Numbering.next(cs)
+      assert {:ok, "GYS-京泰-002"} = Numbering.next(cs)
+    end
+
     test "计数器可改当前值,后续取号顺延", %{company: co} do
       rule!(%{})
       cs = journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]})

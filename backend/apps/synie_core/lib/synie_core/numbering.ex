@@ -54,7 +54,9 @@ defmodule SynieCore.Numbering do
     SynieCore
     |> Ash.Domain.Info.resources()
     |> Enum.find(fn mod ->
-      function_exported?(mod, :permission_prefix, 0) and mod.permission_prefix() == prefix
+      # ensure_loaded:懒加载环境(dev/test)模块未加载时 function_exported? 会误判 false
+      Code.ensure_loaded?(mod) and function_exported?(mod, :permission_prefix, 0) and
+        mod.permission_prefix() == prefix
     end)
   end
 
