@@ -143,7 +143,9 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     <Sheet isOpen={isOpen} onOpenChange={props.onOpenChange} placement="right">
       <Sheet.Backdrop>
         <Sheet.Content className={contentClassName}>
-          <Sheet.Dialog className="h-full">
+          {/* 显式 aria-label:Heading slot 的 labelledby 在过渡期渲染中晚一拍,RAC 会刷
+              "Dialog 必须有标题" 的误报警告;有 aria-label 则完全绕开该告警路径 */}
+          <Sheet.Dialog className="h-full" aria-label={title}>
             <Sheet.CloseTrigger />
             <Sheet.Header>
               <Sheet.Heading>{title}</Sheet.Heading>
@@ -179,7 +181,9 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                           value={values[f.name]}
                           values={values}
                           isDisabled={isFieldDisabled(f, renderMode) || saving}
-                          onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v }))}
+                          onChange={(v) =>
+                            setValues((prev) => ({ ...prev, [f.name]: v, ...(f.effects?.(v) ?? {}) }))
+                          }
                         />
                       )}
                     </div>
@@ -308,7 +312,9 @@ function FieldInput({
     case 'integer':
     case 'decimal':
       return (
+        // fullWidth 缺省时 group 撑满而内部 input 不跟随,点击外框空白无法聚焦
         <NumberField
+          fullWidth
           isDisabled={isDisabled}
           isRequired={field.required}
           value={value == null || value === '' ? NaN : Number(value)}

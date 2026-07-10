@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { parseDate } from '@internationalized/date'
 import { EmptyState } from '@heroui-pro/react'
-import { Input, Label, TextField, toast } from '@heroui/react'
+import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -24,6 +25,11 @@ const CREATE_JOURNAL = `
 const UPDATE_JOURNAL = `
   mutation ($id: ID!, $input: UpdateAccGlJournalInput!) {
     updateAccGlJournal(id: $id, input: $input) { result { id } errors { message } }
+  }
+`
+const AUDIT_JOURNAL = `
+  mutation ($id: ID!, $input: AuditAccGlJournalInput!) {
+    auditAccGlJournal(id: $id, input: $input) { result { id } errors { message } }
   }
 `
 const FETCH_LINES = `
@@ -112,6 +118,15 @@ async function persistLines(journalId: string, current: Row[], snapshot: Row[]):
   return errors
 }
 
+const safeParseDate = (v: string | null) => {
+  if (!v) return null
+  try {
+    return parseDate(v)
+  } catch {
+    return null
+  }
+}
+
 function JournalsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [companyRow, setCompanyRow] = useState<Row | null>(null)
@@ -119,6 +134,39 @@ function JournalsPage() {
   const [lines, setLines] = useState<Row[]>([])
   const [linesSnapshot, setLinesSnapshot] = useState<Row[]>([])
   const [reloadKey, setReloadKey] = useState(0)
+
+  // 审核过账确认框:行内「审核」动作与新增后带过账日期的顺手审核共用;
+  // 过账日期在此填入/修正(草稿可不填,审核时必填)
+  const [auditDialog, setAuditDialog] = useState<{ id: string; fromCreate: boolean } | null>(null)
+  const [auditDate, setAuditDate] = useState<string | null>(null)
+  const [auditing, setAuditing] = useState(false)
+
+  const openAudit = (row: Row, fromCreate = false) => {
+    // 默认过账日期:凭证已填的优先,否则用单据日期
+    setAuditDate((row.postingDate as string | null) ?? (row.date as string | null) ?? null)
+    setAuditDialog({ id: row.id, fromCreate })
+  }
+
+  const confirmAudit = async () => {
+    if (!auditDialog || !auditDate) return
+    setAuditing(true)
+    try {
+      const data = await gqlFetch<{ auditAccGlJournal: { errors: { message: string }[] | null } }>(
+        AUDIT_JOURNAL,
+        { id: auditDialog.id, input: { postingDate: auditDate } }
+      )
+      if (data.auditAccGlJournal.errors && data.auditAccGlJournal.errors.length > 0) {
+        throw new Error(data.auditAccGlJournal.errors.map((e) => e.message).join('; '))
+      }
+      toast.success('凭证已审核过账')
+      setAuditDialog(null)
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      toast.danger('审核失败', { description: (e as Error).message })
+    } finally {
+      setAuditing(false)
+    }
+  }
 
   const companies = useQuery({
     queryKey: ['journalsCompanies'],
@@ -188,9 +236,11 @@ function JournalsPage() {
             key={`${companyId}-${reloadKey}`}
             resource="accGlJournals"
             fixedFilter={{ companyId: { eq: companyId } }}
+            exclude={['submittedAt', 'insertedAt', 'updatedAt']}
             onView={(row) => openDrawer('view', row)}
             onCreate={() => openDrawer('create', null)}
             onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
+            actionHandlers={{ audit: (rows) => openAudit(rows[0]) }}
           />
         )}
       </div>
@@ -202,16 +252,14 @@ function JournalsPage() {
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
+        // 公司由页面顶部选定(提交时注入);状态/提交时间/编写人/提交人是系统内部字段,不给用户看;
+        // 借贷合计是行聚合(只在表格展示),不进表单
+        exclude={['companyId', 'status', 'submittedAt', 'createdById', 'submittedById', 'debitTotal', 'creditTotal']}
         fields={{
           voucherNo: { required: true, placeholder: '如 PZ202601001' },
           date: { required: true, cols: 6 },
-          postingDate: { required: true, cols: 6 },
-          // 公司由页面顶部选定,表单不显示,提交时注入
-          companyId: { visible: () => false },
-          status: { edit: 'readOnly', cols: 6 },
-          submittedAt: { edit: 'readOnly', cols: 6 },
-          createdById: { edit: 'readOnly', cols: 6 },
-          submittedById: { edit: 'readOnly', cols: 6 },
+          // 过账日期草稿可留空,审核时填入;新增时填了保存后会提示直接审核过账
+          postingDate: { cols: 6 },
         }}
         onEdit={drawer?.row?.status === 'DRAFT' ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d)) : undefined}
         extraContent={(mode, row) => (
@@ -224,15 +272,10 @@ function JournalsPage() {
             exclude={['journalId', 'companyId']}
             columns={['idx', 'accountId', 'debit', 'credit', 'partyType', 'partyId', 'remarks']}
             fields={{
-              idx: {
-                required: true,
-                cols: 3,
-                // 建议下一个行号:取当前最大 idx+1,而非 length+1(避免删行后撞号)
-                defaultValue: lines.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
-              },
+              // 行号系统自动分配(transformItem),表格照常展示
+              idx: { visible: () => false },
               accountId: {
                 required: true,
-                cols: 9,
                 // 候选限定在当前公司、非汇总、启用科目(后端另有同公司/汇总/停用校验兜底)
                 remote: {
                   filter: `{companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}}`,
@@ -240,27 +283,19 @@ function JournalsPage() {
               },
               debit: { cols: 6, defaultValue: 0 },
               credit: { cols: 6, defaultValue: 0 },
-              partyType: { cols: 6 },
+              // 切换对手类型时清掉已选对手,避免客户 id 挂在供应商数据源下
+              partyType: { cols: 6, effects: () => ({ partyId: null }) },
               partyId: {
                 cols: 6,
-                // 多态外键:meta 无 ref,默认退化 TextField;这里按当前表单 partyType 值切换 RemoteSelect 数据源
+                // 未选对手类型时不出现;选定后 label 跟随类型显示 供应商/客户
+                visible: (values) => values.partyType === 'SUPPLIER' || values.partyType === 'CUSTOMER',
                 input: ({ value, onChange, isDisabled, values }) => {
-                  const partyType = values.partyType
-                  const resource =
-                    partyType === 'SUPPLIER' ? 'purSuppliers' : partyType === 'CUSTOMER' ? 'salCustomers' : null
-                  if (!resource) {
-                    return (
-                      <TextField isDisabled value="" onChange={() => {}}>
-                        <Label>对手</Label>
-                        <Input placeholder="先选择对手类型" />
-                      </TextField>
-                    )
-                  }
+                  const isSupplier = values.partyType === 'SUPPLIER'
                   return (
                     <RemoteSelect
-                      resource={resource}
-                      label="对手"
-                      placeholder="选择对手…"
+                      resource={isSupplier ? 'purSuppliers' : 'salCustomers'}
+                      label={isSupplier ? '供应商' : '客户'}
+                      placeholder={isSupplier ? '选择供应商…' : '选择客户…'}
                       value={value == null ? null : String(value)}
                       onChange={(id) => onChange(id)}
                       isDisabled={isDisabled}
@@ -271,12 +306,11 @@ function JournalsPage() {
               // 币种由科目复制,不可手改;仅在编辑存量行时展示已复制的值
               currencyId: { edit: 'readOnly' },
             }}
-            validateItem={(values, items, editing) => {
-              const idx = Number(values.idx)
-              if (!Number.isFinite(idx)) return
-              const dup = items.some((it) => it.id !== editing?.id && Number(it.idx) === idx)
-              if (dup) return `行号 ${idx} 已存在,请改用其它行号`
-            }}
+            transformItem={(values, editing) => ({
+              ...values,
+              // 行号自动:存量行保号,新行取当前最大 idx+1(而非 length+1,避免删行后撞号)
+              idx: editing ? editing.idx : lines.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
+            })}
           />
         )}
         onSubmit={async (values, mode) => {
@@ -293,6 +327,10 @@ function JournalsPage() {
               toast.danger('凭证已创建,但部分分录行保存失败', { description: lineErrors.join('; ') })
             } else {
               toast.success('凭证已创建')
+              // 新增时已填过账日期 → 顺手提示直接审核过账
+              if (values.postingDate) {
+                openAudit({ id: journalId, postingDate: values.postingDate, date: values.date } as Row, true)
+              }
             }
           } else {
             const journalId = drawer!.row!.id
@@ -312,6 +350,76 @@ function JournalsPage() {
           setReloadKey((k) => k + 1)
         }}
       />
+
+      <AlertDialog.Backdrop isOpen={auditDialog !== null} onOpenChange={(open) => !open && setAuditDialog(null)}>
+        <AlertDialog.Container>
+          {/* 退场动画期间 auditDialog 已清空、Heading 不在,显式 aria-label 防 RAC 无标题警告 */}
+          <AlertDialog.Dialog className="sm:max-w-[400px]" aria-label="审核过账">
+            {auditDialog && (
+              <>
+                <AlertDialog.Header>
+                  <AlertDialog.Icon status="accent" />
+                  <AlertDialog.Heading>
+                    {auditDialog.fromCreate ? '是否直接审核过账?' : '审核过账'}
+                  </AlertDialog.Heading>
+                </AlertDialog.Header>
+                <AlertDialog.Body>
+                  <p className="mb-3">
+                    {auditDialog.fromCreate
+                      ? '凭证已创建并填写了过账日期,确认后立即审核并生成总账分录。'
+                      : '确认后凭证将审核并生成总账分录。'}
+                  </p>
+                  <DatePicker
+                    value={safeParseDate(auditDate)}
+                    onChange={(v) => setAuditDate(v ? v.toString() : null)}
+                  >
+                    <Label>过账日期</Label>
+                    <DateField.Group fullWidth>
+                      <DateField.Input>{(segment) => <DateField.Segment segment={segment} />}</DateField.Input>
+                      <DateField.Suffix>
+                        <DatePicker.Trigger>
+                          <DatePicker.TriggerIndicator />
+                        </DatePicker.Trigger>
+                      </DateField.Suffix>
+                    </DateField.Group>
+                    <DatePicker.Popover>
+                      <Calendar aria-label="过账日期">
+                        <Calendar.Header>
+                          <Calendar.YearPickerTrigger>
+                            <Calendar.YearPickerTriggerHeading />
+                            <Calendar.YearPickerTriggerIndicator />
+                          </Calendar.YearPickerTrigger>
+                          <Calendar.NavButton slot="previous" />
+                          <Calendar.NavButton slot="next" />
+                        </Calendar.Header>
+                        <Calendar.Grid>
+                          <Calendar.GridHeader>
+                            {(day) => <Calendar.HeaderCell>{day}</Calendar.HeaderCell>}
+                          </Calendar.GridHeader>
+                          <Calendar.GridBody>{(date) => <Calendar.Cell date={date} />}</Calendar.GridBody>
+                        </Calendar.Grid>
+                        <Calendar.YearPickerGrid>
+                          <Calendar.YearPickerGridBody>
+                            {({ year }) => <Calendar.YearPickerCell year={year} />}
+                          </Calendar.YearPickerGridBody>
+                        </Calendar.YearPickerGrid>
+                      </Calendar>
+                    </DatePicker.Popover>
+                  </DatePicker>
+                </AlertDialog.Body>
+                <AlertDialog.Footer>
+                  <Button slot="close" variant="tertiary" isDisabled={auditing}>
+                    {auditDialog.fromCreate ? '暂不审核' : '取消'}
+                  </Button>
+                  <Button isPending={auditing} isDisabled={!auditDate} onPress={confirmAudit}>
+                    审核过账
+                  </Button>
+                </AlertDialog.Footer>
+              </>
+            )}
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </>
   )
 }

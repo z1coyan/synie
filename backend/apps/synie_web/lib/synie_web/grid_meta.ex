@@ -41,12 +41,27 @@ defmodule SynieWeb.GridMeta do
 
     %{
       columns:
-        module
-        |> Ash.Resource.Info.public_attributes()
-        |> Enum.map(&column(&1, refs, rel_descriptions)),
+        Enum.map(
+          Ash.Resource.Info.public_attributes(module),
+          &column(&1, refs, rel_descriptions)
+        ) ++
+          Enum.map(Ash.Resource.Info.public_aggregates(module), &aggregate_column/1),
       capabilities: capabilities(module, actor),
       extended_actions: extended_actions(module),
       destroy_mutation: destroy_mutation(module)
+    }
+  end
+
+  # 聚合列(如凭证借贷合计)仅展示:跨表排序/筛选算子前端未接,fail-closed 关掉
+  defp aggregate_column(agg) do
+    %{
+      name: camelize(agg.name),
+      type: if(agg.kind == :count, do: "integer", else: "decimal"),
+      label: agg.description || to_string(agg.name),
+      sortable: false,
+      filterable: false,
+      enum_options: nil,
+      ref: nil
     }
   end
 

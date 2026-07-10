@@ -201,6 +201,12 @@ const fkFields = resolveFields([parentCol], 'create', [], {
 })
 eq(fkFields[0].picker, 'dialog', 'picker 透传')
 eq(fkFields[0].remote?.searchFields, ['name', 'code'], 'remote 透传')
+
+// —— effects 联动:override 透传,补丁由抽屉 onChange 并入草稿 ——
+const effectFields = resolveFields([col('partyType', 'enum'), col('partyId', 'string')], 'create', [], {
+  partyType: { effects: () => ({ partyId: null }) },
+})
+eq(effectFields[0].effects?.('SUPPLIER'), { partyId: null }, 'effects 透传并产出补丁')
 eq(initialValues(fkFields, null).parentId, null, 'create fk 初值 null')
 eq(
   initialValues(resolveFields([parentCol], 'edit', [], {}), { id: '1', parentId: 'u-1' } as unknown as Row).parentId,

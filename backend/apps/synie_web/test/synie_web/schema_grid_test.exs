@@ -403,6 +403,19 @@ defmodule SynieWeb.SchemaGridTest do
       assert Enum.map(meta["extendedActions"], & &1["key"]) |> Enum.sort() ==
                ["audit", "cancel"]
     end
+
+    test "借贷合计聚合反射为展示列(decimal,不可排序筛选)" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor(), "accGlJournals")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      for name <- ["debitTotal", "creditTotal"] do
+        assert %{"type" => "decimal", "sortable" => false, "filterable" => false, "ref" => nil} =
+                 by_name[name]
+      end
+
+      assert by_name["debitTotal"]["label"] == "借方总金额"
+      assert by_name["creditTotal"]["label"] == "贷方总金额"
+    end
   end
 
   describe "accGlJournalLines 接入" do

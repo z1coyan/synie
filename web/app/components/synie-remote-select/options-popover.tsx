@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { DialogContext } from 'react-aria-components'
 import {
   Autocomplete,
   Collection,
@@ -37,45 +38,49 @@ export function RemoteOptionsPopover({
 }) {
   const rows = (options.data?.pages ?? []).flatMap((p) => p.results)
   return (
-    <Autocomplete.Popover>
-      <Autocomplete.Filter inputValue={draft} onInputChange={onDraft}>
-        <SearchField aria-label="搜索" autoFocus={isDesktop()}>
-          <SearchField.Group>
-            <SearchField.SearchIcon />
-            <SearchField.Input placeholder="输入关键字搜索…" />
-            {options.isFetching && !options.isFetchingNextPage ? <Spinner size="sm" /> : <SearchField.ClearButton />}
-          </SearchField.Group>
-        </SearchField>
-        <ListBox
-          aria-label="选项"
-          renderEmptyState={() => (
-            <EmptyState>
-              {options.isError ? (
-                // gqlFetch 抛错时不能落到「无匹配记录」——那是误报,掩盖了真实的请求失败
-                <span className="text-danger">加载失败:{(options.error as Error).message}</span>
-              ) : options.isPending ? (
-                '加载中…'
-              ) : (
-                '无匹配记录'
-              )}
-            </EmptyState>
-          )}
-        >
-          <Collection items={rows}>
-            {(row: Row) => (
-              <ListBox.Item id={row.id} textValue={optionLabel(src, row)}>
-                {renderItem ? renderItem(row) : optionLabel(src, row)}
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
+    // HeroUI 弹层内部的 RAC Dialog 无标签且不透传 aria-label,会刷"Dialog 必须有标题"
+    // 警告;经 DialogContext 从外层注入 aria-label(RAC useContextProps 合并)
+    <DialogContext.Provider value={{ 'aria-label': '选项列表' }}>
+      <Autocomplete.Popover>
+        <Autocomplete.Filter inputValue={draft} onInputChange={onDraft}>
+          <SearchField aria-label="搜索" autoFocus={isDesktop()}>
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder="输入关键字搜索…" />
+              {options.isFetching && !options.isFetchingNextPage ? <Spinner size="sm" /> : <SearchField.ClearButton />}
+            </SearchField.Group>
+          </SearchField>
+          <ListBox
+            aria-label="选项"
+            renderEmptyState={() => (
+              <EmptyState>
+                {options.isError ? (
+                  // gqlFetch 抛错时不能落到「无匹配记录」——那是误报,掩盖了真实的请求失败
+                  <span className="text-danger">加载失败:{(options.error as Error).message}</span>
+                ) : options.isPending ? (
+                  '加载中…'
+                ) : (
+                  '无匹配记录'
+                )}
+              </EmptyState>
             )}
-          </Collection>
-          {options.hasNextPage && (
-            <ListBoxLoadMoreItem isLoading={options.isFetchingNextPage} onLoadMore={() => options.fetchNextPage()}>
-              <Spinner size="sm" />
-            </ListBoxLoadMoreItem>
-          )}
-        </ListBox>
-      </Autocomplete.Filter>
-    </Autocomplete.Popover>
+          >
+            <Collection items={rows}>
+              {(row: Row) => (
+                <ListBox.Item id={row.id} textValue={optionLabel(src, row)}>
+                  {renderItem ? renderItem(row) : optionLabel(src, row)}
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              )}
+            </Collection>
+            {options.hasNextPage && (
+              <ListBoxLoadMoreItem isLoading={options.isFetchingNextPage} onLoadMore={() => options.fetchNextPage()}>
+                <Spinner size="sm" />
+              </ListBoxLoadMoreItem>
+            )}
+          </ListBox>
+        </Autocomplete.Filter>
+      </Autocomplete.Popover>
+    </DialogContext.Provider>
   )
 }

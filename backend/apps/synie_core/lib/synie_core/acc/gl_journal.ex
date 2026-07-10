@@ -115,13 +115,22 @@ defmodule SynieCore.Acc.GlJournal do
     end
 
     update :audit do
-      accept []
+      # 过账日期可在审核时补填/修正;凭证已有且未传时沿用原值
+      accept [:posting_date]
       require_atomic? false
 
       # 构建期预检(用户体验,普通读即可):此时在动作事务之外,无需也不能加锁。
       # 权威复检在下方 change 的 before_action 钩子内(事务内 FOR UPDATE 重读)完成。
       validate fn changeset, _context ->
         if changeset.data.status == :draft, do: :ok, else: {:error, message: "仅草稿凭证可审核"}
+      end
+
+      validate fn changeset, _context ->
+        if Ash.Changeset.get_attribute(changeset, :posting_date) do
+          :ok
+        else
+          {:error, field: :posting_date, message: "审核过账前必须填写过账日期"}
+        end
       end
 
       validate fn changeset, _context ->
@@ -226,7 +235,7 @@ defmodule SynieCore.Acc.GlJournal do
     end
 
     attribute :posting_date, :date do
-      allow_nil? false
+      # 草稿可不填,审核时必须有(audit 动作校验)
       public? true
       description "过账日期"
     end
@@ -281,6 +290,18 @@ defmodule SynieCore.Acc.GlJournal do
       sort idx: :asc
       public? true
       description "分录行"
+    end
+  end
+
+  aggregates do
+    sum :debit_total, :lines, :debit do
+      public? true
+      description "借方总金额"
+    end
+
+    sum :credit_total, :lines, :credit do
+      public? true
+      description "贷方总金额"
     end
   end
 

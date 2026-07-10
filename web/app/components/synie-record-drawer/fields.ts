@@ -30,6 +30,8 @@ export interface FieldOverride {
   render?: (value: unknown, row: Row) => ReactNode
   /** 表单控件替换(外键本轮用 TextField 顶,下轮换 RemoteSelect) */
   input?: (p: FieldInputProps) => ReactNode
+  /** 值变更联动:返回的补丁并入表单草稿(如 partyType 变更时清空 partyId) */
+  effects?: (value: unknown) => Record<string, unknown> | void
   /** fk 控件形态:默认 'select'(下拉);'dialog' 弹窗表格选择 */
   picker?: 'select' | 'dialog'
   /** fk 数据源定制(searchFields/renderItem/renderValue/filter…);resource 缺省取列 ref */
@@ -48,6 +50,7 @@ export interface ResolvedField {
   visible?: (values: Record<string, unknown>) => boolean
   render?: (value: unknown, row: Row) => ReactNode
   input?: (p: FieldInputProps) => ReactNode
+  effects?: (value: unknown) => Record<string, unknown> | void
   picker?: 'select' | 'dialog'
   remote?: Partial<RemoteSourceConfig>
 }
@@ -80,6 +83,7 @@ export function resolveFields(
         visible: o.visible,
         render: o.render,
         input: o.input,
+        effects: o.effects,
         picker: o.picker,
         remote: o.remote,
       }

@@ -156,7 +156,8 @@ export function useGridActions(opts: {
   const confirmDialog: ReactNode = (
     <AlertDialog.Backdrop isOpen={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
       <AlertDialog.Container>
-        <AlertDialog.Dialog className="sm:max-w-[400px]">
+        {/* 退场动画期间 pending 已清空、Heading 不在,显式 aria-label 防 RAC 无标题警告 */}
+        <AlertDialog.Dialog className="sm:max-w-[400px]" aria-label={pending ? `确认${pending.label}` : '操作确认'}>
           {pending && (
             <>
               <AlertDialog.Header>

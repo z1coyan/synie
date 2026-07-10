@@ -83,6 +83,33 @@ defmodule SynieCore.Acc.JournalFlowTest do
     assert Enum.all?(posted, &(&1.posting_date == ~D[2026-07-10]))
   end
 
+  test "无过账日期:草稿可建,审核被拒;审核时补填生效", ctx do
+    journal =
+      GlJournal
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: ctx.company.id,
+        voucher_no: "记-0002",
+        date: ~D[2026-07-09]
+      })
+      |> Ash.create!(authorize?: false)
+
+    assert journal.posting_date == nil
+
+    line!(journal, 1, ctx.cash, :debit, "5")
+    line!(journal, 2, ctx.sales, :credit, "5")
+
+    assert_raise Ash.Error.Invalid, ~r/过账日期/, fn -> audit!(journal, authorize?: false) end
+
+    audited =
+      journal
+      |> Ash.Changeset.for_update(:audit, %{posting_date: ~D[2026-07-11]}, authorize?: false)
+      |> Ash.update!()
+
+    assert audited.status == :audited
+    assert audited.posting_date == ~D[2026-07-11]
+    assert Enum.all?(entries(journal), &(&1.posting_date == ~D[2026-07-11]))
+  end
+
   test "借贷不平/行数不足审核被拒,凭证保持草稿", ctx do
     line!(ctx.journal, 1, ctx.cash, :debit, "100")
 
