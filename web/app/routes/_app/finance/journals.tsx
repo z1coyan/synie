@@ -245,7 +245,7 @@ function JournalsPage() {
         fields={{
           // 公司提到最前(分录行科目候选依赖它);建后不可改(update 动作不收 company_id)
           companyId: { required: true, order: -1, edit: 'createOnly' },
-          voucherNo: { required: true, placeholder: '如 PZ202601001' },
+          voucherNo: { placeholder: '留空自动编号,或手工输入如 PZ202601001' },
           date: { required: true, cols: 6 },
           // 过账日期草稿可留空,审核时填入;新增时填了保存后会提示直接审核过账
           postingDate: { cols: 6 },

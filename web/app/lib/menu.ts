@@ -141,6 +141,10 @@ export const menuModules: MenuModule[] = [
         ],
       },
       {
+        label: '配置',
+        items: [{ label: '编号规则', path: '/system/numbering' }],
+      },
+      {
         label: '审计',
         items: [{ label: '操作日志', path: '/system/logs' }],
       },

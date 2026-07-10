@@ -41,6 +41,9 @@ export interface SynieEditableTableProps<T extends Row = Row> {
   fields?: Record<string, FieldOverride>
   /** 父表单 view 态传 true:隐藏新增按钮与操作列 */
   readOnly?: boolean
+  /** 关掉新增/删除入口(默认开):行由服务端自动产生、只允许改的子表(如编号计数器)用 */
+  canCreate?: boolean
+  canDelete?: boolean
   /**
    * 写入前校验(如行查重):返回错误文案则 toast 报错、抽屉不关;
    * editing 为 null 表示新增,编辑时校验应跳过自身
@@ -67,7 +70,7 @@ function cellClass(col: GridColumnMeta, o?: EditableColumnOverride): string {
 }
 
 export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTableProps<T>) {
-  const { resource, items, label = '条目', overrides = {}, readOnly = false } = props
+  const { resource, items, label = '条目', overrides = {}, readOnly = false, canCreate = true, canDelete = true } = props
   const meta = useGridMeta(resource)
   const [drawer, setDrawer] = useState<{ mode: 'create' | 'edit'; row: T | null } | null>(null)
 
@@ -88,7 +91,7 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
         <span className="text-sm text-muted">{props.title ?? label}</span>
         <div className="flex items-center gap-2">
           {props.toolbar}
-          {!readOnly && (
+          {!readOnly && canCreate && (
             <Button size="sm" variant="secondary" onPress={() => setDrawer({ mode: 'create', row: null })}>
               新增{label}
             </Button>
@@ -146,9 +149,11 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
                             编辑
                           </Button>
                           {/* ponytail: 草稿行直接删,父表单保存前都可重录;需要挽回再加确认框 */}
-                          <Button size="sm" variant="ghost" className="text-danger" onPress={() => props.onChange(removeItem(items, row.id))}>
-                            删除
-                          </Button>
+                          {canDelete && (
+                            <Button size="sm" variant="ghost" className="text-danger" onPress={() => props.onChange(removeItem(items, row.id))}>
+                              删除
+                            </Button>
+                          )}
                         </div>
                       </Table.Cell>
                     )}
