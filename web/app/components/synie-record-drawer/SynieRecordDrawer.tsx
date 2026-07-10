@@ -177,6 +177,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                           field={f}
                           row={renderRow}
                           value={values[f.name]}
+                          values={values}
                           isDisabled={isFieldDisabled(f, renderMode) || saving}
                           onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v }))}
                         />
@@ -259,16 +260,18 @@ function FieldInput({
   field,
   row,
   value,
+  values,
   isDisabled,
   onChange,
 }: {
   field: ResolvedField
   row?: Row | null
   value: unknown
+  values: Record<string, unknown>
   isDisabled: boolean
   onChange: (v: unknown) => void
 }) {
-  if (field.input) return <>{field.input({ value, onChange, isDisabled })}</>
+  if (field.input) return <>{field.input({ value, onChange, isDisabled, values })}</>
 
   // fk 列:ref(权限裁剪后)或页面 remote.resource 提供数据源;都没有则落到 default TextField(fail-closed)
   if (field.col.type === 'fk') {

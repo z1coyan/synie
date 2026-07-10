@@ -65,19 +65,15 @@ export const menuModules: MenuModule[] = [
     label: '财务',
     description: '账务与费用管理',
     icon: IconLandmark,
-    entry: '/finance/ledger',
+    entry: '/finance/journals',
     groups: [
       {
         label: '账务',
+        // 应收/应付/费用报销留待后续任务实现,路由未落地前不注册(注册了会点进 404)
         items: [
-          { label: '总账', path: '/finance/ledger' },
-          { label: '应收管理', path: '/finance/receivable' },
-          { label: '应付管理', path: '/finance/payable' },
+          { label: '会计凭证', path: '/finance/journals' },
+          { label: '总账分录', path: '/finance/entries' },
         ],
-      },
-      {
-        label: '费用',
-        items: [{ label: '费用报销', path: '/finance/expense' }],
       },
     ],
   },

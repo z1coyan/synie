@@ -9,6 +9,8 @@ export interface FieldInputProps {
   value: unknown
   onChange: (v: unknown) => void
   isDisabled: boolean
+  /** 当前表单完整草稿值(而非仅本字段),供联动控件读取兄弟字段(如按 partyType 切换 partyId 数据源) */
+  values: Record<string, unknown>
 }
 
 export interface FieldOverride {
