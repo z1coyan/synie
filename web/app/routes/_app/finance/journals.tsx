@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { parseDate } from '@internationalized/date'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
-import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
@@ -125,6 +125,11 @@ const safeParseDate = (v: string | null) => {
   }
 }
 
+// 状态胶囊配色:草稿灰、已审核绿、已取消红
+const GRID_OVERRIDES = {
+  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', CANCELLED: 'danger' } },
+} satisfies Record<string, ColumnOverride>
+
 // 公司放首列;提交/创建/更新时间不进表格(有序白名单,兼当 exclude)
 const GRID_COLUMNS = [
   'companyId',
@@ -208,6 +213,7 @@ function JournalsPage() {
           key={reloadKey}
           resource="accGlJournals"
           columns={GRID_COLUMNS}
+          overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}

@@ -1,5 +1,8 @@
 export type GridColumnType = 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime' | 'enum' | 'fk'
 
+/** enum 胶囊配色(HeroUI Chip color),按枚举线上值(大写 token)配 */
+export type EnumChipColor = 'default' | 'accent' | 'success' | 'warning' | 'danger'
+
 export interface GridEnumOption {
   value: string
   label: string

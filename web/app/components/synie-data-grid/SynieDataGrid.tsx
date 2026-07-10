@@ -11,7 +11,7 @@ import { mergePick } from './pick'
 import { useGridMeta } from './meta'
 import { printRows } from './print'
 import { buildFilterLiteral, buildRowQuery, mergeFilterLiterals, nextSort, toGqlLiteral, toSortField, toSortLiteral } from './query'
-import type { ActionContext, BulkAction, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
+import type { ActionContext, BulkAction, EnumChipColor, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
 import { useDraft } from './use-debounced'
 import { useGridActions } from './use-grid-actions'
 
@@ -21,6 +21,8 @@ export interface ColumnOverride {
   width?: number
   /** 不传时数值列(integer/decimal)默认右对齐 */
   align?: 'start' | 'center' | 'end'
+  /** enum 列胶囊配色,按枚举值(大写 token)映射;未配的值用 default 灰 */
+  enumColors?: Record<string, EnumChipColor>
 }
 
 export interface TreeOptions {
@@ -94,7 +96,12 @@ export function selectedRows(selection: Selection, rows: Row[]): Row[] {
 }
 
 /** 默认单元格渲染(SynieEditableTable 复用,保持两处表格视觉一致) */
-export function defaultCell(col: GridColumnMeta, value: unknown, row: Row): ReactNode {
+export function defaultCell(
+  col: GridColumnMeta,
+  value: unknown,
+  row: Row,
+  enumColors?: Record<string, EnumChipColor>
+): ReactNode {
   if (col.type === 'fk' && col.ref) {
     const text = cellText(col, value, row)
     return text || <span className="text-muted">—</span>
@@ -106,7 +113,12 @@ export function defaultCell(col: GridColumnMeta, value: unknown, row: Row): Reac
     case 'datetime':
       return new Date(String(value)).toLocaleString('zh-CN', { hour12: false })
     case 'enum':
-      return col.enumOptions?.find((o) => o.value === value)?.label ?? String(value)
+      // enum 默认胶囊展示;配色经 override.enumColors 按值定制,未配的值灰胶囊
+      return (
+        <Chip size="sm" className="whitespace-nowrap" color={enumColors?.[String(value)] ?? 'default'}>
+          {col.enumOptions?.find((o) => o.value === value)?.label ?? String(value)}
+        </Chip>
+      )
     default:
       return String(value)
   }
@@ -276,7 +288,10 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         cell: (row: Row) => {
           // 懒加载占位行只有 id:首列显示「加载中…」,其余列空
           if (isLoadingRow(row)) return i === 0 ? <span className="text-muted">加载中…</span> : null
-          return overrides[col.name]?.render?.(row[col.name], row) ?? defaultCell(col, row[col.name], row)
+          return (
+            overrides[col.name]?.render?.(row[col.name], row) ??
+            defaultCell(col, row[col.name], row, overrides[col.name]?.enumColors)
+          )
         },
       })),
     [columns, overrides, filters, treeMode]

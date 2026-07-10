@@ -3,7 +3,7 @@ import { Button, Spinner, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import { defaultCell } from '../synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '../synie-data-grid/meta'
-import type { GridColumnMeta, Row } from '../synie-data-grid/types'
+import type { EnumChipColor, GridColumnMeta, Row } from '../synie-data-grid/types'
 import { FkText, SynieRecordDrawer, type SynieRecordDrawerProps } from '../synie-record-drawer/SynieRecordDrawer'
 import type { FieldOverride } from '../synie-record-drawer/fields'
 import { appendItem, displayColumns, localRowId, mergeItem, removeItem } from './editable'
@@ -14,6 +14,8 @@ export interface EditableColumnOverride {
   align?: 'start' | 'center' | 'end'
   /** 单元格自定义渲染 */
   render?: (value: unknown, row: Row) => ReactNode
+  /** enum 列胶囊配色,按枚举值(大写 token)映射;未配的值用 default 灰 */
+  enumColors?: Record<string, EnumChipColor>
   /** 追加到 Table.Column/Table.Cell(如定宽 w-24) */
   className?: string
 }
@@ -179,5 +181,5 @@ function EditableCell({ col, row, override }: { col: GridColumnMeta; row: Row; o
   const value = row[col.name]
   if (override?.render) return <>{override.render(value, row)}</>
   if (col.type === 'fk' && col.ref) return <FkText col={col} row={row} />
-  return <>{defaultCell(col, value, row)}</>
+  return <>{defaultCell(col, value, row, override?.enumColors)}</>
 }
