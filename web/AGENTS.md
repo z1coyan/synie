@@ -13,7 +13,7 @@
 
 - 数据列表一律用 `SynieDataGrid`（`~/components/synie-data-grid/`）；数据详情、新增、编辑一律用 `SynieRecordDrawer`（`~/components/synie-record-drawer/`）三态抽屉，不要自造表格或表单。
 - 字段行为（必填/只读 `edit`/条件显隐 `visible`/栅格 `cols`/默认值）通过 `fields` override 声明，提交 mutation 写在页面 `onSubmit` 回调；接入范例见 `routes/_app/system/roles.tsx`。
-- 父表单内的子条目集合（如单据行）用 `SynieEditableTable`（`~/components/synie-editable-table/`）：表格纯展示，增改一律走二级 `SynieRecordDrawer`，不做行内编辑；`items`/`onChange` 受控、组件不发写请求，父表单提交时一并持久化，新增行 id 带 `local:` 前缀（`isLocalRow` 判别）。
+- 父表单内的子条目（单据行、明细行等）一律用 `SynieEditableTable`（`~/components/synie-editable-table/`）：表格纯展示，增改一律走二级 `SynieRecordDrawer`，不做行内编辑；`items`/`onChange` 受控、组件不发写请求，父表单提交时一并持久化，新增行 id 带 `local:` 前缀（`isLocalRow` 判别）。
 - 组件能力不够时先扩组件再用，不要在页面里绕过它手搭。
 - 一切文件上传/下载必须走 `~/lib/files.ts`（REST `/api/files`），不要在页面自写 fetch/FormData；记录附件 UI 一律用 `SynieAttachmentPanel`（`~/components/synie-attachment-panel/`）挂 SynieRecordDrawer 的 `extraContent`，传 ownerType（graphql type 名）/ownerId。
 
