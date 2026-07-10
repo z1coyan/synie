@@ -81,6 +81,42 @@ defmodule SynieCore.Acc.GlJournalTest do
     assert :ok = Ash.destroy!(draft, authorize?: false)
   end
 
+  describe "自动编号" do
+    defp numbering_rule! do
+      SynieCore.Numbering.Rule
+      |> Ash.Changeset.for_create(
+        :create,
+        %{code: "acc.gl_journal", name: "记账凭证", format: "记{company}-{YYYY}{MM}-{seq}"},
+        authorize?: false
+      )
+      |> Ash.create!()
+    end
+
+    test "编号留空按规则自动取号", %{company: co} do
+      numbering_rule!()
+      attrs = base_attrs(co) |> Map.delete(:voucher_no) |> Map.put(:date, ~D[2026-07-10])
+
+      assert journal!(attrs, authorize?: false).voucher_no == "记#{co.code}-202607-0001"
+      assert journal!(attrs, authorize?: false).voucher_no == "记#{co.code}-202607-0002"
+    end
+
+    test "手填编号原样保留", %{company: co} do
+      numbering_rule!()
+      journal = journal!(%{base_attrs(co) | voucher_no: "记-手填"}, authorize?: false)
+
+      assert journal.voucher_no == "记-手填"
+    end
+
+    test "无规则且留空报错提示配置规则", %{company: co} do
+      error =
+        assert_raise Ash.Error.Invalid, fn ->
+          journal!(Map.delete(base_attrs(co), :voucher_no), authorize?: false)
+        end
+
+      assert Exception.message(error) =~ "编号规则"
+    end
+  end
+
   test "无公司数据权限不能改凭证(CompanyScope)", %{company: co} do
     draft = journal!(base_attrs(co), authorize?: false)
     outsider = actor(company_ids: [])

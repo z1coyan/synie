@@ -85,21 +85,6 @@ defmodule SynieCore.NumberingTest do
     assert {:ok, "A260715000001"} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-07-15])
   end
 
-  test "并发取号不重号", %{company: co} do
-    Ecto.Adapters.SQL.Sandbox.mode(SynieCore.Repo, {:shared, self()})
-    rule = rule!(%{})
-
-    numbers =
-      1..20
-      |> Task.async_stream(fn _ -> Numbering.next!(rule.code, company_id: co.id, date: ~D[2026-07-15]) end,
-        max_concurrency: 10
-      )
-      |> Enum.map(fn {:ok, no} -> no end)
-
-    assert length(Enum.uniq(numbers)) == 20
-    assert "J#{co.code}-202607-0020" in numbers
-  end
-
   test "格式模板必须含 {seq}" do
     assert_raise Ash.Error.Invalid, fn -> rule!(%{format: "J-{YYYY}"}) end
   end
@@ -116,5 +101,41 @@ defmodule SynieCore.NumberingTest do
 
     assert {:ok, no} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-07-15])
     assert no == "J#{co.code}-202607-0101"
+  end
+end
+
+# shared 沙箱模式是全局的,会劫持并行 async 测试的连接,故单独放 async: false 模块(串行跑)
+defmodule SynieCore.NumberingConcurrencyTest do
+  use ExUnit.Case, async: false
+
+  import SynieCore.AuthzFixtures
+
+  alias SynieCore.Numbering
+
+  test "并发取号不重号" do
+    :ok = Ecto.Adapters.SQL.Sandbox.checkout(SynieCore.Repo)
+    Ecto.Adapters.SQL.Sandbox.mode(SynieCore.Repo, {:shared, self()})
+
+    co = company!()
+
+    rule =
+      Numbering.Rule
+      |> Ash.Changeset.for_create(
+        :create,
+        %{code: "test.concurrent", name: "并发测试", format: "J{company}-{YYYY}{MM}-{seq}"},
+        authorize?: false
+      )
+      |> Ash.create!()
+
+    numbers =
+      1..20
+      |> Task.async_stream(
+        fn _ -> Numbering.next!(rule.code, company_id: co.id, date: ~D[2026-07-15]) end,
+        max_concurrency: 10
+      )
+      |> Enum.map(fn {:ok, no} -> no end)
+
+    assert length(Enum.uniq(numbers)) == 20
+    assert "J#{co.code}-202607-0020" in numbers
   end
 end
