@@ -21,80 +21,20 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "code",
+      "source": "scope_key",
       "type": "text"
     },
     {
       "allow_nil?": false,
-      "default": "nil",
+      "default": "0",
       "generated?": false,
       "precision": null,
       "primary_key?": false,
       "references": null,
       "scale": null,
       "size": null,
-      "source": "name",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "format",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "4",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "seq_padding",
+      "source": "value",
       "type": "bigint"
-    },
-    {
-      "allow_nil?": false,
-      "default": "\"monthly\"",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "reset_period",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "true",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "per_company",
-      "type": "boolean"
-    },
-    {
-      "allow_nil?": false,
-      "default": "true",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "enabled",
-      "type": "boolean"
     },
     {
       "allow_nil?": false,
@@ -119,6 +59,37 @@
       "size": null,
       "source": "updated_at",
       "type": "utc_datetime_usec"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": {
+        "deferrable": false,
+        "destination_attribute": "id",
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null,
+        "index?": false,
+        "match_type": null,
+        "match_with": null,
+        "multitenancy": {
+          "attribute": null,
+          "global": null,
+          "strategy": null
+        },
+        "name": "sys_numbering_counter_rule_id_fkey",
+        "on_delete": "delete",
+        "on_update": null,
+        "primary_key?": true,
+        "schema": "public",
+        "table": "sys_numbering_rule"
+      },
+      "scale": null,
+      "size": null,
+      "source": "rule_id",
+      "type": "uuid"
     }
   ],
   "base_filter": null,
@@ -126,20 +97,24 @@
   "create_table_options": null,
   "custom_indexes": [],
   "custom_statements": [],
-  "has_create_action": true,
-  "hash": "01131F166C99EDA73DE59FFD726B046B377242224F199DEF6D46B79B14902155",
+  "has_create_action": false,
+  "hash": "100BD2C4FFCDE3B9760DDAED267930CE753A0D1EB9E9BCF02AF3882E5C798B42",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "sys_numbering_rule_unique_code_index",
+      "index_name": "sys_numbering_counter_unique_scope_per_rule_index",
       "keys": [
         {
           "type": "atom",
-          "value": "code"
+          "value": "rule_id"
+        },
+        {
+          "type": "atom",
+          "value": "scope_key"
         }
       ],
-      "name": "unique_code",
+      "name": "unique_scope_per_rule",
       "nils_distinct?": true,
       "where": null
     }
@@ -151,5 +126,5 @@
   },
   "repo": "Elixir.SynieCore.Repo",
   "schema": null,
-  "table": "sys_numbering_rule"
+  "table": "sys_numbering_counter"
 }

@@ -3,6 +3,7 @@ defmodule SynieCore.NumberingTest do
 
   import SynieCore.AuthzFixtures
 
+  alias SynieCore.Acc.GlJournal
   alias SynieCore.Numbering
 
   setup do
@@ -10,16 +11,21 @@ defmodule SynieCore.NumberingTest do
     %{company: company!()}
   end
 
+  @default_segments [
+    %{"type" => "text", "value" => "记"},
+    %{"type" => "field", "field" => "company.code"},
+    %{"type" => "text", "value" => "-"},
+    %{"type" => "field", "field" => "date", "format" => "YYYYMM"},
+    %{"type" => "text", "value" => "-"},
+    %{"type" => "seq", "padding" => 4}
+  ]
+
   defp rule!(attrs) do
     Numbering.Rule
     |> Ash.Changeset.for_create(
       :create,
       Map.merge(
-        %{
-          code: "test.doc.#{System.unique_integer([:positive])}",
-          name: "测试单据",
-          format: "J{company}-{YYYY}{MM}-{seq}"
-        },
+        %{resource: "acc.gl_journal", name: "测试规则", segments: @default_segments},
         attrs
       ),
       authorize?: false
@@ -27,80 +33,191 @@ defmodule SynieCore.NumberingTest do
     |> Ash.create!()
   end
 
-  test "取号按格式模板渲染并连号", %{company: co} do
-    rule = rule!(%{})
-
-    assert {:ok, no1} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-07-15])
-    assert {:ok, no2} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-07-15])
-
-    assert no1 == "J#{co.code}-202607-0001"
-    assert no2 == "J#{co.code}-202607-0002"
+  # 构建期形态的 changeset(不跑 create action,专测 next/1)
+  defp journal_changeset(attrs) do
+    GlJournal
+    |> Ash.Changeset.new()
+    |> Ash.Changeset.force_change_attributes(attrs)
   end
 
-  test "按月重置:跨月序号从头计", %{company: co} do
-    rule = rule!(%{reset_period: :monthly})
+  describe "取号" do
+    test "按段渲染并连号", %{company: co} do
+      rule!(%{})
+      cs = journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]})
 
-    assert {:ok, "J" <> _} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-07-15])
+      assert {:ok, no1} = Numbering.next(cs)
+      assert {:ok, no2} = Numbering.next(cs)
 
-    assert {:ok, no} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-08-01])
-    assert no == "J#{co.code}-202608-0001"
+      assert no1 == "记#{co.code}-202607-0001"
+      assert no2 == "记#{co.code}-202607-0002"
+    end
+
+    test "日期段渲染变了序号自然从头计(无独立重置周期)", %{company: co} do
+      rule!(%{})
+
+      assert {:ok, _} = Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
+
+      assert {:ok, no} = Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-08-01]}))
+      assert no == "记#{co.code}-202608-0001"
+    end
+
+    test "按公司独立计数", %{company: co} do
+      other = company!()
+      rule!(%{})
+
+      assert {:ok, no1} = Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
+      assert {:ok, no2} = Numbering.next(journal_changeset(%{company_id: other.id, date: ~D[2026-07-15]}))
+
+      assert String.ends_with?(no1, "0001")
+      assert String.ends_with?(no2, "0001")
+    end
+
+    test "不按公司计数时全局连号", %{company: co} do
+      other = company!()
+
+      rule!(%{
+        per_company: false,
+        segments: [
+          %{"type" => "text", "value" => "GL-"},
+          %{"type" => "field", "field" => "date", "format" => "YYYY"},
+          %{"type" => "text", "value" => "-"},
+          %{"type" => "seq", "padding" => 4}
+        ]
+      })
+
+      assert {:ok, "GL-2026-0001"} =
+               Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
+
+      assert {:ok, "GL-2026-0002"} =
+               Numbering.next(journal_changeset(%{company_id: other.id, date: ~D[2026-07-15]}))
+    end
+
+    test "按公司计数但单据缺公司时报错" do
+      rule!(%{segments: [%{"type" => "text", "value" => "A"}, %{"type" => "seq", "padding" => 4}]})
+
+      assert {:error, msg} = Numbering.next(journal_changeset(%{date: ~D[2026-07-15]}))
+      assert msg =~ "公司"
+    end
+
+    test "字段无值时报错", %{company: co} do
+      rule!(%{})
+
+      assert {:error, msg} = Numbering.next(journal_changeset(%{company_id: co.id}))
+      assert msg =~ "date"
+    end
+
+    test "无规则或规则停用返回 no_rule", %{company: co} do
+      cs = journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]})
+      assert {:error, :no_rule} = Numbering.next(cs)
+
+      rule!(%{enabled: false})
+      assert {:error, :no_rule} = Numbering.next(cs)
+    end
+
+    test "序号可在中间,位数可调", %{company: co} do
+      rule!(%{
+        segments: [
+          %{"type" => "text", "value" => "A"},
+          %{"type" => "seq", "padding" => 6},
+          %{"type" => "text", "value" => "-"},
+          %{"type" => "field", "field" => "date", "format" => "YYMMDD"}
+        ]
+      })
+
+      assert {:ok, "A000001-260715"} =
+               Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
+    end
+
+    test "计数器可改当前值,后续取号顺延", %{company: co} do
+      rule!(%{})
+      cs = journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]})
+      {:ok, _} = Numbering.next(cs)
+
+      [counter] = Ash.read!(Numbering.Counter, authorize?: false)
+      assert counter.scope_key == "#{co.code}|记#{co.code}-202607-"
+
+      counter
+      |> Ash.Changeset.for_update(:update, %{value: 100}, authorize?: false)
+      |> Ash.update!()
+
+      assert {:ok, no} = Numbering.next(cs)
+      assert no == "记#{co.code}-202607-0101"
+    end
   end
 
-  test "按公司独立计数", %{company: co} do
-    other = company!()
-    rule = rule!(%{})
+  describe "规则校验" do
+    test "必须恰好一个序号段" do
+      assert_raise Ash.Error.Invalid, ~r/序号段/, fn ->
+        rule!(%{segments: [%{"type" => "text", "value" => "A"}]})
+      end
 
-    assert {:ok, no1} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-07-15])
-    assert {:ok, no2} = Numbering.next(rule.code, company_id: other.id, date: ~D[2026-07-15])
+      assert_raise Ash.Error.Invalid, ~r/序号段/, fn ->
+        rule!(%{
+          segments: [%{"type" => "seq", "padding" => 4}, %{"type" => "seq", "padding" => 4}]
+        })
+      end
+    end
 
-    assert String.ends_with?(no1, "0001")
-    assert String.ends_with?(no2, "0001")
-  end
+    test "固定文本不能为空" do
+      assert_raise Ash.Error.Invalid, ~r/固定文本/, fn ->
+        rule!(%{segments: [%{"type" => "text", "value" => ""}, %{"type" => "seq", "padding" => 4}]})
+      end
+    end
 
-  test "不按公司计数时全局连号", %{company: co} do
-    other = company!()
-    rule = rule!(%{format: "GL-{YYYY}-{seq}", per_company: false, reset_period: :yearly})
+    test "字段必须在绑定资源上存在" do
+      assert_raise Ash.Error.Invalid, ~r/不存在/, fn ->
+        rule!(%{
+          segments: [%{"type" => "field", "field" => "nope"}, %{"type" => "seq", "padding" => 4}]
+        })
+      end
 
-    assert {:ok, "GL-2026-0001"} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-07-15])
-    assert {:ok, "GL-2026-0002"} = Numbering.next(rule.code, company_id: other.id, date: ~D[2026-07-15])
-  end
+      assert_raise Ash.Error.Invalid, ~r/不存在/, fn ->
+        rule!(%{
+          segments: [
+            %{"type" => "field", "field" => "company.nope"},
+            %{"type" => "seq", "padding" => 4}
+          ]
+        })
+      end
+    end
 
-  test "规则需要公司但未传时报错" do
-    rule = rule!(%{})
+    test "日期字段必须带合法格式,非日期字段不能带格式" do
+      assert_raise Ash.Error.Invalid, ~r/格式/, fn ->
+        rule!(%{
+          segments: [%{"type" => "field", "field" => "date"}, %{"type" => "seq", "padding" => 4}]
+        })
+      end
 
-    assert {:error, msg} = Numbering.next(rule.code, date: ~D[2026-07-15])
-    assert msg =~ "公司"
-  end
+      assert_raise Ash.Error.Invalid, ~r/格式/, fn ->
+        rule!(%{
+          segments: [
+            %{"type" => "field", "field" => "remarks", "format" => "YYYY"},
+            %{"type" => "seq", "padding" => 4}
+          ]
+        })
+      end
+    end
 
-  test "无规则或规则停用返回 no_rule", %{company: co} do
-    assert {:error, :no_rule} = Numbering.next("不存在的规则", company_id: co.id)
+    test "绑定资源必须存在" do
+      assert_raise Ash.Error.Invalid, ~r/绑定资源/, fn ->
+        rule!(%{resource: "no.such_resource"})
+      end
+    end
 
-    rule = rule!(%{enabled: false})
-    assert {:error, :no_rule} = Numbering.next(rule.code, company_id: co.id)
-  end
+    test "每资源至多一条启用规则,停用可共存" do
+      rule!(%{})
 
-  test "序号位数与自定义 token 组合", %{company: co} do
-    rule = rule!(%{format: "A{YY}{MM}{DD}#{"{seq}"}", seq_padding: 6, reset_period: :daily})
+      assert_raise Ash.Error.Invalid, ~r/只能启用一条/, fn -> rule!(%{name: "第二条"}) end
 
-    assert {:ok, "A260715000001"} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-07-15])
-  end
+      disabled = rule!(%{name: "停用的", enabled: false})
 
-  test "格式模板必须含 {seq}" do
-    assert_raise Ash.Error.Invalid, fn -> rule!(%{format: "J-{YYYY}"}) end
-  end
-
-  test "计数器可改当前值,后续取号顺延", %{company: co} do
-    rule = rule!(%{})
-    {:ok, _} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-07-15])
-
-    [counter] = Ash.read!(Numbering.Counter, authorize?: false)
-
-    counter
-    |> Ash.Changeset.for_update(:update, %{value: 100}, authorize?: false)
-    |> Ash.update!()
-
-    assert {:ok, no} = Numbering.next(rule.code, company_id: co.id, date: ~D[2026-07-15])
-    assert no == "J#{co.code}-202607-0101"
+      # 已有启用规则时,把停用规则改为启用同样被拒
+      assert_raise Ash.Error.Invalid, ~r/只能启用一条/, fn ->
+        disabled
+        |> Ash.Changeset.for_update(:update, %{enabled: true}, authorize?: false)
+        |> Ash.update!()
+      end
+    end
   end
 end
 
@@ -110,6 +227,7 @@ defmodule SynieCore.NumberingConcurrencyTest do
 
   import SynieCore.AuthzFixtures
 
+  alias SynieCore.Acc.GlJournal
   alias SynieCore.Numbering
 
   test "并发取号不重号" do
@@ -118,24 +236,40 @@ defmodule SynieCore.NumberingConcurrencyTest do
 
     co = company!()
 
-    rule =
-      Numbering.Rule
-      |> Ash.Changeset.for_create(
-        :create,
-        %{code: "test.concurrent", name: "并发测试", format: "J{company}-{YYYY}{MM}-{seq}"},
-        authorize?: false
-      )
-      |> Ash.create!()
+    Numbering.Rule
+    |> Ash.Changeset.for_create(
+      :create,
+      %{
+        resource: "acc.gl_journal",
+        name: "并发测试",
+        segments: [
+          %{"type" => "text", "value" => "J-"},
+          %{"type" => "field", "field" => "date", "format" => "YYYYMM"},
+          %{"type" => "text", "value" => "-"},
+          %{"type" => "seq", "padding" => 4}
+        ]
+      },
+      authorize?: false
+    )
+    |> Ash.create!()
+
+    cs =
+      GlJournal
+      |> Ash.Changeset.new()
+      |> Ash.Changeset.force_change_attributes(%{company_id: co.id, date: ~D[2026-07-15]})
 
     numbers =
       1..20
       |> Task.async_stream(
-        fn _ -> Numbering.next!(rule.code, company_id: co.id, date: ~D[2026-07-15]) end,
+        fn _ ->
+          {:ok, no} = Numbering.next(cs)
+          no
+        end,
         max_concurrency: 10
       )
       |> Enum.map(fn {:ok, no} -> no end)
 
     assert length(Enum.uniq(numbers)) == 20
-    assert "J#{co.code}-202607-0020" in numbers
+    assert "J-202607-0020" in numbers
   end
 end

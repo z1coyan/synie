@@ -1,17 +1,66 @@
-defmodule SynieCore.Numbering.ResetPeriod do
-  @moduledoc "编号重置周期:不重置/按年/按月/按日。"
+defmodule SynieCore.Numbering.Rule.ValidateSegments do
+  @moduledoc "校验段列表结构与字段可解析性(委托 Numbering.validate_segments/2)。"
 
-  use Ash.Type.Enum, values: [never: "不重置", yearly: "按年", monthly: "按月", daily: "按日"]
+  use Ash.Resource.Validation
 
-  def graphql_type(_), do: :sys_numbering_reset_period
+  @impl true
+  def validate(changeset, _opts, _context) do
+    prefix = Ash.Changeset.get_attribute(changeset, :resource)
+    segments = Ash.Changeset.get_attribute(changeset, :segments)
+
+    case SynieCore.Numbering.validate_segments(prefix, segments) do
+      :ok -> :ok
+      {:error, message} -> {:error, field: :segments, message: message}
+    end
+  end
+end
+
+defmodule SynieCore.Numbering.Rule.OneEnabledPerResource do
+  @moduledoc """
+  每资源至多一条启用规则(取号无歧义)。构建期校验给友好报错;
+  并发窗口由 DB partial unique index(resource where enabled)兜底。
+  """
+
+  use Ash.Resource.Validation
+
+  require Ash.Query
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    if Ash.Changeset.get_attribute(changeset, :enabled) do
+      prefix = Ash.Changeset.get_attribute(changeset, :resource)
+
+      SynieCore.Numbering.Rule
+      |> Ash.Query.filter(resource == ^prefix and enabled == true)
+      |> then(fn query ->
+        case changeset.data.id do
+          nil -> query
+          id -> Ash.Query.filter(query, id != ^id)
+        end
+      end)
+      |> Ash.read!(authorize?: false)
+      |> case do
+        [] -> :ok
+        _ -> {:error, field: :enabled, message: "该资源已有启用的编号规则,同一资源只能启用一条"}
+      end
+    else
+      :ok
+    end
+  end
 end
 
 defmodule SynieCore.Numbering.Rule do
   @moduledoc """
-  编号规则,对应 `sys_numbering_rule` 表。
+  编号规则,对应 `sys_numbering_rule` 表。规则绑定资源(`resource` = 权限码前缀,
+  如 `acc.gl_journal`),内容是有序段列表 `segments`(jsonb,string key):
 
-  格式模板 token:`{company}`(公司编码)、`{YYYY}` `{YY}` `{MM}` `{DD}`(取号日期)、
-  `{seq}`(序号,按 seq_padding 补零)。取号入口见 `SynieCore.Numbering.next/2`。
+  - `%{"type" => "text", "value" => "记"}` — 固定文本
+  - `%{"type" => "field", "field" => "company.code"}` — 记录字段(支持 belongs_to 一级字段);
+    date/datetime 字段须带 `"format"`(YYYY/YY/MM/DD 组合)
+  - `%{"type" => "seq", "padding" => 4}` — 序号,恰好一个
+
+  计数范围 = 渲染后的非 seq 段文本(+按公司维度),无独立重置周期——段里引用的
+  日期格式变了 key 自然变、序号自然从头计。取号入口见 `SynieCore.Numbering.next/1`。
   """
 
   use Ash.Resource,
@@ -24,10 +73,21 @@ defmodule SynieCore.Numbering.Rule do
   postgres do
     table "sys_numbering_rule"
     repo SynieCore.Repo
+
+    custom_indexes do
+      # 每资源至多一条启用规则(应用层校验的并发兜底)
+      index [:resource],
+        unique: true,
+        where: "enabled",
+        name: "sys_numbering_rule_one_enabled_per_resource_index"
+    end
   end
 
   graphql do
     type :sys_numbering_rule
+
+    # 段列表整体按 JSON 串收发(同审计日志 changes 先例),前端一次 parse/stringify
+    attribute_types segments: :json_string
   end
 
   policies do
@@ -55,12 +115,18 @@ defmodule SynieCore.Numbering.Rule do
     end
 
     create :create do
-      accept [:code, :name, :format, :seq_padding, :reset_period, :per_company, :enabled]
+      accept [:resource, :name, :segments, :per_company, :enabled]
+
+      validate {SynieCore.Numbering.Rule.ValidateSegments, []}
+      validate {SynieCore.Numbering.Rule.OneEnabledPerResource, []}
     end
 
     update :update do
-      accept [:name, :format, :seq_padding, :reset_period, :per_company, :enabled]
+      accept [:name, :segments, :per_company, :enabled]
       require_atomic? false
+
+      validate {SynieCore.Numbering.Rule.ValidateSegments, []}
+      validate {SynieCore.Numbering.Rule.OneEnabledPerResource, []}
     end
 
     destroy :destroy do
@@ -69,22 +135,14 @@ defmodule SynieCore.Numbering.Rule do
     end
   end
 
-  validations do
-    # 模板缺 {seq} 会导致重号(靠业务表唯一键兜底才炸),建/改时直接挡
-    validate match(:format, ~r/\{seq\}/) do
-      message "格式模板必须包含 {seq} 序号占位"
-      where [changing(:format)]
-    end
-  end
-
   attributes do
     uuid_primary_key :id
 
-    attribute :code, :string do
+    attribute :resource, :string do
       allow_nil? false
       public? true
       constraints max_length: 64
-      description "规则标识"
+      description "绑定资源"
     end
 
     attribute :name, :string do
@@ -94,26 +152,10 @@ defmodule SynieCore.Numbering.Rule do
       description "规则名称"
     end
 
-    attribute :format, :string do
+    attribute :segments, {:array, :map} do
       allow_nil? false
       public? true
-      constraints max_length: 128
-      description "格式模板"
-    end
-
-    attribute :seq_padding, :integer do
-      allow_nil? false
-      public? true
-      default 4
-      constraints min: 1, max: 12
-      description "序号位数"
-    end
-
-    attribute :reset_period, SynieCore.Numbering.ResetPeriod do
-      allow_nil? false
-      public? true
-      default :monthly
-      description "重置周期"
+      description "编号段"
     end
 
     attribute :per_company, :boolean do
@@ -132,9 +174,5 @@ defmodule SynieCore.Numbering.Rule do
 
     create_timestamp :inserted_at, public?: true, description: "创建时间"
     update_timestamp :updated_at, public?: true, description: "更新时间"
-  end
-
-  identities do
-    identity :unique_code, [:code]
   end
 end

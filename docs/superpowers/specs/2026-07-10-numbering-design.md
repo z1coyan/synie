@@ -1,79 +1,75 @@
-# 自动编号模块设计
+# 自动编号模块设计(v2)
 
-日期:2026-07-10
+日期:2026-07-10(v2 依据用户评审重构:去掉重置周期、规则显式绑定资源、段组装式规则编辑)
 
 ## 定位
 
-- 通用单据自动编号能力:各业务模块(凭证、后续销售/采购单据)按可配置规则取号,规则与当前序号在页面上可管理。
-- 首个接入方:手工会计凭证 `acc_gl_journal`(其 spec 中"自动编号留跟进"即本轮)。凭证 `voucher_no` 留空时自动取号,手填仍可用。
+- 通用单据自动编号:规则显式**绑定资源**(单据),规则内容是**有序段列表**(固定文本 / 记录字段 / 序号),页面点选组装,不写模板字符串。
+- 首个接入方:手工会计凭证 `acc_gl_journal`。凭证编号留空自动取号,手填仍可用。
 
 ## 数据模型
 
-新域 `SynieCore.Numbering`(目录 `numbering/`,权限域 `sys`)。两张表:
+域 `SynieCore.Numbering`(目录 `numbering/`,权限域 `sys`)。两张表:
 
 ### sys_numbering_rule(编号规则)
 
 | 字段 | 说明 |
 |---|---|
 | `id` | uuid 主键 |
-| `code` | 规则标识,非空,全局唯一(identity);约定用资源权限码风格,如 `acc.gl_journal` |
-| `name` | 规则名称,非空,如"记账凭证" |
-| `format` | 格式模板,非空;token:`{company}`(公司编码)、`{YYYY}` `{YY}` `{MM}` `{DD}`(取号日期)、`{seq}`(序号,按 `seq_padding` 补零)。如 `J{company}-{YYYY}{MM}-{seq}` → `JA-202607-0001` |
-| `seq_padding` | 序号位数,integer,默认 4 |
-| `reset_period` | 重置周期枚举:never / yearly / monthly / daily,默认 monthly |
-| `per_company` | 是否按公司独立计数,boolean,默认 true |
-| `enabled` | 启用,boolean,默认 true |
-| 时间戳 | inserted_at / updated_at |
+| `resource` | 绑定资源,非空;取值为资源权限码前缀(如 `acc.gl_journal`),前端下拉只列已接入 AutoNumber 的资源 |
+| `name` | 规则名称,非空 |
+| `segments` | jsonb 有序段列表,非空;段形态见下 |
+| `per_company` | 是否按公司计数(计数 key 追加公司编码维度),默认 true |
+| `enabled` | 启用,默认 true;**每资源至多一条启用规则**(应用层校验 + DB partial unique index 兜底) |
 
-- 权限码 `sys.numbering_rule`,actions:`create read update delete`。
-- 不带 `company_id`(规则是全局配置,`{company}`/`per_company` 只影响取号),不挂 CompanyScope。
-- 接审计 Fragment;前端两处中文标签同步。
+段形态(map,string key;`label` 为前端展示冗余,后端忽略):
+
+- `{"type": "text", "value": "记"}` — 固定文本,非空
+- `{"type": "field", "field": "date", "format": "YYYYMM"}` — 记录字段;`field` 支持本资源属性(`date`)与 belongs_to 一级字段(`company.code`);date/datetime 字段必须带 `format`(YYYY/YY/MM/DD 组合)
+- `{"type": "seq", "padding": 4}` — 序号,**恰好一个**,padding 1..12
+
+校验(`ValidateSegments`):非空、恰一 seq、text 非空、field 路径在绑定资源上可解析、format 合法。
+
+- 权限码 `sys.numbering_rule`,actions `create read update delete`;接审计;segments 经 GraphQL 走 `json_string`(同审计 changes 先例)。
 
 ### sys_numbering_counter(编号计数器)
 
-| 字段 | 说明 |
-|---|---|
-| `id` | uuid 主键 |
-| `rule_id` | → sys_numbering_rule,非空,删规则级联删计数器 |
-| `scope_key` | 计数范围键,非空;`公司编码\|周期`(如 `A\|202607`;不按公司为 `-\|202607`,never 周期为空) |
-| `value` | 当前序号(已用到的最大值),bigint 默认 0 |
-| 时间戳 | inserted_at / updated_at |
+同 v1:`rule_id` + `scope_key` + `value`,unique (rule_id, scope_key),只开 read/update(页面调当前值,走 Ash 有审计),行由取号 upsert 自动创建,复用 `sys.numbering_rule` 权限码。
 
-- unique identity `(rule_id, scope_key)`。
-- 不设独立权限码:policy 用 `{HasPermission, as: ...}` 复用 `sys.numbering_rule` 的码(照 `acc_gl_journal_line` 模式)。
-- 只开 `read` / `update`(页面改当前值);行由取号自动创建,GraphQL 不暴露 create/destroy。
-- 接审计 Fragment(改当前值需留痕)。
+**计数 key(v2 核心简化,无重置周期)**:
 
-## 取号 API
+```
+scope_key = (per_company ? 公司编码 <> "|" : "") <> 渲染后的非 seq 段拼接文本
+```
 
-`SynieCore.Numbering` 纯模块:
+如 `记JT-202607-{seq}` 的 key 为 `JT|记JT-202607-`。月份变了 key 自然变、序号自然从头计——重置语义由段里引用的日期格式隐含,无需独立配置。
 
-- `next(code, opts)` → `{:ok, no} | {:error, reason}`;`next!/2` 包装。opts:`company_code`(per_company 或模板含 `{company}` 时必传)、`date`(默认当天)。
-- 步骤:查启用规则 → 算 scope_key → **Postgres upsert 原子递增**(`insert_all` + `on_conflict: [inc: [value: 1]]` + `returning`,并发安全无锁)→ 模板 token 替换。
-- 计数器递增走 Repo 内部路径不过权限(同审计写入);读改计数器走 Ash 资源过权限。
-- 无启用规则 → `{:error, :no_rule}`,调用方决定是否要求手填。
+## 取号
 
-## 凭证接入
+`SynieCore.Numbering.next(changeset)`:
 
-- 通用 change `SynieCore.Numbering.AutoNumber`(opts:rule code、目标属性、公司/日期来源属性):create 时目标属性为空则取号填充,非空跳过;无规则时报错提示"未配置编号规则,请填写编号或先配置规则"。
-- `acc_gl_journal` create 挂上(rule code `acc.gl_journal`,公司编码经 company 关联取,日期取 `date`)。
-- 校验失败/事务回滚会跳号,序号允许有洞(业界常态,不做回收)。
-- 前端凭证页 `voucherNo` 字段改非必填,placeholder 提示"留空自动编号"。
+1. 按 `changeset.resource.permission_prefix()` 查启用规则,无 → `{:error, :no_rule}`
+2. 逐段渲染(field 值从 changeset 取;belongs_to 一级字段 DB 反查;缺值报"编号字段 X 无值")
+3. 算 scope_key → PG upsert 原子递增(同 v1)→ 序号补零嵌回段位置
 
-## 前端页面
+`AutoNumber` change(opts 仅 `attribute:`):create 构建期目标属性为空则调 `next/1` 填充(必填校验时机同 v1,跳号可接受)。
 
-`/system/numbering` 编号规则页,照 `system/roles.tsx` 样板:
+## 绑定关系(用户评审点 2)
 
-- `SynieDataGrid resource="sysNumberingRules"` + `SynieRecordDrawer`(code 仅创建时可填;resetPeriod 枚举中文;perCompany/enabled 开关)。
-- 抽屉 extraContent 挂 `SynieEditableTable resource="sysNumberingCounters"`(按 rule 过滤),二级抽屉仅可改 `value`(scope_key 只读)。
-- 菜单 `menu.ts` 系统管理组加"编号规则";`permission-labels.ts` 与 `logs.tsx` 补标签。
+- 规则列表首列即绑定资源(中文标签,复用 permission-labels)。
+- GraphQL `numberableResources` 返回已挂 AutoNumber 的资源清单 `[{prefix, grid}]`(反射 create action changes),前端资源下拉只列这些——建规则即绑定,启用即生效。
+- 新单据接入 = create action 挂一行 `change {AutoNumber, attribute: :编号字段}`,自动出现在下拉里。
 
-## 本轮范围
+## 前端
 
-后端两资源 + Numbering 模块 + AutoNumber change + 凭证接入 + GraphQL + 测试(格式化/重置周期/并发唯一/凭证自动编号);前端规则页 + 凭证页字段调整。
+`/system/numbering`:
+
+- 表格列:资源(中文)、名称、规则预览(段渲染示例)、按公司计数、启用。
+- 抽屉:资源下拉(创建后不可改)、名称、**段组装器**、两开关;计数器子表同 v1(只改值)。
+- 段组装器(SegmentsEditor):已选段 chips(可删);添加固定文本(输入框)/字段(下拉,候选来自绑定资源 gridMeta;fk 字段二级选择目标字段;日期字段选格式)/序号(位数,已有则禁用);实时预览。字段候选与外键目标字段全部由后端 gridMeta 反射,用户零模板语法。
 
 ## 范围外(跟进项)
 
-- 更多 token(如 `{user}`、自定义周数)与规则校验器(模板非法 token 提示)
+- 段拖拽排序(当前删了重加)
 - 序号空洞回收/预占
-- 其他单据接入(销售、采购)——挂同一 change 即可
+- 其他单据接入(挂同一 change 即可)

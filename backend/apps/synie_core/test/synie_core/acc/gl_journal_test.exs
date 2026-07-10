@@ -86,7 +86,18 @@ defmodule SynieCore.Acc.GlJournalTest do
       SynieCore.Numbering.Rule
       |> Ash.Changeset.for_create(
         :create,
-        %{code: "acc.gl_journal", name: "记账凭证", format: "记{company}-{YYYY}{MM}-{seq}"},
+        %{
+          resource: "acc.gl_journal",
+          name: "记账凭证",
+          segments: [
+            %{"type" => "text", "value" => "记"},
+            %{"type" => "field", "field" => "company.code"},
+            %{"type" => "text", "value" => "-"},
+            %{"type" => "field", "field" => "date", "format" => "YYYYMM"},
+            %{"type" => "text", "value" => "-"},
+            %{"type" => "seq", "padding" => 4}
+          ]
+        },
         authorize?: false
       )
       |> Ash.create!()

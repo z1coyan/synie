@@ -89,11 +89,7 @@ defmodule SynieCore.Acc.GlJournal do
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
 
       # 编号留空自动取号(须在构建期,见 AutoNumber moduledoc)
-      change {SynieCore.Numbering.AutoNumber,
-              rule: "acc.gl_journal",
-              attribute: :voucher_no,
-              date_attribute: :date,
-              company_attribute: :company_id}
+      change {SynieCore.Numbering.AutoNumber, attribute: :voucher_no}
 
       # 编写人自动取 actor;nil actor 只出现在受信内部路径,允许留空
       change fn changeset, context ->

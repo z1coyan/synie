@@ -1,7 +1,8 @@
 defmodule SynieCore.Numbering.Counter do
   @moduledoc """
-  编号计数器,对应 `sys_numbering_counter` 表,行由取号自动创建(`SynieCore.Numbering.next/2`
-  内部 upsert,不走本资源)。`scope_key` 为 `公司编码|周期`(如 `A|202607`,不按公司为 `-`)。
+  编号计数器,对应 `sys_numbering_counter` 表,行由取号自动创建(`SynieCore.Numbering.next/1`
+  内部 upsert,不走本资源)。`scope_key` = 渲染后的非 seq 段文本,按公司计数时前缀
+  `公司编码|`(如 `JT|记JT-202607-`)——日期段渲染结果变了 key 自然变,序号自然从头计。
   只开 read/update:页面可查看并调整当前序号,调整走 Ash 有审计留痕。
   无独立权限点:permission_actions 为空(不进权限目录),动作复用 `sys.numbering_rule` 权限码。
   """
@@ -67,7 +68,8 @@ defmodule SynieCore.Numbering.Counter do
       allow_nil? false
       public? true
       writable? false
-      constraints max_length: 64
+      # key = 公司编码|渲染后的非 seq 段文本,给足余量
+      constraints max_length: 200
       description "计数范围"
     end
 

@@ -10,11 +10,9 @@ defmodule SynieCore.Repo.Migrations.AddNumbering do
   def up do
     create table(:sys_numbering_rule, primary_key: false) do
       add :id, :uuid, null: false, default: fragment("gen_random_uuid()"), primary_key: true
-      add :code, :text, null: false
+      add :resource, :text, null: false
       add :name, :text, null: false
-      add :format, :text, null: false
-      add :seq_padding, :bigint, null: false, default: 4
-      add :reset_period, :text, null: false, default: "monthly"
+      add :segments, {:array, :map}, null: false
       add :per_company, :boolean, null: false, default: true
       add :enabled, :boolean, null: false, default: true
 
@@ -27,8 +25,10 @@ defmodule SynieCore.Repo.Migrations.AddNumbering do
         default: fragment("(now() AT TIME ZONE 'utc')")
     end
 
-    create unique_index(:sys_numbering_rule, [:code],
-             name: "sys_numbering_rule_unique_code_index"
+    create index(:sys_numbering_rule, [:resource],
+             name: "sys_numbering_rule_one_enabled_per_resource_index",
+             unique: true,
+             where: "enabled"
            )
 
     create table(:sys_numbering_counter, primary_key: false) do
@@ -68,8 +68,8 @@ defmodule SynieCore.Repo.Migrations.AddNumbering do
 
     drop table(:sys_numbering_counter)
 
-    drop_if_exists unique_index(:sys_numbering_rule, [:code],
-                     name: "sys_numbering_rule_unique_code_index"
+    drop_if_exists index(:sys_numbering_rule, [:resource],
+                     name: "sys_numbering_rule_one_enabled_per_resource_index"
                    )
 
     drop table(:sys_numbering_rule)
