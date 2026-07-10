@@ -73,9 +73,13 @@ function lineChanged(before: Row, after: Row): boolean {
   return LINE_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
 }
 
-/** 行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy。全程收集错误文案,不中途抛出 */
+/** 行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy。全程收集错误文案(带行号定位),不中途抛出 */
 async function persistLines(journalId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
+  // 多行部分失败时用户要能定位到行,错误文案统一冠以行号(destroy 分支用被删行的 idx)
+  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
+    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
+  }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
@@ -84,7 +88,7 @@ async function persistLines(journalId: string, current: Row[], snapshot: Row[]):
       DESTROY_LINE,
       { id: old.id }
     )
-    if (data.destroyAccGlJournalLine.errors?.length) errors.push(...data.destroyAccGlJournalLine.errors.map((e) => e.message))
+    collect(old.idx, data.destroyAccGlJournalLine.errors)
   }
 
   for (const row of current) {
@@ -93,7 +97,7 @@ async function persistLines(journalId: string, current: Row[], snapshot: Row[]):
         CREATE_LINE,
         { input: { journalId, ...lineInput(row) } }
       )
-      if (data.createAccGlJournalLine.errors?.length) errors.push(...data.createAccGlJournalLine.errors.map((e) => e.message))
+      collect(row.idx, data.createAccGlJournalLine.errors)
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
@@ -102,7 +106,7 @@ async function persistLines(journalId: string, current: Row[], snapshot: Row[]):
         UPDATE_LINE,
         { id: row.id, input: lineInput(row) }
       )
-      if (data.updateAccGlJournalLine.errors?.length) errors.push(...data.updateAccGlJournalLine.errors.map((e) => e.message))
+      collect(row.idx, data.updateAccGlJournalLine.errors)
     }
   }
   return errors
