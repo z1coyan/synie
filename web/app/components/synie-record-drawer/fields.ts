@@ -15,6 +15,8 @@ export interface FieldInputProps {
 
 export interface FieldOverride {
   label?: string
+  /** 表单内排序权重,默认为 meta 列序号;给负值可提到最前(如公司字段) */
+  order?: number
   /** 桌面(lg+)栅格宽度 1-12,默认 12;移动端恒单列 */
   cols?: number
   required?: boolean
@@ -40,6 +42,7 @@ export interface FieldOverride {
 
 export interface ResolvedField {
   col: GridColumnMeta
+  order: number
   name: string
   label: string
   cols: number
@@ -64,12 +67,13 @@ export function resolveFields(
   exclude: string[] = [],
   overrides: Record<string, FieldOverride> = {}
 ): ResolvedField[] {
-  return columns
+  const resolved = columns
     .filter((c) => c.name !== 'id' && !exclude.includes(c.name))
     .filter((c) => mode === 'view' || !SYSTEM_FIELDS.includes(c.name))
-    .map((c) => {
+    .map((c, i) => {
       const o = overrides[c.name] ?? {}
       return {
+        order: o.order ?? i,
         col: c,
         name: c.name,
         label: o.label ?? c.label,
@@ -88,6 +92,8 @@ export function resolveFields(
         remote: o.remote,
       }
     })
+  // sort 稳定:order 同值时保持 meta 列序
+  return resolved.sort((a, b) => a.order - b.order)
 }
 
 /** 当前 mode 下该字段是否禁用(view 态不走表单,不经此函数) */

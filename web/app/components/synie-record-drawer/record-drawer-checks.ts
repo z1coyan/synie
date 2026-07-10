@@ -202,6 +202,15 @@ const fkFields = resolveFields([parentCol], 'create', [], {
 eq(fkFields[0].picker, 'dialog', 'picker 透传')
 eq(fkFields[0].remote?.searchFields, ['name', 'code'], 'remote 透传')
 
+// —— order 排序:负值提前,未指定的保持 meta 列序(稳定) ——
+eq(
+  resolveFields([col('a', 'string'), col('b', 'string'), col('c', 'string')], 'create', [], {
+    c: { order: -1 },
+  }).map((f) => f.name),
+  ['c', 'a', 'b'],
+  'order 负值提到最前,其余保持原序'
+)
+
 // —— effects 联动:override 透传,补丁由抽屉 onChange 并入草稿 ——
 const effectFields = resolveFields([col('partyType', 'enum'), col('partyId', 'string')], 'create', [], {
   partyType: { effects: () => ({ partyId: null }) },

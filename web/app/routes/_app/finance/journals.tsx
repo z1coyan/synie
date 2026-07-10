@@ -1,8 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
-import { EmptyState } from '@heroui-pro/react'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
@@ -127,9 +125,21 @@ const safeParseDate = (v: string | null) => {
   }
 }
 
+// 公司放首列;提交/创建/更新时间不进表格(有序白名单,兼当 exclude)
+const GRID_COLUMNS = [
+  'companyId',
+  'voucherNo',
+  'date',
+  'postingDate',
+  'remarks',
+  'status',
+  'createdById',
+  'submittedById',
+  'debitTotal',
+  'creditTotal',
+]
+
 function JournalsPage() {
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [companyRow, setCompanyRow] = useState<Row | null>(null)
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [lines, setLines] = useState<Row[]>([])
   const [linesSnapshot, setLinesSnapshot] = useState<Row[]>([])
@@ -168,22 +178,6 @@ function JournalsPage() {
     }
   }
 
-  const companies = useQuery({
-    queryKey: ['journalsCompanies'],
-    queryFn: () =>
-      gqlFetch<{ basCompanies: { count: number; results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { count results { id name } } }`
-      ).then((d) => d.basCompanies),
-  })
-
-  useEffect(() => {
-    if (companyId == null && companies.data?.count === 1) {
-      const only = companies.data.results[0]
-      setCompanyId(only.id)
-      setCompanyRow(only)
-    }
-  }, [companies.data, companyId])
-
   // 打开头抽屉:create 行清空;view/edit 按凭证 id 拉行(快照留作提交时 diff 基准)
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
     setDrawer({ mode, row })
@@ -209,40 +203,16 @@ function JournalsPage() {
       <h1 className="font-brand text-3xl tracking-wide">会计凭证</h1>
       <p className="mt-2 text-sm text-ink-500">手工录入记账凭证,草稿态可自由增删改行,审核后生成总账分录。</p>
 
-      <div className="mt-6 max-w-xs">
-        <RemoteSelect
-          resource="basCompanies"
-          label="公司"
-          placeholder="选择公司…"
-          value={companyId}
-          initialRows={companyRow ? [companyRow] : (companies.data?.results ?? [])}
-          onChange={(id, row) => {
-            setCompanyId(id)
-            setCompanyRow(row)
-          }}
-        />
-      </div>
-
       <div className="mt-6">
-        {companyId == null ? (
-          <EmptyState size="md" className="h-64 justify-center">
-            <EmptyState.Header>
-              <EmptyState.Title>请先选择公司</EmptyState.Title>
-              <EmptyState.Description>凭证按公司维护,选择公司后查看或录入凭证。</EmptyState.Description>
-            </EmptyState.Header>
-          </EmptyState>
-        ) : (
-          <SynieDataGrid
-            key={`${companyId}-${reloadKey}`}
-            resource="accGlJournals"
-            fixedFilter={{ companyId: { eq: companyId } }}
-            exclude={['submittedAt', 'insertedAt', 'updatedAt']}
-            onView={(row) => openDrawer('view', row)}
-            onCreate={() => openDrawer('create', null)}
-            onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
-            actionHandlers={{ audit: (rows) => openAudit(rows[0]) }}
-          />
-        )}
+        <SynieDataGrid
+          key={reloadKey}
+          resource="accGlJournals"
+          columns={GRID_COLUMNS}
+          onView={(row) => openDrawer('view', row)}
+          onCreate={() => openDrawer('create', null)}
+          onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
+          actionHandlers={{ audit: (rows) => openAudit(rows[0]) }}
+        />
       </div>
 
       <SynieRecordDrawer
@@ -254,10 +224,9 @@ function JournalsPage() {
         row={drawer?.row}
         // 分录行表 7 列,默认 480px 太挤,凭证抽屉加宽(移动端仍全宽)
         contentClassName="w-full lg:w-[880px]"
-        // 公司由页面顶部选定(提交时注入);状态/提交时间/编写人/提交人是系统内部字段,不给用户看;
-        // 借贷合计是行聚合(只在表格展示),不进表单;创建/更新时间表格已隐藏,行数据不带,view 态只会显示占位
+        // 状态/提交时间/编写人/提交人是系统内部字段,不给用户看;借贷合计是行聚合(只在表格展示),
+        // 不进表单;创建/更新时间表格已隐藏,行数据不带,view 态只会显示占位
         exclude={[
-          'companyId',
           'status',
           'submittedAt',
           'createdById',
@@ -268,70 +237,81 @@ function JournalsPage() {
           'updatedAt',
         ]}
         fields={{
+          // 公司提到最前(分录行科目候选依赖它);建后不可改(update 动作不收 company_id)
+          companyId: { required: true, order: -1, edit: 'createOnly' },
           voucherNo: { required: true, placeholder: '如 PZ202601001' },
           date: { required: true, cols: 6 },
           // 过账日期草稿可留空,审核时填入;新增时填了保存后会提示直接审核过账
           postingDate: { cols: 6 },
         }}
         onEdit={drawer?.row?.status === 'DRAFT' ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d)) : undefined}
-        extraContent={(mode, row) => (
-          <SynieEditableTable
-            resource="accGlJournalLines"
-            label="分录行"
-            items={lines}
-            onChange={setLines}
-            readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT')}
-            // 行表单金额/对手双列排布,默认 420px 局促,加宽一档
-            drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
-            exclude={['journalId', 'companyId']}
-            columns={['idx', 'accountId', 'debit', 'credit', 'partyType', 'partyId', 'remarks']}
-            fields={{
-              // 行号系统自动分配(transformItem),表格照常展示
-              idx: { visible: () => false },
-              accountId: {
-                required: true,
-                // 候选限定在当前公司、非汇总、启用科目(后端另有同公司/汇总/停用校验兜底)
-                remote: {
-                  filter: `{companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}}`,
+        extraContent={(mode, row, values) => {
+          // 凭证公司:存量凭证取行数据(建后不可改),新建取表单草稿;未选公司前不能录行
+          const journalCompanyId = (row?.companyId ?? values.companyId ?? null) as string | null
+          return (
+            <SynieEditableTable
+              resource="accGlJournalLines"
+              label="分录行"
+              items={lines}
+              onChange={setLines}
+              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || journalCompanyId == null}
+              toolbar={
+                mode === 'create' && journalCompanyId == null ? (
+                  <span className="text-xs text-muted">选择公司后可录入分录行</span>
+                ) : undefined
+              }
+              // 行表单金额/对手双列排布,默认 420px 局促,加宽一档
+              drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+              exclude={['journalId', 'companyId']}
+              columns={['idx', 'accountId', 'debit', 'credit', 'partyType', 'partyId', 'remarks']}
+              fields={{
+                // 行号系统自动分配(transformItem),表格照常展示
+                idx: { visible: () => false },
+                accountId: {
+                  required: true,
+                  // 候选限定在凭证公司、非汇总、启用科目(后端另有同公司/汇总/停用校验兜底)
+                  remote: {
+                    filter: `{companyId: {eq: ${JSON.stringify(journalCompanyId)}}, isGroup: {eq: false}, active: {eq: true}}`,
+                  },
                 },
-              },
-              debit: { cols: 6, defaultValue: 0 },
-              credit: { cols: 6, defaultValue: 0 },
-              // 切换对手类型时清掉已选对手,避免客户 id 挂在供应商数据源下
-              partyType: { cols: 6, effects: () => ({ partyId: null }) },
-              partyId: {
-                cols: 6,
-                // 未选对手类型时不出现;选定后 label 跟随类型显示 供应商/客户
-                visible: (values) => values.partyType === 'SUPPLIER' || values.partyType === 'CUSTOMER',
-                input: ({ value, onChange, isDisabled, values }) => {
-                  const isSupplier = values.partyType === 'SUPPLIER'
-                  return (
-                    <RemoteSelect
-                      resource={isSupplier ? 'purSuppliers' : 'salCustomers'}
-                      label={isSupplier ? '供应商' : '客户'}
-                      placeholder={isSupplier ? '选择供应商…' : '选择客户…'}
-                      value={value == null ? null : String(value)}
-                      onChange={(id) => onChange(id)}
-                      isDisabled={isDisabled}
-                    />
-                  )
+                debit: { cols: 6, defaultValue: 0 },
+                credit: { cols: 6, defaultValue: 0 },
+                // 切换对手类型时清掉已选对手,避免客户 id 挂在供应商数据源下
+                partyType: { cols: 6, effects: () => ({ partyId: null }) },
+                partyId: {
+                  cols: 6,
+                  // 未选对手类型时不出现;选定后 label 跟随类型显示 供应商/客户
+                  visible: (values) => values.partyType === 'SUPPLIER' || values.partyType === 'CUSTOMER',
+                  input: ({ value, onChange, isDisabled, values }) => {
+                    const isSupplier = values.partyType === 'SUPPLIER'
+                    return (
+                      <RemoteSelect
+                        resource={isSupplier ? 'purSuppliers' : 'salCustomers'}
+                        label={isSupplier ? '供应商' : '客户'}
+                        placeholder={isSupplier ? '选择供应商…' : '选择客户…'}
+                        value={value == null ? null : String(value)}
+                        onChange={(id) => onChange(id)}
+                        isDisabled={isDisabled}
+                      />
+                    )
+                  },
                 },
-              },
-              // 币种由科目复制,不可手改;仅在编辑存量行时展示已复制的值
-              currencyId: { edit: 'readOnly' },
-            }}
-            transformItem={(values, editing) => ({
-              ...values,
-              // 行号自动:存量行保号,新行取当前最大 idx+1(而非 length+1,避免删行后撞号)
-              idx: editing ? editing.idx : lines.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
-            })}
-          />
-        )}
+                // 币种由科目复制,不可手改;仅在编辑存量行时展示已复制的值
+                currencyId: { edit: 'readOnly' },
+              }}
+              transformItem={(values, editing) => ({
+                ...values,
+                // 行号自动:存量行保号,新行取当前最大 idx+1(而非 length+1,避免删行后撞号)
+                idx: editing ? editing.idx : lines.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
+              })}
+            />
+          )
+        }}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const data = await gqlFetch<{
               createAccGlJournal: { result: { id: string } | null; errors: { message: string }[] | null }
-            }>(CREATE_JOURNAL, { input: { ...values, companyId } })
+            }>(CREATE_JOURNAL, { input: values })
             if (data.createAccGlJournal.errors && data.createAccGlJournal.errors.length > 0) {
               throw new Error(data.createAccGlJournal.errors.map((e) => e.message).join('; '))
             }

@@ -56,9 +56,10 @@ export interface SynieRecordDrawerProps {
   contentClassName?: string
   /**
    * meta 列之外的附加内容(如多对多关联控件),渲染在字段栅格末尾、占满整行;
-   * 状态由页面自持,提交在页面 onSubmit 里自行处理。入参是冻结后的 mode/row(退场动画期间不闪)。
+   * 状态由页面自持,提交在页面 onSubmit 里自行处理。入参是冻结后的 mode/row(退场动画期间不闪),
+   * values 为当前表单草稿(view 态为空对象),供附加内容按表单字段联动(如按公司过滤科目候选)。
    */
-  extraContent?: (mode: DrawerMode, row?: Row | null) => ReactNode
+  extraContent?: (mode: DrawerMode, row: Row | null | undefined, values: Record<string, unknown>) => ReactNode
 }
 
 // Tailwind v4 JIT 扫不到动态拼接类名,1-12 静态映射
@@ -189,7 +190,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                     </div>
                   ))}
                   {props.extraContent && (
-                    <div className="lg:col-span-12">{props.extraContent(renderMode, renderRow)}</div>
+                    <div className="lg:col-span-12">{props.extraContent(renderMode, renderRow, values)}</div>
                   )}
                 </div>
               )}

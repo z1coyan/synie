@@ -35,6 +35,8 @@ export interface TreeOptions {
 export interface SynieDataGridProps {
   /** 与后端 GridMeta 白名单同名,如 "sysRoles" */
   resource: string
+  /** 显示列及其顺序(有序白名单);缺省 = meta 全列。与 exclude 二选一即可 */
+  columns?: string[]
   exclude?: string[]
   overrides?: Record<string, ColumnOverride>
   /** 传了就在行内菜单第一项显示「查看」(打开详情抽屉) */
@@ -122,10 +124,12 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const [search, setSearch] = useState('')
   const [selection, setSelection] = useState<Selection>(new Set())
 
-  const columns = useMemo(
-    () => (meta.data?.columns ?? []).filter((c) => c.name !== 'id' && !exclude.includes(c.name)),
-    [meta.data, exclude]
-  )
+  const columns = useMemo(() => {
+    const base = (meta.data?.columns ?? []).filter((c) => c.name !== 'id' && !exclude.includes(c.name))
+    if (!props.columns) return base
+    const byName = new Map(base.map((c) => [c.name, c]))
+    return props.columns.flatMap((n) => byName.get(n) ?? [])
+  }, [meta.data, exclude, props.columns])
 
   // 树形:用户一旦搜索/筛选就退回平铺分页(树与筛选语义冲突,避免命中子节点却父节点被滤掉的孤儿),清空恢复
   const treeMode = props.tree != null
