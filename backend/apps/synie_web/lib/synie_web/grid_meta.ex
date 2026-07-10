@@ -17,7 +17,10 @@ defmodule SynieWeb.GridMeta do
     "basAccounts" => SynieCore.Base.Account,
     "salCustomers" => SynieCore.Sales.Customer,
     "purSuppliers" => SynieCore.Purchase.Supplier,
-    "sysAuditLogs" => SynieCore.Audit.Log
+    "sysAuditLogs" => SynieCore.Audit.Log,
+    "accGlJournals" => SynieCore.Acc.GlJournal,
+    "accGlJournalLines" => SynieCore.Acc.GlJournalLine,
+    "accGlEntries" => SynieCore.Acc.GlEntry
   }
 
   @spec resolve(String.t(), Authz.Actor.t() | nil) :: {:ok, map()} | {:error, String.t()}

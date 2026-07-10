@@ -381,4 +381,55 @@ defmodule SynieWeb.SchemaGridTest do
       assert %{data: %{"basCompanies" => %{"results" => [%{"name" => "集团总部"}]}}} = by_id
     end
   end
+
+  describe "accGlJournals 接入" do
+    test "status 反射为中文枚举,companyId 反射 fk 指向 basCompanies,extendedActions 含审核/取消" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor(), "accGlJournals")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      assert %{"type" => "enum"} = status = by_name["status"]
+
+      assert Enum.sort_by(status["enumOptions"], & &1["value"]) == [
+               %{"value" => "AUDITED", "label" => "已审核"},
+               %{"value" => "CANCELLED", "label" => "已取消"},
+               %{"value" => "DRAFT", "label" => "草稿"}
+             ]
+
+      assert %{
+               "type" => "fk",
+               "ref" => %{"resource" => "basCompanies", "relation" => "company"}
+             } = by_name["companyId"]
+
+      assert Enum.map(meta["extendedActions"], & &1["key"]) |> Enum.sort() ==
+               ["audit", "cancel"]
+    end
+  end
+
+  describe "accGlJournalLines 接入" do
+    test "accountId 反射 fk 指向 basAccounts,partyType 反射中文枚举,partyId 非 fk(裸 uuid)" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor(), "accGlJournalLines")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      assert %{
+               "type" => "fk",
+               "ref" => %{"resource" => "basAccounts", "relation" => "account"}
+             } = by_name["accountId"]
+
+      assert %{"type" => "enum"} = party_type = by_name["partyType"]
+      labels = party_type["enumOptions"] |> Enum.map(& &1["label"]) |> Enum.sort()
+      assert labels == ["供应商", "客户"]
+
+      assert %{"type" => "string", "filterable" => false, "ref" => nil} = by_name["partyId"]
+    end
+  end
+
+  describe "accGlEntries 接入" do
+    test "只读资源:capabilities 为空,无 destroyMutation,无 extendedActions" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor(), "accGlEntries")
+
+      assert meta["capabilities"] == []
+      assert meta["destroyMutation"] == nil
+      assert meta["extendedActions"] == []
+    end
+  end
 end

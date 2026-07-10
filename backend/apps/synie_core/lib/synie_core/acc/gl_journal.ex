@@ -65,6 +65,13 @@ defmodule SynieCore.Acc.GlJournal do
   def permission_prefix, do: "acc.gl_journal"
   def permission_actions, do: ~w(create read update delete audit cancel)
 
+  def grid_actions do
+    [
+      %{key: "audit", label: "审核", scope: "row", mutation: "auditAccGlJournal", is_danger: false},
+      %{key: "cancel", label: "取消", scope: "row", mutation: "cancelAccGlJournal", is_danger: true}
+    ]
+  end
+
   actions do
     read :read do
       primary? true
