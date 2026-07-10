@@ -312,7 +312,6 @@ function FieldInput({
     case 'integer':
     case 'decimal':
       return (
-        // fullWidth 缺省时 group 撑满而内部 input 不跟随,点击外框空白无法聚焦
         <NumberField
           fullWidth
           isDisabled={isDisabled}
@@ -321,7 +320,9 @@ function FieldInput({
           onChange={(n) => onChange(Number.isFinite(n) ? n : null)}
         >
           <Label>{field.label}</Label>
-          <NumberField.Group>
+          {/* 库样式 group 是 grid-cols-[40px_1fr_40px](给步进按钮留列);不渲染步进
+              按钮时 input 会掉进 40px 列,改单列让 input 撑满 */}
+          <NumberField.Group className="grid-cols-[1fr]">
             <NumberField.Input placeholder={field.placeholder} />
           </NumberField.Group>
         </NumberField>

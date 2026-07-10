@@ -316,7 +316,8 @@ function NumberFilter({
       value={value === '' ? NaN : Number(value)}
       onChange={(n) => onValue(Number.isFinite(n) ? String(n) : '')}
     >
-      <NumberField.Group>
+      {/* 无步进按钮:改单列,防 input 掉进库样式预留的 40px 按钮列(SynieRecordDrawer 同) */}
+      <NumberField.Group className="grid-cols-[1fr]">
         <NumberField.Input placeholder={label} />
       </NumberField.Group>
     </NumberField>

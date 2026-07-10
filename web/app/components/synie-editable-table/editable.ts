@@ -5,7 +5,14 @@ export const LOCAL_ID_PREFIX = 'local:'
 
 export const isLocalRow = (row: Row) => row.id.startsWith(LOCAL_ID_PREFIX)
 
-export const localRowId = () => `${LOCAL_ID_PREFIX}${crypto.randomUUID()}`
+// crypto.randomUUID 仅存在于安全上下文(https/localhost),经局域网 IP 走 http 访问时
+// 没有;本地草稿 id 只需列表内唯一,退化用时间戳+随机数足够
+export const localRowId = () =>
+  `${LOCAL_ID_PREFIX}${
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  }`
 
 /** 系统字段与表单侧(fields.ts SYSTEM_FIELDS)对齐:草稿子条目没有时间戳语义 */
 const HIDDEN = ['id', 'insertedAt', 'updatedAt']
