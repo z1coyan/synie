@@ -17,6 +17,8 @@ defmodule SynieCore do
       list SynieCore.Sales.Customer, :sal_customers, :read, paginate_with: :offset
       list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
+      list SynieCore.Numbering.Rule, :sys_numbering_rules, :read, paginate_with: :offset
+      list SynieCore.Numbering.Counter, :sys_numbering_counters, :read, paginate_with: :offset
       list SynieCore.Files.Attachment, :sys_attachments, :read, paginate_with: :offset
       list SynieCore.Acc.GlEntry, :acc_gl_entries, :read, paginate_with: :offset
       list SynieCore.Acc.GlJournal, :acc_gl_journals, :read, paginate_with: :offset
@@ -70,6 +72,12 @@ defmodule SynieCore do
       destroy SynieCore.Files.File, :destroy_sys_file, :destroy
       destroy SynieCore.Files.Attachment, :destroy_sys_attachment, :destroy
 
+      create SynieCore.Numbering.Rule, :create_sys_numbering_rule, :create
+      update SynieCore.Numbering.Rule, :update_sys_numbering_rule, :update
+      destroy SynieCore.Numbering.Rule, :destroy_sys_numbering_rule, :destroy
+      # 计数器行由取号自动创建,只暴露改当前值
+      update SynieCore.Numbering.Counter, :update_sys_numbering_counter, :update
+
       create SynieCore.Acc.GlJournal, :create_acc_gl_journal, :create
       update SynieCore.Acc.GlJournal, :update_acc_gl_journal, :update
       destroy SynieCore.Acc.GlJournal, :destroy_acc_gl_journal, :destroy
@@ -98,6 +106,8 @@ defmodule SynieCore do
     resource SynieCore.Acc.GlJournal
     resource SynieCore.Acc.GlJournalLine
     resource SynieCore.Audit.Log
+    resource SynieCore.Numbering.Rule
+    resource SynieCore.Numbering.Counter
     resource SynieCore.Files.File
     resource SynieCore.Files.Attachment
   end

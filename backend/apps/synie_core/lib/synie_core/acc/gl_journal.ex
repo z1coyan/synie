@@ -26,8 +26,8 @@ defmodule SynieCore.Acc.GlJournal do
   手工会计凭证(头),对应 `acc_gl_journal` 表。首个 GL voucher,地位与其他单据平等。
 
   生命周期:草稿(可改可删)→ 已审核(audit,生成分录)→ 已取消(cancel,分录标记作废,终态)。
-  编号手工输入,公司内唯一;自动编号留跟进。删除草稿时行由 DB 级联删除
-  (行不留单独审计记录,凭证删除本身已审计)。
+  编号公司内唯一:留空按 `acc.gl_journal` 编号规则自动取号(AutoNumber),手填原样保留。
+  删除草稿时行由 DB 级联删除(行不留单独审计记录,凭证删除本身已审计)。
   """
 
   use Ash.Resource,
@@ -87,6 +87,9 @@ defmodule SynieCore.Acc.GlJournal do
       accept [:company_id, :voucher_no, :date, :posting_date, :remarks]
 
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
+
+      # 编号留空自动取号(须在构建期,见 AutoNumber moduledoc)
+      change {SynieCore.Numbering.AutoNumber, attribute: :voucher_no}
 
       # 编写人自动取 actor;nil actor 只出现在受信内部路径,允许留空
       change fn changeset, context ->

@@ -13,11 +13,12 @@ const GRID_META_QUERY = `
   }
 `
 
-export function useGridMeta(resource: string) {
+export function useGridMeta(resource: string, enabled = true) {
   return useQuery({
     queryKey: ['gridMeta', resource],
     queryFn: () =>
       gqlFetch<{ gridMeta: GridMeta }>(GRID_META_QUERY, { resource }).then((d) => d.gridMeta),
     staleTime: 5 * 60_000,
+    enabled,
   })
 }

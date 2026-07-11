@@ -35,6 +35,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   sys_attachment: '附件关联',
   acc_gl_journal: '会计凭证',
   acc_gl_journal_line: '凭证分录行',
+  sys_numbering_rule: '编号规则',
+  sys_numbering_counter: '编号计数器',
 }
 
 // id 列展示原始 uuid 无阅读价值,记录名称/操作人已够定位;需要按 id 排查时直接查库

@@ -18,6 +18,8 @@ defmodule SynieWeb.GridMeta do
     "salCustomers" => SynieCore.Sales.Customer,
     "purSuppliers" => SynieCore.Purchase.Supplier,
     "sysAuditLogs" => SynieCore.Audit.Log,
+    "sysNumberingRules" => SynieCore.Numbering.Rule,
+    "sysNumberingCounters" => SynieCore.Numbering.Counter,
     "accGlJournals" => SynieCore.Acc.GlJournal,
     "accGlJournalLines" => SynieCore.Acc.GlJournalLine,
     "accGlEntries" => SynieCore.Acc.GlEntry
@@ -32,6 +34,16 @@ defmodule SynieWeb.GridMeta do
   end
 
   def resources, do: @resources
+
+  @doc "create action 挂了 AutoNumber 的白名单资源(编号规则页的资源下拉候选)。"
+  def numberable_resources do
+    for {name, module} <- @resources,
+        action = Ash.Resource.Info.action(module, :create),
+        action != nil,
+        Enum.any?(action.changes, &match?(%{change: {SynieCore.Numbering.AutoNumber, _}}, &1)) do
+      %{prefix: module.permission_prefix(), grid: name}
+    end
+  end
 
   @doc false
   # 公开仅供白名单 resolve/2 内部调用与测试直接反射(如 GridDoc 测试资源);不构成对外 API。
@@ -86,8 +98,8 @@ defmodule SynieWeb.GridMeta do
           type: type_name(attr.type),
           # FK 列走退化路径(无权限/白名单外)时 label 也要中文,兜底关系 description
           label: attr.description || rel_descriptions[attr.name] || to_string(attr.name),
-          # map(jsonb)列排序合法但语义无意义,不给排序入口
-          sortable: attr.type != Ash.Type.Map,
+          # map/数组(jsonb)列排序合法但语义无意义,不给排序入口
+          sortable: attr.type != Ash.Type.Map and not match?({:array, _}, attr.type),
           filterable: filterable?(attr.type),
           enum_options: enum_options(attr.type),
           ref: nil
@@ -136,6 +148,7 @@ defmodule SynieWeb.GridMeta do
   # AshGraphql 的 contains 筛选只对 string/ci_string 生成;uuid、裸 atom(非枚举,无 values/0)
   # 与 map(json_string 标量)若仍标 filterable,跨列搜索/该列筛选会拼出后端不存在的算子,
   # 导致整个查询报错。type 映射仍按 string 处理(展示不受影响)。
+  defp filterable?({:array, _}), do: false
   defp filterable?(type), do: type not in [Ash.Type.UUID, Ash.Type.Atom, Ash.Type.Map]
 
   defp capabilities(module, actor) do

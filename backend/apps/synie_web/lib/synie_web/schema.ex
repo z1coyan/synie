@@ -65,6 +65,11 @@ defmodule SynieWeb.Schema do
     field :destroy_mutation, :string
   end
 
+  object :numberable_resource do
+    field :prefix, non_null(:string)
+    field :grid, non_null(:string)
+  end
+
   query do
     field :me, :session_user do
       resolve(fn _args, %{context: context} ->
@@ -92,6 +97,13 @@ defmodule SynieWeb.Schema do
 
       resolve(fn %{resource: name}, %{context: context} ->
         SynieWeb.GridMeta.resolve(name, context[:actor])
+      end)
+    end
+
+    # 可自动编号的资源清单:create action 挂了 AutoNumber 的白名单资源(编号规则页资源下拉)
+    field :numberable_resources, non_null(list_of(non_null(:numberable_resource))) do
+      resolve(fn _args, _resolution ->
+        {:ok, SynieWeb.GridMeta.numberable_resources()}
       end)
     end
   end
