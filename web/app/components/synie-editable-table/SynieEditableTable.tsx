@@ -4,7 +4,7 @@ import { EmptyState } from '@heroui-pro/react'
 import { defaultCell } from '../synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '../synie-data-grid/meta'
 import type { EnumChipColor, GridColumnMeta, Row } from '../synie-data-grid/types'
-import { FkText, SynieRecordDrawer, type SynieRecordDrawerProps } from '../synie-record-drawer/SynieRecordDrawer'
+import { SynieRecordDrawer, type SynieRecordDrawerProps } from '../synie-record-drawer/SynieRecordDrawer'
 import type { FieldOverride } from '../synie-record-drawer/fields'
 import { appendItem, displayColumns, localRowId, mergeItem, removeItem } from './editable'
 
@@ -181,10 +181,9 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
   )
 }
 
-/** 单元格:override.render 优先;fk 无 join 时按 id 反查显示标签(与抽屉 view 态同一 FkText) */
+/** 单元格:override.render 优先;fk(含无 join 按 id 反查)统一走 defaultCell 的 FkLink */
 function EditableCell({ col, row, override }: { col: GridColumnMeta; row: Row; override?: EditableColumnOverride }) {
   const value = row[col.name]
   if (override?.render) return <>{override.render(value, row)}</>
-  if (col.type === 'fk' && col.ref) return <FkText col={col} row={row} />
   return <>{defaultCell(col, value, row, override?.enumColors)}</>
 }

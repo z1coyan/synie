@@ -16,13 +16,16 @@ import {
   toast,
 } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
+import { useQuery } from '@tanstack/react-query'
+import { gqlFetch } from '~/lib/graphql'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
-import type { GridColumnMeta, Row } from '../synie-data-grid/types'
+import { UUID_RE, buildRowQuery } from '../synie-data-grid/query'
+import type { Row } from '../synie-data-grid/types'
 import { RemoteDialogSelect } from '../synie-remote-select/RemoteDialogSelect'
 import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
-import { resolveSource, type RemoteSourceConfig } from '../synie-remote-select/remote-query'
-import { useRemoteRecords } from '../synie-remote-select/use-remote'
+import type { RemoteSourceConfig } from '../synie-remote-select/remote-query'
+import { FkLink } from './fk-preview'
 import {
   collectValues,
   initialValues,
@@ -44,8 +47,9 @@ export interface SynieRecordDrawerProps {
   /** 资源中文名,标题拼为 新增{label}/编辑{label}/{label}详情 */
   label?: string
   /** view/edit 数据源:直接用表格行数据,不按 id 重查 */
-  // ponytail: 详情需要表格未取字段时再加 by-id 查询
   row?: Row | null
+  /** 没有现成行数据时(fk 速览等)按 id 自查一行;row 优先 */
+  rowId?: string
   exclude?: string[]
   fields?: Record<string, FieldOverride>
   /** create/edit 提交;resolve 即成功(组件关抽屉),throw 则 toast 且不关 */
@@ -89,8 +93,30 @@ const safeParseDate = (v: unknown) => {
 }
 
 export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
-  const { resource, mode, isOpen, row, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
+  const { resource, mode, isOpen, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
   const meta = useGridMeta(resource)
+
+  // rowId 自取数:row 未给时按 id 查一行(列集取自 meta,fk join 一并带回)。
+  // id 非法(白名单反查约定,防拼进查询)按查无处理,不发请求。
+  const wantsFetch = !props.row && !!props.rowId
+  const validId = !!props.rowId && UUID_RE.test(props.rowId)
+  const byId = useQuery({
+    queryKey: ['rowById', resource, props.rowId],
+    enabled: isOpen && wantsFetch && validId && !!meta.data,
+    queryFn: () => {
+      const q = buildRowQuery(resource, meta.data!.columns, {
+        limit: 1,
+        offset: 0,
+        sortLiteral: null,
+        filterLiteral: `{id: {eq: ${JSON.stringify(props.rowId)}}}`,
+      })
+      return gqlFetch<Record<string, { results: Row[] }>>(q).then((d) => d[resource]?.results[0] ?? null)
+    },
+  })
+  const row = props.row ?? byId.data ?? null
+  // isPending 含 enabled 未就绪(等 meta)阶段;data === null 是「查过了但没有」(未查完是 undefined)
+  const rowPending = wantsFetch && validId && byId.isPending
+  const rowMissing = wantsFetch && (!validId || byId.data === null)
 
   // 关闭动画期间冻结最后一次打开时的内容:onOpenChange(false) 后父级常把 mode 回落
   // 'view'、row 置 undefined,若渲染路径跟着实时切换,会在 Sheet 退出动画播放期间把
@@ -152,22 +178,29 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
               <Sheet.Heading>{title}</Sheet.Heading>
             </Sheet.Header>
             <Sheet.Body>
-              {meta.isPending ? (
-                <div className="flex h-32 items-center justify-center">
-                  <Spinner />
-                </div>
-              ) : meta.isError ? (
-                // GridMeta 加载失败:展示报错并可重试(与 SynieDataGrid 同一套失败态)
+              {meta.isError || byId.isError ? (
+                // GridMeta/rowId 取数失败:展示报错并可重试(与 SynieDataGrid 同一套失败态)。
+                // 错误分支在 spinner 之前:meta 失败时 byId 因 enabled 门控永远 isPending,反序会卡死转圈
                 <EmptyState size="md" className="h-64 justify-center">
                   <EmptyState.Header>
                     <EmptyState.Title>数据加载失败</EmptyState.Title>
-                    <EmptyState.Description>{(meta.error as Error).message}</EmptyState.Description>
+                    <EmptyState.Description>{((meta.error ?? byId.error) as Error).message}</EmptyState.Description>
                   </EmptyState.Header>
                   <EmptyState.Content>
-                    <Button variant="secondary" onPress={() => meta.refetch()}>
+                    <Button variant="secondary" onPress={() => (meta.isError ? meta.refetch() : byId.refetch())}>
                       重试
                     </Button>
                   </EmptyState.Content>
+                </EmptyState>
+              ) : meta.isPending || rowPending ? (
+                <div className="flex h-32 items-center justify-center">
+                  <Spinner />
+                </div>
+              ) : rowMissing ? (
+                <EmptyState size="md" className="h-64 justify-center">
+                  <EmptyState.Header>
+                    <EmptyState.Title>记录不存在或无权查看</EmptyState.Title>
+                  </EmptyState.Header>
                 </EmptyState>
               ) : (
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -231,7 +264,7 @@ function ViewField({ field, row }: { field: ResolvedField; row: Row }) {
       <div className="flex flex-col gap-1">
         <span className="text-sm text-muted">{field.label}</span>
         <div className="text-sm">
-          <FkText col={field.col} row={row} />
+          <FkLink col={field.col} row={row} />
         </div>
       </div>
     )
@@ -246,18 +279,6 @@ function ViewField({ field, row }: { field: ResolvedField; row: Row }) {
       </div>
     </div>
   )
-}
-
-/** view 态外键文本:行数据有 join 直接用;否则按 id 反查;都拿不到显示截断 id(SynieEditableTable 复用) */
-export function FkText({ col, row }: { col: GridColumnMeta; row: Row }) {
-  const ref = col.ref!
-  const id = row[col.name] == null ? null : String(row[col.name])
-  const rel = (row[ref.relation] as Row | null | undefined) ?? null
-  const src = resolveSource({}, ref)
-  const resolved = useRemoteRecords(src, rel || !id ? [] : [id])
-  if (!id) return <span className="text-muted">—</span>
-  const target = rel ?? resolved.data?.[0]
-  return <>{target?.[ref.labelField] != null ? String(target[ref.labelField]) : id.slice(0, 8)}</>
 }
 
 /** 表单控件按列类型分发(filter-popover 先例);override.input 优先 */

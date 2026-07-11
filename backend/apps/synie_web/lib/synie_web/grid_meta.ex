@@ -140,9 +140,21 @@ defmodule SynieWeb.GridMeta do
     end)
   end
 
-  # 显示字段约定:资源实现 display_field/0 覆盖,默认 :name
+  # 显示字段约定:资源实现 display_field/0 覆盖;默认 :name,没有 public :name 属性则
+  # 反射取第一个 public string 属性(如凭证的 voucher_no);连 string 属性都没有的资源
+  # 退回 :name(join 失败前端退截断 id,与旧行为一致)
   defp display_field(module) do
-    if function_exported?(module, :display_field, 0), do: module.display_field(), else: :name
+    if function_exported?(module, :display_field, 0) do
+      module.display_field()
+    else
+      attrs = Ash.Resource.Info.public_attributes(module)
+
+      fallback =
+        Enum.find(attrs, &(&1.name == :name)) ||
+          Enum.find(attrs, &(&1.type in [Ash.Type.String, Ash.Type.CiString]))
+
+      if fallback, do: fallback.name, else: :name
+    end
   end
 
   # AshGraphql 的 contains 筛选只对 string/ci_string 生成;uuid、裸 atom(非枚举,无 values/0)

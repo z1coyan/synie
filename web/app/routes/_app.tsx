@@ -8,6 +8,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { AppShell } from '~/components/app-shell'
+import { FkPreviewProvider } from '~/components/synie-record-drawer/fk-preview-provider'
 import { clearToken, getToken } from '~/lib/auth'
 import { gqlFetch } from '~/lib/graphql'
 
@@ -68,7 +69,9 @@ function AppLayout() {
 
   return (
     <AppShell user={data?.me ?? null} onLogout={logout}>
-      <Outlet />
+      <FkPreviewProvider>
+        <Outlet />
+      </FkPreviewProvider>
     </AppShell>
   )
 }

@@ -4,6 +4,7 @@ import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
+import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SyniePermissionSheet } from '~/components/synie-permission-sheet/SyniePermissionSheet'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -61,16 +62,11 @@ function RolesPage() {
 
       <SynieRecordDrawer
         resource="sysRoles"
-        label="角色"
+        {...drawerConfig('sysRoles')}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
-        fields={{
-          code: { required: true, edit: 'createOnly', placeholder: '如 purchaser' },
-          name: { required: true, placeholder: '如 采购管理员' },
-          enabled: { defaultValue: true },
-        }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
           // 更新/创建两支返回不同字段名,各自取 errors 而非 Object.values(data)[0](那样会退化为 any)
