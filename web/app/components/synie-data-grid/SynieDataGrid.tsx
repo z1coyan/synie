@@ -12,6 +12,7 @@ import { useGridMeta } from './meta'
 import { printRows } from './print'
 import { buildFilterLiteral, buildRowQuery, mergeFilterLiterals, nextSort, toGqlLiteral, toSortField, toSortLiteral } from './query'
 import type { ActionContext, BulkAction, EnumChipColor, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
+import { FkLink } from '../synie-record-drawer/fk-preview'
 import { useDraft } from './use-debounced'
 import { useGridActions } from './use-grid-actions'
 
@@ -134,9 +135,9 @@ export function defaultCell(
   row: Row,
   enumColors?: Record<string, EnumChipColor>
 ): ReactNode {
+  // fk 列:link 点开速览抽屉(无 join 时组件内按 id 反查标签);CSV/打印仍走 cellText 纯文本
   if (col.type === 'fk' && col.ref) {
-    const text = cellText(col, value, row)
-    return text ? <ClampCell text={text} /> : <span className="text-muted">—</span>
+    return <FkLink col={col} row={row} />
   }
   if (value == null || value === '') return <span className="text-muted">—</span>
   switch (col.type) {

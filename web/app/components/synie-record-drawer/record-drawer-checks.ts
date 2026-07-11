@@ -228,4 +228,14 @@ eq(
   'edit fk 空保持 null(不得归一为空串)'
 )
 
+// —— drawerConfig:注册表取用与覆盖合并 ——
+import { drawerConfig } from './registry'
+
+eq(drawerConfig('sysRoles').label, '角色', '注册表命中取 label')
+eq(drawerConfig('nope').label, 'nope', '未注册资源 label 退回资源名')
+const merged = drawerConfig('sysRoles', { label: '角色X', fields: { name: { placeholder: 'P' } } })
+eq(merged.label, '角色X', '覆盖 label')
+eq(merged.fields?.name?.placeholder, 'P', '覆盖 fields.name')
+eq(merged.fields?.code?.required, true, 'fields 按字段名合并,未覆盖字段保留')
+
 console.log('record-drawer-checks ok')

@@ -349,6 +349,17 @@ defmodule SynieWeb.SchemaGridTest do
                by_name["parentId"]
     end
 
+    test "目标资源无 name 属性:labelField 反射到第一个 public string 属性(凭证 voucherNo)" do
+      actor = Authz.build_actor(user_with!(["acc.gl_journal:read"]))
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(actor, "accGlJournalLines")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      assert %{
+               "type" => "fk",
+               "ref" => %{"resource" => "accGlJournals", "relation" => "journal", "labelField" => "voucherNo"}
+             } = by_name["journalId"]
+    end
+
     test "无 belongs_to 的资源所有列 ref 为空" do
       assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor())
       assert Enum.all?(meta["columns"], &(&1["ref"] == nil))
