@@ -55,7 +55,12 @@
 }
 
 @layer components {
+  /* 列头/单元格不换行:过宽由 .table__scroll-container 自带的横向滚动承接 */
+  .table__column {
+    @apply whitespace-nowrap;
+  }
+
   .table__cell {
-    @apply text-[13px];
+    @apply text-[13px] whitespace-nowrap;
   }
 }

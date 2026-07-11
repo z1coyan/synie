@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
-import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, Spinner, toast } from '@heroui/react'
+import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, Popover, SearchField, Separator, Spinner, toast } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
 import { gqlFetch, isForbidden } from '~/lib/graphql'
 import { downloadCsv, fetchAllRows, toCsv } from './csv'
@@ -95,6 +95,38 @@ export function selectedRows(selection: Selection, rows: Row[]): Row[] {
   return rows.filter((r) => selection.has(r.id))
 }
 
+/** 超宽文本单元格:截断收起,溢出时点击弹 Popover 看全文;未溢出就是普通文本 */
+function ClampCell({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [overflow, setOverflow] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el) setOverflow(el.scrollWidth > el.clientWidth)
+  }, [text])
+  const clamp = 'block max-w-80 truncate text-start'
+  if (!overflow) {
+    return (
+      <span ref={ref} className={clamp}>
+        {text}
+      </span>
+    )
+  }
+  return (
+    <Popover>
+      <Popover.Trigger aria-label="查看完整内容" className={`${clamp} cursor-pointer`}>
+        <span ref={ref} className={clamp}>
+          {text}
+        </span>
+      </Popover.Trigger>
+      <Popover.Content className="max-w-96">
+        <Popover.Dialog>
+          <p className="whitespace-pre-wrap break-words text-[13px]">{text}</p>
+        </Popover.Dialog>
+      </Popover.Content>
+    </Popover>
+  )
+}
+
 /** 默认单元格渲染(SynieEditableTable 复用,保持两处表格视觉一致) */
 export function defaultCell(
   col: GridColumnMeta,
@@ -104,13 +136,14 @@ export function defaultCell(
 ): ReactNode {
   if (col.type === 'fk' && col.ref) {
     const text = cellText(col, value, row)
-    return text || <span className="text-muted">—</span>
+    return text ? <ClampCell text={text} /> : <span className="text-muted">—</span>
   }
   if (value == null || value === '') return <span className="text-muted">—</span>
   switch (col.type) {
     case 'boolean':
       return <Chip size="sm" color={value ? 'success' : 'default'}>{value ? '是' : '否'}</Chip>
     case 'datetime':
+      // 日期短且已全表 nowrap,不进 ClampCell,永不截断
       return new Date(String(value)).toLocaleString('zh-CN', { hour12: false })
     case 'enum':
       // enum 默认胶囊展示;配色经 override.enumColors 按值定制,未配的值灰胶囊
@@ -120,7 +153,7 @@ export function defaultCell(
         </Chip>
       )
     default:
-      return String(value)
+      return <ClampCell text={String(value)} />
   }
 }
 
