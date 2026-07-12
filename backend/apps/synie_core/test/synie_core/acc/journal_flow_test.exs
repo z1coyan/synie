@@ -153,6 +153,48 @@ defmodule SynieCore.Acc.JournalFlowTest do
     assert entries(ctx.journal) == []
   end
 
+  test "before_action 复检关闭并发改头竞态:构建期见草稿、事务内已审核则拒绝且头未变", ctx do
+    line!(ctx.journal, 1, ctx.cash, :debit, "1")
+    line!(ctx.journal, 2, ctx.sales, :credit, "1")
+
+    # 构建期(仍是草稿)先拿到有效 update changeset,模拟并发的改头请求
+    changeset =
+      ctx.journal
+      |> Ash.Changeset.for_update(:update, %{remarks: "偷改", posting_date: ~D[2099-01-01]},
+        authorize?: false
+      )
+
+    # 模拟另一并发事务已先行审核并提交:直接改库,绕过动作校验
+    Ash.Seed.update!(ctx.journal, %{status: :audited})
+
+    assert_raise Ash.Error.Invalid, ~r/仅草稿凭证可修改或删除/, fn -> Ash.update!(changeset) end
+
+    # 头字段未被改:过账日期/备注仍是原值
+    reloaded = Ash.get!(GlJournal, ctx.journal.id, authorize?: false)
+    assert reloaded.posting_date == ~D[2026-07-10]
+    assert reloaded.remarks == nil
+  end
+
+  test "before_action 复检关闭并发删头竞态:构建期见草稿、事务内已审核则拒绝且凭证仍在", ctx do
+    line!(ctx.journal, 1, ctx.cash, :debit, "1")
+    line!(ctx.journal, 2, ctx.sales, :credit, "1")
+
+    # 构建期(仍是草稿)先拿到有效 destroy changeset,模拟并发的删除请求
+    changeset =
+      ctx.journal |> Ash.Changeset.for_destroy(:destroy, %{}, authorize?: false)
+
+    # 模拟另一并发事务已先行审核并过账(生成分录)并提交
+    audited = audit!(ctx.journal, authorize?: false)
+    assert length(entries(ctx.journal)) == 2
+
+    assert_raise Ash.Error.Invalid, ~r/仅草稿凭证可修改或删除/, fn -> Ash.destroy!(changeset) end
+
+    # 凭证仍存在,已过账分录未被孤儿化(既未被删,也未被作废)
+    assert Ash.get!(GlJournal, audited.id, authorize?: false).status == :audited
+    assert length(entries(ctx.journal)) == 2
+    assert Enum.all?(entries(ctx.journal), &(not &1.is_cancelled))
+  end
+
   test "取消:分录标记作废,凭证终态;草稿不可取消", ctx do
     line!(ctx.journal, 1, ctx.cash, :debit, "8")
     line!(ctx.journal, 2, ctx.sales, :credit, "8")
