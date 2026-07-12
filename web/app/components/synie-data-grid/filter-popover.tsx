@@ -178,9 +178,14 @@ function FilterControl({
         </div>
       )
     case 'fk':
-      // ref 为 null 时后端已标 filterable=false,不会走到这里;防御性放空
-      return column.ref ? (
-        <FkFilter colRef={column.ref} filter={filter?.kind === 'fk' ? filter : undefined} onChange={onChange} />
+      // 普通 fk 才有单一目标资源可建选择器;ref 为 null 或多态 fk 后端已标 filterable=false,防御性放空
+      return column.ref?.resource && column.ref.labelField ? (
+        <FkFilter
+          resource={column.ref.resource}
+          labelField={column.ref.labelField}
+          filter={filter?.kind === 'fk' ? filter : undefined}
+          onChange={onChange}
+        />
       ) : null
     case 'integer':
     case 'decimal':
@@ -224,18 +229,20 @@ function OpSelect<K extends string>({
 }
 
 function FkFilter({
-  colRef,
+  resource,
+  labelField,
   filter,
   onChange,
 }: {
-  colRef: GridColumnRef
+  resource: string
+  labelField: string
   filter: Extract<ColumnFilter, { kind: 'fk' }> | undefined
   onChange: (f: ColumnFilter | null) => void
 }) {
   return (
     <RemoteMultiSelect
-      resource={colRef.resource}
-      labelField={colRef.labelField}
+      resource={resource}
+      labelField={labelField}
       value={filter?.values ?? []}
       placeholder="选择筛选值…"
       onChange={(ids, rows) => {
@@ -246,7 +253,7 @@ function FkFilter({
           values: ids,
           labels: ids.map((id) => {
             const r = byId.get(id)
-            return r && r[colRef.labelField] != null ? String(r[colRef.labelField]) : id.slice(0, 8)
+            return r && r[labelField] != null ? String(r[labelField]) : id.slice(0, 8)
           }),
         })
       }}

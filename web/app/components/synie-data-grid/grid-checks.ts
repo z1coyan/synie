@@ -185,6 +185,29 @@ eq(cellText(fkCol, uuid1, fkRow), '集团总部', 'fk cellText 读 join label')
 eq(cellText(fkCol, uuid1, { id: 'x', parent: null } as unknown as Row), '11111111', 'join 缺失退回截断 id')
 eq(cellText(fkCol, null, { id: 'x' } as unknown as Row), '', 'fk 空值为空串')
 
+// —— 多态 fk:无 relation 不 join;CSV/打印退截断 id ——
+const polyCol: GridColumnMeta = {
+  name: 'partyId',
+  type: 'fk',
+  label: '对手',
+  sortable: false,
+  filterable: false,
+  enumOptions: null,
+  ref: {
+    resource: null,
+    relation: null,
+    labelField: null,
+    discriminator: 'partyType',
+    variants: [{ value: 'SUPPLIER', resource: 'purSuppliers', labelField: 'name' }],
+  },
+}
+eq(
+  buildRowQuery('accGlEntries', [polyCol], { limit: 10, offset: 0, sortLiteral: null, filterLiteral: null }),
+  'query { accGlEntries(limit: 10, offset: 0) { count results { id partyId } } }',
+  '多态 fk 行查询不带 join'
+)
+eq(cellText(polyCol, uuid1, { id: 'x', partyType: 'SUPPLIER' } as unknown as Row), '11111111', '多态 fk 文本退截断 id')
+
 // —— picker 跨页累积选中 ——
 const r = (id: string): Row => ({ id }) as Row
 const page1 = [r('a'), r('b')]

@@ -44,6 +44,15 @@ export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumn
   }
 }
 
+/** fk 目标解析:多态 fk 按行判别值选变体,普通 fk 取自身三件套;解析不了(变体被权限裁剪/判别值未知)为 null */
+export function resolveFkTarget(ref: GridColumnRef, row: Row): { resource: string; labelField: string } | null {
+  if (ref.discriminator) {
+    const v = ref.variants?.find((x) => x.value === String(row[ref.discriminator!] ?? ''))
+    return v ? { resource: v.resource, labelField: v.labelField } : null
+  }
+  return ref.resource ? { resource: ref.resource, labelField: ref.labelField ?? 'name' } : null
+}
+
 const selectionFields = (src: ResolvedSource): string => [...new Set(['id', src.labelField, ...src.fields])].join(' ')
 
 /** 选项分页查询:labelField 升序稳定排序;搜索词 JSON.stringify 转义后拼 contains OR */

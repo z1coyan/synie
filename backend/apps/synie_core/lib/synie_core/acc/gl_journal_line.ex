@@ -117,11 +117,6 @@ defmodule SynieCore.Acc.GlJournalLine.PartyExists do
 
   use Ash.Resource.Validation
 
-  @party_resources %{
-    supplier: SynieCore.Purchase.Supplier,
-    customer: SynieCore.Sales.Customer
-  }
-
   @impl true
   def validate(changeset, _opts, _context) do
     party_type = Ash.Changeset.get_attribute(changeset, :party_type)
@@ -135,7 +130,11 @@ defmodule SynieCore.Acc.GlJournalLine.PartyExists do
         {:error, field: :party_id, message: "对手类型与对手必须同时填写"}
 
       true ->
-        case Ash.get(Map.fetch!(@party_resources, party_type), party_id, authorize?: false) do
+        case Ash.get(
+               Map.fetch!(SynieCore.Acc.PartyType.party_resources(), party_type),
+               party_id,
+               authorize?: false
+             ) do
           {:ok, _} -> :ok
           {:error, _} -> {:error, field: :party_id, message: "对手不存在"}
         end
@@ -203,6 +202,11 @@ defmodule SynieCore.Acc.GlJournalLine do
   # 复用凭证权限码;actions 为空不进权限目录(同 UserRole 跟随 sys.user 的先例)
   def permission_prefix, do: "acc.gl_journal"
   def permission_actions, do: []
+
+  # 对手是多态引用(party_type 判别、无 belongs_to),声明给 GridMeta 反射成多态 fk 列
+  def poly_refs do
+    %{party_id: %{discriminator: :party_type, variants: SynieCore.Acc.PartyType.party_resources()}}
+  end
 
   actions do
     read :read do

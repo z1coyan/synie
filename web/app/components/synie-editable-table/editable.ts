@@ -48,7 +48,8 @@ export function mergeItem<T extends Row>(
 ): T[] {
   const merged = { ...editing, ...values } as Record<string, unknown>
   for (const c of metaColumns) {
-    if (c.type === 'fk' && c.ref && c.name in values && values[c.name] !== editing[c.name]) {
+    // 多态 fk 无 join(relation null),行上没有旧 join 对象可清
+    if (c.type === 'fk' && c.ref?.relation && c.name in values && values[c.name] !== editing[c.name]) {
       merged[c.ref.relation] = null
     }
   }

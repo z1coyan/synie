@@ -48,7 +48,7 @@ defmodule SynieWeb.GridMeta do
   @doc false
   # 公开仅供白名单 resolve/2 内部调用与测试直接反射(如 GridDoc 测试资源);不构成对外 API。
   def build(module, actor) do
-    refs = fk_refs(module, actor)
+    refs = Map.merge(fk_refs(module, actor), poly_refs(module, actor))
     rel_descriptions = rel_descriptions(module)
 
     %{
@@ -84,12 +84,14 @@ defmodule SynieWeb.GridMeta do
           name: camelize(attr.name),
           type: "fk",
           # belongs_to 的 FK attribute 一般没有 description,兜底用关系上的 description
-          label: attr.description || ref.label || to_string(attr.name),
+          label: attr.description || ref[:label] || to_string(attr.name),
           # uuid 排序无意义;筛选走 eq/in(不走 contains,见 filterable?/1 注释)
           sortable: false,
-          filterable: true,
+          # 多态 fk 无单一目标资源,筛选选择器无从建,不可筛
+          filterable: not Map.has_key?(ref, :variants),
           enum_options: nil,
-          ref: %{resource: ref.resource, relation: ref.relation, label_field: ref.label_field}
+          # 普通 fk 带 resource/relation/label_field;多态带 discriminator/variants,其余字段前端拿到 null
+          ref: Map.delete(ref, :label)
         }
 
       :error ->
@@ -138,6 +140,38 @@ defmodule SynieWeb.GridMeta do
         _ -> acc
       end
     end)
+  end
+
+  # 多态引用(判别枚举 + 裸 uuid,无 belongs_to)→ fk 元数据:资源声明 poly_refs/0
+  # (%{attr => %{discriminator: 判别属性, variants: %{枚举值 => 目标资源}}})。
+  # 变体逐个 fail-closed 裁剪(白名单外/无 read 权限);全被裁则不产出 ref,列退化为普通 uuid 列
+  defp poly_refs(module, actor) do
+    if function_exported?(module, :poly_refs, 0) do
+      module_names = Map.new(@resources, fn {name, mod} -> {mod, name} end)
+
+      Enum.reduce(module.poly_refs(), %{}, fn {attr, %{discriminator: disc, variants: variants}},
+                                              acc ->
+        kept =
+          for {value, dest} <- variants,
+              resource_name = module_names[dest],
+              resource_name != nil,
+              Authz.has_permission?(actor, "#{dest.permission_prefix()}:read") do
+            %{
+              # 与 enum_options 同约定:线上 token 大写,前端直接与行的判别值相等比较
+              value: value |> to_string() |> String.upcase(),
+              resource: resource_name,
+              label_field: camelize(display_field(dest))
+            }
+          end
+
+        case kept do
+          [] -> acc
+          kept -> Map.put(acc, attr, %{discriminator: camelize(disc), variants: Enum.sort_by(kept, & &1.value)})
+        end
+      end)
+    else
+      %{}
+    end
   end
 
   # 显示字段约定:资源实现 display_field/0 覆盖;默认 :name,没有 public :name 属性则

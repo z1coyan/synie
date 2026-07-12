@@ -186,7 +186,7 @@ defmodule SynieWeb.SchemaGridTest do
   @meta_query """
   query ($resource: String!) {
     gridMeta(resource: $resource) {
-      columns { name type label sortable filterable enumOptions { value label } ref { resource relation labelField } }
+      columns { name type label sortable filterable enumOptions { value label } ref { resource relation labelField discriminator variants { value resource labelField } } }
       capabilities
       extendedActions { key label scope mutation isDanger }
       destroyMutation
@@ -430,7 +430,7 @@ defmodule SynieWeb.SchemaGridTest do
   end
 
   describe "accGlJournalLines 接入" do
-    test "accountId 反射 fk 指向 basAccounts,partyType 反射中文枚举,partyId 非 fk(裸 uuid)" do
+    test "accountId 反射 fk 指向 basAccounts,partyType 反射中文枚举,partyId 反射多态 fk" do
       assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor(), "accGlJournalLines")
       by_name = Map.new(meta["columns"], &{&1["name"], &1})
 
@@ -443,7 +443,42 @@ defmodule SynieWeb.SchemaGridTest do
       labels = party_type["enumOptions"] |> Enum.map(& &1["label"]) |> Enum.sort()
       assert labels == ["供应商", "客户"]
 
+      # 多态 fk:无 join(relation null)不可筛,按 partyType 判别变体
+      assert %{"type" => "fk", "filterable" => false, "label" => "对手"} = party = by_name["partyId"]
+
+      assert %{
+               "resource" => nil,
+               "relation" => nil,
+               "discriminator" => "partyType",
+               "variants" => [
+                 %{"value" => "CUSTOMER", "resource" => "salCustomers", "labelField" => "name"},
+                 %{"value" => "SUPPLIER", "resource" => "purSuppliers", "labelField" => "name"}
+               ]
+             } = party["ref"]
+    end
+  end
+
+  describe "多态 fk 权限裁剪" do
+    test "无任何变体 read 权限:partyId 退化为普通 uuid 列" do
+      actor = Authz.build_actor(user_with!(["acc.gl_entry:read"]))
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(actor, "accGlEntries")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
       assert %{"type" => "string", "filterable" => false, "ref" => nil} = by_name["partyId"]
+    end
+
+    test "只有客户 read 权限:variants 仅剩 CUSTOMER" do
+      actor = Authz.build_actor(user_with!(["acc.gl_entry:read", "sales.customer:read"]))
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(actor, "accGlEntries")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      assert %{
+               "type" => "fk",
+               "ref" => %{
+                 "discriminator" => "partyType",
+                 "variants" => [%{"value" => "CUSTOMER", "resource" => "salCustomers"}]
+               }
+             } = by_name["partyId"]
     end
   end
 
