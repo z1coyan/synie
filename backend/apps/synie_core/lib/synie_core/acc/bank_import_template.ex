@@ -13,7 +13,11 @@ defmodule SynieCore.Acc.BankImportTemplate.NormalizeColumns do
     Enum.reduce(@col_fields, changeset, fn field, cs ->
       case Ash.Changeset.fetch_change(cs, field) do
         {:ok, value} when is_binary(value) ->
-          Ash.Changeset.force_change_attribute(cs, field, value |> String.trim() |> String.upcase())
+          Ash.Changeset.force_change_attribute(
+            cs,
+            field,
+            value |> String.trim() |> String.upcase()
+          )
 
         _ ->
           cs

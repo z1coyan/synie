@@ -118,9 +118,21 @@ defmodule SynieCore.Acc.BankImportTemplateTest do
       # 双列缺日期格式
       %{datetime_col: nil, datetime_format: nil, date_col: "A"},
       # 时间列缺格式
-      %{datetime_col: nil, datetime_format: nil, date_col: "A", date_format: :ymd_dash, time_col: "B"},
+      %{
+        datetime_col: nil,
+        datetime_format: nil,
+        date_col: "A",
+        date_format: :ymd_dash,
+        time_col: "B"
+      },
       # 时间格式没有时间列
-      %{datetime_col: nil, datetime_format: nil, date_col: "A", date_format: :ymd_dash, time_format: :hms}
+      %{
+        datetime_col: nil,
+        datetime_format: nil,
+        date_col: "A",
+        date_format: :ymd_dash,
+        time_format: :hms
+      }
     ]
 
     for overrides <- invalid do
