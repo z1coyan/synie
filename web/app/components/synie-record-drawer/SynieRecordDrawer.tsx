@@ -109,12 +109,13 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
 
   // rowId 自取数:row 未给时按 id 查一行(列集取自 meta,fk join 一并带回)。
   // id 非法(白名单反查约定,防拼进查询)按查无处理,不发请求。
-  // 本地 meta 模式下该自查路径不适用(无远程 meta 可拼列/查询),追加 !props.meta 防御。
-  const wantsFetch = !props.row && !!props.rowId
+  // 本地 meta 模式下该自查路径不适用(无远程 meta 可拼列/查询),wantsFetch 直接置 false:
+  // disabled query 永远 isPending,若只挡 enabled 不挡 wantsFetch,rowPending 会恒 true 卡死 spinner。
+  const wantsFetch = !props.meta && !props.row && !!props.rowId
   const validId = !!props.rowId && UUID_RE.test(props.rowId)
   const byId = useQuery({
     queryKey: ['rowById', resource, props.rowId],
-    enabled: isOpen && wantsFetch && validId && !props.meta && !!remoteMeta.data,
+    enabled: isOpen && wantsFetch && validId && !!remoteMeta.data,
     queryFn: () => {
       const q = buildRowQuery(resource, remoteMeta.data!.columns, {
         limit: 1,
