@@ -97,6 +97,9 @@ defmodule SynieCore do
       create SynieCore.Acc.VatInvoice, :create_acc_vat_invoice, :create
       update SynieCore.Acc.VatInvoice, :update_acc_vat_invoice, :update
       destroy SynieCore.Acc.VatInvoice, :destroy_acc_vat_invoice, :destroy
+      update SynieCore.Acc.VatInvoice, :audit_acc_vat_invoice, :audit
+      update SynieCore.Acc.VatInvoice, :void_acc_vat_invoice, :void
+      update SynieCore.Acc.VatInvoice, :reverse_acc_vat_invoice, :reverse
     end
   end
 

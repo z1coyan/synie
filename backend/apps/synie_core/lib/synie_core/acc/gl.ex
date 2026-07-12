@@ -25,7 +25,10 @@ defmodule SynieCore.Acc.GL do
   新单据接 GL(调 post!/cancel!)时必须在此注册,分录的来源单据列才能渲染成链接。
   """
   def voucher_resources do
-    %{"acc.gl_journal" => {SynieCore.Acc.GlJournal, "凭证"}}
+    %{
+      "acc.gl_journal" => {SynieCore.Acc.GlJournal, "凭证"},
+      "acc.vat_invoice" => {SynieCore.Acc.VatInvoice, "增值税发票"}
+    }
   end
 
   @doc """

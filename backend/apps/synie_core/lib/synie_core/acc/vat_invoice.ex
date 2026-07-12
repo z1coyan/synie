@@ -59,8 +59,8 @@ defmodule SynieCore.Acc.VatInvoice do
   `mirror_invoice_id` 自引用:内部两公司互开发票时可互链对向发票,供 Task 7 联动展示;
   对向发票被删时该外键由数据库置空(nilify),不级联删除。
 
-  生命周期:草稿(可改可删)→ 已审核(audit)→ 已作废(void)/已红冲(reverse),
-  后三个动作(audit/void/reverse)与 `grid_actions/0` 在 Task 4 实现。
+  生命周期:草稿(可改可删)→ 已审核(audit,派生 `gl_entries/1` 过账)→
+  已作废(void,原分录标 `is_cancelled`)/已红冲(reverse,交 `GL.reverse!` 生成红字组)。
   """
 
   use Ash.Resource,
@@ -124,7 +124,25 @@ defmodule SynieCore.Acc.VatInvoice do
   def permission_prefix, do: "acc.vat_invoice"
   def permission_actions, do: ~w(create read update delete audit void reverse)
 
-  # grid_actions 在 Task 4 补(audit/void/reverse 动作就绪后)
+  def grid_actions do
+    [
+      %{
+        key: "audit",
+        label: "审核",
+        scope: "row",
+        mutation: "auditAccVatInvoice",
+        is_danger: false
+      },
+      %{key: "void", label: "作废", scope: "row", mutation: "voidAccVatInvoice", is_danger: true},
+      %{
+        key: "reverse",
+        label: "红冲",
+        scope: "row",
+        mutation: "reverseAccVatInvoice",
+        is_danger: true
+      }
+    ]
+  end
 
   # 对手是多态引用(party_type 判别、无 belongs_to),声明给 GridMeta 反射成多态 fk 列
   def poly_refs do
@@ -258,6 +276,151 @@ defmodule SynieCore.Acc.VatInvoice do
             {:ok, %{status: :draft}} -> cs
             _ -> Ash.Changeset.add_error(cs, message: "仅草稿发票可修改或删除")
           end
+        end)
+      end
+    end
+
+    update :audit do
+      # 过账日期可在审核时补填/修正
+      accept [:posting_date]
+      require_atomic? false
+
+      # 构建期预检(用户体验,普通读即可):此时在动作事务之外,无需也不能加锁。
+      # 权威复检在下方 change 的 before_action 钩子内(事务内 FOR UPDATE 重读)完成。
+      validate fn changeset, _context ->
+        if changeset.data.status == :draft, do: :ok, else: {:error, message: "仅草稿发票可审核"}
+      end
+
+      validate fn changeset, _context ->
+        if Ash.Changeset.get_attribute(changeset, :posting_date) do
+          :ok
+        else
+          {:error, field: :posting_date, message: "审核过账前必须填写过账日期"}
+        end
+      end
+
+      validate fn changeset, _context ->
+        case __MODULE__.audit_blockers(changeset.data) do
+          [] ->
+            case SynieCore.Acc.GL.validate_entries(
+                   changeset.data.company_id,
+                   __MODULE__.gl_entries(changeset.data)
+                 ) do
+              :ok -> :ok
+              {:error, msg} -> {:error, message: msg}
+            end
+
+          msgs ->
+            {:error, message: Enum.join(msgs, ";")}
+        end
+      end
+
+      change fn changeset, context ->
+        changeset
+        |> Ash.Changeset.force_change_attribute(:status, :audited)
+        |> Ash.Changeset.force_change_attribute(:audited_at, DateTime.utc_now())
+        |> then(fn cs ->
+          case context.actor do
+            %SynieCore.Authz.Actor{user_id: user_id} ->
+              Ash.Changeset.force_change_attribute(cs, :audited_by_id, user_id)
+
+            _ ->
+              cs
+          end
+        end)
+        |> Ash.Changeset.before_action(fn cs ->
+          # 权威复检:before_action 在动作事务内执行,FOR UPDATE 持锁到事务提交,
+          # 借此串行化审核与并发改头/并发审核——关闭双审核竞态(构建期预检看到的状态可能已过期)
+          case __MODULE__.lock_invoice(cs.data.id) do
+            {:ok, %{status: :draft} = locked} ->
+              case __MODULE__.audit_blockers(locked) do
+                [] ->
+                  case SynieCore.Acc.GL.validate_entries(
+                         locked.company_id,
+                         __MODULE__.gl_entries(locked)
+                       ) do
+                    :ok -> cs
+                    {:error, msg} -> Ash.Changeset.add_error(cs, message: msg)
+                  end
+
+                msgs ->
+                  Ash.Changeset.add_error(cs, message: Enum.join(msgs, ";"))
+              end
+
+            _ ->
+              Ash.Changeset.add_error(cs, message: "仅草稿发票可审核")
+          end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, inv ->
+          # 最后防线:事务内重读后过账(纵深防御,正常流程不应触发)
+          SynieCore.Acc.GL.post!(
+            %{
+              voucher_type: "acc.vat_invoice",
+              voucher_id: inv.id,
+              voucher_no: inv.doc_no || inv.invoice_no,
+              company_id: inv.company_id,
+              posting_date: inv.posting_date
+            },
+            __MODULE__.gl_entries(inv)
+          )
+
+          {:ok, inv}
+        end)
+      end
+    end
+
+    update :void do
+      accept []
+      require_atomic? false
+
+      # 构建期预检(用户体验),权威复检在 before_action 钩子内
+      validate fn changeset, _context ->
+        if changeset.data.status == :audited, do: :ok, else: {:error, message: "仅已审核发票可作废"}
+      end
+
+      change fn changeset, _context ->
+        changeset
+        |> Ash.Changeset.force_change_attribute(:status, :voided)
+        |> Ash.Changeset.before_action(fn cs ->
+          # 权威复检:事务内 FOR UPDATE 重读,关闭双作废/作废与红冲并发竞态
+          case __MODULE__.lock_invoice(cs.data.id) do
+            {:ok, %{status: :audited}} -> cs
+            _ -> Ash.Changeset.add_error(cs, message: "仅已审核发票可作废")
+          end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, inv ->
+          SynieCore.Acc.GL.cancel!("acc.vat_invoice", inv.id)
+          {:ok, inv}
+        end)
+      end
+    end
+
+    update :reverse do
+      accept [:red_invoice_no]
+      argument :posting_date, :date, allow_nil?: false
+      require_atomic? false
+
+      # 构建期预检(用户体验),权威复检在 before_action 钩子内
+      validate fn changeset, _context ->
+        if changeset.data.status == :audited, do: :ok, else: {:error, message: "仅已审核发票可红冲"}
+      end
+
+      change fn changeset, _context ->
+        posting_date = Ash.Changeset.get_argument(changeset, :posting_date)
+
+        changeset
+        |> Ash.Changeset.force_change_attribute(:status, :reversed)
+        |> Ash.Changeset.before_action(fn cs ->
+          # 权威复检:事务内 FOR UPDATE 重读,关闭双红冲/红冲与作废并发竞态
+          case __MODULE__.lock_invoice(cs.data.id) do
+            {:ok, %{status: :audited}} -> cs
+            _ -> Ash.Changeset.add_error(cs, message: "仅已审核发票可红冲")
+          end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, inv ->
+          # 红字组生成完全交给 GL.reverse!,发票侧不自己拼分录
+          SynieCore.Acc.GL.reverse!("acc.vat_invoice", inv.id, posting_date)
+          {:ok, inv}
         end)
       end
     end
@@ -486,5 +649,73 @@ defmodule SynieCore.Acc.VatInvoice do
     |> Ash.Query.filter(id == ^invoice_id)
     |> Ash.Query.lock("FOR UPDATE")
     |> Ash.read_one(authorize?: false)
+  end
+
+  @doc "按三科目与方向派生分录组;红冲取负由 GL.reverse! 负责,不在此处理。"
+  def gl_entries(%__MODULE__{} = inv) do
+    currencies =
+      SynieCore.Base.Account
+      |> Ash.Query.filter(
+        id in ^Enum.reject(
+          [inv.party_account_id, inv.amount_account_id, inv.tax_account_id],
+          &is_nil/1
+        )
+      )
+      |> Ash.read!(authorize?: false)
+      |> Map.new(&{&1.id, &1.currency_id})
+
+    zero = Decimal.new(0)
+
+    entry = fn account_id, debit, credit, party? ->
+      %{
+        account_id: account_id,
+        currency_id: currencies[account_id],
+        debit: debit,
+        credit: credit,
+        party_type: if(party?, do: inv.party_type),
+        party_id: if(party?, do: inv.party_id),
+        remarks: nil
+      }
+    end
+
+    tax? = inv.tax_total != nil and Decimal.compare(inv.tax_total, 0) == :gt
+
+    case inv.direction do
+      :outbound ->
+        [
+          entry.(inv.party_account_id, inv.gross_total, zero, true),
+          entry.(inv.amount_account_id, zero, inv.net_total, false)
+        ] ++
+          if(tax?, do: [entry.(inv.tax_account_id, zero, inv.tax_total, false)], else: [])
+
+      :inbound ->
+        [entry.(inv.amount_account_id, inv.net_total, zero, false)] ++
+          if(tax?, do: [entry.(inv.tax_account_id, inv.tax_total, zero, false)], else: []) ++
+          [entry.(inv.party_account_id, zero, inv.gross_total, true)]
+    end
+  end
+
+  @doc "审核前的齐全性检查,返回缺失/错误清单(空 = 可审核)。"
+  def audit_blockers(inv) do
+    zero = Decimal.new(0)
+
+    [
+      {is_nil(inv.invoice_no), "审核前必须填写发票号码"},
+      {is_nil(inv.invoice_date), "审核前必须填写开票日期"},
+      {is_nil(inv.net_total) or is_nil(inv.tax_total) or is_nil(inv.gross_total),
+       "审核前必须填写未税金额、税额与价税合计"},
+      {not is_nil(inv.gross_total) and Decimal.compare(inv.gross_total, zero) != :gt,
+       "价税合计必须大于零"},
+      {not is_nil(inv.tax_total) and Decimal.compare(inv.tax_total, zero) == :lt, "税额不能为负"},
+      {not (is_nil(inv.net_total) or is_nil(inv.tax_total) or is_nil(inv.gross_total)) and
+         not Decimal.equal?(Decimal.add(inv.net_total, inv.tax_total), inv.gross_total),
+       "未税金额+税额必须等于价税合计"},
+      {is_nil(inv.party_account_id), "审核前必须选择往来科目"},
+      {is_nil(inv.amount_account_id), "审核前必须选择价款科目"},
+      {not is_nil(inv.tax_total) and Decimal.compare(inv.tax_total, zero) == :gt and
+         is_nil(inv.tax_account_id), "税额大于零时必须选择税额科目"}
+    ]
+    |> Enum.filter(&elem(&1, 0))
+    |> Enum.map(&elem(&1, 1))
   end
 end

@@ -3,15 +3,32 @@ defmodule SynieCore.Acc.VatInvoiceTest do
 
   import SynieCore.AuthzFixtures
 
-  alias SynieCore.Acc.VatInvoice
+  require Ash.Query
+
+  alias SynieCore.Acc.{GlEntry, VatInvoice}
   alias SynieCore.Authz.Actor
+  alias SynieCore.Base.Account
   alias SynieCore.Sales.Customer
 
   setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(SynieCore.Repo)
     company = company!()
     customer = customer!()
-    %{company: company, customer: customer}
+
+    accounts = %{
+      party: account!(%{code: "1122", name: "应收账款", direction: :debit, company_id: company.id}),
+      amount:
+        account!(%{code: "6001", name: "主营业务收入", direction: :credit, company_id: company.id}),
+      tax:
+        account!(%{
+          code: "222101",
+          name: "应交税费——应交增值税(销项税额)",
+          direction: :credit,
+          company_id: company.id
+        })
+    }
+
+    %{company: company, customer: customer, accounts: accounts}
   end
 
   defp customer!(attrs \\ %{}) do
@@ -19,6 +36,12 @@ defmodule SynieCore.Acc.VatInvoiceTest do
       Map.merge(%{code: "C#{System.unique_integer([:positive])}", name: "测试客户"}, attrs)
 
     Customer
+    |> Ash.Changeset.for_create(:create, attrs)
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp account!(attrs) do
+    Account
     |> Ash.Changeset.for_create(:create, attrs)
     |> Ash.create!(authorize?: false)
   end
@@ -187,5 +210,285 @@ defmodule SynieCore.Acc.VatInvoiceTest do
 
     reloaded = Ash.get!(VatInvoice, original.id, authorize?: false)
     assert reloaded.mirror_invoice_id == nil
+  end
+
+  # 齐全的发票属性:三科目 + 勾稽相符的三金额(net 100 + tax 13 = gross 113),direction 默认开出
+  defp invoice_attrs(co, cust, accounts, overrides \\ %{}) do
+    base_attrs(co, cust.id)
+    |> Map.merge(%{
+      direction: :outbound,
+      party_account_id: accounts.party.id,
+      amount_account_id: accounts.amount.id,
+      tax_account_id: accounts.tax.id,
+      net_total: Decimal.new("100"),
+      tax_total: Decimal.new("13"),
+      gross_total: Decimal.new("113")
+    })
+    |> Map.merge(overrides)
+  end
+
+  defp audit!(inv, posting_date, opts \\ [authorize?: false]) do
+    updated =
+      inv
+      |> Ash.Changeset.for_update(:audit, %{posting_date: posting_date}, opts)
+      |> Ash.update!()
+
+    {:ok, updated}
+  end
+
+  defp audited_invoice!(co, cust, accounts, overrides \\ %{}) do
+    draft = invoice_attrs(co, cust, accounts, overrides) |> invoice!(authorize?: false)
+    {:ok, audited} = audit!(draft, ~D[2026-07-15])
+    audited
+  end
+
+  defp void!(inv, opts \\ [authorize?: false]) do
+    inv
+    |> Ash.Changeset.for_update(:void, %{}, opts)
+    |> Ash.update!()
+  end
+
+  defp reverse!(inv, red_invoice_no, posting_date, opts \\ [authorize?: false]) do
+    inv
+    |> Ash.Changeset.for_update(
+      :reverse,
+      %{red_invoice_no: red_invoice_no, posting_date: posting_date},
+      opts
+    )
+    |> Ash.update!()
+  end
+
+  defp entries_for(voucher_type, voucher_id) do
+    GlEntry
+    |> Ash.Query.filter(voucher_type == ^voucher_type and voucher_id == ^voucher_id)
+    |> Ash.read!(authorize?: false)
+  end
+
+  describe "审核过账" do
+    test "开出发票审核生成 借往来(带对手)/贷价款/贷税额 三行且配平", %{
+      company: co,
+      customer: cust,
+      accounts: accounts
+    } do
+      inv = invoice_attrs(co, cust, accounts) |> invoice!(authorize?: false)
+
+      {:ok, audited} = audit!(inv, ~D[2026-07-15])
+
+      assert audited.status == :audited
+      assert audited.audited_at != nil
+
+      entries = entries_for("acc.vat_invoice", inv.id)
+      assert length(entries) == 3
+
+      party_line = Enum.find(entries, &(&1.account_id == accounts.party.id))
+      amount_line = Enum.find(entries, &(&1.account_id == accounts.amount.id))
+      tax_line = Enum.find(entries, &(&1.account_id == accounts.tax.id))
+
+      assert Decimal.equal?(party_line.debit, Decimal.new("113"))
+      assert Decimal.equal?(party_line.credit, Decimal.new("0"))
+      assert party_line.party_type == :customer
+      assert party_line.party_id == cust.id
+
+      assert Decimal.equal?(amount_line.debit, Decimal.new("0"))
+      assert Decimal.equal?(amount_line.credit, Decimal.new("100"))
+      assert amount_line.party_id == nil
+
+      assert Decimal.equal?(tax_line.debit, Decimal.new("0"))
+      assert Decimal.equal?(tax_line.credit, Decimal.new("13"))
+      assert tax_line.party_id == nil
+
+      debit_total = Enum.reduce(entries, Decimal.new(0), &Decimal.add(&1.debit, &2))
+      credit_total = Enum.reduce(entries, Decimal.new(0), &Decimal.add(&1.credit, &2))
+      assert Decimal.equal?(debit_total, credit_total)
+    end
+
+    test "开入发票审核生成 借价款/借税额/贷往来(带对手) 三行", %{
+      company: co,
+      customer: cust,
+      accounts: accounts
+    } do
+      inv =
+        invoice_attrs(co, cust, accounts, %{direction: :inbound}) |> invoice!(authorize?: false)
+
+      {:ok, audited} = audit!(inv, ~D[2026-07-15])
+      assert audited.status == :audited
+
+      entries = entries_for("acc.vat_invoice", inv.id)
+      assert length(entries) == 3
+
+      party_line = Enum.find(entries, &(&1.account_id == accounts.party.id))
+      amount_line = Enum.find(entries, &(&1.account_id == accounts.amount.id))
+      tax_line = Enum.find(entries, &(&1.account_id == accounts.tax.id))
+
+      assert Decimal.equal?(amount_line.debit, Decimal.new("100"))
+      assert Decimal.equal?(amount_line.credit, Decimal.new("0"))
+      assert amount_line.party_id == nil
+
+      assert Decimal.equal?(tax_line.debit, Decimal.new("13"))
+      assert Decimal.equal?(tax_line.credit, Decimal.new("0"))
+      assert tax_line.party_id == nil
+
+      assert Decimal.equal?(party_line.debit, Decimal.new("0"))
+      assert Decimal.equal?(party_line.credit, Decimal.new("113"))
+      assert party_line.party_type == :customer
+      assert party_line.party_id == cust.id
+    end
+
+    test "税额为 0 只生成两行,税额科目可空", %{company: co, customer: cust, accounts: accounts} do
+      inv =
+        invoice_attrs(co, cust, accounts, %{
+          tax_account_id: nil,
+          net_total: Decimal.new("50"),
+          tax_total: Decimal.new("0"),
+          gross_total: Decimal.new("50")
+        })
+        |> invoice!(authorize?: false)
+
+      {:ok, audited} = audit!(inv, ~D[2026-07-15])
+      assert audited.status == :audited
+
+      entries = entries_for("acc.vat_invoice", inv.id)
+      assert length(entries) == 2
+      assert Enum.all?(entries, &(&1.account_id in [accounts.party.id, accounts.amount.id]))
+    end
+
+    test "审核必填项缺失被拒:无发票号码/无开票日期/勾稽不平(net+tax≠gross)/税额>0 但无税额科目",
+         %{company: co, customer: cust, accounts: accounts} do
+      no_invoice_no =
+        invoice_attrs(co, cust, accounts)
+        |> Map.delete(:invoice_no)
+        |> invoice!(authorize?: false)
+
+      assert_raise Ash.Error.Invalid, ~r/发票号码/, fn -> audit!(no_invoice_no, ~D[2026-07-15]) end
+
+      no_invoice_date =
+        invoice_attrs(co, cust, accounts)
+        |> Map.delete(:invoice_date)
+        |> invoice!(authorize?: false)
+
+      assert_raise Ash.Error.Invalid, ~r/开票日期/, fn -> audit!(no_invoice_date, ~D[2026-07-15]) end
+
+      unbalanced =
+        invoice_attrs(co, cust, accounts, %{gross_total: Decimal.new("999")})
+        |> invoice!(authorize?: false)
+
+      assert_raise Ash.Error.Invalid, ~r/未税金额\+税额必须等于价税合计/, fn ->
+        audit!(unbalanced, ~D[2026-07-15])
+      end
+
+      tax_no_account =
+        invoice_attrs(co, cust, accounts, %{tax_account_id: nil})
+        |> invoice!(authorize?: false)
+
+      assert_raise Ash.Error.Invalid, ~r/税额大于零时必须选择税额科目/, fn ->
+        audit!(tax_no_account, ~D[2026-07-15])
+      end
+    end
+
+    test "审核后 update/destroy 被拒", %{company: co, customer: cust, accounts: accounts} do
+      audited = audited_invoice!(co, cust, accounts)
+
+      assert_raise Ash.Error.Invalid, fn ->
+        audited
+        |> Ash.Changeset.for_update(:update, %{remarks: "x"})
+        |> Ash.update!(authorize?: false)
+      end
+
+      assert_raise Ash.Error.Invalid, fn -> Ash.destroy!(audited, authorize?: false) end
+    end
+
+    test "voucher_no 优先 doc_no,无则用 invoice_no", %{
+      company: co,
+      customer: cust,
+      accounts: accounts
+    } do
+      with_doc = audited_invoice!(co, cust, accounts)
+      entries_a = entries_for("acc.vat_invoice", with_doc.id)
+      assert Enum.all?(entries_a, &(&1.voucher_no == with_doc.doc_no))
+
+      seeded =
+        Ash.Seed.seed!(
+          VatInvoice,
+          invoice_attrs(co, cust, accounts, %{doc_no: nil, invoice_no: "SEEDNO001"})
+        )
+
+      {:ok, seeded_audited} = audit!(seeded, ~D[2026-07-15])
+      assert seeded_audited.doc_no == nil
+
+      entries_b = entries_for("acc.vat_invoice", seeded.id)
+      assert Enum.all?(entries_b, &(&1.voucher_no == "SEEDNO001"))
+    end
+  end
+
+  describe "作废与红冲" do
+    test "void:原分录组标记 is_cancelled,发票 voided", %{
+      company: co,
+      customer: cust,
+      accounts: accounts
+    } do
+      inv = audited_invoice!(co, cust, accounts)
+
+      voided = void!(inv)
+      assert voided.status == :voided
+
+      entries = entries_for("acc.vat_invoice", inv.id)
+      assert length(entries) == 3
+      assert Enum.all?(entries, & &1.is_cancelled)
+    end
+
+    test "reverse:红字组生成、原组标 is_reversed,发票 reversed,red_invoice_no 存档", %{
+      company: co,
+      customer: cust,
+      accounts: accounts
+    } do
+      inv = audited_invoice!(co, cust, accounts)
+      actor = actor(company_ids: [co.id])
+
+      inv =
+        inv
+        |> Ash.Changeset.for_update(
+          :reverse,
+          %{red_invoice_no: "RED001", posting_date: ~D[2026-07-31]},
+          actor: actor
+        )
+        |> Ash.update!()
+
+      assert inv.status == :reversed
+      assert inv.red_invoice_no == "RED001"
+
+      entries = entries_for("acc.vat_invoice", inv.id)
+      assert Enum.count(entries, & &1.is_reversal) == Enum.count(entries, & &1.is_reversed)
+
+      assert Decimal.equal?(
+               Enum.reduce(entries, Decimal.new(0), &Decimal.add(&1.debit, &2)),
+               Decimal.new(0)
+             )
+    end
+
+    test "void 后不能 reverse,reverse 后不能 void(仅 audited 可操作)", %{
+      company: co,
+      customer: cust,
+      accounts: accounts
+    } do
+      voided = audited_invoice!(co, cust, accounts) |> void!()
+
+      assert_raise Ash.Error.Invalid, ~r/仅已审核发票可红冲/, fn ->
+        reverse!(voided, "RED001", ~D[2026-07-31])
+      end
+
+      reversed = audited_invoice!(co, cust, accounts) |> reverse!("RED002", ~D[2026-07-31])
+
+      assert_raise Ash.Error.Invalid, ~r/仅已审核发票可作废/, fn -> void!(reversed) end
+    end
+
+    test "草稿不能 void/reverse", %{company: co, customer: cust, accounts: accounts} do
+      draft = invoice_attrs(co, cust, accounts) |> invoice!(authorize?: false)
+
+      assert_raise Ash.Error.Invalid, ~r/仅已审核发票可作废/, fn -> void!(draft) end
+
+      assert_raise Ash.Error.Invalid, ~r/仅已审核发票可红冲/, fn ->
+        reverse!(draft, "RED003", ~D[2026-07-31])
+      end
+    end
   end
 end
