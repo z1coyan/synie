@@ -6,7 +6,10 @@ defmodule SynieWeb.FileControllerTest do
   import Plug.Conn, only: [put_req_header: 3]
 
   alias SynieCore.Accounts.User
-  alias SynieCore.Authz.{Role, RolePermission, UserRole}
+  alias SynieCore.Acc.GlJournal
+  alias SynieCore.Authz.{Role, RolePermission, UserCompany, UserRole}
+  alias SynieCore.Base.Company
+  alias SynieCore.Sales.Customer
 
   @endpoint SynieWeb.Endpoint
 
@@ -47,7 +50,8 @@ defmodule SynieWeb.FileControllerTest do
   end
 
   # synie_core 的 test/support 不跨应用共享,内联最小夹具(与 schema_user_test 同款)
-  defp token_with!(permissions) do
+  # opts: :companies(授权公司 id 列表)、:super_admin(布尔)
+  defp token_with!(permissions, opts \\ []) do
     user =
       User
       |> Ash.Changeset.for_create(:create, %{
@@ -55,6 +59,15 @@ defmodule SynieWeb.FileControllerTest do
         password: "secret123"
       })
       |> Ash.create!(authorize?: false)
+
+    user =
+      if opts[:super_admin] do
+        user
+        |> Ash.Changeset.for_update(:set_super_admin, %{})
+        |> Ash.update!(authorize?: false)
+      else
+        user
+      end
 
     role =
       Role
@@ -74,7 +87,63 @@ defmodule SynieWeb.FileControllerTest do
     |> Ash.Changeset.for_create(:create, %{user_id: user.id, role_id: role.id})
     |> Ash.create!(authorize?: false)
 
+    for company_id <- Keyword.get(opts, :companies, []) do
+      UserCompany
+      |> Ash.Changeset.for_create(:create, %{user_id: user.id, company_id: company_id})
+      |> Ash.create!(authorize?: false)
+    end
+
     SynieWeb.Auth.sign_token(user)
+  end
+
+  defp company! do
+    i = System.unique_integer([:positive])
+    code = <<?a + rem(div(i, 26), 26), ?a + rem(i, 26)>>
+
+    Company
+    |> Ash.Changeset.for_create(:create, %{code: code, name: "测试公司", short_name: "测司"})
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp gl_journal!(company_id) do
+    GlJournal
+    |> Ash.Changeset.for_create(:create, %{
+      company_id: company_id,
+      voucher_no: "V#{System.unique_integer([:positive])}",
+      date: Date.utc_today()
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp customer! do
+    Customer
+    |> Ash.Changeset.for_create(:create, %{
+      code: "C#{System.unique_integer([:positive])}",
+      name: "测试客户"
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp get_file(token, id) do
+    build_conn()
+    |> put_req_header("authorization", "Bearer " <> token)
+    |> get("/api/files/#{id}")
+  end
+
+  # 上传一个挂到某公司凭证宿主的文件,返回 file id
+  defp upload_attached_to(src, company_id) do
+    host = gl_journal!(company_id)
+    uploader = token_with!(["sys.file:create", "acc.gl_journal:read"], companies: [company_id])
+
+    %{"file" => %{"id" => id}} =
+      upload_conn(uploader, %{
+        "file" => upload_struct(src),
+        "owner_type" => "acc_gl_journal",
+        "owner_id" => host.id
+      })
+      |> json_response(200)
+
+    id
   end
 
   defp upload_conn(token, params) do
@@ -101,8 +170,10 @@ defmodule SynieWeb.FileControllerTest do
     end
 
     test "带 owner 参数:同时返回附件关联", %{src: src} do
-      token = token_with!(["sys.file:create"])
-      owner_id = Ash.UUID.generate()
+      # maybe_attach 现会用 actor 读宿主:真实客户 + sales.customer:read
+      token = token_with!(["sys.file:create", "sales.customer:read"])
+      customer = customer!()
+      owner_id = customer.id
 
       resp =
         upload_conn(token, %{
@@ -114,6 +185,35 @@ defmodule SynieWeb.FileControllerTest do
         |> json_response(200)
 
       assert %{"attachment" => %{"ownerId" => ^owner_id, "category" => "contract"}} = resp
+    end
+
+    test "未知 owner_type:422", %{src: src} do
+      token = token_with!(["sys.file:create"])
+
+      conn =
+        upload_conn(token, %{
+          "file" => upload_struct(src),
+          "owner_type" => "not_a_resource",
+          "owner_id" => Ash.UUID.generate()
+        })
+
+      assert json_response(conn, 422)
+    end
+
+    test "宿主 actor 看不见:403", %{src: src} do
+      co_a = company!()
+      co_b = company!()
+      host_b = gl_journal!(co_b.id)
+      token = token_with!(["sys.file:create", "acc.gl_journal:read"], companies: [co_a.id])
+
+      conn =
+        upload_conn(token, %{
+          "file" => upload_struct(src),
+          "owner_type" => "acc_gl_journal",
+          "owner_id" => host_b.id
+        })
+
+      assert json_response(conn, 403)
     end
 
     test "未登录:401", %{src: src} do
@@ -180,6 +280,55 @@ defmodule SynieWeb.FileControllerTest do
         |> get("/api/files/#{Ash.UUID.generate()}")
 
       assert json_response(conn, 404)
+    end
+  end
+
+  describe "GET /api/files/:id 宿主可见性授权" do
+    test "跨公司下载被拒:A actor 下 B 公司凭证的文件 → 403", %{src: src} do
+      co_a = company!()
+      co_b = company!()
+      file_id = upload_attached_to(src, co_b.id)
+
+      # A 只有 sys.file:read + A 公司:能读文件行,但看不见 B 的附件
+      token_a = token_with!(["sys.file:read"], companies: [co_a.id])
+      assert json_response(get_file(token_a, file_id), 403)
+    end
+
+    test "同公司下载放行:B actor 下 B 公司凭证的文件 → 200", %{src: src} do
+      co_b = company!()
+      file_id = upload_attached_to(src, co_b.id)
+
+      token_b = token_with!(["sys.file:read"], companies: [co_b.id])
+      assert response(get_file(token_b, file_id), 200) == "PDF 字节"
+    end
+
+    test "裸文件:上传人可下 → 200", %{src: src} do
+      uploader = token_with!(["sys.file:create", "sys.file:read"])
+
+      %{"file" => %{"id" => id}} =
+        upload_conn(uploader, %{"file" => upload_struct(src)}) |> json_response(200)
+
+      assert response(get_file(uploader, id), 200) == "PDF 字节"
+    end
+
+    test "裸文件:非上传人(有 sys.file:read)也被拒 → 403", %{src: src} do
+      uploader = token_with!(["sys.file:create", "sys.file:read"])
+
+      %{"file" => %{"id" => id}} =
+        upload_conn(uploader, %{"file" => upload_struct(src)}) |> json_response(200)
+
+      other = token_with!(["sys.file:read"])
+      assert json_response(get_file(other, id), 403)
+    end
+
+    test "裸文件:super_admin 可下 → 200", %{src: src} do
+      uploader = token_with!(["sys.file:create", "sys.file:read"])
+
+      %{"file" => %{"id" => id}} =
+        upload_conn(uploader, %{"file" => upload_struct(src)}) |> json_response(200)
+
+      admin = token_with!([], super_admin: true)
+      assert response(get_file(admin, id), 200) == "PDF 字节"
     end
   end
 end

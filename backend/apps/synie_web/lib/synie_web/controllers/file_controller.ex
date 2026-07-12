@@ -10,6 +10,10 @@ defmodule SynieWeb.FileController do
 
   import Plug.Conn
 
+  require Ash.Query
+
+  alias SynieCore.Files.Attachment
+  alias SynieCore.Files.File, as: StoredFile
   alias SynieCore.Storage
 
   def create(conn, %{"file" => %Plug.Upload{} = upload} = params) do
@@ -26,13 +30,27 @@ defmodule SynieWeb.FileController do
 
       case result do
         {:ok, %{file: file, attachment: attachment}} ->
-          json(conn, %{file: file_json(file), attachment: attachment && attachment_json(attachment)})
+          json(conn, %{
+            file: file_json(file),
+            attachment: attachment && attachment_json(attachment)
+          })
 
         {:error, :forbidden} ->
           error(conn, 403, "forbidden")
 
-        {:error, err} ->
+        # actor 看不到宿主(无权/不存在)→ 拒绝挂接
+        {:error, :forbidden_owner} ->
+          error(conn, 403, "无权访问该宿主记录")
+
+        # owner_type 不在 OwnerRegistry 白名单
+        {:error, :unknown_owner_type} ->
+          error(conn, 422, "未知的宿主类型")
+
+        {:error, err} when is_exception(err) ->
           error(conn, 422, Exception.message(err))
+
+        {:error, _err} ->
+          error(conn, 422, "上传失败")
       end
     end)
   end
@@ -41,9 +59,13 @@ defmodule SynieWeb.FileController do
 
   def show(conn, %{"id" => id}) do
     with_actor(conn, fn actor ->
-      case Ash.get(SynieCore.Files.File, id, actor: actor) do
+      case Ash.get(StoredFile, id, actor: actor) do
         {:ok, file} ->
-          send_stored(conn, file)
+          if authorized_download?(actor, file) do
+            send_stored(conn, file)
+          else
+            error(conn, 403, "forbidden")
+          end
 
         {:error, %Ash.Error.Forbidden{}} ->
           error(conn, 403, "forbidden")
@@ -52,6 +74,32 @@ defmodule SynieWeb.FileController do
           error(conn, 404, "not found")
       end
     end)
+  end
+
+  # 下载授权(宿主可见性,不是裸 sys.file:read):
+  #   - actor 能看见该文件的任一附件(附件读已按公司过滤)→ 授权;
+  #   - 文件完全无附件(裸文件)→ 仅上传人或 super_admin;
+  #   - 其余(附件全在他司,actor 一条都看不见)→ 403。
+  defp authorized_download?(actor, file) do
+    visible =
+      Attachment
+      |> Ash.Query.filter(file_id == ^file.id)
+      |> Ash.read!(actor: actor)
+
+    cond do
+      visible != [] -> true
+      bare_file?(file.id) -> actor.super_admin || actor.user_id == file.uploaded_by_id
+      true -> false
+    end
+  end
+
+  # 文件是否完全没有附件(权威判断,不受公司作用域)——区分"裸文件"与"附件全在他司";
+  # 受信内部读:仅用于下载授权决策,不返回附件数据。
+  defp bare_file?(file_id) do
+    Attachment
+    |> Ash.Query.filter(file_id == ^file_id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.empty?()
   end
 
   defp send_stored(conn, file) do
