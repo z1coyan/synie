@@ -23,6 +23,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'acc.gl_entry': '总账分录',
   'acc.gl_journal': '会计凭证',
   'acc.bank_account': '银行账户',
+  'acc.vat_invoice': '增值税发票',
 }
 
 export const ACTION_LABELS: Record<string, string> = {
@@ -38,6 +39,8 @@ export const ACTION_LABELS: Record<string, string> = {
   batch_print: '批量打印',
   audit: '审核',
   cancel: '取消',
+  void: '作废',
+  reverse: '红冲',
 }
 
 export const domainLabel = (d: string) => DOMAIN_LABELS[d] ?? d

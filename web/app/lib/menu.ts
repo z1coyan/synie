@@ -76,6 +76,10 @@ export const menuModules: MenuModule[] = [
         ],
       },
       {
+        label: '发票管理',
+        items: [{ label: '增值税发票', path: '/finance/invoices' }],
+      },
+      {
         label: '资金',
         items: [{ label: '银行账户', path: '/finance/bank-accounts' }],
       },
