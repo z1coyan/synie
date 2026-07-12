@@ -79,6 +79,19 @@ eq(
 )
 eq(resolveFkTarget(polyRef, { id: u1, partyType: null }), null, '判别值为空解析不了')
 eq(resolveFkTarget(polyRef, { id: u1, partyType: 'EMPLOYEE' }), null, '未知判别值解析不了')
+// 字符串判别(分录来源单据):行值原样比较,不走大写 token
+const voucherRef = {
+  resource: null,
+  relation: null,
+  labelField: null,
+  discriminator: 'voucherType',
+  variants: [{ value: 'acc.gl_journal', resource: 'accGlJournals', labelField: 'voucherNo', label: '凭证' }],
+}
+eq(
+  resolveFkTarget(voucherRef, { id: u1, voucherType: 'acc.gl_journal' }),
+  { resource: 'accGlJournals', labelField: 'voucherNo' },
+  '字符串判别值原样匹配变体'
+)
 eq(resolveFkTarget({ resource: null, relation: null, labelField: null }, { id: u1 }), null, '普通 fk 无 resource 为 null')
 
 // —— optionLabel ——

@@ -142,8 +142,8 @@ defmodule SynieWeb.GridMeta do
     end)
   end
 
-  # 多态引用(判别枚举 + 裸 uuid,无 belongs_to)→ fk 元数据:资源声明 poly_refs/0
-  # (%{attr => %{discriminator: 判别属性, variants: %{枚举值 => 目标资源}}})。
+  # 多态引用(判别枚举/字符串 + 裸 uuid,无 belongs_to)→ fk 元数据:资源声明 poly_refs/0
+  # (%{attr => %{discriminator: 判别属性, variants: %{判别值 => 目标资源 | {目标资源, 中文标签}}}})。
   # 变体逐个 fail-closed 裁剪(白名单外/无 read 权限);全被裁则不产出 ref,列退化为普通 uuid 列
   defp poly_refs(module, actor) do
     if function_exported?(module, :poly_refs, 0) do
@@ -154,28 +154,44 @@ defmodule SynieWeb.GridMeta do
         disc_type = Ash.Resource.Info.attribute(module, disc).type
 
         kept =
-          for {value, dest} <- variants,
+          for {value, variant} <- variants,
+              {dest, label} = variant_dest_label(variant),
               resource_name = module_names[dest],
               resource_name != nil,
               Authz.has_permission?(actor, "#{dest.permission_prefix()}:read") do
             %{
-              # 与 enum_options 同约定:线上 token 大写,前端直接与行的判别值相等比较
-              value: value |> to_string() |> String.upcase(),
+              value: variant_token(disc_type, value),
               resource: resource_name,
               label_field: camelize(display_field(dest)),
-              # 筛选器变体下拉的中文标签,从判别枚举 description 取(与 enum_options 同源)
-              label: enum_label(disc_type, value)
+              # 筛选器变体下拉的中文标签:显式标签优先,否则从判别枚举 description 取(与 enum_options 同源)
+              label: label || enum_label(disc_type, value)
             }
           end
 
         case kept do
-          [] -> acc
-          kept -> Map.put(acc, attr, %{discriminator: camelize(disc), variants: Enum.sort_by(kept, & &1.value)})
+          [] ->
+            acc
+
+          kept ->
+            Map.put(acc, attr, %{
+              discriminator: camelize(disc),
+              # 前端据此决定筛选字面量形态:枚举裸 token,字符串带引号
+              discriminator_type: if(enum_type?(disc_type), do: "enum", else: "string"),
+              variants: Enum.sort_by(kept, & &1.value)
+            })
         end
       end)
     else
       %{}
     end
+  end
+
+  defp variant_dest_label({dest, label}), do: {dest, label}
+  defp variant_dest_label(dest), do: {dest, nil}
+
+  # 与行判别值直接相等比较:枚举列 GraphQL 线上值是大写 token,字符串列原样
+  defp variant_token(disc_type, value) do
+    if enum_type?(disc_type), do: value |> to_string() |> String.upcase(), else: to_string(value)
   end
 
   # 显示字段约定:资源实现 display_field/0 覆盖;默认 :name,没有 public :name 属性则

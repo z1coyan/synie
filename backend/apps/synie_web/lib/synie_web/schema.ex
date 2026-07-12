@@ -47,6 +47,8 @@ defmodule SynieWeb.Schema do
     field :relation, :string
     field :label_field, :string
     field :discriminator, :string
+    # 判别列筛选字面量形态:"enum" 裸 token / "string" 带引号;仅多态 fk 有值
+    field :discriminator_type, :string
     field :variants, list_of(non_null(:grid_column_ref_variant))
   end
 

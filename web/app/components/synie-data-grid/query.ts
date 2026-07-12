@@ -65,11 +65,13 @@ function columnClause(name: string, filter: FilterState[string], columns: GridCo
       const disc = col.ref?.discriminator
       if (!disc) return null
       if (filter.op === 'isNil') return `{${name}: {isNil: true}}`
-      // 变体 token 裸拼进查询(枚举字面量不带引号),按 variants 白名单校验,同 enum 分支纪律
+      // 变体值按 variants 白名单校验后才进查询,同 enum 分支纪律
       if (!col.ref?.variants?.some((v) => v.value === filter.variant)) return null
       const ids = filter.values.filter((v) => UUID_RE.test(v))
       if (ids.length === 0) return null
-      return `{and: [{${disc}: {eq: ${filter.variant}}}, {${name}: {in: [${ids.map(str).join(', ')}]}}]}`
+      // 判别列是枚举时字面量为裸大写 token;字符串判别(如 voucherType)必须带引号
+      const variantLit = col.ref.discriminatorType === 'string' ? str(filter.variant) : filter.variant
+      return `{and: [{${disc}: {eq: ${variantLit}}}, {${name}: {in: [${ids.map(str).join(', ')}]}}]}`
     }
     case 'number': {
       if (filter.op === 'between') {
@@ -159,8 +161,10 @@ export function buildRowQuery(
   opts: { limit: number; offset: number; sortLiteral: string | null; filterLiteral: string | null; extraFields?: string[] }
 ): string {
   const names = columns.map((c) => c.name)
+  // 多态 fk 解析目标要读同行判别值,判别列即使不在可见列也一并取回
+  const discs = columns.flatMap((c) => (c.ref?.discriminator ? [c.ref.discriminator] : []))
   // extraFields:列以外还要取回的标量字段(树形模式的 parentId/childrenCount),Set 去重
-  const scalar = [...new Set(['id', ...names, ...(opts.extraFields ?? [])])]
+  const scalar = [...new Set(['id', ...names, ...discs, ...(opts.extraFields ?? [])])]
   // fk 列带 join:relation { id labelField },单元格/详情显示 label 零额外请求;多态 fk 无 relation 可 join
   const joins = columns.filter((c) => c.ref?.relation).map((c) => `${c.ref!.relation} { id ${c.ref!.labelField} }`)
   const fields = [...scalar, ...joins].join(' ')
