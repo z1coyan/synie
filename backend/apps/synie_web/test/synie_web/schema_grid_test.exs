@@ -42,7 +42,12 @@ defmodule SynieWeb.SchemaGridTest do
 
   defp company!(code, name, parent_id \\ nil) do
     SynieCore.Base.Company
-    |> Ash.Changeset.for_create(:create, %{code: code, name: name, short_name: name, parent_id: parent_id})
+    |> Ash.Changeset.for_create(:create, %{
+      code: code,
+      name: name,
+      short_name: name,
+      parent_id: parent_id
+    })
     |> Ash.create!(authorize?: false)
   end
 
@@ -272,6 +277,7 @@ defmodule SynieWeb.SchemaGridTest do
         )
 
       assert %{data: %{"sysAuditLogs" => %{"results" => rows}}} = result
+
       # contains 也会命中 sys_role_permission/sys_user_role 等夹具行,按变更内容定位目标行
       changes_list = Enum.map(rows, &Jason.decode!(&1["changes"]))
       assert Enum.any?(changes_list, &match?(%{"code" => %{"to" => "al_a"}}, &1))
@@ -336,7 +342,11 @@ defmodule SynieWeb.SchemaGridTest do
                "label" => "上级公司",
                "sortable" => false,
                "filterable" => true,
-               "ref" => %{"resource" => "basCompanies", "relation" => "parent", "labelField" => "name"}
+               "ref" => %{
+                 "resource" => "basCompanies",
+                 "relation" => "parent",
+                 "labelField" => "name"
+               }
              } = by_name["parentId"]
     end
 
@@ -356,7 +366,11 @@ defmodule SynieWeb.SchemaGridTest do
 
       assert %{
                "type" => "fk",
-               "ref" => %{"resource" => "accGlJournals", "relation" => "journal", "labelField" => "voucherNo"}
+               "ref" => %{
+                 "resource" => "accGlJournals",
+                 "relation" => "journal",
+                 "labelField" => "voucherNo"
+               }
              } = by_name["journalId"]
     end
 
@@ -452,8 +466,18 @@ defmodule SynieWeb.SchemaGridTest do
                "discriminator" => "partyType",
                "discriminatorType" => "enum",
                "variants" => [
-                 %{"value" => "CUSTOMER", "resource" => "salCustomers", "labelField" => "name", "label" => "客户"},
-                 %{"value" => "SUPPLIER", "resource" => "purSuppliers", "labelField" => "name", "label" => "供应商"}
+                 %{
+                   "value" => "CUSTOMER",
+                   "resource" => "salCustomers",
+                   "labelField" => "name",
+                   "label" => "客户"
+                 },
+                 %{
+                   "value" => "SUPPLIER",
+                   "resource" => "purSuppliers",
+                   "labelField" => "name",
+                   "label" => "供应商"
+                 }
                ]
              } = party["ref"]
     end
@@ -479,7 +503,9 @@ defmodule SynieWeb.SchemaGridTest do
                "filterable" => true,
                "ref" => %{
                  "discriminator" => "partyType",
-                 "variants" => [%{"value" => "CUSTOMER", "resource" => "salCustomers", "label" => "客户"}]
+                 "variants" => [
+                   %{"value" => "CUSTOMER", "resource" => "salCustomers", "label" => "客户"}
+                 ]
                }
              } = by_name["partyId"]
     end
@@ -604,7 +630,8 @@ defmodule SynieWeb.SchemaGridTest do
           super_actor()
         )
 
-      assert %{data: %{"accGlEntries" => %{"count" => 1, "results" => [%{"partyId" => nil}]}}} = result
+      assert %{data: %{"accGlEntries" => %{"count" => 1, "results" => [%{"partyId" => nil}]}}} =
+               result
     end
   end
 end

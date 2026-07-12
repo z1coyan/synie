@@ -6,6 +6,7 @@ defmodule SynieCore.Files do
 
   alias SynieCore.Files.Attachment
   alias SynieCore.Files.File, as: StoredFile
+  alias SynieCore.Files.OwnerRegistry
   alias SynieCore.Storage
 
   @doc """
@@ -56,7 +57,7 @@ defmodule SynieCore.Files do
     end
   end
 
-  # file + attachment 同事务,挂接失败连文件行一起回滚
+  # file + attachment 同事务,挂接失败(未知宿主/宿主不可见)连文件行一起回滚
   defp create_records(actor, attrs, params) do
     SynieCore.Repo.transaction(fn ->
       # return_notifications?: true 接住通知并丢弃:手动事务里通知无法送达,
@@ -66,32 +67,50 @@ defmodule SynieCore.Files do
         |> Ash.Changeset.for_create(:create, attrs)
         |> Ash.create!(actor: actor, return_notifications?: true)
 
-      %{file: file, attachment: maybe_attach(actor, file, params)}
+      case maybe_attach(actor, file, params) do
+        {:ok, attachment} -> %{file: file, attachment: attachment}
+        # 走 Repo.rollback 让 transaction 返回 {:error, reason},连文件行一起回滚
+        {:error, reason} -> SynieCore.Repo.rollback(reason)
+      end
     end)
   rescue
     e in [Ash.Error.Forbidden, Ash.Error.Invalid] -> {:error, e}
   end
 
+  # 挂接前先在白名单里解析宿主模块,再用 actor 读宿主本身:
+  # 未知 owner_type → :unknown_owner_type;actor 看不到宿主(无权/不存在)→ :forbidden_owner;
+  # 二者都回滚。company_id 从宿主去规范化(全局宿主如客户无该字段 → nil)。
   defp maybe_attach(actor, file, %{owner_type: owner_type, owner_id: owner_id} = params)
        when is_binary(owner_type) and owner_type != "" and is_binary(owner_id) do
-    attrs = %{file_id: file.id, owner_type: owner_type, owner_id: owner_id}
+    with {:ok, module} <- OwnerRegistry.resolve(owner_type),
+         {:ok, host} <- Ash.get(module, owner_id, actor: actor) do
+      attrs = %{
+        file_id: file.id,
+        owner_type: owner_type,
+        owner_id: owner_id,
+        company_id: Map.get(host, :company_id)
+      }
 
-    # category 缺省交给属性默认值,显式传 nil 会撞 allow_nil? false
-    attrs =
-      case params[:category] do
-        nil -> attrs
-        category -> Map.put(attrs, :category, category)
-      end
+      # category 缺省交给属性默认值,显式传 nil 会撞 allow_nil? false
+      attrs =
+        case params[:category] do
+          nil -> attrs
+          category -> Map.put(attrs, :category, category)
+        end
 
-    {attachment, _notifications} =
-      Attachment
-      |> Ash.Changeset.for_create(:create, attrs)
-      |> Ash.create!(actor: actor, return_notifications?: true)
+      {attachment, _notifications} =
+        Attachment
+        |> Ash.Changeset.for_create(:create, attrs)
+        |> Ash.create!(actor: actor, return_notifications?: true)
 
-    attachment
+      {:ok, attachment}
+    else
+      :error -> {:error, :unknown_owner_type}
+      {:error, _reason} -> {:error, :forbidden_owner}
+    end
   end
 
-  defp maybe_attach(_actor, _file, _params), do: nil
+  defp maybe_attach(_actor, _file, _params), do: {:ok, nil}
 
   defp gen_key(filename) do
     date = Calendar.strftime(Date.utc_today(), "%Y/%m/%d")

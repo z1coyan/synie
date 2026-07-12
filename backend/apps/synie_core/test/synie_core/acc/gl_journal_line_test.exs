@@ -70,7 +70,11 @@ defmodule SynieCore.Acc.GlJournalLineTest do
     group =
       Account
       |> Ash.Changeset.for_create(:create, %{
-        code: "1002", name: "汇总", direction: :debit, is_group: true, company_id: ctx.company.id
+        code: "1002",
+        name: "汇总",
+        direction: :debit,
+        is_group: true,
+        company_id: ctx.company.id
       })
       |> Ash.create!(authorize?: false)
 
@@ -81,7 +85,9 @@ defmodule SynieCore.Acc.GlJournalLineTest do
 
   test "party 成对且必须存在", ctx do
     assert_raise Ash.Error.Invalid, ~r/同时填写/, fn ->
-      line!(Map.put(base_attrs(ctx.journal, ctx.account), :party_type, :customer), authorize?: false)
+      line!(Map.put(base_attrs(ctx.journal, ctx.account), :party_type, :customer),
+        authorize?: false
+      )
     end
 
     assert_raise Ash.Error.Invalid, ~r/对手不存在/, fn ->

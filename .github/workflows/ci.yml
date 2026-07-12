@@ -1,0 +1,97 @@
+name: CI
+
+# 每次 push 与 pull_request 都跑:后端测试+格式,前端自检+类型+构建。
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (format + test)
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+      # test 环境的 repo_config 优先读 DATABASE_URL;端口用 service 映射出的 5432。
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/synie_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28"
+          elixir-version: "1.20"
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            backend/deps
+            backend/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('backend/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Fetch dependencies
+        run: mix deps.get
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Set up test database
+        run: |
+          mix ecto.create
+          mix ecto.migrate
+
+      - name: Run tests
+        run: mix test
+
+  frontend:
+    name: Frontend (checks + typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      # @heroui-pro/react 是私有包,postinstall 需 HEROUI_AUTH_TOKEN 才能拉到真包;
+      # 未配置该 secret 时只会装占位包,下面的 tsc / build 会失败(check 步骤不受影响)。
+      - name: Install dependencies
+        run: bun install
+        env:
+          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
+
+      # 纯逻辑自检:不依赖 @heroui-pro,无 token 也能跑。
+      - name: Run pure-logic checks
+        run: bun run check
+
+      # build / tsc 依赖 @heroui-pro/react 真包 —— 需在仓库配置 HEROUI_AUTH_TOKEN secret,
+      # 否则 Pro 仍是占位包,以下两步会失败。
+      # build 必须在 tsc 之前:routeTree.gen.ts 是 gitignore 的生成物,由 bun run build
+      # (TanStack Router vite 插件)生成,fresh checkout 里不存在;vite/esbuild 只剥类型不做
+      # 类型检查,故 build 先跑不会吞掉类型错误,tsc 仍是独立类型门禁。
+      - name: Build
+        run: bun run build
+
+      - name: Typecheck
+        run: bunx tsc --noEmit

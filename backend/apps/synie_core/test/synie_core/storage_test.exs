@@ -5,7 +5,9 @@ defmodule SynieCore.StorageTest do
   alias SynieCore.Storage
 
   setup do
-    base = Path.join(System.tmp_dir!(), "synie_storage_test_#{System.unique_integer([:positive])}")
+    base =
+      Path.join(System.tmp_dir!(), "synie_storage_test_#{System.unique_integer([:positive])}")
+
     root = Path.join(base, "objects")
     File.mkdir_p!(root)
 

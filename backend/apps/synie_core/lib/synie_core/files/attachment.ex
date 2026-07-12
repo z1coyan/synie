@@ -18,6 +18,9 @@ defmodule SynieCore.Files.Attachment do
 
     custom_indexes do
       index [:owner_type, :owner_id]
+
+      # 公司隔离读走 CompanyScope 的 company_id in ^ids,为将来量大后的过滤建索引
+      index [:company_id]
     end
   end
 
@@ -31,16 +34,23 @@ defmodule SynieCore.Files.Attachment do
     end
 
     # 附件是文件的关联维度,不设独立权限点,全部跟随 sys.file
-    policy action(:read) do
-      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "read"}
-    end
-
     policy action(:create) do
       authorize_if {SynieCore.Authz.Checks.HasPermission, as: "create"}
     end
 
     policy action(:destroy) do
       authorize_if {SynieCore.Authz.Checks.HasPermission, as: "delete"}
+    end
+
+    # 读:先 sys.file:read,再照 sys_audit_log 做 fail-closed 公司隔离
+    # (全局宿主附件 company_id 为空,不受限;公司宿主附件按授权公司过滤)
+    policy action(:read) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "read"}
+    end
+
+    policy action(:read) do
+      authorize_if expr(is_nil(company_id))
+      authorize_if SynieCore.Authz.Checks.CompanyScope
     end
   end
 
@@ -59,7 +69,9 @@ defmodule SynieCore.Files.Attachment do
     end
 
     create :create do
-      accept [:file_id, :owner_type, :owner_id, :category]
+      # company_id 由 SynieCore.Files.maybe_attach 从宿主去规范化写入;
+      # 本 create 不注册 GraphQL mutation,accept 它安全
+      accept [:file_id, :owner_type, :owner_id, :category, :company_id]
     end
 
     destroy :destroy do
@@ -90,6 +102,12 @@ defmodule SynieCore.Files.Attachment do
       default "default"
       constraints max_length: 32
       description "业务槽位(如 contract/invoice)"
+    end
+
+    attribute :company_id, :uuid do
+      public? true
+
+      description "去规范化自宿主记录的公司;全局宿主(如客户)为空。照 sys_audit_log 做 fail-closed 公司隔离。"
     end
 
     create_timestamp :inserted_at, public?: true, description: "挂接时间"

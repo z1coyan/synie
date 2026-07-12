@@ -27,8 +27,16 @@ defmodule SynieCore.Base.AccountTest do
   end
 
   test "创建根科目与子科目,children_count 聚合", %{company: co} do
-    root = account!(%{code: "1", name: "资产", direction: :debit, is_group: true, company_id: co.id})
-    account!(%{code: "1001", name: "库存现金", direction: :debit, parent_id: root.id, company_id: co.id})
+    root =
+      account!(%{code: "1", name: "资产", direction: :debit, is_group: true, company_id: co.id})
+
+    account!(%{
+      code: "1001",
+      name: "库存现金",
+      direction: :debit,
+      parent_id: root.id,
+      company_id: co.id
+    })
 
     root = Ash.get!(Account, root.id, load: [:has_children], authorize?: false)
     assert root.has_children == true
@@ -56,16 +64,33 @@ defmodule SynieCore.Base.AccountTest do
 
   test "上级科目必须同公司", %{company: co} do
     other = company!()
-    root = account!(%{code: "1", name: "资产", direction: :debit, is_group: true, company_id: other.id})
+
+    root =
+      account!(%{code: "1", name: "资产", direction: :debit, is_group: true, company_id: other.id})
 
     assert_raise Ash.Error.Invalid, fn ->
-      account!(%{code: "1001", name: "库存现金", direction: :debit, parent_id: root.id, company_id: co.id})
+      account!(%{
+        code: "1001",
+        name: "库存现金",
+        direction: :debit,
+        parent_id: root.id,
+        company_id: co.id
+      })
     end
   end
 
   test "存在下级科目不能删除", %{company: co} do
-    root = account!(%{code: "1", name: "资产", direction: :debit, is_group: true, company_id: co.id})
-    child = account!(%{code: "1001", name: "库存现金", direction: :debit, parent_id: root.id, company_id: co.id})
+    root =
+      account!(%{code: "1", name: "资产", direction: :debit, is_group: true, company_id: co.id})
+
+    child =
+      account!(%{
+        code: "1001",
+        name: "库存现金",
+        direction: :debit,
+        parent_id: root.id,
+        company_id: co.id
+      })
 
     assert_raise Ash.Error.Invalid, fn ->
       root |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)

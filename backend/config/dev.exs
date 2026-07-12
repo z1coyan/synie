@@ -11,3 +11,6 @@ config :synie_web, SynieWeb.Endpoint,
   server: true,
   code_reloader: true,
   debug_errors: true
+
+# dev 打开 GraphiQL playground(/graphql/playground)
+config :synie_web, graphiql_enabled: true

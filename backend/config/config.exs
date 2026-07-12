@@ -7,6 +7,9 @@ config :synie_core,
 config :synie_web,
   namespace: SynieWeb
 
+# GraphiQL playground 默认关闭(生产不暴露交互式查询控制台);仅 dev 打开
+config :synie_web, graphiql_enabled: false
+
 config :synie_web, SynieWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,

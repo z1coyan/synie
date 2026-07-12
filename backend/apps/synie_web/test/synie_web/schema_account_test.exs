@@ -63,6 +63,7 @@ defmodule SynieWeb.SchemaAccountTest do
 
   test "从模板初始化后按父子两级懒加载查询" do
     co = company!()
+
     # 只授 create/read:初始化复用 create 权限码({HasPermission, as: "create"}),无独立权限点
     actor = Authz.build_actor(user_with!(["base.account:create", "base.account:read"], [co]))
 

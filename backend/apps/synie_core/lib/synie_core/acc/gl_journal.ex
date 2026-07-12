@@ -107,14 +107,36 @@ defmodule SynieCore.Acc.GlJournal do
       accept [:voucher_no, :date, :posting_date, :remarks]
       require_atomic? false
 
+      # 构建期预检(用户体验),权威复检在 before_action 钩子内
       validate {SynieCore.Acc.JournalDraft, []}
+
+      change fn changeset, _context ->
+        Ash.Changeset.before_action(changeset, fn cs ->
+          # 权威复检:事务内 FOR UPDATE 重读,关闭"并发审核后头字段被改"竞态
+          case __MODULE__.lock_journal(cs.data.id) do
+            {:ok, %{status: :draft}} -> cs
+            _ -> Ash.Changeset.add_error(cs, message: "仅草稿凭证可修改或删除")
+          end
+        end)
+      end
     end
 
     destroy :destroy do
       primary? true
       require_atomic? false
 
+      # 构建期预检(用户体验),权威复检在 before_action 钩子内
       validate {SynieCore.Acc.JournalDraft, []}
+
+      change fn changeset, _context ->
+        Ash.Changeset.before_action(changeset, fn cs ->
+          # 权威复检:事务内 FOR UPDATE 重读,关闭"并发审核后凭证被删、分录成孤儿"竞态
+          case __MODULE__.lock_journal(cs.data.id) do
+            {:ok, %{status: :draft}} -> cs
+            _ -> Ash.Changeset.add_error(cs, message: "仅草稿凭证可修改或删除")
+          end
+        end)
+      end
     end
 
     update :audit do

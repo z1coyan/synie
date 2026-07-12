@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Label, ListBox, Select, toast } from '@heroui/react'
@@ -113,6 +113,8 @@ function NumberingPage() {
   const [counters, setCounters] = useState<Row[]>([])
   const [countersSnapshot, setCountersSnapshot] = useState<Row[]>([])
   const [reloadKey, setReloadKey] = useState(0)
+  // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一条规则的计数器回填到当前规则
+  const reqIdRef = useRef(0)
 
   // 可编号资源清单:后端反射 create action 挂了 AutoNumber 的资源,建规则即绑定
   const numberables = useQuery({
@@ -128,6 +130,7 @@ function NumberingPage() {
 
   // 打开抽屉:create 清空;view/edit 按规则 id 拉计数器(快照留作提交时 diff 基准)
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
+    const my = ++reqIdRef.current
     setDrawer({ mode, row })
     if (mode === 'create' || row == null) {
       setCounters([])
@@ -136,10 +139,12 @@ function NumberingPage() {
     }
     gqlFetch<{ sysNumberingCounters: { results: Row[] } }>(FETCH_COUNTERS, { ruleId: row.id })
       .then((d) => {
+        if (my !== reqIdRef.current) return
         setCounters(d.sysNumberingCounters.results)
         setCountersSnapshot(d.sysNumberingCounters.results)
       })
       .catch((e) => {
+        if (my !== reqIdRef.current) return
         toast.danger('计数器加载失败', { description: (e as Error).message })
         setCounters([])
         setCountersSnapshot([])
@@ -172,7 +177,14 @@ function NumberingPage() {
         label="编号规则"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
+        onOpenChange={(open) => {
+          if (open) return
+          // 关闭即作废在途请求并清空快照,防止残留快照被下次提交按差异写误用到别的规则
+          reqIdRef.current++
+          setDrawer(null)
+          setCounters([])
+          setCountersSnapshot([])
+        }}
         row={drawer?.row}
         // 段组装器/计数器子表默认 480px 局促,加宽一档(移动端仍全宽)
         contentClassName="w-full lg:w-[640px]"

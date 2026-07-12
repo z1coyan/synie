@@ -23,8 +23,11 @@ defmodule SynieCore.Base.AccountTemplates do
     ]
   end
 
-  defp root(code, name, dir), do: %{code: code, name: name, direction: dir, is_group: true, parent: nil}
-  defp acc(code, name, dir, parent), do: %{code: code, name: name, direction: dir, is_group: false, parent: parent}
+  defp root(code, name, dir),
+    do: %{code: code, name: name, direction: dir, is_group: true, parent: nil}
+
+  defp acc(code, name, dir, parent),
+    do: %{code: code, name: name, direction: dir, is_group: false, parent: parent}
 
   @doc "扁平科目条目,parent 引用父条目 code(根为 nil)"
   def entries(:cas) do
