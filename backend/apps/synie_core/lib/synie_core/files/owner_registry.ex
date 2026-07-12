@@ -4,7 +4,8 @@ defmodule SynieCore.Files.OwnerRegistry do
   @owners %{
     "sal_customer" => SynieCore.Sales.Customer,
     "pur_supplier" => SynieCore.Purchase.Supplier,
-    "acc_gl_journal" => SynieCore.Acc.GlJournal
+    "acc_gl_journal" => SynieCore.Acc.GlJournal,
+    "acc_vat_invoice" => SynieCore.Acc.VatInvoice
   }
 
   @spec resolve(String.t()) :: {:ok, module()} | :error
