@@ -25,6 +25,9 @@ defmodule SynieCore do
       list SynieCore.Acc.GlJournalLine, :acc_gl_journal_lines, :read, paginate_with: :offset
       list SynieCore.Acc.BankAccount, :acc_bank_accounts, :read, paginate_with: :offset
       list SynieCore.Acc.BankTransaction, :acc_bank_transactions, :read, paginate_with: :offset
+
+      list SynieCore.Acc.BankImportTemplate, :acc_bank_import_templates, :read,
+        paginate_with: :offset
     end
 
     mutations do
@@ -97,6 +100,10 @@ defmodule SynieCore do
       create SynieCore.Acc.BankTransaction, :create_acc_bank_transaction, :create
       update SynieCore.Acc.BankTransaction, :update_acc_bank_transaction, :update
       destroy SynieCore.Acc.BankTransaction, :destroy_acc_bank_transaction, :destroy
+
+      create SynieCore.Acc.BankImportTemplate, :create_acc_bank_import_template, :create
+      update SynieCore.Acc.BankImportTemplate, :update_acc_bank_import_template, :update
+      destroy SynieCore.Acc.BankImportTemplate, :destroy_acc_bank_import_template, :destroy
     end
   end
 
@@ -117,6 +124,7 @@ defmodule SynieCore do
     resource SynieCore.Acc.GlJournalLine
     resource SynieCore.Acc.BankAccount
     resource SynieCore.Acc.BankTransaction
+    resource SynieCore.Acc.BankImportTemplate
     resource SynieCore.Audit.Log
     resource SynieCore.Numbering.Rule
     resource SynieCore.Numbering.Counter
