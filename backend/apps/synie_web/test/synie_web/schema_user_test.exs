@@ -90,7 +90,10 @@ defmodule SynieWeb.SchemaUserTest do
       """
 
       assert %{data: %{"resetSysUserPassword" => %{"password" => password}}} = run!(doc, actor)
-      assert {:error, :invalid_credentials} = Accounts.authenticate(to_string(target.username), "oldpass123")
+
+      assert {:error, :invalid_credentials} =
+               Accounts.authenticate(to_string(target.username), "oldpass123")
+
       assert {:ok, _} = Accounts.authenticate(to_string(target.username), password)
     end
 

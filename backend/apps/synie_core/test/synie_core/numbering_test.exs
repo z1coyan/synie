@@ -55,9 +55,12 @@ defmodule SynieCore.NumberingTest do
     test "日期段渲染变了序号自然从头计(无独立重置周期)", %{company: co} do
       rule!(%{})
 
-      assert {:ok, _} = Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
+      assert {:ok, _} =
+               Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
 
-      assert {:ok, no} = Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-08-01]}))
+      assert {:ok, no} =
+               Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-08-01]}))
+
       assert no == "记#{co.code}-202608-0001"
     end
 
@@ -65,8 +68,11 @@ defmodule SynieCore.NumberingTest do
       other = company!()
       rule!(%{})
 
-      assert {:ok, no1} = Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
-      assert {:ok, no2} = Numbering.next(journal_changeset(%{company_id: other.id, date: ~D[2026-07-15]}))
+      assert {:ok, no1} =
+               Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
+
+      assert {:ok, no2} =
+               Numbering.next(journal_changeset(%{company_id: other.id, date: ~D[2026-07-15]}))
 
       assert String.ends_with?(no1, "0001")
       assert String.ends_with?(no2, "0001")
@@ -93,7 +99,9 @@ defmodule SynieCore.NumberingTest do
     end
 
     test "按公司计数但单据缺公司时报错" do
-      rule!(%{segments: [%{"type" => "text", "value" => "A"}, %{"type" => "seq", "padding" => 4}]})
+      rule!(%{
+        segments: [%{"type" => "text", "value" => "A"}, %{"type" => "seq", "padding" => 4}]
+      })
 
       assert {:error, msg} = Numbering.next(journal_changeset(%{date: ~D[2026-07-15]}))
       assert msg =~ "公司"
@@ -181,7 +189,9 @@ defmodule SynieCore.NumberingTest do
 
     test "固定文本不能为空" do
       assert_raise Ash.Error.Invalid, ~r/固定文本/, fn ->
-        rule!(%{segments: [%{"type" => "text", "value" => ""}, %{"type" => "seq", "padding" => 4}]})
+        rule!(%{
+          segments: [%{"type" => "text", "value" => ""}, %{"type" => "seq", "padding" => 4}]
+        })
       end
     end
 

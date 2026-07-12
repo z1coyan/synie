@@ -18,9 +18,7 @@ defmodule SynieCore.Files.DeleteStoredObject do
               :ok
 
             {:error, reason} ->
-              Logger.warning(
-                "清理存储对象失败 #{record.storage}/#{record.key}: #{inspect(reason)}"
-              )
+              Logger.warning("清理存储对象失败 #{record.storage}/#{record.key}: #{inspect(reason)}")
           end
 
         _ ->

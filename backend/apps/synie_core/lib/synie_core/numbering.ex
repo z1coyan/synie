@@ -16,7 +16,12 @@ defmodule SynieCore.Numbering do
 
   alias SynieCore.Numbering.Rule
 
-  @date_types [Ash.Type.Date, Ash.Type.UtcDatetime, Ash.Type.UtcDatetimeUsec, Ash.Type.NaiveDatetime]
+  @date_types [
+    Ash.Type.Date,
+    Ash.Type.UtcDatetime,
+    Ash.Type.UtcDatetimeUsec,
+    Ash.Type.NaiveDatetime
+  ]
   @format_re ~r/^(YYYY|YY|MM|DD)+$/
 
   @doc "按 changeset 所属资源的启用规则取下一个编号(构建期调用,字段值取自 changeset)。"
@@ -157,7 +162,9 @@ defmodule SynieCore.Numbering do
     end
   end
 
-  defp render_segment(%{"type" => "text", "value" => value}, _changeset), do: {:ok, {:text, value}}
+  defp render_segment(%{"type" => "text", "value" => value}, _changeset),
+    do: {:ok, {:text, value}}
+
   defp render_segment(%{"type" => "seq"}, _changeset), do: {:ok, :seq}
 
   defp render_segment(%{"type" => "field", "field" => path} = seg, changeset) do
@@ -202,7 +209,8 @@ defmodule SynieCore.Numbering do
   defp render_value(%Date{} = date, format, _path) when is_binary(format),
     do: {:ok, {:text, format_date(date, format)}}
 
-  defp render_value(%DateTime{} = dt, format, path), do: render_value(DateTime.to_date(dt), format, path)
+  defp render_value(%DateTime{} = dt, format, path),
+    do: render_value(DateTime.to_date(dt), format, path)
 
   defp render_value(%NaiveDateTime{} = dt, format, path),
     do: render_value(NaiveDateTime.to_date(dt), format, path)
@@ -240,7 +248,8 @@ defmodule SynieCore.Numbering do
   end
 
   defp company_code(changeset) do
-    with %{type: :belongs_to} = rel <- Ash.Resource.Info.relationship(changeset.resource, :company),
+    with %{type: :belongs_to} = rel <-
+           Ash.Resource.Info.relationship(changeset.resource, :company),
          id when not is_nil(id) <- Ash.Changeset.get_attribute(changeset, rel.source_attribute),
          {:ok, %{code: code}} when is_binary(code) and code != "" <-
            Ash.get(rel.destination, id, authorize?: false) do
