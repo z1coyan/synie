@@ -22,6 +22,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'sys.file': '附件',
   'acc.gl_entry': '总账分录',
   'acc.gl_journal': '会计凭证',
+  'acc.bank_account': '银行账户',
 }
 
 export const ACTION_LABELS: Record<string, string> = {

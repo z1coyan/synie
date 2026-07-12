@@ -22,7 +22,8 @@ defmodule SynieWeb.GridMeta do
     "sysNumberingCounters" => SynieCore.Numbering.Counter,
     "accGlJournals" => SynieCore.Acc.GlJournal,
     "accGlJournalLines" => SynieCore.Acc.GlJournalLine,
-    "accGlEntries" => SynieCore.Acc.GlEntry
+    "accGlEntries" => SynieCore.Acc.GlEntry,
+    "accBankAccounts" => SynieCore.Acc.BankAccount
   }
 
   @spec resolve(String.t(), Authz.Actor.t() | nil) :: {:ok, map()} | {:error, String.t()}
