@@ -35,12 +35,15 @@ defmodule SynieWeb.Router do
   scope "/graphql" do
     pipe_through [:graphql]
 
-    forward(
-      "/playground",
-      Absinthe.Plug.GraphiQL,
-      schema: Module.concat(["SynieWeb.Schema"]),
-      interface: :playground
-    )
+    # playground 仅在开关打开时挂载(生产默认关闭,避免暴露交互式查询控制台)
+    if Application.compile_env(:synie_web, :graphiql_enabled, false) do
+      forward(
+        "/playground",
+        Absinthe.Plug.GraphiQL,
+        schema: Module.concat(["SynieWeb.Schema"]),
+        interface: :playground
+      )
+    end
 
     forward(
       "/",
