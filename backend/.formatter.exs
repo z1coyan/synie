@@ -3,8 +3,6 @@
     :ash,
     :ash_postgres,
     :ash_graphql,
-    :ash_authentication,
-    :ash_authentication_phoenix,
     :ecto,
     :ecto_sql
   ],
