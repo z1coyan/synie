@@ -322,17 +322,9 @@ mix ecto.migrate && MIX_ENV=test mix ecto.migrate
 
 **Interfaces:**
 - Consumes: Task 1 的 `PartyType`/`PartyExists`;`SynieCore.Numbering.AutoNumber`;Authz 三件(HasPermission/CompanyScope/CompanyAccessible)。
-- Produces: `SynieCore.Acc.VatInvoice`,graphql type `:acc_vat_invoice`,list query `:acc_vat_invoices`,mutations `create/update/destroy_acc_vat_invoice`;`permission_prefix "acc.vat_invoice"`;`lock_invoice/1`(FOR UPDATE 重读,照 `gl_journal.ex` 的 `lock_journal`)。Task 4 在同文件补 audit/void/reverse。
+- Produces: `SynieCore.Acc.VatInvoice`,graphql type `:acc_vat_invoice`,list query `:acc_vat_invoices`,mutations `create/update/destroy_acc_vat_invoice`;`permission_prefix "acc.vat_invoice"`;`lock_invoice/1`(FOR UPDATE 重读,照 `gl_journal.ex` 的 `lock_journal`);`mirror_invoice_id` 自引用(对向发票互链,Task 7 消费)。Task 4 在同文件补 audit/void/reverse。
 
-- [ ] **Step 1: 确认 PG ≥ 15**(唯一索引用 NULLS NOT DISTINCT)
-
-```bash
-docker exec synie-pg psql -U postgres -tc "show server_version"
-```
-
-期望 ≥ 15;若更低,invoice_code 改「非空默认空串」规约并去掉 nulls_distinct(同步改 spec 注记)。
-
-- [ ] **Step 2: 写失败测试**(要点用例;夹具照 `gl_entry_test.exs` 模式)
+- [ ] **Step 1: 写失败测试**(要点用例;夹具照 `gl_entry_test.exs` 模式)
 
 ```elixir
 defmodule SynieCore.Acc.VatInvoiceTest do
@@ -347,16 +339,18 @@ defmodule SynieCore.Acc.VatInvoiceTest do
   test "创建草稿:状态默认 draft,创建人取 actor"
   test "对手存在性:party_type=company 时 party_id 必须是公司"        # PartyExists 覆盖内部公司
   test "同公司同发票代码+号码重复被唯一索引拒绝"
+  test "数电票(代码空串)同号码判重同样生效"
   test "invoice_no 为空的草稿不占唯一坑(可多张)"
   test "仅草稿可改可删:手工把 status 置 audited 后 update/destroy 报错"
   test "读取按公司范围过滤 fail-closed"
   test "items 接受 map 数组并原样读回"
+  test "镜像互链:删除镜像草稿后原票 mirror_invoice_id 被外键置空"
 end
 ```
 
-- [ ] **Step 3: 跑测试确认失败**(模块不存在)
+- [ ] **Step 2: 跑测试确认失败**(模块不存在)
 
-- [ ] **Step 4: 实现资源**
+- [ ] **Step 3: 实现资源**
 
 文件头小模块:
 
@@ -415,11 +409,15 @@ postgres do
   table "acc_vat_invoice"
   repo SynieCore.Repo
 
+  references do
+    # 镜像草稿被删,原票互链自动置空
+    reference :mirror_invoice, on_delete: :nilify
+  end
+
   custom_indexes do
-    # 防重录:代码可空(数电票),NULLS NOT DISTINCT 让空代码也参与判重;草稿无号不占坑
+    # 防重录:invoice_code 非空默认空串(数电票存空串),空代码照常参与判重;草稿无号不占坑
     index [:company_id, :invoice_code, :invoice_no],
       unique: true,
-      nulls_distinct: false,
       where: "invoice_no IS NOT NULL",
       name: "acc_vat_invoice_no_uniq",
       message: "该公司下相同发票代码+号码已登记"
@@ -449,9 +447,9 @@ def poly_refs do
 end
 ```
 
-attributes(全部 `public? true`,description 用中文):`doc_no`(string≤32,可空)、`direction`(InvoiceDirection,非空)、`invoice_date`(date,可空)、`posting_date`(date,可空)、`party_type`(PartyType,非空)/`party_id`(uuid,非空)、`invoice_kind`(InvoiceKind,非空)、`invoice_code`(string≤20,可空)、`invoice_no`(string≤32,可空)、`seller_name`/`seller_tax_no`/`seller_address_phone`/`seller_bank_account`/`buyer_name`/`buyer_tax_no`/`buyer_address_phone`/`buyer_bank_account`(string,可空)、`items`(`{:array, :map}`,非空默认 `[]`)、`net_total`/`tax_total`/`gross_total`(decimal,可空)、`issuer`/`reviewer`/`payee`(string,可空)、`remarks`(string,可空)、`red_invoice_no`(string,可空)、`status`(InvoiceStatus,非空默认 `:draft`,`writable? false`)、`audited_at`(utc_datetime_usec,可空,`writable? false`)、时间戳。
+attributes(全部 `public? true`,description 用中文):`doc_no`(string≤32,可空)、`direction`(InvoiceDirection,非空)、`invoice_date`(date,可空)、`posting_date`(date,可空)、`party_type`(PartyType,非空)/`party_id`(uuid,非空)、`invoice_kind`(InvoiceKind,非空)、`invoice_code`(string≤20,**非空默认 `""`**,数电票存空串)、`invoice_no`(string≤32,可空)、`seller_name`/`seller_tax_no`/`seller_address_phone`/`seller_bank_account`/`buyer_name`/`buyer_tax_no`/`buyer_address_phone`/`buyer_bank_account`(string,可空)、`items`(`{:array, :map}`,非空默认 `[]`)、`net_total`/`tax_total`/`gross_total`(decimal,可空)、`issuer`/`reviewer`/`payee`(string,可空)、`remarks`(string,可空)、`red_invoice_no`(string,可空)、`status`(InvoiceStatus,非空默认 `:draft`,`writable? false`)、`audited_at`(utc_datetime_usec,可空,`writable? false`)、时间戳。
 
-relationships:`belongs_to :company, SynieCore.Base.Company`(非空)、`belongs_to :party_account/:amount_account/:tax_account, SynieCore.Base.Account`(可空)、`belongs_to :created_by/:audited_by, SynieCore.Accounts.User`(可空,`writable? false` 属性照 gl_journal 的 created_by 写法)。
+relationships:`belongs_to :company, SynieCore.Base.Company`(非空)、`belongs_to :party_account/:amount_account/:tax_account, SynieCore.Base.Account`(可空)、`belongs_to :mirror_invoice, __MODULE__`(可空,自引用,对向发票互链)、`belongs_to :created_by/:audited_by, SynieCore.Accounts.User`(可空,`writable? false` 属性照 gl_journal 的 created_by 写法)。
 
 actions(CRUD;audit/void/reverse 在 Task 4):
 
@@ -470,7 +468,8 @@ create :create do
     :buyer_name, :buyer_tax_no, :buyer_address_phone, :buyer_bank_account,
     :items, :net_total, :tax_total, :gross_total,
     :issuer, :reviewer, :payee, :remarks,
-    :party_account_id, :amount_account_id, :tax_account_id
+    :party_account_id, :amount_account_id, :tax_account_id,
+    :mirror_invoice_id
   ]
 
   validate {SynieCore.Authz.Validations.CompanyAccessible, []}
@@ -498,12 +497,12 @@ end
 
 `lock_invoice/1` 照 `gl_journal.ex` 的 `lock_journal/1` 原样改名。
 
-- [ ] **Step 5: 注册**:`synie_core.ex` graphql queries 块加 `list SynieCore.Acc.VatInvoice, :acc_vat_invoices, :read, paginate_with: :offset`,mutations 块加 create/update/destroy 三条,resources 块加 `resource SynieCore.Acc.VatInvoice`;`grid_meta.ex` `@resources` 加 `"accVatInvoices" => SynieCore.Acc.VatInvoice`;`owner_registry.ex` 加 `"acc_vat_invoice" => SynieCore.Acc.VatInvoice`。
+- [ ] **Step 4: 注册**:`synie_core.ex` graphql queries 块加 `list SynieCore.Acc.VatInvoice, :acc_vat_invoices, :read, paginate_with: :offset`,mutations 块加 create/update/destroy 三条,resources 块加 `resource SynieCore.Acc.VatInvoice`;`grid_meta.ex` `@resources` 加 `"accVatInvoices" => SynieCore.Acc.VatInvoice`;`owner_registry.ex` 加 `"acc_vat_invoice" => SynieCore.Acc.VatInvoice`。
 
-- [ ] **Step 6: 生成并执行迁移**(`mix ash_postgres.generate_migrations add_acc_vat_invoice` + 两库 migrate;检查唯一索引带 `NULLS NOT DISTINCT` 与 `WHERE`)
+- [ ] **Step 5: 生成并执行迁移**(`mix ash_postgres.generate_migrations add_acc_vat_invoice` + 两库 migrate;检查唯一索引带 `WHERE invoice_no IS NOT NULL`、镜像外键 `ON DELETE SET NULL`)
 
-- [ ] **Step 7: 跑测试**(`mix test test/synie_core/acc/vat_invoice_test.exs` 全绿,再全量 `mix test`)
-- [ ] **Step 8: Commit**(`feat: 增值税发票资源骨架与注册`)
+- [ ] **Step 6: 跑测试**(`mix test test/synie_core/acc/vat_invoice_test.exs` 全绿,再全量 `mix test`)
+- [ ] **Step 7: Commit**(`feat: 增值税发票资源骨架与注册`)
 
 ---
 
@@ -1070,11 +1069,48 @@ extraContent={(mode, row, values, patchValues) => (
 onSubmit={async (values, mode) => {
   const input = { ...values, items: serializeItems(items) }
   // create/update 走 createAccVatInvoice / updateAccVatInvoice,错误处理与 Toast 照 journals.tsx
-  // create 成功后若已填 postingDate → openAudit(fromCreate) 顺手审核(照 journals)
+  // create 成功后:对手为内部公司先弹对向发票确认(见下),否则已填 postingDate 时弹顺手审核(照 journals)
 }}
 ```
 
 行动作:`actionHandlers={{ audit: (rows) => openAudit(rows[0]), reverse: (rows) => openReverse(rows[0]) }}`;`void` 不接管,走 extendedAction 默认「确认框 + id mutation」。审核弹窗照 `journals.tsx:366-434`(默认日期 `postingDate ?? invoiceDate`);红冲弹窗照审核弹窗改:DatePicker(红冲过账日期,必填)+ TextField(红字发票号码,选填),提交 `reverseAccVatInvoice(id, input: { postingDate, redInvoiceNo })`。
+
+对向发票确认框(内部公司对手,create 成功后触发;spec「内部公司对向发票」节):
+
+```ts
+// onSubmit create 成功后:对手是内部公司 → 先问对向发票,关闭后再按 postingDate 弹顺手审核
+if (values.partyType === 'COMPANY') {
+  setMirrorAsk({ source: { ...values, id: createdId } as Row })
+} else if (values.postingDate) {
+  openAudit(...)  // 照 journals fromCreate
+}
+
+// 镜像 input:company↔party 互换、方向取反、票面字段原样;科目/doc_no/postingDate 不带
+function buildMirrorInput(src: Row): Record<string, unknown> {
+  const copy = ['invoiceDate', 'invoiceKind', 'invoiceCode', 'invoiceNo',
+    'sellerName', 'sellerTaxNo', 'sellerAddressPhone', 'sellerBankAccount',
+    'buyerName', 'buyerTaxNo', 'buyerAddressPhone', 'buyerBankAccount',
+    'items', 'netTotal', 'taxTotal', 'grossTotal',
+    'issuer', 'reviewer', 'payee', 'remarks']
+  return {
+    ...Object.fromEntries(copy.map((k) => [k, src[k] ?? null])),
+    companyId: src.partyId,
+    partyType: 'COMPANY',
+    partyId: src.companyId,
+    direction: src.direction === 'OUTBOUND' ? 'INBOUND' : 'OUTBOUND',
+    mirrorInvoiceId: src.id,
+  }
+}
+
+const confirmMirror = async () => {
+  // createAccVatInvoice(buildMirrorInput(source)) →
+  //   成功再 updateAccVatInvoice(source.id, { mirrorInvoiceId: 新票 id }) 完成互链;
+  //   失败(含无对方公司权限 isForbidden)toast:「对向发票创建失败,请到对方公司手工登记」,不阻塞原票。
+  // 弹窗文案:「对手是内部公司,是否为其创建方向相反的对向发票草稿?(对方需自行补科目并审核)」
+}
+```
+
+fields 补 `mirrorInvoiceId: { edit: 'readOnly' }`(view/edit 态显示为可点 fk 链接,不给手填)。
 
 - [ ] **Step 2: 四处注册**:`registry.ts` 加 `accVatInvoices: { label: '增值税发票' }`;`menu.ts` 财务模块 groups 加 `{ label: '发票管理', items: [{ label: '增值税发票', path: '/finance/invoices' }] }`;`permission-labels.ts` 与 `logs.tsx` 补资源/动作标签(对照文件内 `acc.gl_journal`/audit 的既有写法)。
 
@@ -1103,8 +1139,9 @@ cd web && BACKEND_PORT=4100 bun dev --host      # 前端,绑 0.0.0.0
   4. 红冲(填红冲日期+红字发票号)→ 发票状态「已红冲」;分录页红字组 `is_reversal`=是、负数金额,原组 `is_reversed`=是。
   5. 另建一张**开入**发票(供应商对手,税额 0):审核后两行分录;作废 → 分录 `is_cancelled`=是,发票「已作废」。
   6. 内部公司对手变体可选且校验存在;已审核发票编辑/删除被拒且报错中文可读。
-  7. 附件面板上传/下载原件(create 态应提示「保存后可上传」)。
-  8. 移动端宽度(<1024px)抽屉与表格可用性 spot check。
+  7. **对向发票**:建一张对手为内部公司 B 的开出票 → 保存后弹「创建对向发票」确认 → 确认后 B 公司名下出现方向相反的开入草稿,票面字段一致、科目为空、两票互链可点;取消路径不创建;无 B 公司权限的用户确认后得到失败提示且原票不受影响。
+  8. 附件面板上传/下载原件(create 态应提示「保存后可上传」)。
+  9. 移动端宽度(<1024px)抽屉与表格可用性 spot check。
 
 - [ ] **Step 3: 后端全量回归**(`mix test` 全绿)+ 权限矩阵页确认「增值税发票」七动作中文显示。
 - [ ] **Step 4: Commit 收尾**(如有修补),汇总验证结论。
