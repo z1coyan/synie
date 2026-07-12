@@ -299,12 +299,13 @@ function FieldInput({
 }) {
   if (field.input) return <>{field.input({ value, onChange, isDisabled, values })}</>
 
-  // fk 列:ref(权限裁剪后)或页面 remote.resource 提供数据源;都没有则落到 default TextField(fail-closed)
+  // fk 列:ref(权限裁剪后)或页面 remote.resource 提供数据源;都没有(含多态 fk,表单需页面
+  // 按判别字段自定义 input,journals 先例)则落到 default TextField(fail-closed)
   if (field.col.type === 'fk') {
     const ref = field.col.ref
-    const cfg = { resource: ref?.resource, labelField: ref?.labelField, ...field.remote }
+    const cfg = { resource: ref?.resource ?? undefined, labelField: ref?.labelField ?? undefined, ...field.remote }
     if (cfg.resource) {
-      const rel = ref && row ? ((row[ref.relation] as Row | null | undefined) ?? null) : null
+      const rel = ref?.relation && row ? ((row[ref.relation] as Row | null | undefined) ?? null) : null
       const common = {
         ...(cfg as RemoteSourceConfig & { resource: string }),
         label: field.label,

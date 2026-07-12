@@ -75,7 +75,8 @@ export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEd
     [meta.data]
   )
   const col = columns.find((c) => c.name === fieldName) ?? null
-  const isFk = col?.type === 'fk' && col.ref != null
+  // 段路径按 relation.field 拼、候选按 ref.resource 查,多态 fk 两者皆无,按普通字段处理
+  const isFk = col?.type === 'fk' && col.ref?.relation != null && col.ref.resource != null
 
   // fk 字段的目标资源一级字段候选(gridMeta 反射;剔系统列与更深层 fk)
   const subMeta = useGridMeta(col?.ref?.resource ?? '', isFk)
@@ -93,7 +94,7 @@ export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEd
   const addField = () => {
     if (!col || (isFk && !subCol)) return
     const seg: NumberSegment =
-      isFk && col.ref && subCol
+      isFk && col.ref?.relation && subCol
         ? {
             type: 'field',
             field: `${snake(col.ref.relation)}.${snake(subCol.name)}`,

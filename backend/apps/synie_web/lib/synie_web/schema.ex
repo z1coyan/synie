@@ -34,10 +34,19 @@ defmodule SynieWeb.Schema do
     field :label, non_null(:string)
   end
 
-  object :grid_column_ref do
+  object :grid_column_ref_variant do
+    field :value, non_null(:string)
     field :resource, non_null(:string)
-    field :relation, non_null(:string)
     field :label_field, non_null(:string)
+  end
+
+  object :grid_column_ref do
+    # 普通 fk:resource/relation/label_field 三件套;多态 fk 走 discriminator/variants,三件套为 null
+    field :resource, :string
+    field :relation, :string
+    field :label_field, :string
+    field :discriminator, :string
+    field :variants, list_of(non_null(:grid_column_ref_variant))
   end
 
   object :grid_column do

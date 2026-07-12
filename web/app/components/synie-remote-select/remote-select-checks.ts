@@ -1,5 +1,5 @@
 // bun app/components/synie-remote-select/remote-select-checks.ts 可直接运行的纯函数自检
-import { buildByIdQuery, buildOptionsQuery, optionLabel, resolveSource } from './remote-query'
+import { buildByIdQuery, buildOptionsQuery, optionLabel, resolveFkTarget, resolveSource } from './remote-query'
 import type { Row } from '../synie-data-grid/types'
 
 function eq(actual: unknown, expected: unknown, label: string) {
@@ -59,6 +59,27 @@ eq(
 )
 eq(buildByIdQuery(resolveSource({}, ref)!, ['nope']), null, '全非法为 null')
 eq(buildByIdQuery(resolveSource({ fields: ['code', 'name'] }, ref)!, [u1])!.includes('{ id name code }'), true, 'fields 去重合并')
+
+// —— resolveFkTarget:普通 fk 取三件套;多态按行判别值选变体;解析不了为 null ——
+const polyRef = {
+  resource: null,
+  relation: null,
+  labelField: null,
+  discriminator: 'partyType',
+  variants: [
+    { value: 'CUSTOMER', resource: 'salCustomers', labelField: 'name' },
+    { value: 'SUPPLIER', resource: 'purSuppliers', labelField: 'name' },
+  ],
+}
+eq(resolveFkTarget(ref, { id: u1 }), { resource: 'basCompanies', labelField: 'name' }, '普通 fk 取自身')
+eq(
+  resolveFkTarget(polyRef, { id: u1, partyType: 'SUPPLIER' }),
+  { resource: 'purSuppliers', labelField: 'name' },
+  '多态按判别值选变体'
+)
+eq(resolveFkTarget(polyRef, { id: u1, partyType: null }), null, '判别值为空解析不了')
+eq(resolveFkTarget(polyRef, { id: u1, partyType: 'EMPLOYEE' }), null, '未知判别值解析不了')
+eq(resolveFkTarget({ resource: null, relation: null, labelField: null }, { id: u1 }), null, '普通 fk 无 resource 为 null')
 
 // —— optionLabel ——
 eq(optionLabel(src, { id: u1, name: '集团总部' } as unknown as Row), '集团总部', 'label 字段')

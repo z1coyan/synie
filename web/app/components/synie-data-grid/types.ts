@@ -8,10 +8,20 @@ export interface GridEnumOption {
   label: string
 }
 
-export interface GridColumnRef {
+export interface GridColumnRefVariant {
+  value: string
   resource: string
-  relation: string
   labelField: string
+}
+
+export interface GridColumnRef {
+  /** 普通 fk 三件套;多态 fk 时为 null,改走 discriminator/variants */
+  resource: string | null
+  relation: string | null
+  labelField: string | null
+  /** 多态 fk:同行判别列名(如 partyType)+ 按判别值(大写 token)选目标资源 */
+  discriminator?: string | null
+  variants?: GridColumnRefVariant[] | null
 }
 
 export interface GridColumnMeta {

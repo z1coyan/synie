@@ -151,8 +151,8 @@ export function buildRowQuery(
   const names = columns.map((c) => c.name)
   // extraFields:列以外还要取回的标量字段(树形模式的 parentId/childrenCount),Set 去重
   const scalar = [...new Set(['id', ...names, ...(opts.extraFields ?? [])])]
-  // fk 列带 join:relation { id labelField },单元格/详情显示 label 零额外请求
-  const joins = columns.filter((c) => c.ref).map((c) => `${c.ref!.relation} { id ${c.ref!.labelField} }`)
+  // fk 列带 join:relation { id labelField },单元格/详情显示 label 零额外请求;多态 fk 无 relation 可 join
+  const joins = columns.filter((c) => c.ref?.relation).map((c) => `${c.ref!.relation} { id ${c.ref!.labelField} }`)
   const fields = [...scalar, ...joins].join(' ')
   const args = [`limit: ${opts.limit}`, `offset: ${opts.offset}`]
   if (opts.sortLiteral) args.push(`sort: ${opts.sortLiteral}`)
