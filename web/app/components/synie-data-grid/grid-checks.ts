@@ -191,14 +191,17 @@ const polyCol: GridColumnMeta = {
   type: 'fk',
   label: '对手',
   sortable: false,
-  filterable: false,
+  filterable: true,
   enumOptions: null,
   ref: {
     resource: null,
     relation: null,
     labelField: null,
     discriminator: 'partyType',
-    variants: [{ value: 'SUPPLIER', resource: 'purSuppliers', labelField: 'name' }],
+    variants: [
+      { value: 'CUSTOMER', resource: 'salCustomers', labelField: 'name', label: '客户' },
+      { value: 'SUPPLIER', resource: 'purSuppliers', labelField: 'name', label: '供应商' },
+    ],
   },
 }
 eq(
@@ -207,6 +210,38 @@ eq(
   '多态 fk 行查询不带 join'
 )
 eq(cellText(polyCol, uuid1, { id: 'x', partyType: 'SUPPLIER' } as unknown as Row), '11111111', '多态 fk 文本退截断 id')
+
+// —— 多态 fk 筛选:判别 eq + id in 组合;变体 token 按 variants 白名单,uuid 白名单同普通 fk ——
+eq(
+  buildFilterLiteral(
+    { partyId: { kind: 'polyFk', op: 'in', variant: 'SUPPLIER', values: [uuid1, 'DROP TABLE'], labels: ['甲供'] } },
+    '',
+    [polyCol]
+  ),
+  `{and: [{partyType: {eq: SUPPLIER}}, {partyId: {in: ["${uuid1}"]}}]}`,
+  '多态 fk 筛选:判别 eq 与 id in 组合,非法 uuid 剔除'
+)
+eq(
+  buildFilterLiteral(
+    { partyId: { kind: 'polyFk', op: 'in', variant: 'EVIL) OR (TRUE', values: [uuid1], labels: [] } },
+    '',
+    [polyCol]
+  ),
+  null,
+  '多态 fk 筛选:变体不在白名单为 null(防注入)'
+)
+eq(
+  buildFilterLiteral({ partyId: { kind: 'polyFk', op: 'in', variant: 'SUPPLIER', values: ['nope'], labels: [] } }, '', [
+    polyCol,
+  ]),
+  null,
+  '多态 fk 筛选:uuid 全非法为 null'
+)
+eq(
+  buildFilterLiteral({ partyId: { kind: 'polyFk', op: 'isNil' } }, '', [polyCol]),
+  '{partyId: {isNil: true}}',
+  '多态 fk 筛选:仅看空值走 isNil'
+)
 
 // —— picker 跨页累积选中 ——
 const r = (id: string): Row => ({ id }) as Row

@@ -67,8 +67,8 @@ const polyRef = {
   labelField: null,
   discriminator: 'partyType',
   variants: [
-    { value: 'CUSTOMER', resource: 'salCustomers', labelField: 'name' },
-    { value: 'SUPPLIER', resource: 'purSuppliers', labelField: 'name' },
+    { value: 'CUSTOMER', resource: 'salCustomers', labelField: 'name', label: '客户' },
+    { value: 'SUPPLIER', resource: 'purSuppliers', labelField: 'name', label: '供应商' },
   ],
 }
 eq(resolveFkTarget(ref, { id: u1 }), { resource: 'basCompanies', labelField: 'name' }, '普通 fk 取自身')

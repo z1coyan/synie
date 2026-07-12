@@ -85,10 +85,10 @@ defmodule SynieWeb.GridMeta do
           type: "fk",
           # belongs_to 的 FK attribute 一般没有 description,兜底用关系上的 description
           label: attr.description || ref[:label] || to_string(attr.name),
-          # uuid 排序无意义;筛选走 eq/in(不走 contains,见 filterable?/1 注释)
+          # uuid 排序无意义;筛选走 eq/in(不走 contains,见 filterable?/1 注释);
+          # 多态 fk 同样可筛:前端先按变体选目标资源,拼判别 eq + id in
           sortable: false,
-          # 多态 fk 无单一目标资源,筛选选择器无从建,不可筛
-          filterable: not Map.has_key?(ref, :variants),
+          filterable: true,
           enum_options: nil,
           # 普通 fk 带 resource/relation/label_field;多态带 discriminator/variants,其余字段前端拿到 null
           ref: Map.delete(ref, :label)
@@ -151,6 +151,8 @@ defmodule SynieWeb.GridMeta do
 
       Enum.reduce(module.poly_refs(), %{}, fn {attr, %{discriminator: disc, variants: variants}},
                                               acc ->
+        disc_type = Ash.Resource.Info.attribute(module, disc).type
+
         kept =
           for {value, dest} <- variants,
               resource_name = module_names[dest],
@@ -160,7 +162,9 @@ defmodule SynieWeb.GridMeta do
               # 与 enum_options 同约定:线上 token 大写,前端直接与行的判别值相等比较
               value: value |> to_string() |> String.upcase(),
               resource: resource_name,
-              label_field: camelize(display_field(dest))
+              label_field: camelize(display_field(dest)),
+              # 筛选器变体下拉的中文标签,从判别枚举 description 取(与 enum_options 同源)
+              label: enum_label(disc_type, value)
             }
           end
 

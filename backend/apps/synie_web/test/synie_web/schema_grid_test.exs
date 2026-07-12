@@ -186,7 +186,7 @@ defmodule SynieWeb.SchemaGridTest do
   @meta_query """
   query ($resource: String!) {
     gridMeta(resource: $resource) {
-      columns { name type label sortable filterable enumOptions { value label } ref { resource relation labelField discriminator variants { value resource labelField } } }
+      columns { name type label sortable filterable enumOptions { value label } ref { resource relation labelField discriminator variants { value resource labelField label } } }
       capabilities
       extendedActions { key label scope mutation isDanger }
       destroyMutation
@@ -443,16 +443,16 @@ defmodule SynieWeb.SchemaGridTest do
       labels = party_type["enumOptions"] |> Enum.map(& &1["label"]) |> Enum.sort()
       assert labels == ["供应商", "客户"]
 
-      # 多态 fk:无 join(relation null)不可筛,按 partyType 判别变体
-      assert %{"type" => "fk", "filterable" => false, "label" => "对手"} = party = by_name["partyId"]
+      # 多态 fk:无 join(relation null),按 partyType 判别变体;可筛(先选变体再选记录)
+      assert %{"type" => "fk", "filterable" => true, "label" => "对手"} = party = by_name["partyId"]
 
       assert %{
                "resource" => nil,
                "relation" => nil,
                "discriminator" => "partyType",
                "variants" => [
-                 %{"value" => "CUSTOMER", "resource" => "salCustomers", "labelField" => "name"},
-                 %{"value" => "SUPPLIER", "resource" => "purSuppliers", "labelField" => "name"}
+                 %{"value" => "CUSTOMER", "resource" => "salCustomers", "labelField" => "name", "label" => "客户"},
+                 %{"value" => "SUPPLIER", "resource" => "purSuppliers", "labelField" => "name", "label" => "供应商"}
                ]
              } = party["ref"]
     end
@@ -474,9 +474,10 @@ defmodule SynieWeb.SchemaGridTest do
 
       assert %{
                "type" => "fk",
+               "filterable" => true,
                "ref" => %{
                  "discriminator" => "partyType",
-                 "variants" => [%{"value" => "CUSTOMER", "resource" => "salCustomers"}]
+                 "variants" => [%{"value" => "CUSTOMER", "resource" => "salCustomers", "label" => "客户"}]
                }
              } = by_name["partyId"]
     end
@@ -489,6 +490,77 @@ defmodule SynieWeb.SchemaGridTest do
       assert meta["capabilities"] == []
       assert meta["destroyMutation"] == nil
       assert meta["extendedActions"] == []
+    end
+  end
+
+  # 多态 fk 筛选依赖的算子契约:party_id/party_type 是普通 public 属性,
+  # AshGraphql 自动生成 eq/in/isNil,前端拼 {判别 eq} and {id in} 即可,后端零特殊代码
+  defp entry!(attrs) do
+    SynieCore.Acc.GlEntry
+    |> Ash.Changeset.for_create(:create, attrs)
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp entry_fixtures! do
+    company = company!("GL", "分录公司")
+
+    account =
+      SynieCore.Base.Account
+      |> Ash.Changeset.for_create(:create, %{
+        code: "a#{System.unique_integer([:positive])}",
+        name: "库存现金",
+        direction: :debit,
+        company_id: company.id
+      })
+      |> Ash.create!(authorize?: false)
+
+    base = %{
+      company_id: company.id,
+      account_id: account.id,
+      posting_date: ~D[2026-07-09],
+      debit: Decimal.new("100"),
+      credit: Decimal.new("0"),
+      voucher_type: "acc.gl_journal",
+      voucher_id: Ash.UUID.generate(),
+      voucher_no: "记-0001"
+    }
+
+    customer_a = Ash.UUID.generate()
+    customer_b = Ash.UUID.generate()
+    supplier_c = Ash.UUID.generate()
+
+    entry!(Map.merge(base, %{party_type: :customer, party_id: customer_a}))
+    entry!(Map.merge(base, %{party_type: :customer, party_id: customer_b}))
+    entry!(Map.merge(base, %{party_type: :supplier, party_id: supplier_c}))
+    entry!(base)
+
+    %{customer_a: customer_a}
+  end
+
+  describe "多态 fk 筛选执行" do
+    test "判别 eq + id in 组合:只命中指定客户的分录" do
+      %{customer_a: customer_a} = entry_fixtures!()
+
+      result =
+        run!(
+          ~s|query { accGlEntries(limit: 10, offset: 0, filter: {and: [{partyType: {eq: CUSTOMER}}, {partyId: {in: ["#{customer_a}"]}}]}) { count results { partyId } } }|,
+          super_actor()
+        )
+
+      assert %{data: %{"accGlEntries" => %{"count" => 1, "results" => [row]}}} = result
+      assert row["partyId"] == customer_a
+    end
+
+    test "partyId isNil:只命中无对手的分录" do
+      entry_fixtures!()
+
+      result =
+        run!(
+          ~s|query { accGlEntries(limit: 10, offset: 0, filter: {partyId: {isNil: true}}) { count results { partyId } } }|,
+          super_actor()
+        )
+
+      assert %{data: %{"accGlEntries" => %{"count" => 1, "results" => [%{"partyId" => nil}]}}} = result
     end
   end
 end

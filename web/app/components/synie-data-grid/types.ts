@@ -12,6 +12,8 @@ export interface GridColumnRefVariant {
   value: string
   resource: string
   labelField: string
+  /** 变体中文标签(判别枚举 description),筛选器变体下拉与 Chip 摘要用 */
+  label: string
 }
 
 export interface GridColumnRef {
@@ -86,6 +88,9 @@ export type ColumnFilter =
   | { kind: 'date'; op: DateOp; value: string }
   | { kind: 'date'; op: 'between'; gte?: string; lte?: string }
   | { kind: 'fk'; values: string[]; labels: string[] }
+  // 多态 fk:一次只筛一个变体(variant 为判别枚举大写 token);isNil 单独一档「仅看空值」
+  | { kind: 'polyFk'; op: 'in'; variant: string; values: string[]; labels: string[] }
+  | { kind: 'polyFk'; op: 'isNil' }
 
 /** key 为列名(camelCase) */
 export type FilterState = Record<string, ColumnFilter>
