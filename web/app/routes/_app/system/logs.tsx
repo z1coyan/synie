@@ -35,6 +35,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   sys_attachment: '附件关联',
   acc_gl_journal: '会计凭证',
   acc_gl_journal_line: '凭证分录行',
+  acc_bank_account: '银行账户',
   sys_numbering_rule: '编号规则',
   sys_numbering_counter: '编号计数器',
 }

@@ -75,6 +75,10 @@ export const menuModules: MenuModule[] = [
           { label: '总账分录', path: '/finance/entries' },
         ],
       },
+      {
+        label: '资金',
+        items: [{ label: '银行账户', path: '/finance/bank-accounts' }],
+      },
     ],
   },
   {
