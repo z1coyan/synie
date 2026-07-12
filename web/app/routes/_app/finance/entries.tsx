@@ -8,18 +8,18 @@ export const Route = createFileRoute('/_app/finance/entries')({
   component: EntriesPage,
 })
 
-// 公司放首列;voucher_id 裸 uuid 与创建/更新时间不进表格(有序白名单)
+// 公司放首列;voucherId 多态 fk 链接列(文本=凭证号,点击开来源单据速览),
+// 冗余的 voucherNo/voucherType 字符串列与创建/更新时间不进表格(有序白名单)
 const GRID_COLUMNS = [
   'companyId',
   'postingDate',
-  'voucherNo',
+  'voucherId',
   'accountId',
   'debit',
   'credit',
   'partyType',
   'partyId',
   'currencyId',
-  'voucherType',
   'seq',
   'isCancelled',
   'remarks',
@@ -44,8 +44,8 @@ function EntriesPage() {
         isOpen={viewRow !== null}
         onOpenChange={(open) => !open && setViewRow(null)}
         row={viewRow}
-        // 表格未取这些列,行数据不带,view 态只会显示占位
-        exclude={['voucherId', 'insertedAt', 'updatedAt']}
+        // voucherNo/时间列表格未取、行数据不带(只会显示占位);voucherType 原始类型码,来源单据链接已表意
+        exclude={['voucherNo', 'voucherType', 'insertedAt', 'updatedAt']}
       />
     </>
   )

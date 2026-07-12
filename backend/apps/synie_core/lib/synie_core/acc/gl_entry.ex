@@ -57,9 +57,12 @@ defmodule SynieCore.Acc.GlEntry do
   def permission_prefix, do: "acc.gl_entry"
   def permission_actions, do: ~w(read)
 
-  # 对手是多态引用(party_type 判别、无 belongs_to),声明给 GridMeta 反射成多态 fk 列
+  # 对手与来源单据都是多态引用(判别列 + 裸 uuid、无 belongs_to),声明给 GridMeta 反射成多态 fk 列
   def poly_refs do
-    %{party_id: %{discriminator: :party_type, variants: SynieCore.Acc.PartyType.party_resources()}}
+    %{
+      party_id: %{discriminator: :party_type, variants: SynieCore.Acc.PartyType.party_resources()},
+      voucher_id: %{discriminator: :voucher_type, variants: SynieCore.Acc.GL.voucher_resources()}
+    }
   end
 
   actions do

@@ -15,6 +15,14 @@ defmodule SynieCore.Acc.GL do
 
   @entry_keys [:account_id, :currency_id, :debit, :credit, :party_type, :party_id, :remarks]
 
+  @doc """
+  voucher_type → {来源单据资源, 中文标签}(GridMeta 多态 fk 反射用)。
+  新单据接 GL(调 post!/cancel!)时必须在此注册,分录的来源单据列才能渲染成链接。
+  """
+  def voucher_resources do
+    %{"acc.gl_journal" => {SynieCore.Acc.GlJournal, "凭证"}}
+  end
+
   @doc "校验分录组:行数≥2、每行恰一边>0、借贷配平、对手成对、科目同公司且启用非汇总。"
   def validate_entries(company_id, entries) do
     with :ok <- check_count(entries),

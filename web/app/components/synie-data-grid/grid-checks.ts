@@ -185,7 +185,7 @@ eq(cellText(fkCol, uuid1, fkRow), '集团总部', 'fk cellText 读 join label')
 eq(cellText(fkCol, uuid1, { id: 'x', parent: null } as unknown as Row), '11111111', 'join 缺失退回截断 id')
 eq(cellText(fkCol, null, { id: 'x' } as unknown as Row), '', 'fk 空值为空串')
 
-// —— 多态 fk:无 relation 不 join;CSV/打印退截断 id ——
+// —— 多态 fk:无 relation 不 join;判别列自动取回;CSV/打印退截断 id ——
 const polyCol: GridColumnMeta = {
   name: 'partyId',
   type: 'fk',
@@ -198,6 +198,7 @@ const polyCol: GridColumnMeta = {
     relation: null,
     labelField: null,
     discriminator: 'partyType',
+    discriminatorType: 'enum',
     variants: [
       { value: 'CUSTOMER', resource: 'salCustomers', labelField: 'name', label: '客户' },
       { value: 'SUPPLIER', resource: 'purSuppliers', labelField: 'name', label: '供应商' },
@@ -206,8 +207,8 @@ const polyCol: GridColumnMeta = {
 }
 eq(
   buildRowQuery('accGlEntries', [polyCol], { limit: 10, offset: 0, sortLiteral: null, filterLiteral: null }),
-  'query { accGlEntries(limit: 10, offset: 0) { count results { id partyId } } }',
-  '多态 fk 行查询不带 join'
+  'query { accGlEntries(limit: 10, offset: 0) { count results { id partyId partyType } } }',
+  '多态 fk 行查询不带 join,判别列不可见也自动取回'
 )
 eq(cellText(polyCol, uuid1, { id: 'x', partyType: 'SUPPLIER' } as unknown as Row), '11111111', '多态 fk 文本退截断 id')
 
@@ -241,6 +242,38 @@ eq(
   buildFilterLiteral({ partyId: { kind: 'polyFk', op: 'isNil' } }, '', [polyCol]),
   '{partyId: {isNil: true}}',
   '多态 fk 筛选:仅看空值走 isNil'
+)
+
+// —— 字符串判别的多态 fk(分录来源单据):筛选 eq 值带引号,行查询同样自动取回判别列 ——
+const voucherCol: GridColumnMeta = {
+  name: 'voucherId',
+  type: 'fk',
+  label: '来源单据',
+  sortable: false,
+  filterable: true,
+  enumOptions: null,
+  ref: {
+    resource: null,
+    relation: null,
+    labelField: null,
+    discriminator: 'voucherType',
+    discriminatorType: 'string',
+    variants: [{ value: 'acc.gl_journal', resource: 'accGlJournals', labelField: 'voucherNo', label: '凭证' }],
+  },
+}
+eq(
+  buildFilterLiteral(
+    { voucherId: { kind: 'polyFk', op: 'in', variant: 'acc.gl_journal', values: [uuid1], labels: ['记-0001'] } },
+    '',
+    [voucherCol]
+  ),
+  `{and: [{voucherType: {eq: "acc.gl_journal"}}, {voucherId: {in: ["${uuid1}"]}}]}`,
+  '多态 fk 筛选:字符串判别值带引号'
+)
+eq(
+  buildRowQuery('accGlEntries', [voucherCol], { limit: 10, offset: 0, sortLiteral: null, filterLiteral: null }),
+  'query { accGlEntries(limit: 10, offset: 0) { count results { id voucherId voucherType } } }',
+  '字符串判别多态 fk 行查询自动取回判别列'
 )
 
 // —— picker 跨页累积选中 ——

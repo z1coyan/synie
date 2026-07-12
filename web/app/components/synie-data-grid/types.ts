@@ -12,7 +12,7 @@ export interface GridColumnRefVariant {
   value: string
   resource: string
   labelField: string
-  /** 变体中文标签(判别枚举 description),筛选器变体下拉与 Chip 摘要用 */
+  /** 变体中文标签(判别枚举 description 或 poly_refs 显式标签),筛选器变体下拉与 Chip 摘要用 */
   label: string
 }
 
@@ -21,8 +21,10 @@ export interface GridColumnRef {
   resource: string | null
   relation: string | null
   labelField: string | null
-  /** 多态 fk:同行判别列名(如 partyType)+ 按判别值(大写 token)选目标资源 */
+  /** 多态 fk:同行判别列名(如 partyType)+ 按判别值选目标资源(枚举为大写 token,字符串原样) */
   discriminator?: string | null
+  /** 判别列筛选字面量形态:enum 裸 token / string 带引号 */
+  discriminatorType?: 'enum' | 'string' | null
   variants?: GridColumnRefVariant[] | null
 }
 

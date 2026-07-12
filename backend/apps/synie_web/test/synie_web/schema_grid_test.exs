@@ -186,7 +186,7 @@ defmodule SynieWeb.SchemaGridTest do
   @meta_query """
   query ($resource: String!) {
     gridMeta(resource: $resource) {
-      columns { name type label sortable filterable enumOptions { value label } ref { resource relation labelField discriminator variants { value resource labelField label } } }
+      columns { name type label sortable filterable enumOptions { value label } ref { resource relation labelField discriminator discriminatorType variants { value resource labelField label } } }
       capabilities
       extendedActions { key label scope mutation isDanger }
       destroyMutation
@@ -450,6 +450,7 @@ defmodule SynieWeb.SchemaGridTest do
                "resource" => nil,
                "relation" => nil,
                "discriminator" => "partyType",
+               "discriminatorType" => "enum",
                "variants" => [
                  %{"value" => "CUSTOMER", "resource" => "salCustomers", "labelField" => "name", "label" => "客户"},
                  %{"value" => "SUPPLIER", "resource" => "purSuppliers", "labelField" => "name", "label" => "供应商"}
@@ -459,12 +460,13 @@ defmodule SynieWeb.SchemaGridTest do
   end
 
   describe "多态 fk 权限裁剪" do
-    test "无任何变体 read 权限:partyId 退化为普通 uuid 列" do
+    test "无任何变体 read 权限:partyId/voucherId 都退化为普通 uuid 列" do
       actor = Authz.build_actor(user_with!(["acc.gl_entry:read"]))
       assert %{data: %{"gridMeta" => meta}} = run_meta!(actor, "accGlEntries")
       by_name = Map.new(meta["columns"], &{&1["name"], &1})
 
       assert %{"type" => "string", "filterable" => false, "ref" => nil} = by_name["partyId"]
+      assert %{"type" => "string", "filterable" => false, "ref" => nil} = by_name["voucherId"]
     end
 
     test "只有客户 read 权限:variants 仅剩 CUSTOMER" do
@@ -490,6 +492,33 @@ defmodule SynieWeb.SchemaGridTest do
       assert meta["capabilities"] == []
       assert meta["destroyMutation"] == nil
       assert meta["extendedActions"] == []
+    end
+
+    test "voucherId 反射字符串判别多态 fk:变体值原样(不大写)、显式中文标签" do
+      actor = Authz.build_actor(user_with!(["acc.gl_entry:read", "acc.gl_journal:read"]))
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(actor, "accGlEntries")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      assert %{"type" => "fk", "filterable" => true, "label" => "来源单据"} =
+               voucher = by_name["voucherId"]
+
+      assert %{
+               "resource" => nil,
+               "relation" => nil,
+               "discriminator" => "voucherType",
+               "discriminatorType" => "string",
+               "variants" => [
+                 %{
+                   "value" => "acc.gl_journal",
+                   "resource" => "accGlJournals",
+                   "labelField" => "voucherNo",
+                   "label" => "凭证"
+                 }
+               ]
+             } = voucher["ref"]
+
+      # 同一 actor 无客户/供应商权限:partyId 照常退化,两个多态列互不影响
+      assert %{"ref" => nil} = by_name["partyId"]
     end
   end
 
@@ -534,7 +563,7 @@ defmodule SynieWeb.SchemaGridTest do
     entry!(Map.merge(base, %{party_type: :supplier, party_id: supplier_c}))
     entry!(base)
 
-    %{customer_a: customer_a}
+    %{customer_a: customer_a, base: base}
   end
 
   describe "多态 fk 筛选执行" do
@@ -549,6 +578,21 @@ defmodule SynieWeb.SchemaGridTest do
 
       assert %{data: %{"accGlEntries" => %{"count" => 1, "results" => [row]}}} = result
       assert row["partyId"] == customer_a
+    end
+
+    test "字符串判别 eq(带引号)+ voucherId in 组合:只命中指定凭证的分录" do
+      %{base: base} = entry_fixtures!()
+      # 另一张凭证的分录,应被 in 过滤掉
+      entry!(Map.merge(base, %{voucher_id: Ash.UUID.generate(), voucher_no: "记-0002"}))
+
+      result =
+        run!(
+          ~s|query { accGlEntries(limit: 10, offset: 0, filter: {and: [{voucherType: {eq: "acc.gl_journal"}}, {voucherId: {in: ["#{base.voucher_id}"]}}]}) { count results { voucherId } } }|,
+          super_actor()
+        )
+
+      assert %{data: %{"accGlEntries" => %{"count" => 4, "results" => rows}}} = result
+      assert Enum.all?(rows, &(&1["voucherId"] == base.voucher_id))
     end
 
     test "partyId isNil:只命中无对手的分录" do

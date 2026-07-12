@@ -14,7 +14,8 @@
 ## GraphQL
 
 - list 查询统一 `paginate_with: :offset`(read action 声明 `pagination offset?: true, countable: true`),不留扁平列表——前端 DataGrid/RemoteSelect 都按 `count`/`results` 结构消费。
-- 多态引用(判别枚举 + 裸 uuid,无 belongs_to)要在前端渲染成外键:资源声明 `poly_refs/0`,GridMeta 反射为多态 fk 列(变体按目标资源 read 权限 fail-closed 裁剪)。
+- 多态引用(判别枚举/字符串 + 裸 uuid,无 belongs_to)要在前端渲染成外键:资源声明 `poly_refs/0`,GridMeta 反射为多态 fk 列(变体按目标资源 read 权限 fail-closed 裁剪);字符串判别的变体标签在 variants 映射里显式给 `{资源, 标签}`。
+- 新单据接 GL(`GL.post!`/`cancel!`)时,`voucher_type` 必须同步注册进 `SynieCore.Acc.GL.voucher_resources/0`,分录来源单据列才渲染成链接。
 
 ## 自动编号
 
