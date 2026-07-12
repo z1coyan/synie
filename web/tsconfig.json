@@ -13,6 +13,5 @@
       "~/*": ["./app/*"]
     }
   },
-  "include": ["app", "vite.config.ts"],
-  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
+  "include": ["app", "vite.config.ts"]
 }

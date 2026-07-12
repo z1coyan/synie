@@ -1,3 +1,4 @@
+// @ts-expect-error bun:test 类型未安装(bun 运行时自带),仅此文件局部豁免
 import { describe, expect, test } from 'bun:test'
 import { amountInWords, formatAmount } from './amount'
 
