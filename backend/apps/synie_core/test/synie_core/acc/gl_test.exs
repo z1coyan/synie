@@ -126,4 +126,64 @@ defmodule SynieCore.Acc.GLTest do
 
     assert Enum.all?(entries_of(v.voucher_id), & &1.is_cancelled)
   end
+
+  describe "红字扩展" do
+    test "默认 post! 拒绝负数金额", %{company: co, cash: cash, sales: sales} do
+      entries = [
+        %{account_id: cash.id, debit: Decimal.new("-100"), credit: Decimal.new(0)},
+        %{account_id: sales.id, debit: Decimal.new(0), credit: Decimal.new("-100")}
+      ]
+
+      assert_raise ArgumentError, ~r/恰一边大于零/, fn ->
+        GL.post!(voucher(co), entries)
+      end
+    end
+
+    test "allow_negative 放行恰一边非零的负数行", %{company: co, cash: cash, sales: sales} do
+      entries = [
+        %{account_id: cash.id, debit: Decimal.new("-100"), credit: Decimal.new(0)},
+        %{account_id: sales.id, debit: Decimal.new(0), credit: Decimal.new("-100")}
+      ]
+
+      assert :ok == GL.post!(voucher(co), entries, allow_negative: true)
+    end
+
+    test "reverse! 生成取负红字组并把原组标已红冲", %{company: co, cash: cash, sales: sales} do
+      v = voucher(co)
+      :ok = GL.post!(v, pair(cash, sales, "100"))
+      :ok = GL.reverse!(v.voucher_type, v.voucher_id, ~D[2026-07-31])
+
+      all = entries_of(v.voucher_id)
+      originals = Enum.filter(all, &(not &1.is_reversal))
+      reds = Enum.filter(all, & &1.is_reversal)
+
+      assert length(reds) == 2
+      assert Enum.all?(originals, & &1.is_reversed)
+      assert Enum.all?(reds, &(&1.posting_date == ~D[2026-07-31]))
+      assert Enum.all?(reds, &String.starts_with?(&1.remarks || "", "红冲"))
+      # 借贷合计归零
+      assert Decimal.equal?(sum(all, :debit), Decimal.new(0))
+      assert Decimal.equal?(sum(all, :credit), Decimal.new(0))
+    end
+
+    test "reverse! 无可红冲分录时报错" do
+      assert_raise ArgumentError, ~r/没有可红冲的分录/, fn ->
+        GL.reverse!("acc.gl_journal", Ash.UUID.generate(), ~D[2026-07-31])
+      end
+    end
+
+    test "重复 reverse! 被拒(原组已标记,不再命中)", %{company: co, cash: cash, sales: sales} do
+      v = voucher(co)
+      :ok = GL.post!(v, pair(cash, sales, "100"))
+      :ok = GL.reverse!(v.voucher_type, v.voucher_id, ~D[2026-07-31])
+
+      assert_raise ArgumentError, ~r/没有可红冲的分录/, fn ->
+        GL.reverse!(v.voucher_type, v.voucher_id, ~D[2026-07-31])
+      end
+    end
+  end
+
+  defp sum(entries, key) do
+    entries |> Enum.map(&Map.fetch!(&1, key)) |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+  end
 end
