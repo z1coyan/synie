@@ -3,7 +3,7 @@ import { Button, Spinner, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import { defaultCell } from '../synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '../synie-data-grid/meta'
-import type { EnumChipColor, GridColumnMeta, Row } from '../synie-data-grid/types'
+import type { EnumChipColor, GridColumnMeta, LocalGridMeta, Row } from '../synie-data-grid/types'
 import { SynieRecordDrawer, type SynieRecordDrawerProps } from '../synie-record-drawer/SynieRecordDrawer'
 import type { FieldOverride } from '../synie-record-drawer/fields'
 import { appendItem, displayColumns, localRowId, mergeItem, removeItem } from './editable'
@@ -39,6 +39,8 @@ export interface SynieEditableTableProps<T extends Row = Row> {
   overrides?: Record<string, EditableColumnOverride>
   /** 录入表单字段行为,透传二级 SynieRecordDrawer */
   fields?: Record<string, FieldOverride>
+  /** 本地列/字段定义,提供时跳过 GridMeta 查询,透传二级 SynieRecordDrawer */
+  meta?: LocalGridMeta
   /** 父表单 view 态传 true:隐藏新增按钮与操作列 */
   readOnly?: boolean
   /** 关掉新增/删除入口(默认开):行由服务端自动产生、只允许改的子表(如编号计数器)用 */
@@ -71,10 +73,10 @@ function cellClass(col: GridColumnMeta, o?: EditableColumnOverride): string {
 
 export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTableProps<T>) {
   const { resource, items, label = '条目', overrides = {}, readOnly = false, canCreate = true, canDelete = true } = props
-  const meta = useGridMeta(resource)
+  const remote = useGridMeta(resource, !props.meta) // 本地模式不发请求
   const [drawer, setDrawer] = useState<{ mode: 'create' | 'edit'; row: T | null } | null>(null)
 
-  const metaColumns = meta.data?.columns ?? []
+  const metaColumns = props.meta?.columns ?? remote.data?.columns ?? []
   const cols = displayColumns(metaColumns, props.columns, props.exclude)
 
   const submit = async (values: Record<string, unknown>, mode: 'create' | 'edit') => {
@@ -99,18 +101,18 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
         </div>
       </div>
 
-      {meta.isPending ? (
+      {!props.meta && remote.isPending ? (
         <div className="flex h-24 items-center justify-center">
           <Spinner />
         </div>
-      ) : meta.isError ? (
+      ) : !props.meta && remote.isError ? (
         <EmptyState size="sm" className="h-32 justify-center">
           <EmptyState.Header>
             <EmptyState.Title>数据加载失败</EmptyState.Title>
-            <EmptyState.Description>{(meta.error as Error).message}</EmptyState.Description>
+            <EmptyState.Description>{(remote.error as Error).message}</EmptyState.Description>
           </EmptyState.Header>
           <EmptyState.Content>
-            <Button size="sm" variant="secondary" onPress={() => meta.refetch()}>
+            <Button size="sm" variant="secondary" onPress={() => remote.refetch()}>
               重试
             </Button>
           </EmptyState.Content>
@@ -174,6 +176,7 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
         row={drawer?.row}
         exclude={props.exclude}
         fields={props.fields}
+        meta={props.meta}
         contentClassName={props.drawerProps?.contentClassName ?? 'w-full lg:w-[420px]'}
         onSubmit={submit}
       />
