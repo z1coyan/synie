@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { parseDate } from '@internationalized/date'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
@@ -149,6 +149,8 @@ function JournalsPage() {
   const [lines, setLines] = useState<Row[]>([])
   const [linesSnapshot, setLinesSnapshot] = useState<Row[]>([])
   const [reloadKey, setReloadKey] = useState(0)
+  // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张凭证的行回填到当前凭证
+  const reqIdRef = useRef(0)
 
   // 审核过账确认框:行内「审核」动作与新增后带过账日期的顺手审核共用;
   // 过账日期在此填入/修正(草稿可不填,审核时必填)
@@ -185,6 +187,7 @@ function JournalsPage() {
 
   // 打开头抽屉:create 行清空;view/edit 按凭证 id 拉行(快照留作提交时 diff 基准)
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
+    const my = ++reqIdRef.current
     setDrawer({ mode, row })
     if (mode === 'create') {
       setLines([])
@@ -193,10 +196,12 @@ function JournalsPage() {
     }
     gqlFetch<{ accGlJournalLines: { results: Row[] } }>(FETCH_LINES, { journalId: row!.id })
       .then((d) => {
+        if (my !== reqIdRef.current) return
         setLines(d.accGlJournalLines.results)
         setLinesSnapshot(d.accGlJournalLines.results)
       })
       .catch((e) => {
+        if (my !== reqIdRef.current) return
         toast.danger('分录行加载失败', { description: (e as Error).message })
         setLines([])
         setLinesSnapshot([])
@@ -226,7 +231,14 @@ function JournalsPage() {
         label="凭证"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
+        onOpenChange={(open) => {
+          if (open) return
+          // 关闭即作废在途请求并清空快照,防止残留快照被下次提交按差异写误用到别的凭证
+          reqIdRef.current++
+          setDrawer(null)
+          setLines([])
+          setLinesSnapshot([])
+        }}
         row={drawer?.row}
         // 分录行表 7 列,默认 480px 太挤,凭证抽屉加宽(移动端仍全宽)
         contentClassName="w-full lg:w-[880px]"

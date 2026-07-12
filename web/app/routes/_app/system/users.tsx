@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Button, Modal, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
@@ -149,6 +149,8 @@ function UsersPage() {
   const [roleSel, setRoleSel] = useState<string[]>([])
   const [companySel, setCompanySel] = useState<string[]>([])
   const [names, setNames] = useState<Map<string, string>>(new Map())
+  // 请求守卫:每次开抽屉自增,await 回来后比对最新序号——防止先发的慢请求(A)覆盖已切到 B 的关联/勾选
+  const reqIdRef = useRef(0)
 
   // 重置密码入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
   useEffect(() => {
@@ -168,6 +170,8 @@ function UsersPage() {
 
   // 先拉关联再开抽屉,避免表单已开、回显未到的中间态
   const openDrawer = async (mode: DrawerMode, row: Row | null) => {
+    // 每次开抽屉先占号:create 同步回填也占号,作废上一张单据可能还在途的慢请求
+    const my = ++reqIdRef.current
     if (mode === 'create' || !row) {
       setJoins({ roles: [], companies: [] })
       setRoleSel([])
@@ -184,6 +188,8 @@ function UsersPage() {
           results: { id: string; companyId: string; company: { name: string } | null }[]
         }
       }>(userJoinsQuery(String(row.id)))
+      // 抽屉已切走(开了别的单据/关了):丢弃过期响应,不写 joins/勾选,避免覆盖当前单据
+      if (my !== reqIdRef.current) return
       // 单页截断时未取回的关联会被当成"未勾选",保存会错误回收,直接拒开
       if (
         d.sysUserRoles.count > d.sysUserRoles.results.length ||
