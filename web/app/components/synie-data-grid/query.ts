@@ -61,6 +61,16 @@ function columnClause(name: string, filter: FilterState[string], columns: GridCo
       const ids = filter.values.filter((v) => UUID_RE.test(v))
       return ids.length > 0 ? `{${name}: {in: [${ids.map(str).join(', ')}]}}` : null
     }
+    case 'polyFk': {
+      const disc = col.ref?.discriminator
+      if (!disc) return null
+      if (filter.op === 'isNil') return `{${name}: {isNil: true}}`
+      // 变体 token 裸拼进查询(枚举字面量不带引号),按 variants 白名单校验,同 enum 分支纪律
+      if (!col.ref?.variants?.some((v) => v.value === filter.variant)) return null
+      const ids = filter.values.filter((v) => UUID_RE.test(v))
+      if (ids.length === 0) return null
+      return `{and: [{${disc}: {eq: ${filter.variant}}}, {${name}: {in: [${ids.map(str).join(', ')}]}}]}`
+    }
     case 'number': {
       if (filter.op === 'between') {
         const parts: string[] = []

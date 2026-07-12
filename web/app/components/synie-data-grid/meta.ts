@@ -5,7 +5,7 @@ import type { GridMeta } from './types'
 const GRID_META_QUERY = `
   query GridMeta($resource: String!) {
     gridMeta(resource: $resource) {
-      columns { name type label sortable filterable enumOptions { value label } ref { resource relation labelField discriminator variants { value resource labelField } } }
+      columns { name type label sortable filterable enumOptions { value label } ref { resource relation labelField discriminator variants { value resource labelField label } } }
       capabilities
       extendedActions { key label scope mutation isDanger }
       destroyMutation

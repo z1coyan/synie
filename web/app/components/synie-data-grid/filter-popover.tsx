@@ -16,7 +16,7 @@ import {
   Switch,
 } from '@heroui/react'
 import { RemoteMultiSelect } from '../synie-remote-select/RemoteMultiSelect'
-import type { ColumnFilter, DateOp, GridColumnMeta, GridColumnRef, NumberOp, TextOp } from './types'
+import type { ColumnFilter, DateOp, GridColumnMeta, GridColumnRefVariant, NumberOp, TextOp } from './types'
 import { useDraft } from './use-debounced'
 
 // 弹层 DOM 上 portal 到了表格外,但 React 合成事件仍沿组件树冒泡回可排序的 <th>:
@@ -75,6 +75,11 @@ export function filterSummary(col: GridColumnMeta, f: ColumnFilter): string {
       return f.op === 'between' ? `${f.gte ?? ''} ~ ${f.lte ?? ''}` : `${DATE_OP_LABEL[f.op]} ${f.value}`.trim()
     case 'fk':
       return f.labels.join('、')
+    case 'polyFk': {
+      if (f.op === 'isNil') return '(空)'
+      const variant = (col.ref?.variants ?? []).find((v) => v.value === f.variant)
+      return `${variant ? variant.label : f.variant} · ${f.labels.join('、')}`
+    }
   }
 }
 
@@ -178,7 +183,16 @@ function FilterControl({
         </div>
       )
     case 'fk':
-      // 普通 fk 才有单一目标资源可建选择器;ref 为 null 或多态 fk 后端已标 filterable=false,防御性放空
+      // 多态 fk:先选变体定目标资源,再选记录;普通 fk 直接按 ref 三件套建选择器;ref 为 null 防御性放空
+      if (column.ref?.discriminator && column.ref.variants?.length) {
+        return (
+          <PolyFkFilter
+            variants={column.ref.variants}
+            filter={filter?.kind === 'polyFk' ? filter : undefined}
+            onChange={onChange}
+          />
+        )
+      }
       return column.ref?.resource && column.ref.labelField ? (
         <FkFilter
           resource={column.ref.resource}
@@ -258,6 +272,71 @@ function FkFilter({
         })
       }}
     />
+  )
+}
+
+function PolyFkFilter({
+  variants,
+  filter,
+  onChange,
+}: {
+  variants: GridColumnRefVariant[]
+  filter: Extract<ColumnFilter, { kind: 'polyFk' }> | undefined
+  onChange: (f: ColumnFilter | null) => void
+}) {
+  // 变体选择是前置状态,本身不构成筛选;弹层关闭即卸载,重开时从 filter 回填
+  const [variant, setVariant] = useState(filter?.op === 'in' ? filter.variant : variants[0]?.value)
+  const active = variants.find((v) => v.value === variant)
+  const isNil = filter?.op === 'isNil'
+
+  return (
+    <div className="flex flex-col gap-2">
+      {!isNil && (
+        <>
+          <OpSelect
+            value={variant}
+            options={variants.map((v): [string, string] => [v.value, v.label])}
+            onChange={(v) => {
+              setVariant(v)
+              // 已选记录属于上一个变体的资源,跨资源无意义,切换即清
+              if (filter?.op === 'in') onChange(null)
+            }}
+          />
+          {active && (
+            <RemoteMultiSelect
+              // 切变体重挂载,清掉上个资源的选项分页与搜索词
+              key={active.value}
+              resource={active.resource}
+              labelField={active.labelField}
+              value={filter?.op === 'in' && filter.variant === variant ? filter.values : []}
+              placeholder="选择筛选值…"
+              onChange={(ids, rows) => {
+                if (ids.length === 0) return onChange(null)
+                const byId = new Map(rows.map((r) => [r.id, r]))
+                onChange({
+                  kind: 'polyFk',
+                  op: 'in',
+                  variant: active.value,
+                  values: ids,
+                  labels: ids.map((id) => {
+                    const r = byId.get(id)
+                    return r && r[active.labelField] != null ? String(r[active.labelField]) : id.slice(0, 8)
+                  }),
+                })
+              }}
+            />
+          )}
+        </>
+      )}
+      <Switch isSelected={isNil} onChange={(s) => onChange(s ? { kind: 'polyFk', op: 'isNil' } : null)}>
+        <Switch.Content className="text-sm">
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+          仅看空值
+        </Switch.Content>
+      </Switch>
+    </div>
   )
 }
 

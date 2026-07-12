@@ -38,6 +38,7 @@ defmodule SynieWeb.Schema do
     field :value, non_null(:string)
     field :resource, non_null(:string)
     field :label_field, non_null(:string)
+    field :label, non_null(:string)
   end
 
   object :grid_column_ref do
