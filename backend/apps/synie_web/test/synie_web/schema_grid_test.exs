@@ -455,7 +455,7 @@ defmodule SynieWeb.SchemaGridTest do
 
       assert %{"type" => "enum"} = party_type = by_name["partyType"]
       labels = party_type["enumOptions"] |> Enum.map(& &1["label"]) |> Enum.sort()
-      assert labels == ["供应商", "客户"]
+      assert labels == ["供应商", "内部公司", "客户"]
 
       # 多态 fk:无 join(relation null),按 partyType 判别变体;可筛(先选变体再选记录)
       assert %{"type" => "fk", "filterable" => true, "label" => "对手"} = party = by_name["partyId"]
@@ -466,6 +466,12 @@ defmodule SynieWeb.SchemaGridTest do
                "discriminator" => "partyType",
                "discriminatorType" => "enum",
                "variants" => [
+                 %{
+                   "value" => "COMPANY",
+                   "resource" => "basCompanies",
+                   "labelField" => "name",
+                   "label" => "内部公司"
+                 },
                  %{
                    "value" => "CUSTOMER",
                    "resource" => "salCustomers",

@@ -112,36 +112,6 @@ defmodule SynieCore.Acc.GlJournalLine.CopyCurrency do
   end
 end
 
-defmodule SynieCore.Acc.GlJournalLine.PartyExists do
-  @moduledoc "对手校验:与类型同空同有;按类型查对应主数据表确认存在(多态引用无真外键)。"
-
-  use Ash.Resource.Validation
-
-  @impl true
-  def validate(changeset, _opts, _context) do
-    party_type = Ash.Changeset.get_attribute(changeset, :party_type)
-    party_id = Ash.Changeset.get_attribute(changeset, :party_id)
-
-    cond do
-      is_nil(party_type) and is_nil(party_id) ->
-        :ok
-
-      is_nil(party_type) or is_nil(party_id) ->
-        {:error, field: :party_id, message: "对手类型与对手必须同时填写"}
-
-      true ->
-        case Ash.get(
-               Map.fetch!(SynieCore.Acc.PartyType.party_resources(), party_type),
-               party_id,
-               authorize?: false
-             ) do
-          {:ok, _} -> :ok
-          {:error, _} -> {:error, field: :party_id, message: "对手不存在"}
-        end
-    end
-  end
-end
-
 defmodule SynieCore.Acc.GlJournalLine do
   @moduledoc """
   凭证子条目,对应 `acc_gl_journal_line` 表。
@@ -230,7 +200,7 @@ defmodule SynieCore.Acc.GlJournalLine do
       change {SynieCore.Acc.GlJournalLine.SyncJournal, []}
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       change {SynieCore.Acc.GlJournalLine.CopyCurrency, []}
-      validate {SynieCore.Acc.GlJournalLine.PartyExists, []}
+      validate {SynieCore.Acc.PartyExists, []}
     end
 
     update :update do
@@ -239,7 +209,7 @@ defmodule SynieCore.Acc.GlJournalLine do
 
       change {SynieCore.Acc.GlJournalLine.SyncJournal, []}
       change {SynieCore.Acc.GlJournalLine.CopyCurrency, []}
-      validate {SynieCore.Acc.GlJournalLine.PartyExists, []}
+      validate {SynieCore.Acc.PartyExists, []}
     end
 
     destroy :destroy do
