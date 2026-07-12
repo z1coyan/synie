@@ -100,6 +100,30 @@ defmodule SynieCore.Acc.VatInvoiceTest do
     assert_raise Ash.Error.Invalid, fn -> invoice!(bad_attrs, authorize?: false) end
   end
 
+  test "对手不能是本公司自身:create 时 party_type=company 且 party_id=company_id 被拒", %{
+    company: co
+  } do
+    attrs = base_attrs(co, co.id) |> Map.put(:party_type, :company)
+
+    error =
+      assert_raise Ash.Error.Invalid, fn -> invoice!(attrs, authorize?: false) end
+
+    assert Exception.message(error) =~ "对手不能是本公司"
+  end
+
+  test "对手不能是本公司自身:update 把对手改成本公司被拒", %{company: co, customer: cust} do
+    draft = invoice!(base_attrs(co, cust.id), authorize?: false)
+
+    error =
+      assert_raise Ash.Error.Invalid, fn ->
+        draft
+        |> Ash.Changeset.for_update(:update, %{party_type: :company, party_id: co.id})
+        |> Ash.update!(authorize?: false)
+      end
+
+    assert Exception.message(error) =~ "对手不能是本公司"
+  end
+
   test "同公司同发票代码+号码重复被唯一索引拒绝", %{company: co, customer: cust} do
     attrs = base_attrs(co, cust.id) |> Map.merge(%{invoice_code: "1100", invoice_no: "00000001"})
     invoice!(attrs, authorize?: false)

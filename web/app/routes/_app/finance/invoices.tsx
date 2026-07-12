@@ -188,6 +188,9 @@ const safeParseDate = (v: string | null) => {
 function InvoicesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
+  // edit/view 态 items 靠 FETCH_ITEMS 异步拉取,失败/未完成前不得当"清单已被清空"处理——
+  // 否则 onSubmit 会用空清单覆盖后端原值。create 态本地起手即视为就绪。
+  const [itemsLoaded, setItemsLoaded] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张发票的清单回填到当前发票
   const reqIdRef = useRef(0)
@@ -275,25 +278,36 @@ function InvoicesPage() {
     setMirroring(true)
     try {
       const input = buildMirrorInput(mirrorAsk.source)
-      const data = await gqlFetch<{
-        createAccVatInvoice: { result: { id: string } | null; errors: { message: string }[] | null }
-      }>(CREATE_INVOICE, { input })
-      if (data.createAccVatInvoice.errors && data.createAccVatInvoice.errors.length > 0) {
-        throw new Error(data.createAccVatInvoice.errors.map((e) => e.message).join('; '))
+
+      // 第一步:创建镜像发票。失败即整件事没发生,原票未改——照旧提示手工登记
+      let mirrorId: string
+      try {
+        const data = await gqlFetch<{
+          createAccVatInvoice: { result: { id: string } | null; errors: { message: string }[] | null }
+        }>(CREATE_INVOICE, { input })
+        if (data.createAccVatInvoice.errors && data.createAccVatInvoice.errors.length > 0) {
+          throw new Error(data.createAccVatInvoice.errors.map((e) => e.message).join('; '))
+        }
+        mirrorId = data.createAccVatInvoice.result!.id
+      } catch (e) {
+        toast.danger('对向发票创建失败,请到对方公司手工登记', { description: (e as Error).message })
+        return
       }
-      const mirrorId = data.createAccVatInvoice.result!.id
-      const linkData = await gqlFetch<{ updateAccVatInvoice: { errors: { message: string }[] | null } }>(
-        UPDATE_INVOICE,
-        { id: mirrorAsk.source.id, input: { mirrorInvoiceId: mirrorId } }
-      )
-      if (linkData.updateAccVatInvoice.errors && linkData.updateAccVatInvoice.errors.length > 0) {
-        throw new Error(linkData.updateAccVatInvoice.errors.map((e) => e.message).join('; '))
+
+      // 第二步:原票回写互链。此时镜像已建成,失败不能再提示手工登记(会造成重复建票)
+      try {
+        const linkData = await gqlFetch<{ updateAccVatInvoice: { errors: { message: string }[] | null } }>(
+          UPDATE_INVOICE,
+          { id: mirrorAsk.source.id, input: { mirrorInvoiceId: mirrorId } }
+        )
+        if (linkData.updateAccVatInvoice.errors && linkData.updateAccVatInvoice.errors.length > 0) {
+          throw new Error(linkData.updateAccVatInvoice.errors.map((e) => e.message).join('; '))
+        }
+        toast.success('对向发票草稿已创建并互链')
+      } catch (e) {
+        toast.warning('对向发票已创建,但原票互链回写失败', { description: (e as Error).message })
       }
-      toast.success('对向发票草稿已创建并互链')
       setReloadKey((k) => k + 1)
-    } catch (e) {
-      // 不阻塞原票:原发票已创建成功,对向发票失败只提示手工登记
-      toast.danger('对向发票创建失败,请到对方公司手工登记', { description: (e as Error).message })
     } finally {
       setMirroring(false)
       closeMirrorAsk()
@@ -307,17 +321,21 @@ function InvoicesPage() {
     setDrawer({ mode, row })
     if (mode === 'create' || row == null) {
       setItems([])
+      setItemsLoaded(true)
       return
     }
+    setItemsLoaded(false)
     gqlFetch<{ accVatInvoices: { results: { items: unknown }[] } }>(FETCH_ITEMS, { id: row.id })
       .then((d) => {
         if (my !== reqIdRef.current) return
         setItems(parseItems(d.accVatInvoices.results[0]?.items))
+        setItemsLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
         toast.danger('销售清单加载失败', { description: (e as Error).message })
         setItems([])
+        setItemsLoaded(false)
       })
   }
 
@@ -354,6 +372,7 @@ function InvoicesPage() {
           reqIdRef.current++
           setDrawer(null)
           setItems([])
+          setItemsLoaded(false)
         }}
         // 表格列是白名单子集(卖方/买方/金额/科目等大量字段不在其中),行数据不全;
         // 不传 row,走 rowId 自查完整记录(同 bank-accounts 先例)
@@ -388,6 +407,12 @@ function InvoicesPage() {
             visible: (v) => v.partyType != null,
             input: ({ value, onChange, isDisabled, values }) => {
               const [resource, label] = PARTY_SOURCE[String(values.partyType)] ?? ['salCustomers', '对手']
+              const companyId = (values.companyId ?? null) as string | null
+              // 对手是内部公司时排除本公司自身(不能给自己开票),同 accountInput 按公司过滤写法
+              const filter =
+                resource === 'basCompanies' && companyId
+                  ? `{id: {notEq: ${JSON.stringify(companyId)}}}`
+                  : undefined
               return (
                 <RemoteSelect
                   resource={resource}
@@ -396,6 +421,7 @@ function InvoicesPage() {
                   value={value == null ? null : String(value)}
                   onChange={onChange}
                   isDisabled={isDisabled}
+                  filter={filter}
                 />
               )
             },
@@ -459,7 +485,7 @@ function InvoicesPage() {
                 label="销售清单"
                 items={items}
                 onChange={setItems}
-                readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT')}
+                readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || !itemsLoaded}
               />
               <SynieAttachmentPanel
                 ownerType="acc_vat_invoice"
@@ -471,7 +497,9 @@ function InvoicesPage() {
           )
         }}
         onSubmit={async (values, mode) => {
-          const input = { ...values, items: serializeItems(items) }
+          // edit 态 items 未就绪(FETCH_ITEMS 未回或失败)时省略 items 键,不用空清单覆盖后端原值
+          const omitItems = mode === 'edit' && !itemsLoaded
+          const input = omitItems ? values : { ...values, items: serializeItems(items) }
           if (mode === 'create') {
             const data = await gqlFetch<{
               createAccVatInvoice: { result: { id: string } | null; errors: { message: string }[] | null }
@@ -497,7 +525,7 @@ function InvoicesPage() {
             if (data.updateAccVatInvoice.errors && data.updateAccVatInvoice.errors.length > 0) {
               throw new Error(data.updateAccVatInvoice.errors.map((e) => e.message).join('; '))
             }
-            toast.success('发票已更新')
+            toast.success(omitItems ? '发票已更新(销售清单未加载,本次未修改)' : '发票已更新')
             setReloadKey((k) => k + 1)
           }
         }}

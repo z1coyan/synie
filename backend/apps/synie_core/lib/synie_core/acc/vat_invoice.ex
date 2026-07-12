@@ -45,6 +45,31 @@ defmodule SynieCore.Acc.InvoiceDraft do
   end
 end
 
+defmodule SynieCore.Acc.PartyNotSelf do
+  @moduledoc "对手校验:party_type 为内部公司时,对手不能是发票所属公司自身(不能给自己开票)。"
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    party_type = Ash.Changeset.get_attribute(changeset, :party_type)
+    party_id = Ash.Changeset.get_attribute(changeset, :party_id)
+
+    company_id =
+      if changeset.action_type == :create do
+        Ash.Changeset.get_attribute(changeset, :company_id)
+      else
+        changeset.data.company_id
+      end
+
+    if party_type == :company and not is_nil(party_id) and party_id == company_id do
+      {:error, field: :party_id, message: "对手不能是本公司"}
+    else
+      :ok
+    end
+  end
+end
+
 defmodule SynieCore.Acc.VatInvoice do
   @moduledoc """
   增值税发票(头),对应 `acc_vat_invoice` 表。
@@ -197,6 +222,7 @@ defmodule SynieCore.Acc.VatInvoice do
 
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Acc.PartyExists, []}
+      validate {SynieCore.Acc.PartyNotSelf, []}
 
       # 编号留空自动取号(须在构建期,见 AutoNumber moduledoc)
       change {SynieCore.Numbering.AutoNumber, attribute: :doc_no}
@@ -250,6 +276,7 @@ defmodule SynieCore.Acc.VatInvoice do
       # 构建期预检(用户体验),权威复检在 before_action 钩子内
       validate {SynieCore.Acc.InvoiceDraft, []}
       validate {SynieCore.Acc.PartyExists, []}
+      validate {SynieCore.Acc.PartyNotSelf, []}
 
       change fn changeset, _context ->
         Ash.Changeset.before_action(changeset, fn cs ->

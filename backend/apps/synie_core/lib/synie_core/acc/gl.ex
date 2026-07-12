@@ -153,7 +153,12 @@ defmodule SynieCore.Acc.GL do
       Enum.all?(entries, fn entry ->
         debit = dec(entry[:debit])
         credit = dec(entry[:credit])
-        single_sided = Decimal.compare(debit, 0) != :eq != (Decimal.compare(credit, 0) != :eq)
+
+        # 显式拆两个布尔量再异或比较,避免链式 != 的运算优先级读起来费解
+        # (mix format 会把纯冗余的分组括号吃掉,故用具名变量而非加括号来提升可读性)
+        debit_nonzero? = Decimal.compare(debit, 0) != :eq
+        credit_nonzero? = Decimal.compare(credit, 0) != :eq
+        single_sided = debit_nonzero? != credit_nonzero?
 
         if allow_negative? do
           single_sided

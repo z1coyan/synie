@@ -21,7 +21,7 @@ import { gqlFetch } from '~/lib/graphql'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
 import { UUID_RE, buildRowQuery } from '../synie-data-grid/query'
-import type { LocalGridMeta, Row } from '../synie-data-grid/types'
+import type { GridColumnMeta, LocalGridMeta, Row } from '../synie-data-grid/types'
 import { RemoteDialogSelect } from '../synie-remote-select/RemoteDialogSelect'
 import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
 import type { RemoteSourceConfig } from '../synie-remote-select/remote-query'
@@ -100,10 +100,14 @@ const safeParseDate = (v: unknown) => {
   }
 }
 
+// 稳定空数组回退:remoteMeta.data?.columns 未就绪时若每次渲染都 `?? []` 新建数组,
+// 会让下方以 columns 为依赖的 effect 每次渲染都判定"变了",存在自激重渲染风险
+const EMPTY_COLUMNS: GridColumnMeta[] = []
+
 export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const { resource, mode, isOpen, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
   const remoteMeta = useGridMeta(resource, !props.meta) // 本地模式不发请求
-  const columns = props.meta?.columns ?? remoteMeta.data?.columns ?? []
+  const columns = props.meta?.columns ?? remoteMeta.data?.columns ?? EMPTY_COLUMNS
   const metaPending = !props.meta && remoteMeta.isPending
   const metaError = !props.meta && remoteMeta.isError
 
