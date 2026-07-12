@@ -123,9 +123,12 @@ export function initialValues(fields: ResolvedField[], row: Row | null | undefin
         break
       }
       case 'date':
-      case 'datetime':
-        // DatePicker 只吃 YYYY-MM-DD;datetime ISO 串截取日期位
+        // DatePicker(day 粒度)只吃 YYYY-MM-DD
         out[f.name] = row ? (raw ? String(raw).slice(0, 10) : null) : (f.defaultValue ?? null)
+        break
+      case 'datetime':
+        // ISO UTC → 本地 YYYY-MM-DDTHH:mm:ss(DatePicker second 粒度编辑);提交时转回 UTC
+        out[f.name] = row ? toLocalDateTime(raw) : (f.defaultValue ?? null)
         break
       case 'enum':
       case 'fk':
@@ -137,6 +140,15 @@ export function initialValues(fields: ResolvedField[], row: Row | null | undefin
     }
   }
   return out
+}
+
+/** ISO UTC 串 → 本地时区 YYYY-MM-DDTHH:mm:ss(@internationalized/date 的 CalendarDateTime 形态);非法回落 null */
+function toLocalDateTime(raw: unknown): string | null {
+  if (raw == null || raw === '') return null
+  const d = new Date(String(raw))
+  if (Number.isNaN(d.getTime())) return null
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 // 纯空格视为空；false/0 不算空
@@ -152,6 +164,12 @@ export function collectValues(
   for (const f of visibleFields(fields, values)) {
     if (isFieldDisabled(f, mode)) continue
     const v = values[f.name] ?? null
+    if (f.col.type === 'datetime' && typeof v === 'string' && v !== '') {
+      // 草稿是本地 YYYY-MM-DDTHH:mm:ss,转回 ISO UTC 提交(与 initialValues 的 toLocalDateTime 互逆)
+      const d = new Date(v)
+      out[f.name] = Number.isNaN(d.getTime()) ? null : d.toISOString()
+      continue
+    }
     // fk 全裁剪退化 TextField 被清空时草稿是 '' 而非 null;GraphQL uuid 类型不吃空串,归 null
     out[f.name] = f.col.type === 'fk' && v === '' ? null : v
   }

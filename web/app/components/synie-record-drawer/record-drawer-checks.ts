@@ -135,7 +135,17 @@ const row: Row = {
 } as unknown as Row
 const ivEdit = initialValues(resolveFields(cols, 'edit', [], {}), row)
 eq(ivEdit.price, 12.5, 'edit decimal 字符串归一为 number')
-eq(ivEdit.happenedAt, '2026-01-05', 'edit datetime ISO 截取日期位')
+// datetime 草稿是本地 YYYY-MM-DDTHH:mm:ss;时区无关断言:格式对 + 回转 UTC 与原值一致
+eq(
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(String(ivEdit.happenedAt)),
+  true,
+  'edit datetime 草稿为本地 YYYY-MM-DDTHH:mm:ss'
+)
+eq(
+  new Date(String(ivEdit.happenedAt)).toISOString(),
+  '2026-01-05T08:30:00.000Z',
+  'edit datetime 保留时分秒(回转 UTC 一致)'
+)
 eq(ivEdit.dueOn, '2026-01-05', 'edit date 原样')
 eq(ivEdit.name, '', 'edit string null 归一空串')
 eq(ivEdit.enabled, true, 'edit boolean 原样')
@@ -165,6 +175,14 @@ const createSubmitted = collectValues(
 )
 eq(createSubmitted.code, 'a', 'createOnly 创建态进 payload')
 eq('price' in createSubmitted, false, 'readOnly 创建态不进 payload')
+
+// —— collectValues:datetime 本地草稿转回 ISO UTC 提交(与 initialValues 互逆) ——
+const dtSubmitted = collectValues(
+  resolveFields([col('happenedAt', 'datetime')], 'edit', [], {}),
+  { happenedAt: ivEdit.happenedAt },
+  'edit'
+)
+eq(dtSubmitted.happenedAt, '2026-01-05T08:30:00.000Z', 'datetime 提交转回 ISO UTC')
 
 // —— collectValues:fk 空串归 null(全裁剪退化 TextField 清空时提交 '',GraphQL uuid 不吃空串);非 fk string 字段 '' 不受影响 ——
 const fkSubmitted = collectValues(resolveFields([parentCol, col('name', 'string')], 'edit', [], {}), { parentId: '', name: '' }, 'edit')

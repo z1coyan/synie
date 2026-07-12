@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { parseDate } from '@internationalized/date'
+import { parseDate, parseDateTime } from '@internationalized/date'
 import {
   Button,
   Calendar,
@@ -87,6 +87,16 @@ const safeParseDate = (v: unknown) => {
   if (typeof v !== 'string' || !v) return null
   try {
     return parseDate(v)
+  } catch {
+    return null
+  }
+}
+
+// datetime 草稿是本地 YYYY-MM-DDTHH:mm:ss(fields.ts toLocalDateTime 产出)
+const safeParseDateTime = (v: unknown) => {
+  if (typeof v !== 'string' || !v) return null
+  try {
+    return parseDateTime(v)
   } catch {
     return null
   }
@@ -352,12 +362,15 @@ function FieldInput({
       )
     case 'date':
     case 'datetime':
-      // ponytail: datetime 编辑先按日期粒度,业务需要时分秒时换带 granularity 的 DateField
+      // datetime 到秒粒度(银行流水交易时间先例),CalendarDateTime.toString() 落草稿
+      // YYYY-MM-DDTHH:mm:ss;date 保持日粒度 YYYY-MM-DD
       return (
         <DatePicker
+          granularity={field.col.type === 'datetime' ? 'second' : 'day'}
+          hourCycle={24}
           isDisabled={isDisabled}
           isRequired={field.required}
-          value={safeParseDate(value)}
+          value={field.col.type === 'datetime' ? safeParseDateTime(value) : safeParseDate(value)}
           onChange={(v) => onChange(v ? v.toString() : null)}
         >
           <Label>{field.label}</Label>
