@@ -28,6 +28,7 @@ defmodule SynieCore do
 
       list SynieCore.Acc.BankImportTemplate, :acc_bank_import_templates, :read,
         paginate_with: :offset
+
       list SynieCore.Acc.VatInvoice, :acc_vat_invoices, :read, paginate_with: :offset
     end
 
