@@ -38,6 +38,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   acc_gl_journal: '会计凭证',
   acc_gl_journal_line: '凭证分录行',
   acc_bank_account: '银行账户',
+  acc_bank_transaction: '银行流水',
+  acc_bank_import_template: '流水导入模板',
   acc_vat_invoice: '增值税发票',
   sys_numbering_rule: '编号规则',
   sys_numbering_counter: '编号计数器',

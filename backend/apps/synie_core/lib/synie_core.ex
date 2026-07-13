@@ -24,6 +24,11 @@ defmodule SynieCore do
       list SynieCore.Acc.GlJournal, :acc_gl_journals, :read, paginate_with: :offset
       list SynieCore.Acc.GlJournalLine, :acc_gl_journal_lines, :read, paginate_with: :offset
       list SynieCore.Acc.BankAccount, :acc_bank_accounts, :read, paginate_with: :offset
+      list SynieCore.Acc.BankTransaction, :acc_bank_transactions, :read, paginate_with: :offset
+
+      list SynieCore.Acc.BankImportTemplate, :acc_bank_import_templates, :read,
+        paginate_with: :offset
+
       list SynieCore.Acc.VatInvoice, :acc_vat_invoices, :read, paginate_with: :offset
     end
 
@@ -94,6 +99,13 @@ defmodule SynieCore do
       update SynieCore.Acc.BankAccount, :update_acc_bank_account, :update
       destroy SynieCore.Acc.BankAccount, :destroy_acc_bank_account, :destroy
 
+      create SynieCore.Acc.BankTransaction, :create_acc_bank_transaction, :create
+      update SynieCore.Acc.BankTransaction, :update_acc_bank_transaction, :update
+      destroy SynieCore.Acc.BankTransaction, :destroy_acc_bank_transaction, :destroy
+
+      create SynieCore.Acc.BankImportTemplate, :create_acc_bank_import_template, :create
+      update SynieCore.Acc.BankImportTemplate, :update_acc_bank_import_template, :update
+      destroy SynieCore.Acc.BankImportTemplate, :destroy_acc_bank_import_template, :destroy
       create SynieCore.Acc.VatInvoice, :create_acc_vat_invoice, :create
       update SynieCore.Acc.VatInvoice, :update_acc_vat_invoice, :update
       destroy SynieCore.Acc.VatInvoice, :destroy_acc_vat_invoice, :destroy
@@ -119,6 +131,8 @@ defmodule SynieCore do
     resource SynieCore.Acc.GlJournal
     resource SynieCore.Acc.GlJournalLine
     resource SynieCore.Acc.BankAccount
+    resource SynieCore.Acc.BankTransaction
+    resource SynieCore.Acc.BankImportTemplate
     resource SynieCore.Acc.VatInvoice
     resource SynieCore.Audit.Log
     resource SynieCore.Numbering.Rule

@@ -59,6 +59,8 @@ export interface SynieDataGridProps {
   tree?: TreeOptions
   /** 恒定并进查询 filter 的条件(如 { companyId: { eq: id } }),不进列筛选 UI,平铺/树形都生效 */
   fixedFilter?: Record<string, unknown>
+  /** 初始排序(如流水页按交易时间倒序);仅作初值,用户点表头后照常接管 */
+  defaultSort?: SortState
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
@@ -165,7 +167,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const pickMode = props.pick != null
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const [sort, setSort] = useState<SortState | null>(null)
+  const [sort, setSort] = useState<SortState | null>(props.defaultSort ?? null)
   const [filters, setFilters] = useState<FilterState>({})
   const [search, setSearch] = useState('')
   const [selection, setSelection] = useState<Selection>(new Set())

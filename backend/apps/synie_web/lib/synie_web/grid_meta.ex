@@ -24,6 +24,8 @@ defmodule SynieWeb.GridMeta do
     "accGlJournalLines" => SynieCore.Acc.GlJournalLine,
     "accGlEntries" => SynieCore.Acc.GlEntry,
     "accBankAccounts" => SynieCore.Acc.BankAccount,
+    "accBankTransactions" => SynieCore.Acc.BankTransaction,
+    "accBankImportTemplates" => SynieCore.Acc.BankImportTemplate,
     "accVatInvoices" => SynieCore.Acc.VatInvoice
   }
 

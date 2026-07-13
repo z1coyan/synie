@@ -81,7 +81,11 @@ export const menuModules: MenuModule[] = [
       },
       {
         label: '资金',
-        items: [{ label: '银行账户', path: '/finance/bank-accounts' }],
+        items: [
+          { label: '银行账户', path: '/finance/bank-accounts' },
+          { label: '银行流水', path: '/finance/bank-transactions' },
+          { label: '流水导入模板', path: '/finance/bank-import-templates' },
+        ],
       },
     ],
   },

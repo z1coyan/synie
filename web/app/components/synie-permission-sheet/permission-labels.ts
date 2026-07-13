@@ -23,6 +23,8 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'acc.gl_entry': '总账分录',
   'acc.gl_journal': '会计凭证',
   'acc.bank_account': '银行账户',
+  'acc.bank_transaction': '银行流水',
+  'acc.bank_import_template': '流水导入模板',
   'acc.vat_invoice': '增值税发票',
 }
 

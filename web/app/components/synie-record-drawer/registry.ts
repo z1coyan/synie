@@ -33,6 +33,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
   accGlJournalLines: { label: '分录行' },
   accGlEntries: { label: '分录' },
   accBankAccounts: { label: '银行账户' },
+  accBankTransactions: { label: '银行流水' },
+  accBankImportTemplates: { label: '流水导入模板' },
   accVatInvoices: { label: '增值税发票' },
 }
 
