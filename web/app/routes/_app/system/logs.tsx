@@ -16,6 +16,8 @@ const ACTION_LABELS: Record<string, string> = {
   reset_password: '重置密码',
   audit: '审核',
   cancel: '取消',
+  void: '作废',
+  reverse: '红冲',
 }
 
 // 值为 Track 落库的 GraphQL type 名;新资源接审计后在此补中文,漏了则原样显示英文
@@ -38,6 +40,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   acc_bank_account: '银行账户',
   acc_bank_transaction: '银行流水',
   acc_bank_import_template: '流水导入模板',
+  acc_vat_invoice: '增值税发票',
   sys_numbering_rule: '编号规则',
   sys_numbering_counter: '编号计数器',
 }

@@ -28,6 +28,7 @@ defmodule SynieCore do
 
       list SynieCore.Acc.BankImportTemplate, :acc_bank_import_templates, :read,
         paginate_with: :offset
+      list SynieCore.Acc.VatInvoice, :acc_vat_invoices, :read, paginate_with: :offset
     end
 
     mutations do
@@ -104,6 +105,12 @@ defmodule SynieCore do
       create SynieCore.Acc.BankImportTemplate, :create_acc_bank_import_template, :create
       update SynieCore.Acc.BankImportTemplate, :update_acc_bank_import_template, :update
       destroy SynieCore.Acc.BankImportTemplate, :destroy_acc_bank_import_template, :destroy
+      create SynieCore.Acc.VatInvoice, :create_acc_vat_invoice, :create
+      update SynieCore.Acc.VatInvoice, :update_acc_vat_invoice, :update
+      destroy SynieCore.Acc.VatInvoice, :destroy_acc_vat_invoice, :destroy
+      update SynieCore.Acc.VatInvoice, :audit_acc_vat_invoice, :audit
+      update SynieCore.Acc.VatInvoice, :void_acc_vat_invoice, :void
+      update SynieCore.Acc.VatInvoice, :reverse_acc_vat_invoice, :reverse
     end
   end
 
@@ -125,6 +132,7 @@ defmodule SynieCore do
     resource SynieCore.Acc.BankAccount
     resource SynieCore.Acc.BankTransaction
     resource SynieCore.Acc.BankImportTemplate
+    resource SynieCore.Acc.VatInvoice
     resource SynieCore.Audit.Log
     resource SynieCore.Numbering.Rule
     resource SynieCore.Numbering.Counter
