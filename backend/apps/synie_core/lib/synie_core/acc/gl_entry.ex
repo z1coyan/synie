@@ -22,8 +22,8 @@ defmodule SynieCore.Acc.GlEntry do
 
     check_constraints do
       check_constraint :debit, "single_sided_amount",
-        check: "debit >= 0 AND credit >= 0 AND (debit = 0) <> (credit = 0)",
-        message: "借贷金额必须恰一边大于零"
+        check: "(debit = 0) <> (credit = 0)",
+        message: "借贷金额必须恰一边非零"
 
       check_constraint :party_type, "party_pair",
         check: "(party_type IS NULL) = (party_id IS NULL)",
@@ -92,7 +92,8 @@ defmodule SynieCore.Acc.GlEntry do
         :voucher_type,
         :voucher_id,
         :voucher_no,
-        :remarks
+        :remarks,
+        :is_reversal
       ]
     end
 
@@ -100,6 +101,12 @@ defmodule SynieCore.Acc.GlEntry do
     update :mark_cancelled do
       accept []
       change set_attribute(:is_cancelled, true)
+    end
+
+    # 仅内部(GL.reverse!)使用:原分录组被红冲后标记
+    update :mark_reversed do
+      accept []
+      change set_attribute(:is_reversed, true)
     end
   end
 
@@ -169,6 +176,20 @@ defmodule SynieCore.Acc.GlEntry do
       default false
       public? true
       description "已作废"
+    end
+
+    attribute :is_reversed, :boolean do
+      allow_nil? false
+      default false
+      public? true
+      description "已被红冲(原凭证状态)"
+    end
+
+    attribute :is_reversal, :boolean do
+      allow_nil? false
+      default false
+      public? true
+      description "红字冲销行"
     end
 
     attribute :remarks, :string do

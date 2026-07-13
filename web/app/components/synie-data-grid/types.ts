@@ -53,6 +53,11 @@ export interface GridMeta {
   destroyMutation: string | null
 }
 
+/** 本地 meta:不经后端 GridMeta 反射的显式列定义(内嵌 json 子表等场景) */
+export interface LocalGridMeta {
+  columns: GridColumnMeta[]
+}
+
 /** 行数据是运行时拼查询取回的,类型边界即 unknown(spec「类型边界」节) */
 export type Row = Record<string, unknown> & { id: string }
 

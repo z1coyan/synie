@@ -21,7 +21,7 @@ import { gqlFetch } from '~/lib/graphql'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
 import { UUID_RE, buildRowQuery } from '../synie-data-grid/query'
-import type { Row } from '../synie-data-grid/types'
+import type { GridColumnMeta, LocalGridMeta, Row } from '../synie-data-grid/types'
 import { RemoteDialogSelect } from '../synie-remote-select/RemoteDialogSelect'
 import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
 import type { RemoteSourceConfig } from '../synie-remote-select/remote-query'
@@ -52,6 +52,8 @@ export interface SynieRecordDrawerProps {
   rowId?: string
   exclude?: string[]
   fields?: Record<string, FieldOverride>
+  /** 本地列/字段定义,提供时跳过 GridMeta 查询(resource 仅作缓存 key/标题用途) */
+  meta?: LocalGridMeta
   /** create/edit 提交;resolve 即成功(组件关抽屉),throw 则 toast 且不关 */
   onSubmit?: (values: Record<string, unknown>, mode: 'create' | 'edit') => Promise<void>
   /** view 态 footer 显示「编辑」按钮,点击回调(页面自行切 mode) */
@@ -61,9 +63,15 @@ export interface SynieRecordDrawerProps {
   /**
    * meta 列之外的附加内容(如多对多关联控件),渲染在字段栅格末尾、占满整行;
    * 状态由页面自持,提交在页面 onSubmit 里自行处理。入参是冻结后的 mode/row(退场动画期间不闪),
-   * values 为当前表单草稿(view 态为空对象),供附加内容按表单字段联动(如按公司过滤科目候选)。
+   * values 为当前表单草稿(view 态为空对象),供附加内容按表单字段联动(如按公司过滤科目候选);
+   * patchValues 第 4 参:向表单草稿并入补丁(view 态为 no-op),供内嵌子表「从明细汇总带出」等场景回写。
    */
-  extraContent?: (mode: DrawerMode, row: Row | null | undefined, values: Record<string, unknown>) => ReactNode
+  extraContent?: (
+    mode: DrawerMode,
+    row: Row | null | undefined,
+    values: Record<string, unknown>,
+    patchValues: (patch: Record<string, unknown>) => void,
+  ) => ReactNode
 }
 
 // Tailwind v4 JIT 扫不到动态拼接类名,1-12 静态映射
@@ -92,19 +100,28 @@ const safeParseDate = (v: unknown) => {
   }
 }
 
+// 稳定空数组回退:remoteMeta.data?.columns 未就绪时若每次渲染都 `?? []` 新建数组,
+// 会让下方以 columns 为依赖的 effect 每次渲染都判定"变了",存在自激重渲染风险
+const EMPTY_COLUMNS: GridColumnMeta[] = []
+
 export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const { resource, mode, isOpen, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
-  const meta = useGridMeta(resource)
+  const remoteMeta = useGridMeta(resource, !props.meta) // 本地模式不发请求
+  const columns = props.meta?.columns ?? remoteMeta.data?.columns ?? EMPTY_COLUMNS
+  const metaPending = !props.meta && remoteMeta.isPending
+  const metaError = !props.meta && remoteMeta.isError
 
   // rowId 自取数:row 未给时按 id 查一行(列集取自 meta,fk join 一并带回)。
   // id 非法(白名单反查约定,防拼进查询)按查无处理,不发请求。
-  const wantsFetch = !props.row && !!props.rowId
+  // 本地 meta 模式下该自查路径不适用(无远程 meta 可拼列/查询),wantsFetch 直接置 false:
+  // disabled query 永远 isPending,若只挡 enabled 不挡 wantsFetch,rowPending 会恒 true 卡死 spinner。
+  const wantsFetch = !props.meta && !props.row && !!props.rowId
   const validId = !!props.rowId && UUID_RE.test(props.rowId)
   const byId = useQuery({
     queryKey: ['rowById', resource, props.rowId],
-    enabled: isOpen && wantsFetch && validId && !!meta.data,
+    enabled: isOpen && wantsFetch && validId && !!remoteMeta.data,
     queryFn: () => {
-      const q = buildRowQuery(resource, meta.data!.columns, {
+      const q = buildRowQuery(resource, remoteMeta.data!.columns, {
         limit: 1,
         offset: 0,
         sortLiteral: null,
@@ -131,7 +148,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const renderMode = frozen ? frozen.mode : mode
   const renderRow = frozen ? frozen.row : row
 
-  const fields = resolveFields(meta.data?.columns ?? [], renderMode, exclude, props.fields)
+  const fields = resolveFields(columns, renderMode, exclude, props.fields)
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
 
@@ -140,13 +157,19 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   // 初值只取决于列类型与行数据,故不列入。
   useEffect(() => {
     if (isOpen && mode !== 'view') {
-      setValues(initialValues(resolveFields(meta.data?.columns ?? [], mode, exclude, props.fields), row))
+      setValues(initialValues(resolveFields(columns, mode, exclude, props.fields), row))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, mode, row, meta.data])
+  }, [isOpen, mode, row, columns])
 
   const shown = visibleFields(fields, renderMode === 'view' ? ((renderRow ?? {}) as Record<string, unknown>) : values)
   const title = renderMode === 'create' ? `新增${label}` : renderMode === 'edit' ? `编辑${label}` : `${label}详情`
+
+  // extraContent 第 4 参:把补丁并入表单草稿;view 态无草稿可改,no-op
+  const patchValues = (patch: Record<string, unknown>) => {
+    if (renderMode === 'view') return
+    setValues((v) => ({ ...v, ...patch }))
+  }
 
   const save = async () => {
     if (!props.onSubmit || mode === 'view') return
@@ -178,21 +201,23 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
               <Sheet.Heading>{title}</Sheet.Heading>
             </Sheet.Header>
             <Sheet.Body>
-              {meta.isError || byId.isError ? (
+              {metaError || byId.isError ? (
                 // GridMeta/rowId 取数失败:展示报错并可重试(与 SynieDataGrid 同一套失败态)。
                 // 错误分支在 spinner 之前:meta 失败时 byId 因 enabled 门控永远 isPending,反序会卡死转圈
                 <EmptyState size="md" className="h-64 justify-center">
                   <EmptyState.Header>
                     <EmptyState.Title>数据加载失败</EmptyState.Title>
-                    <EmptyState.Description>{((meta.error ?? byId.error) as Error).message}</EmptyState.Description>
+                    <EmptyState.Description>
+                      {((remoteMeta.error ?? byId.error) as Error).message}
+                    </EmptyState.Description>
                   </EmptyState.Header>
                   <EmptyState.Content>
-                    <Button variant="secondary" onPress={() => (meta.isError ? meta.refetch() : byId.refetch())}>
+                    <Button variant="secondary" onPress={() => (metaError ? remoteMeta.refetch() : byId.refetch())}>
                       重试
                     </Button>
                   </EmptyState.Content>
                 </EmptyState>
-              ) : meta.isPending || rowPending ? (
+              ) : metaPending || rowPending ? (
                 <div className="flex h-32 items-center justify-center">
                   <Spinner />
                 </div>
@@ -223,7 +248,9 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                     </div>
                   ))}
                   {props.extraContent && (
-                    <div className="lg:col-span-12">{props.extraContent(renderMode, renderRow, values)}</div>
+                    <div className="lg:col-span-12">
+                      {props.extraContent(renderMode, renderRow, values, patchValues)}
+                    </div>
                   )}
                 </div>
               )}
@@ -244,7 +271,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                     </Button>
                   </Sheet.Close>
                   {/* 元数据失败时字段集为空,禁止提交空 payload */}
-                  <Button onPress={save} isPending={saving} isDisabled={meta.isError}>
+                  <Button onPress={save} isPending={saving} isDisabled={metaError}>
                     保存
                   </Button>
                 </>

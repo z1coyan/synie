@@ -8,12 +8,15 @@ export const Route = createFileRoute('/_app/finance/entries')({
   component: EntriesPage,
 })
 
-// 公司放首列;voucherId 多态 fk 链接列(文本=凭证号,点击开来源单据速览),
+// 公司放首列;voucherId 多态 fk 链接列(文本=凭证号,点击开来源单据速览),紧跟着的
+// isReversed/isReversal 是红冲标记(该分录是否已被红冲/是否为红冲分录本身);
 // 冗余的 voucherNo/voucherType 字符串列与创建/更新时间不进表格(有序白名单)
 const GRID_COLUMNS = [
   'companyId',
   'postingDate',
   'voucherId',
+  'isReversed',
+  'isReversal',
   'accountId',
   'debit',
   'credit',
