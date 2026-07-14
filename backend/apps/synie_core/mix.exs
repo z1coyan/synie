@@ -34,7 +34,8 @@ defmodule SynieCore.MixProject do
       {:ash_postgres, "~> 2.10"},
       {:ash_graphql, "~> 1.9"},
       {:pbkdf2_elixir, "~> 2.3"},
-      {:simple_sat, "~> 0.1"}
+      {:simple_sat, "~> 0.1"},
+      {:xlsx_reader, "~> 0.8"}
     ]
   end
 end
