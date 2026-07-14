@@ -7,6 +7,7 @@ defmodule SynieWeb.Application do
   def start(_type, _args) do
     children = [
       {Phoenix.PubSub, name: SynieWeb.PubSub},
+      SynieWeb.LoginRateLimiter,
       SynieWeb.Endpoint
     ]
 
