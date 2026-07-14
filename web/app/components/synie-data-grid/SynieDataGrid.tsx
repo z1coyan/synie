@@ -55,6 +55,8 @@ export interface SynieDataGridProps {
   onImport?: (ctx: ActionContext) => void
   /** 提供时「导入」按钮渲染为下拉菜单(仍由 can('import') 门控),与 onImport 二选一 */
   importMenu?: ImportMenuItem[]
+  /** 隐藏搜索框(抽屉内嵌短列表等场景);工具栏动作按钮不受影响 */
+  hideSearch?: boolean
   onPrint?: (rows: Row[]) => void
   actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
   bulkActions?: BulkAction[]
@@ -475,15 +477,18 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* 工具栏:搜索 + Task 6 动作按钮 */}
+      {/* 工具栏:搜索 + Task 6 动作按钮;hideSearch 且无动作按钮时整行不渲染 */}
+      {(!props.hideSearch || actions.toolbarActions.length > 0) && (
       <div className="flex flex-wrap items-center gap-3">
-        <GridSearch
-          value={search}
-          onCommit={(v) => {
-            setSearch(v)
-            setPage(1)
-          }}
-        />
+        {!props.hideSearch && (
+          <GridSearch
+            value={search}
+            onCommit={(v) => {
+              setSearch(v)
+              setPage(1)
+            }}
+          />
+        )}
         <div className="ml-auto flex items-center gap-2">
           {actions.toolbarActions.map((a) =>
             a.key === 'import' && props.importMenu ? (
@@ -521,6 +526,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           )}
         </div>
       </div>
+      )}
 
       {/* 活跃筛选 Chips */}
       {Object.keys(filters).length > 0 && (

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AlertDialog, Button, Calendar, DateField, DatePicker, Input, Label, Modal, NumberField, TextField, toast } from '@heroui/react'
+import { Alert, AlertDialog, Button, Calendar, Chip, DateField, DatePicker, Input, Label, Meter, Modal, NumberField, Surface, TextField, toast } from '@heroui/react'
 import { parseDate } from '@internationalized/date'
 import { useQuery } from '@tanstack/react-query'
+import { formatAmount } from '~/lib/amount'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
@@ -66,9 +67,91 @@ export function ReconcileDrawer({ txn, onOpenChange, onChanged }: ReconcileDrawe
       // 行数据来自列表白名单不全,按 id 自查完整记录(含派生列)
       rowId={txn?.id}
       contentClassName="w-full lg:w-[880px]"
-      exclude={['balance', 'counterpartyAccount', 'note', 'insertedAt', 'updatedAt']}
+      // 金额/状态/进度/交易时间都进头部概要卡;银行余额快照与系统时间戳对对账无用
+      exclude={[
+        'income',
+        'expense',
+        'occurredAt',
+        'reconcileStatus',
+        'reconciledAmount',
+        'unreconciledAmount',
+        'balance',
+        'insertedAt',
+        'updatedAt',
+      ]}
+      // 剩余字段只是辨识流水用的次要信息,双列紧凑排布
+      fields={{
+        companyId: { order: 0, cols: 6 },
+        bankAccountId: { order: 1, cols: 6 },
+        counterpartyName: { order: 2, cols: 6 },
+        counterpartyAccount: { order: 3, cols: 6 },
+        summary: { order: 4, cols: 6 },
+        note: { order: 5, cols: 6 },
+      }}
+      headerContent={(_mode, row) => (row ? <TxnSummary txn={row} /> : null)}
       extraContent={(_mode, row) => (row ? <ReconcileSection txn={row} onChanged={bump} /> : null)}
     />
+  )
+}
+
+const STATUS_COLORS: Record<string, 'danger' | 'warning' | 'success'> = {
+  UNRECONCILED: 'danger',
+  PARTIAL: 'warning',
+  RECONCILED: 'success',
+}
+
+/** 头部概要卡:大字金额 + 对账状态与进度条,用户不再从平铺字段里找数、心算差额 */
+function TxnSummary({ txn }: { txn: Row }) {
+  // 状态中文名取 GridMeta 枚举标签(抽屉已查过,恒缓存命中),不另行硬编码
+  const meta = useGridMeta('accBankTransactions')
+  const isIncome = txn.income != null
+  const amount = Number(isIncome ? txn.income : txn.expense) || 0
+  const reconciled = Number(txn.reconciledAmount) || 0
+  const unreconciled = Number(txn.unreconciledAmount) || 0
+  const status = String(txn.reconcileStatus ?? 'UNRECONCILED')
+  const statusLabel =
+    meta.data?.columns
+      .find((c) => c.name === 'reconcileStatus')
+      ?.enumOptions?.find((o) => o.value === status)?.label ?? status
+  const statusColor = STATUS_COLORS[status] ?? 'default'
+
+  return (
+    <Surface variant="secondary" className="flex flex-col gap-5 rounded-2xl p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm text-muted">{isIncome ? '收入金额' : '支出金额'}</span>
+          <div
+            className={`text-3xl font-semibold leading-none tabular-nums ${isIncome ? 'text-success' : 'text-foreground'}`}
+          >
+            {isIncome ? '+' : '-'}
+            {formatAmount(amount)}
+          </div>
+          <span className="mt-1 text-sm text-muted">
+            {new Date(String(txn.occurredAt)).toLocaleString('zh-CN', { hour12: false })}
+          </span>
+        </div>
+        <Chip size="sm" color={statusColor}>
+          {statusLabel}
+        </Chip>
+      </div>
+      <div className="flex flex-col gap-2">
+        <Meter aria-label="对账进度" value={reconciled} maxValue={amount || 1} color={statusColor}>
+          <Label>对账进度</Label>
+          <Meter.Output />
+          <Meter.Track>
+            <Meter.Fill />
+          </Meter.Track>
+        </Meter>
+        <div className="flex items-center justify-between text-sm tabular-nums">
+          <span className="text-muted">
+            已对账 <span className="font-medium text-foreground">{formatAmount(reconciled)}</span>
+          </span>
+          <span className="text-muted">
+            未对账 <span className="font-medium text-foreground">{formatAmount(unreconciled)}</span>
+          </span>
+        </div>
+      </div>
+    </Surface>
   )
 }
 
@@ -113,18 +196,44 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
     }
   }
 
+  // 还有未对账余额时把动作按钮升为主按钮引导操作;已对完则全部退居次要
+  const hasRemaining = Number(txn.unreconciledAmount) > 0
+
   return (
     <div className="flex flex-col gap-4">
+      {ledger.data === null && !ledger.isPending && (
+        <Alert status="warning">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>该银行账户未绑定会计科目</Alert.Title>
+            <Alert.Description>请先在「银行账户」中绑定科目,再进行对账。</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+      {ledger.isError && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>银行账户信息加载失败</Alert.Title>
+            <Alert.Description>{(ledger.error as Error).message}</Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-medium">对账关联记录</h3>
+          <h3 className="text-sm font-medium">对账记录</h3>
           {typeof ledger.data === 'string' && (
             <div className="flex items-center gap-2">
               <Button size="sm" variant="secondary" onPress={() => setLinkOpen(true)}>
                 关联已有凭证
               </Button>
               {canQuick && (
-                <Button size="sm" variant="secondary" onPress={() => setQuickOpen(true)}>
+                <Button
+                  size="sm"
+                  variant={hasRemaining ? 'primary' : 'secondary'}
+                  onPress={() => setQuickOpen(true)}
+                >
                   快速新增凭证
                 </Button>
               )}
@@ -135,6 +244,12 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
           resource="accBankReconciliations"
           columns={['journalId', 'amount', 'insertedAt']}
           fixedFilter={{ bankTransactionId: { eq: txn.id } }}
+          // 抽屉内嵌短列表,搜索框只添噪音
+          hideSearch
+          overrides={{
+            amount: { render: (v) => formatAmount(v) },
+            insertedAt: { label: '对账时间' },
+          }}
           // accBankReconciliations 无独立权限码、capabilities 恒空;入口已由外层「对账」行动作按
           // reconcile 门控(能进本抽屉即有 reconcile),故此处解除动作不再挂 capability
           rowActions={[
@@ -142,13 +257,6 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
           ]}
         />
       </section>
-
-      {ledger.data === null && !ledger.isPending && (
-        <p className="text-sm text-danger">该银行账户未绑定会计科目,请先在「银行账户」中绑定后再对账。</p>
-      )}
-      {ledger.isError && (
-        <p className="text-sm text-danger">银行账户信息加载失败:{(ledger.error as Error).message}</p>
-      )}
 
       {typeof ledger.data === 'string' && (
         <>
@@ -181,7 +289,7 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
                   <AlertDialog.Heading>确认解除对账?</AlertDialog.Heading>
                 </AlertDialog.Header>
                 <AlertDialog.Body>
-                  <p>将解除该流水与凭证的对账关联(金额 {String(unlink.amount)}),此操作不影响凭证本身。</p>
+                  <p>将解除该流水与凭证的对账关联(金额 {formatAmount(unlink.amount)}),此操作不影响凭证本身。</p>
                 </AlertDialog.Body>
                 <AlertDialog.Footer>
                   <Button slot="close" variant="tertiary" isDisabled={unlinking}>取消</Button>
