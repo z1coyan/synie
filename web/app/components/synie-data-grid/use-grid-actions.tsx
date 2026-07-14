@@ -93,13 +93,13 @@ export function useGridActions(opts: {
       .filter((a) => can(a.key) && (a.scope === scope || a.scope === 'both'))
       .map(extendedAction)
 
-  // 工具栏:新增/导入/导出(print 由行内与批量承载)
+  // 工具栏:导入/新增/导出(print 由行内与批量承载);导入在新增左侧(流水导入产品要求)
   const toolbarActions: ResolvedAction[] = [
-    ...(can('create') && opts.onCreate
-      ? [{ key: 'create', label: '新增', isDanger: false, run: () => opts.onCreate!() }]
-      : []),
     ...(can('import') && opts.onImport
       ? [{ key: 'import', label: '导入', isDanger: false, run: () => opts.onImport!(ctx) }]
+      : []),
+    ...(can('create') && opts.onCreate
+      ? [{ key: 'create', label: '新增', isDanger: false, run: () => opts.onCreate!() }]
       : []),
     ...(can('export') && opts.onExport
       ? [{ key: 'export', label: '导出', isDanger: false, run: () => opts.onExport!() }]
