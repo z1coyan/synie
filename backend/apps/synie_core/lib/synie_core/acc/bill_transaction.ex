@@ -372,6 +372,16 @@ defmodule SynieCore.Acc.BillTransaction do
       validate {SynieCore.Acc.PartyExists, []}
       validate {SynieCore.Acc.BillTransactionRules, []}
 
+      # bill_id 属性层可空是 create 建档路径的技术让步(见 moduledoc),update 无此路径:
+      # 保留在 accept 里允许改挂别的票,但置空即产生无票孤儿交易,必须拒绝
+      validate fn changeset, _context ->
+        if is_nil(Ash.Changeset.get_attribute(changeset, :bill_id)) do
+          {:error, field: :bill_id, message: "交易必须关联票据"}
+        else
+          :ok
+        end
+      end
+
       change fn changeset, _context ->
         Ash.Changeset.before_action(changeset, fn cs ->
           # 权威复检:事务内 FOR UPDATE 重读,关闭"并发审核后字段被改"竞态

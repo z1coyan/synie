@@ -464,6 +464,31 @@ defmodule SynieCore.Acc.BillTransactionTest do
     assert :ok = Ash.destroy!(txn, actor: act)
   end
 
+  test "update 置空 bill_id 被拒", ctx do
+    %{actor: act} = ctx
+
+    txn = txn!(base_attrs(ctx), actor: act)
+
+    error =
+      assert_raise Ash.Error.Invalid, fn ->
+        txn
+        |> Ash.Changeset.for_update(:update, %{bill_id: nil}, actor: act)
+        |> Ash.update!()
+      end
+
+    assert Exception.message(error) =~ "交易必须关联票据"
+
+    # 改挂到另一张票仍然允许(bill_id 保留在 accept 内)
+    other_bill = register_bill!()
+
+    updated =
+      txn
+      |> Ash.Changeset.for_update(:update, %{bill_id: other_bill.id}, actor: act)
+      |> Ash.update!()
+
+    assert updated.bill_id == other_bill.id
+  end
+
   test "读取按公司范围过滤 fail-closed", ctx do
     %{company: co, actor: act} = ctx
 
