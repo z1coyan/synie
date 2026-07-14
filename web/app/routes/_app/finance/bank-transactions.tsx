@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
+import { formatAmount } from '~/lib/amount'
 import { gqlFetch } from '~/lib/graphql'
 import { BankImportCreateDrawer } from '~/components/bank-import/BankImportCreateDrawer'
 import { BankImportHistoryDrawer } from '~/components/bank-import/BankImportHistoryDrawer'
@@ -30,24 +31,59 @@ const UPDATE_BANK_TRANSACTION = `
   }
 `
 
-// 公司放首列;对方账号/备注/时间戳不进表格(有序白名单,兼当 exclude)
+// 列序对齐银行流水单心智:身份(公司/账户)→ 时间 → 交易内容(摘要/对方)→ 金额(收/支)
+// → 对账扩展区(状态/未对账)收尾。余额是银行口径快照(常空、扫读噪音)不进表格,
+// 详情「查看」抽屉仍可见;对方账号/备注/时间戳同理(有序白名单,兼当 exclude)
 const GRID_COLUMNS = [
   'companyId',
   'bankAccountId',
   'occurredAt',
   'summary',
+  'counterpartyName',
   'income',
   'expense',
-  'balance',
   'reconcileStatus',
   'unreconciledAmount',
-  'counterpartyName',
 ]
 
-// 对账状态三态胶囊:未对账红、部分对账橙、已对账绿
+// 金额列降噪:列头去「金额」后缀、千分位;方向由列头表达故不加正负号,收入以绿色示向;
+// 未对账为 0(已对完)弱化、有余额保持前景色。render 返回 null 回落 defaultCell,空值仍出「—」
 const GRID_OVERRIDES = {
+  // 交易时间到分即可(秒进详情看),长户名截断到 120px(点击弹全文),给金额与对账列留视口
+  occurredAt: {
+    render: (v) =>
+      v == null || v === ''
+        ? null
+        : new Date(String(v)).toLocaleString('zh-CN', {
+            hour12: false,
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+  },
+  counterpartyName: { width: 80 },
+  income: {
+    label: '收入',
+    render: (v) => (v == null || v === '' ? null : <span className="text-success">{formatAmount(v)}</span>),
+  },
+  expense: {
+    label: '支出',
+    render: (v) => (v == null || v === '' ? null : formatAmount(v)),
+  },
   reconcileStatus: {
+    // 对账状态三态胶囊:未对账红、部分对账橙、已对账绿
     enumColors: { UNRECONCILED: 'danger', PARTIAL: 'warning', RECONCILED: 'success' },
+  },
+  unreconciledAmount: {
+    label: '未对账',
+    render: (v) =>
+      v == null || v === '' ? null : Number(v) > 0 ? (
+        formatAmount(v)
+      ) : (
+        <span className="text-muted">{formatAmount(v)}</span>
+      ),
   },
 } satisfies Record<string, ColumnOverride>
 

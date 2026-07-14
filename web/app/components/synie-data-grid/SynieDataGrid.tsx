@@ -19,6 +19,8 @@ import { useGridActions } from './use-grid-actions'
 export interface ColumnOverride {
   render?: (value: unknown, row: Row) => ReactNode
   label?: string
+  /** Pro DataGrid 是 auto 布局,th 定宽不生效;此值实际作为文本列 ClampCell 的内容上限(px),
+   *  内容收窄列宽即跟着收窄。数值/enum/fk 列暂不受它约束 */
   width?: number
   /** 不传时数值列(integer/decimal)默认右对齐 */
   align?: 'start' | 'center' | 'end'
@@ -108,26 +110,28 @@ export function selectedRows(selection: Selection, rows: Row[]): Row[] {
   return rows.filter((r) => selection.has(r.id))
 }
 
-/** 超宽文本单元格:截断收起,溢出时点击弹 Popover 看全文;未溢出就是普通文本 */
-function ClampCell({ text }: { text: string }) {
+/** 超宽文本单元格:截断收起,溢出时点击弹 Popover 看全文;未溢出就是普通文本。
+ * maxWidth 覆盖默认 320px 上限(Pro DataGrid auto 布局下列宽随内容,收内容即收列宽) */
+function ClampCell({ text, maxWidth }: { text: string; maxWidth?: number }) {
   const ref = useRef<HTMLSpanElement>(null)
   const [overflow, setOverflow] = useState(false)
   useLayoutEffect(() => {
     const el = ref.current
     if (el) setOverflow(el.scrollWidth > el.clientWidth)
   }, [text])
-  const clamp = 'block max-w-80 truncate text-start'
+  const clamp = `block truncate text-start${maxWidth == null ? ' max-w-80' : ''}`
+  const style = maxWidth == null ? undefined : { maxWidth }
   if (!overflow) {
     return (
-      <span ref={ref} className={clamp}>
+      <span ref={ref} className={clamp} style={style}>
         {text}
       </span>
     )
   }
   return (
     <Popover>
-      <Popover.Trigger aria-label="查看完整内容" className={`${clamp} cursor-pointer`}>
-        <span ref={ref} className={clamp}>
+      <Popover.Trigger aria-label="查看完整内容" className={`${clamp} cursor-pointer`} style={style}>
+        <span ref={ref} className={clamp} style={style}>
           {text}
         </span>
       </Popover.Trigger>
@@ -140,12 +144,13 @@ function ClampCell({ text }: { text: string }) {
   )
 }
 
-/** 默认单元格渲染(SynieEditableTable 复用,保持两处表格视觉一致) */
+/** 默认单元格渲染(SynieEditableTable 复用,保持两处表格视觉一致);clampWidth 收窄文本列内容上限 */
 export function defaultCell(
   col: GridColumnMeta,
   value: unknown,
   row: Row,
-  enumColors?: Record<string, EnumChipColor>
+  enumColors?: Record<string, EnumChipColor>,
+  clampWidth?: number
 ): ReactNode {
   // fk 列:link 点开速览抽屉(无 join 时组件内按 id 反查标签);CSV/打印仍走 cellText 纯文本
   if (col.type === 'fk' && col.ref) {
@@ -170,7 +175,7 @@ export function defaultCell(
         </Chip>
       )
     default:
-      return <ClampCell text={String(value)} />
+      return <ClampCell text={String(value)} maxWidth={clampWidth} />
   }
 }
 
@@ -340,7 +345,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           if (isLoadingRow(row)) return i === 0 ? <span className="text-muted">加载中…</span> : null
           return (
             overrides[col.name]?.render?.(row[col.name], row) ??
-            defaultCell(col, row[col.name], row, overrides[col.name]?.enumColors)
+            defaultCell(col, row[col.name], row, overrides[col.name]?.enumColors, overrides[col.name]?.width)
           )
         },
       })),
