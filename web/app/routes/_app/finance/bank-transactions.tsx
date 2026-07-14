@@ -80,8 +80,6 @@ function BankTransactionsPage() {
             { key: 'new', label: '新增导入', onAction: () => setImportCreateOpen(true) },
           ]}
           overrides={GRID_OVERRIDES}
-          // 未完成对账的行整行警示底色(醒目展示产品要求)
-          rowTint={(row) => (row.reconcileStatus === 'RECONCILED' ? undefined : 'warning')}
           rowActions={[
             { key: 'reconcile', label: '对账', capability: 'reconcile', onAction: (row) => setReconcileTxn(row) },
           ]}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertDialog, Button, Calendar, DateField, DatePicker, Input, Label, NumberField, TextField, toast } from '@heroui/react'
+import { AlertDialog, Button, Calendar, DateField, DatePicker, Input, Label, Modal, NumberField, TextField, toast } from '@heroui/react'
 import { parseDate } from '@internationalized/date'
 import { useQuery } from '@tanstack/react-query'
 import { gqlFetch } from '~/lib/graphql'
@@ -7,7 +7,6 @@ import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { gqlEnum } from '~/components/synie-data-grid/query'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -17,7 +16,7 @@ const DESTROY_RECONCILIATION = `
   }
 `
 
-// 银行账户绑定科目:严格对账的前提,未绑定时隐藏表单并引导去绑定
+// 银行账户绑定科目:严格对账的前提,未绑定时隐藏操作按钮并引导去绑定
 const BANK_ACCOUNT_LEDGER = `
   query ($id: ID!) {
     accBankAccounts(filter: {id: {eq: $id}}, limit: 1, offset: 0) { results { id accountId } }
@@ -76,6 +75,8 @@ export function ReconcileDrawer({ txn, onOpenChange, onChanged }: ReconcileDrawe
 function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void }) {
   const [unlink, setUnlink] = useState<Row | null>(null)
   const [unlinking, setUnlinking] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [quickOpen, setQuickOpen] = useState(false)
 
   const ledger = useQuery({
     queryKey: ['bankAccountLedger', txn.bankAccountId],
@@ -85,6 +86,12 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
         { id: txn.bankAccountId }
       ).then((d) => d.accBankAccounts.results[0]?.accountId ?? null),
   })
+
+  // 快速新增凭证的三码门控:reconcile(能进本抽屉即有)+ 凭证 create/audit 能力
+  const journalMeta = useGridMeta('accGlJournals')
+  const canQuick = ['create', 'audit'].every((c) =>
+    (journalMeta.data?.capabilities ?? []).includes(c)
+  )
 
   const confirmUnlink = async () => {
     if (!unlink) return
@@ -109,7 +116,21 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
   return (
     <div className="flex flex-col gap-4">
       <section className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium">对账关联记录</h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-medium">对账关联记录</h3>
+          {typeof ledger.data === 'string' && (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="secondary" onPress={() => setLinkOpen(true)}>
+                关联已有凭证
+              </Button>
+              {canQuick && (
+                <Button size="sm" variant="secondary" onPress={() => setQuickOpen(true)}>
+                  快速新增凭证
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
         <SynieDataGrid
           resource="accBankReconciliations"
           columns={['journalId', 'amount', 'insertedAt']}
@@ -128,10 +149,24 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
       {ledger.isError && (
         <p className="text-sm text-danger">银行账户信息加载失败:{(ledger.error as Error).message}</p>
       )}
+
       {typeof ledger.data === 'string' && (
         <>
-          <LinkExistingForm txn={txn} ledgerAccountId={ledger.data} onChanged={onChanged} />
-          <QuickCreateForm txn={txn} onChanged={onChanged} />
+          <LinkJournalModal
+            isOpen={linkOpen}
+            onOpenChange={setLinkOpen}
+            txn={txn}
+            ledgerAccountId={ledger.data}
+            onChanged={onChanged}
+          />
+          {canQuick && (
+            <QuickCreateModal
+              isOpen={quickOpen}
+              onOpenChange={setQuickOpen}
+              txn={txn}
+              onChanged={onChanged}
+            />
+          )}
         </>
       )}
 
@@ -161,24 +196,39 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
   )
 }
 
-/** 关联已有凭证:弹窗挑「同公司+已审核+含银行科目方向行」的凭证,选中即预填剩余可对账额度 */
-function LinkExistingForm({
+/** 关联已有凭证:弹窗内直接挑「同公司+已审核+含银行科目方向行」的凭证,选中即预填剩余可对账额度 */
+function LinkJournalModal({
+  isOpen,
+  onOpenChange,
   txn,
   ledgerAccountId,
   onChanged,
 }: {
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
   txn: Row
   ledgerAccountId: string
   onChanged: () => void
 }) {
-  const [journalId, setJournalId] = useState<string | null>(null)
+  const [picked, setPicked] = useState<Row[]>([])
   const [amount, setAmount] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const side = txn.income != null ? 'debit' : 'credit'
+  const journal = picked[0] ?? null
 
-  const pickJournal = async (id: string | null) => {
-    setJournalId(id)
+  // 关闭即清草稿,再次打开从空白开始
+  const handleOpenChange = (open: boolean) => {
+    onOpenChange(open)
+    if (!open) {
+      setPicked([])
+      setAmount(null)
+    }
+  }
+
+  const handlePick = async (rows: Row[]) => {
+    setPicked(rows)
     setAmount(null)
+    const id = rows[0]?.id
     if (!id) return
     try {
       const d = await gqlFetch<{ accBankReconciliationRemaining: string }>(REMAINING, {
@@ -192,18 +242,19 @@ function LinkExistingForm({
   }
 
   const submit = async () => {
-    if (!journalId || amount == null) return
+    if (!journal || amount == null) return
     setSubmitting(true)
     try {
       const data = await gqlFetch<{
         createAccBankReconciliation: { errors: { message: string }[] | null }
       }>(CREATE_RECONCILIATION, {
-        input: { bankTransactionId: txn.id, journalId, amount: String(amount) },
+        input: { bankTransactionId: txn.id, journalId: journal.id, amount: String(amount) },
       })
       if (data.createAccBankReconciliation.errors?.length) {
         throw new Error(data.createAccBankReconciliation.errors.map((e) => e.message).join('; '))
       }
       toast.success('已关联凭证')
+      handleOpenChange(false)
       onChanged()
     } catch (e) {
       toast.danger('关联失败', { description: (e as Error).message })
@@ -213,52 +264,70 @@ function LinkExistingForm({
   }
 
   return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">关联已有凭证</h3>
-      <div className="grid items-end gap-3 lg:grid-cols-[1fr_200px_auto]">
-        <RemoteDialogSelect
-          resource="accGlJournals"
-          label="凭证"
-          // 直连资源须显式给显示字段(缺省 name 拼出非法查询)
-          labelField="voucherNo"
-          searchFields={['voucherNo']}
-          placeholder="选择已审核凭证…"
-          value={journalId}
-          onChange={(id) => void pickJournal(id)}
-          gridColumns={['voucherNo', 'date', 'postingDate', 'remarks', 'debitTotal', 'creditTotal']}
-          gridFilter={{
-            companyId: { eq: txn.companyId },
-            status: { eq: gqlEnum('AUDITED') },
-            // 方向匹配预筛:凭证须含该银行科目对应方向的行(后端校验兜底)
-            lines: { accountId: { eq: ledgerAccountId }, [side]: { greaterThan: '0' } },
-          }}
-        />
-        <NumberField
-          fullWidth
-          value={amount == null ? NaN : amount}
-          onChange={(n) => setAmount(Number.isFinite(n) ? n : null)}
-        >
-          <Label>对账金额</Label>
-          <NumberField.Group className="grid-cols-[1fr]">
-            <NumberField.Input placeholder="选凭证后自动预填" />
-          </NumberField.Group>
-        </NumberField>
-        <Button
-          isDisabled={!journalId || amount == null || amount <= 0}
-          isPending={submitting}
-          onPress={submit}
-        >
-          关联
-        </Button>
-      </div>
-    </section>
+    <Modal.Backdrop isOpen={isOpen} onOpenChange={handleOpenChange}>
+      <Modal.Container>
+        <Modal.Dialog className="max-w-4xl">
+          <Modal.Header>
+            <Modal.Heading>关联已有凭证</Modal.Heading>
+          </Modal.Header>
+          <Modal.Body>
+            <SynieDataGrid
+              resource="accGlJournals"
+              columns={['voucherNo', 'date', 'postingDate', 'remarks', 'debitTotal', 'creditTotal']}
+              fixedFilter={{
+                companyId: { eq: txn.companyId },
+                status: { eq: gqlEnum('AUDITED') },
+                // 方向匹配预筛:凭证须含该银行科目对应方向的行(后端校验兜底)
+                lines: { accountId: { eq: ledgerAccountId }, [side]: { greaterThan: '0' } },
+              }}
+              pick="single"
+              pickedRows={picked}
+              onPickChange={(rows) => void handlePick(rows)}
+            />
+          </Modal.Body>
+          <Modal.Footer>
+            <span className="mr-auto text-sm text-muted">
+              已选:{journal ? String(journal.voucherNo) : '未选择'}
+            </span>
+            <NumberField
+              className="w-48"
+              value={amount == null ? NaN : amount}
+              onChange={(n) => setAmount(Number.isFinite(n) ? n : null)}
+            >
+              <Label>对账金额</Label>
+              <NumberField.Group className="grid-cols-[1fr]">
+                <NumberField.Input placeholder="选凭证后自动预填" />
+              </NumberField.Group>
+            </NumberField>
+            <Button variant="secondary" onPress={() => handleOpenChange(false)} isDisabled={submitting}>
+              取消
+            </Button>
+            <Button
+              isDisabled={!journal || amount == null || amount <= 0}
+              isPending={submitting}
+              onPress={submit}
+            >
+              关联
+            </Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 
 /** 快速新增凭证并关联:银行方向行系统预填,用户只选对方科目;创建后自动审核+关联,整体事务 */
-function QuickCreateForm({ txn, onChanged }: { txn: Row; onChanged: () => void }) {
-  // 三码门控:reconcile(能进本抽屉即有)+ 凭证 create/audit 能力
-  const journalMeta = useGridMeta('accGlJournals')
+function QuickCreateModal({
+  isOpen,
+  onOpenChange,
+  txn,
+  onChanged,
+}: {
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
+  txn: Row
+  onChanged: () => void
+}) {
   const isIncome = txn.income != null
   const [accountId, setAccountId] = useState<string | null>(null)
   const [amount, setAmount] = useState<number | null>(() => {
@@ -275,10 +344,11 @@ function QuickCreateForm({ txn, onChanged }: { txn: Row; onChanged: () => void }
   const [postingDate, setPostingDate] = useState<string | null>(String(txn.occurredAt).slice(0, 10))
   const [submitting, setSubmitting] = useState(false)
 
-  const canQuick = ['create', 'audit'].every((c) =>
-    (journalMeta.data?.capabilities ?? []).includes(c)
-  )
-  if (!canQuick) return null
+  // 关闭即清对方科目(金额/摘要/日期保留默认值,再开无需重填)
+  const handleOpenChange = (open: boolean) => {
+    onOpenChange(open)
+    if (!open) setAccountId(null)
+  }
 
   const submit = async () => {
     if (!accountId || amount == null || !postingDate) return
@@ -301,6 +371,7 @@ function QuickCreateForm({ txn, onChanged }: { txn: Row; onChanged: () => void }
         )
       }
       toast.success('凭证已创建并完成对账')
+      handleOpenChange(false)
       onChanged()
     } catch (e) {
       toast.danger('快速对账失败', { description: (e as Error).message })
@@ -310,81 +381,94 @@ function QuickCreateForm({ txn, onChanged }: { txn: Row; onChanged: () => void }
   }
 
   return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">快速新增凭证并关联</h3>
-      <p className="text-xs text-muted">
-        {isIncome ? '借:银行科目(系统预填) 贷:所选科目' : '借:所选科目 贷:银行科目(系统预填)'}
-        ,保存后自动审核过账并建立对账关联。
-      </p>
-      <div className="grid items-end gap-3 lg:grid-cols-[1fr_160px_1fr_180px_auto]">
-        <RemoteSelect
-          resource="basAccounts"
-          label={isIncome ? '贷方科目' : '借方科目'}
-          labelField="name"
-          searchFields={['code', 'name']}
-          placeholder="选择对方科目…"
-          value={accountId}
-          onChange={(id) => setAccountId(id)}
-          filter={`{companyId: {eq: ${JSON.stringify(txn.companyId)}}, isGroup: {eq: false}, active: {eq: true}}`}
-        />
-        <NumberField
-          fullWidth
-          value={amount == null ? NaN : amount}
-          onChange={(n) => setAmount(Number.isFinite(n) ? n : null)}
-        >
-          <Label>金额</Label>
-          <NumberField.Group className="grid-cols-[1fr]">
-            <NumberField.Input placeholder="默认未对账余额" />
-          </NumberField.Group>
-        </NumberField>
-        <TextField fullWidth value={summary} onChange={setSummary}>
-          <Label>摘要</Label>
-          <Input placeholder="默认取流水摘要" />
-        </TextField>
-        <DatePicker
-          value={postingDate ? safeParseDate(postingDate) : null}
-          onChange={(v) => setPostingDate(v ? v.toString() : null)}
-        >
-          <Label>凭证/过账日期</Label>
-          <DateField.Group fullWidth>
-            <DateField.Input>{(segment) => <DateField.Segment segment={segment} />}</DateField.Input>
-            <DateField.Suffix>
-              <DatePicker.Trigger>
-                <DatePicker.TriggerIndicator />
-              </DatePicker.Trigger>
-            </DateField.Suffix>
-          </DateField.Group>
-          <DatePicker.Popover>
-            <Calendar aria-label="凭证/过账日期">
-              <Calendar.Header>
-                <Calendar.YearPickerTrigger>
-                  <Calendar.YearPickerTriggerHeading />
-                  <Calendar.YearPickerTriggerIndicator />
-                </Calendar.YearPickerTrigger>
-                <Calendar.NavButton slot="previous" />
-                <Calendar.NavButton slot="next" />
-              </Calendar.Header>
-              <Calendar.Grid>
-                <Calendar.GridHeader>{(day) => <Calendar.HeaderCell>{day}</Calendar.HeaderCell>}</Calendar.GridHeader>
-                <Calendar.GridBody>{(date) => <Calendar.Cell date={date} />}</Calendar.GridBody>
-              </Calendar.Grid>
-              <Calendar.YearPickerGrid>
-                <Calendar.YearPickerGridBody>
-                  {({ year }) => <Calendar.YearPickerCell year={year} />}
-                </Calendar.YearPickerGridBody>
-              </Calendar.YearPickerGrid>
-            </Calendar>
-          </DatePicker.Popover>
-        </DatePicker>
-        <Button
-          isDisabled={!accountId || amount == null || amount <= 0 || !postingDate}
-          isPending={submitting}
-          onPress={submit}
-        >
-          创建并对账
-        </Button>
-      </div>
-    </section>
+    <Modal.Backdrop isOpen={isOpen} onOpenChange={handleOpenChange}>
+      <Modal.Container>
+        <Modal.Dialog className="max-w-lg">
+          <Modal.Header>
+            <Modal.Heading>快速新增凭证并关联</Modal.Heading>
+          </Modal.Header>
+          <Modal.Body>
+            <div className="flex flex-col gap-4">
+              <p className="text-xs text-muted">
+                {isIncome ? '借:银行科目(系统预填) 贷:所选科目' : '借:所选科目 贷:银行科目(系统预填)'}
+                ,保存后自动审核过账并建立对账关联。
+              </p>
+              <RemoteSelect
+                resource="basAccounts"
+                label={isIncome ? '贷方科目' : '借方科目'}
+                labelField="name"
+                searchFields={['code', 'name']}
+                placeholder="选择对方科目…"
+                value={accountId}
+                onChange={(id) => setAccountId(id)}
+                filter={`{companyId: {eq: ${JSON.stringify(txn.companyId)}}, isGroup: {eq: false}, active: {eq: true}}`}
+              />
+              <NumberField
+                fullWidth
+                value={amount == null ? NaN : amount}
+                onChange={(n) => setAmount(Number.isFinite(n) ? n : null)}
+              >
+                <Label>金额</Label>
+                <NumberField.Group className="grid-cols-[1fr]">
+                  <NumberField.Input placeholder="默认未对账余额" />
+                </NumberField.Group>
+              </NumberField>
+              <TextField fullWidth value={summary} onChange={setSummary}>
+                <Label>摘要</Label>
+                <Input placeholder="默认取流水摘要" />
+              </TextField>
+              <DatePicker
+                value={postingDate ? safeParseDate(postingDate) : null}
+                onChange={(v) => setPostingDate(v ? v.toString() : null)}
+              >
+                <Label>凭证/过账日期</Label>
+                <DateField.Group fullWidth>
+                  <DateField.Input>{(segment) => <DateField.Segment segment={segment} />}</DateField.Input>
+                  <DateField.Suffix>
+                    <DatePicker.Trigger>
+                      <DatePicker.TriggerIndicator />
+                    </DatePicker.Trigger>
+                  </DateField.Suffix>
+                </DateField.Group>
+                <DatePicker.Popover>
+                  <Calendar aria-label="凭证/过账日期">
+                    <Calendar.Header>
+                      <Calendar.YearPickerTrigger>
+                        <Calendar.YearPickerTriggerHeading />
+                        <Calendar.YearPickerTriggerIndicator />
+                      </Calendar.YearPickerTrigger>
+                      <Calendar.NavButton slot="previous" />
+                      <Calendar.NavButton slot="next" />
+                    </Calendar.Header>
+                    <Calendar.Grid>
+                      <Calendar.GridHeader>{(day) => <Calendar.HeaderCell>{day}</Calendar.HeaderCell>}</Calendar.GridHeader>
+                      <Calendar.GridBody>{(date) => <Calendar.Cell date={date} />}</Calendar.GridBody>
+                    </Calendar.Grid>
+                    <Calendar.YearPickerGrid>
+                      <Calendar.YearPickerGridBody>
+                        {({ year }) => <Calendar.YearPickerCell year={year} />}
+                      </Calendar.YearPickerGridBody>
+                    </Calendar.YearPickerGrid>
+                  </Calendar>
+                </DatePicker.Popover>
+              </DatePicker>
+            </div>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onPress={() => handleOpenChange(false)} isDisabled={submitting}>
+              取消
+            </Button>
+            <Button
+              isDisabled={!accountId || amount == null || amount <= 0 || !postingDate}
+              isPending={submitting}
+              onPress={submit}
+            >
+              创建并对账
+            </Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   )
 }
 

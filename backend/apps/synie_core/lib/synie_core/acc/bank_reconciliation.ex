@@ -443,6 +443,7 @@ defmodule SynieCore.Acc.BankReconciliation do
   end
 
   identities do
-    identity :unique_txn_journal, [:bank_transaction_id, :journal_id]
+    identity :unique_txn_journal, [:bank_transaction_id, :journal_id],
+      message: "该流水与此凭证已有对账记录,如需调整金额请先解除后重新关联"
   end
 end

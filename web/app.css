@@ -63,9 +63,4 @@
   .table__cell {
     @apply text-[13px] whitespace-nowrap;
   }
-
-  /* SynieDataGrid rowTint 行级警示底色:首列隐藏标记 + :has() 上色(DataGrid 无行 className 入口) */
-  tr:has([data-row-tint="warning"]) > td {
-    background-color: color-mix(in srgb, #f5a524 9%, transparent);
-  }
 }
