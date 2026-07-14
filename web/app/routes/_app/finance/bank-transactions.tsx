@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
+import { BankImportCreateDrawer } from '~/components/bank-import/BankImportCreateDrawer'
+import { BankImportHistoryDrawer } from '~/components/bank-import/BankImportHistoryDrawer'
+import { BankImportRecordDrawer } from '~/components/bank-import/BankImportRecordDrawer'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -40,6 +43,12 @@ function BankTransactionsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
+  // 导入三件套:新增导入 / 导入记录(解析结果与执行)/ 导入历史;historyKey 让历史列表跟着变更刷新
+  const [importCreateOpen, setImportCreateOpen] = useState(false)
+  const [importRecordId, setImportRecordId] = useState<string | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyKey, setHistoryKey] = useState(0)
+
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">银行流水</h1>
@@ -54,8 +63,37 @@ function BankTransactionsPage() {
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          importMenu={[
+            { key: 'history', label: '导入历史', onAction: () => setHistoryOpen(true) },
+            { key: 'new', label: '新增导入', onAction: () => setImportCreateOpen(true) },
+          ]}
         />
       </div>
+
+      <BankImportCreateDrawer
+        isOpen={importCreateOpen}
+        onOpenChange={setImportCreateOpen}
+        onParsed={(result) => {
+          setHistoryKey((k) => k + 1)
+          setImportRecordId(result.id)
+        }}
+      />
+
+      <BankImportRecordDrawer
+        importId={importRecordId}
+        onOpenChange={(open) => !open && setImportRecordId(null)}
+        onImported={() => {
+          setHistoryKey((k) => k + 1)
+          setReloadKey((k) => k + 1)
+        }}
+      />
+
+      <BankImportHistoryDrawer
+        isOpen={historyOpen}
+        onOpenChange={setHistoryOpen}
+        onOpenRecord={(id) => setImportRecordId(id)}
+        reloadKey={historyKey}
+      />
 
       <SynieRecordDrawer
         resource="accBankTransactions"

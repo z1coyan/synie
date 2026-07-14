@@ -58,6 +58,10 @@ export interface SynieRecordDrawerProps {
   onSubmit?: (values: Record<string, unknown>, mode: 'create' | 'edit') => Promise<void>
   /** view 态 footer 显示「编辑」按钮,点击回调(页面自行切 mode) */
   onEdit?: () => void
+  /** create/edit 态提交按钮文案,默认「保存」(如导入表单的「解析」) */
+  submitLabel?: string
+  /** view 态 footer 附加动作(渲染在「关闭」之后),如导入记录的「导入」主按钮 */
+  footerActions?: (mode: DrawerMode, row: Row | null | undefined) => ReactNode
   /** Sheet.Content 宽度样式 */
   contentClassName?: string
   /**
@@ -271,6 +275,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                   <Sheet.Close>
                     <Button variant="secondary">关闭</Button>
                   </Sheet.Close>
+                  {props.footerActions?.(renderMode, renderRow)}
                   {props.onEdit && <Button onPress={props.onEdit}>编辑</Button>}
                 </>
               ) : (
@@ -282,7 +287,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                   </Sheet.Close>
                   {/* 元数据失败时字段集为空,禁止提交空 payload */}
                   <Button onPress={save} isPending={saving} isDisabled={metaError}>
-                    保存
+                    {props.submitLabel ?? '保存'}
                   </Button>
                 </>
               )}

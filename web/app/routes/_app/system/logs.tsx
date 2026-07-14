@@ -40,6 +40,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   acc_bank_account: '银行账户',
   acc_bank_transaction: '银行流水',
   acc_bank_import_template: '流水导入模板',
+  acc_bank_import: '银行流水导入',
+  acc_bank_import_item: '流水导入行',
   acc_vat_invoice: '增值税发票',
   sys_numbering_rule: '编号规则',
   sys_numbering_counter: '编号计数器',

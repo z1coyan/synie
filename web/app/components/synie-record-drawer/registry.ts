@@ -35,7 +35,11 @@ const registry: Record<string, ResourceDrawerConfig> = {
   accBankAccounts: { label: '银行账户' },
   accBankTransactions: { label: '银行流水' },
   accBankImportTemplates: { label: '流水导入模板' },
+  accBankImports: { label: '流水导入' },
+  accBankImportItems: { label: '导入行' },
   accVatInvoices: { label: '增值税发票' },
+  // 文件速览:存储配置/对象键是实现细节,不进详情
+  sysFiles: { label: '文件', exclude: ['storage', 'key'] },
 }
 
 /** 取资源抽屉配置;extra 覆盖时 fields 按字段名深合一层,其余浅覆盖 */

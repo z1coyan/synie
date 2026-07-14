@@ -26,6 +26,12 @@ export interface ColumnOverride {
   enumColors?: Record<string, EnumChipColor>
 }
 
+export interface ImportMenuItem {
+  key: string
+  label: string
+  onAction: (ctx: ActionContext) => void
+}
+
 export interface TreeOptions {
   /** 父引用列名,默认 'parentId' */
   parentField?: string
@@ -47,6 +53,8 @@ export interface SynieDataGridProps {
   onCreate?: () => void
   onEdit?: (row: Row) => void
   onImport?: (ctx: ActionContext) => void
+  /** 提供时「导入」按钮渲染为下拉菜单(仍由 can('import') 门控),与 onImport 二选一 */
+  importMenu?: ImportMenuItem[]
   onPrint?: (rows: Row[]) => void
   actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
   bulkActions?: BulkAction[]
@@ -375,7 +383,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     onView: props.onView,
     onCreate: props.onCreate,
     onEdit: props.onEdit,
-    onImport: props.onImport,
+    // importMenu 模式下也要让工具栏出「导入」动作位(点击行为由下方 Dropdown 接管)
+    onImport: props.importMenu ? () => {} : props.onImport,
     onExport: pickMode ? undefined : handleExport,
     onPrintRows: pickMode ? undefined : handlePrintRows,
     actionHandlers: props.actionHandlers,
@@ -472,17 +481,40 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           }}
         />
         <div className="ml-auto flex items-center gap-2">
-          {actions.toolbarActions.map((a) => (
-            <Button
-              key={a.key}
-              size="sm"
-              variant={a.key === 'create' ? 'primary' : 'secondary'}
-              isPending={a.key === 'export' ? exporting : undefined}
-              onPress={() => a.run([])}
-            >
-              {a.label}
-            </Button>
-          ))}
+          {actions.toolbarActions.map((a) =>
+            a.key === 'import' && props.importMenu ? (
+              <Dropdown key={a.key}>
+                <Button size="sm" variant="secondary">
+                  {a.label}
+                </Button>
+                <Dropdown.Popover placement="bottom end">
+                  <Dropdown.Menu
+                    onAction={(key) =>
+                      props.importMenu!
+                        .find((m) => m.key === key)
+                        ?.onAction({ refetch: () => rowsQuery.refetch() })
+                    }
+                  >
+                    {props.importMenu.map((m) => (
+                      <Dropdown.Item key={m.key} id={m.key} textValue={m.label}>
+                        <Label>{m.label}</Label>
+                      </Dropdown.Item>
+                    ))}
+                  </Dropdown.Menu>
+                </Dropdown.Popover>
+              </Dropdown>
+            ) : (
+              <Button
+                key={a.key}
+                size="sm"
+                variant={a.key === 'create' ? 'primary' : 'secondary'}
+                isPending={a.key === 'export' ? exporting : undefined}
+                onPress={() => a.run([])}
+              >
+                {a.label}
+              </Button>
+            )
+          )}
         </div>
       </div>
 

@@ -26,7 +26,10 @@ defmodule SynieWeb.GridMeta do
     "accBankAccounts" => SynieCore.Acc.BankAccount,
     "accBankTransactions" => SynieCore.Acc.BankTransaction,
     "accBankImportTemplates" => SynieCore.Acc.BankImportTemplate,
-    "accVatInvoices" => SynieCore.Acc.VatInvoice
+    "accBankImports" => SynieCore.Acc.BankImport,
+    "accBankImportItems" => SynieCore.Acc.BankImportItem,
+    "accVatInvoices" => SynieCore.Acc.VatInvoice,
+    "sysFiles" => SynieCore.Files.File
   }
 
   @spec resolve(String.t(), Authz.Actor.t() | nil) :: {:ok, map()} | {:error, String.t()}
