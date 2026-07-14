@@ -734,6 +734,7 @@ function BillTransactionsPage() {
               <RemoteSelect
                 resource="accBillHoldings"
                 labelField="label"
+                searchFields={['billNo']}
                 sortField="dueDate"
                 fields={['billId', 'subStart', 'subEnd', 'amount', 'dueDate']}
                 filter={holdingFilter(values)}

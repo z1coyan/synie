@@ -21,7 +21,8 @@ defmodule SynieCore.Acc.BillLedger do
     txs =
       BillTransaction
       |> Ash.Query.filter(bill_id == ^bill_id and status == :audited)
-      |> Ash.Query.sort([:occurred_on, :audited_at])
+      # :id 兜底并列(audited_at 在锁外盖章,理论可撞同微秒)
+      |> Ash.Query.sort([:occurred_on, :audited_at, :id])
       |> Ash.read!(authorize?: false)
 
     segs = Enum.reduce(txs, [], &apply_tx(&2, &1))
