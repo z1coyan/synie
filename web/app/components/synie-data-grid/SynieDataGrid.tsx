@@ -156,6 +156,10 @@ export function defaultCell(
     case 'datetime':
       // 日期短且已全表 nowrap,不进 ClampCell,永不截断
       return new Date(String(value)).toLocaleString('zh-CN', { hour12: false })
+    case 'integer':
+    case 'decimal':
+      // 数值短,不进 ClampCell:其 block+text-start 会盖掉 td 因 align:'end' 继承的右对齐
+      return String(value)
     case 'enum':
       // enum 默认胶囊展示;配色经 override.enumColors 按值定制,未配的值灰胶囊
       return (
