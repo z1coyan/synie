@@ -33,7 +33,7 @@ defmodule SynieCore.Acc.BankTransaction do
 
   银行对账单的电子档案:数据以银行为准,余额是银行口径快照(不推算、不校验连续性),
   流水不参与记账。收入/支出恰填一项且大于零。主要录入路径是导入(另有导入模板资源),
-  手工 CRUD 兜底;凭证关联后续另做。
+  手工 CRUD 兜底;凭证对账见 `BankReconciliation`。
   """
 
   use Ash.Resource,
@@ -112,6 +112,19 @@ defmodule SynieCore.Acc.BankTransaction do
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Acc.OwnBankAccount, check_active: true}
       validate {SynieCore.Acc.BankTransaction.SingleSidedAmount, []}
+
+      # 派生列初始化:未对账金额 = 流水金额(金额缺失时交给 SingleSidedAmount 报错)
+      change fn changeset, _context ->
+        amount =
+          Ash.Changeset.get_attribute(changeset, :income) ||
+            Ash.Changeset.get_attribute(changeset, :expense)
+
+        if amount do
+          Ash.Changeset.force_change_attribute(changeset, :unreconciled_amount, amount)
+        else
+          changeset
+        end
+      end
     end
 
     update :update do
@@ -187,6 +200,30 @@ defmodule SynieCore.Acc.BankTransaction do
       public? true
       constraints max_length: 255
       description "备注"
+    end
+
+    attribute :reconciled_amount, :decimal do
+      allow_nil? false
+      default Decimal.new(0)
+      writable? false
+      public? true
+      description "已对账金额"
+    end
+
+    attribute :unreconciled_amount, :decimal do
+      allow_nil? false
+      default Decimal.new(0)
+      writable? false
+      public? true
+      description "未对账金额"
+    end
+
+    attribute :reconcile_status, SynieCore.Acc.ReconcileStatus do
+      allow_nil? false
+      default :unreconciled
+      writable? false
+      public? true
+      description "对账状态"
     end
 
     create_timestamp :inserted_at, public?: true, description: "创建时间"
