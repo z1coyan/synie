@@ -161,14 +161,16 @@ mix phx.server
 ```bash
 curl -s -X POST http://localhost:4000/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ permissionCatalog { prefix actions } }"}'
+  -d '{"query":"{ me { id username } }"}'
 ```
 
-期望返回权限点目录（无需登录即可访问）：
+期望返回（未带 token 时 `me` 为 null）：
 
 ```json
-{"data":{"permissionCatalog":[{"prefix":"...","actions":["..."]}]}}
+{"data":{"me":null}}
 ```
+
+未带 token 时 `me` 返回 null 而非报错，正好证明 GraphQL 端点存活且工作正常；带 token 后 `me` 返回当前登录用户。
 
 如果用 `curl` 打开 playground，需要带 HTML Accept header：
 
