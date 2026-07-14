@@ -35,11 +35,10 @@ defmodule SynieCore.Acc.Reconcile do
     end
   end
 
-  @doc "流水已对账金额合计;opts[:except] 排除指定对账记录 id。"
-  def reconciled_total(txn_id, opts \\ []) do
+  @doc "流水已对账金额合计。"
+  def reconciled_total(txn_id) do
     BankReconciliation
     |> Ash.Query.filter(bank_transaction_id == ^txn_id)
-    |> except(opts[:except])
     |> Ash.read!(authorize?: false)
     |> sum_amounts()
   end
@@ -63,13 +62,12 @@ defmodule SynieCore.Acc.Reconcile do
   end
 
   @doc """
-  凭证已对账给「绑定同一科目、同方向」流水的金额合计;opts[:except] 排除指定记录。
+  凭证已对账给「绑定同一科目、同方向」流水的金额合计。
   单凭证对账记录量小,直接加载后在内存筛跨表条件,不拼跨表查询。
   """
-  def journal_used(journal_id, ledger_account_id, side, opts \\ []) do
+  def journal_used(journal_id, ledger_account_id, side) do
     BankReconciliation
     |> Ash.Query.filter(journal_id == ^journal_id)
-    |> except(opts[:except])
     |> Ash.Query.load(bank_transaction: [:bank_account])
     |> Ash.read!(authorize?: false)
     |> Enum.filter(fn rec ->
@@ -108,9 +106,6 @@ defmodule SynieCore.Acc.Reconcile do
     )
     |> Ash.update!()
   end
-
-  defp except(query, nil), do: query
-  defp except(query, id), do: Ash.Query.filter(query, id != ^id)
 
   defp sum_amounts(records) do
     records |> Enum.map(& &1.amount) |> Enum.reduce(Decimal.new(0), &Decimal.add/2)

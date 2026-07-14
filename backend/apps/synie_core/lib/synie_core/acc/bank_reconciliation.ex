@@ -181,6 +181,7 @@ defmodule SynieCore.Acc.BankReconciliation.QuickCreate do
 
     with {:ok, txn} when txn != nil <- Reconcile.lock_transaction(txn_id),
          {:ok, ledger_account_id} <- Reconcile.ledger_account_id(txn),
+         :ok <- check_counter(counter_account_id, ledger_account_id),
          :ok <- check_amount(txn, amount) do
       journal =
         GlJournal
@@ -217,6 +218,15 @@ defmodule SynieCore.Acc.BankReconciliation.QuickCreate do
       {:error, field, msg} -> Ash.Changeset.add_error(cs, field: field, message: msg)
       {:error, msg} when is_binary(msg) -> Ash.Changeset.add_error(cs, message: msg)
       _ -> Ash.Changeset.add_error(cs, message: "银行流水不存在")
+    end
+  end
+
+  # 对方科目不能是银行账户绑定的科目:借银行/贷银行的自旋凭证无对账语义
+  defp check_counter(counter_account_id, ledger_account_id) do
+    if counter_account_id == ledger_account_id do
+      {:error, :counter_account_id, "对方科目不能是银行账户绑定的科目"}
+    else
+      :ok
     end
   end
 
@@ -279,6 +289,11 @@ defmodule SynieCore.Acc.BankReconciliation do
       check_constraint :amount, "positive_amount",
         check: "amount > 0",
         message: "对账金额必须大于零"
+    end
+
+    custom_indexes do
+      # 凭证侧额度按 journal_id 反查对账记录(journal_used / 凭证取消守卫),补索引
+      index [:journal_id]
     end
   end
 

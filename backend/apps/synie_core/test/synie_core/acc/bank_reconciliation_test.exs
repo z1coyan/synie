@@ -438,6 +438,20 @@ defmodule SynieCore.Acc.BankReconciliationTest do
 
       assert Exception.message(err) =~ "未对账金额"
     end
+
+    test "对方科目为银行绑定科目整体回滚", %{company: co, bank_acct: b, bank_account: ba} do
+      numbering_rule!()
+      txn = txn!(co, ba, %{income: Decimal.new("100")})
+
+      err =
+        assert_raise Ash.Error.Invalid, fn ->
+          # b 即 ba 绑定的银行科目,借银行/贷银行自旋无对账语义
+          quick!(txn, b, "100", actor: full_actor(co))
+        end
+
+      assert Exception.message(err) =~ "对方科目"
+      assert [] = Ash.read!(GlJournal, authorize?: false)
+    end
   end
 
   describe "remaining 剩余额度查询" do
@@ -467,6 +481,112 @@ defmodule SynieCore.Acc.BankReconciliationTest do
         |> Ash.run_action!(actor: reader)
 
       assert Decimal.equal?(remaining2, Decimal.new("250"))
+    end
+  end
+
+  describe "科目绑定漂移防护" do
+    test "已对账流水禁止更换银行账户,解除后可改", %{company: co, bank_acct: b, sales: s, bank_account: ba} do
+      other_acct = account!(co, %{code: "1002.9", name: "银行存款九", direction: :debit})
+      other_ba = bank_account!(co, other_acct)
+      txn = txn!(co, ba, %{income: Decimal.new("500")})
+      j = audited_journal!(co, [{b, "500", "0"}, {s, "0", "500"}])
+      link = link!(txn, j, "500")
+      txn = reload_txn(txn)
+
+      err =
+        assert_raise Ash.Error.Invalid, fn ->
+          txn
+          |> Ash.Changeset.for_update(:update, %{bank_account_id: other_ba.id})
+          |> Ash.update!(authorize?: false)
+        end
+
+      assert Exception.message(err) =~ "更换银行账户"
+
+      Ash.destroy!(link, authorize?: false)
+
+      updated =
+        reload_txn(txn)
+        |> Ash.Changeset.for_update(:update, %{bank_account_id: other_ba.id})
+        |> Ash.update!(authorize?: false)
+
+      assert updated.bank_account_id == other_ba.id
+    end
+
+    test "账户有对账记录时禁止改绑/解绑科目,解除后可改", %{company: co, bank_acct: b, sales: s, bank_account: ba} do
+      another = account!(co, %{code: "1002.8", name: "银行存款八", direction: :debit})
+      txn = txn!(co, ba, %{income: Decimal.new("300")})
+      j = audited_journal!(co, [{b, "300", "0"}, {s, "0", "300"}])
+      link = link!(txn, j, "300")
+
+      err =
+        assert_raise Ash.Error.Invalid, fn ->
+          ba
+          |> Ash.Changeset.for_update(:update, %{account_id: another.id})
+          |> Ash.update!(authorize?: false)
+        end
+
+      assert Exception.message(err) =~ "绑定科目"
+
+      # 解绑(置 nil)同样被拒
+      assert_raise Ash.Error.Invalid, fn ->
+        ba
+        |> Ash.Changeset.for_update(:update, %{account_id: nil})
+        |> Ash.update!(authorize?: false)
+      end
+
+      Ash.destroy!(link, authorize?: false)
+
+      rebound =
+        ba
+        |> Ash.Changeset.for_update(:update, %{account_id: another.id})
+        |> Ash.update!(authorize?: false)
+
+      assert rebound.account_id == another.id
+    end
+
+    test "无对账记录的账户改绑科目不受影响", %{company: co, bank_account: ba} do
+      another = account!(co, %{code: "1002.7", name: "银行存款七", direction: :debit})
+
+      rebound =
+        ba
+        |> Ash.Changeset.for_update(:update, %{account_id: another.id})
+        |> Ash.update!(authorize?: false)
+
+      assert rebound.account_id == another.id
+    end
+  end
+
+  describe "权限负向" do
+    test "跨公司 actor 建对账被拒", %{company: co, bank_acct: b, sales: s, bank_account: ba} do
+      txn = txn!(co, ba, %{income: Decimal.new("100")})
+      j = audited_journal!(co, [{b, "100", "0"}, {s, "0", "100"}])
+      # 有 reconcile 码但 company_ids 不含流水公司 → CompanyAccessible 判 Invalid
+      other = company!()
+      cross = actor(other, ["acc.bank_transaction:read", "acc.bank_transaction:reconcile"])
+
+      err = assert_raise Ash.Error.Invalid, fn -> link!(txn, j, "100", actor: cross) end
+      assert Exception.message(err) =~ "公司"
+    end
+
+    test "缺 reconcile 码 quick_create 被拒", %{company: co, sales: s, bank_account: ba} do
+      txn = txn!(co, ba, %{income: Decimal.new("100")})
+      no_reconcile = actor(co, ["acc.bank_transaction:read", "acc.gl_journal:*"])
+
+      assert_raise Ash.Error.Forbidden, fn ->
+        quick!(txn, s, "100", actor: no_reconcile)
+      end
+    end
+
+    test "缺 read 码 remaining 被拒", %{company: co, bank_acct: b, sales: s, bank_account: ba} do
+      txn = txn!(co, ba, %{income: Decimal.new("100")})
+      j = audited_journal!(co, [{b, "100", "0"}, {s, "0", "100"}])
+      no_read = actor(co, ["acc.bank_transaction:reconcile"])
+
+      assert_raise Ash.Error.Forbidden, fn ->
+        BankReconciliation
+        |> Ash.ActionInput.for_action(:remaining, %{bank_transaction_id: txn.id, journal_id: j.id})
+        |> Ash.run_action!(actor: no_read)
+      end
     end
   end
 end

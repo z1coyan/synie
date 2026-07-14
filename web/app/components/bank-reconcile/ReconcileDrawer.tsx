@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Input, Label, NumberField, TextField, toast } from '@heroui/react'
 import { parseDate } from '@internationalized/date'
 import { useQuery } from '@tanstack/react-query'
@@ -114,6 +114,8 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
           resource="accBankReconciliations"
           columns={['journalId', 'amount', 'insertedAt']}
           fixedFilter={{ bankTransactionId: { eq: txn.id } }}
+          // accBankReconciliations 无独立权限码、capabilities 恒空;入口已由外层「对账」行动作按
+          // reconcile 门控(能进本抽屉即有 reconcile),故此处解除动作不再挂 capability
           rowActions={[
             { key: 'unlink', label: '解除', isDanger: true, onAction: (row) => setUnlink(row) },
           ]}
@@ -263,6 +265,11 @@ function QuickCreateForm({ txn, onChanged }: { txn: Row; onChanged: () => void }
     const n = Number(txn.unreconciledAmount)
     return Number.isFinite(n) && n > 0 ? n : null
   })
+  // 抽屉重挂时 rowById 可能先回缓存旧行,refetch 落地后同步默认金额,避免残留旧余额
+  const unreconciled = Number(txn.unreconciledAmount)
+  useEffect(() => {
+    setAmount(Number.isFinite(unreconciled) && unreconciled > 0 ? unreconciled : null)
+  }, [unreconciled])
   const [summary, setSummary] = useState<string>((txn.summary as string | null) ?? '')
   // 凭证/过账日期默认取流水交易日(UTC 日期部分,与流水展示同口径)
   const [postingDate, setPostingDate] = useState<string | null>(String(txn.occurredAt).slice(0, 10))

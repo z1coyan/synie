@@ -61,9 +61,18 @@ defmodule SynieCore.Acc.BankTransaction.ReconcileGuard do
     income = Ash.Changeset.get_attribute(cs, :income)
     expense = Ash.Changeset.get_attribute(cs, :expense)
     amount = income || expense
+    was_income? = txn.income != nil
+    now_income? = income != nil
+
+    # 换银行账户 = 换绑定科目 = 凭证侧已用额度归属漂移,已对账流水一律禁止
+    bank_account_changed? =
+      Ash.Changeset.get_attribute(cs, :bank_account_id) != txn.bank_account_id
 
     cond do
-      has_links? and txn.income != nil != (income != nil) ->
+      has_links? and bank_account_changed? ->
+        Ash.Changeset.add_error(cs, message: "流水已有对账记录,不允许更换银行账户")
+
+      has_links? and was_income? != now_income? ->
         Ash.Changeset.add_error(cs, message: "流水已有对账记录,不允许收支换边")
 
       amount != nil and Decimal.compare(amount, total) == :lt ->
