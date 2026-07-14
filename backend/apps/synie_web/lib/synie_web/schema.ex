@@ -99,8 +99,11 @@ defmodule SynieWeb.Schema do
     end
 
     field :permission_catalog, non_null(list_of(non_null(:permission_group))) do
-      resolve(fn _args, _resolution ->
-        {:ok, SynieCore.Authz.Registry.catalog()}
+      resolve(fn _args, %{context: context} ->
+        case context[:actor] do
+          nil -> {:error, "未认证"}
+          _actor -> {:ok, SynieCore.Authz.Registry.catalog()}
+        end
       end)
     end
 
@@ -114,8 +117,11 @@ defmodule SynieWeb.Schema do
 
     # 可自动编号的资源清单:create action 挂了 AutoNumber 的白名单资源(编号规则页资源下拉)
     field :numberable_resources, non_null(list_of(non_null(:numberable_resource))) do
-      resolve(fn _args, _resolution ->
-        {:ok, SynieWeb.GridMeta.numberable_resources()}
+      resolve(fn _args, %{context: context} ->
+        case context[:actor] do
+          nil -> {:error, "未认证"}
+          _actor -> {:ok, SynieWeb.GridMeta.numberable_resources()}
+        end
       end)
     end
   end
