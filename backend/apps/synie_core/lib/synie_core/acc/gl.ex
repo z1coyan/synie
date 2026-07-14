@@ -27,7 +27,8 @@ defmodule SynieCore.Acc.GL do
   def voucher_resources do
     %{
       "acc.gl_journal" => {SynieCore.Acc.GlJournal, "凭证"},
-      "acc.vat_invoice" => {SynieCore.Acc.VatInvoice, "增值税发票"}
+      "acc.vat_invoice" => {SynieCore.Acc.VatInvoice, "增值税发票"},
+      "acc.bill_transaction" => {SynieCore.Acc.BillTransaction, "承兑交易"}
     }
   end
 

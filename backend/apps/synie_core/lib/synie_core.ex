@@ -135,6 +135,8 @@ defmodule SynieCore do
       create SynieCore.Acc.BillTransaction, :create_acc_bill_transaction, :create
       update SynieCore.Acc.BillTransaction, :update_acc_bill_transaction, :update
       destroy SynieCore.Acc.BillTransaction, :destroy_acc_bill_transaction, :destroy
+      update SynieCore.Acc.BillTransaction, :audit_acc_bill_transaction, :audit
+      update SynieCore.Acc.BillTransaction, :void_acc_bill_transaction, :void
     end
   end
 

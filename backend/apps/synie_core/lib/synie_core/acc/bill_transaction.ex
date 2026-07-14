@@ -180,19 +180,21 @@ end
 defmodule SynieCore.Acc.BillTransaction do
   @moduledoc """
   承兑交易,对应 `acc_bill_transaction` 表。五种类型单表:接收/转让/兑付/贴现/调拨,
-  是 GL 的一个 voucher(与发票、手工凭证地位平等,过账在 Task 4 落地)。
+  是 GL 的一个 voucher(与发票、手工凭证地位平等)。
 
   接收交易的建档契约:`bill_id` 与 `bill_attrs`(:map,snake_case 字符串键,键集 = Bill
   `:register` 的 accept 列表)二选一——票号已建档传 `bill_id`;未建档传 `bill_attrs`,
   由 `create` 的 before_action 调用 `Bill.:register` upsert(挂接不覆盖)。其余四种类型
-  一律传 `bill_id`(从持有段选出,Task 3)。
+  一律传 `bill_id`(从持有段选出)。
 
   `bill_id` 逻辑必填但属性层 `allow_nil?` 不能设为 false:bill_attrs 建档要到
   create 的 before_action 才落定 bill_id,而 Ash 的必填校验(require_values)发生在
   before_action 之前(同 `SynieCore.Numbering.AutoNumber` moduledoc 的警告)。真正的
   非空由 create 的显式校验(bill_id 或 bill_attrs 二选一)兜底,DB 外键仍校验存在性。
 
-  生命周期:草稿(可改可删)→ 已审核(audit)→ 已作废(void),audit/void 在 Task 4。
+  生命周期:草稿(可改可删)→ 已审核(`audit`,派生 `gl_entries/1` 过账 + `BillLedger.replay!/1`
+  重放库存)→ 已作废(`void`,原分录标 `is_cancelled` + 重放)。调拨类型不生凭证,`audit`/`void`
+  均跳过 GL 调用,只驱动库存重放(段迁移/迁回)。
   """
 
   use Ash.Resource,
@@ -244,8 +246,26 @@ defmodule SynieCore.Acc.BillTransaction do
   end
 
   def permission_prefix, do: "acc.bill_transaction"
-  # audit/void 权限点先备好,动作落地在 Task 4
   def permission_actions, do: ~w(create read update delete audit void)
+
+  def grid_actions do
+    [
+      %{
+        key: "audit",
+        label: "审核",
+        scope: "row",
+        mutation: "auditAccBillTransaction",
+        is_danger: false
+      },
+      %{
+        key: "void",
+        label: "作废",
+        scope: "row",
+        mutation: "voidAccBillTransaction",
+        is_danger: true
+      }
+    ]
+  end
 
   # 对手是多态引用(party_type 判别、无 belongs_to),声明给 GridMeta 反射成多态 fk 列
   def poly_refs do
@@ -385,9 +405,9 @@ defmodule SynieCore.Acc.BillTransaction do
       change fn changeset, _context ->
         Ash.Changeset.before_action(changeset, fn cs ->
           # 权威复检:事务内 FOR UPDATE 重读,关闭"并发审核后字段被改"竞态
-          case __MODULE__.lock_transaction(cs.data.id) do
-            {:ok, %{status: :draft}} -> cs
-            _ -> Ash.Changeset.add_error(cs, message: "仅草稿交易可修改或删除")
+          case lock_and_ensure(cs, :draft, "仅草稿交易可修改或删除") do
+            {:ok, _locked, cs} -> cs
+            {:error, cs} -> cs
           end
         end)
       end
@@ -403,10 +423,153 @@ defmodule SynieCore.Acc.BillTransaction do
       change fn changeset, _context ->
         Ash.Changeset.before_action(changeset, fn cs ->
           # 权威复检:事务内 FOR UPDATE 重读,关闭"并发审核后交易被删"竞态
-          case __MODULE__.lock_transaction(cs.data.id) do
-            {:ok, %{status: :draft}} -> cs
-            _ -> Ash.Changeset.add_error(cs, message: "仅草稿交易可修改或删除")
+          case lock_and_ensure(cs, :draft, "仅草稿交易可修改或删除") do
+            {:ok, _locked, cs} -> cs
+            {:error, cs} -> cs
           end
+        end)
+      end
+    end
+
+    update :audit do
+      # 过账日期可在审核时补填/修正;调拨不生凭证,不填此参数
+      accept [:posting_date]
+      require_atomic? false
+
+      # 构建期预检(用户体验,普通读即可):此时在动作事务之外,无需也不能加锁。
+      # 权威复检在下方 change 的 before_action 钩子内(事务内 FOR UPDATE 重读)完成。
+      validate fn changeset, _context ->
+        if changeset.data.status == :draft, do: :ok, else: {:error, message: "仅草稿交易可审核"}
+      end
+
+      # 非调拨必填 posting_date;调拨忽略(不生凭证)。posting_date 是本次提交的输入,
+      # 不来自可能过期的 changeset.data,无需在 before_action 里重复校验
+      validate fn changeset, _context ->
+        if changeset.data.transaction_type != :reallocate and
+             is_nil(Ash.Changeset.get_attribute(changeset, :posting_date)) do
+          {:error, field: :posting_date, message: "审核过账前必须填写过账日期"}
+        else
+          :ok
+        end
+      end
+
+      validate fn changeset, _context ->
+        bill = Ash.get!(SynieCore.Acc.Bill, changeset.data.bill_id, authorize?: false)
+
+        case __MODULE__.audit_blockers(changeset.data, bill) do
+          [] ->
+            if changeset.data.transaction_type == :reallocate do
+              :ok
+            else
+              case SynieCore.Acc.GL.validate_entries(
+                     changeset.data.company_id,
+                     __MODULE__.gl_entries(changeset.data)
+                   ) do
+                :ok -> :ok
+                {:error, msg} -> {:error, message: msg}
+              end
+            end
+
+          msgs ->
+            {:error, message: Enum.join(msgs, ";")}
+        end
+      end
+
+      change fn changeset, context ->
+        changeset
+        |> Ash.Changeset.force_change_attribute(:status, :audited)
+        |> Ash.Changeset.force_change_attribute(:audited_at, DateTime.utc_now())
+        |> then(fn cs ->
+          case context.actor do
+            %SynieCore.Authz.Actor{user_id: user_id} ->
+              Ash.Changeset.force_change_attribute(cs, :audited_by_id, user_id)
+
+            _ ->
+              cs
+          end
+        end)
+        |> Ash.Changeset.before_action(fn cs ->
+          # 权威复检:before_action 在动作事务内执行,FOR UPDATE 持锁到事务提交,
+          # 借此串行化审核与并发改头/并发审核——关闭双审核竞态(构建期预检看到的状态可能已过期)
+          case lock_and_ensure(cs, :draft, "仅草稿交易可审核") do
+            {:ok, locked, cs} ->
+              bill = Ash.get!(SynieCore.Acc.Bill, locked.bill_id, authorize?: false)
+
+              case __MODULE__.audit_blockers(locked, bill) do
+                [] ->
+                  if locked.transaction_type == :reallocate do
+                    cs
+                  else
+                    case SynieCore.Acc.GL.validate_entries(
+                           locked.company_id,
+                           __MODULE__.gl_entries(locked)
+                         ) do
+                      :ok -> cs
+                      {:error, msg} -> Ash.Changeset.add_error(cs, message: msg)
+                    end
+                  end
+
+                msgs ->
+                  Ash.Changeset.add_error(cs, message: Enum.join(msgs, ";"))
+              end
+
+            {:error, cs} ->
+              cs
+          end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, tx ->
+          bill = Ash.get!(SynieCore.Acc.Bill, tx.bill_id, authorize?: false)
+
+          # 调拨不生凭证:段迁移交给下面的 BillLedger.replay!
+          if tx.transaction_type != :reallocate do
+            SynieCore.Acc.GL.post!(
+              %{
+                voucher_type: "acc.bill_transaction",
+                voucher_id: tx.id,
+                voucher_no: tx.doc_no || bill.bill_no,
+                company_id: tx.company_id,
+                posting_date: tx.posting_date
+              },
+              __MODULE__.gl_entries(tx)
+            )
+          end
+
+          # 库存全链重验(锁票据行);不合法 raise → 整个审核事务回滚(含上面已插入的分录)
+          SynieCore.Acc.BillLedger.replay!(tx.bill_id)
+          {:ok, tx}
+        end)
+      end
+    end
+
+    update :void do
+      accept []
+      require_atomic? false
+
+      # 构建期预检(用户体验),权威复检在 before_action 钩子内
+      validate fn changeset, _context ->
+        if changeset.data.status == :audited, do: :ok, else: {:error, message: "仅已审核交易可作废"}
+      end
+
+      change fn changeset, _context ->
+        changeset
+        |> Ash.Changeset.force_change_attribute(:status, :voided)
+        |> Ash.Changeset.before_action(fn cs ->
+          # 权威复检:事务内 FOR UPDATE 重读,关闭双作废/作废与并发审核其他交易的竞态
+          case lock_and_ensure(cs, :audited, "仅已审核交易可作废") do
+            {:ok, _locked, cs} -> cs
+            {:error, cs} -> cs
+          end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, tx ->
+          # 调拨没有凭证可取消,跳过(照审核侧对称)
+          if tx.transaction_type != :reallocate do
+            SynieCore.Acc.GL.cancel!("acc.bill_transaction", tx.id)
+          end
+
+          # 移除本笔(已在上面提交为 voided)后重放:后续交易若消耗过本笔产生的段,
+          # replay! 找不到覆盖段而 raise → 整个作废事务回滚(状态与已取消的分录一并撤销)
+          SynieCore.Acc.BillLedger.replay!(tx.bill_id)
+          {:ok, tx}
         end)
       end
     end
@@ -621,11 +784,102 @@ defmodule SynieCore.Acc.BillTransaction do
 
   @doc false
   # 交易粒度锁:FOR UPDATE 锁住交易行本身;仅在 before_action 钩子内调用才有效——
-  # before_action 在动作事务内执行,锁持有到事务提交,借此串行化改/删/审核/作废(Task 4)
+  # before_action 在动作事务内执行,锁持有到事务提交,借此串行化改/删/审核/作废
   def lock_transaction(id) do
     __MODULE__
     |> Ash.Query.filter(id == ^id)
     |> Ash.Query.lock("FOR UPDATE")
     |> Ash.read_one(authorize?: false)
+  end
+
+  @doc false
+  # 权威复检共用:事务内 FOR UPDATE 重读交易,状态不符则挂错(中文);
+  # update/destroy/audit/void 四处 before_action 共用,行为与各自原逐字重复版本一致
+  defp lock_and_ensure(changeset, expected_status, error_message) do
+    case lock_transaction(changeset.data.id) do
+      {:ok, %{status: ^expected_status} = locked} ->
+        {:ok, locked, changeset}
+
+      _ ->
+        {:error, Ash.Changeset.add_error(changeset, message: error_message)}
+    end
+  end
+
+  @doc "按类型派生分录组;调拨不生凭证,返回 []。currency 取科目,照 vat_invoice.gl_entries 的 currencies map。"
+  def gl_entries(%__MODULE__{transaction_type: :reallocate}), do: []
+
+  def gl_entries(%__MODULE__{} = tx) do
+    currencies =
+      SynieCore.Base.Account
+      |> Ash.Query.filter(
+        id in ^Enum.reject(
+          [tx.bill_account_id, tx.settle_account_id, tx.interest_account_id],
+          &is_nil/1
+        )
+      )
+      |> Ash.read!(authorize?: false)
+      |> Map.new(&{&1.id, &1.currency_id})
+
+    zero = Decimal.new(0)
+
+    entry = fn account_id, debit, credit, party? ->
+      %{
+        account_id: account_id,
+        currency_id: currencies[account_id],
+        debit: debit,
+        credit: credit,
+        party_type: if(party?, do: tx.party_type),
+        party_id: if(party?, do: tx.party_id),
+        remarks: nil
+      }
+    end
+
+    case tx.transaction_type do
+      :receive ->
+        [
+          entry.(tx.bill_account_id, tx.amount, zero, false),
+          entry.(tx.settle_account_id, zero, tx.amount, true)
+        ]
+
+      :endorse ->
+        [
+          entry.(tx.settle_account_id, tx.amount, zero, true),
+          entry.(tx.bill_account_id, zero, tx.amount, false)
+        ]
+
+      :settle ->
+        [
+          entry.(tx.settle_account_id, tx.amount, zero, false),
+          entry.(tx.bill_account_id, zero, tx.amount, false)
+        ]
+
+      :discount ->
+        interest? = Decimal.compare(tx.interest, 0) == :gt
+
+        [entry.(tx.settle_account_id, tx.net_amount, zero, false)] ++
+          if(interest?, do: [entry.(tx.interest_account_id, tx.interest, zero, false)], else: []) ++
+          [entry.(tx.bill_account_id, zero, tx.amount, false)]
+    end
+  end
+
+  @doc "审核前齐全性与日期/票面硬校验清单(空=可审核);bill 由调用方 load 后传入。"
+  def audit_blockers(tx, bill) do
+    type = tx.transaction_type
+
+    [
+      {type != :reallocate and is_nil(tx.bill_account_id), "审核前必须选择票据科目"},
+      {type != :reallocate and is_nil(tx.settle_account_id), "审核前必须选择结算科目"},
+      {type == :discount and Decimal.compare(tx.interest, 0) == :gt and
+         is_nil(tx.interest_account_id), "贴现利息大于零时必须选择利息科目"},
+      {type == :settle and Date.compare(tx.occurred_on, bill.due_date) == :lt,
+       "兑付发生日期不能早于票据到期日 #{bill.due_date}"},
+      {type in [:receive, :endorse, :discount] and
+         Date.compare(tx.occurred_on, bill.due_date) == :gt,
+       "#{SynieCore.Acc.BillTransactionType.description(type)}发生日期不能晚于票据到期日 " <>
+         "#{bill.due_date}(到期后只能托收)"},
+      {type in [:endorse, :discount] and not bill.transferable, "该票据「不得转让」,禁止转让与贴现"}
+    ]
+    |> Enum.filter(&elem(&1, 0))
+    |> Enum.map(&elem(&1, 1))
   end
 end
