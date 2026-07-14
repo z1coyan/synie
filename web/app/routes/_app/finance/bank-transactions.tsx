@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { BankImportCreateDrawer } from '~/components/bank-import/BankImportCreateDrawer'
@@ -52,8 +53,8 @@ const GRID_OVERRIDES = {
 
 function BankTransactionsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
   const [reconcileTxn, setReconcileTxn] = useState<Row | null>(null)
+  const queryClient = useQueryClient()
 
   // 导入三件套:新增导入 / 导入记录(解析结果与执行)/ 导入历史;historyKey 让历史列表跟着变更刷新
   const [importCreateOpen, setImportCreateOpen] = useState(false)
@@ -68,7 +69,6 @@ function BankTransactionsPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          key={reloadKey}
           resource="accBankTransactions"
           columns={GRID_COLUMNS}
           defaultSort={{ column: 'occurredAt', direction: 'descending' }}
@@ -100,7 +100,7 @@ function BankTransactionsPage() {
         onOpenChange={(open) => !open && setImportRecordId(null)}
         onImported={() => {
           setHistoryKey((k) => k + 1)
-          setReloadKey((k) => k + 1)
+          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankTransactions'] })
         }}
       />
 
@@ -192,14 +192,15 @@ function BankTransactionsPage() {
           }
           if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '银行流水已登记' : '银行流水已更新')
-          setReloadKey((k) => k + 1)
+          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankTransactions'] })
         }}
       />
 
       <ReconcileDrawer
         txn={reconcileTxn}
         onOpenChange={(open) => !open && setReconcileTxn(null)}
-        onChanged={() => setReloadKey((k) => k + 1)}
+        // 对账增删改变派生列:失效列表查询即可,分页/筛选状态得以保留(main 的 query 失效范式)
+        onChanged={() => queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankTransactions'] })}
       />
     </>
   )

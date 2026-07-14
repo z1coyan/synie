@@ -64,6 +64,18 @@ defmodule SynieWeb.SchemaGridTest do
     result
   end
 
+  describe "元数据端点鉴权" do
+    test "未认证(actor=nil)拉 permissionCatalog 被拒" do
+      result = run!("query { permissionCatalog { prefix } }", nil)
+      assert %{errors: [_ | _]} = result
+    end
+
+    test "未认证拉 numberableResources 被拒" do
+      result = run!("query { numberableResources { grid } }", nil)
+      assert %{errors: [_ | _]} = result
+    end
+  end
+
   describe "sysRoles offset 分页" do
     test "返回 count 与 results,limit/offset 生效" do
       roles!([{"pg1", "分页一", true}, {"pg2", "分页二", true}, {"pg3", "分页三", true}])

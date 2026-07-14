@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import {
   AlertDialog,
@@ -191,7 +192,7 @@ function InvoicesPage() {
   // edit/view 态 items 靠 FETCH_ITEMS 异步拉取,失败/未完成前不得当"清单已被清空"处理——
   // 否则 onSubmit 会用空清单覆盖后端原值。create 态本地起手即视为就绪。
   const [itemsLoaded, setItemsLoaded] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
+  const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张发票的清单回填到当前发票
   const reqIdRef = useRef(0)
 
@@ -228,7 +229,7 @@ function InvoicesPage() {
       }
       toast.success('发票已审核过账')
       setAuditDialog(null)
-      setReloadKey((k) => k + 1)
+      queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
     } catch (e) {
       toast.danger('审核失败', { description: (e as Error).message })
     } finally {
@@ -255,7 +256,7 @@ function InvoicesPage() {
       }
       toast.success('发票已红冲')
       setReverseDialog(null)
-      setReloadKey((k) => k + 1)
+      queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
     } catch (e) {
       toast.danger('红冲失败', { description: (e as Error).message })
     } finally {
@@ -307,7 +308,7 @@ function InvoicesPage() {
       } catch (e) {
         toast.warning('对向发票已创建,但原票互链回写失败', { description: (e as Error).message })
       }
-      setReloadKey((k) => k + 1)
+      queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
     } finally {
       setMirroring(false)
       closeMirrorAsk()
@@ -348,7 +349,6 @@ function InvoicesPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          key={reloadKey}
           resource="accVatInvoices"
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
@@ -509,7 +509,7 @@ function InvoicesPage() {
             }
             const createdId = data.createAccVatInvoice.result!.id
             toast.success('发票已创建')
-            setReloadKey((k) => k + 1)
+            queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
             const source = { ...input, id: createdId } as Row
             if (values.partyType === 'COMPANY') {
               // 对手是内部公司:优先弹对向发票确认(比顺手审核优先级高)
@@ -526,7 +526,7 @@ function InvoicesPage() {
               throw new Error(data.updateAccVatInvoice.errors.map((e) => e.message).join('; '))
             }
             toast.success(omitItems ? '发票已更新(销售清单未加载,本次未修改)' : '发票已更新')
-            setReloadKey((k) => k + 1)
+            queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
           }
         }}
       />

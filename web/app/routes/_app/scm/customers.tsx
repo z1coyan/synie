@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
@@ -25,7 +26,7 @@ const UPDATE_CUSTOMER = `
 
 function CustomersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
+  const queryClient = useQueryClient()
 
   return (
     <>
@@ -34,7 +35,6 @@ function CustomersPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          key={reloadKey}
           resource="salCustomers"
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -79,7 +79,7 @@ function CustomersPage() {
           }
           if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '客户已创建' : '客户已更新')
-          setReloadKey((k) => k + 1)
+          queryClient.invalidateQueries({ queryKey: ['gridRows', 'salCustomers'] })
         }}
       />
     </>

@@ -99,8 +99,11 @@ defmodule SynieWeb.Schema do
     end
 
     field :permission_catalog, non_null(list_of(non_null(:permission_group))) do
-      resolve(fn _args, _resolution ->
-        {:ok, SynieCore.Authz.Registry.catalog()}
+      resolve(fn _args, %{context: context} ->
+        case context[:actor] do
+          nil -> {:error, "未认证"}
+          _actor -> {:ok, SynieCore.Authz.Registry.catalog()}
+        end
       end)
     end
 
@@ -114,8 +117,11 @@ defmodule SynieWeb.Schema do
 
     # 可自动编号的资源清单:create action 挂了 AutoNumber 的白名单资源(编号规则页资源下拉)
     field :numberable_resources, non_null(list_of(non_null(:numberable_resource))) do
-      resolve(fn _args, _resolution ->
-        {:ok, SynieWeb.GridMeta.numberable_resources()}
+      resolve(fn _args, %{context: context} ->
+        case context[:actor] do
+          nil -> {:error, "未认证"}
+          _actor -> {:ok, SynieWeb.GridMeta.numberable_resources()}
+        end
       end)
     end
   end
@@ -125,13 +131,21 @@ defmodule SynieWeb.Schema do
       arg(:username, non_null(:string))
       arg(:password, non_null(:string))
 
-      resolve(fn %{username: username, password: password}, _resolution ->
-        case SynieCore.Accounts.authenticate(username, password) do
-          {:ok, user} ->
-            {:ok, %{token: SynieWeb.Auth.sign_token(user), user: session_user(user)}}
+      resolve(fn %{username: username, password: password}, %{context: context} ->
+        bucket = login_bucket(username, context[:remote_ip])
 
-          {:error, :invalid_credentials} ->
-            {:error, "用户名或密码错误"}
+        if SynieWeb.LoginRateLimiter.blocked?(bucket) do
+          {:error, "登录尝试过于频繁,请稍后再试"}
+        else
+          case SynieCore.Accounts.authenticate(username, password) do
+            {:ok, user} ->
+              SynieWeb.LoginRateLimiter.reset(bucket)
+              {:ok, %{token: SynieWeb.Auth.sign_token(user), user: session_user(user)}}
+
+            {:error, :invalid_credentials} ->
+              SynieWeb.LoginRateLimiter.record_failure(bucket)
+              {:error, "用户名或密码错误"}
+          end
         end
       end)
     end
@@ -177,6 +191,8 @@ defmodule SynieWeb.Schema do
       end)
     end
   end
+
+  defp login_bucket(username, remote_ip), do: {username, remote_ip}
 
   defp mutation_error(%Ash.Error.Forbidden{}), do: "无权限执行该操作"
 

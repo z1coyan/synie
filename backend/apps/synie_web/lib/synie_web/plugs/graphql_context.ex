@@ -13,16 +13,20 @@ defmodule SynieWeb.Plugs.GraphqlContext do
 
   @impl true
   def call(conn, _opts) do
+    base = %{remote_ip: conn.remote_ip}
+
     case current_user(conn) do
       nil ->
-        conn
+        Absinthe.Plug.put_options(conn, context: base)
 
       user ->
         actor = SynieCore.Authz.build_actor(user)
 
         conn
         |> Ash.PlugHelpers.set_actor(actor)
-        |> Absinthe.Plug.put_options(context: %{current_user: user, actor: actor})
+        |> Absinthe.Plug.put_options(
+          context: Map.merge(base, %{current_user: user, actor: actor})
+        )
     end
   end
 

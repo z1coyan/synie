@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
@@ -148,7 +149,7 @@ function JournalsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [lines, setLines] = useState<Row[]>([])
   const [linesSnapshot, setLinesSnapshot] = useState<Row[]>([])
-  const [reloadKey, setReloadKey] = useState(0)
+  const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张凭证的行回填到当前凭证
   const reqIdRef = useRef(0)
 
@@ -177,7 +178,7 @@ function JournalsPage() {
       }
       toast.success('凭证已审核过账')
       setAuditDialog(null)
-      setReloadKey((k) => k + 1)
+      queryClient.invalidateQueries({ queryKey: ['gridRows', 'accGlJournals'] })
     } catch (e) {
       toast.danger('审核失败', { description: (e as Error).message })
     } finally {
@@ -215,7 +216,6 @@ function JournalsPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          key={reloadKey}
           resource="accGlJournals"
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
@@ -359,7 +359,7 @@ function JournalsPage() {
               toast.success('凭证已更新')
             }
           }
-          setReloadKey((k) => k + 1)
+          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accGlJournals'] })
         }}
       />
 

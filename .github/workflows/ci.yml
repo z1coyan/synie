@@ -85,6 +85,10 @@ jobs:
       - name: Run pure-logic checks
         run: bun run check
 
+      # 纯函数单测(金额大写等):不依赖 @heroui-pro,无 token 也能跑。
+      - name: Run unit tests
+        run: bun test
+
       # build / tsc 依赖 @heroui-pro/react 真包 —— 需在仓库配置 HEROUI_AUTH_TOKEN secret,
       # 否则 Pro 仍是占位包,以下两步会失败。
       # build 必须在 tsc 之前:routeTree.gen.ts 是 gitignore 的生成物,由 bun run build
