@@ -7,7 +7,8 @@ defmodule SynieCore.Files.OwnerRegistry do
     "acc_gl_journal" => SynieCore.Acc.GlJournal,
     "acc_bank_account" => SynieCore.Acc.BankAccount,
     "acc_bank_transaction" => SynieCore.Acc.BankTransaction,
-    "acc_vat_invoice" => SynieCore.Acc.VatInvoice
+    "acc_vat_invoice" => SynieCore.Acc.VatInvoice,
+    "acc_bill" => SynieCore.Acc.Bill
   }
 
   @spec resolve(String.t()) :: {:ok, module()} | :error
