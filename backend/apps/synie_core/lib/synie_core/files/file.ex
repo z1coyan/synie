@@ -1,3 +1,25 @@
+defmodule SynieCore.Files.File.AttachmentGuard do
+  @moduledoc "删除文件守卫:仍有业务挂接时拒绝(附件面板先删挂接再删文件的流程不受影响)。"
+
+  use Ash.Resource.Validation
+
+  require Ash.Query
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    attached? =
+      SynieCore.Files.Attachment
+      |> Ash.Query.filter(file_id == ^changeset.data.id)
+      |> Ash.exists?(authorize?: false)
+
+    if attached? do
+      {:error, message: "该文件仍有业务挂接,请先在业务单据中移除附件"}
+    else
+      :ok
+    end
+  end
+end
+
 defmodule SynieCore.Files.File do
   @moduledoc """
   文件对象元数据,对应 `sys_file` 表。一行 = 一个物理存储对象;文件不可变,只增只删。
@@ -55,6 +77,7 @@ defmodule SynieCore.Files.File do
     destroy :destroy do
       primary? true
       require_atomic? false
+      validate {SynieCore.Files.File.AttachmentGuard, []}
       change SynieCore.Files.DeleteStoredObject
     end
   end

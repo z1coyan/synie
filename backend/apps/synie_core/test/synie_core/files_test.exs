@@ -241,8 +241,9 @@ defmodule SynieCore.FilesTest do
                |> Ash.read(actor: nobody)
     end
 
-    test "文件仍被附件引用时删除被 FK 挡住", %{actor: actor, stored: file} do
-      assert {:error, _} = Ash.destroy(file, actor: actor)
+    test "文件仍被附件引用时拒删并报中文错", %{actor: actor, stored: file} do
+      assert {:error, err} = Ash.destroy(file, actor: actor)
+      assert Exception.message(err) =~ "仍有业务挂接"
     end
 
     test "先删附件再删文件,物理对象同步清理", %{actor: actor, stored: file, att: att} do
