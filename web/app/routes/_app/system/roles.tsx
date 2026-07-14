@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
@@ -26,7 +27,7 @@ const UPDATE_ROLE = `
 
 function RolesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
+  const queryClient = useQueryClient()
   const [permRole, setPermRole] = useState<Row | null>(null)
   const [myPerms, setMyPerms] = useState<Set<string>>(new Set())
 
@@ -47,7 +48,6 @@ function RolesPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          key={reloadKey}
           resource="sysRoles"
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -85,7 +85,7 @@ function RolesPage() {
           }
           if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '角色已创建' : '角色已更新')
-          setReloadKey((k) => k + 1) // 触发 SynieDataGrid 重挂载刷新(跟进项:第二个使用页出现时暴露 refetch)
+          queryClient.invalidateQueries({ queryKey: ['gridRows', 'sysRoles'] })
         }}
       />
 

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, ListBox, Select, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
@@ -112,7 +112,7 @@ function NumberingPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [counters, setCounters] = useState<Row[]>([])
   const [countersSnapshot, setCountersSnapshot] = useState<Row[]>([])
-  const [reloadKey, setReloadKey] = useState(0)
+  const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一条规则的计数器回填到当前规则
   const reqIdRef = useRef(0)
 
@@ -162,7 +162,6 @@ function NumberingPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          key={reloadKey}
           resource="sysNumberingRules"
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
@@ -288,7 +287,7 @@ function NumberingPage() {
               toast.success('编号规则已更新')
             }
           }
-          setReloadKey((k) => k + 1)
+          queryClient.invalidateQueries({ queryKey: ['gridRows', 'sysNumberingRules'] })
         }}
       />
     </>
