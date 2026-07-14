@@ -72,7 +72,7 @@ function StoragesPage() {
                   toast.success(`已将「${String(row.label)}」设为默认存储`)
                   ctx.refetch()
                 } catch (e) {
-                  toast.error(e instanceof Error ? e.message : '设为默认失败')
+                  toast.danger(e instanceof Error ? e.message : '设为默认失败')
                 }
               },
             },

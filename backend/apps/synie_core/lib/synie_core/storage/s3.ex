@@ -13,7 +13,10 @@ defmodule SynieCore.Storage.S3 do
 
   @impl true
   def put(config, key, src_path) do
-    case request(S3.put_object(config.bucket, full_key(config, key), File.read!(src_path)), config) do
+    case request(
+           S3.put_object(config.bucket, full_key(config, key), File.read!(src_path)),
+           config
+         ) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
     end

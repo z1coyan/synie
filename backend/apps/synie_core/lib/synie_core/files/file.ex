@@ -85,25 +85,28 @@ defmodule SynieCore.Files.File do
   attributes do
     uuid_primary_key :id
 
+    # 存储接入名,对应 sys_storage.name
     attribute :storage, :string do
       allow_nil? false
       public? true
       constraints max_length: 32
-      description "存储配置名(local/s3/oss...)"
+      description "存储接入"
     end
 
+    # 服务端生成,不含用户输入
     attribute :key, :string do
       allow_nil? false
       public? true
       constraints max_length: 255
-      description "对象键,服务端生成,不含用户输入"
+      description "对象键"
     end
 
+    # 原始文件名仅展示,绝不拼路径
     attribute :filename, :string do
       allow_nil? false
       public? true
       constraints max_length: 255
-      description "原始文件名(仅展示,绝不拼路径)"
+      description "文件名"
     end
 
     attribute :content_type, :string do
@@ -114,13 +117,14 @@ defmodule SynieCore.Files.File do
 
     attribute :size, :integer do
       public? true
-      description "字节数"
+      description "大小"
     end
 
+    # 留作校验/去重
     attribute :sha256, :string do
       public? true
       constraints max_length: 64
-      description "内容摘要,留作校验/去重"
+      description "SHA-256 摘要"
     end
 
     create_timestamp :inserted_at, public?: true, description: "上传时间"

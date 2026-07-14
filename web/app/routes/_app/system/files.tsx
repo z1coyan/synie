@@ -104,7 +104,7 @@ function FilesPage() {
               variant="secondary"
               onPress={() => {
                 downloadFile(String(row.id), String(row.filename ?? 'file')).catch((e) =>
-                  toast.error(e instanceof Error ? e.message : '下载失败')
+                  toast.danger(e instanceof Error ? e.message : '下载失败')
                 )
               }}
             >

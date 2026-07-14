@@ -211,11 +211,12 @@ defmodule SynieCore.Files.StorageEndpoint do
   attributes do
     uuid_primary_key :id
 
+    # name 写入 sys_file.storage,建后不可改(update 不 accept)
     attribute :name, :string do
       allow_nil? false
       public? true
       constraints max_length: 32
-      description "接入名(写入 sys_file.storage,建后不可改)"
+      description "接入名"
     end
 
     attribute :label, :string do
@@ -231,22 +232,24 @@ defmodule SynieCore.Files.StorageEndpoint do
       description "存储类型"
     end
 
+    # local 用;相对路径由 adapter 按后端工作目录展开
     attribute :root, :string do
       public? true
       constraints max_length: 255
-      description "根目录(local;相对路径按后端工作目录展开)"
+      description "根目录"
     end
 
     attribute :endpoint, :string do
       public? true
       constraints max_length: 255
-      description "服务地址(s3/oss,如 https://oss-cn-hangzhou.aliyuncs.com)"
+      description "服务地址"
     end
 
+    # 可空,S3 签名兜底 us-east-1
     attribute :region, :string do
       public? true
       constraints max_length: 64
-      description "区域(可空,签名兜底 us-east-1)"
+      description "区域"
     end
 
     attribute :bucket, :string do
@@ -255,10 +258,11 @@ defmodule SynieCore.Files.StorageEndpoint do
       description "Bucket"
     end
 
+    # 可空,对象存储的「默认路径」,拼在服务端 key 前
     attribute :prefix, :string do
       public? true
       constraints max_length: 128
-      description "对象键前缀(可空,对象存储的默认路径)"
+      description "对象键前缀"
     end
 
     attribute :access_key_id, :string do
