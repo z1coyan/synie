@@ -65,6 +65,11 @@ export interface SynieRecordDrawerProps {
   /** Sheet.Content 宽度样式 */
   contentClassName?: string
   /**
+   * 字段栅格之前的头部内容(如金额主视觉/概要卡),占满整行;
+   * 入参是冻结后的 mode/row(与 extraContent 同一套快照,退场动画期间不闪)
+   */
+  headerContent?: (mode: DrawerMode, row: Row | null | undefined) => ReactNode
+  /**
    * meta 列之外的附加内容(如多对多关联控件),渲染在字段栅格末尾、占满整行;
    * 状态由页面自持,提交在页面 onSubmit 里自行处理。入参是冻结后的 mode/row(退场动画期间不闪),
    * values 为当前表单草稿(view 态为空对象),供附加内容按表单字段联动(如按公司过滤科目候选);
@@ -242,6 +247,10 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                   </EmptyState.Header>
                 </EmptyState>
               ) : (
+                <>
+                {props.headerContent && (
+                  <div className="mb-6">{props.headerContent(renderMode, renderRow)}</div>
+                )}
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
                   {shown.map((f) => (
                     <div key={f.name} className={COL_SPAN[f.cols]}>
@@ -267,6 +276,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                     </div>
                   )}
                 </div>
+                </>
               )}
             </Sheet.Body>
             <Sheet.Footer>
