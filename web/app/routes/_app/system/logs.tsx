@@ -18,6 +18,8 @@ const ACTION_LABELS: Record<string, string> = {
   cancel: '取消',
   void: '作废',
   reverse: '红冲',
+  quick_create: '快速对账',
+  refresh_reconcile: '对账刷新',
 }
 
 // 值为 Track 落库的 GraphQL type 名;新资源接审计后在此补中文,漏了则原样显示英文
@@ -47,6 +49,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   acc_bill_transaction: '承兑交易',
   sys_numbering_rule: '编号规则',
   sys_numbering_counter: '编号计数器',
+  acc_bank_reconciliation: '银行对账记录',
 }
 
 // id 列展示原始 uuid 无阅读价值,记录名称/操作人已够定位;需要按 id 排查时直接查库

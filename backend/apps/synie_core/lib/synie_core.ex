@@ -35,6 +35,13 @@ defmodule SynieCore do
       list SynieCore.Acc.Bill, :acc_bills, :read, paginate_with: :offset
       list SynieCore.Acc.BillTransaction, :acc_bill_transactions, :read, paginate_with: :offset
       list SynieCore.Acc.BillHolding, :acc_bill_holdings, :read, paginate_with: :offset
+
+      list SynieCore.Acc.BankReconciliation, :acc_bank_reconciliations, :read,
+        paginate_with: :offset
+
+      # 对账剩余额度:选中凭证后预填默认对账金额
+      action SynieCore.Acc.BankReconciliation, :acc_bank_reconciliation_remaining, :remaining
+
       # 文件元数据列表:导入记录等 file_id 外键的速览/联查用(字节仍走 REST)
       list SynieCore.Files.File, :sys_files, :read, paginate_with: :offset
     end
@@ -137,6 +144,14 @@ defmodule SynieCore do
       destroy SynieCore.Acc.BillTransaction, :destroy_acc_bill_transaction, :destroy
       update SynieCore.Acc.BillTransaction, :audit_acc_bill_transaction, :audit
       update SynieCore.Acc.BillTransaction, :void_acc_bill_transaction, :void
+
+      create SynieCore.Acc.BankReconciliation, :create_acc_bank_reconciliation, :create
+
+      create SynieCore.Acc.BankReconciliation,
+             :quick_create_acc_bank_reconciliation,
+             :quick_create
+
+      destroy SynieCore.Acc.BankReconciliation, :destroy_acc_bank_reconciliation, :destroy
     end
   end
 
@@ -164,6 +179,7 @@ defmodule SynieCore do
     resource SynieCore.Acc.Bill
     resource SynieCore.Acc.BillTransaction
     resource SynieCore.Acc.BillHolding
+    resource SynieCore.Acc.BankReconciliation
     resource SynieCore.Audit.Log
     resource SynieCore.Numbering.Rule
     resource SynieCore.Numbering.Counter

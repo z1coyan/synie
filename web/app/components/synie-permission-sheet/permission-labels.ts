@@ -46,6 +46,7 @@ export const ACTION_LABELS: Record<string, string> = {
   cancel: '取消',
   void: '作废',
   reverse: '红冲',
+  reconcile: '对账',
 }
 
 export const domainLabel = (d: string) => DOMAIN_LABELS[d] ?? d

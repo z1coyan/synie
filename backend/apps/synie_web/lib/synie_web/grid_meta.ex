@@ -32,6 +32,7 @@ defmodule SynieWeb.GridMeta do
     "accBills" => SynieCore.Acc.Bill,
     "accBillTransactions" => SynieCore.Acc.BillTransaction,
     "accBillHoldings" => SynieCore.Acc.BillHolding,
+    "accBankReconciliations" => SynieCore.Acc.BankReconciliation,
     "sysFiles" => SynieCore.Files.File
   }
 

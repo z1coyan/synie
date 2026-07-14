@@ -43,6 +43,40 @@ defmodule SynieCore.Acc.BankAccount.LedgerAccount do
   end
 end
 
+defmodule SynieCore.Acc.BankAccount.ReconciledRebindGuard do
+  @moduledoc """
+  改绑/解绑会计科目守卫:名下流水一旦有对账记录,凭证侧已用额度是按「当前绑定科目」
+  动态归属的,改绑(含置 nil 解绑)会让历史对账的科目归属漂移、击穿额度不变量,
+  故一律拒绝——须先解除相关对账再改绑。
+  """
+
+  use Ash.Resource.Validation
+
+  require Ash.Query
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    # fetch_change 命中即 account_id 有变更(含改绑到 nil 的解绑);未变更则放行
+    case Ash.Changeset.fetch_change(changeset, :account_id) do
+      {:ok, _new_account_id} -> check(changeset)
+      :error -> :ok
+    end
+  end
+
+  defp check(changeset) do
+    used? =
+      SynieCore.Acc.BankReconciliation
+      |> Ash.Query.filter(bank_transaction.bank_account_id == ^changeset.data.id)
+      |> Ash.exists?(authorize?: false)
+
+    if used? do
+      {:error, field: :account_id, message: "账户名下流水存在对账记录,不允许更换绑定科目,请先解除对账"}
+    else
+      :ok
+    end
+  end
+end
+
 defmodule SynieCore.Acc.BankAccount do
   @moduledoc """
   银行账户,对应 `acc_bank_account` 表。
@@ -134,6 +168,7 @@ defmodule SynieCore.Acc.BankAccount do
       require_atomic? false
 
       validate {SynieCore.Acc.BankAccount.LedgerAccount, []}
+      validate {SynieCore.Acc.BankAccount.ReconciledRebindGuard, []}
     end
 
     destroy :destroy do
