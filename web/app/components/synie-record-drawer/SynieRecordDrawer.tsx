@@ -266,6 +266,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                           onChange={(v) =>
                             setValues((prev) => ({ ...prev, [f.name]: v, ...(f.effects?.(v) ?? {}) }))
                           }
+                          patchValues={patchValues}
                         />
                       )}
                     </div>
@@ -341,6 +342,7 @@ function FieldInput({
   values,
   isDisabled,
   onChange,
+  patchValues,
 }: {
   field: ResolvedField
   row?: Row | null
@@ -348,8 +350,9 @@ function FieldInput({
   values: Record<string, unknown>
   isDisabled: boolean
   onChange: (v: unknown) => void
+  patchValues: (patch: Record<string, unknown>) => void
 }) {
-  if (field.input) return <>{field.input({ value, onChange, isDisabled, values })}</>
+  if (field.input) return <>{field.input({ value, onChange, isDisabled, values, patchValues })}</>
 
   // fk 列:ref(权限裁剪后)或页面 remote.resource 提供数据源;都没有(含多态 fk,表单需页面
   // 按判别字段自定义 input,journals 先例)则落到 default TextField(fail-closed)

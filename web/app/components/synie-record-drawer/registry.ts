@@ -38,6 +38,9 @@ const registry: Record<string, ResourceDrawerConfig> = {
   accBankImports: { label: '流水导入' },
   accBankImportItems: { label: '导入行' },
   accVatInvoices: { label: '增值税发票' },
+  accBills: { label: '承兑票据' },
+  accBillTransactions: { label: '承兑交易' },
+  accBillHoldings: { label: '持有承兑' },
   accBankReconciliations: { label: '对账记录' },
   // 文件速览:存储配置/对象键是实现细节,不进详情
   sysFiles: { label: '文件', exclude: ['storage', 'key'] },

@@ -73,6 +73,8 @@ export interface SynieDataGridProps {
   fixedFilter?: Record<string, unknown>
   /** 初始排序(如流水页按交易时间倒序);仅作初值,用户点表头后照常接管 */
   defaultSort?: SortState
+  /** 本页汇总行:表格下方、分页上方渲染(如金额本页合计);rows 为当前页数据 */
+  pageSummary?: (rows: Row[]) => ReactNode
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
@@ -606,6 +608,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         )}
         contentClassName="min-w-[720px]"
       />
+
+      {props.pageSummary && <div className="px-4 py-2 text-sm text-muted">{props.pageSummary(rows)}</div>}
 
       {/* 树形懒加载下总数/分页无意义,隐藏整条分页栏 */}
       {!treeActive && (
