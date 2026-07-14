@@ -3,7 +3,17 @@ defmodule SynieCore.Acc.BankReconciliationTest do
 
   import SynieCore.AuthzFixtures
 
-  alias SynieCore.Acc.{BankAccount, BankReconciliation, BankTransaction, GlJournal, GlJournalLine}
+  require Ash.Query
+
+  alias SynieCore.Acc.{
+    BankAccount,
+    BankReconciliation,
+    BankTransaction,
+    GlEntry,
+    GlJournal,
+    GlJournalLine
+  }
+
   alias SynieCore.Authz.Actor
   alias SynieCore.Base.{Account, Currency}
 
@@ -315,6 +325,148 @@ defmodule SynieCore.Acc.BankReconciliationTest do
 
       assert Decimal.equal?(swapped.unreconciled_amount, Decimal.new("80"))
       assert :ok = Ash.destroy!(swapped, authorize?: false)
+    end
+  end
+
+  describe "quick_create 快速凭证对账" do
+    defp numbering_rule! do
+      SynieCore.Numbering.Rule
+      |> Ash.Changeset.for_create(
+        :create,
+        %{
+          resource: "acc.gl_journal",
+          name: "记账凭证",
+          segments: [%{"type" => "text", "value" => "记"}, %{"type" => "seq", "padding" => 4}]
+        },
+        authorize?: false
+      )
+      |> Ash.create!()
+    end
+
+    defp quick!(txn, counter_account, amount, opts) do
+      BankReconciliation
+      |> Ash.Changeset.for_create(
+        :quick_create,
+        %{
+          bank_transaction_id: txn.id,
+          counter_account_id: counter_account.id,
+          amount: Decimal.new(amount),
+          summary: "货款",
+          posting_date: ~D[2026-07-14]
+        },
+        opts
+      )
+      |> Ash.create!()
+    end
+
+    # user_id 须指向真实 sys_user 行:凭证 :create 动作会把 actor.user_id 落 created_by_id(FK)
+    defp full_actor(co) do
+      %{actor(co, ["acc.bank_transaction:*", "acc.gl_journal:*"]) | user_id: user!().id}
+    end
+
+    test "成功:凭证自动创建+审核+过账+关联", %{company: co, sales: s, bank_account: ba} do
+      numbering_rule!()
+      txn = txn!(co, ba, %{income: Decimal.new("1000")})
+
+      rec = quick!(txn, s, "1000", actor: full_actor(co))
+
+      journal = Ash.get!(GlJournal, rec.journal_id, authorize?: false)
+      assert journal.status == :audited
+      assert journal.remarks == "货款"
+
+      entries =
+        GlEntry
+        |> Ash.Query.filter(voucher_id == ^journal.id)
+        |> Ash.read!(authorize?: false)
+
+      assert length(entries) == 2
+      assert reload_txn(txn).reconcile_status == :reconciled
+    end
+
+    test "支出流水方向反转:银行科目在贷方", %{company: co, bank_acct: b, sales: s, bank_account: ba} do
+      numbering_rule!()
+      txn = txn!(co, ba, %{expense: Decimal.new("200")})
+
+      rec = quick!(txn, s, "200", actor: full_actor(co))
+
+      lines =
+        GlJournalLine
+        |> Ash.Query.filter(journal_id == ^rec.journal_id)
+        |> Ash.read!(authorize?: false)
+
+      bank_line = Enum.find(lines, &(&1.account_id == b.id))
+      assert Decimal.compare(bank_line.credit, 0) == :gt
+    end
+
+    test "缺凭证权限整体回滚", %{company: co, sales: s, bank_account: ba} do
+      numbering_rule!()
+      txn = txn!(co, ba, %{income: Decimal.new("100")})
+      bank_only = actor(co, ["acc.bank_transaction:*"])
+
+      try do
+        quick!(txn, s, "100", actor: bank_only)
+        flunk("应当因缺少凭证权限而失败")
+      rescue
+        e in [Ash.Error.Forbidden, Ash.Error.Invalid, Ash.Error.Unknown] -> {:ok, e}
+      end
+
+      assert [] = Ash.read!(GlJournal, authorize?: false)
+      assert [] = Ash.read!(BankReconciliation, authorize?: false)
+      assert reload_txn(txn).reconcile_status == :unreconciled
+    end
+
+    test "汇总科目做对方科目整体回滚", %{company: co, sales: _s, bank_account: ba} do
+      numbering_rule!()
+      group = account!(co, %{code: "9001", name: "汇总", direction: :credit, is_group: true})
+      txn = txn!(co, ba, %{income: Decimal.new("100")})
+
+      assert_raise Ash.Error.Invalid, fn ->
+        quick!(txn, group, "100", actor: full_actor(co))
+      end
+
+      assert [] = Ash.read!(GlJournal, authorize?: false)
+    end
+
+    test "超流水未对账余额被拒", %{company: co, sales: s, bank_account: ba} do
+      numbering_rule!()
+      txn = txn!(co, ba, %{income: Decimal.new("100")})
+
+      err =
+        assert_raise Ash.Error.Invalid, fn ->
+          quick!(txn, s, "200", actor: full_actor(co))
+        end
+
+      assert Exception.message(err) =~ "未对账金额"
+    end
+  end
+
+  describe "remaining 剩余额度查询" do
+    test "取流水/凭证双侧剩余的较小值", %{company: co, bank_acct: b, sales: s, bank_account: ba} do
+      txn = txn!(co, ba, %{income: Decimal.new("1000")})
+      j = audited_journal!(co, [{b, "400", "0"}, {s, "0", "400"}])
+      reader = actor(co, ["acc.bank_transaction:*", "acc.gl_journal:read"])
+
+      remaining =
+        BankReconciliation
+        |> Ash.ActionInput.for_action(:remaining, %{
+          bank_transaction_id: txn.id,
+          journal_id: j.id
+        })
+        |> Ash.run_action!(actor: reader)
+
+      assert Decimal.equal?(remaining, Decimal.new("400"))
+
+      link!(txn, j, "150")
+
+      remaining2 =
+        BankReconciliation
+        |> Ash.ActionInput.for_action(:remaining, %{
+          bank_transaction_id: txn.id,
+          journal_id: j.id
+        })
+        |> Ash.run_action!(actor: reader)
+
+      assert Decimal.equal?(remaining2, Decimal.new("250"))
     end
   end
 end

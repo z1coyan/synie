@@ -36,6 +36,9 @@ defmodule SynieCore do
       list SynieCore.Acc.BankReconciliation, :acc_bank_reconciliations, :read,
         paginate_with: :offset
 
+      # 对账剩余额度:选中凭证后预填默认对账金额
+      action SynieCore.Acc.BankReconciliation, :acc_bank_reconciliation_remaining, :remaining
+
       # 文件元数据列表:导入记录等 file_id 外键的速览/联查用(字节仍走 REST)
       list SynieCore.Files.File, :sys_files, :read, paginate_with: :offset
     end
@@ -130,6 +133,11 @@ defmodule SynieCore do
       update SynieCore.Acc.VatInvoice, :reverse_acc_vat_invoice, :reverse
 
       create SynieCore.Acc.BankReconciliation, :create_acc_bank_reconciliation, :create
+
+      create SynieCore.Acc.BankReconciliation,
+             :quick_create_acc_bank_reconciliation,
+             :quick_create
+
       destroy SynieCore.Acc.BankReconciliation, :destroy_acc_bank_reconciliation, :destroy
     end
   end
