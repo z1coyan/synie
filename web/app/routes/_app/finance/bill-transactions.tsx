@@ -939,7 +939,8 @@ function BillTransactionsPage() {
               ]
               const missing = required.filter(([k]) => billDraft[k] == null || billDraft[k] === '').map(([, l]) => l)
               if (missing.length > 0) throw new Error(`请完善票面信息:${missing.join('、')}`)
-              input.billAttrs = billDraft
+              // bill_attrs 是 :map 参数,GraphQL 暴露为 JsonString 标量,写入前须序列化(照 invoices.tsx lines 先例)
+              input.billAttrs = JSON.stringify(billDraft)
             }
           }
 
