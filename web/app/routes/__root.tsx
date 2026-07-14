@@ -11,7 +11,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import '../../app.css'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // ERP 数据录入场景:切窗口不应触发全表重取;写操作后由页面显式 invalidate 刷新
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+})
 
 export const Route = createRootRoute({
   head: () => ({
