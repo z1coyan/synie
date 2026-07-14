@@ -1,11 +1,20 @@
 # Synie
 
-Synie 是一个全栈脚手架仓库，包含两个并列的独立项目：
+Synie 是一个多公司财务 ERP，包含两个并列的独立项目：
 
 - `backend/`：Elixir umbrella，使用 Ash / AshPostgres / AshGraphql / Phoenix / Bandit。
-- `web/`：TanStack Start 前端，使用 Bun、React、HeroUI、Tailwind v4、TanStack Query、GraphQL Code Generator。
+- `web/`：TanStack Start 前端，使用 Bun、React、HeroUI Pro、Tailwind v4、TanStack Query、GraphQL Code Generator。
 
-当前骨架已打通最小端到端链路：前端 `http://localhost:3000` 通过 Vite proxy 请求后端 `http://localhost:4000/graphql`，并显示后端返回的 `Hello, world`。
+已交付的核心模块：
+
+- 总账（GL）：会计凭证录入/审核/取消审核、自动过账、分录明细
+- 增值税发票：台账、三科目自动过账、作废/红冲、对向发票
+- 银行账户与银行流水：导入模板、流水解析入暂存行、确认/批量转正、导入历史
+- 客户/供应商（销售/采购往来单位）主数据
+- 基础资料：公司、科目、币种、计量单位
+- 系统管理：用户/角色/权限矩阵、操作日志、自动编号规则
+
+前端 `http://localhost:3000` 通过 Vite proxy 请求后端 `http://localhost:4000/graphql`；登录后按域（财务/基础资料/供应链/系统）访问各模块页面。
 
 > 注意：根目录没有 `package.json` 或 `mix.exs`。命令分别在 `backend/` 和 `web/` 下执行。
 
@@ -22,11 +31,13 @@ Synie 是一个全栈脚手架仓库，包含两个并列的独立项目：
 │   ├── app/
 │   │   ├── graphql/             # GraphQL operations + generated gql/ output
 │   │   ├── lib/graphql.ts       # fetch('/graphql') client
-│   │   └── routes/index.tsx     # Synie hello page
+│   │   └── routes/
+│   │       ├── login.tsx        # 登录页
+│   │       └── _app/            # 登录后布局，按域分组：finance/base/scm/system
 │   ├── codegen.ts
 │   ├── package.json
 │   └── vite.config.ts
-└── docs/superpowers/           # scaffold spec/plan artifacts
+└── docs/superpowers/           # 设计文档：各模块 spec + 计划/决策记录
 ```
 
 ## 环境要求
@@ -52,7 +63,13 @@ Synie 是一个全栈脚手架仓库，包含两个并列的独立项目：
 
 `backend/.env.example` 记录了本地默认值，但应用不会自动加载 `.env` 文件；请用 shell、direnv、Docker Compose `env_file` 或 IDE run configuration 注入变量。
 
-当前 `sayHello` 是纯 Ash generic action，不访问数据库。因此即使本地 Postgres 不可用或 env 未正确配置，启动/测试时可能看到 Postgrex auth 日志，但 hello GraphQL 链路仍可工作。后续加入持久化资源时，再正式准备数据库和迁移。
+持久化资源已就位（总账、发票、银行流水、客户/供应商等均落库）。本地开发前需确保上述 Postgres 可用，并执行：
+
+```bash
+cd backend
+mix ecto.create
+mix ecto.migrate
+```
 
 ## 安装依赖
 
@@ -144,13 +161,13 @@ mix phx.server
 ```bash
 curl -s -X POST http://localhost:4000/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ sayHello(name: \"world\") }"}'
+  -d '{"query":"{ permissionCatalog { prefix actions } }"}'
 ```
 
-期望返回：
+期望返回权限点目录（无需登录即可访问）：
 
 ```json
-{"data":{"sayHello":"Hello, world"}}
+{"data":{"permissionCatalog":[{"prefix":"...","actions":["..."]}]}}
 ```
 
 如果用 `curl` 打开 playground，需要带 HTML Accept header：
@@ -183,7 +200,7 @@ cd backend
 mix test
 ```
 
-当前测试覆盖 hello generic action。看到 Postgrex 连接错误日志通常是本地 DB 未准备好的非阻塞噪声；以 ExUnit 最终结果为准。
+测试覆盖 GL 过账/凭证审核取消、发票作废/红冲、银行流水导入、权限（策略/矩阵）、gridMeta、文件上传下载等核心域逻辑；运行前需确保本地 Postgres 可用（见上文「环境要求」）。
 
 ### 前端类型检查
 
@@ -217,25 +234,30 @@ web/app/graphql/gql/
 
 ## 当前 GraphQL 合约
 
-后端暴露的示例 query：
+后端通过 AshGraphql 从各 Ash 资源自动派生 CRUD + list 查询，并在 `backend/apps/synie_web/lib/synie_web/schema.ex` 里补充少量自定义 query/mutation：
+
+- 资源 list 查询统一走 offset 分页，返回 `{ count, results }` 结构（不留扁平列表）。
+- 各资源自带增删改 mutation（create/update/destroy）。
+- 自定义 query：`me`（当前登录用户）、`myPermissions`、`permissionCatalog`、`gridMeta(resource: String!)`（DataGrid 列/权限/多态外键元数据）、`numberableResources`（自动编号规则页的资源下拉）。
+- 自定义 mutation：`login(username, password)`、`createSysUser`、`resetSysUserPassword`。
+
+前端不手写类型，而是通过 `web/codegen.ts` 从运行中的后端拉取 live schema 生成 GraphQL 类型（见下文「重新生成 GraphQL 类型」）。
+
+最小示例——登录换取 token：
 
 ```graphql
-query SayHello($name: String!) {
-  sayHello(name: $name)
+mutation Login($username: String!, $password: String!) {
+  login(username: $username, password: $password) {
+    token
+    user {
+      id
+      username
+    }
+  }
 }
 ```
 
-变量示例：
-
-```json
-{"name":"world"}
-```
-
-返回示例：
-
-```json
-{"data":{"sayHello":"Hello, world"}}
-```
+登录后前端把 token 存入 `web/app/lib/auth.ts`，后续请求带 `Authorization: Bearer <token>` header；未带 token 的请求 `actor` 为 nil，具体资源能否访问由各资源的策略决定。
 
 ## 生产环境提示
 
@@ -263,5 +285,5 @@ query SayHello($name: String!) {
 ## 已知开发期注意事项
 
 - `mix compile` / `mix test` 可能提示 `SynieCore.Repo.min_pg_version/0` 未定义；当前按 AshPostgres 默认兼容版本运行。
-- 如果本机 Postgres 凭据不匹配，会看到 `FATAL 28P01 (invalid_password)` 日志；当前 hello 示例不依赖数据库，所以不是阻塞项。
-- 前端页面的 `Hello, world` 是客户端 hydration 后通过 TanStack Query 请求得到；直接 `curl http://localhost:3000/` 主要看到 SSR shell。浏览器或 Vite proxy 日志能验证完整链路。
+- 如果本机 Postgres 凭据不匹配，会看到 `FATAL 28P01 (invalid_password)` 日志；由于业务资源均已落库，这会阻塞几乎所有查询/mutation，需先修正连接配置再继续。
+- 未登录访问 `web/app/routes/_app/` 下的任意页面会被重定向到 `/login`；登录后浏览器或 Vite proxy 日志能验证前后端完整链路（前端页面数据经 TanStack Query 请求 GraphQL 得到，直接 `curl http://localhost:3000/` 主要看到 SSR shell）。
