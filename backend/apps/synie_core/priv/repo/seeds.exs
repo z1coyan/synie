@@ -37,3 +37,25 @@ unless user.super_admin do
 
   IO.puts("已将 #{username} 标记为超级管理员")
 end
+
+# 内置存储接入:local(全局默认,不可删除)。已存在则跳过,不覆盖用户改过的 root。
+alias SynieCore.Files.StorageEndpoint
+
+local =
+  StorageEndpoint
+  |> Ash.Query.filter(name == "local")
+  |> Ash.read_one!(authorize?: false)
+
+if local do
+  IO.puts("存储接入 local 已存在,跳过创建")
+else
+  root = System.get_env("UPLOADS_ROOT") || "uploads"
+
+  StorageEndpoint
+  |> Ash.Changeset.for_create(:create, %{name: "local", label: "本地存储", kind: :local, root: root})
+  |> Ash.Changeset.force_change_attribute(:builtin, true)
+  |> Ash.Changeset.force_change_attribute(:is_default, true)
+  |> Ash.create!(authorize?: false)
+
+  IO.puts("已创建内置存储接入 local(根目录 #{root})")
+end

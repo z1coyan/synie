@@ -160,6 +160,13 @@ export const menuModules: MenuModule[] = [
         items: [{ label: '编号规则', path: '/system/numbering' }],
       },
       {
+        label: '文件存储',
+        items: [
+          { label: '存储接入', path: '/system/storages' },
+          { label: '文件管理', path: '/system/files' },
+        ],
+      },
+      {
         label: '审计',
         items: [{ label: '操作日志', path: '/system/logs' }],
       },

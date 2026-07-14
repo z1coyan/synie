@@ -44,6 +44,8 @@ defmodule SynieCore do
 
       # 文件元数据列表:导入记录等 file_id 外键的速览/联查用(字节仍走 REST)
       list SynieCore.Files.File, :sys_files, :read, paginate_with: :offset
+
+      list SynieCore.Files.StorageEndpoint, :sys_storages, :read, paginate_with: :offset
     end
 
     mutations do
@@ -92,6 +94,11 @@ defmodule SynieCore do
       # 文件的创建走 REST 上传端点(multipart 不过 GraphQL),这里只注册删除与解挂
       destroy SynieCore.Files.File, :destroy_sys_file, :destroy
       destroy SynieCore.Files.Attachment, :destroy_sys_attachment, :destroy
+
+      create SynieCore.Files.StorageEndpoint, :create_sys_storage, :create
+      update SynieCore.Files.StorageEndpoint, :update_sys_storage, :update
+      update SynieCore.Files.StorageEndpoint, :set_default_sys_storage, :set_default
+      destroy SynieCore.Files.StorageEndpoint, :destroy_sys_storage, :destroy
 
       create SynieCore.Numbering.Rule, :create_sys_numbering_rule, :create
       update SynieCore.Numbering.Rule, :update_sys_numbering_rule, :update
@@ -185,5 +192,6 @@ defmodule SynieCore do
     resource SynieCore.Numbering.Counter
     resource SynieCore.Files.File
     resource SynieCore.Files.Attachment
+    resource SynieCore.Files.StorageEndpoint
   end
 end

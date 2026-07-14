@@ -1,10 +1,14 @@
 defmodule SynieCore.StorageTest do
-  # 改全局 Application env,不能 async
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
+  require Ash.Query
+
+  alias SynieCore.Files.StorageEndpoint
   alias SynieCore.Storage
 
   setup do
+    :ok = Ecto.Adapters.SQL.Sandbox.checkout(SynieCore.Repo)
+
     base =
       Path.join(System.tmp_dir!(), "synie_storage_test_#{System.unique_integer([:positive])}")
 
@@ -14,25 +18,28 @@ defmodule SynieCore.StorageTest do
     src = Path.join(base, "src.bin")
     File.write!(src, "hello 附件")
 
-    old = Application.fetch_env(:synie_core, :storages)
-
-    Application.put_env(:synie_core, :storages,
-      test_local: %{adapter: SynieCore.Storage.Local, root: root}
-    )
-
-    on_exit(fn ->
-      File.rm_rf!(base)
-
-      case old do
-        {:ok, v} -> Application.put_env(:synie_core, :storages, v)
-        :error -> Application.delete_env(:synie_core, :storages)
-      end
-    end)
+    on_exit(fn -> File.rm_rf!(base) end)
 
     %{root: root, src: src}
   end
 
-  describe "Local adapter 经门面" do
+  defp endpoint!(attrs, opts \\ []) do
+    changeset = Ash.Changeset.for_create(StorageEndpoint, :create, attrs)
+
+    changeset =
+      Enum.reduce(Keyword.take(opts, [:is_default]), changeset, fn {k, v}, cs ->
+        Ash.Changeset.force_change_attribute(cs, k, v)
+      end)
+
+    Ash.create!(changeset, authorize?: false)
+  end
+
+  describe "Local adapter 经门面(DB 行驱动)" do
+    setup %{root: root} do
+      endpoint!(%{name: "test_local", label: "测试本地", kind: :local, root: root})
+      :ok
+    end
+
     test "put 后 read 取回原内容", %{src: src} do
       assert :ok = Storage.put("test_local", "2026/07/a.bin", src)
       assert {:ok, "hello 附件"} = Storage.read("test_local", "2026/07/a.bin")
@@ -54,25 +61,20 @@ defmodule SynieCore.StorageTest do
     test "本地存储不支持预签名" do
       assert {:error, :unsupported} = Storage.presigned_url("test_local", "k.bin", :get, 300)
     end
+  end
 
-    test "未配置的存储名直接抛错", %{src: src} do
-      assert_raise ArgumentError, ~r/nope/, fn -> Storage.put("nope", "k.bin", src) end
-    end
+  test "未配置的存储名直接抛错", %{src: src} do
+    assert_raise ArgumentError, ~r/nope/, fn -> Storage.put("nope", "k.bin", src) end
   end
 
   describe "default/0" do
-    test "返回 :default_storage 配置对应的名字(字符串,可直接入库)" do
-      old = Application.fetch_env(:synie_core, :default_storage)
-      Application.put_env(:synie_core, :default_storage, :test_local)
+    test "返回默认接入名(字符串,可直接入库)", %{root: root} do
+      endpoint!(%{name: "def_local", label: "默认", kind: :local, root: root}, is_default: true)
+      assert Storage.default() == "def_local"
+    end
 
-      on_exit(fn ->
-        case old do
-          {:ok, v} -> Application.put_env(:synie_core, :default_storage, v)
-          :error -> Application.delete_env(:synie_core, :default_storage)
-        end
-      end)
-
-      assert Storage.default() == "test_local"
+    test "无默认行时抛错提示跑 seeds" do
+      assert_raise RuntimeError, ~r/seeds/, fn -> Storage.default() end
     end
   end
 end

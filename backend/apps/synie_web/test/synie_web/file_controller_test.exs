@@ -23,28 +23,17 @@ defmodule SynieWeb.FileControllerTest do
     src = Path.join(base, "发票.pdf")
     File.write!(src, "PDF 字节")
 
-    old_storages = Application.fetch_env(:synie_core, :storages)
-    old_default = Application.fetch_env(:synie_core, :default_storage)
+    SynieCore.Files.StorageEndpoint
+    |> Ash.Changeset.for_create(:create, %{
+      name: "test_local",
+      label: "测试本地",
+      kind: :local,
+      root: root
+    })
+    |> Ash.Changeset.force_change_attribute(:is_default, true)
+    |> Ash.create!(authorize?: false)
 
-    Application.put_env(:synie_core, :storages,
-      test_local: %{adapter: SynieCore.Storage.Local, root: root}
-    )
-
-    Application.put_env(:synie_core, :default_storage, :test_local)
-
-    on_exit(fn ->
-      File.rm_rf!(base)
-
-      restore = fn key, old ->
-        case old do
-          {:ok, v} -> Application.put_env(:synie_core, key, v)
-          :error -> Application.delete_env(:synie_core, key)
-        end
-      end
-
-      restore.(:storages, old_storages)
-      restore.(:default_storage, old_default)
-    end)
+    on_exit(fn -> File.rm_rf!(base) end)
 
     %{src: src}
   end

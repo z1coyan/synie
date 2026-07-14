@@ -37,6 +37,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   pur_supplier: '供应商',
   sys_file: '附件文件',
   sys_attachment: '附件关联',
+  sys_storage: '存储接入',
   acc_gl_journal: '会计凭证',
   acc_gl_journal_line: '凭证分录行',
   acc_bank_account: '银行账户',

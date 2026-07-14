@@ -4,7 +4,7 @@ defmodule SynieCore.Storage.Adapter do
   未来 S3/阿里云 OSS(S3 兼容 API)共用一个 S3 adapter,换 endpoint 配置即可。
   """
 
-  @typedoc "单个存储的配置(来自 :synie_core, :storages),含 :adapter 与后端自需字段"
+  @typedoc "单个存储的配置(由 SynieCore.Storage 从 sys_storage 行构建),字段随 adapter 而异"
   @type config :: map()
 
   @doc "把本地文件 `src_path` 写入对象 `key`(上传源总是 Plug.Upload 的临时文件)。"
