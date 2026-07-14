@@ -11,6 +11,8 @@ export interface FieldInputProps {
   isDisabled: boolean
   /** 当前表单完整草稿值(而非仅本字段),供联动控件读取兄弟字段(如按 partyType 切换 partyId 数据源) */
   values: Record<string, unknown>
+  /** 向表单草稿并入补丁(view 态 no-op):选段带出多字段、跨字段联动计算用 */
+  patchValues: (patch: Record<string, unknown>) => void
 }
 
 export interface FieldOverride {
