@@ -1,6 +1,5 @@
 defmodule SynieCore.FilesTest do
-  # 改全局 storage 配置,不能 async
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   import SynieCore.AuthzFixtures
 
@@ -9,6 +8,7 @@ defmodule SynieCore.FilesTest do
   alias SynieCore.Files
   alias SynieCore.Files.Attachment
   alias SynieCore.Files.File, as: StoredFile
+  alias SynieCore.Files.StorageEndpoint
   alias SynieCore.Sales.Customer
   alias SynieCore.Storage
 
@@ -22,28 +22,17 @@ defmodule SynieCore.FilesTest do
     src = Path.join(base, "合同.pdf")
     File.write!(src, "PDF 内容")
 
-    old_storages = Application.fetch_env(:synie_core, :storages)
-    old_default = Application.fetch_env(:synie_core, :default_storage)
+    StorageEndpoint
+    |> Ash.Changeset.for_create(:create, %{
+      name: "test_local",
+      label: "测试本地",
+      kind: :local,
+      root: root
+    })
+    |> Ash.Changeset.force_change_attribute(:is_default, true)
+    |> Ash.create!(authorize?: false)
 
-    Application.put_env(:synie_core, :storages,
-      test_local: %{adapter: SynieCore.Storage.Local, root: root}
-    )
-
-    Application.put_env(:synie_core, :default_storage, :test_local)
-
-    on_exit(fn ->
-      File.rm_rf!(base)
-
-      restore = fn key, old ->
-        case old do
-          {:ok, v} -> Application.put_env(:synie_core, key, v)
-          :error -> Application.delete_env(:synie_core, key)
-        end
-      end
-
-      restore.(:storages, old_storages)
-      restore.(:default_storage, old_default)
-    end)
+    on_exit(fn -> File.rm_rf!(base) end)
 
     %{root: root, src: src}
   end

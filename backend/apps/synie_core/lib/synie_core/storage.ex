@@ -1,21 +1,32 @@
 defmodule SynieCore.Storage do
   @moduledoc """
-  文件存储门面:按配置名把操作分发给对应 adapter。
+  文件存储门面:按接入名(`sys_storage.name`)把操作分发给对应 adapter。
 
-  配置(runtime.exs):
-
-      config :synie_core, :storages,
-        local: %{adapter: SynieCore.Storage.Local, root: "/var/synie/uploads"}
-
-      config :synie_core, :default_storage, :local
-
-  存储名以字符串形式入库(`sys_file.storage`);换 bucket/endpoint 时新增一个
-  配置名,旧文件行仍指向旧配置,无需迁移数据。
+  接入点在系统管理→存储接入维护;`sys_file.storage` 存接入名,换 bucket/endpoint 时
+  新增一个接入点,旧文件行仍指向旧接入,无需迁移数据。
   """
+
+  require Ash.Query
+
+  alias SynieCore.Files.StorageEndpoint
+
+  @adapters %{
+    local: SynieCore.Storage.Local,
+    s3: SynieCore.Storage.S3,
+    oss: SynieCore.Storage.S3
+  }
 
   @doc "默认存储名(字符串,可直接写入 sys_file.storage)。"
   @spec default() :: String.t()
-  def default, do: Application.fetch_env!(:synie_core, :default_storage) |> to_string()
+  def default do
+    StorageEndpoint
+    |> Ash.Query.filter(is_default == true)
+    |> Ash.read_one(authorize?: false)
+    |> case do
+      {:ok, %StorageEndpoint{name: name}} -> name
+      _ -> raise "存储接入未初始化:没有默认接入点,请运行 seeds(priv/repo/seeds.exs)"
+    end
+  end
 
   @spec put(String.t(), String.t(), Path.t()) :: :ok | {:error, term()}
   def put(name, key, src_path) do
@@ -43,11 +54,26 @@ defmodule SynieCore.Storage do
   end
 
   defp conf!(name) do
-    storages = Application.fetch_env!(:synie_core, :storages)
-
-    case Enum.find(storages, fn {k, _} -> to_string(k) == name end) do
-      {_, %{adapter: adapter} = config} -> {adapter, config}
-      nil -> raise ArgumentError, "未配置的存储:#{inspect(name)},检查 :synie_core, :storages"
+    StorageEndpoint
+    |> Ash.Query.filter(name == ^name)
+    |> Ash.read_one(authorize?: false)
+    |> case do
+      {:ok, %StorageEndpoint{} = ep} -> {Map.fetch!(@adapters, ep.kind), config(ep)}
+      _ -> raise ArgumentError, "未知的存储接入:#{inspect(name)},请在系统管理→存储接入中配置"
     end
+  end
+
+  defp config(%StorageEndpoint{kind: :local} = ep), do: %{root: ep.root}
+
+  defp config(ep) do
+    %{
+      kind: ep.kind,
+      endpoint: ep.endpoint,
+      region: ep.region,
+      bucket: ep.bucket,
+      prefix: ep.prefix,
+      access_key_id: ep.access_key_id,
+      secret_access_key: ep.secret_access_key
+    }
   end
 end
