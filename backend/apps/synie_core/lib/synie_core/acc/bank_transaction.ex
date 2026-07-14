@@ -79,7 +79,8 @@ defmodule SynieCore.Acc.BankTransaction do
 
   def permission_prefix, do: "acc.bank_transaction"
   # import = 流水导入整链路(导入记录/导入行资源借同一码,见 BankImport)
-  def permission_actions, do: ~w(create read update delete import)
+  # reconcile = 对账整链路(对账记录资源借同一码,见 BankReconciliation)
+  def permission_actions, do: ~w(create read update delete import reconcile)
 
   # fk 速览标题用摘要(可空时前端退截断 id,凭证关联轮再定)
   def display_field, do: :summary
@@ -146,6 +147,32 @@ defmodule SynieCore.Acc.BankTransaction do
       # 不传 check_active:停用账户的存量流水允许改错录归属/补备注
       validate {SynieCore.Acc.OwnBankAccount, []}
       validate {SynieCore.Acc.BankTransaction.SingleSidedAmount, []}
+    end
+
+    update :refresh_reconcile do
+      # 内部动作:对账记录增删后刷新派生列(Reconcile.refresh_transaction!,authorize?: false 调用)
+      accept []
+      require_atomic? false
+
+      argument :reconciled_amount, :decimal, allow_nil?: false
+      argument :unreconciled_amount, :decimal, allow_nil?: false
+      argument :reconcile_status, SynieCore.Acc.ReconcileStatus, allow_nil?: false
+
+      change fn changeset, _context ->
+        changeset
+        |> Ash.Changeset.force_change_attribute(
+          :reconciled_amount,
+          Ash.Changeset.get_argument(changeset, :reconciled_amount)
+        )
+        |> Ash.Changeset.force_change_attribute(
+          :unreconciled_amount,
+          Ash.Changeset.get_argument(changeset, :unreconciled_amount)
+        )
+        |> Ash.Changeset.force_change_attribute(
+          :reconcile_status,
+          Ash.Changeset.get_argument(changeset, :reconcile_status)
+        )
+      end
     end
 
     destroy :destroy do
@@ -245,6 +272,12 @@ defmodule SynieCore.Acc.BankTransaction do
       attribute_public? true
       attribute_writable? true
       description "银行账户"
+    end
+
+    has_many :reconciliations, SynieCore.Acc.BankReconciliation do
+      destination_attribute :bank_transaction_id
+      public? true
+      description "对账记录"
     end
   end
 end

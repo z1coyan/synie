@@ -32,6 +32,10 @@ defmodule SynieCore do
       list SynieCore.Acc.BankImport, :acc_bank_imports, :read, paginate_with: :offset
       list SynieCore.Acc.BankImportItem, :acc_bank_import_items, :read, paginate_with: :offset
       list SynieCore.Acc.VatInvoice, :acc_vat_invoices, :read, paginate_with: :offset
+
+      list SynieCore.Acc.BankReconciliation, :acc_bank_reconciliations, :read,
+        paginate_with: :offset
+
       # 文件元数据列表:导入记录等 file_id 外键的速览/联查用(字节仍走 REST)
       list SynieCore.Files.File, :sys_files, :read, paginate_with: :offset
     end
@@ -124,6 +128,9 @@ defmodule SynieCore do
       update SynieCore.Acc.VatInvoice, :audit_acc_vat_invoice, :audit
       update SynieCore.Acc.VatInvoice, :void_acc_vat_invoice, :void
       update SynieCore.Acc.VatInvoice, :reverse_acc_vat_invoice, :reverse
+
+      create SynieCore.Acc.BankReconciliation, :create_acc_bank_reconciliation, :create
+      destroy SynieCore.Acc.BankReconciliation, :destroy_acc_bank_reconciliation, :destroy
     end
   end
 
@@ -148,6 +155,7 @@ defmodule SynieCore do
     resource SynieCore.Acc.BankImport
     resource SynieCore.Acc.BankImportItem
     resource SynieCore.Acc.VatInvoice
+    resource SynieCore.Acc.BankReconciliation
     resource SynieCore.Audit.Log
     resource SynieCore.Numbering.Rule
     resource SynieCore.Numbering.Counter
