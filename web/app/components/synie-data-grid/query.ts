@@ -136,9 +136,16 @@ export function buildFilterLiteral(
   return `{and: [${clauses.join(', ')}]}`
 }
 
+/** GraphQL 枚举字面量标记:fixedFilter 里的枚举值(如凭证状态 AUDITED)不能带引号 */
+export class GqlEnum {
+  constructor(readonly token: string) {}
+}
+export const gqlEnum = (token: string) => new GqlEnum(token)
+
 /** JS 对象 → GraphQL 输入字面量(键不带引号)。只用于组件 props 传入的受信条件(fixedFilter),字符串值经 JSON 转义 */
 export function toGqlLiteral(value: unknown): string {
   if (value == null) return 'null'
+  if (value instanceof GqlEnum) return value.token
   if (typeof value === 'string') return JSON.stringify(value)
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   if (Array.isArray(value)) return `[${value.map(toGqlLiteral).join(', ')}]`

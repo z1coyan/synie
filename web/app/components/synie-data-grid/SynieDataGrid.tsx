@@ -69,6 +69,8 @@ export interface SynieDataGridProps {
   fixedFilter?: Record<string, unknown>
   /** 初始排序(如流水页按交易时间倒序);仅作初值,用户点表头后照常接管 */
   defaultSort?: SortState
+  /** 行级着色:返回 'warning' 的行整行浅警示底色(如未完成对账的流水);实现见 app.css 的 :has 规则 */
+  rowTint?: (row: Row) => 'warning' | undefined
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
@@ -336,13 +338,21 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         cell: (row: Row) => {
           // 懒加载占位行只有 id:首列显示「加载中…」,其余列空
           if (isLoadingRow(row)) return i === 0 ? <span className="text-muted">加载中…</span> : null
-          return (
+          const content =
             overrides[col.name]?.render?.(row[col.name], row) ??
             defaultCell(col, row[col.name], row, overrides[col.name]?.enumColors)
+          // DataGrid 无行级 className 入口:首列塞隐藏标记,app.css 用 tr:has() 给整行上色
+          const tint = i === 0 ? props.rowTint?.(row) : undefined
+          if (!tint) return content
+          return (
+            <>
+              <span hidden data-row-tint={tint} />
+              {content}
+            </>
           )
         },
       })),
-    [columns, overrides, filters, treeMode]
+    [columns, overrides, filters, treeMode, props.rowTint]
   )
 
   // 取消排序必须传 null 而非 undefined:undefined 会让 DataGrid 退回非受控内部状态,残留首次点击存下的旧描述符
