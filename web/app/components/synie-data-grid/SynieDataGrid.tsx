@@ -53,6 +53,8 @@ export interface SynieDataGridProps {
   /** 传了就在行内菜单第一项显示「查看」(打开详情抽屉) */
   onView?: (row: Row) => void
   onCreate?: () => void
+  /** 「新增」按钮文案覆盖(如固定动线的「新增承兑接收」) */
+  createLabel?: string
   onEdit?: (row: Row) => void
   onImport?: (ctx: ActionContext) => void
   /** 提供时「导入」按钮渲染为下拉菜单(仍由 can('import') 门控),与 onImport 二选一 */
@@ -400,6 +402,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     clearSelection: () => setSelection(new Set()),
     onView: props.onView,
     onCreate: props.onCreate,
+    createLabel: props.createLabel,
     onEdit: props.onEdit,
     // importMenu 模式下也要让工具栏出「导入」动作位(点击行为由下方 Dropdown 接管)
     onImport: props.importMenu ? () => {} : props.onImport,

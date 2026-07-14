@@ -1,3 +1,5 @@
+import { formatAmount } from '~/lib/amount'
+import { SynieAttachmentPanel } from '../synie-attachment-panel/SynieAttachmentPanel'
 import type { SynieRecordDrawerProps } from './SynieRecordDrawer'
 
 /**
@@ -38,7 +40,45 @@ const registry: Record<string, ResourceDrawerConfig> = {
   accBankImports: { label: '流水导入' },
   accBankImportItems: { label: '导入行' },
   accVatInvoices: { label: '增值税发票' },
-  accBills: { label: '承兑票据' },
+  // 票据台账页已并入持有承兑(票面修正走持有段行操作),这里是票据档案的唯一全量呈现:
+  // 任何 billId fk 速览(含已处置票的历史交易行)都能看到完整票面+影像附件
+  accBills: {
+    label: '承兑票据',
+    contentClassName: 'w-full lg:w-[760px]',
+    fields: {
+      // 票号是票据身份,建档即定,不可改(后端 update 动作本就不收 bill_no)
+      billNo: { order: -1, edit: 'readOnly' },
+      billKind: { order: 0, cols: 6 },
+      transferable: { order: 1, cols: 6 },
+      issueDate: { order: 2, cols: 6 },
+      dueDate: { order: 3, cols: 6 },
+      faceAmount: { order: 4, cols: 6, render: (v) => formatAmount(v) },
+      acceptanceDate: { order: 5, cols: 6 },
+      // 出票人/收款人/承兑人四件套(名称/账号/开户行/开户行联行号),两列排
+      drawerName: { order: 6, cols: 6, label: '出票人名称' },
+      drawerAccount: { order: 7, cols: 6, label: '出票人账号' },
+      drawerBankName: { order: 8, cols: 6, label: '出票人开户行' },
+      drawerBankNo: { order: 9, cols: 6, label: '出票人开户行联行号' },
+      payeeName: { order: 10, cols: 6, label: '收款人名称' },
+      payeeAccount: { order: 11, cols: 6, label: '收款人账号' },
+      payeeBankName: { order: 12, cols: 6, label: '收款人开户行' },
+      payeeBankNo: { order: 13, cols: 6, label: '收款人开户行联行号' },
+      acceptorName: { order: 14, cols: 6, label: '承兑人名称' },
+      acceptorAccount: { order: 15, cols: 6, label: '承兑人账号' },
+      acceptorBankName: { order: 16, cols: 6, label: '承兑人开户行' },
+      acceptorBankNo: { order: 17, cols: 6, label: '承兑人开户行联行号' },
+      remarks: { order: 18 },
+    },
+    // 票面影像:create 态无宿主 id,面板自身显示提示,无需在此分支
+    extraContent: (mode, row) => (
+      <SynieAttachmentPanel
+        ownerType="acc_bill"
+        ownerId={row?.id as string | undefined}
+        category="original"
+        readonly={mode === 'view'}
+      />
+    ),
+  },
   accBillTransactions: { label: '承兑交易' },
   accBillHoldings: { label: '持有承兑' },
   accBankReconciliations: { label: '对账记录' },

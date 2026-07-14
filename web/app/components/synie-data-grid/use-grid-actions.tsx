@@ -44,6 +44,8 @@ export function useGridActions(opts: {
   clearSelection: () => void
   onView?: (row: Row) => void
   onCreate?: () => void
+  /** 「新增」按钮文案覆盖(如固定动线的「新增承兑接收」) */
+  createLabel?: string
   onEdit?: (row: Row) => void
   onImport?: (ctx: ActionContext) => void
   onExport?: () => void
@@ -99,7 +101,7 @@ export function useGridActions(opts: {
       ? [{ key: 'import', label: '导入', isDanger: false, run: () => opts.onImport!(ctx) }]
       : []),
     ...(can('create') && opts.onCreate
-      ? [{ key: 'create', label: '新增', isDanger: false, run: () => opts.onCreate!() }]
+      ? [{ key: 'create', label: opts.createLabel ?? '新增', isDanger: false, run: () => opts.onCreate!() }]
       : []),
     ...(can('export') && opts.onExport
       ? [{ key: 'export', label: '导出', isDanger: false, run: () => opts.onExport!() }]
