@@ -231,8 +231,21 @@ defmodule SynieCore.Acc.GlJournal do
         |> Ash.Changeset.before_action(fn cs ->
           # 权威复检:事务内 FOR UPDATE 重读,关闭双取消竞态(与审核同根因)
           case __MODULE__.lock_journal(cs.data.id) do
-            {:ok, %{status: :audited}} -> cs
-            _ -> Ash.Changeset.add_error(cs, message: "仅已审核凭证可取消")
+            {:ok, %{status: :audited}} ->
+              # 有银行对账关联的凭证不可取消(对账以「已审核」为前提;先解除再取消)
+              used? =
+                SynieCore.Acc.BankReconciliation
+                |> Ash.Query.filter(journal_id == ^cs.data.id)
+                |> Ash.exists?(authorize?: false)
+
+              if used? do
+                Ash.Changeset.add_error(cs, message: "凭证已用于银行对账,请先解除对账")
+              else
+                cs
+              end
+
+            _ ->
+              Ash.Changeset.add_error(cs, message: "仅已审核凭证可取消")
           end
         end)
         |> Ash.Changeset.after_action(fn _changeset, journal ->

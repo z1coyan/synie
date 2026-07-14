@@ -8,6 +8,10 @@ import type { RemoteSelectProps } from './RemoteSelect'
 
 export interface RemoteDialogSelectProps extends RemoteSelectProps {
   dialogTitle?: string
+  /** 弹窗表格的恒定过滤(透传 SynieDataGrid fixedFilter);枚举值用 gqlEnum() 包装 */
+  gridFilter?: Record<string, unknown>
+  /** 弹窗表格显示列(有序白名单),缺省 meta 全列 */
+  gridColumns?: string[]
 }
 
 export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
@@ -60,7 +64,14 @@ export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
               <Modal.Heading>{props.dialogTitle ?? `选择${props.label ?? ''}`}</Modal.Heading>
             </Modal.Header>
             <Modal.Body>
-              <SynieDataGrid resource={src.resource} pick="single" pickedRows={draft} onPickChange={setDraft} />
+              <SynieDataGrid
+                resource={src.resource}
+                columns={props.gridColumns}
+                fixedFilter={props.gridFilter}
+                pick="single"
+                pickedRows={draft}
+                onPickChange={setDraft}
+              />
             </Modal.Body>
             <Modal.Footer>
               <span className="mr-auto text-sm text-muted">

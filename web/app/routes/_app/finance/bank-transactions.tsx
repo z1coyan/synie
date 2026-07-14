@@ -6,11 +6,13 @@ import { gqlFetch } from '~/lib/graphql'
 import { BankImportCreateDrawer } from '~/components/bank-import/BankImportCreateDrawer'
 import { BankImportHistoryDrawer } from '~/components/bank-import/BankImportHistoryDrawer'
 import { BankImportRecordDrawer } from '~/components/bank-import/BankImportRecordDrawer'
+import { ReconcileDrawer } from '~/components/bank-reconcile/ReconcileDrawer'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
+import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 
 export const Route = createFileRoute('/_app/finance/bank-transactions')({
@@ -37,11 +39,21 @@ const GRID_COLUMNS = [
   'income',
   'expense',
   'balance',
+  'reconcileStatus',
+  'unreconciledAmount',
   'counterpartyName',
 ]
 
+// 对账状态三态胶囊:未对账红、部分对账橙、已对账绿
+const GRID_OVERRIDES = {
+  reconcileStatus: {
+    enumColors: { UNRECONCILED: 'danger', PARTIAL: 'warning', RECONCILED: 'success' },
+  },
+} satisfies Record<string, ColumnOverride>
+
 function BankTransactionsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const [reconcileTxn, setReconcileTxn] = useState<Row | null>(null)
   const queryClient = useQueryClient()
 
   // 导入三件套:新增导入 / 导入记录(解析结果与执行)/ 导入历史;historyKey 让历史列表跟着变更刷新
@@ -66,6 +78,10 @@ function BankTransactionsPage() {
           importMenu={[
             { key: 'history', label: '导入历史', onAction: () => setHistoryOpen(true) },
             { key: 'new', label: '新增导入', onAction: () => setImportCreateOpen(true) },
+          ]}
+          overrides={GRID_OVERRIDES}
+          rowActions={[
+            { key: 'reconcile', label: '对账', capability: 'reconcile', onAction: (row) => setReconcileTxn(row) },
           ]}
         />
       </div>
@@ -103,6 +119,8 @@ function BankTransactionsPage() {
         onOpenChange={(open) => !open && setDrawer(null)}
         // 表格列是白名单子集(无对方账号/备注),行数据不全;不传 row,走 rowId 自查完整记录
         rowId={drawer?.row?.id}
+        // 派生列是系统维护字段,不进表单;view 态在对账抽屉里看
+        exclude={['reconcileStatus', 'reconciledAmount', 'unreconciledAmount']}
         fields={{
           // 公司提到最前(账户候选依赖它);建后不可改(update 动作不收 company_id);
           // 换公司时清掉已选账户,避免跨公司账户挂错
@@ -176,6 +194,13 @@ function BankTransactionsPage() {
           toast.success(mode === 'create' ? '银行流水已登记' : '银行流水已更新')
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankTransactions'] })
         }}
+      />
+
+      <ReconcileDrawer
+        txn={reconcileTxn}
+        onOpenChange={(open) => !open && setReconcileTxn(null)}
+        // 对账增删改变派生列:失效列表查询即可,分页/筛选状态得以保留(main 的 query 失效范式)
+        onChanged={() => queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankTransactions'] })}
       />
     </>
   )

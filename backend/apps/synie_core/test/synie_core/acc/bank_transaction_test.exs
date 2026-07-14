@@ -154,4 +154,20 @@ defmodule SynieCore.Acc.BankTransactionTest do
       |> Ash.create!(actor: no_perm)
     end
   end
+
+  describe "对账派生列" do
+    test "创建收入流水:未对账金额=流水金额,状态未对账", %{company: co, bank_account: ba} do
+      txn = txn!(valid_attrs(co, ba))
+
+      assert Decimal.equal?(txn.reconciled_amount, 0)
+      assert Decimal.equal?(txn.unreconciled_amount, Decimal.new("100.50"))
+      assert txn.reconcile_status == :unreconciled
+    end
+
+    test "支出流水同样回填未对账金额", %{company: co, bank_account: ba} do
+      txn = txn!(valid_attrs(co, ba, %{income: nil, expense: Decimal.new("88")}))
+
+      assert Decimal.equal?(txn.unreconciled_amount, Decimal.new("88"))
+    end
+  end
 end
