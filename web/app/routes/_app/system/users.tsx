@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
@@ -138,7 +139,7 @@ function JoinText({ label, items }: { label: string; items: string[] }) {
 
 function UsersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
+  const queryClient = useQueryClient()
   const [myPerms, setMyPerms] = useState<Set<string>>(new Set())
   // 一次性密码:仅存在于本次响应与此弹窗,关闭后无法再次查看
   const [oneTime, setOneTime] = useState<{ username: string; password: string } | null>(null)
@@ -256,7 +257,6 @@ function UsersPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          key={reloadKey}
           resource="sysUsers"
           onView={(row) => void openDrawer('view', row)}
           onCreate={() => void openDrawer('create', null)}
@@ -364,7 +364,7 @@ function UsersPage() {
           } else {
             toast.success(mode === 'create' ? '用户已创建' : '用户已更新')
           }
-          setReloadKey((k) => k + 1)
+          queryClient.invalidateQueries({ queryKey: ['gridRows', 'sysUsers'] })
         }}
       />
 
