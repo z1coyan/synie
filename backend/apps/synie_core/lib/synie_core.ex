@@ -33,6 +33,7 @@ defmodule SynieCore do
       list SynieCore.Acc.BankImportItem, :acc_bank_import_items, :read, paginate_with: :offset
       list SynieCore.Acc.VatInvoice, :acc_vat_invoices, :read, paginate_with: :offset
       list SynieCore.Acc.Bill, :acc_bills, :read, paginate_with: :offset
+      list SynieCore.Acc.BillTransaction, :acc_bill_transactions, :read, paginate_with: :offset
       # 文件元数据列表:导入记录等 file_id 外键的速览/联查用(字节仍走 REST)
       list SynieCore.Files.File, :sys_files, :read, paginate_with: :offset
     end
@@ -129,6 +130,10 @@ defmodule SynieCore do
       # 建档走内部 :register(接收交易时顺带注册),无 create mutation
       update SynieCore.Acc.Bill, :update_acc_bill, :update
       destroy SynieCore.Acc.Bill, :destroy_acc_bill, :destroy
+
+      create SynieCore.Acc.BillTransaction, :create_acc_bill_transaction, :create
+      update SynieCore.Acc.BillTransaction, :update_acc_bill_transaction, :update
+      destroy SynieCore.Acc.BillTransaction, :destroy_acc_bill_transaction, :destroy
     end
   end
 
@@ -154,6 +159,7 @@ defmodule SynieCore do
     resource SynieCore.Acc.BankImportItem
     resource SynieCore.Acc.VatInvoice
     resource SynieCore.Acc.Bill
+    resource SynieCore.Acc.BillTransaction
     resource SynieCore.Audit.Log
     resource SynieCore.Numbering.Rule
     resource SynieCore.Numbering.Counter

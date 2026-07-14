@@ -1,8 +1,11 @@
 defmodule SynieCore.Acc.BillTest do
   use ExUnit.Case, async: true
 
-  alias SynieCore.Acc.Bill
+  import SynieCore.AuthzFixtures
+
+  alias SynieCore.Acc.{BankAccount, Bill, BillTransaction}
   alias SynieCore.Authz.Actor
+  alias SynieCore.Base.Currency
 
   setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(SynieCore.Repo)
@@ -14,6 +17,54 @@ defmodule SynieCore.Acc.BillTest do
     struct!(
       %Actor{user_id: Ash.UUID.generate(), permissions: MapSet.new(["acc.bill:*"])},
       overrides
+    )
+  end
+
+  defp currency! do
+    i = System.unique_integer([:positive])
+    code = <<?A + rem(div(i, 676), 26), ?A + rem(div(i, 26), 26), ?A + rem(i, 26)>>
+
+    Currency
+    |> Ash.Changeset.for_create(:create, %{name: "测试币", iso_code: code})
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp bank_account!(company, attrs \\ %{}) do
+    BankAccount
+    |> Ash.Changeset.for_create(
+      :create,
+      Map.merge(
+        %{
+          alias: "户#{System.unique_integer([:positive])}",
+          bank_name: "招商银行",
+          holder_name: "测试公司",
+          account_no: "#{System.unique_integer([:positive])}",
+          company_id: company.id,
+          currency_id: currency!().id
+        },
+        attrs
+      )
+    )
+    |> Ash.create!(authorize?: false)
+  end
+
+  # 直接落一笔草稿交易(不经完整校验矩阵),仅用于挂接票据做读过滤/拒删场景
+  defp seed_transaction!(company, bank_account, bill, overrides \\ %{}) do
+    Ash.Seed.seed!(
+      BillTransaction,
+      Map.merge(
+        %{
+          company_id: company.id,
+          bank_account_id: bank_account.id,
+          bill_id: bill.id,
+          transaction_type: :receive,
+          occurred_on: ~D[2026-07-01],
+          sub_start: 1,
+          sub_end: 100,
+          amount: Decimal.new("1")
+        },
+        overrides
+      )
     )
   end
 
@@ -116,5 +167,43 @@ defmodule SynieCore.Acc.BillTest do
     act = actor()
 
     assert :ok = Ash.destroy!(bill, actor: act)
+  end
+
+  test "票据读过滤:A 公司录过交易后 A 可见该票,无交易公司的 actor 不可见" do
+    company_a = company!()
+    company_b = company!()
+    bill = register!(base_attrs())
+    seed_transaction!(company_a, bank_account!(company_a), bill)
+
+    visible = actor(company_ids: [company_a.id])
+    other = actor(company_ids: [company_b.id])
+    none = actor([])
+
+    assert [seen] = Ash.read!(Bill, actor: visible)
+    assert seen.id == bill.id
+
+    assert Ash.read!(Bill, actor: other) == []
+    assert Ash.read!(Bill, actor: none) == []
+  end
+
+  test "有交易的票据 destroy 被拒;有交易后改 due_date/face_amount/transferable 被拒" do
+    company = company!()
+    bill = register!(base_attrs())
+    seed_transaction!(company, bank_account!(company), bill)
+    act = actor()
+
+    assert_raise Ash.Error.Invalid, fn -> Ash.destroy!(bill, actor: act) end
+
+    for {field, value} <- [
+          {:due_date, ~D[2027-01-01]},
+          {:face_amount, Decimal.new("1")},
+          {:transferable, false}
+        ] do
+      assert_raise Ash.Error.Invalid, fn ->
+        bill
+        |> Ash.Changeset.for_update(:update, %{field => value}, actor: act)
+        |> Ash.update!()
+      end
+    end
   end
 end
