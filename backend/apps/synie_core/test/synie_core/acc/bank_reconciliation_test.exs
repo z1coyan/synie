@@ -246,4 +246,75 @@ defmodule SynieCore.Acc.BankReconciliationTest do
     assert_raise Ash.Error.Forbidden, fn -> Ash.destroy!(link, actor: reader) end
     assert :ok = Ash.destroy!(link, actor: writer)
   end
+
+  describe "反向约束" do
+    test "已对账凭证不可取消,解除后可以", %{company: co, bank_acct: b, sales: s, bank_account: ba} do
+      txn = txn!(co, ba, %{income: Decimal.new("100")})
+      j = audited_journal!(co, [{b, "100", "0"}, {s, "0", "100"}])
+      link = link!(txn, j, "100")
+
+      err =
+        assert_raise Ash.Error.Invalid, fn ->
+          j |> Ash.Changeset.for_update(:cancel, %{}) |> Ash.update!(authorize?: false)
+        end
+
+      assert Exception.message(err) =~ "解除对账"
+
+      Ash.destroy!(link, authorize?: false)
+
+      cancelled = j |> Ash.Changeset.for_update(:cancel, %{}) |> Ash.update!(authorize?: false)
+      assert cancelled.status == :cancelled
+    end
+
+    test "已对账流水禁删、金额不得低于已对账、禁换边", %{company: co, bank_acct: b, sales: s, bank_account: ba} do
+      txn = txn!(co, ba, %{income: Decimal.new("1000")})
+      j = audited_journal!(co, [{b, "400", "0"}, {s, "0", "400"}])
+      link!(txn, j, "400")
+      txn = reload_txn(txn)
+
+      assert_raise Ash.Error.Invalid, fn -> Ash.destroy!(txn, authorize?: false) end
+
+      err =
+        assert_raise Ash.Error.Invalid, fn ->
+          txn
+          |> Ash.Changeset.for_update(:update, %{income: Decimal.new("300")})
+          |> Ash.update!(authorize?: false)
+        end
+
+      assert Exception.message(err) =~ "已对账金额"
+
+      assert_raise Ash.Error.Invalid, fn ->
+        txn
+        |> Ash.Changeset.for_update(:update, %{income: nil, expense: Decimal.new("1000")})
+        |> Ash.update!(authorize?: false)
+      end
+    end
+
+    test "上调金额后派生列同步刷新", %{company: co, bank_acct: b, sales: s, bank_account: ba} do
+      txn = txn!(co, ba, %{income: Decimal.new("400")})
+      j = audited_journal!(co, [{b, "400", "0"}, {s, "0", "400"}])
+      link!(txn, j, "400")
+      assert reload_txn(txn).reconcile_status == :reconciled
+
+      updated =
+        reload_txn(txn)
+        |> Ash.Changeset.for_update(:update, %{income: Decimal.new("1000")})
+        |> Ash.update!(authorize?: false)
+
+      assert updated.reconcile_status == :partial
+      assert Decimal.equal?(updated.unreconciled_amount, Decimal.new("600"))
+    end
+
+    test "无对账的流水删除/换边不受影响", %{company: co, bank_account: ba} do
+      txn = txn!(co, ba, %{income: Decimal.new("100")})
+
+      swapped =
+        txn
+        |> Ash.Changeset.for_update(:update, %{income: nil, expense: Decimal.new("80")})
+        |> Ash.update!(authorize?: false)
+
+      assert Decimal.equal?(swapped.unreconciled_amount, Decimal.new("80"))
+      assert :ok = Ash.destroy!(swapped, authorize?: false)
+    end
+  end
 end

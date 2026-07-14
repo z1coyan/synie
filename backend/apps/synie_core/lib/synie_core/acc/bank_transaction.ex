@@ -27,6 +27,74 @@ defmodule SynieCore.Acc.BankTransaction.SingleSidedAmount do
   end
 end
 
+defmodule SynieCore.Acc.BankTransaction.ReconcileGuard do
+  @moduledoc """
+  已有对账关联的流水约束:禁止删除;修改时禁止收支换边、金额不得低于已对账金额;
+  金额变化时同步刷新未对账金额与状态。before_action 事务内 FOR UPDATE 锁自身行,
+  与对账增删(同样先锁流水)串行化。
+  """
+
+  use Ash.Resource.Change
+
+  alias SynieCore.Acc.Reconcile
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.before_action(changeset, fn cs ->
+      {:ok, txn} = Reconcile.lock_transaction(cs.data.id)
+      total = Reconcile.reconciled_total(txn.id)
+      has_links? = Decimal.compare(total, 0) == :gt
+
+      if cs.action.name == :destroy do
+        if has_links? do
+          Ash.Changeset.add_error(cs, message: "流水已有对账记录,请先解除对账后再删除")
+        else
+          cs
+        end
+      else
+        check_update(cs, txn, total, has_links?)
+      end
+    end)
+  end
+
+  defp check_update(cs, txn, total, has_links?) do
+    income = Ash.Changeset.get_attribute(cs, :income)
+    expense = Ash.Changeset.get_attribute(cs, :expense)
+    amount = income || expense
+
+    cond do
+      has_links? and txn.income != nil != (income != nil) ->
+        Ash.Changeset.add_error(cs, message: "流水已有对账记录,不允许收支换边")
+
+      amount != nil and Decimal.compare(amount, total) == :lt ->
+        Ash.Changeset.add_error(cs,
+          field: (income && :income) || :expense,
+          message: "金额不得低于已对账金额(已对账 #{total})"
+        )
+
+      amount != nil ->
+        refresh_derived(cs, amount, total)
+
+      true ->
+        cs
+    end
+  end
+
+  # 金额可能被修改:按锁内权威合计重算派生列(与对账增删的刷新同一套口径)
+  defp refresh_derived(cs, amount, total) do
+    status =
+      cond do
+        Decimal.compare(total, 0) == :eq -> :unreconciled
+        Decimal.compare(total, amount) == :lt -> :partial
+        true -> :reconciled
+      end
+
+    cs
+    |> Ash.Changeset.force_change_attribute(:unreconciled_amount, Decimal.sub(amount, total))
+    |> Ash.Changeset.force_change_attribute(:reconcile_status, status)
+  end
+end
+
 defmodule SynieCore.Acc.BankTransaction do
   @moduledoc """
   银行流水,对应 `acc_bank_transaction` 表。
@@ -147,6 +215,8 @@ defmodule SynieCore.Acc.BankTransaction do
       # 不传 check_active:停用账户的存量流水允许改错录归属/补备注
       validate {SynieCore.Acc.OwnBankAccount, []}
       validate {SynieCore.Acc.BankTransaction.SingleSidedAmount, []}
+
+      change {SynieCore.Acc.BankTransaction.ReconcileGuard, []}
     end
 
     update :refresh_reconcile do
@@ -178,6 +248,8 @@ defmodule SynieCore.Acc.BankTransaction do
     destroy :destroy do
       primary? true
       require_atomic? false
+
+      change {SynieCore.Acc.BankTransaction.ReconcileGuard, []}
     end
   end
 
