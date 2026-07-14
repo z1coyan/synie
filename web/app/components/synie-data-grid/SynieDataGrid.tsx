@@ -75,6 +75,8 @@ export interface SynieDataGridProps {
   defaultSort?: SortState
   /** 本页汇总行:表格下方、分页上方渲染(如金额本页合计);rows 为当前页数据 */
   pageSummary?: (rows: Row[]) => ReactNode
+  /** 内建/自定义动作成功变更数据、本表 refetch 时一并回调,供页面联动失效关联资源缓存 */
+  onMutated?: () => void
 }
 
 const PAGE_SIZES = [10, 20, 50, 100]
@@ -391,7 +393,10 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   const actions = useGridActions({
     meta: meta.data,
-    refetch: () => rowsQuery.refetch(),
+    refetch: () => {
+      rowsQuery.refetch()
+      props.onMutated?.()
+    },
     clearSelection: () => setSelection(new Set()),
     onView: props.onView,
     onCreate: props.onCreate,
@@ -508,7 +513,12 @@ export function SynieDataGrid(props: SynieDataGridProps) {
                     onAction={(key) =>
                       props.importMenu!
                         .find((m) => m.key === key)
-                        ?.onAction({ refetch: () => rowsQuery.refetch() })
+                        ?.onAction({
+                          refetch: () => {
+                            rowsQuery.refetch()
+                            props.onMutated?.()
+                          },
+                        })
                     }
                   >
                     {props.importMenu.map((m) => (
