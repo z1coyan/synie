@@ -89,6 +89,17 @@ const PARTY_SOURCE: Record<string, [resource: string, label: string]> = {
   COMPANY: ['basCompanies', '内部公司'],
 }
 
+// 交易类型选项:值=GraphQL 大写 token,标签=后端枚举 description(BILL_KIND_OPTIONS 同款先例)。
+// 不用 meta 默认 Select 而自定义 input,是为了在 onChange 里同步重置页面态(不能放 effects:
+// effects 在 setValues updater 内执行,React updater 必须纯,内里 setState 会 dev 警告 + StrictMode 双跑)
+const TRANSACTION_TYPE_OPTIONS = [
+  { value: 'RECEIVE', label: '接收' },
+  { value: 'ENDORSE', label: '转让' },
+  { value: 'SETTLE', label: '兑付' },
+  { value: 'DISCOUNT', label: '贴现' },
+  { value: 'REALLOCATE', label: '调拨' },
+]
+
 const BILL_KIND_OPTIONS = [
   { value: 'BANK_ACCEPTANCE', label: '银行承兑汇票' },
   { value: 'COMMERCIAL_ACCEPTANCE', label: '商业承兑汇票' },
@@ -162,7 +173,8 @@ function bankAccountFilter(values: Record<string, unknown>): string {
   return `{companyId: {eq: ${JSON.stringify(companyId)}}, active: {eq: true}}`
 }
 
-function bankAccountInput(label: string, placeholderWhenReady: string) {
+// onPicked:选中后追加的页面态处理(如清 pickedHolding)——不放 effects,effects 在 setValues updater 内必须纯
+function bankAccountInput(label: string, placeholderWhenReady: string, onPicked?: () => void) {
   return ({ value, onChange, isDisabled, values }: FieldInputProps) => {
     const companyId = (values.companyId ?? null) as string | null
     return (
@@ -173,7 +185,10 @@ function bankAccountInput(label: string, placeholderWhenReady: string) {
         searchFields={['alias', 'accountNo']}
         placeholder={companyId ? placeholderWhenReady : '先选择公司'}
         value={value == null ? null : String(value)}
-        onChange={(id) => onChange(id)}
+        onChange={(id) => {
+          onChange(id)
+          onPicked?.()
+        }}
         isDisabled={isDisabled || companyId == null}
         filter={bankAccountFilter(values)}
       />
@@ -623,50 +638,84 @@ function BillTransactionsPage() {
             required: true,
             order: -2,
             edit: 'createOnly',
-            // 切类型清空所有类型专属字段,并重置接收/选段两个页面态,避免残留串型
-            effects: () => {
-              resetDraftState()
-              return {
-                billId: null,
-                subStart: null,
-                subEnd: null,
-                amount: null,
-                partyType: null,
-                partyId: null,
-                discountOrg: null,
-                discountRate: null,
-                interest: null,
-                netAmount: null,
-                toBankAccountId: null,
-              }
-            },
+            // effects 只返回字段补丁(在 setValues updater 内执行,必须纯);
+            // 页面态重置(pickedHolding/billLookup/billDraft)在下方自定义 input 的 onChange 里做
+            effects: () => ({
+              billId: null,
+              subStart: null,
+              subEnd: null,
+              amount: null,
+              partyType: null,
+              partyId: null,
+              discountOrg: null,
+              discountRate: null,
+              interest: null,
+              netAmount: null,
+              toBankAccountId: null,
+            }),
+            input: ({ value, onChange, isDisabled }) => (
+              <Select
+                isDisabled={isDisabled}
+                isRequired
+                value={value == null ? null : String(value)}
+                onChange={(v) => {
+                  onChange(v == null ? null : String(v))
+                  // 切类型重置接收/选段页面态,避免残留串型(与 effects 清字段配套)
+                  resetDraftState()
+                }}
+              >
+                <Label>交易类型</Label>
+                <Select.Trigger>
+                  <Select.Value />
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    {TRANSACTION_TYPE_OPTIONS.map((o) => (
+                      <ListBox.Item key={o.value} id={o.value} textValue={o.label}>
+                        {o.label}
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            ),
           },
           companyId: {
             required: true,
             order: -1,
             edit: 'createOnly',
-            effects: () => {
-              setPickedHolding(null)
-              return {
-                bankAccountId: null,
-                toBankAccountId: null,
-                billId: null,
-                billAccountId: null,
-                settleAccountId: null,
-                interestAccountId: null,
-              }
-            },
+            effects: () => ({
+              bankAccountId: null,
+              toBankAccountId: null,
+              billId: null,
+              billAccountId: null,
+              settleAccountId: null,
+              interestAccountId: null,
+            }),
+            // 自定义 input 只为在 onChange 里同步清选段页面态(billId 被 effects 清空,pickedHolding 须跟着清)
+            input: ({ value, onChange, isDisabled }) => (
+              <RemoteSelect
+                resource="basCompanies"
+                label="公司"
+                placeholder="选择公司…"
+                value={value == null ? null : String(value)}
+                onChange={(id) => {
+                  onChange(id)
+                  setPickedHolding(null)
+                }}
+                isDisabled={isDisabled}
+              />
+            ),
           },
           docNo: { order: 0, placeholder: '留空自动编号' },
           bankAccountId: {
             order: 1,
             required: true,
             cols: 6,
-            input: bankAccountInput('银行账户', '选择账户(调拨类型即转出账户)…'),
-            effects: () => {
-              setPickedHolding(null)
-              return { billId: null, subStart: null, subEnd: null, amount: null }
-            },
+            input: bankAccountInput('银行账户', '选择账户(调拨类型即转出账户)…', () => setPickedHolding(null)),
+            effects: () => ({ billId: null, subStart: null, subEnd: null, amount: null }),
           },
           toBankAccountId: {
             order: 2,
@@ -712,7 +761,15 @@ function BillTransactionsPage() {
             order: 6,
             cols: 4,
             required: true,
-            input: numberInput('交易金额', (v, values, patch) => patch(recalcSeg({ ...values, amount: v }))),
+            input: numberInput('交易金额', (v, values, patch) => {
+              const seg = recalcSeg({ ...values, amount: v })
+              // 贴现:金额变了利息必须跟着重算(自动路径,按当前利率/发生日/选段到期日),
+              // 否则陈旧利息随提交入库(amount=interest+net 勾稽在注入 netAmount 后恒过,拦不住)
+              const disc = T('DISCOUNT')(values)
+                ? recalcDiscount({ ...values, ...seg }, {}, pickedHolding?.dueDate ? String(pickedHolding.dueDate) : null)
+                : {}
+              patch({ ...seg, ...disc })
+            }),
           },
           subEnd: { order: 7, cols: 4, edit: 'readOnly' }, // 恒由 subStart+amount 推得
           partyType: {
@@ -848,6 +905,22 @@ function BillTransactionsPage() {
           const input: Record<string, unknown> = { ...values }
           // transactionType 是 createOnly:edit 态被 collectValues 剔除,自查改取原行数据(类型不可编辑,恒定)
           const txType = (mode === 'create' ? values.transactionType : drawer?.row?.transactionType) as string | undefined
+
+          // subEnd/netAmount 是 readOnly 派生字段,collectValues 会整体剥离(同 billId 机制),
+          // 而后端 sub_end 非空必填、贴现必填 net_amount——这里从已收集的 subStart/amount(/interest)
+          // 统一重算注入(与 recalcSeg/recalcDiscount 同一公式同一舍入),不读表单显示值,保证两处恒一致
+          const start = Number(input.subStart)
+          const amount = Number(input.amount)
+          if (Number.isFinite(start) && start >= 1 && Number.isFinite(amount) && amount > 0) {
+            input.subEnd = start + Math.round(amount * 100) - 1
+          }
+          if (txType === 'DISCOUNT') {
+            // interest 缺失时不注入(Number(null) 是 0,会把"利息未填"伪装成"利息为零"),留给后端必填校验报错
+            const interest = input.interest == null ? NaN : Number(input.interest)
+            if (Number.isFinite(amount) && Number.isFinite(interest)) {
+              input.netAmount = Math.round((amount - interest) * 100) / 100
+            }
+          }
 
           if (txType === 'REALLOCATE' && !input.toBankAccountId) {
             throw new Error('调拨交易必须选择转入账户')
