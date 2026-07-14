@@ -5,7 +5,7 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
 
-export const Route = createFileRoute('/_app/finance/bill-holdings')({
+export const Route = createFileRoute('/_app/finance/acceptance/holdings')({
   component: BillHoldingsPage,
 })
 
@@ -33,12 +33,11 @@ function BillHoldingsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">持有承兑</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <p className="text-sm text-ink-500">
         各银行账户当前持有的承兑票据段快照,由承兑交易审核后自动重放生成,只读不可编辑。
       </p>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <SynieDataGrid
           resource="accBillHoldings"
           columns={GRID_COLUMNS}

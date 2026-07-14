@@ -29,7 +29,7 @@ import { FkLink } from '~/components/synie-record-drawer/fk-preview'
 import type { DrawerMode, FieldInputProps } from '~/components/synie-record-drawer/fields'
 import type { GridColumnMeta, Row } from '~/components/synie-data-grid/types'
 
-export const Route = createFileRoute('/_app/finance/bill-transactions')({
+export const Route = createFileRoute('/_app/finance/acceptance/transactions')({
   component: BillTransactionsPage,
 })
 
@@ -523,6 +523,17 @@ function BillTransactionsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
 
+  // 三视图同页联动:审核/作废驱动持有重放,接收顺带建档票据——写后统一显式失效兄弟 tab,
+  // 免得切 tab 撞上 staleTime 内的陈旧缓存(重挂不重取)
+  const invalidateSiblings = () => {
+    queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBillHoldings'] })
+    queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBills'] })
+  }
+  const invalidateAcceptance = () => {
+    queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBillTransactions'] })
+    invalidateSiblings()
+  }
+
   // 选段整行(dueDate 供贴现算息);接收:按票号查到的既有票;接收:新票票面草稿(snake 键)
   const [pickedHolding, setPickedHolding] = useState<Row | null>(null)
   const [billLookup, setBillLookup] = useState<Row | null>(null)
@@ -570,7 +581,7 @@ function BillTransactionsPage() {
       }
       toast.success('承兑交易已审核过账')
       setAuditDialog(null)
-      queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBillTransactions'] })
+      invalidateAcceptance()
     } catch (e) {
       toast.danger('审核失败', { description: (e as Error).message })
     } finally {
@@ -591,7 +602,7 @@ function BillTransactionsPage() {
       }
       toast.success('调拨已审核')
       setReallocateAuditDialog(null)
-      queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBillTransactions'] })
+      invalidateAcceptance()
     } catch (e) {
       toast.danger('审核失败', { description: (e as Error).message })
     } finally {
@@ -601,12 +612,11 @@ function BillTransactionsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">承兑交易</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <p className="text-sm text-ink-500">
         接收、转让、兑付、贴现、调拨五种承兑票据业务,草稿态可自由编辑,审核后过账并驱动持有库存重放。
       </p>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <SynieDataGrid
           resource="accBillTransactions"
           columns={GRID_COLUMNS}
@@ -616,6 +626,8 @@ function BillTransactionsPage() {
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
           actionHandlers={{ audit: (rows) => openAudit(rows[0]!) }}
+          // 作废走内建确认流程(refetch 只刷本表),持有/台账靠 onMutated 联动失效
+          onMutated={invalidateSiblings}
         />
       </div>
 
@@ -964,7 +976,7 @@ function BillTransactionsPage() {
             }
             toast.success('承兑交易已更新')
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBillTransactions'] })
+          invalidateAcceptance()
         }}
       />
 

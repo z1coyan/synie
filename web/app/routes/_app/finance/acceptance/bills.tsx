@@ -10,7 +10,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
-export const Route = createFileRoute('/_app/finance/bills')({
+export const Route = createFileRoute('/_app/finance/acceptance/bills')({
   component: BillsPage,
 })
 
@@ -34,12 +34,11 @@ function BillsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">承兑票据</h1>
-      <p className="mt-2 text-sm text-ink-500">
+      <p className="text-sm text-ink-500">
         承兑票据主档,建档随接收交易自动完成;此处仅供票面修正,有交易后到期日/票据包金额/能否转让锁定不可改。
       </p>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <SynieDataGrid
           resource="accBills"
           columns={GRID_COLUMNS}
