@@ -20,6 +20,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'sales.customer': '客户',
   'purchase.supplier': '供应商',
   'sys.file': '附件',
+  'sys.storage': '存储接入',
   'acc.gl_entry': '总账分录',
   'acc.gl_journal': '会计凭证',
   'acc.bank_account': '银行账户',
