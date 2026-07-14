@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Alert, AlertDialog, Button, Calendar, Chip, DateField, DatePicker, Input, Label, Meter, Modal, NumberField, Surface, TextField, toast } from '@heroui/react'
 import { parseDate } from '@internationalized/date'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatAmount } from '~/lib/amount'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
@@ -48,17 +48,19 @@ export interface ReconcileDrawerProps {
 }
 
 export function ReconcileDrawer({ txn, onOpenChange, onChanged }: ReconcileDrawerProps) {
-  // 对账增删后 bump:key 变化整体重挂,概要派生列与关联列表一起刷新
-  const [version, setVersion] = useState(0)
+  const queryClient = useQueryClient()
 
+  // 对账增删后显式失效相关查询(全局 staleTime 30s,重挂并不保证重取):
+  // 概要卡/字段读的 rowById + 关联记录列表;父流水列表由页面 onChanged 自行失效
   const bump = () => {
-    setVersion((v) => v + 1)
+    if (txn) queryClient.invalidateQueries({ queryKey: ['rowById', 'accBankTransactions', txn.id] })
+    queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankReconciliations'] })
     onChanged()
   }
 
   return (
     <SynieRecordDrawer
-      key={`${txn?.id ?? ''}:${version}`}
+      key={txn?.id ?? ''}
       resource="accBankTransactions"
       label="流水对账"
       mode="view"
@@ -120,10 +122,10 @@ function TxnSummary({ txn }: { txn: Row }) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1.5">
           <span className="text-sm text-muted">{isIncome ? '收入金额' : '支出金额'}</span>
+          {/* 方向已由 label 说明,不再加正负号(「支出金额 -x」是双重否定);收入以绿色强调 */}
           <div
             className={`text-3xl font-semibold leading-none tabular-nums ${isIncome ? 'text-success' : 'text-foreground'}`}
           >
-            {isIncome ? '+' : '-'}
             {formatAmount(amount)}
           </div>
           <span className="mt-1 text-sm text-muted">
@@ -222,7 +224,8 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-medium">对账记录</h3>
+          {/* 与字段栅格的 label 同一套样式(ViewField:text-sm text-muted) */}
+          <h3 className="text-sm text-muted">对账记录</h3>
           {typeof ledger.data === 'string' && (
             <div className="flex items-center gap-2">
               <Button size="sm" variant="secondary" onPress={() => setLinkOpen(true)}>
