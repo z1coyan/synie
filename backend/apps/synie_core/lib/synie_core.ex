@@ -32,6 +32,9 @@ defmodule SynieCore do
       list SynieCore.Acc.BankImport, :acc_bank_imports, :read, paginate_with: :offset
       list SynieCore.Acc.BankImportItem, :acc_bank_import_items, :read, paginate_with: :offset
       list SynieCore.Acc.VatInvoice, :acc_vat_invoices, :read, paginate_with: :offset
+      list SynieCore.Acc.Bill, :acc_bills, :read, paginate_with: :offset
+      list SynieCore.Acc.BillTransaction, :acc_bill_transactions, :read, paginate_with: :offset
+      list SynieCore.Acc.BillHolding, :acc_bill_holdings, :read, paginate_with: :offset
 
       list SynieCore.Acc.BankReconciliation, :acc_bank_reconciliations, :read,
         paginate_with: :offset
@@ -139,6 +142,16 @@ defmodule SynieCore do
       update SynieCore.Acc.VatInvoice, :void_acc_vat_invoice, :void
       update SynieCore.Acc.VatInvoice, :reverse_acc_vat_invoice, :reverse
 
+      # 建档走内部 :register(接收交易时顺带注册),无 create mutation
+      update SynieCore.Acc.Bill, :update_acc_bill, :update
+      destroy SynieCore.Acc.Bill, :destroy_acc_bill, :destroy
+
+      create SynieCore.Acc.BillTransaction, :create_acc_bill_transaction, :create
+      update SynieCore.Acc.BillTransaction, :update_acc_bill_transaction, :update
+      destroy SynieCore.Acc.BillTransaction, :destroy_acc_bill_transaction, :destroy
+      update SynieCore.Acc.BillTransaction, :audit_acc_bill_transaction, :audit
+      update SynieCore.Acc.BillTransaction, :void_acc_bill_transaction, :void
+
       create SynieCore.Acc.BankReconciliation, :create_acc_bank_reconciliation, :create
 
       create SynieCore.Acc.BankReconciliation,
@@ -170,6 +183,9 @@ defmodule SynieCore do
     resource SynieCore.Acc.BankImport
     resource SynieCore.Acc.BankImportItem
     resource SynieCore.Acc.VatInvoice
+    resource SynieCore.Acc.Bill
+    resource SynieCore.Acc.BillTransaction
+    resource SynieCore.Acc.BillHolding
     resource SynieCore.Acc.BankReconciliation
     resource SynieCore.Audit.Log
     resource SynieCore.Numbering.Rule

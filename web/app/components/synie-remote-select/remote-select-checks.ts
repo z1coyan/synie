@@ -17,6 +17,7 @@ const ref = { resource: 'basCompanies', relation: 'parent', labelField: 'name' }
 eq(resolveSource({}, ref), {
   resource: 'basCompanies',
   labelField: 'name',
+  sortField: 'name',
   searchFields: ['name'],
   filter: null,
   fields: [],
@@ -29,6 +30,9 @@ eq(
 )
 eq(resolveSource({ searchFields: [] }, ref)!.searchFields, ['name'], '空 searchFields 回落 labelField')
 eq(resolveSource({}), null, '无 resource 为 null')
+// sortField:默认回落 labelField(计算字段场景);显式传入时用它排序而非 labelField
+eq(resolveSource({ labelField: 'label' }, ref)!.sortField, 'label', 'sortField 默认回落 labelField')
+eq(resolveSource({ labelField: 'label', sortField: 'dueDate' }, ref)!.sortField, 'dueDate', 'sortField 显式覆盖')
 
 const src = resolveSource({ searchFields: ['name', 'code'], filter: '{enabled: {eq: true}}' }, ref)!
 
@@ -47,6 +51,12 @@ eq(
   buildOptionsQuery(resolveSource({}, ref)!, 'a', 0),
   'query { basCompanies(limit: 20, offset: 0, sort: [{field: NAME, order: ASC}], filter: {name: {contains: "a"}}) { count results { id name } } }',
   '单条件不包 and/or'
+)
+// labelField 为计算字段(不可排序)时,sortField 显式指定真实可排序字段,排序改按它而非 labelField
+eq(
+  buildOptionsQuery(resolveSource({ labelField: 'label', sortField: 'dueDate' }, ref)!, '', 0),
+  'query { basCompanies(limit: 20, offset: 0, sort: [{field: DUE_DATE, order: ASC}]) { count results { id label } } }',
+  'sortField 覆盖排序字段(计算字段 labelField 场景)'
 )
 
 // —— buildByIdQuery:去重 + uuid 白名单;全非法为 null ——
