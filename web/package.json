@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "codegen": "graphql-codegen",
     "check": "bun app/components/run-checks.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
