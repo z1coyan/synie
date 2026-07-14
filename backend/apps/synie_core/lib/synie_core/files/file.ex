@@ -33,6 +33,9 @@ defmodule SynieCore.Files.File do
   def permission_prefix, do: "sys.file"
   def permission_actions, do: ~w(create read delete)
 
+  # fk 速览标题用原始文件名(默认反射会取到 storage,对用户无意义)
+  def display_field, do: :filename
+
   actions do
     read :read do
       primary? true

@@ -120,7 +120,9 @@ defmodule SynieCore.Acc.BankImportParserTest do
   end
 
   test "日期不符合格式:字段留空并报行错,其余字段照常" do
-    [item] = parse!(double_template(), [@header, ["07/01/2026", "10:00:00", "1", "", "", "", "备注在摘要"]])
+    [item] =
+      parse!(double_template(), [@header, ["07/01/2026", "10:00:00", "1", "", "", "", "备注在摘要"]])
+
     assert item.occurred_at == nil
     assert item.error =~ "不符合格式 YYYY-MM-DD"
     assert Decimal.equal?(item.income, Decimal.new("1"))
@@ -164,7 +166,10 @@ defmodule SynieCore.Acc.BankImportParserTest do
     tpl = double_template(%{counterparty_account_col: "F", counterparty_name_col: nil})
 
     [item] =
-      parse!(tpl, [@header, ["2026-07-01", "10:00:00", 100.5, nil, nil, "6222020200112233445", ""]])
+      parse!(tpl, [
+        @header,
+        ["2026-07-01", "10:00:00", 100.5, nil, nil, "6222020200112233445", ""]
+      ])
 
     assert Decimal.equal?(item.income, Decimal.new("100.5"))
     assert item.counterparty_account == "6222020200112233445"
@@ -173,7 +178,8 @@ defmodule SynieCore.Acc.BankImportParserTest do
   test "余额无法解析与超长摘要报行错" do
     long = String.duplicate("长", 256)
 
-    [item] = parse!(double_template(), [@header, ["2026-07-01", "10:00:00", "1", "", "abc", "", long]])
+    [item] =
+      parse!(double_template(), [@header, ["2026-07-01", "10:00:00", "1", "", "abc", "", long]])
 
     assert item.error =~ "余额「abc」无法解析"
     assert item.error =~ "摘要超过 255 字"

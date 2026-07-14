@@ -78,7 +78,8 @@ defmodule SynieCore.Acc.BankTransaction do
   end
 
   def permission_prefix, do: "acc.bank_transaction"
-  def permission_actions, do: ~w(create read update delete)
+  # import = 流水导入整链路(导入记录/导入行资源借同一码,见 BankImport)
+  def permission_actions, do: ~w(create read update delete import)
 
   # fk 速览标题用摘要(可空时前端退截断 id,凭证关联轮再定)
   def display_field, do: :summary

@@ -29,7 +29,11 @@ defmodule SynieCore do
       list SynieCore.Acc.BankImportTemplate, :acc_bank_import_templates, :read,
         paginate_with: :offset
 
+      list SynieCore.Acc.BankImport, :acc_bank_imports, :read, paginate_with: :offset
+      list SynieCore.Acc.BankImportItem, :acc_bank_import_items, :read, paginate_with: :offset
       list SynieCore.Acc.VatInvoice, :acc_vat_invoices, :read, paginate_with: :offset
+      # 文件元数据列表:导入记录等 file_id 外键的速览/联查用(字节仍走 REST)
+      list SynieCore.Files.File, :sys_files, :read, paginate_with: :offset
     end
 
     mutations do
@@ -106,6 +110,14 @@ defmodule SynieCore do
       create SynieCore.Acc.BankImportTemplate, :create_acc_bank_import_template, :create
       update SynieCore.Acc.BankImportTemplate, :update_acc_bank_import_template, :update
       destroy SynieCore.Acc.BankImportTemplate, :destroy_acc_bank_import_template, :destroy
+
+      # 导入记录:create 即解析;无 header update(解析后锁定);行的 create 是解析内部路径
+      create SynieCore.Acc.BankImport, :create_acc_bank_import, :create
+      update SynieCore.Acc.BankImport, :import_acc_bank_import, :import
+      destroy SynieCore.Acc.BankImport, :destroy_acc_bank_import, :destroy
+      update SynieCore.Acc.BankImportItem, :update_acc_bank_import_item, :update
+      destroy SynieCore.Acc.BankImportItem, :destroy_acc_bank_import_item, :destroy
+
       create SynieCore.Acc.VatInvoice, :create_acc_vat_invoice, :create
       update SynieCore.Acc.VatInvoice, :update_acc_vat_invoice, :update
       destroy SynieCore.Acc.VatInvoice, :destroy_acc_vat_invoice, :destroy
@@ -133,6 +145,8 @@ defmodule SynieCore do
     resource SynieCore.Acc.BankAccount
     resource SynieCore.Acc.BankTransaction
     resource SynieCore.Acc.BankImportTemplate
+    resource SynieCore.Acc.BankImport
+    resource SynieCore.Acc.BankImportItem
     resource SynieCore.Acc.VatInvoice
     resource SynieCore.Audit.Log
     resource SynieCore.Numbering.Rule

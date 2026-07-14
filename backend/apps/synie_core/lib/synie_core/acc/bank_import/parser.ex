@@ -22,16 +22,22 @@ defmodule SynieCore.Acc.BankImport.Parser do
 
   # 文本单元格按格式枚举解析的正则表;命名捕获 y/m/d/h/mi/s,缺省分量按 0 补
   @datetime_regex %{
-    ymd_dash_hms: ~r/^(?<y>\d{4})-(?<m>\d{1,2})-(?<d>\d{1,2})\s+(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/,
+    ymd_dash_hms:
+      ~r/^(?<y>\d{4})-(?<m>\d{1,2})-(?<d>\d{1,2})\s+(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/,
     ymd_dash_hm: ~r/^(?<y>\d{4})-(?<m>\d{1,2})-(?<d>\d{1,2})\s+(?<h>\d{1,2}):(?<mi>\d{1,2})$/,
-    ymd_slash_hms: ~r/^(?<y>\d{4})\/(?<m>\d{1,2})\/(?<d>\d{1,2})\s+(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/,
+    ymd_slash_hms:
+      ~r/^(?<y>\d{4})\/(?<m>\d{1,2})\/(?<d>\d{1,2})\s+(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/,
     ymd_slash_hm: ~r/^(?<y>\d{4})\/(?<m>\d{1,2})\/(?<d>\d{1,2})\s+(?<h>\d{1,2}):(?<mi>\d{1,2})$/,
     compact_space: ~r/^(?<y>\d{4})(?<m>\d{2})(?<d>\d{2})\s+(?<h>\d{2})(?<mi>\d{2})(?<s>\d{2})$/,
     compact: ~r/^(?<y>\d{4})(?<m>\d{2})(?<d>\d{2})(?<h>\d{2})(?<mi>\d{2})(?<s>\d{2})$/,
-    iso_t: ~r/^(?<y>\d{4})-(?<m>\d{1,2})-(?<d>\d{1,2})T(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/,
-    cn_hms: ~r/^(?<y>\d{4})年(?<m>\d{1,2})月(?<d>\d{1,2})日\s*(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/,
-    mdy_slash_hms: ~r/^(?<m>\d{1,2})\/(?<d>\d{1,2})\/(?<y>\d{4})\s+(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/,
-    dmy_slash_hms: ~r/^(?<d>\d{1,2})\/(?<m>\d{1,2})\/(?<y>\d{4})\s+(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/
+    iso_t:
+      ~r/^(?<y>\d{4})-(?<m>\d{1,2})-(?<d>\d{1,2})T(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/,
+    cn_hms:
+      ~r/^(?<y>\d{4})年(?<m>\d{1,2})月(?<d>\d{1,2})日\s*(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/,
+    mdy_slash_hms:
+      ~r/^(?<m>\d{1,2})\/(?<d>\d{1,2})\/(?<y>\d{4})\s+(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/,
+    dmy_slash_hms:
+      ~r/^(?<d>\d{1,2})\/(?<m>\d{1,2})\/(?<y>\d{4})\s+(?<h>\d{1,2}):(?<mi>\d{1,2}):(?<s>\d{1,2})$/
   }
 
   @date_regex %{
@@ -255,8 +261,14 @@ defmodule SynieCore.Acc.BankImport.Parser do
   # 时间表的正则没有 y 捕获,补 1970-01-01 占位(调用方只取 time 部分)
   defp named_captures_with_defaults(regex, value) do
     case Regex.named_captures(regex, value) do
-      nil -> nil
-      captures -> Map.merge(%{"y" => "1970", "m" => "1", "d" => "1", "h" => "0", "mi" => "0", "s" => "0"}, captures)
+      nil ->
+        nil
+
+      captures ->
+        Map.merge(
+          %{"y" => "1970", "m" => "1", "d" => "1", "h" => "0", "mi" => "0", "s" => "0"},
+          captures
+        )
     end
   end
 
