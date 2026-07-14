@@ -181,7 +181,7 @@ defmodule SynieCore.Acc.BankImportTest do
     record = create_import!(ctx, file.id)
 
     assert record.status == :failed
-    assert record.error =~ "仅支持 xlsx"
+    assert record.error =~ "仅支持 Excel"
     assert items_of(record) == []
   end
 

@@ -210,8 +210,36 @@ defmodule SynieCore.Acc.BankImportParserTest do
     assert msg =~ "超过上限 5000 行"
   end
 
-  test "非 xlsx 文件报可读错误" do
+  test "非 Excel 文件报可读错误(HTML/文本改名的假 xls 也落在这)" do
     assert {:error, msg} = Parser.parse(double_template(), "这不是 zip")
-    assert msg =~ "仅支持 xlsx"
+    assert msg =~ "仅支持 Excel"
+
+    assert {:error, msg} =
+             Parser.parse(double_template(), "<html><table><tr><td>假xls</td></tr></table></html>")
+
+    assert msg =~ "另存为 xlsx"
+  end
+
+  # 夹具是真 BIFF8(测试内 xlsx 经 LibreOffice 转出后提交):
+  # 第2行全文本单元格,第3行原生日期/时间/数字单元格,第4行支出行
+  test "xls(BIFF8):魔数分流 calamine,单元格归一后与 xlsx 同逻辑" do
+    binary = File.read!(Path.join(__DIR__, "../../support/fixtures/bank_import_sample.xls"))
+    {:ok, [text_row, native_row, expense_row]} = Parser.parse(double_template(), binary)
+
+    assert text_row.occurred_at == ~U[2026-07-01 02:30:00Z]
+    assert Decimal.equal?(text_row.income, Decimal.new("1234.56"))
+    assert Decimal.equal?(text_row.balance, Decimal.new("5000.00"))
+    assert text_row.counterparty_name == "某某公司"
+    assert text_row.error == nil
+
+    # 原生日期 + 原生时间(calamine 给 NaiveDateTime)+ 浮点金额(归一去 .0 语义)
+    assert native_row.occurred_at == ~U[2026-07-02 00:30:00Z]
+    assert Decimal.equal?(native_row.income, Decimal.new("100.5"))
+    assert native_row.summary == "原生单元格行"
+    assert native_row.error == nil
+
+    assert Decimal.equal?(expense_row.expense, Decimal.new("88"))
+    assert expense_row.income == nil
+    assert expense_row.error == nil
   end
 end

@@ -33,8 +33,9 @@ export function BankImportCreateDrawer({ isOpen, onOpenChange, onParsed }: BankI
   }, [isOpen])
 
   const pickFile = (candidate: File) => {
-    if (!candidate.name.toLowerCase().endsWith('.xlsx')) {
-      toast.danger('仅支持 xlsx 文件', { description: 'xls 请用 Excel 另存为 xlsx 后重试' })
+    const name = candidate.name.toLowerCase()
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+      toast.danger('仅支持 Excel 文件(xlsx / xls)')
       return
     }
     setFile(candidate)
@@ -111,14 +112,17 @@ export function BankImportCreateDrawer({ isOpen, onOpenChange, onParsed }: BankI
             >
               <DropZone.Icon />
               <DropZone.Label>拖拽银行导出文件到此处,或点击选择</DropZone.Label>
-              <DropZone.Description>仅支持 xlsx;列布局须与所选导入模板一致</DropZone.Description>
+              <DropZone.Description>支持 xlsx / xls;列布局须与所选导入模板一致</DropZone.Description>
               <DropZone.Trigger>选择文件</DropZone.Trigger>
             </DropZone.Area>
-            <DropZone.Input accept=".xlsx" onSelect={(list) => list[0] && pickFile(list[0])} />
+            <DropZone.Input accept=".xlsx,.xls" onSelect={(list) => list[0] && pickFile(list[0])} />
             {file && (
               <DropZone.FileList>
                 <DropZone.FileItem status="complete">
-                  <DropZone.FileFormatIcon color="green" format="XLSX" />
+                  <DropZone.FileFormatIcon
+                    color="green"
+                    format={file.name.toLowerCase().endsWith('.xls') ? 'XLS' : 'XLSX'}
+                  />
                   <DropZone.FileInfo>
                     <DropZone.FileName>{file.name}</DropZone.FileName>
                     <DropZone.FileMeta>{formatFileSize(file.size)}</DropZone.FileMeta>

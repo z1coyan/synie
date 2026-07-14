@@ -4,10 +4,14 @@ defmodule SynieCore.Acc.BankImport.Parser do
   `{:ok, [行]}`(行含 row_no 与流水字段,解析失败的字段留空并写入 error)
   或 `{:error, 记录级原因}`(文件不可读/零数据行/超上限)。
 
-  取值规则(spec 拍板):
+  取值规则(spec 拍板;xls 支持为 2026-07-14 用户追加):
 
-    * 仅 xlsx(Elixir 生态无 xls 解析),数字单元格按原始字符串取
+    * xlsx 走 xlsx_reader(纯 Elixir),数字单元格按原始字符串取
       (`number_type: String`,对方账号等长数字防浮点失真);
+    * xls(BIFF8)走 spreadsheet(Rust calamine 预编译 NIF):按文件魔数分流,
+      单元格归一成与 xlsx 路径相同的形状后共用全部下游逻辑;calamine 数字一律
+      浮点,整数值格式化去 `.0`(Excel 本身仅保 15 位有效数字,超长账号建议
+      源文件用文本格式);
     * Excel 原生日期/时间样式单元格(库转换为 Date/NaiveDateTime)优先于
       模板格式枚举,文本单元格才按格式正则解析;
     * 本地时间按固定偏移转 UTC(`:bank_import_utc_offset_minutes`,默认
@@ -66,22 +70,32 @@ defmodule SynieCore.Acc.BankImport.Parser do
     note: {255, "备注"}
   ]
 
+  @format_error "无法读取文件:仅支持 Excel 的 xlsx/xls 格式(部分银行导出的“xls”实为网页或文本,请用 Excel 打开后另存为 xlsx 再试)"
+
   @spec parse(struct(), binary()) :: {:ok, [map()]} | {:error, String.t()}
   def parse(template, binary) do
-    with {:ok, package} <- open(binary),
-         {:ok, rows} <- first_sheet(package) do
+    with {:ok, rows} <- read_rows(binary) do
       build_items(template, rows)
     end
   end
 
-  # 库对非 zip 输入不返回 error 而是抛错(translate_zip_error 漏分支),rescue 一并兜住
-  defp open(binary) do
+  # 按魔数分流:zip(PK)→ xlsx,OLE2 复合文档 → xls;两者皆非(HTML/CSV 改名的
+  # “假 xls” 也落在这)直接给可操作的报错
+  defp read_rows(<<0x50, 0x4B, _rest::binary>> = binary), do: read_xlsx(binary)
+
+  defp read_rows(<<0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, _rest::binary>> = binary),
+    do: read_xls(binary)
+
+  defp read_rows(_binary), do: {:error, @format_error}
+
+  # 库对畸形输入不返回 error 而是抛错(translate_zip_error 漏分支),rescue 一并兜住
+  defp read_xlsx(binary) do
     case XlsxReader.open(binary, source: :binary) do
-      {:ok, package} -> {:ok, package}
-      {:error, _reason} -> {:error, "无法读取文件:仅支持 xlsx 格式(xls 请用 Excel 另存为 xlsx 后重试)"}
+      {:ok, package} -> first_sheet(package)
+      {:error, _reason} -> {:error, @format_error}
     end
   rescue
-    _ -> {:error, "无法读取文件:仅支持 xlsx 格式(xls 请用 Excel 另存为 xlsx 后重试)"}
+    _ -> {:error, @format_error}
   end
 
   defp first_sheet(package) do
@@ -96,6 +110,43 @@ defmodule SynieCore.Acc.BankImport.Parser do
         {:error, "文件中没有工作表"}
     end
   end
+
+  # NIF 侧异常(损坏文件触发 panic)按格式错误兜底
+  defp read_xls(binary) do
+    case Spreadsheet.sheet_names(binary, format: :binary) do
+      {:ok, [name | _]} ->
+        case Spreadsheet.parse(binary, sheet: name, format: :binary) do
+          {:ok, rows} -> {:ok, Enum.map(rows, fn row -> Enum.map(row, &normalize_xls_cell/1) end)}
+          {:error, _reason} -> {:error, "工作表「#{name}」解析失败"}
+        end
+
+      {:ok, []} ->
+        {:error, "文件中没有工作表"}
+
+      {:error, _reason} ->
+        {:error, @format_error}
+    end
+  rescue
+    _ -> {:error, @format_error}
+  end
+
+  # 归一成 xlsx 路径的单元格形状:空 → ""(cell/2 再折叠为 nil)、数字 → 字符串、
+  # 公式错误({:error, "#REF!"})→ 错误码原文(落进金额/日期解析的行错误提示)、
+  # Date/NaiveDateTime 结构原样透传(原生日期优先路径)
+  defp normalize_xls_cell(nil), do: ""
+
+  defp normalize_xls_cell(value) when is_float(value) do
+    if value == trunc(value) and abs(value) < 1.0e15 do
+      Integer.to_string(trunc(value))
+    else
+      Float.to_string(value)
+    end
+  end
+
+  defp normalize_xls_cell(value) when is_integer(value), do: Integer.to_string(value)
+  defp normalize_xls_cell(value) when is_boolean(value), do: to_string(value)
+  defp normalize_xls_cell({:error, reason}), do: to_string(reason)
+  defp normalize_xls_cell(value), do: value
 
   defp build_items(template, rows) do
     cols = column_indexes(template)

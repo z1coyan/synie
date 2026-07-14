@@ -66,7 +66,7 @@
 
 纯函数模块:`parse(template, xlsx_binary) → {:ok, [%{row_no, fields..., error}]} | {:error, 记录级消息}`。
 
-- 依赖新增 `{:xlsx_reader, "~> 0.8"}`(纯 Elixir,仅 xlsx;.xls 拒绝并提示另存为 xlsx——#10 预设的取舍,选后端解析是产品拍板)。二进制经 `Storage.read` 取回,`open(bin, source: :binary)`,取第一个工作表。
+- 依赖:xlsx 走 `{:xlsx_reader, "~> 0.8"}`(纯 Elixir);xls(BIFF8)走 `{:spreadsheet, "~> 0.6"}`(Rust calamine 预编译 NIF,2026-07-14 评审追加,见文末修订)。二进制经 `Storage.read` 取回,按文件魔数分流(zip→xlsx、OLE2→xls,两者皆非——含 HTML/文本改名的“假 xls”——给可操作报错),取第一个工作表;xls 单元格归一成 xlsx 路径同形状后共用全部下游逻辑。
 - 单元格取值:`number_type: String`(对方账号等长数字防浮点失真),日期格式单元格靠库的类型转换得 Date/NaiveDateTime/Time 结构,**原生日期类型优先于模板格式枚举**(#10 拍板),文本单元格才按格式枚举正则解析。
 - 时间:单列/双列模式按模板;时间列缺省 00:00:00。**本地时间→UTC**:按固定偏移 `config :synie_core, :bank_import_utc_offset_minutes`(默认 480,即 UTC+8;国内无夏令时,不引 tzdata)。
 - 金额:双列模式 0/空视为未填,恰一项>0,负数报行错误(提示检查列配置);单列带符号按正负拆收/支,0 报错。千分位逗号/空格剥离后 Decimal 解析。
@@ -118,7 +118,7 @@
 
 ## 裁量(自主拍板,评审可推翻)
 
-1. 仅支持 .xlsx(Elixir 生态无 .xls 解析;报错文案引导另存)。
+1. ~~仅支持 .xlsx(Elixir 生态无 .xls 解析;报错文案引导另存)~~ 评审推翻,见文末修订:xls 已支持。
 2. 时区固定偏移 UTC+8 可配置(不引 tzdata)。
 3. 行数上限 5000/次(审计量与事务时长兜底)。
 4. 同账户同文件(sha256)非 failed 记录存在即拒绝重传(防呆,可删旧记录绕开)。
@@ -135,3 +135,8 @@
 - 解析失败记录的「重新解析/换文件」(现删了重来)。
 - 「金额列(正数)+ 收/支方向列」第三金额模式(#10 既有跟进项,模板层缺口)。
 - 上传后 create 失败产生的孤儿 sys_file 清理。
+- HTML/CSV 改名的“假 xls”(部分银行导出实为网页/文本):现给引导另存的报错,不解析。
+
+## 修订(2026-07-14 用户评审)
+
+- **追加 xls(BIFF8)支持**:纯 Elixir 生态无可靠 xls 解析(exoffice 弃维护多年),采用 `spreadsheet`(Rust calamine 封装)——预编译 NIF 免本机工具链(与 bcrypt→pbkdf2 的取舍不同点:无需编译)。魔数分流,xls 单元格归一(数字浮点→字符串、整数值去 `.0`;原生日期 NaiveDateTime 透传;公式错误码原文进行错误提示)后共用下游;calamine 浮点意味着 xls 数字单元格仅 15 位有效数字(Excel 自身限制),超长账号建议源文件文本格式。测试夹具为真 BIFF8(xlsx 夹具经 LibreOffice 转出后提交,CI 不依赖转换工具)。

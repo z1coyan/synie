@@ -24,6 +24,8 @@ defmodule SynieCore.XlsxFixture do
 
     files = [
       {~c"[Content_Types].xml", content_types_xml()},
+      # xlsx_reader 不看根 rels,但 LibreOffice 等严格实现需要(测试内转 xls 用)
+      {~c"_rels/.rels", root_rels_xml()},
       {~c"xl/workbook.xml", workbook_xml(sheet_name)},
       {~c"xl/_rels/workbook.xml.rels", workbook_rels_xml()},
       {~c"xl/styles.xml", styles_xml()},
@@ -47,6 +49,17 @@ defmodule SynieCore.XlsxFixture do
       <Override PartName="/xl/styles.xml"
         ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
     </Types>
+    """
+  end
+
+  defp root_rels_xml do
+    """
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+      <Relationship Id="rId1"
+        Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
+        Target="xl/workbook.xml"/>
+    </Relationships>
     """
   end
 
