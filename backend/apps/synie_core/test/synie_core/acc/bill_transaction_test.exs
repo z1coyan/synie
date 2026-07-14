@@ -145,22 +145,6 @@ defmodule SynieCore.Acc.BillTransactionTest do
     |> Ash.read!(authorize?: false)
   end
 
-  # 捕获 audit!/void! 触发的 after_action 回滚异常(BillLedger.replay! 的中文 raise 经
-  # Ash 动作管线包裹成 error class,不保证具体是哪一种,只断言消息文本)
-  defp assert_raises_with_message(substrings, fun) do
-    error =
-      try do
-        fun.()
-        flunk("expected raise")
-      rescue
-        e -> e
-      end
-
-    msg = Exception.message(error)
-    for s <- List.wrap(substrings), do: assert(msg =~ s)
-    error
-  end
-
   # 默认接收交易(带对手),覆盖字段按测试场景传 overrides
   defp base_attrs(%{company: co, bank_account: ba, bill: bill, customer: cust}, overrides \\ %{}) do
     Map.merge(
@@ -1154,7 +1138,9 @@ defmodule SynieCore.Acc.BillTransactionTest do
           actor: act
         )
 
-      assert_raises_with_message(["并未持有"], fn -> audit!(endorse_tx, ~D[2026-07-05], act) end)
+      err = assert_raise Ash.Error.Invalid, fn -> audit!(endorse_tx, ~D[2026-07-05], act) end
+      assert Exception.message(err) =~ "并未持有"
+      assert Exception.message(err) =~ endorse_tx.doc_no
 
       reloaded = Ash.get!(BillTransaction, endorse_tx.id, authorize?: false)
       assert reloaded.status == :draft
@@ -1229,9 +1215,9 @@ defmodule SynieCore.Acc.BillTransactionTest do
         )
         |> audit!(~D[2026-07-10], act)
 
-      assert_raises_with_message(["并未持有", endorse_tx.doc_no], fn ->
-        void!(receive_tx, act)
-      end)
+      err = assert_raise Ash.Error.Invalid, fn -> void!(receive_tx, act) end
+      assert Exception.message(err) =~ "并未持有"
+      assert Exception.message(err) =~ endorse_tx.doc_no
 
       reloaded = Ash.get!(BillTransaction, receive_tx.id, authorize?: false)
       assert reloaded.status == :audited

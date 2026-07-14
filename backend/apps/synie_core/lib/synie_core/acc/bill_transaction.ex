@@ -534,9 +534,9 @@ defmodule SynieCore.Acc.BillTransaction do
             )
           end
 
-          # 库存全链重验(锁票据行);不合法 raise → 整个审核事务回滚(含上面已插入的分录)
-          SynieCore.Acc.BillLedger.replay!(tx.bill_id)
-          {:ok, tx}
+          # 库存全链重验(锁票据行);不合法则 {:error, _} 回滚整个审核事务(含上面已插入的分录),
+          # 并把中文报错(含单号)透传成用户可见的 Ash 校验错误,而非顶层 something_went_wrong
+          replay_bill!(tx)
         end)
       end
     end
@@ -567,9 +567,9 @@ defmodule SynieCore.Acc.BillTransaction do
           end
 
           # 移除本笔(已在上面提交为 voided)后重放:后续交易若消耗过本笔产生的段,
-          # replay! 找不到覆盖段而 raise → 整个作废事务回滚(状态与已取消的分录一并撤销)
-          SynieCore.Acc.BillLedger.replay!(tx.bill_id)
-          {:ok, tx}
+          # replay! 找不到覆盖段则 {:error, _} 回滚整个作废事务(状态与已取消的分录一并撤销),
+          # 并把中文报错(含单号)透传成用户可见的 Ash 校验错误,而非顶层 something_went_wrong
+          replay_bill!(tx)
         end)
       end
     end
@@ -803,6 +803,19 @@ defmodule SynieCore.Acc.BillTransaction do
       _ ->
         {:error, Ash.Changeset.add_error(changeset, message: error_message)}
     end
+  end
+
+  @doc false
+  # audit/void after_action 共用:BillLedger.replay! 校验不合法时 raise ArgumentError
+  # (中文,带单号),这里捕获转成 {:error, InvalidChanges}——after_action 返回 {:error, _}
+  # 同样触发事务回滚(照 raise 原行为),但错误消息会作为 Ash 校验错误透传给前端,
+  # 而不是被包成顶层 something_went_wrong 只进服务端日志
+  defp replay_bill!(tx) do
+    SynieCore.Acc.BillLedger.replay!(tx.bill_id)
+    {:ok, tx}
+  rescue
+    e in ArgumentError ->
+      {:error, Ash.Error.Changes.InvalidChanges.exception(message: e.message)}
   end
 
   @doc "按类型派生分录组;调拨不生凭证,返回 []。currency 取科目,照 vat_invoice.gl_entries 的 currencies map。"

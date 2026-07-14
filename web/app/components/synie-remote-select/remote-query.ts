@@ -7,6 +7,8 @@ export interface RemoteSourceConfig {
   resource: string
   /** 显示字段,默认 gridMeta ref.labelField,再兜底 'name' */
   labelField?: string
+  /** 排序字段,默认 labelField;labelField 为计算字段不可排序时用 */
+  sortField?: string
   /** 远程搜索 contains OR 字段,默认 [labelField] */
   searchFields?: string[]
   /** 固定过滤字面量,如 `{enabled: {eq: true}}` */
@@ -23,6 +25,7 @@ export interface RemoteSourceConfig {
 export interface ResolvedSource {
   resource: string
   labelField: string
+  sortField: string
   searchFields: string[]
   filter: string | null
   fields: string[]
@@ -37,6 +40,7 @@ export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumn
   return {
     resource,
     labelField,
+    sortField: cfg.sortField ?? labelField,
     searchFields: cfg.searchFields?.length ? cfg.searchFields : [labelField],
     filter: cfg.filter ?? null,
     fields: cfg.fields ?? [],
@@ -55,7 +59,7 @@ export function resolveFkTarget(ref: GridColumnRef, row: Row): { resource: strin
 
 const selectionFields = (src: ResolvedSource): string => [...new Set(['id', src.labelField, ...src.fields])].join(' ')
 
-/** 选项分页查询:labelField 升序稳定排序;搜索词 JSON.stringify 转义后拼 contains OR */
+/** 选项分页查询:sortField(默认 labelField)升序稳定排序;搜索词 JSON.stringify 转义后拼 contains OR */
 export function buildOptionsQuery(src: ResolvedSource, search: string, offset: number): string {
   const clauses: string[] = []
   if (src.filter) clauses.push(src.filter)
@@ -64,7 +68,7 @@ export function buildOptionsQuery(src: ResolvedSource, search: string, offset: n
     const ors = src.searchFields.map((f) => `{${f}: {contains: ${JSON.stringify(s)}}}`)
     clauses.push(ors.length === 1 ? ors[0] : `{or: [${ors.join(', ')}]}`)
   }
-  const args = [`limit: ${src.pageSize}`, `offset: ${offset}`, `sort: [{field: ${toSortField(src.labelField)}, order: ASC}]`]
+  const args = [`limit: ${src.pageSize}`, `offset: ${offset}`, `sort: [{field: ${toSortField(src.sortField)}, order: ASC}]`]
   if (clauses.length === 1) args.push(`filter: ${clauses[0]}`)
   if (clauses.length > 1) args.push(`filter: {and: [${clauses.join(', ')}]}`)
   return `query { ${src.resource}(${args.join(', ')}) { count results { ${selectionFields(src)} } } }`
