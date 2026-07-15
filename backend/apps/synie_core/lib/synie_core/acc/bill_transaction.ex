@@ -236,8 +236,13 @@ defmodule SynieCore.Acc.BillTransaction do
       authorize_if always()
     end
 
-    policy always() do
+    policy action([:read, :create, :update, :destroy, :audit, :void]) do
       authorize_if SynieCore.Authz.Checks.HasPermission
+    end
+
+    # OCR 是录入辅助,复用 create 码不新设权限点(同银行流水 import 先例)
+    policy action(:ocr) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "create"}
     end
 
     policy action_type([:read, :update, :destroy]) do
@@ -571,6 +576,16 @@ defmodule SynieCore.Acc.BillTransaction do
           # 并把中文报错(含单号)透传成用户可见的 Ash 校验错误,而非顶层 something_went_wrong
           replay_bill!(tx)
         end)
+      end
+    end
+
+    action :ocr, :map do
+      description "上传承兑汇票图片后 OCR 识别,返回可回填接收票面草稿的字段(不落库)"
+      argument :file_id, :uuid, allow_nil?: false
+
+      run fn input, context ->
+        # DSL run 闭包内 alias 不生效(同 bank_reconciliation :remaining 先例),全限定
+        SynieCore.Ocr.recognize_bank_acceptance(context.actor, input.arguments.file_id)
       end
     end
   end

@@ -165,6 +165,10 @@ defmodule SynieCore do
       destroy SynieCore.Acc.BankReconciliation, :destroy_acc_bank_reconciliation, :destroy
 
       update SynieCore.Acc.Setting, :update_acc_setting, :update
+
+      # OCR 识别是有副作用的外部调用(计费),注册为 mutation;权限复用各自 create 码
+      action SynieCore.Acc.VatInvoice, :ocr_acc_vat_invoice, :ocr
+      action SynieCore.Acc.BillTransaction, :ocr_acc_bill_transaction, :ocr
     end
   end
 

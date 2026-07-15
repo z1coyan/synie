@@ -137,8 +137,13 @@ defmodule SynieCore.Acc.VatInvoice do
       authorize_if always()
     end
 
-    policy always() do
+    policy action([:read, :create, :update, :destroy, :audit, :void, :reverse]) do
       authorize_if SynieCore.Authz.Checks.HasPermission
+    end
+
+    # OCR 是录入辅助,复用 create 码不新设权限点(同银行流水 import 先例)
+    policy action(:ocr) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "create"}
     end
 
     policy action_type([:read, :update, :destroy]) do
@@ -449,6 +454,16 @@ defmodule SynieCore.Acc.VatInvoice do
           SynieCore.Acc.GL.reverse!("acc.vat_invoice", inv.id, posting_date)
           {:ok, inv}
         end)
+      end
+    end
+
+    action :ocr, :map do
+      description "上传发票图片/PDF 后 OCR 识别,返回可回填创建表单的字段(不落库)"
+      argument :file_id, :uuid, allow_nil?: false
+
+      run fn input, context ->
+        # DSL run 闭包内 alias 不生效(同 bank_reconciliation :remaining 先例),全限定
+        SynieCore.Ocr.recognize_invoice(context.actor, input.arguments.file_id)
       end
     end
   end
