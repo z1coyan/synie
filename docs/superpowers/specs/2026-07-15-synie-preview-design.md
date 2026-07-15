@@ -35,6 +35,7 @@ interface SyniePreviewProps {
 - `FileThumb`(同目录):按 fileId 鉴权拉字节的缩略图按钮,blob 缓存与 SyniePreview 互通;加载失败降级破图图标+title。
 - `SynieAttachmentPanel` 图片附件行以缩略图替换文件图标,点缩略图开预览(文件名回归纯文本)。
 - SynieDataGrid 列 override 新增 `image?: true | { fileId(row), filename(row), keepText }`:单元格渲染缩略图、点击全屏预览、同列(当前页)图片循环切换;`fileId` 返回空回退默认渲染,`keepText` 在缩略图旁保留默认文本(文件名列)。试点 `/system/files`。
+- SynieDataGrid 新增 `attachmentImages={{ ownerType, category?, label? }}`(用户追加:财务三单据接入):虚拟「图片」列,行自查图片附件(共享 helper `synie-attachment-panel/attachments.ts`,与面板同 queryKey、写后联动刷新),首图缩略图+超出计数,点击预览该行全部图片。接入:发票(acc_vat_invoice/original/票面)、银行流水(acc_bank_transaction/回单)、承兑交易(acc_bill_transaction/票面;持有页 bill 本身不带附件,票面在交易上,故不接)。
 
 ## 落地整合
 

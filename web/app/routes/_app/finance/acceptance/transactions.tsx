@@ -136,6 +136,7 @@ function BillTransactionsPage() {
           resource="accBillTransactions"
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
+          attachmentImages={{ ownerType: 'acc_bill_transaction', label: '票面' }}
           defaultSort={{ column: 'occurredOn', direction: 'descending' }}
           onView={(row) => setDrawer({ mode: 'view', row })}
           // 其余交易类型都基于已有承兑(从持有段行发起),唯一的凭空创建入口就是接收

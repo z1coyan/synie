@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { blobUrl, fetchFileBlob, uploadFile } from '~/lib/files'
+import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
 import { SyniePreview } from '../synie-preview/SyniePreview'
 
 /**
@@ -21,12 +22,6 @@ export interface SynieImageAttachmentProps {
   label: string
   /** view 模式只读:隐藏上传/删除 */
   readonly?: boolean
-}
-
-interface AttachmentRow {
-  id: string
-  insertedAt: string
-  file: { id: string; filename: string; contentType: string | null }
 }
 
 const DESTROY_ATTACHMENT = `
@@ -58,22 +53,12 @@ export function SynieImageAttachment({ ownerType, ownerId, category, label, read
   const canDelete = (perms.data?.has('sys.file:delete') ?? false) && !readonly
 
   // listKey 与 SynieAttachmentPanel 同构,同宿主的失效互相可见
-  const listKey = ['sysAttachments', ownerType, ownerId ?? '', category]
+  const listKey = attachmentListKey(ownerType, ownerId, category)
 
   const list = useQuery({
     queryKey: listKey,
     enabled: !!ownerId,
-    queryFn: () => {
-      // owner_type/category 是开发期常量,ownerId 是库里 uuid,内插安全(与面板同做法)
-      const query = `query {
-        sysAttachments(limit: 20, filter: { ownerType: { eq: "${ownerType}" }, ownerId: { eq: "${ownerId}" }, category: { eq: "${category}" } }) {
-          results { id insertedAt file { id filename contentType } }
-        }
-      }`
-      return gqlFetch<{ sysAttachments: { results: AttachmentRow[] } }>(query).then((d) =>
-        [...d.sysAttachments.results].sort((a, b) => a.insertedAt.localeCompare(b.insertedAt))
-      )
-    },
+    queryFn: () => fetchAttachmentList(ownerType, ownerId!, category),
   })
   // 槽位语义:只呈现最新一张;历史残留(替换失败留下的旧图)不展示
   const current = list.data && list.data.length > 0 ? list.data[list.data.length - 1] : null

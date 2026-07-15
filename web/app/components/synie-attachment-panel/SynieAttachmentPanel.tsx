@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { downloadFile, uploadFile } from '~/lib/files'
+import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
 import { FileThumb } from '../synie-preview/FileThumb'
 import { SyniePreview } from '../synie-preview/SyniePreview'
 
@@ -19,13 +20,6 @@ export interface SynieAttachmentPanelProps {
   category?: string
   /** view 模式只读:隐藏上传/删除 */
   readonly?: boolean
-}
-
-interface AttachmentRow {
-  id: string
-  category: string
-  insertedAt: string
-  file: { id: string; filename: string; contentType: string | null; size: number | null }
 }
 
 const DESTROY_ATTACHMENT = `
@@ -63,23 +57,12 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
   const canCreate = (perms.data?.has('sys.file:create') ?? false) && !readonly
   const canDelete = (perms.data?.has('sys.file:delete') ?? false) && !readonly
 
-  const listKey = ['sysAttachments', ownerType, ownerId ?? '', category ?? '']
+  const listKey = attachmentListKey(ownerType, ownerId, category)
 
   const list = useQuery({
     queryKey: listKey,
     enabled: !!ownerId,
-    queryFn: () => {
-      // owner_type/category 是开发期常量,ownerId 是库里 uuid,内插安全(与 DataGrid 同做法)
-      const categoryFilter = category ? `, category: { eq: "${category}" }` : ''
-      const query = `query {
-        sysAttachments(limit: 200, filter: { ownerType: { eq: "${ownerType}" }, ownerId: { eq: "${ownerId}" }${categoryFilter} }) {
-          results { id category insertedAt file { id filename contentType size } }
-        }
-      }`
-      return gqlFetch<{ sysAttachments: { results: AttachmentRow[] } }>(query).then((d) =>
-        [...d.sysAttachments.results].sort((a, b) => a.insertedAt.localeCompare(b.insertedAt))
-      )
-    },
+    queryFn: () => fetchAttachmentList(ownerType, ownerId!, category),
   })
 
   const handlePick = () => fileInputRef.current?.click()

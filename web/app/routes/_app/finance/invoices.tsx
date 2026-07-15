@@ -362,6 +362,7 @@ function InvoicesPage() {
           resource="accVatInvoices"
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
+          attachmentImages={{ ownerType: 'acc_vat_invoice', category: 'original', label: '票面' }}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
