@@ -20,7 +20,7 @@
 
 - 单行字段表,全局配置,不挂公司(与 sys_storage 同基线)。
 - 字段:`ocr_access_key_id :string`、`ocr_access_key_secret :string, sensitive? true`(明文入库,安全基线与 sys_storage 一致:靠权限码控读 + 前端打码)。
-- 计算字段 `ocr_configured`(布尔):两个凭证字段均非空。前端用它判断 OCR 按钮可用性,不暴露凭证内容。
+- 只读布尔查询 `accOcrConfigured`(资源上的 generic action,登录即可查):两个凭证字段均非空。前端用它判断 OCR 按钮可用性,不暴露凭证内容;不做成计算字段——计算字段要走 read 权限,普通录入员没有 `acc.setting:read`。
 - 权限:`permission_prefix "acc.setting"`,actions `read` / `update`。
 - 单例实现:migration seed 一行;`read :get` 取第一行,`update` 常规更新。
 - GraphQL 在域文件集中注册(get 查询 + update mutation)。
