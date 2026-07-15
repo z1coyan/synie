@@ -46,7 +46,13 @@ defmodule SynieCore.Ocr.AliyunSigner do
   V3 CanonicalRequest。CanonicalHeaders 每行以 \\n 结尾(与 SignedHeaders 之间
   因此隔一个空行),整体各段再以 \\n 连接——与 AWS SigV4 同构,勿"修掉"空行。
   """
-  @spec canonical_request(String.t(), String.t(), String.t(), [{String.t(), String.t()}], String.t()) ::
+  @spec canonical_request(
+          String.t(),
+          String.t(),
+          String.t(),
+          [{String.t(), String.t()}],
+          String.t()
+        ) ::
           String.t()
   def canonical_request(method, uri, query, headers, payload_hash) do
     canonical_headers = Enum.map_join(headers, fn {k, v} -> "#{k}:#{v}\n" end)

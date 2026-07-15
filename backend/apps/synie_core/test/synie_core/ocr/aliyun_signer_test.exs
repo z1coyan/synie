@@ -43,7 +43,17 @@ defmodule SynieCore.Ocr.AliyunSignerTest do
   end
 
   test "headers/6 产出全套请求头与正确签名" do
-    headers = AliyunSigner.headers("ocr-api.cn-hangzhou.aliyuncs.com", "RecognizeInvoice", "2021-07-07", "abc", @creds, date: @date, nonce: @nonce)
+    headers =
+      AliyunSigner.headers(
+        "ocr-api.cn-hangzhou.aliyuncs.com",
+        "RecognizeInvoice",
+        "2021-07-07",
+        "abc",
+        @creds,
+        date: @date,
+        nonce: @nonce
+      )
+
     map = Map.new(headers)
 
     assert map["x-acs-content-sha256"] == @abc_sha256
@@ -53,7 +63,8 @@ defmodule SynieCore.Ocr.AliyunSignerTest do
     assert map["content-type"] == "application/octet-stream"
 
     # 用文档公式独立复算签名对拍(HMAC-SHA256 → 小写 hex)
-    signed_names = "content-type;host;x-acs-action;x-acs-content-sha256;x-acs-date;x-acs-signature-nonce;x-acs-version"
+    signed_names =
+      "content-type;host;x-acs-action;x-acs-content-sha256;x-acs-date;x-acs-signature-nonce;x-acs-version"
 
     canonical =
       AliyunSigner.canonical_request(
