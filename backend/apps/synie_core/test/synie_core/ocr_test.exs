@@ -79,6 +79,19 @@ defmodule SynieCore.OcrTest do
     assert msg =~ "凭证"
   end
 
+  test "generic action :ocr 未配置凭证 → 中文信息经 Ash.Error.Invalid 透传(而非笼统 Unknown)",
+       %{src: src} do
+    actor = actor_with!(["sys.file:create", "sys.file:read", "acc.vat_invoice:create"])
+    file = upload!(actor, src, "image/png")
+
+    assert {:error, %Ash.Error.Invalid{} = error} =
+             VatInvoice
+             |> Ash.ActionInput.for_action(:ocr, %{file_id: file.id})
+             |> Ash.run_action(actor: actor)
+
+    assert Exception.message(error) =~ "凭证"
+  end
+
   test "发票识别 happy path:取文件字节 → 调阿里云 → 映射字段", %{src: src} do
     configure_ocr!()
     stub_invoice_success()

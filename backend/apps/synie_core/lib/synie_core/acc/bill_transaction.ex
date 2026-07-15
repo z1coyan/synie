@@ -585,7 +585,15 @@ defmodule SynieCore.Acc.BillTransaction do
 
       run fn input, context ->
         # DSL run 闭包内 alias 不生效(同 bank_reconciliation :remaining 先例),全限定
-        SynieCore.Ocr.recognize_bank_acceptance(context.actor, input.arguments.file_id)
+        case SynieCore.Ocr.recognize_bank_acceptance(context.actor, input.arguments.file_id) do
+          {:ok, fields} ->
+            {:ok, fields}
+
+          # 字符串错误会被包成 Ash.Error.Unknown,AshGraphql 渲染不了;
+          # 包成 Action.InvalidArgument(协议已实现)让中文信息透出到前端
+          {:error, msg} ->
+            {:error, Ash.Error.Action.InvalidArgument.exception(field: :file_id, message: msg)}
+        end
       end
     end
   end
