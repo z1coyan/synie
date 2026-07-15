@@ -19,3 +19,6 @@ config :pbkdf2_elixir, rounds: 1
 # 选择 MERGE 语句做 upsert,PG16 不支持 MERGE...RETURNING 会报语法错误,故本地关闭该优化路径,
 # 回退到 ON CONFLICT 实现(行为一致)。容器升级到 17 后可删除本行。
 config :ash_postgres, upsert_with_merge?: false
+
+# OCR HTTP 走 Req.Test 桩,测试不出网
+config :synie_core, ocr_req_options: [plug: {Req.Test, SynieCore.Ocr.AliyunClient}]
