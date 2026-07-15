@@ -35,6 +35,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   bas_account: '会计科目',
   sal_customer: '客户',
   pur_supplier: '供应商',
+  hr_employee: '员工',
   sys_file: '附件文件',
   sys_attachment: '附件关联',
   sys_storage: '存储接入',
