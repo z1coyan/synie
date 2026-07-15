@@ -4,6 +4,7 @@ defmodule SynieWeb.FileController do
 
     * `POST /api/files` — 上传,可选 `owner_type`/`owner_id`/`category` 同请求挂附件
     * `GET /api/files/:id` — 下载;支持预签名的存储 302 直达,本地存储回源发送
+    * `POST /api/files/:id/attachments` — 给已有文件补挂宿主附件
   """
 
   use Phoenix.Controller, formats: [:json]
@@ -56,6 +57,38 @@ defmodule SynieWeb.FileController do
   end
 
   def create(conn, _params), do: error(conn, 400, "缺少 file 字段(multipart)")
+
+  def attach(conn, %{"id" => id} = params) do
+    with_actor(conn, fn actor ->
+      result =
+        SynieCore.Files.attach(actor, %{
+          file_id: id,
+          owner_type: params["owner_type"],
+          owner_id: params["owner_id"],
+          category: params["category"]
+        })
+
+      case result do
+        {:ok, attachment} ->
+          json(conn, %{attachment: attachment_json(attachment)})
+
+        {:error, :file_not_found} ->
+          error(conn, 404, "文件不存在或无权访问")
+
+        {:error, :missing_owner} ->
+          error(conn, 400, "缺少 owner_type/owner_id 参数")
+
+        {:error, :forbidden_owner} ->
+          error(conn, 403, "无权访问该宿主记录")
+
+        {:error, :unknown_owner_type} ->
+          error(conn, 422, "未知的宿主类型")
+
+        {:error, err} when is_exception(err) ->
+          error(conn, 422, Exception.message(err))
+      end
+    end)
+  end
 
   def show(conn, %{"id" => id}) do
     with_actor(conn, fn actor ->
