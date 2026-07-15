@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
-import { uploadFile } from '~/lib/files'
+import { uploadFile, type UploadedFile } from '~/lib/files'
 
 /**
  * 票据 OCR 按钮:选图 → 上传裸文件(暂不挂宿主)→ 调 OCR mutation → 识别字段交调用方回填。
- * 文件 id 一并交回,调用方在单据保存成功后用 attachFile 补挂为附件。
+ * 上传的文件元数据一并交回,调用方可展示为暂存附件、并在单据保存成功后用 attachFile 挂接。
  * 未配置凭证(accOcrConfigured=false)时禁用并就地提示(禁用态没有 hover 事件,不用 Tooltip)。
  */
 export interface SynieOcrButtonProps {
@@ -16,7 +16,7 @@ export interface SynieOcrButtonProps {
   resultKey: string
   /** 文件选择器 accept,如 'image/*,.pdf'(发票)或 'image/*'(承兑) */
   accept: string
-  onRecognized: (fields: Record<string, unknown>, fileId: string) => void
+  onRecognized: (fields: Record<string, unknown>, file: UploadedFile) => void
 }
 
 const OCR_CONFIGURED = `query { accOcrConfigured }`
@@ -56,7 +56,7 @@ export function SynieOcrButton({ mutation, resultKey, accept, onRecognized }: Sy
         toast.warning('未识别出票面内容,请人工录入')
         return
       }
-      onRecognized(fields, uploaded.id)
+      onRecognized(fields, uploaded)
       toast.success('识别完成,请核对回填内容')
     } catch (e) {
       if (!mountedRef.current) return

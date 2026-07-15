@@ -478,14 +478,14 @@ function InvoicesPage() {
                   mutation={OCR_INVOICE}
                   resultKey="ocrAccVatInvoice"
                   accept="image/*,.pdf"
-                  onRecognized={(fields, fileId) => {
+                  onRecognized={(fields, file) => {
                     // items 走本地清单状态,其余字段直接回填表单草稿
                     const { items: ocrItems, ...rest } = fields
                     patchValues(rest)
                     if (Array.isArray(ocrItems) && ocrItems.length > 0) {
                       setItems(ocrItems.map((it) => ({ id: localRowId(), ...(it as object) }) as Row))
                     }
-                    ocrFileRef.current = fileId
+                    ocrFileRef.current = file.id
                   }}
                 />
               )}

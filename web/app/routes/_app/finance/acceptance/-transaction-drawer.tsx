@@ -18,7 +18,7 @@ import {
 import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
 import { BANKS } from '~/lib/banks'
-import { attachFile } from '~/lib/files'
+import { attachFile, type UploadedFile } from '~/lib/files'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieOcrButton } from '~/components/synie-ocr-button/SynieOcrButton'
@@ -60,14 +60,20 @@ const UPDATE_BILL_TRANSACTION = `
 const LOOKUP_BILL = `
   query ($billNo: String!) {
     accBills(filter: {billNo: {eq: $billNo}}, limit: 1, offset: 0) {
-      results { id billNo billKind dueDate faceAmount acceptorName }
+      results { id billNo billKind dueDate drawerName acceptorName }
     }
   }
 `
-// OCR generic action:返回票面草稿字段(snake_case)JSON,不落库
+// OCR generic action:返回票面草稿(snake_case)+ 子票段字段(sub_start/sub_end/amount)JSON,不落库
 const OCR_BILL = `
   mutation ($input: OcrAccBillTransactionInput!) {
     ocrAccBillTransaction(input: $input)
+  }
+`
+// 暂存附件被替换(重复 OCR)时尽力清理旧裸文件;失败静默(不挂接即不可见)
+const DESTROY_FILE = `
+  mutation ($id: ID!) {
+    destroySysFile(id: $id) { result { id } errors { message } }
   }
 `
 
@@ -370,7 +376,8 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * 接收票面区:仅 create + RECEIVE 态渲染。票号失焦/按钮触发查档——
+ * 接收票面区:仅 create + RECEIVE 态渲染,置于抽屉最顶部(headerContent)——
+ * 录入动线从票面开始:OCR 识图回填票面草稿并带出子票段,或票号失焦/按钮触发查档,
  * 命中已建档票据展示只读摘要,未命中展开票面草稿表单(snake_case 键,提交时整体作 billAttrs)。
  */
 function ReceiveBillSection({
@@ -386,7 +393,7 @@ function ReceiveBillSection({
   billLookup: Row | null
   setBillLookup: (row: Row | null) => void
   patchValues: (patch: Record<string, unknown>) => void
-  onOcrFile: (fileId: string) => void
+  onOcrFile: (file: UploadedFile) => void
 }) {
   const [loading, setLoading] = useState(false)
   const updateDraft = (key: string, value: unknown) => setBillDraft((prev) => ({ ...prev, [key]: value }))
@@ -407,38 +414,35 @@ function ReceiveBillSection({
     }
   }
 
-  const faceAmount = billLookup ? Number(billLookup.faceAmount) : Number(billDraft.face_amount)
-  const fullBillOut = () => {
-    if (!Number.isFinite(faceAmount) || faceAmount <= 0) {
-      toast.danger('请先填写票据包金额,或查档命中已有票据')
-      return
-    }
-    patchValues({ subStart: 1, amount: faceAmount, subEnd: Math.round(faceAmount * 100) })
-  }
-
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-default/60 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-sm font-medium">票面信息(接收)</span>
-        <div className="flex items-center gap-3">
-          <SynieOcrButton
-            mutation={OCR_BILL}
-            resultKey="ocrAccBillTransaction"
-            accept="image/*"
-            onRecognized={(fields, fileId) => {
-              // 识别视为换票:清查档命中,整体并入草稿后按新票号自动查档
-              setBillLookup(null)
-              patchValues({ billId: null })
-              setBillDraft((prev) => ({ ...prev, ...fields }))
-              onOcrFile(fileId)
-              const billNo = typeof fields.bill_no === 'string' ? fields.bill_no.trim() : ''
-              if (billNo) void runLookup(billNo)
-            }}
-          />
-          <Button size="sm" variant="secondary" onPress={fullBillOut}>
-            整票带出
-          </Button>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm font-medium">票面信息(接收)</span>
+          <span className="text-xs text-muted">上传票面自动识别回填,子票区间直接带出交易段</span>
         </div>
+        <SynieOcrButton
+          mutation={OCR_BILL}
+          resultKey="ocrAccBillTransaction"
+          accept="image/*"
+          onRecognized={(fields, file) => {
+            // 子票段是交易字段,不进票面草稿:拆出后回填表单(勾稽公式与后端 mapper 一致)
+            const { sub_start: subStart, sub_end: subEnd, amount, ...face } = fields
+            // 识别视为换票:清查档命中,票面并入草稿后按新票号自动查档
+            setBillLookup(null)
+            const patch: Record<string, unknown> = { billId: null }
+            if (subStart != null && amount != null) {
+              patch.subStart = Number(subStart)
+              patch.subEnd = subEnd == null ? null : Number(subEnd)
+              patch.amount = Number(amount)
+            }
+            patchValues(patch)
+            setBillDraft((prev) => ({ ...prev, ...face }))
+            onOcrFile(file)
+            const billNo = typeof face.bill_no === 'string' ? face.bill_no.trim() : ''
+            if (billNo) void runLookup(billNo)
+          }}
+        />
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -467,7 +471,7 @@ function ReceiveBillSection({
         <div className="grid grid-cols-2 gap-3 rounded-lg bg-default/30 p-3 text-sm sm:grid-cols-4">
           <SummaryItem label="种类" value={BILL_KIND_LABELS[String(billLookup.billKind)] ?? String(billLookup.billKind)} />
           <SummaryItem label="到期日" value={String(billLookup.dueDate ?? '—')} />
-          <SummaryItem label="金额" value={formatAmount(billLookup.faceAmount)} />
+          <SummaryItem label="出票人" value={String(billLookup.drawerName ?? '—')} />
           <SummaryItem label="承兑人" value={String(billLookup.acceptorName ?? '—')} />
         </div>
       ) : (
@@ -481,17 +485,6 @@ function ReceiveBillSection({
             <DraftDate label="到期日" value={billDraft.due_date} onChange={(v) => updateDraft('due_date', v)} isRequired />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <NumberField
-              fullWidth
-              isRequired
-              value={billDraft.face_amount == null || billDraft.face_amount === '' ? NaN : Number(billDraft.face_amount)}
-              onChange={(n) => updateDraft('face_amount', Number.isFinite(n) ? n : null)}
-            >
-              <Label>票据包金额</Label>
-              <NumberField.Group className="grid-cols-[1fr]">
-                <NumberField.Input />
-              </NumberField.Group>
-            </NumberField>
             <DraftDate label="承兑日期" value={billDraft.acceptance_date} onChange={(v) => updateDraft('acceptance_date', v)} />
             <div className="flex items-center">
               <Switch isSelected={billDraft.transferable !== false} onChange={(v) => updateDraft('transferable', v)}>
@@ -547,8 +540,17 @@ export function AcceptanceTransactionDrawer({
   const [pickedHolding, setPickedHolding] = useState<Row | null>(null)
   const [billLookup, setBillLookup] = useState<Row | null>(null)
   const [billDraft, setBillDraft] = useState<Record<string, unknown>>({})
-  // OCR 用图的裸文件 id:创建成功后补挂为附件,抽屉重开即作废
-  const ocrFileRef = useRef<string | null>(null)
+  // 创建态暂存附件(含 OCR 原图):先传裸文件,创建成功后统一挂接;抽屉重开即清空
+  const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([])
+  // 最近一次 OCR 原图的文件 id:重复识别视为换图,旧图出暂存列表并尽力清理
+  const ocrFileIdRef = useRef<string | null>(null)
+
+  const handleOcrFile = (file: UploadedFile) => {
+    const prev = ocrFileIdRef.current
+    ocrFileIdRef.current = file.id
+    setPendingFiles((fs) => [...fs.filter((f) => f.id !== prev), file])
+    if (prev) void gqlFetch(DESTROY_FILE, { id: prev }).catch(() => undefined)
+  }
 
   // 打开时初始化组件态:从持有段发起的创建把该段整行灌入选段状态
   useEffect(() => {
@@ -556,8 +558,16 @@ export function AcceptanceTransactionDrawer({
     setPickedHolding(state.mode === 'create' ? (state.holding ?? null) : null)
     setBillLookup(null)
     setBillDraft({})
-    ocrFileRef.current = null
+    setPendingFiles([])
+    ocrFileIdRef.current = null
   }, [state])
+
+  // 布局随类型微调:贴现要排三个科目(4/4/4),其余类型两个科目对半(6/6)
+  const layoutType = createType ?? (row?.transactionType as string | undefined)
+  const accountCols = layoutType === 'DISCOUNT' ? 4 : 6
+  // 接收的票/段来自票面区(OCR/查档回填),与公司、账户选择无关;
+  // 持有段类型换公司/账户则必须清选段(候选集变了)——effects 按类型二分
+  const isReceive = layoutType === 'RECEIVE'
 
   return (
     <SynieRecordDrawer
@@ -571,24 +581,28 @@ export function AcceptanceTransactionDrawer({
       contentClassName="w-full lg:w-[760px]"
       exclude={EXCLUDE}
       fields={{
-        // 类型随入口定死(接收在交易 tab,其余从持有段行发起),表单内只读展示
+        // 类型随入口定死(接收在交易 tab,其余从持有段行发起):创建态标题已表意,
+        // 不再占一行渲染只读字段(defaultValue 仍种进草稿,T() 显隐联动照常);查看/编辑态照常展示
         transactionType: {
           order: -2,
           edit: 'readOnly',
           defaultValue: createType,
+          visible: mode === 'create' ? () => false : undefined,
         },
         companyId: {
           required: true,
           order: -1,
+          cols: 6,
           edit: 'createOnly',
           defaultValue: holding?.companyId == null ? undefined : String(holding.companyId),
           effects: () => ({
             bankAccountId: null,
             toBankAccountId: null,
-            billId: null,
             billAccountId: null,
             settleAccountId: null,
             interestAccountId: null,
+            // 接收的 billId 由票面区查档/建档决定,不随公司清
+            ...(isReceive ? {} : { billId: null }),
           }),
           // 自定义 input 只为在 onChange 里同步清选段页面态(billId 被 effects 清空,pickedHolding 须跟着清)
           input: ({ value, onChange, isDisabled }) => (
@@ -605,14 +619,15 @@ export function AcceptanceTransactionDrawer({
             />
           ),
         },
-        docNo: { order: 0, placeholder: '留空自动编号' },
+        docNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
         bankAccountId: {
           order: 1,
           required: true,
           cols: 6,
           defaultValue: holding?.bankAccountId == null ? undefined : String(holding.bankAccountId),
           input: bankAccountInput('银行账户', '选择账户(调拨类型即转出账户)…', () => setPickedHolding(null)),
-          effects: () => ({ billId: null, subStart: null, subEnd: null, amount: null }),
+          // 接收:账户只是持有落点,不动票/段(OCR/查档回填在先,选账户在后,清了就白填)
+          effects: isReceive ? undefined : () => ({ billId: null, subStart: null, subEnd: null, amount: null }),
         },
         toBankAccountId: {
           order: 2,
@@ -624,7 +639,7 @@ export function AcceptanceTransactionDrawer({
         occurredOn: { order: 3, required: true, cols: 6 },
         billId: {
           order: 4,
-          cols: 6,
+          cols: 12,
           defaultValue: holding?.billId == null ? undefined : String(holding.billId),
           // 接收:隐藏(票据由票面区建档/查档,见 extraContent);其余类型:持有段选择器
           visible: (v) => v.transactionType != null && v.transactionType !== 'RECEIVE',
@@ -655,13 +670,15 @@ export function AcceptanceTransactionDrawer({
           order: 5,
           cols: 4,
           required: true,
-          defaultValue: holding?.subStart == null ? undefined : Number(holding.subStart),
+          // 接收缺省整票从 1 起(OCR 识别到子票区间会覆盖);段行发起的类型取该段起号
+          defaultValue: holding?.subStart != null ? Number(holding.subStart) : createType === 'RECEIVE' ? 1 : undefined,
           input: numberInput('子票起', (v, values, patch) => patch(recalcSeg({ ...values, subStart: v }))),
         },
         amount: {
           order: 6,
           cols: 4,
           required: true,
+          render: (v) => formatAmount(v),
           defaultValue: holding?.amount == null ? undefined : Number(holding.amount),
           input: numberInput('交易金额', (v, values, patch) => {
             const seg = recalcSeg({ ...values, amount: v })
@@ -740,7 +757,7 @@ export function AcceptanceTransactionDrawer({
         },
         discountRate: {
           order: 11,
-          cols: 4,
+          cols: 6,
           visible: T('DISCOUNT'),
           input: numberInput('贴现利率(%)', (v, values, patch) =>
             patch(recalcDiscount(values, { discountRate: v }, pickedHolding?.dueDate ? String(pickedHolding.dueDate) : null))
@@ -748,25 +765,27 @@ export function AcceptanceTransactionDrawer({
         },
         interest: {
           order: 12,
-          cols: 4,
+          cols: 6,
           visible: T('DISCOUNT'),
+          render: (v) => formatAmount(v),
           input: numberInput('贴现利息', (v, values, patch) =>
             patch(
               recalcDiscount(values, { interest: v }, pickedHolding?.dueDate ? String(pickedHolding.dueDate) : null, true)
             )
           ),
         },
-        netAmount: { order: 13, cols: 4, visible: T('DISCOUNT'), edit: 'readOnly' }, // 恒 = 金额 − 利息
+        // 恒 = 金额 − 利息
+        netAmount: { order: 13, cols: 6, visible: T('DISCOUNT'), edit: 'readOnly', render: (v) => formatAmount(v) },
         billAccountId: {
           order: 14,
-          cols: 4,
+          cols: accountCols,
           visible: (v) => v.transactionType !== 'REALLOCATE',
           label: '票据科目',
           input: accountInput('票据科目'),
         },
         settleAccountId: {
           order: 15,
-          cols: 4,
+          cols: accountCols,
           visible: (v) => v.transactionType !== 'REALLOCATE',
           label: '结算科目',
           input: accountInput('结算科目'),
@@ -781,30 +800,46 @@ export function AcceptanceTransactionDrawer({
         remarks: { order: 17 },
       }}
       onEdit={row?.status === 'DRAFT' ? () => onStateChange({ mode: 'edit', row: row! }) : undefined}
-      extraContent={(mode, row, values, patchValues) => {
+      // 接收创建的动线从票面开始:票面区(含 OCR)置顶,识别/查档随即回填下方交易字段
+      headerContent={(mode, _row, values, patchValues) => {
+        if (mode !== 'create' || values.transactionType !== 'RECEIVE') return null
+        return (
+          <div className="flex flex-col gap-4">
+            <ReceiveBillSection
+              billDraft={billDraft}
+              setBillDraft={setBillDraft}
+              billLookup={billLookup}
+              setBillLookup={setBillLookup}
+              patchValues={patchValues}
+              onOcrFile={handleOcrFile}
+            />
+            <span className="text-sm font-medium">交易信息</span>
+          </div>
+        )
+      }}
+      extraContent={(mode, row, values) => {
         const txType = mode === 'view' ? (row?.transactionType as string | undefined) : (values.transactionType as string | undefined)
         const billIdForLink = mode === 'view' ? (row?.billId as string | undefined) : (values.billId as string | undefined)
         return (
           <div className="flex flex-col gap-4">
-            {txType === 'RECEIVE' &&
-              (mode === 'create' ? (
-                <ReceiveBillSection
-                  billDraft={billDraft}
-                  setBillDraft={setBillDraft}
-                  billLookup={billLookup}
-                  setBillLookup={setBillLookup}
-                  patchValues={patchValues}
-                  onOcrFile={(id) => {
-                    ocrFileRef.current = id
-                  }}
-                />
-              ) : (
-                <BillFaceLink billId={billIdForLink} />
-              ))}
+            {txType === 'RECEIVE' && mode !== 'create' && <BillFaceLink billId={billIdForLink} />}
             <SynieAttachmentPanel
               ownerType="acc_bill_transaction"
               ownerId={(row?.id as string | undefined) ?? null}
               readonly={mode === 'view'}
+              // 创建态走暂存:上传即入列表(OCR 原图同列表),保存成功后统一挂接
+              pending={
+                mode === 'create'
+                  ? {
+                      files: pendingFiles,
+                      onAdd: (f) => setPendingFiles((fs) => [...fs, f]),
+                      onRemove: (id) => {
+                        if (ocrFileIdRef.current === id) ocrFileIdRef.current = null
+                        setPendingFiles((fs) => fs.filter((f) => f.id !== id))
+                      },
+                    }
+                  : undefined
+              }
             />
           </div>
         )
@@ -844,7 +879,6 @@ export function AcceptanceTransactionDrawer({
               ['bill_no', '票据号码'],
               ['bill_kind', '票据种类'],
               ['due_date', '到期日'],
-              ['face_amount', '票据包金额'],
             ]
             const missing = required.filter(([k]) => billDraft[k] == null || billDraft[k] === '').map(([, l]) => l)
             if (missing.length > 0) throw new Error(`请完善票面信息:${missing.join('、')}`)
@@ -860,20 +894,20 @@ export function AcceptanceTransactionDrawer({
           if (data.createAccBillTransaction.errors && data.createAccBillTransaction.errors.length > 0) {
             throw new Error(data.createAccBillTransaction.errors.map((e) => e.message).join('; '))
           }
-          // OCR 原图补挂为附件;挂接失败不阻断建单,提示手工补传即可
-          if (ocrFileRef.current) {
-            const fid = ocrFileRef.current
-            ocrFileRef.current = null
+          // 暂存附件(含 OCR 原图)统一挂接;个别失败不阻断建单,提示手工补传即可
+          const failed: string[] = []
+          for (const f of pendingFiles) {
             try {
-              await attachFile(fid, {
+              await attachFile(f.id, {
                 ownerType: 'acc_bill_transaction',
                 ownerId: data.createAccBillTransaction.result!.id,
               })
-            } catch (e) {
-              toast.warning('交易已创建,但票面原图挂接失败,请在附件面板手工补传', {
-                description: (e as Error).message,
-              })
+            } catch {
+              failed.push(f.filename)
             }
+          }
+          if (failed.length > 0) {
+            toast.warning(`交易已创建,但附件挂接失败:${failed.join('、')},请在附件面板手工补传`)
           }
           toast.success(`承兑${TX_TYPE_LABEL[(txType ?? 'RECEIVE') as TxType] ?? '交易'}已创建`)
         } else {

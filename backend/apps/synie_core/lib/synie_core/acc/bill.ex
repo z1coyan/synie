@@ -237,7 +237,7 @@ defmodule SynieCore.Acc.Bill do
     end
 
     attribute :face_amount, :decimal do
-      allow_nil? false
+      # 可空:承兑均来源于接收,原票据包金额业务上不关心;有值时段勾稽仍校验不越界
       public? true
       constraints min: 0
       description "票据包金额"
