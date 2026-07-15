@@ -85,7 +85,7 @@ export const menuModules: MenuModule[] = [
           { label: '银行账户', path: '/finance/bank-accounts' },
           { label: '银行流水', path: '/finance/bank-transactions' },
           { label: '流水导入模板', path: '/finance/bank-import-templates' },
-          // 承兑三视图(交易/持有/台账)收敛为单入口,页内 tabs 分流(子路由)
+          // 承兑两视图(交易/持有)收敛为单入口,页内 tabs 分流(子路由)
           { label: '承兑汇票', path: '/finance/acceptance' },
         ],
       },

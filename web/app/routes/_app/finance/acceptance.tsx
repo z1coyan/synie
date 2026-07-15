@@ -5,12 +5,12 @@ export const Route = createFileRoute('/_app/finance/acceptance')({
   component: AcceptanceLayout,
 })
 
-// 承兑汇票三视图一页承载:交易(录入/审核动线)、持有(当前库存快照)、台账(历史票档案+票面修正)。
+// 承兑汇票两视图一页承载:交易(接收录入/审核动线)、持有(当前库存快照+后续交易/票面修正入口)。
+// 原「票据台账」并入:票面档案随 billId fk 速览全局可达(registry accBills),票面修正走持有段行操作。
 // tab 即子路由,URL 可直达、可后退;选中态由 pathname 反推,不另存状态
 const TABS = [
   { id: 'transactions', label: '承兑交易' },
   { id: 'holdings', label: '持有承兑' },
-  { id: 'bills', label: '票据台账' },
 ] as const
 
 function AcceptanceLayout() {
