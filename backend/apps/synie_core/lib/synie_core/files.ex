@@ -57,7 +57,6 @@ defmodule SynieCore.Files do
     end
   end
 
-  # file + attachment 同事务,挂接失败(未知宿主/宿主不可见)连文件行一起回滚
   @doc """
   给已有 `sys_file` 补挂宿主附件(OCR 动线:识别时上传裸文件,单据保存成功后回头挂接)。
   `params`:`:file_id` 必填,`:owner_type`/`:owner_id` 必填,`:category` 可选。
@@ -85,6 +84,7 @@ defmodule SynieCore.Files do
     end
   end
 
+  # file + attachment 同事务,挂接失败(未知宿主/宿主不可见)连文件行一起回滚
   defp create_records(actor, attrs, params) do
     SynieCore.Repo.transaction(fn ->
       # return_notifications?: true 接住通知并丢弃:手动事务里通知无法送达,
