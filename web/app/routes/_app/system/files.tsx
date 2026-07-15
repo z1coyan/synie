@@ -81,6 +81,13 @@ function FilesPage() {
           resource="sysFiles"
           columns={GRID_COLUMNS}
           overrides={{
+            // 图片类文件:缩略图 + 文件名,点缩略图全屏预览(本页图片循环切换)
+            filename: {
+              image: {
+                fileId: (row) => (String(row.contentType ?? '').startsWith('image/') ? row.id : null),
+                keepText: true,
+              },
+            },
             size: { render: formatSize, align: 'end' },
             key: { width: 220 },
           }}

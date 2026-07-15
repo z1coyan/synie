@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Link, Modal, Spinner, toast } from '@heroui/react'
+import { Button, Modal, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { downloadFile, uploadFile } from '~/lib/files'
+import { FileThumb } from '../synie-preview/FileThumb'
 import { SyniePreview } from '../synie-preview/SyniePreview'
 
 /**
@@ -166,20 +167,19 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
         <ul className="divide-y divide-separator rounded-2xl border border-border">
           {list.data!.map((row) => (
             <li key={row.id} className="flex items-center gap-3 px-3 py-2">
-              <FileIcon />
+              {row.file.contentType?.startsWith('image/') ? (
+                <FileThumb
+                  fileId={row.file.id}
+                  alt={row.file.filename}
+                  onPress={() => setPreviewIndex(images.findIndex((i) => i.id === row.id))}
+                />
+              ) : (
+                <FileIcon />
+              )}
               <div className="min-w-0 flex-1">
-                {row.file.contentType?.startsWith('image/') ? (
-                  <Link
-                    onPress={() => setPreviewIndex(images.findIndex((i) => i.id === row.id))}
-                    className="block max-w-full cursor-pointer truncate text-sm text-inherit underline-offset-2 hover:underline"
-                  >
-                    {row.file.filename}
-                  </Link>
-                ) : (
-                  <p className="truncate text-sm" title={row.file.filename}>
-                    {row.file.filename}
-                  </p>
-                )}
+                <p className="truncate text-sm" title={row.file.filename}>
+                  {row.file.filename}
+                </p>
                 <p className="text-xs text-muted">
                   {formatBytes(row.file.size)}
                   {row.insertedAt ? ` · ${row.insertedAt.slice(0, 10)}` : ''}

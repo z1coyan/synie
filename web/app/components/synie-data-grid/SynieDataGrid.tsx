@@ -13,8 +13,19 @@ import { printRows } from './print'
 import { buildFilterLiteral, buildRowQuery, mergeFilterLiterals, nextSort, toGqlLiteral, toSortField, toSortLiteral } from './query'
 import type { ActionContext, BulkAction, EnumChipColor, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
 import { FkLink } from '../synie-record-drawer/fk-preview'
+import { FileThumb } from '../synie-preview/FileThumb'
+import { SyniePreview } from '../synie-preview/SyniePreview'
 import { useDraft } from './use-debounced'
 import { useGridActions } from './use-grid-actions'
+
+export interface GridImageOverride {
+  /** 解析该行的 sys_file id;返回空值回退默认单元格渲染(非图片行)。缺省:列值即 file id */
+  fileId?: (row: Row) => string | null | undefined
+  /** 预览/下载用文件名;缺省取行上 filename 字段(字符串时) */
+  filename?: (row: Row) => string | null | undefined
+  /** 缩略图旁保留默认文本渲染(文件名列等);纯 file id 列默认只显示缩略图 */
+  keepText?: boolean
+}
 
 export interface ColumnOverride {
   render?: (value: unknown, row: Row) => ReactNode
@@ -26,6 +37,19 @@ export interface ColumnOverride {
   align?: 'start' | 'center' | 'end'
   /** enum 列胶囊配色,按枚举值(大写 token)映射;未配的值用 default 灰 */
   enumColors?: Record<string, EnumChipColor>
+  /** 图片列:单元格渲染缩略图,点击全屏预览(SyniePreview),同列图片循环切换;true 即列值为 sys_file id */
+  image?: true | GridImageOverride
+}
+
+/** 图片列取 file id/文件名:image 为 true 走缺省约定,对象形态可逐行定制 */
+function imageFileId(img: true | GridImageOverride, colName: string, row: Row): string | null {
+  const raw = img !== true && img.fileId ? img.fileId(row) : row[colName]
+  return raw == null || raw === '' ? null : String(raw)
+}
+
+function imageFilename(img: true | GridImageOverride, row: Row): string | undefined {
+  const name = img !== true && img.filename ? img.filename(row) : typeof row.filename === 'string' ? row.filename : null
+  return name ?? undefined
 }
 
 export interface ImportMenuItem {
@@ -219,6 +243,9 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const [childrenByParent, setChildrenByParent] = useState<Map<string, Row[]>>(new Map())
   const [loadingParents, setLoadingParents] = useState<Set<string>>(new Set())
 
+  // 图片列全屏预览:记住列与被点的 fileId;关闭只翻 open 让退场动画播完
+  const [imagePreview, setImagePreview] = useState<{ col: string; fileId: string; open: boolean } | null>(null)
+
   // 搜索/筛选列用组件内已排除 id/exclude 的 columns,被 exclude 隐藏的列不应参与搜索
   // 防抖在输入源头(useDraft:搜索框/筛选草稿),这里拿到的已是停稳值,离散操作(勾选/日期/清除)即时生效
   const userFilterLiteral = meta.data ? buildFilterLiteral(filters, search, columns) : null
@@ -349,10 +376,29 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         cell: (row: Row) => {
           // 懒加载占位行只有 id:首列显示「加载中…」,其余列空
           if (isLoadingRow(row)) return i === 0 ? <span className="text-muted">加载中…</span> : null
-          return (
+          const text =
             overrides[col.name]?.render?.(row[col.name], row) ??
             defaultCell(col, row[col.name], row, overrides[col.name]?.enumColors, overrides[col.name]?.width)
+          const img = overrides[col.name]?.image
+          if (!img) return text
+          const fileId = imageFileId(img, col.name, row)
+          if (!fileId) return text
+          const thumb = (
+            <FileThumb
+              fileId={fileId}
+              alt={imageFilename(img, row)}
+              onPress={() => setImagePreview({ col: col.name, fileId, open: true })}
+            />
           )
+          if (img !== true && img.keepText) {
+            return (
+              <span className="flex items-center gap-2">
+                {thumb}
+                {text}
+              </span>
+            )
+          }
+          return thumb
         },
       })),
     [columns, overrides, filters, treeMode]
@@ -685,6 +731,30 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       </ActionBar>
 
       {actions.confirmDialog}
+
+      {/* 图片列全屏预览:items 携当前页该列全部图片可循环切换 */}
+      {imagePreview &&
+        (() => {
+          const img = overrides[imagePreview.col]?.image
+          if (!img) return null
+          const items = rows.flatMap((row) => {
+            const fileId = imageFileId(img, imagePreview.col, row)
+            return fileId ? [{ fileId, filename: imageFilename(img, row) }] : []
+          })
+          return (
+            <SyniePreview
+              items={items}
+              isOpen={imagePreview.open}
+              onOpenChange={(open) => {
+                if (!open) setImagePreview((s) => (s ? { ...s, open: false } : s))
+              }}
+              initialIndex={Math.max(
+                0,
+                items.findIndex((it) => it.fileId === imagePreview.fileId)
+              )}
+            />
+          )
+        })()}
     </div>
   )
 }

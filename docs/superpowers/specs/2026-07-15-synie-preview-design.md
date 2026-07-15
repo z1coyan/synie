@@ -30,9 +30,14 @@ interface SyniePreviewProps {
 - `fileId` 形态查询 key 复用 `['fileBlob', id]`(与 SynieImageAttachment 共享缓存),下载走 `downloadFile`(带鉴权);`src` 形态锚点下载。
 - 交互:方向键/箭头按钮循环切换;滚轮与 +/- 按钮缩放(0.25–8 倍);拖拽平移;旋转 90° 步进;切图重置视图;点空白处关闭;底部「n / N · filename」。
 
+## 缩略图与表格图片列(用户追加需求)
+
+- `FileThumb`(同目录):按 fileId 鉴权拉字节的缩略图按钮,blob 缓存与 SyniePreview 互通;加载失败降级破图图标+title。
+- `SynieAttachmentPanel` 图片附件行以缩略图替换文件图标,点缩略图开预览(文件名回归纯文本)。
+- SynieDataGrid 列 override 新增 `image?: true | { fileId(row), filename(row), keepText }`:单元格渲染缩略图、点击全屏预览、同列(当前页)图片循环切换;`fileId` 返回空回退默认渲染,`keepText` 在缩略图旁保留默认文本(文件名列)。试点 `/system/files`。
+
 ## 落地整合
 
 - `blobUrl(blob)` helper 从 SynieImageAttachment 上移至 `~/lib/files.ts` 共享。
 - `SynieImageAttachment` 放大预览改用 SyniePreview(单张,带下载/旋转,验证抽屉内层级)。
-- `SynieAttachmentPanel` 图片类附件文件名可点,打开 SyniePreview 并携全部图片附件循环切换。
-- `web/CLAUDE.md`(=AGENTS.md)标准组件节补一行使用规范。
+- `web/CLAUDE.md`(=AGENTS.md)标准组件节补使用规范。
