@@ -212,7 +212,7 @@ defmodule SynieCore.Acc.BillTransactionTest do
     assert txn2.bill_id == txn1.bill_id
   end
 
-  test "接收缺 bill_id 又缺 bill_attrs 被拒;bill_attrs 缺票号/种类/到期日/金额被拒(中文报错)", ctx do
+  test "接收缺 bill_id 又缺 bill_attrs 被拒;bill_attrs 缺票号/种类/到期日被拒(中文报错)", ctx do
     %{actor: act} = ctx
     base = base_attrs(ctx) |> Map.delete(:bill_id)
 
@@ -263,6 +263,35 @@ defmodule SynieCore.Acc.BillTransactionTest do
       end
 
     assert Exception.message(err3) =~ "必须大于零"
+  end
+
+  test "票据包金额可空:bill_attrs 不带 face_amount 可建档,段不设上限", ctx do
+    %{company: co, bank_account: ba, customer: cust, actor: act} = ctx
+
+    txn =
+      txn!(
+        %{
+          doc_no: "BT-#{System.unique_integer([:positive])}",
+          company_id: co.id,
+          bank_account_id: ba.id,
+          transaction_type: :receive,
+          occurred_on: ~D[2026-07-01],
+          sub_start: 5_000_001,
+          sub_end: 5_000_100,
+          amount: Decimal.new("1"),
+          party_type: :customer,
+          party_id: cust.id,
+          bill_attrs: %{
+            "bill_no" => "NOFACE#{System.unique_integer([:positive])}",
+            "bill_kind" => :bank_acceptance,
+            "due_date" => ~D[2026-12-31]
+          }
+        },
+        actor: act
+      )
+
+    bill = Ash.get!(Bill, txn.bill_id, authorize?: false)
+    assert bill.face_amount == nil
   end
 
   test "类型-字段矩阵:接收/转让必填对手,兑付/贴现/调拨对手必须为空", ctx do

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
-import { downloadFile, uploadFile } from '~/lib/files'
+import { downloadFile, uploadFile, type UploadedFile } from '~/lib/files'
 import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
 import { FileThumb } from '../synie-preview/FileThumb'
 import { SyniePreview } from '../synie-preview/SyniePreview'
@@ -10,16 +10,28 @@ import { SyniePreview } from '../synie-preview/SyniePreview'
 /**
  * 通用附件面板:挂在 SynieRecordDrawer 的 extraContent,按 owner_type/owner_id
  * 多态引用宿主记录,业务表零改动。上传/删除即时落库,不走抽屉草稿。
+ * create 态(无 ownerId)传 pending 即启用暂存:文件先上传为裸文件,
+ * 保存成功后由父级统一 attachFile 挂接(见 acceptance/-transaction-drawer.tsx)。
  */
 export interface SynieAttachmentPanelProps {
   /** 宿主资源标识(graphql type 名,如 sal_customer) */
   ownerType: string
-  /** 宿主记录 id;create 模式下还没有,面板显示提示 */
+  /** 宿主记录 id;create 模式下还没有,面板显示提示(或走 pending 暂存) */
   ownerId?: string | null
   /** 业务槽位,缺省 default;设置后上传/列表都限定该槽位 */
   category?: string
   /** view 模式只读:隐藏上传/删除 */
   readonly?: boolean
+  /**
+   * 创建态暂存(仅无 ownerId 时生效):列表由父级状态承载(如 OCR 原图也进同一列表),
+   * 移除时尽力删除裸文件,删不掉也从列表移除(不挂接即不可见,残留裸文件与
+   * OCR 孤儿文件同一清理债)
+   */
+  pending?: {
+    files: UploadedFile[]
+    onAdd: (file: UploadedFile) => void
+    onRemove: (fileId: string) => void
+  }
 }
 
 const DESTROY_ATTACHMENT = `
@@ -40,13 +52,15 @@ function formatBytes(size: number | null): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }: SynieAttachmentPanelProps) {
+export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly, pending }: SynieAttachmentPanelProps) {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<AttachmentRow | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+
+  const pendingMode = !ownerId && !!pending
 
   // 无共享权限 hook,面板自查;queryKey 共享,多实例只发一次。fail-closed:拉不到=无权限
   const perms = useQuery({
@@ -68,15 +82,21 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
   const handlePick = () => fileInputRef.current?.click()
 
   const handleUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0 || !ownerId) return
+    if (!files || files.length === 0 || (!ownerId && !pendingMode)) return
     setUploading(true)
     const toastId = toast('正在上传…', { isLoading: true, timeout: 0 })
     try {
       for (const file of Array.from(files)) {
-        await uploadFile(file, { ownerType, ownerId, category })
+        if (pendingMode) {
+          // 暂存:裸文件上传,不挂宿主,列表进父级状态
+          const { file: uploaded } = await uploadFile(file)
+          pending!.onAdd(uploaded)
+        } else {
+          await uploadFile(file, { ownerType, ownerId: ownerId!, category })
+        }
       }
-      toast.success(`已上传 ${files.length} 个附件`)
-      await queryClient.invalidateQueries({ queryKey: listKey })
+      toast.success(pendingMode ? `已暂存 ${files.length} 个附件,保存后自动挂接` : `已上传 ${files.length} 个附件`)
+      if (!pendingMode) await queryClient.invalidateQueries({ queryKey: listKey })
     } catch (e) {
       toast.danger('上传失败', { description: (e as Error).message })
     } finally {
@@ -86,8 +106,19 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
     }
   }
 
-  // 图片类附件文件名可点开全屏预览,items 携全部图片可循环切换
-  const images = (list.data ?? []).filter((r) => r.file.contentType?.startsWith('image/'))
+  // 暂存移除:先出列表(不挂接即不可见),再尽力清理裸文件(失败静默,同 OCR 孤儿文件债)
+  const handleRemovePending = (fileId: string) => {
+    pending!.onRemove(fileId)
+    void gqlFetch(DESTROY_FILE, { id: fileId }).catch(() => undefined)
+  }
+
+  // 图片类附件文件名可点开全屏预览,items 携全部图片可循环切换;
+  // 暂存态从 pending.files 取,已保存态从附件列表取,两态互斥
+  const pendingRows: AttachmentRow[] = pendingMode
+    ? pending!.files.map((f) => ({ id: `pending:${f.id}`, category: category ?? 'default', insertedAt: f.insertedAt, file: f }))
+    : []
+  const rows = pendingMode ? pendingRows : (list.data ?? [])
+  const images = rows.filter((r) => r.file.contentType?.startsWith('image/'))
 
   const handleDownload = async (row: AttachmentRow) => {
     try {
@@ -124,7 +155,7 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium">附件</span>
-        {canCreate && ownerId && (
+        {canCreate && (ownerId || pendingMode) && (
           <>
             {/* 文件选择必须走原生 input,隐藏后由 Button 代理触发 */}
             <input ref={fileInputRef} type="file" multiple hidden onChange={(e) => handleUpload(e.target.files)} />
@@ -136,19 +167,19 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
         )}
       </div>
 
-      {!ownerId ? (
+      {!ownerId && !pendingMode ? (
         <p className="text-sm text-muted">保存后即可上传附件</p>
-      ) : list.isLoading ? (
+      ) : !pendingMode && list.isLoading ? (
         <div className="flex justify-center py-4">
           <Spinner size="sm" />
         </div>
-      ) : list.isError ? (
+      ) : !pendingMode && list.isError ? (
         <p className="text-sm text-danger">附件加载失败:{(list.error as Error).message}</p>
-      ) : list.data!.length === 0 ? (
-        <p className="text-sm text-muted">暂无附件</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-muted">{pendingMode ? '暂无附件,可先上传,保存时自动挂接' : '暂无附件'}</p>
       ) : (
         <ul className="divide-y divide-separator rounded-2xl border border-border">
-          {list.data!.map((row) => (
+          {rows.map((row) => (
             <li key={row.id} className="flex items-center gap-3 px-3 py-2">
               {row.file.contentType?.startsWith('image/') ? (
                 <FileThumb
@@ -165,22 +196,36 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
                 </p>
                 <p className="text-xs text-muted">
                   {formatBytes(row.file.size)}
-                  {row.insertedAt ? ` · ${row.insertedAt.slice(0, 10)}` : ''}
+                  {pendingMode ? ' · 待保存挂接' : row.insertedAt ? ` · ${row.insertedAt.slice(0, 10)}` : ''}
                 </p>
               </div>
-              <Button size="sm" variant="ghost" isIconOnly aria-label="下载" onPress={() => handleDownload(row)}>
-                <DownloadIcon />
-              </Button>
-              {canDelete && (
+              {pendingMode ? (
                 <Button
                   size="sm"
-                  variant="danger-soft"
+                  variant="ghost"
                   isIconOnly
-                  aria-label="删除"
-                  onPress={() => setDeleteTarget(row)}
+                  aria-label="移除"
+                  onPress={() => handleRemovePending(row.file.id)}
                 >
                   <TrashIcon />
                 </Button>
+              ) : (
+                <>
+                  <Button size="sm" variant="ghost" isIconOnly aria-label="下载" onPress={() => handleDownload(row)}>
+                    <DownloadIcon />
+                  </Button>
+                  {canDelete && (
+                    <Button
+                      size="sm"
+                      variant="danger-soft"
+                      isIconOnly
+                      aria-label="删除"
+                      onPress={() => setDeleteTarget(row)}
+                    >
+                      <TrashIcon />
+                    </Button>
+                  )}
+                </>
               )}
             </li>
           ))}

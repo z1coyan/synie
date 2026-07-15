@@ -65,10 +65,16 @@ export interface SynieRecordDrawerProps {
   /** Sheet.Content 宽度样式 */
   contentClassName?: string
   /**
-   * 字段栅格之前的头部内容(如金额主视觉/概要卡),占满整行;
-   * 入参是冻结后的 mode/row(与 extraContent 同一套快照,退场动画期间不闪)
+   * 字段栅格之前的头部内容(如金额主视觉/概要卡、承兑票面区),占满整行;
+   * 入参是冻结后的 mode/row(与 extraContent 同一套快照,退场动画期间不闪),
+   * values/patchValues 同 extraContent(表单草稿读写,view 态分别为空对象/no-op)
    */
-  headerContent?: (mode: DrawerMode, row: Row | null | undefined) => ReactNode
+  headerContent?: (
+    mode: DrawerMode,
+    row: Row | null | undefined,
+    values: Record<string, unknown>,
+    patchValues: (patch: Record<string, unknown>) => void,
+  ) => ReactNode
   /**
    * meta 列之外的附加内容(如多对多关联控件),渲染在字段栅格末尾、占满整行;
    * 状态由页面自持,提交在页面 onSubmit 里自行处理。入参是冻结后的 mode/row(退场动画期间不闪),
@@ -248,9 +254,11 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                 </EmptyState>
               ) : (
                 <>
-                {props.headerContent && (
-                  <div className="mb-6">{props.headerContent(renderMode, renderRow)}</div>
-                )}
+                {/* 返回 null/undefined 不渲染占位容器(空 div 的 mb-6 会平白多出一段间距) */}
+                {(() => {
+                  const node = props.headerContent?.(renderMode, renderRow, values, patchValues)
+                  return node == null ? null : <div className="mb-6">{node}</div>
+                })()}
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
                   {shown.map((f) => (
                     <div key={f.name} className={COL_SPAN[f.cols]}>

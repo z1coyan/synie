@@ -86,7 +86,7 @@ defmodule SynieCore.Acc.BillTest do
     |> Ash.create!(authorize?: false)
   end
 
-  test "register 建档:票号/种类/到期日/金额必填,其余票面可空" do
+  test "register 建档:票号/种类/到期日必填,其余票面可空(含票据包金额)" do
     bill = register!(base_attrs())
 
     assert bill.bill_kind == :bank_acceptance
@@ -101,11 +101,15 @@ defmodule SynieCore.Acc.BillTest do
     assert bill.remarks == nil
     assert bill.transferable == true
 
-    for field <- [:bill_no, :bill_kind, :due_date, :face_amount] do
+    for field <- [:bill_no, :bill_kind, :due_date] do
       attrs = base_attrs() |> Map.delete(field)
 
       assert_raise Ash.Error.Invalid, fn -> register!(attrs) end
     end
+
+    # 票据包金额可空:承兑均来源于接收,原包金额不关心
+    no_face = register!(base_attrs() |> Map.delete(:face_amount))
+    assert no_face.face_amount == nil
   end
 
   test "register 重复票号 upsert 挂接不覆盖:二次提交不同票面,读回仍是首录票面" do

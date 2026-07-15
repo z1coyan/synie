@@ -37,8 +37,8 @@ defmodule SynieCore.Acc.BillTransactionRules do
   - discount 必填贴现四件(org/rate/interest/net)且 amount = interest + net;其余类型四件必须为空
   - reallocate 必填 to_bank_account_id(同公司/启用/≠转出);其余类型必须为空
   - 段勾稽:sub_end − sub_start + 1 = amount × 100;1 ≤ sub_start ≤ sub_end ≤ face_amount × 100
-    (bill_id 为空时——接收走 bill_attrs 建档——build 期跳过越界这一步,由建档 change 在
-    before_action 补上 bill_id 后调用 `check_face_range/2` 复检)
+    (票据包金额未录入时不设上限;bill_id 为空时——接收走 bill_attrs 建档——build 期跳过
+    越界这一步,由建档 change 在 before_action 补上 bill_id 后调用 `check_face_range/2` 复检)
   """
   use Ash.Resource.Validation
 
@@ -168,6 +168,8 @@ defmodule SynieCore.Acc.BillTransactionRules do
   @doc false
   # 子票段不能越出票据包范围;供上面的构建期校验、以及 create 里 bill_attrs 建档
   # 拿到 bill 之后在 before_action 内复检共用(建档路径 build 期还没有 bill,拿不到 face_amount)
+  def check_face_range(_sub_end, nil), do: :ok
+
   def check_face_range(sub_end, face_amount) do
     if Decimal.compare(Decimal.new(sub_end), Decimal.mult(face_amount, 100)) == :gt do
       {:error, field: :sub_end, message: "子票段超出票据包范围"}
@@ -791,7 +793,7 @@ defmodule SynieCore.Acc.BillTransaction do
       {:error, _error} ->
         Ash.Changeset.add_error(changeset,
           field: :bill_attrs,
-          message: "票据建档失败,请检查票号/种类/到期日/金额等必填票面信息"
+          message: "票据建档失败,请检查票号/种类/到期日等必填票面信息"
         )
     end
   end

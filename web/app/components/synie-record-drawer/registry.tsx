@@ -81,15 +81,17 @@ const registry: Record<string, ResourceDrawerConfig> = {
   accBills: {
     label: '承兑票据',
     contentClassName: 'w-full lg:w-[760px]',
+    // 票据包金额不展示:承兑均来源于接收,原包金额业务上不关心(后端已改可空)
+    exclude: ['faceAmount'],
     fields: {
       // 票号是票据身份,建档即定,不可改(后端 update 动作本就不收 bill_no)
       billNo: { order: -1, edit: 'readOnly' },
       billKind: { order: 0, cols: 6 },
       transferable: { order: 1, cols: 6 },
       issueDate: { order: 2, cols: 6 },
-      dueDate: { order: 3, cols: 6 },
-      faceAmount: { order: 4, cols: 6, render: (v) => formatAmount(v) },
-      acceptanceDate: { order: 5, cols: 6 },
+      acceptanceDate: { order: 3, cols: 6 },
+      // 半宽字段共 5 个,到期日独占整行,保证下方出票人四件套两列对齐
+      dueDate: { order: 4 },
       // 出票人/收款人/承兑人四件套(名称/账号/开户行/开户行联行号),两列排
       drawerName: { order: 6, cols: 6, label: '出票人名称' },
       drawerAccount: { order: 7, cols: 6, label: '出票人账号' },

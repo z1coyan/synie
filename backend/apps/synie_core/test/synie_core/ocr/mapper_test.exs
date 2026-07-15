@@ -94,11 +94,12 @@ defmodule SynieCore.Ocr.MapperTest do
     refute Map.has_key?(InvoiceMapper.map(%{"data" => %{"invoiceDate" => "识别失败"}}), "invoiceDate")
   end
 
-  test "承兑:映射为票面草稿 snake_case 键" do
+  test "承兑:映射为票面草稿 snake_case 键;子票区间解析为段三字段" do
     m =
       AcceptanceMapper.map(%{
         "data" => %{
           "draftNumber" => "130331200093520210630123456789012",
+          "subDraftNumber" => "1000001-2000000",
           "issueDate" => "2026年06月30日",
           "validToDate" => "2026-12-30",
           "totalAmount" => "1,000,000.00",
@@ -121,7 +122,6 @@ defmodule SynieCore.Ocr.MapperTest do
     assert m["bill_kind"] == "BANK_ACCEPTANCE"
     assert m["issue_date"] == "2026-06-30"
     assert m["due_date"] == "2026-12-30"
-    assert m["face_amount"] == "1000000.00"
     assert m["acceptance_date"] == "2026-07-01"
     assert m["transferable"] == true
     assert m["drawer_name"] == "出票公司"
@@ -130,11 +130,42 @@ defmodule SynieCore.Ocr.MapperTest do
     assert m["payee_name"] == "收款公司"
     assert m["acceptor_name"] == "承兑银行"
     assert m["acceptor_bank_no"] == "102331000000"
+
+    # 原包金额不映射;子票区间按区间宽度推段与金额
+    refute Map.has_key?(m, "face_amount")
+    assert m["sub_start"] == 1_000_001
+    assert m["sub_end"] == 2_000_000
+    assert m["amount"] == "10000.00"
+  end
+
+  test "承兑:无子票区间按整票退化(起=1,金额=票面金额)" do
+    m = AcceptanceMapper.map(%{"data" => %{"totalAmount" => "¥1,000,000.00"}})
+    assert m["sub_start"] == 1
+    assert m["sub_end"] == 100_000_000
+    assert m["amount"] == "1000000.00"
+  end
+
+  test "承兑:子票区间兼容各式分隔与单号;非法区间退化整票" do
+    m = AcceptanceMapper.map(%{"data" => %{"subDraftNumber" => "00000001至01000000"}})
+    assert m["sub_start"] == 1
+    assert m["sub_end"] == 1_000_000
+    assert m["amount"] == "10000.00"
+
+    single = AcceptanceMapper.map(%{"data" => %{"subDraftNumber" => "88"}})
+    assert single["sub_start"] == 88
+    assert single["sub_end"] == 88
+    assert single["amount"] == "0.01"
+
+    bad = AcceptanceMapper.map(%{"data" => %{"subDraftNumber" => "区间", "totalAmount" => "5"}})
+    assert bad["sub_start"] == 1
+    assert bad["sub_end"] == 500
+    assert bad["amount"] == "5"
   end
 
   test "承兑:不可转让 → transferable false;缺失字段省略" do
     m = AcceptanceMapper.map(%{"data" => %{"assignability" => "不得转让"}})
     assert m["transferable"] == false
     refute Map.has_key?(m, "bill_no")
+    refute Map.has_key?(m, "sub_start")
   end
 end
