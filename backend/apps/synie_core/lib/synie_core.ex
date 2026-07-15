@@ -17,6 +17,7 @@ defmodule SynieCore do
       list SynieCore.Sales.Customer, :sal_customers, :read, paginate_with: :offset
       list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
       list SynieCore.Hr.Employee, :hr_employees, :read, paginate_with: :offset
+      list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
       list SynieCore.Numbering.Rule, :sys_numbering_rules, :read, paginate_with: :offset
       list SynieCore.Numbering.Counter, :sys_numbering_counters, :read, paginate_with: :offset
@@ -99,6 +100,10 @@ defmodule SynieCore do
       create SynieCore.Hr.Employee, :create_hr_employee, :create
       update SynieCore.Hr.Employee, :update_hr_employee, :update
       destroy SynieCore.Hr.Employee, :destroy_hr_employee, :destroy
+
+      create SynieCore.Inv.MaterialCategory, :create_inv_material_category, :create
+      update SynieCore.Inv.MaterialCategory, :update_inv_material_category, :update
+      destroy SynieCore.Inv.MaterialCategory, :destroy_inv_material_category, :destroy
 
       # 文件的创建走 REST 上传端点(multipart 不过 GraphQL),这里只注册删除与解挂
       destroy SynieCore.Files.File, :destroy_sys_file, :destroy
@@ -190,6 +195,7 @@ defmodule SynieCore do
     resource SynieCore.Sales.Customer
     resource SynieCore.Purchase.Supplier
     resource SynieCore.Hr.Employee
+    resource SynieCore.Inv.MaterialCategory
     resource SynieCore.Acc.GlEntry
     resource SynieCore.Acc.GlJournal
     resource SynieCore.Acc.GlJournalLine

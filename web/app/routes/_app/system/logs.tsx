@@ -36,6 +36,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   sal_customer: '客户',
   pur_supplier: '供应商',
   hr_employee: '员工',
+  inv_material_category: '物料分类',
   sys_file: '附件文件',
   sys_attachment: '附件关联',
   sys_storage: '存储接入',
