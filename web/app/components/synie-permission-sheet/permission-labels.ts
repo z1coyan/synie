@@ -30,6 +30,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'acc.bill': '承兑票据',
   'acc.bill_transaction': '承兑交易',
   'acc.bill_holding': '持有承兑',
+  'acc.setting': '财务设置',
 }
 
 export const ACTION_LABELS: Record<string, string> = {
