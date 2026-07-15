@@ -24,4 +24,8 @@ config :synie_web, SynieWeb.Endpoint,
   live_view: [signing_salt: "synie_salt"]
 
 config :phoenix, :json_library, Jason
+
+# ExAws 默认使用 hackney；改用项目已有的 Req，避免引入存在安全漏洞的 hackney 1.x。
+config :ex_aws, http_client: ExAws.Request.Req
+
 import_config "#{config_env()}.exs"

@@ -37,7 +37,6 @@ defmodule SynieCore.MixProject do
       {:req, "~> 0.5"},
       {:ex_aws, "~> 2.5"},
       {:ex_aws_s3, "~> 2.5"},
-      {:hackney, "~> 1.20"},
       {:sweet_xml, "~> 0.7"},
       {:pbkdf2_elixir, "~> 2.3"},
       {:simple_sat, "~> 0.1"},

@@ -31,9 +31,9 @@ defmodule SynieWeb.MixProject do
   defp deps do
     [
       {:synie_core, in_umbrella: true},
-      {:phoenix, "~> 1.7"},
+      {:phoenix, "~> 1.8.9"},
       {:phoenix_html, "~> 4.0"},
-      {:phoenix_live_view, "~> 1.1"},
+      {:phoenix_live_view, "~> 1.2.7"},
       {:jason, "~> 1.4"},
       {:ash_graphql, "~> 1.9"},
       {:bandit, "~> 1.5"}
