@@ -33,6 +33,8 @@ defmodule SynieCore.MixProject do
       {:ash, "~> 3.29"},
       {:ash_postgres, "~> 2.10"},
       {:ash_graphql, "~> 1.9"},
+      # 阿里云 OCR HTTP 客户端(Req.Test 可注入 plug,测试不出网)
+      {:req, "~> 0.5"},
       {:ex_aws, "~> 2.5"},
       {:ex_aws_s3, "~> 2.5"},
       {:hackney, "~> 1.20"},

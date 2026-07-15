@@ -18,8 +18,10 @@ import {
 import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
 import { BANKS } from '~/lib/banks'
+import { attachFile } from '~/lib/files'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
+import { SynieOcrButton } from '~/components/synie-ocr-button/SynieOcrButton'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { FkLink } from '~/components/synie-record-drawer/fk-preview'
 import type { FieldInputProps } from '~/components/synie-record-drawer/fields'
@@ -60,6 +62,12 @@ const LOOKUP_BILL = `
     accBills(filter: {billNo: {eq: $billNo}}, limit: 1, offset: 0) {
       results { id billNo billKind dueDate faceAmount acceptorName }
     }
+  }
+`
+// OCR generic action:返回票面草稿字段(snake_case)JSON,不落库
+const OCR_BILL = `
+  mutation ($input: OcrAccBillTransactionInput!) {
+    ocrAccBillTransaction(input: $input)
   }
 `
 
@@ -371,18 +379,20 @@ function ReceiveBillSection({
   billLookup,
   setBillLookup,
   patchValues,
+  onOcrFile,
 }: {
   billDraft: Record<string, unknown>
   setBillDraft: (updater: (prev: Record<string, unknown>) => Record<string, unknown>) => void
   billLookup: Row | null
   setBillLookup: (row: Row | null) => void
   patchValues: (patch: Record<string, unknown>) => void
+  onOcrFile: (fileId: string) => void
 }) {
   const [loading, setLoading] = useState(false)
   const updateDraft = (key: string, value: unknown) => setBillDraft((prev) => ({ ...prev, [key]: value }))
 
-  const runLookup = async () => {
-    const billNo = String(billDraft.bill_no ?? '').trim()
+  const runLookup = async (billNoArg?: string) => {
+    const billNo = (billNoArg ?? String(billDraft.bill_no ?? '')).trim()
     if (!billNo) return
     setLoading(true)
     try {
@@ -410,9 +420,25 @@ function ReceiveBillSection({
     <div className="flex flex-col gap-4 rounded-lg border border-default/60 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="text-sm font-medium">票面信息(接收)</span>
-        <Button size="sm" variant="secondary" onPress={fullBillOut}>
-          整票带出
-        </Button>
+        <div className="flex items-center gap-3">
+          <SynieOcrButton
+            mutation={OCR_BILL}
+            resultKey="ocrAccBillTransaction"
+            accept="image/*"
+            onRecognized={(fields, fileId) => {
+              // 识别视为换票:清查档命中,整体并入草稿后按新票号自动查档
+              setBillLookup(null)
+              patchValues({ billId: null })
+              setBillDraft((prev) => ({ ...prev, ...fields }))
+              onOcrFile(fileId)
+              const billNo = typeof fields.bill_no === 'string' ? fields.bill_no.trim() : ''
+              if (billNo) void runLookup(billNo)
+            }}
+          />
+          <Button size="sm" variant="secondary" onPress={fullBillOut}>
+            整票带出
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -427,12 +453,12 @@ function ReceiveBillSection({
               patchValues({ billId: null })
             }
           }}
-          onBlur={runLookup}
+          onBlur={() => runLookup()}
         >
           <Label>票据号码</Label>
           <Input placeholder="输入票号,失焦自动查档" />
         </TextField>
-        <Button size="sm" variant="secondary" isPending={loading} onPress={runLookup}>
+        <Button size="sm" variant="secondary" isPending={loading} onPress={() => runLookup()}>
           查档
         </Button>
       </div>
@@ -521,6 +547,8 @@ export function AcceptanceTransactionDrawer({
   const [pickedHolding, setPickedHolding] = useState<Row | null>(null)
   const [billLookup, setBillLookup] = useState<Row | null>(null)
   const [billDraft, setBillDraft] = useState<Record<string, unknown>>({})
+  // OCR 用图的裸文件 id:创建成功后补挂为附件,抽屉重开即作废
+  const ocrFileRef = useRef<string | null>(null)
 
   // 打开时初始化组件态:从持有段发起的创建把该段整行灌入选段状态
   useEffect(() => {
@@ -528,6 +556,7 @@ export function AcceptanceTransactionDrawer({
     setPickedHolding(state.mode === 'create' ? (state.holding ?? null) : null)
     setBillLookup(null)
     setBillDraft({})
+    ocrFileRef.current = null
   }, [state])
 
   return (
@@ -765,6 +794,9 @@ export function AcceptanceTransactionDrawer({
                   billLookup={billLookup}
                   setBillLookup={setBillLookup}
                   patchValues={patchValues}
+                  onOcrFile={(id) => {
+                    ocrFileRef.current = id
+                  }}
                 />
               ) : (
                 <BillFaceLink billId={billIdForLink} />
@@ -827,6 +859,21 @@ export function AcceptanceTransactionDrawer({
           }>(CREATE_BILL_TRANSACTION, { input })
           if (data.createAccBillTransaction.errors && data.createAccBillTransaction.errors.length > 0) {
             throw new Error(data.createAccBillTransaction.errors.map((e) => e.message).join('; '))
+          }
+          // OCR 原图补挂为附件;挂接失败不阻断建单,提示手工补传即可
+          if (ocrFileRef.current) {
+            const fid = ocrFileRef.current
+            ocrFileRef.current = null
+            try {
+              await attachFile(fid, {
+                ownerType: 'acc_bill_transaction',
+                ownerId: data.createAccBillTransaction.result!.id,
+              })
+            } catch (e) {
+              toast.warning('交易已创建,但票面原图挂接失败,请在附件面板手工补传', {
+                description: (e as Error).message,
+              })
+            }
           }
           toast.success(`承兑${TX_TYPE_LABEL[(txType ?? 'RECEIVE') as TxType] ?? '交易'}已创建`)
         } else {

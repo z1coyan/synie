@@ -76,3 +76,23 @@ export async function downloadFile(fileId: string, filename: string): Promise<vo
   a.click()
   URL.revokeObjectURL(url)
 }
+
+/** 给已上传的裸文件补挂宿主附件(OCR 动线:识别先上传、单据保存成功后挂接) */
+export async function attachFile(
+  fileId: string,
+  opts: { ownerType: string; ownerId: string; category?: string }
+): Promise<UploadedAttachment> {
+  const form = new FormData()
+  form.append('owner_type', opts.ownerType)
+  form.append('owner_id', opts.ownerId)
+  if (opts.category) form.append('category', opts.category)
+
+  const res = await fetch(`/api/files/${fileId}/attachments`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form,
+  })
+  if (!res.ok) throw new Error(await errorMessage(res))
+  const json = (await res.json()) as { attachment: UploadedAttachment }
+  return json.attachment
+}

@@ -57,6 +57,45 @@ defmodule SynieCore.Files do
     end
   end
 
+  @doc """
+  给已有 `sys_file` 补挂宿主附件(OCR 动线:识别时上传裸文件,单据保存成功后回头挂接)。
+  `params`:`:file_id` 必填,`:owner_type`/`:owner_id` 必填,`:category` 可选。
+  权限比上传时顺带挂接更严:除能读文件、能读宿主、有附件 create 权外,仅限上传者本人/超管
+  (补挂会改变文件可见性,见 check_uploader)。
+  """
+  @spec attach(SynieCore.Authz.Actor.t(), map()) ::
+          {:ok, Attachment.t()} | {:error, term()}
+  def attach(actor, %{file_id: file_id} = params) do
+    with {:ok, file} <- fetch_file(actor, file_id),
+         :ok <- check_uploader(actor, file),
+         {:ok, %Attachment{} = attachment} <- maybe_attach(actor, file, params) do
+      {:ok, attachment}
+    else
+      # maybe_attach 对缺 owner 参数返回 {:ok, nil},此处视为调用错误
+      {:ok, nil} -> {:error, :missing_owner}
+      {:error, reason} -> {:error, reason}
+    end
+  rescue
+    e in [Ash.Error.Forbidden, Ash.Error.Invalid] -> {:error, e}
+  end
+
+  defp fetch_file(actor, file_id) do
+    case Ash.get(StoredFile, file_id, actor: actor) do
+      {:ok, file} -> {:ok, file}
+      {:error, _} -> {:error, :file_not_found}
+    end
+  end
+
+  # 补挂会改变文件可见性(宿主可见者即可下载),故仅允许上传者本人/超管补挂,
+  # 否则持 sys.file:read 的用户可把他人裸文件挂到自己可见的宿主上越权下载
+  defp check_uploader(actor, file) do
+    if actor.super_admin or actor.user_id == file.uploaded_by_id do
+      :ok
+    else
+      {:error, :not_uploader}
+    end
+  end
+
   # file + attachment 同事务,挂接失败(未知宿主/宿主不可见)连文件行一起回滚
   defp create_records(actor, attrs, params) do
     SynieCore.Repo.transaction(fn ->

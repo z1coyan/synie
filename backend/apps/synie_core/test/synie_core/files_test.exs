@@ -289,6 +289,80 @@ defmodule SynieCore.FilesTest do
     end
   end
 
+  describe "attach/2(给已有文件补挂附件)" do
+    test "裸文件可补挂到可见宿主(全局宿主 company_id 为空)", %{src: src} do
+      actor = actor_with!(["sys.file:create", "sys.file:read", "sales.customer:read"])
+      customer = customer!()
+
+      {:ok, %{file: file, attachment: nil}} =
+        Files.upload(actor, %{path: src, filename: "合同.pdf", content_type: "application/pdf"})
+
+      assert {:ok, %Attachment{} = attachment} =
+               Files.attach(actor, %{
+                 file_id: file.id,
+                 owner_type: "sal_customer",
+                 owner_id: customer.id,
+                 category: "original"
+               })
+
+      assert attachment.file_id == file.id
+      assert attachment.owner_type == "sal_customer"
+      assert attachment.category == "original"
+      assert attachment.company_id == nil
+    end
+
+    test "非上传者补挂被拒 :not_uploader,即使持有 read 权限", %{src: src} do
+      uploader = actor_with!(["sys.file:create", "sales.customer:read"])
+      other = actor_with!(["sys.file:create", "sys.file:read", "sales.customer:read"])
+      customer = customer!()
+
+      {:ok, %{file: file}} =
+        Files.upload(uploader, %{path: src, filename: "合同.pdf", content_type: "application/pdf"})
+
+      assert {:error, :not_uploader} =
+               Files.attach(other, %{
+                 file_id: file.id,
+                 owner_type: "sal_customer",
+                 owner_id: customer.id
+               })
+    end
+
+    test "宿主不可见 → forbidden_owner;未知宿主 → unknown_owner_type", %{src: src} do
+      actor = actor_with!(["sys.file:create", "sys.file:read"])
+      customer = customer!()
+
+      {:ok, %{file: file}} =
+        Files.upload(actor, %{path: src, filename: "a.pdf", content_type: "application/pdf"})
+
+      # 无 sales.customer:read → 看不见宿主
+      assert {:error, :forbidden_owner} =
+               Files.attach(actor, %{
+                 file_id: file.id,
+                 owner_type: "sal_customer",
+                 owner_id: customer.id
+               })
+
+      assert {:error, :unknown_owner_type} =
+               Files.attach(actor, %{
+                 file_id: file.id,
+                 owner_type: "not_exist",
+                 owner_id: customer.id
+               })
+    end
+
+    test "缺 owner 参数 → missing_owner;文件不可见 → file_not_found", %{src: src} do
+      actor = actor_with!(["sys.file:create", "sys.file:read"])
+
+      {:ok, %{file: file}} =
+        Files.upload(actor, %{path: src, filename: "b.pdf", content_type: "application/pdf"})
+
+      assert {:error, :missing_owner} = Files.attach(actor, %{file_id: file.id})
+
+      no_read = actor_with!([])
+      assert {:error, :file_not_found} = Files.attach(no_read, %{file_id: file.id})
+    end
+  end
+
   test "权限目录含 sys.file 组" do
     assert %{prefix: "sys.file", actions: ~w(create read delete)} in SynieCore.Authz.Registry.catalog()
   end

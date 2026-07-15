@@ -21,6 +21,8 @@ import { SynieEditableTable } from '~/components/synie-editable-table/SynieEdita
 import { localRowId } from '~/components/synie-editable-table/editable'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
+import { attachFile } from '~/lib/files'
+import { SynieOcrButton } from '~/components/synie-ocr-button/SynieOcrButton'
 import type { DrawerMode, FieldInputProps } from '~/components/synie-record-drawer/fields'
 import type { LocalGridMeta, Row } from '~/components/synie-data-grid/types'
 
@@ -46,6 +48,12 @@ const AUDIT_INVOICE = `
 const REVERSE_INVOICE = `
   mutation ($id: ID!, $input: ReverseAccVatInvoiceInput!) {
     reverseAccVatInvoice(id: $id, input: $input) { result { id } errors { message } }
+  }
+`
+// OCR generic action:返回识别字段 JSON,不落库
+const OCR_INVOICE = `
+  mutation ($input: OcrAccVatInvoiceInput!) {
+    ocrAccVatInvoice(input: $input)
   }
 `
 // 发票明细(items)与头一起挂在同一条记录上,不是独立资源;开抽屉时单独取一次
@@ -195,6 +203,8 @@ function InvoicesPage() {
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张发票的清单回填到当前发票
   const reqIdRef = useRef(0)
+  // OCR 用图的裸文件 id:创建成功后补挂为附件,抽屉关闭即作废
+  const ocrFileRef = useRef<string | null>(null)
 
   // 审核过账确认框:行内「审核」动作与新增后带过账日期的顺手审核共用
   const [auditDialog, setAuditDialog] = useState<{ id: string; fromCreate: boolean } | null>(null)
@@ -370,6 +380,7 @@ function InvoicesPage() {
         onOpenChange={(open) => {
           if (open) return
           reqIdRef.current++
+          ocrFileRef.current = null
           setDrawer(null)
           setItems([])
           setItemsLoaded(false)
@@ -461,6 +472,22 @@ function InvoicesPage() {
           const gross = mode === 'view' ? row?.grossTotal : values.grossTotal
           return (
             <div className="flex flex-col gap-4">
+              {mode === 'create' && (
+                <SynieOcrButton
+                  mutation={OCR_INVOICE}
+                  resultKey="ocrAccVatInvoice"
+                  accept="image/*,.pdf"
+                  onRecognized={(fields, fileId) => {
+                    // items 走本地清单状态,其余字段直接回填表单草稿
+                    const { items: ocrItems, ...rest } = fields
+                    patchValues(rest)
+                    if (Array.isArray(ocrItems) && ocrItems.length > 0) {
+                      setItems(ocrItems.map((it) => ({ id: localRowId(), ...(it as object) }) as Row))
+                    }
+                    ocrFileRef.current = fileId
+                  }}
+                />
+              )}
               <div className="flex flex-wrap items-center gap-3 text-sm">
                 <span className="text-muted">价税合计(大写):</span>
                 <span>{gross != null && gross !== '' ? amountInWords(gross) : '—'}</span>
@@ -508,6 +535,18 @@ function InvoicesPage() {
               throw new Error(data.createAccVatInvoice.errors.map((e) => e.message).join('; '))
             }
             const createdId = data.createAccVatInvoice.result!.id
+            // OCR 原图补挂为附件;挂接失败不阻断建票,提示手工补传即可
+            if (ocrFileRef.current) {
+              const fid = ocrFileRef.current
+              ocrFileRef.current = null
+              try {
+                await attachFile(fid, { ownerType: 'acc_vat_invoice', ownerId: createdId, category: 'original' })
+              } catch (e) {
+                toast.warning('发票已创建,但票面原图挂接失败,请在附件面板手工补传', {
+                  description: (e as Error).message,
+                })
+              }
+            }
             toast.success('发票已创建')
             queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
             const source = { ...input, id: createdId } as Row
