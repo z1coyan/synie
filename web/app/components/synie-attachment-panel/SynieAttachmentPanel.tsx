@@ -3,6 +3,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { downloadFile, uploadFile } from '~/lib/files'
+import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
+import { FileThumb } from '../synie-preview/FileThumb'
+import { SyniePreview } from '../synie-preview/SyniePreview'
 
 /**
  * 通用附件面板:挂在 SynieRecordDrawer 的 extraContent,按 owner_type/owner_id
@@ -17,13 +20,6 @@ export interface SynieAttachmentPanelProps {
   category?: string
   /** view 模式只读:隐藏上传/删除 */
   readonly?: boolean
-}
-
-interface AttachmentRow {
-  id: string
-  category: string
-  insertedAt: string
-  file: { id: string; filename: string; contentType: string | null; size: number | null }
 }
 
 const DESTROY_ATTACHMENT = `
@@ -50,6 +46,7 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
   const [uploading, setUploading] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<AttachmentRow | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
 
   // 无共享权限 hook,面板自查;queryKey 共享,多实例只发一次。fail-closed:拉不到=无权限
   const perms = useQuery({
@@ -60,23 +57,12 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
   const canCreate = (perms.data?.has('sys.file:create') ?? false) && !readonly
   const canDelete = (perms.data?.has('sys.file:delete') ?? false) && !readonly
 
-  const listKey = ['sysAttachments', ownerType, ownerId ?? '', category ?? '']
+  const listKey = attachmentListKey(ownerType, ownerId, category)
 
   const list = useQuery({
     queryKey: listKey,
     enabled: !!ownerId,
-    queryFn: () => {
-      // owner_type/category 是开发期常量,ownerId 是库里 uuid,内插安全(与 DataGrid 同做法)
-      const categoryFilter = category ? `, category: { eq: "${category}" }` : ''
-      const query = `query {
-        sysAttachments(limit: 200, filter: { ownerType: { eq: "${ownerType}" }, ownerId: { eq: "${ownerId}" }${categoryFilter} }) {
-          results { id category insertedAt file { id filename contentType size } }
-        }
-      }`
-      return gqlFetch<{ sysAttachments: { results: AttachmentRow[] } }>(query).then((d) =>
-        [...d.sysAttachments.results].sort((a, b) => a.insertedAt.localeCompare(b.insertedAt))
-      )
-    },
+    queryFn: () => fetchAttachmentList(ownerType, ownerId!, category),
   })
 
   const handlePick = () => fileInputRef.current?.click()
@@ -99,6 +85,9 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
+
+  // 图片类附件文件名可点开全屏预览,items 携全部图片可循环切换
+  const images = (list.data ?? []).filter((r) => r.file.contentType?.startsWith('image/'))
 
   const handleDownload = async (row: AttachmentRow) => {
     try {
@@ -161,7 +150,15 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
         <ul className="divide-y divide-separator rounded-2xl border border-border">
           {list.data!.map((row) => (
             <li key={row.id} className="flex items-center gap-3 px-3 py-2">
-              <FileIcon />
+              {row.file.contentType?.startsWith('image/') ? (
+                <FileThumb
+                  fileId={row.file.id}
+                  alt={row.file.filename}
+                  onPress={() => setPreviewIndex(images.findIndex((i) => i.id === row.id))}
+                />
+              ) : (
+                <FileIcon />
+              )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm" title={row.file.filename}>
                   {row.file.filename}
@@ -189,6 +186,13 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
           ))}
         </ul>
       )}
+
+      <SyniePreview
+        items={images.map((r) => ({ fileId: r.file.id, filename: r.file.filename }))}
+        isOpen={previewIndex !== null}
+        onOpenChange={(open) => !open && setPreviewIndex(null)}
+        initialIndex={previewIndex ?? 0}
+      />
 
       <Modal.Backdrop isOpen={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <Modal.Container>

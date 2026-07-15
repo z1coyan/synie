@@ -107,6 +107,7 @@ function BankTransactionsPage() {
         <SynieDataGrid
           resource="accBankTransactions"
           columns={GRID_COLUMNS}
+          attachmentImages={{ ownerType: 'acc_bank_transaction', label: '回单' }}
           defaultSort={{ column: 'occurredAt', direction: 'descending' }}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
