@@ -43,6 +43,9 @@ const GRID_COLUMNS = [
 
 const GRID_OVERRIDES = {
   amount: { render: (v: unknown) => formatAmount(v) },
+  // meta description 即列头,括号说明进表格太啰嗦,收敛为短名
+  dueDate: { label: '到期日' },
+  sourceTransactionId: { label: '来源交易' },
 } satisfies Record<string, ColumnOverride>
 
 // 持有段行内可发起的后续交易(接收之外的四类都基于已有承兑,入口收在这里)

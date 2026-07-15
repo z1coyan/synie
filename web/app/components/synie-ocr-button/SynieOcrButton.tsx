@@ -16,12 +16,23 @@ export interface SynieOcrButtonProps {
   resultKey: string
   /** 文件选择器 accept,如 'image/*,.pdf'(发票)或 'image/*'(承兑) */
   accept: string
+  /** 按钮文案,默认「上传识别」 */
+  label?: string
+  /** 作为表单主动作时可升为 primary,默认 secondary */
+  variant?: 'primary' | 'secondary'
   onRecognized: (fields: Record<string, unknown>, file: UploadedFile) => void
 }
 
 const OCR_CONFIGURED = `query { accOcrConfigured }`
 
-export function SynieOcrButton({ mutation, resultKey, accept, onRecognized }: SynieOcrButtonProps) {
+export function SynieOcrButton({
+  mutation,
+  resultKey,
+  accept,
+  label = '上传识别',
+  variant = 'secondary',
+  onRecognized,
+}: SynieOcrButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   // 识别在途中抽屉被关(组件卸载)后 promise 才 resolve 的竞态守卫:
@@ -76,13 +87,13 @@ export function SynieOcrButton({ mutation, resultKey, accept, onRecognized }: Sy
       <input ref={inputRef} type="file" accept={accept} hidden onChange={(e) => handleFile(e.target.files)} />
       <Button
         size="sm"
-        variant="secondary"
+        variant={variant}
         isPending={busy}
         isDisabled={disabled}
         onPress={() => inputRef.current?.click()}
       >
         <ScanIcon />
-        上传识别
+        {label}
       </Button>
       {disabled && (
         <span className="text-xs text-muted">未配置 OCR 凭证,请到「系统管理→财务设置」配置</span>
