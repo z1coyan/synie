@@ -60,7 +60,8 @@ defmodule SynieCore.Files do
   @doc """
   给已有 `sys_file` 补挂宿主附件(OCR 动线:识别时上传裸文件,单据保存成功后回头挂接)。
   `params`:`:file_id` 必填,`:owner_type`/`:owner_id` 必填,`:category` 可选。
-  权限语义与上传时顺带挂接一致:actor 要能读文件、能读宿主、有附件 create 权。
+  权限比上传时顺带挂接更严:除能读文件、能读宿主、有附件 create 权外,仅限上传者本人/超管
+  (补挂会改变文件可见性,见 check_uploader)。
   """
   @spec attach(SynieCore.Authz.Actor.t(), map()) ::
           {:ok, Attachment.t()} | {:error, term()}
