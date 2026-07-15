@@ -16,7 +16,7 @@
 - 父表单内的子条目（单据行、明细行等）一律用 `SynieEditableTable`（`~/components/synie-editable-table/`）：表格纯展示，增改一律走二级 `SynieRecordDrawer`，不做行内编辑；`items`/`onChange` 受控、组件不发写请求，父表单提交时一并持久化，新增行 id 带 `local:` 前缀（`isLocalRow` 判别）。
 - 组件能力不够时先扩组件再用，不要在页面里绕过它手搭。
 - 外键单元格/字段默认渲染为可点 link，点击开全局速览抽屉（`FkPreviewProvider` 已挂 `_app` 布局，页面零接线）；资源级抽屉通用定制（label/fields 等）写在 `synie-record-drawer/registry.ts`，页面用 `{...drawerConfig('资源名')}` 引用同一份再按需覆盖。
-- 一切文件上传/下载必须走 `~/lib/files.ts`（REST `/api/files`），不要在页面自写 fetch/FormData；记录附件 UI 一律用 `SynieAttachmentPanel`（`~/components/synie-attachment-panel/`）挂 SynieRecordDrawer 的 `extraContent`，传 ownerType（graphql type 名）/ownerId。
+- 一切文件上传/下载必须走 `~/lib/files.ts`（REST `/api/files`），不要在页面自写 fetch/FormData；记录附件 UI 一律用 `SynieAttachmentPanel`（`~/components/synie-attachment-panel/`）挂 SynieRecordDrawer 的 `extraContent`，传 ownerType（graphql type 名）/ownerId；固定单图槽位（证件照等）用同目录 `SynieImageAttachment`，一个 category 一张图。
 
 ## 移动端适配
 

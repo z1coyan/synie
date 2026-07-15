@@ -17,6 +17,7 @@ defmodule SynieWeb.GridMeta do
     "basAccounts" => SynieCore.Base.Account,
     "salCustomers" => SynieCore.Sales.Customer,
     "purSuppliers" => SynieCore.Purchase.Supplier,
+    "hrEmployees" => SynieCore.Hr.Employee,
     "sysAuditLogs" => SynieCore.Audit.Log,
     "sysNumberingRules" => SynieCore.Numbering.Rule,
     "sysNumberingCounters" => SynieCore.Numbering.Counter,
