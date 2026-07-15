@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Modal, Spinner, toast } from '@heroui/react'
+import { Button, Link, Modal, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { downloadFile, uploadFile } from '~/lib/files'
+import { SyniePreview } from '../synie-preview/SyniePreview'
 
 /**
  * 通用附件面板:挂在 SynieRecordDrawer 的 extraContent,按 owner_type/owner_id
@@ -50,6 +51,7 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
   const [uploading, setUploading] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<AttachmentRow | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
 
   // 无共享权限 hook,面板自查;queryKey 共享,多实例只发一次。fail-closed:拉不到=无权限
   const perms = useQuery({
@@ -99,6 +101,9 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
+
+  // 图片类附件文件名可点开全屏预览,items 携全部图片可循环切换
+  const images = (list.data ?? []).filter((r) => r.file.contentType?.startsWith('image/'))
 
   const handleDownload = async (row: AttachmentRow) => {
     try {
@@ -163,9 +168,18 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
             <li key={row.id} className="flex items-center gap-3 px-3 py-2">
               <FileIcon />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm" title={row.file.filename}>
-                  {row.file.filename}
-                </p>
+                {row.file.contentType?.startsWith('image/') ? (
+                  <Link
+                    onPress={() => setPreviewIndex(images.findIndex((i) => i.id === row.id))}
+                    className="block max-w-full cursor-pointer truncate text-sm text-inherit underline-offset-2 hover:underline"
+                  >
+                    {row.file.filename}
+                  </Link>
+                ) : (
+                  <p className="truncate text-sm" title={row.file.filename}>
+                    {row.file.filename}
+                  </p>
+                )}
                 <p className="text-xs text-muted">
                   {formatBytes(row.file.size)}
                   {row.insertedAt ? ` · ${row.insertedAt.slice(0, 10)}` : ''}
@@ -189,6 +203,13 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly }:
           ))}
         </ul>
       )}
+
+      <SyniePreview
+        items={images.map((r) => ({ fileId: r.file.id, filename: r.file.filename }))}
+        isOpen={previewIndex !== null}
+        onOpenChange={(open) => !open && setPreviewIndex(null)}
+        initialIndex={previewIndex ?? 0}
+      />
 
       <Modal.Backdrop isOpen={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <Modal.Container>

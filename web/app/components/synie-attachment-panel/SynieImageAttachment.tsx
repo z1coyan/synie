@@ -2,7 +2,8 @@ import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
-import { fetchFileBlob, uploadFile } from '~/lib/files'
+import { blobUrl, fetchFileBlob, uploadFile } from '~/lib/files'
+import { SyniePreview } from '../synie-preview/SyniePreview'
 
 /**
  * 单图附件槽位:SynieAttachmentPanel 的图片变体,一个 owner+category 槽位一张图
@@ -38,20 +39,6 @@ const DESTROY_FILE = `
     destroySysFile(id: $id) { result { id } errors { message } }
   }
 `
-
-// Blob → objectURL 一对一缓存,不主动 revoke:卸载即 revoke 会与抽屉退场动画期间
-// 仍引用该 URL 的 <img> 竞态(console 刷 ERR_FILE_NOT_FOUND);URL 随 Blob 被 GC 一起释放,
-// 单图槽位量级的驻留可接受,重挂复用同一 URL 也免了图片闪烁
-const blobUrls = new WeakMap<Blob, string>()
-
-function blobUrl(blob: Blob): string {
-  let url = blobUrls.get(blob)
-  if (!url) {
-    url = URL.createObjectURL(blob)
-    blobUrls.set(blob, url)
-  }
-  return url
-}
 
 export function SynieImageAttachment({ ownerType, ownerId, category, label, readonly }: SynieImageAttachmentProps) {
   const queryClient = useQueryClient()
@@ -199,15 +186,11 @@ export function SynieImageAttachment({ ownerType, ownerId, category, label, read
         ) : null}
       </div>
 
-      <Modal.Backdrop isOpen={zoomed} onOpenChange={setZoomed}>
-        <Modal.Container>
-          <Modal.Dialog className="max-w-3xl" aria-label={`${label}大图`}>
-            <Modal.Body className="p-2">
-              {objectUrl && <img src={objectUrl} alt={label} className="max-h-[80vh] w-full object-contain" />}
-            </Modal.Body>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
+      <SyniePreview
+        items={current ? [{ fileId: current.file.id, filename: current.file.filename }] : []}
+        isOpen={zoomed}
+        onOpenChange={setZoomed}
+      />
 
       <Modal.Backdrop isOpen={confirmDelete} onOpenChange={setConfirmDelete}>
         <Modal.Container>

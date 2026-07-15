@@ -56,7 +56,22 @@ export async function uploadFile(
   return (await res.json()) as UploadResult
 }
 
-/** 取文件字节为 Blob(经 fetch 带鉴权头),图片预览等内联展示用;调用方自管 objectURL 生命周期 */
+// Blob → objectURL 一对一缓存,不主动 revoke:卸载即 revoke 会与浮层退场动画期间
+// 仍引用该 URL 的 <img> 竞态(console 刷 ERR_FILE_NOT_FOUND);URL 随 Blob 被 GC 一起释放,
+// 预览量级的驻留可接受,重挂复用同一 URL 也免了图片闪烁
+const blobUrls = new WeakMap<Blob, string>()
+
+/** Blob 的稳定 objectURL(带缓存),配合 fetchFileBlob 做 <img> 内联展示 */
+export function blobUrl(blob: Blob): string {
+  let url = blobUrls.get(blob)
+  if (!url) {
+    url = URL.createObjectURL(blob)
+    blobUrls.set(blob, url)
+  }
+  return url
+}
+
+/** 取文件字节为 Blob(经 fetch 带鉴权头),图片预览等内联展示用 */
 export async function fetchFileBlob(fileId: string): Promise<Blob> {
   const res = await fetch(`/api/files/${fileId}`, { headers: authHeaders() })
   if (!res.ok) throw new Error(await errorMessage(res))
