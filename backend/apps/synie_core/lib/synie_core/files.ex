@@ -66,6 +66,7 @@ defmodule SynieCore.Files do
           {:ok, Attachment.t()} | {:error, term()}
   def attach(actor, %{file_id: file_id} = params) do
     with {:ok, file} <- fetch_file(actor, file_id),
+         :ok <- check_uploader(actor, file),
          {:ok, %Attachment{} = attachment} <- maybe_attach(actor, file, params) do
       {:ok, attachment}
     else
@@ -81,6 +82,16 @@ defmodule SynieCore.Files do
     case Ash.get(StoredFile, file_id, actor: actor) do
       {:ok, file} -> {:ok, file}
       {:error, _} -> {:error, :file_not_found}
+    end
+  end
+
+  # 补挂会改变文件可见性(宿主可见者即可下载),故仅允许上传者本人/超管补挂,
+  # 否则持 sys.file:read 的用户可把他人裸文件挂到自己可见的宿主上越权下载
+  defp check_uploader(actor, file) do
+    if actor.super_admin or actor.user_id == file.uploaded_by_id do
+      :ok
+    else
+      {:error, :not_uploader}
     end
   end
 

@@ -75,6 +75,9 @@ defmodule SynieWeb.FileController do
         {:error, :file_not_found} ->
           error(conn, 404, "文件不存在或无权访问")
 
+        {:error, :not_uploader} ->
+          error(conn, 403, "仅能挂接本人上传的文件")
+
         {:error, :missing_owner} ->
           error(conn, 400, "缺少 owner_type/owner_id 参数")
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
@@ -24,6 +24,15 @@ const OCR_CONFIGURED = `query { accOcrConfigured }`
 export function SynieOcrButton({ mutation, resultKey, accept, onRecognized }: SynieOcrButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
+  // 识别在途中抽屉被关(组件卸载)后 promise 才 resolve 的竞态守卫:
+  // 卸载后不再调 onRecognized/setBusy/弹 toast,防止把旧 fileId/字段写进下一张单据
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const configured = useQuery({
     queryKey: ['accOcrConfigured'],
@@ -39,6 +48,7 @@ export function SynieOcrButton({ mutation, resultKey, accept, onRecognized }: Sy
     try {
       const { file: uploaded } = await uploadFile(file)
       const data = await gqlFetch<Record<string, unknown>>(mutation, { input: { fileId: uploaded.id } })
+      if (!mountedRef.current) return
       // :map 返回按 JSON 标量下发;防御性兼容字符串形态(同 items json_string 先例)
       const raw = data[resultKey]
       const fields = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Record<string, unknown> | null
@@ -49,9 +59,11 @@ export function SynieOcrButton({ mutation, resultKey, accept, onRecognized }: Sy
       onRecognized(fields, uploaded.id)
       toast.success('识别完成,请核对回填内容')
     } catch (e) {
+      if (!mountedRef.current) return
       toast.danger('识别失败', { description: (e as Error).message })
     } finally {
       toast.close(toastId)
+      if (!mountedRef.current) return
       setBusy(false)
       if (inputRef.current) inputRef.current.value = ''
     }
