@@ -7,7 +7,7 @@ import viteReact from '@vitejs/plugin-react'
 export default defineConfig({
   server: {
     port: 3000,
-    allowedHosts: ['home-n5pro', '.ts.net'],
+    allowedHosts: ['home-n5pro', '.ts.net', 'home-macmini'],
     proxy: {
       '/graphql': {
         // BACKEND_PORT 可覆盖,供 worktree 并行起服务时指向自己的后端
