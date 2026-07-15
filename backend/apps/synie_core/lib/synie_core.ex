@@ -47,6 +47,10 @@ defmodule SynieCore do
       list SynieCore.Files.File, :sys_files, :read, paginate_with: :offset
 
       list SynieCore.Files.StorageEndpoint, :sys_storages, :read, paginate_with: :offset
+
+      # 财务设置是单行表,read_one 免分页;配置态布尔登录即可查(OCR 按钮防呆)
+      read_one SynieCore.Acc.Setting, :acc_setting, :read
+      action SynieCore.Acc.Setting, :acc_ocr_configured, :ocr_configured
     end
 
     mutations do
@@ -164,6 +168,12 @@ defmodule SynieCore do
              :quick_create
 
       destroy SynieCore.Acc.BankReconciliation, :destroy_acc_bank_reconciliation, :destroy
+
+      update SynieCore.Acc.Setting, :update_acc_setting, :update
+
+      # OCR 识别是有副作用的外部调用(计费),注册为 mutation;权限复用各自 create 码
+      action SynieCore.Acc.VatInvoice, :ocr_acc_vat_invoice, :ocr
+      action SynieCore.Acc.BillTransaction, :ocr_acc_bill_transaction, :ocr
     end
   end
 
@@ -193,6 +203,7 @@ defmodule SynieCore do
     resource SynieCore.Acc.BillTransaction
     resource SynieCore.Acc.BillHolding
     resource SynieCore.Acc.BankReconciliation
+    resource SynieCore.Acc.Setting
     resource SynieCore.Audit.Log
     resource SynieCore.Numbering.Rule
     resource SynieCore.Numbering.Counter
