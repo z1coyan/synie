@@ -46,17 +46,8 @@ export const menuModules: MenuModule[] = [
     groups: [
       {
         label: '组织人事',
-        items: [
-          { label: '员工档案', path: '/hr/employees' },
-          { label: '组织架构', path: '/hr/org' },
-        ],
-      },
-      {
-        label: '考勤薪酬',
-        items: [
-          { label: '考勤管理', path: '/hr/attendance' },
-          { label: '薪酬管理', path: '/hr/payroll' },
-        ],
+        // 组织架构/考勤/薪酬留待后续任务实现,路由未落地前不注册(注册了会点进 404)
+        items: [{ label: '员工档案', path: '/hr/employees' }],
       },
     ],
   },

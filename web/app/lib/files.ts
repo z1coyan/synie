@@ -56,6 +56,13 @@ export async function uploadFile(
   return (await res.json()) as UploadResult
 }
 
+/** 取文件字节为 Blob(经 fetch 带鉴权头),图片预览等内联展示用;调用方自管 objectURL 生命周期 */
+export async function fetchFileBlob(fileId: string): Promise<Blob> {
+  const res = await fetch(`/api/files/${fileId}`, { headers: authHeaders() })
+  if (!res.ok) throw new Error(await errorMessage(res))
+  return res.blob()
+}
+
 /** 下载文件并触发浏览器保存(经 fetch 带鉴权头,后端本地回源或 302 预签名) */
 export async function downloadFile(fileId: string, filename: string): Promise<void> {
   const res = await fetch(`/api/files/${fileId}`, { headers: authHeaders() })

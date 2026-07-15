@@ -5,6 +5,7 @@ export const DOMAIN_LABELS: Record<string, string> = {
   sales: '销售',
   purchase: '采购',
   acc: '财务',
+  hr: '人事',
 }
 
 export const RESOURCE_LABELS: Record<string, string> = {
@@ -19,6 +20,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'base.account': '会计科目',
   'sales.customer': '客户',
   'purchase.supplier': '供应商',
+  'hr.employee': '员工',
   'sys.file': '附件',
   'sys.storage': '存储接入',
   'acc.gl_entry': '总账分录',

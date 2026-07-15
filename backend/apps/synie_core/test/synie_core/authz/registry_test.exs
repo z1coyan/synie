@@ -8,7 +8,7 @@ defmodule SynieCore.Authz.RegistryTest do
 
     assert prefixes ==
              Enum.sort(
-               ~w(sys.user sys.role sys.role_permission sys.audit_log sys.file sys.storage sys.numbering_rule base.company base.unit base.currency base.account sales.customer purchase.supplier acc.gl_entry acc.gl_journal acc.bank_account acc.bank_transaction acc.bank_import_template acc.vat_invoice acc.bill acc.bill_transaction acc.bill_holding acc.setting)
+               ~w(sys.user sys.role sys.role_permission sys.audit_log sys.file sys.storage sys.numbering_rule base.company base.unit base.currency base.account sales.customer purchase.supplier hr.employee acc.gl_entry acc.gl_journal acc.bank_account acc.bank_transaction acc.bank_import_template acc.vat_invoice acc.bill acc.bill_transaction acc.bill_holding acc.setting)
              )
   end
 

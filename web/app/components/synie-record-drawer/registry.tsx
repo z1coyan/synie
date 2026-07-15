@@ -1,5 +1,6 @@
 import { formatAmount } from '~/lib/amount'
 import { SynieAttachmentPanel } from '../synie-attachment-panel/SynieAttachmentPanel'
+import { SynieImageAttachment } from '../synie-attachment-panel/SynieImageAttachment'
 import type { SynieRecordDrawerProps } from './SynieRecordDrawer'
 
 /**
@@ -28,6 +29,41 @@ const registry: Record<string, ResourceDrawerConfig> = {
   basAccounts: { label: '科目' },
   salCustomers: { label: '客户' },
   purSuppliers: { label: '供应商' },
+  hrEmployees: {
+    label: '员工',
+    contentClassName: 'w-full lg:w-[640px]',
+    fields: {
+      // 编号必填但可留空自动取号(后端 AutoNumber),前端不标必填
+      code: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      name: { order: 1, cols: 6, required: true },
+      attendanceNo: { order: 2, cols: 6 },
+      phone: { order: 3, cols: 6 },
+      idNumber: { order: 4 },
+      householdRegistration: { order: 5 },
+      currentAddress: { order: 6 },
+      dailyWage: { order: 7, cols: 6, render: (v) => formatAmount(v) },
+      monthlyAllowance: { order: 8, cols: 6, render: (v) => formatAmount(v) },
+    },
+    // 身份证正/背面照片:附件槽位(owner+category),create 态无宿主 id,槽位自身显示提示
+    extraContent: (mode, row) => (
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SynieImageAttachment
+          ownerType="hr_employee"
+          ownerId={row?.id as string | undefined}
+          category="id_front"
+          label="身份证正面"
+          readonly={mode === 'view'}
+        />
+        <SynieImageAttachment
+          ownerType="hr_employee"
+          ownerId={row?.id as string | undefined}
+          category="id_back"
+          label="身份证背面"
+          readonly={mode === 'view'}
+        />
+      </div>
+    ),
+  },
   sysAuditLogs: { label: '操作日志' },
   sysNumberingRules: { label: '编号规则' },
   sysNumberingCounters: { label: '计数器' },
