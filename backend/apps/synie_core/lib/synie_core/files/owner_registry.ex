@@ -5,6 +5,7 @@ defmodule SynieCore.Files.OwnerRegistry do
     "sal_customer" => SynieCore.Sales.Customer,
     "pur_supplier" => SynieCore.Purchase.Supplier,
     "hr_employee" => SynieCore.Hr.Employee,
+    "inv_material" => SynieCore.Inv.Material,
     "acc_gl_journal" => SynieCore.Acc.GlJournal,
     "acc_bank_account" => SynieCore.Acc.BankAccount,
     "acc_bank_transaction" => SynieCore.Acc.BankTransaction,

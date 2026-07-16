@@ -29,6 +29,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'hr.payroll_payment': '工资发放',
   'hr.employee_loan': '员工借款',
   'inv.material_category': '物料分类',
+  'inv.material': '物料',
   'sys.file': '附件',
   'sys.storage': '存储接入',
   'acc.gl_entry': '总账分录',

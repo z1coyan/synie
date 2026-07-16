@@ -33,9 +33,10 @@ defmodule SynieCore.Inv.MaterialCategory do
   @moduledoc """
   物料分类,对应 `inv_material_category` 表。
 
-  全局共享的树形分类学(不分公司),编号人工定义、全局唯一,将来作为物料编号前缀
+  全局共享的树形分类学(不分公司),编号人工定义、全局唯一,作为物料编号前缀
   (编号可改,已生成的物料编号不追溯)。`is_leaf` 为硬约束:叶子分类不能有子分类,
-  (物料模块落地后)物料只能挂叶子分类。注意与科目 `is_group` 语义相反。
+  物料只能挂叶子分类;下有物料的分类不能删除、不能改为非叶子。
+  注意与科目 `is_group` 语义相反。
   """
 
   use Ash.Resource,
@@ -107,6 +108,17 @@ defmodule SynieCore.Inv.MaterialCategory do
           :ok
         end
       end
+
+      # 挂着物料的叶子不能改成非叶子(物料只能挂叶子,改了编号语义也整个变掉)
+      validate fn changeset, _context ->
+        if Ash.Changeset.changing_attribute?(changeset, :is_leaf) &&
+             Ash.Changeset.get_attribute(changeset, :is_leaf) == false &&
+             has_materials?(changeset.data.id) do
+          {:error, field: :is_leaf, message: "分类下存在物料,不能改为非叶子分类"}
+        else
+          :ok
+        end
+      end
     end
 
     destroy :destroy do
@@ -120,12 +132,26 @@ defmodule SynieCore.Inv.MaterialCategory do
           :ok
         end
       end
+
+      validate fn changeset, _context ->
+        if has_materials?(changeset.data.id) do
+          {:error, message: "分类下存在物料,不能删除"}
+        else
+          :ok
+        end
+      end
     end
   end
 
   defp has_children?(id) do
     __MODULE__
     |> Ash.Query.filter(parent_id == ^id)
+    |> Ash.exists?(authorize?: false)
+  end
+
+  defp has_materials?(id) do
+    SynieCore.Inv.Material
+    |> Ash.Query.filter(category_id == ^id)
     |> Ash.exists?(authorize?: false)
   end
 

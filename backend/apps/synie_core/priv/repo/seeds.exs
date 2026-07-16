@@ -59,3 +59,33 @@ else
 
   IO.puts("已创建内置存储接入 local(根目录 #{root})")
 end
+
+# 物料编号规则:分类编号+"-"+4 位序号,每叶子分类各自计数(计数范围=非序号段文本)。
+# 物料是全局主数据,不按公司计数。已有该资源规则(含用户改过的)则跳过,不覆盖。
+alias SynieCore.Numbering.Rule
+
+material_rule =
+  Rule
+  |> Ash.Query.filter(resource == "inv.material")
+  |> Ash.read!(authorize?: false)
+  |> List.first()
+
+if material_rule do
+  IO.puts("物料编号规则已存在,跳过创建")
+else
+  Rule
+  |> Ash.Changeset.for_create(:create, %{
+    resource: "inv.material",
+    name: "物料编号",
+    segments: [
+      %{"type" => "field", "field" => "category.code"},
+      %{"type" => "text", "value" => "-"},
+      %{"type" => "seq", "padding" => 4}
+    ],
+    per_company: false,
+    enabled: true
+  })
+  |> Ash.create!(authorize?: false)
+
+  IO.puts("已创建物料编号规则(分类编号-4 位序号)")
+end

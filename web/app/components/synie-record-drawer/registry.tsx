@@ -66,6 +66,22 @@ const registry: Record<string, ResourceDrawerConfig> = {
       </div>
     ),
   },
+  invMaterials: {
+    label: '物料',
+    contentClassName: 'w-full lg:w-[640px]',
+    fields: {
+      // 编号必填但可留空自动取号(后端 AutoNumber:分类编号-4 位序号),前端不标必填
+      code: { order: 0, cols: 6, placeholder: '留空自动编号(分类号-序号)' },
+      name: { order: 1, cols: 6, required: true },
+      // 物料只能挂启用的叶子分类(后端另有叶子校验兜底)
+      categoryId: { order: 2, cols: 6, required: true, remote: { filter: '{isLeaf: {eq: true}, active: {eq: true}}' } },
+      defaultUnitId: { order: 3, cols: 6, required: true },
+      spec: { order: 4, cols: 6, placeholder: '如 M8×30' },
+      customerPartNo: { order: 5, cols: 6 },
+      active: { order: 6, defaultValue: true },
+    },
+  },
+  invMaterialUnits: { label: '单位转换' },
   hrPayrolls: {
     label: '工资单',
     fields: {

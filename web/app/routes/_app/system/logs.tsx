@@ -49,6 +49,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   hr_payroll_payment: '工资发放记录',
   hr_employee_loan: '员工借款',
   inv_material_category: '物料分类',
+  inv_material: '物料',
+  inv_material_unit: '物料单位转换',
   sys_file: '附件文件',
   sys_attachment: '附件关联',
   sys_storage: '存储接入',
