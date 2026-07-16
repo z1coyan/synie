@@ -133,6 +133,90 @@ defmodule SynieCore.Base.AccountTest do
     end
   end
 
+  describe "科目角色" do
+    test "叶子科目可挂,汇总科目被拒", %{company: co} do
+      leaf =
+        account!(%{
+          code: "1122",
+          name: "应收账款",
+          direction: :debit,
+          role: :receivable,
+          company_id: co.id
+        })
+
+      assert leaf.role == :receivable
+
+      assert_raise Ash.Error.Invalid, ~r/汇总科目不能设置科目角色/, fn ->
+        account!(%{
+          code: "1",
+          name: "资产",
+          direction: :debit,
+          is_group: true,
+          role: :receivable,
+          company_id: co.id
+        })
+      end
+
+      # 已挂角色的科目改成汇总同样被拒
+      assert_raise Ash.Error.Invalid, ~r/汇总科目不能设置科目角色/, fn ->
+        leaf
+        |> Ash.Changeset.for_update(:update, %{is_group: true})
+        |> Ash.update!(authorize?: false)
+      end
+    end
+
+    test "外币科目不能挂角色,人民币科目可以", %{company: co} do
+      usd =
+        SynieCore.Base.Currency
+        |> Ash.Changeset.for_create(:create, %{name: "美元", iso_code: "USD", symbol: "$"})
+        |> Ash.create!(authorize?: false)
+
+      cny =
+        SynieCore.Base.Currency
+        |> Ash.Changeset.for_create(:create, %{name: "人民币", iso_code: "CNY", symbol: "¥"})
+        |> Ash.create!(authorize?: false)
+
+      assert_raise Ash.Error.Invalid, ~r/外币科目不能设置科目角色/, fn ->
+        account!(%{
+          code: "1122",
+          name: "应收账款",
+          direction: :debit,
+          role: :receivable,
+          currency_id: usd.id,
+          company_id: co.id
+        })
+      end
+
+      assert account!(%{
+               code: "1122",
+               name: "应收账款",
+               direction: :debit,
+               role: :receivable,
+               currency_id: cny.id,
+               company_id: co.id
+             }).role == :receivable
+    end
+
+    test "模板初始化预设四个往来科目的角色", %{company: co} do
+      Account
+      |> Ash.ActionInput.for_action(:init_from_template, %{company_id: co.id, template: :cas})
+      |> Ash.run_action!(authorize?: false)
+
+      roles =
+        Account
+        |> Ash.Query.filter(company_id == ^co.id and not is_nil(role))
+        |> Ash.read!(authorize?: false)
+        |> Map.new(&{&1.name, &1.role})
+
+      assert roles == %{
+               "应收账款" => :receivable,
+               "预付账款" => :advance_paid,
+               "应付账款" => :payable,
+               "预收账款" => :advance_received
+             }
+    end
+  end
+
   test "已有科目的公司不能重复初始化", %{company: co} do
     account!(%{code: "1", name: "资产", direction: :debit, company_id: co.id})
 

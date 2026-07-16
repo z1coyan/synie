@@ -183,7 +183,10 @@ function AccountsPage() {
           isGroup: { cols: 6, defaultValue: false },
           active: { cols: 6, defaultValue: true },
           currencyId: { cols: 6, label: '币种' },
+          // 科目角色:应收应付报表按角色圈定科目;仅叶子科目可挂(汇总科目隐藏,后端另有校验兜底)
+          role: { cols: 6, visible: (v) => v.isGroup !== true },
           parentId: {
+            cols: 6,
             label: '上级科目',
             // 候选限定在当前公司(后端另有同公司校验兜底)
             remote: { filter: `{companyId: {eq: ${JSON.stringify(companyId)}}}` },

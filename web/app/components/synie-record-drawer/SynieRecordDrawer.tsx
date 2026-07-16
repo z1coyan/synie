@@ -463,16 +463,28 @@ function FieldInput({
         <Select
           isDisabled={isDisabled}
           isRequired={field.required}
-          value={value == null ? null : String(value)}
-          onChange={(v) => onChange(v)}
+          value={value == null || value === '' ? null : String(value)}
+          onChange={(v) => onChange(v === '' ? null : v)}
         >
           <Label>{field.label}</Label>
           <Select.Trigger>
-            <Select.Value />
+            {/* RAC Select 无 placeholder prop,占位文案走 Value 的 render prop */}
+            <Select.Value>
+              {({ isPlaceholder, defaultChildren }) =>
+                isPlaceholder ? (field.placeholder ?? '请选择…') : defaultChildren
+              }
+            </Select.Value>
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
+              {/* 可选枚举给「(无)」清空项(空串 key 提交映射回 null),必填枚举不给 */}
+              {!field.required && (
+                <ListBox.Item key="" id="" textValue="(无)">
+                  <span className="text-muted">(无)</span>
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              )}
               {(field.col.enumOptions ?? []).map((o) => (
                 <ListBox.Item key={o.value} id={o.value} textValue={o.label}>
                   {o.label}

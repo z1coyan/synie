@@ -45,7 +45,13 @@ defmodule SynieCore.Acc.GlEntry do
       authorize_if always()
     end
 
-    policy always() do
+    # 应收应付报表是读能力的衍生视图,复用 read 码不新设权限点;
+    # 公司数据权限在实现内手动检查(泛型动作不走 CompanyScope)
+    policy action(:ar_ap_report) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "read"}
+    end
+
+    policy action_type([:read, :create, :update, :destroy]) do
       authorize_if SynieCore.Authz.Checks.HasPermission
     end
 
@@ -107,6 +113,15 @@ defmodule SynieCore.Acc.GlEntry do
     update :mark_reversed do
       accept []
       change set_attribute(:is_reversed, true)
+    end
+
+    action :ar_ap_report, :map do
+      description "应收应付报表:截至日按对手×科目角色轧差(纯 GL 口径)"
+
+      argument :company_id, :uuid, allow_nil?: false
+      argument :as_of, :date, allow_nil?: false
+
+      run SynieCore.Acc.ArApReport
     end
   end
 

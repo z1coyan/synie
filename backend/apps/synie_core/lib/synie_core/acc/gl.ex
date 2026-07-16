@@ -34,7 +34,8 @@ defmodule SynieCore.Acc.GL do
 
   @doc """
   校验分录组:行数≥2、每行恰一边非零(默认恰一边大于零,`opts[:allow_negative]`
-  放行负数)、借贷配平、对手成对、科目同公司且启用非汇总。
+  放行负数)、借贷配平、对手成对、科目同公司且启用非汇总、挂科目角色的科目
+  必须填对手(应收应付报表按对手归属,见 docs/adr/2026-07-16-ar-ap-report.md)。
   """
   def validate_entries(company_id, entries, opts \\ []) do
     with :ok <- check_count(entries),
@@ -202,7 +203,24 @@ defmodule SynieCore.Acc.GL do
       Enum.any?(accounts, &(&1.company_id != company_id)) -> {:error, "科目必须属于单据公司"}
       Enum.any?(accounts, & &1.is_group) -> {:error, "汇总科目不能入账"}
       Enum.any?(accounts, &(not &1.active)) -> {:error, "停用科目不能入账"}
-      true -> :ok
+      true -> check_role_party(accounts, entries)
+    end
+  end
+
+  # 挂了科目角色的科目(应收/应付类往来科目)分录必须带对手,否则应收应付报表无法归属。
+  # 红字行豁免:红冲拷贝原行,存量无对手行的红字组与原组在报表兜底行里正好对冲归零
+  defp check_role_party(accounts, entries) do
+    role_names = accounts |> Enum.filter(& &1.role) |> Map.new(&{&1.id, &1.name})
+
+    missing =
+      Enum.find(entries, fn entry ->
+        Map.has_key?(role_names, entry[:account_id]) and is_nil(entry[:party_id]) and
+          entry[:is_reversal] != true
+      end)
+
+    case missing do
+      nil -> :ok
+      entry -> {:error, "往来科目「#{role_names[entry[:account_id]]}」的分录必须填写对手"}
     end
   end
 

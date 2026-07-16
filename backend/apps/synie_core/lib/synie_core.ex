@@ -39,6 +39,9 @@ defmodule SynieCore do
       list SynieCore.Numbering.Counter, :sys_numbering_counters, :read, paginate_with: :offset
       list SynieCore.Files.Attachment, :sys_attachments, :read, paginate_with: :offset
       list SynieCore.Acc.GlEntry, :acc_gl_entries, :read, paginate_with: :offset
+
+      # 应收应付报表:截至日按对手×科目角色轧差,不落库
+      action SynieCore.Acc.GlEntry, :acc_ar_ap_report, :ar_ap_report
       list SynieCore.Acc.GlJournal, :acc_gl_journals, :read, paginate_with: :offset
       list SynieCore.Acc.GlJournalLine, :acc_gl_journal_lines, :read, paginate_with: :offset
       list SynieCore.Acc.BankAccount, :acc_bank_accounts, :read, paginate_with: :offset
