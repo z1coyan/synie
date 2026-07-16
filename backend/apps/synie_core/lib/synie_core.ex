@@ -20,6 +20,13 @@ defmodule SynieCore do
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
       list SynieCore.Hr.AttendancePunch, :hr_attendance_punches, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceImport, :hr_attendance_imports, :read, paginate_with: :offset
+      list SynieCore.Hr.AttendanceDay, :hr_attendance_days, :read, paginate_with: :offset
+
+      list SynieCore.Hr.AttendanceCorrection, :hr_attendance_corrections, :read,
+        paginate_with: :offset
+
+      # 月度考勤汇总(供工资):按月聚合,不落库
+      action SynieCore.Hr.AttendanceDay, :hr_attendance_month_summary, :month_summary
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
       list SynieCore.Numbering.Rule, :sys_numbering_rules, :read, paginate_with: :offset
       list SynieCore.Numbering.Counter, :sys_numbering_counters, :read, paginate_with: :offset
@@ -111,6 +118,12 @@ defmodule SynieCore do
       create SynieCore.Hr.AttendanceImport, :create_hr_attendance_import, :create
       update SynieCore.Hr.AttendanceImport, :import_hr_attendance_import, :import
       destroy SynieCore.Hr.AttendanceImport, :destroy_hr_attendance_import, :destroy
+
+      create SynieCore.Hr.AttendanceCorrection, :create_hr_attendance_correction, :create
+      update SynieCore.Hr.AttendanceCorrection, :update_hr_attendance_correction, :update
+      destroy SynieCore.Hr.AttendanceCorrection, :destroy_hr_attendance_correction, :destroy
+      # 区间重算兜底(导入/补卡已自动重算)
+      action SynieCore.Hr.AttendanceDay, :recalc_hr_attendance_days, :recalc
 
       # 文件的创建走 REST 上传端点(multipart 不过 GraphQL),这里只注册删除与解挂
       destroy SynieCore.Files.File, :destroy_sys_file, :destroy
@@ -205,6 +218,8 @@ defmodule SynieCore do
     resource SynieCore.Inv.MaterialCategory
     resource SynieCore.Hr.AttendancePunch
     resource SynieCore.Hr.AttendanceImport
+    resource SynieCore.Hr.AttendanceDay
+    resource SynieCore.Hr.AttendanceCorrection
     resource SynieCore.Acc.GlEntry
     resource SynieCore.Acc.GlJournal
     resource SynieCore.Acc.GlJournalLine

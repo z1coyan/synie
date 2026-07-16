@@ -177,6 +177,11 @@ defmodule SynieCore.Hr.AttendanceImport.ExecuteImport do
               stop_on_error?: true
             )
 
+          # 新打卡落库后重算受影响 (员工, 本地日) 的日考勤(同事务,整体成败一致)
+          rows
+          |> Enum.map(&{&1.employee_id, SynieCore.Hr.Attendance.Rules.local_date(&1.punched_at)})
+          |> SynieCore.Hr.Attendance.Recompute.recompute()
+
           {:ok, record}
       end
     end)
@@ -268,6 +273,37 @@ defmodule SynieCore.Hr.AttendanceImport.ExecuteImport do
 
     kept = Enum.reject(rows, &MapSet.member?(existing, {&1.employee_id, &1.punched_at}))
     {kept, length(rows) - length(kept)}
+  end
+end
+
+defmodule SynieCore.Hr.AttendanceImport.RecalcOnDestroy do
+  @moduledoc """
+  撤销批次后重算日考勤:before_action 收集本批打卡的 (员工, 本地日)(打卡由
+  库级联随批次删除,须在删前取数),after_action(级联已生效)按剩余打卡+补卡
+  重算——其他批次/补卡还有卡则行被重写,全空则派生行一并清掉。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    changeset
+    |> Ash.Changeset.before_action(fn cs ->
+      pairs =
+        SynieCore.Hr.AttendancePunch
+        |> Ash.Query.filter(import_id == ^cs.data.id)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(&{&1.employee_id, SynieCore.Hr.Attendance.Rules.local_date(&1.punched_at)})
+        |> Enum.uniq()
+
+      Ash.Changeset.set_context(cs, %{recalc_pairs: pairs})
+    end)
+    |> Ash.Changeset.after_action(fn cs, record ->
+      SynieCore.Hr.Attendance.Recompute.recompute(cs.context[:recalc_pairs] || [])
+      {:ok, record}
+    end)
   end
 end
 
@@ -371,6 +407,8 @@ defmodule SynieCore.Hr.AttendanceImport do
       require_atomic? false
       # 任何状态可删:删除即整批撤销(打卡级联删),是导错文件的纠正口子;
       # 与执行导入的竞态由行锁天然串行(删除等锁,提交后连同新写打卡一并级联)
+
+      change {SynieCore.Hr.AttendanceImport.RecalcOnDestroy, []}
     end
   end
 

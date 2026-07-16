@@ -21,6 +21,8 @@ defmodule SynieWeb.GridMeta do
     "invMaterialCategories" => SynieCore.Inv.MaterialCategory,
     "hrAttendancePunches" => SynieCore.Hr.AttendancePunch,
     "hrAttendanceImports" => SynieCore.Hr.AttendanceImport,
+    "hrAttendanceDays" => SynieCore.Hr.AttendanceDay,
+    "hrAttendanceCorrections" => SynieCore.Hr.AttendanceCorrection,
     "sysAuditLogs" => SynieCore.Audit.Log,
     "sysNumberingRules" => SynieCore.Numbering.Rule,
     "sysNumberingCounters" => SynieCore.Numbering.Counter,
@@ -231,7 +233,10 @@ defmodule SynieWeb.GridMeta do
   # 与 map(json_string 标量)若仍标 filterable,跨列搜索/该列筛选会拼出后端不存在的算子,
   # 导致整个查询报错。type 映射仍按 string 处理(展示不受影响)。
   defp filterable?({:array, _}), do: false
-  defp filterable?(type), do: type not in [Ash.Type.UUID, Ash.Type.Atom, Ash.Type.Map]
+
+  # Time 同样没有 contains 算子(日考勤四段时刻列展示即可,筛选走日期列)
+  defp filterable?(type),
+    do: type not in [Ash.Type.UUID, Ash.Type.Atom, Ash.Type.Map, Ash.Type.Time]
 
   defp capabilities(module, actor) do
     prefix = module.permission_prefix()

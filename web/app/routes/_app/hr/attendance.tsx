@@ -5,9 +5,13 @@ export const Route = createFileRoute('/_app/hr/attendance')({
   component: AttendanceLayout,
 })
 
-// 考勤两视图一页承载(照承兑 tabs 先例):打卡记录(原始事实台账,只读)、导入记录
-// (.dat 批次列表与上传/执行/撤销动线)。tab 即子路由,URL 可直达、可后退
+// 考勤五视图一页承载(照承兑 tabs 先例):日考勤(计算结果主视图)、月汇总(供工资)、
+// 补卡单(计算层修正)、打卡记录(原始事实台账,只读)、导入记录(.dat 批次动线)。
+// tab 即子路由,URL 可直达、可后退
 const TABS = [
+  { id: 'days', label: '日考勤' },
+  { id: 'monthly', label: '月汇总' },
+  { id: 'corrections', label: '补卡单' },
   { id: 'punches', label: '打卡记录' },
   { id: 'imports', label: '导入记录' },
 ] as const
@@ -15,7 +19,7 @@ const TABS = [
 function AttendanceLayout() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const selected = TABS.find((t) => pathname.includes(`/hr/attendance/${t.id}`))?.id ?? 'punches'
+  const selected = TABS.find((t) => pathname.includes(`/hr/attendance/${t.id}`))?.id ?? 'days'
 
   return (
     <>

@@ -38,6 +38,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   pur_supplier: '供应商',
   hr_employee: '员工',
   hr_attendance_import: '考勤导入',
+  hr_attendance_correction: '补卡单',
   inv_material_category: '物料分类',
   sys_file: '附件文件',
   sys_attachment: '附件关联',

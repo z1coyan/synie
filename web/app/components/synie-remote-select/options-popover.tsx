@@ -11,6 +11,23 @@ import {
 } from '@heroui/react'
 import type { Row } from '../synie-data-grid/types'
 import { optionLabel, type ResolvedSource } from './remote-query'
+
+// 默认下拉项:label 单行;数据源声明了副行字段(如员工的 工号/考勤机编号)则加灰色副行
+function defaultItem(src: ResolvedSource, row: Row) {
+  const subtitle = src.itemSubtitleFields
+    .map((f) => row[f])
+    .filter((v) => v != null && v !== '')
+    .join(' · ')
+
+  if (!subtitle) return optionLabel(src, row)
+
+  return (
+    <div className="flex min-w-0 flex-col">
+      <span className="truncate">{optionLabel(src, row)}</span>
+      <span className="truncate text-xs text-muted">{subtitle}</span>
+    </div>
+  )
+}
 import type { useRemoteOptions } from './use-remote'
 
 /** 桌面断点(lg,1024px)才自动聚焦搜索框,避免移动端弹层一打开就唤起键盘 */
@@ -68,7 +85,7 @@ export function RemoteOptionsPopover({
             <Collection items={rows}>
               {(row: Row) => (
                 <ListBox.Item id={row.id} textValue={optionLabel(src, row)}>
-                  {renderItem ? renderItem(row) : optionLabel(src, row)}
+                  {renderItem ? renderItem(row) : defaultItem(src, row)}
                   <ListBox.ItemIndicator />
                 </ListBox.Item>
               )}
