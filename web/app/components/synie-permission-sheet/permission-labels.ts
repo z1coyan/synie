@@ -23,6 +23,8 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'purchase.supplier': '供应商',
   'hr.employee': '员工',
   'hr.attendance_punch': '打卡记录',
+  'hr.attendance_day': '日考勤',
+  'hr.attendance_correction': '补卡单',
   'inv.material_category': '物料分类',
   'sys.file': '附件',
   'sys.storage': '存储接入',
@@ -54,6 +56,7 @@ export const ACTION_LABELS: Record<string, string> = {
   void: '作废',
   reverse: '红冲',
   reconcile: '对账',
+  recalc: '重算',
 }
 
 export const domainLabel = (d: string) => DOMAIN_LABELS[d] ?? d
