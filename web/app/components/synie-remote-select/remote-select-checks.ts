@@ -22,7 +22,26 @@ eq(resolveSource({}, ref), {
   filter: null,
   fields: [],
   pageSize: 20,
+  itemSubtitleFields: [],
 }, 'ref 默认值')
+
+// —— 资源级默认:员工三字段搜索 + 编号副行;页面 config 仍可覆盖 ——
+const emp = resolveSource({ resource: 'hrEmployees' })!
+eq(emp.searchFields, ['name', 'code', 'attendanceNo'], '员工资源级默认搜索字段')
+eq(emp.itemSubtitleFields, ['code', 'attendanceNo'], '员工资源级默认副行字段')
+eq(
+  resolveSource({ resource: 'hrEmployees', searchFields: ['name'] })!.searchFields,
+  ['name'],
+  'config 覆盖资源级默认'
+)
+eq(
+  buildOptionsQuery(emp, '9001', 0).includes(
+    '{or: [{name: {contains: "9001"}}, {code: {contains: "9001"}}, {attendanceNo: {contains: "9001"}}]}'
+  ),
+  true,
+  '员工搜索拼三字段 contains OR'
+)
+eq(buildOptionsQuery(emp, '', 0).includes('results { id name code attendanceNo }'), true, '副行字段并入取回')
 eq(
   resolveSource({ resource: 'sysUsers', labelField: 'username', searchFields: ['username', 'name'], filter: '{enabled: {eq: true}}', fields: ['name'], pageSize: 50 }, ref)!.resource,
   'sysUsers',

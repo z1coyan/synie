@@ -20,6 +20,8 @@ export interface RemoteSourceConfig {
   renderItem?: (row: Row) => ReactNode
   /** 选中回填渲染,默认 label 文本/chip */
   renderValue?: (row: Row) => ReactNode
+  /** 默认下拉项的副行字段(值非空的用 · 连接);自定义 renderItem 时无效 */
+  itemSubtitleFields?: string[]
 }
 
 export interface ResolvedSource {
@@ -30,21 +32,37 @@ export interface ResolvedSource {
   filter: string | null
   fields: string[]
   pageSize: number
+  itemSubtitleFields: string[]
+}
+
+/**
+ * 资源级数据源默认(优先级:页面 config > 本表 > 通用兜底),全站该资源的
+ * RemoteSelect 族与表格 fk 筛选器一并生效。员工按 姓名/工号/考勤机编号 三字段
+ * 搜索并在下拉项带编号副行——大量占位 [未知] 员工只能靠编号区分(补卡选人/考勤各表筛选)。
+ */
+const RESOURCE_DEFAULTS: Record<string, Partial<RemoteSourceConfig>> = {
+  hrEmployees: {
+    searchFields: ['name', 'code', 'attendanceNo'],
+    itemSubtitleFields: ['code', 'attendanceNo'],
+  },
 }
 
 /** gridMeta ref 提供默认,页面 config 覆盖;二者都无 resource 时 null(调用方退化 TextField) */
 export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumnRef | null): ResolvedSource | null {
   const resource = cfg.resource ?? ref?.resource
   if (!resource) return null
+  const defaults = RESOURCE_DEFAULTS[resource] ?? {}
   const labelField = cfg.labelField ?? ref?.labelField ?? 'name'
+  const searchFields = cfg.searchFields?.length ? cfg.searchFields : defaults.searchFields
   return {
     resource,
     labelField,
     sortField: cfg.sortField ?? labelField,
-    searchFields: cfg.searchFields?.length ? cfg.searchFields : [labelField],
+    searchFields: searchFields?.length ? searchFields : [labelField],
     filter: cfg.filter ?? null,
-    fields: cfg.fields ?? [],
+    fields: cfg.fields ?? defaults.fields ?? [],
     pageSize: cfg.pageSize ?? 20,
+    itemSubtitleFields: cfg.renderItem ? [] : (cfg.itemSubtitleFields ?? defaults.itemSubtitleFields ?? []),
   }
 }
 
@@ -57,7 +75,8 @@ export function resolveFkTarget(ref: GridColumnRef, row: Row): { resource: strin
   return ref.resource ? { resource: ref.resource, labelField: ref.labelField ?? 'name' } : null
 }
 
-const selectionFields = (src: ResolvedSource): string => [...new Set(['id', src.labelField, ...src.fields])].join(' ')
+const selectionFields = (src: ResolvedSource): string =>
+  [...new Set(['id', src.labelField, ...src.fields, ...src.itemSubtitleFields])].join(' ')
 
 /** 选项分页查询:sortField(默认 labelField)升序稳定排序;搜索词 JSON.stringify 转义后拼 contains OR */
 export function buildOptionsQuery(src: ResolvedSource, search: string, offset: number): string {
