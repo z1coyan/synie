@@ -253,6 +253,36 @@ defmodule SynieCore.Hr.PayrollTest do
     assert reload(payroll).status == :pending
   end
 
+  test "pay_remaining 一键发放:锁内按未发差额计价,无差额拒绝" do
+    employee = employee!(%{})
+    payroll = payroll!(employee, %{workdays: Decimal.new(10), daily_wage: Decimal.new(100)})
+
+    pay_remaining = fn ->
+      PayrollPayment
+      |> Ash.Changeset.for_create(:pay_remaining, %{
+        payroll_id: payroll.id,
+        paid_on: ~D[2026-07-05]
+      })
+      |> Ash.create!(authorize?: false)
+    end
+
+    paid = pay_remaining.()
+    assert Decimal.equal?(paid.amount, Decimal.new(1000))
+    assert paid.kind == :normal
+    assert reload(payroll).status == :paid
+
+    # 已无差额再发被拒(防过期差额重复发放)
+    assert_raise Ash.Error.Invalid, fn -> pay_remaining.() end
+
+    # 部分发放后一键补齐:金额=剩余差额,类型=补发
+    :ok = paid |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)
+    payment!(payroll, %{amount: Decimal.new(400)})
+
+    supplement = pay_remaining.()
+    assert Decimal.equal?(supplement.amount, Decimal.new(600))
+    assert supplement.kind == :supplement
+  end
+
   test "补发不再校验借款余额,也不再生成归还行" do
     employee = employee!(%{})
     loan!(employee, %{amount: Decimal.new(300)})

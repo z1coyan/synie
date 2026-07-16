@@ -139,8 +139,9 @@ defmodule SynieCore do
       destroy SynieCore.Hr.Payroll, :destroy_hr_payroll, :destroy
       action SynieCore.Hr.Payroll, :generate_hr_payrolls, :generate
 
-      # 发放记录:创建即发放(翻转工资单),不可改只可删重录
+      # 发放记录:创建即发放(翻转工资单),不可改只可删重录;pay_remaining 一键发未发差额
       create SynieCore.Hr.PayrollPayment, :create_hr_payroll_payment, :create
+      create SynieCore.Hr.PayrollPayment, :pay_remaining_hr_payroll_payment, :pay_remaining
       destroy SynieCore.Hr.PayrollPayment, :destroy_hr_payroll_payment, :destroy
 
       create SynieCore.Hr.EmployeeLoan, :create_hr_employee_loan, :create

@@ -44,3 +44,8 @@ export const PAYMENT_KIND_LABELS: Record<string, string> = {
   NORMAL: '发放',
   SUPPLEMENT: '补发',
 }
+
+export const today = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}

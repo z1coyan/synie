@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, toast } from '@heroui/react'
+import { AlertDialog, Button, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
+import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { MonthSelect, monthOptions } from './-shared'
+import { MonthSelect, monthOptions, today } from './-shared'
 import { PaymentsSection } from './-payments-section'
 
 export const Route = createFileRoute('/_app/hr/payroll/slips')({
@@ -41,6 +42,14 @@ const REFRESH_PAYROLL = `
     refreshHrPayroll(id: $id) { result { id } errors { message } }
   }
 `
+const PAY_REMAINING = `
+  mutation ($input: PayRemainingHrPayrollPaymentInput!) {
+    payRemainingHrPayrollPayment(input: $input) { result { id } errors { message } }
+  }
+`
+
+// 未发差额(以行数据估算,仅作展示;实发金额由后端锁内权威计算)
+const remainingOf = (row: Row) => Number(row.payable || 0) - Number(row.paidTotal || 0)
 
 interface MonthStats {
   count: number
@@ -87,7 +96,13 @@ function PayrollSlipsPage() {
   const [month, setMonth] = useState(options[0].value)
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [payDialog, setPayDialog] = useState<Row[] | null>(null)
+  const [paying, setPaying] = useState(false)
   const queryClient = useQueryClient()
+
+  // 发放按 hr_payroll_payment 自身权限码门控(发放≠改单)
+  const paymentsMeta = useGridMeta('hrPayrollPayments')
+  const canPay = (paymentsMeta.data?.capabilities ?? []).includes('create')
 
   const stats = useQuery({
     queryKey: ['payrollMonthStats', month],
@@ -128,6 +143,34 @@ function PayrollSlipsPage() {
     } finally {
       setGenerating(false)
     }
+  }
+
+  // 一键发放:后端锁内按 应发−已发 计算金额,这里只挑差额>0 的行发起
+  const runPay = async () => {
+    const targets = (payDialog ?? []).filter((r) => remainingOf(r) > 0)
+    setPaying(true)
+    let done = 0
+    const failures: string[] = []
+
+    for (const row of targets) {
+      try {
+        const data = await gqlFetch<{
+          payRemainingHrPayrollPayment: { errors: { message: string }[] | null }
+        }>(PAY_REMAINING, { input: { payrollId: row.id, paidOn: today() } })
+        const errors = data.payRemainingHrPayrollPayment.errors
+        if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+        done += 1
+      } catch (e) {
+        failures.push((e as Error).message)
+      }
+    }
+
+    setPaying(false)
+    setPayDialog(null)
+    if (done > 0) toast.success(`已发放 ${done} 张工资单`)
+    if (failures.length > 0)
+      toast.danger(`${failures.length} 张发放失败`, { description: failures[0] })
+    invalidateAll()
   }
 
   const refresh = async (row: Row) => {
@@ -182,6 +225,10 @@ function PayrollSlipsPage() {
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: row.status === 'PENDING' ? 'edit' : 'view', row })}
           rowActions={[
+            // 发放按 hr_payroll_payment:create 门控,不能用本表 capability 字段(那是 hr.payroll 的码)
+            ...(canPay
+              ? [{ key: 'pay', label: '发放', onAction: (row: Row) => setPayDialog([row]) }]
+              : []),
             {
               key: 'refresh',
               label: '重取快照',
@@ -189,6 +236,11 @@ function PayrollSlipsPage() {
               onAction: (row) => void refresh(row),
             },
           ]}
+          bulkActions={
+            canPay
+              ? [{ key: 'payRemaining', label: '批量发放', onAction: (rows) => setPayDialog(rows) }]
+              : undefined
+          }
           onMutated={invalidateAll}
         />
       </div>
@@ -254,6 +306,47 @@ function PayrollSlipsPage() {
           mode !== 'create' && row ? <PaymentsSection payroll={row} onChanged={invalidateAll} /> : null
         }
       />
+
+      <AlertDialog.Backdrop isOpen={payDialog !== null} onOpenChange={(open) => !open && setPayDialog(null)}>
+        <AlertDialog.Container>
+          <AlertDialog.Dialog className="sm:max-w-[440px]" aria-label="确认发放">
+            <AlertDialog.Header>
+              <AlertDialog.Heading>确认发放?</AlertDialog.Heading>
+            </AlertDialog.Header>
+            <AlertDialog.Body>
+              {(() => {
+                const rows = payDialog ?? []
+                const targets = rows.filter((r) => remainingOf(r) > 0)
+                const total = targets.reduce((acc, r) => acc + remainingOf(r), 0)
+                const skipped = rows.length - targets.length
+
+                return targets.length === 0 ? (
+                  <p className="text-sm text-ink-500">所选工资单均无未发差额,无需发放。</p>
+                ) : (
+                  <p className="text-sm text-ink-500">
+                    将按未发差额(应发 − 已发)发放 <span className="font-medium">{targets.length}</span> 张工资单,
+                    合计 <span className="font-medium">{formatAmount(String(total))}</span>
+                    {skipped > 0 ? `;${skipped} 张已发放完毕,自动跳过` : ''}。发放日期取今天,金额以后端实时核算为准。
+                  </p>
+                )
+              })()}
+            </AlertDialog.Body>
+            <AlertDialog.Footer>
+              <Button slot="close" variant="tertiary" isDisabled={paying}>
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                isPending={paying}
+                isDisabled={(payDialog ?? []).every((r) => remainingOf(r) <= 0)}
+                onPress={() => void runPay()}
+              >
+                发放
+              </Button>
+            </AlertDialog.Footer>
+          </AlertDialog.Dialog>
+        </AlertDialog.Container>
+      </AlertDialog.Backdrop>
     </>
   )
 }

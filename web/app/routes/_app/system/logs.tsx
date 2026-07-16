@@ -22,6 +22,7 @@ const ACTION_LABELS: Record<string, string> = {
   refresh_reconcile: '对账刷新',
   import: '执行导入',
   refresh: '重取快照',
+  pay_remaining: '一键发放',
   mark_paid: '标记已发放',
   mark_pending: '翻回待发放',
   auto_repay: '联动归还',

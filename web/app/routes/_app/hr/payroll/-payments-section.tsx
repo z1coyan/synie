@@ -6,7 +6,7 @@ import { formatAmount } from '~/lib/amount'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
-import { PAYMENT_KIND_LABELS } from './-shared'
+import { PAYMENT_KIND_LABELS, today } from './-shared'
 
 const FETCH_PAYMENTS = `
   query ($payrollId: ID!) {
@@ -32,11 +32,6 @@ interface PaymentRow {
   amount: string
   kind: 'NORMAL' | 'SUPPLEMENT'
   remarks: string | null
-}
-
-const today = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 /**

@@ -17,6 +17,10 @@ defmodule SynieCore.Hr.PayrollPayment do
   (多发冲回)、禁止为零。不可修改,只可删除重录(审计口径干净);删除后该工资单
   已无任何发放记录时自动翻回待发放并删除联动归还行。
 
+  `pay_remaining` 一键发放(行动作/批量发放共用):金额不收前端,事务内锁单后
+  按 应发 − 已发 权威计算,差额 ≤ 0 拒绝——前端拿到的差额可能过期,以锁内计算
+  为准防重复发放;其余联动与 `create` 完全一致。
+
   员工/月份自工资单去规范化(发放流水页按员工/月直筛),不可手填;属性层可空是
   技术让步(必填校验先于 before_action,照承兑交易 bill_id 先例),实际由
   before_action 强制回填。全局不挂公司(照 hr 域先例)。
@@ -50,6 +54,11 @@ defmodule SynieCore.Hr.PayrollPayment do
   policies do
     bypass actor_attribute_equals(:super_admin, true) do
       authorize_if always()
+    end
+
+    # 一键发放=创建发放记录的快捷形态,复用 create 码不新设权限点
+    policy action(:pay_remaining) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "create"}
     end
 
     policy action([:read, :create, :destroy]) do
@@ -101,6 +110,30 @@ defmodule SynieCore.Hr.PayrollPayment do
       change fn changeset, context ->
         changeset
         |> Ash.Changeset.before_action(fn cs -> __MODULE__.prepare_create(cs) end)
+        |> Ash.Changeset.after_action(fn _cs, payment ->
+          __MODULE__.settle_create(payment, context.actor)
+        end)
+      end
+    end
+
+    create :pay_remaining do
+      # 一键发放未发差额:金额不收前端,锁内权威计算(见 moduledoc)
+      accept [:payroll_id, :paid_on, :remarks]
+
+      # 经办人自动取 actor;nil actor 只出现在受信内部路径,允许留空
+      change fn changeset, context ->
+        case context.actor do
+          %SynieCore.Authz.Actor{user_id: user_id} ->
+            Ash.Changeset.force_change_attribute(changeset, :created_by_id, user_id)
+
+          _ ->
+            changeset
+        end
+      end
+
+      change fn changeset, context ->
+        changeset
+        |> Ash.Changeset.before_action(fn cs -> __MODULE__.prepare_pay_remaining(cs) end)
         |> Ash.Changeset.after_action(fn _cs, payment ->
           __MODULE__.settle_create(payment, context.actor)
         end)
@@ -194,34 +227,69 @@ defmodule SynieCore.Hr.PayrollPayment do
   def prepare_create(changeset) do
     case SynieCore.Hr.Payroll.lock(Ash.Changeset.get_attribute(changeset, :payroll_id)) do
       {:ok, %SynieCore.Hr.Payroll{} = payroll} ->
-        kind = if payroll.status == :pending, do: :normal, else: :supplement
+        apply_payroll_context(changeset, payroll)
 
-        changeset =
+      _ ->
+        Ash.Changeset.add_error(changeset, field: :payroll_id, message: "工资单不存在")
+    end
+  end
+
+  @doc false
+  # 一键发放:锁工资单 → 锁内算差额(应发 − 已发,≤0 拒绝)→ 其余联动同 prepare_create
+  def prepare_pay_remaining(changeset) do
+    case SynieCore.Hr.Payroll.lock(Ash.Changeset.get_attribute(changeset, :payroll_id)) do
+      {:ok, %SynieCore.Hr.Payroll{} = payroll} ->
+        remaining = Decimal.sub(payroll.payable, paid_sum(payroll.id))
+
+        if Decimal.compare(remaining, 0) == :gt do
           changeset
-          |> Ash.Changeset.force_change_attribute(:kind, kind)
-          |> Ash.Changeset.force_change_attribute(:employee_id, payroll.employee_id)
-          |> Ash.Changeset.force_change_attribute(:month, payroll.month)
-
-        if kind == :normal and Decimal.compare(payroll.loan_deduction, 0) == :gt do
-          balance = SynieCore.Hr.EmployeeLoan.balance(payroll.employee_id)
-
-          if Decimal.compare(balance, payroll.loan_deduction) == :lt do
-            Ash.Changeset.add_error(changeset,
-              field: :payroll_id,
-              message:
-                "借款抵扣(#{payroll.loan_deduction})超过员工借款余额(#{balance})," <>
-                  "请先修正工资单借款抵扣或补录借款"
-            )
-          else
-            changeset
-          end
+          |> Ash.Changeset.force_change_attribute(:amount, remaining)
+          |> apply_payroll_context(payroll)
         else
-          changeset
+          Ash.Changeset.add_error(changeset,
+            field: :payroll_id,
+            message: "该工资单已无未发差额(应发 #{payroll.payable},已发放完毕)"
+          )
         end
 
       _ ->
         Ash.Changeset.add_error(changeset, field: :payroll_id, message: "工资单不存在")
     end
+  end
+
+  # 两条创建路径共用:判别类型/回填员工与月份/翻转前校验借款余额(调用方已持工资单行锁)
+  defp apply_payroll_context(changeset, payroll) do
+    kind = if payroll.status == :pending, do: :normal, else: :supplement
+
+    changeset =
+      changeset
+      |> Ash.Changeset.force_change_attribute(:kind, kind)
+      |> Ash.Changeset.force_change_attribute(:employee_id, payroll.employee_id)
+      |> Ash.Changeset.force_change_attribute(:month, payroll.month)
+
+    if kind == :normal and Decimal.compare(payroll.loan_deduction, 0) == :gt do
+      balance = SynieCore.Hr.EmployeeLoan.balance(payroll.employee_id)
+
+      if Decimal.compare(balance, payroll.loan_deduction) == :lt do
+        Ash.Changeset.add_error(changeset,
+          field: :payroll_id,
+          message:
+            "借款抵扣(#{payroll.loan_deduction})超过员工借款余额(#{balance})," <>
+              "请先修正工资单借款抵扣或补录借款"
+        )
+      else
+        changeset
+      end
+    else
+      changeset
+    end
+  end
+
+  defp paid_sum(payroll_id) do
+    __MODULE__
+    |> Ash.Query.filter(payroll_id == ^payroll_id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.reduce(Decimal.new(0), &Decimal.add(&1.amount, &2))
   end
 
   @doc false
