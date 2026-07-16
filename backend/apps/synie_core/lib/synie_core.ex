@@ -27,6 +27,13 @@ defmodule SynieCore do
 
       # 月度考勤汇总(供工资):按月聚合,不落库
       action SynieCore.Hr.AttendanceDay, :hr_attendance_month_summary, :month_summary
+      list SynieCore.Hr.Payroll, :hr_payrolls, :read, paginate_with: :offset
+      list SynieCore.Hr.PayrollPayment, :hr_payroll_payments, :read, paginate_with: :offset
+      list SynieCore.Hr.EmployeeLoan, :hr_employee_loans, :read, paginate_with: :offset
+
+      # 月度薪资统计(列表统计条)与员工借款余额汇总:读能力衍生视图,不落库
+      action SynieCore.Hr.Payroll, :hr_payroll_month_stats, :month_stats
+      action SynieCore.Hr.EmployeeLoan, :hr_employee_loan_balances, :balances
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
       list SynieCore.Numbering.Rule, :sys_numbering_rules, :read, paginate_with: :offset
       list SynieCore.Numbering.Counter, :sys_numbering_counters, :read, paginate_with: :offset
@@ -125,6 +132,22 @@ defmodule SynieCore do
       # 区间重算兜底(导入/补卡已自动重算)
       action SynieCore.Hr.AttendanceDay, :recalc_hr_attendance_days, :recalc
 
+      # 工资单:generate 按月批量生成、refresh 重取快照;状态翻转由发放记录联动,无独立 mutation
+      create SynieCore.Hr.Payroll, :create_hr_payroll, :create
+      update SynieCore.Hr.Payroll, :update_hr_payroll, :update
+      update SynieCore.Hr.Payroll, :refresh_hr_payroll, :refresh
+      destroy SynieCore.Hr.Payroll, :destroy_hr_payroll, :destroy
+      action SynieCore.Hr.Payroll, :generate_hr_payrolls, :generate
+
+      # 发放记录:创建即发放(翻转工资单),不可改只可删重录;pay_remaining 一键发未发差额
+      create SynieCore.Hr.PayrollPayment, :create_hr_payroll_payment, :create
+      create SynieCore.Hr.PayrollPayment, :pay_remaining_hr_payroll_payment, :pay_remaining
+      destroy SynieCore.Hr.PayrollPayment, :destroy_hr_payroll_payment, :destroy
+
+      create SynieCore.Hr.EmployeeLoan, :create_hr_employee_loan, :create
+      update SynieCore.Hr.EmployeeLoan, :update_hr_employee_loan, :update
+      destroy SynieCore.Hr.EmployeeLoan, :destroy_hr_employee_loan, :destroy
+
       # 文件的创建走 REST 上传端点(multipart 不过 GraphQL),这里只注册删除与解挂
       destroy SynieCore.Files.File, :destroy_sys_file, :destroy
       destroy SynieCore.Files.Attachment, :destroy_sys_attachment, :destroy
@@ -220,6 +243,9 @@ defmodule SynieCore do
     resource SynieCore.Hr.AttendanceImport
     resource SynieCore.Hr.AttendanceDay
     resource SynieCore.Hr.AttendanceCorrection
+    resource SynieCore.Hr.Payroll
+    resource SynieCore.Hr.PayrollPayment
+    resource SynieCore.Hr.EmployeeLoan
     resource SynieCore.Acc.GlEntry
     resource SynieCore.Acc.GlJournal
     resource SynieCore.Acc.GlJournalLine
