@@ -24,10 +24,11 @@ defmodule SynieCore.Base.AccountTemplates do
   end
 
   defp root(code, name, dir),
-    do: %{code: code, name: name, direction: dir, is_group: true, parent: nil}
+    do: %{code: code, name: name, direction: dir, is_group: true, parent: nil, role: nil}
 
-  defp acc(code, name, dir, parent),
-    do: %{code: code, name: name, direction: dir, is_group: false, parent: parent}
+  # role:科目角色预设(应收/应付/预收/预付四个标准往来科目,见 docs/adr/2026-07-16-ar-ap-report.md)
+  defp acc(code, name, dir, parent, role \\ nil),
+    do: %{code: code, name: name, direction: dir, is_group: false, parent: parent, role: role}
 
   @doc "扁平科目条目,parent 引用父条目 code(根为 nil)"
   def entries(:cas) do
@@ -46,8 +47,8 @@ defmodule SynieCore.Base.AccountTemplates do
       acc("1012", "其他货币资金", :debit, "1"),
       acc("1101", "交易性金融资产", :debit, "1"),
       acc("1121", "应收票据", :debit, "1"),
-      acc("1122", "应收账款", :debit, "1"),
-      acc("1123", "预付账款", :debit, "1"),
+      acc("1122", "应收账款", :debit, "1", :receivable),
+      acc("1123", "预付账款", :debit, "1", :advance_paid),
       acc("1131", "应收股利", :debit, "1"),
       acc("1132", "应收利息", :debit, "1"),
       acc("1221", "其他应收款", :debit, "1"),
@@ -89,8 +90,8 @@ defmodule SynieCore.Base.AccountTemplates do
       acc("2001", "短期借款", :credit, "2"),
       acc("2101", "交易性金融负债", :credit, "2"),
       acc("2201", "应付票据", :credit, "2"),
-      acc("2202", "应付账款", :credit, "2"),
-      acc("2203", "预收账款", :credit, "2"),
+      acc("2202", "应付账款", :credit, "2", :payable),
+      acc("2203", "预收账款", :credit, "2", :advance_received),
       acc("2211", "应付职工薪酬", :credit, "2"),
       acc("2221", "应交税费", :credit, "2"),
       acc("2231", "应付利息", :credit, "2"),
@@ -158,8 +159,8 @@ defmodule SynieCore.Base.AccountTemplates do
       acc("1012", "其他货币资金", :debit, "1"),
       acc("1101", "短期投资", :debit, "1"),
       acc("1121", "应收票据", :debit, "1"),
-      acc("1122", "应收账款", :debit, "1"),
-      acc("1123", "预付账款", :debit, "1"),
+      acc("1122", "应收账款", :debit, "1", :receivable),
+      acc("1123", "预付账款", :debit, "1", :advance_paid),
       acc("1131", "应收股利", :debit, "1"),
       acc("1132", "应收利息", :debit, "1"),
       acc("1221", "其他应收款", :debit, "1"),
@@ -189,8 +190,8 @@ defmodule SynieCore.Base.AccountTemplates do
       # 负债类
       acc("2001", "短期借款", :credit, "2"),
       acc("2201", "应付票据", :credit, "2"),
-      acc("2202", "应付账款", :credit, "2"),
-      acc("2203", "预收账款", :credit, "2"),
+      acc("2202", "应付账款", :credit, "2", :payable),
+      acc("2203", "预收账款", :credit, "2", :advance_received),
       acc("2211", "应付职工薪酬", :credit, "2"),
       acc("2221", "应交税费", :credit, "2"),
       acc("2231", "应付利息", :credit, "2"),
@@ -240,9 +241,9 @@ defmodule SynieCore.Base.AccountTemplates do
       # 资产
       acc("1001", "库存现金", :debit, "1"),
       acc("1002", "银行存款", :debit, "1"),
-      acc("1101", "应收账款", :debit, "1"),
+      acc("1101", "应收账款", :debit, "1", :receivable),
       acc("1102", "其他应收款", :debit, "1"),
-      acc("1103", "预付账款", :debit, "1"),
+      acc("1103", "预付账款", :debit, "1", :advance_paid),
       acc("1201", "存货", :debit, "1"),
       acc("1202", "原材料", :debit, "1"),
       acc("1301", "固定资产", :debit, "1"),
@@ -253,9 +254,9 @@ defmodule SynieCore.Base.AccountTemplates do
 
       # 负债
       acc("2001", "短期借款", :credit, "2"),
-      acc("2101", "应付账款", :credit, "2"),
+      acc("2101", "应付账款", :credit, "2", :payable),
       acc("2102", "其他应付款", :credit, "2"),
-      acc("2103", "预收账款", :credit, "2"),
+      acc("2103", "预收账款", :credit, "2", :advance_received),
       acc("2201", "应付职工薪酬", :credit, "2"),
       acc("2202", "应交税费", :credit, "2"),
       acc("2301", "长期借款", :credit, "2"),

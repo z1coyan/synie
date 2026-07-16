@@ -6,6 +6,76 @@ defmodule SynieCore.Base.AccountDirection do
   def graphql_type(_), do: :account_direction
 end
 
+defmodule SynieCore.Base.AccountRole do
+  @moduledoc """
+  科目角色:标记科目在应收应付口径下的用途,应收应付报表按角色圈定科目范围。
+  决策见 docs/adr/2026-07-16-ar-ap-report.md;同公司多科目可挂同一角色,报表合并。
+  """
+
+  use Ash.Type.Enum,
+    values: [
+      unbilled_receivable: "未开票应收",
+      receivable: "应收账款",
+      advance_received: "预收账款",
+      unbilled_payable: "未开票应付",
+      payable: "应付账款",
+      advance_paid: "预付账款"
+    ]
+
+  def graphql_type(_), do: :bas_account_role
+
+  @doc "应收侧三角色(顺序即报表列序)"
+  def receivable_roles, do: [:unbilled_receivable, :receivable, :advance_received]
+
+  @doc "应付侧三角色(顺序即报表列序)"
+  def payable_roles, do: [:unbilled_payable, :payable, :advance_paid]
+
+  @doc "角色自然方向:debit 角色余额=借−贷,credit 角色余额=贷−借"
+  def natural_direction(role) when role in [:unbilled_receivable, :receivable, :advance_paid],
+    do: :debit
+
+  def natural_direction(role) when role in [:unbilled_payable, :payable, :advance_received],
+    do: :credit
+end
+
+defmodule SynieCore.Base.AccountRoleGuard do
+  @moduledoc """
+  校验科目角色挂载条件:只允许叶子(非汇总)科目——分录只能记叶子,圈叶子即完备;
+  外币科目不可挂——报表不做折算(均见 docs/adr/2026-07-16-ar-ap-report.md)。
+  """
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    cond do
+      is_nil(Ash.Changeset.get_attribute(changeset, :role)) ->
+        :ok
+
+      Ash.Changeset.get_attribute(changeset, :is_group) ->
+        {:error, field: :role, message: "汇总科目不能设置科目角色"}
+
+      true ->
+        check_currency(changeset)
+    end
+  end
+
+  # currency 为空视作本位币;非空时仅人民币科目可挂角色
+  defp check_currency(changeset) do
+    case Ash.Changeset.get_attribute(changeset, :currency_id) do
+      nil ->
+        :ok
+
+      currency_id ->
+        case Ash.get(SynieCore.Base.Currency, currency_id, authorize?: false) do
+          {:ok, %{iso_code: "CNY"}} -> :ok
+          {:ok, _} -> {:error, field: :role, message: "外币科目不能设置科目角色(报表不做折算)"}
+          {:error, _} -> {:error, field: :currency_id, message: "币种不存在"}
+        end
+    end
+  end
+end
+
 defmodule SynieCore.Base.AccountTemplateKey do
   @moduledoc "科目表初始化模板,与 `SynieCore.Base.AccountTemplates.entries/1` 的参数一致。"
 
@@ -115,18 +185,30 @@ defmodule SynieCore.Base.Account do
     end
 
     create :create do
-      accept [:code, :name, :direction, :is_group, :active, :parent_id, :company_id, :currency_id]
+      accept [
+        :code,
+        :name,
+        :direction,
+        :is_group,
+        :active,
+        :role,
+        :parent_id,
+        :company_id,
+        :currency_id
+      ]
 
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Base.AccountParent, []}
+      validate {SynieCore.Base.AccountRoleGuard, []}
     end
 
     update :update do
       # 不接受 company_id:科目不允许换公司(树与编码唯一性都以公司为界)
-      accept [:code, :name, :direction, :is_group, :active, :parent_id, :currency_id]
+      accept [:code, :name, :direction, :is_group, :active, :role, :parent_id, :currency_id]
       require_atomic? false
 
       validate {SynieCore.Base.AccountParent, []}
+      validate {SynieCore.Base.AccountRoleGuard, []}
     end
 
     destroy :destroy do
@@ -193,6 +275,11 @@ defmodule SynieCore.Base.Account do
       public? true
       default true
       description "启用"
+    end
+
+    attribute :role, SynieCore.Base.AccountRole do
+      public? true
+      description "科目角色"
     end
 
     create_timestamp :inserted_at, public?: true, description: "创建时间"

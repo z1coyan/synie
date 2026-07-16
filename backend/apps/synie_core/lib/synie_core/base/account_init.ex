@@ -43,6 +43,7 @@ defmodule SynieCore.Base.AccountInit do
         name: entry.name,
         direction: entry.direction,
         is_group: entry.is_group,
+        role: entry.role,
         company_id: company_id
       },
       actor: actor

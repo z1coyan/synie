@@ -70,6 +70,7 @@ export const menuModules: MenuModule[] = [
         items: [
           { label: '会计凭证', path: '/finance/journals' },
           { label: '总账分录', path: '/finance/entries' },
+          { label: '应收应付', path: '/finance/ar-ap' },
         ],
       },
       {

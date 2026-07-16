@@ -109,6 +109,8 @@ export interface SynieDataGridProps {
   fixedFilter?: Record<string, unknown>
   /** 初始排序(如流水页按交易时间倒序);仅作初值,用户点表头后照常接管 */
   defaultSort?: SortState
+  /** 初始列筛选(如报表下钻带条件跳转);仅作初值,用户可照常改/清,变更预置条件需换 key 重挂 */
+  defaultFilters?: FilterState
   /** 本页汇总行:表格下方、分页上方渲染(如金额本页合计);rows 为当前页数据 */
   pageSummary?: (rows: Row[]) => ReactNode
   /** 附件图片列:行记录的图片附件(sys_attachment 多态挂接)以缩略图列呈现,
@@ -230,7 +232,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [sort, setSort] = useState<SortState | null>(props.defaultSort ?? null)
-  const [filters, setFilters] = useState<FilterState>({})
+  const [filters, setFilters] = useState<FilterState>(props.defaultFilters ?? {})
   const [search, setSearch] = useState('')
   const [selection, setSelection] = useState<Selection>(new Set())
 

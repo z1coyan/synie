@@ -119,6 +119,43 @@ defmodule SynieCore.Acc.GLTest do
              GL.validate_entries(co.id, [Map.put(a, :party_type, :customer), b])
   end
 
+  describe "科目角色对手强校" do
+    test "挂角色科目的分录必须填对手", %{company: co, sales: sales} do
+      receivable =
+        account!(%{
+          code: "1122",
+          name: "应收账款",
+          direction: :debit,
+          role: :receivable,
+          company_id: co.id
+        })
+
+      assert {:error, "往来科目「应收账款」的分录必须填写对手"} =
+               GL.validate_entries(co.id, pair(receivable, sales, "100"))
+
+      with_party =
+        pair(receivable, sales, "100")
+        |> List.update_at(
+          0,
+          &Map.merge(&1, %{party_type: :customer, party_id: Ash.UUID.generate()})
+        )
+
+      assert :ok = GL.validate_entries(co.id, with_party)
+    end
+
+    test "红字行豁免:存量无对手分录可红冲", %{company: co, cash: cash, sales: sales} do
+      # 先无角色过账(模拟存量),再给科目挂角色
+      v = voucher(co)
+      :ok = GL.post!(v, pair(cash, sales, "100"))
+
+      cash
+      |> Ash.Changeset.for_update(:update, %{role: :unbilled_receivable})
+      |> Ash.update!(authorize?: false)
+
+      assert :ok = GL.reverse!(v.voucher_type, v.voucher_id, ~D[2026-07-31])
+    end
+  end
+
   test "cancel! 标记该单据全部分录", %{company: co, cash: cash, sales: sales} do
     v = voucher(co)
     :ok = GL.post!(v, pair(cash, sales, "88"))
