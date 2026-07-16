@@ -29,6 +29,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
   basAccounts: { label: '科目' },
   salCustomers: { label: '客户' },
   purSuppliers: { label: '供应商' },
+  hrAttendancePunches: { label: '打卡记录' },
+  hrAttendanceImports: { label: '考勤导入' },
   hrEmployees: {
     label: '员工',
     contentClassName: 'w-full lg:w-[640px]',

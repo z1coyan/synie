@@ -162,5 +162,8 @@ defmodule SynieCore.Hr.Employee do
     identity :unique_code, [:code], message: "员工编号已存在"
     # 可空字段:Postgres 唯一索引对 NULL 互不冲突,未填身份证号的员工不受限
     identity :unique_id_number, [:id_number], message: "身份证号已存在"
+
+    # 考勤导入按编号匹配员工,语义要求非空全局唯一(多台考勤机同编号=同一人)
+    identity :unique_attendance_no, [:attendance_no], message: "考勤机编号已存在"
   end
 end

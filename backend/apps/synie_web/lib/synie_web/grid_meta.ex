@@ -19,6 +19,8 @@ defmodule SynieWeb.GridMeta do
     "purSuppliers" => SynieCore.Purchase.Supplier,
     "hrEmployees" => SynieCore.Hr.Employee,
     "invMaterialCategories" => SynieCore.Inv.MaterialCategory,
+    "hrAttendancePunches" => SynieCore.Hr.AttendancePunch,
+    "hrAttendanceImports" => SynieCore.Hr.AttendanceImport,
     "sysAuditLogs" => SynieCore.Audit.Log,
     "sysNumberingRules" => SynieCore.Numbering.Rule,
     "sysNumberingCounters" => SynieCore.Numbering.Counter,
@@ -234,7 +236,14 @@ defmodule SynieWeb.GridMeta do
   defp capabilities(module, actor) do
     prefix = module.permission_prefix()
 
-    module.permission_actions()
+    # 复用他人权限码的资源(permission_actions 为空不进权限目录)可另行声明
+    # grid_capabilities/0,仅供前端按钮门控(如考勤导入批次的 import)
+    actions =
+      if function_exported?(module, :grid_capabilities, 0),
+        do: module.grid_capabilities(),
+        else: module.permission_actions()
+
+    actions
     |> Enum.reject(&(&1 == "read"))
     |> Enum.filter(&Authz.has_permission?(actor, "#{prefix}:#{&1}"))
   end

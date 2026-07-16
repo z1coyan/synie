@@ -53,6 +53,17 @@ defmodule SynieCore.Hr.EmployeeTest do
     employee!(%{code: "E0004", name: "赵六"})
   end
 
+  test "考勤机编号唯一,未填不受限" do
+    employee!(%{code: "E0001", name: "张三", attendance_no: "1"})
+
+    assert_raise Ash.Error.Invalid, ~r/考勤机编号已存在/, fn ->
+      employee!(%{code: "E0002", name: "李四", attendance_no: "1"})
+    end
+
+    employee!(%{code: "E0003", name: "王五"})
+    employee!(%{code: "E0004", name: "赵六"})
+  end
+
   test "编号留空且未配置编号规则时报错提示" do
     assert_raise Ash.Error.Invalid, ~r/未配置启用的编号规则/, fn ->
       employee!(%{name: "张三"})
