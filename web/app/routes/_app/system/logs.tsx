@@ -21,6 +21,11 @@ const ACTION_LABELS: Record<string, string> = {
   quick_create: '快速对账',
   refresh_reconcile: '对账刷新',
   import: '执行导入',
+  refresh: '重取快照',
+  mark_paid: '标记已发放',
+  mark_pending: '翻回待发放',
+  auto_repay: '联动归还',
+  auto_destroy: '联动删除',
 }
 
 // 值为 Track 落库的 GraphQL type 名;新资源接审计后在此补中文,漏了则原样显示英文
@@ -39,6 +44,9 @@ const RESOURCE_LABELS: Record<string, string> = {
   hr_employee: '员工',
   hr_attendance_import: '考勤导入',
   hr_attendance_correction: '补卡单',
+  hr_payroll: '工资单',
+  hr_payroll_payment: '工资发放记录',
+  hr_employee_loan: '员工借款',
   inv_material_category: '物料分类',
   sys_file: '附件文件',
   sys_attachment: '附件关联',

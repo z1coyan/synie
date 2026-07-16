@@ -66,6 +66,27 @@ const registry: Record<string, ResourceDrawerConfig> = {
       </div>
     ),
   },
+  hrPayrolls: {
+    label: '工资单',
+    fields: {
+      dailyWage: { render: (v) => formatAmount(v) },
+      baseAmount: { render: (v) => formatAmount(v) },
+      allowance: { render: (v) => formatAmount(v) },
+      bonus: { render: (v) => formatAmount(v) },
+      fine: { render: (v) => formatAmount(v) },
+      loanDeduction: { render: (v) => formatAmount(v) },
+      payable: { render: (v) => formatAmount(v) },
+      paidTotal: { render: (v) => formatAmount(v) },
+    },
+  },
+  hrPayrollPayments: {
+    label: '发放记录',
+    fields: { amount: { render: (v) => formatAmount(v) } },
+  },
+  hrEmployeeLoans: {
+    label: '员工借款',
+    fields: { amount: { render: (v) => formatAmount(v) } },
+  },
   sysAuditLogs: { label: '操作日志' },
   sysNumberingRules: { label: '编号规则' },
   sysNumberingCounters: { label: '计数器' },

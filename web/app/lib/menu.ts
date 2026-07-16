@@ -46,11 +46,13 @@ export const menuModules: MenuModule[] = [
     groups: [
       {
         label: '组织人事',
-        // 组织架构/薪酬留待后续任务实现,路由未落地前不注册(注册了会点进 404)
+        // 组织架构留待后续任务实现,路由未落地前不注册(注册了会点进 404)
         items: [
           { label: '员工档案', path: '/hr/employees' },
           // 考勤两视图(打卡记录/导入记录)收敛为单入口,页内 tabs 分流(子路由)
           { label: '考勤', path: '/hr/attendance' },
+          // 薪资三视图(工资单/发放记录/借款台账)同法收敛为单入口
+          { label: '员工薪资', path: '/hr/payroll' },
         ],
       },
     ],
