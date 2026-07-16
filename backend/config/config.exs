@@ -6,6 +6,7 @@ config :synie_core,
 
 # 银行流水导入:文件里的本地时间按该偏移转 UTC(默认 UTC+8,国内无夏令时)
 config :synie_core, bank_import_utc_offset_minutes: 480
+config :synie_core, attendance_import_utc_offset_minutes: 480
 
 config :synie_web,
   namespace: SynieWeb

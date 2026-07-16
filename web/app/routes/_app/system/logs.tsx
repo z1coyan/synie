@@ -20,6 +20,7 @@ const ACTION_LABELS: Record<string, string> = {
   reverse: '红冲',
   quick_create: '快速对账',
   refresh_reconcile: '对账刷新',
+  import: '执行导入',
 }
 
 // 值为 Track 落库的 GraphQL type 名;新资源接审计后在此补中文,漏了则原样显示英文
@@ -36,6 +37,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   sal_customer: '客户',
   pur_supplier: '供应商',
   hr_employee: '员工',
+  hr_attendance_import: '考勤导入',
   inv_material_category: '物料分类',
   sys_file: '附件文件',
   sys_attachment: '附件关联',

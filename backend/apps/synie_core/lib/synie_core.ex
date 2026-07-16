@@ -18,6 +18,8 @@ defmodule SynieCore do
       list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
       list SynieCore.Hr.Employee, :hr_employees, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
+      list SynieCore.Hr.AttendancePunch, :hr_attendance_punches, :read, paginate_with: :offset
+      list SynieCore.Hr.AttendanceImport, :hr_attendance_imports, :read, paginate_with: :offset
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
       list SynieCore.Numbering.Rule, :sys_numbering_rules, :read, paginate_with: :offset
       list SynieCore.Numbering.Counter, :sys_numbering_counters, :read, paginate_with: :offset
@@ -104,6 +106,11 @@ defmodule SynieCore do
       create SynieCore.Inv.MaterialCategory, :create_inv_material_category, :create
       update SynieCore.Inv.MaterialCategory, :update_inv_material_category, :update
       destroy SynieCore.Inv.MaterialCategory, :destroy_inv_material_category, :destroy
+
+      # 考勤导入:create 即解析预览,import 执行(打卡记录无独立写 mutation),删除即整批撤销
+      create SynieCore.Hr.AttendanceImport, :create_hr_attendance_import, :create
+      update SynieCore.Hr.AttendanceImport, :import_hr_attendance_import, :import
+      destroy SynieCore.Hr.AttendanceImport, :destroy_hr_attendance_import, :destroy
 
       # 文件的创建走 REST 上传端点(multipart 不过 GraphQL),这里只注册删除与解挂
       destroy SynieCore.Files.File, :destroy_sys_file, :destroy
@@ -196,6 +203,8 @@ defmodule SynieCore do
     resource SynieCore.Purchase.Supplier
     resource SynieCore.Hr.Employee
     resource SynieCore.Inv.MaterialCategory
+    resource SynieCore.Hr.AttendancePunch
+    resource SynieCore.Hr.AttendanceImport
     resource SynieCore.Acc.GlEntry
     resource SynieCore.Acc.GlJournal
     resource SynieCore.Acc.GlJournalLine

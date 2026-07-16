@@ -22,6 +22,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'sales.customer': '客户',
   'purchase.supplier': '供应商',
   'hr.employee': '员工',
+  'hr.attendance_punch': '打卡记录',
   'inv.material_category': '物料分类',
   'sys.file': '附件',
   'sys.storage': '存储接入',
