@@ -20,6 +20,10 @@ export interface SynieAttachmentPanelProps {
   ownerId?: string | null
   /** 业务槽位,缺省 default;设置后上传/列表都限定该槽位 */
   category?: string
+  /** 面板标题,缺省「附件」;一条记录挂多组槽位时用于区分(如 图纸/其他文件) */
+  label?: string
+  /** 文件选择器 accept 限制(如 image/*);只是选择器过滤,不做强校验 */
+  accept?: string
   /** view 模式只读:隐藏上传/删除 */
   readonly?: boolean
   /**
@@ -52,7 +56,15 @@ function formatBytes(size: number | null): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly, pending }: SynieAttachmentPanelProps) {
+export function SynieAttachmentPanel({
+  ownerType,
+  ownerId,
+  category,
+  label = '附件',
+  accept,
+  readonly,
+  pending,
+}: SynieAttachmentPanelProps) {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -154,11 +166,18 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly, p
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">附件</span>
+        <span className="text-sm font-medium">{label}</span>
         {canCreate && (ownerId || pendingMode) && (
           <>
             {/* 文件选择必须走原生 input,隐藏后由 Button 代理触发 */}
-            <input ref={fileInputRef} type="file" multiple hidden onChange={(e) => handleUpload(e.target.files)} />
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              accept={accept}
+              onChange={(e) => handleUpload(e.target.files)}
+            />
             <Button size="sm" variant="secondary" isPending={uploading} onPress={handlePick}>
               <UploadIcon />
               上传附件
@@ -168,7 +187,7 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly, p
       </div>
 
       {!ownerId && !pendingMode ? (
-        <p className="text-sm text-muted">保存后即可上传附件</p>
+        <p className="text-sm text-muted">保存后即可上传{label}</p>
       ) : !pendingMode && list.isLoading ? (
         <div className="flex justify-center py-4">
           <Spinner size="sm" />
@@ -176,7 +195,7 @@ export function SynieAttachmentPanel({ ownerType, ownerId, category, readonly, p
       ) : !pendingMode && list.isError ? (
         <p className="text-sm text-danger">附件加载失败:{(list.error as Error).message}</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-muted">{pendingMode ? '暂无附件,可先上传,保存时自动挂接' : '暂无附件'}</p>
+        <p className="text-sm text-muted">{pendingMode ? `暂无${label},可先上传,保存时自动挂接` : `暂无${label}`}</p>
       ) : (
         <ul className="divide-y divide-separator rounded-2xl border border-border">
           {rows.map((row) => (

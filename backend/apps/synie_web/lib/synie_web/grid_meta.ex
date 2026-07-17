@@ -19,6 +19,8 @@ defmodule SynieWeb.GridMeta do
     "purSuppliers" => SynieCore.Purchase.Supplier,
     "hrEmployees" => SynieCore.Hr.Employee,
     "invMaterialCategories" => SynieCore.Inv.MaterialCategory,
+    "invMaterials" => SynieCore.Inv.Material,
+    "invMaterialUnits" => SynieCore.Inv.MaterialUnit,
     "hrAttendancePunches" => SynieCore.Hr.AttendancePunch,
     "hrAttendanceImports" => SynieCore.Hr.AttendanceImport,
     "hrAttendanceDays" => SynieCore.Hr.AttendanceDay,

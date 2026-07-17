@@ -45,6 +45,19 @@ const RESOURCE_DEFAULTS: Record<string, Partial<RemoteSourceConfig>> = {
     searchFields: ['name', 'code', 'attendanceNo'],
     itemSubtitleFields: ['code', 'attendanceNo'],
   },
+  // 分类/物料/单位:名称+编号(符号)双字段搜索,下拉带编号副行方便认料
+  invMaterialCategories: {
+    searchFields: ['name', 'code'],
+    itemSubtitleFields: ['code'],
+  },
+  invMaterials: {
+    searchFields: ['name', 'code', 'spec'],
+    itemSubtitleFields: ['code', 'spec'],
+  },
+  basUnits: {
+    searchFields: ['name', 'symbol'],
+    itemSubtitleFields: ['symbol'],
+  },
 }
 
 /** gridMeta ref 提供默认,页面 config 覆盖;二者都无 resource 时 null(调用方退化 TextField) */
