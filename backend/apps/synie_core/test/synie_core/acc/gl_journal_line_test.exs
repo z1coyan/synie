@@ -13,10 +13,8 @@ defmodule SynieCore.Acc.GlJournalLineTest do
 
     company = company!()
 
-    currency =
-      Currency
-      |> Ash.Changeset.for_create(:create, %{name: "人民币", iso_code: "CNY", symbol: "¥"})
-      |> Ash.create!(authorize?: false)
+    # CNY 已由迁移种入(公司本币兜底),取或建而非直建
+    currency = cny!()
 
     account =
       Account

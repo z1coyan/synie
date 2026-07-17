@@ -597,4 +597,190 @@ defmodule SynieCore.Sales.OrderTest do
       assert Exception.message(err2) =~ "仍有业务挂接"
     end
   end
+
+  describe "双币" do
+    test "公司本币必填", _ctx do
+      assert_raise Ash.Error.Invalid, ~r/base_currency/, fn ->
+        SynieCore.Base.Company
+        |> Ash.Changeset.for_create(:create, %{code: "zz", name: "无本币公司", short_name: "无币"})
+        |> Ash.create!(authorize?: false)
+      end
+    end
+
+    test "币种留空默认公司本币,汇率强制 1", ctx do
+      assert ctx.order.currency_id == ctx.company.base_currency_id
+      assert Decimal.equal?(ctx.order.exchange_rate, 1)
+    end
+
+    test "本币订单手填汇率被强制回 1", ctx do
+      order =
+        order!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          currency_id: ctx.company.base_currency_id,
+          exchange_rate: Decimal.new("7.25")
+        })
+
+      assert Decimal.equal?(order.exchange_rate, 1)
+    end
+
+    test "外币订单不填汇率报错", ctx do
+      usd = foreign_currency!(%{name: "美元", iso_code: "USD"})
+
+      assert_raise Ash.Error.Invalid, ~r/外币订单必须填写汇率/, fn ->
+        order!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          currency_id: usd.id
+        })
+      end
+    end
+
+    test "汇率必须大于零", ctx do
+      usd = foreign_currency!(%{name: "美元", iso_code: "USD"})
+
+      assert_raise Ash.Error.Invalid, ~r/汇率必须大于零/, fn ->
+        order!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          currency_id: usd.id,
+          exchange_rate: Decimal.new("-1")
+        })
+      end
+    end
+
+    test "外币行按金额链换算(本币金额从原币金额换,本币单价仅展示)", ctx do
+      usd = foreign_currency!(%{name: "美元", iso_code: "USD"})
+
+      order =
+        order!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          currency_id: usd.id,
+          exchange_rate: Decimal.new("7.25")
+        })
+
+      item =
+        item!(order, %{
+          material_id: ctx.material.id,
+          unit_id: ctx.kg.id,
+          qty: 3,
+          price: Decimal.new("9.99")
+        })
+
+      assert Decimal.equal?(item.amount, Decimal.new("29.97"))
+      assert Decimal.equal?(item.base_amount, Decimal.new("217.28"))
+      assert Decimal.equal?(item.base_price, Decimal.new("72.4275"))
+    end
+
+    test "本币订单双套同值落库", ctx do
+      item =
+        item!(ctx.order, %{
+          material_id: ctx.material.id,
+          unit_id: ctx.kg.id,
+          qty: 2,
+          price: Decimal.new("3.50")
+        })
+
+      assert Decimal.equal?(item.amount, Decimal.new("7.00"))
+      assert Decimal.equal?(item.base_amount, item.amount)
+      assert Decimal.equal?(item.base_price, item.price)
+    end
+
+    test "草稿改汇率全部行本币列重算,双币总额聚合正确", ctx do
+      usd = foreign_currency!(%{name: "美元", iso_code: "USD"})
+
+      order =
+        order!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          currency_id: usd.id,
+          exchange_rate: Decimal.new("7")
+        })
+
+      item =
+        item!(order, %{
+          material_id: ctx.material.id,
+          unit_id: ctx.kg.id,
+          qty: 2,
+          price: Decimal.new("3.50")
+        })
+
+      assert Decimal.equal?(item.base_amount, Decimal.new("49.00"))
+
+      order
+      |> Ash.Changeset.for_update(:update, %{exchange_rate: Decimal.new("7.5")})
+      |> Ash.update!(authorize?: false)
+
+      item = Ash.get!(OrderItem, item.id, authorize?: false)
+      assert Decimal.equal?(item.base_amount, Decimal.new("52.50"))
+      assert Decimal.equal?(item.base_price, Decimal.new("26.25"))
+
+      order =
+        Ash.get!(Order, order.id, authorize?: false, load: [:gross_total, :base_gross_total])
+
+      assert Decimal.equal?(order.gross_total, Decimal.new("7.00"))
+      assert Decimal.equal?(order.base_gross_total, Decimal.new("52.50"))
+    end
+
+    test "外币单改回本币:汇率强制 1,行本币列重算回同值", ctx do
+      usd = foreign_currency!(%{name: "美元", iso_code: "USD"})
+
+      order =
+        order!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          currency_id: usd.id,
+          exchange_rate: Decimal.new("7.25")
+        })
+
+      item =
+        item!(order, %{
+          material_id: ctx.material.id,
+          unit_id: ctx.kg.id,
+          qty: 2,
+          price: Decimal.new("3.50")
+        })
+
+      refute Decimal.equal?(item.base_amount, item.amount)
+
+      order =
+        order
+        |> Ash.Changeset.for_update(:update, %{currency_id: ctx.company.base_currency_id})
+        |> Ash.update!(authorize?: false)
+
+      assert Decimal.equal?(order.exchange_rate, 1)
+
+      item = Ash.get!(OrderItem, item.id, authorize?: false)
+      assert Decimal.equal?(item.base_amount, item.amount)
+      assert Decimal.equal?(item.base_price, item.price)
+    end
+
+    test "不动币种/汇率的头更新不影响汇率也不空重算", ctx do
+      usd = foreign_currency!(%{name: "美元", iso_code: "USD"})
+
+      order =
+        order!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          currency_id: usd.id,
+          exchange_rate: Decimal.new("7.25")
+        })
+
+      updated =
+        order
+        |> Ash.Changeset.for_update(:update, %{remarks: "只改备注"})
+        |> Ash.update!(authorize?: false)
+
+      assert Decimal.equal?(updated.exchange_rate, Decimal.new("7.25"))
+      assert updated.currency_id == usd.id
+    end
+  end
 end

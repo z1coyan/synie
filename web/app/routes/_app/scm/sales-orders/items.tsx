@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Link } from '@heroui/react'
+import { formatAmount, formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useOrderDrawer, type OpenOrderDrawer } from './-order-drawer'
@@ -9,11 +10,12 @@ export const Route = createFileRoute('/_app/scm/sales-orders/items')({
   component: SalesOrderItemsTab,
 })
 
-// 行级明细列白名单:头信息(orderDate/partyId/orderStatus 由后端 gridMeta 以 calc/多态 fk 列下发,
-// 判别列 partyType 不出列也随查询取回,对手列照常解析)
-// + 行自身字段;行号/税率/含税金额与客户料号不进网格(行号对跨单浏览无意义,税率/金额进抽屉看),
+// 行级明细列白名单:头信息(orderDate/partyId/orderStatus/currencyCode 由后端 gridMeta 以
+// calc/多态 fk 列下发,判别列 partyType 不出列也随查询取回,对手列照常解析)
+// + 行自身字段;行号/税率与客户料号不进网格(行号对跨单浏览无意义,税率进抽屉看),
 // companyId/insertedAt/updatedAt 不进表格(兼当 exclude)。
-// 物料/单位走快照文本列(下单时落库,防主数据改名/换码影响历史单显示)
+// 物料/单位走快照文本列(下单时落库,防主数据改名/换码影响历史单显示)。
+// 跨订单混合行,双币金额恒全列展示(本币单两套同值;简化只在订单抽屉内,ADR 双币)
 const GRID_COLUMNS = [
   'orderId',
   'orderDate',
@@ -24,7 +26,11 @@ const GRID_COLUMNS = [
   'materialSpec',
   'unitName',
   'qty',
+  'currencyCode',
+  'basePrice',
   'price',
+  'baseAmount',
+  'amount',
   'remarks',
 ]
 
@@ -56,6 +62,11 @@ function buildOverrides(openDrawer: OpenOrderDrawer) {
       label: '状态',
       enumColors: { DRAFT: 'default', AUDITED: 'success', CLOSED: 'warning', VOIDED: 'danger' },
     },
+    // 双币金额列(定案顺序:本币单价、原币单价、本币金额、原币金额);本币单价 4 位精度
+    basePrice: { label: '本币单价', render: (v: unknown) => formatPrice(v) },
+    price: { label: '原币单价', render: (v: unknown) => formatPrice(v) },
+    baseAmount: { label: '本币金额', render: (v: unknown) => formatAmount(v) },
+    amount: { label: '原币金额', render: (v: unknown) => formatAmount(v) },
   } satisfies Record<string, ColumnOverride>
 }
 

@@ -36,8 +36,17 @@ const registry: Record<string, ResourceDrawerConfig> = {
     // 条目表 8 列,默认 480px 太挤,订单抽屉加宽(移动端仍全宽)
     contentClassName: 'w-full lg:w-[880px]',
     // 状态翻转走行内动作(audit/close/void);审核时间/审核人/录入人是系统字段;
-    // 含税总额是行聚合,只在表格展示;创建/更新时间表格已隐藏
-    exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'grossTotal', 'insertedAt', 'updatedAt'],
+    // 双币含税总额是行聚合,只在表格展示;创建/更新时间表格已隐藏
+    exclude: [
+      'status',
+      'auditedAt',
+      'auditedById',
+      'createdById',
+      'grossTotal',
+      'baseGrossTotal',
+      'insertedAt',
+      'updatedAt',
+    ],
     fields: {
       // 公司提到最前;建后不可改(update 动作不收 company_id)
       companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
@@ -102,10 +111,13 @@ const registry: Record<string, ResourceDrawerConfig> = {
           )
         },
       },
-      remarks: { order: 4, label: '订单备注' },
+      // 币种(原币)一单一币;汇率原币→本币,本币单强制 1(动态默认/显隐在订单页按公司本币叠加)
+      currencyId: { order: 4, cols: 6, required: true, label: '币种' },
+      exchangeRate: { order: 5, cols: 6, label: '汇率', placeholder: '如 7.25' },
+      remarks: { order: 6, label: '订单备注' },
       // 交易条款是对客户的自由多行文本,置表单底部
       terms: {
-        order: 5,
+        order: 7,
         label: '交易条款',
         input: ({ value, onChange, isDisabled }) => (
           <TextField value={value == null ? '' : String(value)} onChange={onChange} isDisabled={isDisabled}>

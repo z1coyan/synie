@@ -36,6 +36,106 @@ defmodule SynieCore.Sales.OrderPartyType do
   end
 end
 
+defmodule SynieCore.Sales.Order.SyncCurrency do
+  @moduledoc """
+  订单头币种/汇率归一(ADR 2026-07-17-sales-order-currency):
+  币种留空默认单据公司本币;币种即本币时汇率强制为 1(用户不可指定);
+  外币必须显式提供汇率——按 params 判断,属性 default 1 不算数
+  (create 与「改币种为外币」的 update 都要求显式给;>0 由 validation 与 DB 约束兜底)。
+  构建期执行——汇率参与行金额计算,必须在保存前就位;
+  公司读不到时跳过,由 CompanyAccessible 校验/外键兜底报错。
+  """
+
+  use Ash.Resource.Change
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    company_id = Ash.Changeset.get_attribute(changeset, :company_id) || changeset.data.company_id
+
+    case base_currency_id(company_id) do
+      nil ->
+        changeset
+
+      base_currency_id ->
+        changeset =
+          if Ash.Changeset.get_attribute(changeset, :currency_id) == nil do
+            Ash.Changeset.force_change_attribute(changeset, :currency_id, base_currency_id)
+          else
+            changeset
+          end
+
+        cond do
+          Ash.Changeset.get_attribute(changeset, :currency_id) == base_currency_id ->
+            Ash.Changeset.force_change_attribute(changeset, :exchange_rate, Decimal.new(1))
+
+          rate_provided?(changeset) ->
+            changeset
+
+          # 外币 update 未动币种:沿用存量汇率,只有改成外币那一下才强制显式给
+          changeset.action_type == :update and
+              Ash.Changeset.get_attribute(changeset, :currency_id) == changeset.data.currency_id ->
+            changeset
+
+          true ->
+            Ash.Changeset.add_error(changeset, field: :exchange_rate, message: "外币订单必须填写汇率")
+        end
+    end
+  end
+
+  defp rate_provided?(changeset) do
+    Map.has_key?(changeset.params, :exchange_rate) or
+      Map.has_key?(changeset.params, "exchange_rate")
+  end
+
+  defp base_currency_id(nil), do: nil
+
+  defp base_currency_id(company_id) do
+    case Ash.get(SynieCore.Base.Company, company_id, authorize?: false) do
+      {:ok, %{base_currency_id: id}} -> id
+      _ -> nil
+    end
+  end
+end
+
+defmodule SynieCore.Sales.Order.RecalcItems do
+  @moduledoc """
+  头上币种/汇率实际变化时重算全部行的本币列(本币金额=原币金额×汇率):
+  after_action 在动作事务内执行,与头更新同生共死;此时头的 FOR UPDATE 锁
+  (update 动作 before_action 所加)仍持有,行编辑被串行化在外。
+  逐行走 OrderItem :recalc_base 内部动作(保留审计),行数受单据规模约束。
+  仅挂 update 动作(create 时无行)。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.after_action(changeset, fn changeset, order ->
+      if currency_changed?(changeset.data, order) do
+        SynieCore.Sales.OrderItem
+        |> Ash.Query.filter(order_id == ^order.id)
+        |> Ash.read!(authorize?: false)
+        |> Enum.each(fn item ->
+          item
+          |> Ash.Changeset.for_update(:recalc_base, %{})
+          |> Ash.update!(authorize?: false)
+        end)
+      end
+
+      {:ok, order}
+    end)
+  end
+
+  # 按实际值比较(而非 changing_attribute?):本币单 update 每次都会被 SyncCurrency
+  # force 汇率=1,若按「是否被写」判断会次次触发全行空重算
+  defp currency_changed?(old, new) do
+    old.currency_id != new.currency_id or
+      Decimal.compare(old.exchange_rate || Decimal.new(0), new.exchange_rate) != :eq
+  end
+end
+
 defmodule SynieCore.Sales.Order.ClearItemDrawings do
   @moduledoc """
   删订单前显式清理所有行的图纸挂接:订单删行走 DB 级联
@@ -78,6 +178,10 @@ defmodule SynieCore.Sales.Order do
   (AutoNumber),手填原样保留。对手为多态引用(客户/内部公司,无真外键),
   审核唯一业务门槛是行数 ≥ 1。行见 `OrderItem`,删除草稿时行由 DB 级联删除
   (不走 OrderItem destroy 钩子,行的图纸挂接由 ClearItemDrawings 在删单前显式清理)。
+
+  双币:币种(原币)与汇率挂头,一单一币,留空默认公司本币;本币单汇率强制 1,
+  外币单必填(SyncCurrency);草稿改币种/汇率同事务重算全部行本币列(RecalcItems),
+  审核锁单即冻结。ADR 2026-07-17-sales-order-currency。
   """
 
   use Ash.Resource,
@@ -97,6 +201,10 @@ defmodule SynieCore.Sales.Order do
       check_constraint :party_type, "party_pair",
         check: "(party_type IS NULL) = (party_id IS NULL)",
         message: "对手类型与对手必须同时填写"
+
+      check_constraint :exchange_rate, "exchange_rate_positive",
+        check: "exchange_rate > 0",
+        message: "汇率必须大于零"
     end
   end
 
@@ -152,12 +260,25 @@ defmodule SynieCore.Sales.Order do
     end
 
     create :create do
-      accept [:company_id, :order_no, :order_date, :party_type, :party_id, :terms, :remarks]
+      accept [
+        :company_id,
+        :order_no,
+        :order_date,
+        :party_type,
+        :party_id,
+        :currency_id,
+        :exchange_rate,
+        :terms,
+        :remarks
+      ]
 
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Sales.OrderPartyType, []}
       validate {SynieCore.Acc.PartyExists, []}
       validate {SynieCore.Acc.PartyNotSelf, []}
+
+      # 币种默认公司本币/本币强制汇率1/外币必填汇率
+      change {SynieCore.Sales.Order.SyncCurrency, []}
 
       # 编号留空自动取号(须在构建期,见 AutoNumber moduledoc)
       change {SynieCore.Numbering.AutoNumber, attribute: :order_no}
@@ -175,7 +296,17 @@ defmodule SynieCore.Sales.Order do
     end
 
     update :update do
-      accept [:order_no, :order_date, :party_type, :party_id, :terms, :remarks]
+      accept [
+        :order_no,
+        :order_date,
+        :party_type,
+        :party_id,
+        :currency_id,
+        :exchange_rate,
+        :terms,
+        :remarks
+      ]
+
       require_atomic? false
 
       # 构建期预检(用户体验),权威复检在 before_action 钩子内
@@ -183,6 +314,9 @@ defmodule SynieCore.Sales.Order do
       validate {SynieCore.Sales.OrderPartyType, []}
       validate {SynieCore.Acc.PartyExists, []}
       validate {SynieCore.Acc.PartyNotSelf, []}
+
+      # 币种默认公司本币/本币强制汇率1/外币必填汇率
+      change {SynieCore.Sales.Order.SyncCurrency, []}
 
       change fn changeset, _context ->
         Ash.Changeset.before_action(changeset, fn cs ->
@@ -193,6 +327,9 @@ defmodule SynieCore.Sales.Order do
           end
         end)
       end
+
+      # 币种/汇率实际变化时同事务重算全部行的本币列
+      change {SynieCore.Sales.Order.RecalcItems, []}
     end
 
     destroy :destroy do
@@ -310,6 +447,10 @@ defmodule SynieCore.Sales.Order do
     end
   end
 
+  validations do
+    validate compare(:exchange_rate, greater_than: 0), message: "汇率必须大于零"
+  end
+
   attributes do
     uuid_primary_key :id
 
@@ -337,6 +478,18 @@ defmodule SynieCore.Sales.Order do
       allow_nil? false
       public? true
       description "对手"
+    end
+
+    # 汇率:原币→本币换算率,手工填写(无汇率主数据表);本币单由 SyncCurrency 强制为 1,
+    # 外币单必须显式提供(SyncCurrency 查 params,默认值不算数)。
+    # default 1 的另一职责:让 GraphQL create input 的该字段可空——无默认时 ash_graphql
+    # 生成 Decimal! 非空,本币单前端不传汇率会在 GraphQL 校验层被拒,到不了 SyncCurrency。
+    # 金额链见 OrderItem.ComputeAmount(ADR 2026-07-17-sales-order-currency)
+    attribute :exchange_rate, :decimal do
+      allow_nil? false
+      default Decimal.new(1)
+      public? true
+      description "汇率(原币→本币)"
     end
 
     attribute :terms, :string do
@@ -377,6 +530,15 @@ defmodule SynieCore.Sales.Order do
       description "公司"
     end
 
+    # 原币(交易货币):一单一币,行金额跟随换算;留空由 SyncCurrency 默认公司本币
+    belongs_to :currency, SynieCore.Base.Currency do
+      allow_nil? false
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "币种(原币)"
+    end
+
     belongs_to :created_by, SynieCore.Accounts.User do
       public? true
       attribute_public? true
@@ -400,7 +562,12 @@ defmodule SynieCore.Sales.Order do
   aggregates do
     sum :gross_total, :items, :amount do
       public? true
-      description "含税总额(行含税金额合计)"
+      description "原币含税总额(行原币含税金额合计)"
+    end
+
+    sum :base_gross_total, :items, :base_amount do
+      public? true
+      description "本币含税总额(行本币含税金额合计)"
     end
   end
 

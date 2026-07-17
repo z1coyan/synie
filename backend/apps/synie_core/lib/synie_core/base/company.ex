@@ -1,5 +1,5 @@
 defmodule SynieCore.Base.Company do
-  @moduledoc "公司(ERPNext 式多公司,单库),对应 `bas_company` 表,树形结构支持集团/合并视角。"
+  @moduledoc "公司(ERPNext 式多公司,单库),对应 `bas_company` 表,树形结构支持集团/合并视角。本币(base_currency)必填,是该记账主体单据双币换算的目标口径。"
 
   use Ash.Resource,
     domain: SynieCore,
@@ -34,11 +34,11 @@ defmodule SynieCore.Base.Company do
     defaults [:read]
 
     create :create do
-      accept [:code, :name, :short_name, :parent_id]
+      accept [:code, :name, :short_name, :parent_id, :base_currency_id]
     end
 
     update :update do
-      accept [:name, :short_name, :parent_id]
+      accept [:name, :short_name, :parent_id, :base_currency_id]
       require_atomic? false
 
       # 只挡自引用(parent_id 设为自身 id 会让树遍历死循环);两节点以上成环检测留跟进,
@@ -95,6 +95,16 @@ defmodule SynieCore.Base.Company do
       attribute_public? true
       attribute_writable? true
       description "上级公司"
+    end
+
+    # 本币:记账主体的记账货币,单据双币换算的目标口径(ADR 2026-07-17-sales-order-currency);
+    # 迁移已回填存量公司为 CNY
+    belongs_to :base_currency, SynieCore.Base.Currency do
+      allow_nil? false
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "本币"
     end
   end
 
