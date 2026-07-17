@@ -34,6 +34,22 @@ defmodule SynieCore.Acc.SettingTest do
     assert setting.ocr_access_key_id == "ak"
   end
 
+  test "密钥只写:argument 写入生效,不传 argument 时 secret 不变" do
+    Setting.get()
+    |> Ash.Changeset.for_update(:update, %{ocr_access_key_secret: "sk-1"})
+    |> Ash.update!(authorize?: false)
+
+    assert Setting.get().ocr_access_key_secret == "sk-1"
+
+    # 只改 key_id、不传 secret argument:secret 保持旧值
+    Setting.get()
+    |> Ash.Changeset.for_update(:update, %{ocr_access_key_id: "ak-2"})
+    |> Ash.update!(authorize?: false)
+
+    assert Setting.get().ocr_access_key_id == "ak-2"
+    assert Setting.get().ocr_access_key_secret == "sk-1"
+  end
+
   test "无权限者读写皆被拒绝" do
     actor = actor_with!([])
 

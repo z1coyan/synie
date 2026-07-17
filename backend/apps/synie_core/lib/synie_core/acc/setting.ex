@@ -45,7 +45,24 @@ defmodule SynieCore.Acc.Setting do
     end
 
     update :update do
-      accept [:ocr_access_key_id, :ocr_access_key_secret]
+      accept [:ocr_access_key_id]
+
+      # 密钥只写不回读(public? false 不进 accept/GraphQL),经 argument 写入;nil/空串 = 不修改
+      argument :ocr_access_key_secret, :string
+
+      change fn changeset, _context ->
+        case Ash.Changeset.get_argument(changeset, :ocr_access_key_secret) do
+          nil ->
+            changeset
+
+          "" ->
+            changeset
+
+          secret ->
+            Ash.Changeset.force_change_attribute(changeset, :ocr_access_key_secret, secret)
+        end
+      end
+
       require_atomic? false
     end
 
@@ -79,7 +96,7 @@ defmodule SynieCore.Acc.Setting do
     end
 
     attribute :ocr_access_key_secret, :string do
-      public? true
+      public? false
       sensitive? true
       constraints max_length: 128
       description "阿里云 OCR AccessKey Secret"
