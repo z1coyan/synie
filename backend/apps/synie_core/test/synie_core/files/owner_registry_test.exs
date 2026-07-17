@@ -10,6 +10,8 @@ defmodule SynieCore.Files.OwnerRegistryTest do
     # 银行账户页附件面板已上线,#8 漏登记导致上传报未知宿主,回归钉住
     assert {:ok, SynieCore.Acc.BankAccount} = OwnerRegistry.resolve("acc_bank_account")
     assert {:ok, SynieCore.Acc.BankTransaction} = OwnerRegistry.resolve("acc_bank_transaction")
+    # 订单条目的图纸挂接复制宿主
+    assert {:ok, SynieCore.Sales.OrderItem} = OwnerRegistry.resolve("sal_order_item")
   end
 
   test "未知 owner_type 返回 :error(fail-closed)" do

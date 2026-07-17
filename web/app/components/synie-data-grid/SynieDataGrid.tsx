@@ -84,6 +84,10 @@ export interface SynieDataGridProps {
   columns?: string[]
   exclude?: string[]
   overrides?: Record<string, ColumnOverride>
+  /** 覆盖 meta 下发的 capabilities 门控:资源复用他人权限码、meta capabilities 为空时
+   *  页面显式声明可用动作(如 salOrderItems 复用 sales.order 权限码,条目视图声明 ['create','update']);
+   *  仅驱动按钮显隐,服务端 policy 仍是权威校验 */
+  capabilities?: string[]
   /** 传了就在行内菜单第一项显示「查看」(打开详情抽屉) */
   onView?: (row: Row) => void
   onCreate?: () => void
@@ -481,6 +485,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   const actions = useGridActions({
     meta: meta.data,
+    capabilities: props.capabilities,
     refetch: () => {
       rowsQuery.refetch()
       props.onMutated?.()

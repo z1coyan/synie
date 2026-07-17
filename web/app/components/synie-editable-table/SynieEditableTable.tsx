@@ -12,7 +12,7 @@ export interface EditableColumnOverride {
   label?: string
   /** 不传时数值列(integer/decimal)默认右对齐 */
   align?: 'start' | 'center' | 'end'
-  /** 单元格自定义渲染 */
+  /** 单元格自定义渲染;返回 null/undefined 回落默认渲染(快照优先、缺失回落 live 等场景,与 SynieDataGrid 的 ?? 语义一致) */
   render?: (value: unknown, row: Row) => ReactNode
   /** enum 列胶囊配色,按枚举值(大写 token)映射;未配的值用 default 灰 */
   enumColors?: Record<string, EnumChipColor>
@@ -184,9 +184,9 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
   )
 }
 
-/** 单元格:override.render 优先;fk(含无 join 按 id 反查)统一走 defaultCell 的 FkLink */
+/** 单元格:override.render 优先,返回 null/undefined 回落默认渲染(语义同 SynieDataGrid 列 override);
+ *  fk(含无 join 按 id 反查)统一走 defaultCell 的 FkLink */
 function EditableCell({ col, row, override }: { col: GridColumnMeta; row: Row; override?: EditableColumnOverride }) {
   const value = row[col.name]
-  if (override?.render) return <>{override.render(value, row)}</>
-  return <>{defaultCell(col, value, row, override?.enumColors)}</>
+  return <>{override?.render?.(value, row) ?? defaultCell(col, value, row, override?.enumColors)}</>
 }

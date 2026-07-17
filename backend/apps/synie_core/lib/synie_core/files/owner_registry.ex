@@ -3,6 +3,7 @@ defmodule SynieCore.Files.OwnerRegistry do
 
   @owners %{
     "sal_customer" => SynieCore.Sales.Customer,
+    "sal_order_item" => SynieCore.Sales.OrderItem,
     "pur_supplier" => SynieCore.Purchase.Supplier,
     "hr_employee" => SynieCore.Hr.Employee,
     "inv_material" => SynieCore.Inv.Material,

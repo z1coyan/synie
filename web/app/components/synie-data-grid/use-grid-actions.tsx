@@ -40,6 +40,8 @@ async function runIdMutation(mutation: string, ids: string[]): Promise<{ ok: num
 
 export function useGridActions(opts: {
   meta: GridMeta | undefined
+  /** 覆盖 meta.capabilities(资源复用他人权限码、meta 为空时页面显式声明);不传用 meta 下发值 */
+  capabilities?: string[]
   refetch: () => void
   clearSelection: () => void
   onView?: (row: Row) => void
@@ -61,7 +63,7 @@ export function useGridActions(opts: {
   const [running, setRunning] = useState(false)
 
   const can = (capability?: string) =>
-    !capability || (meta?.capabilities ?? []).includes(capability)
+    !capability || (opts.capabilities ?? meta?.capabilities ?? []).includes(capability)
   const ctx: ActionContext = { refetch }
 
   const confirmThenMutate = (label: string, isDanger: boolean, mutation: string) => (rows: Row[]) =>

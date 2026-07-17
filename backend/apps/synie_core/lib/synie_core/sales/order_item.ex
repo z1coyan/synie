@@ -135,12 +135,130 @@ defmodule SynieCore.Sales.OrderItem.ComputeAmount do
   end
 end
 
+defmodule SynieCore.Sales.OrderItem.SnapshotMaterial do
+  @moduledoc """
+  物料信息快照:行保存(create/update)即按当前 material_id/unit_id 重拍
+  物料编号/名称/规格/客户料号与单位名称——「行保存即重拍」是定案语义,审核锁行
+  即冻结,主数据后续变更不回溯(ADR 2026-07-17-sales-order-item-snapshot)。
+  快照属性 writable? false,只能经此 change 写入(force_change_attribute,
+  照 ComputeAmount 先例)。物料/单位读不到时跳过,由 MaterialUnitAllowed 与
+  外键兜底报错。
+  """
+
+  use Ash.Resource.Change
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    material_id = Ash.Changeset.get_attribute(changeset, :material_id)
+    unit_id = Ash.Changeset.get_attribute(changeset, :unit_id)
+
+    with {:ok, material} <- get(SynieCore.Inv.Material, material_id),
+         {:ok, unit} <- get(SynieCore.Base.Unit, unit_id) do
+      changeset
+      |> Ash.Changeset.force_change_attribute(:material_code, material.code)
+      |> Ash.Changeset.force_change_attribute(:material_name, material.name)
+      |> Ash.Changeset.force_change_attribute(:material_spec, material.spec)
+      |> Ash.Changeset.force_change_attribute(:customer_part_no, material.customer_part_no)
+      |> Ash.Changeset.force_change_attribute(:unit_name, unit.name)
+    else
+      _ -> changeset
+    end
+  end
+
+  defp get(_resource, nil), do: :error
+  defp get(resource, id), do: Ash.get(resource, id, authorize?: false)
+end
+
+defmodule SynieCore.Sales.OrderItem.SyncDrawings do
+  @moduledoc """
+  图纸挂接复制:行 create/update 后(after_action,在动作事务内)把物料当前
+  drawing 槽位的 sys_file 集合同步为行的挂接(owner_type `sal_order_item`、
+  category `drawing`):旧的行挂接整删,按当前物料图纸整建——引用复制而非字节复制
+  (文件字节不可变、有挂接不可删,引用即永恒,零存储放大)。
+  挂接写失败随动作事务一起回滚(after_action 先例见 SynieCore.Audit.Track)。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  alias SynieCore.Files.Attachment
+  alias SynieCore.Sales.OrderItem.ClearDrawings
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.after_action(changeset, fn _changeset, item ->
+      sync!(item)
+      {:ok, item}
+    end)
+  end
+
+  @doc false
+  def sync!(item) do
+    ClearDrawings.clear!(item.id)
+
+    Attachment
+    |> Ash.Query.filter(
+      owner_type == "inv_material" and owner_id == ^item.material_id and category == "drawing"
+    )
+    |> Ash.read!(authorize?: false)
+    |> Enum.each(fn %{file_id: file_id} ->
+      Attachment
+      |> Ash.Changeset.for_create(:create, %{
+        file_id: file_id,
+        owner_type: "sal_order_item",
+        owner_id: item.id,
+        category: "drawing",
+        company_id: item.company_id
+      })
+      |> Ash.create!(authorize?: false)
+    end)
+  end
+end
+
+defmodule SynieCore.Sales.OrderItem.ClearDrawings do
+  @moduledoc """
+  清理行的图纸挂接。attachment 与行业务表之间没有外键,行删挂接不会跟着删,
+  留着会让 sys_file 被 AttachmentGuard 永久锁死,故行 destroy 必须显式清。
+  注意:订单删行走 DB 级联(postgres reference on_delete: :delete),本钩子不触发——
+  订单侧的清理见 SynieCore.Sales.Order.ClearItemDrawings。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  alias SynieCore.Files.Attachment
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.after_action(changeset, fn _changeset, item ->
+      clear!(item.id)
+      {:ok, item}
+    end)
+  end
+
+  @doc false
+  def clear!(item_id) do
+    Attachment
+    |> Ash.Query.filter(
+      owner_type == "sal_order_item" and owner_id == ^item_id and category == "drawing"
+    )
+    |> Ash.read!(authorize?: false)
+    |> Enum.each(&Ash.destroy!(&1, authorize?: false))
+  end
+end
+
 defmodule SynieCore.Sales.OrderItem do
   @moduledoc """
   销售订单条目,对应 `sal_order_item` 表。
 
   `company_id` 冗余自父订单以复用公司数据权限;含税金额保存时按 数量×含税单价
   计算(两位小数)不可手改;行单位限物料默认单位或其转换单位;仅父订单草稿态可增删改。
+  物料编号/名称/规格/客户料号与单位名称是快照物理列:行保存(create/update)即按
+  当前物料/单位重拍(见 `SnapshotMaterial`),审核锁行即冻结,主数据后续变更不回溯;
+  物料 drawing 槽位的文件在行保存时复制挂接到行(见 `SyncDrawings`),
+  行/订单删除时显式清理(见 `ClearDrawings` 与 `Order.ClearItemDrawings`)。
   v1 不拆未税金额/税额(将来开票对接时按 含税÷(1+税率) 拆)。
   无独立权限点:permission_actions 为空(不进权限目录),动作复用 `sales.order` 权限码。
   """
@@ -195,6 +313,21 @@ defmodule SynieCore.Sales.OrderItem do
   def permission_prefix, do: "sales.order"
   def permission_actions, do: []
 
+  # 条目视图展示的订单头字段 calculation 白名单,GridMeta 只反射声明在列的 calculation
+  # (opt-in 先例见 grid_actions/0、grid_capabilities/0)
+  def grid_calculations, do: [:order_date, :order_status, :party_type, :party_id]
+
+  # 头字段 party_id 是订单上的多态引用(经 calculation 暴露,判别字段 party_type 同为
+  # calculation),声明给 GridMeta 反射成多态 fk 列;variants 与 Order.poly_refs/0 完全一致
+  def poly_refs do
+    %{
+      party_id: %{
+        discriminator: :party_type,
+        variants: Map.take(SynieCore.Acc.PartyType.party_resources(), [:customer, :company])
+      }
+    }
+  end
+
   actions do
     read :read do
       primary? true
@@ -205,7 +338,15 @@ defmodule SynieCore.Sales.OrderItem do
                  default_limit: 20,
                  max_page_size: 200
 
-      prepare build(sort: [idx: :asc])
+      # 行按录入顺序展示:仅在请求未指定排序时兜底 idx 升序——显式传 sort
+      # (条目视图按头字段排序)不被顶掉;drawer 查询显式传 IDX ASC,行为不变
+      prepare fn query, _context ->
+        if Enum.empty?(query.sort) do
+          Ash.Query.sort(query, idx: :asc)
+        else
+          query
+        end
+      end
     end
 
     create :create do
@@ -216,6 +357,8 @@ defmodule SynieCore.Sales.OrderItem do
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Sales.OrderItem.MaterialUnitAllowed, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
+      change {SynieCore.Sales.OrderItem.SnapshotMaterial, []}
+      change {SynieCore.Sales.OrderItem.SyncDrawings, []}
     end
 
     update :update do
@@ -225,6 +368,8 @@ defmodule SynieCore.Sales.OrderItem do
       change {SynieCore.Sales.OrderItem.SyncOrder, []}
       validate {SynieCore.Sales.OrderItem.MaterialUnitAllowed, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
+      change {SynieCore.Sales.OrderItem.SnapshotMaterial, []}
+      change {SynieCore.Sales.OrderItem.SyncDrawings, []}
     end
 
     destroy :destroy do
@@ -232,6 +377,7 @@ defmodule SynieCore.Sales.OrderItem do
       require_atomic? false
 
       change {SynieCore.Sales.OrderItem.SyncOrder, []}
+      change {SynieCore.Sales.OrderItem.ClearDrawings, []}
     end
   end
 
@@ -279,6 +425,42 @@ defmodule SynieCore.Sales.OrderItem do
       description "税率(小数,如 0.13)"
     end
 
+    # 物料信息快照:行保存时按当前物料/单位重拍(SnapshotMaterial),
+    # writable? false 照 amount 先例只能由 change 写入;spec/customer_part_no 可空
+    # (物料本身可空),审核锁行即冻结,主数据后续变更不回溯
+    attribute :material_code, :string do
+      allow_nil? false
+      writable? false
+      public? true
+      description "物料编号"
+    end
+
+    attribute :material_name, :string do
+      allow_nil? false
+      writable? false
+      public? true
+      description "物料名称"
+    end
+
+    attribute :material_spec, :string do
+      writable? false
+      public? true
+      description "规格"
+    end
+
+    attribute :customer_part_no, :string do
+      writable? false
+      public? true
+      description "客户料号"
+    end
+
+    attribute :unit_name, :string do
+      allow_nil? false
+      writable? false
+      public? true
+      description "单位名称"
+    end
+
     attribute :remarks, :string do
       public? true
       constraints max_length: 512
@@ -319,6 +501,30 @@ defmodule SynieCore.Sales.OrderItem do
       attribute_public? true
       attribute_writable? true
       description "单位"
+    end
+  end
+
+  calculations do
+    # 条目视图展示的订单头字段:沿 belongs_to :order 实时取数,不落物理列
+    # (冗余列被否,见 ADR 2026-07-17);description 与 Order 对应属性保持一致
+    calculate :order_date, :date, expr(order.order_date) do
+      public? true
+      description "订单日期"
+    end
+
+    calculate :order_status, SynieCore.Sales.OrderStatus, expr(order.status) do
+      public? true
+      description "状态"
+    end
+
+    calculate :party_type, SynieCore.Acc.PartyType, expr(order.party_type) do
+      public? true
+      description "对手类型(客户/内部公司)"
+    end
+
+    calculate :party_id, :uuid, expr(order.party_id) do
+      public? true
+      description "对手"
     end
   end
 end

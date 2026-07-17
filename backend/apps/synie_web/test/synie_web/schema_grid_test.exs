@@ -652,4 +652,219 @@ defmodule SynieWeb.SchemaGridTest do
                result
     end
   end
+
+  # 销售条目夹具:公司/客户/物料(分类+单位)/订单/条目。dates 每个元素建一单(指定订单日期)一行
+  defp sales_item_fixtures!(dates) do
+    company = company!("SA", "销售夹具公司")
+
+    customer =
+      SynieCore.Sales.Customer
+      |> Ash.Changeset.for_create(:create, %{
+        code: "C-#{System.unique_integer([:positive])}",
+        name: "夹具客户"
+      })
+      |> Ash.create!(authorize?: false)
+
+    unit =
+      SynieCore.Base.Unit
+      |> Ash.Changeset.for_create(:create, %{
+        unit_type: :quantity,
+        is_base: true,
+        name: "只",
+        symbol: "s#{System.unique_integer([:positive])}",
+        ratio: 1
+      })
+      |> Ash.create!(authorize?: false)
+
+    category =
+      SynieCore.Inv.MaterialCategory
+      |> Ash.Changeset.for_create(:create, %{
+        code: "MC#{System.unique_integer([:positive])}",
+        name: "夹具分类"
+      })
+      |> Ash.create!(authorize?: false)
+
+    material =
+      SynieCore.Inv.Material
+      |> Ash.Changeset.for_create(:create, %{
+        code: "MAT-#{System.unique_integer([:positive])}",
+        name: "夹具物料",
+        category_id: category.id,
+        default_unit_id: unit.id
+      })
+      |> Ash.create!(authorize?: false)
+
+    pairs =
+      Enum.map(dates, fn date ->
+        order =
+          SynieCore.Sales.Order
+          |> Ash.Changeset.for_create(:create, %{
+            company_id: company.id,
+            order_no: "SO-#{System.unique_integer([:positive])}",
+            order_date: date,
+            party_type: :customer,
+            party_id: customer.id
+          })
+          |> Ash.create!(authorize?: false)
+
+        item =
+          SynieCore.Sales.OrderItem
+          |> Ash.Changeset.for_create(:create, %{
+            order_id: order.id,
+            idx: 1,
+            material_id: material.id,
+            unit_id: unit.id,
+            qty: 1,
+            price: 1
+          })
+          |> Ash.create!(authorize?: false)
+
+        {order, item}
+      end)
+
+    %{customer: customer, pairs: pairs}
+  end
+
+  describe "salOrderItems 头字段 calculation" do
+    test "gridMeta:物料快照列反射为普通 string 列(中文标签)" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor(), "salOrderItems")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      for {name, label} <- [
+            {"materialCode", "物料编号"},
+            {"materialName", "物料名称"},
+            {"materialSpec", "规格"},
+            {"customerPartNo", "客户料号"},
+            {"unitName", "单位名称"}
+          ] do
+        assert %{"type" => "string", "label" => ^label} = by_name[name]
+      end
+    end
+
+    test "gridMeta:四个头字段反射成列(类型/中文标签/枚举项),partyId 为多态 fk" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor(), "salOrderItems")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      assert %{
+               "type" => "date",
+               "label" => "订单日期",
+               "sortable" => true,
+               "filterable" => true
+             } = by_name["orderDate"]
+
+      assert %{"type" => "enum", "label" => "状态", "sortable" => true, "filterable" => true} =
+               status = by_name["orderStatus"]
+
+      assert Enum.sort_by(status["enumOptions"], & &1["value"]) == [
+               %{"value" => "AUDITED", "label" => "已审核"},
+               %{"value" => "CLOSED", "label" => "已关闭"},
+               %{"value" => "DRAFT", "label" => "草稿"},
+               %{"value" => "VOIDED", "label" => "已作废"}
+             ]
+
+      assert %{"type" => "enum", "label" => "对手类型(客户/内部公司)"} =
+               party_type = by_name["partyType"]
+
+      # PartyType 枚举全量反射(供应商值留给采购域),与 accGlJournalLines 的 partyType 一致
+      assert Enum.sort_by(party_type["enumOptions"], & &1["value"]) == [
+               %{"value" => "COMPANY", "label" => "内部公司"},
+               %{"value" => "CUSTOMER", "label" => "客户"},
+               %{"value" => "SUPPLIER", "label" => "供应商"}
+             ]
+
+      assert %{"type" => "fk", "label" => "对手", "sortable" => false, "filterable" => true} =
+               party = by_name["partyId"]
+
+      assert %{
+               "resource" => nil,
+               "relation" => nil,
+               "discriminator" => "partyType",
+               "discriminatorType" => "enum",
+               "variants" => [
+                 %{
+                   "value" => "COMPANY",
+                   "resource" => "basCompanies",
+                   "labelField" => "name",
+                   "label" => "内部公司"
+                 },
+                 %{
+                   "value" => "CUSTOMER",
+                   "resource" => "salCustomers",
+                   "labelField" => "name",
+                   "label" => "客户"
+                 }
+               ]
+             } = party["ref"]
+    end
+
+    test "gridMeta:多态 fk 变体按目标资源 read 权限裁剪" do
+      actor = Authz.build_actor(user_with!(["sales.customer:read"]))
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(actor, "salOrderItems")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      assert %{
+               "type" => "fk",
+               "ref" => %{
+                 "discriminator" => "partyType",
+                 "variants" => [
+                   %{"value" => "CUSTOMER", "resource" => "salCustomers", "label" => "客户"}
+                 ]
+               }
+             } = by_name["partyId"]
+
+      # 无任何变体 read 权限:partyId 退化为普通列(无 ref)
+      no_perm = Authz.build_actor(user_with!([]))
+      assert %{data: %{"gridMeta" => meta2}} = run_meta!(no_perm, "salOrderItems")
+      by_name2 = Map.new(meta2["columns"], &{&1["name"], &1})
+      assert %{"type" => "string", "filterable" => false, "ref" => nil} = by_name2["partyId"]
+    end
+
+    test "行查询:四个头字段 calculation 取到订单值" do
+      %{pairs: [{_order, item}], customer: customer} = sales_item_fixtures!([~D[2026-07-17]])
+
+      result =
+        run!(
+          ~s|query { salOrderItems(filter: {id: {eq: "#{item.id}"}}) { results { orderDate orderStatus partyType partyId } } }|,
+          super_actor()
+        )
+
+      assert %{data: %{"salOrderItems" => %{"results" => [row]}}} = result
+      assert row["orderDate"] == "2026-07-17"
+      assert row["orderStatus"] == "DRAFT"
+      assert row["partyType"] == "CUSTOMER"
+      assert row["partyId"] == customer.id
+    end
+
+    test "calculation 排序:orderDate DESC 生效(不被行号兜底顶掉)" do
+      %{pairs: [{_o1, item1}, {_o2, item2}]} =
+        sales_item_fixtures!([~D[2026-07-01], ~D[2026-07-15]])
+
+      result =
+        run!(
+          ~s|query { salOrderItems(filter: {id: {in: ["#{item1.id}", "#{item2.id}"]}}, sort: [{field: ORDER_DATE, order: DESC}]) { results { id orderDate } } }|,
+          super_actor()
+        )
+
+      assert %{data: %{"salOrderItems" => %{"results" => rows}}} = result
+      assert Enum.map(rows, & &1["id"]) == [item2.id, item1.id]
+      assert Enum.map(rows, & &1["orderDate"]) == ["2026-07-15", "2026-07-01"]
+    end
+
+    test "calculation 筛选:orderStatus eq 只命中已审核订单的行" do
+      %{pairs: [{_o1, item1}, {order2, item2}]} =
+        sales_item_fixtures!([~D[2026-07-01], ~D[2026-07-15]])
+
+      order2 |> Ash.Changeset.for_update(:audit, %{}) |> Ash.update!(authorize?: false)
+
+      result =
+        run!(
+          ~s|query { salOrderItems(filter: {and: [{id: {in: ["#{item1.id}", "#{item2.id}"]}}, {orderStatus: {eq: AUDITED}}]}) { count results { id orderStatus } } }|,
+          super_actor()
+        )
+
+      assert %{data: %{"salOrderItems" => %{"count" => 1, "results" => [row]}}} = result
+      assert row["id"] == item2.id
+      assert row["orderStatus"] == "AUDITED"
+    end
+  end
 end

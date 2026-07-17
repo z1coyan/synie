@@ -82,11 +82,28 @@ defmodule SynieWeb.GridMeta do
           Ash.Resource.Info.public_attributes(module),
           &column(&1, refs, rel_descriptions)
         ) ++
-          Enum.map(Ash.Resource.Info.public_aggregates(module), &aggregate_column/1),
+          Enum.map(Ash.Resource.Info.public_aggregates(module), &aggregate_column/1) ++
+          Enum.map(grid_calculations(module), &column(&1, refs, rel_descriptions)),
       capabilities: capabilities(module, actor),
       extended_actions: extended_actions(module),
       destroy_mutation: destroy_mutation(module)
     }
+  end
+
+  # 计算列 opt-in:资源声明 grid_calculations/0 白名单(同 grid_actions/0、grid_capabilities/0
+  # 先例),仅名单内 public calculation 反射成列。列形状与 attribute 列一致(column/3 复用,
+  # party_id 经同一套 refs 查表拿到 poly_refs 的多态 fk):AshGraphql 对 expr calculation
+  # 生成排序字段与筛选算子(表达式编译进 SQL,经 salOrderItems 真实查询验证),无需特判
+  defp grid_calculations(module) do
+    if function_exported?(module, :grid_calculations, 0) do
+      by_name = Map.new(Ash.Resource.Info.public_calculations(module), &{&1.name, &1})
+
+      module.grid_calculations()
+      |> Enum.map(&by_name[&1])
+      |> Enum.reject(&is_nil/1)
+    else
+      []
+    end
   end
 
   # 聚合列(如凭证借贷合计)仅展示:跨表排序/筛选算子前端未接,fail-closed 关掉
@@ -176,7 +193,9 @@ defmodule SynieWeb.GridMeta do
 
       Enum.reduce(module.poly_refs(), %{}, fn {attr, %{discriminator: disc, variants: variants}},
                                               acc ->
-        disc_type = Ash.Resource.Info.attribute(module, disc).type
+        # 判别字段可能是 calculation(如 OrderItem.party_type 经 calculation 暴露,无同名
+        # attribute):用 field/2 查(attribute → aggregate → calculation)
+        disc_type = Ash.Resource.Info.field(module, disc).type
 
         kept =
           for {value, variant} <- variants,

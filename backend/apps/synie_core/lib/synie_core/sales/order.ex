@@ -36,6 +36,37 @@ defmodule SynieCore.Sales.OrderPartyType do
   end
 end
 
+defmodule SynieCore.Sales.Order.ClearItemDrawings do
+  @moduledoc """
+  删订单前显式清理所有行的图纸挂接:订单删行走 DB 级联
+  (order_item postgres reference on_delete: :delete),OrderItem 的 destroy 钩子
+  不触发,不清会让挂接的 sys_file 被 AttachmentGuard 永久锁死。
+  before_action 在动作事务内执行,清理与订单删除同生共死(删单失败整体回滚)。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.before_action(changeset, fn cs ->
+      cs.data.id
+      |> item_ids()
+      |> Enum.each(&SynieCore.Sales.OrderItem.ClearDrawings.clear!/1)
+
+      cs
+    end)
+  end
+
+  defp item_ids(order_id) do
+    SynieCore.Sales.OrderItem
+    |> Ash.Query.filter(order_id == ^order_id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(& &1.id)
+  end
+end
+
 defmodule SynieCore.Sales.Order do
   @moduledoc """
   销售订单(头),对应 `sal_order` 表。公司向客户承诺供货的订货单据,纯业务承诺:
@@ -45,7 +76,8 @@ defmodule SynieCore.Sales.Order do
   已作废(void)两个终态,均不可逆;仅已审核单可关闭/作废(关闭=生效后提前终止,
   作废=单据不该存在)。订单号全局唯一:留空按 `sales.order` 编号规则自动取号
   (AutoNumber),手填原样保留。对手为多态引用(客户/内部公司,无真外键),
-  审核唯一业务门槛是行数 ≥ 1。行见 `OrderItem`,删除草稿时行由 DB 级联删除。
+  审核唯一业务门槛是行数 ≥ 1。行见 `OrderItem`,删除草稿时行由 DB 级联删除
+  (不走 OrderItem destroy 钩子,行的图纸挂接由 ClearItemDrawings 在删单前显式清理)。
   """
 
   use Ash.Resource,
@@ -179,6 +211,9 @@ defmodule SynieCore.Sales.Order do
           end
         end)
       end
+
+      # 行由 DB 级联删除(不走 OrderItem destroy 钩子),行的图纸挂接须在此显式清
+      change {SynieCore.Sales.Order.ClearItemDrawings, []}
     end
 
     update :audit do
