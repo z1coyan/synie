@@ -17,6 +17,9 @@ defmodule SynieCore do
       list SynieCore.Sales.Customer, :sal_customers, :read, paginate_with: :offset
       list SynieCore.Sales.Order, :sal_orders, :read, paginate_with: :offset
       list SynieCore.Sales.OrderItem, :sal_order_items, :read, paginate_with: :offset
+      list SynieCore.Sales.Quotation, :sal_quotations, :read, paginate_with: :offset
+      list SynieCore.Sales.QuotationItem, :sal_quotation_items, :read, paginate_with: :offset
+      list SynieCore.Sales.QuotationTier, :sal_quotation_tiers, :read, paginate_with: :offset
       list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
       list SynieCore.Hr.Employee, :hr_employees, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
@@ -127,6 +130,21 @@ defmodule SynieCore do
       create SynieCore.Sales.OrderItem, :create_sal_order_item, :create
       update SynieCore.Sales.OrderItem, :update_sal_order_item, :update
       destroy SynieCore.Sales.OrderItem, :destroy_sal_order_item, :destroy
+
+      # 销售报价单:状态翻转走 audit/void 独立 mutation;条目与价格档随单头权限码
+      create SynieCore.Sales.Quotation, :create_sal_quotation, :create
+      update SynieCore.Sales.Quotation, :update_sal_quotation, :update
+      destroy SynieCore.Sales.Quotation, :destroy_sal_quotation, :destroy
+      update SynieCore.Sales.Quotation, :audit_sal_quotation, :audit
+      update SynieCore.Sales.Quotation, :void_sal_quotation, :void
+
+      create SynieCore.Sales.QuotationItem, :create_sal_quotation_item, :create
+      update SynieCore.Sales.QuotationItem, :update_sal_quotation_item, :update
+      destroy SynieCore.Sales.QuotationItem, :destroy_sal_quotation_item, :destroy
+
+      create SynieCore.Sales.QuotationTier, :create_sal_quotation_tier, :create
+      update SynieCore.Sales.QuotationTier, :update_sal_quotation_tier, :update
+      destroy SynieCore.Sales.QuotationTier, :destroy_sal_quotation_tier, :destroy
 
       create SynieCore.Purchase.Supplier, :create_pur_supplier, :create
       update SynieCore.Purchase.Supplier, :update_pur_supplier, :update
@@ -265,6 +283,9 @@ defmodule SynieCore do
     resource SynieCore.Sales.Customer
     resource SynieCore.Sales.Order
     resource SynieCore.Sales.OrderItem
+    resource SynieCore.Sales.Quotation
+    resource SynieCore.Sales.QuotationItem
+    resource SynieCore.Sales.QuotationTier
     resource SynieCore.Purchase.Supplier
     resource SynieCore.Hr.Employee
     resource SynieCore.Inv.MaterialCategory

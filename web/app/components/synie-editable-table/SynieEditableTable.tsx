@@ -58,6 +58,12 @@ export interface SynieEditableTableProps<T extends Row = Row> {
   toolbar?: ReactNode
   /** 透传二级抽屉宽度等;默认比父抽屉窄一档(lg:w-[420px]) */
   drawerProps?: Pick<SynieRecordDrawerProps, 'contentClassName'>
+  /**
+   * 透传二级抽屉的 extraContent(字段栅格末尾的附加内容),签名同 SynieRecordDrawer:
+   * 行内子表(如报价条目的价格档)等场景用。注意 collectValues 会剥离非字段键,
+   * 附加内容的状态应由页面自持,提交经 transformItem 并入行数据
+   */
+  extraContent?: SynieRecordDrawerProps['extraContent']
 }
 
 const ALIGN: Record<'start' | 'center' | 'end', string> = {
@@ -177,6 +183,7 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
         exclude={props.exclude}
         fields={props.fields}
         meta={props.meta}
+        extraContent={props.extraContent}
         contentClassName={props.drawerProps?.contentClassName ?? 'w-full lg:w-[420px]'}
         onSubmit={submit}
       />
