@@ -14,8 +14,8 @@ defmodule SynieCore.Hr.PayrollPayment do
   创建即发放:before_action 锁工资单行(串行化并发发放/删单/改单),按其状态
   自动判别类型——待发放=「发放」并在 after_action 翻转工资单为已发放(借款抵扣
   >0 时校验员工借款余额、自动生成台账归还行),已发放=「补发」。金额允许为负
-  (多发冲回)、禁止为零。不可修改,只可删除重录(审计口径干净);删除后该工资单
-  已无任何发放记录时自动翻回待发放并删除联动归还行。
+  (多发冲回)、禁止为零。不可修改,只可删除重录(审计口径干净);删除「发放」
+  记录即自动翻回待发放并删除联动归还行(无论是否还有补发)。
 
   `pay_remaining` 一键发放(行动作/批量发放共用):金额不收前端,事务内锁单后
   按 应发 − 已发 权威计算,差额 ≤ 0 拒绝——前端拿到的差额可能过期,以锁内计算
@@ -323,14 +323,16 @@ defmodule SynieCore.Hr.PayrollPayment do
   end
 
   @doc false
-  # 删除发放的联动(事务内):该工资单已无任何发放记录时翻回待发放并删联动归还行
+  # 删除发放的联动(事务内):删「发放」(normal)即回退结算——翻回待发放并删联动归还行,
+  # 无论是否还有补发记录(归还行隶属于 normal 那笔的结算事实,见 settle_create);
+  # 删「补发」且该工资单已无任何发放记录时同样回退(兼容历史脏数据)。
   def settle_destroy(payment, actor) do
     remaining =
       __MODULE__
       |> Ash.Query.filter(payroll_id == ^payment.payroll_id)
       |> Ash.count!(authorize?: false)
 
-    if remaining == 0 do
+    if payment.kind == :normal or remaining == 0 do
       case Ash.get(SynieCore.Hr.Payroll, payment.payroll_id, authorize?: false) do
         {:ok, %{status: :paid} = payroll} ->
           payroll
