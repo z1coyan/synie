@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, ListBox, Select, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
+import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import {
@@ -168,6 +169,11 @@ function NumberingPage() {
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer('edit', row)}
+          rowActions={statusToggleActions({
+            field: 'enabled',
+            mutation: UPDATE_RULE,
+            resultKey: 'updateSysNumberingRule',
+          })}
         />
       </div>
 
@@ -187,6 +193,9 @@ function NumberingPage() {
         row={drawer?.row}
         // 段组装器/计数器子表默认 480px 局促,加宽一档(移动端仍全宽)
         contentClassName="w-full lg:w-[640px]"
+        // 启用是状态不是表单字段(规范):新建默认启用(同资源已有启用规则会被后端校验拒绝,
+        // 提示先停用旧规则),启停走列表行动作
+        exclude={['enabled']}
         fields={{
           resource: {
             required: true,
@@ -236,7 +245,6 @@ function NumberingPage() {
             ),
           },
           perCompany: { defaultValue: true, cols: 6 },
-          enabled: { defaultValue: true, cols: 6 },
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         extraContent={(mode, row) =>

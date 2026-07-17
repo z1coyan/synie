@@ -5,6 +5,7 @@ import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -53,6 +54,14 @@ function BankAccountsPage() {
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          rowActions={statusToggleActions({
+            field: 'active',
+            mutation: UPDATE_BANK_ACCOUNT,
+            resultKey: 'updateAccBankAccount',
+            rowLabel: (row) => String(row.alias ?? ''),
+            // 抽屉走 rowId 自查,状态翻转后一并失效行缓存
+            onDone: () => queryClient.invalidateQueries({ queryKey: ['rowById', 'accBankAccounts'] }),
+          })}
         />
       </div>
 
@@ -64,6 +73,8 @@ function BankAccountsPage() {
         onOpenChange={(open) => !open && setDrawer(null)}
         // 表格列是白名单子集(无支行/备注),行数据不全;不传 row,走 rowId 自查完整记录
         rowId={drawer?.row?.id}
+        // 启用是状态不是表单字段(规范):新建默认启用,停用(账户退出)走列表行动作
+        exclude={['active']}
         fields={{
           // 公司提到最前(绑定科目候选依赖它);建后不可改(update 动作不收 company_id);
           // 换公司时清掉已选科目,避免跨公司科目挂错
@@ -75,7 +86,6 @@ function BankAccountsPage() {
           holderName: { order: 4, required: true, placeholder: '通常与公司名一致' },
           accountNo: { order: 5, required: true, placeholder: '对公账号/卡号' },
           currencyId: { order: 6, required: true, cols: 6 },
-          active: { order: 8, cols: 6, defaultValue: true },
           accountId: {
             order: 7,
             cols: 6,
