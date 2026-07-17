@@ -51,6 +51,8 @@ export function useGridActions(opts: {
   onExport?: () => void
   onPrintRows?: (rows: Row[]) => void
   actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
+  /** 按行显隐动作:key 为扩展动作 key 或内建 'edit'/'delete',返回 false 该行菜单不含此动作(如仅草稿可删) */
+  actionVisible?: Record<string, (row: Row) => boolean>
   bulkActions?: BulkAction[]
   rowActions?: RowAction[]
 }) {
@@ -108,18 +110,19 @@ export function useGridActions(opts: {
       : []),
   ]
 
-  // 行内菜单
+  // 行内菜单(actionVisible 按行过滤:状态机类页面仅特定状态放行审核/删除等)
+  const vis = (key: string, row: Row) => opts.actionVisible?.[key]?.(row) ?? true
   const rowMenuFor = (row: Row): ResolvedAction[] => [
     ...(opts.onView
       ? [{ key: 'view', label: '查看', isDanger: false, run: () => opts.onView!(row) }]
       : []),
-    ...(can('update') && opts.onEdit
+    ...(can('update') && opts.onEdit && vis('edit', row)
       ? [{ key: 'edit', label: '编辑', isDanger: false, run: () => opts.onEdit!(row) }]
       : []),
     ...(can('print') && opts.onPrintRows
       ? [{ key: 'print', label: '打印', isDanger: false, run: () => opts.onPrintRows!([row]) }]
       : []),
-    ...extended('row'),
+    ...extended('row').filter((a) => vis(a.key, row)),
     ...(opts.rowActions ?? [])
       .filter((a) => can(a.capability))
       .map((a) => ({
@@ -128,7 +131,7 @@ export function useGridActions(opts: {
         isDanger: a.isDanger ?? false,
         run: () => a.onAction(row, ctx),
       })),
-    ...(can('delete') && meta?.destroyMutation
+    ...(can('delete') && meta?.destroyMutation && vis('delete', row)
       ? [{ key: 'delete', label: '删除', isDanger: true, run: confirmThenMutate('删除', true, meta.destroyMutation) }]
       : []),
   ]

@@ -16,6 +16,8 @@ defmodule SynieWeb.GridMeta do
     "basUnits" => SynieCore.Base.Unit,
     "basAccounts" => SynieCore.Base.Account,
     "salCustomers" => SynieCore.Sales.Customer,
+    "salOrders" => SynieCore.Sales.Order,
+    "salOrderItems" => SynieCore.Sales.OrderItem,
     "purSuppliers" => SynieCore.Purchase.Supplier,
     "hrEmployees" => SynieCore.Hr.Employee,
     "invMaterialCategories" => SynieCore.Inv.MaterialCategory,

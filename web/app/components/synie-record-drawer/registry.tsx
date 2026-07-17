@@ -1,6 +1,8 @@
+import { Label, ListBox, Select, TextArea, TextField } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
 import { SynieAttachmentPanel } from '../synie-attachment-panel/SynieAttachmentPanel'
 import { SynieImageAttachment } from '../synie-attachment-panel/SynieImageAttachment'
+import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
 import type { SynieRecordDrawerProps } from './SynieRecordDrawer'
 
 /**
@@ -29,6 +31,92 @@ const registry: Record<string, ResourceDrawerConfig> = {
   basUnits: { label: '单位' },
   basAccounts: { label: '科目' },
   salCustomers: { label: '客户' },
+  salOrders: {
+    label: '销售订单',
+    // 条目表 8 列,默认 480px 太挤,订单抽屉加宽(移动端仍全宽)
+    contentClassName: 'w-full lg:w-[880px]',
+    // 状态翻转走行内动作(audit/close/void);审核时间/审核人/录入人是系统字段;
+    // 含税总额是行聚合,只在表格展示;创建/更新时间表格已隐藏
+    exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'grossTotal', 'insertedAt', 'updatedAt'],
+    fields: {
+      // 公司提到最前;建后不可改(update 动作不收 company_id)
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      // 编号可留空自动取号(后端 AutoNumber:sales.order 编号规则),前端不标必填
+      orderNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      orderDate: { order: 1, cols: 6, required: true },
+      // 订单对手限客户/内部公司(供应商留给采购单);meta 枚举是全量三值,自定义下拉只放两类
+      partyType: {
+        order: 2,
+        cols: 6,
+        required: true,
+        label: '对手类型',
+        // 切换对手类型时清掉已选对手,避免客户 id 挂在公司数据源下
+        effects: () => ({ partyId: null }),
+        input: ({ value, onChange, isDisabled }) => (
+          <Select
+            isDisabled={isDisabled}
+            isRequired
+            value={value == null || value === '' ? null : String(value)}
+            onChange={(v) => onChange(v === '' ? null : v)}
+          >
+            <Label>对手类型</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item key="CUSTOMER" id="CUSTOMER" textValue="客户">
+                  客户
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                <ListBox.Item key="COMPANY" id="COMPANY" textValue="内部公司">
+                  内部公司
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        ),
+      },
+      partyId: {
+        order: 3,
+        cols: 6,
+        required: true,
+        label: '对手',
+        // 未选对手类型时不出现;选定后数据源跟随类型(多态 fk,同凭证分录行先例)
+        visible: (values) => values.partyType === 'CUSTOMER' || values.partyType === 'COMPANY',
+        input: ({ value, onChange, isDisabled, values }) => {
+          const isCompany = values.partyType === 'COMPANY'
+          return (
+            <RemoteSelect
+              resource={isCompany ? 'basCompanies' : 'salCustomers'}
+              label="对手"
+              placeholder={isCompany ? '选择内部公司…' : '选择客户…'}
+              value={value == null ? null : String(value)}
+              onChange={(id) => onChange(id)}
+              isDisabled={isDisabled}
+            />
+          )
+        },
+      },
+      remarks: { order: 4, label: '订单备注' },
+      // 交易条款是对客户的自由多行文本,置表单底部
+      terms: {
+        order: 5,
+        label: '交易条款',
+        input: ({ value, onChange, isDisabled }) => (
+          <TextField value={value == null ? '' : String(value)} onChange={onChange} isDisabled={isDisabled}>
+            <Label>交易条款</Label>
+            <TextArea rows={4} placeholder="对客户展示的交易条款,如交付、付款、验收约定" />
+          </TextField>
+        ),
+      },
+    },
+  },
+  salOrderItems: { label: '订单条目' },
   purSuppliers: { label: '供应商' },
   hrAttendancePunches: { label: '打卡记录' },
   hrAttendanceImports: { label: '考勤导入' },

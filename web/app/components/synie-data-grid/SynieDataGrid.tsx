@@ -97,6 +97,8 @@ export interface SynieDataGridProps {
   hideSearch?: boolean
   onPrint?: (rows: Row[]) => void
   actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
+  /** 按行显隐行内动作:key 为扩展动作 key 或内建 'edit'/'delete'(如仅草稿订单可删),返回 false 该行不显示 */
+  actionVisible?: Record<string, (row: Row) => boolean>
   bulkActions?: BulkAction[]
   rowActions?: RowAction[]
   /** 选择器模式:表格作为弹窗选择器主体,隐藏动作/批量条,选中受控且跨页累积 */
@@ -493,6 +495,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     onExport: pickMode ? undefined : handleExport,
     onPrintRows: pickMode ? undefined : handlePrintRows,
     actionHandlers: props.actionHandlers,
+    actionVisible: props.actionVisible,
     bulkActions: props.bulkActions,
     rowActions: props.rowActions,
   })

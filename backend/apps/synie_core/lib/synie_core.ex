@@ -15,6 +15,8 @@ defmodule SynieCore do
       list SynieCore.Base.Currency, :bas_currencies, :read, paginate_with: :offset
       list SynieCore.Base.Account, :bas_accounts, :read, paginate_with: :offset
       list SynieCore.Sales.Customer, :sal_customers, :read, paginate_with: :offset
+      list SynieCore.Sales.Order, :sal_orders, :read, paginate_with: :offset
+      list SynieCore.Sales.OrderItem, :sal_order_items, :read, paginate_with: :offset
       list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
       list SynieCore.Hr.Employee, :hr_employees, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
@@ -113,6 +115,18 @@ defmodule SynieCore do
       create SynieCore.Sales.Customer, :create_sal_customer, :create
       update SynieCore.Sales.Customer, :update_sal_customer, :update
       destroy SynieCore.Sales.Customer, :destroy_sal_customer, :destroy
+
+      # 销售订单:状态翻转走 audit/close/void 独立 mutation;行随单头权限码
+      create SynieCore.Sales.Order, :create_sal_order, :create
+      update SynieCore.Sales.Order, :update_sal_order, :update
+      destroy SynieCore.Sales.Order, :destroy_sal_order, :destroy
+      update SynieCore.Sales.Order, :audit_sal_order, :audit
+      update SynieCore.Sales.Order, :close_sal_order, :close
+      update SynieCore.Sales.Order, :void_sal_order, :void
+
+      create SynieCore.Sales.OrderItem, :create_sal_order_item, :create
+      update SynieCore.Sales.OrderItem, :update_sal_order_item, :update
+      destroy SynieCore.Sales.OrderItem, :destroy_sal_order_item, :destroy
 
       create SynieCore.Purchase.Supplier, :create_pur_supplier, :create
       update SynieCore.Purchase.Supplier, :update_pur_supplier, :update
@@ -249,6 +263,8 @@ defmodule SynieCore do
     resource SynieCore.Base.Currency
     resource SynieCore.Base.Account
     resource SynieCore.Sales.Customer
+    resource SynieCore.Sales.Order
+    resource SynieCore.Sales.OrderItem
     resource SynieCore.Purchase.Supplier
     resource SynieCore.Hr.Employee
     resource SynieCore.Inv.MaterialCategory
