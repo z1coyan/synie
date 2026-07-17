@@ -27,7 +27,16 @@ const UPDATE_EMPLOYEE = `
 `
 
 // 常用列白名单:户籍/现居住地长文本进详情看,给薪酬列留视口
-const GRID_COLUMNS = ['code', 'name', 'attendanceNo', 'idNumber', 'phone', 'dailyWage', 'monthlyAllowance']
+const GRID_COLUMNS = [
+  'code',
+  'name',
+  'attendanceNo',
+  'idNumber',
+  'phone',
+  'dailyWage',
+  'monthlyAllowance',
+  'insuranceTypes',
+]
 
 const GRID_OVERRIDES = {
   dailyWage: { render: (v) => (v == null || v === '' ? null : formatAmount(v)) },

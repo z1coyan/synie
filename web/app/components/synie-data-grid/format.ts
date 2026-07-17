@@ -8,6 +8,10 @@ export function cellText(col: GridColumnMeta, value: unknown, row?: Row): string
     // join 缺失(权限裁剪后的旧数据/多态 fk 无 join):退回截断 id,不报错
     return value == null || value === '' ? '' : String(value).slice(0, 8)
   }
+  if (col.type === 'enumArray')
+    return (Array.isArray(value) ? value : [])
+      .map((v) => col.enumOptions?.find((o) => o.value === v)?.label ?? String(v))
+      .join('、')
   if (value == null || value === '') return ''
   if (col.type === 'boolean') return value ? '是' : '否'
   if (col.type === 'datetime') return new Date(String(value)).toLocaleString('zh-CN', { hour12: false })

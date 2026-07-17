@@ -236,6 +236,7 @@ const registry: Record<string, ResourceDrawerConfig> = {
       currentAddress: { order: 6 },
       dailyWage: { order: 7, cols: 6, render: (v) => formatAmount(v) },
       monthlyAllowance: { order: 8, cols: 6, render: (v) => formatAmount(v) },
+      insuranceTypes: { order: 9 },
     },
     // 身份证正/背面照片:附件槽位(owner+category),create 态无宿主 id,槽位自身显示提示
     extraContent: (mode, row) => (

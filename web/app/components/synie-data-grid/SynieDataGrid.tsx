@@ -227,6 +227,20 @@ export function defaultCell(
           {col.enumOptions?.find((o) => o.value === value)?.label ?? String(value)}
         </Chip>
       )
+    case 'enumArray': {
+      // 枚举数组(如参保类型):胶囊组平铺换行;空数组与空值同显 —
+      const tokens = Array.isArray(value) ? (value as string[]) : []
+      if (tokens.length === 0) return <span className="text-muted">—</span>
+      return (
+        <div className="flex flex-wrap gap-1">
+          {tokens.map((v) => (
+            <Chip key={v} size="sm" className="whitespace-nowrap" color={enumColors?.[v] ?? 'default'}>
+              {col.enumOptions?.find((o) => o.value === v)?.label ?? v}
+            </Chip>
+          ))}
+        </div>
+      )
+    }
     default:
       return <ClampCell text={String(value)} maxWidth={clampWidth} />
   }

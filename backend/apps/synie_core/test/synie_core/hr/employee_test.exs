@@ -33,6 +33,27 @@ defmodule SynieCore.Hr.EmployeeTest do
     assert Decimal.eq?(emp.monthly_allowance, Decimal.new("800"))
   end
 
+  test "参保类型:原子险种多选任意组合,默认空" do
+    emp = employee!(%{code: "EI01", name: "张三"})
+    assert emp.insurance_types == []
+
+    emp2 =
+      employee!(%{
+        code: "EI02",
+        name: "李四",
+        insurance_types: [:social_injury, :housing_fund, :commercial_injury]
+      })
+
+    assert emp2.insurance_types == [:social_injury, :housing_fund, :commercial_injury]
+
+    updated =
+      emp2
+      |> Ash.Changeset.for_update(:update, %{insurance_types: [:social_pension]})
+      |> Ash.update!(authorize?: false)
+
+    assert updated.insurance_types == [:social_pension]
+  end
+
   test "员工编号唯一" do
     employee!(%{code: "E0001", name: "张三"})
 

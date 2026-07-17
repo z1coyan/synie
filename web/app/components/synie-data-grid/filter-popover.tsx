@@ -69,6 +69,12 @@ export function filterSummary(col: GridColumnMeta, f: ColumnFilter): string {
         .filter((o) => f.values.includes(o.value))
         .map((o) => o.label)
         .join('、')
+    case 'enumArray': {
+      const labels = (col.enumOptions ?? [])
+        .filter((o) => f.values.includes(o.value))
+        .map((o) => o.label)
+      return `${f.op === 'hasAny' ? '包含' : '不包含'} ${labels.join('、')}`
+    }
     case 'number':
       return f.op === 'between' ? `${f.gte ?? ''} ~ ${f.lte ?? ''}` : `${NUMBER_OP_LABEL[f.op]} ${f.value}`
     case 'date':
@@ -182,6 +188,49 @@ function FilterControl({
           })}
         </div>
       )
+    case 'enumArray': {
+      // 枚举数组:先选包含/不包含,再勾险种;「包含」= 含任一勾选项,「不包含」= 勾选项全都没有。
+      // 与 enum 同款 Checkbox 列表,全不勾即清筛选(op 随之回落默认,先勾值再切方向)
+      const op = filter?.kind === 'enumArray' ? filter.op : 'hasAny'
+      const values = filter?.kind === 'enumArray' ? filter.values : []
+      return (
+        <div className="flex flex-col gap-2">
+          <OpSelect
+            value={op}
+            options={[
+              ['hasAny', '包含(任一)'],
+              ['notHas', '不包含'],
+            ]}
+            onChange={(next) => {
+              if (values.length > 0) onChange({ kind: 'enumArray', op: next, values })
+            }}
+          />
+          <div className="flex flex-col gap-1">
+            {(column.enumOptions ?? []).map((o) => {
+              const checked = values.includes(o.value)
+              return (
+                <Checkbox
+                  key={o.value}
+                  slot={null}
+                  isSelected={checked}
+                  onChange={(sel) => {
+                    const next = sel ? [...values, o.value] : values.filter((v) => v !== o.value)
+                    onChange(next.length > 0 ? { kind: 'enumArray', op, values: next } : null)
+                  }}
+                >
+                  <Checkbox.Content>
+                    <Checkbox.Control>
+                      <Checkbox.Indicator />
+                    </Checkbox.Control>
+                    {o.label}
+                  </Checkbox.Content>
+                </Checkbox>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
     case 'fk':
       // 多态 fk:先选变体定目标资源,再选记录;普通 fk 直接按 ref 三件套建选择器;ref 为 null 防御性放空
       if (column.ref?.discriminator && column.ref.variants?.length) {

@@ -1,4 +1,13 @@
-export type GridColumnType = 'string' | 'integer' | 'decimal' | 'boolean' | 'date' | 'datetime' | 'enum' | 'fk'
+export type GridColumnType =
+  | 'string'
+  | 'integer'
+  | 'decimal'
+  | 'boolean'
+  | 'date'
+  | 'datetime'
+  | 'enum'
+  | 'enumArray'
+  | 'fk'
 
 /** enum 胶囊配色(HeroUI Chip color),按枚举线上值(大写 token)配 */
 export type EnumChipColor = 'default' | 'accent' | 'success' | 'warning' | 'danger'
@@ -90,6 +99,8 @@ export type ColumnFilter =
   | { kind: 'text'; op: TextOp; value: string }
   | { kind: 'bool'; eq: boolean }
   | { kind: 'enum'; values: string[] }
+  // 枚举数组:hasAny = 含任一勾选险种,notHas = 所有勾选险种都没有(空数组也命中)
+  | { kind: 'enumArray'; op: 'hasAny' | 'notHas'; values: string[] }
   | { kind: 'number'; op: NumberOp; value: string }
   | { kind: 'number'; op: 'between'; gte?: string; lte?: string }
   | { kind: 'date'; op: DateOp; value: string }
