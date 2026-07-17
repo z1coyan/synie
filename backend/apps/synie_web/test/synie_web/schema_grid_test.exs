@@ -882,4 +882,61 @@ defmodule SynieWeb.SchemaGridTest do
       assert row["orderStatus"] == "AUDITED"
     end
   end
+
+  describe "枚举数组列(员工参保类型)" do
+    test "gridMeta:type enumArray,带 8 险种选项,可筛不可排" do
+      assert %{data: %{"gridMeta" => meta}} = run_meta!(super_actor(), "hrEmployees")
+      by_name = Map.new(meta["columns"], &{&1["name"], &1})
+
+      col = by_name["insuranceTypes"]
+      assert col["type"] == "enumArray"
+      assert col["label"] == "参保类型"
+      assert col["sortable"] == false
+      assert col["filterable"] == true
+      assert length(col["enumOptions"]) == 8
+      assert %{"value" => "SOCIAL_INJURY", "label" => "社保工伤"} in col["enumOptions"]
+      assert %{"value" => "HOUSING_FUND", "label" => "公积金"} in col["enumOptions"]
+      assert %{"value" => "COMMERCIAL_MEDICAL", "label" => "商保医疗"} in col["enumOptions"]
+    end
+
+    test "has 筛选「包含」,not 包裹「不包含」" do
+      for {code, types} <- [
+            {"ei1", [:social_injury, :housing_fund]},
+            {"ei2", [:social_pension]},
+            {"ei3", []}
+          ] do
+        SynieCore.Hr.Employee
+        |> Ash.Changeset.for_create(:create, %{
+          code: code,
+          name: "员工#{code}",
+          insurance_types: types
+        })
+        |> Ash.create!(authorize?: false)
+      end
+
+      actor = Authz.build_actor(user_with!(["hr.employee:read"]))
+
+      assert %{data: %{"hrEmployees" => %{"results" => [row]}}} =
+               run!(
+                 ~s|query { hrEmployees(filter: {insuranceTypesHas: {input: {type: SOCIAL_INJURY}, eq: true}}) { results { code insuranceTypes } } }|,
+                 actor
+               )
+
+      assert row["code"] == "ei1"
+      assert row["insuranceTypes"] == ["SOCIAL_INJURY", "HOUSING_FUND"]
+
+      # 「不包含」= eq false;未参保(空数组)员工也要命中
+      result =
+        run!(
+          ~s|query { hrEmployees(filter: {insuranceTypesHas: {input: {type: SOCIAL_INJURY}, eq: false}}) { results { code } } }|,
+          actor
+        )
+
+      assert %{data: %{"hrEmployees" => %{"results" => rows}}} = result
+      codes = Enum.map(rows, & &1["code"])
+      assert "ei2" in codes
+      assert "ei3" in codes
+      refute "ei1" in codes
+    end
+  end
 end

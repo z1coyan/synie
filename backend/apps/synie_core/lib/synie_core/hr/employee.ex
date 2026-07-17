@@ -57,7 +57,8 @@ defmodule SynieCore.Hr.Employee do
         :phone,
         :current_address,
         :daily_wage,
-        :monthly_allowance
+        :monthly_allowance,
+        :insurance_types
       ]
 
       # 编号留空自动取号(须在构建期,见 AutoNumber moduledoc)
@@ -74,7 +75,8 @@ defmodule SynieCore.Hr.Employee do
         :phone,
         :current_address,
         :daily_wage,
-        :monthly_allowance
+        :monthly_allowance,
+        :insurance_types
       ]
 
       require_atomic? false
@@ -154,8 +156,29 @@ defmodule SynieCore.Hr.Employee do
       description "月补贴"
     end
 
+    # 原子险种多选,任意组合不设互斥;当前状态快照,变更追溯靠审计日志
+    attribute :insurance_types, {:array, SynieCore.Hr.InsuranceType} do
+      public? true
+      allow_nil? false
+      default []
+      description "参保类型"
+    end
+
     create_timestamp :inserted_at, public?: true, description: "创建时间"
     update_timestamp :updated_at, public?: true, description: "更新时间"
+  end
+
+  calculations do
+    # 参保类型列的筛选通道:AshGraphql 不为数组属性生成 filter 字段,包含判断走带参
+    # 伴生 calculation(命名约定 `<attr>_has`,GridMeta 据此标记枚举数组列可筛)。
+    # 前端「包含」= {insuranceTypesHas: {input: {type: X}, eq: true}},「不包含」= eq false
+    calculate :insurance_types_has,
+              :boolean,
+              expr(has(insurance_types, ^arg(:type))) do
+      public? true
+      argument :type, SynieCore.Hr.InsuranceType, allow_nil?: false
+      description "参保类型包含判断(仅列筛选用)"
+    end
   end
 
   identities do

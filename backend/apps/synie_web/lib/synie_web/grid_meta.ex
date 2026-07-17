@@ -75,15 +75,16 @@ defmodule SynieWeb.GridMeta do
   def build(module, actor) do
     refs = Map.merge(fk_refs(module, actor), poly_refs(module, actor))
     rel_descriptions = rel_descriptions(module)
+    filter_calcs = module |> Ash.Resource.Info.public_calculations() |> MapSet.new(& &1.name)
 
     %{
       columns:
         Enum.map(
           Ash.Resource.Info.public_attributes(module),
-          &column(&1, refs, rel_descriptions)
+          &column(&1, refs, rel_descriptions, filter_calcs)
         ) ++
           Enum.map(Ash.Resource.Info.public_aggregates(module), &aggregate_column/1) ++
-          Enum.map(grid_calculations(module), &column(&1, refs, rel_descriptions)),
+          Enum.map(grid_calculations(module), &column(&1, refs, rel_descriptions, filter_calcs)),
       capabilities: capabilities(module, actor),
       extended_actions: extended_actions(module),
       destroy_mutation: destroy_mutation(module)
@@ -119,7 +120,7 @@ defmodule SynieWeb.GridMeta do
     }
   end
 
-  defp column(attr, refs, rel_descriptions) do
+  defp column(attr, refs, rel_descriptions, filter_calcs) do
     case Map.fetch(refs, attr.name) do
       {:ok, ref} ->
         %{
@@ -144,7 +145,7 @@ defmodule SynieWeb.GridMeta do
           label: attr.description || rel_descriptions[attr.name] || to_string(attr.name),
           # map/数组(jsonb)列排序合法但语义无意义,不给排序入口
           sortable: attr.type != Ash.Type.Map and not match?({:array, _}, attr.type),
-          filterable: filterable?(attr.type),
+          filterable: filterable?(attr.type) and filter_channel?(attr, filter_calcs),
           enum_options: enum_options(attr.type),
           ref: nil
         }
@@ -258,7 +259,17 @@ defmodule SynieWeb.GridMeta do
   # AshGraphql 的 contains 筛选只对 string/ci_string 生成;uuid、裸 atom(非枚举,无 values/0)
   # 与 map(json_string 标量)若仍标 filterable,跨列搜索/该列筛选会拼出后端不存在的算子,
   # 导致整个查询报错。type 映射仍按 string 处理(展示不受影响)。
-  defp filterable?({:array, _}), do: false
+  # 枚举数组(enumArray)例外:AshGraphql 不为数组属性生成 filter 字段,筛选走伴生
+  # `<attr>_has` 布尔 calculation(见 filter_channel?/2);其余数组仍不可筛
+  defp filterable?({:array, inner}), do: enum_type?(inner)
+
+  # 枚举数组列的筛选通道是伴生 `<attr>_has` 带参 calculation(前端拼
+  # {<attr>Has: {input: {type: X}, eq: true/false}});伴生缺失则 fail-closed 不可筛,
+  # 防止 filterable 列拼出 schema 里不存在的 filter 字段整查报错。非数组列不受此限
+  defp filter_channel?(%{type: {:array, _}, name: name}, filter_calcs),
+    do: MapSet.member?(filter_calcs, :"#{name}_has")
+
+  defp filter_channel?(_attr, _filter_calcs), do: true
 
   # Time 同样没有 contains 算子(日考勤四段时刻列展示即可,筛选走日期列)
   defp filterable?(type),
@@ -294,6 +305,11 @@ defmodule SynieWeb.GridMeta do
 
   defp camelize(name), do: name |> to_string() |> Absinthe.Utils.camelize(lower: true)
 
+  # 枚举数组列(如员工参保类型):展示标签组、筛选走 has;非枚举数组沿用 string 展示路径
+  defp type_name({:array, inner}) do
+    if enum_type?(inner), do: "enumArray", else: "string"
+  end
+
   defp type_name(type) do
     cond do
       enum_type?(type) ->
@@ -323,6 +339,8 @@ defmodule SynieWeb.GridMeta do
   defp enum_type?(type) do
     is_atom(type) and Code.ensure_loaded?(type) and function_exported?(type, :values, 0)
   end
+
+  defp enum_options({:array, inner}), do: enum_options(inner)
 
   defp enum_options(type) do
     if enum_type?(type) do

@@ -57,6 +57,17 @@ function columnClause(name: string, filter: FilterState[string], columns: GridCo
         ? `{${name}: {in: [${allowed.map((v) => v.toUpperCase()).join(', ')}]}}`
         : null
     }
+    case 'enumArray': {
+      // AshGraphql 不为数组属性生成 filter 字段,走伴生 `<attr>_has` 布尔 calculation
+      // (约定:calc 名 = 列名 + Has,参数名 type;见后端 GridMeta.filter_channel?)。
+      // 包含任一 = or 各险种 eq true;不包含 = and 各险种 eq false。token 经 enumOptions 白名单
+      const allowed = filter.values.filter((v) => col.enumOptions?.some((o) => o.value === v))
+      if (allowed.length === 0) return null
+      const eq = filter.op === 'hasAny'
+      const clauses = allowed.map((v) => `{${name}Has: {input: {type: ${v.toUpperCase()}}, eq: ${eq}}}`)
+      if (clauses.length === 1) return clauses[0]
+      return eq ? `{or: [${clauses.join(', ')}]}` : `{and: [${clauses.join(', ')}]}`
+    }
     case 'fk': {
       const ids = filter.values.filter((v) => UUID_RE.test(v))
       return ids.length > 0 ? `{${name}: {in: [${ids.map(str).join(', ')}]}}` : null

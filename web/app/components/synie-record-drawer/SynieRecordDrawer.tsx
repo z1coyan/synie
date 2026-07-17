@@ -3,6 +3,7 @@ import { parseDate, parseDateTime } from '@internationalized/date'
 import {
   Button,
   Calendar,
+  Checkbox,
   DateField,
   DatePicker,
   Input,
@@ -495,6 +496,38 @@ function FieldInput({
           </Select.Popover>
         </Select>
       )
+    case 'enumArray': {
+      // 枚举数组多选:Checkbox 两列勾选组(项目无 CheckboxGroup 先例,复用列筛选的 Checkbox 写法);
+      // 提交顺序按 enumOptions 声明序归一,与后端枚举定义序一致
+      const selected = Array.isArray(value) ? (value as string[]) : []
+      const canonical = (next: string[]) =>
+        (field.col.enumOptions ?? []).map((o) => o.value).filter((v) => next.includes(v))
+      return (
+        <div className="flex flex-col gap-1.5">
+          <Label>{field.label}</Label>
+          <div className="grid grid-cols-2 gap-1.5">
+            {(field.col.enumOptions ?? []).map((o) => (
+              <Checkbox
+                key={o.value}
+                slot={null}
+                isDisabled={isDisabled}
+                isSelected={selected.includes(o.value)}
+                onChange={(sel) =>
+                  onChange(canonical(sel ? [...selected, o.value] : selected.filter((v) => v !== o.value)))
+                }
+              >
+                <Checkbox.Content>
+                  <Checkbox.Control>
+                    <Checkbox.Indicator />
+                  </Checkbox.Control>
+                  {o.label}
+                </Checkbox.Content>
+              </Checkbox>
+            ))}
+          </div>
+        </div>
+      )
+    }
     default:
       return (
         <TextField

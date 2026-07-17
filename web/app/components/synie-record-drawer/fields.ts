@@ -137,6 +137,10 @@ export function initialValues(fields: ResolvedField[], row: Row | null | undefin
         // fk 值语义同 enum:id 串或 null,空不得归一为空串(GraphQL uuid 不吃空串)
         out[f.name] = row ? (raw == null ? null : String(raw)) : (f.defaultValue ?? null)
         break
+      case 'enumArray':
+        // 枚举数组:行值是大写 token 数组,原样进草稿;新建默认全不勾
+        out[f.name] = row ? (Array.isArray(raw) ? raw.map(String) : []) : (f.defaultValue ?? [])
+        break
       default:
         out[f.name] = row ? (raw == null ? '' : String(raw)) : (f.defaultValue ?? '')
     }
@@ -153,8 +157,9 @@ function toLocalDateTime(raw: unknown): string | null {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
-// 纯空格视为空；false/0 不算空
-const isEmpty = (v: unknown) => v == null || (typeof v === 'string' && v.trim() === '')
+// 纯空格视为空；false/0 不算空;空数组(enumArray 全不勾)算空
+const isEmpty = (v: unknown) =>
+  v == null || (typeof v === 'string' && v.trim() === '') || (Array.isArray(v) && v.length === 0)
 
 /** 提交 payload:仅收当前可见且当前 mode 可编辑的字段;undefined 归 null */
 export function collectValues(
