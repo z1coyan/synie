@@ -72,50 +72,6 @@ defmodule SynieCore.Sales.OrderItem.SyncOrder do
   end
 end
 
-defmodule SynieCore.Sales.OrderItem.MaterialUnitAllowed do
-  @moduledoc """
-  校验行单位:必须是物料默认单位或该物料单位转换行里的单位——
-  任何取值都能折算回默认单位,将来发货扣库存不会卡在无法换算的行上。
-  物料不存在在此一并报出(友好报错,DB 外键兜底)。
-  """
-
-  use Ash.Resource.Validation
-
-  require Ash.Query
-
-  @impl true
-  def validate(changeset, _opts, _context) do
-    material_id = Ash.Changeset.get_attribute(changeset, :material_id)
-    unit_id = Ash.Changeset.get_attribute(changeset, :unit_id)
-
-    # nil 由 allow_nil? false 兜底报必填
-    if is_nil(material_id) or is_nil(unit_id) do
-      :ok
-    else
-      case Ash.get(SynieCore.Inv.Material, material_id, authorize?: false) do
-        {:ok, %{default_unit_id: ^unit_id}} ->
-          :ok
-
-        {:ok, _material} ->
-          if conversion_exists?(material_id, unit_id) do
-            :ok
-          else
-            {:error, field: :unit_id, message: "单位必须是物料默认单位或其单位转换单位"}
-          end
-
-        {:error, _} ->
-          {:error, field: :material_id, message: "物料不存在"}
-      end
-    end
-  end
-
-  defp conversion_exists?(material_id, unit_id) do
-    SynieCore.Inv.MaterialUnit
-    |> Ash.Query.filter(material_id == ^material_id and unit_id == ^unit_id)
-    |> Ash.exists?(authorize?: false)
-  end
-end
-
 defmodule SynieCore.Sales.OrderItem.ComputeAmount do
   @moduledoc """
   金额链系统算(ADR 2026-07-17-sales-order-currency),四列均不允许手改
@@ -167,40 +123,6 @@ defmodule SynieCore.Sales.OrderItem.ComputeAmount do
     |> Ash.Query.filter(id == ^order_id)
     |> Ash.read_one(authorize?: false)
   end
-end
-
-defmodule SynieCore.Sales.OrderItem.SnapshotMaterial do
-  @moduledoc """
-  物料信息快照:行保存(create/update)即按当前 material_id/unit_id 重拍
-  物料编号/名称/规格/客户料号与单位名称——「行保存即重拍」是定案语义,审核锁行
-  即冻结,主数据后续变更不回溯(ADR 2026-07-17-sales-order-item-snapshot)。
-  快照属性 writable? false,只能经此 change 写入(force_change_attribute,
-  照 ComputeAmount 先例)。物料/单位读不到时跳过,由 MaterialUnitAllowed 与
-  外键兜底报错。
-  """
-
-  use Ash.Resource.Change
-
-  @impl true
-  def change(changeset, _opts, _context) do
-    material_id = Ash.Changeset.get_attribute(changeset, :material_id)
-    unit_id = Ash.Changeset.get_attribute(changeset, :unit_id)
-
-    with {:ok, material} <- get(SynieCore.Inv.Material, material_id),
-         {:ok, unit} <- get(SynieCore.Base.Unit, unit_id) do
-      changeset
-      |> Ash.Changeset.force_change_attribute(:material_code, material.code)
-      |> Ash.Changeset.force_change_attribute(:material_name, material.name)
-      |> Ash.Changeset.force_change_attribute(:material_spec, material.spec)
-      |> Ash.Changeset.force_change_attribute(:customer_part_no, material.customer_part_no)
-      |> Ash.Changeset.force_change_attribute(:unit_name, unit.name)
-    else
-      _ -> changeset
-    end
-  end
-
-  defp get(_resource, nil), do: :error
-  defp get(resource, id), do: Ash.get(resource, id, authorize?: false)
 end
 
 defmodule SynieCore.Sales.OrderItem.SyncDrawings do
@@ -391,9 +313,9 @@ defmodule SynieCore.Sales.OrderItem do
       # 顺序敏感:先回填 company_id,再做公司授权校验
       change {SynieCore.Sales.OrderItem.SyncOrder, []}
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
-      validate {SynieCore.Sales.OrderItem.MaterialUnitAllowed, []}
+      validate {SynieCore.Sales.MaterialUnitAllowed, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
-      change {SynieCore.Sales.OrderItem.SnapshotMaterial, []}
+      change {SynieCore.Sales.SnapshotMaterial, []}
       change {SynieCore.Sales.OrderItem.SyncDrawings, []}
     end
 
@@ -402,9 +324,9 @@ defmodule SynieCore.Sales.OrderItem do
       require_atomic? false
 
       change {SynieCore.Sales.OrderItem.SyncOrder, []}
-      validate {SynieCore.Sales.OrderItem.MaterialUnitAllowed, []}
+      validate {SynieCore.Sales.MaterialUnitAllowed, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
-      change {SynieCore.Sales.OrderItem.SnapshotMaterial, []}
+      change {SynieCore.Sales.SnapshotMaterial, []}
       change {SynieCore.Sales.OrderItem.SyncDrawings, []}
     end
 

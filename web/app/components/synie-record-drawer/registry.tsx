@@ -129,6 +129,96 @@ const registry: Record<string, ResourceDrawerConfig> = {
     },
   },
   salOrderItems: { label: '订单条目' },
+  salQuotations: {
+    label: '销售报价单',
+    // 条目表含梯度概要列,默认 480px 太挤,报价抽屉加宽(移动端仍全宽)
+    contentClassName: 'w-full lg:w-[880px]',
+    // 状态翻转走行内动作(audit/void);审核时间/审核人/录入人是系统字段;创建/更新时间表格已隐藏
+    exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt'],
+    fields: {
+      // 公司提到最前;建后不可改(update 动作不收 company_id)
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      // 编号可留空自动取号(后端 AutoNumber:sales.quotation 编号规则),前端不标必填
+      quotationNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      quotationDate: { order: 1, cols: 6, required: true },
+      // 截止当日仍有效;过期是派生展示态,不落库
+      validUntil: { order: 2, cols: 6, required: true, label: '报价截止' },
+      // 报价对手限客户/内部公司(同销售订单);meta 枚举是全量三值,自定义下拉只放两类
+      partyType: {
+        order: 3,
+        cols: 6,
+        required: true,
+        label: '对手类型',
+        // 切换对手类型时清掉已选对手,避免客户 id 挂在公司数据源下
+        effects: () => ({ partyId: null }),
+        input: ({ value, onChange, isDisabled }) => (
+          <Select
+            isDisabled={isDisabled}
+            isRequired
+            value={value == null || value === '' ? null : String(value)}
+            onChange={(v) => onChange(v === '' ? null : v)}
+          >
+            <Label>对手类型</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item key="CUSTOMER" id="CUSTOMER" textValue="客户">
+                  客户
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                <ListBox.Item key="COMPANY" id="COMPANY" textValue="内部公司">
+                  内部公司
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        ),
+      },
+      partyId: {
+        order: 4,
+        cols: 6,
+        required: true,
+        label: '对手',
+        // 未选对手类型时不出现;选定后数据源跟随类型(多态 fk,同销售订单先例)
+        visible: (values) => values.partyType === 'CUSTOMER' || values.partyType === 'COMPANY',
+        input: ({ value, onChange, isDisabled, values }) => {
+          const isCompany = values.partyType === 'COMPANY'
+          return (
+            <RemoteSelect
+              resource={isCompany ? 'basCompanies' : 'salCustomers'}
+              label="对手"
+              placeholder={isCompany ? '选择内部公司…' : '选择客户…'}
+              value={value == null ? null : String(value)}
+              onChange={(id) => onChange(id)}
+              isDisabled={isDisabled}
+            />
+          )
+        },
+      },
+      // 一单一币,默认单据公司本币;报价单无金额,不挂汇率不做双币
+      currencyId: { order: 5, cols: 6, required: true, label: '币种' },
+      remarks: { order: 6, label: '报价备注' },
+      // 报价条款是对客户的自由多行文本,置表单底部
+      terms: {
+        order: 7,
+        label: '报价条款',
+        input: ({ value, onChange, isDisabled }) => (
+          <TextField value={value == null ? '' : String(value)} onChange={onChange} isDisabled={isDisabled}>
+            <Label>报价条款</Label>
+            <TextArea rows={4} placeholder="对客户展示的报价条款,如付款、交付、有效条件约定" />
+          </TextField>
+        ),
+      },
+    },
+  },
+  salQuotationItems: { label: '报价条目' },
+  salQuotationTiers: { label: '价格档' },
   purSuppliers: { label: '供应商' },
   hrAttendancePunches: { label: '打卡记录' },
   hrAttendanceImports: { label: '考勤导入' },

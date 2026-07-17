@@ -21,6 +21,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'base.account': '会计科目',
   'sales.customer': '客户',
   'sales.order': '销售订单',
+  'sales.quotation': '销售报价单',
   'purchase.supplier': '供应商',
   'hr.employee': '员工',
   'hr.attendance_punch': '打卡记录',
