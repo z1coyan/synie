@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
+import { attachFile, type UploadedFile } from '~/lib/files'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -104,17 +105,22 @@ function MaterialsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [units, setUnits] = useState<Row[]>([])
   const [unitsSnapshot, setUnitsSnapshot] = useState<Row[]>([])
+  // 创建态暂存附件(图纸/其他文件两槽位分开):先传裸文件,创建成功后统一挂接;抽屉重开即清空
+  const [pendingDrawings, setPendingDrawings] = useState<UploadedFile[]>([])
+  const [pendingOthers, setPendingOthers] = useState<UploadedFile[]>([])
   const queryClient = useQueryClient()
   // 请求守卫:防止慢响应把上一条物料的转换行回填到当前物料(同凭证页先例)
   const reqIdRef = useRef(0)
 
-  // 打开抽屉:create 清空转换行;view/edit 按物料 id 拉行(快照留作提交时 diff 基准)
+  // 打开抽屉:create 清空转换行与暂存附件;view/edit 按物料 id 拉行(快照留作提交时 diff 基准)
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
     const my = ++reqIdRef.current
     setDrawer({ mode, row })
     if (mode === 'create' || !row) {
       setUnits([])
       setUnitsSnapshot([])
+      setPendingDrawings([])
+      setPendingOthers([])
       return
     }
     gqlFetch<{ invMaterialUnits: { results: Row[] } }>(FETCH_UNITS, { materialId: row.id })
@@ -135,7 +141,7 @@ function MaterialsPage() {
     <>
       <h1 className="font-brand text-3xl tracking-wide">物料管理</h1>
       <p className="mt-2 text-sm text-ink-500">
-        全局共享的物料主数据:编号留空按「分类号-序号」自动生成,图纸与单位转换在详情中维护。
+        全局共享的物料主数据:编号留空按「分类号-序号」自动生成,图纸、其他文件与单位转换建料时即可一并录入。
       </p>
 
       <div className="mt-6">
@@ -189,6 +195,16 @@ function MaterialsPage() {
                 label="图纸"
                 accept="image/*"
                 readonly={mode === 'view'}
+                // 创建态走暂存,保存成功后按槽位统一挂接
+                pending={
+                  mode === 'create'
+                    ? {
+                        files: pendingDrawings,
+                        onAdd: (f) => setPendingDrawings((fs) => [...fs, f]),
+                        onRemove: (id) => setPendingDrawings((fs) => fs.filter((f) => f.id !== id)),
+                      }
+                    : undefined
+                }
               />
               <SynieAttachmentPanel
                 ownerType="inv_material"
@@ -196,6 +212,15 @@ function MaterialsPage() {
                 category="default"
                 label="其他文件"
                 readonly={mode === 'view'}
+                pending={
+                  mode === 'create'
+                    ? {
+                        files: pendingOthers,
+                        onAdd: (f) => setPendingOthers((fs) => [...fs, f]),
+                        onRemove: (id) => setPendingOthers((fs) => fs.filter((f) => f.id !== id)),
+                      }
+                    : undefined
+                }
               />
             </div>
           )
@@ -210,10 +235,25 @@ function MaterialsPage() {
             }
             const materialId = data.createInvMaterial.result!.id
             const unitErrors = await persistUnits(materialId, units, [])
+            // 暂存附件按槽位统一挂接;个别失败不阻断建料,提示手工补传即可
+            const failed: string[] = []
+            for (const { file, category } of [
+              ...pendingDrawings.map((file) => ({ file, category: 'drawing' })),
+              ...pendingOthers.map((file) => ({ file, category: 'default' })),
+            ]) {
+              try {
+                await attachFile(file.id, { ownerType: 'inv_material', ownerId: materialId, category })
+              } catch {
+                failed.push(file.filename)
+              }
+            }
+            if (failed.length > 0) {
+              toast.warning(`物料已创建,但附件挂接失败:${failed.join('、')},请在详情附件区手工补传`)
+            }
             if (unitErrors.length > 0) {
               toast.danger('物料已创建,但部分单位转换保存失败', { description: unitErrors.join('; ') })
-            } else {
-              toast.success('物料已创建,进入详情可上传图纸')
+            } else if (failed.length === 0) {
+              toast.success('物料已创建')
             }
           } else {
             const materialId = drawer!.row!.id
