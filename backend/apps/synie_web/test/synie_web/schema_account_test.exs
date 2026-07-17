@@ -22,8 +22,27 @@ defmodule SynieWeb.SchemaAccountTest do
 
   defp company! do
     Company
-    |> Ash.Changeset.for_create(:create, %{code: co_code(), name: "测试公司", short_name: "测司"})
+    |> Ash.Changeset.for_create(:create, %{
+      code: co_code(),
+      name: "测试公司",
+      short_name: "测司",
+      base_currency_id: base_currency_id!()
+    })
     |> Ash.create!(authorize?: false)
+  end
+
+  # 公司本币必填;CNY 已由迁移种入,取或建(synie_web 用不到 synie_core 的测试夹具)
+  defp base_currency_id! do
+    case Ash.get(SynieCore.Base.Currency, %{iso_code: "CNY"}, authorize?: false, error?: false) do
+      {:ok, %{id: id}} when is_binary(id) ->
+        id
+
+      _ ->
+        SynieCore.Base.Currency
+        |> Ash.Changeset.for_create(:create, %{name: "人民币", iso_code: "CNY", symbol: "￥"})
+        |> Ash.create!(authorize?: false)
+        |> Map.fetch!(:id)
+    end
   end
 
   defp user_with!(permissions, companies) do

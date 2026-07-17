@@ -13,19 +13,20 @@ defmodule SynieCore.Base.CurrencyTest do
     |> Ash.create!(authorize?: false)
   end
 
+  # CNY 已由迁移种入 DB(公司本币兜底),测试改用其他币种码,不再假设空库
   test "创建货币,符号可选" do
-    cny = currency!(%{name: "人民币", iso_code: "CNY", symbol: "¥"})
+    jpy = currency!(%{name: "日元", iso_code: "JPY", symbol: "¥"})
     usd = currency!(%{name: "美元", iso_code: "USD"})
 
-    assert cny.symbol == "¥"
+    assert jpy.symbol == "¥"
     assert is_nil(usd.symbol)
   end
 
   test "iso_code 唯一" do
-    currency!(%{name: "人民币", iso_code: "CNY"})
+    currency!(%{name: "欧元", iso_code: "EUR"})
 
     assert_raise Ash.Error.Invalid, fn ->
-      currency!(%{name: "人民币2", iso_code: "CNY"})
+      currency!(%{name: "欧元2", iso_code: "EUR"})
     end
   end
 

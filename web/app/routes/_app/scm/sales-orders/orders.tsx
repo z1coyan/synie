@@ -9,14 +9,27 @@ export const Route = createFileRoute('/_app/scm/sales-orders/orders')({
 })
 
 // 状态胶囊配色:草稿灰、已审核绿、已关闭黄、已作废红
+// 双币总额混合列表全列展示(本币单两套同值);汇率不进表格,抽屉里看
 const GRID_OVERRIDES = {
   partyType: { label: '对手类型' },
-  grossTotal: { label: '含税总额', render: (v: unknown) => formatAmount(v) },
+  currencyId: { label: '币种' },
+  grossTotal: { label: '原币含税总额', render: (v: unknown) => formatAmount(v) },
+  baseGrossTotal: { label: '本币含税总额', render: (v: unknown) => formatAmount(v) },
   status: { enumColors: { DRAFT: 'default', AUDITED: 'success', CLOSED: 'warning', VOIDED: 'danger' } },
 } satisfies Record<string, ColumnOverride>
 
 // 常用列白名单:时间戳/审核人/录入人不进表格(兼当 exclude)
-const GRID_COLUMNS = ['companyId', 'orderNo', 'orderDate', 'partyType', 'partyId', 'grossTotal', 'status']
+const GRID_COLUMNS = [
+  'companyId',
+  'orderNo',
+  'orderDate',
+  'partyType',
+  'partyId',
+  'currencyId',
+  'grossTotal',
+  'baseGrossTotal',
+  'status',
+]
 
 // 状态机动作显隐:审核/删除仅草稿,关闭/作废仅已审核(后端权威校验兜底,这里做体验层)
 const ACTION_VISIBLE = {
