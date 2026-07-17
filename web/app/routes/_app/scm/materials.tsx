@@ -126,6 +126,8 @@ function MaterialsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [units, setUnits] = useState<Row[]>([])
   const [unitsSnapshot, setUnitsSnapshot] = useState<Row[]>([])
+  // edit/view 态单位转换靠 FETCH_UNITS 异步拉取,未完成前禁止编辑,防回填覆盖在输行
+  const [unitsLoaded, setUnitsLoaded] = useState(false)
   // 创建态暂存附件(图纸/其他文件两槽位分开):先传裸文件,创建成功后统一挂接;抽屉重开即清空
   const [pendingDrawings, setPendingDrawings] = useState<UploadedFile[]>([])
   const [pendingOthers, setPendingOthers] = useState<UploadedFile[]>([])
@@ -142,13 +144,16 @@ function MaterialsPage() {
       setUnitsSnapshot([])
       setPendingDrawings([])
       setPendingOthers([])
+      setUnitsLoaded(true)
       return
     }
+    setUnitsLoaded(false)
     gqlFetch<{ invMaterialUnits: { results: Row[] } }>(FETCH_UNITS, { materialId: row.id })
       .then((d) => {
         if (my !== reqIdRef.current) return
         setUnits(d.invMaterialUnits.results)
         setUnitsSnapshot(d.invMaterialUnits.results)
+        setUnitsLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
@@ -204,7 +209,7 @@ function MaterialsPage() {
                 label="单位转换"
                 items={units}
                 onChange={setUnits}
-                readOnly={mode === 'view'}
+                readOnly={mode === 'view' || (mode !== 'create' && !unitsLoaded)}
                 exclude={['materialId']}
                 columns={['unitId', 'factor']}
                 fields={{

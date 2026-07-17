@@ -149,6 +149,8 @@ function JournalsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [lines, setLines] = useState<Row[]>([])
   const [linesSnapshot, setLinesSnapshot] = useState<Row[]>([])
+  // edit/view 态分录行靠 FETCH_LINES 异步拉取,未完成前禁止编辑,防回填覆盖在输行
+  const [linesLoaded, setLinesLoaded] = useState(false)
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张凭证的行回填到当前凭证
   const reqIdRef = useRef(0)
@@ -193,13 +195,16 @@ function JournalsPage() {
     if (mode === 'create') {
       setLines([])
       setLinesSnapshot([])
+      setLinesLoaded(true)
       return
     }
+    setLinesLoaded(false)
     gqlFetch<{ accGlJournalLines: { results: Row[] } }>(FETCH_LINES, { journalId: row!.id })
       .then((d) => {
         if (my !== reqIdRef.current) return
         setLines(d.accGlJournalLines.results)
         setLinesSnapshot(d.accGlJournalLines.results)
+        setLinesLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
@@ -272,7 +277,7 @@ function JournalsPage() {
               label="分录行"
               items={lines}
               onChange={setLines}
-              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || journalCompanyId == null}
+              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || journalCompanyId == null || (mode !== 'create' && !linesLoaded)}
               toolbar={
                 mode === 'create' && journalCompanyId == null ? (
                   <span className="text-xs text-muted">选择公司后可录入分录行</span>
