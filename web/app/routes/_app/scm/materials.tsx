@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { toast } from '@heroui/react'
+import { Link, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { attachFile, type UploadedFile } from '~/lib/files'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
@@ -11,6 +11,7 @@ import { SynieEditableTable } from '~/components/synie-editable-table/SynieEdita
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
+import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -99,8 +100,27 @@ async function persistUnits(materialId: string, current: Row[], snapshot: Row[])
   return errors
 }
 
-// 常用列白名单:时间戳不进表格,图纸走 attachmentImages 虚拟列
-const GRID_COLUMNS = ['code', 'name', 'categoryId', 'spec', 'customerPartNo', 'defaultUnitId', 'active']
+// 常用列白名单:时间戳不进表格,图纸走 attachmentImages 虚拟列;分类列置顶
+const GRID_COLUMNS = ['categoryId', 'code', 'name', 'spec', 'customerPartNo', 'defaultUnitId', 'active']
+
+/** 分类列单元格:「分类编号-分类名称」,点击开分类速览(join 默认只取 id/name,code 经 joinFields 追加取回) */
+function CategoryCell({ row }: { row: Row }) {
+  const openPreview = useFkPreview()
+  const id = row.categoryId == null || row.categoryId === '' ? null : String(row.categoryId)
+  const cat = (row.category as Row | null | undefined) ?? null
+  if (!id) return <span className="text-muted">—</span>
+  // join 缺失(分类读权限被裁剪):退截断 id,不给点不开的 link
+  if (!cat) return <>{id.slice(0, 8)}</>
+  const text = [cat.code, cat.name].filter((s) => s != null && s !== '').join('-')
+  return (
+    <Link
+      onPress={() => openPreview('invMaterialCategories', String(cat.id ?? id))}
+      className="inline-block max-w-80 cursor-pointer truncate align-bottom text-inherit underline-offset-2 hover:underline"
+    >
+      {text}
+    </Link>
+  )
+}
 
 function MaterialsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
@@ -149,6 +169,8 @@ function MaterialsPage() {
         <SynieDataGrid
           resource="invMaterials"
           columns={GRID_COLUMNS}
+          joinFields={{ category: ['code'] }}
+          overrides={{ categoryId: { render: (_value, row) => <CategoryCell row={row} /> } }}
           attachmentImages={{ ownerType: 'inv_material', category: 'drawing', label: '图纸' }}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}

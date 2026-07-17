@@ -107,6 +107,8 @@ export interface SynieDataGridProps {
   tree?: TreeOptions
   /** 恒定并进查询 filter 的条件(如 { companyId: { eq: id } }),不进列筛选 UI,平铺/树形都生效 */
   fixedFilter?: Record<string, unknown>
+  /** fk join 追加取回的关系字段,按 relation 名配置(如 { category: ['code'] });供列 render override 展示 */
+  joinFields?: Record<string, string[]>
   /** 初始排序(如流水页按交易时间倒序);仅作初值,用户点表头后照常接管 */
   defaultSort?: SortState
   /** 初始列筛选(如报表下钻带条件跳转);仅作初值,用户可照常改/清,变更预置条件需换 key 重挂 */
@@ -295,6 +297,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         sortLiteral: effectiveSortLiteral,
         filterLiteral: effectiveFilterLiteral,
         extraFields: treeExtraFields,
+        joinFields: props.joinFields,
       })
       return gqlFetch<Record<string, { count: number; results: Row[] }>>(query).then((d) => d[resource])
     },
@@ -317,6 +320,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       sortLiteral: treeSortLiteral,
       filterLiteral: childFilterLiteral,
       extraFields: treeExtraFields,
+      joinFields: props.joinFields,
     })
     gqlFetch<Record<string, { count: number; results: Row[] }>>(query)
       .then((d) => setChildrenByParent((prev) => new Map(prev).set(parentId, d[resource].results)))

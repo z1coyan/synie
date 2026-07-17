@@ -165,15 +165,29 @@ export function mergeFilterLiterals(literals: (string | null)[]): string | null 
 export function buildRowQuery(
   resource: string,
   columns: GridColumnMeta[],
-  opts: { limit: number; offset: number; sortLiteral: string | null; filterLiteral: string | null; extraFields?: string[] }
+  opts: {
+    limit: number
+    offset: number
+    sortLiteral: string | null
+    filterLiteral: string | null
+    extraFields?: string[]
+    /** fk join 除 id/labelField 外追加取回的关系字段,按 relation 名配置(如 { category: ['code'] }) */
+    joinFields?: Record<string, string[]>
+  }
 ): string {
   const names = columns.map((c) => c.name)
   // 多态 fk 解析目标要读同行判别值,判别列即使不在可见列也一并取回
   const discs = columns.flatMap((c) => (c.ref?.discriminator ? [c.ref.discriminator] : []))
   // extraFields:列以外还要取回的标量字段(树形模式的 parentId/childrenCount),Set 去重
   const scalar = [...new Set(['id', ...names, ...discs, ...(opts.extraFields ?? [])])]
-  // fk 列带 join:relation { id labelField },单元格/详情显示 label 零额外请求;多态 fk 无 relation 可 join
-  const joins = columns.filter((c) => c.ref?.relation).map((c) => `${c.ref!.relation} { id ${c.ref!.labelField} }`)
+  // fk 列带 join:relation { id labelField },单元格/详情显示 label 零额外请求;多态 fk 无 relation 可 join;
+  // joinFields 可按 relation 追加字段(如分类列要同时展示编号与名称)
+  const joins = columns
+    .filter((c) => c.ref?.relation)
+    .map((c) => {
+      const fields = [...new Set(['id', c.ref!.labelField!, ...(opts.joinFields?.[c.ref!.relation!] ?? [])])]
+      return `${c.ref!.relation} { ${fields.join(' ')} }`
+    })
   const fields = [...scalar, ...joins].join(' ')
   const args = [`limit: ${opts.limit}`, `offset: ${opts.offset}`]
   if (opts.sortLiteral) args.push(`sort: ${opts.sortLiteral}`)
