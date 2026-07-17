@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -43,6 +44,13 @@ function MaterialCategoriesPage() {
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          rowActions={statusToggleActions({
+            field: 'active',
+            mutation: UPDATE_CATEGORY,
+            resultKey: 'updateInvMaterialCategory',
+            // 树的子层缓存在组件本地,refetch 只刷根层,remount 一并清子层
+            onDone: () => setReloadKey((k) => k + 1),
+          })}
         />
       </div>
 
@@ -53,11 +61,12 @@ function MaterialCategoriesPage() {
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
+        // 启用是状态不是表单字段(规范):新建默认启用,启停走列表行动作;叶子是固有属性留在表单
+        exclude={['active']}
         fields={{
           code: { required: true, cols: 6, placeholder: '如 01、0101' },
           name: { required: true, cols: 6, placeholder: '如 原材料' },
           isLeaf: { cols: 6, defaultValue: true },
-          active: { cols: 6, defaultValue: true },
           parentId: {
             label: '上级分类',
             // 候选限定非叶子分类(叶子不能挂子分类,后端另有校验兜底)

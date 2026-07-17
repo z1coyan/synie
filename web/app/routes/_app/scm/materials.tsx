@@ -6,6 +6,7 @@ import { gqlFetch } from '~/lib/graphql'
 import { attachFile, type UploadedFile } from '~/lib/files'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -152,6 +153,13 @@ function MaterialsPage() {
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer('edit', row)}
+          rowActions={statusToggleActions({
+            field: 'active',
+            mutation: UPDATE_MATERIAL,
+            resultKey: 'updateInvMaterial',
+            // 抽屉走 rowId 自查,状态翻转后一并失效行缓存
+            onDone: () => queryClient.invalidateQueries({ queryKey: ['rowById', 'invMaterials'] }),
+          })}
         />
       </div>
 

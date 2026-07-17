@@ -5,6 +5,7 @@ import { EmptyState, InlineSelect } from '@heroui-pro/react'
 import { Button, ListBox, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -165,6 +166,13 @@ function AccountsPage() {
             onView={(row) => setDrawer({ mode: 'view', row })}
             onCreate={() => setDrawer({ mode: 'create', row: null })}
             onEdit={(row) => setDrawer({ mode: 'edit', row })}
+            rowActions={statusToggleActions({
+              field: 'active',
+              mutation: UPDATE_ACCOUNT,
+              resultKey: 'updateBasAccount',
+              // 树的子层缓存在组件本地,refetch 只刷根层,remount 一并清子层
+              onDone: () => setReloadKey((k) => k + 1),
+            })}
           />
         )}
       </div>
@@ -176,12 +184,13 @@ function AccountsPage() {
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
+        // 启用是状态不是表单字段(规范):新建默认启用,启停走列表行动作;汇总科目是固有属性留在表单
+        exclude={['active']}
         fields={{
           code: { required: true, cols: 6, placeholder: '如 1001' },
           name: { required: true, cols: 6, placeholder: '如 库存现金' },
           direction: { required: true, cols: 6 },
           isGroup: { cols: 6, defaultValue: false },
-          active: { cols: 6, defaultValue: true },
           currencyId: { cols: 6, label: '币种' },
           // 科目角色:应收应付报表按角色圈定科目;仅叶子科目可挂(汇总科目隐藏,后端另有校验兜底)
           role: { cols: 6, visible: (v) => v.isGroup !== true },

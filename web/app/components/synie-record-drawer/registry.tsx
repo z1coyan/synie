@@ -17,10 +17,11 @@ const registry: Record<string, ResourceDrawerConfig> = {
   sysUsers: { label: '用户' },
   sysRoles: {
     label: '角色',
+    // 启用是状态不是表单字段(规范):新建默认启用,启停走列表行动作
+    exclude: ['enabled'],
     fields: {
       code: { required: true, edit: 'createOnly', placeholder: '如 purchaser' },
       name: { required: true, placeholder: '如 采购管理员' },
-      enabled: { defaultValue: true },
     },
   },
   basCompanies: { label: '公司' },
@@ -69,6 +70,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
   invMaterials: {
     label: '物料',
     contentClassName: 'w-full lg:w-[640px]',
+    // 启用是状态不是表单字段(规范):新建默认启用,启停走列表行动作
+    exclude: ['active'],
     fields: {
       // 编号必填但可留空自动取号(后端 AutoNumber:分类编号-4 位序号),前端不标必填
       code: { order: 0, cols: 6, placeholder: '留空自动编号(分类号-序号)' },
@@ -78,7 +81,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       defaultUnitId: { order: 3, cols: 6, required: true },
       spec: { order: 4, cols: 6, placeholder: '如 M8×30' },
       customerPartNo: { order: 5, cols: 6 },
-      active: { order: 6, defaultValue: true },
     },
   },
   invMaterialUnits: { label: '单位转换' },

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SyniePermissionSheet } from '~/components/synie-permission-sheet/SyniePermissionSheet'
@@ -52,11 +53,13 @@ function RolesPage() {
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
-          rowActions={
-            canConfigure
-              ? [{ key: 'permissions', label: '配置权限', onAction: (row) => setPermRole(row) }]
-              : undefined
-          }
+          rowActions={[
+            ...(canConfigure
+              ? [{ key: 'permissions', label: '配置权限', onAction: (row: Row) => setPermRole(row) }]
+              : []),
+            // 停用角色即收回其全部权限贡献,状态翻转走行动作不进表单(规范)
+            ...statusToggleActions({ field: 'enabled', mutation: UPDATE_ROLE, resultKey: 'updateSysRole' }),
+          ]}
         />
       </div>
 
