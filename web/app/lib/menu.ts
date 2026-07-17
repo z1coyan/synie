@@ -100,6 +100,7 @@ export const menuModules: MenuModule[] = [
         label: '交易',
         items: [
           { label: '采购订单', path: '/scm/purchase' },
+          { label: '销售报价', path: '/scm/quotations' },
           { label: '销售订单', path: '/scm/sales-orders' },
         ],
       },
