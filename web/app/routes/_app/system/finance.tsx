@@ -10,7 +10,8 @@ export const Route = createFileRoute('/_app/system/finance')({
 
 const SETTING_QUERY = `
   query {
-    accSetting { id ocrAccessKeyId ocrAccessKeySecret }
+    accSetting { id ocrAccessKeyId }
+    accOcrConfigured
   }
 `
 const UPDATE_SETTING = `
@@ -22,40 +23,42 @@ const UPDATE_SETTING = `
 interface Setting {
   id: string
   ocrAccessKeyId: string | null
-  ocrAccessKeySecret: string | null
 }
 
 function FinanceSettingsPage() {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: ['accSetting'],
-    queryFn: () => gqlFetch<{ accSetting: Setting | null }>(SETTING_QUERY).then((d) => d.accSetting),
+    queryFn: () => gqlFetch<{ accSetting: Setting | null; accOcrConfigured: boolean }>(SETTING_QUERY),
   })
 
   const [keyId, setKeyId] = useState('')
   const [secret, setSecret] = useState('')
   const [saving, setSaving] = useState(false)
 
-  // 查询回填本地草稿(单行配置,页面即表单)
+  // 查询回填本地草稿(单行配置,页面即表单);密钥只写不回读,不回填
   useEffect(() => {
-    if (query.data) {
-      setKeyId(query.data.ocrAccessKeyId ?? '')
-      setSecret(query.data.ocrAccessKeySecret ?? '')
+    if (query.data?.accSetting) {
+      setKeyId(query.data.accSetting.ocrAccessKeyId ?? '')
     }
   }, [query.data])
 
   const save = async () => {
-    if (!query.data) return
+    if (!query.data?.accSetting) return
     setSaving(true)
     try {
       const data = await gqlFetch<{ updateAccSetting: { errors: { message: string }[] | null } }>(
         UPDATE_SETTING,
-        { id: query.data.id, input: { ocrAccessKeyId: keyId || null, ocrAccessKeySecret: secret || null } }
+        {
+          id: query.data.accSetting.id,
+          input: { ocrAccessKeyId: keyId || null, ...(secret.trim() ? { ocrAccessKeySecret: secret } : {}) },
+        }
       )
       if (data.updateAccSetting.errors && data.updateAccSetting.errors.length > 0) {
         throw new Error(data.updateAccSetting.errors.map((e) => e.message).join('; '))
       }
       toast.success('财务设置已保存')
+      setSecret('')
       queryClient.invalidateQueries({ queryKey: ['accSetting'] })
       queryClient.invalidateQueries({ queryKey: ['accOcrConfigured'] })
     } catch (e) {
@@ -94,7 +97,10 @@ function FinanceSettingsPage() {
               </TextField>
               <TextField value={secret} onChange={setSecret}>
                 <Label>AccessKey Secret</Label>
-                <Input type="password" placeholder="仅管理员可见,保存后生效" />
+                <Input
+                  type="password"
+                  placeholder={query.data?.accOcrConfigured ? '已配置,留空不修改' : '未配置'}
+                />
               </TextField>
               <div>
                 <Button isPending={saving} onPress={save}>

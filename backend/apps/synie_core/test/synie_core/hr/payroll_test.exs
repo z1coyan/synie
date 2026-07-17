@@ -253,6 +253,45 @@ defmodule SynieCore.Hr.PayrollTest do
     assert reload(payroll).status == :pending
   end
 
+  test "删除「发放」即回退结算联动,无论是否还有补发;重发重建归还行" do
+    employee = employee!(%{})
+    loan!(employee, %{amount: Decimal.new(500)})
+
+    payroll =
+      payroll!(employee, %{
+        workdays: Decimal.new(10),
+        daily_wage: Decimal.new(100),
+        loan_deduction: Decimal.new(200)
+      })
+
+    normal = payment!(payroll, %{amount: Decimal.new(5000)})
+    assert normal.kind == :normal
+    assert Decimal.equal?(EmployeeLoan.balance(employee.id), Decimal.new(300))
+
+    supplement = payment!(payroll, %{amount: Decimal.new(50)})
+    assert supplement.kind == :supplement
+
+    # 删除 normal(还剩 supplement):翻回待发放并删联动归还行,余额恢复
+    :ok = normal |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)
+    assert reload(payroll).status == :pending
+    assert Decimal.equal?(EmployeeLoan.balance(employee.id), Decimal.new(500))
+    assert Ash.get!(PayrollPayment, supplement.id, authorize?: false).kind == :supplement
+
+    # 再次发放:重新判为 normal,翻回已发放并重建归还行,余额重新抵扣
+    repaid = payment!(payroll, %{amount: Decimal.new(800)})
+    assert repaid.kind == :normal
+    assert reload(payroll).status == :paid
+    assert Decimal.equal?(EmployeeLoan.balance(employee.id), Decimal.new(300))
+
+    auto =
+      EmployeeLoan
+      |> Ash.read!(authorize?: false)
+      |> Enum.find(&(&1.payroll_id == payroll.id))
+
+    assert auto.kind == :repay
+    assert Decimal.equal?(auto.amount, Decimal.new(200))
+  end
+
   test "pay_remaining 一键发放:锁内按未发差额计价,无差额拒绝" do
     employee = employee!(%{})
     payroll = payroll!(employee, %{workdays: Decimal.new(10), daily_wage: Decimal.new(100)})

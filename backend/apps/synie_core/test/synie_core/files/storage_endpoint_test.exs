@@ -154,6 +154,77 @@ defmodule SynieCore.Files.StorageEndpointTest do
     end
   end
 
+  describe "密钥只写" do
+    test "create 经 argument 写入 secret,内部读回可用(adapter 签名依赖)" do
+      ep =
+        StorageEndpoint
+        |> Ash.Changeset.for_create(:create, %{
+          name: "sec1",
+          label: "x",
+          kind: :s3,
+          endpoint: "http://minio:9000",
+          bucket: "b",
+          access_key_id: "ak",
+          secret_access_key: "sk-create"
+        })
+        |> Ash.create!(authorize?: false)
+
+      assert Ash.get!(StorageEndpoint, ep.id, authorize?: false).secret_access_key == "sk-create"
+    end
+
+    test "update 不传/传空串 argument 保持旧值,传新值则更新" do
+      ep =
+        StorageEndpoint
+        |> Ash.Changeset.for_create(:create, %{
+          name: "sec2",
+          label: "x",
+          kind: :s3,
+          endpoint: "http://minio:9000",
+          bucket: "b",
+          access_key_id: "ak",
+          secret_access_key: "sk-old"
+        })
+        |> Ash.create!(authorize?: false)
+
+      # 不传 argument:保持旧值(KindFields 回退已存值,不误报必填)
+      ep
+      |> Ash.Changeset.for_update(:update, %{label: "改名"})
+      |> Ash.update!(authorize?: false)
+
+      assert Ash.get!(StorageEndpoint, ep.id, authorize?: false).secret_access_key == "sk-old"
+
+      # 传空串:保持旧值
+      ep
+      |> Ash.Changeset.for_update(:update, %{secret_access_key: ""})
+      |> Ash.update!(authorize?: false)
+
+      assert Ash.get!(StorageEndpoint, ep.id, authorize?: false).secret_access_key == "sk-old"
+
+      # 传新值:更新
+      ep
+      |> Ash.Changeset.for_update(:update, %{secret_access_key: "sk-new"})
+      |> Ash.update!(authorize?: false)
+
+      assert Ash.get!(StorageEndpoint, ep.id, authorize?: false).secret_access_key == "sk-new"
+    end
+
+    test "s3 create 不传 secret argument 报 KindFields 必填" do
+      assert {:error, err} =
+               StorageEndpoint
+               |> Ash.Changeset.for_create(:create, %{
+                 name: "sec3",
+                 label: "x",
+                 kind: :s3,
+                 endpoint: "http://e",
+                 bucket: "b",
+                 access_key_id: "ak"
+               })
+               |> Ash.create(authorize?: false)
+
+      assert Exception.message(err) =~ "该存储类型下「Secret Access Key」必填"
+    end
+  end
+
   describe "set_default" do
     test "切换默认:旧默认自动清掉,全表恒只有一行默认" do
       a = endpoint!(%{name: "d1"}, is_default: true)

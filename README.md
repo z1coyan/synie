@@ -270,6 +270,7 @@ mutation Login($username: String!, $password: String!) {
 - 按部署域名设置 `PHX_HOST`。
 - 为 AshPostgres 资源补齐迁移和数据库生命周期。
 - 根据需要增加认证资源和策略；当前只安装了 Ash Authentication 相关依赖，没有 User resource 或登录流程。
+- 初始化管理员口令:seeds 读 `ADMIN_PASSWORD` 环境变量,缺省随机生成且仅在创建时打印一次;请立即妥善保存。凡用旧版 seeds(硬编码口令)初始化过的环境,admin 口令应视为已泄露并重置。
 
 `backend/config/runtime.exs` 已在 `prod` 环境读取：
 

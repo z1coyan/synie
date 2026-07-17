@@ -93,7 +93,7 @@ defmodule SynieCore.Files.StorageEndpoint do
   @moduledoc """
   存储接入点,对应 `sys_storage` 表。`name` 即 `sys_file.storage` 的配置名,建后不可改;
   `kind` 决定 adapter(local/s3/oss)。全局默认唯一(partial unique index),新上传落到默认
-  接入点;内置 local 行由 seeds 创建,不可删除。密钥仅 `sys.storage` 权限(管理员)可读。
+  接入点;内置 local 行由 seeds 创建,不可删除。密钥只写不回读:GraphQL 不暴露,update 留空表示不修改。
   """
 
   use Ash.Resource,
@@ -160,9 +160,19 @@ defmodule SynieCore.Files.StorageEndpoint do
         :region,
         :bucket,
         :prefix,
-        :access_key_id,
-        :secret_access_key
+        :access_key_id
       ]
+
+      # 密钥只写不回读(public? false 不进 accept/GraphQL),经 argument 写入;nil/空串 = 不修改
+      argument :secret_access_key, :string
+
+      change fn changeset, _context ->
+        case Ash.Changeset.get_argument(changeset, :secret_access_key) do
+          nil -> changeset
+          "" -> changeset
+          secret -> Ash.Changeset.force_change_attribute(changeset, :secret_access_key, secret)
+        end
+      end
 
       validate match(:name, ~r/^[a-z0-9][a-z0-9_-]*$/),
         message: "接入名只能用小写字母、数字、中划线、下划线,且以字母或数字开头"
@@ -179,9 +189,18 @@ defmodule SynieCore.Files.StorageEndpoint do
         :region,
         :bucket,
         :prefix,
-        :access_key_id,
-        :secret_access_key
+        :access_key_id
       ]
+
+      argument :secret_access_key, :string
+
+      change fn changeset, _context ->
+        case Ash.Changeset.get_argument(changeset, :secret_access_key) do
+          nil -> changeset
+          "" -> changeset
+          secret -> Ash.Changeset.force_change_attribute(changeset, :secret_access_key, secret)
+        end
+      end
 
       require_atomic? false
 
@@ -272,7 +291,7 @@ defmodule SynieCore.Files.StorageEndpoint do
     end
 
     attribute :secret_access_key, :string do
-      public? true
+      public? false
       sensitive? true
       constraints max_length: 128
       description "Secret Access Key"

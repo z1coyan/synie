@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { toast } from '@heroui/react'
+import { Input, Label, TextField, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -37,6 +37,8 @@ const isObjectStore = (v: Record<string, unknown>) => v.kind === 'S3' || v.kind 
 
 function StoragesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  // 密钥只写不回读:meta/GraphQL 均无此字段,输入由页面自持,提交时并入 input;空 = 不修改
+  const [secret, setSecret] = useState('')
   const queryClient = useQueryClient()
 
   return (
@@ -85,7 +87,12 @@ function StoragesPage() {
         resource="sysStorages"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDrawer(null)
+            setSecret('')
+          }
+        }}
         // 表格列是白名单子集,走 rowId 自查完整记录
         rowId={drawer?.row?.id}
         fields={{
@@ -104,7 +111,6 @@ function StoragesPage() {
               bucket: null,
               prefix: null,
               accessKeyId: null,
-              secretAccessKey: null,
             }),
           },
           isDefault: { order: 4, cols: 6, edit: 'readOnly' },
@@ -125,27 +131,33 @@ function StoragesPage() {
           bucket: { order: 8, cols: 6, required: true, visible: isObjectStore },
           prefix: { order: 9, visible: isObjectStore, placeholder: '对象键前缀(默认路径),可留空' },
           accessKeyId: { order: 10, cols: 6, required: true, visible: isObjectStore },
-          secretAccessKey: {
-            order: 11,
-            cols: 6,
-            required: true,
-            visible: isObjectStore,
-            render: () => '••••••••',
-          },
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        // 密钥输入(meta 无此字段):对象存储才需要;create 必填(后端 KindFields 兜底),edit 留空不修改
+        extraContent={(mode, _row, values) =>
+          mode !== 'view' && isObjectStore(values) ? (
+            <TextField value={secret} onChange={setSecret} isRequired={mode === 'create'}>
+              <Label>Secret Access Key</Label>
+              <Input
+                type="password"
+                placeholder={mode === 'create' ? '对象存储密钥,只写不回读' : '已配置,留空不修改'}
+              />
+            </TextField>
+          ) : null
+        }
         onSubmit={async (values, mode) => {
+          const input = secret.trim() !== '' ? { ...values, secretAccessKey: secret } : values
           let errors: { message: string }[] | null
           if (mode === 'create') {
             const data = await gqlFetch<{ createSysStorage: { errors: { message: string }[] | null } }>(
               CREATE_STORAGE,
-              { input: values }
+              { input }
             )
             errors = data.createSysStorage.errors
           } else {
             const data = await gqlFetch<{ updateSysStorage: { errors: { message: string }[] | null } }>(
               UPDATE_STORAGE,
-              { id: drawer!.row!.id, input: values }
+              { id: drawer!.row!.id, input }
             )
             errors = data.updateSysStorage.errors
           }

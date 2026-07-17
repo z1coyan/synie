@@ -9,6 +9,7 @@ defmodule SynieWeb.FileControllerTest do
   alias SynieCore.Acc.GlJournal
   alias SynieCore.Authz.{Role, RolePermission, UserCompany, UserRole}
   alias SynieCore.Base.Company
+  alias SynieCore.Hr.Employee
   alias SynieCore.Sales.Customer
 
   @endpoint SynieWeb.Endpoint
@@ -113,6 +114,15 @@ defmodule SynieWeb.FileControllerTest do
     |> Ash.create!(authorize?: false)
   end
 
+  defp employee! do
+    Employee
+    |> Ash.Changeset.for_create(:create, %{
+      code: "E#{System.unique_integer([:positive])}",
+      name: "测试员工"
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
   defp get_file(token, id) do
     build_conn()
     |> put_req_header("authorization", "Bearer " <> token)
@@ -128,6 +138,22 @@ defmodule SynieWeb.FileControllerTest do
       upload_conn(uploader, %{
         "file" => upload_struct(src),
         "owner_type" => "acc_gl_journal",
+        "owner_id" => host.id
+      })
+      |> json_response(200)
+
+    id
+  end
+
+  # 上传一个挂到员工(全局宿主,附件 company_id 为空)的文件,返回 file id
+  defp upload_attached_to_employee(src) do
+    host = employee!()
+    uploader = token_with!(["sys.file:create", "hr.employee:read"])
+
+    %{"file" => %{"id" => id}} =
+      upload_conn(uploader, %{
+        "file" => upload_struct(src),
+        "owner_type" => "hr_employee",
         "owner_id" => host.id
       })
       |> json_response(200)
@@ -283,12 +309,37 @@ defmodule SynieWeb.FileControllerTest do
       assert json_response(get_file(token_a, file_id), 403)
     end
 
-    test "同公司下载放行:B actor 下 B 公司凭证的文件 → 200", %{src: src} do
+    # 行为变更(下载叠加宿主读权限):仅 sys.file:read 即使同公司也 403,放行需同时具备宿主读码(见下条用例)
+    test "同公司但无宿主读码:B actor 只有 sys.file:read → 403", %{src: src} do
       co_b = company!()
       file_id = upload_attached_to(src, co_b.id)
 
       token_b = token_with!(["sys.file:read"], companies: [co_b.id])
+      assert json_response(get_file(token_b, file_id), 403)
+    end
+
+    test "同公司且有宿主读码:B actor 有 acc.gl_journal:read → 200", %{src: src} do
+      co_b = company!()
+      file_id = upload_attached_to(src, co_b.id)
+
+      token_b = token_with!(["sys.file:read", "acc.gl_journal:read"], companies: [co_b.id])
       assert response(get_file(token_b, file_id), 200) == "PDF 字节"
+    end
+
+    # 全局宿主(员工)附件 company_id 为空、不受公司维度收窄,是本次修复的越权口子:
+    # 仅 sys.file:read 不再放行,需同时具备宿主读码 hr.employee:read
+    test "员工附件:仅 sys.file:read 无 hr.employee:read → 403", %{src: src} do
+      file_id = upload_attached_to_employee(src)
+
+      token = token_with!(["sys.file:read"])
+      assert json_response(get_file(token, file_id), 403)
+    end
+
+    test "员工附件:有 sys.file:read + hr.employee:read → 200", %{src: src} do
+      file_id = upload_attached_to_employee(src)
+
+      token = token_with!(["sys.file:read", "hr.employee:read"])
+      assert response(get_file(token, file_id), 200) == "PDF 字节"
     end
 
     test "裸文件:上传人可下 → 200", %{src: src} do

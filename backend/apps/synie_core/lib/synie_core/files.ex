@@ -1,8 +1,11 @@
 defmodule SynieCore.Files do
   @moduledoc """
   文件上传编排:生成对象键 → 写存储 → 落 `sys_file`(可选同时挂 `sys_attachment`)。
-  下载、删除直接走资源动作与 `SynieCore.Storage` 门面,本模块只管上传这条多步路径。
+  删除直接走资源动作与 `SynieCore.Storage` 门面;下载传送走 `SynieWeb.FileController`,
+  其授权判定收口在本模块 `downloadable?/2`。
   """
+
+  require Ash.Query
 
   alias SynieCore.Files.Attachment
   alias SynieCore.Files.File, as: StoredFile
@@ -77,6 +80,49 @@ defmodule SynieCore.Files do
     end
   rescue
     e in [Ash.Error.Forbidden, Ash.Error.Invalid] -> {:error, e}
+  end
+
+  @doc """
+  下载授权(REST GET /api/files/:id 用):
+    - actor 能看见该文件的任一附件,且对至少一个宿主资源有读权限(权限码 `<prefix>:read`,
+      通配照常)→ 授权;宿主 owner_type 不在 OwnerRegistry 白名单 → fail-closed 不授权;
+    - 文件完全无附件(裸文件)→ 仅上传人或 super_admin;
+    - 其余 → false。
+  """
+  @spec downloadable?(SynieCore.Authz.Actor.t(), StoredFile.t()) :: boolean()
+  def downloadable?(actor, file) do
+    visible =
+      Attachment
+      |> Ash.Query.filter(file_id == ^file.id)
+      |> Ash.read!(actor: actor)
+
+    cond do
+      visible != [] ->
+        Enum.any?(visible, fn att ->
+          case OwnerRegistry.resolve(att.owner_type) do
+            {:ok, resource} ->
+              SynieCore.Authz.has_permission?(actor, resource.permission_prefix() <> ":read")
+
+            :error ->
+              false
+          end
+        end)
+
+      bare_file?(file.id) ->
+        actor.super_admin || actor.user_id == file.uploaded_by_id
+
+      true ->
+        false
+    end
+  end
+
+  # 文件是否完全没有附件(权威判断,不受公司作用域)——区分"裸文件"与"附件全在他司";
+  # 受信内部读:仅用于下载授权决策,不返回附件数据。
+  defp bare_file?(file_id) do
+    Attachment
+    |> Ash.Query.filter(file_id == ^file_id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.empty?()
   end
 
   defp fetch_file(actor, file_id) do

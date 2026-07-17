@@ -226,6 +226,8 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   // 交易条款不走抽屉字段(要排在条目表之下,抽屉 extraContent 固定在字段后渲染),由页面自持
   const [terms, setTerms] = useState('')
+  // edit/view 态条目与条款靠 FETCH_DETAIL 异步拉取,未完成前禁止编辑,防回填覆盖在输行
+  const [detailLoaded, setDetailLoaded] = useState(false)
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张订单的行回填到当前订单
   const reqIdRef = useRef(0)
@@ -239,8 +241,10 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
       setItems([])
       setItemsSnapshot([])
       setTerms('')
+      setDetailLoaded(true)
       return
     }
+    setDetailLoaded(false)
     gqlFetch<{ salOrders: { results: { terms: string | null }[] }; salOrderItems: { results: Row[] } }>(
       FETCH_DETAIL,
       { orderId: order!.id }
@@ -250,6 +254,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
         setTerms(d.salOrders.results[0]?.terms ?? '')
         setItems(d.salOrderItems.results)
         setItemsSnapshot(d.salOrderItems.results)
+        setDetailLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
@@ -296,7 +301,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             label="订单条目"
             items={items}
             onChange={setItems}
-            readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT')}
+            readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)}
             // 行表单物料/数量/单价双列排布,默认 420px 局促,加宽一档
             drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
             exclude={[
@@ -406,7 +411,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           />
           {/* 交易条款置表单底部(条目表之下);值由页面自持,提交时并入 values */}
           <div className="mt-4">
-            <TextField value={terms} onChange={setTerms} isDisabled={mode === 'view'}>
+            <TextField value={terms} onChange={setTerms} isDisabled={mode === 'view' || (mode !== 'create' && !detailLoaded)}>
               <Label>交易条款</Label>
               <TextArea rows={4} placeholder="对客户展示的交易条款,如交付、付款、验收约定" />
             </TextField>

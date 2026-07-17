@@ -17,16 +17,21 @@ user =
     IO.puts("用户 #{username} 已存在,跳过创建")
     user
   else
+    initial_password =
+      System.get_env("ADMIN_PASSWORD") ||
+        (:crypto.strong_rand_bytes(9) |> Base.url_encode64())
+
     created =
       User
       |> Ash.Changeset.for_create(:create, %{
         username: username,
         name: "系统管理员",
-        password: "admin123"
+        password: initial_password
       })
       |> Ash.create!(authorize?: false)
 
-    IO.puts("已创建用户 #{username}(初始密码 admin123)")
+    IO.puts("已创建用户 #{username}(初始密码 #{initial_password})")
+    IO.puts("⚠️  该密码仅此一次显示,请妥善保存;更换请由管理员在「用户管理」重置。")
     created
   end
 
