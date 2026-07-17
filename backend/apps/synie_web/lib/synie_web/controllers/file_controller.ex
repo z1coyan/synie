@@ -11,9 +11,6 @@ defmodule SynieWeb.FileController do
 
   import Plug.Conn
 
-  require Ash.Query
-
-  alias SynieCore.Files.Attachment
   alias SynieCore.Files.File, as: StoredFile
   alias SynieCore.Storage
 
@@ -97,7 +94,7 @@ defmodule SynieWeb.FileController do
     with_actor(conn, fn actor ->
       case Ash.get(StoredFile, id, actor: actor) do
         {:ok, file} ->
-          if authorized_download?(actor, file) do
+          if SynieCore.Files.downloadable?(actor, file) do
             send_stored(conn, file)
           else
             error(conn, 403, "forbidden")
@@ -112,31 +109,7 @@ defmodule SynieWeb.FileController do
     end)
   end
 
-  # 下载授权(宿主可见性,不是裸 sys.file:read):
-  #   - actor 能看见该文件的任一附件(附件读已按公司过滤)→ 授权;
-  #   - 文件完全无附件(裸文件)→ 仅上传人或 super_admin;
-  #   - 其余(附件全在他司,actor 一条都看不见)→ 403。
-  defp authorized_download?(actor, file) do
-    visible =
-      Attachment
-      |> Ash.Query.filter(file_id == ^file.id)
-      |> Ash.read!(actor: actor)
-
-    cond do
-      visible != [] -> true
-      bare_file?(file.id) -> actor.super_admin || actor.user_id == file.uploaded_by_id
-      true -> false
-    end
-  end
-
-  # 文件是否完全没有附件(权威判断,不受公司作用域)——区分"裸文件"与"附件全在他司";
-  # 受信内部读:仅用于下载授权决策,不返回附件数据。
-  defp bare_file?(file_id) do
-    Attachment
-    |> Ash.Query.filter(file_id == ^file_id)
-    |> Ash.read!(authorize?: false)
-    |> Enum.empty?()
-  end
+  # 下载授权判定已下沉至 SynieCore.Files.downloadable?/2
 
   defp send_stored(conn, file) do
     case Storage.presigned_url(file.storage, file.key, :get, 300) do
