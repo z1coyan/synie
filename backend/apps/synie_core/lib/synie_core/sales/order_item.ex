@@ -117,21 +117,55 @@ defmodule SynieCore.Sales.OrderItem.MaterialUnitAllowed do
 end
 
 defmodule SynieCore.Sales.OrderItem.ComputeAmount do
-  @moduledoc "含税金额系统算:数量 × 含税单价,保留两位小数;不允许手改(属性 writable? false 兜底)。"
+  @moduledoc """
+  金额链系统算(ADR 2026-07-17-sales-order-currency),四列均不允许手改
+  (属性 writable? false 兜底):
+  原币金额 = 数量 × 原币单价(2位);本币金额 = 原币金额 × 汇率(2位,从金额换算,
+  行内恒有 本币金额≡round(原币金额×汇率));本币单价 = 原币单价 × 汇率(4位,仅展示参考)。
+
+  汇率取父订单头,且在 before_action 内取——此时 SyncOrder 的 FOR UPDATE 已锁住订单
+  (changes 声明序在其后,钩子同序执行),读到的汇率不会被并发的头更新作废;
+  构建期读会留下「行按旧汇率算、头已改」的竞态窗口。
+  订单/数量/单价读不到时跳过,由 SyncOrder 与必填校验兜底报错。
+  """
 
   use Ash.Resource.Change
 
+  require Ash.Query
+
   @impl true
   def change(changeset, _opts, _context) do
-    qty = Ash.Changeset.get_attribute(changeset, :qty)
-    price = Ash.Changeset.get_attribute(changeset, :price)
+    Ash.Changeset.before_action(changeset, fn cs ->
+      qty = Ash.Changeset.get_attribute(cs, :qty)
+      price = Ash.Changeset.get_attribute(cs, :price)
+      order_id = Ash.Changeset.get_attribute(cs, :order_id) || cs.data.order_id
 
-    if is_nil(qty) or is_nil(price) do
-      changeset
-    else
-      amount = qty |> Decimal.mult(price) |> Decimal.round(2)
-      Ash.Changeset.force_change_attribute(changeset, :amount, amount)
-    end
+      with false <- is_nil(qty) or is_nil(price),
+           {:ok, %{exchange_rate: %Decimal{} = rate}} <- read_order(order_id) do
+        amount = qty |> Decimal.mult(price) |> Decimal.round(2)
+
+        cs
+        |> Ash.Changeset.force_change_attribute(:amount, amount)
+        |> Ash.Changeset.force_change_attribute(
+          :base_amount,
+          amount |> Decimal.mult(rate) |> Decimal.round(2)
+        )
+        |> Ash.Changeset.force_change_attribute(
+          :base_price,
+          price |> Decimal.mult(rate) |> Decimal.round(4)
+        )
+      else
+        _ -> cs
+      end
+    end)
+  end
+
+  defp read_order(nil), do: :error
+
+  defp read_order(order_id) do
+    SynieCore.Sales.Order
+    |> Ash.Query.filter(id == ^order_id)
+    |> Ash.read_one(authorize?: false)
   end
 end
 
@@ -253,8 +287,10 @@ defmodule SynieCore.Sales.OrderItem do
   @moduledoc """
   销售订单条目,对应 `sal_order_item` 表。
 
-  `company_id` 冗余自父订单以复用公司数据权限;含税金额保存时按 数量×含税单价
-  计算(两位小数)不可手改;行单位限物料默认单位或其转换单位;仅父订单草稿态可增删改。
+  `company_id` 冗余自父订单以复用公司数据权限;金额四列(原币/本币的单价与金额中
+  除原币单价外)按金额链系统算不可手改(见 `ComputeAmount`,汇率取父订单头);
+  头上币种/汇率变化时经 `:recalc_base` 内部动作同事务重算本币列;
+  行单位限物料默认单位或其转换单位;仅父订单草稿态可增删改。
   物料编号/名称/规格/客户料号与单位名称是快照物理列:行保存(create/update)即按
   当前物料/单位重拍(见 `SnapshotMaterial`),审核锁行即冻结,主数据后续变更不回溯;
   物料 drawing 槽位的文件在行保存时复制挂接到行(见 `SyncDrawings`),
@@ -315,7 +351,7 @@ defmodule SynieCore.Sales.OrderItem do
 
   # 条目视图展示的订单头字段 calculation 白名单,GridMeta 只反射声明在列的 calculation
   # (opt-in 先例见 grid_actions/0、grid_capabilities/0)
-  def grid_calculations, do: [:order_date, :order_status, :party_type, :party_id]
+  def grid_calculations, do: [:order_date, :order_status, :party_type, :party_id, :currency_code]
 
   # 头字段 party_id 是订单上的多态引用(经 calculation 暴露,判别字段 party_type 同为
   # calculation),声明给 GridMeta 反射成多态 fk 列;variants 与 Order.poly_refs/0 完全一致
@@ -379,6 +415,17 @@ defmodule SynieCore.Sales.OrderItem do
       change {SynieCore.Sales.OrderItem.SyncOrder, []}
       change {SynieCore.Sales.OrderItem.ClearDrawings, []}
     end
+
+    # 内部动作:头上币种/汇率变化时由 Order.RecalcItems 在同事务内逐行调用,
+    # 按头的最新汇率重算本币列。不注册 GraphQL、不进权限目录;
+    # 不挂 SyncOrder/SnapshotMaterial——调用方已持订单锁且订单必为草稿,
+    # 快照语义是「行保存才重拍」,头改汇率不算行保存
+    update :recalc_base do
+      accept []
+      require_atomic? false
+
+      change {SynieCore.Sales.OrderItem.ComputeAmount, []}
+    end
   end
 
   validations do
@@ -407,7 +454,7 @@ defmodule SynieCore.Sales.OrderItem do
     attribute :price, :decimal do
       allow_nil? false
       public? true
-      description "含税单价"
+      description "原币含税单价"
     end
 
     attribute :amount, :decimal do
@@ -415,7 +462,25 @@ defmodule SynieCore.Sales.OrderItem do
       writable? false
       default Decimal.new(0)
       public? true
-      description "含税金额(系统算:数量×含税单价)"
+      description "原币含税金额(系统算:数量×原币单价)"
+    end
+
+    # 双币列照 amount 先例 writable? false,只能由 ComputeAmount 写入;
+    # 本币单(汇率1)两套同值,统一双套落库(ADR 2026-07-17-sales-order-currency)
+    attribute :base_price, :decimal do
+      allow_nil? false
+      writable? false
+      default Decimal.new(0)
+      public? true
+      description "本币含税单价(系统算:原币单价×汇率,4位,仅展示参考)"
+    end
+
+    attribute :base_amount, :decimal do
+      allow_nil? false
+      writable? false
+      default Decimal.new(0)
+      public? true
+      description "本币含税金额(系统算:原币金额×汇率)"
     end
 
     attribute :tax_rate, :decimal do
@@ -525,6 +590,12 @@ defmodule SynieCore.Sales.OrderItem do
     calculate :party_id, :uuid, expr(order.party_id) do
       public? true
       description "对手"
+    end
+
+    # 币种以 ISO 码文本呈现(混合行列表的口径标签),不做 fk 列——条目上它是头字段投影
+    calculate :currency_code, :string, expr(order.currency.iso_code) do
+      public? true
+      description "币种"
     end
   end
 end

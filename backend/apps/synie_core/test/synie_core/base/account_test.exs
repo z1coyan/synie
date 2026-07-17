@@ -171,10 +171,8 @@ defmodule SynieCore.Base.AccountTest do
         |> Ash.Changeset.for_create(:create, %{name: "美元", iso_code: "USD", symbol: "$"})
         |> Ash.create!(authorize?: false)
 
-      cny =
-        SynieCore.Base.Currency
-        |> Ash.Changeset.for_create(:create, %{name: "人民币", iso_code: "CNY", symbol: "¥"})
-        |> Ash.create!(authorize?: false)
+      # CNY 已由迁移种入(公司本币兜底),取或建而非直建
+      cny = cny!()
 
       assert_raise Ash.Error.Invalid, ~r/外币科目不能设置科目角色/, fn ->
         account!(%{

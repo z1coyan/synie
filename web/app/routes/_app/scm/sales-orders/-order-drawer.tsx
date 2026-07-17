@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, ListBox, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
-import { formatAmount } from '~/lib/amount'
+import { formatAmount, formatPrice } from '~/lib/amount'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -48,11 +48,19 @@ const FETCH_DETAIL = `
     }
     salOrderItems(filter: {orderId: {eq: $orderId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
       results {
-        id idx materialId unitId qty price amount taxRate remarks
+        id idx materialId unitId qty price amount basePrice baseAmount taxRate remarks
         materialName unitName
         material { id name }
         unit { id name }
       }
+    }
+  }
+`
+// 单据公司的本币:决定汇率字段显隐、币种默认值与条目表双币列(整单本币时只显一套)
+const FETCH_COMPANY_BASE = `
+  query ($companyId: ID!) {
+    basCompanies(filter: {id: {eq: $companyId}}, limit: 1, offset: 0) {
+      results { id baseCurrencyId }
     }
   }
 `
@@ -144,6 +152,60 @@ async function persistItems(orderId: string, current: Row[], snapshot: Row[]): P
 // 税率库存小数(0.13),前端一律按百分比展示/录入(条目 tab 的 taxRate 列也用它渲染)
 export const formatPercent = (v: unknown) => (v == null || v === '' ? '' : `${Math.round(Number(v) * 10000) / 100}%`)
 
+// 本地即时换算(展示层;保存时后端权威重算):值×汇率按 dp 位四舍五入,非数值回 null
+function mulRound(v: unknown, rate: number, dp: number): number | null {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  const f = 10 ** dp
+  return Math.round((n * rate + Number.EPSILON) * f) / f
+}
+
+/**
+ * 公司本币同步(渲染为 null 的表单伴生组件):
+ * 1. 按单据公司查本币,上报给 provider(汇率字段显隐、条目表双币列都依赖它);
+ * 2. create/edit 态币种为空时(新建初始、切公司被 effects 清空)默认公司本币。
+ * 外币单的币种已有值,不会被覆盖(编辑存量外币单安全)。
+ */
+function CompanyCurrencySync({
+  mode,
+  row,
+  values,
+  patchValues,
+  onBaseCurrency,
+}: {
+  mode: DrawerMode
+  row: Row | null | undefined
+  values: Record<string, unknown>
+  patchValues: (patch: Record<string, unknown>) => void
+  onBaseCurrency: (id: string | null) => void
+}) {
+  const companyId = String((mode === 'view' ? row?.companyId : (values.companyId ?? row?.companyId)) ?? '')
+  const query = useQuery({
+    queryKey: ['companyBaseCurrency', companyId],
+    enabled: companyId !== '',
+    staleTime: 300_000,
+    queryFn: () =>
+      gqlFetch<{ basCompanies: { results: { baseCurrencyId: string | null }[] } }>(FETCH_COMPANY_BASE, {
+        companyId,
+      }).then((d) => d.basCompanies.results[0]?.baseCurrencyId ?? null),
+  })
+  const base = companyId === '' ? null : (query.data ?? null)
+
+  useEffect(() => {
+    onBaseCurrency(base)
+  }, [base, onBaseCurrency])
+
+  const currencyId = values.currencyId
+  useEffect(() => {
+    if (mode === 'view' || base == null) return
+    if (currencyId == null || currencyId === '') patchValues({ currencyId: base })
+    // patchValues 每次渲染重建,依赖它会空转;补丁条件由 base/currencyId 驱动,patch 后条件即不满足
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, base, currencyId])
+
+  return null
+}
+
 // 本地日期 YYYY-MM-DD(不用 toISOString:UTC 串在 UTC+8 凌晨会差一天)
 function todayLocal(): string {
   const d = new Date()
@@ -226,6 +288,8 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   // 交易条款不走抽屉字段(要排在条目表之下,抽屉 extraContent 固定在字段后渲染),由页面自持
   const [terms, setTerms] = useState('')
+  // 单据公司本币(CompanyCurrencySync 上报):汇率显隐、币种默认、条目表双币列都依赖它
+  const [baseCurrencyId, setBaseCurrencyId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张订单的行回填到当前订单
   const reqIdRef = useRef(0)
@@ -265,7 +329,25 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   const drawerCfg = {
     ...baseCfg,
     exclude: [...(baseCfg.exclude ?? []), 'terms'],
-    fields: { ...baseCfg.fields, orderDate: { order: 1, cols: 6, required: true, defaultValue: todayLocal() } },
+    fields: {
+      ...baseCfg.fields,
+      orderDate: { order: 1, cols: 6, required: true, defaultValue: todayLocal() },
+      // 切公司清币种/汇率,由 CompanyCurrencySync 按新公司本币重新带出
+      companyId: { ...baseCfg.fields?.companyId, effects: () => ({ currencyId: null, exchangeRate: null }) },
+      // 切币种重置汇率:切到本币后端强制 1(字段随即隐藏),切到外币要求重填
+      currencyId: { ...baseCfg.fields?.currencyId, effects: () => ({ exchangeRate: null }) },
+      // 汇率仅外币单可见且必填;本币单不出字段、不进提交(后端 SyncCurrency 强制 1)。
+      // view 态 values 即行数据,同一判定对详情展示同样生效
+      exchangeRate: {
+        ...baseCfg.fields?.exchangeRate,
+        required: true,
+        visible: (values) =>
+          baseCurrencyId != null &&
+          values.currencyId != null &&
+          values.currencyId !== '' &&
+          String(values.currencyId) !== baseCurrencyId,
+      },
+    },
   }
 
   return (
@@ -289,8 +371,24 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
         // 表格列是白名单子集,行数据不全(缺交易条款/备注);不传 row,走 rowId 自查完整记录
         rowId={drawer?.order?.id}
         onEdit={drawer?.order?.status === 'DRAFT' ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d)) : undefined}
-        extraContent={(mode, row) => (
+        extraContent={(mode, row, values, patchValues) => {
+          // 整单币种/汇率:编辑态读表单草稿,查看态读行数据(rowId 自查含全字段)。
+          // 整单本币只显一套单价/金额;外币展开双套列(展示简化只在单订单上下文,条目 tab 恒全列)
+          const currencyId = String((mode === 'view' ? row?.currencyId : (values.currencyId ?? row?.currencyId)) ?? '')
+          const isForeign = baseCurrencyId != null && currencyId !== '' && currencyId !== baseCurrencyId
+          const rawRate = mode === 'view' ? row?.exchangeRate : (values.exchangeRate ?? row?.exchangeRate)
+          const rate = Number.isFinite(Number(rawRate)) && Number(rawRate) > 0 ? Number(rawRate) : 1
+          const priceLabel = isForeign ? '原币含税单价' : '含税单价'
+          const amountLabel = isForeign ? '原币含税金额' : '含税金额'
+          return (
           <>
+            <CompanyCurrencySync
+              mode={mode}
+              row={row}
+              values={values}
+              patchValues={patchValues}
+              onBaseCurrency={setBaseCurrencyId}
+            />
             <SynieEditableTable
             resource="salOrderItems"
             label="订单条目"
@@ -308,10 +406,26 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
               'materialSpec',
               'customerPartNo',
               'unitName',
+              // 头字段 calculation 只服务条目 tab 的跨单浏览,不进行级表单
+              // (双币列 basePrice/baseAmount 要上表格,不能进 exclude,表单用 visible:false 隐藏)
+              'orderDate',
+              'orderStatus',
+              'partyType',
+              'partyId',
+              'currencyCode',
             ]}
-            columns={['idx', 'materialId', 'unitId', 'qty', 'price', 'amount', 'taxRate', 'remarks']}
+            columns={
+              isForeign
+                ? ['idx', 'materialId', 'unitId', 'qty', 'basePrice', 'price', 'baseAmount', 'amount', 'taxRate', 'remarks']
+                : ['idx', 'materialId', 'unitId', 'qty', 'price', 'amount', 'taxRate', 'remarks']
+            }
             overrides={{
-              amount: { label: '含税金额', render: (v) => formatAmount(v) },
+              // 表格列头用短标签(同层级与本币列对齐);行表单字段才用「含税」长标签
+              price: { label: isForeign ? '原币单价' : '含税单价' },
+              amount: { label: isForeign ? '原币金额' : '含税金额', render: (v) => formatAmount(v) },
+              // 双币列按当前汇率即时换算展示(编辑中改汇率立即跟手;保存时后端权威重算落库)
+              basePrice: { label: '本币单价', render: (_v, r) => formatPrice(mulRound(r.price, rate, 4)) },
+              baseAmount: { label: '本币金额', render: (_v, r) => formatAmount(mulRound(r.amount, rate, 2)) },
               taxRate: { label: '税率(%)', render: (v) => formatPercent(v) },
               // 物料/单位列显示口径:行快照名(下单时落库,防主数据改名);无快照返回 undefined 回落默认 fk 渲染
               // ——本地新行/编辑中刚改选的行按 join 或 id 反查显示今日名(编辑本来就是选今天的物料,保存后后端重拍)
@@ -347,7 +461,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   />
                 ),
               },
-              price: { order: 3, cols: 6, required: true },
+              price: { order: 3, cols: 6, required: true, label: priceLabel },
               taxRate: {
                 order: 4,
                 cols: 6,
@@ -372,13 +486,13 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
               amount: {
                 order: 5,
                 cols: 6,
-                label: '含税金额',
+                label: amountLabel,
                 input: ({ values }) => {
                   const amt =
                     Math.round(((Number(values.qty) || 0) * (Number(values.price) || 0) + Number.EPSILON) * 100) / 100
                   return (
                     <NumberField fullWidth isDisabled value={amt}>
-                      <Label>含税金额</Label>
+                      <Label>{amountLabel}</Label>
                       <NumberField.Group className="grid-cols-[1fr]">
                         <NumberField.Input />
                       </NumberField.Group>
@@ -386,6 +500,28 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   )
                 },
               },
+              // 本币单价仅作表格展示参考,不进行表单;本币金额外币单给只读预览(本币单与原币恒同值,不显)
+              basePrice: { visible: () => false },
+              baseAmount: isForeign
+                ? {
+                    order: 6,
+                    cols: 6,
+                    label: '本币含税金额',
+                    input: ({ values }) => {
+                      const amt =
+                        Math.round(((Number(values.qty) || 0) * (Number(values.price) || 0) + Number.EPSILON) * 100) /
+                        100
+                      return (
+                        <NumberField fullWidth isDisabled value={mulRound(amt, rate, 2) ?? 0}>
+                          <Label>本币含税金额</Label>
+                          <NumberField.Group className="grid-cols-[1fr]">
+                            <NumberField.Input />
+                          </NumberField.Group>
+                        </NumberField>
+                      )
+                    },
+                  }
+                : { visible: () => false },
             }}
             validateItem={(vals) => {
               if (!(Number(vals.qty) > 0)) return '数量必须大于零'
@@ -412,7 +548,8 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             </TextField>
           </div>
           </>
-        )}
+          )
+        }}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const data = await gqlFetch<{

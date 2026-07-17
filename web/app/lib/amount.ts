@@ -6,6 +6,14 @@ export function formatAmount(value: unknown): string {
   return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/** 单价千分位:最少 2 位、最多 4 位小数(本币单价 4 位精度先例);空值回空串 */
+export function formatPrice(value: unknown): string {
+  if (value == null || value === '') return ''
+  const n = Number(value)
+  if (!Number.isFinite(n)) return String(value)
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+}
+
 const DIGITS = '零壹贰叁肆伍陆柒捌玖'
 const UNITS = ['', '拾', '佰', '仟']
 const GROUPS = ['', '万', '亿', '万亿']
