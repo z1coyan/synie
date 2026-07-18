@@ -124,7 +124,7 @@ export const menuModules: MenuModule[] = [
   {
     key: 'base',
     label: '基础数据',
-    description: '公司、货币与计量单位等主数据',
+    description: '公司、货币、计量单位与市场行情等主数据',
     icon: IconDatabase,
     entry: '/system/companies',
     groups: [
@@ -135,6 +135,13 @@ export const menuModules: MenuModule[] = [
           { label: '科目表', path: '/base/accounts' },
           { label: '货币管理', path: '/base/currencies' },
           { label: '单位管理', path: '/base/units' },
+        ],
+      },
+      {
+        label: '行情',
+        items: [
+          { label: '行情品种', path: '/base/market-instruments' },
+          { label: '行情价点', path: '/base/market-prices' },
         ],
       },
     ],

@@ -42,6 +42,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   bas_currency: '货币',
   bas_unit: '计量单位',
   bas_account: '会计科目',
+  bas_market_instrument: '行情品种',
+  bas_market_price_point: '行情价点',
   sal_customer: '客户',
   sal_order: '销售订单',
   sal_order_item: '销售订单条目',
