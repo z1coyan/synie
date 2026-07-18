@@ -9,6 +9,7 @@ import {
 import { Toast } from '@heroui/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { APPEARANCE_FOUC_SCRIPT } from '~/lib/appearance'
 import '../../app.css'
 
 const queryClient = new QueryClient({
@@ -69,17 +70,17 @@ function BootSplash() {
           exit={{ pointerEvents: 'none' }}
         >
           <motion.div
-            className="absolute inset-x-0 top-0 h-1/2 bg-ink-900"
+            className="absolute inset-x-0 top-0 h-1/2 bg-brand-ink"
             exit={{ y: '-100%' }}
             transition={curtainTransition}
           />
           <motion.div
-            className="absolute inset-x-0 bottom-0 h-1/2 bg-ink-900"
+            className="absolute inset-x-0 bottom-0 h-1/2 bg-brand-ink"
             exit={{ y: '100%' }}
             transition={curtainTransition}
           />
           <motion.div
-            className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-porcelain"
+            className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-brand-porcelain"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: reduced ? 0 : 0.25 } }}
@@ -103,7 +104,7 @@ function BootSplash() {
               }}
             />
             <motion.span
-              className="text-xs tracking-[0.5em] text-porcelain/60"
+              className="text-xs tracking-[0.5em] text-brand-porcelain/60"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: reduced ? 0 : 0.7, duration: reduced ? 0 : 0.6 }}
@@ -119,8 +120,10 @@ function BootSplash() {
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
+        {/* 阻塞式防闪:在 hydrate 前按本机外观模式挂 class/data-theme */}
+        <script dangerouslySetInnerHTML={{ __html: APPEARANCE_FOUC_SCRIPT }} />
         <HeadContent />
       </head>
       <body>

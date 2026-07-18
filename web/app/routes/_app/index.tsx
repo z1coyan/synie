@@ -38,7 +38,7 @@ function DashboardPage() {
               to={m.entry}
               className={`${cardVariants().base()} flex-row items-center gap-4 no-underline transition-shadow hover:shadow-md`}
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ink-900 text-porcelain">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-ink text-brand-porcelain">
                 <m.icon className="h-5 w-5" />
               </span>
               <span className="min-w-0">

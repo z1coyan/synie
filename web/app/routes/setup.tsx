@@ -13,6 +13,7 @@ import {
   TextField,
   toast,
 } from '@heroui/react'
+import { AppearanceSwitch } from '~/components/appearance-switch'
 import { setToken } from '~/lib/auth'
 import { gqlFetch } from '~/lib/graphql'
 import { fetchSetupStatus } from '~/lib/setup'
@@ -124,13 +125,13 @@ function SetupPage() {
 
   return (
     <div className="min-h-screen flex bg-porcelain text-ink-900">
-      {/* 左栏:品牌面板(同 login 页视觉) */}
-      <aside className="relative hidden lg:flex lg:w-[52%] xl:w-[55%] flex-col justify-between overflow-hidden bg-ink-900 text-porcelain">
+      {/* 左栏:品牌仪式面(同 login,恒定玄蓝) */}
+      <aside className="relative hidden lg:flex lg:w-[52%] xl:w-[55%] flex-col justify-between overflow-hidden bg-brand-ink text-brand-porcelain">
         <ResourceLattice />
 
         <span
           aria-hidden
-          className="absolute right-8 top-1/2 -translate-y-1/2 select-none text-xs tracking-[0.5em] text-porcelain/25 font-brand"
+          className="absolute right-8 top-1/2 -translate-y-1/2 select-none text-xs tracking-[0.5em] text-brand-porcelain/25 font-brand"
           style={{ writingMode: 'vertical-rl' }}
         >
           万物皆资源 · 秩序即效率
@@ -139,7 +140,7 @@ function SetupPage() {
         <header className="relative z-10 flex items-baseline gap-3 px-12 pt-10">
           <span className="font-brand text-2xl tracking-wide">Synie</span>
           <span className="h-4 w-px bg-gilt/70" aria-hidden />
-          <span className="text-xs tracking-[0.35em] text-porcelain/60">
+          <span className="text-xs tracking-[0.35em] text-brand-porcelain/60">
             企业资源管理系统
           </span>
         </header>
@@ -150,10 +151,10 @@ function SetupPage() {
             <br />
             万象待启。
           </h1>
-          <p className="mt-6 text-sm leading-relaxed text-porcelain/55">
+          <p className="mt-6 text-sm leading-relaxed text-brand-porcelain/55">
             首次启动,三步完成初始化:管理员、公司与首选语言。
           </p>
-          <div className="mt-10 flex items-center gap-4 text-[11px] tracking-[0.3em] text-porcelain/35">
+          <div className="mt-10 flex items-center gap-4 text-[11px] tracking-[0.3em] text-brand-porcelain/35">
             <span className="h-px w-10 bg-gilt/50" aria-hidden />
             <span>一次性</span>
             <span>初始化</span>
@@ -162,8 +163,11 @@ function SetupPage() {
         </div>
       </aside>
 
-      {/* 右栏:向导 */}
-      <main className="flex flex-1 flex-col justify-center px-8 sm:px-16 py-12">
+      {/* 右栏:向导(跟随外观) */}
+      <main className="relative flex flex-1 flex-col justify-center px-8 sm:px-16 py-12">
+        <div className="absolute right-6 top-6 sm:right-10 sm:top-8">
+          <AppearanceSwitch size="sm" />
+        </div>
         <div className="mx-auto w-full max-w-sm">
           {/* 小屏时的词标 */}
           <div className="mb-10 flex items-baseline gap-3 lg:hidden">
@@ -379,7 +383,7 @@ function StepAdmin(props: { hasUsers: boolean; onDone: () => void }) {
           size="lg"
           isPending={pending}
           isDisabled={!username || !password || (!props.hasUsers && !confirm)}
-          className="mt-2 w-full rounded-sm bg-ink-900 text-porcelain tracking-[0.4em] hover:bg-ink-800"
+          className="mt-2 w-full rounded-sm bg-brand-ink text-brand-porcelain tracking-[0.4em] hover:bg-brand-ink-mid"
         >
           {props.hasUsers ? '登录并继续' : '创建并继续'}
         </Button>
@@ -570,7 +574,7 @@ function StepCompany(props: { onDone: () => void }) {
             isPending={pending}
             isDisabled={!template}
             onPress={submitInitOnly}
-            className="mt-2 w-full rounded-sm bg-ink-900 text-porcelain tracking-[0.4em] hover:bg-ink-800"
+            className="mt-2 w-full rounded-sm bg-brand-ink text-brand-porcelain tracking-[0.4em] hover:bg-brand-ink-mid"
           >
             初始化科目并继续
           </Button>
@@ -668,7 +672,7 @@ function StepCompany(props: { onDone: () => void }) {
           size="lg"
           isPending={pending}
           isDisabled={!code.trim() || !name.trim() || !shortName.trim() || !baseCurrencyId || !template}
-          className="mt-2 w-full rounded-sm bg-ink-900 text-porcelain tracking-[0.4em] hover:bg-ink-800"
+          className="mt-2 w-full rounded-sm bg-brand-ink text-brand-porcelain tracking-[0.4em] hover:bg-brand-ink-mid"
         >
           创建公司并继续
         </Button>
@@ -733,7 +737,7 @@ function StepLanguage() {
           type="submit"
           size="lg"
           isPending={complete.isPending}
-          className="mt-2 w-full rounded-sm bg-ink-900 text-porcelain tracking-[0.4em] hover:bg-ink-800"
+          className="mt-2 w-full rounded-sm bg-brand-ink text-brand-porcelain tracking-[0.4em] hover:bg-brand-ink-mid"
         >
           完成初始化
         </Button>

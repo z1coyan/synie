@@ -5,26 +5,63 @@
 @import "@heroui-pro/react/css";
 @custom-variant dark (&:is(.dark *));
 
-/* v2 primary → v3 accent:品牌玄蓝 */
+/*
+ * 品牌原色(不随外观翻转) — 仪式面:启动幕布、侧栏图标轨、登录/向导左栏
+ * 页面语义色 ink/porcelain — 业务面随白天/黑夜翻转
+ */
 :root,
 [data-theme="light"] {
   --accent: #12305e;
   --accent-foreground: #fafaf7;
+
+  --synie-brand-ink: #0a1e3f;
+  --synie-brand-ink-mid: #12305e;
+  --synie-brand-porcelain: #fafaf7;
+
+  --synie-ink-900: #0a1e3f;
+  --synie-ink-800: #12305e;
+  --synie-ink-500: #3a5f96;
+  --synie-porcelain: #fafaf7;
+}
+
+.dark,
+[data-theme="dark"] {
+  /* 暗色下品牌 accent 略提亮,保证可点可读 */
+  --accent: #6b8fc4;
+  --accent-foreground: #0a1e3f;
+
+  --synie-ink-900: #e8eaef;
+  --synie-ink-800: #c5cad6;
+  --synie-ink-500: #8b95a8;
+  --synie-porcelain: #0b1220;
 }
 
 @theme {
   --font-brand: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong",
     "SimSun", serif;
-  --color-ink-900: #0a1e3f;
-  --color-ink-800: #12305e;
-  --color-ink-500: #3a5f96;
-  --color-porcelain: #fafaf7;
+
+  /* 页面语义色(随 .dark 翻转) */
+  --color-ink-900: var(--synie-ink-900);
+  --color-ink-800: var(--synie-ink-800);
+  --color-ink-500: var(--synie-ink-500);
+  --color-porcelain: var(--synie-porcelain);
+
+  /* 品牌恒定色(仪式面专用) */
+  --color-brand-ink: var(--synie-brand-ink);
+  --color-brand-ink-mid: var(--synie-brand-ink-mid);
+  --color-brand-porcelain: var(--synie-brand-porcelain);
+
   --color-gilt: #c9a15a;
   --color-jade: #5f9ea0;
 
-    /* Border Radius */
+  /* Border Radius */
   --radius: 0.125rem;
   --field-radius: 0.75rem;
+}
+
+html {
+  background-color: var(--synie-porcelain);
+  color: var(--synie-ink-900);
 }
 
 /* 登录页左栏「资源经纬」节点的呼吸光 */

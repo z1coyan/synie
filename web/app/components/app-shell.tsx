@@ -13,6 +13,7 @@ import {
   ScrollShadow,
   Tooltip,
 } from '@heroui/react'
+import { AppearanceSwitch } from '~/components/appearance-switch'
 import { IconMenu } from '~/components/icons'
 import {
   isPathActive,
@@ -53,10 +54,10 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
 
   return (
     <div className="flex h-screen bg-porcelain text-ink-900">
-      {/* 第一列:模块图标栏(仅桌面) */}
+      {/* 第一列:模块图标栏(仅桌面) — 品牌仪式面,恒定玄蓝 */}
       <nav
         aria-label="模块导航"
-        className="hidden w-16 shrink-0 flex-col items-center bg-ink-900 py-5 text-porcelain lg:flex"
+        className="hidden w-16 shrink-0 flex-col items-center bg-brand-ink py-5 text-brand-porcelain lg:flex"
       >
         <Link
           to="/"
@@ -79,8 +80,8 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
                   onPress={() => navigate({ to: m.entry })}
                   className={`relative h-11 w-11 rounded-xl ${
                     active
-                      ? 'bg-porcelain/15 text-porcelain hover:bg-porcelain/15'
-                      : 'text-porcelain/45 hover:bg-porcelain/10 hover:text-porcelain/90'
+                      ? 'bg-brand-porcelain/15 text-brand-porcelain hover:bg-brand-porcelain/15'
+                      : 'text-brand-porcelain/45 hover:bg-brand-porcelain/10 hover:text-brand-porcelain/90'
                   }`}
                 >
                   <m.icon className="h-[22px] w-[22px]" />
@@ -103,13 +104,13 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
             username={user?.username}
             onLogout={onLogout}
             placement="right bottom"
-            avatarClassName="bg-porcelain/15"
-            fallbackClassName="bg-transparent text-porcelain"
+            avatarClassName="bg-brand-porcelain/15"
+            fallbackClassName="bg-transparent text-brand-porcelain"
           />
         </div>
       </nav>
 
-      {/* 第二列:二级菜单面板(仅桌面) */}
+      {/* 第二列:二级菜单面板(仅桌面) — 跟随外观 */}
       <aside className="hidden w-56 shrink-0 flex-col border-r border-ink-900/10 lg:flex">
         <div className="px-6 pb-2 pt-7">
           <p className="font-brand text-lg tracking-wide">{activeModule.label}</p>
@@ -245,7 +246,7 @@ function MenuLink({
       onClick={onNavigate}
       className={`flex h-9 items-center rounded-lg px-3 text-sm ${
         active
-          ? 'bg-white font-medium text-ink-900 shadow-sm'
+          ? 'bg-ink-900/8 font-medium text-ink-900 shadow-sm dark:bg-brand-porcelain/10 dark:shadow-none'
           : 'text-ink-900/65 hover:bg-ink-900/5'
       }`}
     >
@@ -254,7 +255,7 @@ function MenuLink({
   )
 }
 
-/** 头像 + 用户下拉(桌面在图标栏底部,移动端在顶栏右侧) */
+/** 头像 + 用户下拉(桌面在图标栏底部,移动端在顶栏右侧);含外观模式三选一 */
 function UserMenu({
   displayName,
   username,
@@ -284,7 +285,11 @@ function UserMenu({
           </Avatar.Fallback>
         </Avatar>
       </Button>
-      <Dropdown.Popover placement={placement}>
+      <Dropdown.Popover placement={placement} className="min-w-52">
+        <div className="border-b border-ink-900/10 px-3 py-2.5">
+          <p className="mb-1.5 text-[11px] tracking-wide text-ink-500">外观</p>
+          <AppearanceSwitch size="sm" className="w-full justify-between" />
+        </div>
         <Dropdown.Menu
           aria-label="用户操作"
           onAction={(key) => {
