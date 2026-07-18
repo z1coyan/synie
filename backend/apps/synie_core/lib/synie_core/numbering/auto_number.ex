@@ -6,6 +6,9 @@ defmodule SynieCore.Numbering.AutoNumber do
 
       change {SynieCore.Numbering.AutoNumber, attribute: :voucher_no}
 
+  资源不接受手填编号时(如物料 code 不在 accept 中)传 `manual_entry: false`,
+  无规则报错文案不再提示"请填写编号"。
+
   必须在构建期(change 主体)取号:Ash 的必填校验(require_values)在 for_create 末尾、
   before_action 之前执行,推迟到钩子里 allow_nil? false 的属性会先报必填。
   代价是后续校验/权限失败也会消耗序号——跳号可接受,序号允许有洞。
@@ -27,12 +30,20 @@ defmodule SynieCore.Numbering.AutoNumber do
         {:error, :no_rule} ->
           Ash.Changeset.add_error(changeset,
             field: attribute,
-            message: "未配置启用的编号规则,请填写编号,或在 系统管理→编号规则 配置"
+            message: no_rule_message(opts)
           )
 
         {:error, message} ->
           Ash.Changeset.add_error(changeset, field: attribute, message: message)
       end
+    end
+  end
+
+  defp no_rule_message(opts) do
+    if Keyword.get(opts, :manual_entry, true) do
+      "未配置启用的编号规则,请填写编号,或在 系统管理→编号规则 配置"
+    else
+      "未配置启用的编号规则,请在 系统管理→编号规则 配置"
     end
   end
 end

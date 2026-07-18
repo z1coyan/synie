@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { attachFile, type UploadedFile } from '~/lib/files'
@@ -34,6 +34,12 @@ const FETCH_UNITS = `
     invMaterialUnits(filter: {materialId: {eq: $materialId}}, sort: [{field: INSERTED_AT, order: ASC}], limit: 200, offset: 0) {
       results { id unitId factor unit { id name symbol } }
     }
+  }
+`
+// 单位转换 tab 的基准单位提示:按默认单位 id 反查名称(单位主数据量小,全量拉取缓存)
+const FETCH_UNIT_NAMES = `
+  query {
+    basUnits(limit: 200, offset: 0) { results { id name } }
   }
 `
 const CREATE_UNIT = `
@@ -145,6 +151,14 @@ function MaterialsPage() {
   // 请求守卫:防止慢响应把上一条物料的转换行回填到当前物料(同凭证页先例)
   const reqIdRef = useRef(0)
 
+  // 单位名称表:单位转换 tab 的「基准单位」提示按默认单位 id 反查名称
+  const { data: unitNames } = useQuery({
+    queryKey: ['basUnitNames'],
+    queryFn: () => gqlFetch<{ basUnits: { results: Row[] } }>(FETCH_UNIT_NAMES).then((d) => d.basUnits.results),
+    enabled: drawer !== null,
+    staleTime: 60_000,
+  })
+
   // 打开抽屉:create 清空转换行与暂存附件;view/edit 按物料 id 拉行(快照留作提交时 diff 基准)
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
     const my = ++reqIdRef.current
@@ -177,7 +191,7 @@ function MaterialsPage() {
     <>
       <h1 className="font-brand text-3xl tracking-wide">物料管理</h1>
       <p className="mt-2 text-sm text-ink-500">
-        全局共享的物料主数据:可标记客户物料;编号留空按「分类号[客户号]-序号」自动生成;图纸、其他文件与单位转换建料时即可一并录入。
+        全局共享的物料主数据:可标记客户物料;编号按「分类号[客户号]-序号」自动取号,不可手填;图纸、其他文件与单位转换建料时即可一并录入。
       </p>
 
       <div className="mt-6">
@@ -209,14 +223,65 @@ function MaterialsPage() {
         // 表格列是白名单子集,行数据不全;不传 row,走 rowId 自查完整记录
         rowId={drawer?.row?.id}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
-        extraContent={(mode, row, values) => {
-          // 默认单位:编辑态取表单草稿(可能刚改),view 态取行数据;转换行不能选它
-          const defaultUnitId = ((values.defaultUnitId ?? row?.defaultUnitId) as string | null) ?? null
-          return (
-            <div className="flex flex-col gap-6">
+        extraContent={(mode, row) => (
+          // 图纸与其他文件两组附件槽位并排,同 hrEmployees 证件照先例
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <SynieAttachmentPanel
+              ownerType="inv_material"
+              ownerId={row?.id as string | undefined}
+              category="drawing"
+              label="图纸"
+              accept="image/*"
+              readonly={mode === 'view'}
+              // 创建态走暂存,保存成功后按槽位统一挂接
+              pending={
+                mode === 'create'
+                  ? {
+                      files: pendingDrawings,
+                      onAdd: (f) => setPendingDrawings((fs) => [...fs, f]),
+                      onRemove: (id) => setPendingDrawings((fs) => fs.filter((f) => f.id !== id)),
+                    }
+                  : undefined
+              }
+            />
+            <SynieAttachmentPanel
+              ownerType="inv_material"
+              ownerId={row?.id as string | undefined}
+              category="default"
+              label="其他文件"
+              readonly={mode === 'view'}
+              pending={
+                mode === 'create'
+                  ? {
+                      files: pendingOthers,
+                      onAdd: (f) => setPendingOthers((fs) => [...fs, f]),
+                      onRemove: (id) => setPendingOthers((fs) => fs.filter((f) => f.id !== id)),
+                    }
+                  : undefined
+              }
+            />
+          </div>
+        )}
+        tabExtraContent={{
+          // 单位转换 tab:基准单位提示随默认单位草稿联动;保存语义不变(随主表单 diff 提交)
+          units: (mode, row, values) => {
+            // 默认单位:编辑/新建态取表单草稿(可能刚改),view 态取行数据;转换行不能选它
+            const defaultUnitId = ((values.defaultUnitId ?? row?.defaultUnitId) as string | null) ?? null
+            const baseName = defaultUnitId
+              ? String(unitNames?.find((u) => u.id === defaultUnitId)?.name ?? '…')
+              : '未选择'
+            return (
               <SynieEditableTable
                 resource="invMaterialUnits"
                 label="单位转换"
+                title={
+                  <span>
+                    单位转换
+                    <span className="ml-2 text-xs font-normal text-muted">
+                      基准单位:{baseName}(1 默认单位 = x 该单位)
+                    </span>
+                  </span>
+                }
                 items={units}
                 onChange={setUnits}
                 readOnly={mode === 'view' || (mode !== 'create' && !unitsLoaded)}
@@ -233,45 +298,8 @@ function MaterialsPage() {
                   if (items.some((r) => r.id !== editing?.id && r.unitId === vals.unitId)) return '该单位已有转换行'
                 }}
               />
-              {/* 图纸与其他文件两组附件槽位并排,同 hrEmployees 证件照先例 */}
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <SynieAttachmentPanel
-                  ownerType="inv_material"
-                  ownerId={row?.id as string | undefined}
-                  category="drawing"
-                  label="图纸"
-                  accept="image/*"
-                  readonly={mode === 'view'}
-                  // 创建态走暂存,保存成功后按槽位统一挂接
-                  pending={
-                    mode === 'create'
-                      ? {
-                          files: pendingDrawings,
-                          onAdd: (f) => setPendingDrawings((fs) => [...fs, f]),
-                          onRemove: (id) => setPendingDrawings((fs) => fs.filter((f) => f.id !== id)),
-                        }
-                      : undefined
-                  }
-                />
-                <SynieAttachmentPanel
-                  ownerType="inv_material"
-                  ownerId={row?.id as string | undefined}
-                  category="default"
-                  label="其他文件"
-                  readonly={mode === 'view'}
-                  pending={
-                    mode === 'create'
-                      ? {
-                          files: pendingOthers,
-                          onAdd: (f) => setPendingOthers((fs) => [...fs, f]),
-                          onRemove: (id) => setPendingOthers((fs) => fs.filter((f) => f.id !== id)),
-                        }
-                      : undefined
-                  }
-                />
-              </div>
-            </div>
-          )
+            )
+          },
         }}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {

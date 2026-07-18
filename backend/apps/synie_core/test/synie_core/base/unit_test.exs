@@ -14,12 +14,13 @@ defmodule SynieCore.Base.UnitTest do
   end
 
   test "基准单位与换算单位" do
-    kg = unit!(%{unit_type: :weight, is_base: true, name: "千克", symbol: "kgs", ratio: 1})
-    g = unit!(%{unit_type: :weight, name: "克", symbol: "g", ratio: "0.001"})
+    # 不用 :weight:迁移内置了 weight 基准(吨),基准每类型唯一会撞
+    box = unit!(%{unit_type: :quantity, is_base: true, name: "箱", symbol: "kgs", ratio: 1})
+    piece = unit!(%{unit_type: :quantity, name: "盒", symbol: "g", ratio: "0.001"})
 
-    assert kg.is_base
-    refute g.is_base
-    assert Decimal.eq?(g.ratio, Decimal.new("0.001"))
+    assert box.is_base
+    refute piece.is_base
+    assert Decimal.eq?(piece.ratio, Decimal.new("0.001"))
   end
 
   test "单位符号唯一" do

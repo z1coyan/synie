@@ -13,6 +13,7 @@ import {
   Select,
   Spinner,
   Switch,
+  Tabs,
   TextField,
   toast,
 } from '@heroui/react'
@@ -31,13 +32,28 @@ import {
   collectValues,
   initialValues,
   isFieldDisabled,
-  missingRequired,
+  missingRequiredFields,
   resolveFields,
   visibleFields,
   type DrawerMode,
   type FieldOverride,
   type ResolvedField,
 } from './fields'
+
+/** headerContent/extraContent/tabExtraContent 共用签名:入参是冻结后的 mode/row
+ * (与渲染同一套快照,退场动画期间不闪);values 为当前表单草稿(view 态为空对象),
+ * patchValues 向草稿并入补丁(view 态 no-op) */
+export type DrawerExtraContent = (
+  mode: DrawerMode,
+  row: Row | null | undefined,
+  values: Record<string, unknown>,
+  patchValues: (patch: Record<string, unknown>) => void,
+) => ReactNode
+
+export interface DrawerTab {
+  key: string
+  label: string
+}
 
 export interface SynieRecordDrawerProps {
   /** 与后端 GridMeta 白名单同名,如 "sysRoles" */
@@ -67,27 +83,22 @@ export interface SynieRecordDrawerProps {
   contentClassName?: string
   /**
    * 字段栅格之前的头部内容(如金额主视觉/概要卡、承兑票面区),占满整行;
-   * 入参是冻结后的 mode/row(与 extraContent 同一套快照,退场动画期间不闪),
-   * values/patchValues 同 extraContent(表单草稿读写,view 态分别为空对象/no-op)
+   * 声明 tabs 时恒显示在 tab 栏之上,不随 tab 切换
    */
-  headerContent?: (
-    mode: DrawerMode,
-    row: Row | null | undefined,
-    values: Record<string, unknown>,
-    patchValues: (patch: Record<string, unknown>) => void,
-  ) => ReactNode
+  headerContent?: DrawerExtraContent
   /**
    * meta 列之外的附加内容(如多对多关联控件),渲染在字段栅格末尾、占满整行;
-   * 状态由页面自持,提交在页面 onSubmit 里自行处理。入参是冻结后的 mode/row(退场动画期间不闪),
-   * values 为当前表单草稿(view 态为空对象),供附加内容按表单字段联动(如按公司过滤科目候选);
-   * patchValues 第 4 参:向表单草稿并入补丁(view 态为 no-op),供内嵌子表「从明细汇总带出」等场景回写。
+   * 状态由页面自持,提交在页面 onSubmit 里自行处理。
+   * 声明 tabs 时本槽归入首个 tab,其余 tab 的附加内容走 tabExtraContent。
    */
-  extraContent?: (
-    mode: DrawerMode,
-    row: Row | null | undefined,
-    values: Record<string, unknown>,
-    patchValues: (patch: Record<string, unknown>) => void,
-  ) => ReactNode
+  extraContent?: DrawerExtraContent
+  /**
+   * tabs 分区声明(首个为主 tab);不声明则不渲染 tab 栏,布局与单页形态完全一致。
+   * 字段经 FieldOverride.tab 路由(缺省归首 tab);必填缺失保存时自动切到缺失字段所在 tab。
+   */
+  tabs?: DrawerTab[]
+  /** 非首 tab 的附加内容槽,key 为 tab key(首 tab 的附加内容仍走 extraContent) */
+  tabExtraContent?: Record<string, DrawerExtraContent>
 }
 
 // Tailwind v4 JIT 扫不到动态拼接类名,1-12 静态映射
@@ -177,6 +188,8 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const fields = resolveFields(columns, renderMode, exclude, props.fields)
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
+  // 当前 tab:null 表示未手动切换过(回落首 tab),每次打开抽屉重置
+  const [activeTab, setActiveTab] = useState<string | null>(null)
 
   // 打开/换行/换模式时重建草稿(view 不用草稿,直接读 row)。
   // props.fields/exclude 常为内联字面量,进依赖会在父级每次渲染时重置用户输入;
@@ -188,7 +201,26 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mode, row, columns])
 
+  // 每次打开抽屉回到首 tab(isOpen 翻转才触发,mode/row 切换不清用户所在 tab)
+  useEffect(() => {
+    if (isOpen) setActiveTab(null)
+  }, [isOpen])
+
   const shown = visibleFields(fields, renderMode === 'view' ? ((renderRow ?? {}) as Record<string, unknown>) : values)
+
+  const tabs = props.tabs ?? []
+  const firstTabKey = tabs[0]?.key ?? null
+  // 空 tab 隐藏:无任何可见字段且无附加内容槽的 tab 不渲染(如 fk 速览没有页面的 tabExtraContent,
+  // 单位转换 tab 会是空的);只剩一个可见 tab 时整栏不渲染,退回单页形态
+  const visibleTabs = tabs.filter(
+    (t) =>
+      shown.some((f) => (f.tab ?? firstTabKey) === t.key) ||
+      (t.key === firstTabKey ? !!props.extraContent : !!props.tabExtraContent?.[t.key])
+  )
+  const tabsOn = visibleTabs.length > 1
+  const wantedTab = activeTab ?? firstTabKey
+  const currentTab = visibleTabs.some((t) => t.key === wantedTab) ? wantedTab : (visibleTabs[0]?.key ?? firstTabKey)
+
   const title = renderMode === 'create' ? `新增${label}` : renderMode === 'edit' ? `编辑${label}` : `${label}详情`
 
   // extraContent 第 4 参:把补丁并入表单草稿;view 态无草稿可改,no-op
@@ -199,9 +231,11 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
 
   const save = async () => {
     if (!props.onSubmit || mode === 'view') return
-    const missing = missingRequired(fields, values, mode)
+    const missing = missingRequiredFields(fields, values, mode)
     if (missing.length > 0) {
-      toast.danger(`请填写:${missing.join('、')}`)
+      // 缺失字段在非当前 tab 时先切过去,toast 指名字段,用户不用猜去哪儿补
+      if (tabsOn) setActiveTab(missing[0].tab ?? firstTabKey)
+      toast.danger(`请填写:${missing.map((f) => f.label).join('、')}`)
       return
     }
     setSaving(true)
@@ -213,6 +247,63 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     } finally {
       setSaving(false)
     }
+  }
+
+  // 字段栅格(含 section 分组标题);subset 已按 tab 过滤好
+  const renderFields = (subset: ResolvedField[]) => (
+    <>
+      {(() => {
+        // 分组标题:section 非空且变化时在该字段前插标题行;'' 显式收编
+        // (画 hairline,之后字段在组外);undefined 并入上一组。
+        // 标题行只随「首个携带新 section 的可见字段」出现,组内无可见字段则不渲染
+        let lastSection: string | undefined
+        return subset.map((f) => {
+          let header: ReactNode = null
+          if (f.section === '') {
+            if (lastSection !== undefined) header = <div className="border-t border-separator" />
+            lastSection = undefined
+          } else if (f.section != null) {
+            if (f.section !== lastSection) {
+              header = <h3 className="border-b border-separator pb-2 text-sm font-medium">{f.section}</h3>
+            }
+            lastSection = f.section
+          }
+          return (
+            <Fragment key={f.name}>
+              {header && <div className="lg:col-span-12">{header}</div>}
+              <div className={COL_SPAN[f.cols]}>
+                {renderMode === 'view' ? (
+                  <ViewField field={f} row={renderRow ?? ({ id: '' } as Row)} />
+                ) : (
+                  <FieldInput
+                    field={f}
+                    row={renderRow}
+                    value={values[f.name]}
+                    values={values}
+                    isDisabled={isFieldDisabled(f, renderMode) || saving}
+                    onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v, ...(f.effects?.(v) ?? {}) }))}
+                    patchValues={patchValues}
+                  />
+                )}
+              </div>
+            </Fragment>
+          )
+        })
+      })()}
+    </>
+  )
+
+  // 一个 tab 的内容:字段栅格 + 该 tab 的附加内容槽(首 tab 走 extraContent,其余走 tabExtraContent);
+  // tabKey 为 null 即单页形态(未声明 tabs),渲染全部字段
+  const renderTabBody = (tabKey: string | null) => {
+    const subset = tabKey == null ? shown : shown.filter((f) => (f.tab ?? firstTabKey) === tabKey)
+    const extraFn = tabKey == null || tabKey === firstTabKey ? props.extraContent : props.tabExtraContent?.[tabKey]
+    return (
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        {renderFields(subset)}
+        {extraFn && <div className="mt-2 lg:col-span-12">{extraFn(renderMode, renderRow, values, patchValues)}</div>}
+      </div>
+    )
   }
 
   return (
@@ -260,53 +351,31 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                   const node = props.headerContent?.(renderMode, renderRow, values, patchValues)
                   return node == null ? null : <div className="mb-6">{node}</div>
                 })()}
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-                  {(() => {
-                    // 分组标题:section 非空且变化时在该字段前插标题行;'' 显式收编
-                    // (画 hairline,之后字段在组外);undefined 并入上一组。
-                    // 标题行只随「首个携带新 section 的可见字段」出现,组内无可见字段则不渲染
-                    let lastSection: string | undefined
-                    return shown.map((f) => {
-                      let header: ReactNode = null
-                      if (f.section === '') {
-                        if (lastSection !== undefined) header = <div className="border-t border-separator" />
-                        lastSection = undefined
-                      } else if (f.section != null) {
-                        if (f.section !== lastSection) {
-                          header = <h3 className="border-b border-separator pb-2 text-sm font-medium">{f.section}</h3>
-                        }
-                        lastSection = f.section
-                      }
-                      return (
-                        <Fragment key={f.name}>
-                          {header && <div className="lg:col-span-12">{header}</div>}
-                          <div className={COL_SPAN[f.cols]}>
-                            {renderMode === 'view' ? (
-                              <ViewField field={f} row={renderRow ?? ({ id: '' } as Row)} />
-                            ) : (
-                              <FieldInput
-                                field={f}
-                                row={renderRow}
-                                value={values[f.name]}
-                                values={values}
-                                isDisabled={isFieldDisabled(f, renderMode) || saving}
-                                onChange={(v) =>
-                                  setValues((prev) => ({ ...prev, [f.name]: v, ...(f.effects?.(v) ?? {}) }))
-                                }
-                                patchValues={patchValues}
-                              />
-                            )}
-                          </div>
-                        </Fragment>
-                      )
-                    })
-                  })()}
-                  {props.extraContent && (
-                    <div className="mt-2 lg:col-span-12">
-                      {props.extraContent(renderMode, renderRow, values, patchValues)}
-                    </div>
-                  )}
-                </div>
+                {tabsOn ? (
+                  <Tabs
+                    variant="secondary"
+                    selectedKey={currentTab}
+                    onSelectionChange={(key) => setActiveTab(String(key))}
+                  >
+                    <Tabs.ListContainer>
+                      {/* 同销售订单 tabs 先例:收紧为内容宽靠左,容器全宽底边保留 */}
+                      <Tabs.List aria-label={`${label}表单分区`} className="w-fit min-w-0 *:w-auto">
+                        {visibleTabs.map((t) => (
+                          <Tabs.Tab key={t.key} id={t.key}>
+                            {t.label}
+                            <Tabs.Indicator />
+                          </Tabs.Tab>
+                        ))}
+                      </Tabs.List>
+                    </Tabs.ListContainer>
+                    <Tabs.Panel id={currentTab!} className="pt-4">
+                      {renderTabBody(currentTab)}
+                    </Tabs.Panel>
+                  </Tabs>
+                ) : (
+                  // 声明了 tabs 但只有一个可见 tab:仍按 tab 过滤字段与内容槽(首 tab 可能恰恰是空槽)
+                  renderTabBody(tabs.length > 0 ? currentTab : null)
+                )}
                 </>
               )}
             </Sheet.Body>

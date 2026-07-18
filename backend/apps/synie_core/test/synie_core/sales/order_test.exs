@@ -34,9 +34,10 @@ defmodule SynieCore.Sales.OrderTest do
       })
       |> Ash.create!(authorize?: false)
 
-    kg = unit!(%{unit_type: :weight, is_base: true, name: "千克", symbol: "kg", ratio: 1})
+    # 不抢 is_base 与迁移内置的 吨/kg(symbol 全局唯一);测试不依赖基准单位语义
+    kg = unit!(%{unit_type: :weight, name: "千克", symbol: "kgs", ratio: 1})
     box = unit!(%{unit_type: :quantity, name: "箱", symbol: "箱", ratio: 1})
-    pcs = unit!(%{unit_type: :quantity, is_base: true, name: "只", symbol: "只", ratio: 1})
+    pcs = unit!(%{unit_type: :quantity, name: "只", symbol: "只", ratio: 1})
 
     leaf =
       MaterialCategory
@@ -46,15 +47,14 @@ defmodule SynieCore.Sales.OrderTest do
       })
       |> Ash.create!(authorize?: false)
 
+    # 物料编号仅自动取号(动作不接受 code),夹具用 seed 直写以保留确定性编号
     material =
-      Material
-      |> Ash.Changeset.for_create(:create, %{
+      Ash.Seed.seed!(Material, %{
         code: "MAT-#{System.unique_integer([:positive])}",
         name: "螺丝",
         category_id: leaf.id,
         default_unit_id: kg.id
       })
-      |> Ash.create!(authorize?: false)
 
     # 转换单位:1 kg = 10 箱
     MaterialUnit
@@ -163,15 +163,13 @@ defmodule SynieCore.Sales.OrderTest do
   end
 
   defp material!(leaf, unit, attrs) do
-    Material
-    |> Ash.Changeset.for_create(
-      :create,
+    Ash.Seed.seed!(
+      Material,
       Map.merge(
         %{code: "MAT-#{System.unique_integer([:positive])}", name: "螺母"},
         Map.merge(attrs, %{category_id: leaf.id, default_unit_id: unit.id})
       )
     )
-    |> Ash.create!(authorize?: false)
   end
 
   # 给物料 drawing 槽位挂一张图纸,返回 sys_file(sys_file.storage 无外键,任意值即可)
@@ -514,8 +512,14 @@ defmodule SynieCore.Sales.OrderTest do
 
   describe "物料信息快照" do
     test "创建行落五个快照列(编号/名称/规格/客户料号/单位名称)", ctx do
+      # 客户方产品编号仅客户料可持有(非客户料保存即清空),先升级为客户料
       ctx.material
-      |> Ash.Changeset.for_update(:update, %{spec: "Φ12×45", customer_part_no: "KH-518"})
+      |> Ash.Changeset.for_update(:update, %{
+        spec: "Φ12×45",
+        is_customer_material: true,
+        customer_id: ctx.customer.id,
+        customer_part_no: "KH-518"
+      })
       |> Ash.update!(authorize?: false)
 
       item = item!(ctx.order, %{material_id: ctx.material.id, unit_id: ctx.kg.id})

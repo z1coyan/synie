@@ -140,9 +140,9 @@ defmodule SynieCore.Inv.Material do
   物料,对应 `inv_material` 表。全局主数据(不挂公司,与物料分类同理):
   库存/成本等公司维度将来由库存资源承载。
 
-  编号留空按 `inv.material` 编号规则自动取号(AutoNumber,seed 规则为
-  分类编号+客户编号(空则省略)+`-`+4 位序号),手填原样保留;改挂分类/客户编号不追溯。
-  只能挂叶子分类。客户物料见 `is_customer_material`/`customer_id`(v1 一料一客);
+  编号由 `inv.material` 编号规则自动取号(AutoNumber,seed 规则为
+  分类编号+客户编号(空则省略)+`-`+4 位序号),不接受手填、创建后不可修改;
+  改挂分类/客户编号不追溯。只能挂叶子分类。客户物料见 `is_customer_material`/`customer_id`(v1 一料一客);
   销侧单据只能用通用料或本客户料。图纸/其他文件走统一附件
   (owner_type `inv_material`,槽位 `drawing`/`default`),不占表字段。单位转换子表见 `MaterialUnit`。
   """
@@ -199,8 +199,8 @@ defmodule SynieCore.Inv.Material do
     end
 
     create :create do
+      # 不接受 :code:编号仅由编号规则自动取号(见 AutoNumber)
       accept [
-        :code,
         :name,
         :spec,
         :customer_part_no,
@@ -215,13 +215,13 @@ defmodule SynieCore.Inv.Material do
       change {SynieCore.Inv.Material.ClearCustomerWhenGeneral, []}
       validate {SynieCore.Inv.MaterialCustomerFields, []}
 
-      # 编号留空自动取号(须在构建期,见 AutoNumber moduledoc)
-      change {SynieCore.Numbering.AutoNumber, attribute: :code}
+      # 自动取号(须在构建期,见 AutoNumber moduledoc);无启用规则则报错
+      change {SynieCore.Numbering.AutoNumber, attribute: :code, manual_entry: false}
     end
 
     update :update do
+      # 不接受 :code:编号创建后不可修改
       accept [
-        :code,
         :name,
         :spec,
         :customer_part_no,

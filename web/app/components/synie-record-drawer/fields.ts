@@ -33,6 +33,8 @@ export interface FieldOverride {
   /** 分组标题:从该字段起开启新分组,持续到下一个 section 声明;组内无可见字段时不渲染。
    * 省略(undefined)并入上一组;空串 '' 显式收编——之后字段在组外,仅画 hairline 分隔(如系统时间戳) */
   section?: string
+  /** 所属 tab key(抽屉声明 tabs 时生效);省略归入首个 tab */
+  tab?: string
   /** view 态自定义渲染 */
   render?: (value: unknown, row: Row) => ReactNode
   /** 表单控件替换(外键本轮用 TextField 顶,下轮换 RemoteSelect) */
@@ -57,6 +59,7 @@ export interface ResolvedField {
   defaultValue?: unknown
   visible?: (values: Record<string, unknown>) => boolean
   section?: string
+  tab?: string
   render?: (value: unknown, row: Row) => ReactNode
   input?: (p: FieldInputProps) => ReactNode
   effects?: (value: unknown) => Record<string, unknown> | void
@@ -92,6 +95,7 @@ export function resolveFields(
         defaultValue: o.defaultValue,
         visible: o.visible,
         section: o.section,
+        tab: o.tab,
         render: o.render,
         input: o.input,
         effects: o.effects,
@@ -188,13 +192,22 @@ export function collectValues(
   return out
 }
 
+/** 必填缺失的字段(只查当前可见且可编辑的字段;false/0 不算空);返回字段本身,供按 tab 定位 */
+export function missingRequiredFields(
+  fields: ResolvedField[],
+  values: Record<string, unknown>,
+  mode: 'create' | 'edit'
+): ResolvedField[] {
+  return visibleFields(fields, values).filter(
+    (f) => f.required && !isFieldDisabled(f, mode) && isEmpty(values[f.name])
+  )
+}
+
 /** 必填缺失的字段 label;只查当前可见且可编辑的字段(false/0 不算空) */
 export function missingRequired(
   fields: ResolvedField[],
   values: Record<string, unknown>,
   mode: 'create' | 'edit'
 ): string[] {
-  return visibleFields(fields, values)
-    .filter((f) => f.required && !isFieldDisabled(f, mode) && isEmpty(values[f.name]))
-    .map((f) => f.label)
+  return missingRequiredFields(fields, values, mode).map((f) => f.label)
 }

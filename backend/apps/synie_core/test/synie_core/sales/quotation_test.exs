@@ -23,9 +23,10 @@ defmodule SynieCore.Sales.QuotationTest do
       })
       |> Ash.create!(authorize?: false)
 
-    kg = unit!(%{unit_type: :weight, is_base: true, name: "千克", symbol: "kg", ratio: 1})
+    # 不抢 is_base 与迁移内置的 吨/kg(symbol 全局唯一);测试不依赖基准单位语义
+    kg = unit!(%{unit_type: :weight, name: "千克", symbol: "kgs", ratio: 1})
     box = unit!(%{unit_type: :quantity, name: "箱", symbol: "箱", ratio: 1})
-    pcs = unit!(%{unit_type: :quantity, is_base: true, name: "只", symbol: "只", ratio: 1})
+    pcs = unit!(%{unit_type: :quantity, name: "只", symbol: "只", ratio: 1})
 
     leaf =
       MaterialCategory
@@ -35,15 +36,14 @@ defmodule SynieCore.Sales.QuotationTest do
       })
       |> Ash.create!(authorize?: false)
 
+    # 物料编号仅自动取号(动作不接受 code),夹具用 seed 直写以保留确定性编号
     material =
-      Material
-      |> Ash.Changeset.for_create(:create, %{
+      Ash.Seed.seed!(Material, %{
         code: "MAT-#{System.unique_integer([:positive])}",
         name: "螺丝",
         category_id: leaf.id,
         default_unit_id: kg.id
       })
-      |> Ash.create!(authorize?: false)
 
     # 转换单位:1 kg = 10 箱
     MaterialUnit
@@ -271,8 +271,14 @@ defmodule SynieCore.Sales.QuotationTest do
   end
 
   test "条目落物料快照五列,company_id 冗余自报价单", ctx do
+    # 客户方产品编号仅客户料可持有(非客户料保存即清空),先升级为客户料
     ctx.material
-    |> Ash.Changeset.for_update(:update, %{spec: "Φ12×45", customer_part_no: "KH-518"})
+    |> Ash.Changeset.for_update(:update, %{
+      spec: "Φ12×45",
+      is_customer_material: true,
+      customer_id: ctx.customer.id,
+      customer_part_no: "KH-518"
+    })
     |> Ash.update!(authorize?: false)
 
     item = item!(ctx.quotation, %{material_id: ctx.material.id, unit_id: ctx.kg.id})

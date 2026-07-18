@@ -38,19 +38,17 @@ defmodule SynieCore.Sales.MaterialCustomerAllowedTest do
       |> Ash.Changeset.for_create(:create, %{code: "L#{n}", name: "类"})
       |> Ash.create!(authorize?: false)
 
+    # 物料编号仅自动取号(动作不接受 code),夹具用 seed 直写以保留确定性编号
     general =
-      Material
-      |> Ash.Changeset.for_create(:create, %{
+      Ash.Seed.seed!(Material, %{
         code: "G-#{n}",
         name: "通用料",
         category_id: leaf.id,
         default_unit_id: kg.id
       })
-      |> Ash.create!(authorize?: false)
 
     owned =
-      Material
-      |> Ash.Changeset.for_create(:create, %{
+      Ash.Seed.seed!(Material, %{
         code: "O-#{n}",
         name: "客户料",
         category_id: leaf.id,
@@ -58,7 +56,6 @@ defmodule SynieCore.Sales.MaterialCustomerAllowedTest do
         is_customer_material: true,
         customer_id: customer.id
       })
-      |> Ash.create!(authorize?: false)
 
     quotation =
       Quotation

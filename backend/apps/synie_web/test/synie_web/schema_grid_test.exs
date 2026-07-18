@@ -699,15 +699,14 @@ defmodule SynieWeb.SchemaGridTest do
       })
       |> Ash.create!(authorize?: false)
 
+    # 物料编号仅自动取号(动作不接受 code),夹具用 seed 直写以保留确定性编号
     material =
-      SynieCore.Inv.Material
-      |> Ash.Changeset.for_create(:create, %{
+      Ash.Seed.seed!(SynieCore.Inv.Material, %{
         code: "MAT-#{System.unique_integer([:positive])}",
         name: "夹具物料",
         category_id: category.id,
         default_unit_id: unit.id
       })
-      |> Ash.create!(authorize?: false)
 
     pairs =
       Enum.map(dates, fn date ->
