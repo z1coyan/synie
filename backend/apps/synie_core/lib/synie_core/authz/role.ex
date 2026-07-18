@@ -1,5 +1,20 @@
+defmodule SynieCore.Authz.Role.BuiltinGuard do
+  @moduledoc "内置角色守卫:内置角色不可更新、不可删除(其授权只读由 RolePermission 侧守卫)。"
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    if changeset.data && changeset.data.builtin do
+      {:error, message: "内置角色不可修改或删除"}
+    else
+      :ok
+    end
+  end
+end
+
 defmodule SynieCore.Authz.Role do
-  @moduledoc "角色,对应 `sys_role` 表。"
+  @moduledoc "角色,对应 `sys_role` 表。内置角色(builtin)由迁移种子(如 admin),不可改不可删。"
 
   use Ash.Resource,
     domain: SynieCore,
@@ -48,11 +63,15 @@ defmodule SynieCore.Authz.Role do
     update :update do
       accept [:name, :enabled]
       require_atomic? false
+
+      validate SynieCore.Authz.Role.BuiltinGuard
     end
 
     destroy :destroy do
       primary? true
       require_atomic? false
+
+      validate SynieCore.Authz.Role.BuiltinGuard
     end
   end
 
@@ -78,6 +97,14 @@ defmodule SynieCore.Authz.Role do
       public? true
       default true
       description "启用"
+    end
+
+    # 内置标记:仅迁移种子可写(资源 create 不接受),守卫挡一切 update/destroy
+    attribute :builtin, :boolean do
+      allow_nil? false
+      public? true
+      default false
+      description "内置角色"
     end
 
     create_timestamp :inserted_at, public?: true, description: "创建时间"

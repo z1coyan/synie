@@ -46,4 +46,10 @@ defmodule SynieCore.Authz.RegistryTest do
 
     assert Registry.granted_codes(actor) == Registry.all_codes()
   end
+
+  test "granted_codes 全域通配 * 展开为全部" do
+    actor = %Actor{user_id: "x", permissions: MapSet.new(["*"])}
+
+    assert Registry.granted_codes(actor) == Registry.all_codes()
+  end
 end

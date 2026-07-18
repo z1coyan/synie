@@ -69,7 +69,10 @@ Synie 是一个多公司财务 ERP，包含两个并列的独立项目：
 cd backend
 mix ecto.create
 mix ecto.migrate
+mix run apps/synie_core/priv/repo/seeds.exs
 ```
+
+其中迁移顺带种子 CNY 与内置 admin 角色；seeds 只管环境层（存储接入、编号规则）。首次打开应用会进入初始化向导，在向导里创建首个超级管理员与首个公司，完成后向导入口永久关闭。
 
 ## 安装依赖
 
@@ -240,8 +243,8 @@ web/app/graphql/gql/
 
 - 资源 list 查询统一走 offset 分页，返回 `{ count, results }` 结构（不留扁平列表）。
 - 各资源自带增删改 mutation（create/update/destroy）。
-- 自定义 query：`me`（当前登录用户）、`myPermissions`、`permissionCatalog`、`gridMeta(resource: String!)`（DataGrid 列/权限/多态外键元数据）、`numberableResources`（自动编号规则页的资源下拉）。
-- 自定义 mutation：`login(username, password)`、`createSysUser`、`resetSysUserPassword`。
+- 自定义 query：`me`（当前登录用户）、`myPermissions`、`permissionCatalog`、`gridMeta(resource: String!)`（DataGrid 列/权限/多态外键元数据）、`numberableResources`（自动编号规则页的资源下拉）、`setupStatus`（初始化向导状态，未认证可读）。
+- 自定义 mutation：`login(username, password)`、`createSysUser`、`resetSysUserPassword`、`setupCreateFirstUser`（向导建首个超管并返回登录态）、`setupSeedCommonCurrencies`（预置常用货币）、`setupComplete`（写首选语言并落完成旗标）。
 
 前端不手写类型，而是通过 `web/codegen.ts` 从运行中的后端拉取 live schema 生成 GraphQL 类型（见下文「重新生成 GraphQL 类型」）。
 
@@ -270,7 +273,7 @@ mutation Login($username: String!, $password: String!) {
 - 按部署域名设置 `PHX_HOST`。
 - 为 AshPostgres 资源补齐迁移和数据库生命周期。
 - 根据需要增加认证资源和策略；当前只安装了 Ash Authentication 相关依赖，没有 User resource 或登录流程。
-- 初始化管理员口令:seeds 读 `ADMIN_PASSWORD` 环境变量,缺省随机生成且仅在创建时打印一次;请立即妥善保存。凡用旧版 seeds(硬编码口令)初始化过的环境,admin 口令应视为已泄露并重置。
+- 初始化流程：`mix ecto.migrate`（顺带种子 CNY 与内置 admin 角色）→ `seeds.exs`（环境层：存储接入、编号规则）→ 浏览器打开应用进入初始化向导，创建首个超级管理员（口令由操作者当场自设，不落日志）。凡用旧版 seeds（硬编码/环境变量口令）初始化过的环境，其 admin 口令应视为已泄露并重置。
 
 `backend/config/runtime.exs` 已在 `prod` 环境读取：
 

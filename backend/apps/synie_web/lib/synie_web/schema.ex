@@ -29,6 +29,11 @@ defmodule SynieWeb.Schema do
     field :password, non_null(:string)
   end
 
+  object :setup_status do
+    field :initialized, non_null(:boolean)
+    field :has_users, non_null(:boolean)
+  end
+
   object :grid_enum_option do
     field :value, non_null(:string)
     field :label, non_null(:string)
@@ -86,6 +91,13 @@ defmodule SynieWeb.Schema do
     field :me, :session_user do
       resolve(fn _args, %{context: context} ->
         {:ok, session_user(context[:current_user])}
+      end)
+    end
+
+    # 初始化向导状态:未认证可读(门控信息不含敏感数据,完成旗标落库后前端据此永久关闭入口)
+    field :setup_status, non_null(:setup_status) do
+      resolve(fn _args, _resolution ->
+        {:ok, SynieCore.Setup.status()}
       end)
     end
 
@@ -172,6 +184,57 @@ defmodule SynieWeb.Schema do
       end)
     end
 
+    # 初始化向导:建首个用户(未认证可用,门面内按「未初始化且无用户」门控)并直接返回登录态
+    field :setup_create_first_user, non_null(:login_result) do
+      arg(:username, non_null(:string))
+      arg(:name, :string)
+      arg(:password, non_null(:string))
+
+      resolve(fn args, _resolution ->
+        case SynieCore.Setup.create_first_user(args) do
+          {:ok, user} ->
+            {:ok, %{token: SynieWeb.Auth.sign_token(user), user: session_user(user)}}
+
+          {:error, error} ->
+            {:error, mutation_error(error)}
+        end
+      end)
+    end
+
+    # 初始化向导:预置常用货币(登录即可,门面内按未初始化门控),返回新建条数
+    field :setup_seed_common_currencies, non_null(:integer) do
+      resolve(fn _args, %{context: context} ->
+        case context[:actor] do
+          nil ->
+            {:error, "未认证"}
+
+          _actor ->
+            case SynieCore.Setup.seed_common_currencies() do
+              {:ok, count} -> {:ok, count}
+              {:error, error} -> {:error, mutation_error(error)}
+            end
+        end
+      end)
+    end
+
+    # 初始化向导:完成(写首选语言+落完成旗标,落旗后 setup 接口永久关闭)
+    field :setup_complete, non_null(:boolean) do
+      arg(:preferred_language, non_null(:string))
+
+      resolve(fn %{preferred_language: language}, %{context: context} ->
+        case context[:actor] do
+          nil ->
+            {:error, "未认证"}
+
+          actor ->
+            case SynieCore.Setup.complete(actor, language) do
+              :ok -> {:ok, true}
+              {:error, error} -> {:error, mutation_error(error)}
+            end
+        end
+      end)
+    end
+
     field :reset_sys_user_password, non_null(:reset_password_result) do
       arg(:id, non_null(:id))
 
@@ -195,6 +258,8 @@ defmodule SynieWeb.Schema do
   defp login_bucket(username, remote_ip), do: {username, remote_ip}
 
   defp mutation_error(%Ash.Error.Forbidden{}), do: "无权限执行该操作"
+
+  defp mutation_error(error) when is_binary(error), do: error
 
   defp mutation_error(%{errors: errors}) when is_list(errors),
     do: Enum.map_join(errors, "; ", &sub_error_message/1)

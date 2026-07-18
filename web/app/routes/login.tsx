@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Button,
   Input,
@@ -12,6 +12,7 @@ import {
 } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { getToken, setToken } from '~/lib/auth'
+import { fetchSetupStatus } from '~/lib/setup'
 
 const LOGIN_MUTATION = `
   mutation Login($username: String!, $password: String!) {
@@ -34,8 +35,12 @@ interface LoginData {
 }
 
 export const Route = createFileRoute('/login')({
-  beforeLoad: () => {
-    if (typeof window !== 'undefined' && getToken()) {
+  beforeLoad: async () => {
+    if (typeof window === 'undefined') return
+    // 未初始化:登录页让位给初始化向导(向导第 1 步自带登录续作)
+    const status = await fetchSetupStatus().catch(() => null)
+    if (status && !status.initialized) throw redirect({ to: '/setup' })
+    if (getToken()) {
       throw redirect({ to: '/' })
     }
   },
@@ -49,12 +54,19 @@ function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
-  // beforeLoad 在 SSR 首屏时读不到 localStorage,客户端再兜底一次
+  const { data: setupStatus } = useQuery({ queryKey: ['setupStatus'], queryFn: fetchSetupStatus })
+
+  // beforeLoad 在 SSR 首屏时读不到 localStorage 也发不了 fetch,客户端再兜底一次;
+  // 同样要等 setupStatus 落定:未初始化先去向导,不把登录页亮出来
   useEffect(() => {
-    if (getToken()) {
+    if (setupStatus && !setupStatus.initialized) {
+      navigate({ to: '/setup', replace: true })
+      return
+    }
+    if (setupStatus?.initialized && getToken()) {
       navigate({ to: '/', replace: true })
     }
-  }, [navigate])
+  }, [setupStatus, navigate])
 
   const login = useMutation({
     mutationFn: () =>

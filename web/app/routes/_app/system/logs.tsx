@@ -37,6 +37,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   sys_user_role: '用户角色',
   sys_role_permission: '角色权限',
   sys_user_company: '用户公司授权',
+  sys_setting: '系统设置',
   bas_company: '公司',
   bas_currency: '货币',
   bas_unit: '计量单位',
@@ -77,6 +78,12 @@ const RESOURCE_LABELS: Record<string, string> = {
   sal_setting: '销售设置',
 }
 
+// changes 键是 snake_case 属性名(后端 Track 落库);新字段接审计后在此补中文,漏了则原样显示
+const FIELD_LABELS: Record<string, string> = {
+  preferred_language: '首选语言',
+  setup_completed_at: '初始化完成时刻',
+}
+
 // id 列展示原始 uuid 无阅读价值,记录名称/操作人已够定位;需要按 id 排查时直接查库
 const EXCLUDE = ['recordId', 'actorId', 'companyId']
 
@@ -105,11 +112,14 @@ function changesSummary(value: unknown) {
   return count > 0 ? `${count} 项变更` : <span className="text-muted">—</span>
 }
 
-/** 抽屉详情:变更 JSON 代码块(带复制) */
+/** 抽屉详情:变更 JSON 代码块(带复制);字段名按 FIELD_LABELS 翻成中文 */
 function ChangesJson({ value }: { value: unknown }) {
   const changes = parseChanges(value)
   if (!changes || Object.keys(changes).length === 0) return <span className="text-muted">—</span>
-  const code = JSON.stringify(changes, null, 2)
+  const labeled = Object.fromEntries(
+    Object.entries(changes).map(([k, v]) => [FIELD_LABELS[k] ?? k, v])
+  )
+  const code = JSON.stringify(labeled, null, 2)
   return (
     <CodeBlock>
       <CodeBlock.Header>

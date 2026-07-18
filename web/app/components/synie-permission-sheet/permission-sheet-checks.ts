@@ -21,9 +21,12 @@ const catalog: CatalogGroup[] = [
 eq(coveredBy('sys.role:read', new Set(['sys.role:read'])), true, 'coveredBy 精确命中')
 eq(coveredBy('sys.role:read', new Set(['sys.role:*'])), true, 'coveredBy 资源通配')
 eq(coveredBy('sys.role:read', new Set(['sys.*'])), true, 'coveredBy 域通配')
+eq(coveredBy('sys.role:read', new Set(['*'])), true, 'coveredBy 全域通配')
 eq(coveredBy('sys.role:read', new Set(['sales.*', 'sys.user:read'])), false, 'coveredBy 不命中')
 eq(coveredBy('malformed', new Set(['malformed'])), true, 'coveredBy 无冒号码仅精确匹配')
-eq(coveredBy('malformed', new Set(['*'])), false, 'coveredBy 无冒号码不吃通配')
+eq(coveredBy('malformed', new Set(['sys.*'])), false, 'coveredBy 无冒号码不吃域通配')
+// 后端候选对无冒号码也含 "*"(Permission.candidates/1 兜底分支),此处对齐
+eq(coveredBy('malformed', new Set(['*'])), true, 'coveredBy 无冒号码吃全域通配(对齐后端)')
 
 // —— groupByDomain / actionColumns ——
 eq(groupByDomain(catalog).map((b) => b.domain), ['sys', 'sales'], 'groupByDomain 域顺序')
@@ -86,6 +89,23 @@ eq(
   buildDiff(catalog, [{ id: 's1', permission: 'legacy.thing:read' }], new Set()),
   { toCreate: [], toDestroyIds: [] },
   'buildDiff 目录外陈旧码保留不动'
+)
+
+// —— 全域通配 `*`(内置 admin 角色的授权形态) ——
+const globalRows: GrantedRow[] = [{ id: 'g1', permission: '*' }]
+const allCodes = catalog.flatMap((g) => g.actions.map((a) => `${g.prefix}:${a}`))
+const checkedAll = initialChecked(catalog, globalRows)
+eq([...checkedAll].sort(), [...allCodes].sort(), 'initialChecked 全域通配全勾')
+eq(
+  buildDiff(catalog, globalRows, checkedAll),
+  { toCreate: [], toDestroyIds: [] },
+  'buildDiff 全域通配全勾时保留不动'
+)
+const missingOne = new Set(allCodes.filter((c) => c !== 'sys.role:delete'))
+eq(
+  buildDiff(catalog, globalRows, missingOne),
+  { toCreate: [...missingOne], toDestroyIds: ['g1'] },
+  'buildDiff 全域通配缺一码即拆行补齐'
 )
 
 console.log('permission-sheet-checks ok')

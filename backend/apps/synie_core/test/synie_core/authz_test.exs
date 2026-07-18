@@ -3,6 +3,8 @@ defmodule SynieCore.AuthzTest do
 
   import SynieCore.AuthzFixtures
 
+  require Ash.Query
+
   alias SynieCore.Authz
   alias SynieCore.Authz.Actor
 
@@ -65,5 +67,21 @@ defmodule SynieCore.AuthzTest do
     refute Authz.has_permission?(actor, "fi.voucher:read")
 
     refute Authz.has_permission?(nil, "sales.order:read")
+  end
+
+  test "全域通配 * 经内置 admin 角色覆盖一切权限码" do
+    user = user!()
+
+    admin =
+      SynieCore.Authz.Role
+      |> Ash.Query.filter(code == "admin")
+      |> Ash.read_one!(authorize?: false)
+
+    assign!(user, admin)
+
+    actor = Authz.build_actor(user)
+
+    assert Authz.has_permission?(actor, "anything.at:all")
+    assert SynieCore.Authz.Registry.granted_codes(actor) == SynieCore.Authz.Registry.all_codes()
   end
 end

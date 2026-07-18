@@ -53,7 +53,7 @@ export function useGridActions(opts: {
   onExport?: () => void
   onPrintRows?: (rows: Row[]) => void
   actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
-  /** 按行显隐动作:key 为扩展动作 key 或内建 'edit'/'delete',返回 false 该行菜单不含此动作(如仅草稿可删) */
+  /** 按行显隐动作:key 为扩展动作 key、自定义 rowActions key 或内建 'edit'/'delete',返回 false 该行菜单不含此动作(如仅草稿可删) */
   actionVisible?: Record<string, (row: Row) => boolean>
   bulkActions?: BulkAction[]
   rowActions?: RowAction[]
@@ -126,7 +126,7 @@ export function useGridActions(opts: {
       : []),
     ...extended('row').filter((a) => vis(a.key, row)),
     ...(opts.rowActions ?? [])
-      .filter((a) => can(a.capability))
+      .filter((a) => can(a.capability) && vis(a.key, row))
       .map((a) => ({
         key: a.key,
         label: a.label,

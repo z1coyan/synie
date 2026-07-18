@@ -1,0 +1,787 @@
+import { useCallback, useEffect, useState } from 'react'
+import type { FormEvent } from 'react'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  Button,
+  Input,
+  InputGroup,
+  Label,
+  ListBox,
+  Select,
+  Spinner,
+  TextField,
+  toast,
+} from '@heroui/react'
+import { setToken } from '~/lib/auth'
+import { gqlFetch } from '~/lib/graphql'
+import { fetchSetupStatus } from '~/lib/setup'
+
+// —— GraphQL 文档(setup 四个操作无 codegen 生成,照 login.tsx 手写) ——
+const LOGIN_MUTATION = `
+  mutation Login($username: String!, $password: String!) {
+    login(username: $username, password: $password) {
+      token
+      user { id username name }
+    }
+  }
+`
+const CREATE_FIRST_USER = `
+  mutation ($username: String!, $name: String, $password: String!) {
+    setupCreateFirstUser(username: $username, name: $name, password: $password) {
+      token
+      user { id username name }
+    }
+  }
+`
+const SEED_CURRENCIES = `
+  mutation { setupSeedCommonCurrencies }
+`
+const COMPANIES_QUERY = `
+  query { basCompanies(limit: 1, offset: 0) { count results { id name } } }
+`
+const CURRENCIES_QUERY = `
+  query { basCurrencies(limit: 200, offset: 0) { count results { id name isoCode symbol } } }
+`
+const accountCountQuery = (companyId: string) => `
+  query { basAccounts(limit: 1, offset: 0, filter: {companyId: {eq: ${JSON.stringify(companyId)}}}) { count } }
+`
+const CREATE_COMPANY = `
+  mutation ($input: CreateBasCompanyInput!) {
+    createBasCompany(input: $input) { result { id } errors { message } }
+  }
+`
+// 泛型 action 返回标量(创建条数),同 accounts.tsx;错误走 top-level errors 由 gqlFetch 抛出
+const INIT_FROM_TEMPLATE = `
+  mutation ($input: InitBasAccountFromTemplateInput!) {
+    initBasAccountFromTemplate(input: $input)
+  }
+`
+const COMPLETE_SETUP = `
+  mutation ($preferredLanguage: String!) {
+    setupComplete(preferredLanguage: $preferredLanguage)
+  }
+`
+
+interface SessionUser {
+  id: string
+  username: string
+  name: string | null
+}
+interface LoginResult {
+  token: string
+  user: SessionUser
+}
+interface Currency {
+  id: string
+  name: string
+  isoCode: string
+  symbol: string | null
+}
+interface CompanyRow {
+  id: string
+  name: string
+}
+
+// 与 accounts.tsx 的模板清单一致;必选、无默认
+const TEMPLATES = [
+  { value: 'CAS', label: '企业会计准则' },
+  { value: 'SMALL', label: '小企业会计准则' },
+  { value: 'INTL', label: '国际通用(精简)' },
+]
+
+const LANGUAGES = [
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'en-US', label: 'English' },
+]
+
+const COMPANY_CODE_RE = /^[A-Za-z]{2}$/
+
+export const Route = createFileRoute('/setup')({
+  beforeLoad: async () => {
+    // SSR 首屏发不了相对路径 fetch,客户端在组件内再兜底一次(同 login.tsx 模式)
+    if (typeof window === 'undefined') return
+    const status = await fetchSetupStatus().catch(() => null)
+    if (status?.initialized) throw redirect({ to: '/' })
+  },
+  component: SetupPage,
+})
+
+function SetupPage() {
+  const navigate = useNavigate()
+  const [step, setStep] = useState(1)
+  const goStep2 = useCallback(() => setStep(2), [])
+  const goStep3 = useCallback(() => setStep(3), [])
+
+  const status = useQuery({ queryKey: ['setupStatus'], queryFn: fetchSetupStatus })
+
+  // 已完成初始化:向导永久关闭,回工作台(beforeLoad 在 SSR 读不到时的客户端兜底)
+  useEffect(() => {
+    if (status.data?.initialized) {
+      navigate({ to: '/', replace: true })
+    }
+  }, [status.data, navigate])
+
+  return (
+    <div className="min-h-screen flex bg-porcelain text-ink-900">
+      {/* 左栏:品牌面板(同 login 页视觉) */}
+      <aside className="relative hidden lg:flex lg:w-[52%] xl:w-[55%] flex-col justify-between overflow-hidden bg-ink-900 text-porcelain">
+        <ResourceLattice />
+
+        <span
+          aria-hidden
+          className="absolute right-8 top-1/2 -translate-y-1/2 select-none text-xs tracking-[0.5em] text-porcelain/25 font-brand"
+          style={{ writingMode: 'vertical-rl' }}
+        >
+          万物皆资源 · 秩序即效率
+        </span>
+
+        <header className="relative z-10 flex items-baseline gap-3 px-12 pt-10">
+          <span className="font-brand text-2xl tracking-wide">Synie</span>
+          <span className="h-4 w-px bg-gilt/70" aria-hidden />
+          <span className="text-xs tracking-[0.35em] text-porcelain/60">
+            企业资源管理系统
+          </span>
+        </header>
+
+        <div className="relative z-10 px-12 pb-16 max-w-xl">
+          <h1 className="font-brand text-4xl xl:text-5xl leading-snug tracking-wide">
+            基业初立,
+            <br />
+            万象待启。
+          </h1>
+          <p className="mt-6 text-sm leading-relaxed text-porcelain/55">
+            首次启动,三步完成初始化:管理员、公司与首选语言。
+          </p>
+          <div className="mt-10 flex items-center gap-4 text-[11px] tracking-[0.3em] text-porcelain/35">
+            <span className="h-px w-10 bg-gilt/50" aria-hidden />
+            <span>一次性</span>
+            <span>初始化</span>
+            <span>向导</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* 右栏:向导 */}
+      <main className="flex flex-1 flex-col justify-center px-8 sm:px-16 py-12">
+        <div className="mx-auto w-full max-w-sm">
+          {/* 小屏时的词标 */}
+          <div className="mb-10 flex items-baseline gap-3 lg:hidden">
+            <span className="font-brand text-2xl">Synie</span>
+            <span className="text-xs tracking-[0.3em] text-ink-500">
+              企业资源管理系统
+            </span>
+          </div>
+
+          <h2 className="font-brand text-3xl tracking-wide">初始化向导</h2>
+          <p className="mt-3 text-sm text-ink-500">全新部署的一次性初始化,完成后本页自动关闭</p>
+
+          <div className="mt-8">
+            <StepIndicator current={step} />
+          </div>
+
+          {status.isPending ? (
+            <Loading />
+          ) : status.isError || !status.data ? (
+            <LoadError
+              message={status.error instanceof Error ? status.error.message : '状态查询失败'}
+              onRetry={() => status.refetch()}
+            />
+          ) : status.data.initialized ? (
+            <Loading /> // 即将跳转工作台
+          ) : step === 1 ? (
+            <StepAdmin hasUsers={status.data.hasUsers} onDone={goStep2} />
+          ) : step === 2 ? (
+            <StepCompany onDone={goStep3} />
+          ) : (
+            <StepLanguage />
+          )}
+
+          <p className="mt-16 text-xs text-ink-500/60">
+            © 2026 Synie · 企业内部系统
+          </p>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+const STEPS = ['管理员', '公司', '首选语言']
+
+function StepIndicator(props: { current: number }) {
+  return (
+    <ol className="flex items-center gap-2 sm:gap-3">
+      {STEPS.map((label, i) => {
+        const n = i + 1
+        const done = n < props.current
+        const active = n === props.current
+        return (
+          <li key={label} className="flex items-center gap-2 sm:gap-3">
+            {i > 0 && (
+              <span
+                aria-hidden
+                className={`h-px w-6 sm:w-10 ${done || active ? 'bg-gilt' : 'bg-ink-500/25'}`}
+              />
+            )}
+            <span
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs ${
+                active
+                  ? 'bg-ink-900 text-porcelain'
+                  : done
+                    ? 'bg-gilt text-ink-900'
+                    : 'border border-ink-500/30 text-ink-500'
+              }`}
+            >
+              {n}
+            </span>
+            <span className={`text-xs tracking-[0.2em] ${active ? 'font-medium text-ink-900' : 'text-ink-500'}`}>
+              {label}
+            </span>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+function Loading() {
+  return (
+    <div className="mt-10 flex h-40 items-center justify-center">
+      <Spinner size="lg" />
+    </div>
+  )
+}
+
+function LoadError(props: { message: string; onRetry: () => void }) {
+  return (
+    <div className="mt-10 flex flex-col items-start gap-3">
+      <p className="text-sm text-ink-500">加载失败:{props.message}</p>
+      <Button variant="secondary" onPress={props.onRetry}>
+        重试
+      </Button>
+    </div>
+  )
+}
+
+/** 步骤 1 · 管理员:无用户建首个超管;已有用户(断线续作)改走登录 */
+function StepAdmin(props: { hasUsers: boolean; onDone: () => void }) {
+  const queryClient = useQueryClient()
+  const [username, setUsername] = useState('')
+  const [name, setName] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+
+  const onAuthed = (result: LoginResult, message: string) => {
+    setToken(result.token)
+    // 清掉可能缓存的 me:null,否则进入下一步后布局会误判登录态失效(同 login.tsx)
+    queryClient.removeQueries({ queryKey: ['me'] })
+    toast.success(message)
+    props.onDone()
+  }
+
+  const createUser = useMutation({
+    mutationFn: () =>
+      gqlFetch<{ setupCreateFirstUser: LoginResult }>(CREATE_FIRST_USER, {
+        username,
+        name: name.trim() === '' ? null : name.trim(),
+        password,
+      }),
+    onSuccess: (data) =>
+      onAuthed(data.setupCreateFirstUser, `管理员 ${data.setupCreateFirstUser.user.name ?? data.setupCreateFirstUser.user.username} 已创建`),
+    onError: (error) => {
+      toast.danger('创建管理员失败', {
+        description: error instanceof Error ? error.message : '请稍后再试',
+      })
+    },
+  })
+
+  const login = useMutation({
+    mutationFn: () => gqlFetch<{ login: LoginResult }>(LOGIN_MUTATION, { username, password }),
+    onSuccess: (data) =>
+      onAuthed(data.login, `欢迎回来,${data.login.user.name ?? data.login.user.username}`),
+    onError: (error) => {
+      toast.danger('登录失败', {
+        description: error instanceof Error ? error.message : '请稍后再试',
+      })
+    },
+  })
+
+  const pending = createUser.isPending || login.isPending
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    if (!username || !password || pending) return
+    if (!props.hasUsers) {
+      if (password !== confirm) {
+        toast.warning('两次输入的密码不一致')
+        return
+      }
+      createUser.mutate()
+    } else {
+      login.mutate()
+    }
+  }
+
+  return (
+    <div className="mt-8">
+      {props.hasUsers ? (
+        <p className="rounded-sm border border-ink-500/20 bg-ink-900/[0.03] px-4 py-3 text-sm text-ink-500">
+          已存在管理员账号,请登录后继续初始化。
+        </p>
+      ) : (
+        <p className="text-sm text-ink-500">创建首个管理员账号(超级管理员),创建后自动登录。</p>
+      )}
+
+      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-5">
+        <TextField value={username} onChange={setUsername} isDisabled={pending}>
+          <Label>用户名</Label>
+          <Input autoFocus autoComplete="username" className="rounded-sm" />
+        </TextField>
+
+        {!props.hasUsers && (
+          <TextField value={name} onChange={setName} isDisabled={pending}>
+            <Label>姓名(选填)</Label>
+            <Input autoComplete="name" className="rounded-sm" />
+          </TextField>
+        )}
+
+        <TextField value={password} onChange={setPassword} isDisabled={pending}>
+          <Label>密码</Label>
+          <InputGroup className="rounded-sm">
+            <InputGroup.Input
+              type={showPassword ? 'text' : 'password'}
+              autoComplete={props.hasUsers ? 'current-password' : 'new-password'}
+            />
+            <InputGroup.Suffix className="pr-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-xs text-ink-500 hover:text-ink-900"
+                onPress={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? '隐藏密码' : '显示密码'}
+              >
+                {showPassword ? '隐藏' : '显示'}
+              </Button>
+            </InputGroup.Suffix>
+          </InputGroup>
+        </TextField>
+
+        {!props.hasUsers && (
+          <TextField value={confirm} onChange={setConfirm} isDisabled={pending}>
+            <Label>确认密码</Label>
+            <Input type="password" autoComplete="new-password" className="rounded-sm" />
+          </TextField>
+        )}
+
+        <Button
+          type="submit"
+          size="lg"
+          isPending={pending}
+          isDisabled={!username || !password || (!props.hasUsers && !confirm)}
+          className="mt-2 w-full rounded-sm bg-ink-900 text-porcelain tracking-[0.4em] hover:bg-ink-800"
+        >
+          {props.hasUsers ? '登录并继续' : '创建并继续'}
+        </Button>
+      </form>
+    </div>
+  )
+}
+
+/** 步骤 2 · 公司:先静默预置常用货币;无公司走创建,已有公司(续作)按科目数分流 */
+function StepCompany(props: { onDone: () => void }) {
+  const [seeded, setSeeded] = useState(false)
+  const [code, setCode] = useState('')
+  const [name, setName] = useState('')
+  const [shortName, setShortName] = useState('')
+  const [baseCurrencyId, setBaseCurrencyId] = useState<string | null>(null)
+  const [template, setTemplate] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+
+  // 进入公司步:幂等预置约 20 种常用货币(静默,成功不提示;失败仅告警,不阻塞后续选币)
+  useEffect(() => {
+    let cancelled = false
+    gqlFetch<{ setupSeedCommonCurrencies: number }>(SEED_CURRENCIES)
+      .catch((e) => toast.danger('预置常用货币失败', { description: (e as Error).message }))
+      .finally(() => {
+        if (!cancelled) setSeeded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const companies = useQuery({
+    queryKey: ['setupCompanies'],
+    queryFn: () =>
+      gqlFetch<{ basCompanies: { count: number; results: CompanyRow[] } }>(COMPANIES_QUERY).then(
+        (d) => d.basCompanies
+      ),
+  })
+
+  // 货币选项在预置完成后拉取,否则可能拿不到刚补进来的币种
+  const currencies = useQuery({
+    queryKey: ['setupCurrencies'],
+    enabled: seeded,
+    queryFn: () =>
+      gqlFetch<{ basCurrencies: { count: number; results: Currency[] } }>(CURRENCIES_QUERY).then(
+        (d) => d.basCurrencies
+      ),
+  })
+
+  const existing = (companies.data?.count ?? 0) > 0 ? (companies.data!.results[0] ?? null) : null
+
+  // 续作语义:已有公司时查其科目数,0 走模板初始化,>0 由下方 effect 直接进步骤 3
+  const accountCount = useQuery({
+    queryKey: ['setupAccountCount', existing?.id],
+    enabled: existing != null,
+    queryFn: () =>
+      gqlFetch<{ basAccounts: { count: number } }>(accountCountQuery(existing!.id)).then(
+        (d) => d.basAccounts.count
+      ),
+  })
+
+  // 本位币默认选中 CNY(预置清单含人民币)
+  useEffect(() => {
+    if (baseCurrencyId == null && currencies.data) {
+      const cny = currencies.data.results.find((c) => c.isoCode === 'CNY')
+      if (cny) setBaseCurrencyId(cny.id)
+    }
+  }, [currencies.data, baseCurrencyId])
+
+  const { onDone } = props
+  useEffect(() => {
+    if (existing && (accountCount.data ?? 0) > 0) onDone()
+  }, [existing, accountCount.data, onDone])
+
+  const submitCreate = async () => {
+    if (pending) return
+    if (!COMPANY_CODE_RE.test(code.trim())) {
+      toast.warning('公司编号需为恰好 2 位英文字母')
+      return
+    }
+    if (!baseCurrencyId) {
+      toast.warning('请选择本位币')
+      return
+    }
+    if (!template) {
+      toast.warning('请选择科目表模板')
+      return
+    }
+    setPending(true)
+    const id = toast('正在创建公司并初始化科目…', { isLoading: true, timeout: 0 })
+    try {
+      const created = await gqlFetch<{
+        createBasCompany: { result: { id: string } | null; errors: { message: string }[] | null }
+      }>(CREATE_COMPANY, {
+        input: { code: code.trim(), name: name.trim(), shortName: shortName.trim(), baseCurrencyId },
+      })
+      const errors = created.createBasCompany.errors
+      if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+      const companyId = created.createBasCompany.result!.id
+      const init = await gqlFetch<{ initBasAccountFromTemplate: number }>(INIT_FROM_TEMPLATE, {
+        input: { companyId, template },
+      })
+      toast.close(id)
+      toast.success(`公司「${name.trim()}」已创建,并按模板初始化 ${init.initBasAccountFromTemplate} 个科目`)
+      props.onDone()
+    } catch (e) {
+      toast.close(id)
+      toast.danger('创建公司失败', { description: (e as Error).message })
+      // 公司可能已创建、仅科目初始化失败:刷新列表,按续作分支只补初始化
+      companies.refetch()
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const submitInitOnly = async () => {
+    if (pending || !existing) return
+    if (!template) {
+      toast.warning('请选择科目表模板')
+      return
+    }
+    setPending(true)
+    const id = toast('正在初始化科目表…', { isLoading: true, timeout: 0 })
+    try {
+      const init = await gqlFetch<{ initBasAccountFromTemplate: number }>(INIT_FROM_TEMPLATE, {
+        input: { companyId: existing.id, template },
+      })
+      toast.close(id)
+      toast.success(`已按模板初始化 ${init.initBasAccountFromTemplate} 个科目`)
+      props.onDone()
+    } catch (e) {
+      toast.close(id)
+      toast.danger('初始化科目失败', { description: (e as Error).message })
+    } finally {
+      setPending(false)
+    }
+  }
+
+  if (companies.isPending) return <Loading />
+  if (companies.isError || !companies.data) {
+    return (
+      <LoadError
+        message={companies.error instanceof Error ? companies.error.message : '公司查询失败'}
+        onRetry={() => companies.refetch()}
+      />
+    )
+  }
+
+  // —— 续作分支:已有公司 ——
+  if (existing) {
+    if (accountCount.isPending || (accountCount.data ?? 0) > 0) return <Loading />
+    if (accountCount.isError) {
+      return (
+        <LoadError
+          message={accountCount.error instanceof Error ? accountCount.error.message : '科目查询失败'}
+          onRetry={() => accountCount.refetch()}
+        />
+      )
+    }
+    return (
+      <div className="mt-8">
+        <p className="rounded-sm border border-ink-500/20 bg-ink-900/[0.03] px-4 py-3 text-sm text-ink-500">
+          公司已存在:{existing.name}。其科目表尚未初始化,选择模板一键初始化后继续。
+        </p>
+        <div className="mt-6 flex flex-col gap-5">
+          <Select value={template} onChange={(v) => setTemplate(v == null ? null : String(v))}>
+            <Label>科目表模板</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                {TEMPLATES.map((t) => (
+                  <ListBox.Item key={t.value} id={t.value} textValue={t.label}>
+                    {t.label}
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                ))}
+              </ListBox>
+            </Select.Popover>
+          </Select>
+          <p className="text-xs text-ink-500">将按所选模板为该公司一键初始化会计科目,后续可自行增删调整。</p>
+          <Button
+            size="lg"
+            isPending={pending}
+            isDisabled={!template}
+            onPress={submitInitOnly}
+            className="mt-2 w-full rounded-sm bg-ink-900 text-porcelain tracking-[0.4em] hover:bg-ink-800"
+          >
+            初始化科目并继续
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // —— 创建分支:无公司 ——
+  if (!seeded || currencies.isPending) return <Loading />
+  if (currencies.isError || !currencies.data) {
+    return (
+      <LoadError
+        message={currencies.error instanceof Error ? currencies.error.message : '货币查询失败'}
+        onRetry={() => currencies.refetch()}
+      />
+    )
+  }
+
+  return (
+    <div className="mt-8">
+      <p className="text-sm text-ink-500">创建第一家公司(记账主体),并按模板初始化其科目表。</p>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          submitCreate()
+        }}
+        className="mt-6 flex flex-col gap-5"
+      >
+        <TextField value={code} onChange={setCode} isDisabled={pending}>
+          <Label>公司编号</Label>
+          <Input placeholder="如 SH" autoFocus className="rounded-sm" />
+        </TextField>
+        <p className="-mt-3 text-xs text-ink-500">恰好 2 位英文字母,创建后不可改。</p>
+
+        <TextField value={name} onChange={setName} isDisabled={pending}>
+          <Label>公司名称</Label>
+          <Input placeholder="如 上海总部" className="rounded-sm" />
+        </TextField>
+
+        <TextField value={shortName} onChange={setShortName} isDisabled={pending}>
+          <Label>公司简称</Label>
+          <Input placeholder="如 上海" className="rounded-sm" />
+        </TextField>
+
+        <Select
+          value={baseCurrencyId}
+          onChange={(v) => setBaseCurrencyId(v == null ? null : String(v))}
+          isDisabled={pending}
+        >
+          <Label>本位币</Label>
+          <Select.Trigger>
+            <Select.Value>
+              {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+            </Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {currencies.data.results.map((c) => (
+                <ListBox.Item key={c.id} id={c.id} textValue={`${c.name}(${c.isoCode})`}>
+                  {c.name}({c.isoCode})
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+        <p className="-mt-3 text-xs text-ink-500">记账货币,单据双币换算的目标口径。</p>
+
+        <Select value={template} onChange={(v) => setTemplate(v == null ? null : String(v))} isDisabled={pending}>
+          <Label>科目表模板</Label>
+          <Select.Trigger>
+            <Select.Value>
+              {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+            </Select.Value>
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {TEMPLATES.map((t) => (
+                <ListBox.Item key={t.value} id={t.value} textValue={t.label}>
+                  {t.label}
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+        <p className="-mt-3 text-xs text-ink-500">必选。将按所选模板一键初始化会计科目,后续可自行增删调整。</p>
+
+        <Button
+          type="submit"
+          size="lg"
+          isPending={pending}
+          isDisabled={!code.trim() || !name.trim() || !shortName.trim() || !baseCurrencyId || !template}
+          className="mt-2 w-full rounded-sm bg-ink-900 text-porcelain tracking-[0.4em] hover:bg-ink-800"
+        >
+          创建公司并继续
+        </Button>
+      </form>
+    </div>
+  )
+}
+
+/** 步骤 3 · 首选语言:写当前用户偏好并落完成旗标,随后回工作台 */
+function StepLanguage() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [language, setLanguage] = useState('zh-CN')
+
+  const complete = useMutation({
+    mutationFn: () => gqlFetch<{ setupComplete: boolean }>(COMPLETE_SETUP, { preferredLanguage: language }),
+    onSuccess: () => {
+      // 落旗后门控即刻反转:清掉向导期缓存的 setupStatus/me,回 _app 重新判定
+      queryClient.removeQueries({ queryKey: ['setupStatus'] })
+      queryClient.removeQueries({ queryKey: ['me'] })
+      toast.success('初始化完成,欢迎使用 Synie')
+      navigate({ to: '/' })
+    },
+    onError: (error) => {
+      toast.danger('完成初始化失败', {
+        description: error instanceof Error ? error.message : '请稍后再试',
+      })
+    },
+  })
+
+  return (
+    <div className="mt-8">
+      <p className="text-sm text-ink-500">选择当前用户的首选语言。</p>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!complete.isPending) complete.mutate()
+        }}
+        className="mt-6 flex flex-col gap-5"
+      >
+        <Select value={language} onChange={(v) => v != null && setLanguage(String(v))} isDisabled={complete.isPending}>
+          <Label>首选语言</Label>
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {LANGUAGES.map((l) => (
+                <ListBox.Item key={l.value} id={l.value} textValue={l.label}>
+                  {l.label}
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+        <p className="-mt-3 text-xs text-ink-500">目前仅作偏好记录,界面翻译将在后续版本提供。</p>
+
+        <Button
+          type="submit"
+          size="lg"
+          isPending={complete.isPending}
+          className="mt-2 w-full rounded-sm bg-ink-900 text-porcelain tracking-[0.4em] hover:bg-ink-800"
+        >
+          完成初始化
+        </Button>
+      </form>
+    </div>
+  )
+}
+
+/** 左栏背景:细线经纬网格 + 呼吸的资源节点(同 login 页) */
+function ResourceLattice() {
+  return (
+    <svg
+      aria-hidden
+      className="absolute inset-0 h-full w-full"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <pattern id="lattice" width="56" height="56" patternUnits="userSpaceOnUse">
+          <path
+            d="M 56 0 L 0 0 0 56"
+            fill="none"
+            stroke="rgba(250,250,247,0.05)"
+            strokeWidth="1"
+          />
+        </pattern>
+        <radialGradient id="vignette" cx="30%" cy="70%" r="90%">
+          <stop offset="0%" stopColor="#12305e" />
+          <stop offset="100%" stopColor="#0a1e3f" />
+        </radialGradient>
+      </defs>
+
+      <rect width="100%" height="100%" fill="url(#vignette)" />
+      <rect width="100%" height="100%" fill="url(#lattice)" />
+
+      {/* 资源节点:仓储网络的抽象连线 */}
+      <g stroke="rgba(201,161,90,0.35)" strokeWidth="1" fill="none">
+        <path d="M 168 168 L 392 224 L 336 448 L 112 392 Z" />
+        <path d="M 392 224 L 616 168" />
+        <path d="M 336 448 L 560 504" />
+      </g>
+      <g fill="#c9a15a">
+        <circle className="node-breathe" cx="168" cy="168" r="3" />
+        <circle className="node-breathe-late" cx="392" cy="224" r="4" />
+        <circle className="node-breathe" cx="336" cy="448" r="3" />
+        <circle className="node-breathe-late" cx="112" cy="392" r="2.5" />
+        <circle className="node-breathe" cx="616" cy="168" r="2.5" />
+        <circle className="node-breathe-late" cx="560" cy="504" r="3" />
+      </g>
+    </svg>
+  )
+}
