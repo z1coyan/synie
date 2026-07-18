@@ -150,7 +150,8 @@ defmodule SynieCore.Setup do
 
           {setting, n2} =
             Setting.get()
-            |> Ash.Changeset.for_update(:update, %{setup_completed_at: DateTime.utc_now()})
+            |> Ash.Changeset.for_update(:update, %{})
+            |> Ash.Changeset.force_change_attribute(:setup_completed_at, DateTime.utc_now())
             |> Ash.update!(authorize?: false, actor: actor, return_notifications?: true)
 
           {setting, n1 ++ n2}

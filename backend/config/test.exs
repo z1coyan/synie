@@ -22,3 +22,12 @@ config :ash_postgres, upsert_with_merge?: false
 
 # OCR HTTP 走 Req.Test 桩,测试不出网
 config :synie_core, ocr_req_options: [plug: {Req.Test, SynieCore.Ocr.AliyunClient}]
+
+# 行情拉取:测试不启调度;HTTP 分别桩新浪/上期所
+config :synie_core, market_fetch_scheduler: false
+
+config :synie_core,
+  market_fetch_sina_req_options: [plug: {Req.Test, SynieCore.Base.MarketFetch.SinaClient}]
+
+config :synie_core,
+  market_fetch_shfe_req_options: [plug: {Req.Test, SynieCore.Base.MarketFetch.ShfeClient}]

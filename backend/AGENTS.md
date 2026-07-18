@@ -10,7 +10,7 @@
 - `authorize?: false` 仅限受信内部路径(actor 构建、seeds、`SynieCore.Setup` 门面、测试夹具)。
 - 新资源/新动作必须同步补前端中文标签:权限矩阵 `web/app/components/synie-permission-sheet/permission-labels.ts`、操作日志 `web/app/routes/_app/system/logs.tsx`(漏了原样显英文码)。
 - `permission_actions` 只列用户视角的独立能力;衍生动作不设新权限点,策略里用 `{HasPermission, as: "create"}` 复用既有码(如科目模板初始化=批量新增)。
-- 财务域全局配置(非公司维度)加字段进 `acc_setting` 单行资源(系统管理→财务设置),不另建配置表;系统级配置同理进 `sys_setting`(初始化完成时刻等,无界面、仅 `SynieCore.Setup` 内部读写)。
+- 财务域全局配置(非公司维度)加字段进 `acc_setting` 单行资源(系统管理→财务设置),不另建配置表;系统级配置同理进 `sys_setting`(初始化完成时刻由 Setup 内部写;行情拉取节奏等经 GraphQL `sys.setting` 读写,界面在基础数据→基础设置→行情拉取 Tab)。
 
 ## GraphQL
 

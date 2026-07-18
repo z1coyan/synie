@@ -8,6 +8,9 @@ config :synie_core,
 config :synie_core, bank_import_utc_offset_minutes: 480
 config :synie_core, attendance_import_utc_offset_minutes: 480
 
+# 行情拉取:进程内 GenServer 调度(测试关闭);HTTP 客户端可用 req_options 注入桩
+config :synie_core, market_fetch_scheduler: true
+
 config :synie_web,
   namespace: SynieWeb
 

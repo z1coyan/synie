@@ -96,7 +96,7 @@ defmodule SynieCore.Repo.Migrations.AddMarketPrice do
              where: "(is_voided = false)"
            )
 
-    # --- 种子:CNY + 吨(若不存在) + 四品种(无价点) ---
+    # --- 种子:CNY + 吨/千克(若不存在) + 四品种(无价点) ---
     # 本币兜底(与销售订单币种迁移同口径)
     execute("""
     INSERT INTO bas_currency (name, iso_code, symbol)
@@ -123,23 +123,53 @@ defmodule SynieCore.Repo.Migrations.AddMarketPrice do
     )
     """)
 
+    # 千克:沪银等(元/千克)。吨为基准时 ratio=0.001
+    execute("""
+    INSERT INTO bas_unit (unit_type, is_base, name, symbol, ratio)
+    SELECT
+      'weight',
+      false,
+      '千克',
+      'kg',
+      CASE
+        WHEN EXISTS (
+          SELECT 1 FROM bas_unit
+          WHERE unit_type = 'weight' AND is_base = true AND symbol IN ('t', '吨')
+        ) THEN 0.001
+        ELSE 1
+      END
+    WHERE NOT EXISTS (
+      SELECT 1 FROM bas_unit WHERE symbol IN ('kg', '千克') OR name IN ('千克', '公斤')
+    )
+    """)
+
+    # 沪铜/铝/长江铜:元/吨;沪银:元/千克(上期所口径)
     execute("""
     INSERT INTO bas_market_instrument
       (code, name, source_type, default_price_kind, active, currency_id, unit_id)
     SELECT v.code, v.name, v.source_type, v.default_price_kind, true,
            (SELECT id FROM bas_currency WHERE iso_code = 'CNY' LIMIT 1),
-           (SELECT id FROM bas_unit WHERE symbol IN ('t', '吨') OR name = '吨' ORDER BY symbol LIMIT 1)
+           (SELECT id FROM bas_unit
+            WHERE CASE WHEN v.unit_kind = 'kg'
+              THEN symbol IN ('kg', '千克') OR name IN ('千克', '公斤')
+              ELSE symbol IN ('t', '吨') OR name = '吨'
+            END
+            ORDER BY symbol LIMIT 1)
     FROM (VALUES
-      ('SHFE_CU', '沪铜', 'exchange', 'settlement'),
-      ('CJ_CU', '长江铜', 'spot_index', 'average'),
-      ('SHFE_AL', '沪铝', 'exchange', 'settlement'),
-      ('SHFE_AG', '沪银', 'exchange', 'settlement')
-    ) AS v(code, name, source_type, default_price_kind)
+      ('SHFE_CU', '沪铜', 'exchange', 'settlement', 't'),
+      ('CJ_CU', '长江铜', 'spot_index', 'average', 't'),
+      ('SHFE_AL', '沪铝', 'exchange', 'settlement', 't'),
+      ('SHFE_AG', '沪银', 'exchange', 'settlement', 'kg')
+    ) AS v(code, name, source_type, default_price_kind, unit_kind)
     WHERE NOT EXISTS (
       SELECT 1 FROM bas_market_instrument i WHERE i.code = v.code
     )
     AND EXISTS (SELECT 1 FROM bas_currency WHERE iso_code = 'CNY')
     AND EXISTS (SELECT 1 FROM bas_unit WHERE symbol IN ('t', '吨') OR name = '吨')
+    AND (
+      v.unit_kind <> 'kg'
+      OR EXISTS (SELECT 1 FROM bas_unit WHERE symbol IN ('kg', '千克') OR name IN ('千克', '公斤'))
+    )
     """)
   end
 

@@ -54,6 +54,7 @@ defmodule SynieCore.Base.MarketInstrument do
 
   一条=一条稳定参考价序列(如沪铜、长江铜),全局共享;钉死币种/计量单位/默认价类/来源类型。
   退出以停用为主,有价点时不可物理删除。
+  拉取映射(`fetch_enabled`/外部代码)可改,仅启用且映射齐全的品种参与自动/手动刷新。
   """
 
   use Ash.Resource,
@@ -106,14 +107,26 @@ defmodule SynieCore.Base.MarketInstrument do
         :default_price_kind,
         :active,
         :note,
+        :fetch_enabled,
+        :external_last_code,
+        :external_product_group,
         :currency_id,
         :unit_id
       ]
     end
 
     update :update do
-      # 编码/币种/单位/来源类型钉死序列口径,创建后不可改
-      accept [:name, :default_price_kind, :active, :note]
+      # 编码/币种/单位/来源类型钉死序列口径,创建后不可改;拉取映射可改
+      accept [
+        :name,
+        :default_price_kind,
+        :active,
+        :note,
+        :fetch_enabled,
+        :external_last_code,
+        :external_product_group
+      ]
+
       require_atomic? false
     end
 
@@ -158,6 +171,25 @@ defmodule SynieCore.Base.MarketInstrument do
       public? true
       default true
       description "启用"
+    end
+
+    attribute :fetch_enabled, :boolean do
+      allow_nil? false
+      public? true
+      default false
+      description "启用拉取"
+    end
+
+    attribute :external_last_code, :string do
+      public? true
+      constraints max_length: 32
+      description "外部最新价代码(如 CU0 主连)"
+    end
+
+    attribute :external_product_group, :string do
+      public? true
+      constraints max_length: 16
+      description "外部品种组(如上期所日数据 cu)"
     end
 
     attribute :note, :string do

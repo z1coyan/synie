@@ -15,6 +15,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'sys.role_permission': '角色权限',
   'sys.audit_log': '操作日志',
   'sys.numbering_rule': '编号规则',
+  'sys.setting': '系统设置',
   'base.company': '公司',
   'base.unit': '计量单位',
   'base.currency': '币种',

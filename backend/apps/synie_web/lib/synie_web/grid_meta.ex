@@ -266,7 +266,11 @@ defmodule SynieWeb.GridMeta do
   # 导致整个查询报错。type 映射仍按 string 处理(展示不受影响)。
   # 枚举数组(enumArray)例外:AshGraphql 不为数组属性生成 filter 字段,筛选走伴生
   # `<attr>_has` 布尔 calculation(见 filter_channel?/2);其余数组仍不可筛
+  # Time 同样没有 contains 算子(日考勤四段时刻列展示即可,筛选走日期列)
   defp filterable?({:array, inner}), do: enum_type?(inner)
+
+  defp filterable?(type),
+    do: type not in [Ash.Type.UUID, Ash.Type.Atom, Ash.Type.Map, Ash.Type.Time]
 
   # 枚举数组列的筛选通道是伴生 `<attr>_has` 带参 calculation(前端拼
   # {<attr>Has: {input: {type: X}, eq: true/false}});伴生缺失则 fail-closed 不可筛,
@@ -275,10 +279,6 @@ defmodule SynieWeb.GridMeta do
     do: MapSet.member?(filter_calcs, :"#{name}_has")
 
   defp filter_channel?(_attr, _filter_calcs), do: true
-
-  # Time 同样没有 contains 算子(日考勤四段时刻列展示即可,筛选走日期列)
-  defp filterable?(type),
-    do: type not in [Ash.Type.UUID, Ash.Type.Atom, Ash.Type.Map, Ash.Type.Time]
 
   defp capabilities(module, actor) do
     prefix = module.permission_prefix()

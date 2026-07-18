@@ -41,6 +41,9 @@ const registry: Record<string, ResourceDrawerConfig> = {
       defaultPriceKind: { required: true },
       currencyId: { required: true, edit: 'createOnly' },
       unitId: { required: true, edit: 'createOnly' },
+      fetchEnabled: {},
+      externalLastCode: { placeholder: '主连如 CU0' },
+      externalProductGroup: { placeholder: '上期所组如 cu' },
     },
   },
   basMarketPricePoints: {

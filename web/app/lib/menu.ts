@@ -144,6 +144,11 @@ export const menuModules: MenuModule[] = [
           { label: '行情价点', path: '/base/market-prices' },
         ],
       },
+      {
+        label: '设置',
+        // 多视图收敛为单入口,页内 tabs 分流(子路由,照考勤/薪资先例)
+        items: [{ label: '基础设置', path: '/base/settings' }],
+      },
     ],
   },
   {
