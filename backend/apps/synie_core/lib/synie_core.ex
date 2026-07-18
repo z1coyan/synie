@@ -25,6 +25,9 @@ defmodule SynieCore do
 
       # 销售设置是单行表,read_one 免分页(同 acc_setting 先例)
       read_one SynieCore.Sales.Setting, :sal_setting, :read
+
+      # 系统设置(行情拉取配置等);初始化旗标不经 GraphQL 写
+      read_one SynieCore.Sys.Setting, :sys_setting, :read
       list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
       list SynieCore.Hr.Employee, :hr_employees, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
@@ -121,6 +124,7 @@ defmodule SynieCore do
 
       create SynieCore.Base.MarketPricePoint, :create_bas_market_price_point, :create
       update SynieCore.Base.MarketPricePoint, :void_bas_market_price_point, :void
+      action SynieCore.Base.MarketPricePoint, :refresh_bas_market_price_points, :refresh
 
       create SynieCore.Base.Account, :create_bas_account, :create
       update SynieCore.Base.Account, :update_bas_account, :update
@@ -159,6 +163,7 @@ defmodule SynieCore do
       destroy SynieCore.Sales.QuotationTier, :destroy_sal_quotation_tier, :destroy
 
       update SynieCore.Sales.Setting, :update_sal_setting, :update
+      update SynieCore.Sys.Setting, :update_sys_setting, :update
 
       create SynieCore.Purchase.Supplier, :create_pur_supplier, :create
       update SynieCore.Purchase.Supplier, :update_pur_supplier, :update

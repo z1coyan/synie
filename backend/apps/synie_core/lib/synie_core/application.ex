@@ -3,9 +3,13 @@ defmodule SynieCore.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [
-      SynieCore.Repo
-    ]
+    children =
+      [SynieCore.Repo] ++
+        if Application.get_env(:synie_core, :market_fetch_scheduler, true) do
+          [SynieCore.Base.MarketFetch.Scheduler]
+        else
+          []
+        end
 
     opts = [strategy: :one_for_one, name: SynieCore.Supervisor]
     Supervisor.start_link(children, opts)

@@ -81,6 +81,11 @@ defmodule SynieCore.Base.MarketPricePoint do
     policy action([:read, :create, :void]) do
       authorize_if SynieCore.Authz.Checks.HasPermission
     end
+
+    # 手动刷新复用 create(本质是批量录入拉取价点)
+    policy action(:refresh) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "create"}
+    end
   end
 
   def permission_prefix, do: "base.market_price"
@@ -133,6 +138,23 @@ defmodule SynieCore.Base.MarketPricePoint do
       end
 
       change set_attribute(:is_voided, true)
+    end
+
+    action :refresh, :map do
+      description "手动刷新行情:启用拉取的品种立刻拉最新价;过结算窗口则顺带补当日结算价"
+
+      argument :instrument_id, :uuid, allow_nil?: true
+
+      run fn input, _context ->
+        # 未传 instrumentId 时 arguments 可能根本没有该 key(空 input {}),不能用 . 访问
+        opts =
+          case Map.get(input.arguments, :instrument_id) do
+            nil -> []
+            id -> [instrument_id: id]
+          end
+
+        SynieCore.Base.MarketFetch.refresh(opts)
+      end
     end
   end
 

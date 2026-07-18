@@ -31,6 +31,9 @@ const GRID_COLUMNS = [
   'currencyId',
   'unitId',
   'active',
+  'fetchEnabled',
+  'externalLastCode',
+  'externalProductGroup',
   'note',
 ]
 
@@ -42,7 +45,7 @@ function MarketInstrumentsPage() {
     <>
       <h1 className="font-brand text-3xl tracking-wide">行情品种</h1>
       <p className="mt-2 text-sm text-ink-500">
-        期货与现货参考价序列主数据（如沪铜、长江铜）。一条品种对应一条稳定价序列，全局共享。
+        期货与现货参考价序列主数据（如沪铜、长江铜）。一条品种对应一条稳定价序列，全局共享。交易所序列可开启拉取并填写外部代码。
       </p>
 
       <div className="mt-6">
@@ -70,6 +73,9 @@ function MarketInstrumentsPage() {
           currencyId: { required: true, edit: 'createOnly', cols: 6 },
           unitId: { required: true, edit: 'createOnly', cols: 6 },
           active: { defaultValue: true },
+          fetchEnabled: { defaultValue: false },
+          externalLastCode: { placeholder: '主连如 CU0', cols: 6 },
+          externalProductGroup: { placeholder: '上期所组如 cu', cols: 6 },
           note: { placeholder: '可选备注' },
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}

@@ -37,7 +37,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   sys_user_role: '用户角色',
   sys_role_permission: '角色权限',
   sys_user_company: '用户公司授权',
-  sys_setting: '系统设置',
+  sys_setting: '系统设置(行情拉取等)',
   bas_company: '公司',
   bas_currency: '货币',
   bas_unit: '计量单位',
