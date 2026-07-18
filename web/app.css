@@ -1,6 +1,6 @@
 @import "@fontsource/noto-serif-sc/400.css";
 @import "@fontsource/noto-serif-sc/600.css";
-@import "tailwindcss";
+/* @heroui/styles 已内含 tailwindcss,勿再单独 @import "tailwindcss" */
 @import "@heroui/styles";
 @import "@heroui-pro/react/css";
 @custom-variant dark (&:is(.dark *));

@@ -3,6 +3,7 @@ import path from 'node:path'
 import { defineConfig, searchForWorkspaceRoot } from 'vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   server: {
@@ -31,6 +32,8 @@ export default defineConfig({
     }
   },
   plugins: [
+    // Tailwind 走 Vite 插件,避免 PostCSS 把 HeroUI 组件 CSS 拆开单独编译丢 utility
+    tailwindcss(),
     tanstackStart({ srcDirectory: 'app' }),
     viteReact()
   ]
