@@ -30,6 +30,9 @@ export interface FieldOverride {
   defaultValue?: unknown
   /** 条件字段:返回 false 则不渲染、不校验、不提交;view 态入参为行数据 */
   visible?: (values: Record<string, unknown>) => boolean
+  /** 分组标题:从该字段起开启新分组,持续到下一个 section 声明;组内无可见字段时不渲染。
+   * 省略(undefined)并入上一组;空串 '' 显式收编——之后字段在组外,仅画 hairline 分隔(如系统时间戳) */
+  section?: string
   /** view 态自定义渲染 */
   render?: (value: unknown, row: Row) => ReactNode
   /** 表单控件替换(外键本轮用 TextField 顶,下轮换 RemoteSelect) */
@@ -53,6 +56,7 @@ export interface ResolvedField {
   placeholder?: string
   defaultValue?: unknown
   visible?: (values: Record<string, unknown>) => boolean
+  section?: string
   render?: (value: unknown, row: Row) => ReactNode
   input?: (p: FieldInputProps) => ReactNode
   effects?: (value: unknown) => Record<string, unknown> | void
@@ -87,6 +91,7 @@ export function resolveFields(
         placeholder: o.placeholder,
         defaultValue: o.defaultValue,
         visible: o.visible,
+        section: o.section,
         render: o.render,
         input: o.input,
         effects: o.effects,

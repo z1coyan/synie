@@ -165,7 +165,7 @@ export function SynieAttachmentPanel({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between border-b border-separator pb-2">
         <span className="text-sm font-medium">{label}</span>
         {canCreate && (ownerId || pendingMode) && (
           <>

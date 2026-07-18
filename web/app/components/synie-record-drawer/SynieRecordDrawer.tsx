@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { parseDate, parseDateTime } from '@internationalized/date'
 import {
   Button,
@@ -261,27 +261,48 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                   return node == null ? null : <div className="mb-6">{node}</div>
                 })()}
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-                  {shown.map((f) => (
-                    <div key={f.name} className={COL_SPAN[f.cols]}>
-                      {renderMode === 'view' ? (
-                        <ViewField field={f} row={renderRow ?? ({ id: '' } as Row)} />
-                      ) : (
-                        <FieldInput
-                          field={f}
-                          row={renderRow}
-                          value={values[f.name]}
-                          values={values}
-                          isDisabled={isFieldDisabled(f, renderMode) || saving}
-                          onChange={(v) =>
-                            setValues((prev) => ({ ...prev, [f.name]: v, ...(f.effects?.(v) ?? {}) }))
-                          }
-                          patchValues={patchValues}
-                        />
-                      )}
-                    </div>
-                  ))}
+                  {(() => {
+                    // 分组标题:section 非空且变化时在该字段前插标题行;'' 显式收编
+                    // (画 hairline,之后字段在组外);undefined 并入上一组。
+                    // 标题行只随「首个携带新 section 的可见字段」出现,组内无可见字段则不渲染
+                    let lastSection: string | undefined
+                    return shown.map((f) => {
+                      let header: ReactNode = null
+                      if (f.section === '') {
+                        if (lastSection !== undefined) header = <div className="border-t border-separator" />
+                        lastSection = undefined
+                      } else if (f.section != null) {
+                        if (f.section !== lastSection) {
+                          header = <h3 className="border-b border-separator pb-2 text-sm font-medium">{f.section}</h3>
+                        }
+                        lastSection = f.section
+                      }
+                      return (
+                        <Fragment key={f.name}>
+                          {header && <div className="lg:col-span-12">{header}</div>}
+                          <div className={COL_SPAN[f.cols]}>
+                            {renderMode === 'view' ? (
+                              <ViewField field={f} row={renderRow ?? ({ id: '' } as Row)} />
+                            ) : (
+                              <FieldInput
+                                field={f}
+                                row={renderRow}
+                                value={values[f.name]}
+                                values={values}
+                                isDisabled={isFieldDisabled(f, renderMode) || saving}
+                                onChange={(v) =>
+                                  setValues((prev) => ({ ...prev, [f.name]: v, ...(f.effects?.(v) ?? {}) }))
+                                }
+                                patchValues={patchValues}
+                              />
+                            )}
+                          </div>
+                        </Fragment>
+                      )
+                    })
+                  })()}
                   {props.extraContent && (
-                    <div className="lg:col-span-12">
+                    <div className="mt-2 lg:col-span-12">
                       {props.extraContent(renderMode, renderRow, values, patchValues)}
                     </div>
                   )}
@@ -386,15 +407,18 @@ function FieldInput({
 
   switch (field.col.type) {
     case 'boolean':
+      // 与带 Label 的输入框并排时开关偏矮,撑满格高垂直居中对齐
       return (
-        <Switch isSelected={Boolean(value)} onChange={onChange} isDisabled={isDisabled}>
-          <Switch.Content className="text-sm">
-            <Switch.Control>
-              <Switch.Thumb />
-            </Switch.Control>
-            {field.label}
-          </Switch.Content>
-        </Switch>
+        <div className="flex h-full items-center">
+          <Switch isSelected={Boolean(value)} onChange={onChange} isDisabled={isDisabled}>
+            <Switch.Content className="text-sm">
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+              {field.label}
+            </Switch.Content>
+          </Switch>
+        </div>
       )
     case 'integer':
     case 'decimal':

@@ -12,7 +12,7 @@
 ## 业务数据页标准组件
 
 - 数据列表一律用 `SynieDataGrid`（`~/components/synie-data-grid/`）；数据详情、新增、编辑一律用 `SynieRecordDrawer`（`~/components/synie-record-drawer/`）三态抽屉，不要自造表格或表单。
-- 字段行为（必填/只读 `edit`/条件显隐 `visible`/栅格 `cols`/默认值）通过 `fields` override 声明，提交 mutation 写在页面 `onSubmit` 回调；接入范例见 `routes/_app/system/roles.tsx`。
+- 字段行为（必填/只读 `edit`/条件显隐 `visible`/栅格 `cols`/默认值/分组标题 `section`）通过 `fields` override 声明，提交 mutation 写在页面 `onSubmit` 回调；接入范例见 `routes/_app/system/roles.tsx`。
 - 启用/停用等状态类开关不进创建/编辑表单（表单 `exclude` 掉，新建由后端默认值兜底）：状态翻转用独立入口（表格行动作、详情页按钮）显式触发；仅记录固有属性的布尔（如叶子分类、基准单位）仍属表单字段。
 - 父表单内的子条目（单据行、明细行等）一律用 `SynieEditableTable`（`~/components/synie-editable-table/`）：表格纯展示，增改一律走二级 `SynieRecordDrawer`，不做行内编辑；`items`/`onChange` 受控、组件不发写请求，父表单提交时一并持久化，新增行 id 带 `local:` 前缀（`isLocalRow` 判别）。
 - 组件能力不够时先扩组件再用，不要在页面里绕过它手搭。

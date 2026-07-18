@@ -95,8 +95,8 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-muted">{props.title ?? label}</span>
+      <div className="flex items-center justify-between gap-2 border-b border-separator pb-2">
+        <span className="text-sm font-medium">{props.title ?? label}</span>
         <div className="flex items-center gap-2">
           {props.toolbar}
           {!readOnly && canCreate && (

@@ -294,7 +294,7 @@ const registry: Record<string, ResourceDrawerConfig> = {
     exclude: ['active'],
     fields: {
       // 编号必填但可留空自动取号(后端 AutoNumber:分类+可选客户号-序号),前端不标必填
-      code: { order: 0, cols: 6, placeholder: '留空自动编号(分类号[客户号]-序号)' },
+      code: { order: 0, cols: 6, section: '基本信息', placeholder: '留空自动编号(分类号[客户号]-序号)' },
       name: { order: 1, cols: 6, required: true },
       // 物料只能挂启用的叶子分类(后端另有叶子校验兜底)
       categoryId: { order: 2, cols: 6, required: true, remote: { filter: '{isLeaf: {eq: true}, active: {eq: true}}' } },
@@ -307,10 +307,12 @@ const registry: Record<string, ResourceDrawerConfig> = {
         // 关掉客户料时清空客户与对方料号(与后端 ClearCustomerWhenGeneral 一致)
         effects: (v) => (v ? {} : { customerId: null, customerPartNo: null }),
       },
+      // 客户物料字段自成一组:开关打开才出现,分组标题随字段显隐
       customerId: {
         order: 6,
         cols: 6,
         required: true,
+        section: '客户物料',
         visible: (values) => Boolean(values.isCustomerMaterial),
       },
       customerPartNo: {
@@ -319,6 +321,10 @@ const registry: Record<string, ResourceDrawerConfig> = {
         visible: (values) => Boolean(values.isCustomerMaterial),
         placeholder: '客户侧料号',
       },
+      // view 态时间戳收编出业务分组并垫底(order 默认是 meta 列序,会插进业务字段中间):
+      // hairline 分隔,不挂在「客户物料」组尾
+      insertedAt: { order: 98, section: '' },
+      updatedAt: { order: 99 },
     },
   },
   invMaterialUnits: { label: '单位转换' },

@@ -213,7 +213,7 @@ function MaterialsPage() {
           // 默认单位:编辑态取表单草稿(可能刚改),view 态取行数据;转换行不能选它
           const defaultUnitId = ((values.defaultUnitId ?? row?.defaultUnitId) as string | null) ?? null
           return (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-6">
               <SynieEditableTable
                 resource="invMaterialUnits"
                 label="单位转换"
@@ -233,40 +233,43 @@ function MaterialsPage() {
                   if (items.some((r) => r.id !== editing?.id && r.unitId === vals.unitId)) return '该单位已有转换行'
                 }}
               />
-              <SynieAttachmentPanel
-                ownerType="inv_material"
-                ownerId={row?.id as string | undefined}
-                category="drawing"
-                label="图纸"
-                accept="image/*"
-                readonly={mode === 'view'}
-                // 创建态走暂存,保存成功后按槽位统一挂接
-                pending={
-                  mode === 'create'
-                    ? {
-                        files: pendingDrawings,
-                        onAdd: (f) => setPendingDrawings((fs) => [...fs, f]),
-                        onRemove: (id) => setPendingDrawings((fs) => fs.filter((f) => f.id !== id)),
-                      }
-                    : undefined
-                }
-              />
-              <SynieAttachmentPanel
-                ownerType="inv_material"
-                ownerId={row?.id as string | undefined}
-                category="default"
-                label="其他文件"
-                readonly={mode === 'view'}
-                pending={
-                  mode === 'create'
-                    ? {
-                        files: pendingOthers,
-                        onAdd: (f) => setPendingOthers((fs) => [...fs, f]),
-                        onRemove: (id) => setPendingOthers((fs) => fs.filter((f) => f.id !== id)),
-                      }
-                    : undefined
-                }
-              />
+              {/* 图纸与其他文件两组附件槽位并排,同 hrEmployees 证件照先例 */}
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <SynieAttachmentPanel
+                  ownerType="inv_material"
+                  ownerId={row?.id as string | undefined}
+                  category="drawing"
+                  label="图纸"
+                  accept="image/*"
+                  readonly={mode === 'view'}
+                  // 创建态走暂存,保存成功后按槽位统一挂接
+                  pending={
+                    mode === 'create'
+                      ? {
+                          files: pendingDrawings,
+                          onAdd: (f) => setPendingDrawings((fs) => [...fs, f]),
+                          onRemove: (id) => setPendingDrawings((fs) => fs.filter((f) => f.id !== id)),
+                        }
+                      : undefined
+                  }
+                />
+                <SynieAttachmentPanel
+                  ownerType="inv_material"
+                  ownerId={row?.id as string | undefined}
+                  category="default"
+                  label="其他文件"
+                  readonly={mode === 'view'}
+                  pending={
+                    mode === 'create'
+                      ? {
+                          files: pendingOthers,
+                          onAdd: (f) => setPendingOthers((fs) => [...fs, f]),
+                          onRemove: (id) => setPendingOthers((fs) => fs.filter((f) => f.id !== id)),
+                        }
+                      : undefined
+                  }
+                />
+              </div>
             </div>
           )
         }}
