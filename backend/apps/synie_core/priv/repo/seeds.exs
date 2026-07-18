@@ -1,47 +1,9 @@
-# 初始化系统用户。
+# 环境层初始化:存储接入点、编号规则等无需人决策的数据。
+# 业务初始化(首个管理员、首个公司等)由初始化向导承担——迁移跑完后打开应用即进入;
+# 内置角色、CNY 等由迁移种子。首个管理员不再由本脚本创建。
 # 运行:cd backend/apps/synie_core && mix run priv/repo/seeds.exs
 
 require Ash.Query
-
-alias SynieCore.Accounts.User
-
-username = "admin"
-
-user =
-  User
-  |> Ash.Query.filter(username == ^username)
-  |> Ash.read_one!(authorize?: false)
-
-user =
-  if user do
-    IO.puts("用户 #{username} 已存在,跳过创建")
-    user
-  else
-    initial_password =
-      System.get_env("ADMIN_PASSWORD") ||
-        (:crypto.strong_rand_bytes(9) |> Base.url_encode64())
-
-    created =
-      User
-      |> Ash.Changeset.for_create(:create, %{
-        username: username,
-        name: "系统管理员",
-        password: initial_password
-      })
-      |> Ash.create!(authorize?: false)
-
-    IO.puts("已创建用户 #{username}(初始密码 #{initial_password})")
-    IO.puts("⚠️  该密码仅此一次显示,请妥善保存;更换请由管理员在「用户管理」重置。")
-    created
-  end
-
-unless user.super_admin do
-  user
-  |> Ash.Changeset.for_update(:set_super_admin, %{})
-  |> Ash.update!(authorize?: false)
-
-  IO.puts("已将 #{username} 标记为超级管理员")
-end
 
 # 内置存储接入:local(全局默认,不可删除)。已存在则跳过,不覆盖用户改过的 root。
 alias SynieCore.Files.StorageEndpoint

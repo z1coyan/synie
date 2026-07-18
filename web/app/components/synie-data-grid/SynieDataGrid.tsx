@@ -101,7 +101,7 @@ export interface SynieDataGridProps {
   hideSearch?: boolean
   onPrint?: (rows: Row[]) => void
   actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
-  /** 按行显隐行内动作:key 为扩展动作 key 或内建 'edit'/'delete'(如仅草稿订单可删),返回 false 该行不显示 */
+  /** 按行显隐行内动作:key 为扩展动作 key、自定义 rowActions key 或内建 'edit'/'delete'(如仅草稿订单可删),返回 false 该行不显示 */
   actionVisible?: Record<string, (row: Row) => boolean>
   bulkActions?: BulkAction[]
   rowActions?: RowAction[]

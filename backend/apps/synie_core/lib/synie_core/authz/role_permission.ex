@@ -1,5 +1,33 @@
+defmodule SynieCore.Authz.RolePermission.BuiltinRoleGuard do
+  @moduledoc "内置角色授权守卫:内置角色(如 admin)的授权只读,不可增删。"
+
+  use Ash.Resource.Validation
+
+  require Ash.Query
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    # create 取写入值,destroy 取存量值
+    role_id =
+      Ash.Changeset.get_attribute(changeset, :role_id) ||
+        (changeset.data && changeset.data.role_id)
+
+    if role_id && builtin_role?(role_id) do
+      {:error, message: "内置角色的授权不可增删"}
+    else
+      :ok
+    end
+  end
+
+  defp builtin_role?(role_id) do
+    SynieCore.Authz.Role
+    |> Ash.Query.filter(id == ^role_id and builtin == true)
+    |> Ash.exists?(authorize?: false)
+  end
+end
+
 defmodule SynieCore.Authz.RolePermission do
-  @moduledoc "角色-权限码授权,对应 `sys_role_permission` 表。权限码可为通配(`sales.order:*`、`sales.*`)。"
+  @moduledoc "角色-权限码授权,对应 `sys_role_permission` 表。权限码可为通配(`sales.order:*`、`sales.*`、`*`)。"
 
   use Ash.Resource,
     domain: SynieCore,
@@ -43,11 +71,15 @@ defmodule SynieCore.Authz.RolePermission do
 
     create :create do
       accept [:role_id, :permission]
+
+      validate SynieCore.Authz.RolePermission.BuiltinRoleGuard
     end
 
     destroy :destroy do
       primary? true
       require_atomic? false
+
+      validate SynieCore.Authz.RolePermission.BuiltinRoleGuard
     end
   end
 

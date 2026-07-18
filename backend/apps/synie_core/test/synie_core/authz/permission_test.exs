@@ -19,6 +19,12 @@ defmodule SynieCore.Authz.PermissionTest do
     refute Permission.matches?(["sales.*"], "fi.voucher:read")
   end
 
+  test "全域通配:*(仅内部种子,如内置 admin 角色)" do
+    assert Permission.matches?(["*"], "sales.order:audit")
+    assert Permission.matches?(["*"], "sys.role:delete")
+    assert Permission.matches?(MapSet.new(["*"]), "base.company:read")
+  end
+
   test "权限集可以是 MapSet" do
     perms = MapSet.new(["sys.role:*"])
     assert Permission.matches?(perms, "sys.role:create")

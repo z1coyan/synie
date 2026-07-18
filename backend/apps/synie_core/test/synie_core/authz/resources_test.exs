@@ -3,6 +3,10 @@ defmodule SynieCore.Authz.ResourcesTest do
 
   import SynieCore.AuthzFixtures
 
+  require Ash.Query
+
+  alias SynieCore.Authz.{Role, RolePermission}
+
   setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(SynieCore.Repo)
   end
@@ -72,5 +76,56 @@ defmodule SynieCore.Authz.ResourcesTest do
     assert SynieCore.Authz.UserRole.permission_prefix() == "sys.user"
     assert SynieCore.Authz.UserRole.permission_actions() == []
     assert SynieCore.Authz.RolePermission.permission_prefix() == "sys.role_permission"
+  end
+
+  test "内置 admin 角色随迁移种子,持全域通配 * 授权" do
+    role = Role |> Ash.Query.filter(code == "admin") |> Ash.read_one!(authorize?: false)
+
+    assert role.builtin
+    assert role.enabled
+
+    grants =
+      RolePermission |> Ash.Query.filter(role_id == ^role.id) |> Ash.read!(authorize?: false)
+
+    assert Enum.map(grants, & &1.permission) == ["*"]
+  end
+
+  test "内置角色不可更新、不可删除,其授权不可增删" do
+    role = Role |> Ash.Query.filter(code == "admin") |> Ash.read_one!(authorize?: false)
+
+    assert {:error, _} =
+             role
+             |> Ash.Changeset.for_update(:update, %{enabled: false})
+             |> Ash.update(authorize?: false)
+
+    assert {:error, _} =
+             role
+             |> Ash.Changeset.for_destroy(:destroy)
+             |> Ash.destroy(authorize?: false)
+
+    assert {:error, _} =
+             RolePermission
+             |> Ash.Changeset.for_create(:create, %{role_id: role.id, permission: "sales.*"})
+             |> Ash.create(authorize?: false)
+
+    grant =
+      RolePermission |> Ash.Query.filter(role_id == ^role.id) |> Ash.read_one!(authorize?: false)
+
+    assert {:error, _} =
+             grant
+             |> Ash.Changeset.for_destroy(:destroy)
+             |> Ash.destroy(authorize?: false)
+  end
+
+  test "普通角色不受内置守卫影响" do
+    role = role!()
+    grant = grant!(role, "sales.*")
+
+    assert {:ok, _} =
+             role
+             |> Ash.Changeset.for_update(:update, %{enabled: false})
+             |> Ash.update(authorize?: false)
+
+    assert :ok = grant |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy(authorize?: false)
   end
 end

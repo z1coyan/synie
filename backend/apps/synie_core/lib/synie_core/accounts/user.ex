@@ -128,6 +128,13 @@ defmodule SynieCore.Accounts.User do
       default false
     end
 
+    # 首选语言:i18n 落地前纯占位,仅初始化向导(Setup.complete)写入,不走界面
+    attribute :preferred_language, :string do
+      public? true
+      constraints max_length: 16
+      description "首选语言"
+    end
+
     create_timestamp :inserted_at, public?: true, description: "创建时间"
     update_timestamp :updated_at, public?: true, description: "更新时间"
   end

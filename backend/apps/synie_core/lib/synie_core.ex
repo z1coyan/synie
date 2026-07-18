@@ -319,6 +319,7 @@ defmodule SynieCore do
     resource SynieCore.Acc.BankReconciliation
     resource SynieCore.Acc.Setting
     resource SynieCore.Audit.Log
+    resource SynieCore.Sys.Setting
     resource SynieCore.Numbering.Rule
     resource SynieCore.Numbering.Counter
     resource SynieCore.Files.File

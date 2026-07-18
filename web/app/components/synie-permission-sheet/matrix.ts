@@ -1,5 +1,5 @@
 // 权限矩阵纯函数层:通配匹配、勾选初态、保存 diff。
-// 通配语义与后端 SynieCore.Authz.Permission 对齐:`前缀:*`(资源全部动作)、`域.*`(域全部码)。
+// 通配语义与后端 SynieCore.Authz.Permission 对齐:`前缀:*`(资源全部动作)、`域.*`(域全部码)、`*`(全域)。
 
 export interface CatalogGroup {
   prefix: string // 如 "sys.role"
@@ -42,13 +42,13 @@ export function actionColumns(catalog: CatalogGroup[]): string[] {
   return [...canonical, ...extra]
 }
 
-// "sales.order:audit" 的候选:自身、"sales.order:*"、"sales.*"(对齐后端 Permission.candidates/1)
+// "sales.order:audit" 的候选:自身、"sales.order:*"、"sales.*"、"*"(对齐后端 Permission.candidates/1)
 function candidates(code: string): string[] {
   const i = code.indexOf(':')
-  if (i < 0) return [code]
+  if (i < 0) return [code, '*']
   const prefix = code.slice(0, i)
   const j = prefix.indexOf('.')
-  return j < 0 ? [code, `${prefix}:*`] : [code, `${prefix}:*`, `${prefix.slice(0, j)}.*`]
+  return j < 0 ? [code, `${prefix}:*`, '*'] : [code, `${prefix}:*`, `${prefix.slice(0, j)}.*`, '*']
 }
 
 /** granted(具体码或通配码集合)是否覆盖给定具体码 */

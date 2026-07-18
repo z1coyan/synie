@@ -24,6 +24,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
     fields: {
       code: { required: true, edit: 'createOnly', placeholder: '如 purchaser' },
       name: { required: true, placeholder: '如 采购管理员' },
+      // 内置标记仅迁移种子可写(create 不收),表单/详情不展示(同 sysStorages 先例)
+      builtin: { visible: () => false },
     },
   },
   basCompanies: { label: '公司' },

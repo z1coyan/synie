@@ -11,6 +11,7 @@ import { AppShell } from '~/components/app-shell'
 import { FkPreviewProvider } from '~/components/synie-record-drawer/fk-preview-provider'
 import { clearToken, getToken } from '~/lib/auth'
 import { gqlFetch } from '~/lib/graphql'
+import { fetchSetupStatus } from '~/lib/setup'
 
 const ME_QUERY = `
   query Me {
@@ -27,8 +28,15 @@ interface MeData {
 }
 
 export const Route = createFileRoute('/_app')({
-  beforeLoad: () => {
-    if (typeof window !== 'undefined' && !getToken()) {
+  beforeLoad: async () => {
+    // SSR 首屏发不了相对路径 fetch 也读不到 localStorage,客户端在组件内再兜底(同 login.tsx 模式)
+    if (typeof window === 'undefined') return
+    // 未完成初始化:除 /setup 与 /login 外一律先进向导(向导第 1 步自带登录续作)
+    const status = await fetchSetupStatus().catch(() => null)
+    if (status && !status.initialized) {
+      throw redirect({ to: '/setup' })
+    }
+    if (!getToken()) {
       throw redirect({ to: '/login' })
     }
   },
@@ -45,12 +53,24 @@ function AppLayout() {
     enabled: !!getToken(),
   })
 
-  // beforeLoad 在 SSR 首屏时读不到 localStorage,客户端再兜底一次
+  // 初始化门控(未认证可查);查询失败 fail-open 维持现状,避免与 /setup 互弹死循环
+  const { data: setupStatus, isError: setupStatusError } = useQuery({
+    queryKey: ['setupStatus'],
+    queryFn: fetchSetupStatus,
+  })
+
+  // beforeLoad 在 SSR 首屏被跳过,客户端兜底:两个跳转必须等 setupStatus 落定再判去向——
+  // 未初始化进向导;已初始化(或查询失败 fail-open)且无 token 回登录页。
+  // 若让「无 token → /login」同步抢跑,setupStatus 异步回来时组件已卸载,永远进不了向导
   useEffect(() => {
-    if (!getToken()) {
+    if (setupStatus && !setupStatus.initialized) {
+      navigate({ to: '/setup', replace: true })
+      return
+    }
+    if ((setupStatus || setupStatusError) && !getToken()) {
       navigate({ to: '/login', replace: true })
     }
-  }, [navigate])
+  }, [setupStatus, setupStatusError, navigate])
 
   // token 失效(me 为空)时清除并回登录页
   useEffect(() => {
