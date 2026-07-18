@@ -74,6 +74,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   sys_numbering_counter: '编号计数器',
   acc_bank_reconciliation: '银行对账记录',
   acc_setting: '财务设置',
+  sal_setting: '销售设置',
 }
 
 // id 列展示原始 uuid 无阅读价值,记录名称/操作人已够定位;需要按 id 排查时直接查库

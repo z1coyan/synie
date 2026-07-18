@@ -717,6 +717,7 @@ defmodule SynieWeb.SchemaGridTest do
             company_id: company.id,
             order_no: "SO-#{System.unique_integer([:positive])}",
             order_date: date,
+            order_type: :sample,
             party_type: :customer,
             party_id: customer.id
           })

@@ -72,6 +72,140 @@ defmodule SynieCore.Sales.OrderItem.SyncOrder do
   end
 end
 
+defmodule SynieCore.Sales.OrderItem.DeriveQuotation do
+  @moduledoc """
+  按订单分型建行(构建期,在 ComputeAmount/SnapshotMaterial 之前跑):
+
+  常规订单——必须挂有效报价条目(报价单已审核+订单日期在报价区间+公司/对手/币种一致,
+  与审核复核同款判定,见 `Sales.QuotationLink`);物料/单位/单价由报价条目强制派生
+  (忽略用户传值):固定价取报价单价,数量梯度按行数量套档(低于首档起订量无报价);
+  税率用户未显式传时取报价条目税率;qty 变化(update)时重新套档派生 price。
+  样品订单——不得挂报价条目,数量受 `sal_setting` 样品上限约束;
+  物料/单位/单价走现状逻辑(MaterialUnitAllowed 等不动)。
+
+  订单读不到时跳过,由 SyncOrder 兜底报错;强制派生只在值不同时才落 change,
+  避免备注类更新在审计日志留下 material/unit/price 的假变更。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  alias SynieCore.Sales.QuotationLink
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    order_id = Ash.Changeset.get_attribute(changeset, :order_id) || changeset.data.order_id
+
+    case read_order(order_id) do
+      {:ok, %{order_type: :regular} = order} -> derive_regular(changeset, order)
+      {:ok, %{order_type: :sample}} -> validate_sample(changeset)
+      _ -> changeset
+    end
+  end
+
+  defp derive_regular(changeset, order) do
+    case Ash.Changeset.get_attribute(changeset, :quotation_item_id) do
+      nil ->
+        Ash.Changeset.add_error(changeset,
+          field: :quotation_item_id,
+          message: "常规订单条目必须选择报价条目"
+        )
+
+      quotation_item_id ->
+        case QuotationLink.load_item(quotation_item_id) do
+          :error ->
+            Ash.Changeset.add_error(changeset,
+              field: :quotation_item_id,
+              message: "报价条目不存在"
+            )
+
+          {:ok, quotation_item, quotation} ->
+            case QuotationLink.check(order, quotation) do
+              :ok ->
+                derive_from_item(changeset, quotation_item)
+
+              {:error, message} ->
+                Ash.Changeset.add_error(changeset, field: :quotation_item_id, message: message)
+            end
+        end
+    end
+  end
+
+  defp derive_from_item(changeset, quotation_item) do
+    changeset
+    |> force_if_different(:material_id, quotation_item.material_id)
+    |> force_if_different(:unit_id, quotation_item.unit_id)
+    |> derive_price(quotation_item)
+    |> derive_tax_rate(quotation_item)
+  end
+
+  defp derive_price(changeset, %{pricing_mode: :fixed} = quotation_item) do
+    force_if_different(changeset, :price, quotation_item.price)
+  end
+
+  defp derive_price(changeset, %{pricing_mode: :qty_tiered} = quotation_item) do
+    case Ash.Changeset.get_attribute(changeset, :qty) do
+      nil ->
+        # qty 缺失由必填校验兜底报错
+        changeset
+
+      qty ->
+        case QuotationLink.tier_price(quotation_item.id, qty) do
+          {:ok, price} -> force_if_different(changeset, :price, price)
+          :error -> Ash.Changeset.add_error(changeset, field: :qty, message: "低于首档起订量,无报价")
+        end
+    end
+  end
+
+  # 用户未显式传税率时取报价条目税率(显式传 0 也是显式,查 params 同 SyncCurrency 思路)
+  defp derive_tax_rate(changeset, quotation_item) do
+    if Map.has_key?(changeset.params, :tax_rate) or Map.has_key?(changeset.params, "tax_rate") do
+      changeset
+    else
+      force_if_different(changeset, :tax_rate, quotation_item.tax_rate)
+    end
+  end
+
+  defp validate_sample(changeset) do
+    changeset =
+      if Ash.Changeset.get_attribute(changeset, :quotation_item_id) do
+        Ash.Changeset.add_error(changeset,
+          field: :quotation_item_id,
+          message: "样品订单条目不可选择报价条目"
+        )
+      else
+        changeset
+      end
+
+    qty = Ash.Changeset.get_attribute(changeset, :qty)
+
+    with %Decimal{} <- qty,
+         %{sample_item_max_qty: max} <- SynieCore.Sales.Setting.get(),
+         true <- Decimal.compare(qty, Decimal.new(max)) == :gt do
+      Ash.Changeset.add_error(changeset, field: :qty, message: "样品条目数量超出上限(最大 #{max})")
+    else
+      _ -> changeset
+    end
+  end
+
+  defp force_if_different(changeset, attribute, value) do
+    if Ash.Changeset.get_attribute(changeset, attribute) == value do
+      changeset
+    else
+      Ash.Changeset.force_change_attribute(changeset, attribute, value)
+    end
+  end
+
+  defp read_order(nil), do: {:ok, nil}
+
+  defp read_order(order_id) do
+    SynieCore.Sales.Order
+    |> Ash.Query.filter(id == ^order_id)
+    |> Ash.read_one(authorize?: false)
+  end
+end
+
 defmodule SynieCore.Sales.OrderItem.ComputeAmount do
   @moduledoc """
   金额链系统算(ADR 2026-07-17-sales-order-currency),四列均不允许手改
@@ -213,6 +347,9 @@ defmodule SynieCore.Sales.OrderItem do
   除原币单价外)按金额链系统算不可手改(见 `ComputeAmount`,汇率取父订单头);
   头上币种/汇率变化时经 `:recalc_base` 内部动作同事务重算本币列;
   行单位限物料默认单位或其转换单位;仅父订单草稿态可增删改。
+  按订单分型建行(见 `DeriveQuotation`):常规订单行必须挂有效报价条目,
+  物料/单位/单价由报价强制派生(忽略用户传值);样品订单行不得挂报价条目,
+  数量受 `sal_setting` 样品上限约束。
   物料编号/名称/规格/客户料号与单位名称是快照物理列:行保存(create/update)即按
   当前物料/单位重拍(见 `SnapshotMaterial`),审核锁行即冻结,主数据后续变更不回溯;
   物料 drawing 槽位的文件在行保存时复制挂接到行(见 `SyncDrawings`),
@@ -237,6 +374,9 @@ defmodule SynieCore.Sales.OrderItem do
     references do
       # 删草稿订单 DB 级联删行(行不留单独审计,订单删除本身已审计)
       reference :order, on_delete: :delete
+
+      # 报价条目是溯源链接(on_delete nothing):作废走状态不删行,行历史不随报价断链
+      reference :quotation_item, on_delete: :nothing
     end
 
     check_constraints do
@@ -308,11 +448,24 @@ defmodule SynieCore.Sales.OrderItem do
     end
 
     create :create do
-      accept [:order_id, :idx, :material_id, :unit_id, :qty, :price, :tax_rate, :remarks]
+      accept [
+        :order_id,
+        :idx,
+        :material_id,
+        :unit_id,
+        :qty,
+        :price,
+        :tax_rate,
+        :remarks,
+        :quotation_item_id
+      ]
 
-      # 顺序敏感:先回填 company_id,再做公司授权校验
+      # 顺序敏感:先回填 company_id,再做公司授权校验;
+      # 分型派生在 MaterialUnitAllowed/ComputeAmount/SnapshotMaterial 之前,
+      # 派生出的物料/单位/单价再经既有机制校验与计算
       change {SynieCore.Sales.OrderItem.SyncOrder, []}
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
+      change {SynieCore.Sales.OrderItem.DeriveQuotation, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
       change {SynieCore.Sales.SnapshotMaterial, []}
@@ -320,10 +473,11 @@ defmodule SynieCore.Sales.OrderItem do
     end
 
     update :update do
-      accept [:idx, :material_id, :unit_id, :qty, :price, :tax_rate, :remarks]
+      accept [:idx, :material_id, :unit_id, :qty, :price, :tax_rate, :remarks, :quotation_item_id]
       require_atomic? false
 
       change {SynieCore.Sales.OrderItem.SyncOrder, []}
+      change {SynieCore.Sales.OrderItem.DeriveQuotation, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
       change {SynieCore.Sales.SnapshotMaterial, []}
@@ -488,6 +642,14 @@ defmodule SynieCore.Sales.OrderItem do
       attribute_public? true
       attribute_writable? true
       description "单位"
+    end
+
+    # 报价溯源链接:常规订单行必填(物料/单位/单价由此派生),样品订单行必须为空
+    belongs_to :quotation_item, SynieCore.Sales.QuotationItem do
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "报价条目"
     end
   end
 
