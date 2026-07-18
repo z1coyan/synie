@@ -12,6 +12,8 @@ export const Route = createFileRoute('/_app/scm/sales-orders/orders')({
 // 双币总额混合列表全列展示(本币单两套同值);汇率不进表格,抽屉里看
 const GRID_OVERRIDES = {
   partyType: { label: '对手类型' },
+  // 订单分型:常规灰、样品蓝;枚举筛选由 meta(filterable)自动带出
+  orderType: { label: '类型', enumColors: { REGULAR: 'default', SAMPLE: 'accent' } },
   currencyId: { label: '币种' },
   grossTotal: { label: '原币含税总额', render: (v: unknown) => formatAmount(v) },
   baseGrossTotal: { label: '本币含税总额', render: (v: unknown) => formatAmount(v) },
@@ -23,6 +25,7 @@ const GRID_COLUMNS = [
   'companyId',
   'orderNo',
   'orderDate',
+  'orderType',
   'partyType',
   'partyId',
   'currencyId',

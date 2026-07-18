@@ -159,6 +159,7 @@ export const menuModules: MenuModule[] = [
         items: [
           { label: '编号规则', path: '/system/numbering' },
           { label: '财务设置', path: '/system/finance' },
+          { label: '销售设置', path: '/system/sales' },
         ],
       },
       {

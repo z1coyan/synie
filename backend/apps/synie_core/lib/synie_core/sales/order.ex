@@ -6,6 +6,14 @@ defmodule SynieCore.Sales.OrderStatus do
   def graphql_type(_), do: :sal_order_status
 end
 
+defmodule SynieCore.Sales.OrderType do
+  @moduledoc "销售订单类型:常规订单(条目挂报价派生)/样品订单(数量受 sal_setting 上限约束)。"
+
+  use Ash.Type.Enum, values: [regular: "常规订单", sample: "样品订单"]
+
+  def graphql_type(_), do: :sal_order_type
+end
+
 defmodule SynieCore.Sales.OrderDraft do
   @moduledoc "校验订单处于草稿态(修改/删除的前提)。"
 
@@ -17,6 +25,157 @@ defmodule SynieCore.Sales.OrderDraft do
       :ok
     else
       {:error, message: "仅草稿订单可修改或删除"}
+    end
+  end
+end
+
+defmodule SynieCore.Sales.OrderTypeLocked do
+  @moduledoc "订单类型锁死:新建时可选,后续不可变更(改型=重开一张单)。仅挂 update 动作。"
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    if Ash.Changeset.get_attribute(changeset, :order_type) != changeset.data.order_type do
+      {:error, field: :order_type, message: "订单类型不可变更"}
+    else
+      :ok
+    end
+  end
+end
+
+defmodule SynieCore.Sales.Order.HeadFieldsFrozen do
+  @moduledoc """
+  头关键字段变更闸:订单已有条目(≥ 1 行)时,对手/公司/订单日期/币种不可再改——
+  常规行的报价链接判定与派生价格锚定这些头字段,改头会让既有行口径漂移,
+  报错引导先删条目再改头。按实际值对比(get_attribute vs changeset.data,
+  同 RecalcItems.currency_changed? 思路),不动这些字段的更新(备注/条款等)不受拦。
+  仅挂 update 动作(create 时无行)。
+  """
+
+  use Ash.Resource.Validation
+
+  @fields [:party_type, :party_id, :company_id, :order_date, :currency_id]
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    if head_changed?(changeset) and SynieCore.Sales.Order.has_items?(changeset.data.id) do
+      {:error, message: "请先删除订单条目"}
+    else
+      :ok
+    end
+  end
+
+  defp head_changed?(changeset) do
+    Enum.any?(@fields, fn field ->
+      Ash.Changeset.get_attribute(changeset, field) != Map.get(changeset.data, field)
+    end)
+  end
+end
+
+defmodule SynieCore.Sales.Order.VerifyItems do
+  @moduledoc """
+  审核复核(第二道闸):审核前逐行重验分型规则,任一不满足即中止审核。
+  常规订单每行:报价链接仍有效(已审核+订单日期在报价区间+公司/对手/币种一致,
+  与行构建期同款判定,见 `Sales.QuotationLink`)且单价与报价一致
+  (固定价相等;梯度按行数量套档,低于首档起订量报错);
+  样品订单每行:不得挂报价条目且数量不超 `sal_setting` 样品上限。
+  行构建期已校验过,这里拦的是建行后报价作废/配置收紧等漂移;
+  before_action 在动作事务内执行,订单 FOR UPDATE 锁已由前一 change 持有,
+  行编辑被串行化在外(锁内重读行,看到的是定稿)。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  alias SynieCore.Sales.QuotationLink
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.before_action(changeset, fn cs ->
+      items =
+        SynieCore.Sales.OrderItem
+        |> Ash.Query.filter(order_id == ^cs.data.id)
+        |> Ash.read!(authorize?: false)
+
+      case verify(cs.data, items) do
+        :ok -> cs
+        {:error, message} -> Ash.Changeset.add_error(cs, message: message)
+      end
+    end)
+  end
+
+  defp verify(%{order_type: :regular} = order, items) do
+    first_error(items, &verify_regular_item(order, &1))
+  end
+
+  defp verify(%{order_type: :sample}, items) do
+    max_qty =
+      case SynieCore.Sales.Setting.get() do
+        %{sample_item_max_qty: max} -> max
+        _ -> nil
+      end
+
+    first_error(items, &verify_sample_item(&1, max_qty))
+  end
+
+  defp first_error(items, check_fun) do
+    Enum.reduce_while(items, :ok, fn item, :ok ->
+      case check_fun.(item) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, "第#{item.idx}行:#{reason}"}}
+      end
+    end)
+  end
+
+  defp verify_regular_item(order, item) do
+    case item.quotation_item_id do
+      nil ->
+        {:error, "缺少报价条目"}
+
+      quotation_item_id ->
+        case QuotationLink.load_item(quotation_item_id) do
+          :error ->
+            {:error, "报价条目不存在"}
+
+          {:ok, quotation_item, quotation} ->
+            with :ok <- QuotationLink.check(order, quotation),
+                 :ok <- check_price(item, quotation_item) do
+              :ok
+            end
+        end
+    end
+  end
+
+  defp check_price(item, %{pricing_mode: :fixed} = quotation_item) do
+    if Decimal.equal?(item.price, quotation_item.price) do
+      :ok
+    else
+      {:error, "单价与报价不一致"}
+    end
+  end
+
+  defp check_price(item, %{pricing_mode: :qty_tiered} = quotation_item) do
+    case QuotationLink.tier_price(quotation_item.id, item.qty) do
+      {:ok, price} ->
+        if Decimal.equal?(item.price, price), do: :ok, else: {:error, "单价与报价不一致"}
+
+      :error ->
+        {:error, "数量低于首档起订量,无报价"}
+    end
+  end
+
+  defp verify_sample_item(item, max_qty) do
+    cond do
+      item.quotation_item_id ->
+        {:error, "样品订单条目不可挂报价条目"}
+
+      is_integer(max_qty) and Decimal.compare(item.qty, Decimal.new(max_qty)) == :gt ->
+        {:error, "样品条目数量超出上限(最大 #{max_qty})"}
+
+      true ->
+        :ok
     end
   end
 end
@@ -172,11 +331,16 @@ defmodule SynieCore.Sales.Order do
   销售订单(头),对应 `sal_order` 表。公司向客户承诺供货的订货单据,纯业务承诺:
   审核不派生 GL 分录也不动库存,履行(发货/开票)由将来的下游模块承载。
 
+  订单分型(`order_type`,新建时可选、建后锁死):常规订单条目必须挂有效报价条目,
+  物料/单位/单价由报价派生;样品订单条目不挂报价,数量受 `sal_setting` 样品上限约束。
+  两道闸护航:草稿改头关键字段(对手/公司/订单日期/币种)且已有条目时报错先删条目
+  (HeadFieldsFrozen);审核时逐行复核分型规则(VerifyItems),任一不满足即中止。
+
   生命周期:草稿(可改可删)→ 已审核(audit,锁死,无反审核)→ 已关闭(close)/
   已作废(void)两个终态,均不可逆;仅已审核单可关闭/作废(关闭=生效后提前终止,
   作废=单据不该存在)。订单号全局唯一:留空按 `sales.order` 编号规则自动取号
   (AutoNumber),手填原样保留。对手为多态引用(客户/内部公司,无真外键),
-  审核唯一业务门槛是行数 ≥ 1。行见 `OrderItem`,删除草稿时行由 DB 级联删除
+  审核业务门槛是行数 ≥ 1 且逐行通过分型复核。行见 `OrderItem`,删除草稿时行由 DB 级联删除
   (不走 OrderItem destroy 钩子,行的图纸挂接由 ClearItemDrawings 在删单前显式清理)。
 
   双币:币种(原币)与汇率挂头,一单一币,留空默认公司本币;本币单汇率强制 1,
@@ -264,6 +428,7 @@ defmodule SynieCore.Sales.Order do
         :company_id,
         :order_no,
         :order_date,
+        :order_type,
         :party_type,
         :party_id,
         :currency_id,
@@ -299,6 +464,7 @@ defmodule SynieCore.Sales.Order do
       accept [
         :order_no,
         :order_date,
+        :order_type,
         :party_type,
         :party_id,
         :currency_id,
@@ -311,6 +477,8 @@ defmodule SynieCore.Sales.Order do
 
       # 构建期预检(用户体验),权威复检在 before_action 钩子内
       validate {SynieCore.Sales.OrderDraft, []}
+      validate {SynieCore.Sales.OrderTypeLocked, []}
+      validate {SynieCore.Sales.Order.HeadFieldsFrozen, []}
       validate {SynieCore.Sales.OrderPartyType, []}
       validate {SynieCore.Acc.PartyExists, []}
       validate {SynieCore.Acc.PartyNotSelf, []}
@@ -400,6 +568,9 @@ defmodule SynieCore.Sales.Order do
           end
         end)
       end
+
+      # 审核复核(第二道闸):锁内逐行重验分型规则,任一不满足即中止
+      change {SynieCore.Sales.Order.VerifyItems, []}
     end
 
     update :close do
@@ -466,6 +637,14 @@ defmodule SynieCore.Sales.Order do
       public? true
       default &Date.utc_today/0
       description "订单日期"
+    end
+
+    # 分型建后锁死(OrderTypeLocked):常规行挂报价派生,样品行受数量上限约束
+    attribute :order_type, SynieCore.Sales.OrderType do
+      allow_nil? false
+      default :regular
+      public? true
+      description "订单类型"
     end
 
     attribute :party_type, SynieCore.Acc.PartyType do

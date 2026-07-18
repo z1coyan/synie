@@ -20,6 +20,9 @@ defmodule SynieCore do
       list SynieCore.Sales.Quotation, :sal_quotations, :read, paginate_with: :offset
       list SynieCore.Sales.QuotationItem, :sal_quotation_items, :read, paginate_with: :offset
       list SynieCore.Sales.QuotationTier, :sal_quotation_tiers, :read, paginate_with: :offset
+
+      # 销售设置是单行表,read_one 免分页(同 acc_setting 先例)
+      read_one SynieCore.Sales.Setting, :sal_setting, :read
       list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
       list SynieCore.Hr.Employee, :hr_employees, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
@@ -145,6 +148,8 @@ defmodule SynieCore do
       create SynieCore.Sales.QuotationTier, :create_sal_quotation_tier, :create
       update SynieCore.Sales.QuotationTier, :update_sal_quotation_tier, :update
       destroy SynieCore.Sales.QuotationTier, :destroy_sal_quotation_tier, :destroy
+
+      update SynieCore.Sales.Setting, :update_sal_setting, :update
 
       create SynieCore.Purchase.Supplier, :create_pur_supplier, :create
       update SynieCore.Purchase.Supplier, :update_pur_supplier, :update
@@ -286,6 +291,7 @@ defmodule SynieCore do
     resource SynieCore.Sales.Quotation
     resource SynieCore.Sales.QuotationItem
     resource SynieCore.Sales.QuotationTier
+    resource SynieCore.Sales.Setting
     resource SynieCore.Purchase.Supplier
     resource SynieCore.Hr.Employee
     resource SynieCore.Inv.MaterialCategory
