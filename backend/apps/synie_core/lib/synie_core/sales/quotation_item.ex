@@ -255,6 +255,7 @@ defmodule SynieCore.Sales.QuotationItem do
       change {SynieCore.Sales.QuotationItem.SyncQuotation, []}
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
+      validate {SynieCore.Sales.MaterialCustomerAllowed, []}
       change {SynieCore.Sales.QuotationItem.PricingRules, []}
       change {SynieCore.Sales.SnapshotMaterial, []}
     end
@@ -265,6 +266,7 @@ defmodule SynieCore.Sales.QuotationItem do
 
       change {SynieCore.Sales.QuotationItem.SyncQuotation, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
+      validate {SynieCore.Sales.MaterialCustomerAllowed, []}
       change {SynieCore.Sales.QuotationItem.PricingRules, []}
       change {SynieCore.Sales.SnapshotMaterial, []}
       # 梯度切回固定价时同事务清空价格档

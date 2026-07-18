@@ -5,13 +5,16 @@ defmodule SynieCore.Inv.MaterialTest do
   alias SynieCore.Base.Unit
   alias SynieCore.Inv.{Material, MaterialCategory, MaterialUnit}
   alias SynieCore.Numbering.Rule
+  alias SynieCore.Sales.Customer
 
   setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(SynieCore.Repo)
 
-    leaf = category!(%{code: "01", name: "原材料"})
-    kg = unit!(%{unit_type: :weight, is_base: true, name: "千克", symbol: "kg", ratio: 1})
-    pcs = unit!(%{unit_type: :quantity, is_base: true, name: "只", symbol: "只", ratio: 1})
+    n = System.unique_integer([:positive])
+    leaf = category!(%{code: "01#{n}", name: "原材料"})
+    # 不抢 is_base(每类型全局唯一,async 测试会撞);物料测试不依赖基准单位语义
+    kg = unit!(%{unit_type: :weight, name: "千克#{n}", symbol: "kg#{n}", ratio: 1})
+    pcs = unit!(%{unit_type: :quantity, name: "只#{n}", symbol: "p#{n}", ratio: 1})
 
     %{leaf: leaf, kg: kg, pcs: pcs}
   end
@@ -40,7 +43,7 @@ defmodule SynieCore.Inv.MaterialTest do
     |> Ash.create!(authorize?: false)
   end
 
-  # seed 同款规则:分类编号+"-"+4 位序号,不按公司计数
+  # seed 同款规则:分类+客户(空省略)+"-"+4 位序号
   defp numbering_rule! do
     Rule
     |> Ash.Changeset.for_create(:create, %{
@@ -48,12 +51,29 @@ defmodule SynieCore.Inv.MaterialTest do
       name: "物料编号",
       segments: [
         %{"type" => "field", "field" => "category.code"},
+        %{"type" => "field", "field" => "customer.code"},
         %{"type" => "text", "value" => "-"},
         %{"type" => "seq", "padding" => 4}
       ],
       per_company: false,
       enabled: true
     })
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp customer!(attrs \\ %{}) do
+    attrs =
+      Map.merge(
+        %{
+          code: "C#{System.unique_integer([:positive])}",
+          name: "测试客户",
+          short_name: "测客"
+        },
+        attrs
+      )
+
+    Customer
+    |> Ash.Changeset.for_create(:create, attrs)
     |> Ash.create!(authorize?: false)
   end
 
@@ -64,15 +84,34 @@ defmodule SynieCore.Inv.MaterialTest do
   describe "编号" do
     test "留空自动取号:分类编号-4 位序号,每分类各自计数", %{leaf: leaf, kg: kg} do
       numbering_rule!()
-      other = category!(%{code: "02", name: "半成品"})
+      other = category!(%{code: "02#{System.unique_integer([:positive])}", name: "半成品"})
 
       m1 = material!(%{name: "螺丝", category_id: leaf.id, default_unit_id: kg.id})
       m2 = material!(%{name: "螺母", category_id: leaf.id, default_unit_id: kg.id})
       m3 = material!(%{name: "垫片", category_id: other.id, default_unit_id: kg.id})
 
-      assert m1.code == "01-0001"
-      assert m2.code == "01-0002"
-      assert m3.code == "02-0001"
+      assert m1.code == "#{leaf.code}-0001"
+      assert m2.code == "#{leaf.code}-0002"
+      assert m3.code == "#{other.code}-0001"
+    end
+
+    test "客户物料取号含客户编号,与通用料分桶计数", %{leaf: leaf, kg: kg} do
+      numbering_rule!()
+      cust = customer!(%{code: "77"})
+
+      general = material!(%{name: "通用螺丝", category_id: leaf.id, default_unit_id: kg.id})
+
+      owned =
+        material!(%{
+          name: "定制件",
+          category_id: leaf.id,
+          default_unit_id: kg.id,
+          is_customer_material: true,
+          customer_id: cust.id
+        })
+
+      assert general.code == "#{leaf.code}-0001"
+      assert owned.code == "#{leaf.code}77-0001"
     end
 
     test "手填编号原样保留,重复编号被拒", %{leaf: leaf, kg: kg} do
@@ -172,6 +211,76 @@ defmodule SynieCore.Inv.MaterialTest do
       :ok = m |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)
 
       assert [] = Ash.read!(MaterialUnit, authorize?: false)
+    end
+  end
+
+  describe "客户约束" do
+    test "客户物料必填客户;非客户料清空客户与对方料号", %{leaf: leaf, kg: kg} do
+      cust = customer!()
+
+      assert_raise Ash.Error.Invalid, ~r/客户物料必须选择客户/, fn ->
+        material!(%{
+          code: "M1",
+          name: "定制",
+          category_id: leaf.id,
+          default_unit_id: kg.id,
+          is_customer_material: true
+        })
+      end
+
+      m =
+        material!(%{
+          code: "M2",
+          name: "定制",
+          category_id: leaf.id,
+          default_unit_id: kg.id,
+          is_customer_material: true,
+          customer_id: cust.id,
+          customer_part_no: "KH-1"
+        })
+
+      assert m.is_customer_material
+      assert m.customer_id == cust.id
+      assert m.customer_part_no == "KH-1"
+
+      general =
+        m
+        |> Ash.Changeset.for_update(:update, %{is_customer_material: false})
+        |> Ash.update!(authorize?: false)
+
+      assert general.is_customer_material == false
+      assert general.customer_id == nil
+      assert general.customer_part_no == nil
+    end
+
+    test "非客户料提交对方料号时被清空", %{leaf: leaf, kg: kg} do
+      m =
+        material!(%{
+          code: "M1",
+          name: "通用",
+          category_id: leaf.id,
+          default_unit_id: kg.id,
+          customer_part_no: "X"
+        })
+
+      assert m.customer_part_no == nil
+    end
+
+    test "有物料引用的客户不能删除", %{leaf: leaf, kg: kg} do
+      cust = customer!()
+
+      material!(%{
+        code: "M1",
+        name: "定制",
+        category_id: leaf.id,
+        default_unit_id: kg.id,
+        is_customer_material: true,
+        customer_id: cust.id
+      })
+
+      assert_raise Ash.Error.Invalid, ~r/存在关联物料,不能删除/, fn ->
+        cust |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)
+      end
     end
   end
 

@@ -293,14 +293,32 @@ const registry: Record<string, ResourceDrawerConfig> = {
     // 启用是状态不是表单字段(规范):新建默认启用,启停走列表行动作
     exclude: ['active'],
     fields: {
-      // 编号必填但可留空自动取号(后端 AutoNumber:分类编号-4 位序号),前端不标必填
-      code: { order: 0, cols: 6, placeholder: '留空自动编号(分类号-序号)' },
+      // 编号必填但可留空自动取号(后端 AutoNumber:分类+可选客户号-序号),前端不标必填
+      code: { order: 0, cols: 6, placeholder: '留空自动编号(分类号[客户号]-序号)' },
       name: { order: 1, cols: 6, required: true },
       // 物料只能挂启用的叶子分类(后端另有叶子校验兜底)
       categoryId: { order: 2, cols: 6, required: true, remote: { filter: '{isLeaf: {eq: true}, active: {eq: true}}' } },
       defaultUnitId: { order: 3, cols: 6, required: true },
       spec: { order: 4, cols: 6, placeholder: '如 M8×30' },
-      customerPartNo: { order: 5, cols: 6 },
+      isCustomerMaterial: {
+        order: 5,
+        cols: 6,
+        defaultValue: false,
+        // 关掉客户料时清空客户与对方料号(与后端 ClearCustomerWhenGeneral 一致)
+        effects: (v) => (v ? {} : { customerId: null, customerPartNo: null }),
+      },
+      customerId: {
+        order: 6,
+        cols: 6,
+        required: true,
+        visible: (values) => Boolean(values.isCustomerMaterial),
+      },
+      customerPartNo: {
+        order: 7,
+        cols: 6,
+        visible: (values) => Boolean(values.isCustomerMaterial),
+        placeholder: '客户侧料号',
+      },
     },
   },
   invMaterialUnits: { label: '单位转换' },

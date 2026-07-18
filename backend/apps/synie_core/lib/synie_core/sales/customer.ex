@@ -1,5 +1,5 @@
 defmodule SynieCore.Sales.Customer do
-  @moduledoc "客户,对应 `sal_customers` 表。编号前期手工填写,全局唯一。"
+  @moduledoc "客户,对应 `sal_customers` 表。编号前期手工填写,全局唯一。有物料引用时禁止删除。"
 
   use Ash.Resource,
     domain: SynieCore,
@@ -7,6 +7,8 @@ defmodule SynieCore.Sales.Customer do
     extensions: [AshGraphql.Resource],
     authorizers: [Ash.Policy.Authorizer],
     fragments: [SynieCore.Audit.Fragment]
+
+  require Ash.Query
 
   postgres do
     table "sal_customers"
@@ -53,6 +55,14 @@ defmodule SynieCore.Sales.Customer do
     destroy :destroy do
       primary? true
       require_atomic? false
+
+      validate fn changeset, _context ->
+        if has_materials?(changeset.data.id) do
+          {:error, message: "存在关联物料,不能删除"}
+        else
+          :ok
+        end
+      end
     end
   end
 
@@ -85,5 +95,11 @@ defmodule SynieCore.Sales.Customer do
 
   identities do
     identity :unique_code, [:code]
+  end
+
+  defp has_materials?(customer_id) do
+    SynieCore.Inv.Material
+    |> Ash.Query.filter(customer_id == ^customer_id)
+    |> Ash.exists?(authorize?: false)
   end
 end

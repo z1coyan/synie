@@ -57,10 +57,11 @@ defmodule SynieCore.Numbering.Rule do
   - `%{"type" => "text", "value" => "记"}` — 固定文本
   - `%{"type" => "field", "field" => "company.code"}` — 记录字段(支持 belongs_to 一级字段);
     date/datetime 字段须带 `"format"`(YYYY/YY/MM/DD 组合)
-  - `%{"type" => "seq", "padding" => 4}` — 序号,恰好一个
+  - `%{"type" => "seq", "padding" => 4}` — 序号,恰好一个;`padding` 0=不补零,1..12 补零
 
-  计数范围 = 渲染后的非 seq 段文本(+按公司维度),无独立重置周期——段里引用的
-  日期格式变了 key 自然变、序号自然从头计。取号入口见 `SynieCore.Numbering.next/1`。
+  字段段取值为空时省略该段。计数范围 = 渲染后的非 seq 段文本(+按公司维度),
+  无独立重置周期——段里引用的日期格式变了 key 自然变、序号自然从头计。
+  取号入口见 `SynieCore.Numbering.next/1`。
   """
 
   use Ash.Resource,

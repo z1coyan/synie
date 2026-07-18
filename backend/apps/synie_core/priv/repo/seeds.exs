@@ -27,7 +27,8 @@ else
   IO.puts("已创建内置存储接入 local(根目录 #{root})")
 end
 
-# 物料编号规则:分类编号+"-"+4 位序号,每叶子分类各自计数(计数范围=非序号段文本)。
+# 物料编号规则:分类编号+客户编号(空则省略)+"-"+4 位序号。
+# 通用料 01-0001、客户 77 料 0177-0001;计数范围=非序号段文本,按分类×客户分桶。
 # 物料是全局主数据,不按公司计数。已有该资源规则(含用户改过的)则跳过,不覆盖。
 alias SynieCore.Numbering.Rule
 
@@ -46,6 +47,7 @@ else
     name: "物料编号",
     segments: [
       %{"type" => "field", "field" => "category.code"},
+      %{"type" => "field", "field" => "customer.code"},
       %{"type" => "text", "value" => "-"},
       %{"type" => "seq", "padding" => 4}
     ],
@@ -54,5 +56,5 @@ else
   })
   |> Ash.create!(authorize?: false)
 
-  IO.puts("已创建物料编号规则(分类编号-4 位序号)")
+  IO.puts("已创建物料编号规则(分类+客户编号-4 位序号)")
 end

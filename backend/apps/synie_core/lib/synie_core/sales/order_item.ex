@@ -467,6 +467,7 @@ defmodule SynieCore.Sales.OrderItem do
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       change {SynieCore.Sales.OrderItem.DeriveQuotation, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
+      validate {SynieCore.Sales.MaterialCustomerAllowed, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
       change {SynieCore.Sales.SnapshotMaterial, []}
       change {SynieCore.Sales.OrderItem.SyncDrawings, []}
@@ -479,6 +480,7 @@ defmodule SynieCore.Sales.OrderItem do
       change {SynieCore.Sales.OrderItem.SyncOrder, []}
       change {SynieCore.Sales.OrderItem.DeriveQuotation, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
+      validate {SynieCore.Sales.MaterialCustomerAllowed, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
       change {SynieCore.Sales.SnapshotMaterial, []}
       change {SynieCore.Sales.OrderItem.SyncDrawings, []}

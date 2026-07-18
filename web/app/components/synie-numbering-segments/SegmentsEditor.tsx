@@ -9,6 +9,7 @@ export interface NumberSegment {
   field?: string
   label?: string
   format?: string
+  /** 0=不补零,1..12 补零宽度 */
   padding?: number
 }
 
@@ -36,16 +37,22 @@ function dateSample(format: string): string {
 
 export function segmentLabel(seg: NumberSegment): string {
   if (seg.type === 'text') return `“${seg.value ?? ''}”`
-  if (seg.type === 'seq') return `序号(${seg.padding ?? 4}位)`
+  if (seg.type === 'seq') {
+    const p = seg.padding ?? 4
+    return p === 0 ? '序号(不补零)' : `序号(${p}位)`
+  }
   return (seg.label ?? seg.field ?? '') + (seg.format ? `·${seg.format}` : '')
 }
 
-/** 示例串:日期段用今天渲染,序号补零取 1,其他字段用 [中文名] 占位 */
+/** 示例串:日期段用今天渲染,序号按 padding 取 1,其他字段用 [中文名] 占位 */
 export function segmentsPreview(segments: NumberSegment[]): string {
   return segments
     .map((seg) => {
       if (seg.type === 'text') return seg.value ?? ''
-      if (seg.type === 'seq') return '1'.padStart(seg.padding ?? 4, '0')
+      if (seg.type === 'seq') {
+        const p = seg.padding ?? 4
+        return p === 0 ? '1' : '1'.padStart(p, '0')
+      }
       if (seg.format) return dateSample(seg.format)
       return `[${seg.label ?? seg.field}]`
     })
@@ -60,7 +67,7 @@ export interface SegmentsEditorProps {
   isDisabled?: boolean
 }
 
-/** 编号段组装器:固定文本 / 资源字段(fk 二级字段、日期带格式)/ 序号(仅一个),点选拼装 */
+/** 编号段组装器:固定文本 / 资源字段(fk 二级字段、日期带格式)/ 序号(仅一个),点选拼装;支持拖拽排序 */
 export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEditorProps) {
   const meta = useGridMeta(grid ?? '', grid != null)
 
@@ -69,6 +76,7 @@ export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEd
   const [subField, setSubField] = useState<string | null>(null)
   const [format, setFormat] = useState<string>('YYYYMM')
   const [padding, setPadding] = useState(4)
+  const [dragFrom, setDragFrom] = useState<number | null>(null)
 
   const columns = useMemo(
     () => (meta.data?.columns ?? []).filter((c) => !SKIP.includes(c.name)),
@@ -107,6 +115,14 @@ export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEd
     setSubField(null)
   }
 
+  const moveSegment = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= value.length || to >= value.length) return
+    const next = value.slice()
+    const [item] = next.splice(from, 1)
+    next.splice(to, 0, item)
+    onChange(next)
+  }
+
   if (grid == null) {
     return (
       <div className="flex flex-col gap-1">
@@ -120,26 +136,50 @@ export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEd
     <div className="flex flex-col gap-2">
       <Label>编号段{isDisabled ? '' : '*'}</Label>
 
-      {/* 已选段 */}
+      {/* 已选段:可拖拽排序 */}
       <div className="flex flex-wrap items-center gap-1.5">
         {value.length === 0 && <span className="text-sm text-muted">暂无编号段,请在下方添加</span>}
         {value.map((seg, i) => (
-          <Chip key={i} size="sm" className={isDisabled ? undefined : 'pr-1'} color={seg.type === 'seq' ? 'accent' : 'default'}>
-            <Chip.Label>{segmentLabel(seg)}</Chip.Label>
-            {!isDisabled && (
-              <CloseButton
-                aria-label={`删除段 ${segmentLabel(seg)}`}
-                className="h-4 w-4 [&_svg]:size-3"
-                onPress={() => onChange(value.filter((_, j) => j !== i))}
-              />
-            )}
-          </Chip>
+          <span
+            key={`${i}-${seg.type}-${seg.field ?? seg.value ?? seg.padding}`}
+            draggable={!isDisabled}
+            className={isDisabled ? undefined : 'cursor-grab active:cursor-grabbing'}
+            onDragStart={(e) => {
+              setDragFrom(i)
+              e.dataTransfer.effectAllowed = 'move'
+              e.dataTransfer.setData('text/plain', String(i))
+            }}
+            onDragOver={(e) => {
+              if (isDisabled) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'move'
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              const from = dragFrom ?? Number(e.dataTransfer.getData('text/plain'))
+              moveSegment(from, i)
+              setDragFrom(null)
+            }}
+            onDragEnd={() => setDragFrom(null)}
+          >
+            <Chip size="sm" className={isDisabled ? undefined : 'pr-1'} color={seg.type === 'seq' ? 'accent' : 'default'}>
+              <Chip.Label>{segmentLabel(seg)}</Chip.Label>
+              {!isDisabled && (
+                <CloseButton
+                  aria-label={`删除段 ${segmentLabel(seg)}`}
+                  className="h-4 w-4 [&_svg]:size-3"
+                  onPress={() => onChange(value.filter((_, j) => j !== i))}
+                />
+              )}
+            </Chip>
+          </span>
         ))}
       </div>
 
       {value.length > 0 && (
         <p className="text-xs text-muted">
           示例:<span className="font-mono">{segmentsPreview(value)}</span>
+          {!isDisabled && <span className="ml-2">（可拖拽段调整顺序）</span>}
         </p>
       )}
 
@@ -242,19 +282,19 @@ export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEd
             </Button>
           </div>
 
-          {/* 序号 */}
+          {/* 序号:0=不补零,1..12 补零位数 */}
           <div className="flex items-end gap-2">
             <NumberField
               className="flex-1"
               aria-label="序号位数"
-              minValue={1}
+              minValue={0}
               maxValue={12}
               value={padding}
               onChange={(n) => setPadding(Number.isFinite(n) ? n : 4)}
               isDisabled={hasSeq}
             >
               <NumberField.Group className="grid-cols-[1fr]">
-                <NumberField.Input placeholder="序号位数" />
+                <NumberField.Input placeholder="序号位数,0=不补零" />
               </NumberField.Group>
             </NumberField>
             <Button

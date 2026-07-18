@@ -40,6 +40,33 @@ defmodule SynieCore.Sales.QuotationPartyType do
   end
 end
 
+defmodule SynieCore.Sales.Quotation.HeadFieldsFrozen do
+  @moduledoc """
+  头关键字段变更闸:报价已有条目时,对手/公司/币种不可再改——
+  条目物料的客户约束锚定对手,改头会让既有行口径漂移,报错引导先删条目再改头。
+  仅挂 update。
+  """
+
+  use Ash.Resource.Validation
+
+  @fields [:party_type, :party_id, :company_id, :currency_id]
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    if head_changed?(changeset) and SynieCore.Sales.Quotation.has_items?(changeset.data.id) do
+      {:error, message: "请先删除报价条目"}
+    else
+      :ok
+    end
+  end
+
+  defp head_changed?(changeset) do
+    Enum.any?(@fields, fn field ->
+      Ash.Changeset.get_attribute(changeset, field) != Map.get(changeset.data, field)
+    end)
+  end
+end
+
 defmodule SynieCore.Sales.Quotation.DefaultCurrency do
   @moduledoc """
   报价单币种归一:币种留空默认单据公司本币。报价单没有金额(条目只有单价、无数量),
@@ -219,6 +246,7 @@ defmodule SynieCore.Sales.Quotation do
 
       # 构建期预检(用户体验),权威复检在 before_action 钩子内
       validate {SynieCore.Sales.QuotationDraft, []}
+      validate {SynieCore.Sales.Quotation.HeadFieldsFrozen, []}
       validate {SynieCore.Sales.QuotationPartyType, []}
       validate {SynieCore.Acc.PartyExists, []}
       validate {SynieCore.Acc.PartyNotSelf, []}

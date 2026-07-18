@@ -101,7 +101,17 @@ async function persistUnits(materialId: string, current: Row[], snapshot: Row[])
 }
 
 // 常用列白名单:时间戳不进表格,图纸走 attachmentImages 虚拟列;分类列置顶
-const GRID_COLUMNS = ['categoryId', 'code', 'name', 'spec', 'customerPartNo', 'defaultUnitId', 'active']
+const GRID_COLUMNS = [
+  'categoryId',
+  'code',
+  'name',
+  'spec',
+  'isCustomerMaterial',
+  'customerId',
+  'customerPartNo',
+  'defaultUnitId',
+  'active',
+]
 
 /** 分类列单元格:「分类编号-分类名称」,点击开分类速览(join 默认只取 id/name,code 经 joinFields 追加取回) */
 function CategoryCell({ row }: { row: Row }) {
@@ -167,7 +177,7 @@ function MaterialsPage() {
     <>
       <h1 className="font-brand text-3xl tracking-wide">物料管理</h1>
       <p className="mt-2 text-sm text-ink-500">
-        全局共享的物料主数据:编号留空按「分类号-序号」自动生成,图纸、其他文件与单位转换建料时即可一并录入。
+        全局共享的物料主数据:可标记客户物料;编号留空按「分类号[客户号]-序号」自动生成;图纸、其他文件与单位转换建料时即可一并录入。
       </p>
 
       <div className="mt-6">

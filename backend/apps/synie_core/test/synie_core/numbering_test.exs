@@ -107,11 +107,28 @@ defmodule SynieCore.NumberingTest do
       assert msg =~ "公司"
     end
 
-    test "字段无值时报错", %{company: co} do
+    test "字段空值省略该段", %{company: co} do
       rule!(%{})
 
-      assert {:error, msg} = Numbering.next(journal_changeset(%{company_id: co.id}))
-      assert msg =~ "date"
+      # date 段空则省略,得到 记CODE--0001(两段固定分隔符之间无日期)
+      assert {:ok, no} = Numbering.next(journal_changeset(%{company_id: co.id}))
+      assert no == "记#{co.code}--0001"
+    end
+
+    test "padding 0 不补零", %{company: co} do
+      rule!(%{
+        per_company: false,
+        segments: [
+          %{"type" => "text", "value" => "N"},
+          %{"type" => "seq", "padding" => 0}
+        ]
+      })
+
+      assert {:ok, "N1"} =
+               Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
+
+      assert {:ok, "N2"} =
+               Numbering.next(journal_changeset(%{company_id: co.id, date: ~D[2026-07-15]}))
     end
 
     test "无规则或规则停用返回 no_rule", %{company: co} do

@@ -80,7 +80,8 @@ defmodule SynieCore.Numbering do
 
   defp segment_error(%{"type" => "seq"} = seg, _module) do
     padding = Map.get(seg, "padding", 4)
-    if is_integer(padding) and padding in 1..12, do: nil, else: {:error, "序号位数须在 1~12 之间"}
+    # 0 = 不补零;1..12 = 补零宽度
+    if is_integer(padding) and padding in 0..12, do: nil, else: {:error, "序号位数须在 0~12 之间(0=不补零)"}
   end
 
   defp segment_error(%{"type" => "field", "field" => path} = seg, module) when is_binary(path) do
@@ -148,10 +149,11 @@ defmodule SynieCore.Numbering do
     end
   end
 
-  # 段列表 → [{:text, 渲染文本} | :seq];field 段取值失败即报错
+  # 段列表 → [{:text, 渲染文本} | :seq];字段空值省略该段(不报错)
   defp render_parts(segments, changeset) do
     Enum.reduce_while(segments, {:ok, []}, fn seg, {:ok, acc} ->
       case render_segment(seg, changeset) do
+        {:ok, :omit} -> {:cont, {:ok, acc}}
         {:ok, part} -> {:cont, {:ok, [part | acc]}}
         {:error, _} = err -> {:halt, err}
       end
@@ -169,7 +171,9 @@ defmodule SynieCore.Numbering do
 
   defp render_segment(%{"type" => "field", "field" => path} = seg, changeset) do
     case field_value(changeset, path) do
-      {:ok, nil} -> {:error, "编号字段 #{path} 无值"}
+      # 空则省略:支持物料等「可选客户前缀」与一条规则覆盖多种形态
+      {:ok, nil} -> {:ok, :omit}
+      {:ok, ""} -> {:ok, :omit}
       {:ok, value} -> render_value(value, Map.get(seg, "format"), path)
       :error -> {:error, "编号字段 #{path} 在资源上不存在"}
     end
@@ -261,10 +265,15 @@ defmodule SynieCore.Numbering do
 
   defp assemble(parts, seq, padding) do
     Enum.map_join(parts, "", fn
-      :seq -> seq |> Integer.to_string() |> String.pad_leading(padding, "0")
+      :seq -> format_seq(seq, padding)
       {:text, s} -> s
     end)
   end
+
+  defp format_seq(seq, 0), do: Integer.to_string(seq)
+
+  defp format_seq(seq, padding) when is_integer(padding) and padding > 0,
+    do: seq |> Integer.to_string() |> String.pad_leading(padding, "0")
 
   # PG upsert:不存在则插 value=1,存在则原子 +1,RETURNING 拿到本次序号
   defp bump(rule_id, scope_key) do
