@@ -32,6 +32,30 @@ const registry: Record<string, ResourceDrawerConfig> = {
   basCurrencies: { label: '货币' },
   basUnits: { label: '单位' },
   basAccounts: { label: '科目' },
+  basMarketInstruments: {
+    label: '行情品种',
+    fields: {
+      code: { required: true, edit: 'createOnly', placeholder: '如 SHFE_CU' },
+      name: { required: true, placeholder: '如 沪铜' },
+      sourceType: { required: true },
+      defaultPriceKind: { required: true },
+      currencyId: { required: true, edit: 'createOnly' },
+      unitId: { required: true, edit: 'createOnly' },
+    },
+  },
+  basMarketPricePoints: {
+    label: '行情价点',
+    // 价点不可改:无编辑态表单;币种/单位由品种继承
+    exclude: ['currencyId', 'unitId', 'isVoided', 'insertedAt', 'updatedAt'],
+    fields: {
+      instrumentId: { required: true, edit: 'createOnly' },
+      observedAt: { required: true, edit: 'createOnly' },
+      price: { required: true, edit: 'createOnly' },
+      priceKind: { edit: 'createOnly' },
+      source: { edit: 'createOnly' },
+      note: { edit: 'createOnly' },
+    },
+  },
   salCustomers: { label: '客户' },
   salOrders: {
     label: '销售订单',

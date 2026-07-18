@@ -15,6 +15,8 @@ defmodule SynieWeb.GridMeta do
     "basCurrencies" => SynieCore.Base.Currency,
     "basUnits" => SynieCore.Base.Unit,
     "basAccounts" => SynieCore.Base.Account,
+    "basMarketInstruments" => SynieCore.Base.MarketInstrument,
+    "basMarketPricePoints" => SynieCore.Base.MarketPricePoint,
     "salCustomers" => SynieCore.Sales.Customer,
     "salOrders" => SynieCore.Sales.Order,
     "salOrderItems" => SynieCore.Sales.OrderItem,

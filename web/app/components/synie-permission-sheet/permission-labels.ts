@@ -19,6 +19,8 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'base.unit': '计量单位',
   'base.currency': '币种',
   'base.account': '会计科目',
+  'base.market_instrument': '行情品种',
+  'base.market_price': '行情价点',
   'sales.customer': '客户',
   'sales.order': '销售订单',
   'sales.quotation': '销售报价单',

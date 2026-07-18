@@ -14,6 +14,8 @@ defmodule SynieCore do
       list SynieCore.Base.Unit, :bas_units, :read, paginate_with: :offset
       list SynieCore.Base.Currency, :bas_currencies, :read, paginate_with: :offset
       list SynieCore.Base.Account, :bas_accounts, :read, paginate_with: :offset
+      list SynieCore.Base.MarketInstrument, :bas_market_instruments, :read, paginate_with: :offset
+      list SynieCore.Base.MarketPricePoint, :bas_market_price_points, :read, paginate_with: :offset
       list SynieCore.Sales.Customer, :sal_customers, :read, paginate_with: :offset
       list SynieCore.Sales.Order, :sal_orders, :read, paginate_with: :offset
       list SynieCore.Sales.OrderItem, :sal_order_items, :read, paginate_with: :offset
@@ -112,6 +114,13 @@ defmodule SynieCore do
       create SynieCore.Base.Currency, :create_bas_currency, :create
       update SynieCore.Base.Currency, :update_bas_currency, :update
       destroy SynieCore.Base.Currency, :destroy_bas_currency, :destroy
+
+      create SynieCore.Base.MarketInstrument, :create_bas_market_instrument, :create
+      update SynieCore.Base.MarketInstrument, :update_bas_market_instrument, :update
+      destroy SynieCore.Base.MarketInstrument, :destroy_bas_market_instrument, :destroy
+
+      create SynieCore.Base.MarketPricePoint, :create_bas_market_price_point, :create
+      update SynieCore.Base.MarketPricePoint, :void_bas_market_price_point, :void
 
       create SynieCore.Base.Account, :create_bas_account, :create
       update SynieCore.Base.Account, :update_bas_account, :update
@@ -284,6 +293,8 @@ defmodule SynieCore do
     resource SynieCore.Base.Company
     resource SynieCore.Base.Unit
     resource SynieCore.Base.Currency
+    resource SynieCore.Base.MarketInstrument
+    resource SynieCore.Base.MarketPricePoint
     resource SynieCore.Base.Account
     resource SynieCore.Sales.Customer
     resource SynieCore.Sales.Order
