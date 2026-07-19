@@ -67,6 +67,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   inv_stock_doc_item: '手工出入库单行',
   inv_stock_transfer: '手工调拨单',
   inv_stock_transfer_item: '手工调拨单行',
+  inv_stock_count: '库存盘点单',
+  inv_stock_count_item: '库存盘点单行',
   sys_file: '附件文件',
   sys_attachment: '附件关联',
   sys_storage: '存储接入',

@@ -33,6 +33,8 @@ defmodule SynieWeb.GridMeta do
     "invStockDocItems" => SynieCore.Inv.StockDocItem,
     "invStockTransfers" => SynieCore.Inv.StockTransfer,
     "invStockTransferItems" => SynieCore.Inv.StockTransferItem,
+    "invStockCounts" => SynieCore.Inv.StockCount,
+    "invStockCountItems" => SynieCore.Inv.StockCountItem,
     "invStockEntries" => SynieCore.Inv.StockEntry,
     "hrAttendancePunches" => SynieCore.Hr.AttendancePunch,
     "hrAttendanceImports" => SynieCore.Hr.AttendanceImport,

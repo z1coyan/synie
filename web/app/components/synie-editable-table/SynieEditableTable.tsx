@@ -31,7 +31,8 @@ export interface SynieEditableTableProps<T extends Row = Row> {
   onChange: (items: T[]) => void
   /** 条目中文名:新增按钮/抽屉标题/空态文案,如 "分录行" */
   label?: string
-  /** 表格显示列及其顺序;缺省 = meta 全列(剔 id/时间戳/exclude)。只影响表格,不影响录入表单 */
+  /** 表格显示列及其顺序;缺省 = meta 全列(剔 id/时间戳/exclude)。只影响表格,不影响录入表单。
+   * 可含 meta 之外的计算列名(如差异=折算−账面):需在 overrides 同名声明,值由 overrides.render 现算 */
   columns?: string[]
   /** 表格列与录入表单字段共用剔除(如父外键列 entryId) */
   exclude?: string[]
@@ -83,7 +84,7 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
   const [drawer, setDrawer] = useState<{ mode: 'create' | 'edit'; row: T | null } | null>(null)
 
   const metaColumns = props.meta?.columns ?? remote.data?.columns ?? []
-  const cols = displayColumns(metaColumns, props.columns, props.exclude)
+  const cols = displayColumns(metaColumns, props.columns, props.exclude, overrides)
 
   const submit = async (values: Record<string, unknown>, mode: 'create' | 'edit') => {
     const editing = mode === 'edit' ? (drawer?.row ?? null) : null

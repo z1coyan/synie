@@ -30,7 +30,8 @@ defmodule SynieCore.Inv.Stock do
   def voucher_resources do
     %{
       "inv.stock_doc" => {SynieCore.Inv.StockDoc, "手工出入库单"},
-      "inv.stock_transfer" => {SynieCore.Inv.StockTransfer, "手工调拨单"}
+      "inv.stock_transfer" => {SynieCore.Inv.StockTransfer, "手工调拨单"},
+      "inv.stock_count" => {SynieCore.Inv.StockCount, "库存盘点单"}
     }
   end
 
@@ -88,7 +89,7 @@ defmodule SynieCore.Inv.Stock do
     %Ash.BulkResult{status: :success} =
       StockEntry
       |> Ash.Query.filter(voucher_type == ^voucher_type and voucher_id == ^voucher_id)
-      |> Ash.bulk_update(:mark_cancelled, %{},
+      |> Ash.bulk_update(:mark_cancelled, %{cancelled_at: DateTime.utc_now()},
         strategy: :atomic,
         authorize?: false,
         return_errors?: true

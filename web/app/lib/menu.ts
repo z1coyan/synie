@@ -117,6 +117,7 @@ export const menuModules: MenuModule[] = [
         items: [
           { label: '手工出入库单', path: '/scm/stock-docs' },
           { label: '手工调拨单', path: '/scm/stock-transfers' },
+          { label: '库存盘点单', path: '/scm/stock-counts' },
           { label: '库存余额', path: '/scm/inventory' },
           { label: '库存分录', path: '/scm/stock-entries' },
         ],

@@ -19,17 +19,28 @@ const HIDDEN = ['id', 'insertedAt', 'updatedAt']
 
 /**
  * 表格显示列:meta 列剔 id/系统字段/exclude;columns 传了则按其顺序取白名单
- * (columns 只影响表格显示,不影响二级抽屉字段集)
+ * (columns 只影响表格显示,不影响二级抽屉字段集)。
+ * columns 含 meta 之外的名字且 overrides 有同名声明时,合成「计算列」
+ * (如盘点差异=折算实盘−账面,值由 overrides.render 从行数据现算):仅展示,
+ * 不可排序/筛选;二级抽屉字段集仍只来自 meta,计算列不进录入表单。
  */
 export function displayColumns(
   metaColumns: GridColumnMeta[],
   columns?: string[],
-  exclude: string[] = []
+  exclude: string[] = [],
+  overrides: Record<string, { label?: string }> = {}
 ): GridColumnMeta[] {
   const base = metaColumns.filter((c) => !HIDDEN.includes(c.name) && !exclude.includes(c.name))
   if (!columns) return base
   const byName = new Map(base.map((c) => [c.name, c]))
-  return columns.flatMap((n) => byName.get(n) ?? [])
+  return columns.flatMap((n) => {
+    const found = byName.get(n)
+    if (found) return [found]
+    // meta 之外的计算列:overrides 声明了才合成(类型取中性的 string,对齐/渲染走 overrides);
+    // 未声明按未知名忽略(与原行为一致)
+    if (!(n in overrides)) return []
+    return [{ name: n, type: 'string' as const, label: overrides[n].label ?? n, sortable: false, filterable: false, enumOptions: null, ref: null }]
+  })
 }
 
 export function appendItem<T extends Row>(items: T[], values: Record<string, unknown>, id: string): T[] {

@@ -53,6 +53,18 @@ eq(
   'columns 定序,未知名/系统字段忽略'
 )
 
+// —— displayColumns:meta 之外的计算列,overrides 同名声明才合成;不声明仍忽略 ——
+const computed = displayColumns(cols, ['diff', 'summary'], [], { diff: { label: '差异' } })
+eq(
+  computed.map((c) => [c.name, c.label, c.sortable, c.filterable]),
+  [
+    ['diff', '差异', false, false],
+    ['summary', 'L:summary', true, true],
+  ],
+  '计算列按 overrides 合成且定序,不可排序/筛选'
+)
+eq(displayColumns(cols, ['nope']).map((c) => c.name), [], '未知名无 overrides 仍忽略')
+
 // —— localRowId / isLocalRow ——
 const lid = localRowId()
 eq(isLocalRow({ id: lid } as Row), true, '本地 id 判真')

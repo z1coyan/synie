@@ -389,6 +389,25 @@ const registry: Record<string, ResourceDrawerConfig> = {
     },
   },
   invStockTransferItems: { label: '手工调拨行' },
+  invStockCounts: {
+    label: '库存盘点单',
+    // 行表格 6 列(含差异计算列),默认 480px 太挤,单据抽屉加宽(同手工出入库单先例;移动端仍全宽)
+    contentClassName: 'w-full lg:w-[880px]',
+    // 状态翻转走行内动作(approve/cancel);账面快照时间/审核时间/审核人/录入人是系统字段;创建/更新时间表格已隐藏
+    exclude: ['status', 'snapshotTakenAt', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt'],
+    fields: {
+      // 公司提到最前;建后不可换(update 动作不收 company_id)
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      // 编号可留空自动取号(后端 AutoNumber:inv.stock_count 编号规则),前端不标必填
+      docNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      postingDate: { order: 1, cols: 6, required: true },
+      // 仓候选限本公司启用叶子仓(与后端 WarehouseUsable 同口径,页面层按公司叠 filter)
+      warehouseId: { order: 2, required: true, label: '仓库' },
+      summary: { order: 3, label: '摘要' },
+      remarks: { order: 4, label: '备注' },
+    },
+  },
+  invStockCountItems: { label: '盘点行' },
   invStockEntries: { label: '库存分录' },
   hrPayrolls: {
     label: '工资单',

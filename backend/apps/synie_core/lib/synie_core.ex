@@ -45,6 +45,9 @@ defmodule SynieCore do
       list SynieCore.Inv.StockTransferItem, :inv_stock_transfer_items, :read,
         paginate_with: :offset
 
+      list SynieCore.Inv.StockCount, :inv_stock_counts, :read, paginate_with: :offset
+      list SynieCore.Inv.StockCountItem, :inv_stock_count_items, :read, paginate_with: :offset
+
       # 库存余额表:仓×物料聚合(未作废分录、截至日口径),不落库
       action SynieCore.Inv.StockEntry, :inv_stock_balance, :stock_balance
       list SynieCore.Hr.AttendancePunch, :hr_attendance_punches, :read, paginate_with: :offset
@@ -226,6 +229,18 @@ defmodule SynieCore do
       update SynieCore.Inv.StockTransferItem, :update_inv_stock_transfer_item, :update
       destroy SynieCore.Inv.StockTransferItem, :destroy_inv_stock_transfer_item, :destroy
 
+      # 库存盘点单:状态翻转走 approve/cancel 独立 mutation;refresh 刷新账面数;盘点行随单头权限码(同手工出入库单先例)
+      create SynieCore.Inv.StockCount, :create_inv_stock_count, :create
+      update SynieCore.Inv.StockCount, :update_inv_stock_count, :update
+      destroy SynieCore.Inv.StockCount, :destroy_inv_stock_count, :destroy
+      update SynieCore.Inv.StockCount, :refresh_inv_stock_count, :refresh
+      update SynieCore.Inv.StockCount, :approve_inv_stock_count, :approve
+      update SynieCore.Inv.StockCount, :cancel_inv_stock_count, :cancel
+
+      create SynieCore.Inv.StockCountItem, :create_inv_stock_count_item, :create
+      update SynieCore.Inv.StockCountItem, :update_inv_stock_count_item, :update
+      destroy SynieCore.Inv.StockCountItem, :destroy_inv_stock_count_item, :destroy
+
       # 考勤导入:create 即解析预览,import 执行(打卡记录无独立写 mutation),删除即整批撤销
       create SynieCore.Hr.AttendanceImport, :create_hr_attendance_import, :create
       update SynieCore.Hr.AttendanceImport, :import_hr_attendance_import, :import
@@ -360,6 +375,8 @@ defmodule SynieCore do
     resource SynieCore.Inv.StockDocItem
     resource SynieCore.Inv.StockTransfer
     resource SynieCore.Inv.StockTransferItem
+    resource SynieCore.Inv.StockCount
+    resource SynieCore.Inv.StockCountItem
     resource SynieCore.Hr.AttendancePunch
     resource SynieCore.Hr.AttendanceImport
     resource SynieCore.Hr.AttendanceDay

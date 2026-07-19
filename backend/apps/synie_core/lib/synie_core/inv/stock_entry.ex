@@ -9,7 +9,8 @@ defmodule SynieCore.Inv.StockEntry do
 
   用户无直接写入口:GraphQL 仅注册查询;`:create` 与 `:mark_cancelled` 仅供
   Inv.Stock 模块以 `authorize?: false` 调用。不挂审计 Fragment——分录本身即来源
-  单据的审计产物,来源单据已接审计。作废不删数,仅标记 `is_cancelled`。
+  单据的审计产物,来源单据已接审计。作废不删数,仅标记 `is_cancelled` 并落
+  `cancelled_at`(盘点单审核的兜底校验据此判定快照后有分录作废)。
   """
 
   use Ash.Resource,
@@ -103,7 +104,8 @@ defmodule SynieCore.Inv.StockEntry do
 
     # 仅内部(Inv.Stock.cancel!)使用:作废来源单据时批量标记
     update :mark_cancelled do
-      accept []
+      # cancelled_at 由 Inv.Stock.cancel! 以批量输入运行时传入(DSL 字面量是编译期求值,不可用)
+      accept [:cancelled_at]
       change set_attribute(:is_cancelled, true)
     end
 
@@ -168,6 +170,11 @@ defmodule SynieCore.Inv.StockEntry do
       default false
       public? true
       description "已作废"
+    end
+
+    attribute :cancelled_at, :utc_datetime_usec do
+      public? true
+      description "作废时间(盘点单审核的兜底校验据此判定「快照后该仓分录有作废」)"
     end
 
     attribute :remarks, :string do
