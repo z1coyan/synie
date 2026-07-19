@@ -28,6 +28,7 @@ defmodule SynieWeb.GridMeta do
     "invMaterialCategories" => SynieCore.Inv.MaterialCategory,
     "invMaterials" => SynieCore.Inv.Material,
     "invMaterialUnits" => SynieCore.Inv.MaterialUnit,
+    "invWarehouses" => SynieCore.Inv.Warehouse,
     "hrAttendancePunches" => SynieCore.Hr.AttendancePunch,
     "hrAttendanceImports" => SynieCore.Hr.AttendanceImport,
     "hrAttendanceDays" => SynieCore.Hr.AttendanceDay,

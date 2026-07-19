@@ -58,6 +58,12 @@ const INIT_FROM_TEMPLATE = `
     initBasAccountFromTemplate(input: $input)
   }
 `
+// 默认仓库种子(所有仓库/默认仓库/在途),同 INIT_FROM_TEMPLATE 的标量返回约定;幂等,已有仓库返回 0
+const SEED_WAREHOUSE_DEFAULTS = `
+  mutation ($input: SeedInvWarehouseDefaultsInput!) {
+    seedInvWarehouseDefaults(input: $input)
+  }
+`
 const COMPLETE_SETUP = `
   mutation ($preferredLanguage: String!) {
     setupComplete(preferredLanguage: $preferredLanguage)
@@ -486,8 +492,22 @@ function StepCompany(props: { onDone: () => void }) {
       const init = await gqlFetch<{ initBasAccountFromTemplate: number }>(INIT_FROM_TEMPLATE, {
         input: { companyId, template },
       })
+      // 建仓失败不阻断向导(公司/科目已就位):报错提示,仓库可事后手工补建
+      let warehouseCount = 0
+      let seedError: string | null = null
+      try {
+        const seed = await gqlFetch<{ seedInvWarehouseDefaults: number }>(SEED_WAREHOUSE_DEFAULTS, {
+          input: { companyId },
+        })
+        warehouseCount = seed.seedInvWarehouseDefaults
+      } catch (e) {
+        seedError = (e as Error).message
+      }
       toast.close(id)
-      toast.success(`公司「${name.trim()}」已创建,并按模板初始化 ${init.initBasAccountFromTemplate} 个科目`)
+      if (seedError) toast.danger('初始化默认仓库失败', { description: seedError })
+      toast.success(
+        `公司「${name.trim()}」已创建,并按模板初始化 ${init.initBasAccountFromTemplate} 个科目、${warehouseCount} 个仓库`
+      )
       props.onDone()
     } catch (e) {
       toast.close(id)

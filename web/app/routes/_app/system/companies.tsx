@@ -22,6 +22,12 @@ const UPDATE_COMPANY = `
     updateBasCompany(id: $id, input: $input) { result { id } errors { message } }
   }
 `
+// 默认仓库种子(所有仓库/默认仓库/在途):泛型 action 返回标量(新建条数),幂等;失败走 top-level errors 由 gqlFetch 抛出
+const SEED_WAREHOUSE_DEFAULTS = `
+  mutation ($input: SeedInvWarehouseDefaultsInput!) {
+    seedInvWarehouseDefaults(input: $input)
+  }
+`
 
 function CompaniesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
@@ -59,12 +65,13 @@ function CompaniesPage() {
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
           let errors: { message: string }[] | null
+          let createdId: string | null = null
           if (mode === 'create') {
-            const data = await gqlFetch<{ createBasCompany: { errors: { message: string }[] | null } }>(
-              CREATE_COMPANY,
-              { input: values }
-            )
+            const data = await gqlFetch<{
+              createBasCompany: { result: { id: string } | null; errors: { message: string }[] | null }
+            }>(CREATE_COMPANY, { input: values })
             errors = data.createBasCompany.errors
+            createdId = data.createBasCompany.result?.id ?? null
           } else {
             const data = await gqlFetch<{ updateBasCompany: { errors: { message: string }[] | null } }>(
               UPDATE_COMPANY,
@@ -73,7 +80,19 @@ function CompaniesPage() {
             errors = data.updateBasCompany.errors
           }
           if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
-          toast.success(mode === 'create' ? '公司已创建' : '公司已更新')
+          // 建新公司后种子默认仓库;失败只报错不回滚公司(种子幂等,可重建公司或手工补仓)
+          let seedNote = ''
+          if (createdId) {
+            try {
+              const seed = await gqlFetch<{ seedInvWarehouseDefaults: number }>(SEED_WAREHOUSE_DEFAULTS, {
+                input: { companyId: createdId },
+              })
+              seedNote = `,并初始化 ${seed.seedInvWarehouseDefaults} 个默认仓库`
+            } catch (e) {
+              toast.danger('初始化默认仓库失败', { description: (e as Error).message })
+            }
+          }
+          toast.success(mode === 'create' ? `公司已创建${seedNote}` : '公司已更新')
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'basCompanies'] })
         }}
       />

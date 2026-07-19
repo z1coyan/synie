@@ -60,6 +60,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   inv_material_category: '物料分类',
   inv_material: '物料',
   inv_material_unit: '物料单位转换',
+  inv_warehouse: '仓库',
   sys_file: '附件文件',
   sys_attachment: '附件关联',
   sys_storage: '存储接入',

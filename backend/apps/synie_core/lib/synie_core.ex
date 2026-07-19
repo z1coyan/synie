@@ -33,6 +33,7 @@ defmodule SynieCore do
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
       list SynieCore.Inv.Material, :inv_materials, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialUnit, :inv_material_units, :read, paginate_with: :offset
+      list SynieCore.Inv.Warehouse, :inv_warehouses, :read, paginate_with: :offset
       list SynieCore.Hr.AttendancePunch, :hr_attendance_punches, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceImport, :hr_attendance_imports, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceDay, :hr_attendance_days, :read, paginate_with: :offset
@@ -185,6 +186,11 @@ defmodule SynieCore do
       update SynieCore.Inv.MaterialUnit, :update_inv_material_unit, :update
       destroy SynieCore.Inv.MaterialUnit, :destroy_inv_material_unit, :destroy
 
+      create SynieCore.Inv.Warehouse, :create_inv_warehouse, :create
+      update SynieCore.Inv.Warehouse, :update_inv_warehouse, :update
+      destroy SynieCore.Inv.Warehouse, :destroy_inv_warehouse, :destroy
+      action SynieCore.Inv.Warehouse, :seed_inv_warehouse_defaults, :seed_defaults
+
       # 考勤导入:create 即解析预览,import 执行(打卡记录无独立写 mutation),删除即整批撤销
       create SynieCore.Hr.AttendanceImport, :create_hr_attendance_import, :create
       update SynieCore.Hr.AttendanceImport, :import_hr_attendance_import, :import
@@ -313,6 +319,7 @@ defmodule SynieCore do
     resource SynieCore.Inv.MaterialCategory
     resource SynieCore.Inv.Material
     resource SynieCore.Inv.MaterialUnit
+    resource SynieCore.Inv.Warehouse
     resource SynieCore.Hr.AttendancePunch
     resource SynieCore.Hr.AttendanceImport
     resource SynieCore.Hr.AttendanceDay

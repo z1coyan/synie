@@ -109,6 +109,7 @@ export const menuModules: MenuModule[] = [
         items: [
           { label: '物料管理', path: '/scm/materials' },
           { label: '物料分类', path: '/scm/material-categories' },
+          { label: '仓库管理', path: '/scm/warehouses' },
           { label: '库存查询', path: '/scm/inventory' },
         ],
       },

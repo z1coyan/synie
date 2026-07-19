@@ -339,6 +339,7 @@ const registry: Record<string, ResourceDrawerConfig> = {
     },
   },
   invMaterialUnits: { label: '单位转换' },
+  invWarehouses: { label: '仓库' },
   hrPayrolls: {
     label: '工资单',
     fields: {
