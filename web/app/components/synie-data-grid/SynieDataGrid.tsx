@@ -119,6 +119,8 @@ export interface SynieDataGridProps {
   defaultSort?: SortState
   /** 初始列筛选(如报表下钻带条件跳转);仅作初值,用户可照常改/清,变更预置条件需换 key 重挂 */
   defaultFilters?: FilterState
+  /** 列筛选变更回调(如建单时按公司列筛唯一值预填公司);不控 filter 状态 */
+  onFiltersChange?: (filters: FilterState) => void
   /** 本页汇总行:表格下方、分页上方渲染(如金额本页合计);rows 为当前页数据 */
   pageSummary?: (rows: Row[]) => ReactNode
   /** 附件图片列:行记录的图片附件(sys_attachment 多态挂接)以缩略图列呈现,
@@ -257,6 +259,12 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const [filters, setFilters] = useState<FilterState>(props.defaultFilters ?? {})
   const [search, setSearch] = useState('')
   const [selection, setSelection] = useState<Selection>(new Set())
+
+  // 筛变通知页面(建单默认公司等);不把回调放进 deps 以免父组件未 memo 时循环
+  useEffect(() => {
+    props.onFiltersChange?.(filters)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters])
 
   const columns = useMemo(() => {
     const base = (meta.data?.columns ?? []).filter((c) => c.name !== 'id' && !exclude.includes(c.name))
