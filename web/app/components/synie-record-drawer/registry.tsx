@@ -340,6 +340,56 @@ const registry: Record<string, ResourceDrawerConfig> = {
   },
   invMaterialUnits: { label: '单位转换' },
   invWarehouses: { label: '仓库' },
+  invStockDocs: {
+    label: '手工出入库单',
+    // 行表格 6 列,默认 480px 太挤,单据抽屉加宽(同销售订单先例;移动端仍全宽)
+    contentClassName: 'w-full lg:w-[880px]',
+    // 状态翻转走行内动作(audit/void);审核时间/审核人/录入人是系统字段;创建/更新时间表格已隐藏
+    exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt'],
+    fields: {
+      // 公司提到最前;建后不可换(update 动作不收 company_id)
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      // 方向新建必选默认「入库」,编辑态锁死(后端 StockDocDirectionLocked 同口径)
+      direction: { required: true, order: 0, cols: 6, defaultValue: 'IN', edit: 'createOnly' },
+      // 编号可留空自动取号(后端 AutoNumber:inv.stock_doc 编号规则),前端不标必填
+      docNo: { order: 1, cols: 6, placeholder: '留空自动编号' },
+      docDate: { order: 2, cols: 6, required: true },
+      // 仓候选限本公司启用叶子仓(与后端 WarehouseUsable 同口径,页面层按公司叠 filter)
+      warehouseId: { order: 3, required: true, label: '仓库' },
+      summary: { order: 4, label: '摘要', placeholder: '货从哪来/到哪去(带入库存分录)' },
+      remarks: { order: 5, label: '备注' },
+    },
+  },
+  invStockDocItems: { label: '出入库行' },
+  invStockTransfers: {
+    label: '手工调拨单',
+    contentClassName: 'w-full lg:w-[880px]',
+    // 状态流转走行内动作(ship/receive);各时间点/操作人是系统字段;创建/更新时间表格已隐藏
+    exclude: [
+      'status',
+      'shippedAt',
+      'shippedById',
+      'receivedAt',
+      'receivedById',
+      'createdById',
+      'insertedAt',
+      'updatedAt',
+    ],
+    fields: {
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      docNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      docDate: { order: 1, cols: 6, required: true },
+      // 三仓候选均限本公司启用叶子仓(后端 WarehouseUsable 同口径,页面层按公司叠 filter);
+      // 在途仓由页面层按公司种子仓("{code} - 在途")默认预填
+      fromWarehouseId: { order: 2, cols: 6, required: true, label: '调出仓库' },
+      toWarehouseId: { order: 3, cols: 6, required: true, label: '调入仓库' },
+      transitWarehouseId: { order: 4, cols: 6, required: true, label: '在途仓库' },
+      summary: { order: 5, label: '摘要' },
+      remarks: { order: 6, label: '备注' },
+    },
+  },
+  invStockTransferItems: { label: '手工调拨行' },
+  invStockEntries: { label: '库存分录' },
   hrPayrolls: {
     label: '工资单',
     fields: {

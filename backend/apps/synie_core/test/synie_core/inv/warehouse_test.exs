@@ -6,8 +6,8 @@ defmodule SynieCore.Inv.WarehouseTest do
   require Ash.Query
 
   alias SynieCore.Authz.Actor
-  alias SynieCore.Base.Account
-  alias SynieCore.Inv.Warehouse
+  alias SynieCore.Base.{Account, Unit}
+  alias SynieCore.Inv.{Material, MaterialCategory, StockDoc, StockDocItem, Warehouse}
 
   setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(SynieCore.Repo)
@@ -18,6 +18,45 @@ defmodule SynieCore.Inv.WarehouseTest do
     Warehouse
     |> Ash.Changeset.for_create(:create, attrs)
     |> Ash.create!(authorize?: false)
+  end
+
+  defp unit!(attrs),
+    do: Unit |> Ash.Changeset.for_create(:create, attrs) |> Ash.create!(authorize?: false)
+
+  defp material!(category, unit, attrs) do
+    Ash.Seed.seed!(
+      Material,
+      Map.merge(
+        %{code: "MAT-#{System.unique_integer([:positive])}", name: "螺丝"},
+        Map.merge(attrs, %{category_id: category.id, default_unit_id: unit.id})
+      )
+    )
+  end
+
+  # 建已审核手工出入库单(入库),让仓产生库存分录
+  defp stock_in!(company, warehouse, material, unit) do
+    doc =
+      StockDoc
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        warehouse_id: warehouse.id,
+        direction: :in,
+        doc_no: "CRK-#{System.unique_integer([:positive])}",
+        doc_date: ~D[2026-07-18]
+      })
+      |> Ash.create!(authorize?: false)
+
+    StockDocItem
+    |> Ash.Changeset.for_create(:create, %{
+      stock_doc_id: doc.id,
+      idx: 1,
+      material_id: material.id,
+      unit_id: unit.id,
+      qty: 2
+    })
+    |> Ash.create!(authorize?: false)
+
+    doc |> Ash.Changeset.for_update(:audit, %{}) |> Ash.update!(authorize?: false)
   end
 
   defp account!(attrs) do
@@ -272,6 +311,61 @@ defmodule SynieCore.Inv.WarehouseTest do
                  actor: actor(%{company_ids: []})
                )
                |> Ash.run_action()
+    end
+  end
+
+  describe "库存分录约束" do
+    setup %{company: co} do
+      kg = unit!(%{unit_type: :weight, name: "千克", symbol: "kg-wc", ratio: 1})
+
+      category =
+        MaterialCategory
+        |> Ash.Changeset.for_create(:create, %{
+          code: "WC#{System.unique_integer([:positive])}",
+          name: "原材料"
+        })
+        |> Ash.create!(authorize?: false)
+
+      %{kg: kg, material: material!(category, kg, %{})}
+    end
+
+    test "有分录(含已作废)的仓不能删除,无分录可删", %{company: co, kg: kg, material: mat} do
+      wh = warehouse!(%{name: "主仓", company_id: co.id})
+      doc = stock_in!(co, wh, mat, kg)
+
+      assert_raise Ash.Error.Invalid, ~r/仓库已有库存分录,不能删除/, fn ->
+        wh |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)
+      end
+
+      # 作废入库单后分录标记作废,仍是历史引用,同样禁删
+      doc |> Ash.Changeset.for_update(:void, %{}) |> Ash.update!(authorize?: false)
+
+      assert_raise Ash.Error.Invalid, ~r/仓库已有库存分录,不能删除/, fn ->
+        wh |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)
+      end
+
+      empty = warehouse!(%{name: "空仓", company_id: co.id})
+      :ok = empty |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)
+    end
+
+    test "有分录的仓不能改为非叶子,无分录可改", %{company: co, kg: kg, material: mat} do
+      wh = warehouse!(%{name: "主仓", company_id: co.id})
+      stock_in!(co, wh, mat, kg)
+
+      assert_raise Ash.Error.Invalid, ~r/仓库已有库存分录,不能改为非叶子/, fn ->
+        wh
+        |> Ash.Changeset.for_update(:update, %{is_leaf: false})
+        |> Ash.update!(authorize?: false)
+      end
+
+      empty = warehouse!(%{name: "空仓", company_id: co.id})
+
+      updated =
+        empty
+        |> Ash.Changeset.for_update(:update, %{is_leaf: false})
+        |> Ash.update!(authorize?: false)
+
+      refute updated.is_leaf
     end
   end
 

@@ -37,6 +37,9 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'inv.material_category': '物料分类',
   'inv.material': '物料',
   'inv.warehouse': '仓库',
+  'inv.stock_doc': '手工出入库单',
+  'inv.stock_transfer': '手工调拨单',
+  'inv.stock_entry': '库存分录',
   'sys.file': '附件',
   'sys.storage': '存储接入',
   'acc.gl_entry': '总账分录',
@@ -67,6 +70,8 @@ export const ACTION_LABELS: Record<string, string> = {
   void: '作废',
   close: '关闭',
   reverse: '红冲',
+  ship: '发货',
+  receive: '收货',
   reconcile: '对账',
   recalc: '重算',
 }

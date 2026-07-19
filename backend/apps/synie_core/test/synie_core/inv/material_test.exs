@@ -1,11 +1,22 @@
 defmodule SynieCore.Inv.MaterialTest do
   use ExUnit.Case, async: true
 
+  import SynieCore.AuthzFixtures
+
   require Ash.Query
 
   alias SynieCore.Authz.Actor
   alias SynieCore.Base.Unit
-  alias SynieCore.Inv.{Material, MaterialCategory, MaterialUnit}
+
+  alias SynieCore.Inv.{
+    Material,
+    MaterialCategory,
+    MaterialUnit,
+    StockDoc,
+    StockDocItem,
+    Warehouse
+  }
+
   alias SynieCore.Numbering.Rule
   alias SynieCore.Sales.Customer
 
@@ -14,6 +25,7 @@ defmodule SynieCore.Inv.MaterialTest do
 
     n = System.unique_integer([:positive])
     leaf = category!(%{code: "01#{n}", name: "原材料"})
+
     # 不抢 is_base(每类型全局唯一,async 测试会撞);物料测试不依赖基准单位语义
     kg = unit!(%{unit_type: :weight, name: "千克#{n}", symbol: "kg#{n}", ratio: 1})
     pcs = unit!(%{unit_type: :quantity, name: "只#{n}", symbol: "p#{n}", ratio: 1})
@@ -93,6 +105,37 @@ defmodule SynieCore.Inv.MaterialTest do
 
   defp actor(permissions) do
     %Actor{user_id: Ash.UUID.generate(), permissions: MapSet.new(permissions)}
+  end
+
+  # 建已审核手工出入库单(入库),让物料产生库存分录
+  defp stock_in!(company, material, unit) do
+    warehouse =
+      Warehouse
+      |> Ash.Changeset.for_create(:create, %{name: "主仓", company_id: company.id})
+      |> Ash.create!(authorize?: false)
+
+    doc =
+      StockDoc
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        warehouse_id: warehouse.id,
+        direction: :in,
+        doc_no: "CRK-#{System.unique_integer([:positive])}",
+        doc_date: ~D[2026-07-18]
+      })
+      |> Ash.create!(authorize?: false)
+
+    StockDocItem
+    |> Ash.Changeset.for_create(:create, %{
+      stock_doc_id: doc.id,
+      idx: 1,
+      material_id: material.id,
+      unit_id: unit.id,
+      qty: 2
+    })
+    |> Ash.create!(authorize?: false)
+
+    doc |> Ash.Changeset.for_update(:audit, %{}) |> Ash.update!(authorize?: false)
   end
 
   describe "编号" do
@@ -304,6 +347,40 @@ defmodule SynieCore.Inv.MaterialTest do
       assert_raise Ash.Error.Invalid, ~r/存在关联物料,不能删除/, fn ->
         cust |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)
       end
+    end
+  end
+
+  describe "库存分录约束" do
+    test "有分录的物料不能删除,无分录可删", %{leaf: leaf, kg: kg} do
+      m = material!(%{name: "螺丝", category_id: leaf.id, default_unit_id: kg.id})
+      stock_in!(company!(), m, kg)
+
+      assert_raise Ash.Error.Invalid, ~r/物料已有库存分录,不能删除/, fn ->
+        m |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)
+      end
+
+      m2 = material!(%{name: "螺母", category_id: leaf.id, default_unit_id: kg.id})
+      :ok = m2 |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false)
+    end
+
+    test "有分录改默认单位被拦,无分录可改", %{leaf: leaf, kg: kg, pcs: pcs} do
+      m = material!(%{name: "螺丝", category_id: leaf.id, default_unit_id: kg.id})
+      stock_in!(company!(), m, kg)
+
+      assert_raise Ash.Error.Invalid, ~r/物料已有库存分录,默认单位不可修改/, fn ->
+        m
+        |> Ash.Changeset.for_update(:update, %{default_unit_id: pcs.id})
+        |> Ash.update!(authorize?: false)
+      end
+
+      m2 = material!(%{name: "螺母", category_id: leaf.id, default_unit_id: kg.id})
+
+      updated =
+        m2
+        |> Ash.Changeset.for_update(:update, %{default_unit_id: pcs.id})
+        |> Ash.update!(authorize?: false)
+
+      assert updated.default_unit_id == pcs.id
     end
   end
 

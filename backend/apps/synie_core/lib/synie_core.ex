@@ -15,7 +15,10 @@ defmodule SynieCore do
       list SynieCore.Base.Currency, :bas_currencies, :read, paginate_with: :offset
       list SynieCore.Base.Account, :bas_accounts, :read, paginate_with: :offset
       list SynieCore.Base.MarketInstrument, :bas_market_instruments, :read, paginate_with: :offset
-      list SynieCore.Base.MarketPricePoint, :bas_market_price_points, :read, paginate_with: :offset
+
+      list SynieCore.Base.MarketPricePoint, :bas_market_price_points, :read,
+        paginate_with: :offset
+
       list SynieCore.Sales.Customer, :sal_customers, :read, paginate_with: :offset
       list SynieCore.Sales.Order, :sal_orders, :read, paginate_with: :offset
       list SynieCore.Sales.OrderItem, :sal_order_items, :read, paginate_with: :offset
@@ -34,6 +37,16 @@ defmodule SynieCore do
       list SynieCore.Inv.Material, :inv_materials, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialUnit, :inv_material_units, :read, paginate_with: :offset
       list SynieCore.Inv.Warehouse, :inv_warehouses, :read, paginate_with: :offset
+      list SynieCore.Inv.StockEntry, :inv_stock_entries, :read, paginate_with: :offset
+      list SynieCore.Inv.StockDoc, :inv_stock_docs, :read, paginate_with: :offset
+      list SynieCore.Inv.StockDocItem, :inv_stock_doc_items, :read, paginate_with: :offset
+      list SynieCore.Inv.StockTransfer, :inv_stock_transfers, :read, paginate_with: :offset
+
+      list SynieCore.Inv.StockTransferItem, :inv_stock_transfer_items, :read,
+        paginate_with: :offset
+
+      # 库存余额表:仓×物料聚合(未作废分录、截至日口径),不落库
+      action SynieCore.Inv.StockEntry, :inv_stock_balance, :stock_balance
       list SynieCore.Hr.AttendancePunch, :hr_attendance_punches, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceImport, :hr_attendance_imports, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceDay, :hr_attendance_days, :read, paginate_with: :offset
@@ -191,6 +204,28 @@ defmodule SynieCore do
       destroy SynieCore.Inv.Warehouse, :destroy_inv_warehouse, :destroy
       action SynieCore.Inv.Warehouse, :seed_inv_warehouse_defaults, :seed_defaults
 
+      # 手工出入库单:状态翻转走 audit/void 独立 mutation;单据行随单头权限码(同销售订单先例)
+      create SynieCore.Inv.StockDoc, :create_inv_stock_doc, :create
+      update SynieCore.Inv.StockDoc, :update_inv_stock_doc, :update
+      destroy SynieCore.Inv.StockDoc, :destroy_inv_stock_doc, :destroy
+      update SynieCore.Inv.StockDoc, :audit_inv_stock_doc, :audit
+      update SynieCore.Inv.StockDoc, :void_inv_stock_doc, :void
+
+      create SynieCore.Inv.StockDocItem, :create_inv_stock_doc_item, :create
+      update SynieCore.Inv.StockDocItem, :update_inv_stock_doc_item, :update
+      destroy SynieCore.Inv.StockDocItem, :destroy_inv_stock_doc_item, :destroy
+
+      # 调拨单:状态翻转走 ship/receive 独立 mutation;单据行随单头权限码(同手工出入库单先例)
+      create SynieCore.Inv.StockTransfer, :create_inv_stock_transfer, :create
+      update SynieCore.Inv.StockTransfer, :update_inv_stock_transfer, :update
+      destroy SynieCore.Inv.StockTransfer, :destroy_inv_stock_transfer, :destroy
+      update SynieCore.Inv.StockTransfer, :ship_inv_stock_transfer, :ship
+      update SynieCore.Inv.StockTransfer, :receive_inv_stock_transfer, :receive
+
+      create SynieCore.Inv.StockTransferItem, :create_inv_stock_transfer_item, :create
+      update SynieCore.Inv.StockTransferItem, :update_inv_stock_transfer_item, :update
+      destroy SynieCore.Inv.StockTransferItem, :destroy_inv_stock_transfer_item, :destroy
+
       # 考勤导入:create 即解析预览,import 执行(打卡记录无独立写 mutation),删除即整批撤销
       create SynieCore.Hr.AttendanceImport, :create_hr_attendance_import, :create
       update SynieCore.Hr.AttendanceImport, :import_hr_attendance_import, :import
@@ -320,6 +355,11 @@ defmodule SynieCore do
     resource SynieCore.Inv.Material
     resource SynieCore.Inv.MaterialUnit
     resource SynieCore.Inv.Warehouse
+    resource SynieCore.Inv.StockEntry
+    resource SynieCore.Inv.StockDoc
+    resource SynieCore.Inv.StockDocItem
+    resource SynieCore.Inv.StockTransfer
+    resource SynieCore.Inv.StockTransferItem
     resource SynieCore.Hr.AttendancePunch
     resource SynieCore.Hr.AttendanceImport
     resource SynieCore.Hr.AttendanceDay

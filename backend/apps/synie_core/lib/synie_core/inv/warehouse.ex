@@ -77,13 +77,69 @@ defmodule SynieCore.Inv.WarehouseAccount do
   end
 end
 
+defmodule SynieCore.Inv.WarehouseUsable do
+  @moduledoc """
+  校验库存单据仓:必须存在、属于单据公司、叶子仓且启用。
+
+  仓停用「拦新不拦旧」——新单据保存(create/update)与调拨发货(ship)时拦截,
+  审核/作废/调拨收货不再校验(ADR 2026-07-19-stock-ledger)。
+
+  默认读 changeset 的 warehouse_id/company_id 两属性(手工出入库单直接用);
+  `attribute` 选项换成其他仓属性(调拨单三仓逐个校验,错误落在对应字段)。
+  """
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, opts, _context) do
+    attribute = Keyword.get(opts, :attribute, :warehouse_id)
+    warehouse_id = Ash.Changeset.get_attribute(changeset, attribute)
+    company_id = Ash.Changeset.get_attribute(changeset, :company_id)
+
+    # nil 由 allow_nil? false 兜底报必填
+    if is_nil(warehouse_id) or is_nil(company_id) do
+      :ok
+    else
+      case check(warehouse_id, company_id) do
+        :ok -> :ok
+        {:error, message} -> {:error, field: attribute, message: message}
+      end
+    end
+  end
+
+  @doc """
+  单仓可用性检查:存在、同公司、叶子且启用,返回 :ok | {:error, 消息}。
+  调拨单发货在锁内逐仓复检(锁内无 changeset)也走此。
+  """
+  def check(warehouse_id, company_id) do
+    case Ash.get(SynieCore.Inv.Warehouse, warehouse_id, authorize?: false) do
+      {:ok, %{company_id: ^company_id, is_leaf: false}} ->
+        {:error, "只有叶子仓库才能发生库存"}
+
+      {:ok, %{company_id: ^company_id, active: false}} ->
+        {:error, "仓库已停用"}
+
+      {:ok, %{company_id: ^company_id}} ->
+        :ok
+
+      {:ok, _warehouse} ->
+        {:error, "仓库不属于本公司"}
+
+      {:error, _} ->
+        {:error, "仓库不存在"}
+    end
+  end
+end
+
 defmodule SynieCore.Inv.Warehouse do
   @moduledoc """
   仓库,对应 `inv_warehouse` 表。
 
   公司下的仓库树(名称同公司内唯一,创建后不允许换公司)。`is_leaf` 为硬约束:
-  叶子仓库不能挂子仓库,有下级的仓库不能改为叶子、不能删除。
-  `is_outsourced`/`allow_negative` 为占位字段,暂无逻辑;`account` 为关联科目(选填)。
+  叶子仓库不能挂子仓库,有下级的仓库不能改为叶子、不能删除;已有库存分录
+  (含已作废)的仓禁删、不能改回非叶子(分录只挂叶子仓,见库存分录 ADR)。
+  `is_outsourced` 为占位字段,暂无逻辑;`allow_negative` 在库存分录落地后生效
+  (负库存校验逐仓跳过,见 `SynieCore.Inv.Stock`);`account` 为关联科目(选填)。
   注意与科目 `is_group` 语义相反。
   """
 
@@ -179,6 +235,17 @@ defmodule SynieCore.Inv.Warehouse do
           :ok
         end
       end
+
+      # 已有库存分录(含已作废)的仓不能改回非叶子:分录只挂叶子仓,改非叶子即历史引用语义悬空
+      validate fn changeset, _context ->
+        if Ash.Changeset.changing_attribute?(changeset, :is_leaf) &&
+             Ash.Changeset.get_attribute(changeset, :is_leaf) == false &&
+             has_stock_entries?(changeset.data.id) do
+          {:error, field: :is_leaf, message: "仓库已有库存分录,不能改为非叶子"}
+        else
+          :ok
+        end
+      end
     end
 
     destroy :destroy do
@@ -188,6 +255,15 @@ defmodule SynieCore.Inv.Warehouse do
       validate fn changeset, _context ->
         if has_children?(changeset.data.id) do
           {:error, message: "存在下级仓库,不能删除"}
+        else
+          :ok
+        end
+      end
+
+      # 存在库存分录(含已作废——作废分录仍是历史引用)的仓禁删
+      validate fn changeset, _context ->
+        if has_stock_entries?(changeset.data.id) do
+          {:error, message: "仓库已有库存分录,不能删除"}
         else
           :ok
         end
@@ -207,6 +283,12 @@ defmodule SynieCore.Inv.Warehouse do
   defp has_children?(id) do
     __MODULE__
     |> Ash.Query.filter(parent_id == ^id)
+    |> Ash.exists?(authorize?: false)
+  end
+
+  defp has_stock_entries?(id) do
+    SynieCore.Inv.StockEntry
+    |> Ash.Query.filter(warehouse_id == ^id)
     |> Ash.exists?(authorize?: false)
   end
 
@@ -245,7 +327,7 @@ defmodule SynieCore.Inv.Warehouse do
       allow_nil? false
       public? true
       default false
-      description "允许负库存(占位,暂无逻辑)"
+      description "允许负库存(库存分录审核/作废的负库存校验逐仓跳过)"
     end
 
     create_timestamp :inserted_at, public?: true, description: "创建时间"

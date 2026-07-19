@@ -131,7 +131,9 @@ defmodule SynieCore.Base.MarketPriceTest do
     end
 
     j = instrument!()
-    assert :ok == (j |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false) && :ok)
+
+    assert :ok ==
+             (j |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy!(authorize?: false) && :ok)
   end
 
   test "取价:≤ 时点最近有效点,跳过已作废" do

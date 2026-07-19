@@ -58,3 +58,37 @@ else
 
   IO.puts("已创建物料编号规则(分类+客户编号-4 位序号)")
 end
+
+# 手工出入库单/手工调拨单编号规则:前缀 + 业务日期(YYYYMMDD) + "-" + 4 位序号,按公司计数。
+# 已有该资源规则(含用户改过的)则跳过,不覆盖。
+for {resource, name, prefix} <- [
+      {"inv.stock_doc", "手工出入库单编号", "CRK"},
+      {"inv.stock_transfer", "手工调拨单编号", "DB"}
+    ] do
+  existing =
+    Rule
+    |> Ash.Query.filter(resource == ^resource)
+    |> Ash.read!(authorize?: false)
+    |> List.first()
+
+  if existing do
+    IO.puts("#{name}规则已存在,跳过创建")
+  else
+    Rule
+    |> Ash.Changeset.for_create(:create, %{
+      resource: resource,
+      name: name,
+      segments: [
+        %{"type" => "text", "value" => prefix},
+        %{"type" => "field", "field" => "doc_date", "format" => "YYYYMMDD"},
+        %{"type" => "text", "value" => "-"},
+        %{"type" => "seq", "padding" => 4}
+      ],
+      per_company: true,
+      enabled: true
+    })
+    |> Ash.create!(authorize?: false)
+
+    IO.puts("已创建#{name}规则(#{prefix}+业务日期-4 位序号,按公司计数)")
+  end
+end

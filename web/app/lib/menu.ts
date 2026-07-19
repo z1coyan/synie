@@ -110,7 +110,15 @@ export const menuModules: MenuModule[] = [
           { label: '物料管理', path: '/scm/materials' },
           { label: '物料分类', path: '/scm/material-categories' },
           { label: '仓库管理', path: '/scm/warehouses' },
-          { label: '库存查询', path: '/scm/inventory' },
+        ],
+      },
+      {
+        label: '库存',
+        items: [
+          { label: '手工出入库单', path: '/scm/stock-docs' },
+          { label: '手工调拨单', path: '/scm/stock-transfers' },
+          { label: '库存余额', path: '/scm/inventory' },
+          { label: '库存分录', path: '/scm/stock-entries' },
         ],
       },
       {

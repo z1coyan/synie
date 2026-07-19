@@ -30,7 +30,11 @@ defmodule SynieCore.Base.MarketFetch.Sessions do
   人类可读的定时规则说明(供界面展示,与调度实现一致)。
   `interval_minutes` 取 30/60/120。
   """
-  def schedule_description(interval_minutes \\ 60, schedule_enabled \\ true, settlement_enabled \\ true) do
+  def schedule_description(
+        interval_minutes \\ 60,
+        schedule_enabled \\ true,
+        settlement_enabled \\ true
+      ) do
     interval = if interval_minutes in [30, 60, 120], do: interval_minutes, else: 60
 
     last =

@@ -237,6 +237,18 @@ defmodule SynieCore.Inv.Material do
       validate {SynieCore.Inv.MaterialCategoryIsLeaf, []}
       validate {SynieCore.Inv.MaterialDefaultUnitLocked, []}
       validate {SynieCore.Inv.MaterialCustomerLocked, []}
+
+      # 已有库存分录后默认单位锁死:分录数量恒为默认单位口径,改单位=篡改全部历史
+      # 分录语义(与「存在转换行不可改」并列,见 ADR 2026-07-19-stock-ledger)
+      validate fn changeset, _context ->
+        if Ash.Changeset.changing_attribute?(changeset, :default_unit_id) &&
+             has_stock_entries?(changeset.data.id) do
+          {:error, field: :default_unit_id, message: "物料已有库存分录,默认单位不可修改"}
+        else
+          :ok
+        end
+      end
+
       change {SynieCore.Inv.Material.ClearCustomerWhenGeneral, []}
       validate {SynieCore.Inv.MaterialCustomerFields, []}
     end
@@ -245,6 +257,15 @@ defmodule SynieCore.Inv.Material do
       # 转换子表行随物料级联删(DB reference on_delete: :delete);附件不级联,与全站一致
       primary? true
       require_atomic? false
+
+      # 存在库存分录(含已作废——作废分录仍是历史引用)的物料禁删
+      validate fn changeset, _context ->
+        if has_stock_entries?(changeset.data.id) do
+          {:error, message: "物料已有库存分录,不能删除"}
+        else
+          :ok
+        end
+      end
     end
   end
 
@@ -344,5 +365,11 @@ defmodule SynieCore.Inv.Material do
       |> Ash.exists?(authorize?: false)
 
     order_hit? or quotation_hit?
+  end
+
+  defp has_stock_entries?(material_id) do
+    SynieCore.Inv.StockEntry
+    |> Ash.Query.filter(material_id == ^material_id)
+    |> Ash.exists?(authorize?: false)
   end
 end

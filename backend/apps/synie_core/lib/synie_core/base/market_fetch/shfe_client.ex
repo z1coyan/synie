@@ -15,7 +15,8 @@ defmodule SynieCore.Base.MarketFetch.ShfeClient do
   返回 `{:ok, %{price, delivery_month, close, open_interest, volume, report_date}}`
   或 `{:error, :not_available}`(非交易日/尚未发布)、`{:error, String.t()}`。
   """
-  @spec fetch_settlement(String.t(), Date.t()) :: {:ok, map()} | {:error, :not_available | String.t()}
+  @spec fetch_settlement(String.t(), Date.t()) ::
+          {:ok, map()} | {:error, :not_available | String.t()}
   def fetch_settlement(product_group, %Date{} = trade_date)
       when is_binary(product_group) do
     group = product_group |> String.trim() |> String.downcase()
