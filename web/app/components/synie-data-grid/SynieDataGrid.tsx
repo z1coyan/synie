@@ -115,6 +115,11 @@ export interface SynieDataGridProps {
   fixedFilter?: Record<string, unknown>
   /** fk join 追加取回的关系字段,按 relation 名配置(如 { category: ['code'] });供列 render override 展示 */
   joinFields?: Record<string, string[]>
+  /**
+   * 列以外还要取回的标量字段(不进表格展示,进 results 行数据)。
+   * 选择器确认后要带 id 之外的业务键(如 materialId/unitId)时用。
+   */
+  extraFields?: string[]
   /** 初始排序(如流水页按交易时间倒序);仅作初值,用户点表头后照常接管 */
   defaultSort?: SortState
   /** 初始列筛选(如报表下钻带条件跳转);仅作初值,用户可照常改/清,变更预置条件需换 key 重挂 */
@@ -283,6 +288,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     ? `[{field: ${toSortField(props.tree.sort.field)}, order: ${props.tree.sort.order}}]`
     : null
   const treeExtraFields = treeMode ? [parentField, hasChildrenField] : undefined
+  const queryExtraFields = [...new Set([...(treeExtraFields ?? []), ...(props.extraFields ?? [])])]
+  const queryExtraFieldsOrUndef = queryExtraFields.length > 0 ? queryExtraFields : undefined
 
   const [expanded, setExpanded] = useState<Selection>(new Set())
   const [childrenByParent, setChildrenByParent] = useState<Map<string, Row[]>>(new Map())
@@ -315,7 +322,17 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   }, [fixedFilterLiteral])
 
   const rowsQuery = useQuery({
-    queryKey: ['gridRows', resource, treeActive, page, pageSize, effectiveSortLiteral, effectiveFilterLiteral],
+    queryKey: [
+      'gridRows',
+      resource,
+      treeActive,
+      page,
+      pageSize,
+      effectiveSortLiteral,
+      effectiveFilterLiteral,
+      // extraFields 影响 results 形状,进 key 防与无 extra 的列表缓存串味
+      queryExtraFieldsOrUndef?.slice().sort().join(',') ?? '',
+    ],
     enabled: !!meta.data,
     placeholderData: keepPreviousData,
     queryFn: () => {
@@ -324,7 +341,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         offset: treeActive ? 0 : (page - 1) * pageSize,
         sortLiteral: effectiveSortLiteral,
         filterLiteral: effectiveFilterLiteral,
-        extraFields: treeExtraFields,
+        extraFields: queryExtraFieldsOrUndef,
         joinFields: props.joinFields,
       })
       return gqlFetch<Record<string, { count: number; results: Row[] }>>(query).then((d) => d[resource])
@@ -347,7 +364,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       offset: 0,
       sortLiteral: treeSortLiteral,
       filterLiteral: childFilterLiteral,
-      extraFields: treeExtraFields,
+      extraFields: queryExtraFieldsOrUndef,
       joinFields: props.joinFields,
     })
     gqlFetch<Record<string, { count: number; results: Row[] }>>(query)

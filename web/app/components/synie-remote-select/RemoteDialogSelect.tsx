@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button, CloseButton, Label, Modal } from '@heroui/react'
-import { SynieDataGrid } from '../synie-data-grid/SynieDataGrid'
-import type { Row } from '../synie-data-grid/types'
+import { SynieDataGrid, type ColumnOverride } from '../synie-data-grid/SynieDataGrid'
+import type { Row, SortState } from '../synie-data-grid/types'
 import { optionLabel, resolveSource } from './remote-query'
 import { useRemoteRecords } from './use-remote'
 import type { RemoteSelectProps } from './RemoteSelect'
@@ -12,6 +12,14 @@ export interface RemoteDialogSelectProps extends RemoteSelectProps {
   gridFilter?: Record<string, unknown>
   /** 弹窗表格显示列(有序白名单),缺省 meta 全列 */
   gridColumns?: string[]
+  /** 弹窗表格列覆盖(标签/渲染等),透传 SynieDataGrid overrides */
+  gridOverrides?: Record<string, ColumnOverride>
+  /** 弹窗表格初始排序 */
+  gridDefaultSort?: SortState
+  /** 列外取回字段(确认选中时要带 materialId 等业务键) */
+  gridExtraFields?: string[]
+  /** 弹窗宽度 class,默认 max-w-4xl */
+  dialogClassName?: string
 }
 
 export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
@@ -32,6 +40,10 @@ export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
     : props.value != null
       ? String(props.value).slice(0, 8)
       : null
+
+  const footerLabel = draft[0]
+    ? (props.renderValue?.(draft[0]) ?? optionLabel(src, draft[0]))
+    : '未选择'
 
   return (
     <>
@@ -59,7 +71,7 @@ export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
 
       <Modal.Backdrop isOpen={open} onOpenChange={setOpen}>
         <Modal.Container>
-          <Modal.Dialog className="max-w-4xl">
+          <Modal.Dialog className={props.dialogClassName ?? 'max-w-4xl'}>
             <Modal.Header>
               <Modal.Heading>{props.dialogTitle ?? `选择${props.label ?? ''}`}</Modal.Heading>
             </Modal.Header>
@@ -67,16 +79,17 @@ export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
               <SynieDataGrid
                 resource={src.resource}
                 columns={props.gridColumns}
+                overrides={props.gridOverrides}
                 fixedFilter={props.gridFilter}
+                defaultSort={props.gridDefaultSort}
+                extraFields={props.gridExtraFields}
                 pick="single"
                 pickedRows={draft}
                 onPickChange={setDraft}
               />
             </Modal.Body>
             <Modal.Footer>
-              <span className="mr-auto text-sm text-muted">
-                已选:{draft[0] ? optionLabel(src, draft[0]) : '未选择'}
-              </span>
+              <span className="mr-auto max-w-[50%] truncate text-sm text-muted">已选:{footerLabel}</span>
               <Button variant="secondary" onPress={() => setOpen(false)}>
                 取消
               </Button>

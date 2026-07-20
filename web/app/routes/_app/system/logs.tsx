@@ -49,6 +49,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   sal_customer: '客户',
   sal_order: '销售订单',
   sal_order_item: '销售订单条目',
+  sal_delivery: '销售发货单',
+  sal_delivery_item: '发货条目',
   sal_quotation: '销售报价单',
   sal_quotation_item: '销售报价条目',
   sal_quotation_tier: '报价价格档',

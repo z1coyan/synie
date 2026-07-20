@@ -19,9 +19,13 @@ interface PendingConfirm {
 
 /** 逐条执行仅吃 id 的 mutation(destroy/扩展工作流动作)。 */
 // ponytail: 前端逐条循环,量大或需事务性时后端加 Ash bulk action 再切
-async function runIdMutation(mutation: string, ids: string[]): Promise<{ ok: number; fail: number }> {
+async function runIdMutation(
+  mutation: string,
+  ids: string[]
+): Promise<{ ok: number; fail: number; messages: string[] }> {
   let ok = 0
   let fail = 0
+  const messages: string[] = []
   for (const id of ids) {
     try {
       const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
@@ -29,13 +33,39 @@ async function runIdMutation(mutation: string, ids: string[]): Promise<{ ok: num
         { id }
       )
       const errors = data[mutation]?.errors
-      if (errors && errors.length > 0) fail += 1
-      else ok += 1
-    } catch {
+      if (errors && errors.length > 0) {
+        fail += 1
+        // 业务校验(负库存/超发/科目等)走 payload.errors,逐条汇总给用户
+        for (const e of errors) {
+          if (e.message) messages.push(e.message)
+        }
+      } else {
+        ok += 1
+      }
+    } catch (e) {
+      // GraphQL 顶层错误(gqlFetch 抛 GqlError)或网络异常
       fail += 1
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg) messages.push(msg)
     }
   }
-  return { ok, fail }
+  return { ok, fail, messages }
+}
+
+/** toast 描述:有具体原因则优先列出(去重,条数多时截断) */
+function failureDescription(fail: number, ok: number, messages: string[]): string {
+  const unique = [...new Set(messages.map((m) => m.trim()).filter(Boolean))]
+  const reasons =
+    unique.length === 0
+      ? ''
+      : unique.length <= 3
+        ? unique.join('；')
+        : `${unique.slice(0, 3).join('；')}…(共 ${unique.length} 条原因)`
+  // 单条失败:只报原因,不说「共 1 条均未执行成功」
+  if (ok === 0 && fail === 1) return reasons || '操作未成功'
+  if (ok === 0) return reasons ? `共 ${fail} 条失败: ${reasons}` : `共 ${fail} 条均未执行成功`
+  const summary = `成功 ${ok} 条,失败 ${fail} 条`
+  return reasons ? `${summary}。${reasons}` : summary
 }
 
 export function useGridActions(opts: {
@@ -72,11 +102,18 @@ export function useGridActions(opts: {
       isDanger,
       rows,
       execute: async (rs) => {
-        const { ok, fail } = await runIdMutation(mutation, rs.map((r) => r.id))
+        const { ok, fail, messages } = await runIdMutation(
+          mutation,
+          rs.map((r) => r.id)
+        )
         // 三分支:全部成功 / 整批失败(下方 ok>0 门控自然不 refetch)/ 部分失败
         if (fail === 0) toast.success(`${label}成功(${ok} 条)`)
-        else if (ok === 0) toast.danger(`${label}失败`, { description: `共 ${fail} 条均未执行成功` })
-        else toast.danger(`${label}部分失败`, { description: `成功 ${ok} 条,失败 ${fail} 条` })
+        else if (ok === 0)
+          toast.danger(`${label}失败`, { description: failureDescription(fail, ok, messages) })
+        else
+          toast.danger(`${label}部分失败`, {
+            description: failureDescription(fail, ok, messages),
+          })
         if (ok > 0) {
           refetch()
           clearSelection()

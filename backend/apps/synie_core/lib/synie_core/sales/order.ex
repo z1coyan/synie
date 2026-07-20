@@ -329,7 +329,7 @@ end
 defmodule SynieCore.Sales.Order do
   @moduledoc """
   销售订单(头),对应 `sal_order` 表。公司向客户承诺供货的订货单据,纯业务承诺:
-  审核不派生 GL 分录也不动库存,履行(发货/开票)由将来的下游模块承载。
+  审核不派生 GL 分录也不动库存;实物出库与未开票应收由销售发货单承载,开票仍由发票模块承载。
 
   订单分型(`order_type`,新建时可选、建后锁死):常规订单条目必须挂有效报价条目,
   物料/单位/单价由报价派生;样品订单条目不挂报价,数量受 `sal_setting` 样品上限约束。
@@ -604,14 +604,33 @@ defmodule SynieCore.Sales.Order do
         if changeset.data.status == :audited, do: :ok, else: {:error, message: "仅已审核订单可作废"}
       end
 
+      validate fn changeset, _context ->
+        if __MODULE__.has_active_deliveries?(changeset.data.id) do
+          {:error, message: "订单存在已审核发货,请先作废相关销售发货单"}
+        else
+          :ok
+        end
+      end
+
       change fn changeset, _context ->
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :voided)
         |> Ash.Changeset.before_action(fn cs ->
           # 权威复检:事务内 FOR UPDATE 重读,关闭并发竞态(与审核同根因)
           case __MODULE__.lock_order(cs.data.id) do
-            {:ok, %{status: :audited}} -> cs
-            _ -> Ash.Changeset.add_error(cs, message: "仅已审核订单可作废")
+            {:ok, %{status: :audited}} ->
+              if __MODULE__.has_active_deliveries?(cs.data.id) do
+                Ash.Changeset.add_error(cs, message: "订单存在已审核发货,请先作废相关销售发货单")
+              else
+                if __MODULE__.has_draft_deliveries?(cs.data.id) do
+                  Ash.Changeset.add_error(cs, message: "请先删除引用本订单的草稿销售发货单")
+                else
+                  cs
+                end
+              end
+
+            _ ->
+              Ash.Changeset.add_error(cs, message: "仅已审核订单可作废")
           end
         end)
       end
@@ -769,6 +788,22 @@ defmodule SynieCore.Sales.Order do
   def has_items?(order_id) do
     SynieCore.Sales.OrderItem
     |> Ash.Query.filter(order_id == ^order_id)
+    |> Ash.exists?(authorize?: false)
+  end
+
+  @doc false
+  # 存在已审核未作废的发货引用本订单任一条目时,订单不可作废
+  def has_active_deliveries?(order_id) do
+    SynieCore.Sales.DeliveryItem
+    |> Ash.Query.filter(order_item.order_id == ^order_id and delivery.status == :audited)
+    |> Ash.exists?(authorize?: false)
+  end
+
+  @doc false
+  # 草稿发货仍引用本订单时,作废订单会让草稿行失效——要求先删草稿发货
+  def has_draft_deliveries?(order_id) do
+    SynieCore.Sales.DeliveryItem
+    |> Ash.Query.filter(order_item.order_id == ^order_id and delivery.status == :draft)
     |> Ash.exists?(authorize?: false)
   end
 end

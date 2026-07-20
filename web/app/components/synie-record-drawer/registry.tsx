@@ -361,6 +361,77 @@ const registry: Record<string, ResourceDrawerConfig> = {
     },
   },
   invStockDocItems: { label: '出入库行' },
+  salDeliveries: {
+    label: '销售发货单',
+    contentClassName: 'w-full lg:w-[960px]',
+    exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt'],
+    fields: {
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      deliveryNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      deliveryDate: { order: 1, cols: 6, required: true },
+      postingDate: { order: 2, cols: 6, label: '过账日期' },
+      partyType: {
+        order: 3,
+        cols: 6,
+        required: true,
+        label: '对手类型',
+        effects: () => ({ partyId: null }),
+        input: ({ value, onChange, isDisabled }) => (
+          <Select
+            isDisabled={isDisabled}
+            isRequired
+            value={value == null || value === '' ? null : String(value)}
+            onChange={(v) => onChange(v === '' ? null : v)}
+          >
+            <Label>对手类型</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item key="CUSTOMER" id="CUSTOMER" textValue="客户">
+                  客户
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                <ListBox.Item key="COMPANY" id="COMPANY" textValue="内部公司">
+                  内部公司
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        ),
+      },
+      partyId: {
+        order: 4,
+        cols: 6,
+        required: true,
+        label: '对手',
+        visible: (values) => values.partyType === 'CUSTOMER' || values.partyType === 'COMPANY',
+        input: ({ value, onChange, isDisabled, values }) => {
+          const isCompany = values.partyType === 'COMPANY'
+          return (
+            <RemoteSelect
+              resource={isCompany ? 'basCompanies' : 'salCustomers'}
+              label="对手"
+              placeholder={isCompany ? '选择内部公司…' : '选择客户…'}
+              value={value == null ? null : String(value)}
+              onChange={(id) => onChange(id)}
+              isDisabled={isDisabled}
+            />
+          )
+        },
+      },
+      warehouseId: { order: 5, cols: 6, label: '默认仓库(可空)' },
+      debitAccountId: { order: 6, cols: 6, label: '借方科目(未开票应收)' },
+      creditAccountId: { order: 7, cols: 6, label: '贷方科目' },
+      remarks: { order: 8, label: '备注' },
+    },
+  },
+  salDeliveryItems: { label: '发货条目' },
   invStockTransfers: {
     label: '手工调拨单',
     contentClassName: 'w-full lg:w-[880px]',

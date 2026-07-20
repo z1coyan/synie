@@ -31,7 +31,8 @@ defmodule SynieCore.Inv.Stock do
     %{
       "inv.stock_doc" => {SynieCore.Inv.StockDoc, "手工出入库单"},
       "inv.stock_transfer" => {SynieCore.Inv.StockTransfer, "手工调拨单"},
-      "inv.stock_count" => {SynieCore.Inv.StockCount, "库存盘点单"}
+      "inv.stock_count" => {SynieCore.Inv.StockCount, "库存盘点单"},
+      "sales.delivery" => {SynieCore.Sales.Delivery, "销售发货单"}
     }
   end
 

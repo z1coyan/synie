@@ -24,6 +24,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'base.market_price': '行情价点',
   'sales.customer': '客户',
   'sales.order': '销售订单',
+  'sales.delivery': '销售发货单',
   'sales.quotation': '销售报价单',
   'sales.setting': '销售设置',
   'purchase.supplier': '供应商',

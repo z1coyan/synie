@@ -26,6 +26,7 @@ const GRID_COLUMNS = [
   'materialSpec',
   'unitName',
   'qty',
+  'shippedQty',
   'currencyCode',
   'basePrice',
   'price',
@@ -62,6 +63,8 @@ function buildOverrides(openDrawer: OpenOrderDrawer) {
       label: '状态',
       enumColors: { DRAFT: 'default', AUDITED: 'success', CLOSED: 'warning', VOIDED: 'danger' },
     },
+    // 已发数量为默认单位口径(销售发货审核/作废同步)
+    shippedQty: { label: '已发数量' },
     // 双币金额列(定案顺序:本币单价、原币单价、本币金额、原币金额);本币单价 4 位精度
     basePrice: { label: '本币单价', render: (v: unknown) => formatPrice(v) },
     price: { label: '原币单价', render: (v: unknown) => formatPrice(v) },

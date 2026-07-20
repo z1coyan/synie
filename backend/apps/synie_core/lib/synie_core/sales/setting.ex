@@ -2,7 +2,7 @@ defmodule SynieCore.Sales.Setting do
   @moduledoc """
   销售设置,对应 `sal_setting` 单行表:销售域全局配置(非公司维度)统一加字段进这张表,
   不另建配置表。行由迁移 seed、恒存在——不开放 create/destroy,只有 read/update。
-  当前字段:样品订单条目数量上限(样品行建行与订单审核复核同卡)。
+  当前字段:样品订单单行数量上限、发货超发比例(发货审核时卡累计已发)。
   """
 
   use Ash.Resource,
@@ -20,6 +20,10 @@ defmodule SynieCore.Sales.Setting do
       check_constraint :sample_item_max_qty, "sample_item_max_qty_positive",
         check: "sample_item_max_qty > 0",
         message: "样品条目数量上限必须大于零"
+
+      check_constraint :delivery_overship_ratio, "delivery_overship_ratio_range",
+        check: "delivery_overship_ratio >= 0 AND delivery_overship_ratio <= 1",
+        message: "发货超发比例必须在 0(含)与 1(含)之间"
     end
   end
 
@@ -46,7 +50,7 @@ defmodule SynieCore.Sales.Setting do
     end
 
     update :update do
-      accept [:sample_item_max_qty]
+      accept [:sample_item_max_qty, :delivery_overship_ratio]
 
       require_atomic? false
     end
@@ -54,6 +58,12 @@ defmodule SynieCore.Sales.Setting do
 
   validations do
     validate compare(:sample_item_max_qty, greater_than: 0), message: "样品条目数量上限必须大于零"
+
+    validate compare(:delivery_overship_ratio, greater_than_or_equal_to: 0),
+      message: "发货超发比例不能为负"
+
+    validate compare(:delivery_overship_ratio, less_than_or_equal_to: 1),
+      message: "发货超发比例不能超过 100%"
   end
 
   attributes do
@@ -64,6 +74,13 @@ defmodule SynieCore.Sales.Setting do
       default 100
       public? true
       description "样品订单条目数量上限"
+    end
+
+    attribute :delivery_overship_ratio, :decimal do
+      allow_nil? false
+      default Decimal.new(0)
+      public? true
+      description "发货超发比例(小数,0=禁超发,0.05=5%,上限 1)"
     end
 
     create_timestamp :inserted_at, public?: true, description: "创建时间"

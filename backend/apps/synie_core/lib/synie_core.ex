@@ -22,6 +22,8 @@ defmodule SynieCore do
       list SynieCore.Sales.Customer, :sal_customers, :read, paginate_with: :offset
       list SynieCore.Sales.Order, :sal_orders, :read, paginate_with: :offset
       list SynieCore.Sales.OrderItem, :sal_order_items, :read, paginate_with: :offset
+      list SynieCore.Sales.Delivery, :sal_deliveries, :read, paginate_with: :offset
+      list SynieCore.Sales.DeliveryItem, :sal_delivery_items, :read, paginate_with: :offset
       list SynieCore.Sales.Quotation, :sal_quotations, :read, paginate_with: :offset
       list SynieCore.Sales.QuotationItem, :sal_quotation_items, :read, paginate_with: :offset
       list SynieCore.Sales.QuotationTier, :sal_quotation_tiers, :read, paginate_with: :offset
@@ -163,6 +165,17 @@ defmodule SynieCore do
       create SynieCore.Sales.OrderItem, :create_sal_order_item, :create
       update SynieCore.Sales.OrderItem, :update_sal_order_item, :update
       destroy SynieCore.Sales.OrderItem, :destroy_sal_order_item, :destroy
+
+      # 销售发货单:审核派生库存+总账+已发数量;作废回滚;行随单头权限码
+      create SynieCore.Sales.Delivery, :create_sal_delivery, :create
+      update SynieCore.Sales.Delivery, :update_sal_delivery, :update
+      destroy SynieCore.Sales.Delivery, :destroy_sal_delivery, :destroy
+      update SynieCore.Sales.Delivery, :audit_sal_delivery, :audit
+      update SynieCore.Sales.Delivery, :void_sal_delivery, :void
+
+      create SynieCore.Sales.DeliveryItem, :create_sal_delivery_item, :create
+      update SynieCore.Sales.DeliveryItem, :update_sal_delivery_item, :update
+      destroy SynieCore.Sales.DeliveryItem, :destroy_sal_delivery_item, :destroy
 
       # 销售报价单:状态翻转走 audit/void 独立 mutation;条目与价格档随单头权限码
       create SynieCore.Sales.Quotation, :create_sal_quotation, :create
@@ -360,6 +373,8 @@ defmodule SynieCore do
     resource SynieCore.Sales.Customer
     resource SynieCore.Sales.Order
     resource SynieCore.Sales.OrderItem
+    resource SynieCore.Sales.Delivery
+    resource SynieCore.Sales.DeliveryItem
     resource SynieCore.Sales.Quotation
     resource SynieCore.Sales.QuotationItem
     resource SynieCore.Sales.QuotationTier

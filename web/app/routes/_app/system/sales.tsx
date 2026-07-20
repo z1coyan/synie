@@ -10,7 +10,7 @@ export const Route = createFileRoute('/_app/system/sales')({
 
 const SETTING_QUERY = `
   query {
-    salSetting { id sampleItemMaxQty }
+    salSetting { id sampleItemMaxQty deliveryOvershipRatio }
   }
 `
 const UPDATE_SETTING = `
@@ -19,34 +19,53 @@ const UPDATE_SETTING = `
   }
 `
 
+type SalSetting = {
+  id: string
+  sampleItemMaxQty: number
+  deliveryOvershipRatio: string | number
+}
+
 function SalesSettingsPage() {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: ['salSetting'],
-    queryFn: () => gqlFetch<{ salSetting: { id: string; sampleItemMaxQty: number } | null }>(SETTING_QUERY),
+    queryFn: () => gqlFetch<{ salSetting: SalSetting | null }>(SETTING_QUERY),
   })
 
   const [maxQty, setMaxQty] = useState<number>(NaN)
+  // 界面按百分比录入(0–100),落库小数 0–1
+  const [overshipPct, setOvershipPct] = useState<number>(NaN)
   const [saving, setSaving] = useState(false)
 
-  // 查询回填本地草稿(单行配置,页面即表单,同财务设置页先例)
   useEffect(() => {
-    if (query.data?.salSetting) setMaxQty(query.data.salSetting.sampleItemMaxQty)
+    if (!query.data?.salSetting) return
+    setMaxQty(query.data.salSetting.sampleItemMaxQty)
+    const ratio = Number(query.data.salSetting.deliveryOvershipRatio)
+    setOvershipPct(Number.isFinite(ratio) ? Math.round(ratio * 10000) / 100 : 0)
   }, [query.data])
 
   const save = async () => {
     if (!query.data?.salSetting) return
-    // 后端 check constraint/validation 兜底(>0 整数),这里做体验层拦截
     if (!Number.isInteger(maxQty) || maxQty <= 0) {
       toast.danger('样品条目数量上限必须是正整数')
       return
     }
+    if (!Number.isFinite(overshipPct) || overshipPct < 0 || overshipPct > 100) {
+      toast.danger('发货超发比例须在 0%–100% 之间')
+      return
+    }
     setSaving(true)
     try {
-      const data = await gqlFetch<{ updateSalSetting: { errors: { message: string }[] | null } }>(UPDATE_SETTING, {
-        id: query.data.salSetting.id,
-        input: { sampleItemMaxQty: maxQty },
-      })
+      const data = await gqlFetch<{ updateSalSetting: { errors: { message: string }[] | null } }>(
+        UPDATE_SETTING,
+        {
+          id: query.data.salSetting.id,
+          input: {
+            sampleItemMaxQty: maxQty,
+            deliveryOvershipRatio: String(overshipPct / 100),
+          },
+        },
+      )
       if (data.updateSalSetting.errors && data.updateSalSetting.errors.length > 0) {
         throw new Error(data.updateSalSetting.errors.map((e) => e.message).join('; '))
       }
@@ -62,7 +81,9 @@ function SalesSettingsPage() {
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">销售设置</h1>
-      <p className="mt-2 text-sm text-ink-500">销售模块全局配置(非公司维度)。样品订单条目自由录入,但单行数量不得越过上限。</p>
+      <p className="mt-2 text-sm text-ink-500">
+        销售模块全局配置(非公司维度)。样品上限与发货超发容差在此维护。
+      </p>
 
       <Card className="mt-6 max-w-2xl">
         <Card.Header>
@@ -79,23 +100,52 @@ function SalesSettingsPage() {
           ) : query.isError ? (
             <p className="text-sm text-danger">加载失败:{(query.error as Error).message}</p>
           ) : (
-            <div className="flex flex-col gap-4">
-              <NumberField fullWidth value={maxQty} onChange={setMaxQty} minValue={1}>
-                <Label>样品条目数量上限</Label>
-                {/* 库样式 group 给步进按钮留列;不渲染步进按钮时改单列让 input 撑满 */}
-                <NumberField.Group className="grid-cols-[1fr]">
-                  <NumberField.Input placeholder="如 100" />
-                </NumberField.Group>
-              </NumberField>
-              <div>
-                <Button isPending={saving} onPress={save}>
-                  保存
-                </Button>
-              </div>
-            </div>
+            <NumberField fullWidth value={maxQty} onChange={setMaxQty} minValue={1}>
+              <Label>样品条目数量上限</Label>
+              <NumberField.Group className="grid-cols-[1fr]">
+                <NumberField.Input placeholder="如 100" />
+              </NumberField.Group>
+            </NumberField>
           )}
         </Card.Content>
       </Card>
+
+      <Card className="mt-4 max-w-2xl">
+        <Card.Header>
+          <Card.Title>销售发货</Card.Title>
+          <Card.Description>
+            超发比例:审核时允许累计已发 ≤ 订购数量 × (1 + 比例)。0% 表示禁止超发。
+          </Card.Description>
+        </Card.Header>
+        <Card.Content>
+          {query.isLoading ? (
+            <div className="flex justify-center py-6">
+              <Spinner size="sm" />
+            </div>
+          ) : query.isError ? null : (
+            <NumberField
+              fullWidth
+              value={overshipPct}
+              onChange={setOvershipPct}
+              minValue={0}
+              maxValue={100}
+            >
+              <Label>发货超发比例(%)</Label>
+              <NumberField.Group className="grid-cols-[1fr]">
+                <NumberField.Input placeholder="如 0 或 5" />
+              </NumberField.Group>
+            </NumberField>
+          )}
+        </Card.Content>
+      </Card>
+
+      {!query.isLoading && !query.isError && (
+        <div className="mt-4">
+          <Button isPending={saving} onPress={save}>
+            保存
+          </Button>
+        </div>
+      )}
     </>
   )
 }

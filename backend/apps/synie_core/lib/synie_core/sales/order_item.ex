@@ -386,6 +386,10 @@ defmodule SynieCore.Sales.OrderItem do
       check_constraint :tax_rate, "tax_rate_range",
         check: "tax_rate >= 0 AND tax_rate < 1",
         message: "税率必须在 0(含)与 1 之间"
+
+      check_constraint :shipped_qty, "shipped_qty_nonnegative",
+        check: "shipped_qty >= 0",
+        message: "已发数量不能为负"
     end
   end
 
@@ -413,7 +417,8 @@ defmodule SynieCore.Sales.OrderItem do
 
   # 条目视图展示的订单头字段 calculation 白名单,GridMeta 只反射声明在列的 calculation
   # (opt-in 先例见 grid_actions/0、grid_capabilities/0)
-  def grid_calculations, do: [:order_date, :order_status, :party_type, :party_id, :currency_code]
+  def grid_calculations,
+    do: [:order_date, :order_status, :party_type, :party_id, :currency_code, :remaining_base_qty]
 
   # 头字段 party_id 是订单上的多态引用(经 calculation 暴露,判别字段 party_type 同为
   # calculation),声明给 GridMeta 反射成多态 fk 列;variants 与 Order.poly_refs/0 完全一致
@@ -468,6 +473,8 @@ defmodule SynieCore.Sales.OrderItem do
       change {SynieCore.Sales.OrderItem.DeriveQuotation, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
       validate {SynieCore.Sales.MaterialCustomerAllowed, []}
+      # 折默认单位数量:与已发 shipped_qty 同口径,供剩余可发筛选与发货超发校验
+      change {SynieCore.Inv.StockItemBaseQty, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
       change {SynieCore.Sales.SnapshotMaterial, []}
       change {SynieCore.Sales.OrderItem.SyncDrawings, []}
@@ -481,6 +488,7 @@ defmodule SynieCore.Sales.OrderItem do
       change {SynieCore.Sales.OrderItem.DeriveQuotation, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
       validate {SynieCore.Sales.MaterialCustomerAllowed, []}
+      change {SynieCore.Inv.StockItemBaseQty, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
       change {SynieCore.Sales.SnapshotMaterial, []}
       change {SynieCore.Sales.OrderItem.SyncDrawings, []}
@@ -503,6 +511,26 @@ defmodule SynieCore.Sales.OrderItem do
       require_atomic? false
 
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}
+    end
+
+    # 内部动作:销售发货审核/作废时加减已发数量(默认单位)。调用方须已 FOR UPDATE
+    # 锁住本行,并完成超发校验;不注册 GraphQL。
+    update :adjust_shipped_qty do
+      accept []
+      require_atomic? false
+      argument :delta, :decimal, allow_nil?: false
+
+      change fn changeset, _context ->
+        delta = Ash.Changeset.get_argument(changeset, :delta)
+        current = changeset.data.shipped_qty || Decimal.new(0)
+        next = Decimal.add(current, delta)
+
+        if Decimal.compare(next, 0) == :lt do
+          Ash.Changeset.add_error(changeset, field: :shipped_qty, message: "已发数量不能为负")
+        else
+          Ash.Changeset.force_change_attribute(changeset, :shipped_qty, next)
+        end
+      end
     end
   end
 
@@ -527,6 +555,24 @@ defmodule SynieCore.Sales.OrderItem do
       allow_nil? false
       public? true
       description "数量"
+    end
+
+    # 订购数量折默认单位(系统算,与库存/已发同口径);StockItemBaseQty 写入
+    attribute :base_qty, :decimal do
+      allow_nil? false
+      writable? false
+      default Decimal.new(0)
+      public? true
+      description "订购数量(物料默认单位,系统折算)"
+    end
+
+    # 默认单位口径的已发累计:由销售发货审核/作废同步加减(投影列,见 ADR 2026-07-20)
+    attribute :shipped_qty, :decimal do
+      allow_nil? false
+      writable? false
+      default Decimal.new(0)
+      public? true
+      description "已发数量(物料默认单位,系统维护)"
     end
 
     attribute :price, :decimal do
@@ -682,6 +728,12 @@ defmodule SynieCore.Sales.OrderItem do
     calculate :currency_code, :string, expr(order.currency.iso_code) do
       public? true
       description "币种"
+    end
+
+    # 未发数量(默认单位)=订购 base − 已发;发货选条目筛 remaining_base_qty > 0
+    calculate :remaining_base_qty, :decimal, expr(base_qty - shipped_qty) do
+      public? true
+      description "未发数量(物料默认单位)"
     end
   end
 end
