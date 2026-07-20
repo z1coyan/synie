@@ -82,6 +82,11 @@ defmodule SynieCore.Base.MarketPricePoint do
       authorize_if SynieCore.Authz.Checks.HasPermission
     end
 
+    # 图区只读投影(品种 chips / 时序)复用 read
+    policy action([:chart_instruments, :price_series]) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "read"}
+    end
+
     # 手动刷新复用 create(本质是批量录入拉取价点)
     policy action(:refresh) do
       authorize_if {SynieCore.Authz.Checks.HasPermission, as: "create"}
@@ -154,6 +159,32 @@ defmodule SynieCore.Base.MarketPricePoint do
           end
 
         SynieCore.Base.MarketFetch.refresh(opts)
+      end
+    end
+
+    action :chart_instruments, {:array, :map} do
+      description "行情图可勾选品种(启用品种轻量投影,需价点 read)"
+
+      run fn _input, _context ->
+        {:ok, SynieCore.Base.MarketChart.chart_instruments()}
+      end
+    end
+
+    action :price_series, :map do
+      description "多品种行情时序(价类×时间窗,仅未作废点,需价点 read)"
+
+      argument :instrument_ids, {:array, :uuid}, allow_nil?: false
+      argument :price_kind, SynieCore.Base.MarketPriceKind, allow_nil?: false
+      argument :from, :utc_datetime, allow_nil?: false
+      argument :to, :utc_datetime, allow_nil?: false
+
+      run fn input, _context ->
+        SynieCore.Base.MarketChart.price_series(
+          input.arguments.instrument_ids || [],
+          input.arguments.price_kind,
+          input.arguments.from,
+          input.arguments.to
+        )
       end
     end
   end

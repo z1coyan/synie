@@ -128,6 +128,10 @@ export const menuModules: MenuModule[] = [
           { label: '供应商管理', path: '/scm/suppliers' },
         ],
       },
+      {
+        label: '设置',
+        items: [{ label: '供应链设置', path: '/scm/settings' }],
+      },
     ],
   },
   {
@@ -148,10 +152,7 @@ export const menuModules: MenuModule[] = [
       },
       {
         label: '行情',
-        items: [
-          { label: '行情品种', path: '/base/market-instruments' },
-          { label: '行情价点', path: '/base/market-prices' },
-        ],
+        items: [{ label: '行情', path: '/base/market' }],
       },
       {
         label: '设置',
@@ -180,7 +181,6 @@ export const menuModules: MenuModule[] = [
         items: [
           { label: '编号规则', path: '/system/numbering' },
           { label: '财务设置', path: '/system/finance' },
-          { label: '销售设置', path: '/system/sales' },
         ],
       },
       {

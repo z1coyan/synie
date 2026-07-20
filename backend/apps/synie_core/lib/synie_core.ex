@@ -19,6 +19,10 @@ defmodule SynieCore do
       list SynieCore.Base.MarketPricePoint, :bas_market_price_points, :read,
         paginate_with: :offset
 
+      # 行情页图区:可绘图品种 + 多品种时序(价点 read 权限)
+      action SynieCore.Base.MarketPricePoint, :bas_market_chart_instruments, :chart_instruments
+      action SynieCore.Base.MarketPricePoint, :bas_market_price_series, :price_series
+
       list SynieCore.Sales.Customer, :sal_customers, :read, paginate_with: :offset
       list SynieCore.Sales.Order, :sal_orders, :read, paginate_with: :offset
       list SynieCore.Sales.OrderItem, :sal_order_items, :read, paginate_with: :offset
@@ -28,7 +32,7 @@ defmodule SynieCore do
       list SynieCore.Sales.QuotationItem, :sal_quotation_items, :read, paginate_with: :offset
       list SynieCore.Sales.QuotationTier, :sal_quotation_tiers, :read, paginate_with: :offset
 
-      # 销售设置是单行表,read_one 免分页(同 acc_setting 先例)
+      # 供应链设置(sal_setting)是单行表,read_one 免分页(同 acc_setting 先例)
       read_one SynieCore.Sales.Setting, :sal_setting, :read
 
       # 系统设置(行情拉取配置等);初始化旗标不经 GraphQL 写

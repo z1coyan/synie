@@ -14,6 +14,14 @@
   --accent: #12305e;
   --accent-foreground: #fafaf7;
 
+  /* 图表色板:高区分度多色(默认仅为 accent 明度阶且无 --chart-6,多系列对比分不清) */
+  --chart-1: #2563eb;
+  --chart-2: #d97706;
+  --chart-3: #059669;
+  --chart-4: #7c3aed;
+  --chart-5: #dc2626;
+  --chart-6: #0891b2;
+
   --synie-brand-ink: #0a1e3f;
   --synie-brand-ink-mid: #12305e;
   --synie-brand-porcelain: #fafaf7;
@@ -29,6 +37,14 @@
   /* 暗色下品牌 accent 略提亮,保证可点可读 */
   --accent: #6b8fc4;
   --accent-foreground: #0a1e3f;
+
+  /* 图表色板暗色对应提亮 */
+  --chart-1: #60a5fa;
+  --chart-2: #fbbf24;
+  --chart-3: #34d399;
+  --chart-4: #a78bfa;
+  --chart-5: #f87171;
+  --chart-6: #22d3ee;
 
   --synie-ink-900: #e8eaef;
   --synie-ink-800: #c5cad6;

@@ -88,7 +88,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   sys_numbering_counter: '编号计数器',
   acc_bank_reconciliation: '银行对账记录',
   acc_setting: '财务设置',
-  sal_setting: '销售设置',
+  sal_setting: '供应链设置',
 }
 
 // changes 键是 snake_case 属性名(后端 Track 落库);新字段接审计后在此补中文,漏了则原样显示

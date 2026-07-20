@@ -16,7 +16,7 @@ import type { Row } from '~/components/synie-data-grid/types'
  * 销售订单共享抽屉:布局层挂载一份,订单 tab(整单 grid)与订单条目 tab(行级 grid)
  * 经 context 调起同一个三态抽屉(条目表编辑/交易条款/提交 diff/审核流转动作完全一致)。
  * 订单分型:常规订单条目只能从有效报价条目挑选(物料/单位/单价随报价锁定带出,税率带入可改,
- * 数量梯度条目价保存时由后端按数量套档);样品订单条目自由录入,单行数量受销售设置上限约束。
+ * 数量梯度条目价保存时由后端按数量套档);样品订单条目自由录入,单行数量受供应链设置上限约束。
  * 类型建后锁死(后端 OrderTypeLocked 报错兜底,前端编辑态禁用)。
  */
 
@@ -286,7 +286,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
     retry: false,
     queryFn: () =>
       gqlFetch<{ salSetting: { id: string; sampleItemMaxQty: number } | null }>(FETCH_SAL_SETTING).catch((e) => {
-        if (!isForbidden(e)) console.warn('销售设置查询失败,样品数量上限客户端校验跳过:', (e as Error).message)
+        if (!isForbidden(e)) console.warn('供应链设置查询失败,样品数量上限客户端校验跳过:', (e as Error).message)
         return { salSetting: null }
       }),
   })

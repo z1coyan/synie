@@ -2,6 +2,7 @@ defmodule SynieCore.Base.MarketPriceTest do
   use ExUnit.Case, async: true
 
   alias SynieCore.Base.Currency
+  alias SynieCore.Base.MarketChart
   alias SynieCore.Base.MarketInstrument
   alias SynieCore.Base.MarketPricePoint
   alias SynieCore.Base.MarketQuote
@@ -171,5 +172,123 @@ defmodule SynieCore.Base.MarketPriceTest do
       |> Ash.Changeset.for_update(:void, %{})
       |> Ash.update!(authorize?: false)
     end
+  end
+
+  test "图区:chart_instruments 仅启用品种" do
+    on = instrument!(%{code: "ON#{System.unique_integer([:positive])}", active: true})
+    off = instrument!(%{code: "OFF#{System.unique_integer([:positive])}", active: false})
+
+    ids = MarketChart.chart_instruments() |> Enum.map(& &1["id"])
+    assert on.id in ids
+    refute off.id in ids
+  end
+
+  test "图区:price_series 同口径时序,跳过作废,骨架空点" do
+    c = currency!()
+    u = unit!()
+
+    a =
+      instrument!(%{
+        code: "A#{System.unique_integer([:positive])}",
+        currency_id: c.id,
+        unit_id: u.id
+      })
+
+    b =
+      instrument!(%{
+        code: "B#{System.unique_integer([:positive])}",
+        currency_id: c.id,
+        unit_id: u.id
+      })
+
+    point!(a, %{
+      observed_at: ~U[2026-07-01 00:00:00Z],
+      price: Decimal.new("100"),
+      price_kind: :settlement
+    })
+
+    voided =
+      point!(a, %{
+        observed_at: ~U[2026-07-02 00:00:00Z],
+        price: Decimal.new("999"),
+        price_kind: :settlement
+      })
+
+    voided
+    |> Ash.Changeset.for_update(:void, %{})
+    |> Ash.update!(authorize?: false)
+
+    point!(a, %{
+      observed_at: ~U[2026-07-03 00:00:00Z],
+      price: Decimal.new("110"),
+      price_kind: :settlement
+    })
+
+    # 最新价不进结算序列
+    point!(a, %{
+      observed_at: ~U[2026-07-03 12:00:00Z],
+      price: Decimal.new("111"),
+      price_kind: :last
+    })
+
+    assert {:ok, payload} =
+             MarketChart.price_series(
+               [a.id, b.id],
+               :settlement,
+               ~U[2026-07-01 00:00:00Z],
+               ~U[2026-07-10 00:00:00Z]
+             )
+
+    assert payload["priceKind"] == "settlement"
+    assert length(payload["series"]) == 2
+
+    sa = Enum.find(payload["series"], &(&1["instrumentId"] == a.id))
+    sb = Enum.find(payload["series"], &(&1["instrumentId"] == b.id))
+    assert length(sa["points"]) == 2
+    assert hd(sa["points"])["price"] == "100"
+    assert List.last(sa["points"])["price"] == "110"
+    assert sb["points"] == []
+  end
+
+  test "图区:异单位拒同图;超上限拒" do
+    c = currency!()
+    u1 = unit!()
+    u2 = unit!()
+
+    a =
+      instrument!(%{
+        code: "U1#{System.unique_integer([:positive])}",
+        currency_id: c.id,
+        unit_id: u1.id
+      })
+
+    b =
+      instrument!(%{
+        code: "U2#{System.unique_integer([:positive])}",
+        currency_id: c.id,
+        unit_id: u2.id
+      })
+
+    assert {:error, err} =
+             MarketChart.price_series(
+               [a.id, b.id],
+               :settlement,
+               ~U[2026-07-01 00:00:00Z],
+               ~U[2026-07-10 00:00:00Z]
+             )
+
+    assert Exception.message(err) =~ "同一币种"
+
+    ids = for _ <- 1..7, do: Ecto.UUID.generate()
+
+    assert {:error, err2} =
+             MarketChart.price_series(
+               ids,
+               :settlement,
+               ~U[2026-07-01 00:00:00Z],
+               ~U[2026-07-10 00:00:00Z]
+             )
+
+    assert Exception.message(err2) =~ "最多"
   end
 end

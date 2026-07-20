@@ -4,8 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 
-export const Route = createFileRoute('/_app/system/sales')({
-  component: SalesSettingsPage,
+export const Route = createFileRoute('/_app/scm/settings')({
+  component: ScmSettingsPage,
 })
 
 const SETTING_QUERY = `
@@ -25,7 +25,7 @@ type SalSetting = {
   deliveryOvershipRatio: string | number
 }
 
-function SalesSettingsPage() {
+function ScmSettingsPage() {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: ['salSetting'],
@@ -69,7 +69,7 @@ function SalesSettingsPage() {
       if (data.updateSalSetting.errors && data.updateSalSetting.errors.length > 0) {
         throw new Error(data.updateSalSetting.errors.map((e) => e.message).join('; '))
       }
-      toast.success('销售设置已保存')
+      toast.success('供应链设置已保存')
       queryClient.invalidateQueries({ queryKey: ['salSetting'] })
     } catch (e) {
       toast.danger('保存失败', { description: (e as Error).message })
@@ -80,9 +80,9 @@ function SalesSettingsPage() {
 
   return (
     <>
-      <h1 className="font-brand text-3xl tracking-wide">销售设置</h1>
+      <h1 className="font-brand text-3xl tracking-wide">供应链设置</h1>
       <p className="mt-2 text-sm text-ink-500">
-        销售模块全局配置(非公司维度)。样品上限与发货超发容差在此维护。
+        供应链全局配置(非公司维度)。样品上限与发货超发容差在此维护。
       </p>
 
       <Card className="mt-6 max-w-2xl">
