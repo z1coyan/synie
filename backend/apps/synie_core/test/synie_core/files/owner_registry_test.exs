@@ -12,6 +12,8 @@ defmodule SynieCore.Files.OwnerRegistryTest do
     assert {:ok, SynieCore.Acc.BankTransaction} = OwnerRegistry.resolve("acc_bank_transaction")
     # 订单条目的图纸挂接复制宿主
     assert {:ok, SynieCore.Sales.OrderItem} = OwnerRegistry.resolve("sal_order_item")
+    # 发货条目的图纸挂接复制宿主
+    assert {:ok, SynieCore.Sales.DeliveryItem} = OwnerRegistry.resolve("sal_delivery_item")
   end
 
   test "未知 owner_type 返回 :error(fail-closed)" do

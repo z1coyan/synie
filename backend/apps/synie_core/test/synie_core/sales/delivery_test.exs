@@ -7,6 +7,8 @@ defmodule SynieCore.Sales.DeliveryTest do
 
   alias SynieCore.Acc.GlEntry
   alias SynieCore.Base.{Account, Unit}
+  alias SynieCore.Files.Attachment
+  alias SynieCore.Files.File, as: StoredFile
   alias SynieCore.Inv.{Material, MaterialCategory, StockDoc, StockDocItem, StockEntry, Warehouse}
   alias SynieCore.Sales.{Customer, Delivery, DeliveryItem, Order, OrderItem, Setting}
 
@@ -390,5 +392,222 @@ defmodule SynieCore.Sales.DeliveryTest do
                credit_account_id: credit.id
              })
              |> Ash.create(authorize?: false)
+  end
+
+  # 给物料 drawing 槽位挂一张图纸,返回 sys_file
+  defp drawing!(material, filename \\ "图纸.pdf") do
+    file =
+      StoredFile
+      |> Ash.Changeset.for_create(:create, %{
+        storage: "test",
+        key: "test/#{System.unique_integer([:positive])}-#{filename}",
+        filename: filename
+      })
+      |> Ash.create!(authorize?: false)
+
+    Attachment
+    |> Ash.Changeset.for_create(:create, %{
+      file_id: file.id,
+      owner_type: "inv_material",
+      owner_id: material.id,
+      category: "drawing"
+    })
+    |> Ash.create!(authorize?: false)
+
+    file
+  end
+
+  defp item_drawings(item_id) do
+    Attachment
+    |> Ash.Query.filter(
+      owner_type == "sal_delivery_item" and owner_id == ^item_id and category == "drawing"
+    )
+    |> Ash.read!(authorize?: false)
+  end
+
+  defp drawing_file_ids(item_id),
+    do: item_drawings(item_id) |> Enum.map(& &1.file_id) |> Enum.sort()
+
+  describe "图纸挂接复制" do
+    test "创建行把物料 drawing 挂接复制到行(其他槽位不复制)", ctx do
+      f1 = drawing!(ctx.material, "a.pdf")
+      f2 = drawing!(ctx.material, "b.pdf")
+
+      other =
+        StoredFile
+        |> Ash.Changeset.for_create(:create, %{
+          storage: "test",
+          key: "test/#{System.unique_integer([:positive])}-x.pdf",
+          filename: "x.pdf"
+        })
+        |> Ash.create!(authorize?: false)
+
+      Attachment
+      |> Ash.Changeset.for_create(:create, %{
+        file_id: other.id,
+        owner_type: "inv_material",
+        owner_id: ctx.material.id,
+        category: "default"
+      })
+      |> Ash.create!(authorize?: false)
+
+      d =
+        delivery!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          debit_account_id: ctx.debit.id,
+          credit_account_id: ctx.credit.id
+        })
+
+      item =
+        line!(d, %{
+          order_item_id: ctx.order_item.id,
+          material_id: ctx.material.id,
+          unit_id: ctx.kg.id,
+          warehouse_id: ctx.warehouse.id
+        })
+
+      atts = item_drawings(item.id)
+      assert Enum.map(atts, & &1.file_id) |> Enum.sort() == Enum.sort([f1.id, f2.id])
+      assert Enum.all?(atts, &(&1.category == "drawing" and &1.company_id == ctx.company.id))
+    end
+
+    test "重存行整删整建跟随物料图纸增删", ctx do
+      f1 = drawing!(ctx.material, "a.pdf")
+      f2 = drawing!(ctx.material, "b.pdf")
+
+      d =
+        delivery!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          debit_account_id: ctx.debit.id,
+          credit_account_id: ctx.credit.id
+        })
+
+      item =
+        line!(d, %{
+          order_item_id: ctx.order_item.id,
+          material_id: ctx.material.id,
+          unit_id: ctx.kg.id,
+          warehouse_id: ctx.warehouse.id
+        })
+
+      assert drawing_file_ids(item.id) == Enum.sort([f1.id, f2.id])
+
+      Attachment
+      |> Ash.Query.filter(
+        owner_type == "inv_material" and owner_id == ^ctx.material.id and file_id == ^f1.id
+      )
+      |> Ash.read_one!(authorize?: false)
+      |> Ash.destroy!(authorize?: false)
+
+      f3 = drawing!(ctx.material, "c.pdf")
+
+      item
+      |> Ash.Changeset.for_update(:update, %{qty: 2})
+      |> Ash.update!(authorize?: false)
+
+      assert drawing_file_ids(item.id) == Enum.sort([f2.id, f3.id])
+    end
+
+    test "删除行清理其图纸挂接(物料挂接不动)", ctx do
+      f = drawing!(ctx.material)
+
+      d =
+        delivery!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          debit_account_id: ctx.debit.id,
+          credit_account_id: ctx.credit.id
+        })
+
+      item =
+        line!(d, %{
+          order_item_id: ctx.order_item.id,
+          material_id: ctx.material.id,
+          unit_id: ctx.kg.id,
+          warehouse_id: ctx.warehouse.id
+        })
+
+      assert drawing_file_ids(item.id) == [f.id]
+
+      :ok = item |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy(authorize?: false)
+
+      assert item_drawings(item.id) == []
+
+      material_atts =
+        Attachment
+        |> Ash.Query.filter(owner_type == "inv_material" and owner_id == ^ctx.material.id)
+        |> Ash.read!(authorize?: false)
+
+      assert Enum.map(material_atts, & &1.file_id) == [f.id]
+    end
+
+    test "删除草稿发货单(DB 级联删行)也清理行的图纸挂接", ctx do
+      f = drawing!(ctx.material)
+
+      d =
+        delivery!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          debit_account_id: ctx.debit.id,
+          credit_account_id: ctx.credit.id
+        })
+
+      item =
+        line!(d, %{
+          order_item_id: ctx.order_item.id,
+          material_id: ctx.material.id,
+          unit_id: ctx.kg.id,
+          warehouse_id: ctx.warehouse.id
+        })
+
+      assert drawing_file_ids(item.id) == [f.id]
+
+      :ok = d |> Ash.Changeset.for_destroy(:destroy) |> Ash.destroy(authorize?: false)
+
+      assert {:error, _} = Ash.get(DeliveryItem, item.id, authorize?: false)
+      assert item_drawings(item.id) == []
+    end
+
+    test "文件被行挂接时拒删;物料解除挂接后仍拒删(行还挂着)", ctx do
+      f = drawing!(ctx.material)
+
+      d =
+        delivery!(%{
+          company_id: ctx.company.id,
+          party_type: :customer,
+          party_id: ctx.customer.id,
+          debit_account_id: ctx.debit.id,
+          credit_account_id: ctx.credit.id
+        })
+
+      item =
+        line!(d, %{
+          order_item_id: ctx.order_item.id,
+          material_id: ctx.material.id,
+          unit_id: ctx.kg.id,
+          warehouse_id: ctx.warehouse.id
+        })
+
+      assert drawing_file_ids(item.id) == [f.id]
+
+      assert {:error, err} = Ash.destroy(f, authorize?: false)
+      assert Exception.message(err) =~ "仍有业务挂接"
+
+      Attachment
+      |> Ash.Query.filter(
+        owner_type == "inv_material" and owner_id == ^ctx.material.id and file_id == ^f.id
+      )
+      |> Ash.read_one!(authorize?: false)
+      |> Ash.destroy!(authorize?: false)
+
+      assert {:error, err2} = Ash.destroy(f, authorize?: false)
+      assert Exception.message(err2) =~ "仍有业务挂接"
+    end
   end
 end

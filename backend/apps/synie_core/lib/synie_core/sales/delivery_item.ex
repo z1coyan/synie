@@ -253,12 +253,92 @@ defmodule SynieCore.Sales.DeliveryItem.BindOrderItem do
   end
 end
 
+defmodule SynieCore.Sales.DeliveryItem.SyncDrawings do
+  @moduledoc """
+  图纸挂接复制:行 create/update 后把物料当前 drawing 槽位的 sys_file 同步为
+  行挂接(owner_type `sal_delivery_item`、category `drawing`);整删整建,
+  引用复制而非字节复制(同订单条目 `OrderItem.SyncDrawings` 先例)。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  alias SynieCore.Files.Attachment
+  alias SynieCore.Sales.DeliveryItem.ClearDrawings
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.after_action(changeset, fn _changeset, item ->
+      sync!(item)
+      {:ok, item}
+    end)
+  end
+
+  @doc false
+  def sync!(item) do
+    ClearDrawings.clear!(item.id)
+
+    Attachment
+    |> Ash.Query.filter(
+      owner_type == "inv_material" and owner_id == ^item.material_id and category == "drawing"
+    )
+    |> Ash.read!(authorize?: false)
+    |> Enum.each(fn %{file_id: file_id} ->
+      Attachment
+      |> Ash.Changeset.for_create(:create, %{
+        file_id: file_id,
+        owner_type: "sal_delivery_item",
+        owner_id: item.id,
+        category: "drawing",
+        company_id: item.company_id
+      })
+      |> Ash.create!(authorize?: false)
+    end)
+  end
+end
+
+defmodule SynieCore.Sales.DeliveryItem.ClearDrawings do
+  @moduledoc """
+  清理发货行的图纸挂接。attachment 与行无外键,行删挂接不会跟着删,
+  留着会让 sys_file 被 AttachmentGuard 永久锁死,故行 destroy 必须显式清。
+  注意:发货单删行走 DB 级联,本钩子不触发——单头清理见 `Delivery.ClearItemDrawings`。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  alias SynieCore.Files.Attachment
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.after_action(changeset, fn _changeset, item ->
+      clear!(item.id)
+      {:ok, item}
+    end)
+  end
+
+  @doc false
+  def clear!(item_id) do
+    Attachment
+    |> Ash.Query.filter(
+      owner_type == "sal_delivery_item" and owner_id == ^item_id and category == "drawing"
+    )
+    |> Ash.read!(authorize?: false)
+    |> Enum.each(&Ash.destroy!(&1, authorize?: false))
+  end
+end
+
 defmodule SynieCore.Sales.DeliveryItem do
   @moduledoc """
   销售发货条目,对应 `sal_delivery_item` 表。
 
   行必挂订单条目;单位限默认/转换单位,系统折算 base_qty;行仓必填;
-  行保存冻结物料快照与订单条目快照。权限复用 `sales.delivery`。
+  行保存冻结物料快照(编号/名称/规格/客户料号/单位名)与订单条目快照;
+  物料 drawing 槽位在行保存时复制挂接到行(见 `SyncDrawings`),
+  行/发货单删除时显式清理(见 `ClearDrawings` 与 `Delivery.ClearItemDrawings`)。
+  权限复用 `sales.delivery`。
   """
 
   use Ash.Resource,
@@ -363,6 +443,7 @@ defmodule SynieCore.Sales.DeliveryItem do
       validate {SynieCore.Inv.WarehouseUsable, []}
       change {SynieCore.Inv.StockItemBaseQty, []}
       change {SynieCore.Sales.SnapshotMaterial, []}
+      change {SynieCore.Sales.DeliveryItem.SyncDrawings, []}
     end
 
     update :update do
@@ -375,6 +456,7 @@ defmodule SynieCore.Sales.DeliveryItem do
       validate {SynieCore.Inv.WarehouseUsable, []}
       change {SynieCore.Inv.StockItemBaseQty, []}
       change {SynieCore.Sales.SnapshotMaterial, []}
+      change {SynieCore.Sales.DeliveryItem.SyncDrawings, []}
     end
 
     destroy :destroy do
@@ -382,6 +464,7 @@ defmodule SynieCore.Sales.DeliveryItem do
       require_atomic? false
 
       change {SynieCore.Sales.DeliveryItem.SyncDelivery, []}
+      change {SynieCore.Sales.DeliveryItem.ClearDrawings, []}
     end
   end
 

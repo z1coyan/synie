@@ -174,6 +174,37 @@ defmodule SynieCore.Sales.Delivery.CreditAccountOk do
   end
 end
 
+defmodule SynieCore.Sales.Delivery.ClearItemDrawings do
+  @moduledoc """
+  删发货单前显式清理所有行的图纸挂接:发货单删行走 DB 级联
+  (delivery_item postgres reference on_delete: :delete),DeliveryItem 的
+  destroy 钩子不触发,不清会让挂接的 sys_file 被 AttachmentGuard 永久锁死。
+  before_action 在动作事务内执行,清理与删单同生共死。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.before_action(changeset, fn cs ->
+      cs.data.id
+      |> item_ids()
+      |> Enum.each(&SynieCore.Sales.DeliveryItem.ClearDrawings.clear!/1)
+
+      cs
+    end)
+  end
+
+  defp item_ids(delivery_id) do
+    SynieCore.Sales.DeliveryItem
+    |> Ash.Query.filter(delivery_id == ^delivery_id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.map(& &1.id)
+  end
+end
+
 defmodule SynieCore.Sales.Delivery do
   @moduledoc """
   销售发货单(头),对应 `sal_delivery` 表。履约出库事实:审核同一事务内写负向
@@ -182,6 +213,7 @@ defmodule SynieCore.Sales.Delivery do
 
   生命周期:草稿→已审核→(已作废);仅草稿可改可删;无反审核/红冲/关闭态。
   单号全局唯一,留空按 `sales.delivery` 编号规则取号。行见 `DeliveryItem`。
+  删单前须清理行图纸挂接(见 `ClearItemDrawings`)。
   """
 
   use Ash.Resource,
@@ -335,6 +367,9 @@ defmodule SynieCore.Sales.Delivery do
           end
         end)
       end
+
+      # 行由 DB 级联删除(不走 DeliveryItem destroy 钩子),行的图纸挂接须在此显式清
+      change {SynieCore.Sales.Delivery.ClearItemDrawings, []}
     end
 
     update :audit do

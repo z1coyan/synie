@@ -69,6 +69,8 @@ function DeliveryItemsTab() {
       resource="salDeliveryItems"
       columns={GRID_COLUMNS}
       overrides={GRID_OVERRIDES}
+      // 行图纸:sys_attachment 挂接(owner_type sal_delivery_item / category drawing),与订单条目同机制
+      attachmentImages={{ ownerType: 'sal_delivery_item', category: 'drawing', label: '图纸' }}
       defaultSort={{ column: 'deliveryDate', direction: 'descending' }}
       // 开抽屉需要母单 id;不进展示列,经 extraFields 取回(避免 deliveryId 为 undefined 过滤报错)
       extraFields={['deliveryId']}
