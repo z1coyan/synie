@@ -102,7 +102,6 @@ export const menuModules: MenuModule[] = [
           { label: '采购订单', path: '/scm/purchase' },
           { label: '销售报价', path: '/scm/quotations' },
           { label: '销售订单', path: '/scm/sales-orders' },
-          { label: '销售发货', path: '/scm/sales-deliveries' },
         ],
       },
       {
@@ -116,6 +115,7 @@ export const menuModules: MenuModule[] = [
       {
         label: '库存',
         items: [
+          { label: '销售发货', path: '/scm/sales-deliveries' },
           { label: '其他库存单', path: '/scm/other-stock' },
           { label: '库存余额', path: '/scm/inventory' },
           { label: '库存分录', path: '/scm/stock-entries' },
