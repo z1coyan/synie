@@ -5,6 +5,7 @@ import { formatAmount, formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useOrderDrawer, type OpenOrderDrawer } from './-order-drawer'
+import { QtyProgressCell } from '../-qty-progress-cell'
 
 export const Route = createFileRoute('/_app/scm/sales-orders/items')({
   component: SalesOrderItemsTab,
@@ -25,8 +26,9 @@ const GRID_COLUMNS = [
   'materialName',
   'materialSpec',
   'unitName',
-  'qty',
-  'shippedQty',
+  // 数量/已发/未发并一列:列本体是未发数量计算列(筛选/排序即未发口径),
+  // 单元格进度条渲染,行数量与已发由 extraFields 补取
+  'remainingBaseQty',
   'currencyCode',
   'basePrice',
   'price',
@@ -63,8 +65,14 @@ function buildOverrides(openDrawer: OpenOrderDrawer) {
       label: '状态',
       enumColors: { DRAFT: 'default', AUDITED: 'success', CLOSED: 'warning', VOIDED: 'danger' },
     },
-    // 已发数量为默认单位口径(销售发货审核/作废同步)
-    shippedQty: { label: '已发数量' },
+    // 合并列:进度条展示 已发/数量·未发(折回行单位,见 QtyProgressCell);列筛选/排序=未发数量
+    remainingBaseQty: {
+      label: '发货进度',
+      align: 'start',
+      render: (_v: unknown, row: Row) => (
+        <QtyProgressCell row={row} doneField="shippedQty" labels={{ done: '已发', remaining: '未发' }} />
+      ),
+    },
     // 双币金额列(定案顺序:本币单价、原币单价、本币金额、原币金额);本币单价 4 位精度
     basePrice: { label: '本币单价', render: (v: unknown) => formatPrice(v) },
     price: { label: '原币单价', render: (v: unknown) => formatPrice(v) },
@@ -83,6 +91,8 @@ function SalesOrderItemsTab() {
       resource="salOrderItems"
       columns={GRID_COLUMNS}
       overrides={overrides}
+      // 合并进度列的取数(qty 行单位;baseQty/shippedQty 默认单位投影列)
+      extraFields={['qty', 'baseQty', 'shippedQty']}
       // 行图纸:sys_attachment 挂接(owner_type sal_order_item / category drawing),与物料页同机制的虚拟列
       attachmentImages={{ ownerType: 'sal_order_item', category: 'drawing', label: '图纸' }}
       // 默认订单日期倒序(新单在前);calc 列排序后端已验证支持
