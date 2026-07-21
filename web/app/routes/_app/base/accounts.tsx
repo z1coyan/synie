@@ -190,9 +190,14 @@ function AccountsPage() {
           code: { required: true, cols: 6, placeholder: '如 1001' },
           name: { required: true, cols: 6, placeholder: '如 库存现金' },
           direction: { required: true, cols: 6 },
-          isGroup: { cols: 6, defaultValue: false },
+          isGroup: {
+            cols: 6,
+            defaultValue: false,
+            // 勾成汇总后角色字段隐藏且不进 payload;联动清空草稿,避免用户误以为仍保留角色
+            effects: (v) => (v === true ? { role: null } : undefined),
+          },
           currencyId: { cols: 6, label: '币种' },
-          // 科目角色:应收应付报表按角色圈定科目;仅叶子科目可挂(汇总科目隐藏,后端另有校验兜底)
+          // 科目角色:应收应付报表按角色圈定科目;仅叶子科目可挂(汇总科目隐藏;后端转汇总时自动清 role)
           role: { cols: 6, visible: (v) => v.isGroup !== true },
           parentId: {
             cols: 6,
@@ -206,17 +211,19 @@ function AccountsPage() {
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
+          // 汇总时 role 字段不可见不进 collectValues;显式带 null,与后端 ClearGroupAccountRole 双保险
+          const input = values.isGroup === true ? { ...values, role: null } : values
           let errors: { message: string }[] | null
           if (mode === 'create') {
             const data = await gqlFetch<{ createBasAccount: { errors: { message: string }[] | null } }>(
               CREATE_ACCOUNT,
-              { input: { ...values, companyId } }
+              { input: { ...input, companyId } }
             )
             errors = data.createBasAccount.errors
           } else {
             const data = await gqlFetch<{ updateBasAccount: { errors: { message: string }[] | null } }>(
               UPDATE_ACCOUNT,
-              { id: drawer!.row!.id, input: values }
+              { id: drawer!.row!.id, input }
             )
             errors = data.updateBasAccount.errors
           }

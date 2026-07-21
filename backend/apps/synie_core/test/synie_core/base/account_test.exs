@@ -134,7 +134,7 @@ defmodule SynieCore.Base.AccountTest do
   end
 
   describe "科目角色" do
-    test "叶子科目可挂,汇总科目被拒", %{company: co} do
+    test "叶子科目可挂,汇总科目自动清空角色", %{company: co} do
       leaf =
         account!(%{
           code: "1122",
@@ -146,7 +146,8 @@ defmodule SynieCore.Base.AccountTest do
 
       assert leaf.role == :receivable
 
-      assert_raise Ash.Error.Invalid, ~r/汇总科目不能设置科目角色/, fn ->
+      # 创建时同时给汇总+角色:自动丢掉角色
+      group =
         account!(%{
           code: "1",
           name: "资产",
@@ -155,14 +156,18 @@ defmodule SynieCore.Base.AccountTest do
           role: :receivable,
           company_id: co.id
         })
-      end
 
-      # 已挂角色的科目改成汇总同样被拒
-      assert_raise Ash.Error.Invalid, ~r/汇总科目不能设置科目角色/, fn ->
+      assert group.is_group
+      assert group.role == nil
+
+      # 已挂角色的叶子改成汇总:自动清空角色(前端勾选汇总后角色不进 payload)
+      updated =
         leaf
         |> Ash.Changeset.for_update(:update, %{is_group: true})
         |> Ash.update!(authorize?: false)
-      end
+
+      assert updated.is_group
+      assert updated.role == nil
     end
 
     test "外币科目不能挂角色,人民币科目可以", %{company: co} do

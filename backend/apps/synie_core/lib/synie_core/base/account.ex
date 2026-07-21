@@ -38,10 +38,32 @@ defmodule SynieCore.Base.AccountRole do
     do: :credit
 end
 
+defmodule SynieCore.Base.ClearGroupAccountRole do
+  @moduledoc """
+  汇总科目不能挂角色:创建/更新为汇总时自动清空 role。
+
+  前端勾选「汇总科目」后角色字段会隐藏且不进 payload;若不主动清空,
+  校验仍读到库里的旧 role,会误报「汇总科目不能设置科目角色」。
+  见 docs/adr/2026-07-16-ar-ap-report.md。
+  """
+
+  use Ash.Resource.Change
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    if Ash.Changeset.get_attribute(changeset, :is_group) do
+      Ash.Changeset.force_change_attribute(changeset, :role, nil)
+    else
+      changeset
+    end
+  end
+end
+
 defmodule SynieCore.Base.AccountRoleGuard do
   @moduledoc """
   校验科目角色挂载条件:只允许叶子(非汇总)科目——分录只能记叶子,圈叶子即完备;
   外币科目不可挂——报表不做折算(均见 docs/adr/2026-07-16-ar-ap-report.md)。
+  汇总科目的 role 由 ClearGroupAccountRole 在校验前清空,本校验作兜底。
   """
 
   use Ash.Resource.Validation
@@ -197,6 +219,8 @@ defmodule SynieCore.Base.Account do
         :currency_id
       ]
 
+      # 汇总科目自动清 role,须在 AccountRoleGuard 之前
+      change {SynieCore.Base.ClearGroupAccountRole, []}
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Base.AccountParent, []}
       validate {SynieCore.Base.AccountRoleGuard, []}
@@ -207,6 +231,8 @@ defmodule SynieCore.Base.Account do
       accept [:code, :name, :direction, :is_group, :active, :role, :parent_id, :currency_id]
       require_atomic? false
 
+      # 汇总科目自动清 role,须在 AccountRoleGuard 之前
+      change {SynieCore.Base.ClearGroupAccountRole, []}
       validate {SynieCore.Base.AccountParent, []}
       validate {SynieCore.Base.AccountRoleGuard, []}
     end
