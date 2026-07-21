@@ -136,6 +136,8 @@ function ScmPurchaseSettingsTab() {
         </Card.Content>
       </Card>
 
+      <CompanyAccountDefaultsCard side="receipt" />
+
       {!query.isLoading && !query.isError && (
         <div className="mt-4">
           <Button isPending={saving} onPress={save}>
@@ -143,8 +145,6 @@ function ScmPurchaseSettingsTab() {
           </Button>
         </div>
       )}
-
-      <CompanyAccountDefaultsCard side="receipt" />
     </>
   )
 }
