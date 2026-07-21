@@ -123,6 +123,8 @@ const GRID_COLUMNS = [
 const GRID_OVERRIDES = {
   status: { enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger', REVERSED: 'warning' } },
   grossTotal: { render: (v: unknown) => formatAmount(v) },
+  // 列名缺省取后端 description(是给 API 看的整段说明),覆盖成短列名
+  salReconciliationId: { label: '关联对账单' },
 } satisfies Record<string, ColumnOverride>
 
 // 对手候选数据源按 partyType 切换;COMPANY(内部公司对向发票)用公司主数据
