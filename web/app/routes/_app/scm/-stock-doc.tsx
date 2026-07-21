@@ -409,6 +409,8 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
           </>
         )}
         onSubmit={async (values, mode) => {
+          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          let savedId: string
           if (mode === 'create') {
             const data = await gqlFetch<Record<string, MutationResult>>(cfg.mutations.createDoc, {
               input: values,
@@ -422,6 +424,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
             } else {
               toast.success(`${cfg.label}已创建`)
             }
+            savedId = docId
           } else {
             const data = await gqlFetch<Record<string, MutationResult>>(cfg.mutations.updateDoc, {
               id: drawer!.row!.id,
@@ -435,9 +438,11 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
             } else {
               toast.success(`${cfg.label}已更新`)
             }
+            savedId = drawer!.row!.id
           }
           queryClient.invalidateQueries({ queryKey: ['gridRows', cfg.resource] })
           queryClient.invalidateQueries({ queryKey: ['rowById', cfg.resource] })
+          return savedId
         }}
       />
     </>

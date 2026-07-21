@@ -525,6 +525,8 @@ function InvoicesPage() {
           )
         }}
         onSubmit={async (values, mode) => {
+          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          let savedId: string
           // edit 态 items 未就绪(FETCH_ITEMS 未回或失败)时省略 items 键,不用空清单覆盖后端原值
           const omitItems = mode === 'edit' && !itemsLoaded
           const input = omitItems ? values : { ...values, items: serializeItems(items) }
@@ -557,6 +559,7 @@ function InvoicesPage() {
             } else if (values.postingDate) {
               openAudit({ id: createdId, postingDate: values.postingDate, invoiceDate: values.invoiceDate } as Row, true)
             }
+            savedId = createdId
           } else {
             const invoiceId = drawer!.row!.id
             const data = await gqlFetch<{
@@ -567,7 +570,9 @@ function InvoicesPage() {
             }
             toast.success(omitItems ? '发票已更新(销售清单未加载,本次未修改)' : '发票已更新')
             queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
+            savedId = invoiceId
           }
+          return savedId
         }}
       />
 

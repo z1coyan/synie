@@ -18,7 +18,7 @@ import {
   toast,
 } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { gqlFetch } from '~/lib/graphql'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
@@ -71,8 +71,12 @@ export interface SynieRecordDrawerProps {
   fields?: Record<string, FieldOverride>
   /** 本地列/字段定义,提供时跳过 GridMeta 查询(resource 仅作缓存 key/标题用途) */
   meta?: LocalGridMeta
-  /** create/edit 提交;resolve 即成功(组件关抽屉),throw 则 toast 且不关 */
-  onSubmit?: (values: Record<string, unknown>, mode: 'create' | 'edit') => Promise<void>
+  /**
+   * create/edit 提交;resolve 即成功(组件关抽屉),throw 则 toast 且不关。
+   * 返回保存后的记录 id(create 态必须返回):meta 下发 audit 扩展动作且用户有 audit 能力时,
+   * 保存按钮旁自动出现「保存并审核」,取该 id 调审核 mutation(通用约定,见 web/AGENTS.md)。
+   */
+  onSubmit?: (values: Record<string, unknown>, mode: 'create' | 'edit') => Promise<string | void>
   /** view 态 footer 显示「编辑」按钮,点击回调(页面自行切 mode) */
   onEdit?: () => void
   /** create/edit 态提交按钮文案,默认「保存」(如导入表单的「解析」) */
@@ -188,6 +192,18 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const fields = resolveFields(columns, renderMode, exclude, props.fields)
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
+  const queryClient = useQueryClient()
+
+  // 「保存并审核」通用约定:资源 meta 下发 key=audit 的行级扩展动作、且当前用户 capabilities
+  // 含 audit 时,保存按钮旁多出该按钮。行带 status 字段且非草稿时不给入口(服务端权威校验兜底)。
+  const auditAction = remoteMeta.data?.extendedActions?.find(
+    (a) => a.key === 'audit' && (a.scope === 'row' || a.scope === 'both'),
+  )
+  const canSaveAndAudit =
+    !!props.onSubmit &&
+    !!auditAction &&
+    (remoteMeta.data?.capabilities ?? []).includes('audit') &&
+    (renderRow?.status == null || renderRow?.status === 'DRAFT')
   // 当前 tab:null 表示未手动切换过(回落首 tab),每次打开抽屉重置
   const [activeTab, setActiveTab] = useState<string | null>(null)
 
@@ -229,7 +245,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     setValues((v) => ({ ...v, ...patch }))
   }
 
-  const save = async () => {
+  const save = async (andAudit = false) => {
     if (!props.onSubmit || mode === 'view') return
     const missing = missingRequiredFields(fields, values, mode)
     if (missing.length > 0) {
@@ -240,7 +256,30 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     }
     setSaving(true)
     try {
-      await props.onSubmit(collectValues(fields, values, mode), mode)
+      const savedId = await props.onSubmit(collectValues(fields, values, mode), mode)
+      if (andAudit && auditAction) {
+        // create 态靠 onSubmit 返回的新 id;edit 态回落行 id
+        const auditId = savedId ?? row?.id
+        if (auditId == null || auditId === '') {
+          toast.warning('单据已保存,但未取得单据 id,请在列表中执行审核')
+        } else {
+          const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
+            `mutation ($id: ID!) { ${auditAction.mutation}(id: $id) { errors { message } } }`,
+            { id: auditId },
+          )
+          const errors = data[auditAction.mutation]?.errors
+          if (errors?.length) {
+            // 单据已落库(草稿),审核未过:如实告知,不关抽屉外的任何状态
+            toast.danger('单据已保存,但审核失败', {
+              description: errors.map((e) => e.message).join('; '),
+            })
+          } else {
+            toast.success('已保存并审核')
+          }
+          queryClient.invalidateQueries({ queryKey: ['gridRows'] })
+          queryClient.invalidateQueries({ queryKey: ['rowById'] })
+        }
+      }
       props.onOpenChange(false)
     } catch (e) {
       toast.danger('保存失败', { description: (e as Error).message })
@@ -396,7 +435,17 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                     </Button>
                   </Sheet.Close>
                   {/* 元数据失败时字段集为空,禁止提交空 payload */}
-                  <Button onPress={save} isPending={saving} isDisabled={metaError}>
+                  {canSaveAndAudit && (
+                    <Button
+                      variant="secondary"
+                      onPress={() => void save(true)}
+                      isPending={saving}
+                      isDisabled={metaError}
+                    >
+                      保存并审核
+                    </Button>
+                  )}
+                  <Button onPress={() => void save()} isPending={saving} isDisabled={metaError}>
                     {props.submitLabel ?? '保存'}
                   </Button>
                 </>

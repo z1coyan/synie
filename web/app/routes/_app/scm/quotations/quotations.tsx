@@ -2,7 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Chip } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
-import { useQuotationDrawer } from './-quotation-drawer'
+import { useAuditDoc } from '../-audit-doc'
+import { salesQuotationAuditConfig, useQuotationDrawer } from './-quotation-drawer'
 
 export const Route = createFileRoute('/_app/scm/quotations/quotations')({
   component: QuotationsTab,
@@ -57,16 +58,22 @@ const ACTION_VISIBLE = {
 
 function QuotationsTab() {
   const openDrawer = useQuotationDrawer()
+  const { requestAudit, auditDialog } = useAuditDoc(salesQuotationAuditConfig)
 
   return (
-    <SynieDataGrid
-      resource="salQuotations"
-      columns={GRID_COLUMNS}
-      overrides={GRID_OVERRIDES}
-      onView={(row) => openDrawer('view', row)}
-      onCreate={() => openDrawer('create', null)}
-      onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
-      actionVisible={ACTION_VISIBLE}
-    />
+    <>
+      <SynieDataGrid
+        resource="salQuotations"
+        columns={GRID_COLUMNS}
+        overrides={GRID_OVERRIDES}
+        onView={(row) => openDrawer('view', row)}
+        onCreate={() => openDrawer('create', null)}
+        onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
+        // 审核改走「列出全部条目核对」的确认弹窗(与条目页「审核整单」同一套)
+        actionHandlers={{ audit: (rows, ctx) => requestAudit(String(rows[0].id), ctx.refetch) }}
+        actionVisible={ACTION_VISIBLE}
+      />
+      {auditDialog}
+    </>
   )
 }

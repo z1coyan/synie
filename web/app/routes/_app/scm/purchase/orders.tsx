@@ -2,7 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { formatAmount } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
-import { useOrderDrawer } from './-order-drawer'
+import { useAuditDoc } from '../-audit-doc'
+import { purchaseOrderAuditConfig, useOrderDrawer } from './-order-drawer'
 
 export const Route = createFileRoute('/_app/scm/purchase/orders')({
   component: PurchaseOrdersTab,
@@ -44,16 +45,22 @@ const ACTION_VISIBLE = {
 
 function PurchaseOrdersTab() {
   const openDrawer = useOrderDrawer()
+  const { requestAudit, auditDialog } = useAuditDoc(purchaseOrderAuditConfig)
 
   return (
-    <SynieDataGrid
-      resource="purOrders"
-      columns={GRID_COLUMNS}
-      overrides={GRID_OVERRIDES}
-      onView={(row) => openDrawer('view', row)}
-      onCreate={() => openDrawer('create', null)}
-      onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
-      actionVisible={ACTION_VISIBLE}
-    />
+    <>
+      <SynieDataGrid
+        resource="purOrders"
+        columns={GRID_COLUMNS}
+        overrides={GRID_OVERRIDES}
+        onView={(row) => openDrawer('view', row)}
+        onCreate={() => openDrawer('create', null)}
+        onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
+        // 审核改走「列出全部条目核对」的确认弹窗(与条目页「审核整单」同一套)
+        actionHandlers={{ audit: (rows, ctx) => requestAudit(String(rows[0].id), ctx.refetch) }}
+        actionVisible={ACTION_VISIBLE}
+      />
+      {auditDialog}
+    </>
   )
 }

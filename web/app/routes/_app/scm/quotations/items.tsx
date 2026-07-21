@@ -4,7 +4,8 @@ import { Chip, Link } from '@heroui/react'
 import { formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
-import { useQuotationDrawer, type OpenQuotationDrawer } from './-quotation-drawer'
+import { useAuditDoc } from '../-audit-doc'
+import { salesQuotationAuditConfig, useQuotationDrawer, type OpenQuotationDrawer } from './-quotation-drawer'
 import { isExpired } from './quotations'
 
 export const Route = createFileRoute('/_app/scm/quotations/items')({
@@ -33,9 +34,10 @@ const GRID_COLUMNS = [
   'remarks',
 ]
 
-// 行编辑仅草稿单放行(后端 SyncQuotation 权威校验兜底,这里做体验层)
+// 行编辑/审核整单仅草稿单放行(后端 SyncQuotation 权威校验兜底,这里做体验层);删除不进条目视图
 const ACTION_VISIBLE = {
   edit: (row: Row) => row.quotationStatus === 'DRAFT',
+  auditDoc: (row: Row) => row.quotationStatus === 'DRAFT',
 } satisfies Record<string, (row: Row) => boolean>
 
 // quotationId 列覆盖默认 FkLink(速览抽屉):点击开共享完整报价抽屉,与点行的「查看」一致。
@@ -80,24 +82,39 @@ function buildOverrides(openDrawer: OpenQuotationDrawer) {
 
 function QuotationItemsTab() {
   const openDrawer = useQuotationDrawer()
+  const { requestAudit, auditDialog } = useAuditDoc(salesQuotationAuditConfig)
   // openDrawer 是 context 稳定引用,overrides 不会因网格重渲染反复重建列定义
   const overrides = useMemo(() => buildOverrides(openDrawer), [openDrawer])
 
   return (
-    <SynieDataGrid
-      resource="salQuotationItems"
-      columns={GRID_COLUMNS}
-      overrides={overrides}
-      // 默认报价日期倒序(新单在前);calc 列排序沿用销售订单条目已验证的能力
-      defaultSort={{ column: 'quotationDate', direction: 'descending' }}
-      // salQuotationItems 复用 sales.quotation 权限码,meta capabilities 为空:显式声明本视图
-      // 可用动作(整单「新建报价单」+ 草稿单「编辑」),不声明 delete,删除不进条目视图
-      capabilities={['create', 'update']}
-      createLabel="新建报价单"
-      onCreate={() => openDrawer('create', null)}
-      onView={(row) => openDrawer('view', { id: String(row.quotationId), status: row.quotationStatus })}
-      onEdit={(row) => openDrawer('edit', { id: String(row.quotationId), status: row.quotationStatus })}
-      actionVisible={ACTION_VISIBLE}
-    />
+    <>
+      <SynieDataGrid
+        resource="salQuotationItems"
+        columns={GRID_COLUMNS}
+        overrides={overrides}
+        // 默认报价日期倒序(新单在前);calc 列排序沿用销售订单条目已验证的能力
+        defaultSort={{ column: 'quotationDate', direction: 'descending' }}
+        // salQuotationItems 复用 sales.quotation 权限码,meta capabilities 为空:显式声明本视图
+        // 可用动作(整单「新建报价单」+ 草稿单「编辑/审核整单」),不声明 delete,删除不进条目视图
+        capabilities={['create', 'update', 'audit']}
+        createLabel="新建报价单"
+        onCreate={() => openDrawer('create', null)}
+        onView={(row) => openDrawer('view', { id: String(row.quotationId), status: row.quotationStatus })}
+        onEdit={(row) => openDrawer('edit', { id: String(row.quotationId), status: row.quotationStatus })}
+        rowActions={[
+          {
+            key: 'auditDoc',
+            label: '审核整单',
+            capability: 'audit',
+            onAction: (row, ctx) => {
+              if (row.quotationId == null || row.quotationId === '') return
+              requestAudit(String(row.quotationId), ctx.refetch)
+            },
+          },
+        ]}
+        actionVisible={ACTION_VISIBLE}
+      />
+      {auditDialog}
+    </>
   )
 }

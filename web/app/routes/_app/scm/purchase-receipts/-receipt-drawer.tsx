@@ -19,6 +19,7 @@ import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialo
 import { gqlEnum } from '~/components/synie-data-grid/query'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import {
   CompanyDefaultSync,
   WarehouseRemoteSelect,
@@ -31,6 +32,27 @@ export interface ReceiptRef {
 }
 
 export type OpenReceiptDrawer = (mode: DrawerMode, receipt: ReceiptRef | null) => void
+
+// 「审核整单」确认弹窗配置:条目页行操作与入库单页「审核」动作共用(见 scm/-audit-doc)
+export const receiptAuditConfig = {
+  docLabel: '采购入库单',
+  mutation: 'auditPurReceipt',
+  itemsResource: 'purReceiptItems',
+  docIdField: 'receiptId',
+  itemFields:
+    'id idx materialCode materialName materialSpec customerPartNo unitName qty baseQty remarks',
+  columns: [
+    {
+      key: 'materialName',
+      label: '物料',
+      render: auditMaterialCell({ key: 'customerPartNo', label: '客户料号' }),
+    },
+    { key: 'unitName', label: '单位' },
+    { key: 'qty', label: '入库数量', align: 'end' },
+    { key: 'baseQty', label: '折算数量', align: 'end' },
+    { key: 'remarks', label: '行备注' },
+  ],
+} satisfies AuditDocConfig
 
 const ReceiptDrawerContext = createContext<OpenReceiptDrawer>(() => {})
 
@@ -800,6 +822,8 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
           )
         }}
         onSubmit={async (values, mode) => {
+          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          let savedId: string
           if (mode === 'create') {
             const data = await gqlFetch<{ createPurReceipt: MutationResult }>(CREATE_RECEIPT, {
               input: values,
@@ -815,6 +839,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             } else {
               toast.success('采购入库单已创建')
             }
+            savedId = receiptId
           } else {
             const data = await gqlFetch<{ updatePurReceipt: MutationResult }>(UPDATE_RECEIPT, {
               id: drawer!.row!.id,
@@ -830,11 +855,13 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             } else {
               toast.success('采购入库单已更新')
             }
+            savedId = drawer!.row!.id
           }
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'purReceipts'] })
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'purReceiptItems'] })
           queryClient.invalidateQueries({ queryKey: ['rowById', 'purReceipts'] })
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOrderItems'] })
+          return savedId
         }}
       />
     </ReceiptDrawerContext.Provider>

@@ -933,6 +933,8 @@ export function AcceptanceTransactionDrawer({
         )
       }}
       onSubmit={async (values, mode) => {
+        // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+        let savedId: string
         const input: Record<string, unknown> = { ...values }
         // transactionType 只读展示,collectValues 会剥离:create 取入口定死的类型显式注入,edit 取原行数据(恒定)
         const txType = (mode === 'create' ? createType : row?.transactionType) as string | undefined
@@ -982,6 +984,7 @@ export function AcceptanceTransactionDrawer({
           if (data.createAccBillTransaction.errors && data.createAccBillTransaction.errors.length > 0) {
             throw new Error(data.createAccBillTransaction.errors.map((e) => e.message).join('; '))
           }
+          savedId = data.createAccBillTransaction.result!.id
           // 暂存附件(票面原图+额外文件)统一挂接;个别失败不阻断建单,提示手工补传即可
           const failed: string[] = []
           for (const f of [...(ocrFile ? [ocrFile] : []), ...pendingFiles]) {
@@ -1007,8 +1010,10 @@ export function AcceptanceTransactionDrawer({
             throw new Error(data.updateAccBillTransaction.errors.map((e) => e.message).join('; '))
           }
           toast.success('承兑交易已更新')
+          savedId = row!.id
         }
         onMutated()
+        return savedId
       }}
     />
   )

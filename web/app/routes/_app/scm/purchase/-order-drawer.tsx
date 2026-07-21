@@ -11,6 +11,7 @@ import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 
 /**
  * 采购订单共享抽屉:布局层挂载一份,订单 tab(整单 grid)与订单条目 tab(行级 grid)
@@ -29,6 +30,29 @@ export interface OrderRef {
 }
 
 export type OpenOrderDrawer = (mode: DrawerMode, order: OrderRef | null) => void
+
+// 「审核整单」确认弹窗配置:条目页行操作与订单页「审核」动作共用(见 scm/-audit-doc)
+// 列只取行上快照/计算字段(materialCode 等保存时已冻结),不 join 会触发嵌套授权的 fk
+export const purchaseOrderAuditConfig = {
+  docLabel: '采购订单',
+  mutation: 'auditPurOrder',
+  itemsResource: 'purOrderItems',
+  docIdField: 'orderId',
+  itemFields:
+    'id idx materialCode materialName materialSpec customerPartNo unitName qty price amount remarks',
+  columns: [
+    {
+      key: 'materialName',
+      label: '物料',
+      render: auditMaterialCell({ key: 'customerPartNo', label: '客户料号' }),
+    },
+    { key: 'unitName', label: '单位' },
+    { key: 'qty', label: '数量', align: 'end' },
+    { key: 'price', label: '含税单价', align: 'end', render: (v: unknown) => formatPrice(v) },
+    { key: 'amount', label: '含税金额', align: 'end', render: (v: unknown) => formatAmount(v) },
+    { key: 'remarks', label: '行备注' },
+  ],
+} satisfies AuditDocConfig
 
 const OrderDrawerContext = createContext<OpenOrderDrawer>(() => {})
 
@@ -797,6 +821,8 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           )
         }}
         onSubmit={async (values, mode) => {
+          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          let savedId: string
           if (mode === 'create') {
             const data = await gqlFetch<{
               createPurOrder: { result: { id: string } | null; errors: { message: string }[] | null }
@@ -811,6 +837,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             } else {
               toast.success('采购订单已创建')
             }
+            savedId = orderId
           } else {
             const orderId = drawer!.order!.id
             const data = await gqlFetch<{
@@ -825,12 +852,14 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             } else {
               toast.success('采购订单已更新')
             }
+            savedId = orderId
           }
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOrders'] })
           // 条目 tab 的行级 grid 也要失效:条目增删改/整单提交都落在 purOrderItems 上
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOrderItems'] })
           // 抽屉走 rowId 自查,一并失效行缓存,重开详情不吃 30s staleTime 的旧行
           queryClient.invalidateQueries({ queryKey: ['rowById', 'purOrders'] })
+          return savedId
         }}
       />
     </OrderDrawerContext.Provider>

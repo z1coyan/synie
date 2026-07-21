@@ -4,7 +4,8 @@ import { Link } from '@heroui/react'
 import { formatAmount, formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
-import { useOrderDrawer, type OpenOrderDrawer } from './-order-drawer'
+import { useOrderDrawer, salesOrderAuditConfig, type OpenOrderDrawer } from './-order-drawer'
+import { useAuditDoc } from '../-audit-doc'
 import { QtyProgressCell } from '../-qty-progress-cell'
 
 export const Route = createFileRoute('/_app/scm/sales-orders/items')({
@@ -37,9 +38,10 @@ const GRID_COLUMNS = [
   'remarks',
 ]
 
-// 行编辑仅草稿单放行(后端 SyncOrder 权威校验兜底,这里做体验层);审核/关闭/作废/删除不进条目视图
+// 行编辑/审核整单仅草稿单放行(后端权威校验兜底,这里做体验层);关闭/作废/删除不进条目视图
 const ACTION_VISIBLE = {
   edit: (row: Row) => row.orderStatus === 'DRAFT',
+  auditDoc: (row: Row) => row.orderStatus === 'DRAFT',
 } satisfies Record<string, (row: Row) => boolean>
 
 // orderId 列覆盖默认 FkLink(速览抽屉):点击开共享完整订单抽屉,与点行的「查看」一致。
@@ -83,28 +85,43 @@ function buildOverrides(openDrawer: OpenOrderDrawer) {
 
 function SalesOrderItemsTab() {
   const openDrawer = useOrderDrawer()
+  const { requestAudit, auditDialog } = useAuditDoc(salesOrderAuditConfig)
   // openDrawer 是 context 稳定引用,overrides 不会因网格重渲染反复重建列定义
   const overrides = useMemo(() => buildOverrides(openDrawer), [openDrawer])
 
   return (
-    <SynieDataGrid
-      resource="salOrderItems"
-      columns={GRID_COLUMNS}
-      overrides={overrides}
-      // 合并进度列的取数(qty 行单位;baseQty/shippedQty 默认单位投影列)
-      extraFields={['qty', 'baseQty', 'shippedQty']}
-      // 行图纸:sys_attachment 挂接(owner_type sal_order_item / category drawing),与物料页同机制的虚拟列
-      attachmentImages={{ ownerType: 'sal_order_item', category: 'drawing', label: '图纸' }}
-      // 默认订单日期倒序(新单在前);calc 列排序后端已验证支持
-      defaultSort={{ column: 'orderDate', direction: 'descending' }}
-      // salOrderItems 复用 sales.order 权限码,meta capabilities 为空:显式声明本视图可用动作
-      // (整单「新建订单」+ 草稿单「编辑」),不声明 delete,删除不进条目视图
-      capabilities={['create', 'update']}
-      createLabel="新建订单"
-      onCreate={() => openDrawer('create', null)}
-      onView={(row) => openDrawer('view', { id: String(row.orderId), status: row.orderStatus })}
-      onEdit={(row) => openDrawer('edit', { id: String(row.orderId), status: row.orderStatus })}
-      actionVisible={ACTION_VISIBLE}
-    />
+    <>
+      <SynieDataGrid
+        resource="salOrderItems"
+        columns={GRID_COLUMNS}
+        overrides={overrides}
+        // 合并进度列的取数(qty 行单位;baseQty/shippedQty 默认单位投影列)
+        extraFields={['qty', 'baseQty', 'shippedQty']}
+        // 行图纸:sys_attachment 挂接(owner_type sal_order_item / category drawing),与物料页同机制的虚拟列
+        attachmentImages={{ ownerType: 'sal_order_item', category: 'drawing', label: '图纸' }}
+        // 默认订单日期倒序(新单在前);calc 列排序后端已验证支持
+        defaultSort={{ column: 'orderDate', direction: 'descending' }}
+        // salOrderItems 复用 sales.order 权限码,meta capabilities 为空:显式声明本视图可用动作
+        // (整单「新建订单」+ 草稿单「编辑/审核整单」),不声明 delete,删除不进条目视图
+        capabilities={['create', 'update', 'audit']}
+        createLabel="新建订单"
+        onCreate={() => openDrawer('create', null)}
+        onView={(row) => openDrawer('view', { id: String(row.orderId), status: row.orderStatus })}
+        onEdit={(row) => openDrawer('edit', { id: String(row.orderId), status: row.orderStatus })}
+        rowActions={[
+          {
+            key: 'auditDoc',
+            label: '审核整单',
+            capability: 'audit',
+            onAction: (row, ctx) => {
+              if (row.orderId == null || row.orderId === '') return
+              requestAudit(String(row.orderId), ctx.refetch)
+            },
+          },
+        ]}
+        actionVisible={ACTION_VISIBLE}
+      />
+      {auditDialog}
+    </>
   )
 }

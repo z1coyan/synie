@@ -10,6 +10,7 @@ import { SynieEditableTable } from '~/components/synie-editable-table/SynieEdita
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 
 /**
  * 采购报价单共享抽屉:布局层挂载一份,报价单 tab(整单 grid)与报价条目 tab(行级 grid)
@@ -28,6 +29,36 @@ export interface QuotationRef {
 }
 
 export type OpenQuotationDrawer = (mode: DrawerMode, quotation: QuotationRef | null) => void
+
+// 「审核整单」确认弹窗配置:条目页行操作与报价单页「审核」动作共用(见 scm/-audit-doc)。
+// 列只取条目上的快照/自有字段(物料快照/定价模式/价税),不 join 会触发嵌套授权的 fk;
+// 梯度行单价为空属正常(价在价格档上),定价模式列已标明
+export const purchaseQuotationAuditConfig = {
+  docLabel: '采购报价单',
+  mutation: 'auditPurQuotation',
+  itemsResource: 'purQuotationItems',
+  docIdField: 'quotationId',
+  itemFields:
+    'id idx materialCode materialName materialSpec unitName pricingMode price taxRate remarks',
+  columns: [
+    { key: 'materialName', label: '物料', render: auditMaterialCell() },
+    { key: 'unitName', label: '单位' },
+    {
+      key: 'pricingMode',
+      label: '定价模式',
+      render: (v: unknown) =>
+        v === 'QTY_TIERED' ? '数量梯度' : v === 'FIXED' ? '固定价' : undefined,
+    },
+    {
+      key: 'price',
+      label: '含税单价',
+      align: 'end',
+      render: (v: unknown) => (v == null || v === '' ? '—' : formatPrice(v)),
+    },
+    { key: 'taxRate', label: '税率', align: 'end', render: (v: unknown) => formatPercent(v) },
+    { key: 'remarks', label: '行备注' },
+  ],
+} satisfies AuditDocConfig
 
 const QuotationDrawerContext = createContext<OpenQuotationDrawer>(() => {})
 
@@ -583,6 +614,8 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
           </>
         )}
         onSubmit={async (values, mode) => {
+          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          let savedId: string
           if (mode === 'create') {
             const data = await gqlFetch<{
               createPurQuotation: { result: { id: string } | null; errors: { message: string }[] | null }
@@ -597,6 +630,7 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
             } else {
               toast.success('采购报价单已创建')
             }
+            savedId = quotationId
           } else {
             const quotationId = drawer!.quotation!.id
             const data = await gqlFetch<{
@@ -611,12 +645,14 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
             } else {
               toast.success('采购报价单已更新')
             }
+            savedId = quotationId
           }
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'purQuotations'] })
           // 条目 tab 的行级 grid 也要失效:条目/价格档增删改都落在 purQuotationItems 上
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'purQuotationItems'] })
           // 抽屉走 rowId 自查,一并失效行缓存,重开详情不吃 30s staleTime 的旧行
           queryClient.invalidateQueries({ queryKey: ['rowById', 'purQuotations'] })
+          return savedId
         }}
       />
     </QuotationDrawerContext.Provider>

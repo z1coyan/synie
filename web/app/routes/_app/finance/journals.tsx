@@ -331,6 +331,8 @@ function JournalsPage() {
           )
         }}
         onSubmit={async (values, mode) => {
+          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          let savedId: string
           if (mode === 'create') {
             const data = await gqlFetch<{
               createAccGlJournal: { result: { id: string } | null; errors: { message: string }[] | null }
@@ -349,6 +351,7 @@ function JournalsPage() {
                 openAudit({ id: journalId, postingDate: values.postingDate, date: values.date } as Row, true)
               }
             }
+            savedId = journalId
           } else {
             const journalId = drawer!.row!.id
             const data = await gqlFetch<{
@@ -363,8 +366,10 @@ function JournalsPage() {
             } else {
               toast.success('凭证已更新')
             }
+            savedId = journalId
           }
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'accGlJournals'] })
+          return savedId
         }}
       />
 

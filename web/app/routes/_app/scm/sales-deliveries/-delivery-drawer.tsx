@@ -19,6 +19,7 @@ import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialo
 import { gqlEnum } from '~/components/synie-data-grid/query'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import {
   CompanyDefaultSync,
   WarehouseRemoteSelect,
@@ -31,6 +32,27 @@ export interface DeliveryRef {
 }
 
 export type OpenDeliveryDrawer = (mode: DrawerMode, delivery: DeliveryRef | null) => void
+
+// 「审核整单」确认弹窗配置:条目页行操作与发货单页「审核」动作共用(见 scm/-audit-doc)
+export const deliveryAuditConfig = {
+  docLabel: '销售发货单',
+  mutation: 'auditSalDelivery',
+  itemsResource: 'salDeliveryItems',
+  docIdField: 'deliveryId',
+  itemFields:
+    'id idx materialCode materialName materialSpec customerPartNo unitName qty baseQty remarks',
+  columns: [
+    {
+      key: 'materialName',
+      label: '物料',
+      render: auditMaterialCell({ key: 'customerPartNo', label: '客户料号' }),
+    },
+    { key: 'unitName', label: '单位' },
+    { key: 'qty', label: '发货数量', align: 'end' },
+    { key: 'baseQty', label: '折算数量', align: 'end' },
+    { key: 'remarks', label: '行备注' },
+  ],
+} satisfies AuditDocConfig
 
 const DeliveryDrawerContext = createContext<OpenDeliveryDrawer>(() => {})
 
@@ -808,6 +830,8 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
           )
         }}
         onSubmit={async (values, mode) => {
+          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          let savedId: string
           if (mode === 'create') {
             const data = await gqlFetch<{ createSalDelivery: MutationResult }>(CREATE_DELIVERY, {
               input: values,
@@ -823,6 +847,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
             } else {
               toast.success('销售发货单已创建')
             }
+            savedId = deliveryId
           } else {
             const data = await gqlFetch<{ updateSalDelivery: MutationResult }>(UPDATE_DELIVERY, {
               id: drawer!.row!.id,
@@ -838,11 +863,13 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
             } else {
               toast.success('销售发货单已更新')
             }
+            savedId = drawer!.row!.id
           }
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'salDeliveries'] })
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'salDeliveryItems'] })
           queryClient.invalidateQueries({ queryKey: ['rowById', 'salDeliveries'] })
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'salOrderItems'] })
+          return savedId
         }}
       />
     </DeliveryDrawerContext.Provider>

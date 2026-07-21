@@ -1,7 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
-import { useDeliveryDrawer } from './-delivery-drawer'
+import { useAuditDoc } from '../-audit-doc'
+import { deliveryAuditConfig, useDeliveryDrawer } from './-delivery-drawer'
 
 export const Route = createFileRoute('/_app/scm/sales-deliveries/items')({
   component: DeliveryItemsTab,
@@ -61,35 +62,60 @@ const GRID_COLUMNS = [
   'baseQty',
 ]
 
+// 行编辑/审核整单仅草稿单放行(后端权威校验兜底,这里做体验层);删除不进条目视图
+const ACTION_VISIBLE = {
+  edit: (row: Row) => row.deliveryStatus === 'DRAFT',
+  auditDoc: (row: Row) => row.deliveryStatus === 'DRAFT',
+} satisfies Record<string, (row: Row) => boolean>
+
 function DeliveryItemsTab() {
   const openDrawer = useDeliveryDrawer()
+  const { requestAudit, auditDialog } = useAuditDoc(deliveryAuditConfig)
 
   return (
-    <SynieDataGrid
-      resource="salDeliveryItems"
-      columns={GRID_COLUMNS}
-      overrides={GRID_OVERRIDES}
-      // 行图纸:sys_attachment 挂接(owner_type sal_delivery_item / category drawing),与订单条目同机制
-      attachmentImages={{ ownerType: 'sal_delivery_item', category: 'drawing', label: '图纸' }}
-      defaultSort={{ column: 'deliveryDate', direction: 'descending' }}
-      // 开抽屉需要母单 id;不进展示列,经 extraFields 取回(避免 deliveryId 为 undefined 过滤报错)
-      extraFields={['deliveryId']}
-      createLabel="新建发货单"
-      onCreate={() => openDrawer('create', null)}
-      onView={(row) => {
-        if (row.deliveryId == null || row.deliveryId === '') return
-        openDrawer('view', {
-          id: String(row.deliveryId),
-          status: row.deliveryStatus,
-        })
-      }}
-      onEdit={(row) => {
-        if (row.deliveryId == null || row.deliveryId === '') return
-        openDrawer(row.deliveryStatus === 'DRAFT' ? 'edit' : 'view', {
-          id: String(row.deliveryId),
-          status: row.deliveryStatus,
-        })
-      }}
-    />
+    <>
+      <SynieDataGrid
+        resource="salDeliveryItems"
+        columns={GRID_COLUMNS}
+        overrides={GRID_OVERRIDES}
+        // 行图纸:sys_attachment 挂接(owner_type sal_delivery_item / category drawing),与订单条目同机制
+        attachmentImages={{ ownerType: 'sal_delivery_item', category: 'drawing', label: '图纸' }}
+        defaultSort={{ column: 'deliveryDate', direction: 'descending' }}
+        // 开抽屉需要母单 id;不进展示列,经 extraFields 取回(避免 deliveryId 为 undefined 过滤报错)
+        extraFields={['deliveryId']}
+        // salDeliveryItems 复用 sales.delivery 权限码,meta capabilities 为空:显式声明本视图
+        // 可用动作(整单「新建发货单」+ 草稿单「编辑/审核整单」),不声明 delete,删除不进条目视图
+        capabilities={['create', 'update', 'audit']}
+        createLabel="新建发货单"
+        onCreate={() => openDrawer('create', null)}
+        onView={(row) => {
+          if (row.deliveryId == null || row.deliveryId === '') return
+          openDrawer('view', {
+            id: String(row.deliveryId),
+            status: row.deliveryStatus,
+          })
+        }}
+        onEdit={(row) => {
+          if (row.deliveryId == null || row.deliveryId === '') return
+          openDrawer(row.deliveryStatus === 'DRAFT' ? 'edit' : 'view', {
+            id: String(row.deliveryId),
+            status: row.deliveryStatus,
+          })
+        }}
+        rowActions={[
+          {
+            key: 'auditDoc',
+            label: '审核整单',
+            capability: 'audit',
+            onAction: (row, ctx) => {
+              if (row.deliveryId == null || row.deliveryId === '') return
+              requestAudit(String(row.deliveryId), ctx.refetch)
+            },
+          },
+        ]}
+        actionVisible={ACTION_VISIBLE}
+      />
+      {auditDialog}
+    </>
   )
 }
