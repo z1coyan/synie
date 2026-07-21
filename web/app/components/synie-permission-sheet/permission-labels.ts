@@ -83,5 +83,6 @@ export const ACTION_LABELS: Record<string, string> = {
 }
 
 export const domainLabel = (d: string) => DOMAIN_LABELS[d] ?? d
-export const resourceLabel = (p: string) => RESOURCE_LABELS[p] ?? p
+// 资源标签优先用 catalog 下发的 label(后端权威),缺失时回落静态映射,再漏原样显示英文
+export const resourceLabel = (p: string, label?: string) => label ?? RESOURCE_LABELS[p] ?? p
 export const actionLabel = (a: string) => ACTION_LABELS[a] ?? a

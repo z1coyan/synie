@@ -30,6 +30,7 @@ defmodule SynieCore.Sales.Customer do
   end
 
   def permission_prefix, do: "sales.customer"
+  def permission_label, do: "客户"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

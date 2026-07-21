@@ -28,6 +28,7 @@ defmodule SynieCore.Purchase.Supplier do
   end
 
   def permission_prefix, do: "purchase.supplier"
+  def permission_label, do: "供应商"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

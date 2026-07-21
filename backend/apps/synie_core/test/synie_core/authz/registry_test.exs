@@ -12,6 +12,14 @@ defmodule SynieCore.Authz.RegistryTest do
              )
   end
 
+  test "catalog 组带中文资源标签" do
+    labels = Map.new(Registry.catalog(), &{&1.prefix, &1.label})
+
+    assert labels["sales.order"] == "销售订单"
+    assert labels["sys.role"] == "角色"
+    assert labels["acc.gl_journal"] == "会计凭证"
+  end
+
   test "all_codes 展开为 前缀:动作" do
     codes = Registry.all_codes()
 

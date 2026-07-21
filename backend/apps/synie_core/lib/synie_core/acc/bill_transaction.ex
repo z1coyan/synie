@@ -253,6 +253,7 @@ defmodule SynieCore.Acc.BillTransaction do
   end
 
   def permission_prefix, do: "acc.bill_transaction"
+  def permission_label, do: "承兑交易"
   def permission_actions, do: ~w(create read update delete audit void)
 
   def grid_actions do

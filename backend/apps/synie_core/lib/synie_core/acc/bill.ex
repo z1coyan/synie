@@ -111,6 +111,7 @@ defmodule SynieCore.Acc.Bill do
   end
 
   def permission_prefix, do: "acc.bill"
+  def permission_label, do: "承兑票据"
   def permission_actions, do: ~w(read update delete)
 
   validations do

@@ -53,6 +53,7 @@ defmodule SynieCore.Sales.Setting do
   end
 
   def permission_prefix, do: "sales.setting"
+  def permission_label, do: "供应链设置"
   def permission_actions, do: ~w(read update)
 
   actions do

@@ -67,6 +67,7 @@ defmodule SynieCore.Hr.PayrollPayment do
   end
 
   def permission_prefix, do: "hr.payroll_payment"
+  def permission_label, do: "工资发放"
   def permission_actions, do: ~w(create read delete)
 
   actions do

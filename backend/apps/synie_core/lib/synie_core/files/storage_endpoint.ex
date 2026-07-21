@@ -135,6 +135,7 @@ defmodule SynieCore.Files.StorageEndpoint do
   end
 
   def permission_prefix, do: "sys.storage"
+  def permission_label, do: "存储接入"
   def permission_actions, do: ~w(create read update delete)
 
   def display_field, do: :label

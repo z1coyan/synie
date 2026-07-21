@@ -89,6 +89,7 @@ defmodule SynieCore.Hr.AttendanceCorrection do
   end
 
   def permission_prefix, do: "hr.attendance_correction"
+  def permission_label, do: "补卡单"
 
   def permission_actions, do: ~w(create read update delete)
 

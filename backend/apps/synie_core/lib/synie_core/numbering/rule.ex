@@ -102,6 +102,7 @@ defmodule SynieCore.Numbering.Rule do
   end
 
   def permission_prefix, do: "sys.numbering_rule"
+  def permission_label, do: "编号规则"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

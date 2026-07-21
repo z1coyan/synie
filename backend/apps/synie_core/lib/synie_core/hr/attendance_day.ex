@@ -64,6 +64,7 @@ defmodule SynieCore.Hr.AttendanceDay do
   end
 
   def permission_prefix, do: "hr.attendance_day"
+  def permission_label, do: "日考勤"
 
   def permission_actions, do: ~w(read recalc)
 

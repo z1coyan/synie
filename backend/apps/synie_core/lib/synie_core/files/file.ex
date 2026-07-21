@@ -53,6 +53,7 @@ defmodule SynieCore.Files.File do
   end
 
   def permission_prefix, do: "sys.file"
+  def permission_label, do: "附件"
   def permission_actions, do: ~w(create read delete)
 
   # fk 速览标题用原始文件名(默认反射会取到 storage,对用户无意义)

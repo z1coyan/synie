@@ -67,6 +67,7 @@ defmodule SynieCore.Acc.BillHolding do
   end
 
   def permission_prefix, do: "acc.bill_holding"
+  def permission_label, do: "持有承兑"
   def permission_actions, do: ~w(read)
 
   actions do

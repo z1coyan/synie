@@ -152,6 +152,7 @@ defmodule SynieCore.Acc.VatInvoice do
   end
 
   def permission_prefix, do: "acc.vat_invoice"
+  def permission_label, do: "增值税发票"
   def permission_actions, do: ~w(create read update delete audit void reverse)
 
   def grid_actions do

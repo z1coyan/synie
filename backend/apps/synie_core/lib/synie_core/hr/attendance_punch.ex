@@ -51,6 +51,7 @@ defmodule SynieCore.Hr.AttendancePunch do
   end
 
   def permission_prefix, do: "hr.attendance_punch"
+  def permission_label, do: "打卡记录"
 
   # import 是批次链路的用户视角能力,权限码挂本资源(照 acc.bank_transaction:import)
   def permission_actions, do: ~w(read import)

@@ -45,6 +45,7 @@ defmodule SynieCore.Audit.Log do
   end
 
   def permission_prefix, do: "sys.audit_log"
+  def permission_label, do: "操作日志"
   def permission_actions, do: ~w(read)
 
   actions do

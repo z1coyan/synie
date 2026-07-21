@@ -164,6 +164,7 @@ defmodule SynieCore.Acc.BankImportTemplate do
   end
 
   def permission_prefix, do: "acc.bank_import_template"
+  def permission_label, do: "流水导入模板"
   def permission_actions, do: ~w(create read update delete)
 
   # 默认反射也会取到 name,显式声明防字段顺序变动

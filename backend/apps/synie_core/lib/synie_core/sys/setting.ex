@@ -43,6 +43,7 @@ defmodule SynieCore.Sys.Setting do
   end
 
   def permission_prefix, do: "sys.setting"
+  def permission_label, do: "系统设置"
   def permission_actions, do: ~w(read update)
 
   actions do

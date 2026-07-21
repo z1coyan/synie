@@ -63,6 +63,7 @@ defmodule SynieCore.Acc.GlJournal do
   end
 
   def permission_prefix, do: "acc.gl_journal"
+  def permission_label, do: "会计凭证"
   def permission_actions, do: ~w(create read update delete audit cancel)
 
   def grid_actions do

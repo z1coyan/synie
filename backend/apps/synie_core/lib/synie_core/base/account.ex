@@ -190,6 +190,7 @@ defmodule SynieCore.Base.Account do
   end
 
   def permission_prefix, do: "base.account"
+  def permission_label, do: "会计科目"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

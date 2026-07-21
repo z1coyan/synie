@@ -39,6 +39,7 @@ defmodule SynieCore.Base.Unit do
   end
 
   def permission_prefix, do: "base.unit"
+  def permission_label, do: "计量单位"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

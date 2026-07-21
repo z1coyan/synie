@@ -94,6 +94,7 @@ defmodule SynieCore.Base.MarketPricePoint do
   end
 
   def permission_prefix, do: "base.market_price"
+  def permission_label, do: "行情价点"
   def permission_actions, do: ~w(create read void)
 
   def grid_actions do

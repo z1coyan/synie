@@ -61,6 +61,7 @@ defmodule SynieCore.Acc.GlEntry do
   end
 
   def permission_prefix, do: "acc.gl_entry"
+  def permission_label, do: "总账分录"
   def permission_actions, do: ~w(read)
 
   # 对手与来源单据都是多态引用(判别列 + 裸 uuid、无 belongs_to),声明给 GridMeta 反射成多态 fk 列

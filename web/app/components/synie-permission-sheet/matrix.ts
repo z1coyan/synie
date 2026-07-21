@@ -1,8 +1,9 @@
-// 权限矩阵纯函数层:通配匹配、勾选初态、保存 diff。
+// 权限矩阵纯函数层:通配匹配、勾选初态、三态、搜索过滤、sync 提交集构造。
 // 通配语义与后端 SynieCore.Authz.Permission 对齐:`前缀:*`(资源全部动作)、`域.*`(域全部码)、`*`(全域)。
 
 export interface CatalogGroup {
   prefix: string // 如 "sys.role"
+  label?: string // 后端下发的资源中文名;缺失时前端回落 permission-labels 静态映射
   actions: string[] // 如 ["create", "read"]
 }
 
@@ -11,12 +12,9 @@ export interface GrantedRow {
   permission: string // 具体码或通配码
 }
 
-export interface MatrixDiff {
-  toCreate: string[] // 需新建的具体权限码
-  toDestroyIds: string[] // 需删除的 sys_role_permission 行 id
-}
+export type TriState = 'all' | 'some' | 'none'
 
-/** 展示顺序(动作全集与后端 Permission.default_actions 一致,顺序为前端展示序);catalog 出现的非标动作(工作流码)排尾 */
+/** 矩阵固定列(默认动作集,与后端 Permission.default_actions 一致,顺序为前端展示序);其余动作(工作流码)收进行尾"更多" */
 export const CANONICAL_ACTIONS = [
   'create', 'read', 'update', 'delete', 'print', 'import',
   'export', 'batch_delete', 'batch_update', 'batch_print',
@@ -34,12 +32,34 @@ export function groupByDomain(catalog: CatalogGroup[]): { domain: string; groups
   return out
 }
 
-/** 列 = catalog 全部动作并集:规范序在前,非标动作按首现顺序排尾 */
-export function actionColumns(catalog: CatalogGroup[]): string[] {
-  const seen = [...new Set(catalog.flatMap((g) => g.actions))]
-  const canonical = CANONICAL_ACTIONS.filter((a) => seen.includes(a))
-  const extra = seen.filter((a) => !CANONICAL_ACTIONS.includes(a))
-  return [...canonical, ...extra]
+/** 资源的全部动作码(固定列 + "更多"里的),保持 actions 原顺序 */
+export function groupCodes(g: CatalogGroup): string[] {
+  return g.actions.map((a) => `${g.prefix}:${a}`)
+}
+
+/** 把资源的动作拆成固定列动作(规范序) + "更多"动作(原序) */
+export function splitActions(actions: string[]): { fixed: string[]; extra: string[] } {
+  return {
+    fixed: CANONICAL_ACTIONS.filter((a) => actions.includes(a)),
+    extra: actions.filter((a) => !CANONICAL_ACTIONS.includes(a)),
+  }
+}
+
+/** 搜索过滤:按展示标签或 prefix 子串匹配(大小写不敏感),保持 catalog 原顺序 */
+export function searchGroups(
+  catalog: CatalogGroup[],
+  keyword: string,
+  labelOf: (g: CatalogGroup) => string
+): CatalogGroup[] {
+  const kw = keyword.trim().toLowerCase()
+  if (!kw) return []
+  return catalog.filter((g) => labelOf(g).toLowerCase().includes(kw) || g.prefix.toLowerCase().includes(kw))
+}
+
+/** 三态:codes 全勾/部分勾/全未勾;空集按未勾(调用方据此禁用该全选框) */
+export function triState(codes: string[], checked: Set<string>): TriState {
+  const n = codes.filter((c) => checked.has(c)).length
+  return n === 0 ? 'none' : n === codes.length ? 'all' : 'some'
 }
 
 // "sales.order:audit" 的候选:自身、"sales.order:*"、"sales.*"、"*"(对齐后端 Permission.candidates/1)
@@ -70,30 +90,12 @@ export function initialChecked(catalog: CatalogGroup[], rows: GrantedRow[]): Set
 }
 
 /**
- * 保存 diff:
- * - 精确行:码被取消 → 删;仍勾选 → 保留。
- * - 通配行:展开集全部仍勾选 → 保留;有任一被取消 → 删行,靠 toCreate 补齐其余逐码。
- * - 目录外的陈旧码不渲染也不动(fail-safe)。
- * - toCreate = 勾选集中未被任何保留行覆盖的码。
+ * syncSysRolePermissions 提交集:当前勾选的具体码,按 catalog 序,剔除两类——
+ * - 被任一存量通配行覆盖的码:通配行后端保留,若再提交会被重复落成具体行;
+ * - 初态/勾选本只含 catalog 码,此处 flatMap catalog 构造天然不含目录外码(fail-safe)。
+ * 语义注意:取消勾选通配覆盖的码不会生效(通配行仍在,后端保留),与"通配行与目录外码后端保留"契约一致。
  */
-export function buildDiff(catalog: CatalogGroup[], rows: GrantedRow[], checked: Set<string>): MatrixDiff {
-  const catalogCodes = catalog.flatMap((g) => g.actions.map((a) => `${g.prefix}:${a}`))
-  const kept = new Set<string>()
-  const toDestroyIds: string[] = []
-
-  for (const row of rows) {
-    if (row.permission.endsWith('*')) {
-      const expansion = catalogCodes.filter((c) => coveredBy(c, new Set([row.permission])))
-      if (expansion.every((c) => checked.has(c))) kept.add(row.permission)
-      else toDestroyIds.push(row.id)
-    } else if (catalogCodes.includes(row.permission)) {
-      if (checked.has(row.permission)) kept.add(row.permission)
-      else toDestroyIds.push(row.id)
-    } else {
-      kept.add(row.permission) // 目录外陈旧码:保留不动
-    }
-  }
-
-  const toCreate = [...checked].filter((c) => !coveredBy(c, kept))
-  return { toCreate, toDestroyIds }
+export function buildSubmit(catalog: CatalogGroup[], rows: GrantedRow[], checked: Set<string>): string[] {
+  const wildcards = new Set(rows.map((r) => r.permission).filter((p) => p.endsWith('*')))
+  return catalog.flatMap(groupCodes).filter((c) => checked.has(c) && !coveredBy(c, wildcards))
 }

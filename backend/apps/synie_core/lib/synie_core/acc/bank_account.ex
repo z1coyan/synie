@@ -117,6 +117,7 @@ defmodule SynieCore.Acc.BankAccount do
   end
 
   def permission_prefix, do: "acc.bank_account"
+  def permission_label, do: "银行账户"
   def permission_actions, do: ~w(create read update delete)
 
   # fk 速览/下拉显示用别名(默认反射也会取到 alias,显式声明防字段顺序变动)

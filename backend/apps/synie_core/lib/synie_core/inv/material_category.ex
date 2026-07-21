@@ -70,6 +70,7 @@ defmodule SynieCore.Inv.MaterialCategory do
   end
 
   def permission_prefix, do: "inv.material_category"
+  def permission_label, do: "物料分类"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

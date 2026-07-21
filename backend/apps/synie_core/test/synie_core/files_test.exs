@@ -364,6 +364,6 @@ defmodule SynieCore.FilesTest do
   end
 
   test "权限目录含 sys.file 组" do
-    assert %{prefix: "sys.file", actions: ~w(create read delete)} in SynieCore.Authz.Registry.catalog()
+    assert %{prefix: "sys.file", label: "附件", actions: ~w(create read delete)} in SynieCore.Authz.Registry.catalog()
   end
 end

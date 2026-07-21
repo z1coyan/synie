@@ -3,7 +3,8 @@
 ## 权限
 
 - 权限码 `域.资源:动作`(如 `sales.order:audit`),通配 `前缀:*`、`域.*`、`*`(全域,仅迁移种子/内置角色使用,业务代码不得写入)。
-- 权限点由代码派生不入库:资源声明 `permission_prefix/0` 与 `permission_actions/0`。
+- 权限点由代码派生不入库:资源声明 `permission_prefix/0`、`permission_label/0`(中文资源名,随 catalog 下发)与 `permission_actions/0`。
+- 角色授权整组保存走 mutation `syncSysRolePermissions(roleId, permissions)`(RolePermission 泛型动作 `:sync`):事务内 diff 增删,只同步当前 catalog 内具体码,通配码与目录外存量码原样保留,内置角色拒写,权限复用 `sys.role_permission:create` 码。
 - 资源接权限照样板 `apps/synie_core/test/support/test_domain.ex`(Test.Doc):authorizer + 三段 policies。
 - 带 `company_id` 的资源:所有能写 `company_id` 的动作(含 update)都要挂 `CompanyAccessible` 校验。
 - 公司数据权限 fail-closed:`sys_user_company` 显式授权才可见;`all_companies`/`super_admin` 例外。

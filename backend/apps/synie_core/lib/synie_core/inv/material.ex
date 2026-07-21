@@ -185,6 +185,7 @@ defmodule SynieCore.Inv.Material do
   end
 
   def permission_prefix, do: "inv.material"
+  def permission_label, do: "物料"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

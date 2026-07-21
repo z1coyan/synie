@@ -9,15 +9,22 @@ defmodule SynieCore.Authz.Registry do
   # ponytail: 目前只有一个域;拆多域时把这里改成遍历域列表即可。
   @domains [SynieCore]
 
-  @doc "权限组列表:[%{prefix, actions}]。"
-  @spec catalog() :: [%{prefix: String.t(), actions: [String.t()]}]
+  @doc "权限组列表:[%{prefix, label, actions}]。label 为资源中文名(供权限树直接渲染)。"
+  @spec catalog() :: [%{prefix: String.t(), label: String.t(), actions: [String.t()]}]
   def catalog do
     @domains
     |> Enum.flat_map(&Ash.Domain.Info.resources/1)
     |> Enum.filter(&permission_source?/1)
-    |> Enum.map(&%{prefix: &1.permission_prefix(), actions: &1.permission_actions()})
+    |> Enum.map(&{&1, &1.permission_actions()})
     # 复用他人权限码的资源(如 UserRole/UserCompany 跟随 sys.user)actions 为空,不进目录
-    |> Enum.reject(&(&1.actions == []))
+    |> Enum.reject(fn {_resource, actions} -> actions == [] end)
+    |> Enum.map(fn {resource, actions} ->
+      %{
+        prefix: resource.permission_prefix(),
+        label: resource.permission_label(),
+        actions: actions
+      }
+    end)
   end
 
   @doc "全部具体权限码。"

@@ -155,6 +155,7 @@ defmodule SynieCore.Acc.BankTransaction do
   end
 
   def permission_prefix, do: "acc.bank_transaction"
+  def permission_label, do: "银行流水"
   # import = 流水导入整链路(导入记录/导入行资源借同一码,见 BankImport)
   # reconcile = 对账整链路(对账记录资源借同一码,见 BankReconciliation)
   def permission_actions, do: ~w(create read update delete import reconcile)

@@ -15,6 +15,7 @@ defmodule SynieWeb.Schema do
 
   object :permission_group do
     field :prefix, non_null(:string)
+    field :label, non_null(:string)
     field :actions, non_null(list_of(non_null(:string)))
   end
 
@@ -231,6 +232,26 @@ defmodule SynieWeb.Schema do
               :ok -> {:ok, true}
               {:error, error} -> {:error, mutation_error(error)}
             end
+        end
+      end)
+    end
+
+    # 角色授权整组保存:以目标列表同步目录内具体码(通配/目录外存量码保留),返回同步后全部授权码
+    field :sync_sys_role_permissions, non_null(list_of(non_null(:string))) do
+      arg(:role_id, non_null(:id))
+      arg(:permissions, non_null(list_of(non_null(:string))))
+
+      resolve(fn %{role_id: role_id, permissions: permissions}, %{context: context} ->
+        SynieCore.Authz.RolePermission
+        |> Ash.ActionInput.for_action(
+          :sync,
+          %{role_id: role_id, permissions: permissions},
+          actor: context[:actor]
+        )
+        |> Ash.run_action()
+        |> case do
+          {:ok, codes} -> {:ok, codes}
+          {:error, error} -> {:error, mutation_error(error)}
         end
       end)
     end

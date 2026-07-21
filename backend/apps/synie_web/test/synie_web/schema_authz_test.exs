@@ -94,9 +94,48 @@ defmodule SynieWeb.SchemaAuthzTest do
   test "permissionCatalog 返回权限组" do
     actor = Authz.build_actor(user_with!([]))
 
-    result = run!("query { permissionCatalog { prefix actions } }", actor)
+    result = run!("query { permissionCatalog { prefix label actions } }", actor)
 
     assert %{data: %{"permissionCatalog" => groups}} = result
-    assert Enum.any?(groups, &(&1["prefix"] == "sys.role"))
+    assert Enum.any?(groups, &(&1["prefix"] == "sys.role" and &1["label"] == "角色"))
+  end
+
+  test "syncSysRolePermissions 整组同步授权" do
+    actor = Authz.build_actor(user_with!(["sys.role_permission:create", "sys.role_permission:delete"]))
+
+    role =
+      Role
+      |> Ash.Changeset.for_create(:create, %{
+        code: "r_#{System.unique_integer([:positive])}",
+        name: "角色"
+      })
+      |> Ash.create!(authorize?: false)
+
+    doc =
+      ~s|mutation { syncSysRolePermissions(roleId: "#{role.id}", permissions: ["sales.order:read", "base.company:read"]) }|
+
+    result = run!(doc, actor)
+
+    assert %{data: %{"syncSysRolePermissions" => codes}} = result
+    assert Enum.sort(codes) == ["base.company:read", "sales.order:read"]
+  end
+
+  test "syncSysRolePermissions 无权限报错" do
+    actor = Authz.build_actor(user_with!([]))
+
+    role =
+      Role
+      |> Ash.Changeset.for_create(:create, %{
+        code: "r_#{System.unique_integer([:positive])}",
+        name: "角色"
+      })
+      |> Ash.create!(authorize?: false)
+
+    doc =
+      ~s|mutation { syncSysRolePermissions(roleId: "#{role.id}", permissions: ["sales.order:read"]) }|
+
+    result = run!(doc, actor)
+
+    assert result[:errors] != nil and result[:errors] != []
   end
 end

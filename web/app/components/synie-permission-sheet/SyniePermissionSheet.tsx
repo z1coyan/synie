@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, Checkbox, Spinner, Table, toast } from '@heroui/react'
+import { Button, Checkbox, Chip, SearchField, Spinner, Table, toast } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { gqlFetch } from '~/lib/graphql'
-import { actionColumns, buildDiff, groupByDomain, initialChecked } from './matrix'
+import {
+  CANONICAL_ACTIONS,
+  buildSubmit,
+  groupByDomain,
+  groupCodes,
+  initialChecked,
+  searchGroups,
+  splitActions,
+  triState,
+} from './matrix'
 import type { CatalogGroup, GrantedRow } from './matrix'
 import { actionLabel, domainLabel, resourceLabel } from './permission-labels'
 
@@ -21,11 +30,21 @@ interface Loaded {
   rows: GrantedRow[]
 }
 
+/** MatrixTable 需要的外部状态与回调,由 Sheet 本体持有(搜索视图与域视图共用) */
+interface MatrixCtx {
+  checked: Set<string>
+  disabled: boolean
+  expanded: Set<string>
+  toggle: (code: string, selected: boolean) => void
+  toggleMany: (codes: string[], selected: boolean) => void
+  toggleExpand: (prefix: string) => void
+}
+
 // roleId 内插进查询串,JSON.stringify 转义(同 remote-query.ts buildOptionsQuery/buildByIdQuery 的转义先例)。
 // list 统一 offset 分页(backend/CLAUDE.md);limit 200 = max_page_size,权限行数量级远小于此,一页取足。
 const loadQuery = (roleId: string) => `
   query {
-    permissionCatalog { prefix actions }
+    permissionCatalog { prefix label actions }
     sysRolePermissions(filter: { roleId: { eq: ${JSON.stringify(roleId)} } }, limit: 200, offset: 0) {
       count
       results { id permission }
@@ -33,16 +52,138 @@ const loadQuery = (roleId: string) => `
   }
 `
 
-const CREATE = `
-  mutation ($input: CreateSysRolePermissionInput!) {
-    createSysRolePermission(input: $input) { result { id } errors { message } }
+// 单次 sync:传目标勾选的具体码集合,后端事务内 diff;通配行与目录外码后端保留(见 matrix.ts buildSubmit)
+const SYNC = `
+  mutation ($roleId: ID!, $permissions: [String!]!) {
+    syncSysRolePermissions(roleId: $roleId, permissions: $permissions)
   }
 `
-const DESTROY = `
-  mutation ($id: ID!) {
-    destroySysRolePermission(id: $id) { errors { message } }
+
+/** 某域/某搜索结果分组的一张权限矩阵:行=资源,列=固定 10 动作 + 行尾"更多" */
+function MatrixTable(props: { ariaLabel: string; groups: CatalogGroup[]; ctx: MatrixCtx }) {
+  const { groups, ctx } = props
+
+  const check = (code: string) => (
+    <Checkbox
+      aria-label={code}
+      // 表格树内 Table 的 CheckboxContext 只认 slot="selection";slot={null} 退出,否则渲染抛错
+      slot={null}
+      isSelected={ctx.checked.has(code)}
+      isDisabled={ctx.disabled}
+      onChange={(selected: boolean) => ctx.toggle(code, selected)}
+    >
+      <Checkbox.Content>
+        <Checkbox.Control>
+          <Checkbox.Indicator />
+        </Checkbox.Control>
+      </Checkbox.Content>
+    </Checkbox>
+  )
+
+  // 三级全选共用:全勾/半选/未勾;无适用码时禁用(如某列在当前组无资源支持)
+  const triCheck = (label: string, codes: string[]) => {
+    const state = triState(codes, ctx.checked)
+    return (
+      <Checkbox
+        aria-label={label}
+        slot={null}
+        isSelected={state === 'all'}
+        isIndeterminate={state === 'some'}
+        isDisabled={ctx.disabled || codes.length === 0}
+        onChange={(selected: boolean) => ctx.toggleMany(codes, selected)}
+      >
+        <Checkbox.Content>
+          <Checkbox.Control>
+            <Checkbox.Indicator />
+          </Checkbox.Control>
+        </Checkbox.Content>
+      </Checkbox>
+    )
   }
-`
+
+  return (
+    <Table>
+      <Table.ScrollContainer>
+        <Table.Content aria-label={props.ariaLabel}>
+          <Table.Header>
+            <Table.Column isRowHeader>资源</Table.Column>
+            {CANONICAL_ACTIONS.map((a) => {
+              // 列头全选:该动作在当前组所有适用资源上的码
+              const codes = groups.filter((g) => g.actions.includes(a)).map((g) => `${g.prefix}:${a}`)
+              return (
+                <Table.Column key={a}>
+                  <div className="flex items-center gap-1.5">
+                    {triCheck(`全选${actionLabel(a)}`, codes)}
+                    {actionLabel(a)}
+                  </div>
+                </Table.Column>
+              )
+            })}
+            <Table.Column>更多</Table.Column>
+          </Table.Header>
+          <Table.Body>
+            {groups.flatMap((g) => {
+              const { fixed, extra } = splitActions(g.actions)
+              const isExpanded = ctx.expanded.has(g.prefix)
+              const mainRow = (
+                <Table.Row key={g.prefix}>
+                  <Table.Cell>
+                    <div className="flex items-center gap-1.5">
+                      {/* 行头全选:该资源全部动作,含"更多"里的 */}
+                      {triCheck(`全选${resourceLabel(g.prefix, g.label)}`, groupCodes(g))}
+                      {resourceLabel(g.prefix, g.label)}
+                    </div>
+                  </Table.Cell>
+                  {CANONICAL_ACTIONS.map((a) => (
+                    <Table.Cell key={a}>
+                      {fixed.includes(a) ? check(`${g.prefix}:${a}`) : <span className="text-ink-500">—</span>}
+                    </Table.Cell>
+                  ))}
+                  <Table.Cell>
+                    {extra.length > 0 && (
+                      <Button size="sm" variant="ghost" onPress={() => ctx.toggleExpand(g.prefix)}>
+                        {isExpanded ? '收起' : `更多(${extra.length})`}
+                      </Button>
+                    )}
+                  </Table.Cell>
+                </Table.Row>
+              )
+              if (!isExpanded) return [mainRow]
+              const moreRow = (
+                <Table.Row key={`${g.prefix}:more`}>
+                  <Table.Cell colSpan={CANONICAL_ACTIONS.length + 2}>
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 py-1">
+                      {extra.map((a) => {
+                        const code = `${g.prefix}:${a}`
+                        return (
+                          <Checkbox
+                            key={a}
+                            slot={null}
+                            isSelected={ctx.checked.has(code)}
+                            isDisabled={ctx.disabled}
+                            onChange={(selected: boolean) => ctx.toggle(code, selected)}
+                          >
+                            <Checkbox.Content>
+                              <Checkbox.Control>
+                                <Checkbox.Indicator />
+                              </Checkbox.Control>
+                              {actionLabel(a)}
+                            </Checkbox.Content>
+                          </Checkbox>
+                        )
+                      })}
+                    </div>
+                  </Table.Cell>
+                </Table.Row>
+              )
+              return [mainRow, moreRow]
+            })}
+          </Table.Body>
+        </Table.Content>
+      </Table.ScrollContainer>
+    </Table>
+  )
+}
 
 export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
   const { roleId, isOpen } = props
@@ -51,6 +192,9 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  const [keyword, setKeyword] = useState('')
+  const [domain, setDomain] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   // 关闭动画期间冻结最后一次打开时的角色名:onOpenChange(false) 后父级常把 roleName 跟着
   // 置空(见 roles.tsx 的 setPermRole(null)),若标题实时跟 props,会在 Sheet 退出动画播放期间
@@ -81,6 +225,10 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
         }
         setData({ roleId, catalog: res.permissionCatalog, rows: results })
         setChecked(initialChecked(res.permissionCatalog, results))
+        // 换角色后视图状态归零:搜索、选中域、"更多"展开行
+        setKeyword('')
+        setDomain(null)
+        setExpanded(new Set())
       })
       .catch((e) => {
         if (!cancelled) setError((e as Error).message)
@@ -104,57 +252,58 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
       return next
     })
 
+  // 全选落子:全选 = 展开为具体码逐个加/删,不写通配码(提交集永远只有具体码)
+  const toggleMany = (codes: string[], selected: boolean) =>
+    setChecked((prev) => {
+      const next = new Set(prev)
+      for (const c of codes) {
+        if (selected) next.add(c)
+        else next.delete(c)
+      }
+      return next
+    })
+
+  const toggleExpand = (prefix: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(prefix)) next.delete(prefix)
+      else next.add(prefix)
+      return next
+    })
+
   const save = async () => {
     if (!loaded || !roleId) return
-    const diff = buildDiff(loaded.catalog, loaded.rows, checked)
-    if (diff.toCreate.length === 0 && diff.toDestroyIds.length === 0) {
-      props.onOpenChange(false)
-      return
-    }
     setSaving(true)
-    const failed: string[] = []
-    // ponytail: 前端逐条并发、聚合报错;量大或需事务性时后端加 bulk action 再切
-    await Promise.all([
-      ...diff.toCreate.map(async (code) => {
-        try {
-          const res = await gqlFetch<{ createSysRolePermission: { errors: { message: string }[] | null } }>(
-            CREATE,
-            { input: { roleId, permission: code } }
-          )
-          if (res.createSysRolePermission.errors?.length) failed.push(code)
-        } catch {
-          failed.push(code)
-        }
-      }),
-      ...diff.toDestroyIds.map(async (id) => {
-        const code = loaded.rows.find((r) => r.id === id)?.permission ?? id
-        try {
-          const res = await gqlFetch<{ destroySysRolePermission: { errors: { message: string }[] | null } }>(
-            DESTROY,
-            { id }
-          )
-          if (res.destroySysRolePermission.errors?.length) failed.push(`回收失败:${code}`)
-        } catch {
-          failed.push(`回收失败:${code}`)
-        }
-      }),
-    ])
-    setSaving(false)
-    if (failed.length > 0) {
-      toast.danger('权限保存部分失败', { description: failed.join('、') })
-      setReloadKey((k) => k + 1) // 重拉真实勾选态,Sheet 不关
-    } else {
+    try {
+      await gqlFetch<{ syncSysRolePermissions: string[] }>(SYNC, {
+        roleId,
+        permissions: buildSubmit(loaded.catalog, loaded.rows, checked),
+      })
       toast.success('权限已保存')
       props.onOpenChange(false)
+    } catch (e) {
+      toast.danger('权限保存失败', { description: (e as Error).message })
+      setReloadKey((k) => k + 1) // 重拉真实勾选态,Sheet 不关
+    } finally {
+      setSaving(false)
     }
   }
 
-  const columns = loaded ? actionColumns(loaded.catalog) : []
+  const disabled = props.readOnly || saving
+  const buckets = loaded ? groupByDomain(loaded.catalog) : []
+  // 选中域兜底:domain 未设或已不存在时取第一个域
+  const activeDomain = buckets.some((b) => b.domain === domain) ? domain : buckets[0]?.domain
+  const searching = keyword.trim() !== ''
+  const searchBuckets = searching
+    ? groupByDomain(searchGroups(loaded?.catalog ?? [], keyword, (g) => resourceLabel(g.prefix, g.label)))
+    : []
+
+  const ctx: MatrixCtx = { checked, disabled, expanded, toggle, toggleMany, toggleExpand }
 
   return (
     <Sheet isOpen={isOpen} onOpenChange={props.onOpenChange} placement="right">
       <Sheet.Backdrop>
-        <Sheet.Content className="w-full lg:w-[720px]">
+        <Sheet.Content className="w-full lg:w-[1080px]">
           <Sheet.Dialog className="h-full">
             <Sheet.CloseTrigger />
             <Sheet.Header>
@@ -178,54 +327,100 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
                   <Spinner />
                 </div>
               ) : (
-                <div className="flex flex-col gap-6">
-                  {groupByDomain(loaded.catalog).map((bucket) => (
-                    <section key={bucket.domain}>
-                      <h3 className="mb-2 text-sm font-medium text-ink-500">{domainLabel(bucket.domain)}</h3>
-                      <Table>
-                        <Table.ScrollContainer>
-                          <Table.Content aria-label={`${domainLabel(bucket.domain)}权限`}>
-                            <Table.Header>
-                              <Table.Column isRowHeader>资源</Table.Column>
-                              {columns.map((a) => (
-                                <Table.Column key={a}>{actionLabel(a)}</Table.Column>
-                              ))}
-                            </Table.Header>
-                            <Table.Body>
-                              {bucket.groups.map((g) => (
-                                <Table.Row key={g.prefix}>
-                                  <Table.Cell>{resourceLabel(g.prefix)}</Table.Cell>
-                                  {columns.map((a) => {
-                                    const code = `${g.prefix}:${a}`
-                                    return (
-                                      <Table.Cell key={a}>
-                                        {g.actions.includes(a) ? (
-                                          <Checkbox
-                                            aria-label={code}
-                                            isSelected={checked.has(code)}
-                                            isDisabled={props.readOnly || saving}
-                                            onChange={(selected: boolean) => toggle(code, selected)}
-                                          >
-                                            <Checkbox.Content>
-                                              <Checkbox.Control>
-                                                <Checkbox.Indicator />
-                                              </Checkbox.Control>
-                                            </Checkbox.Content>
-                                          </Checkbox>
-                                        ) : (
-                                          <span className="text-ink-500">—</span>
-                                        )}
-                                      </Table.Cell>
-                                    )
-                                  })}
-                                </Table.Row>
-                              ))}
-                            </Table.Body>
-                          </Table.Content>
-                        </Table.ScrollContainer>
-                      </Table>
-                    </section>
-                  ))}
+                <div className="flex flex-col gap-4">
+                  <SearchField aria-label="搜索资源" value={keyword} onChange={setKeyword} className="w-full lg:w-72">
+                    <SearchField.Group>
+                      <SearchField.SearchIcon />
+                      <SearchField.Input placeholder="搜索资源名 / prefix…" />
+                      <SearchField.ClearButton />
+                    </SearchField.Group>
+                  </SearchField>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+                    {/* 左侧域导航:域名 + 徽标(已授权资源数/总资源数) + 域级三态全选;移动端横排 */}
+                    <nav className="flex shrink-0 flex-wrap gap-1 lg:w-44 lg:flex-col lg:items-stretch">
+                      {buckets.map((bucket) => {
+                        const domainCodes = bucket.groups.flatMap(groupCodes)
+                        const granted = bucket.groups.filter((g) =>
+                          groupCodes(g).some((c) => checked.has(c))
+                        ).length
+                        const state = triState(domainCodes, checked)
+                        return (
+                          <div
+                            key={bucket.domain}
+                            className={`flex items-center gap-0.5 rounded-md px-1 ${
+                              !searching && bucket.domain === activeDomain ? 'bg-surface-secondary' : ''
+                            }`}
+                          >
+                            <Checkbox
+                              aria-label={`全选${domainLabel(bucket.domain)}`}
+                              isSelected={state === 'all'}
+                              isIndeterminate={state === 'some'}
+                              isDisabled={disabled || domainCodes.length === 0}
+                              onChange={(selected: boolean) => toggleMany(domainCodes, selected)}
+                            >
+                              <Checkbox.Content>
+                                <Checkbox.Control>
+                                  <Checkbox.Indicator />
+                                </Checkbox.Control>
+                              </Checkbox.Content>
+                            </Checkbox>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="flex-1 justify-start"
+                              onPress={() => {
+                                setDomain(bucket.domain)
+                                setKeyword('')
+                              }}
+                            >
+                              {domainLabel(bucket.domain)}
+                              <Chip size="sm" variant="soft" className="ml-auto">
+                                {granted}/{bucket.groups.length}
+                              </Chip>
+                            </Button>
+                          </div>
+                        )
+                      })}
+                    </nav>
+                    <div className="min-w-0 flex-1">
+                      {searching ? (
+                        searchBuckets.length === 0 ? (
+                          <EmptyState size="md" className="h-48 justify-center">
+                            <EmptyState.Header>
+                              <EmptyState.Title>无匹配资源</EmptyState.Title>
+                              <EmptyState.Description>换个关键词试试</EmptyState.Description>
+                            </EmptyState.Header>
+                          </EmptyState>
+                        ) : (
+                          <div className="flex flex-col gap-6">
+                            {searchBuckets.map((bucket) => (
+                              <section key={bucket.domain}>
+                                <h3 className="mb-2 text-sm font-medium text-ink-500">
+                                  {domainLabel(bucket.domain)}
+                                </h3>
+                                <MatrixTable
+                                  ariaLabel={`${domainLabel(bucket.domain)}权限`}
+                                  groups={bucket.groups}
+                                  ctx={ctx}
+                                />
+                              </section>
+                            ))}
+                          </div>
+                        )
+                      ) : (
+                        buckets
+                          .filter((b) => b.domain === activeDomain)
+                          .map((bucket) => (
+                            <MatrixTable
+                              key={bucket.domain}
+                              ariaLabel={`${domainLabel(bucket.domain)}权限`}
+                              groups={bucket.groups}
+                              ctx={ctx}
+                            />
+                          ))
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </Sheet.Body>

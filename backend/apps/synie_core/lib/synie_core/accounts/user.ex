@@ -41,6 +41,7 @@ defmodule SynieCore.Accounts.User do
   end
 
   def permission_prefix, do: "sys.user"
+  def permission_label, do: "用户"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

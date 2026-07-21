@@ -37,6 +37,7 @@ defmodule SynieCore.Acc.Setting do
   end
 
   def permission_prefix, do: "acc.setting"
+  def permission_label, do: "财务设置"
   def permission_actions, do: ~w(read update)
 
   actions do

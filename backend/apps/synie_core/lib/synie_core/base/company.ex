@@ -28,6 +28,7 @@ defmodule SynieCore.Base.Company do
   end
 
   def permission_prefix, do: "base.company"
+  def permission_label, do: "公司"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

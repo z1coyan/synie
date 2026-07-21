@@ -28,6 +28,7 @@ defmodule SynieCore.Base.Currency do
   end
 
   def permission_prefix, do: "base.currency"
+  def permission_label, do: "币种"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

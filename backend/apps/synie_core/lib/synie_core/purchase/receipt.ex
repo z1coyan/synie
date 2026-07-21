@@ -257,6 +257,7 @@ defmodule SynieCore.Purchase.Receipt do
   end
 
   def permission_prefix, do: "purchase.receipt"
+  def permission_label, do: "采购入库单"
   def permission_actions, do: ~w(create read update delete audit void)
 
   def grid_actions do

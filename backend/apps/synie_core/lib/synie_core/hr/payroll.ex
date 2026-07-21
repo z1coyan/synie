@@ -86,6 +86,7 @@ defmodule SynieCore.Hr.Payroll do
   end
 
   def permission_prefix, do: "hr.payroll"
+  def permission_label, do: "工资单"
   def permission_actions, do: ~w(create read update delete)
 
   # refresh 复用 update 码(见 policies),不走 grid_actions(其 key 必须是独立权限码);

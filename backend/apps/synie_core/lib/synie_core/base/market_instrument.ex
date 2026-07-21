@@ -84,6 +84,7 @@ defmodule SynieCore.Base.MarketInstrument do
   end
 
   def permission_prefix, do: "base.market_instrument"
+  def permission_label, do: "行情品种"
   def permission_actions, do: ~w(create read update delete)
 
   def display_field, do: :name

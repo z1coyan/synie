@@ -50,12 +50,20 @@ defmodule SynieCore.Authz.RolePermission do
       authorize_if always()
     end
 
-    policy always() do
+    policy action_type([:create, :read, :destroy]) do
       authorize_if SynieCore.Authz.Checks.HasPermission
+    end
+
+    # 整组同步是授权的增删合一:一次调用可能删行,故要求同时具备 create 与 delete
+    # 两码(与矩阵编辑门控同口径),不设独立权限点(权限矩阵零噪音)
+    policy action(:sync) do
+      forbid_unless {SynieCore.Authz.Checks.HasPermission, as: "create"}
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "delete"}
     end
   end
 
   def permission_prefix, do: "sys.role_permission"
+  def permission_label, do: "角色权限"
   def permission_actions, do: ~w(create read delete)
 
   actions do
@@ -80,6 +88,17 @@ defmodule SynieCore.Authz.RolePermission do
       require_atomic? false
 
       validate SynieCore.Authz.RolePermission.BuiltinRoleGuard
+    end
+
+    # 权限配置页整组保存:以目标列表为准同步目录内具体码;
+    # 存量通配码与目录外码原样保留,内置角色拒绝写入
+    action :sync, {:array, :string} do
+      argument :role_id, :uuid, allow_nil?: false
+      argument :permissions, {:array, :string}, allow_nil?: false
+
+      transaction? true
+
+      run SynieCore.Authz.RolePermissionSync
     end
   end
 

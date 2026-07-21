@@ -34,6 +34,7 @@ defmodule SynieCore.Hr.Employee do
   end
 
   def permission_prefix, do: "hr.employee"
+  def permission_label, do: "员工"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

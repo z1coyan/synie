@@ -160,6 +160,7 @@ defmodule SynieCore.Sales.Quotation do
   end
 
   def permission_prefix, do: "sales.quotation"
+  def permission_label, do: "销售报价单"
   def permission_actions, do: ~w(create read update delete audit void)
 
   def grid_actions do

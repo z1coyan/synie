@@ -43,6 +43,7 @@ defmodule SynieCore.Authz.Role do
   end
 
   def permission_prefix, do: "sys.role"
+  def permission_label, do: "角色"
   def permission_actions, do: ~w(create read update delete batch_delete export print batch_print)
 
   actions do

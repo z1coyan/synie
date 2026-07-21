@@ -184,6 +184,7 @@ defmodule SynieCore.Inv.Warehouse do
   end
 
   def permission_prefix, do: "inv.warehouse"
+  def permission_label, do: "仓库"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

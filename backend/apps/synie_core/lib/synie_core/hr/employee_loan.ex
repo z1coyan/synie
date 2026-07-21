@@ -79,6 +79,7 @@ defmodule SynieCore.Hr.EmployeeLoan do
   end
 
   def permission_prefix, do: "hr.employee_loan"
+  def permission_label, do: "员工借款"
   def permission_actions, do: ~w(create read update delete)
 
   actions do

@@ -93,6 +93,7 @@ defmodule SynieCore.Inv.StockDoc do
   end
 
   def permission_prefix, do: "inv.stock_doc"
+  def permission_label, do: "手工出入库单"
   def permission_actions, do: ~w(create read update delete audit void)
 
   def grid_actions do
