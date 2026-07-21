@@ -1,9 +1,19 @@
 import { describe, expect, test } from 'bun:test'
-import { amountInWords, formatAmount } from './amount'
+import { amountInWords, formatAmount, formatQty } from './amount'
 
 describe('formatAmount', () => {
   test('千分位两位小数', () => expect(formatAmount(1234567.8)).toBe('1,234,567.80'))
   test('空值', () => expect(formatAmount(null)).toBe(''))
+})
+
+describe('formatQty', () => {
+  test('decimal 字符串去尾零', () => expect(formatQty('200.000000')).toBe('200'))
+  test('千分位', () => expect(formatQty('12345.500000')).toBe('12,345.5'))
+  test('6 位精度保留', () => expect(formatQty('0.000001')).toBe('0.000001'))
+  test('超长小数截断到 6 位', () => expect(formatQty(1 / 3)).toBe('0.333333'))
+  test('窄空间 4 位', () => expect(formatQty(1 / 3, 4)).toBe('0.3333'))
+  test('空值', () => expect(formatQty(null)).toBe(''))
+  test('非数值原样', () => expect(formatQty('abc')).toBe('abc'))
 })
 
 describe('amountInWords', () => {

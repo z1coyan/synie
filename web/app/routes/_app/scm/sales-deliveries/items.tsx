@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { formatQty } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useAuditDoc } from '../-audit-doc'
@@ -44,9 +45,10 @@ const GRID_OVERRIDES = {
     },
   },
   unitName: { label: '单位' },
-  baseQty: { label: '折算数量' },
-  reconciledQty: { label: '已对账数量' },
-  remainingReconcilableQty: { label: '剩余可对账' },
+  qty: { label: '数量', render: (v: unknown) => formatQty(v) || undefined },
+  baseQty: { label: '折算数量', render: (v: unknown) => formatQty(v) || undefined },
+  reconciledQty: { label: '已对账数量', render: (v: unknown) => formatQty(v) || undefined },
+  remainingReconcilableQty: { label: '剩余可对账', render: (v: unknown) => formatQty(v) || undefined },
 } satisfies Record<string, ColumnOverride>
 
 // 列全走行上快照/计算字段,不点 materialId 等会触发嵌套授权的 fk

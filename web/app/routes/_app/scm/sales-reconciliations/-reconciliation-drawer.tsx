@@ -8,16 +8,16 @@ import {
   type ReactNode,
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Input, Label, NumberField, TextField, toast } from '@heroui/react'
+import { Input, Label, NumberField, TextField, Button, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
-import { formatAmount } from '~/lib/amount'
+import { formatAmount, formatQty } from '~/lib/amount'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
+import { isLocalRow, localRowId } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
-import { gqlEnum } from '~/components/synie-data-grid/query'
+import { gqlEnum, toGqlLiteral } from '~/components/synie-data-grid/query'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
@@ -423,6 +423,7 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [filters] = useState<FilterState>({})
   // 发货条目缓存:选择时写入完整行,validateItem/transformItem 带剩余量与快照价
   const deliveryItemsRef = useRef(new Map<string, Row>())
@@ -559,6 +560,76 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
             items.find((r) => r.orderCurrencyCode != null && r.orderCurrencyCode !== '')
               ?.orderCurrencyCode ?? null
 
+          // 「导入所有未对账」:按选择弹窗同口径(diGridFilter)拉全部候选,
+          // 跳过已在清单的发货条目,数量默认=剩余可对账量(折行单位)
+          const importAllUnreconciled = async () => {
+            if (!diGridFilter) return
+            setImporting(true)
+            try {
+              const filterLit = toGqlLiteral(diGridFilter)
+              const fields =
+                'id qty baseQty remainingReconcilableQty orderPrice orderBasePrice orderCurrencyCode materialCode materialName materialSpec customerPartNo unitName deliveryNo'
+              const candidates: Row[] = []
+              let offset = 0
+              for (;;) {
+                const data = await gqlFetch<{
+                  salDeliveryItems: { count: number; results: Row[] }
+                }>(
+                  `query { salDeliveryItems(filter: ${filterLit}, limit: 200, offset: ${offset}, sort: [{field: DELIVERY_DATE, order: ASC}]) { count results { ${fields} } } }`,
+                )
+                const page = data.salDeliveryItems
+                candidates.push(...page.results)
+                // 按实际返回行数推进:limit 可能被 max_page_size 钳制(同 fetchAllRows 纪律)
+                offset += page.results.length
+                if (candidates.length >= page.count || page.results.length === 0) break
+              }
+              const listed = new Set(items.map((r) => String(r.deliveryItemId)))
+              const fresh = candidates.filter((di) => !listed.has(String(di.id)))
+              if (fresh.length === 0) {
+                toast.warning('没有可导入的未对账发货条目')
+                return
+              }
+              // 清单为空时 filter 未钉币种:候选跨币种则无法保证单内同币种,先手工选一行钉住
+              if (
+                items.length === 0 &&
+                new Set(fresh.map((di) => String(di.orderCurrencyCode ?? ''))).size > 1
+              ) {
+                toast.warning('未对账条目存在多个币种,请先手工新增一行钉住币种后再导入')
+                return
+              }
+              let maxIdx = items.reduce((m, r) => Math.max(m, Number(r.idx) || 0), 0)
+              const imported = fresh.map((di) => {
+                deliveryItemsRef.current.set(String(di.id), di)
+                const remaining = Number(di.remainingReconcilableQty)
+                const ratio = Number(di.baseQty) > 0 ? Number(di.qty) / Number(di.baseQty) : 1
+                // 数量默认=剩余可对账量(折行单位,6 位去尾差);金额按金额链 2 位预览,落库以后端为准
+                const qty = Math.round(remaining * ratio * 1e6) / 1e6
+                return {
+                  id: localRowId(),
+                  idx: ++maxIdx,
+                  deliveryItemId: di.id,
+                  qty,
+                  remarks: null,
+                  materialCode: di.materialCode ?? null,
+                  materialName: di.materialName ?? null,
+                  materialSpec: di.materialSpec ?? null,
+                  customerPartNo: di.customerPartNo ?? null,
+                  unitName: di.unitName ?? null,
+                  deliveryNo: di.deliveryNo ?? null,
+                  orderCurrencyCode: di.orderCurrencyCode ?? null,
+                  amount: previewAmount(qty, di.orderPrice),
+                  baseAmount: previewAmount(qty, di.orderBasePrice),
+                }
+              })
+              setItems((cur) => [...cur, ...imported])
+              toast.success(`已导入 ${imported.length} 条未对账发货条目`)
+            } catch (e) {
+              toast.danger('导入未对账条目失败', { description: (e as Error).message })
+            } finally {
+              setImporting(false)
+            }
+          }
+
           // 条目录入:弹窗选发货条目后锁定回填物料/单位/币种快照;用户只填数量/行备注
           const itemFields: Record<string, FieldOverride> = {
             idx: { visible: () => false },
@@ -630,9 +701,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                     materialName: { label: '物料名称' },
                     customerPartNo: { label: '客户料号' },
                     unitName: { label: '单位' },
-                    qty: { label: '发货数量' },
-                    reconciledQty: { label: '已对账数量' },
-                    remainingReconcilableQty: { label: '剩余可对账' },
+                    qty: { label: '发货数量', render: (v: unknown) => formatQty(v) || undefined },
+                    reconciledQty: { label: '已对账数量', render: (v: unknown) => formatQty(v) || undefined },
+                    remainingReconcilableQty: { label: '剩余可对账', render: (v: unknown) => formatQty(v) || undefined },
                     orderPrice: { label: '含税单价' },
                     orderCurrencyCode: { label: '币种' },
                   }}
@@ -731,6 +802,10 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
 
           const totalAmount = items.reduce((acc, r) => acc + (Number(r.amount) || 0), 0)
           const totalBaseAmount = items.reduce((acc, r) => acc + (Number(r.baseAmount) || 0), 0)
+          const itemsReadOnly =
+            mode === 'view' ||
+            (row != null && row.status !== 'DRAFT') ||
+            (mode !== 'create' && !detailLoaded)
 
           return (
             <>
@@ -759,16 +834,24 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                 label="对账条目"
                 items={items}
                 onChange={setItems}
-                readOnly={
-                  mode === 'view' ||
-                  (row != null && row.status !== 'DRAFT') ||
-                  (mode !== 'create' && !detailLoaded)
-                }
+                readOnly={itemsReadOnly}
                 canCreate={headerReady}
                 toolbar={
-                  mode !== 'view' && !headerReady ? (
-                    <span className="text-xs text-muted">先选齐公司、对手类型与对手</span>
-                  ) : undefined
+                  itemsReadOnly ? undefined : (
+                    <div className="flex items-center gap-2">
+                      {!headerReady && (
+                        <span className="text-xs text-muted">先选齐公司、对手类型与对手</span>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        isDisabled={!headerReady || importing}
+                        onPress={() => void importAllUnreconciled()}
+                      >
+                        {importing ? '导入中…' : '导入所有未对账'}
+                      </Button>
+                    </div>
+                  )
                 }
                 drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
                 exclude={[
@@ -830,7 +913,8 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                     },
                   },
                   unitName: { label: '单位' },
-                  baseQty: { label: '折算数量' },
+                  qty: { render: (v) => formatQty(v) || undefined },
+                  baseQty: { label: '折算数量', render: (v) => formatQty(v) || undefined },
                   amount: { label: '金额(原币)', render: (v) => formatAmount(v) || undefined },
                   baseAmount: {
                     label: '本币金额',

@@ -14,6 +14,16 @@ export function formatPrice(value: unknown): string {
   return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 }
 
+/** 数量千分位、去尾零:默认最多 6 位小数(默认单位 base 量 6 位精度);
+ * 窄空间(如进度格)可传 maxFractionDigits=4(行单位换算回的长小数截断);
+ * 空值回空串,非数值原样字符串化,同 formatAmount 纪律 */
+export function formatQty(value: unknown, maxFractionDigits = 6): string {
+  if (value == null || value === '') return ''
+  const n = Number(value)
+  if (!Number.isFinite(n)) return String(value)
+  return n.toLocaleString('zh-CN', { maximumFractionDigits: maxFractionDigits })
+}
+
 const DIGITS = '零壹贰叁肆伍陆柒捌玖'
 const UNITS = ['', '拾', '佰', '仟']
 const GROUPS = ['', '万', '亿', '万亿']

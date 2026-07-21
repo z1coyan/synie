@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { formatAmount } from '~/lib/amount'
+import { formatAmount, formatQty } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useReconciliationDrawer } from './-reconciliation-drawer'
@@ -19,7 +19,8 @@ const GRID_OVERRIDES = {
   // 编号/规格/客户料号不在行 calculation 上,此处只有名称单行
   materialName: { label: '物料' },
   unitName: { label: '单位' },
-  baseQty: { label: '折算数量' },
+  qty: { label: '数量', render: (v: unknown) => formatQty(v) || undefined },
+  baseQty: { label: '折算数量', render: (v: unknown) => formatQty(v) || undefined },
   amount: { label: '金额(原币)', render: (v: unknown) => formatAmount(v) },
   baseAmount: { label: '本币金额', render: (v: unknown) => formatAmount(v) },
 } satisfies Record<string, ColumnOverride>

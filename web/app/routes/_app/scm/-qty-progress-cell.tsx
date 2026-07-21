@@ -1,11 +1,11 @@
 import { ProgressBar } from '@heroui/react'
+import { formatQty } from '~/lib/amount'
 import type { Row } from '~/components/synie-data-grid/types'
 
-// 数量最多 4 位小数、去尾零(行单位换算回来的已收/发可能带长小数,如 1÷3 换算);
-// 非法值原样字符串化,同 formatAmount 纪律
+// 进度格空间窄,数量最多 4 位小数、去尾零(行单位换算回来的已收/发可能带长小数,如 1÷3 换算)
 function fmtQty(value: number): string {
   if (!Number.isFinite(value)) return '—'
-  return value.toLocaleString('zh-CN', { maximumFractionDigits: 4 })
+  return formatQty(value, 4)
 }
 
 export interface QtyProgressLabels {
