@@ -28,6 +28,11 @@ defmodule SynieCore do
       list SynieCore.Sales.OrderItem, :sal_order_items, :read, paginate_with: :offset
       list SynieCore.Sales.Delivery, :sal_deliveries, :read, paginate_with: :offset
       list SynieCore.Sales.DeliveryItem, :sal_delivery_items, :read, paginate_with: :offset
+      list SynieCore.Sales.Reconciliation, :sal_reconciliations, :read, paginate_with: :offset
+
+      list SynieCore.Sales.ReconciliationItem, :sal_reconciliation_items, :read,
+        paginate_with: :offset
+
       list SynieCore.Sales.Quotation, :sal_quotations, :read, paginate_with: :offset
       list SynieCore.Sales.QuotationItem, :sal_quotation_items, :read, paginate_with: :offset
       list SynieCore.Sales.QuotationTier, :sal_quotation_tiers, :read, paginate_with: :offset
@@ -193,6 +198,19 @@ defmodule SynieCore do
       create SynieCore.Sales.DeliveryItem, :create_sal_delivery_item, :create
       update SynieCore.Sales.DeliveryItem, :update_sal_delivery_item, :update
       destroy SynieCore.Sales.DeliveryItem, :destroy_sal_delivery_item, :destroy
+
+      # 销售对账单:常规单 confirm/unconfirm,赠送/样品单 audit(结单)/void;行随单头权限码
+      create SynieCore.Sales.Reconciliation, :create_sal_reconciliation, :create
+      update SynieCore.Sales.Reconciliation, :update_sal_reconciliation, :update
+      destroy SynieCore.Sales.Reconciliation, :destroy_sal_reconciliation, :destroy
+      update SynieCore.Sales.Reconciliation, :confirm_sal_reconciliation, :confirm
+      update SynieCore.Sales.Reconciliation, :unconfirm_sal_reconciliation, :unconfirm
+      update SynieCore.Sales.Reconciliation, :audit_sal_reconciliation, :audit
+      update SynieCore.Sales.Reconciliation, :void_sal_reconciliation, :void
+
+      create SynieCore.Sales.ReconciliationItem, :create_sal_reconciliation_item, :create
+      update SynieCore.Sales.ReconciliationItem, :update_sal_reconciliation_item, :update
+      destroy SynieCore.Sales.ReconciliationItem, :destroy_sal_reconciliation_item, :destroy
 
       # 销售报价单:状态翻转走 audit/void 独立 mutation;条目与价格档随单头权限码
       create SynieCore.Sales.Quotation, :create_sal_quotation, :create
@@ -433,6 +451,8 @@ defmodule SynieCore do
     resource SynieCore.Sales.OrderItem
     resource SynieCore.Sales.Delivery
     resource SynieCore.Sales.DeliveryItem
+    resource SynieCore.Sales.Reconciliation
+    resource SynieCore.Sales.ReconciliationItem
     resource SynieCore.Sales.Quotation
     resource SynieCore.Sales.QuotationItem
     resource SynieCore.Sales.QuotationTier

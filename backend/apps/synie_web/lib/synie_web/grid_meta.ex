@@ -22,6 +22,8 @@ defmodule SynieWeb.GridMeta do
     "salOrderItems" => SynieCore.Sales.OrderItem,
     "salDeliveries" => SynieCore.Sales.Delivery,
     "salDeliveryItems" => SynieCore.Sales.DeliveryItem,
+    "salReconciliations" => SynieCore.Sales.Reconciliation,
+    "salReconciliationItems" => SynieCore.Sales.ReconciliationItem,
     "salQuotations" => SynieCore.Sales.Quotation,
     "salQuotationItems" => SynieCore.Sales.QuotationItem,
     "salQuotationTiers" => SynieCore.Sales.QuotationTier,

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import {
   AlertDialog,
@@ -15,6 +15,7 @@ import {
 } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { amountInWords, formatAmount } from '~/lib/amount'
+import { UUID_RE } from '~/components/synie-data-grid/query'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -109,6 +110,7 @@ const GRID_COLUMNS = [
   'docNo',
   'direction',
   'partyId',
+  'salReconciliationId',
   'invoiceKind',
   'invoiceNo',
   'invoiceDate',
@@ -147,6 +149,65 @@ function accountInput(label: string) {
       />
     )
   }
+}
+
+// 关联销售对账单候选限:本公司、本对手、客户已确认、常规类型(与后端 VatInvoiceReconciliationLink/审核校验同口径);
+// 对手类型是枚举,filter 里用裸 token(同 accountFilter 先例)
+function reconciliationFilter(values: Record<string, unknown>): string | undefined {
+  const { companyId, partyType, partyId } = values
+  if (!companyId || !partyType || !partyId) return undefined
+  return `{and: [{companyId: {eq: ${JSON.stringify(String(companyId))}}}, {partyType: {eq: ${String(partyType)}}}, {partyId: {eq: ${JSON.stringify(String(partyId))}}}, {status: {eq: CONFIRMED}}, {reconciliationType: {eq: REGULAR}}]}`
+}
+
+/**
+ * 「关联销售对账单」字段:仅开出发票草稿可改。下拉限本公司本对手、客户已确认的常规单;
+ * 选中后展示对账单本币含税合计,与发票价税合计不等时红色提示(后端审核强校验一对一且相等)。
+ */
+function ReconciliationLinkInput({ value, onChange, isDisabled, values }: FieldInputProps) {
+  const id = value == null || value === '' ? null : String(value)
+  const filter = reconciliationFilter(values)
+
+  // 选中/回显的对账单合计:编辑态初值无行数据,按 id 自查一次(RemoteSelect 只回 labelField 集)
+  const recQuery = useQuery({
+    queryKey: ['salReconciliations', 'linkHint', id],
+    enabled: id != null && UUID_RE.test(id),
+    queryFn: () =>
+      gqlFetch<{ salReconciliations: { results: Row[] } }>(
+        `query ($id: ID!) {
+          salReconciliations(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
+            results { id reconciliationNo status baseGrossTotal }
+          }
+        }`,
+        { id },
+      ).then((d) => d.salReconciliations.results[0] ?? null),
+  })
+
+  const rec = recQuery.data ?? null
+  const gross = values.grossTotal == null || values.grossTotal === '' ? null : Number(values.grossTotal)
+  const recTotal = rec?.baseGrossTotal == null ? null : Number(rec.baseGrossTotal)
+  const mismatch = gross != null && recTotal != null && Math.abs(gross - recTotal) > 0.005
+
+  return (
+    <div className="flex flex-col gap-1">
+      <RemoteSelect
+        resource="salReconciliations"
+        label="关联销售对账单"
+        placeholder={filter ? '选择客户已确认的常规对账单…' : '先选齐公司与对手'}
+        labelField="reconciliationNo"
+        searchFields={['reconciliationNo']}
+        value={id}
+        onChange={(rid) => onChange(rid)}
+        isDisabled={isDisabled || filter == null}
+        filter={filter}
+      />
+      {rec && (
+        <p className={`text-xs ${mismatch ? 'text-danger' : 'text-muted'}`}>
+          对账单本币含税合计 {formatAmount(rec.baseGrossTotal)};审核要求与发票价税合计相等
+          {mismatch ? `(当前价税合计 ${formatAmount(gross)},不相等)` : ''}
+        </p>
+      )}
+    </div>
+  )
 }
 
 // 镜像 input 直接透传的票面/明细字段(科目、doc_no、postingDate 不带——对方需自行补科目并审核)
@@ -406,17 +467,28 @@ function InvoicesPage() {
             required: true,
             order: -1,
             edit: 'createOnly',
-            // 换公司清科目(科目按公司隔离)
-            effects: () => ({ partyAccountId: null, amountAccountId: null, taxAccountId: null }),
+            // 换公司清科目与关联对账单(均按公司+对手隔离)
+            effects: () => ({
+              partyAccountId: null,
+              amountAccountId: null,
+              taxAccountId: null,
+              salReconciliationId: null,
+            }),
           },
           docNo: { placeholder: '留空自动编号' },
           direction: { required: true, cols: 6 },
           invoiceKind: { required: true, cols: 6 },
-          partyType: { required: true, cols: 6, effects: () => ({ partyId: null }) },
+          partyType: {
+            required: true,
+            cols: 6,
+            effects: () => ({ partyId: null, salReconciliationId: null }),
+          },
           partyId: {
             required: true,
             cols: 6,
             visible: (v) => v.partyType != null,
+            // 换对手后原关联对账单口径失效,一并清掉
+            effects: () => ({ salReconciliationId: null }),
             input: ({ value, onChange, isDisabled, values }) => {
               const [resource, label] = PARTY_SOURCE[String(values.partyType)] ?? ['salCustomers', '对手']
               const companyId = (values.companyId ?? null) as string | null
@@ -461,6 +533,12 @@ function InvoicesPage() {
           payee: { cols: 4 },
           // 对向发票互链:由页面提交流程写回,不给手填
           mirrorInvoiceId: { edit: 'readOnly' },
+          // 关联销售对账单:仅开出方向展示(收入方向无此业务),仅草稿可编辑(表单本就只在草稿可改)
+          salReconciliationId: {
+            label: '关联销售对账单',
+            visible: (v) => v.direction === 'OUTBOUND',
+            input: (p) => <ReconciliationLinkInput {...p} />,
+          },
         }}
         onEdit={
           drawer?.row?.status === 'DRAFT'

@@ -357,12 +357,17 @@ defmodule SynieCore.Sales.DeliveryItem do
 
     references do
       reference :delivery, on_delete: :delete
+
       # 订单条目可能长期存在;发货行保留引用,订单删不了(有发货时),on_delete nothing
       reference :order_item, on_delete: :nothing
     end
 
     check_constraints do
       check_constraint :qty, "qty_positive", check: "qty > 0", message: "数量必须大于零"
+
+      check_constraint :reconciled_qty, "reconciled_qty_nonnegative",
+        check: "reconciled_qty >= 0",
+        message: "已对账数量不能为负"
     end
   end
 
@@ -393,7 +398,8 @@ defmodule SynieCore.Sales.DeliveryItem do
       :delivery_date,
       :delivery_status,
       :party_type,
-      :party_id
+      :party_id,
+      :remaining_reconcilable_qty
     ]
 
   def poly_refs do
@@ -465,6 +471,26 @@ defmodule SynieCore.Sales.DeliveryItem do
 
       change {SynieCore.Sales.DeliveryItem.SyncDelivery, []}
       change {SynieCore.Sales.DeliveryItem.ClearDrawings, []}
+    end
+
+    # 内部动作:销售对账单生效(常规单确认/赠送样品单结单)与回退(撤回/作废)时
+    # 加减已对账数量(默认单位)。调用方须已 FOR UPDATE 锁住本行,并完成剩余量校验;不注册 GraphQL。
+    update :adjust_reconciled_qty do
+      accept []
+      require_atomic? false
+      argument :delta, :decimal, allow_nil?: false
+
+      change fn changeset, _context ->
+        delta = Ash.Changeset.get_argument(changeset, :delta)
+        current = changeset.data.reconciled_qty || Decimal.new(0)
+        next = Decimal.add(current, delta)
+
+        if Decimal.compare(next, 0) == :lt do
+          Ash.Changeset.add_error(changeset, field: :reconciled_qty, message: "已对账数量不能为负")
+        else
+          Ash.Changeset.force_change_attribute(changeset, :reconciled_qty, next)
+        end
+      end
     end
   end
 
@@ -607,6 +633,15 @@ defmodule SynieCore.Sales.DeliveryItem do
       description "订单原币代码"
     end
 
+    # 已对账数量(默认单位,受控投影):生效中销售对账单行累计,确认/结单加、撤回/作废减
+    attribute :reconciled_qty, :decimal do
+      allow_nil? false
+      writable? false
+      default Decimal.new(0)
+      public? true
+      description "已对账数量(默认单位;由销售对账单生效/回退同步)"
+    end
+
     attribute :remarks, :string do
       public? true
       constraints max_length: 512
@@ -690,6 +725,14 @@ defmodule SynieCore.Sales.DeliveryItem do
     calculate :party_id, :uuid, expr(delivery.party_id) do
       public? true
       description "对手"
+    end
+
+    # 剩余可对账量 = 发货 base − 已对账(对账条目池过滤:> 0 才可勾选)
+    calculate :remaining_reconcilable_qty,
+              :decimal,
+              expr(base_qty - reconciled_qty) do
+      public? true
+      description "剩余可对账量(默认单位)"
     end
   end
 

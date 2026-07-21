@@ -432,6 +432,14 @@ defmodule SynieCore.Sales.Delivery do
           else: {:error, message: "仅已审核销售发货单可作废"}
       end
 
+      validate fn changeset, _context ->
+        if __MODULE__.has_reconciled_items?(changeset.data.id) do
+          {:error, message: "存在已对账条目,不可作废,请先撤回/作废相关销售对账单"}
+        else
+          :ok
+        end
+      end
+
       change fn changeset, _context ->
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :voided)
@@ -581,6 +589,14 @@ defmodule SynieCore.Sales.Delivery do
   end
 
   @doc false
+  # 任一条目存在非零已对账数量(被生效中销售对账单消耗)则整单不可作废
+  def has_reconciled_items?(delivery_id) do
+    SynieCore.Sales.DeliveryItem
+    |> Ash.Query.filter(delivery_id == ^delivery_id and reconciled_qty > 0)
+    |> Ash.exists?(authorize?: false)
+  end
+
+  @doc false
   def load_items(delivery_id) do
     SynieCore.Sales.DeliveryItem
     |> Ash.Query.filter(delivery_id == ^delivery_id)
@@ -612,13 +628,23 @@ defmodule SynieCore.Sales.Delivery do
   def unfulfill!(_changeset, delivery) do
     items = load_items(delivery.id)
 
-    with :ok <- cancel_stock(delivery),
+    with :ok <- check_not_reconciled(items),
+         :ok <- cancel_stock(delivery),
          :ok <- cancel_gl(delivery),
          :ok <- adjust_shipped(items, :sub) do
       :ok
     end
   rescue
     e in ArgumentError -> {:error, Exception.message(e)}
+  end
+
+  # 权威复检(锁内):任一条目已被对账消耗则不可作废
+  defp check_not_reconciled(items) do
+    if Enum.any?(items, &(Decimal.compare(&1.reconciled_qty || Decimal.new(0), 0) == :gt)) do
+      {:error, "存在已对账条目,不可作废,请先撤回/作废相关销售对账单"}
+    else
+      :ok
+    end
   end
 
   defp ensure_posting_date(cs, locked) do

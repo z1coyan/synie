@@ -45,6 +45,8 @@ const GRID_OVERRIDES = {
   },
   unitName: { label: '单位' },
   baseQty: { label: '折算数量' },
+  reconciledQty: { label: '已对账数量' },
+  remainingReconcilableQty: { label: '剩余可对账' },
 } satisfies Record<string, ColumnOverride>
 
 // 列全走行上快照/计算字段,不点 materialId 等会触发嵌套授权的 fk
@@ -60,6 +62,8 @@ const GRID_COLUMNS = [
   'unitName',
   'qty',
   'baseQty',
+  'reconciledQty',
+  'remainingReconcilableQty',
 ]
 
 // 行编辑/审核整单仅草稿单放行(后端权威校验兜底,这里做体验层);删除不进条目视图

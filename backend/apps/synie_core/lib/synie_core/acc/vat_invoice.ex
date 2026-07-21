@@ -70,6 +70,45 @@ defmodule SynieCore.Acc.PartyNotSelf do
   end
 end
 
+defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
+  @moduledoc """
+  关联销售对账单校验:仅开出方向发票可关联(进项票无未开票应收可冲),
+  且对账单必须存在;类型/状态/一致性/金额等权威校验在审核时做(见 `VatInvoice.reconciliation_blockers/1`)。
+  """
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    case Ash.Changeset.get_attribute(changeset, :sal_reconciliation_id) do
+      nil ->
+        :ok
+
+      reconciliation_id ->
+        direction =
+          Ash.Changeset.get_attribute(changeset, :direction) || changeset.data.direction
+
+        cond do
+          direction != :outbound ->
+            {:error, field: :sal_reconciliation_id, message: "仅开出发票可关联销售对账单"}
+
+          not exists?(reconciliation_id) ->
+            {:error, field: :sal_reconciliation_id, message: "关联的销售对账单不存在"}
+
+          true ->
+            :ok
+        end
+    end
+  end
+
+  defp exists?(reconciliation_id) do
+    case Ash.get(SynieCore.Sales.Reconciliation, reconciliation_id, authorize?: false) do
+      {:ok, _} -> true
+      _ -> false
+    end
+  end
+end
+
 defmodule SynieCore.Acc.VatInvoice do
   @moduledoc """
   增值税发票(头),对应 `acc_vat_invoice` 表。
@@ -83,6 +122,12 @@ defmodule SynieCore.Acc.VatInvoice do
 
   `mirror_invoice_id` 自引用:内部两公司互开发票时可互链对向发票,供 Task 7 联动展示;
   对向发票被删时该外键由数据库置空(nilify),不级联删除。
+
+  `sal_reconciliation_id`(仅开出发票、草稿可改):关联常规销售对账单后,审核校验
+  对账单=客户已确认/公司对手一致/价税合计=对账单本币合计(一对一),过账=正常三行
+  +冲回组(借对账单头借方=发货贷方口径/贷对账单头贷方=未开票应收,金额=价税合计),
+  同事务把对账单翻为已结单;作废/红冲自动解除关联并把对账单退回客户已确认
+  (ADR 2026-07-21-sales-reconciliation)。
 
   生命周期:草稿(可改可删)→ 已审核(audit,派生 `gl_entries/1` 过账)→
   已作废(void,原分录标 `is_cancelled`)/已红冲(reverse,交 `GL.reverse!` 生成红字组)。
@@ -104,6 +149,8 @@ defmodule SynieCore.Acc.VatInvoice do
     references do
       # 镜像草稿被删,原票互链自动置空
       reference :mirror_invoice, on_delete: :nilify
+      # 被发票引用的对账单不可删(须先在发票草稿上解除关联)
+      reference :sal_reconciliation, on_delete: :nothing
     end
 
     custom_indexes do
@@ -223,12 +270,14 @@ defmodule SynieCore.Acc.VatInvoice do
         :party_account_id,
         :amount_account_id,
         :tax_account_id,
-        :mirror_invoice_id
+        :mirror_invoice_id,
+        :sal_reconciliation_id
       ]
 
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Acc.PartyExists, []}
       validate {SynieCore.Acc.PartyNotSelf, []}
+      validate {SynieCore.Acc.VatInvoiceReconciliationLink, []}
 
       # 编号留空自动取号(须在构建期,见 AutoNumber moduledoc)
       change {SynieCore.Numbering.AutoNumber, attribute: :doc_no}
@@ -274,7 +323,8 @@ defmodule SynieCore.Acc.VatInvoice do
         :party_account_id,
         :amount_account_id,
         :tax_account_id,
-        :mirror_invoice_id
+        :mirror_invoice_id,
+        :sal_reconciliation_id
       ]
 
       require_atomic? false
@@ -283,6 +333,7 @@ defmodule SynieCore.Acc.VatInvoice do
       validate {SynieCore.Acc.InvoiceDraft, []}
       validate {SynieCore.Acc.PartyExists, []}
       validate {SynieCore.Acc.PartyNotSelf, []}
+      validate {SynieCore.Acc.VatInvoiceReconciliationLink, []}
 
       change fn changeset, _context ->
         Ash.Changeset.before_action(changeset, fn cs ->
@@ -333,7 +384,8 @@ defmodule SynieCore.Acc.VatInvoice do
       end
 
       validate fn changeset, _context ->
-        case __MODULE__.audit_blockers(changeset.data) do
+        case __MODULE__.audit_blockers(changeset.data) ++
+               __MODULE__.reconciliation_blockers(changeset.data) do
           [] ->
             case SynieCore.Acc.GL.validate_entries(
                    changeset.data.company_id,
@@ -366,7 +418,7 @@ defmodule SynieCore.Acc.VatInvoice do
           # 借此串行化审核与并发改头/并发审核——关闭双审核竞态(构建期预检看到的状态可能已过期)
           case __MODULE__.lock_invoice(cs.data.id) do
             {:ok, %{status: :draft} = locked} ->
-              case __MODULE__.audit_blockers(locked) do
+              case __MODULE__.audit_blockers(locked) ++ __MODULE__.reconciliation_blockers(locked) do
                 [] ->
                   case SynieCore.Acc.GL.validate_entries(
                          locked.company_id,
@@ -397,6 +449,11 @@ defmodule SynieCore.Acc.VatInvoice do
             __MODULE__.gl_entries(inv)
           )
 
+          # 关联对账单:同一事务把常规对账单翻为已结单(一对一,见 reconciliation_blockers)
+          if inv.sal_reconciliation_id do
+            SynieCore.Sales.Reconciliation.close_from_invoice!(inv.sal_reconciliation_id)
+          end
+
           {:ok, inv}
         end)
       end
@@ -412,8 +469,12 @@ defmodule SynieCore.Acc.VatInvoice do
       end
 
       change fn changeset, _context ->
+        # 关联对账单:作废自动解除关联并把对账单退回客户已确认(同事务)
+        linked_reconciliation_id = changeset.data.sal_reconciliation_id
+
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :voided)
+        |> unlink_reconciliation()
         |> Ash.Changeset.before_action(fn cs ->
           # 权威复检:事务内 FOR UPDATE 重读,关闭双作废/作废与红冲并发竞态
           case __MODULE__.lock_invoice(cs.data.id) do
@@ -423,6 +484,11 @@ defmodule SynieCore.Acc.VatInvoice do
         end)
         |> Ash.Changeset.after_action(fn _cs, inv ->
           SynieCore.Acc.GL.cancel!("acc.vat_invoice", inv.id)
+
+          if linked_reconciliation_id do
+            SynieCore.Sales.Reconciliation.reopen_from_invoice!(linked_reconciliation_id)
+          end
+
           {:ok, inv}
         end)
       end
@@ -440,9 +506,12 @@ defmodule SynieCore.Acc.VatInvoice do
 
       change fn changeset, _context ->
         posting_date = Ash.Changeset.get_argument(changeset, :posting_date)
+        # 关联对账单:红冲自动解除关联并把对账单退回客户已确认(同事务)
+        linked_reconciliation_id = changeset.data.sal_reconciliation_id
 
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :reversed)
+        |> unlink_reconciliation()
         |> Ash.Changeset.before_action(fn cs ->
           # 权威复检:事务内 FOR UPDATE 重读,关闭双红冲/红冲与作废并发竞态
           case __MODULE__.lock_invoice(cs.data.id) do
@@ -453,6 +522,11 @@ defmodule SynieCore.Acc.VatInvoice do
         |> Ash.Changeset.after_action(fn _cs, inv ->
           # 红字组生成完全交给 GL.reverse!,发票侧不自己拼分录
           SynieCore.Acc.GL.reverse!("acc.vat_invoice", inv.id, posting_date)
+
+          if linked_reconciliation_id do
+            SynieCore.Sales.Reconciliation.reopen_from_invoice!(linked_reconciliation_id)
+          end
+
           {:ok, inv}
         end)
       end
@@ -679,6 +753,13 @@ defmodule SynieCore.Acc.VatInvoice do
       description "对向发票"
     end
 
+    belongs_to :sal_reconciliation, SynieCore.Sales.Reconciliation do
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "关联销售对账单(仅开出发票、草稿可改;审核一对一结单)"
+    end
+
     belongs_to :created_by, SynieCore.Accounts.User do
       public? true
       attribute_public? true
@@ -702,13 +783,21 @@ defmodule SynieCore.Acc.VatInvoice do
     |> Ash.read_one(authorize?: false)
   end
 
-  @doc "按三科目与方向派生分录组;红冲取负由 GL.reverse! 负责,不在此处理。"
+  @doc "按三科目与方向派生分录组;关联对账单时追加冲回组(借对账单头借方/贷对账单头贷方)。红冲取负由 GL.reverse! 负责,不在此处理。"
   def gl_entries(%__MODULE__{} = inv) do
+    reconciliation = load_reconciliation(inv)
+
     currencies =
       SynieCore.Base.Account
       |> Ash.Query.filter(
         id in ^Enum.reject(
-          [inv.party_account_id, inv.amount_account_id, inv.tax_account_id],
+          [
+            inv.party_account_id,
+            inv.amount_account_id,
+            inv.tax_account_id,
+            reconciliation && reconciliation.debit_account_id,
+            reconciliation && reconciliation.credit_account_id
+          ],
           &is_nil/1
         )
       )
@@ -731,18 +820,85 @@ defmodule SynieCore.Acc.VatInvoice do
 
     tax? = inv.tax_total != nil and Decimal.compare(inv.tax_total, 0) == :gt
 
-    case inv.direction do
-      :outbound ->
-        [
-          entry.(inv.party_account_id, inv.gross_total, zero, true),
-          entry.(inv.amount_account_id, zero, inv.net_total, false)
-        ] ++
-          if(tax?, do: [entry.(inv.tax_account_id, zero, inv.tax_total, false)], else: [])
+    base_entries =
+      case inv.direction do
+        :outbound ->
+          [
+            entry.(inv.party_account_id, inv.gross_total, zero, true),
+            entry.(inv.amount_account_id, zero, inv.net_total, false)
+          ] ++
+            if(tax?, do: [entry.(inv.tax_account_id, zero, inv.tax_total, false)], else: [])
 
-      :inbound ->
-        [entry.(inv.amount_account_id, inv.net_total, zero, false)] ++
-          if(tax?, do: [entry.(inv.tax_account_id, inv.tax_total, zero, false)], else: []) ++
-          [entry.(inv.party_account_id, zero, inv.gross_total, true)]
+        :inbound ->
+          [entry.(inv.amount_account_id, inv.net_total, zero, false)] ++
+            if(tax?, do: [entry.(inv.tax_account_id, inv.tax_total, zero, false)], else: []) ++
+            [entry.(inv.party_account_id, zero, inv.gross_total, true)]
+      end
+
+    base_entries ++ reversal_entries(inv, reconciliation, entry, zero)
+  end
+
+  # 冲回组:借对账单头借方科目(发货贷方口径,不带对手)/贷对账单头贷方科目
+  # (未开票应收,往来科目须带对手),金额=价税合计——把发货时挂的未开票应收清零
+  defp reversal_entries(_inv, nil, _entry, _zero), do: []
+
+  defp reversal_entries(inv, reconciliation, entry, zero) do
+    [
+      entry.(reconciliation.debit_account_id, inv.gross_total, zero, false),
+      entry.(reconciliation.credit_account_id, zero, inv.gross_total, true)
+    ]
+  end
+
+  defp load_reconciliation(%{sal_reconciliation_id: nil}), do: nil
+
+  defp load_reconciliation(%{sal_reconciliation_id: reconciliation_id}) do
+    Ash.get!(SynieCore.Sales.Reconciliation, reconciliation_id, authorize?: false)
+  end
+
+  @doc "关联对账单的审核前检查,返回错误清单(空 = 可审核;未关联时恒空)。"
+  def reconciliation_blockers(%{sal_reconciliation_id: nil}), do: []
+
+  def reconciliation_blockers(inv) do
+    reconciliation =
+      SynieCore.Sales.Reconciliation
+      |> Ash.get(inv.sal_reconciliation_id, authorize?: false)
+      |> case do
+        {:ok, reconciliation} -> reconciliation
+        _ -> nil
+      end
+
+    case reconciliation do
+      nil ->
+        ["关联的销售对账单不存在"]
+
+      reconciliation ->
+        reconciliation_total =
+          reconciliation.id
+          |> SynieCore.Sales.Reconciliation.load_items()
+          |> Enum.map(& &1.base_amount)
+          |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+          |> Decimal.round(2)
+
+        [
+          {reconciliation.reconciliation_type != :regular, "仅常规对账单可关联发票"},
+          {reconciliation.status != :confirmed, "对账单须为客户已确认状态"},
+          {reconciliation.company_id != inv.company_id, "对账单公司与发票不一致"},
+          {reconciliation.party_type != inv.party_type or reconciliation.party_id != inv.party_id,
+           "对账单对手与发票不一致"},
+          {is_nil(inv.gross_total) or not Decimal.equal?(inv.gross_total, reconciliation_total),
+           "发票价税合计必须等于对账单合计"}
+        ]
+        |> Enum.filter(&elem(&1, 0))
+        |> Enum.map(&elem(&1, 1))
+    end
+  end
+
+  # 作废/红冲时解除对账单关联(仅在有关联时落 change,避免审计日志假变更)
+  defp unlink_reconciliation(changeset) do
+    if changeset.data.sal_reconciliation_id do
+      Ash.Changeset.force_change_attribute(changeset, :sal_reconciliation_id, nil)
+    else
+      changeset
     end
   end
 
