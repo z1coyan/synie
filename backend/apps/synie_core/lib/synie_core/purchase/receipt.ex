@@ -87,7 +87,7 @@ defmodule SynieCore.Purchase.Receipt.OptionalWarehouseUsable do
 end
 
 defmodule SynieCore.Purchase.Receipt.DebitAccountOk do
-  @moduledoc "借方科目若填写,须本公司、启用、非汇总(不强制角色,存货/费用等会计自选)。"
+  @moduledoc "借方科目必填,须本公司、启用、非汇总(不强制角色,存货/费用等会计自选)。草稿保存即校验。"
 
   use Ash.Resource.Validation
 
@@ -97,7 +97,7 @@ defmodule SynieCore.Purchase.Receipt.DebitAccountOk do
     company_id = Ash.Changeset.get_attribute(changeset, :company_id)
 
     if is_nil(account_id) do
-      :ok
+      {:error, field: :debit_account_id, message: "借方科目不能为空"}
     else
       case check_account(account_id, company_id) do
         :ok -> :ok
@@ -129,8 +129,8 @@ end
 
 defmodule SynieCore.Purchase.Receipt.CreditAccountRole do
   @moduledoc """
-  贷方科目若填写,必须挂「未开票应付」角色(ADR 2026-07-20-purchase-line);
-  另须本公司、启用、非汇总。保存期软校验;金额>0 审核时科目必填并再验。
+  贷方科目必填,必须挂「未开票应付」角色(ADR 2026-07-20-purchase-line / 2026-07-21);
+  另须本公司、启用、非汇总。草稿保存即校验(与零金额是否过账无关)。
   """
 
   use Ash.Resource.Validation
@@ -141,7 +141,7 @@ defmodule SynieCore.Purchase.Receipt.CreditAccountRole do
     company_id = Ash.Changeset.get_attribute(changeset, :company_id)
 
     if is_nil(account_id) do
-      :ok
+      {:error, field: :credit_account_id, message: "贷方科目不能为空"}
     else
       case check_account(account_id, company_id, :unbilled_payable) do
         :ok -> :ok
@@ -530,17 +530,19 @@ defmodule SynieCore.Purchase.Receipt do
     end
 
     belongs_to :debit_account, SynieCore.Base.Account do
+      allow_nil? false
       public? true
       attribute_public? true
       attribute_writable? true
-      description "借方科目(自选:存货/费用等)"
+      description "借方科目(自选:存货/费用等;草稿必填)"
     end
 
     belongs_to :credit_account, SynieCore.Base.Account do
+      allow_nil? false
       public? true
       attribute_public? true
       attribute_writable? true
-      description "贷方科目(未开票应付)"
+      description "贷方科目(未开票应付;草稿必填)"
     end
 
     belongs_to :created_by, SynieCore.Accounts.User do

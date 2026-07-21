@@ -33,8 +33,8 @@ import {
   initialValues,
   isFieldDisabled,
   missingRequiredFields,
+  renderableFields,
   resolveFields,
-  visibleFields,
   type DrawerMode,
   type FieldOverride,
   type ResolvedField,
@@ -222,7 +222,11 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     if (isOpen) setActiveTab(null)
   }, [isOpen])
 
-  const shown = visibleFields(fields, renderMode === 'view' ? ((renderRow ?? {}) as Record<string, unknown>) : values)
+  // 主栅格只渲染非 hidden 字段;hidden 字段仍在 fields 里参与必填/提交(由 extraContent 写值)
+  const shown = renderableFields(
+    fields,
+    renderMode === 'view' ? ((renderRow ?? {}) as Record<string, unknown>) : values,
+  )
 
   const tabs = props.tabs ?? []
   const firstTabKey = tabs[0]?.key ?? null

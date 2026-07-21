@@ -61,6 +61,8 @@ defmodule SynieCore.Purchase.ReceiptTest do
 
     debit = account!(company, "1405", "库存商品", nil)
     credit = account!(company, "2202U", "未开票应付", :unbilled_payable)
+    Process.put(:test_receipt_debit_id, debit.id)
+    Process.put(:test_receipt_credit_id, credit.id)
 
     {order, order_item} = audited_order!(company, supplier, material, kg)
 
@@ -136,11 +138,14 @@ defmodule SynieCore.Purchase.ReceiptTest do
   end
 
   defp receipt!(attrs) do
+    # 草稿科目必填:默认带 setup 里的借贷科;显式传入可覆盖
     attrs =
       Map.merge(
         %{
           receipt_no: "RN-#{System.unique_integer([:positive])}",
-          receipt_date: ~D[2026-07-20]
+          receipt_date: ~D[2026-07-20],
+          debit_account_id: Process.get(:test_receipt_debit_id),
+          credit_account_id: Process.get(:test_receipt_credit_id)
         },
         attrs
       )
@@ -391,8 +396,24 @@ defmodule SynieCore.Purchase.ReceiptTest do
     assert length(stock) == 2
   end
 
-  test "零单价订单入库跳过总账,科目可空", ctx do
-    %{company: co, supplier: su, warehouse: wh, material: mat, kg: kg} = ctx
+  test "草稿保存科目必填", ctx do
+    %{company: co, supplier: su} = ctx
+
+    assert {:error, _} =
+             Receipt
+             |> Ash.Changeset.for_create(:create, %{
+               receipt_no: "RN-#{System.unique_integer([:positive])}",
+               receipt_date: ~D[2026-07-20],
+               company_id: co.id,
+               party_type: :supplier,
+               party_id: su.id
+             })
+             |> Ash.create(authorize?: false)
+  end
+
+  test "零单价订单入库跳过总账,但科目仍必填", ctx do
+    %{company: co, supplier: su, warehouse: wh, material: mat, kg: kg, debit: debit, credit: credit} =
+      ctx
 
     order =
       Order
@@ -422,7 +443,13 @@ defmodule SynieCore.Purchase.ReceiptTest do
     order |> Ash.Changeset.for_update(:audit, %{}) |> Ash.update!(authorize?: false)
 
     r =
-      receipt!(%{company_id: co.id, party_type: :supplier, party_id: su.id})
+      receipt!(%{
+        company_id: co.id,
+        party_type: :supplier,
+        party_id: su.id,
+        debit_account_id: debit.id,
+        credit_account_id: credit.id
+      })
 
     line!(r, %{
       order_item_id: oi.id,
@@ -448,36 +475,6 @@ defmodule SynieCore.Purchase.ReceiptTest do
       |> Ash.read!(authorize?: false)
 
     assert length(stock) == 1
-  end
-
-  test "有金额入库审核:缺贷方科目/缺借方科目被拒", ctx do
-    %{company: co, supplier: su, warehouse: wh, material: mat, kg: kg, order_item: oi} = ctx
-
-    r =
-      receipt!(%{company_id: co.id, party_type: :supplier, party_id: su.id})
-
-    line!(r, %{
-      order_item_id: oi.id,
-      material_id: mat.id,
-      unit_id: kg.id,
-      warehouse_id: wh.id,
-      qty: Decimal.new(4)
-    })
-
-    assert {:error, error} =
-             r |> Ash.Changeset.for_update(:audit, %{}) |> Ash.update(authorize?: false)
-
-    assert Exception.message(error) =~ "有金额入库审核前必须选择借方科目"
-
-    r =
-      r
-      |> Ash.Changeset.for_update(:update, %{debit_account_id: ctx.debit.id})
-      |> Ash.update!(authorize?: false)
-
-    assert {:error, error2} =
-             r |> Ash.Changeset.for_update(:audit, %{}) |> Ash.update(authorize?: false)
-
-    assert Exception.message(error2) =~ "有金额入库审核前必须选择贷方科目(未开票应付)"
   end
 
   test "作废回滚仍过负库存校验:库存已耗用后作废被拒", ctx do
@@ -798,7 +795,9 @@ defmodule SynieCore.Purchase.ReceiptTest do
           party_type: :supplier,
           party_id: su.id,
           receipt_no: "RN-N1",
-          receipt_date: ~D[2026-07-20]
+          receipt_date: ~D[2026-07-20],
+          debit_account_id: ctx.debit.id,
+          credit_account_id: ctx.credit.id
         })
         |> Ash.create!(actor: actor)
       end

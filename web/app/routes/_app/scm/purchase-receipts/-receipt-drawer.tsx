@@ -25,6 +25,7 @@ import {
   WarehouseRemoteSelect,
   defaultCompanyId,
 } from '../-stock-doc'
+import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
 
 export interface ReceiptRef {
   id: string
@@ -181,6 +182,94 @@ function accountFilter(companyId: string | null, roleEnum?: string): string | un
   const base = `companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}`
   if (roleEnum) return `{${base}, role: {eq: ${roleEnum}}}`
   return `{${base}}`
+}
+
+/**
+ * 新建态:公司选定/变更时整组覆盖借贷科目为该公司默认(无默认则清空)。
+ * 编辑态公司锁死,不重灌。
+ */
+function ReceiptAccountDefaultSync({
+  mode,
+  companyId,
+  patchValues,
+}: {
+  mode: DrawerMode
+  companyId: string | null
+  patchValues: (patch: Record<string, unknown>) => void
+}) {
+  const filledFor = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (mode !== 'create') return
+    if (!companyId) {
+      filledFor.current = null
+      return
+    }
+    if (filledFor.current === companyId) return
+    filledFor.current = companyId
+    let cancelled = false
+    void fetchCompanyAccountDefaults(companyId).then((row) => {
+      if (cancelled) return
+      patchValues({
+        debitAccountId: row?.receiptDebitAccountId ?? null,
+        creditAccountId: row?.receiptCreditAccountId ?? null,
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, companyId])
+
+  return null
+}
+
+function ReceiptAccountFooter({
+  mode,
+  values,
+  patchValues,
+  isDisabled,
+}: {
+  mode: DrawerMode
+  values: Record<string, unknown>
+  patchValues: (patch: Record<string, unknown>) => void
+  isDisabled: boolean
+}) {
+  const companyId = (values.companyId as string | null) ?? null
+  const debit = values.debitAccountId == null || values.debitAccountId === '' ? null : String(values.debitAccountId)
+  const credit =
+    values.creditAccountId == null || values.creditAccountId === '' ? null : String(values.creditAccountId)
+
+  return (
+    <div className="mt-6 grid grid-cols-1 gap-4 border-t border-separator pt-4 lg:grid-cols-2">
+      <RemoteSelect
+        resource="basAccounts"
+        label="借方科目"
+        placeholder={companyId ? '选择借方科目(存货/费用等)…' : '先选择公司'}
+        value={debit}
+        onChange={(id) => patchValues({ debitAccountId: id })}
+        isDisabled={isDisabled || !companyId || mode === 'view'}
+        isRequired={mode !== 'view'}
+        filter={accountFilter(companyId)}
+        labelField="name"
+        searchFields={['name', 'code']}
+        itemSubtitleFields={['code']}
+      />
+      <RemoteSelect
+        resource="basAccounts"
+        label="贷方科目(未开票应付)"
+        placeholder={companyId ? '选择未开票应付科目…' : '先选择公司'}
+        value={credit}
+        onChange={(id) => patchValues({ creditAccountId: id })}
+        isDisabled={isDisabled || !companyId || mode === 'view'}
+        isRequired={mode !== 'view'}
+        filter={accountFilter(companyId, 'UNBILLED_PAYABLE')}
+        labelField="name"
+        searchFields={['name', 'code']}
+        itemSubtitleFields={['code']}
+      />
+    </div>
+  )
 }
 
 /**
@@ -372,66 +461,6 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             label="默认仓库(可空,新建行预填)"
           />
         ),
-      },
-      debitAccountId: {
-        ...baseCfg.fields?.debitAccountId,
-        input: ({
-          value,
-          onChange,
-          isDisabled,
-          values,
-        }: {
-          value: unknown
-          onChange: (v: unknown) => void
-          isDisabled: boolean
-          values: Record<string, unknown>
-        }) => {
-          const companyId = (values.companyId as string | null) ?? null
-          return (
-            <RemoteSelect
-              resource="basAccounts"
-              label="借方科目"
-              placeholder={companyId ? '选择借方科目(存货/费用等)…' : '先选择公司'}
-              value={value == null || value === '' ? null : String(value)}
-              onChange={(id) => onChange(id)}
-              isDisabled={isDisabled || !companyId}
-              filter={accountFilter(companyId)}
-              labelField="name"
-              searchFields={['name', 'code']}
-              itemSubtitleFields={['code']}
-            />
-          )
-        },
-      },
-      creditAccountId: {
-        ...baseCfg.fields?.creditAccountId,
-        input: ({
-          value,
-          onChange,
-          isDisabled,
-          values,
-        }: {
-          value: unknown
-          onChange: (v: unknown) => void
-          isDisabled: boolean
-          values: Record<string, unknown>
-        }) => {
-          const companyId = (values.companyId as string | null) ?? null
-          return (
-            <RemoteSelect
-              resource="basAccounts"
-              label="贷方科目(未开票应付)"
-              placeholder={companyId ? '选择未开票应付科目…' : '先选择公司'}
-              value={value == null || value === '' ? null : String(value)}
-              onChange={(id) => onChange(id)}
-              isDisabled={isDisabled || !companyId}
-              filter={accountFilter(companyId, 'UNBILLED_PAYABLE')}
-              labelField="name"
-              searchFields={['name', 'code']}
-              itemSubtitleFields={['code']}
-            />
-          )
-        },
       },
     },
   }
@@ -667,6 +696,12 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                 patchValues={patchValues}
                 defaultId={createDefaultCompany}
               />
+              <ReceiptAccountDefaultSync
+                key={`acct-${drawer?.row?.id ?? 'create'}-${reqIdRef.current}`}
+                mode={mode}
+                companyId={companyId}
+                patchValues={patchValues}
+              />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
                 key={`${drawer?.row?.id ?? 'create'}-${reqIdRef.current}`}
@@ -817,6 +852,14 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                     orderQty: oitem?.qty ?? editing?.orderQty ?? vals.orderQty ?? null,
                   }
                 }}
+              />
+              <ReceiptAccountFooter
+                mode={mode}
+                values={values}
+                patchValues={patchValues}
+                isDisabled={
+                  mode === 'view' || (row != null && row.status !== 'DRAFT')
+                }
               />
             </>
           )

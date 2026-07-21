@@ -96,12 +96,17 @@ const RESOURCE_LABELS: Record<string, string> = {
   acc_bank_reconciliation: '银行对账记录',
   acc_setting: '财务设置',
   sal_setting: '供应链设置',
+  sal_company_account_default: '公司默认过账科目',
 }
 
 // changes 键是 snake_case 属性名(后端 Track 落库);新字段接审计后在此补中文,漏了则原样显示
 const FIELD_LABELS: Record<string, string> = {
   preferred_language: '首选语言',
   setup_completed_at: '初始化完成时刻',
+  delivery_debit_account_id: '发货默认借方科目',
+  delivery_credit_account_id: '发货默认贷方科目',
+  receipt_debit_account_id: '入库默认借方科目',
+  receipt_credit_account_id: '入库默认贷方科目',
 }
 
 // id 列展示原始 uuid 无阅读价值,记录名称/操作人已够定位;需要按 id 排查时直接查库

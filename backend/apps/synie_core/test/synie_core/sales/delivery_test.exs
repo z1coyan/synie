@@ -60,6 +60,8 @@ defmodule SynieCore.Sales.DeliveryTest do
 
     debit = account!(company, "1122U", "未开票应收", :unbilled_receivable)
     credit = account!(company, "6001", "主营业务收入", nil)
+    Process.put(:test_delivery_debit_id, debit.id)
+    Process.put(:test_delivery_credit_id, credit.id)
 
     order =
       Order
@@ -139,11 +141,14 @@ defmodule SynieCore.Sales.DeliveryTest do
   end
 
   defp delivery!(attrs) do
+    # 草稿科目必填:默认带 setup 里的借贷科;显式传入可覆盖
     attrs =
       Map.merge(
         %{
           delivery_no: "DN-#{System.unique_integer([:positive])}",
-          delivery_date: ~D[2026-07-20]
+          delivery_date: ~D[2026-07-20],
+          debit_account_id: Process.get(:test_delivery_debit_id),
+          credit_account_id: Process.get(:test_delivery_credit_id)
         },
         attrs
       )
@@ -278,8 +283,24 @@ defmodule SynieCore.Sales.DeliveryTest do
     assert Decimal.equal?(oi.shipped_qty, Decimal.new(11))
   end
 
-  test "零单价订单发货跳过总账", ctx do
-    %{company: co, customer: cu, warehouse: wh, material: mat, kg: kg} = ctx
+  test "草稿保存科目必填", ctx do
+    %{company: co, customer: cu} = ctx
+
+    assert {:error, _} =
+             Delivery
+             |> Ash.Changeset.for_create(:create, %{
+               delivery_no: "DN-#{System.unique_integer([:positive])}",
+               delivery_date: ~D[2026-07-20],
+               company_id: co.id,
+               party_type: :customer,
+               party_id: cu.id
+             })
+             |> Ash.create(authorize?: false)
+  end
+
+  test "零单价订单发货跳过总账,但科目仍必填", ctx do
+    %{company: co, customer: cu, warehouse: wh, material: mat, kg: kg, debit: debit, credit: credit} =
+      ctx
 
     order =
       Order
@@ -312,7 +333,9 @@ defmodule SynieCore.Sales.DeliveryTest do
       delivery!(%{
         company_id: co.id,
         party_type: :customer,
-        party_id: cu.id
+        party_id: cu.id,
+        debit_account_id: debit.id,
+        credit_account_id: credit.id
       })
 
     line!(d, %{

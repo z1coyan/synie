@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
+import { CompanyAccountDefaultsCard } from './-company-account-defaults'
 
 export const Route = createFileRoute('/_app/scm/settings/sales')({
   component: ScmSalesSettingsTab,
@@ -142,6 +143,8 @@ function ScmSalesSettingsTab() {
           </Button>
         </div>
       )}
+
+      <CompanyAccountDefaultsCard side="delivery" />
     </>
   )
 }

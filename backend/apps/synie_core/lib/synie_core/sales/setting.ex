@@ -3,7 +3,8 @@ defmodule SynieCore.Sales.Setting do
   供应链设置,对应 `sal_setting` 单行表:供应链全局配置(非公司维度)统一加字段进这张表,
   不另建配置表。行由迁移 seed、恒存在——不开放 create/destroy,只有 read/update。
   当前字段:样品订单单行数量上限、零星订单单行数量上限、发货超发比例(发货审核时卡累计已发)、
-  入库超收比例(入库审核时卡累计已收,校验属采购入库第二期)。
+  入库超收比例(入库审核时卡累计已收)。
+  按公司的发货/入库默认过账科目见 `CompanyAccountDefault`(不塞本表)。
   权限前缀仍为 sales.setting(历史资源码,界面中文名「供应链设置」)。
   """
 

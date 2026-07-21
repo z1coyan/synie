@@ -30,6 +30,11 @@ export interface FieldOverride {
   defaultValue?: unknown
   /** 条件字段:返回 false 则不渲染、不校验、不提交;view 态入参为行数据 */
   visible?: (values: Record<string, unknown>) => boolean
+  /**
+   * 不渲染主字段栅格,但仍参与必填校验与提交(值靠 patchValues / extraContent 外部 UI 写入)。
+   * 与 visible:false 区别:hidden 仍校验/提交,visible:false 整字段剔除。
+   */
+  hidden?: boolean
   /** 分组标题:从该字段起开启新分组,持续到下一个 section 声明;组内无可见字段时不渲染。
    * 省略(undefined)并入上一组;空串 '' 显式收编——之后字段在组外,仅画 hairline 分隔(如系统时间戳) */
   section?: string
@@ -58,6 +63,7 @@ export interface ResolvedField {
   placeholder?: string
   defaultValue?: unknown
   visible?: (values: Record<string, unknown>) => boolean
+  hidden?: boolean
   section?: string
   tab?: string
   render?: (value: unknown, row: Row) => ReactNode
@@ -94,6 +100,7 @@ export function resolveFields(
         placeholder: o.placeholder,
         defaultValue: o.defaultValue,
         visible: o.visible,
+        hidden: o.hidden,
         section: o.section,
         tab: o.tab,
         render: o.render,
@@ -115,6 +122,14 @@ export function isFieldDisabled(f: ResolvedField, mode: DrawerMode): boolean {
 
 export function visibleFields(fields: ResolvedField[], values: Record<string, unknown>): ResolvedField[] {
   return fields.filter((f) => f.visible?.(values) ?? true)
+}
+
+/** 主字段栅格应渲染的字段(剔除 hidden;hidden 仍在 visibleFields 内参与校验/提交) */
+export function renderableFields(
+  fields: ResolvedField[],
+  values: Record<string, unknown>,
+): ResolvedField[] {
+  return visibleFields(fields, values).filter((f) => !f.hidden)
 }
 
 /** 表单草稿初值:编辑从行数据按类型归一化,新建按类型给空值(defaultValue 优先) */

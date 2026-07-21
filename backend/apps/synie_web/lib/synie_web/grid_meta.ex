@@ -25,6 +25,7 @@ defmodule SynieWeb.GridMeta do
     "salQuotations" => SynieCore.Sales.Quotation,
     "salQuotationItems" => SynieCore.Sales.QuotationItem,
     "salQuotationTiers" => SynieCore.Sales.QuotationTier,
+    "salCompanyAccountDefaults" => SynieCore.Sales.CompanyAccountDefault,
     "purSuppliers" => SynieCore.Purchase.Supplier,
     "purQuotations" => SynieCore.Purchase.Quotation,
     "purQuotationItems" => SynieCore.Purchase.QuotationItem,

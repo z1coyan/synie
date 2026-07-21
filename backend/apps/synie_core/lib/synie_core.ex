@@ -35,6 +35,10 @@ defmodule SynieCore do
       # 供应链设置(sal_setting)是单行表,read_one 免分页(同 acc_setting 先例)
       read_one SynieCore.Sales.Setting, :sal_setting, :read
 
+      # 公司默认过账科目(一公司一行);设置页按公司 filter 取
+      list SynieCore.Sales.CompanyAccountDefault, :sal_company_account_defaults, :read,
+        paginate_with: :offset
+
       # 系统设置(行情拉取配置等);初始化旗标不经 GraphQL 写
       read_one SynieCore.Sys.Setting, :sys_setting, :read
       list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
@@ -206,6 +210,9 @@ defmodule SynieCore do
       destroy SynieCore.Sales.QuotationTier, :destroy_sal_quotation_tier, :destroy
 
       update SynieCore.Sales.Setting, :update_sal_setting, :update
+
+      create SynieCore.Sales.CompanyAccountDefault, :create_sal_company_account_default, :create
+      update SynieCore.Sales.CompanyAccountDefault, :update_sal_company_account_default, :update
       update SynieCore.Sys.Setting, :update_sys_setting, :update
 
       create SynieCore.Purchase.Supplier, :create_pur_supplier, :create
@@ -430,6 +437,7 @@ defmodule SynieCore do
     resource SynieCore.Sales.QuotationItem
     resource SynieCore.Sales.QuotationTier
     resource SynieCore.Sales.Setting
+    resource SynieCore.Sales.CompanyAccountDefault
     resource SynieCore.Purchase.Supplier
     resource SynieCore.Purchase.Quotation
     resource SynieCore.Purchase.QuotationItem
