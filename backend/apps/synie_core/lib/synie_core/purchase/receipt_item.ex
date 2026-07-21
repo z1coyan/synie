@@ -366,6 +366,10 @@ defmodule SynieCore.Purchase.ReceiptItem do
 
     check_constraints do
       check_constraint :qty, "qty_positive", check: "qty > 0", message: "数量必须大于零"
+
+      check_constraint :reconciled_qty, "reconciled_qty_nonnegative",
+        check: "reconciled_qty >= 0",
+        message: "已对账数量不能为负"
     end
   end
 
@@ -396,7 +400,8 @@ defmodule SynieCore.Purchase.ReceiptItem do
       :receipt_date,
       :receipt_status,
       :party_type,
-      :party_id
+      :party_id,
+      :remaining_reconcilable_qty
     ]
 
   def poly_refs do
@@ -468,6 +473,26 @@ defmodule SynieCore.Purchase.ReceiptItem do
 
       change {SynieCore.Purchase.ReceiptItem.SyncReceipt, []}
       change {SynieCore.Purchase.ReceiptItem.ClearDrawings, []}
+    end
+
+    # 内部动作:采购对账单生效(常规单确认/赠送样品单结单)与回退(撤回/作废)时
+    # 加减已对账数量(默认单位)。调用方须已 FOR UPDATE 锁住本行,并完成剩余量校验;不注册 GraphQL。
+    update :adjust_reconciled_qty do
+      accept []
+      require_atomic? false
+      argument :delta, :decimal, allow_nil?: false
+
+      change fn changeset, _context ->
+        delta = Ash.Changeset.get_argument(changeset, :delta)
+        current = changeset.data.reconciled_qty || Decimal.new(0)
+        next = Decimal.add(current, delta)
+
+        if Decimal.compare(next, 0) == :lt do
+          Ash.Changeset.add_error(changeset, field: :reconciled_qty, message: "已对账数量不能为负")
+        else
+          Ash.Changeset.force_change_attribute(changeset, :reconciled_qty, next)
+        end
+      end
     end
   end
 
@@ -610,6 +635,15 @@ defmodule SynieCore.Purchase.ReceiptItem do
       description "订单原币代码"
     end
 
+    # 已对账数量(默认单位,受控投影):生效中采购对账单行累计,确认/结单加、撤回/作废减
+    attribute :reconciled_qty, :decimal do
+      allow_nil? false
+      writable? false
+      default Decimal.new(0)
+      public? true
+      description "已对账数量(默认单位;由采购对账单生效/回退同步)"
+    end
+
     attribute :remarks, :string do
       public? true
       constraints max_length: 512
@@ -693,6 +727,14 @@ defmodule SynieCore.Purchase.ReceiptItem do
     calculate :party_id, :uuid, expr(receipt.party_id) do
       public? true
       description "对手"
+    end
+
+    # 剩余可对账量 = 入库 base − 已对账(对账条目池过滤:> 0 才可勾选)
+    calculate :remaining_reconcilable_qty,
+              :decimal,
+              expr(base_qty - reconciled_qty) do
+      public? true
+      description "剩余可对账量(默认单位)"
     end
   end
 end

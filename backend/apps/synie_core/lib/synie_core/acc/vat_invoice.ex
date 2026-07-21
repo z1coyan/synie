@@ -72,8 +72,9 @@ end
 
 defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
   @moduledoc """
-  关联销售对账单校验:开出方向发票必须关联(每类发票须挂上级表单;进项票无未开票应收可冲,
-  不可关联),且对账单必须存在;类型/状态/一致性/金额等权威校验在审核时做
+  关联对账单校验:开出方向发票必须关联销售对账单、开入方向发票必须关联采购对账单
+  (每类发票须挂上级表单),且关联的对账单必须存在;两槽互斥(开出不可挂采购对账单,
+  开入不可挂销售对账单)。类型/状态/一致性/金额等权威校验在审核时做
   (见 `VatInvoice.reconciliation_blockers/1`)。
   """
 
@@ -84,6 +85,13 @@ defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
     direction =
       Ash.Changeset.get_attribute(changeset, :direction) || changeset.data.direction
 
+    with :ok <- check_sal_link(changeset, direction),
+         :ok <- check_pur_link(changeset, direction) do
+      :ok
+    end
+  end
+
+  defp check_sal_link(changeset, direction) do
     case Ash.Changeset.get_attribute(changeset, :sal_reconciliation_id) do
       nil ->
         if direction == :outbound do
@@ -97,7 +105,7 @@ defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
           direction != :outbound ->
             {:error, field: :sal_reconciliation_id, message: "仅开出发票可关联销售对账单"}
 
-          not exists?(reconciliation_id) ->
+          not sal_exists?(reconciliation_id) ->
             {:error, field: :sal_reconciliation_id, message: "关联的销售对账单不存在"}
 
           true ->
@@ -106,8 +114,38 @@ defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
     end
   end
 
-  defp exists?(reconciliation_id) do
+  defp check_pur_link(changeset, direction) do
+    case Ash.Changeset.get_attribute(changeset, :pur_reconciliation_id) do
+      nil ->
+        if direction == :inbound do
+          {:error, field: :pur_reconciliation_id, message: "开入发票必须关联采购对账单"}
+        else
+          :ok
+        end
+
+      reconciliation_id ->
+        cond do
+          direction != :inbound ->
+            {:error, field: :pur_reconciliation_id, message: "仅开入发票可关联采购对账单"}
+
+          not pur_exists?(reconciliation_id) ->
+            {:error, field: :pur_reconciliation_id, message: "关联的采购对账单不存在"}
+
+          true ->
+            :ok
+        end
+    end
+  end
+
+  defp sal_exists?(reconciliation_id) do
     case Ash.get(SynieCore.Sales.Reconciliation, reconciliation_id, authorize?: false) do
+      {:ok, _} -> true
+      _ -> false
+    end
+  end
+
+  defp pur_exists?(reconciliation_id) do
+    case Ash.get(SynieCore.Purchase.Reconciliation, reconciliation_id, authorize?: false) do
       {:ok, _} -> true
       _ -> false
     end
@@ -134,6 +172,10 @@ defmodule SynieCore.Acc.VatInvoice do
   同事务把对账单翻为已结单;作废/红冲自动解除关联并把对账单退回客户已确认
   (ADR 2026-07-21-sales-reconciliation)。
 
+  `pur_reconciliation_id`(仅开入发票、草稿可改,必填):关联常规采购对账单,口径与
+  销售侧逐点镜像(借贷镜像)——冲回组=借对账单头借方(未开票应付,带对手)/
+  贷对账单头贷方(入库借方口径,不带对手);作废/红冲退回供应商已确认。
+
   生命周期:草稿(可改可删)→ 已审核(audit,派生 `gl_entries/1` 过账)→
   已作废(void,原分录标 `is_cancelled`)/已红冲(reverse,交 `GL.reverse!` 生成红字组)。
   """
@@ -156,6 +198,7 @@ defmodule SynieCore.Acc.VatInvoice do
       reference :mirror_invoice, on_delete: :nilify
       # 被发票引用的对账单不可删(须先在发票草稿上解除关联)
       reference :sal_reconciliation, on_delete: :nothing
+      reference :pur_reconciliation, on_delete: :nothing
     end
 
     custom_indexes do
@@ -276,7 +319,8 @@ defmodule SynieCore.Acc.VatInvoice do
         :amount_account_id,
         :tax_account_id,
         :mirror_invoice_id,
-        :sal_reconciliation_id
+        :sal_reconciliation_id,
+        :pur_reconciliation_id
       ]
 
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
@@ -329,7 +373,8 @@ defmodule SynieCore.Acc.VatInvoice do
         :amount_account_id,
         :tax_account_id,
         :mirror_invoice_id,
-        :sal_reconciliation_id
+        :sal_reconciliation_id,
+        :pur_reconciliation_id
       ]
 
       require_atomic? false
@@ -459,6 +504,10 @@ defmodule SynieCore.Acc.VatInvoice do
             SynieCore.Sales.Reconciliation.close_from_invoice!(inv.sal_reconciliation_id)
           end
 
+          if inv.pur_reconciliation_id do
+            SynieCore.Purchase.Reconciliation.close_from_invoice!(inv.pur_reconciliation_id)
+          end
+
           {:ok, inv}
         end)
       end
@@ -474,8 +523,9 @@ defmodule SynieCore.Acc.VatInvoice do
       end
 
       change fn changeset, _context ->
-        # 关联对账单:作废自动解除关联并把对账单退回客户已确认(同事务)
-        linked_reconciliation_id = changeset.data.sal_reconciliation_id
+        # 关联对账单:作废自动解除关联并把对账单退回客户/供应商已确认(同事务)
+        linked_sal_reconciliation_id = changeset.data.sal_reconciliation_id
+        linked_pur_reconciliation_id = changeset.data.pur_reconciliation_id
 
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :voided)
@@ -490,8 +540,12 @@ defmodule SynieCore.Acc.VatInvoice do
         |> Ash.Changeset.after_action(fn _cs, inv ->
           SynieCore.Acc.GL.cancel!("acc.vat_invoice", inv.id)
 
-          if linked_reconciliation_id do
-            SynieCore.Sales.Reconciliation.reopen_from_invoice!(linked_reconciliation_id)
+          if linked_sal_reconciliation_id do
+            SynieCore.Sales.Reconciliation.reopen_from_invoice!(linked_sal_reconciliation_id)
+          end
+
+          if linked_pur_reconciliation_id do
+            SynieCore.Purchase.Reconciliation.reopen_from_invoice!(linked_pur_reconciliation_id)
           end
 
           {:ok, inv}
@@ -511,8 +565,9 @@ defmodule SynieCore.Acc.VatInvoice do
 
       change fn changeset, _context ->
         posting_date = Ash.Changeset.get_argument(changeset, :posting_date)
-        # 关联对账单:红冲自动解除关联并把对账单退回客户已确认(同事务)
-        linked_reconciliation_id = changeset.data.sal_reconciliation_id
+        # 关联对账单:红冲自动解除关联并把对账单退回客户/供应商已确认(同事务)
+        linked_sal_reconciliation_id = changeset.data.sal_reconciliation_id
+        linked_pur_reconciliation_id = changeset.data.pur_reconciliation_id
 
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :reversed)
@@ -528,8 +583,12 @@ defmodule SynieCore.Acc.VatInvoice do
           # 红字组生成完全交给 GL.reverse!,发票侧不自己拼分录
           SynieCore.Acc.GL.reverse!("acc.vat_invoice", inv.id, posting_date)
 
-          if linked_reconciliation_id do
-            SynieCore.Sales.Reconciliation.reopen_from_invoice!(linked_reconciliation_id)
+          if linked_sal_reconciliation_id do
+            SynieCore.Sales.Reconciliation.reopen_from_invoice!(linked_sal_reconciliation_id)
+          end
+
+          if linked_pur_reconciliation_id do
+            SynieCore.Purchase.Reconciliation.reopen_from_invoice!(linked_pur_reconciliation_id)
           end
 
           {:ok, inv}
@@ -765,6 +824,13 @@ defmodule SynieCore.Acc.VatInvoice do
       description "关联销售对账单(仅开出发票、草稿可改;审核一对一结单)"
     end
 
+    belongs_to :pur_reconciliation, SynieCore.Purchase.Reconciliation do
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "关联采购对账单(仅开入发票、草稿必填;审核一对一结单)"
+    end
+
     belongs_to :created_by, SynieCore.Accounts.User do
       public? true
       attribute_public? true
@@ -788,9 +854,10 @@ defmodule SynieCore.Acc.VatInvoice do
     |> Ash.read_one(authorize?: false)
   end
 
-  @doc "按三科目与方向派生分录组;关联对账单时追加冲回组(借对账单头借方/贷对账单头贷方)。红冲取负由 GL.reverse! 负责,不在此处理。"
+  @doc "按三科目与方向派生分录组;关联对账单时追加冲回组(销售侧借对账单头借方/贷对账单头贷方,采购侧借贷镜像)。红冲取负由 GL.reverse! 负责,不在此处理。"
   def gl_entries(%__MODULE__{} = inv) do
-    reconciliation = load_reconciliation(inv)
+    sal_reconciliation = load_sal_reconciliation(inv)
+    pur_reconciliation = load_pur_reconciliation(inv)
 
     currencies =
       SynieCore.Base.Account
@@ -800,8 +867,10 @@ defmodule SynieCore.Acc.VatInvoice do
             inv.party_account_id,
             inv.amount_account_id,
             inv.tax_account_id,
-            reconciliation && reconciliation.debit_account_id,
-            reconciliation && reconciliation.credit_account_id
+            sal_reconciliation && sal_reconciliation.debit_account_id,
+            sal_reconciliation && sal_reconciliation.credit_account_id,
+            pur_reconciliation && pur_reconciliation.debit_account_id,
+            pur_reconciliation && pur_reconciliation.credit_account_id
           ],
           &is_nil/1
         )
@@ -840,30 +909,53 @@ defmodule SynieCore.Acc.VatInvoice do
             [entry.(inv.party_account_id, zero, inv.gross_total, true)]
       end
 
-    base_entries ++ reversal_entries(inv, reconciliation, entry, zero)
+    base_entries ++
+      sal_reversal_entries(inv, sal_reconciliation, entry, zero) ++
+      pur_reversal_entries(inv, pur_reconciliation, entry, zero)
   end
 
-  # 冲回组:借对账单头借方科目(发货贷方口径,不带对手)/贷对账单头贷方科目
+  # 销售冲回组:借对账单头借方科目(发货贷方口径,不带对手)/贷对账单头贷方科目
   # (未开票应收,往来科目须带对手),金额=价税合计——把发货时挂的未开票应收清零
-  defp reversal_entries(_inv, nil, _entry, _zero), do: []
+  defp sal_reversal_entries(_inv, nil, _entry, _zero), do: []
 
-  defp reversal_entries(inv, reconciliation, entry, zero) do
+  defp sal_reversal_entries(inv, reconciliation, entry, zero) do
     [
       entry.(reconciliation.debit_account_id, inv.gross_total, zero, false),
       entry.(reconciliation.credit_account_id, zero, inv.gross_total, true)
     ]
   end
 
-  defp load_reconciliation(%{sal_reconciliation_id: nil}), do: nil
+  # 采购冲回组(与销售借贷镜像):借对账单头借方科目(未开票应付,往来科目须带对手)/
+  # 贷对账单头贷方科目(入库借方口径,不带对手),金额=价税合计——把入库时挂的未开票应付清零
+  defp pur_reversal_entries(_inv, nil, _entry, _zero), do: []
 
-  defp load_reconciliation(%{sal_reconciliation_id: reconciliation_id}) do
+  defp pur_reversal_entries(inv, reconciliation, entry, zero) do
+    [
+      entry.(reconciliation.debit_account_id, inv.gross_total, zero, true),
+      entry.(reconciliation.credit_account_id, zero, inv.gross_total, false)
+    ]
+  end
+
+  defp load_sal_reconciliation(%{sal_reconciliation_id: nil}), do: nil
+
+  defp load_sal_reconciliation(%{sal_reconciliation_id: reconciliation_id}) do
     Ash.get!(SynieCore.Sales.Reconciliation, reconciliation_id, authorize?: false)
   end
 
-  @doc "关联对账单的审核前检查,返回错误清单(空 = 可审核;未关联时恒空)。"
-  def reconciliation_blockers(%{sal_reconciliation_id: nil}), do: []
+  defp load_pur_reconciliation(%{pur_reconciliation_id: nil}), do: nil
 
+  defp load_pur_reconciliation(%{pur_reconciliation_id: reconciliation_id}) do
+    Ash.get!(SynieCore.Purchase.Reconciliation, reconciliation_id, authorize?: false)
+  end
+
+  @doc "关联对账单的审核前检查,返回错误清单(空 = 可审核;两个方向都未关联时恒空)。"
   def reconciliation_blockers(inv) do
+    sal_reconciliation_blockers(inv) ++ pur_reconciliation_blockers(inv)
+  end
+
+  defp sal_reconciliation_blockers(%{sal_reconciliation_id: nil}), do: []
+
+  defp sal_reconciliation_blockers(inv) do
     reconciliation =
       SynieCore.Sales.Reconciliation
       |> Ash.get(inv.sal_reconciliation_id, authorize?: false)
@@ -898,13 +990,60 @@ defmodule SynieCore.Acc.VatInvoice do
     end
   end
 
+  defp pur_reconciliation_blockers(%{pur_reconciliation_id: nil}), do: []
+
+  defp pur_reconciliation_blockers(inv) do
+    reconciliation =
+      SynieCore.Purchase.Reconciliation
+      |> Ash.get(inv.pur_reconciliation_id, authorize?: false)
+      |> case do
+        {:ok, reconciliation} -> reconciliation
+        _ -> nil
+      end
+
+    case reconciliation do
+      nil ->
+        ["关联的采购对账单不存在"]
+
+      reconciliation ->
+        reconciliation_total =
+          reconciliation.id
+          |> SynieCore.Purchase.Reconciliation.load_items()
+          |> Enum.map(& &1.base_amount)
+          |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+          |> Decimal.round(2)
+
+        [
+          {reconciliation.reconciliation_type != :regular, "仅常规对账单可关联发票"},
+          {reconciliation.status != :confirmed, "对账单须为供应商已确认状态"},
+          {reconciliation.company_id != inv.company_id, "对账单公司与发票不一致"},
+          {reconciliation.party_type != inv.party_type or reconciliation.party_id != inv.party_id,
+           "对账单对手与发票不一致"},
+          {is_nil(inv.gross_total) or not Decimal.equal?(inv.gross_total, reconciliation_total),
+           "发票价税合计必须等于对账单合计"}
+        ]
+        |> Enum.filter(&elem(&1, 0))
+        |> Enum.map(&elem(&1, 1))
+    end
+  end
+
   # 作废/红冲时解除对账单关联(仅在有关联时落 change,避免审计日志假变更)
   defp unlink_reconciliation(changeset) do
-    if changeset.data.sal_reconciliation_id do
-      Ash.Changeset.force_change_attribute(changeset, :sal_reconciliation_id, nil)
-    else
-      changeset
-    end
+    changeset
+    |> then(fn cs ->
+      if cs.data.sal_reconciliation_id do
+        Ash.Changeset.force_change_attribute(cs, :sal_reconciliation_id, nil)
+      else
+        cs
+      end
+    end)
+    |> then(fn cs ->
+      if cs.data.pur_reconciliation_id do
+        Ash.Changeset.force_change_attribute(cs, :pur_reconciliation_id, nil)
+      else
+        cs
+      end
+    end)
   end
 
   @doc "审核前的齐全性检查,返回缺失/错误清单(空 = 可审核)。"

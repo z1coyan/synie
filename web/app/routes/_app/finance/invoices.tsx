@@ -111,6 +111,7 @@ const GRID_COLUMNS = [
   'direction',
   'partyId',
   'salReconciliationId',
+  'purReconciliationId',
   'invoiceKind',
   'invoiceNo',
   'invoiceDate',
@@ -124,7 +125,8 @@ const GRID_OVERRIDES = {
   status: { enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger', REVERSED: 'warning' } },
   grossTotal: { render: (v: unknown) => formatAmount(v) },
   // 列名缺省取后端 description(是给 API 看的整段说明),覆盖成短列名
-  salReconciliationId: { label: '关联对账单' },
+  salReconciliationId: { label: '关联销售对账单' },
+  purReconciliationId: { label: '关联采购对账单' },
 } satisfies Record<string, ColumnOverride>
 
 // 对手候选数据源按 partyType 切换;COMPANY(内部公司对向发票)用公司主数据
@@ -135,13 +137,13 @@ const PARTY_SOURCE: Record<string, [resource: string, label: string]> = {
 }
 
 // 新增发票先选类型:类型定死方向与对手类型,选定后由选择器写入表单草稿(direction/partyType
-// 字段创建态隐藏)。每类发票必须关联上级表单:采购对账单规划中,采购开入暂不可选;
-// 费用报销(员工对手)规划中——PartyType 枚举尚无员工类型
-type InvoiceCreateType = 'sales' | 'internal'
+// 字段创建态隐藏)。每类发票必须关联上级表单:销售开出/内部互开关联销售对账单,采购开入关联
+// 采购对账单;费用报销(员工对手)规划中——PartyType 枚举尚无员工类型
+type InvoiceCreateType = 'sales' | 'internal' | 'purchase'
 const INVOICE_CREATE_TYPES = [
   { key: 'sales', label: '销售开出', desc: '向客户开具销项发票', disabled: false, preset: { direction: 'OUTBOUND', partyType: 'CUSTOMER' } },
   { key: 'internal', label: '内部互开', desc: '内部公司互开,保存后可生成对向发票', disabled: false, preset: { direction: 'OUTBOUND', partyType: 'COMPANY' } },
-  { key: 'purchase', label: '采购开入', desc: '采购对账单(规划中)', disabled: true, preset: null },
+  { key: 'purchase', label: '采购开入', desc: '供应商进项发票,须关联采购对账单', disabled: false, preset: { direction: 'INBOUND', partyType: 'SUPPLIER' } },
   { key: 'expense', label: '费用报销', desc: '规划中', disabled: true, preset: null },
 ] as const
 
@@ -164,8 +166,8 @@ function accountInput(label: string) {
   }
 }
 
-// 关联销售对账单候选限:本公司、本对手、客户已确认、常规类型(与后端 VatInvoiceReconciliationLink/审核校验同口径);
-// 对手类型是枚举,filter 里用裸 token(同 accountFilter 先例)
+// 关联对账单候选限:本公司、本对手、对方已确认、常规类型(与后端 VatInvoiceReconciliationLink/审核校验同口径,
+// 销售/采购两侧同一函数);对手类型是枚举,filter 里用裸 token(同 accountFilter 先例)
 function reconciliationFilter(values: Record<string, unknown>): string | undefined {
   const { companyId, partyType, partyId } = values
   if (!companyId || !partyType || !partyId) return undefined
@@ -207,6 +209,58 @@ function ReconciliationLinkInput({ value, onChange, isDisabled, values }: FieldI
         label="关联销售对账单"
         isRequired
         placeholder={filter ? '选择客户已确认的常规对账单…' : '先选齐公司与对手'}
+        labelField="reconciliationNo"
+        searchFields={['reconciliationNo']}
+        value={id}
+        onChange={(rid) => onChange(rid)}
+        isDisabled={isDisabled || filter == null}
+        filter={filter}
+      />
+      {rec && (
+        <p className={`text-xs ${mismatch ? 'text-danger' : 'text-muted'}`}>
+          对账单本币含税合计 {formatAmount(rec.baseGrossTotal)};审核要求与发票价税合计相等
+          {mismatch ? `(当前价税合计 ${formatAmount(gross)},不相等)` : ''}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 「关联采购对账单」字段:仅开入发票草稿可改。下拉限本公司本对手、供应商已确认的常规单;
+ * 选中后展示对账单本币含税合计,与发票价税合计不等时红色提示(后端审核强校验一对一且相等)。
+ */
+function PurReconciliationLinkInput({ value, onChange, isDisabled, values }: FieldInputProps) {
+  const id = value == null || value === '' ? null : String(value)
+  const filter = reconciliationFilter(values)
+
+  // 选中/回显的对账单合计:编辑态初值无行数据,按 id 自查一次(RemoteSelect 只回 labelField 集)
+  const recQuery = useQuery({
+    queryKey: ['purReconciliations', 'linkHint', id],
+    enabled: id != null && UUID_RE.test(id),
+    queryFn: () =>
+      gqlFetch<{ purReconciliations: { results: Row[] } }>(
+        `query ($id: ID!) {
+          purReconciliations(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
+            results { id reconciliationNo status baseGrossTotal }
+          }
+        }`,
+        { id },
+      ).then((d) => d.purReconciliations.results[0] ?? null),
+  })
+
+  const rec = recQuery.data ?? null
+  const gross = values.grossTotal == null || values.grossTotal === '' ? null : Number(values.grossTotal)
+  const recTotal = rec?.baseGrossTotal == null ? null : Number(rec.baseGrossTotal)
+  const mismatch = gross != null && recTotal != null && Math.abs(gross - recTotal) > 0.005
+
+  return (
+    <div className="flex flex-col gap-1">
+      <RemoteSelect
+        resource="purReconciliations"
+        label="关联采购对账单"
+        isRequired
+        placeholder={filter ? '选择供应商已确认的常规对账单…' : '先选齐公司与对手'}
         labelField="reconciliationNo"
         searchFields={['reconciliationNo']}
         value={id}
@@ -320,9 +374,10 @@ function InvoicesPage() {
         partyType: [2],
         partyId: [3],
         salReconciliationId: [4],
-        partyAccountId: [5],
-        amountAccountId: [6],
-        taxAccountId: [7],
+        purReconciliationId: [5],
+        partyAccountId: [6],
+        amountAccountId: [7],
+        taxAccountId: [8],
         invoiceKind: [10, '票面信息(OCR 填充,请核对)'],
         invoiceCode: [11],
         invoiceNo: [12],
@@ -372,7 +427,8 @@ function InvoicesPage() {
         amountAccountId: [44],
         taxAccountId: [45],
         salReconciliationId: [50, '关联'],
-        mirrorInvoiceId: [51, '关联'],
+        purReconciliationId: [51, '关联'],
+        mirrorInvoiceId: [52, '关联'],
         remarks: [60, ''],
       }
   const lay = (key: string) => {
@@ -634,6 +690,7 @@ function InvoicesPage() {
               amountAccountId: null,
               taxAccountId: null,
               salReconciliationId: null,
+              purReconciliationId: null,
             }),
           },
           docNo: { ...lay('docNo'), placeholder: '留空自动编号' },
@@ -657,7 +714,7 @@ function InvoicesPage() {
                 required: true,
                 cols: 6,
                 ...lay('partyType'),
-                effects: () => ({ partyId: null, salReconciliationId: null }),
+                effects: () => ({ partyId: null, salReconciliationId: null, purReconciliationId: null }),
               },
           partyId: {
             required: true,
@@ -665,7 +722,7 @@ function InvoicesPage() {
             ...lay('partyId'),
             visible: (v) => v.partyType != null,
             // 换对手后原关联对账单口径失效,一并清掉
-            effects: () => ({ salReconciliationId: null }),
+            effects: () => ({ salReconciliationId: null, purReconciliationId: null }),
             input: ({ value, onChange, isDisabled, values }) => {
               const [resource, label] = PARTY_SOURCE[String(values.partyType)] ?? ['salCustomers', '对手']
               const companyId = (values.companyId ?? null) as string | null
@@ -712,6 +769,16 @@ function InvoicesPage() {
             visible: (v) => v.direction === 'OUTBOUND',
             input: (p) => <ReconciliationLinkInput {...p} />,
           },
+          // 关联采购对账单:开入发票必关联,前后端同口径(后端 VatInvoiceReconciliationLink);
+          // 支出方向不展示(销项票无此业务),仅草稿可编辑;
+          // create 态并入「基本信息」手工组(收票登记前先选好),edit/view 态在「关联」组
+          purReconciliationId: {
+            ...lay('purReconciliationId'),
+            label: '关联采购对账单',
+            required: true,
+            visible: (v) => v.direction === 'INBOUND',
+            input: (p) => <PurReconciliationLinkInput {...p} />,
+          },
           // 对向发票互链:由页面提交流程写回,不给手填;create 态恒为空,与备注一起收编在组外
           mirrorInvoiceId: { edit: 'readOnly', ...lay('mirrorInvoiceId') },
           // 备注收编在分组之外,hairline 分隔(同系统时间戳惯例)
@@ -733,7 +800,12 @@ function InvoicesPage() {
                 if (t.preset == null) return
                 setCreateType(t.key as InvoiceCreateType)
                 // 换类型后对手与关联对账单口径失效,一并清掉(同 partyType/partyId effects)
-                patchValues({ ...t.preset, partyId: null, salReconciliationId: null })
+                patchValues({
+                  ...t.preset,
+                  partyId: null,
+                  salReconciliationId: null,
+                  purReconciliationId: null,
+                })
               }}
             />
           )

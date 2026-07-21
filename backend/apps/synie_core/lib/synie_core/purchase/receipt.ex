@@ -212,7 +212,8 @@ defmodule SynieCore.Purchase.Receipt do
   (贷方强制未开票应付角色、借方自选,贷方行带对手)。与销售发货逐点对称
   (借贷镜像),详见 docs/adr/2026-07-20-purchase-line.md。
 
-  生命周期:草稿→已审核→(已作废);仅草稿可改可删;无反审核/红冲/关闭态。
+  生命周期:草稿→已审核→(已作废);仅草稿可改可删;无反审核/红冲/关闭态;
+  任一条目有非零已对账数量(被生效中采购对账单消耗)时不可作废。
   单号全局唯一,留空按 `purchase.receipt` 编号规则取号。行见 `ReceiptItem`。
   内部公司对手只记买方账,不自动镜像卖方出库。删单前须清理行图纸挂接
   (见 `ClearItemDrawings`)。
@@ -437,6 +438,14 @@ defmodule SynieCore.Purchase.Receipt do
           else: {:error, message: "仅已审核采购入库单可作废"}
       end
 
+      validate fn changeset, _context ->
+        if __MODULE__.has_reconciled_items?(changeset.data.id) do
+          {:error, message: "存在已对账条目,不可作废,请先撤回/作废相关采购对账单"}
+        else
+          :ok
+        end
+      end
+
       change fn changeset, _context ->
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :voided)
@@ -586,6 +595,14 @@ defmodule SynieCore.Purchase.Receipt do
   end
 
   @doc false
+  # 任一条目存在非零已对账数量(被生效中采购对账单消耗)则整单不可作废
+  def has_reconciled_items?(receipt_id) do
+    SynieCore.Purchase.ReceiptItem
+    |> Ash.Query.filter(receipt_id == ^receipt_id and reconciled_qty > 0)
+    |> Ash.exists?(authorize?: false)
+  end
+
+  @doc false
   def load_items(receipt_id) do
     SynieCore.Purchase.ReceiptItem
     |> Ash.Query.filter(receipt_id == ^receipt_id)
@@ -617,13 +634,23 @@ defmodule SynieCore.Purchase.Receipt do
   def unfulfill!(_changeset, receipt) do
     items = load_items(receipt.id)
 
-    with :ok <- cancel_stock(receipt),
+    with :ok <- check_not_reconciled(items),
+         :ok <- cancel_stock(receipt),
          :ok <- cancel_gl(receipt),
          :ok <- adjust_received(items, :sub) do
       :ok
     end
   rescue
     e in ArgumentError -> {:error, Exception.message(e)}
+  end
+
+  # 权威复检(锁内):任一条目已被对账消耗则不可作废
+  defp check_not_reconciled(items) do
+    if Enum.any?(items, &(Decimal.compare(&1.reconciled_qty || Decimal.new(0), 0) == :gt)) do
+      {:error, "存在已对账条目,不可作废,请先撤回/作废相关采购对账单"}
+    else
+      :ok
+    end
   end
 
   defp ensure_posting_date(cs, locked) do

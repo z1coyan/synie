@@ -8,6 +8,7 @@ defmodule SynieCore.Acc.VatInvoiceTest do
   alias SynieCore.Acc.{GlEntry, VatInvoice}
   alias SynieCore.Authz.Actor
   alias SynieCore.Base.Account
+  alias SynieCore.Purchase.{Reconciliation, Supplier}
   alias SynieCore.Sales.Customer
 
   setup do
@@ -28,7 +29,42 @@ defmodule SynieCore.Acc.VatInvoiceTest do
         })
     }
 
-    %{company: company, customer: customer, accounts: accounts}
+    # 开入发票 create/update 必须关联采购对账单(VatInvoiceReconciliationLink);
+    # 本模块用例聚焦发票自身,setup 备一张草稿采购对账单供 base_attrs 默认关联
+    # (审核五笔/结单/解除关联全链路见 purchase/reconciliation_test.exs)
+    supplier =
+      Supplier
+      |> Ash.Changeset.for_create(:create, %{
+        code: "S#{System.unique_integer([:positive])}",
+        name: "测试供应商"
+      })
+      |> Ash.create!(authorize?: false)
+
+    unbilled =
+      account!(%{
+        code: "2202U",
+        name: "未开票应付",
+        direction: :credit,
+        company_id: company.id,
+        role: :unbilled_payable
+      })
+
+    pur_recon =
+      Reconciliation
+      |> Ash.Changeset.for_create(:create, %{
+        reconciliation_no: "PR-#{System.unique_integer([:positive])}",
+        reconciliation_type: :regular,
+        company_id: company.id,
+        party_type: :supplier,
+        party_id: supplier.id,
+        debit_account_id: unbilled.id,
+        credit_account_id: accounts.amount.id
+      })
+      |> Ash.create!(authorize?: false)
+
+    Process.put(:test_pur_recon_id, pur_recon.id)
+
+    %{company: company, customer: customer, accounts: accounts, pur_recon: pur_recon}
   end
 
   defp customer!(attrs \\ %{}) do
@@ -59,7 +95,8 @@ defmodule SynieCore.Acc.VatInvoiceTest do
     |> Ash.create!(opts)
   end
 
-  # 默认走客户对手(party_type=customer);party_id 显式传参以便个别用例覆盖成内部公司等
+  # 默认走客户对手(party_type=customer);party_id 显式传参以便个别用例覆盖成内部公司等;
+  # direction 默认开入,故默认关联 setup 的草稿采购对账单(开入强制关联)
   defp base_attrs(co, party_id) do
     %{
       company_id: co.id,
@@ -71,7 +108,8 @@ defmodule SynieCore.Acc.VatInvoiceTest do
       invoice_kind: :normal,
       invoice_code: "1100",
       invoice_no: "#{System.unique_integer([:positive])}",
-      items: [%{"name" => "货物A", "qty" => 1}]
+      items: [%{"name" => "货物A", "qty" => 1}],
+      pur_reconciliation_id: Process.get(:test_pur_recon_id)
     }
   end
 
@@ -149,10 +187,23 @@ defmodule SynieCore.Acc.VatInvoiceTest do
     assert Exception.message(error) =~ "开出发票必须关联销售对账单"
   end
 
-  test "开入发票不关联对账单可正常创建(对向发票镜像链路)", %{company: co, customer: cust} do
-    invoice = invoice!(base_attrs(co, cust.id), authorize?: false)
-    assert invoice.direction == :inbound
-    assert invoice.sal_reconciliation_id == nil
+  test "开入发票必须关联采购对账单:create 未关联被拒", %{company: co, customer: cust} do
+    attrs = base_attrs(co, cust.id) |> Map.delete(:pur_reconciliation_id)
+
+    error =
+      assert_raise Ash.Error.Invalid, fn -> invoice!(attrs, authorize?: false) end
+
+    assert Exception.message(error) =~ "开入发票必须关联采购对账单"
+  end
+
+  test "开入发票关联的采购对账单必须存在", %{company: co, customer: cust} do
+    attrs =
+      base_attrs(co, cust.id) |> Map.put(:pur_reconciliation_id, Ash.UUID.generate())
+
+    error =
+      assert_raise Ash.Error.Invalid, fn -> invoice!(attrs, authorize?: false) end
+
+    assert Exception.message(error) =~ "关联的采购对账单不存在"
   end
 
   test "同公司同发票代码+号码重复被唯一索引拒绝", %{company: co, customer: cust} do
@@ -267,9 +318,11 @@ defmodule SynieCore.Acc.VatInvoiceTest do
     assert reloaded.mirror_invoice_id == nil
   end
 
-  # 齐全的发票属性:三科目 + 勾稽相符的三金额(net 100 + tax 13 = gross 113),direction 默认开出
+  # 齐全的发票属性:三科目 + 勾稽相符的三金额(net 100 + tax 13 = gross 113),direction 默认开出;
+  # base_attrs 默认带采购对账单关联(开入强制),开出用例须剔除(两槽互斥,审核按 direction 走 sal 分支)
   defp invoice_attrs(co, cust, accounts, overrides \\ %{}) do
     base_attrs(co, cust.id)
+    |> Map.delete(:pur_reconciliation_id)
     |> Map.merge(%{
       direction: :outbound,
       party_account_id: accounts.party.id,
@@ -367,8 +420,9 @@ defmodule SynieCore.Acc.VatInvoiceTest do
       customer: cust,
       accounts: accounts
     } do
+      # 开入 create 强制关联采购对账单;本用例聚焦 inbound 三分录派生,直接 seed 建档(同 outbound 先例)
       inv =
-        invoice_attrs(co, cust, accounts, %{direction: :inbound}) |> invoice!(authorize?: false)
+        invoice_attrs(co, cust, accounts, %{direction: :inbound}) |> seed_invoice!()
 
       {:ok, audited} = audit!(inv, ~D[2026-07-15])
       assert audited.status == :audited

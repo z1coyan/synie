@@ -56,6 +56,10 @@ defmodule SynieCore do
       list SynieCore.Purchase.OrderItem, :pur_order_items, :read, paginate_with: :offset
       list SynieCore.Purchase.Receipt, :pur_receipts, :read, paginate_with: :offset
       list SynieCore.Purchase.ReceiptItem, :pur_receipt_items, :read, paginate_with: :offset
+      list SynieCore.Purchase.Reconciliation, :pur_reconciliations, :read, paginate_with: :offset
+
+      list SynieCore.Purchase.ReconciliationItem, :pur_reconciliation_items, :read,
+        paginate_with: :offset
       list SynieCore.Hr.Employee, :hr_employees, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
       list SynieCore.Inv.Material, :inv_materials, :read, paginate_with: :offset
@@ -275,6 +279,19 @@ defmodule SynieCore do
       update SynieCore.Purchase.ReceiptItem, :update_pur_receipt_item, :update
       destroy SynieCore.Purchase.ReceiptItem, :destroy_pur_receipt_item, :destroy
 
+      # 采购对账单:常规单 confirm/unconfirm,赠送/样品单 audit(结单)/void;行随单头权限码
+      create SynieCore.Purchase.Reconciliation, :create_pur_reconciliation, :create
+      update SynieCore.Purchase.Reconciliation, :update_pur_reconciliation, :update
+      destroy SynieCore.Purchase.Reconciliation, :destroy_pur_reconciliation, :destroy
+      update SynieCore.Purchase.Reconciliation, :confirm_pur_reconciliation, :confirm
+      update SynieCore.Purchase.Reconciliation, :unconfirm_pur_reconciliation, :unconfirm
+      update SynieCore.Purchase.Reconciliation, :audit_pur_reconciliation, :audit
+      update SynieCore.Purchase.Reconciliation, :void_pur_reconciliation, :void
+
+      create SynieCore.Purchase.ReconciliationItem, :create_pur_reconciliation_item, :create
+      update SynieCore.Purchase.ReconciliationItem, :update_pur_reconciliation_item, :update
+      destroy SynieCore.Purchase.ReconciliationItem, :destroy_pur_reconciliation_item, :destroy
+
       create SynieCore.Hr.Employee, :create_hr_employee, :create
       update SynieCore.Hr.Employee, :update_hr_employee, :update
       destroy SynieCore.Hr.Employee, :destroy_hr_employee, :destroy
@@ -466,6 +483,8 @@ defmodule SynieCore do
     resource SynieCore.Purchase.OrderItem
     resource SynieCore.Purchase.Receipt
     resource SynieCore.Purchase.ReceiptItem
+    resource SynieCore.Purchase.Reconciliation
+    resource SynieCore.Purchase.ReconciliationItem
     resource SynieCore.Hr.Employee
     resource SynieCore.Inv.MaterialCategory
     resource SynieCore.Inv.Material

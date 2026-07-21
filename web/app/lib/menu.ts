@@ -101,6 +101,7 @@ export const menuModules: MenuModule[] = [
         items: [
           { label: '采购报价', path: '/scm/purchase-quotations' },
           { label: '采购订单', path: '/scm/purchase' },
+          { label: '采购对账', path: '/scm/purchase-reconciliations' },
           { label: '销售报价', path: '/scm/quotations' },
           { label: '销售订单', path: '/scm/sales-orders' },
           { label: '销售对账', path: '/scm/sales-reconciliations' },

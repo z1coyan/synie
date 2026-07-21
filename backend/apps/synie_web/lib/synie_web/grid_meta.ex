@@ -36,6 +36,8 @@ defmodule SynieWeb.GridMeta do
     "purOrderItems" => SynieCore.Purchase.OrderItem,
     "purReceipts" => SynieCore.Purchase.Receipt,
     "purReceiptItems" => SynieCore.Purchase.ReceiptItem,
+    "purReconciliations" => SynieCore.Purchase.Reconciliation,
+    "purReconciliationItems" => SynieCore.Purchase.ReconciliationItem,
     "hrEmployees" => SynieCore.Hr.Employee,
     "invMaterialCategories" => SynieCore.Inv.MaterialCategory,
     "invMaterials" => SynieCore.Inv.Material,

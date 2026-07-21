@@ -17,6 +17,8 @@ defmodule SynieCore.Purchase.ReceiptTest do
     OrderItem,
     Receipt,
     ReceiptItem,
+    Reconciliation,
+    ReconciliationItem,
     Supplier
   }
 
@@ -696,8 +698,73 @@ defmodule SynieCore.Purchase.ReceiptTest do
     end
   end
 
-  describe "与订单交叉" do
-    test "有已审核入库时订单不可作废,先作废入库后可作废", ctx do
+  describe "对账作废拦截" do
+    test "存在非零已对账数量的入库单不可作废;撤回对账后可作废", ctx do
+      %{company: co, supplier: su, warehouse: wh, material: mat, kg: kg, order_item: oi} = ctx
+
+      r =
+        receipt!(%{
+          company_id: co.id,
+          party_type: :supplier,
+          party_id: su.id,
+          debit_account_id: ctx.debit.id,
+          credit_account_id: ctx.credit.id
+        })
+
+      item =
+        line!(r, %{
+          order_item_id: oi.id,
+          material_id: mat.id,
+          unit_id: kg.id,
+          warehouse_id: wh.id,
+          qty: Decimal.new(4)
+        })
+
+      r = r |> Ash.Changeset.for_update(:audit, %{}) |> Ash.update!(authorize?: false)
+
+      recon =
+        Reconciliation
+        |> Ash.Changeset.for_create(:create, %{
+          reconciliation_no: "PR-#{System.unique_integer([:positive])}",
+          reconciliation_type: :regular,
+          company_id: co.id,
+          party_type: :supplier,
+          party_id: su.id,
+          debit_account_id: ctx.credit.id,
+          credit_account_id: ctx.debit.id
+        })
+        |> Ash.create!(authorize?: false)
+
+      ReconciliationItem
+      |> Ash.Changeset.for_create(:create, %{
+        reconciliation_id: recon.id,
+        idx: 1,
+        receipt_item_id: item.id,
+        qty: Decimal.new(1)
+      })
+      |> Ash.create!(authorize?: false)
+
+      recon = recon |> Ash.Changeset.for_update(:confirm, %{}) |> Ash.update!(authorize?: false)
+
+      assert Decimal.equal?(
+               Ash.get!(ReceiptItem, item.id, authorize?: false).reconciled_qty,
+               Decimal.new(1)
+             )
+
+      assert {:error, error} =
+               r |> Ash.Changeset.for_update(:void, %{}) |> Ash.update(authorize?: false)
+
+      assert Exception.message(error) =~ "已对账"
+      assert Ash.get!(Receipt, r.id, authorize?: false).status == :audited
+
+      recon |> Ash.Changeset.for_update(:unconfirm, %{}) |> Ash.update!(authorize?: false)
+
+      voided = r |> Ash.Changeset.for_update(:void, %{}) |> Ash.update!(authorize?: false)
+      assert voided.status == :voided
+    end
+  end
+
+  describe "与订单交叉" do    test "有已审核入库时订单不可作废,先作废入库后可作废", ctx do
       %{
         company: co,
         supplier: su,

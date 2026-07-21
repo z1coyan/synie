@@ -515,6 +515,108 @@ const registry: Record<string, ResourceDrawerConfig> = {
     },
   },
   purReceiptItems: { label: '入库条目' },
+  purReconciliations: {
+    label: '采购对账单',
+    contentClassName: 'w-full lg:w-[960px]',
+    // 状态翻转走行内动作(confirm/unconfirm/audit/void);双币含税合计是行聚合,只在表格/条目表底部展示;
+    // 录入人/创建/更新时间是系统字段
+    exclude: [
+      'status',
+      'createdById',
+      'grossTotal',
+      'baseGrossTotal',
+      'insertedAt',
+      'updatedAt',
+    ],
+    fields: {
+      // 公司提到最前;建后不可换(update 动作不收 company_id)
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      // 编号可留空自动取号(后端 AutoNumber:purchase.reconciliation 编号规则),前端不标必填
+      reconciliationNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      // 对账类型手选必填、保存后锁死(换类型删单/作废重开,后端 ReconciliationTypeLocked 同口径)
+      reconciliationType: {
+        order: 1,
+        cols: 6,
+        required: true,
+        edit: 'createOnly',
+        label: '对账类型',
+      },
+      // 对手限供应商/内部公司(与采购入库同);meta 枚举是全量三值,自定义下拉只放两类
+      partyType: {
+        order: 2,
+        cols: 6,
+        required: true,
+        label: '对手类型',
+        effects: () => ({ partyId: null }),
+        input: ({ value, onChange, isDisabled }) => (
+          <Select
+            isDisabled={isDisabled}
+            isRequired
+            value={value == null || value === '' ? null : String(value)}
+            onChange={(v) => onChange(v === '' ? null : v)}
+          >
+            <Label>对手类型</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item key="SUPPLIER" id="SUPPLIER" textValue="供应商">
+                  供应商
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                <ListBox.Item key="COMPANY" id="COMPANY" textValue="内部公司">
+                  内部公司
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        ),
+      },
+      partyId: {
+        order: 3,
+        cols: 6,
+        required: true,
+        label: '对手',
+        visible: (values) => values.partyType === 'SUPPLIER' || values.partyType === 'COMPANY',
+        input: ({ value, onChange, isDisabled, values }) => {
+          const isCompany = values.partyType === 'COMPANY'
+          return (
+            <RemoteSelect
+              resource={isCompany ? 'basCompanies' : 'purSuppliers'}
+              label="对手"
+              placeholder={isCompany ? '选择内部公司…' : '选择供应商…'}
+              value={value == null ? null : String(value)}
+              onChange={(id) => onChange(id)}
+              isDisabled={isDisabled}
+            />
+          )
+        },
+      },
+      // 过账日期仅赠送/样品单结单过账用(有金额必填,未填默认结单当日);常规单不展示
+      postingDate: {
+        order: 4,
+        cols: 6,
+        label: '过账日期',
+        visible: (values) => values.reconciliationType === 'GIFT_SAMPLE',
+      },
+      remarks: { order: 6, label: '备注' },
+      // 借贷科目在条目表下方渲染(见对账抽屉 extraContent);hidden=不占主栅格但仍必填/提交
+      debitAccountId: {
+        order: 100,
+        cols: 6,
+        required: true,
+        label: '借方科目(未开票应付)',
+        hidden: true,
+      },
+      creditAccountId: { order: 101, cols: 6, required: true, label: '贷方科目', hidden: true },
+    },
+  },
+  purReconciliationItems: { label: '对账条目' },
   hrAttendancePunches: { label: '打卡记录' },
   hrAttendanceImports: { label: '考勤导入' },
   hrEmployees: {
