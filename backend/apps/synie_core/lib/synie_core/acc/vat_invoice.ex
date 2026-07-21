@@ -72,22 +72,27 @@ end
 
 defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
   @moduledoc """
-  关联销售对账单校验:仅开出方向发票可关联(进项票无未开票应收可冲),
-  且对账单必须存在;类型/状态/一致性/金额等权威校验在审核时做(见 `VatInvoice.reconciliation_blockers/1`)。
+  关联销售对账单校验:开出方向发票必须关联(每类发票须挂上级表单;进项票无未开票应收可冲,
+  不可关联),且对账单必须存在;类型/状态/一致性/金额等权威校验在审核时做
+  (见 `VatInvoice.reconciliation_blockers/1`)。
   """
 
   use Ash.Resource.Validation
 
   @impl true
   def validate(changeset, _opts, _context) do
+    direction =
+      Ash.Changeset.get_attribute(changeset, :direction) || changeset.data.direction
+
     case Ash.Changeset.get_attribute(changeset, :sal_reconciliation_id) do
       nil ->
-        :ok
+        if direction == :outbound do
+          {:error, field: :sal_reconciliation_id, message: "开出发票必须关联销售对账单"}
+        else
+          :ok
+        end
 
       reconciliation_id ->
-        direction =
-          Ash.Changeset.get_attribute(changeset, :direction) || changeset.data.direction
-
         cond do
           direction != :outbound ->
             {:error, field: :sal_reconciliation_id, message: "仅开出发票可关联销售对账单"}

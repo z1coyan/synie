@@ -313,6 +313,11 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
           }
           return (
             <Fragment key={f.name}>
+              {/* 字段前插槽(FieldOverride.before);返回 null/undefined 不渲染占位容器(同 headerContent 惯例) */}
+              {(() => {
+                const node = f.before?.(renderMode, renderRow, values, patchValues)
+                return node == null ? null : <div className="lg:col-span-12">{node}</div>
+              })()}
               {header && <div className="lg:col-span-12">{header}</div>}
               <div className={COL_SPAN[f.cols]}>
                 {renderMode === 'view' ? (

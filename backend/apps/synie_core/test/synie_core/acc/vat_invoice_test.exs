@@ -124,6 +124,37 @@ defmodule SynieCore.Acc.VatInvoiceTest do
     assert Exception.message(error) =~ "对手不能是本公司"
   end
 
+  test "开出发票必须关联销售对账单:create 未关联被拒", %{company: co, customer: cust} do
+    attrs = base_attrs(co, cust.id) |> Map.put(:direction, :outbound)
+
+    error =
+      assert_raise Ash.Error.Invalid, fn -> invoice!(attrs, authorize?: false) end
+
+    assert Exception.message(error) =~ "开出发票必须关联销售对账单"
+  end
+
+  test "开出发票必须关联销售对账单:update 改为开出方向未补关联同样被拒", %{
+    company: co,
+    customer: cust
+  } do
+    draft = invoice!(base_attrs(co, cust.id), authorize?: false)
+
+    error =
+      assert_raise Ash.Error.Invalid, fn ->
+        draft
+        |> Ash.Changeset.for_update(:update, %{direction: :outbound})
+        |> Ash.update!(authorize?: false)
+      end
+
+    assert Exception.message(error) =~ "开出发票必须关联销售对账单"
+  end
+
+  test "开入发票不关联对账单可正常创建(对向发票镜像链路)", %{company: co, customer: cust} do
+    invoice = invoice!(base_attrs(co, cust.id), authorize?: false)
+    assert invoice.direction == :inbound
+    assert invoice.sal_reconciliation_id == nil
+  end
+
   test "同公司同发票代码+号码重复被唯一索引拒绝", %{company: co, customer: cust} do
     attrs = base_attrs(co, cust.id) |> Map.merge(%{invoice_code: "1100", invoice_no: "00000001"})
     invoice!(attrs, authorize?: false)
@@ -251,6 +282,11 @@ defmodule SynieCore.Acc.VatInvoiceTest do
     |> Map.merge(overrides)
   end
 
+  # 开出发票 create/update 必须关联销售对账单(VatInvoiceReconciliationLink);本模块的审核/作废/
+  # 红冲用例聚焦分录生成与状态机,草稿直接 seed 建档(同文件 audited/nil doc_no 种子先例)——
+  # 关联对账单的发票全链路(五笔分录/结单/作废红冲解除关联)见 sales/reconciliation_test.exs
+  defp seed_invoice!(attrs), do: Ash.Seed.seed!(VatInvoice, attrs)
+
   defp audit!(inv, posting_date, opts \\ [authorize?: false]) do
     updated =
       inv
@@ -261,7 +297,7 @@ defmodule SynieCore.Acc.VatInvoiceTest do
   end
 
   defp audited_invoice!(co, cust, accounts, overrides \\ %{}) do
-    draft = invoice_attrs(co, cust, accounts, overrides) |> invoice!(authorize?: false)
+    draft = seed_invoice!(invoice_attrs(co, cust, accounts, overrides))
     {:ok, audited} = audit!(draft, ~D[2026-07-15])
     audited
   end
@@ -294,7 +330,7 @@ defmodule SynieCore.Acc.VatInvoiceTest do
       customer: cust,
       accounts: accounts
     } do
-      inv = invoice_attrs(co, cust, accounts) |> invoice!(authorize?: false)
+      inv = seed_invoice!(invoice_attrs(co, cust, accounts))
 
       {:ok, audited} = audit!(inv, ~D[2026-07-15])
 
@@ -360,13 +396,14 @@ defmodule SynieCore.Acc.VatInvoiceTest do
 
     test "税额为 0 只生成两行,税额科目可空", %{company: co, customer: cust, accounts: accounts} do
       inv =
-        invoice_attrs(co, cust, accounts, %{
-          tax_account_id: nil,
-          net_total: Decimal.new("50"),
-          tax_total: Decimal.new("0"),
-          gross_total: Decimal.new("50")
-        })
-        |> invoice!(authorize?: false)
+        seed_invoice!(
+          invoice_attrs(co, cust, accounts, %{
+            tax_account_id: nil,
+            net_total: Decimal.new("50"),
+            tax_total: Decimal.new("0"),
+            gross_total: Decimal.new("50")
+          })
+        )
 
       {:ok, audited} = audit!(inv, ~D[2026-07-15])
       assert audited.status == :audited
@@ -381,28 +418,26 @@ defmodule SynieCore.Acc.VatInvoiceTest do
       no_invoice_no =
         invoice_attrs(co, cust, accounts)
         |> Map.delete(:invoice_no)
-        |> invoice!(authorize?: false)
+        |> seed_invoice!()
 
       assert_raise Ash.Error.Invalid, ~r/发票号码/, fn -> audit!(no_invoice_no, ~D[2026-07-15]) end
 
       no_invoice_date =
         invoice_attrs(co, cust, accounts)
         |> Map.delete(:invoice_date)
-        |> invoice!(authorize?: false)
+        |> seed_invoice!()
 
       assert_raise Ash.Error.Invalid, ~r/开票日期/, fn -> audit!(no_invoice_date, ~D[2026-07-15]) end
 
       unbalanced =
-        invoice_attrs(co, cust, accounts, %{gross_total: Decimal.new("999")})
-        |> invoice!(authorize?: false)
+        seed_invoice!(invoice_attrs(co, cust, accounts, %{gross_total: Decimal.new("999")}))
 
       assert_raise Ash.Error.Invalid, ~r/未税金额\+税额必须等于价税合计/, fn ->
         audit!(unbalanced, ~D[2026-07-15])
       end
 
       tax_no_account =
-        invoice_attrs(co, cust, accounts, %{tax_account_id: nil})
-        |> invoice!(authorize?: false)
+        seed_invoice!(invoice_attrs(co, cust, accounts, %{tax_account_id: nil}))
 
       assert_raise Ash.Error.Invalid, ~r/税额大于零时必须选择税额科目/, fn ->
         audit!(tax_no_account, ~D[2026-07-15])
@@ -506,7 +541,7 @@ defmodule SynieCore.Acc.VatInvoiceTest do
     end
 
     test "草稿不能 void/reverse", %{company: co, customer: cust, accounts: accounts} do
-      draft = invoice_attrs(co, cust, accounts) |> invoice!(authorize?: false)
+      draft = seed_invoice!(invoice_attrs(co, cust, accounts))
 
       assert_raise Ash.Error.Invalid, ~r/仅已审核发票可作废/, fn -> void!(draft) end
 

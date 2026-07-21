@@ -40,6 +40,15 @@ export interface FieldOverride {
   section?: string
   /** 所属 tab key(抽屉声明 tabs 时生效);省略归入首个 tab */
   tab?: string
+  /** 字段前全宽插槽:渲染在该字段(及其 section 标题)之前,签名同抽屉 extraContent;
+   * 返回 null/undefined 不渲染。用于把一块自制 UI 锚到某个分组正上方
+   * (如发票 create 态的 OCR 区挂「票面信息」组前);view 态同样回调,自行按 mode 返回 null */
+  before?: (
+    mode: DrawerMode,
+    row: Row | null | undefined,
+    values: Record<string, unknown>,
+    patchValues: (patch: Record<string, unknown>) => void,
+  ) => ReactNode
   /** view 态自定义渲染 */
   render?: (value: unknown, row: Row) => ReactNode
   /** 表单控件替换(外键本轮用 TextField 顶,下轮换 RemoteSelect) */
@@ -66,6 +75,7 @@ export interface ResolvedField {
   hidden?: boolean
   section?: string
   tab?: string
+  before?: FieldOverride['before']
   render?: (value: unknown, row: Row) => ReactNode
   input?: (p: FieldInputProps) => ReactNode
   effects?: (value: unknown) => Record<string, unknown> | void
@@ -103,6 +113,7 @@ export function resolveFields(
         hidden: o.hidden,
         section: o.section,
         tab: o.tab,
+        before: o.before,
         render: o.render,
         input: o.input,
         effects: o.effects,

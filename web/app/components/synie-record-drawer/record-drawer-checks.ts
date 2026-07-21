@@ -220,6 +220,13 @@ const fkFields = resolveFields([parentCol], 'create', [], {
 eq(fkFields[0].picker, 'dialog', 'picker 透传')
 eq(fkFields[0].remote?.searchFields, ['name', 'code'], 'remote 透传')
 
+// —— before 字段前插槽:override 透传到 ResolvedField ——
+eq(
+  typeof resolveFields([col('a', 'string')], 'create', [], { a: { before: () => null } })[0].before,
+  'function',
+  'before 透传'
+)
+
 // —— order 排序:负值提前,未指定的保持 meta 列序(稳定) ——
 eq(
   resolveFields([col('a', 'string'), col('b', 'string'), col('c', 'string')], 'create', [], {
