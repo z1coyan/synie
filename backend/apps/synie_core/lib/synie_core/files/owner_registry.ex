@@ -6,6 +6,8 @@ defmodule SynieCore.Files.OwnerRegistry do
     "sal_order_item" => SynieCore.Sales.OrderItem,
     "sal_delivery_item" => SynieCore.Sales.DeliveryItem,
     "pur_supplier" => SynieCore.Purchase.Supplier,
+    "pur_order_item" => SynieCore.Purchase.OrderItem,
+    "pur_receipt_item" => SynieCore.Purchase.ReceiptItem,
     "hr_employee" => SynieCore.Hr.Employee,
     "inv_material" => SynieCore.Inv.Material,
     "acc_gl_journal" => SynieCore.Acc.GlJournal,

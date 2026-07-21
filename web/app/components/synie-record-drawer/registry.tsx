@@ -249,6 +249,265 @@ const registry: Record<string, ResourceDrawerConfig> = {
   salQuotationItems: { label: '报价条目' },
   salQuotationTiers: { label: '价格档' },
   purSuppliers: { label: '供应商' },
+  purQuotations: {
+    label: '采购报价单',
+    // 条目表含梯度概要列,默认 480px 太挤,报价抽屉加宽(移动端仍全宽)
+    contentClassName: 'w-full lg:w-[880px]',
+    // 状态翻转走行内动作(audit/void);审核时间/审核人/录入人是系统字段;创建/更新时间表格已隐藏
+    exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt'],
+    fields: {
+      // 公司提到最前;建后不可改(update 动作不收 company_id)
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      // 编号可留空自动取号(后端 AutoNumber:purchase.quotation 编号规则),前端不标必填
+      quotationNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      quotationDate: { order: 1, cols: 6, required: true },
+      // 截止当日仍有效;过期是派生展示态,不落库
+      validUntil: { order: 2, cols: 6, required: true, label: '报价截止' },
+      // 报价对手限供应商/内部公司(同采购订单);meta 枚举是全量三值,自定义下拉只放两类
+      partyType: {
+        order: 3,
+        cols: 6,
+        required: true,
+        label: '对手类型',
+        // 切换对手类型时清掉已选对手,避免供应商 id 挂在公司数据源下
+        effects: () => ({ partyId: null }),
+        input: ({ value, onChange, isDisabled }) => (
+          <Select
+            isDisabled={isDisabled}
+            isRequired
+            value={value == null || value === '' ? null : String(value)}
+            onChange={(v) => onChange(v === '' ? null : v)}
+          >
+            <Label>对手类型</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item key="SUPPLIER" id="SUPPLIER" textValue="供应商">
+                  供应商
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                <ListBox.Item key="COMPANY" id="COMPANY" textValue="内部公司">
+                  内部公司
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        ),
+      },
+      partyId: {
+        order: 4,
+        cols: 6,
+        required: true,
+        label: '对手',
+        // 未选对手类型时不出现;选定后数据源跟随类型(多态 fk,同销售报价先例)
+        visible: (values) => values.partyType === 'SUPPLIER' || values.partyType === 'COMPANY',
+        input: ({ value, onChange, isDisabled, values }) => {
+          const isCompany = values.partyType === 'COMPANY'
+          return (
+            <RemoteSelect
+              resource={isCompany ? 'basCompanies' : 'purSuppliers'}
+              label="对手"
+              placeholder={isCompany ? '选择内部公司…' : '选择供应商…'}
+              value={value == null ? null : String(value)}
+              onChange={(id) => onChange(id)}
+              isDisabled={isDisabled}
+            />
+          )
+        },
+      },
+      // 一单一币,默认单据公司本币;报价单无金额,不挂汇率不做双币
+      currencyId: { order: 5, cols: 6, required: true, label: '币种' },
+      remarks: { order: 6, label: '报价备注' },
+      // 报价条款是对供应商的自由多行文本,置表单底部
+      terms: {
+        order: 7,
+        label: '报价条款',
+        input: ({ value, onChange, isDisabled }) => (
+          <TextField value={value == null ? '' : String(value)} onChange={onChange} isDisabled={isDisabled}>
+            <Label>报价条款</Label>
+            <TextArea rows={4} placeholder="对供应商展示的报价条款,如付款、交付、有效条件约定" />
+          </TextField>
+        ),
+      },
+    },
+  },
+  purQuotationItems: { label: '采购报价条目' },
+  purQuotationTiers: { label: '采购报价价格档' },
+  purOrders: {
+    label: '采购订单',
+    // 条目表 8 列,默认 480px 太挤,订单抽屉加宽(移动端仍全宽)
+    contentClassName: 'w-full lg:w-[880px]',
+    // 状态翻转走行内动作(audit/close/void);审核时间/审核人/录入人是系统字段;
+    // 双币含税总额是行聚合,只在表格展示;创建/更新时间表格已隐藏
+    exclude: [
+      'status',
+      'auditedAt',
+      'auditedById',
+      'createdById',
+      'grossTotal',
+      'baseGrossTotal',
+      'insertedAt',
+      'updatedAt',
+    ],
+    fields: {
+      // 公司提到最前;建后不可改(update 动作不收 company_id)
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      // 编号可留空自动取号(后端 AutoNumber:purchase.order 编号规则),前端不标必填
+      orderNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      orderDate: { order: 1, cols: 6, required: true },
+      // 订单对手限供应商/内部公司;meta 枚举是全量三值,自定义下拉只放两类
+      partyType: {
+        order: 2,
+        cols: 6,
+        required: true,
+        label: '对手类型',
+        // 切换对手类型时清掉已选对手,避免供应商 id 挂在公司数据源下
+        effects: () => ({ partyId: null }),
+        input: ({ value, onChange, isDisabled }) => (
+          <Select
+            isDisabled={isDisabled}
+            isRequired
+            value={value == null || value === '' ? null : String(value)}
+            onChange={(v) => onChange(v === '' ? null : v)}
+          >
+            <Label>对手类型</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item key="SUPPLIER" id="SUPPLIER" textValue="供应商">
+                  供应商
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                <ListBox.Item key="COMPANY" id="COMPANY" textValue="内部公司">
+                  内部公司
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        ),
+      },
+      partyId: {
+        order: 3,
+        cols: 6,
+        required: true,
+        label: '对手',
+        // 未选对手类型时不出现;选定后数据源跟随类型(多态 fk,同销售订单先例)
+        visible: (values) => values.partyType === 'SUPPLIER' || values.partyType === 'COMPANY',
+        input: ({ value, onChange, isDisabled, values }) => {
+          const isCompany = values.partyType === 'COMPANY'
+          return (
+            <RemoteSelect
+              resource={isCompany ? 'basCompanies' : 'purSuppliers'}
+              label="对手"
+              placeholder={isCompany ? '选择内部公司…' : '选择供应商…'}
+              value={value == null ? null : String(value)}
+              onChange={(id) => onChange(id)}
+              isDisabled={isDisabled}
+            />
+          )
+        },
+      },
+      // 币种(原币)一单一币;汇率原币→本币,本币单强制 1(动态默认/显隐在订单页按公司本币叠加)
+      currencyId: { order: 4, cols: 6, required: true, label: '币种' },
+      exchangeRate: { order: 5, cols: 6, label: '汇率', placeholder: '如 7.25' },
+      remarks: { order: 6, label: '订单备注' },
+      // 交易条款是对供应商的自由多行文本,置表单底部
+      terms: {
+        order: 7,
+        label: '交易条款',
+        input: ({ value, onChange, isDisabled }) => (
+          <TextField value={value == null ? '' : String(value)} onChange={onChange} isDisabled={isDisabled}>
+            <Label>交易条款</Label>
+            <TextArea rows={4} placeholder="对供应商展示的交易条款,如交付、付款、验收约定" />
+          </TextField>
+        ),
+      },
+    },
+  },
+  purOrderItems: { label: '采购订单条目' },
+  purReceipts: {
+    label: '采购入库单',
+    contentClassName: 'w-full lg:w-[960px]',
+    exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt'],
+    fields: {
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      receiptNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      receiptDate: { order: 1, cols: 6, required: true },
+      postingDate: { order: 2, cols: 6, label: '过账日期' },
+      partyType: {
+        order: 3,
+        cols: 6,
+        required: true,
+        label: '对手类型',
+        effects: () => ({ partyId: null }),
+        input: ({ value, onChange, isDisabled }) => (
+          <Select
+            isDisabled={isDisabled}
+            isRequired
+            value={value == null || value === '' ? null : String(value)}
+            onChange={(v) => onChange(v === '' ? null : v)}
+          >
+            <Label>对手类型</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item key="SUPPLIER" id="SUPPLIER" textValue="供应商">
+                  供应商
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                <ListBox.Item key="COMPANY" id="COMPANY" textValue="内部公司">
+                  内部公司
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        ),
+      },
+      partyId: {
+        order: 4,
+        cols: 6,
+        required: true,
+        label: '对手',
+        visible: (values) => values.partyType === 'SUPPLIER' || values.partyType === 'COMPANY',
+        input: ({ value, onChange, isDisabled, values }) => {
+          const isCompany = values.partyType === 'COMPANY'
+          return (
+            <RemoteSelect
+              resource={isCompany ? 'basCompanies' : 'purSuppliers'}
+              label="对手"
+              placeholder={isCompany ? '选择内部公司…' : '选择供应商…'}
+              value={value == null ? null : String(value)}
+              onChange={(id) => onChange(id)}
+              isDisabled={isDisabled}
+            />
+          )
+        },
+      },
+      warehouseId: { order: 5, cols: 6, label: '默认仓库(可空)' },
+      debitAccountId: { order: 6, cols: 6, label: '借方科目' },
+      creditAccountId: { order: 7, cols: 6, label: '贷方科目(未开票应付)' },
+      remarks: { order: 8, label: '备注' },
+    },
+  },
+  purReceiptItems: { label: '入库条目' },
   hrAttendancePunches: { label: '打卡记录' },
   hrAttendanceImports: { label: '考勤导入' },
   hrEmployees: {

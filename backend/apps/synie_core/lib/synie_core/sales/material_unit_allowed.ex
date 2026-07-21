@@ -3,7 +3,7 @@ defmodule SynieCore.Sales.MaterialUnitAllowed do
   校验行单位:必须是物料默认单位或该物料单位转换行里的单位——
   任何取值都能折算回默认单位,将来发货扣库存不会卡在无法换算的行上。
   物料不存在在此一并报出(友好报错,DB 外键兜底)。
-  销售订单条目与报价单条目共用(读 material_id/unit_id 两属性)。
+  销售/采购两侧的订单条目与报价条目共用(读 material_id/unit_id 两属性)。
   """
 
   use Ash.Resource.Validation

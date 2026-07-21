@@ -38,6 +38,15 @@ defmodule SynieCore do
       # 系统设置(行情拉取配置等);初始化旗标不经 GraphQL 写
       read_one SynieCore.Sys.Setting, :sys_setting, :read
       list SynieCore.Purchase.Supplier, :pur_suppliers, :read, paginate_with: :offset
+      list SynieCore.Purchase.Quotation, :pur_quotations, :read, paginate_with: :offset
+      list SynieCore.Purchase.QuotationItem, :pur_quotation_items, :read, paginate_with: :offset
+
+      list SynieCore.Purchase.QuotationTier, :pur_quotation_tiers, :read, paginate_with: :offset
+
+      list SynieCore.Purchase.Order, :pur_orders, :read, paginate_with: :offset
+      list SynieCore.Purchase.OrderItem, :pur_order_items, :read, paginate_with: :offset
+      list SynieCore.Purchase.Receipt, :pur_receipts, :read, paginate_with: :offset
+      list SynieCore.Purchase.ReceiptItem, :pur_receipt_items, :read, paginate_with: :offset
       list SynieCore.Hr.Employee, :hr_employees, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
       list SynieCore.Inv.Material, :inv_materials, :read, paginate_with: :offset
@@ -202,6 +211,44 @@ defmodule SynieCore do
       create SynieCore.Purchase.Supplier, :create_pur_supplier, :create
       update SynieCore.Purchase.Supplier, :update_pur_supplier, :update
       destroy SynieCore.Purchase.Supplier, :destroy_pur_supplier, :destroy
+
+      # 采购报价单:状态翻转走 audit/void 独立 mutation;条目与价格档随单头权限码
+      create SynieCore.Purchase.Quotation, :create_pur_quotation, :create
+      update SynieCore.Purchase.Quotation, :update_pur_quotation, :update
+      destroy SynieCore.Purchase.Quotation, :destroy_pur_quotation, :destroy
+      update SynieCore.Purchase.Quotation, :audit_pur_quotation, :audit
+      update SynieCore.Purchase.Quotation, :void_pur_quotation, :void
+
+      create SynieCore.Purchase.QuotationItem, :create_pur_quotation_item, :create
+      update SynieCore.Purchase.QuotationItem, :update_pur_quotation_item, :update
+      destroy SynieCore.Purchase.QuotationItem, :destroy_pur_quotation_item, :destroy
+
+      create SynieCore.Purchase.QuotationTier, :create_pur_quotation_tier, :create
+      update SynieCore.Purchase.QuotationTier, :update_pur_quotation_tier, :update
+      destroy SynieCore.Purchase.QuotationTier, :destroy_pur_quotation_tier, :destroy
+
+      # 采购订单:状态翻转走 audit/close/void 独立 mutation;行随单头权限码
+      create SynieCore.Purchase.Order, :create_pur_order, :create
+      update SynieCore.Purchase.Order, :update_pur_order, :update
+      destroy SynieCore.Purchase.Order, :destroy_pur_order, :destroy
+      update SynieCore.Purchase.Order, :audit_pur_order, :audit
+      update SynieCore.Purchase.Order, :close_pur_order, :close
+      update SynieCore.Purchase.Order, :void_pur_order, :void
+
+      create SynieCore.Purchase.OrderItem, :create_pur_order_item, :create
+      update SynieCore.Purchase.OrderItem, :update_pur_order_item, :update
+      destroy SynieCore.Purchase.OrderItem, :destroy_pur_order_item, :destroy
+
+      # 采购入库单:审核派生库存+总账+已收数量;作废回滚;行随单头权限码
+      create SynieCore.Purchase.Receipt, :create_pur_receipt, :create
+      update SynieCore.Purchase.Receipt, :update_pur_receipt, :update
+      destroy SynieCore.Purchase.Receipt, :destroy_pur_receipt, :destroy
+      update SynieCore.Purchase.Receipt, :audit_pur_receipt, :audit
+      update SynieCore.Purchase.Receipt, :void_pur_receipt, :void
+
+      create SynieCore.Purchase.ReceiptItem, :create_pur_receipt_item, :create
+      update SynieCore.Purchase.ReceiptItem, :update_pur_receipt_item, :update
+      destroy SynieCore.Purchase.ReceiptItem, :destroy_pur_receipt_item, :destroy
 
       create SynieCore.Hr.Employee, :create_hr_employee, :create
       update SynieCore.Hr.Employee, :update_hr_employee, :update
@@ -384,6 +431,13 @@ defmodule SynieCore do
     resource SynieCore.Sales.QuotationTier
     resource SynieCore.Sales.Setting
     resource SynieCore.Purchase.Supplier
+    resource SynieCore.Purchase.Quotation
+    resource SynieCore.Purchase.QuotationItem
+    resource SynieCore.Purchase.QuotationTier
+    resource SynieCore.Purchase.Order
+    resource SynieCore.Purchase.OrderItem
+    resource SynieCore.Purchase.Receipt
+    resource SynieCore.Purchase.ReceiptItem
     resource SynieCore.Hr.Employee
     resource SynieCore.Inv.MaterialCategory
     resource SynieCore.Inv.Material

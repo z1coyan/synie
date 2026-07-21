@@ -5,7 +5,7 @@ defmodule SynieCore.Sales.SnapshotMaterial do
   即冻结,主数据后续变更不回溯(ADR 2026-07-17-sales-order-item-snapshot)。
   快照属性 writable? false,只能经此 change 写入(force_change_attribute,
   照 ComputeAmount 先例)。物料/单位读不到时跳过,由 MaterialUnitAllowed 与
-  外键兜底报错。销售订单条目与报价单条目共用(两者快照列同名)。
+  外键兜底报错。销售/采购两侧的订单条目与报价条目共用(快照列同名)。
   """
 
   use Ash.Resource.Change
