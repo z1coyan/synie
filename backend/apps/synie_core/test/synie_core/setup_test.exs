@@ -154,6 +154,69 @@ defmodule SynieCore.SetupTest do
              Setup.create_first_user(%{username: "latecomer", password: "x"})
   end
 
+  test "complete seed_sample_data 写入示例客商/物料/报价,幂等跳过" do
+    alias SynieCore.Base.Company
+    alias SynieCore.Inv.Material
+    alias SynieCore.Purchase.Supplier
+    alias SynieCore.Sales.Customer
+    alias SynieCore.Setup.SampleData
+
+    {:ok, _} = Setup.seed_common_currencies()
+
+    cny =
+      Currency
+      |> Ash.Query.filter(iso_code == "CNY")
+      |> Ash.read_one!(authorize?: false)
+
+    assert :ok = Setup.activate_only_base_currency(cny.id)
+
+    company =
+      Company
+      |> Ash.Changeset.for_create(:create, %{
+        code: "JT",
+        name: "台州京泰电气有限公司",
+        short_name: "台州京泰",
+        base_currency_id: cny.id
+      })
+      |> Ash.create!(authorize?: false)
+
+    {:ok, user} = Setup.create_first_user(%{username: "admin_sample", name: "管理员", password: "s3cret"})
+    actor = Authz.build_actor(user)
+
+    assert :ok = Setup.complete(actor, "zh-CN", seed_sample_data: true)
+
+    customers = Customer |> Ash.read!(authorize?: false)
+    suppliers = Supplier |> Ash.read!(authorize?: false)
+    materials = Material |> Ash.read!(authorize?: false)
+    sales_qs = SynieCore.Sales.Quotation |> Ash.read!(authorize?: false)
+    pur_qs = SynieCore.Purchase.Quotation |> Ash.read!(authorize?: false)
+
+    assert length(customers) == 3
+    assert Enum.any?(customers, &(&1.code == "C01" and &1.short_name == "海纳电气"))
+    assert length(suppliers) == 3
+    assert Enum.any?(suppliers, &(&1.code == "S01"))
+    assert length(materials) == 6
+    assert Enum.count(materials, & &1.is_customer_material) == 2
+    assert length(sales_qs) == 2
+    assert Enum.count(sales_qs, &(&1.status == :audited)) == 1
+    assert Enum.count(sales_qs, &(&1.status == :draft)) == 1
+    assert length(pur_qs) == 2
+    assert Enum.count(pur_qs, &(&1.status == :audited)) == 1
+
+    # 幂等:再次 seed 不增行
+    {summary, []} = SampleData.seed!(company.id, actor)
+    assert summary == %{
+             customers: 0,
+             suppliers: 0,
+             materials: 0,
+             sales_quotations: 0,
+             purchase_quotations: 0
+           }
+
+    assert length(Customer |> Ash.read!(authorize?: false)) == 3
+    assert length(Material |> Ash.read!(authorize?: false)) == 6
+  end
+
   test "complete 幂等:已有存储/编号规则/分类时不覆盖" do
     StorageEndpoint
     |> Ash.Changeset.for_create(:create, %{

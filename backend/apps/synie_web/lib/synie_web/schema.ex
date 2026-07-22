@@ -237,16 +237,21 @@ defmodule SynieWeb.Schema do
     end
 
     # 初始化向导:完成(写首选语言+落完成旗标,落旗后 setup 接口永久关闭)
+    # seed_sample_data:可选写入示例客商/物料/报价(依赖已建公司与完成时环境种子)
     field :setup_complete, non_null(:boolean) do
       arg(:preferred_language, non_null(:string))
+      arg(:seed_sample_data, :boolean)
 
-      resolve(fn %{preferred_language: language}, %{context: context} ->
+      resolve(fn args, %{context: context} ->
+        language = args.preferred_language
+        seed_sample? = Map.get(args, :seed_sample_data) == true
+
         case context[:actor] do
           nil ->
             {:error, "未认证"}
 
           actor ->
-            case SynieCore.Setup.complete(actor, language) do
+            case SynieCore.Setup.complete(actor, language, seed_sample_data: seed_sample?) do
               :ok -> {:ok, true}
               {:error, error} -> {:error, mutation_error(error)}
             end

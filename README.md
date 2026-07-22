@@ -74,13 +74,15 @@ mix ecto.migrate
 # mix synie.db.reset
 ```
 
-空库只需迁移即可启动。迁移顺带种子 CNY、内置 admin 角色与单行配置表；首次打开应用进入初始化向导（建超管 → 建公司 → 选语言），**完成时**幂等种子内置存储接入、编号规则、物料两级分类与机加工常用计量单位，并向导入口永久关闭。无需再跑 `seeds.exs`。
+空库只需迁移即可启动。迁移顺带种子 CNY、内置 admin 角色与单行配置表；首次打开应用进入初始化向导（可选空白或示例起步 → 建超管 → 建公司 → 选语言），**完成时**幂等种子内置存储接入、编号规则、物料两级分类与机加工常用计量单位（示例路径另写客商/物料/报价），并向导入口永久关闭。无需再跑 `seeds.exs`。
 
 **重置开发库**（清空数据、重跑迁移，再走初始化向导）：
 
 ```bash
 cd backend
 mix synie.db.reset
+# 可选:一键演示环境(admin/admin123 + JT 台州京泰 + 示例业务数据,仅 dev/test)
+mix synie.demo
 ```
 
 ## 安装依赖
@@ -254,7 +256,7 @@ web/app/graphql/gql/
 - 资源 list 查询统一走 offset 分页，返回 `{ count, results }` 结构（不留扁平列表）。
 - 各资源自带增删改 mutation（create/update/destroy）。
 - 自定义 query：`me`（当前登录用户）、`myPermissions`、`permissionCatalog`、`gridMeta(resource: String!)`（DataGrid 列/权限/多态外键元数据）、`numberableResources`（自动编号规则页的资源下拉）、`setupStatus`（初始化向导状态，未认证可读）。
-- 自定义 mutation：`login(username, password)`、`createSysUser`、`resetSysUserPassword`、`setupCreateFirstUser`（向导建首个超管并返回登录态）、`setupSeedCommonCurrencies`（预置常用货币）、`setupComplete`（写首选语言并落完成旗标）。
+- 自定义 mutation：`login(username, password)`、`createSysUser`、`resetSysUserPassword`、`setupCreateFirstUser`（向导建首个超管并返回登录态）、`setupSeedCommonCurrencies`（预置常用货币）、`setupComplete`（写首选语言并落完成旗标；可选 `seedSampleData` 写入示例客商/物料/报价）。
 
 前端不手写类型，而是通过 `web/codegen.ts` 从运行中的后端拉取 live schema 生成 GraphQL 类型（见下文「重新生成 GraphQL 类型」）。
 
@@ -283,7 +285,7 @@ mutation Login($username: String!, $password: String!) {
 - 按部署域名设置 `PHX_HOST`。
 - 为 AshPostgres 资源补齐迁移和数据库生命周期。
 - 根据需要增加认证资源和策略；当前只安装了 Ash Authentication 相关依赖，没有 User resource 或登录流程。
-- 初始化流程：`mix ecto.migrate`（顺带种子 CNY 与内置 admin 角色）→ 浏览器打开应用进入初始化向导（建超管、公司、语言；完成时种子存储接入/编号规则/物料分类）。口令由操作者当场自设，不落日志。凡用旧版 seeds（硬编码/环境变量口令）初始化过的环境，其 admin 口令应视为已泄露并重置。
+- 初始化流程：`mix ecto.migrate`（顺带种子 CNY 与内置 admin 角色）→ 浏览器打开应用进入初始化向导（空白或示例起步、建超管、公司、语言；完成时种子存储接入/编号规则/物料分类，示例路径另写业务样例）。口令由操作者当场自设，不落日志。开发可用 `mix synie.demo`。凡用旧版 seeds（硬编码/环境变量口令）初始化过的环境，其 admin 口令应视为已泄露并重置。
 
 `backend/config/runtime.exs` 已在 `prod` 环境读取：
 

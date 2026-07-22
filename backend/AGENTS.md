@@ -4,6 +4,7 @@
 
 - **环境变量**:`config/config.exs` 在 dev/test 自动加载 `backend/.env` 与 `backend/.env.<env>`(后者覆盖前者;进程已有变量优先)。prod 不读文件。
 - 一键重置(仅 `MIX_ENV=dev|test`):`cd backend && mix synie.db.reset`——断开会话、`drop`/`create`/`migrate`。完成后打开应用走初始化向导,无需 `seeds.exs`。
+- 一键演示库(仅 `MIX_ENV=dev|test`,已初始化则拒绝):`mix synie.demo`——管理员 `admin`/`admin123`、公司 JT 台州京泰电气有限公司、完成初始化并写入示例客户/供应商/物料/报价(与向导「示例数据」路径等价)。
 
 ## 权限
 

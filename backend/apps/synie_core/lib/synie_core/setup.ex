@@ -5,7 +5,7 @@ defmodule SynieCore.Setup do
   门控:`sys_setting.setup_completed_at` 空 = 未初始化,向导开放;落库后相关接口永久关闭。
   空库只需 `mix ecto.migrate` 即可启动应用并进入向导——无需再跑 `seeds.exs`。
   完成时幂等种子:内置存储接入 local、编号规则、物料两级分类、机加工常用计量单位,
-  并写首选语言、落完成旗标。
+  并写首选语言、落完成旗标;可选写入示例业务数据(见 `Setup.SampleData`)。
   中间步骤(公司创建/科目表初始化等)由前端向导调既有 mutation(超管身份),不在此门面内。
   迁移仍种子 CNY、内置 admin 角色、行情用吨/千克与各单行配置表。
   常用货币预置时全部停用;选定本币后 `activate_only_base_currency/1` 仅启用本币,其余须手动启用。
@@ -23,6 +23,7 @@ defmodule SynieCore.Setup do
   alias SynieCore.Inv.MaterialCategory
   alias SynieCore.Numbering.Rule
   alias SynieCore.Repo
+  alias SynieCore.Setup.SampleData
   alias SynieCore.Sys.Setting
 
   @languages ["zh-CN", "en-US"]
@@ -306,10 +307,16 @@ defmodule SynieCore.Setup do
 
   @doc """
   完成初始化:写入当前用户的首选语言;幂等种子内置存储接入、编号规则、物料两级分类、
-  机加工常用计量单位;落完成旗标(同事务)。落旗后 setup 各接口随之关闭;仅未初始化时可用。
+  机加工常用计量单位;可选示例业务数据(客户/供应商/物料/销采报价);落完成旗标(同事务)。
+  落旗后 setup 各接口随之关闭;仅未初始化时可用。
+
+  选项:
+  - `seed_sample_data: true` — 为首个公司写入示例客商、物料与报价单(无公司时忽略)
   """
-  @spec complete(Actor.t(), String.t()) :: :ok | {:error, term()}
-  def complete(%Actor{user_id: user_id} = actor, language) do
+  @spec complete(Actor.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def complete(%Actor{user_id: user_id} = actor, language, opts \\ []) do
+    seed_sample? = Keyword.get(opts, :seed_sample_data, false)
+
     cond do
       initialized?() ->
         {:error, "系统已完成初始化"}
@@ -332,13 +339,26 @@ defmodule SynieCore.Setup do
           n_cats = seed_material_categories!()
           n_units = seed_units!()
 
+          # 示例数据依赖分类/单位/编号规则,须在其后;无公司时跳过(续作异常路径)
+          n_sample =
+            if seed_sample? do
+              case first_company_id() do
+                nil -> []
+                company_id ->
+                  {_summary, notifications} = SampleData.seed!(company_id, actor)
+                  notifications
+              end
+            else
+              []
+            end
+
           {setting, n2} =
             Setting.get()
             |> Ash.Changeset.for_update(:update, %{})
             |> Ash.Changeset.force_change_attribute(:setup_completed_at, DateTime.utc_now())
             |> Ash.update!(authorize?: false, actor: actor, return_notifications?: true)
 
-          {setting, n1 ++ n_storage ++ n_rules ++ n_cats ++ n_units ++ n2}
+          {setting, n1 ++ n_storage ++ n_rules ++ n_cats ++ n_units ++ n_sample ++ n2}
         end)
         |> case do
           {:ok, {_setting, notifications}} ->
@@ -351,6 +371,15 @@ defmodule SynieCore.Setup do
     end
   rescue
     e -> {:error, e}
+  end
+
+  defp first_company_id do
+    case SynieCore.Base.Company
+         |> Ash.Query.limit(1)
+         |> Ash.read!(authorize?: false) do
+      [%{id: id} | _] -> id
+      _ -> nil
+    end
   end
 
   # ---------------------------------------------------------------------------

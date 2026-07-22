@@ -70,8 +70,8 @@ const SEED_WAREHOUSE_DEFAULTS = `
   }
 `
 const COMPLETE_SETUP = `
-  mutation ($preferredLanguage: String!) {
-    setupComplete(preferredLanguage: $preferredLanguage)
+  mutation ($preferredLanguage: String!, $seedSampleData: Boolean) {
+    setupComplete(preferredLanguage: $preferredLanguage, seedSampleData: $seedSampleData)
   }
 `
 
@@ -94,6 +94,21 @@ interface CompanyRow {
   id: string
   name: string
 }
+
+/** 初始化路径:空白只建底座;示例另写客商/物料/报价,并预填演示公司与管理员 */
+type SetupPath = 'blank' | 'sample'
+
+// 示例数据路径预填(与 mix synie.demo 一致,可在向导中改)
+const SAMPLE_DEFAULTS = {
+  username: 'admin',
+  name: '管理员',
+  password: 'admin123',
+  companyCode: 'JT',
+  companyName: '台州京泰电气有限公司',
+  companyShortName: '台州京泰',
+  language: 'zh-CN',
+  template: 'SMALL',
+} as const
 
 // 与 accounts.tsx 的模板清单一致;必选、无默认
 const TEMPLATES = [
@@ -122,6 +137,8 @@ export const Route = createFileRoute('/setup')({
 function SetupPage() {
   const navigate = useNavigate()
   const [step, setStep] = useState(1)
+  // 默认空白;选「示例数据」后预填管理员/公司并在完成时落示例业务数据
+  const [path, setPath] = useState<SetupPath>('blank')
   const goStep2 = useCallback(() => setStep(2), [])
   const goStep3 = useCallback(() => setStep(3), [])
 
@@ -163,7 +180,7 @@ function SetupPage() {
             万象待启。
           </h1>
           <p className="mt-6 text-sm leading-relaxed text-brand-porcelain/55">
-            首次启动,三步完成初始化:管理员、公司与首选语言。
+            首次启动,三步完成初始化:管理员、公司与首选语言。可选从示例业务数据起步。
           </p>
           <div className="mt-10 flex items-center gap-4 text-[11px] tracking-[0.3em] text-brand-porcelain/35">
             <span className="h-px w-10 bg-gilt/50" aria-hidden />
@@ -205,11 +222,16 @@ function SetupPage() {
           ) : status.data.initialized ? (
             <Loading /> // 即将跳转工作台
           ) : step === 1 ? (
-            <StepAdmin hasUsers={status.data.hasUsers} onDone={goStep2} />
+            <StepAdmin
+              hasUsers={status.data.hasUsers}
+              path={path}
+              onPathChange={setPath}
+              onDone={goStep2}
+            />
           ) : step === 2 ? (
-            <StepCompany onDone={goStep3} />
+            <StepCompany path={path} onDone={goStep3} />
           ) : (
-            <StepLanguage />
+            <StepLanguage seedSampleData={path === 'sample'} />
           )}
 
           <p className="mt-16 text-xs text-ink-500/60">
@@ -279,13 +301,35 @@ function LoadError(props: { message: string; onRetry: () => void }) {
 }
 
 /** 步骤 1 · 管理员:无用户建首个超管;已有用户(断线续作)改走登录 */
-function StepAdmin(props: { hasUsers: boolean; onDone: () => void }) {
+function StepAdmin(props: {
+  hasUsers: boolean
+  path: SetupPath
+  onPathChange: (path: SetupPath) => void
+  onDone: () => void
+}) {
   const queryClient = useQueryClient()
-  const [username, setUsername] = useState('')
-  const [name, setName] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
+  const sample = props.path === 'sample'
+  const [username, setUsername] = useState(sample ? SAMPLE_DEFAULTS.username : '')
+  const [name, setName] = useState(sample ? SAMPLE_DEFAULTS.name : '')
+  const [password, setPassword] = useState(sample ? SAMPLE_DEFAULTS.password : '')
+  const [confirm, setConfirm] = useState(sample ? SAMPLE_DEFAULTS.password : '')
   const [showPassword, setShowPassword] = useState(false)
+
+  // 切换路径时回填/清空示例默认值(仅新建管理员场景;续作登录不改口令框)
+  useEffect(() => {
+    if (props.hasUsers) return
+    if (props.path === 'sample') {
+      setUsername(SAMPLE_DEFAULTS.username)
+      setName(SAMPLE_DEFAULTS.name)
+      setPassword(SAMPLE_DEFAULTS.password)
+      setConfirm(SAMPLE_DEFAULTS.password)
+    } else {
+      setUsername('')
+      setName('')
+      setPassword('')
+      setConfirm('')
+    }
+  }, [props.path, props.hasUsers])
 
   const onAuthed = (result: LoginResult, message: string) => {
     setToken(result.token)
@@ -345,7 +389,30 @@ function StepAdmin(props: { hasUsers: boolean; onDone: () => void }) {
           已存在管理员账号,请登录后继续初始化。
         </p>
       ) : (
-        <p className="text-sm text-ink-500">创建首个管理员账号(超级管理员),创建后自动登录。</p>
+        <>
+          <p className="text-sm text-ink-500">选择起步方式,再创建首个管理员账号(超级管理员)。</p>
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <PathCard
+              active={props.path === 'blank'}
+              title="空白项目"
+              description="仅建管理员与公司底座,业务数据自行维护"
+              onPress={() => props.onPathChange('blank')}
+              disabled={pending}
+            />
+            <PathCard
+              active={props.path === 'sample'}
+              title="示例数据"
+              description="预填演示账号与公司,完成时写入客户/供应商/物料/报价"
+              onPress={() => props.onPathChange('sample')}
+              disabled={pending}
+            />
+          </div>
+          {sample && (
+            <p className="mt-3 rounded-sm border border-gilt/40 bg-gilt/10 px-3 py-2 text-xs text-ink-500">
+              已预填演示账号(可改)。完成初始化时将写入示例客户、供应商、物料与销采报价单。
+            </p>
+          )}
+        </>
       )}
 
       <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-5">
@@ -403,14 +470,43 @@ function StepAdmin(props: { hasUsers: boolean; onDone: () => void }) {
   )
 }
 
+function PathCard(props: {
+  active: boolean
+  title: string
+  description: string
+  onPress: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      disabled={props.disabled}
+      onClick={props.onPress}
+      className={`rounded-sm border px-3 py-3 text-left transition-colors ${
+        props.active
+          ? 'border-ink-900 bg-ink-900 text-porcelain'
+          : 'border-ink-500/25 bg-transparent text-ink-900 hover:border-ink-500/50'
+      } ${props.disabled ? 'opacity-50' : ''}`}
+    >
+      <div className={`text-sm font-medium tracking-wide ${props.active ? 'text-porcelain' : ''}`}>
+        {props.title}
+      </div>
+      <div className={`mt-1 text-xs leading-relaxed ${props.active ? 'text-porcelain/70' : 'text-ink-500'}`}>
+        {props.description}
+      </div>
+    </button>
+  )
+}
+
 /** 步骤 2 · 公司:先静默预置常用货币;无公司走创建,已有公司(续作)按科目数分流 */
-function StepCompany(props: { onDone: () => void }) {
+function StepCompany(props: { path: SetupPath; onDone: () => void }) {
+  const sample = props.path === 'sample'
   const [seeded, setSeeded] = useState(false)
-  const [code, setCode] = useState('')
-  const [name, setName] = useState('')
-  const [shortName, setShortName] = useState('')
+  const [code, setCode] = useState(sample ? SAMPLE_DEFAULTS.companyCode : '')
+  const [name, setName] = useState(sample ? SAMPLE_DEFAULTS.companyName : '')
+  const [shortName, setShortName] = useState(sample ? SAMPLE_DEFAULTS.companyShortName : '')
   const [baseCurrencyId, setBaseCurrencyId] = useState<string | null>(null)
-  const [template, setTemplate] = useState<string | null>(null)
+  const [template, setTemplate] = useState<string | null>(sample ? SAMPLE_DEFAULTS.template : null)
   const [pending, setPending] = useState(false)
 
   // 进入公司步:幂等预置约 20 种常用货币(静默,成功不提示;失败仅告警,不阻塞后续选币)
@@ -625,7 +721,11 @@ function StepCompany(props: { onDone: () => void }) {
 
   return (
     <div className="mt-8">
-      <p className="text-sm text-ink-500">创建第一家公司(记账主体),并按模板初始化其科目表。</p>
+      <p className="text-sm text-ink-500">
+        {sample
+          ? '已预填演示公司(可改)。创建后将按模板初始化科目表,完成初始化时再写入示例业务数据。'
+          : '创建第一家公司(记账主体),并按模板初始化其科目表。'}
+      </p>
 
       <form
         onSubmit={(e) => {
@@ -711,18 +811,28 @@ function StepCompany(props: { onDone: () => void }) {
 }
 
 /** 步骤 3 · 首选语言:写当前用户偏好并落完成旗标,随后回工作台 */
-function StepLanguage() {
+function StepLanguage(props: { seedSampleData: boolean }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [language, setLanguage] = useState('zh-CN')
+  const [language, setLanguage] = useState(
+    props.seedSampleData ? SAMPLE_DEFAULTS.language : 'zh-CN'
+  )
 
   const complete = useMutation({
-    mutationFn: () => gqlFetch<{ setupComplete: boolean }>(COMPLETE_SETUP, { preferredLanguage: language }),
+    mutationFn: () =>
+      gqlFetch<{ setupComplete: boolean }>(COMPLETE_SETUP, {
+        preferredLanguage: language,
+        seedSampleData: props.seedSampleData,
+      }),
     onSuccess: () => {
       // 落旗后门控即刻反转:清掉向导期缓存的 setupStatus/me,回 _app 重新判定
       queryClient.removeQueries({ queryKey: ['setupStatus'] })
       queryClient.removeQueries({ queryKey: ['me'] })
-      toast.success('初始化完成,欢迎使用 Synie')
+      toast.success(
+        props.seedSampleData
+          ? '初始化完成,示例客户/供应商/物料/报价已就绪'
+          : '初始化完成,欢迎使用 Synie'
+      )
       navigate({ to: '/' })
     },
     onError: (error) => {
@@ -735,6 +845,11 @@ function StepLanguage() {
   return (
     <div className="mt-8">
       <p className="text-sm text-ink-500">选择当前用户的首选语言。</p>
+      {props.seedSampleData && (
+        <p className="mt-3 rounded-sm border border-gilt/40 bg-gilt/10 px-3 py-2 text-xs text-ink-500">
+          完成时将同时写入示例业务数据:3 家客户、3 家供应商、6 种物料,以及销售/采购报价各 2 张。
+        </p>
+      )}
 
       <form
         onSubmit={(e) => {
