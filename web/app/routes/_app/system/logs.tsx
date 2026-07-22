@@ -101,6 +101,13 @@ const RESOURCE_LABELS: Record<string, string> = {
   acc_setting: '财务设置',
   sal_setting: '供应链设置',
   sal_company_account_default: '公司默认过账科目',
+  mfg_operation: '工序',
+  mfg_process_template: '工艺模板',
+  mfg_process_template_item: '工艺模板行',
+  mfg_bom: 'BOM',
+  mfg_bom_component: 'BOM 配料行',
+  mfg_bom_route: 'BOM 工艺路线行',
+  mfg_bom_byproduct: 'BOM 副产品行',
 }
 
 // changes 键是 snake_case 属性名(后端 Track 落库);新字段接审计后在此补中文,漏了则原样显示

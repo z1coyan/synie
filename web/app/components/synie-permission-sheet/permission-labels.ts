@@ -7,6 +7,7 @@ export const DOMAIN_LABELS: Record<string, string> = {
   acc: '财务',
   hr: '人事',
   inv: '库存',
+  mfg: '生产',
 }
 
 export const RESOURCE_LABELS: Record<string, string> = {
@@ -47,6 +48,9 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'inv.stock_transfer': '手工调拨单',
   'inv.stock_count': '库存盘点单',
   'inv.stock_entry': '库存分录',
+  'mfg.bom': 'BOM',
+  'mfg.operation': '工序',
+  'mfg.route_template': '工艺模板',
   'sys.file': '附件',
   'sys.storage': '存储接入',
   'acc.gl_entry': '总账分录',

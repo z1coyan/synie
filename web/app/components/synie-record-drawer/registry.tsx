@@ -698,6 +698,58 @@ const registry: Record<string, ResourceDrawerConfig> = {
       </div>
     ),
   },
+  mfgOperations: {
+    label: '工序',
+    fields: {
+      // 编号可留空自动取号(后端 AutoNumber:mfg.operation),创建后不可改(update 不收 code)
+      code: { order: 0, cols: 6, edit: 'createOnly', placeholder: '留空自动编号' },
+      name: { order: 1, cols: 6, required: true, placeholder: '如 冲网' },
+      note: { order: 2 },
+    },
+  },
+  mfgProcessTemplates: {
+    label: '工艺模板',
+    // 工艺步骤 4 列,默认 480px 太挤,模板抽屉加宽(同物料先例;移动端仍全宽)
+    contentClassName: 'w-full lg:w-[760px]',
+    // 两 tab:基本信息(字段)、工艺步骤(页面 tabExtraContent)
+    tabs: [
+      { key: 'basic', label: '基本信息' },
+      { key: 'items', label: '工艺步骤' },
+    ],
+    fields: {
+      // 编号可留空自动取号(后端 AutoNumber:mfg.route_template),创建后不可改
+      code: { order: 0, cols: 6, edit: 'createOnly', placeholder: '留空自动编号' },
+      name: { order: 1, cols: 6, required: true, placeholder: '如 冲网标准工艺' },
+      note: { order: 2 },
+      // view 态时间戳收编出业务分组并垫底(同物料先例)
+      insertedAt: { order: 98, section: '' },
+      updatedAt: { order: 99 },
+    },
+  },
+  mfgProcessTemplateItems: { label: '工艺步骤' },
+  mfgBoms: {
+    label: 'BOM',
+    // 配料 5 列,默认 480px 太挤,BOM 抽屉加宽(同订单先例;移动端仍全宽)
+    contentClassName: 'w-full lg:w-[880px]',
+    // 四 tab:基本信息(字段)、配料/工艺路线/副产品(页面 tabExtraContent)
+    tabs: [
+      { key: 'basic', label: '基本信息' },
+      { key: 'components', label: '配料' },
+      { key: 'routes', label: '工艺路线' },
+      { key: 'byproducts', label: '副产品' },
+    ],
+    fields: {
+      // BOM 以物料为唯一键:建后不可换(update 不收 material_id,换物料=删旧建新);物料量大走弹窗选择
+      materialId: { order: 0, required: true, edit: 'createOnly', picker: 'dialog' },
+      note: { order: 1 },
+      // view 态时间戳收编出业务分组并垫底(同物料先例)
+      insertedAt: { order: 98, section: '' },
+      updatedAt: { order: 99 },
+    },
+  },
+  mfgBomComponents: { label: '配料' },
+  mfgBomRoutes: { label: '工艺路线' },
+  mfgBomByproducts: { label: '副产品' },
   invMaterials: {
     label: '物料',
     contentClassName: 'w-full lg:w-[640px]',

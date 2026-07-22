@@ -101,18 +101,22 @@ defmodule SynieCore.SetupTest do
     assert %{initialized: true} = Setup.status()
 
     # 内置 local 存储接入
-    local = StorageEndpoint |> Ash.Query.filter(name == "local") |> Ash.read_one!(authorize?: false)
+    local =
+      StorageEndpoint |> Ash.Query.filter(name == "local") |> Ash.read_one!(authorize?: false)
+
     assert local.builtin
     assert local.is_default
     assert local.kind == :local
     assert local.root == "uploads"
 
-    # 编号规则:物料 + 员工 + 15 种业务单据
+    # 编号规则:物料 + 员工 + 工序 + 工艺模板 + 15 种业务单据
     rules = Rule |> Ash.read!(authorize?: false)
-    assert length(rules) == 17
+    assert length(rules) == 19
     resources = MapSet.new(rules, & &1.resource)
     assert "inv.material" in resources
     assert "hr.employee" in resources
+    assert "mfg.operation" in resources
+    assert "mfg.route_template" in resources
     assert "sales.order" in resources
     assert "acc.gl_journal" in resources
 
@@ -180,7 +184,9 @@ defmodule SynieCore.SetupTest do
       })
       |> Ash.create!(authorize?: false)
 
-    {:ok, user} = Setup.create_first_user(%{username: "admin_sample", name: "管理员", password: "s3cret"})
+    {:ok, user} =
+      Setup.create_first_user(%{username: "admin_sample", name: "管理员", password: "s3cret"})
+
     actor = Authz.build_actor(user)
 
     assert :ok = Setup.complete(actor, "zh-CN", seed_sample_data: true)
@@ -205,6 +211,7 @@ defmodule SynieCore.SetupTest do
 
     # 幂等:再次 seed 不增行
     {summary, []} = SampleData.seed!(company.id, actor)
+
     assert summary == %{
              customers: 0,
              suppliers: 0,
@@ -249,11 +256,15 @@ defmodule SynieCore.SetupTest do
     {:ok, user} = Setup.create_first_user(%{username: "admin_idem", password: "s3cret"})
     assert :ok = Setup.complete(Authz.build_actor(user), "zh-CN")
 
-    local = StorageEndpoint |> Ash.Query.filter(name == "local") |> Ash.read_one!(authorize?: false)
+    local =
+      StorageEndpoint |> Ash.Query.filter(name == "local") |> Ash.read_one!(authorize?: false)
+
     assert local.root == "custom_uploads"
     assert local.label == "改过的本地"
 
-    material = Rule |> Ash.Query.filter(resource == "inv.material") |> Ash.read_one!(authorize?: false)
+    material =
+      Rule |> Ash.Query.filter(resource == "inv.material") |> Ash.read_one!(authorize?: false)
+
     assert material.name == "用户改过的物料编号"
 
     # 已有任一分类则整棵跳过,不会再补默认树

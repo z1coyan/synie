@@ -79,6 +79,16 @@ defmodule SynieCore do
 
       # 库存余额表:仓×物料聚合(未作废分录、截至日口径),不落库
       action SynieCore.Inv.StockEntry, :inv_stock_balance, :stock_balance
+      list SynieCore.Mfg.Operation, :mfg_operations, :read, paginate_with: :offset
+      list SynieCore.Mfg.ProcessTemplate, :mfg_process_templates, :read, paginate_with: :offset
+
+      list SynieCore.Mfg.ProcessTemplateItem, :mfg_process_template_items, :read,
+        paginate_with: :offset
+
+      list SynieCore.Mfg.Bom, :mfg_boms, :read, paginate_with: :offset
+      list SynieCore.Mfg.BomComponent, :mfg_bom_components, :read, paginate_with: :offset
+      list SynieCore.Mfg.BomRoute, :mfg_bom_routes, :read, paginate_with: :offset
+      list SynieCore.Mfg.BomByproduct, :mfg_bom_byproducts, :read, paginate_with: :offset
       list SynieCore.Hr.AttendancePunch, :hr_attendance_punches, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceImport, :hr_attendance_imports, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceDay, :hr_attendance_days, :read, paginate_with: :offset
@@ -302,6 +312,36 @@ defmodule SynieCore do
       update SynieCore.Hr.Employee, :update_hr_employee, :update
       destroy SynieCore.Hr.Employee, :destroy_hr_employee, :destroy
 
+      # 生产域:行子表随主表权限码(同物料单位转换先例);BOM 路线从模板带入复用 update 码
+      create SynieCore.Mfg.Operation, :create_mfg_operation, :create
+      update SynieCore.Mfg.Operation, :update_mfg_operation, :update
+      destroy SynieCore.Mfg.Operation, :destroy_mfg_operation, :destroy
+
+      create SynieCore.Mfg.ProcessTemplate, :create_mfg_process_template, :create
+      update SynieCore.Mfg.ProcessTemplate, :update_mfg_process_template, :update
+      destroy SynieCore.Mfg.ProcessTemplate, :destroy_mfg_process_template, :destroy
+
+      create SynieCore.Mfg.ProcessTemplateItem, :create_mfg_process_template_item, :create
+      update SynieCore.Mfg.ProcessTemplateItem, :update_mfg_process_template_item, :update
+      destroy SynieCore.Mfg.ProcessTemplateItem, :destroy_mfg_process_template_item, :destroy
+
+      create SynieCore.Mfg.Bom, :create_mfg_bom, :create
+      update SynieCore.Mfg.Bom, :update_mfg_bom, :update
+      destroy SynieCore.Mfg.Bom, :destroy_mfg_bom, :destroy
+      update SynieCore.Mfg.Bom, :apply_mfg_bom_route_template, :apply_route_template
+
+      create SynieCore.Mfg.BomComponent, :create_mfg_bom_component, :create
+      update SynieCore.Mfg.BomComponent, :update_mfg_bom_component, :update
+      destroy SynieCore.Mfg.BomComponent, :destroy_mfg_bom_component, :destroy
+
+      create SynieCore.Mfg.BomRoute, :create_mfg_bom_route, :create
+      update SynieCore.Mfg.BomRoute, :update_mfg_bom_route, :update
+      destroy SynieCore.Mfg.BomRoute, :destroy_mfg_bom_route, :destroy
+
+      create SynieCore.Mfg.BomByproduct, :create_mfg_bom_byproduct, :create
+      update SynieCore.Mfg.BomByproduct, :update_mfg_bom_byproduct, :update
+      destroy SynieCore.Mfg.BomByproduct, :destroy_mfg_bom_byproduct, :destroy
+
       create SynieCore.Inv.MaterialCategory, :create_inv_material_category, :create
       update SynieCore.Inv.MaterialCategory, :update_inv_material_category, :update
       destroy SynieCore.Inv.MaterialCategory, :destroy_inv_material_category, :destroy
@@ -502,6 +542,13 @@ defmodule SynieCore do
     resource SynieCore.Purchase.Reconciliation
     resource SynieCore.Purchase.ReconciliationItem
     resource SynieCore.Hr.Employee
+    resource SynieCore.Mfg.Operation
+    resource SynieCore.Mfg.ProcessTemplate
+    resource SynieCore.Mfg.ProcessTemplateItem
+    resource SynieCore.Mfg.Bom
+    resource SynieCore.Mfg.BomComponent
+    resource SynieCore.Mfg.BomRoute
+    resource SynieCore.Mfg.BomByproduct
     resource SynieCore.Inv.MaterialCategory
     resource SynieCore.Inv.Material
     resource SynieCore.Inv.MaterialUnit

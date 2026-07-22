@@ -343,7 +343,9 @@ defmodule SynieCore.Setup do
           n_sample =
             if seed_sample? do
               case first_company_id() do
-                nil -> []
+                nil ->
+                  []
+
                 company_id ->
                   {_summary, notifications} = SampleData.seed!(company_id, actor)
                   notifications
@@ -444,6 +446,19 @@ defmodule SynieCore.Setup do
         %{"type" => "seq", "padding" => 4}
       ])
 
+    # 生产域:工序/工艺模板编号,全局主数据不按公司,前缀-4 位序号(同员工先例)
+    n3 =
+      ensure_numbering_rule!("mfg.operation", "工序编号", false, [
+        %{"type" => "text", "value" => "M(O)-"},
+        %{"type" => "seq", "padding" => 4}
+      ])
+
+    n4 =
+      ensure_numbering_rule!("mfg.route_template", "工艺模板编号", false, [
+        %{"type" => "text", "value" => "M(T)-"},
+        %{"type" => "seq", "padding" => 4}
+      ])
+
     n_docs =
       Enum.flat_map(@doc_numbering_rules, fn {resource, name, prefix, date_field} ->
         ensure_numbering_rule!(resource, name, true, [
@@ -459,7 +474,7 @@ defmodule SynieCore.Setup do
         ])
       end)
 
-    n1 ++ n2 ++ n_docs
+    n1 ++ n2 ++ n3 ++ n4 ++ n_docs
   end
 
   defp date_field_label("order_date"), do: "订单日期"

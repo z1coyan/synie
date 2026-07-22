@@ -1,6 +1,7 @@
 import type { ComponentType, SVGProps } from 'react'
 import {
   IconDatabase,
+  IconFactory,
   IconGrid,
   IconLandmark,
   IconPackage,
@@ -137,6 +138,26 @@ export const menuModules: MenuModule[] = [
       {
         label: '设置',
         items: [{ label: '供应链设置', path: '/scm/settings' }],
+      },
+    ],
+  },
+  {
+    key: 'mfg',
+    label: '生产',
+    description: 'BOM 与工艺管理',
+    icon: IconFactory,
+    entry: '/mfg/boms',
+    groups: [
+      {
+        label: '配方',
+        items: [{ label: 'BOM', path: '/mfg/boms' }],
+      },
+      {
+        label: '基础设置',
+        items: [
+          { label: '工序', path: '/mfg/operations' },
+          { label: '工艺模板', path: '/mfg/process-templates' },
+        ],
       },
     ],
   },
