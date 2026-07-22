@@ -44,7 +44,11 @@ export function segmentLabel(seg: NumberSegment): string {
   return (seg.label ?? seg.field ?? '') + (seg.format ? `·${seg.format}` : '')
 }
 
-/** 示例串:日期段用今天渲染,序号按 padding 取 1,其他字段用 [中文名] 占位 */
+/**
+ * 示例串(非真实取号):日期段用今天渲染,序号按 padding 取 1,
+ * 其他字段用中文 label 占位;无 label 时回退字段路径。
+ * 真号由后端按 field 路径解析记录值,与 label 无关。
+ */
 export function segmentsPreview(segments: NumberSegment[]): string {
   return segments
     .map((seg) => {
@@ -54,7 +58,9 @@ export function segmentsPreview(segments: NumberSegment[]): string {
         return p === 0 ? '1' : '1'.padStart(p, '0')
       }
       if (seg.format) return dateSample(seg.format)
-      return `[${seg.label ?? seg.field}]`
+      // 优先中文 label;无 label 时用尖括号标出路径,避免被误当成真实编号
+      const name = seg.label || seg.field || '?'
+      return `<${name}>`
     })
     .join('')
 }

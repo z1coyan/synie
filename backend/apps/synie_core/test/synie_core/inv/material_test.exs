@@ -69,7 +69,7 @@ defmodule SynieCore.Inv.MaterialTest do
     |> Ash.create!(authorize?: false)
   end
 
-  # seed 同款规则:分类+客户(空省略)+"-"+4 位序号
+  # seed 同款规则:分类+客户(空省略)+"-"+不补零序号
   defp numbering_rule! do
     Rule
     |> Ash.Changeset.for_create(:create, %{
@@ -79,7 +79,7 @@ defmodule SynieCore.Inv.MaterialTest do
         %{"type" => "field", "field" => "category.code"},
         %{"type" => "field", "field" => "customer.code"},
         %{"type" => "text", "value" => "-"},
-        %{"type" => "seq", "padding" => 4}
+        %{"type" => "seq", "padding" => 0}
       ],
       per_company: false,
       enabled: true
@@ -139,7 +139,7 @@ defmodule SynieCore.Inv.MaterialTest do
   end
 
   describe "编号" do
-    test "自动取号:分类编号-4 位序号,每分类各自计数", %{leaf: leaf, kg: kg} do
+    test "自动取号:分类编号-不补零序号,每分类各自计数", %{leaf: leaf, kg: kg} do
       numbering_rule!()
       other = category!(%{code: "02#{System.unique_integer([:positive])}", name: "半成品"})
 
@@ -147,9 +147,9 @@ defmodule SynieCore.Inv.MaterialTest do
       m2 = material!(%{name: "螺母", category_id: leaf.id, default_unit_id: kg.id})
       m3 = material!(%{name: "垫片", category_id: other.id, default_unit_id: kg.id})
 
-      assert m1.code == "#{leaf.code}-0001"
-      assert m2.code == "#{leaf.code}-0002"
-      assert m3.code == "#{other.code}-0001"
+      assert m1.code == "#{leaf.code}-1"
+      assert m2.code == "#{leaf.code}-2"
+      assert m3.code == "#{other.code}-1"
     end
 
     test "客户物料取号含客户编号,与通用料分桶计数", %{leaf: leaf, kg: kg} do
@@ -167,8 +167,8 @@ defmodule SynieCore.Inv.MaterialTest do
           customer_id: cust.id
         })
 
-      assert general.code == "#{leaf.code}-0001"
-      assert owned.code == "#{leaf.code}77-0001"
+      assert general.code == "#{leaf.code}-1"
+      assert owned.code == "#{leaf.code}77-1"
     end
 
     test "编号不接受手填", %{leaf: leaf, kg: kg} do

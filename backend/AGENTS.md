@@ -1,5 +1,10 @@
 # Synie 后端
 
+## 开发库
+
+- **环境变量**:`config/config.exs` 在 dev/test 自动加载 `backend/.env` 与 `backend/.env.<env>`(后者覆盖前者;进程已有变量优先)。prod 不读文件。
+- 一键重置(仅 `MIX_ENV=dev|test`):`cd backend && mix synie.db.reset`——断开会话、`drop`/`create`/`migrate`。完成后打开应用走初始化向导,无需 `seeds.exs`。
+
 ## 权限
 
 - 权限码 `域.资源:动作`(如 `sales.order:audit`),通配 `前缀:*`、`域.*`、`*`(全域,仅迁移种子/内置角色使用,业务代码不得写入)。
@@ -32,7 +37,7 @@
 
 - 一切文件/附件能力必须走统一文件接口:元数据只存 `sys_file`/`sys_attachment`,读写只经 `SynieCore.Files`(上传编排)与 `SynieCore.Storage` 门面;禁止业务代码直接读写磁盘、自建文件表或另开上传端点。
 - 业务表挂附件零改动:走 `sys_attachment`(owner_type = graphql type 名 + owner_id);单文件字段直接加 `xxx_file_id` FK → `sys_file`。
-- 文件字节走 REST `POST/GET /api/files`(multipart/二进制不过 GraphQL);存储接入在 `sys_storage`(系统管理→存储接入)维护,内置 local 由 seeds 创建;新后端实现 `SynieCore.Storage.Adapter` 并在 `SynieCore.Storage` 的 `@adapters` 登记 kind。
+- 文件字节走 REST `POST/GET /api/files`(multipart/二进制不过 GraphQL);存储接入在 `sys_storage`(系统管理→存储接入)维护,内置 local 由初始化向导完成时创建;新后端实现 `SynieCore.Storage.Adapter` 并在 `SynieCore.Storage` 的 `@adapters` 登记 kind。
 - 新可挂附件的资源必须在 `SynieCore.Files.OwnerRegistry` 登记 owner_type→模块(否则其附件无法下载/挂接,fail-closed 预期代价)。附件公司隔离由挂接时从宿主去规范化的 `company_id` + 读策略(照 `sys_audit_log`:`is_nil(company_id)` 或 `CompanyScope`)自动获得。
 
 ## 审计

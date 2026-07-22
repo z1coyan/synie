@@ -93,7 +93,7 @@ defmodule SynieCore.Files.StorageEndpoint do
   @moduledoc """
   存储接入点,对应 `sys_storage` 表。`name` 即 `sys_file.storage` 的配置名,建后不可改;
   `kind` 决定 adapter(local/s3/oss)。全局默认唯一(partial unique index),新上传落到默认
-  接入点;内置 local 行由 seeds 创建,不可删除。密钥只写不回读:GraphQL 不暴露,update 留空表示不修改。
+  接入点;内置 local 行由初始化向导完成时创建,不可删除。密钥只写不回读:GraphQL 不暴露,update 留空表示不修改。
   """
 
   use Ash.Resource,

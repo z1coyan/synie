@@ -24,7 +24,8 @@ defmodule SynieCore.Storage do
     |> Ash.read_one(authorize?: false)
     |> case do
       {:ok, %StorageEndpoint{name: name}} -> name
-      _ -> raise "存储接入未初始化:没有默认接入点,请运行 seeds(priv/repo/seeds.exs)"
+      _ ->
+        raise "存储接入未初始化:没有默认接入点,请先完成初始化向导(或在系统管理→存储接入中配置)"
     end
   end
 

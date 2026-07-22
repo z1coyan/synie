@@ -140,8 +140,8 @@ defmodule SynieCore.Inv.Material do
   物料,对应 `inv_material` 表。全局主数据(不挂公司,与物料分类同理):
   库存/成本等公司维度将来由库存资源承载。
 
-  编号由 `inv.material` 编号规则自动取号(AutoNumber,seed 规则为
-  分类编号+客户编号(空则省略)+`-`+4 位序号),不接受手填、创建后不可修改;
+  编号由 `inv.material` 编号规则自动取号(AutoNumber,初始化完成时预置规则为
+  分类编号+客户编号(空则省略)+`-`+不补零序号),不接受手填、创建后不可修改;
   改挂分类/客户编号不追溯。只能挂叶子分类。客户物料见 `is_customer_material`/`customer_id`(v1 一料一客);
   销侧单据只能用通用料或本客户料。图纸/其他文件走统一附件
   (owner_type `inv_material`,槽位 `drawing`/`default`),不占表字段。单位转换子表见 `MaterialUnit`。

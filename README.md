@@ -61,18 +61,27 @@ Synie 是一个多公司财务 ERP，包含两个并列的独立项目：
 1. 设置 `DATABASE_URL`，优先级最高，例如 `postgres://postgres:postgres@localhost:5440/synie_dev`。
 2. 设置拆分变量：`PGHOST`、`PGPORT`、`PGUSER`、`PGPASSWORD`、`PGDATABASE`、`POOL_SIZE`。
 
-`backend/.env.example` 记录了本地默认值，但应用不会自动加载 `.env` 文件；请用 shell、direnv、Docker Compose `env_file` 或 IDE run configuration 注入变量。
+后端 **dev/test 会自动加载** `backend/.env`，以及可选的 `backend/.env.dev` / `backend/.env.test`（后者覆盖前者同名键）。进程里已有的环境变量优先（shell / CI / IDE 不会被文件覆盖）。`prod` 不读文件。模板见 `backend/.env.example`；test 库名由已提交的 `.env.test` 固定为 `synie_test`。
 
 持久化资源已就位（总账、发票、银行流水、客户/供应商等均落库）。本地开发前需确保上述 Postgres 可用，并执行：
 
 ```bash
 cd backend
+# 首次: cp .env.example .env
 mix ecto.create
 mix ecto.migrate
-mix run apps/synie_core/priv/repo/seeds.exs
+# 或一键重置(删库重建并迁移,会断开会话;仅 dev/test):
+# mix synie.db.reset
 ```
 
-其中迁移顺带种子 CNY 与内置 admin 角色；seeds 只管环境层（存储接入、编号规则）。首次打开应用会进入初始化向导，在向导里创建首个超级管理员与首个公司，完成后向导入口永久关闭。
+空库只需迁移即可启动。迁移顺带种子 CNY、内置 admin 角色与单行配置表；首次打开应用进入初始化向导（建超管 → 建公司 → 选语言），**完成时**幂等种子内置存储接入、编号规则、物料两级分类与机加工常用计量单位，并向导入口永久关闭。无需再跑 `seeds.exs`。
+
+**重置开发库**（清空数据、重跑迁移，再走初始化向导）：
+
+```bash
+cd backend
+mix synie.db.reset
+```
 
 ## 安装依赖
 
@@ -151,6 +160,7 @@ bash /tmp/heroui-install.sh heroui-pro-design-taste
 
 ```bash
 cd backend
+# 自动读 backend/.env,无需 source
 mix phx.server
 ```
 
@@ -273,7 +283,7 @@ mutation Login($username: String!, $password: String!) {
 - 按部署域名设置 `PHX_HOST`。
 - 为 AshPostgres 资源补齐迁移和数据库生命周期。
 - 根据需要增加认证资源和策略；当前只安装了 Ash Authentication 相关依赖，没有 User resource 或登录流程。
-- 初始化流程：`mix ecto.migrate`（顺带种子 CNY 与内置 admin 角色）→ `seeds.exs`（环境层：存储接入、编号规则）→ 浏览器打开应用进入初始化向导，创建首个超级管理员（口令由操作者当场自设，不落日志）。凡用旧版 seeds（硬编码/环境变量口令）初始化过的环境，其 admin 口令应视为已泄露并重置。
+- 初始化流程：`mix ecto.migrate`（顺带种子 CNY 与内置 admin 角色）→ 浏览器打开应用进入初始化向导（建超管、公司、语言；完成时种子存储接入/编号规则/物料分类）。口令由操作者当场自设，不落日志。凡用旧版 seeds（硬编码/环境变量口令）初始化过的环境，其 admin 口令应视为已泄露并重置。
 
 `backend/config/runtime.exs` 已在 `prod` 环境读取：
 

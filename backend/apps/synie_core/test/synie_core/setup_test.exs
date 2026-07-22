@@ -1,9 +1,15 @@
 defmodule SynieCore.SetupTest do
   use ExUnit.Case, async: true
 
+  require Ash.Query
+
   alias SynieCore.{Authz, Setup}
   alias SynieCore.Accounts.User
   alias SynieCore.Base.Currency
+  alias SynieCore.Base.Unit
+  alias SynieCore.Files.StorageEndpoint
+  alias SynieCore.Inv.MaterialCategory
+  alias SynieCore.Numbering.Rule
 
   setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(SynieCore.Repo)
@@ -43,12 +49,16 @@ defmodule SynieCore.SetupTest do
     assert {:error, "系统已完成初始化"} = Setup.seed_common_currencies()
   end
 
-  test "complete 写首选语言并落完成旗标,随后 setup 接口全面关闭" do
+  test "complete 写首选语言、种子存储/编号/分类、落完成旗标,随后 setup 接口全面关闭" do
     {:ok, user} = Setup.create_first_user(%{username: "admin_done", password: "s3cret"})
     actor = Authz.build_actor(user)
 
     assert {:error, "不支持的语言"} = Setup.complete(actor, "fr-FR")
     assert %{initialized: false} = Setup.status()
+    # 完成前不应有存储接入/编号规则/物料分类
+    assert [] = StorageEndpoint |> Ash.read!(authorize?: false)
+    assert [] = Rule |> Ash.read!(authorize?: false)
+    assert [] = MaterialCategory |> Ash.read!(authorize?: false)
 
     assert :ok = Setup.complete(actor, "zh-CN")
 
@@ -56,9 +66,103 @@ defmodule SynieCore.SetupTest do
     assert user.preferred_language == "zh-CN"
     assert %{initialized: true} = Setup.status()
 
+    # 内置 local 存储接入
+    local = StorageEndpoint |> Ash.Query.filter(name == "local") |> Ash.read_one!(authorize?: false)
+    assert local.builtin
+    assert local.is_default
+    assert local.kind == :local
+    assert local.root == "uploads"
+
+    # 编号规则:物料 + 员工 + 15 种业务单据
+    rules = Rule |> Ash.read!(authorize?: false)
+    assert length(rules) == 17
+    resources = MapSet.new(rules, & &1.resource)
+    assert "inv.material" in resources
+    assert "hr.employee" in resources
+    assert "sales.order" in resources
+    assert "acc.gl_journal" in resources
+
+    material_rule = Enum.find(rules, &(&1.resource == "inv.material"))
+    assert material_rule.per_company == false
+    assert Enum.any?(material_rule.segments, &(&1["type"] == "seq" and &1["padding"] == 0))
+
+    sales_order = Enum.find(rules, &(&1.resource == "sales.order"))
+    assert sales_order.per_company == true
+    assert Enum.any?(sales_order.segments, &(&1["type"] == "text" and &1["value"] == "S(O)-"))
+
+    # 物料两级分类:5 大类 + 叶子
+    cats = MaterialCategory |> Ash.read!(authorize?: false)
+    by_code = Map.new(cats, &{&1.code, &1})
+    assert by_code["F"].is_leaf == false
+    assert by_code["F(P)"].is_leaf == true
+    assert by_code["F(P)"].parent_id == by_code["F"].id
+    assert by_code["P(W)"].name == "木箱"
+    assert by_code["S(G)"].is_leaf == true
+    assert length(cats) == 16
+
+    # 机加工计量单位(按 symbol;重量吨/千克可能已由迁移存在)
+    by_symbol = Unit |> Ash.read!(authorize?: false) |> Map.new(&{&1.symbol, &1})
+    assert by_symbol["mm"].is_base == true
+    assert by_symbol["mm"].unit_type == :length
+    assert by_symbol["μm"].unit_type == :length
+    assert by_symbol["mm²"].is_base == true
+    assert by_symbol["pcs"].is_base == true
+    assert by_symbol["pcs"].unit_type == :quantity
+    assert by_symbol["打"].ratio == Decimal.new("12")
+    assert by_symbol["台"].unit_type == :quantity
+    # 迁移已有重量基准「吨」时,setup 不另抢基准
+    assert by_symbol["t"].is_base == true
+    assert by_symbol["g"].unit_type == :weight
+
     assert {:error, "系统已完成初始化"} = Setup.complete(actor, "en-US")
 
     assert {:error, "系统已完成初始化"} =
              Setup.create_first_user(%{username: "latecomer", password: "x"})
+  end
+
+  test "complete 幂等:已有存储/编号规则/分类时不覆盖" do
+    StorageEndpoint
+    |> Ash.Changeset.for_create(:create, %{
+      name: "local",
+      label: "改过的本地",
+      kind: :local,
+      root: "custom_uploads"
+    })
+    |> Ash.Changeset.force_change_attribute(:builtin, true)
+    |> Ash.Changeset.force_change_attribute(:is_default, true)
+    |> Ash.create!(authorize?: false)
+
+    Rule
+    |> Ash.Changeset.for_create(:create, %{
+      resource: "inv.material",
+      name: "用户改过的物料编号",
+      segments: [
+        %{"type" => "text", "value" => "X-"},
+        %{"type" => "seq", "padding" => 4}
+      ],
+      per_company: false,
+      enabled: true
+    })
+    |> Ash.create!(authorize?: false)
+
+    MaterialCategory
+    |> Ash.Changeset.for_create(:create, %{code: "Z", name: "自定义", is_leaf: true, active: true})
+    |> Ash.create!(authorize?: false)
+
+    {:ok, user} = Setup.create_first_user(%{username: "admin_idem", password: "s3cret"})
+    assert :ok = Setup.complete(Authz.build_actor(user), "zh-CN")
+
+    local = StorageEndpoint |> Ash.Query.filter(name == "local") |> Ash.read_one!(authorize?: false)
+    assert local.root == "custom_uploads"
+    assert local.label == "改过的本地"
+
+    material = Rule |> Ash.Query.filter(resource == "inv.material") |> Ash.read_one!(authorize?: false)
+    assert material.name == "用户改过的物料编号"
+
+    # 已有任一分类则整棵跳过,不会再补默认树
+    codes = MaterialCategory |> Ash.read!(authorize?: false) |> Enum.map(& &1.code)
+    assert codes == ["Z"]
+    # 其余单据规则仍会补齐
+    assert Rule |> Ash.Query.filter(resource == "sales.order") |> Ash.exists?(authorize?: false)
   end
 end

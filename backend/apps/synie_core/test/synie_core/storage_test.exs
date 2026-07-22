@@ -73,8 +73,8 @@ defmodule SynieCore.StorageTest do
       assert Storage.default() == "def_local"
     end
 
-    test "无默认行时抛错提示跑 seeds" do
-      assert_raise RuntimeError, ~r/seeds/, fn -> Storage.default() end
+    test "无默认行时抛错提示完成初始化向导" do
+      assert_raise RuntimeError, ~r/初始化向导|存储接入/, fn -> Storage.default() end
     end
   end
 end

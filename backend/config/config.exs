@@ -1,5 +1,17 @@
 import Config
 
+# 非生产:自动加载 backend/.env 与 backend/.env.<env>(后者覆盖前者)。
+# 进程已有环境变量优先(shell / CI / IDE 注入不被覆盖)。
+# prod 不读文件,密钥只来自真实环境变量。
+if config_env() in [:dev, :test] do
+  Code.require_file("dotenv.exs", __DIR__)
+
+  SynieDotenv.load!([
+    Path.expand("../.env", __DIR__),
+    Path.expand("../.env.#{config_env()}", __DIR__)
+  ])
+end
+
 config :synie_core,
   ash_domains: [SynieCore],
   ecto_repos: [SynieCore.Repo]
