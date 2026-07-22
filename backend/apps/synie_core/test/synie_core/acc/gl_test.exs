@@ -154,6 +154,19 @@ defmodule SynieCore.Acc.GLTest do
 
       assert :ok = GL.reverse!(v.voucher_type, v.voucher_id, ~D[2026-07-31])
     end
+
+    test "费用角色科目的分录不要求带对手(强校仅往来角色)", %{company: co, cash: cash} do
+      travel =
+        account!(%{
+          code: "660201",
+          name: "差旅费",
+          direction: :debit,
+          role: :travel,
+          company_id: co.id
+        })
+
+      assert :ok = GL.validate_entries(co.id, pair(travel, cash, "100"))
+    end
   end
 
   test "cancel! 标记该单据全部分录", %{company: co, cash: cash, sales: sales} do

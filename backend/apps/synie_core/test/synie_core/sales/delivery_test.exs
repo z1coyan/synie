@@ -16,6 +16,7 @@ defmodule SynieCore.Sales.DeliveryTest do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(SynieCore.Repo)
 
     company = company!()
+
     customer =
       Customer
       |> Ash.Changeset.for_create(:create, %{
@@ -158,7 +159,10 @@ defmodule SynieCore.Sales.DeliveryTest do
 
   defp line!(delivery, attrs) do
     DeliveryItem
-    |> Ash.Changeset.for_create(:create, Map.merge(%{idx: 1, qty: Decimal.new(3)}, attrs) |> Map.put(:delivery_id, delivery.id))
+    |> Ash.Changeset.for_create(
+      :create,
+      Map.merge(%{idx: 1, qty: Decimal.new(3)}, attrs) |> Map.put(:delivery_id, delivery.id)
+    )
     |> Ash.create!(authorize?: false)
   end
 
@@ -215,8 +219,8 @@ defmodule SynieCore.Sales.DeliveryTest do
 
     # 本币金额 4/10 * 1000 = 400
     assert length(gl) == 2
-    debit_row = Enum.find(gl, &Decimal.compare(&1.debit, 0) == :gt)
-    credit_row = Enum.find(gl, &Decimal.compare(&1.credit, 0) == :gt)
+    debit_row = Enum.find(gl, &(Decimal.compare(&1.debit, 0) == :gt))
+    credit_row = Enum.find(gl, &(Decimal.compare(&1.credit, 0) == :gt))
     assert Decimal.equal?(debit_row.debit, Decimal.new("400.00"))
     assert Decimal.equal?(credit_row.credit, Decimal.new("400.00"))
     assert debit_row.party_id == cu.id
@@ -268,7 +272,8 @@ defmodule SynieCore.Sales.DeliveryTest do
       qty: Decimal.new(11)
     })
 
-    assert {:error, _} = d |> Ash.Changeset.for_update(:audit, %{}) |> Ash.update(authorize?: false)
+    assert {:error, _} =
+             d |> Ash.Changeset.for_update(:audit, %{}) |> Ash.update(authorize?: false)
 
     setting = Setting.get()
 
@@ -299,7 +304,15 @@ defmodule SynieCore.Sales.DeliveryTest do
   end
 
   test "零单价订单发货跳过总账,但科目仍必填", ctx do
-    %{company: co, customer: cu, warehouse: wh, material: mat, kg: kg, debit: debit, credit: credit} =
+    %{
+      company: co,
+      customer: cu,
+      warehouse: wh,
+      material: mat,
+      kg: kg,
+      debit: debit,
+      credit: credit
+    } =
       ctx
 
     order =

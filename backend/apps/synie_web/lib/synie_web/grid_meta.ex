@@ -69,6 +69,8 @@ defmodule SynieWeb.GridMeta do
     "accBankImports" => SynieCore.Acc.BankImport,
     "accBankImportItems" => SynieCore.Acc.BankImportItem,
     "accVatInvoices" => SynieCore.Acc.VatInvoice,
+    "accExpenseReports" => SynieCore.Acc.ExpenseReport,
+    "accExpenseReportItems" => SynieCore.Acc.ExpenseReportItem,
     "accBills" => SynieCore.Acc.Bill,
     "accBillTransactions" => SynieCore.Acc.BillTransaction,
     "accBillHoldings" => SynieCore.Acc.BillHolding,

@@ -218,6 +218,30 @@ defmodule SynieCore.Base.AccountTest do
                "预收账款" => :advance_received
              }
     end
+
+    test "往来/费用两族角色清单;其他应付款自然方向为贷", %{company: co} do
+      alias SynieCore.Base.AccountRole
+
+      assert AccountRole.party_roles() ==
+               AccountRole.receivable_roles() ++ AccountRole.payable_roles()
+
+      assert AccountRole.payable_roles() ==
+               [:unbilled_payable, :payable, :other_payable, :advance_paid]
+
+      assert AccountRole.expense_roles() ==
+               [:travel, :office, :entertainment, :transport, :other_expense]
+
+      assert AccountRole.natural_direction(:other_payable) == :credit
+
+      # 费用角色同往来角色一样可挂叶子本币科目
+      assert account!(%{
+               code: "660201",
+               name: "差旅费",
+               direction: :debit,
+               role: :travel,
+               company_id: co.id
+             }).role == :travel
+    end
   end
 
   test "已有科目的公司不能重复初始化", %{company: co} do

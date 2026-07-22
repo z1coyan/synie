@@ -990,6 +990,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
   accBankImports: { label: '流水导入' },
   accBankImportItems: { label: '导入行' },
   accVatInvoices: { label: '增值税发票' },
+  accExpenseReports: { label: '报销单' },
+  accExpenseReportItems: { label: '报销行' },
   // 票据台账页已并入持有承兑(票面修正走持有段行操作),这里是票据档案的唯一全量呈现:
   // 任何 billId fk 速览(含已处置票的历史交易行)都能看到完整票面+影像附件
   accBills: {

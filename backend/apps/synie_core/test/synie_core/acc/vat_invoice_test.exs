@@ -206,6 +206,71 @@ defmodule SynieCore.Acc.VatInvoiceTest do
     assert Exception.message(error) =~ "关联的采购对账单不存在"
   end
 
+  defp employee!(attrs \\ %{}) do
+    attrs =
+      Map.merge(%{code: "E#{System.unique_integer([:positive])}", name: "测试员工"}, attrs)
+
+    SynieCore.Hr.Employee
+    |> Ash.Changeset.for_create(:create, attrs)
+    |> Ash.create!(authorize?: false)
+  end
+
+  describe "员工对手(费用报销发票)" do
+    test "员工对手开入不强制关联采购对账单", %{company: co} do
+      employee = employee!()
+
+      attrs =
+        base_attrs(co, employee.id)
+        |> Map.put(:party_type, :employee)
+        |> Map.delete(:pur_reconciliation_id)
+
+      invoice = invoice!(attrs, authorize?: false)
+      assert invoice.party_type == :employee
+      assert invoice.direction == :inbound
+      assert invoice.pur_reconciliation_id == nil
+    end
+
+    test "员工对手不允许开出方向", %{company: co} do
+      employee = employee!()
+
+      attrs =
+        base_attrs(co, employee.id)
+        |> Map.merge(%{party_type: :employee, direction: :outbound})
+        |> Map.delete(:pur_reconciliation_id)
+
+      error =
+        assert_raise Ash.Error.Invalid, fn -> invoice!(attrs, authorize?: false) end
+
+      assert Exception.message(error) =~ "员工对手的发票必须为开入方向"
+    end
+
+    test "员工发票关联采购对账单被拒", %{company: co} do
+      employee = employee!()
+
+      # base_attrs 默认带采购对账单关联
+      attrs = base_attrs(co, employee.id) |> Map.put(:party_type, :employee)
+
+      error =
+        assert_raise Ash.Error.Invalid, fn -> invoice!(attrs, authorize?: false) end
+
+      assert Exception.message(error) =~ "费用报销发票不关联对账单"
+    end
+
+    test "员工发票关联销售对账单被拒", %{company: co} do
+      employee = employee!()
+
+      attrs =
+        base_attrs(co, employee.id)
+        |> Map.merge(%{party_type: :employee, sal_reconciliation_id: Ash.UUID.generate()})
+        |> Map.delete(:pur_reconciliation_id)
+
+      error =
+        assert_raise Ash.Error.Invalid, fn -> invoice!(attrs, authorize?: false) end
+
+      assert Exception.message(error) =~ "费用报销发票不关联对账单"
+    end
+  end
+
   test "同公司同发票代码+号码重复被唯一索引拒绝", %{company: co, customer: cust} do
     attrs = base_attrs(co, cust.id) |> Map.merge(%{invoice_code: "1100", invoice_no: "00000001"})
     invoice!(attrs, authorize?: false)

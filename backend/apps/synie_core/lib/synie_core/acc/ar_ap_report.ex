@@ -9,7 +9,7 @@ defmodule SynieCore.Acc.ArApReport do
 
   返回 map(经 GraphQL 为 json 标量):
   `asOf`、`roleAccounts`(角色→科目清单,前端下钻圈科目用)、`rows`(对手行,
-  六角色余额 + netReceivable/netPayable,Decimal 一律转字符串照聚合 action 先例)。
+  各往来角色余额 + netReceivable/netPayable,Decimal 一律转字符串照聚合 action 先例)。
   """
 
   use Ash.Resource.Actions.Implementation
@@ -32,9 +32,10 @@ defmodule SynieCore.Acc.ArApReport do
   end
 
   defp build(company_id, as_of) do
+    # 只圈往来角色科目:费用角色(报销类型)不进应收应付报表(费用报销 ADR 2026-07-21)
     accounts =
       Account
-      |> Ash.Query.filter(company_id == ^company_id and not is_nil(role))
+      |> Ash.Query.filter(company_id == ^company_id and role in ^AccountRole.party_roles())
       |> Ash.read!(authorize?: false)
 
     role_by_account = Map.new(accounts, &{&1.id, &1.role})
@@ -73,9 +74,9 @@ defmodule SynieCore.Acc.ArApReport do
     |> Ash.read!(authorize?: false)
   end
 
-  # 对手在各角色下的余额:按角色自然方向轧差(debit 角色=借−贷,credit 角色=贷−借)
+  # 对手在各往来角色下的余额:按角色自然方向轧差(debit 角色=借−贷,credit 角色=贷−借)
   defp sum_roles(entries, role_by_account) do
-    Map.new(AccountRole.values(), fn role ->
+    Map.new(AccountRole.party_roles(), fn role ->
       balance =
         entries
         |> Enum.filter(&(role_by_account[&1.account_id] == role))
@@ -99,6 +100,7 @@ defmodule SynieCore.Acc.ArApReport do
     net_payable =
       sums[:unbilled_payable]
       |> Decimal.add(sums[:payable])
+      |> Decimal.add(sums[:other_payable])
       |> Decimal.sub(sums[:advance_paid])
 
     %{

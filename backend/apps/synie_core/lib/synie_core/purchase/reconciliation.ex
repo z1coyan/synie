@@ -73,7 +73,8 @@ defmodule SynieCore.Purchase.Reconciliation.HeadFieldsFrozen do
 
   @impl true
   def validate(changeset, _opts, _context) do
-    if head_changed?(changeset) and SynieCore.Purchase.Reconciliation.has_items?(changeset.data.id) do
+    if head_changed?(changeset) and
+         SynieCore.Purchase.Reconciliation.has_items?(changeset.data.id) do
       {:error, message: "请先删除对账条目"}
     else
       :ok

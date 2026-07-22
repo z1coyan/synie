@@ -24,6 +24,13 @@ import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieA
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { attachFile, type UploadedFile } from '~/lib/files'
 import { SynieOcrButton } from '~/components/synie-ocr-button/SynieOcrButton'
+import {
+  EXPENSE_ROLES,
+  ExpenseRoleSelect,
+  expenseRoleLabel,
+  findRoleAccounts,
+  OTHER_PAYABLE_ROLE,
+} from './-expense-role'
 import type { DrawerMode, FieldInputProps } from '~/components/synie-record-drawer/fields'
 import type { LocalGridMeta, Row } from '~/components/synie-data-grid/types'
 
@@ -129,22 +136,23 @@ const GRID_OVERRIDES = {
   purReconciliationId: { label: '关联采购对账单' },
 } satisfies Record<string, ColumnOverride>
 
-// 对手候选数据源按 partyType 切换;COMPANY(内部公司对向发票)用公司主数据
+// 对手候选数据源按 partyType 切换;COMPANY(内部公司对向发票)用公司主数据,EMPLOYEE(费用报销)用员工档案
 const PARTY_SOURCE: Record<string, [resource: string, label: string]> = {
   SUPPLIER: ['purSuppliers', '供应商'],
   CUSTOMER: ['salCustomers', '客户'],
   COMPANY: ['basCompanies', '内部公司'],
+  EMPLOYEE: ['hrEmployees', '员工'],
 }
 
 // 新增发票先选类型:类型定死方向与对手类型,选定后由选择器写入表单草稿(direction/partyType
-// 字段创建态隐藏)。每类发票必须关联上级表单:销售开出/内部互开关联销售对账单,采购开入关联
-// 采购对账单;费用报销(员工对手)规划中——PartyType 枚举尚无员工类型
-type InvoiceCreateType = 'sales' | 'internal' | 'purchase'
+// 字段创建态隐藏)。销售开出/内部互开关联销售对账单,采购开入关联采购对账单;
+// 费用报销(员工对手)不关联任何对账单,选报销类型自动带金额/往来科目
+type InvoiceCreateType = 'sales' | 'internal' | 'purchase' | 'expense'
 const INVOICE_CREATE_TYPES = [
   { key: 'sales', label: '销售开出', desc: '向客户开具销项发票', disabled: false, preset: { direction: 'OUTBOUND', partyType: 'CUSTOMER' } },
   { key: 'internal', label: '内部互开', desc: '内部公司互开,保存后可生成对向发票', disabled: false, preset: { direction: 'OUTBOUND', partyType: 'COMPANY' } },
   { key: 'purchase', label: '采购开入', desc: '供应商进项发票,须关联采购对账单', disabled: false, preset: { direction: 'INBOUND', partyType: 'SUPPLIER' } },
-  { key: 'expense', label: '费用报销', desc: '规划中', disabled: true, preset: null },
+  { key: 'expense', label: '费用报销', desc: '员工垫付费用,对手限员工,不关联对账单', disabled: false, preset: { direction: 'INBOUND', partyType: 'EMPLOYEE' } },
 ] as const
 
 // 往来/金额/税额三科目候选限定在当前选择的公司、非汇总、启用科目(同 journals/bank-accounts 科目 filter 先例);
@@ -278,7 +286,57 @@ function PurReconciliationLinkInput({ value, onChange, isDisabled, values }: Fie
   )
 }
 
-/** 新增发票类型选择卡(仅 create 态,抽屉顶部 headerContent);disabled 项为规划中占位 */
+/**
+ * 报销类型带科目(仅费用报销发票,纯录入辅助不随表单提交——发票上没有这个字段):
+ * 选费用角色后查本公司挂该角色与 other_payable 角色的唯一启用非汇总科目,
+ * 恰好一个自动填 金额/往来科目;零个或多个不填,提示手选(税额科目维持手选)。
+ */
+function ExpenseRoleAccountPicker({
+  companyId,
+  patchValues,
+}: {
+  companyId: string | null
+  patchValues: (patch: Record<string, unknown>) => void
+}) {
+  const [role, setRole] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  return (
+    <ExpenseRoleSelect
+      value={role}
+      isDisabled={companyId == null || busy}
+      onChange={async (r) => {
+        setRole(r)
+        if (!r || !companyId) return
+        setBusy(true)
+        try {
+          const [expense, payable] = await Promise.all([
+            findRoleAccounts(companyId, r),
+            findRoleAccounts(companyId, OTHER_PAYABLE_ROLE),
+          ])
+          const roleLabel = expenseRoleLabel(r)
+          const patch: Record<string, unknown> = {}
+          const misses: string[] = []
+          if (expense.length === 1) patch.amountAccountId = expense[0].id
+          else misses.push(`金额科目(角色「${roleLabel}」挂有 ${expense.length} 个科目)`)
+          if (payable.length === 1) patch.partyAccountId = payable[0].id
+          else misses.push(`往来科目(角色「其他应付款」挂有 ${payable.length} 个科目)`)
+          if (Object.keys(patch).length > 0) patchValues(patch)
+          if (misses.length > 0) {
+            toast.warning('部分科目未能自动带出,请手选', { description: misses.join(';') })
+          } else {
+            toast.success(`已按报销类型「${roleLabel}」带出金额/往来科目`)
+          }
+        } catch (e) {
+          toast.danger('按报销类型带科目失败', { description: (e as Error).message })
+        } finally {
+          setBusy(false)
+        }
+      }}
+    />
+  )
+}
+
+/** 新增发票类型选择卡(仅 create 态,抽屉顶部 headerContent) */
 function InvoiceTypePicker({
   value,
   onChange,
@@ -755,8 +813,20 @@ function InvoicesPage() {
           netTotal: { cols: 4, ...lay('netTotal') },
           taxTotal: { cols: 4, ...lay('taxTotal') },
           grossTotal: { cols: 4, ...lay('grossTotal') },
-          // 同公司、非汇总、启用科目候选(见 accountInput)
-          partyAccountId: { cols: 4, ...lay('partyAccountId'), input: accountInput('往来科目') },
+          // 同公司、非汇总、启用科目候选(见 accountInput);
+          // 往来科目前锚「报销类型」选择器(仅费用报销发票,见 ExpenseRoleAccountPicker)
+          partyAccountId: {
+            cols: 4,
+            ...lay('partyAccountId'),
+            input: accountInput('往来科目'),
+            before: (mode, _row, values, patchValues) =>
+              mode !== 'view' && values.partyType === 'EMPLOYEE' ? (
+                <ExpenseRoleAccountPicker
+                  companyId={(values.companyId ?? null) as string | null}
+                  patchValues={patchValues}
+                />
+              ) : null,
+          },
           amountAccountId: { cols: 4, ...lay('amountAccountId'), input: accountInput('金额科目') },
           taxAccountId: { cols: 4, ...lay('taxAccountId'), input: accountInput('税额科目') },
           // 关联销售对账单:开出发票(销售开出/内部互开)必关联,前后端同口径
@@ -769,14 +839,15 @@ function InvoicesPage() {
             visible: (v) => v.direction === 'OUTBOUND',
             input: (p) => <ReconciliationLinkInput {...p} />,
           },
-          // 关联采购对账单:开入发票必关联,前后端同口径(后端 VatInvoiceReconciliationLink);
+          // 关联采购对账单:开入发票(非员工对手)必关联,前后端同口径(后端 VatInvoiceReconciliationLink);
+          // 费用报销发票(员工对手)不关联任何对账单,字段隐藏且不校验(visible:false 整字段剔除);
           // 支出方向不展示(销项票无此业务),仅草稿可编辑;
           // create 态并入「基本信息」手工组(收票登记前先选好),edit/view 态在「关联」组
           purReconciliationId: {
             ...lay('purReconciliationId'),
             label: '关联采购对账单',
             required: true,
-            visible: (v) => v.direction === 'INBOUND',
+            visible: (v) => v.direction === 'INBOUND' && v.partyType !== 'EMPLOYEE',
             input: (p) => <PurReconciliationLinkInput {...p} />,
           },
           // 对向发票互链:由页面提交流程写回,不给手填;create 态恒为空,与备注一起收编在组外

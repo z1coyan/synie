@@ -414,7 +414,15 @@ defmodule SynieCore.Purchase.ReceiptTest do
   end
 
   test "零单价订单入库跳过总账,但科目仍必填", ctx do
-    %{company: co, supplier: su, warehouse: wh, material: mat, kg: kg, debit: debit, credit: credit} =
+    %{
+      company: co,
+      supplier: su,
+      warehouse: wh,
+      material: mat,
+      kg: kg,
+      debit: debit,
+      credit: credit
+    } =
       ctx
 
     order =
@@ -764,7 +772,8 @@ defmodule SynieCore.Purchase.ReceiptTest do
     end
   end
 
-  describe "与订单交叉" do    test "有已审核入库时订单不可作废,先作废入库后可作废", ctx do
+  describe "与订单交叉" do
+    test "有已审核入库时订单不可作废,先作废入库后可作废", ctx do
       %{
         company: co,
         supplier: su,

@@ -473,6 +473,7 @@ defmodule SynieCore.Sales.OrderItem do
       change {SynieCore.Sales.OrderItem.DeriveQuotation, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
       validate {SynieCore.Sales.MaterialCustomerAllowed, []}
+
       # 折默认单位数量:与已发 shipped_qty 同口径,供剩余可发筛选与发货超发校验
       change {SynieCore.Inv.StockItemBaseQty, []}
       change {SynieCore.Sales.OrderItem.ComputeAmount, []}

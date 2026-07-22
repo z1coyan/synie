@@ -60,6 +60,7 @@ defmodule SynieCore do
 
       list SynieCore.Purchase.ReconciliationItem, :pur_reconciliation_items, :read,
         paginate_with: :offset
+
       list SynieCore.Hr.Employee, :hr_employees, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
       list SynieCore.Inv.Material, :inv_materials, :read, paginate_with: :offset
@@ -113,6 +114,11 @@ defmodule SynieCore do
       list SynieCore.Acc.BankImport, :acc_bank_imports, :read, paginate_with: :offset
       list SynieCore.Acc.BankImportItem, :acc_bank_import_items, :read, paginate_with: :offset
       list SynieCore.Acc.VatInvoice, :acc_vat_invoices, :read, paginate_with: :offset
+      list SynieCore.Acc.ExpenseReport, :acc_expense_reports, :read, paginate_with: :offset
+
+      list SynieCore.Acc.ExpenseReportItem, :acc_expense_report_items, :read,
+        paginate_with: :offset
+
       list SynieCore.Acc.Bill, :acc_bills, :read, paginate_with: :offset
       list SynieCore.Acc.BillTransaction, :acc_bill_transactions, :read, paginate_with: :offset
       list SynieCore.Acc.BillHolding, :acc_bill_holdings, :read, paginate_with: :offset
@@ -425,6 +431,16 @@ defmodule SynieCore do
       update SynieCore.Acc.VatInvoice, :void_acc_vat_invoice, :void
       update SynieCore.Acc.VatInvoice, :reverse_acc_vat_invoice, :reverse
 
+      create SynieCore.Acc.ExpenseReport, :create_acc_expense_report, :create
+      update SynieCore.Acc.ExpenseReport, :update_acc_expense_report, :update
+      destroy SynieCore.Acc.ExpenseReport, :destroy_acc_expense_report, :destroy
+      update SynieCore.Acc.ExpenseReport, :audit_acc_expense_report, :audit
+      update SynieCore.Acc.ExpenseReport, :void_acc_expense_report, :void
+
+      create SynieCore.Acc.ExpenseReportItem, :create_acc_expense_report_item, :create
+      update SynieCore.Acc.ExpenseReportItem, :update_acc_expense_report_item, :update
+      destroy SynieCore.Acc.ExpenseReportItem, :destroy_acc_expense_report_item, :destroy
+
       # 建档走内部 :register(接收交易时顺带注册),无 create mutation
       update SynieCore.Acc.Bill, :update_acc_bill, :update
       destroy SynieCore.Acc.Bill, :destroy_acc_bill, :destroy
@@ -513,6 +529,8 @@ defmodule SynieCore do
     resource SynieCore.Acc.BankImport
     resource SynieCore.Acc.BankImportItem
     resource SynieCore.Acc.VatInvoice
+    resource SynieCore.Acc.ExpenseReport
+    resource SynieCore.Acc.ExpenseReportItem
     resource SynieCore.Acc.Bill
     resource SynieCore.Acc.BillTransaction
     resource SynieCore.Acc.BillHolding

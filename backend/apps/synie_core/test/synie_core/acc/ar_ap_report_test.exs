@@ -176,6 +176,48 @@ defmodule SynieCore.Acc.ArApReportTest do
     assert Enum.map(result["roleAccounts"]["unbilledReceivable"], & &1["code"]) == ["112201"]
   end
 
+  test "其他应付款计入净应付;费用角色不进报表列", ctx do
+    %{company: co, acc: acc} = ctx
+
+    other_payable = account!(co, "2241", "其他应付款", :credit, :other_payable)
+    travel = account!(co, "660201", "差旅费", :debit, :travel)
+
+    employee =
+      SynieCore.Hr.Employee
+      |> Ash.Changeset.for_create(:create, %{
+        code: "E#{System.unique_integer([:positive])}",
+        name: "员工甲"
+      })
+      |> Ash.create!(authorize?: false)
+
+    # 报销挂账:借差旅费(费用角色,不带对手)/贷其他应付款(带员工对手)
+    :ok =
+      post!(co, ~D[2026-07-01], [
+        line(travel, "100", 0),
+        line(other_payable, 0, "100", {:employee, employee.id})
+      ])
+
+    # 供应商应付 80 对照(净应付 = 应付 + 其他应付款)
+    :ok =
+      post!(co, ~D[2026-07-02], [
+        line(acc.sales, "80", 0),
+        line(acc.payable, 0, "80", {:supplier, ctx.supplier.id})
+      ])
+
+    result = report(co, ~D[2026-07-31])
+
+    row_e = row(result, "员工甲")
+    assert row_e["partyType"] == "employee"
+    assert row_e["balances"]["otherPayable"] == "100"
+    assert row_e["netPayable"] == "100"
+    # 费用角色不出列、不进角色科目清单
+    refute Map.has_key?(row_e["balances"], "travel")
+    refute Map.has_key?(result["roleAccounts"], "travel")
+
+    row_s = row(result, "供应商丙")
+    assert row_s["netPayable"] == "80"
+  end
+
   test "全零对手不出行(开票后全额收款)", ctx do
     %{company: co, acc: acc, customer_a: a} = ctx
     ca = {:customer, a.id}

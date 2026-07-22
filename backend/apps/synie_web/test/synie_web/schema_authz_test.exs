@@ -101,7 +101,8 @@ defmodule SynieWeb.SchemaAuthzTest do
   end
 
   test "syncSysRolePermissions 整组同步授权" do
-    actor = Authz.build_actor(user_with!(["sys.role_permission:create", "sys.role_permission:delete"]))
+    actor =
+      Authz.build_actor(user_with!(["sys.role_permission:create", "sys.role_permission:delete"]))
 
     role =
       Role

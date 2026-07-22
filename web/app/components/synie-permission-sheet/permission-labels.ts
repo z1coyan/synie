@@ -55,6 +55,7 @@ export const RESOURCE_LABELS: Record<string, string> = {
   'acc.bank_transaction': '银行流水',
   'acc.bank_import_template': '流水导入模板',
   'acc.vat_invoice': '增值税发票',
+  'acc.expense_report': '报销单',
   'acc.bill': '承兑票据',
   'acc.bill_transaction': '承兑交易',
   'acc.bill_holding': '持有承兑',

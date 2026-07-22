@@ -66,7 +66,6 @@ export const menuModules: MenuModule[] = [
     groups: [
       {
         label: '账务',
-        // 应收/应付/费用报销留待后续任务实现,路由未落地前不注册(注册了会点进 404)
         items: [
           { label: '会计凭证', path: '/finance/journals' },
           { label: '总账分录', path: '/finance/entries' },
@@ -75,7 +74,10 @@ export const menuModules: MenuModule[] = [
       },
       {
         label: '发票管理',
-        items: [{ label: '增值税发票', path: '/finance/invoices' }],
+        items: [
+          { label: '增值税发票', path: '/finance/invoices' },
+          { label: '报销单', path: '/finance/expense-reports' },
+        ],
       },
       {
         label: '资金',

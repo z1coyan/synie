@@ -70,11 +70,33 @@ defmodule SynieCore.Acc.PartyNotSelf do
   end
 end
 
+defmodule SynieCore.Acc.VatInvoiceEmployeeParty do
+  @moduledoc """
+  员工对手(费用报销发票)规则:方向必须为开入。发票第四类型由方向+对手派生,
+  不落类型字段(决策见 docs/adr/2026-07-21-expense-reimbursement.md)。
+  """
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    party_type = Ash.Changeset.get_attribute(changeset, :party_type)
+    direction = Ash.Changeset.get_attribute(changeset, :direction)
+
+    if party_type == :employee and direction != :inbound do
+      {:error, field: :direction, message: "员工对手的发票必须为开入方向(费用报销)"}
+    else
+      :ok
+    end
+  end
+end
+
 defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
   @moduledoc """
-  关联对账单校验:开出方向发票必须关联销售对账单、开入方向发票必须关联采购对账单
-  (每类发票须挂上级表单),且关联的对账单必须存在;两槽互斥(开出不可挂采购对账单,
-  开入不可挂销售对账单)。类型/状态/一致性/金额等权威校验在审核时做
+  关联对账单校验:开出方向发票必须关联销售对账单;开入方向且对手非员工时必须关联
+  采购对账单(每类发票须挂上级表单),且关联的对账单必须存在;两槽互斥(开出不可挂
+  采购对账单,开入不可挂销售对账单);对手为员工(费用报销发票)时两槽都必须为空。
+  类型/状态/一致性/金额等权威校验在审核时做
   (见 `VatInvoice.reconciliation_blockers/1`)。
   """
 
@@ -85,13 +107,15 @@ defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
     direction =
       Ash.Changeset.get_attribute(changeset, :direction) || changeset.data.direction
 
-    with :ok <- check_sal_link(changeset, direction),
-         :ok <- check_pur_link(changeset, direction) do
+    employee? = Ash.Changeset.get_attribute(changeset, :party_type) == :employee
+
+    with :ok <- check_sal_link(changeset, direction, employee?),
+         :ok <- check_pur_link(changeset, direction, employee?) do
       :ok
     end
   end
 
-  defp check_sal_link(changeset, direction) do
+  defp check_sal_link(changeset, direction, employee?) do
     case Ash.Changeset.get_attribute(changeset, :sal_reconciliation_id) do
       nil ->
         if direction == :outbound do
@@ -102,6 +126,9 @@ defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
 
       reconciliation_id ->
         cond do
+          employee? ->
+            {:error, field: :sal_reconciliation_id, message: "费用报销发票不关联对账单"}
+
           direction != :outbound ->
             {:error, field: :sal_reconciliation_id, message: "仅开出发票可关联销售对账单"}
 
@@ -114,10 +141,10 @@ defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
     end
   end
 
-  defp check_pur_link(changeset, direction) do
+  defp check_pur_link(changeset, direction, employee?) do
     case Ash.Changeset.get_attribute(changeset, :pur_reconciliation_id) do
       nil ->
-        if direction == :inbound do
+        if direction == :inbound and not employee? do
           {:error, field: :pur_reconciliation_id, message: "开入发票必须关联采购对账单"}
         else
           :ok
@@ -125,6 +152,9 @@ defmodule SynieCore.Acc.VatInvoiceReconciliationLink do
 
       reconciliation_id ->
         cond do
+          employee? ->
+            {:error, field: :pur_reconciliation_id, message: "费用报销发票不关联对账单"}
+
           direction != :inbound ->
             {:error, field: :pur_reconciliation_id, message: "仅开入发票可关联采购对账单"}
 
@@ -157,7 +187,13 @@ defmodule SynieCore.Acc.VatInvoice do
   增值税发票(头),对应 `acc_vat_invoice` 表。
 
   `direction` 标识开票方向(开入即进项票、开出即销项票);对手 `party_type`/`party_id`
-  为多态引用,复用凭证行/总账分录同款 `PartyType`(供应商/客户/内部公司)。
+  为多态引用,复用凭证行/总账分录同款 `PartyType`(供应商/客户/内部公司/员工)。
+
+  费用报销发票(第四类型):对手=员工时方向必须为开入、不关联任何对账单
+  (`VatInvoiceEmployeeParty`/`VatInvoiceReconciliationLink`),审核过账同标准进项
+  (借金额/税额、贷往来带员工对手)即完成挂账;被报销单挂票行引用(含草稿报销单)
+  期间不可作废/红冲(见 `SynieCore.Acc.ExpenseReport.invoice_referenced?/1`,
+  ADR 2026-07-21-expense-reimbursement)。类型由方向+对手派生,不落字段。
 
   编号分两层:`doc_no` 是内部单据编号,留空按 `acc.vat_invoice` 规则自动取号
   (AutoNumber),与凭证 `voucher_no` 同一套机制;`invoice_code`+`invoice_no` 才是
@@ -326,6 +362,7 @@ defmodule SynieCore.Acc.VatInvoice do
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Acc.PartyExists, []}
       validate {SynieCore.Acc.PartyNotSelf, []}
+      validate {SynieCore.Acc.VatInvoiceEmployeeParty, []}
       validate {SynieCore.Acc.VatInvoiceReconciliationLink, []}
 
       # 编号留空自动取号(须在构建期,见 AutoNumber moduledoc)
@@ -383,6 +420,7 @@ defmodule SynieCore.Acc.VatInvoice do
       validate {SynieCore.Acc.InvoiceDraft, []}
       validate {SynieCore.Acc.PartyExists, []}
       validate {SynieCore.Acc.PartyNotSelf, []}
+      validate {SynieCore.Acc.VatInvoiceEmployeeParty, []}
       validate {SynieCore.Acc.VatInvoiceReconciliationLink, []}
 
       change fn changeset, _context ->
@@ -522,6 +560,15 @@ defmodule SynieCore.Acc.VatInvoice do
         if changeset.data.status == :audited, do: :ok, else: {:error, message: "仅已审核发票可作废"}
       end
 
+      # 报销锁定:被非作废报销单挂票行引用的发票不可作废(费用报销 ADR 2026-07-21)
+      validate fn changeset, _context ->
+        if SynieCore.Acc.ExpenseReport.invoice_referenced?(changeset.data.id) do
+          {:error, message: "发票已被报销单引用,请先在报销单上移除该行或作废报销单"}
+        else
+          :ok
+        end
+      end
+
       change fn changeset, _context ->
         # 关联对账单:作废自动解除关联并把对账单退回客户/供应商已确认(同事务)
         linked_sal_reconciliation_id = changeset.data.sal_reconciliation_id
@@ -533,8 +580,17 @@ defmodule SynieCore.Acc.VatInvoice do
         |> Ash.Changeset.before_action(fn cs ->
           # 权威复检:事务内 FOR UPDATE 重读,关闭双作废/作废与红冲并发竞态
           case __MODULE__.lock_invoice(cs.data.id) do
-            {:ok, %{status: :audited}} -> cs
-            _ -> Ash.Changeset.add_error(cs, message: "仅已审核发票可作废")
+            {:ok, %{status: :audited} = locked} ->
+              if SynieCore.Acc.ExpenseReport.invoice_referenced?(locked.id) do
+                Ash.Changeset.add_error(cs,
+                  message: "发票已被报销单引用,请先在报销单上移除该行或作废报销单"
+                )
+              else
+                cs
+              end
+
+            _ ->
+              Ash.Changeset.add_error(cs, message: "仅已审核发票可作废")
           end
         end)
         |> Ash.Changeset.after_action(fn _cs, inv ->
@@ -563,8 +619,18 @@ defmodule SynieCore.Acc.VatInvoice do
         if changeset.data.status == :audited, do: :ok, else: {:error, message: "仅已审核发票可红冲"}
       end
 
+      # 报销锁定:被非作废报销单挂票行引用的发票不可红冲(费用报销 ADR 2026-07-21)
+      validate fn changeset, _context ->
+        if SynieCore.Acc.ExpenseReport.invoice_referenced?(changeset.data.id) do
+          {:error, message: "发票已被报销单引用,请先在报销单上移除该行或作废报销单"}
+        else
+          :ok
+        end
+      end
+
       change fn changeset, _context ->
         posting_date = Ash.Changeset.get_argument(changeset, :posting_date)
+
         # 关联对账单:红冲自动解除关联并把对账单退回客户/供应商已确认(同事务)
         linked_sal_reconciliation_id = changeset.data.sal_reconciliation_id
         linked_pur_reconciliation_id = changeset.data.pur_reconciliation_id
@@ -575,8 +641,17 @@ defmodule SynieCore.Acc.VatInvoice do
         |> Ash.Changeset.before_action(fn cs ->
           # 权威复检:事务内 FOR UPDATE 重读,关闭双红冲/红冲与作废并发竞态
           case __MODULE__.lock_invoice(cs.data.id) do
-            {:ok, %{status: :audited}} -> cs
-            _ -> Ash.Changeset.add_error(cs, message: "仅已审核发票可红冲")
+            {:ok, %{status: :audited} = locked} ->
+              if SynieCore.Acc.ExpenseReport.invoice_referenced?(locked.id) do
+                Ash.Changeset.add_error(cs,
+                  message: "发票已被报销单引用,请先在报销单上移除该行或作废报销单"
+                )
+              else
+                cs
+              end
+
+            _ ->
+              Ash.Changeset.add_error(cs, message: "仅已审核发票可红冲")
           end
         end)
         |> Ash.Changeset.after_action(fn _cs, inv ->
@@ -828,7 +903,7 @@ defmodule SynieCore.Acc.VatInvoice do
       public? true
       attribute_public? true
       attribute_writable? true
-      description "关联采购对账单(仅开入发票、草稿必填;审核一对一结单)"
+      description "关联采购对账单(仅开入发票、对手非员工时草稿必填;审核一对一结单)"
     end
 
     belongs_to :created_by, SynieCore.Accounts.User do

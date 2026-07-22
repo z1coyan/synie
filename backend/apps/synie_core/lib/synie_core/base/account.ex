@@ -8,8 +8,9 @@ end
 
 defmodule SynieCore.Base.AccountRole do
   @moduledoc """
-  科目角色:标记科目在应收应付口径下的用途,应收应付报表按角色圈定科目范围。
-  决策见 docs/adr/2026-07-16-ar-ap-report.md;同公司多科目可挂同一角色,报表合并。
+  科目角色:标记科目用途,分两族——往来角色圈定应收应付报表口径,费用角色
+  (即报销类型)供报销类单据带出费用科目(决策见 docs/adr/2026-07-16-ar-ap-report.md
+  与 docs/adr/2026-07-21-expense-reimbursement.md);同公司多科目可挂同一角色,报表合并。
   """
 
   use Ash.Type.Enum,
@@ -19,7 +20,13 @@ defmodule SynieCore.Base.AccountRole do
       advance_received: "预收账款",
       unbilled_payable: "未开票应付",
       payable: "应付账款",
-      advance_paid: "预付账款"
+      other_payable: "其他应付款",
+      advance_paid: "预付账款",
+      travel: "差旅费",
+      office: "办公费",
+      entertainment: "业务招待费",
+      transport: "交通费",
+      other_expense: "其他费用"
     ]
 
   def graphql_type(_), do: :bas_account_role
@@ -27,15 +34,22 @@ defmodule SynieCore.Base.AccountRole do
   @doc "应收侧三角色(顺序即报表列序)"
   def receivable_roles, do: [:unbilled_receivable, :receivable, :advance_received]
 
-  @doc "应付侧三角色(顺序即报表列序)"
-  def payable_roles, do: [:unbilled_payable, :payable, :advance_paid]
+  @doc "应付侧四角色(顺序即报表列序;其他应付款=员工报销挂账,见费用报销 ADR)"
+  def payable_roles, do: [:unbilled_payable, :payable, :other_payable, :advance_paid]
 
-  @doc "角色自然方向:debit 角色余额=借−贷,credit 角色余额=贷−借"
+  @doc "往来角色全集(应收+应付):应收应付报表口径与分录带对手强校都按此圈定"
+  def party_roles, do: receivable_roles() ++ payable_roles()
+
+  @doc "费用角色五枚举(即报销类型):不进应收应付报表,其科目分录不要求带对手"
+  def expense_roles, do: [:travel, :office, :entertainment, :transport, :other_expense]
+
+  @doc "角色自然方向:debit 角色余额=借−贷,credit 角色余额=贷−借。仅往来角色有自然方向,费用角色不可调用"
   def natural_direction(role) when role in [:unbilled_receivable, :receivable, :advance_paid],
     do: :debit
 
-  def natural_direction(role) when role in [:unbilled_payable, :payable, :advance_received],
-    do: :credit
+  def natural_direction(role)
+      when role in [:unbilled_payable, :payable, :other_payable, :advance_received],
+      do: :credit
 end
 
 defmodule SynieCore.Base.ClearGroupAccountRole do

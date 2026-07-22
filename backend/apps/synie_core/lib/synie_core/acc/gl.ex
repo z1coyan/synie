@@ -32,13 +32,14 @@ defmodule SynieCore.Acc.GL do
       "sales.delivery" => {SynieCore.Sales.Delivery, "销售发货单"},
       "sales.reconciliation" => {SynieCore.Sales.Reconciliation, "销售对账单"},
       "purchase.receipt" => {SynieCore.Purchase.Receipt, "采购入库单"},
-      "purchase.reconciliation" => {SynieCore.Purchase.Reconciliation, "采购对账单"}
+      "purchase.reconciliation" => {SynieCore.Purchase.Reconciliation, "采购对账单"},
+      "acc.expense_report" => {SynieCore.Acc.ExpenseReport, "报销单"}
     }
   end
 
   @doc """
   校验分录组:行数≥2、每行恰一边非零(默认恰一边大于零,`opts[:allow_negative]`
-  放行负数)、借贷配平、对手成对、科目同公司且启用非汇总、挂科目角色的科目
+  放行负数)、借贷配平、对手成对、科目同公司且启用非汇总、挂往来角色的科目
   必须填对手(应收应付报表按对手归属,见 docs/adr/2026-07-16-ar-ap-report.md)。
   """
   def validate_entries(company_id, entries, opts \\ []) do
@@ -211,10 +212,14 @@ defmodule SynieCore.Acc.GL do
     end
   end
 
-  # 挂了科目角色的科目(应收/应付类往来科目)分录必须带对手,否则应收应付报表无法归属。
+  # 挂了往来角色的科目(应收/应付/其他应付款)分录必须带对手,否则应收应付报表无法归属;
+  # 费用角色(报销类型)科目分录不要求带对手(费用报销 ADR 2026-07-21)。
   # 红字行豁免:红冲拷贝原行,存量无对手行的红字组与原组在报表兜底行里正好对冲归零
   defp check_role_party(accounts, entries) do
-    role_names = accounts |> Enum.filter(& &1.role) |> Map.new(&{&1.id, &1.name})
+    role_names =
+      accounts
+      |> Enum.filter(&(&1.role in SynieCore.Base.AccountRole.party_roles()))
+      |> Map.new(&{&1.id, &1.name})
 
     missing =
       Enum.find(entries, fn entry ->
