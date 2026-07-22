@@ -218,6 +218,24 @@ defmodule SynieWeb.Schema do
       end)
     end
 
+    # 初始化向导:选定本币后仅启用该币种(其余停用);须在建公司前调用
+    field :setup_activate_only_base_currency, non_null(:boolean) do
+      arg(:currency_id, non_null(:id))
+
+      resolve(fn %{currency_id: currency_id}, %{context: context} ->
+        case context[:actor] do
+          nil ->
+            {:error, "未认证"}
+
+          _actor ->
+            case SynieCore.Setup.activate_only_base_currency(currency_id) do
+              :ok -> {:ok, true}
+              {:error, error} -> {:error, mutation_error(error)}
+            end
+        end
+      end)
+    end
+
     # 初始化向导:完成(写首选语言+落完成旗标,落旗后 setup 接口永久关闭)
     field :setup_complete, non_null(:boolean) do
       arg(:preferred_language, non_null(:string))

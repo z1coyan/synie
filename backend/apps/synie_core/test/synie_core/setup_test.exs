@@ -30,15 +30,20 @@ defmodule SynieCore.SetupTest do
              Setup.create_first_user(%{username: "second", password: "x"})
   end
 
-  test "seed_common_currencies 幂等补齐常用货币,已初始化后拒绝" do
-    # 迁移已保底 CNY,故新建 19 种、总量 20 种齐全
+  test "seed_common_currencies 幂等补齐常用货币且全部停用,已初始化后拒绝" do
+    # 迁移已保底 CNY,故新建 19 种、总量 20 种齐全;尚无公司时清单内全部停用
     assert {:ok, 19} = Setup.seed_common_currencies()
 
-    codes = Currency |> Ash.read!(authorize?: false) |> Enum.map(& &1.iso_code)
+    currencies = Currency |> Ash.read!(authorize?: false)
+    codes = Enum.map(currencies, & &1.iso_code)
 
     for code <-
           ~w(CNY USD EUR JPY HKD TWD GBP KRW SGD AUD CAD CHF MOP THB MYR IDR VND PHP INR RUB) do
       assert code in codes
+    end
+
+    for c <- currencies, c.iso_code in ~w(CNY USD EUR JPY) do
+      assert c.active == false, "#{c.iso_code} 应停用"
     end
 
     assert {:ok, 0} = Setup.seed_common_currencies()
@@ -47,6 +52,35 @@ defmodule SynieCore.SetupTest do
     :ok = Setup.complete(Authz.build_actor(user), "zh-CN")
 
     assert {:error, "系统已完成初始化"} = Setup.seed_common_currencies()
+  end
+
+  test "activate_only_base_currency 仅启用选定本币,已初始化后拒绝" do
+    assert {:ok, _} = Setup.seed_common_currencies()
+
+    usd =
+      Currency
+      |> Ash.Query.filter(iso_code == "USD")
+      |> Ash.read_one!(authorize?: false)
+
+    assert usd.active == false
+    assert :ok = Setup.activate_only_base_currency(usd.id)
+
+    by_code = Currency |> Ash.read!(authorize?: false) |> Map.new(&{&1.iso_code, &1})
+    assert by_code["USD"].active == true
+    assert by_code["CNY"].active == false
+    assert by_code["EUR"].active == false
+
+    # 改选本币:仅新本币启用
+    cny = by_code["CNY"]
+    assert :ok = Setup.activate_only_base_currency(cny.id)
+    by_code = Currency |> Ash.read!(authorize?: false) |> Map.new(&{&1.iso_code, &1})
+    assert by_code["CNY"].active == true
+    assert by_code["USD"].active == false
+
+    {:ok, user} = Setup.create_first_user(%{username: "admin_for_base", password: "s3cret"})
+    :ok = Setup.complete(Authz.build_actor(user), "zh-CN")
+
+    assert {:error, "系统已完成初始化"} = Setup.activate_only_base_currency(usd.id)
   end
 
   test "complete 写首选语言、种子存储/编号/分类、落完成旗标,随后 setup 接口全面关闭" do

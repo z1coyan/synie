@@ -1312,7 +1312,12 @@ function MarketPage() {
           name: { required: true, placeholder: '如 沪铜', cols: 6 },
           sourceType: { required: true, cols: 6 },
           defaultPriceKind: { required: true, cols: 6 },
-          currencyId: { required: true, edit: 'createOnly', cols: 6 },
+          currencyId: {
+            required: true,
+            edit: 'createOnly',
+            cols: 6,
+            remote: { filter: '{active: {eq: true}}' },
+          },
           unitId: { required: true, edit: 'createOnly', cols: 6 },
           active: { defaultValue: true },
           fetchEnabled: { defaultValue: false },

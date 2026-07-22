@@ -1,3 +1,31 @@
+defmodule SynieCore.Base.Company.BaseCurrencyActive do
+  @moduledoc "本币须为启用中的货币。"
+  use Ash.Resource.Validation
+
+  @impl true
+  def init(opts), do: {:ok, opts}
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    currency_id = Ash.Changeset.get_attribute(changeset, :base_currency_id)
+
+    if is_nil(currency_id) do
+      :ok
+    else
+      case Ash.get(SynieCore.Base.Currency, currency_id, authorize?: false) do
+        {:ok, %{active: true}} ->
+          :ok
+
+        {:ok, _} ->
+          {:error, field: :base_currency_id, message: "币种未启用"}
+
+        {:error, _} ->
+          {:error, field: :base_currency_id, message: "币种不存在"}
+      end
+    end
+  end
+end
+
 defmodule SynieCore.Base.Company do
   @moduledoc "公司(ERPNext 式多公司,单库),对应 `bas_company` 表,树形结构支持集团/合并视角。本币(base_currency)必填,是该记账主体单据双币换算的目标口径。"
 
@@ -36,11 +64,15 @@ defmodule SynieCore.Base.Company do
 
     create :create do
       accept [:code, :name, :short_name, :parent_id, :base_currency_id]
+
+      validate {SynieCore.Base.Company.BaseCurrencyActive, []}
     end
 
     update :update do
       accept [:name, :short_name, :parent_id, :base_currency_id]
       require_atomic? false
+
+      validate {SynieCore.Base.Company.BaseCurrencyActive, []}
 
       # 只挡自引用(parent_id 设为自身 id 会让树遍历死循环);两节点以上成环检测留跟进,
       # 需要额外查库才能判断,权衡后本轮先堵最常见的误操作路径(试点页 UI 正常可触发)

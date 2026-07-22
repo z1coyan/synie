@@ -8,6 +8,7 @@ defmodule SynieCore.Setup do
   并写首选语言、落完成旗标。
   中间步骤(公司创建/科目表初始化等)由前端向导调既有 mutation(超管身份),不在此门面内。
   迁移仍种子 CNY、内置 admin 角色、行情用吨/千克与各单行配置表。
+  常用货币预置时全部停用;选定本币后 `activate_only_base_currency/1` 仅启用本币,其余须手动启用。
 
   全部为受信内部路径(`authorize?: false`);GraphQL schema 负责按接口要求校验 actor。
   """
@@ -196,29 +197,111 @@ defmodule SynieCore.Setup do
     e -> {:error, e}
   end
 
-  @doc "预置常用货币(按 iso_code 幂等,返回本次新建条数);仅未初始化时可用。"
+  @doc """
+  预置常用货币(按 iso_code 幂等,返回本次新建条数);仅未初始化时可用。
+
+  预置一律停用(`active: false`)。尚无公司时还会把清单内已有币种(含迁移保底的 CNY)
+  一并重置为停用,待选定本币后由 `activate_only_base_currency/1` 只启用本币。
+  已有公司(续作)不强制重置,避免把已启用的本币关掉。
+  """
   @spec seed_common_currencies() :: {:ok, non_neg_integer()} | {:error, term()}
   def seed_common_currencies do
     if initialized?() do
       {:error, "系统已完成初始化"}
     else
+      codes = Enum.map(@common_currencies, & &1.iso_code)
+
       existing =
         Currency
-        |> Ash.Query.filter(iso_code in ^Enum.map(@common_currencies, & &1.iso_code))
+        |> Ash.Query.filter(iso_code in ^codes)
         |> Ash.read!(authorize?: false)
-        |> MapSet.new(& &1.iso_code)
+
+      existing_codes = MapSet.new(existing, & &1.iso_code)
 
       created =
         @common_currencies
-        |> Enum.reject(&(&1.iso_code in existing))
+        |> Enum.reject(&(&1.iso_code in existing_codes))
         |> Enum.map(fn attrs ->
           Currency
-          |> Ash.Changeset.for_create(:create, attrs)
+          |> Ash.Changeset.for_create(:create, Map.put(attrs, :active, false))
           |> Ash.create!(authorize?: false)
         end)
 
+      # 首启(尚无公司):清单内已有币种(如迁移 CNY)一并停用,保证选本币前全停
+      unless companies_exist?() do
+        existing
+        |> Enum.filter(& &1.active)
+        |> Enum.each(fn currency ->
+          currency
+          |> Ash.Changeset.for_update(:update, %{active: false})
+          |> Ash.update!(authorize?: false)
+        end)
+      end
+
       {:ok, length(created)}
     end
+  end
+
+  @doc """
+  初始化向导:选定本币后仅启用该币种,其余全部停用。
+  须在建公司之前调用(公司本币校验要求启用中的货币);仅未初始化时可用。
+  """
+  @spec activate_only_base_currency(String.t()) :: :ok | {:error, term()}
+  def activate_only_base_currency(currency_id) when is_binary(currency_id) do
+    if initialized?() do
+      {:error, "系统已完成初始化"}
+    else
+      case Ash.get(Currency, currency_id, authorize?: false) do
+        {:ok, base} ->
+          Repo.transaction(fn ->
+            # 停用全部启用中的非本币;再确保本币启用。事务内 update 须 return_notifications?,
+            # 提交后再统一 notify(与 complete 同模式)。
+            n_off =
+              Currency
+              |> Ash.Query.filter(active == true and id != ^currency_id)
+              |> Ash.read!(authorize?: false)
+              |> Enum.flat_map(fn currency ->
+                {_c, notifications} =
+                  currency
+                  |> Ash.Changeset.for_update(:update, %{active: false})
+                  |> Ash.update!(authorize?: false, return_notifications?: true)
+
+                notifications
+              end)
+
+            n_on =
+              if base.active do
+                []
+              else
+                {_c, notifications} =
+                  base
+                  |> Ash.Changeset.for_update(:update, %{active: true})
+                  |> Ash.update!(authorize?: false, return_notifications?: true)
+
+                notifications
+              end
+
+            n_off ++ n_on
+          end)
+          |> case do
+            {:ok, notifications} ->
+              Ash.Notifier.notify(notifications)
+              :ok
+
+            {:error, error} ->
+              {:error, error}
+          end
+
+        {:error, _} ->
+          {:error, "币种不存在"}
+      end
+    end
+  rescue
+    e -> {:error, e}
+  end
+
+  defp companies_exist? do
+    SynieCore.Base.Company |> Ash.exists?(authorize?: false)
   end
 
   @doc """

@@ -28,10 +28,25 @@ const registry: Record<string, ResourceDrawerConfig> = {
       builtin: { visible: () => false },
     },
   },
-  basCompanies: { label: '公司' },
-  basCurrencies: { label: '货币' },
+  basCompanies: {
+    label: '公司',
+    fields: {
+      // 本币仅可选启用币种(拦新不拦旧)
+      baseCurrencyId: { remote: { filter: '{active: {eq: true}}' } },
+    },
+  },
+  basCurrencies: {
+    label: '货币',
+    // 启用是状态不是表单字段:新建默认启用,启停走列表行动作
+    exclude: ['active'],
+  },
   basUnits: { label: '单位' },
-  basAccounts: { label: '科目' },
+  basAccounts: {
+    label: '科目',
+    fields: {
+      currencyId: { remote: { filter: '{active: {eq: true}}' } },
+    },
+  },
   basMarketInstruments: {
     label: '行情品种',
     fields: {
@@ -39,7 +54,11 @@ const registry: Record<string, ResourceDrawerConfig> = {
       name: { required: true, placeholder: '如 沪铜' },
       sourceType: { required: true },
       defaultPriceKind: { required: true },
-      currencyId: { required: true, edit: 'createOnly' },
+      currencyId: {
+        required: true,
+        edit: 'createOnly',
+        remote: { filter: '{active: {eq: true}}' },
+      },
       unitId: { required: true, edit: 'createOnly' },
       fetchEnabled: {},
       externalLastCode: { placeholder: '主连如 CU0' },
@@ -140,8 +159,14 @@ const registry: Record<string, ResourceDrawerConfig> = {
           )
         },
       },
-      // 币种(原币)一单一币;汇率原币→本币,本币单强制 1(动态默认/显隐在订单页按公司本币叠加)
-      currencyId: { order: 4, cols: 6, required: true, label: '币种' },
+      // 币种(原币)一单一币;仅启用币种可选;汇率原币→本币,本币单强制 1(动态默认/显隐在订单页按公司本币叠加)
+      currencyId: {
+        order: 4,
+        cols: 6,
+        required: true,
+        label: '币种',
+        remote: { filter: '{active: {eq: true}}' },
+      },
       exchangeRate: { order: 5, cols: 6, label: '汇率', placeholder: '如 7.25' },
       remarks: { order: 6, label: '订单备注' },
       // 交易条款是对客户的自由多行文本,置表单底部
@@ -230,8 +255,14 @@ const registry: Record<string, ResourceDrawerConfig> = {
           )
         },
       },
-      // 一单一币,默认单据公司本币;报价单无金额,不挂汇率不做双币
-      currencyId: { order: 5, cols: 6, required: true, label: '币种' },
+      // 一单一币,默认单据公司本币;仅启用币种可选;报价单无金额,不挂汇率不做双币
+      currencyId: {
+        order: 5,
+        cols: 6,
+        required: true,
+        label: '币种',
+        remote: { filter: '{active: {eq: true}}' },
+      },
       remarks: { order: 6, label: '报价备注' },
       // 报价条款是对客户的自由多行文本,置表单底部
       terms: {
@@ -321,8 +352,14 @@ const registry: Record<string, ResourceDrawerConfig> = {
           )
         },
       },
-      // 一单一币,默认单据公司本币;报价单无金额,不挂汇率不做双币
-      currencyId: { order: 5, cols: 6, required: true, label: '币种' },
+      // 一单一币,默认单据公司本币;仅启用币种可选;报价单无金额,不挂汇率不做双币
+      currencyId: {
+        order: 5,
+        cols: 6,
+        required: true,
+        label: '币种',
+        remote: { filter: '{active: {eq: true}}' },
+      },
       remarks: { order: 6, label: '报价备注' },
       // 报价条款是对供应商的自由多行文本,置表单底部
       terms: {
@@ -419,8 +456,14 @@ const registry: Record<string, ResourceDrawerConfig> = {
           )
         },
       },
-      // 币种(原币)一单一币;汇率原币→本币,本币单强制 1(动态默认/显隐在订单页按公司本币叠加)
-      currencyId: { order: 4, cols: 6, required: true, label: '币种' },
+      // 币种(原币)一单一币;仅启用币种可选;汇率原币→本币,本币单强制 1(动态默认/显隐在订单页按公司本币叠加)
+      currencyId: {
+        order: 4,
+        cols: 6,
+        required: true,
+        label: '币种',
+        remote: { filter: '{active: {eq: true}}' },
+      },
       exchangeRate: { order: 5, cols: 6, label: '汇率', placeholder: '如 7.25' },
       remarks: { order: 6, label: '订单备注' },
       // 交易条款是对供应商的自由多行文本,置表单底部

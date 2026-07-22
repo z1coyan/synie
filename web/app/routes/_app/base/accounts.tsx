@@ -196,7 +196,11 @@ function AccountsPage() {
             // 勾成汇总后角色字段隐藏且不进 payload;联动清空草稿,避免用户误以为仍保留角色
             effects: (v) => (v === true ? { role: null } : undefined),
           },
-          currencyId: { cols: 6, label: '币种' },
+          currencyId: {
+            cols: 6,
+            label: '币种',
+            remote: { filter: '{active: {eq: true}}' },
+          },
           // 科目角色:应收应付报表按角色圈定科目;仅叶子科目可挂(汇总科目隐藏;后端转汇总时自动清 role)
           role: { cols: 6, visible: (v) => v.isGroup !== true },
           parentId: {

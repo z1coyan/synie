@@ -58,8 +58,12 @@ function CompaniesPage() {
           code: { required: true, edit: 'createOnly', placeholder: '两位英文字母,如 SH' },
           name: { required: true, placeholder: '如 上海总部' },
           shortName: { required: true, placeholder: '如 上海' },
-          // 本币:记账主体的记账货币,单据双币换算的目标口径(必填,fk 零配置出 RemoteSelect)
-          baseCurrencyId: { required: true, label: '本币' },
+          // 本币:记账主体的记账货币,单据双币换算的目标口径(必填);仅启用币种可选
+          baseCurrencyId: {
+            required: true,
+            label: '本币',
+            remote: { filter: '{active: {eq: true}}' },
+          },
           // parentId 是 fk 列,零配置自动出 RemoteSelect;要弹窗选择时:parentId: { picker: 'dialog' }
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}

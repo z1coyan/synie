@@ -1,5 +1,42 @@
+defmodule SynieCore.Base.Currency.NotCompanyBase do
+  @moduledoc "停用校验:被任一家公司引用为本币的货币不可停用。"
+  use Ash.Resource.Validation
+
+  require Ash.Query
+
+  @impl true
+  def init(opts), do: {:ok, opts}
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    active = Ash.Changeset.get_attribute(changeset, :active)
+    currency_id = changeset.data.id
+
+    if active == false and currency_id do
+      has_company? =
+        SynieCore.Base.Company
+        |> Ash.Query.filter(base_currency_id == ^currency_id)
+        |> Ash.exists?(authorize?: false)
+
+      if has_company? do
+        {:error, field: :active, message: "已被公司引用为本币,不可停用"}
+      else
+        :ok
+      end
+    else
+      :ok
+    end
+  end
+end
+
 defmodule SynieCore.Base.Currency do
-  @moduledoc "货币,对应 `bas_currency` 表。iso_code 为 ISO 4217 三位大写字母编码,创建后不可改。"
+  @moduledoc """
+  货币,对应 `bas_currency` 表。iso_code 为 ISO 4217 三位大写字母编码,创建后不可改。
+
+  启停(`active`):拦新不拦旧——新建单据/公司本币只能选启用币种;停用不影响已引用历史。
+  被任一家公司引用为本币的货币不可停用。初始化向导预置常用货币时默认全部停用,
+  选定本币后仅本币启用,其余须在货币管理页手动启用。
+  """
 
   use Ash.Resource,
     domain: SynieCore,
@@ -43,12 +80,14 @@ defmodule SynieCore.Base.Currency do
     end
 
     create :create do
-      accept [:name, :iso_code, :symbol]
+      accept [:name, :iso_code, :symbol, :active]
     end
 
     update :update do
-      accept [:name, :symbol]
+      accept [:name, :symbol, :active]
       require_atomic? false
+
+      validate {SynieCore.Base.Currency.NotCompanyBase, []}
     end
 
     destroy :destroy do
@@ -78,6 +117,13 @@ defmodule SynieCore.Base.Currency do
       public? true
       constraints max_length: 8
       description "符号"
+    end
+
+    attribute :active, :boolean do
+      allow_nil? false
+      public? true
+      default true
+      description "启用"
     end
 
     create_timestamp :inserted_at, public?: true, description: "创建时间"

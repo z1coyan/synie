@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -30,7 +31,9 @@ function CurrenciesPage() {
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">货币管理</h1>
-      <p className="mt-2 text-sm text-ink-500">交易与账务使用的货币主数据。</p>
+      <p className="mt-2 text-sm text-ink-500">
+        交易与账务使用的货币主数据。停用后不可再选作新单据/公司本币；历史引用不受影响。被公司引用为本币的不可停用。
+      </p>
 
       <div className="mt-6">
         <SynieDataGrid
@@ -38,6 +41,13 @@ function CurrenciesPage() {
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          rowActions={statusToggleActions({
+            field: 'active',
+            mutation: UPDATE_CURRENCY,
+            resultKey: 'updateBasCurrency',
+            rowLabel: (row) => String(row.name ?? row.isoCode ?? ''),
+            onDone: () => queryClient.invalidateQueries({ queryKey: ['gridRows', 'basCurrencies'] }),
+          })}
         />
       </div>
 
@@ -48,6 +58,8 @@ function CurrenciesPage() {
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
+        // 启用是状态不是表单字段(规范):新建默认启用,启停走列表行动作
+        exclude={['active']}
         fields={{
           name: { required: true, placeholder: '如 人民币' },
           // 后端 update 不收 iso_code,创建后不可改

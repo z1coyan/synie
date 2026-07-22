@@ -85,7 +85,12 @@ function BankAccountsPage() {
           branchName: { order: 3, cols: 6, placeholder: '如 深圳分行营业部' },
           holderName: { order: 4, required: true, placeholder: '通常与公司名一致' },
           accountNo: { order: 5, required: true, placeholder: '对公账号/卡号' },
-          currencyId: { order: 6, required: true, cols: 6 },
+          currencyId: {
+            order: 6,
+            required: true,
+            cols: 6,
+            remote: { filter: '{active: {eq: true}}' },
+          },
           accountId: {
             order: 7,
             cols: 6,

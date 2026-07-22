@@ -60,6 +60,14 @@ defmodule SynieCore.Base.CompanyTest do
     end
   end
 
+  test "本币须为启用中的货币" do
+    inactive = foreign_currency!(%{active: false})
+
+    assert_raise Ash.Error.Invalid, fn ->
+      company!(%{base_currency_id: inactive.id})
+    end
+  end
+
   test "资源声明了权限前缀" do
     assert SynieCore.Base.Company.permission_prefix() == "base.company"
     # UserCompany 复用 sys.user 权限码,不设独立权限点

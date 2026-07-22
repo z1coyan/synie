@@ -38,6 +38,11 @@ const CREATE_FIRST_USER = `
 const SEED_CURRENCIES = `
   mutation { setupSeedCommonCurrencies }
 `
+const ACTIVATE_ONLY_BASE_CURRENCY = `
+  mutation ($currencyId: ID!) {
+    setupActivateOnlyBaseCurrency(currencyId: $currencyId)
+  }
+`
 const COMPANIES_QUERY = `
   query { basCompanies(limit: 1, offset: 0) { count results { id name } } }
 `
@@ -481,6 +486,10 @@ function StepCompany(props: { onDone: () => void }) {
     setPending(true)
     const id = toast('正在创建公司并初始化科目…', { isLoading: true, timeout: 0 })
     try {
+      // 选定本币后仅启用该币种(预置货币默认全停);须在建公司前完成,公司本币校验要求启用中的货币
+      await gqlFetch<{ setupActivateOnlyBaseCurrency: boolean }>(ACTIVATE_ONLY_BASE_CURRENCY, {
+        currencyId: baseCurrencyId,
+      })
       const created = await gqlFetch<{
         createBasCompany: { result: { id: string } | null; errors: { message: string }[] | null }
       }>(CREATE_COMPANY, {
