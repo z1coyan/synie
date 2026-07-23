@@ -472,6 +472,71 @@ defmodule SynieCore.Printing.TemplateAndExportTest do
     assert Enum.all?(fields, fn {_, v} -> is_binary(v) end)
   end
 
+  test "模板管理权限与打印权限解耦：仅打印类权限、无模板管理权限，可导出且可列模板" do
+    company = company!(%{name: "解耦测试公司", code: "JJ"})
+
+    admin =
+      [
+        "sys.file:create",
+        "sys.print_template:create",
+        "sys.print_template:read",
+        "sales.order:read",
+        "sales.order:export"
+      ]
+      |> actor_with_company!(company)
+
+    customer =
+      SynieCore.Sales.Customer
+      |> Ash.Changeset.for_create(:create, %{
+        code: "C-#{System.unique_integer([:positive])}",
+        name: "解耦测试客户"
+      })
+      |> Ash.create!(authorize?: false)
+
+    order =
+      SynieCore.Sales.Order
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        party_type: :customer,
+        party_id: customer.id,
+        order_no: "SO-#{System.unique_integer([:positive])}",
+        order_date: ~D[2026-07-23],
+        order_type: :sample
+      })
+      |> Ash.create!(authorize?: false)
+
+    file = upload_xlsx!(admin, [["${order_no}"]])
+
+    {:ok, template} =
+      Template
+      |> Ash.Changeset.for_create(:create, %{
+        name: "解耦模板",
+        resource: "sales.order",
+        file_id: file.id
+      })
+      |> Ash.create(actor: admin)
+
+    # 无 sys.print_template:* 任何权限，仅有该资源的 read + export
+    actor =
+      ["sales.order:read", "sales.order:export"]
+      |> actor_with_company!(company)
+
+    assert {:ok, list} = SynieCore.Printing.list_templates("sales.order", actor)
+    assert Enum.any?(list, &(&1.id == template.id))
+
+    assert {:ok, %{binary: bin, filename: filename}} =
+             SynieCore.Printing.export("sales.order", [order.id], template.id, actor)
+
+    assert filename =~ order.order_no
+    assert byte_size(bin) > 0
+  end
+
+  test "无打印类权限（仅 read），列模板被拒" do
+    actor = actor!(["sales.order:read"])
+
+    assert {:error, :forbidden} = SynieCore.Printing.list_templates("sales.order", actor)
+  end
+
   # 带公司授权的 actor：先建用户/角色/权限与公司授权，再构建 actor（actor 快照公司集合）
   defp actor_with_company!(perms, company) do
     user = user!()

@@ -15,8 +15,11 @@ defmodule SynieWeb.PrintControllerTest do
   end
 
   describe "GET /api/print/field-catalog" do
-    test "任意权限目录资源返回 {fields, loops} 派生清单" do
-      conn = authed_get("/api/print/field-catalog", %{"resource" => "mfg.bom"})
+    test "有模板管理读权限，任意权限目录资源返回 {fields, loops} 派生清单" do
+      conn =
+        authed_get("/api/print/field-catalog", %{"resource" => "mfg.bom"}, [
+          "sys.print_template:read"
+        ])
 
       assert %{"fields" => fields, "loops" => loops} = json_response(conn, 200)
 
@@ -37,7 +40,10 @@ defmodule SynieWeb.PrintControllerTest do
     end
 
     test "无 has_many 资源 loops 为空（如物料）" do
-      conn = authed_get("/api/print/field-catalog", %{"resource" => "inv.material"})
+      conn =
+        authed_get("/api/print/field-catalog", %{"resource" => "inv.material"}, [
+          "sys.print_template:read"
+        ])
 
       assert %{"fields" => fields, "loops" => loops} = json_response(conn, 200)
       assert is_list(loops)
@@ -49,8 +55,19 @@ defmodule SynieWeb.PrintControllerTest do
       assert "default_unit.name" in names
     end
 
+    test "仅该资源打印权限（无模板管理权限）也可查看字段清单" do
+      conn =
+        authed_get("/api/print/field-catalog", %{"resource" => "mfg.bom"}, ["mfg.bom:print"])
+
+      assert %{"fields" => _fields, "loops" => _loops} = json_response(conn, 200)
+    end
+
     test "未知资源 404" do
-      conn = authed_get("/api/print/field-catalog", %{"resource" => "nope.res"})
+      conn =
+        authed_get("/api/print/field-catalog", %{"resource" => "nope.res"}, [
+          "sys.print_template:read"
+        ])
+
       assert json_response(conn, 404)
     end
 
@@ -58,11 +75,31 @@ defmodule SynieWeb.PrintControllerTest do
       conn = get(build_conn(), "/api/print/field-catalog", %{"resource" => "mfg.bom"})
       assert json_response(conn, 401)
     end
+
+    test "登录但零权限 403（无模板管理权限也无该资源打印类权限）" do
+      conn = authed_get("/api/print/field-catalog", %{"resource" => "mfg.bom"}, [])
+      assert json_response(conn, 403)
+    end
   end
 
-  defp authed_get(path, params) do
+  describe "GET /api/print/templates" do
+    test "登录但零权限 403" do
+      conn = authed_get("/api/print/templates", %{"resource" => "sales.order"}, [])
+      assert json_response(conn, 403)
+    end
+
+    test "仅该资源打印权限（无模板管理权限）200，空列表也算" do
+      conn =
+        authed_get("/api/print/templates", %{"resource" => "sales.order"}, ["sales.order:print"])
+
+      assert %{"templates" => templates} = json_response(conn, 200)
+      assert is_list(templates)
+    end
+  end
+
+  defp authed_get(path, params, permissions) do
     build_conn()
-    |> put_req_header("authorization", "Bearer " <> token_with!([]))
+    |> put_req_header("authorization", "Bearer " <> token_with!(permissions))
     |> get(path, params)
   end
 
