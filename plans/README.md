@@ -7,12 +7,12 @@
 
 | Plan | 标题 | 优先级 | 工作量 | 依赖 | 状态 |
 |------|------|--------|--------|------|------|
-| 001 | 渲染器块偏移改按最大行号,修批量打印行号冲突 | P1 | S | — | TODO |
-| 002 | 渲染器保留模板自带手工分页符 | P1 | M | 001 | TODO |
-| 003 | DocBuilder 格式化兜底安全化(map/嵌套结构不再崩) | P1 | S | — | TODO |
-| 004 | 打印/导出权限与模板管理权限解耦 + field-catalog 端点加权限门 | P1 | M | — | TODO |
-| 005 | 模板文件挂接 attachment(下载授权 + 生命周期) | P2 | M | — | TODO |
-| 006 | PdfConverter 超时杀进程 + 全局并发上限 | P2 | M | — | TODO |
+| 001 | 渲染器块偏移改按最大行号,修批量打印行号冲突 | P1 | S | — | DONE(d7589fe + ea3cbec 评审修订:空块 max_row 兜底) |
+| 002 | 渲染器保留模板自带手工分页符 | P1 | M | 001 | DONE(060aff3) |
+| 003 | DocBuilder 格式化兜底安全化(map/嵌套结构不再崩) | P1 | S | — | DONE(eb4833e) |
+| 004 | 打印/导出权限与模板管理权限解耦 + field-catalog 端点加权限门 | P1 | M | — | DONE(3209ce6) |
+| 005 | 模板文件挂接 attachment(下载授权 + 生命周期) | P2 | M | — | DONE(b8560d3) |
+| 006 | PdfConverter 超时杀进程 + 全局并发上限 | P2 | M | — | DONE(9d6c668;计划经 f67befb 修订——本机 uutils timeout 的 `-s KILL` 静默失效,改默认 TERM + `-k` 升级) |
 
 状态取值:TODO | IN PROGRESS | DONE | BLOCKED(附一行原因)| REJECTED(附一行理由)
 
