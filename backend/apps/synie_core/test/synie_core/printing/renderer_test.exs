@@ -310,6 +310,38 @@ defmodule SynieCore.Printing.RendererTest do
       assert sheet =~ ~s|id="3"|
     end
 
+    test "模板含空白行（稀疏行号）时批量块不重叠" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            {1, ["头:${a}"]},
+            {3, ["尾:${b}"]}
+          ]
+        )
+
+      docs = [
+        doc(%{"a" => "1", "b" => "1"}),
+        doc(%{"a" => "2", "b" => "2"})
+      ]
+
+      assert {:ok, out} = Renderer.render_pages(template, docs)
+
+      sheet = PrintingFixture.part(out, "xl/worksheets/sheet1.xml")
+
+      row_nos =
+        ~r/<row\b[^>]*\br="(\d+)"/
+        |> Regex.scan(sheet)
+        |> Enum.map(fn [_, r] -> r end)
+
+      # 第二块偏移 = 第一块最大行号（3），而非行元素个数（2）
+      assert row_nos == ["1", "3", "4", "6"]
+      assert length(row_nos) == length(Enum.uniq(row_nos))
+
+      assert sheet =~ ~s|manualBreakCount="1"|
+      assert sheet =~ ~s|<brk id="3"|
+      assert sheet =~ ~s|<dimension ref="A1:A6"/>|
+    end
+
     test "单 doc 不产生额外分页符；docs 为空报错" do
       template = PrintingFixture.build(rows: [["${a}"]])
       assert {:ok, out} = Renderer.render_pages(template, [doc(%{"a" => "1"})])
@@ -355,6 +387,22 @@ defmodule SynieCore.Printing.RendererTest do
       assert Enum.any?(names, &String.contains?(&1, " "))
       assert Enum.all?(names, &(String.length(&1) <= 31))
       assert length(names) == length(Enum.uniq(names))
+    end
+
+    test "稀疏模板（空白行）dimension 按最大行号计，非行元素个数" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            {1, ["${a}"]},
+            {3, ["${b}"]}
+          ]
+        )
+
+      assert {:ok, out} =
+               Renderer.render_sheets(template, [{"S1", doc(%{"a" => "1", "b" => "2"})}])
+
+      sheet = PrintingFixture.part(out, "xl/worksheets/sheet_synie_1.xml")
+      assert sheet =~ ~s|<dimension ref="A1:A3"/>|
     end
   end
 

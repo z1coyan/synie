@@ -225,8 +225,8 @@ defmodule SynieCore.Printing.Renderer do
   end
 
   defp stitch_blocks([only]) do
-    %{rows: rows, merges: merges, height: height, max_col: max_col} = only
-    dim = dimension_ref(max_col, height)
+    %{rows: rows, merges: merges, max_row: max_row, max_col: max_col} = only
+    dim = dimension_ref(max_col, max_row)
     {rows, merges, [], dim}
   end
 
@@ -235,8 +235,8 @@ defmodule SynieCore.Printing.Renderer do
       Enum.reduce(blocks, {[], [], [], 0, 1}, fn block, {rs, ms, brs, off, mc} ->
         shifted_rows = Enum.map(block.rows, &shift_row_xml(&1, off))
         shifted_merges = Enum.map(block.merges, &shift_ref(&1, off))
-        new_off = off + block.height
-        # 分页符在块末行（Excel brk id = 该行之后分页，用块最后一行号）
+        new_off = off + block.max_row
+        # 分页符在块末行（Excel brk id = 该行之后分页，用块最大行号）
         brk_id = new_off
         mc2 = max(mc, block.max_col)
 
@@ -267,7 +267,7 @@ defmodule SynieCore.Printing.Renderer do
             block.rows,
             block.merges,
             [],
-            dimension_ref(block.max_col, block.height)
+            dimension_ref(block.max_col, block.max_row)
           )
 
         {name, sheet_xml}
@@ -436,10 +436,10 @@ defmodule SynieCore.Printing.Renderer do
       |> Enum.map(&shift_merge_for_loops(&1, loop_plan))
       |> Enum.reject(&is_nil/1)
 
-    height = length(out_rows)
     max_col = max_column(out_rows)
+    max_row = out_rows |> Enum.map(&row_number!/1) |> Enum.max()
 
-    %{rows: out_rows, merges: merges, height: height, max_col: max_col}
+    %{rows: out_rows, merges: merges, max_col: max_col, max_row: max_row}
   end
 
   # 多循环区 merge 顺移：整段落在某循环模板行上的 merge 丢弃（约定不跨循环行）；
@@ -696,7 +696,7 @@ defmodule SynieCore.Printing.Renderer do
   defp block_offsets(blocks) do
     {offs, _} =
       Enum.map_reduce(blocks, 0, fn b, off ->
-        {off, off + b.height}
+        {off, off + b.max_row}
       end)
 
     offs
@@ -802,8 +802,8 @@ defmodule SynieCore.Printing.Renderer do
     end
   end
 
-  defp dimension_ref(max_col, height) do
-    "A1:#{col_letters(max_col - 1)}#{max(height, 1)}"
+  defp dimension_ref(max_col, max_row) do
+    "A1:#{col_letters(max_col - 1)}#{max(max_row, 1)}"
   end
 
   defp col_letters(n) when n >= 0 do
