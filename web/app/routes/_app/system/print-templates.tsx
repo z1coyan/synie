@@ -29,11 +29,31 @@ const SET_DEFAULT = `
     setDefaultSysPrintTemplate(id: $id) { result { id } errors { message } }
   }
 `
+const PERMISSION_CATALOG = `
+  query { permissionCatalog { prefix label } }
+`
 
-const RESOURCES = [
-  { prefix: 'sales.order', label: '销售订单' },
-  { prefix: 'sales.delivery', label: '销售发货单' },
-]
+interface ResourceOption {
+  prefix: string
+  label: string
+}
+
+// 权限目录按「域.资源」组织;下拉按域中文名分域展示
+const DOMAIN_LABELS: Record<string, string> = {
+  sales: '销售',
+  purchase: '采购',
+  inv: '库存',
+  acc: '财务',
+  hr: '人事',
+  base: '基础数据',
+  sys: '系统',
+  mfg: '生产',
+}
+
+function resourceOptionText(r: ResourceOption) {
+  const domain = r.prefix.split('.')[0]
+  return `${DOMAIN_LABELS[domain] ?? domain} · ${r.label}`
+}
 
 const GRID_COLUMNS = ['name', 'resource', 'isDefault', 'remarks', 'updatedAt']
 
@@ -43,7 +63,23 @@ function PrintTemplatesPage() {
   const [fileName, setFileName] = useState('')
   const [catalog, setCatalog] = useState<FieldCatalog | null>(null)
   const [resourcePick, setResourcePick] = useState('sales.order')
+  const [resources, setResources] = useState<ResourceOption[]>([])
   const [uploading, setUploading] = useState(false)
+
+  useEffect(() => {
+    void gqlFetch<{ permissionCatalog: ResourceOption[] }>(PERMISSION_CATALOG)
+      .then((data) => setResources(data.permissionCatalog))
+      .catch((e: unknown) => {
+        setResources([])
+        toast.danger(e instanceof Error ? e.message : '加载资源目录失败')
+      })
+  }, [])
+
+  useEffect(() => {
+    if (resources.length > 0 && !resources.some((r) => r.prefix === resourcePick)) {
+      setResourcePick(resources[0].prefix)
+    }
+  }, [resources, resourcePick])
 
   useEffect(() => {
     if (!drawer) return
@@ -90,7 +126,7 @@ function PrintTemplatesPage() {
           overrides={{
             resource: {
               label: '资源',
-              render: (v) => RESOURCES.find((r) => r.prefix === v)?.label ?? String(v ?? ''),
+              render: (v) => resources.find((r) => r.prefix === v)?.label ?? String(v ?? ''),
             },
           }}
           onView={(row) => {
@@ -101,7 +137,7 @@ function PrintTemplatesPage() {
           onCreate={() => {
             setFileId(null)
             setFileName('')
-            setResourcePick('sales.order')
+            setResourcePick(resources[0]?.prefix ?? 'sales.order')
             setDrawer({ mode: 'create', row: null })
           }}
           onEdit={(row) => {
@@ -178,9 +214,9 @@ function PrintTemplatesPage() {
                   </Select.Trigger>
                   <Select.Popover>
                     <ListBox>
-                      {RESOURCES.map((r) => (
-                        <ListBox.Item key={r.prefix} id={r.prefix} textValue={r.label}>
-                          {r.label}
+                      {resources.map((r) => (
+                        <ListBox.Item key={r.prefix} id={r.prefix} textValue={resourceOptionText(r)}>
+                          {resourceOptionText(r)}
                           <ListBox.ItemIndicator />
                         </ListBox.Item>
                       ))}
@@ -212,24 +248,20 @@ function PrintTemplatesPage() {
                 <p className="mb-1 text-muted">头字段</p>
                 <ul className="mb-2 list-inside list-disc font-mono text-xs">
                   {catalog.fields.map((f) => (
-                    <li key={f.name}>
-                      ${'{'}
-                      {f.name}
-                      {'}'} — {f.label}
-                    </li>
+                    <li key={f.name}>{`\${${f.name}}`}</li>
                   ))}
                 </ul>
-                <p className="mb-1 text-muted">明细（写在同一行，items. 前缀）</p>
-                <ul className="list-inside list-disc font-mono text-xs">
-                  <li>${'{items._seq}'} — 行序号</li>
-                  {catalog.items.map((f) => (
-                    <li key={f.name}>
-                      ${'{items.'}
-                      {f.name}
-                      {'}'} — {f.label}
-                    </li>
-                  ))}
-                </ul>
+                {catalog.loops.map((loop) => (
+                  <div key={loop.name}>
+                    <p className="mb-1 text-muted">循环区（{loop.name}.* 写在同一行）</p>
+                    <ul className="mb-2 list-inside list-disc font-mono text-xs">
+                      <li>{`\${${loop.name}._seq}`} — 行序号</li>
+                      {loop.fields.map((f) => (
+                        <li key={`${loop.name}.${f.name}`}>{`\${${loop.name}.${f.name}}`}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
               </div>
             )}
           </div>

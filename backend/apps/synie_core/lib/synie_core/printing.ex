@@ -18,11 +18,6 @@ defmodule SynieCore.Printing do
 
   @max_batch 100
 
-  @resource_modules %{
-    "sales.order" => SynieCore.Sales.Order,
-    "sales.delivery" => SynieCore.Sales.Delivery
-  }
-
   @doc "列出某资源可用模板（含默认标记），供前端弹窗。"
   def list_templates(resource, actor) when is_binary(resource) do
     Template
@@ -135,20 +130,24 @@ defmodule SynieCore.Printing do
   end
 
   defp load_records(resource, ids, actor) do
-    mod = Map.fetch!(@resource_modules, resource)
+    case FieldCatalog.module_for(resource) do
+      nil ->
+        {:error, "不支持的资源类型 #{resource}"}
 
-    records =
-      Enum.map(ids, fn id ->
-        case Ash.get(mod, id, actor: actor) do
-          {:ok, rec} -> rec
-          {:error, _} -> nil
+      mod ->
+        records =
+          Enum.map(ids, fn id ->
+            case Ash.get(mod, id, actor: actor) do
+              {:ok, rec} -> rec
+              {:error, _} -> nil
+            end
+          end)
+
+        if Enum.any?(records, &is_nil/1) do
+          {:error, "部分单据不存在或无权查看"}
+        else
+          {:ok, records}
         end
-      end)
-
-    if Enum.any?(records, &is_nil/1) do
-      {:error, "部分单据不存在或无权查看"}
-    else
-      {:ok, records}
     end
   end
 
@@ -174,35 +173,70 @@ defmodule SynieCore.Printing do
     end)
   end
 
-  defp sheet_name_for("sales.order", rec), do: rec.order_no || "订单"
-  defp sheet_name_for("sales.delivery", rec), do: rec.delivery_no || "发货"
-  defp sheet_name_for(_, _), do: "Sheet"
+  # sheet 名/文件名：display_field → :name → 首个 *_no 属性 → 兜底
+  defp sheet_name_for(resource, rec) do
+    module = FieldCatalog.module_for(resource)
 
-  defp export_filename(_resource, [one]) do
-    base = sheet_name_for_guess(one)
-    "#{base}.xlsx"
+    candidate =
+      cond do
+        is_nil(module) ->
+          nil
+
+        function_exported?(module, :display_field, 0) ->
+          Map.get(rec, module.display_field())
+
+        true ->
+          no_or_name_value(module, rec)
+      end
+
+    case candidate do
+      v when is_binary(v) and v != "" -> v
+      _ -> "Sheet"
+    end
+  end
+
+  defp no_or_name_value(module, rec) do
+    names = module |> Ash.Resource.Info.public_attributes() |> Enum.map(& &1.name)
+
+    cond do
+      :name in names ->
+        Map.get(rec, :name)
+
+      no = Enum.find(names, &String.ends_with?(to_string(&1), "_no")) ->
+        Map.get(rec, no)
+
+      true ->
+        nil
+    end
+  end
+
+  defp export_filename(resource, [one]) do
+    "#{sheet_name_for(resource, one)}.xlsx"
   end
 
   defp export_filename(resource, _) do
     "#{resource_label(resource)}-批量-#{Date.utc_today()}.xlsx"
   end
 
-  defp print_filename(_resource, [one]) do
-    base = sheet_name_for_guess(one)
-    "#{base}.pdf"
+  defp print_filename(resource, [one]) do
+    "#{sheet_name_for(resource, one)}.pdf"
   end
 
   defp print_filename(resource, _) do
     "#{resource_label(resource)}-批量-#{Date.utc_today()}.pdf"
   end
 
-  defp sheet_name_for_guess(%{order_no: n}) when is_binary(n), do: n
-  defp sheet_name_for_guess(%{delivery_no: n}) when is_binary(n), do: n
-  defp sheet_name_for_guess(_), do: "document"
+  defp resource_label(resource) do
+    case FieldCatalog.module_for(resource) do
+      nil ->
+        resource
 
-  defp resource_label("sales.order"), do: "销售订单"
-  defp resource_label("sales.delivery"), do: "销售发货"
-  defp resource_label(r), do: r
+      module ->
+        if function_exported?(module, :permission_label, 0),
+          do: module.permission_label(),
+          else: resource
+    end
+  end
 
   defp xlsx_ctype,
     do: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

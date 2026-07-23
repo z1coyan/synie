@@ -35,6 +35,16 @@ defmodule SynieCore.Authz.Registry do
     end
   end
 
+  @doc "权限码前缀 → 资源模块映射（打印字段清单等按码取模块用；复用他人权限码的资源不进）。"
+  @spec resource_modules() :: %{String.t() => module()}
+  def resource_modules do
+    @domains
+    |> Enum.flat_map(&Ash.Domain.Info.resources/1)
+    |> Enum.filter(&permission_source?/1)
+    |> Enum.reject(fn resource -> resource.permission_actions() == [] end)
+    |> Map.new(fn resource -> {resource.permission_prefix(), resource} end)
+  end
+
   @doc "actor 实际生效的具体权限码(通配已展开;super_admin 得到全部)。"
   @spec granted_codes(Actor.t()) :: [String.t()]
   def granted_codes(%Actor{super_admin: true}), do: all_codes()

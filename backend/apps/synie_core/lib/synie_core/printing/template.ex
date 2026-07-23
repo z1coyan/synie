@@ -49,9 +49,9 @@ defmodule SynieCore.Printing.Template.ValidateFile do
     with {:ok, file} <- Ash.get(SynieCore.Files.File, file_id, authorize?: false),
          :ok <- check_xlsx_filename(file.filename),
          {:ok, binary} <- SynieCore.Storage.read(file.storage, file.key),
-         {:ok, %{fields: fields, items: items}} <-
+         {:ok, %{fields: fields, nested: nested}} <-
            SynieCore.Printing.Renderer.extract_placeholders(binary) do
-      SynieCore.Printing.FieldCatalog.validate_placeholders(resource, fields, items)
+      SynieCore.Printing.FieldCatalog.validate_placeholders(resource, fields, nested)
     else
       {:error, %Ash.Error.Query.NotFound{}} ->
         {:error, "模板文件不存在"}
@@ -92,7 +92,9 @@ defmodule SynieCore.Printing.Template.SetDefault do
       resource = changeset.data.resource
 
       SynieCore.Printing.Template
-      |> Ash.Query.filter(resource == ^resource and is_default == true and id != ^changeset.data.id)
+      |> Ash.Query.filter(
+        resource == ^resource and is_default == true and id != ^changeset.data.id
+      )
       |> Ash.read!(authorize?: false)
       |> Enum.each(fn t ->
         t

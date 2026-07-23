@@ -22,7 +22,10 @@ defmodule SynieCore.Printing.Renderer do
 
   alias SynieCore.Printing.RenderError
 
-  @type doc :: %{fields: %{String.t() => String.t()}, items: [%{String.t() => String.t()}]}
+  @type doc :: %{
+          fields: %{String.t() => String.t()},
+          loops: %{String.t() => [%{String.t() => String.t()}]}
+        }
 
   @placeholder ~r/\$\{([^{}]+)\}/
   @row_re ~r/<row\b[^>]*?(?:\/>|>[\s\S]*?<\/row>)/
@@ -59,9 +62,13 @@ defmodule SynieCore.Printing.Renderer do
     end)
   end
 
-  @doc "上传校验用：提取模板第一个 sheet 中全部占位符（fields 为普通占位符，items 为去掉 `items.` 前缀的明细占位符，均去重排序）。"
+  @doc """
+  上传校验用：提取模板第一个 sheet 中全部占位符。
+  无点号的进 `fields`；含点号的按首段归组进 `nested`（如 `%{"company" => ["name"], "items" => ["qty"]}`），
+  首段是关联还是循环区由 FieldCatalog 按资源语义判定。均去重排序。
+  """
   @spec extract_placeholders(binary()) ::
-          {:ok, %{fields: [String.t()], items: [String.t()]}} | {:error, term()}
+          {:ok, %{fields: [String.t()], nested: %{String.t() => [String.t()]}}} | {:error, term()}
   def extract_placeholders(template) when is_binary(template) do
     run(fn ->
       with {:ok, pkg} <- open_package(template) do
@@ -78,17 +85,17 @@ defmodule SynieCore.Printing.Renderer do
           |> Enum.flat_map(&Regex.scan(@placeholder, &1))
           |> Enum.map(fn [_, name] -> name end)
 
-        {items, fields} = Enum.split_with(names, &String.starts_with?(&1, "items."))
+        {dotted, plain} = Enum.split_with(names, &String.contains?(&1, "."))
 
-        {:ok,
-         %{
-           fields: fields |> Enum.uniq() |> Enum.sort(),
-           items:
-             items
-             |> Enum.map(&String.trim_leading(&1, "items."))
-             |> Enum.uniq()
-             |> Enum.sort()
-         }}
+        nested =
+          dotted
+          |> Enum.group_by(
+            fn name -> name |> String.split(".", parts: 2) |> hd() end,
+            fn name -> name |> String.split(".", parts: 2) |> List.last() end
+          )
+          |> Map.new(fn {k, v} -> {k, v |> Enum.uniq() |> Enum.sort()} end)
+
+        {:ok, %{fields: plain |> Enum.uniq() |> Enum.sort(), nested: nested}}
       end
     end)
   end
@@ -253,7 +260,16 @@ defmodule SynieCore.Printing.Renderer do
       |> Enum.zip(names)
       |> Enum.map(fn {{_raw_name, doc}, name} ->
         block = expand_sheet(template_sheet, pkg.shared, doc)
-        sheet_xml = rebuild_sheet(template_sheet, block.rows, block.merges, [], dimension_ref(block.max_col, block.height))
+
+        sheet_xml =
+          rebuild_sheet(
+            template_sheet,
+            block.rows,
+            block.merges,
+            [],
+            dimension_ref(block.max_col, block.height)
+          )
+
         {name, sheet_xml}
       end)
 
@@ -266,9 +282,21 @@ defmodule SynieCore.Printing.Renderer do
         rid = "rIdSynie#{i}"
 
         se = se ++ [~s|<sheet name="#{xml_escape(name)}" sheetId="#{1000 + i}" r:id="#{rid}"/>|]
-        re = re ++ [~s|<Relationship Id="#{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet_synie_#{i}.xml"/>|]
+
+        re =
+          re ++
+            [
+              ~s|<Relationship Id="#{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet_synie_#{i}.xml"/>|
+            ]
+
         fp = fp ++ [{path, xml}]
-        ov = ov ++ [~s|<Override PartName="/#{path}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>|]
+
+        ov =
+          ov ++
+            [
+              ~s|<Override PartName="/#{path}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>|
+            ]
+
         {se, re, fp, ov}
       end)
 
@@ -294,6 +322,7 @@ defmodule SynieCore.Printing.Renderer do
       old_rels
       |> then(fn xml ->
         inner = Enum.join(kept_rels ++ rels_entries)
+
         Regex.replace(~r/<Relationships\b[^>]*>[\s\S]*<\/Relationships>/, xml, fn full ->
           open = Regex.run(~r/<Relationships\b[^>]*>/, full) |> hd()
           open <> inner <> "</Relationships>"
@@ -349,8 +378,12 @@ defmodule SynieCore.Printing.Renderer do
 
   defp expand_sheet(sheet_xml, shared, doc) do
     fields = stringify_map(Map.get(doc, :fields) || Map.get(doc, "fields") || %{})
-    items = Map.get(doc, :items) || Map.get(doc, "items") || []
-    items = Enum.map(items, &stringify_map/1)
+
+    loops =
+      (Map.get(doc, :loops) || Map.get(doc, "loops") || %{})
+      |> Map.new(fn {k, v} -> {to_string(k), Enum.map(v || [], &stringify_map/1)} end)
+
+    ctx = %{fields: fields, loop_names: Map.keys(loops)}
 
     rows =
       @row_re
@@ -361,77 +394,46 @@ defmodule SynieCore.Printing.Renderer do
       raise RenderError, message: "sheet 中没有 row"
     end
 
-    {item_idx, item_row} =
-      rows
-      |> Enum.with_index()
-      |> Enum.find_value({nil, nil}, fn {row, idx} ->
-        if item_row?(row, shared), do: {idx, row}
+    # 逐行标注循环区模板行；多循环区各占一段，顺序展开，delta 累计下移
+    tagged =
+      Enum.map(rows, fn row ->
+        case loop_row_prefix(row, shared, ctx.loop_names) do
+          nil -> {:static, row}
+          name -> {:loop, name, row}
+        end
       end)
 
-    {out_rows, row_delta_after_item, item_template_r} =
-      cond do
-        is_nil(item_idx) ->
-          # 无明细行：整表只做头字段替换
-          filled =
-            Enum.map(rows, fn row ->
-              fill_row(row, shared, fields, nil)
-            end)
+    {out_rows_rev, _delta, loop_plan_rev} =
+      Enum.reduce(tagged, {[], 0, []}, fn
+        {:static, row}, {acc, delta, plan} ->
+          filled = row |> shift_row_xml(delta) |> fill_row(shared, ctx, nil)
+          {[filled | acc], delta, plan}
 
-          {filled, 0, nil}
+        {:loop, name, row}, {acc, delta, plan} ->
+          items = Map.get(loops, name, [])
+          template_r = row_number!(row)
 
-        items == [] ->
-          # 删除明细模板行，下方行上移 1
-          item_r = row_number!(item_row)
-          before = Enum.take(rows, item_idx)
-          after_rows = Enum.drop(rows, item_idx + 1)
-
-          filled_before = Enum.map(before, &fill_row(&1, shared, fields, nil))
-
-          filled_after =
-            Enum.map(after_rows, fn row ->
-              row
-              |> shift_row_xml(-1)
-              |> fill_row(shared, fields, nil)
-            end)
-
-          {filled_before ++ filled_after, -1, item_r}
-
-        true ->
-          item_r = row_number!(item_row)
-          n = length(items)
-          before = Enum.take(rows, item_idx)
-          after_rows = Enum.drop(rows, item_idx + 1)
-
-          filled_before = Enum.map(before, &fill_row(&1, shared, fields, nil))
-
-          item_rows =
+          emitted =
             items
             |> Enum.with_index(1)
             |> Enum.map(fn {item, seq} ->
               item_fields = Map.put(item, "_seq", Integer.to_string(seq))
-              # 第 seq 行相对模板行偏移 seq-1
-              item_row
-              |> shift_row_xml(seq - 1)
-              |> fill_row(shared, fields, item_fields)
-            end)
 
-          delta = n - 1
-
-          filled_after =
-            Enum.map(after_rows, fn row ->
               row
-              |> shift_row_xml(delta)
-              |> fill_row(shared, fields, nil)
+              |> shift_row_xml(delta + seq - 1)
+              |> fill_row(shared, ctx, {name, item_fields})
             end)
 
-          {filled_before ++ item_rows ++ filled_after, delta, item_r}
-      end
+          {Enum.reverse(emitted) ++ acc, delta + length(items) - 1,
+           [{template_r, length(items)} | plan]}
+      end)
+
+    out_rows = Enum.reverse(out_rows_rev)
+    loop_plan = Enum.reverse(loop_plan_rev)
 
     merges =
       extract_merge_refs(sheet_xml)
-      |> Enum.map(fn ref ->
-        shift_merge_for_items(ref, item_template_r, row_delta_after_item, length(items), item_idx)
-      end)
+      |> Enum.map(&shift_merge_for_loops(&1, loop_plan))
       |> Enum.reject(&is_nil/1)
 
     height = length(out_rows)
@@ -440,54 +442,61 @@ defmodule SynieCore.Printing.Renderer do
     %{rows: out_rows, merges: merges, height: height, max_col: max_col}
   end
 
-  defp shift_merge_for_items(ref, nil, _delta, _n_items, _item_idx), do: ref
-
-  defp shift_merge_for_items(ref, item_r, delta, n_items, _item_idx) do
-    # 若 merge 完全在明细行：复制策略简化——仅顺移下方；明细行上的 merge 丢弃（约定不跨明细）
+  # 多循环区 merge 顺移：整段落在某循环模板行上的 merge 丢弃（约定不跨循环行）；
+  # 其余按各端点行号下方的累计 delta 分别顺移（跨循环行的 merge 顺移结果未定义，见 moduledoc）
+  defp shift_merge_for_loops(ref, loop_plan) do
     {r1, r2} = ref_row_range(ref)
 
-    cond do
-      r1 == item_r and r2 == item_r and n_items > 0 ->
-        # 单行 merge 在明细模板行：为每条 item 复制（简化：只保留第一条偏移）
-        # 多条时展开多个 merge
-        nil
-
-      r1 >= item_r and r2 <= item_r and n_items == 0 ->
-        nil
-
-      r1 > item_r ->
-        shift_ref(ref, delta)
-
-      r2 < item_r ->
-        ref
-
-      true ->
-        # 跨明细模板行的 merge：约定不支持，原样或顺移下界
-        shift_ref(ref, delta)
+    if Enum.any?(loop_plan, fn {t_r, _n} -> t_r == r1 and r1 == r2 end) do
+      nil
+    else
+      shift_ref_rows(ref, &delta_before(loop_plan, &1))
     end
   end
 
-  # 明细行上的单行 merge：在 expand 里对每条复制 — 重写更清晰
-  # 上面返回 nil 会丢 merge；在 expand_sheet 末尾对 item 行 merge 单独处理：
+  defp delta_before(loop_plan, row) do
+    Enum.reduce(loop_plan, 0, fn {t_r, n}, acc ->
+      if t_r < row, do: acc + n - 1, else: acc
+    end)
+  end
 
-  defp item_row?(row_xml, shared) do
+  # merge 两端点按各自下方的累计 delta 分别顺移
+  defp shift_ref_rows(ref, fun) do
+    Regex.replace(@ref_re, ref, fn _, dol1, col, dol2, row ->
+      r = String.to_integer(row)
+      dol1 <> col <> dol2 <> Integer.to_string(r + fun.(r))
+    end)
+  end
+
+  # 返回行内第一个循环区占位符的首段（该行为该循环区的模板行）；无则 nil
+  defp loop_row_prefix(row_xml, shared, loop_names) do
     @cell_re
     |> Regex.scan(row_xml)
-    |> Enum.any?(fn [cell] ->
+    |> Enum.find_value(fn [cell] ->
       case cell_text(cell, shared) do
-        nil -> false
-        t -> Regex.match?(~r/\$\{items\./, t)
+        nil ->
+          nil
+
+        text ->
+          @placeholder
+          |> Regex.scan(text)
+          |> Enum.find_value(fn [_, name] ->
+            case String.split(name, ".", parts: 2) do
+              [prefix, _] -> if prefix in loop_names, do: prefix
+              _ -> nil
+            end
+          end)
       end
     end)
   end
 
-  defp fill_row(row_xml, shared, fields, item_fields) do
+  defp fill_row(row_xml, shared, ctx, loop_ctx) do
     Regex.replace(@cell_re, row_xml, fn cell ->
-      fill_cell(cell, shared, fields, item_fields)
+      fill_cell(cell, shared, ctx, loop_ctx)
     end)
   end
 
-  defp fill_cell(cell, shared, fields, item_fields) do
+  defp fill_cell(cell, shared, ctx, loop_ctx) do
     case cell_text(cell, shared) do
       nil ->
         cell
@@ -496,17 +505,25 @@ defmodule SynieCore.Printing.Renderer do
         if Regex.match?(@placeholder, text) do
           replaced =
             Regex.replace(@placeholder, text, fn _, name ->
-              cond do
-                String.starts_with?(name, "items.") and is_map(item_fields) ->
-                  key = String.trim_leading(name, "items.")
-                  Map.get(item_fields, key, "")
+              case String.split(name, ".", parts: 2) do
+                [single] ->
+                  Map.get(ctx.fields, single, "")
 
-                String.starts_with?(name, "items.") ->
-                  # 头字段行上的明细占位（不应出现）→ 空
-                  ""
+                [prefix, rest] ->
+                  cond do
+                    # 本循环区模板行内的该区占位
+                    match?({^prefix, _}, loop_ctx) ->
+                      {_, loop_fields} = loop_ctx
+                      Map.get(loop_fields, rest, "")
 
-                true ->
-                  Map.get(fields, name, "")
+                    # 循环占位出现在其模板行之外 → 空
+                    prefix in ctx.loop_names ->
+                      ""
+
+                    # 头字段路径（关系.字段）
+                    true ->
+                      Map.get(ctx.fields, name, "")
+                  end
               end
             end)
 
@@ -867,7 +884,9 @@ defmodule SynieCore.Printing.Renderer do
 
   defp attr(tag, name) do
     case Regex.run(~r/#{Regex.escape(name)}="([^"]*)"/, tag) do
-      [_, v] -> v
+      [_, v] ->
+        v
+
       _ ->
         case Regex.run(~r/#{Regex.escape(name)}='([^']*)'/, tag) do
           [_, v] -> v

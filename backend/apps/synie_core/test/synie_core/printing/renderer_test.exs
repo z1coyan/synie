@@ -5,7 +5,7 @@ defmodule SynieCore.Printing.RendererTest do
   alias SynieCore.PrintingFixture
 
   defp doc(fields, items \\ []) do
-    %{fields: fields, items: items}
+    %{fields: fields, loops: %{"items" => items}}
   end
 
   describe "render_pages/2 单条（单头占位符）" do
@@ -24,6 +24,25 @@ defmodule SynieCore.Printing.RendererTest do
 
       rows = PrintingFixture.read_first_sheet(out)
       assert [["订单号：SO-1", "", ""]] = rows
+    end
+
+    test "头字段路径占位符（关系.字段）替换" do
+      template =
+        PrintingFixture.build(rows: [["${company.name}", "${company.code}", "${order_no}"]])
+
+      assert {:ok, out} =
+               Renderer.render_pages(template, [
+                 %{
+                   fields: %{
+                     "company.name" => "京泰电气",
+                     "company.code" => "JT",
+                     "order_no" => "SO-1"
+                   },
+                   loops: %{}
+                 }
+               ])
+
+      assert [["京泰电气", "JT", "SO-1"]] = PrintingFixture.read_first_sheet(out)
     end
 
     test "占位符藏在 sharedStrings 中也能替换（改写为 inline string）" do
@@ -94,6 +113,32 @@ defmodule SynieCore.Printing.RendererTest do
       assert [["N"], ["行A"], ["行B"]] = PrintingFixture.read_first_sheet(out)
     end
 
+    test "循环区按关系名寻址（非 items 名称同样展开）" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            ["头 ${bom_name}"],
+            ["${components._seq}", "${components.material_name}", "${components.qty}"],
+            ["尾注"]
+          ]
+        )
+
+      doc = %{
+        fields: %{"bom_name" => "BOM-1"},
+        loops: %{
+          "components" => [
+            %{"material_name" => "铜排", "qty" => "2"},
+            %{"material_name" => "网板", "qty" => "1"}
+          ]
+        }
+      }
+
+      assert {:ok, out} = Renderer.render_pages(template, [doc])
+
+      assert [["头 BOM-1"], ["1", "铜排", "2"], ["2", "网板", "1"], ["尾注"]] =
+               PrintingFixture.read_first_sheet(out)
+    end
+
     test "0 条目：明细模板行整行删除，下方行上移" do
       template =
         PrintingFixture.build(
@@ -117,6 +162,90 @@ defmodule SynieCore.Printing.RendererTest do
                Renderer.render_pages(template, [doc(%{"title" => "T"}, [])])
 
       assert [["仅头 T"]] = PrintingFixture.read_first_sheet(out)
+    end
+  end
+
+  describe "render_pages/2 多循环区" do
+    test "两个循环区各占一段，按各自数据展开、_seq 各自编号" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            ["头 ${name}"],
+            ["${components._seq}", "${components.material_name}"],
+            ["中间 ${code}"],
+            ["${routes._seq}", "${routes.operation_name}"],
+            ["尾注"]
+          ]
+        )
+
+      doc = %{
+        fields: %{"name" => "BOM-1", "code" => "C1"},
+        loops: %{
+          "components" => [%{"material_name" => "铜排"}, %{"material_name" => "网板"}],
+          "routes" => [
+            %{"operation_name" => "冲网"},
+            %{"operation_name" => "分切"},
+            %{"operation_name" => "焊接"}
+          ]
+        }
+      }
+
+      assert {:ok, out} = Renderer.render_pages(template, [doc])
+
+      assert [
+               ["头 BOM-1"],
+               ["1", "铜排"],
+               ["2", "网板"],
+               ["中间 C1"],
+               ["1", "冲网"],
+               ["2", "分切"],
+               ["3", "焊接"],
+               ["尾注"]
+             ] = PrintingFixture.read_first_sheet(out)
+    end
+
+    test "某循环区 0 行仅删该区模板行，其余循环区不受影响" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            ["${components.name}"],
+            ["${byproducts.name}"],
+            ["尾"]
+          ]
+        )
+
+      doc = %{
+        fields: %{},
+        loops: %{"components" => [%{"name" => "甲"}], "byproducts" => []}
+      }
+
+      assert {:ok, out} = Renderer.render_pages(template, [doc])
+      assert [["甲"], ["尾"]] = PrintingFixture.read_first_sheet(out)
+    end
+
+    test "多循环区下方 mergeCell 顺移" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            ["${components.name}"],
+            ["${routes.name}"],
+            ["合并"]
+          ],
+          merges: ["A3:B3"]
+        )
+
+      doc = %{
+        fields: %{},
+        loops: %{
+          "components" => [%{"name" => "a"}, %{"name" => "b"}],
+          "routes" => [%{"name" => "r1"}]
+        }
+      }
+
+      assert {:ok, out} = Renderer.render_pages(template, [doc])
+      sheet = PrintingFixture.part(out, "xl/worksheets/sheet1.xml")
+      # 行1→2行（+1）、行2→1行（+0）→ 原第3行变第4行
+      assert sheet =~ ~s|ref="A4:B4"|
     end
   end
 
@@ -247,24 +376,24 @@ defmodule SynieCore.Printing.RendererTest do
   end
 
   describe "extract_placeholders/1" do
-    test "提取 fields 与 items（去重排序，items 去前缀）" do
+    test "普通占位符进 fields，点号占位符按首段归组进 nested" do
       template =
         PrintingFixture.build(
           rows: [
-            ["${order_no} ${company_name}"],
+            ["${order_no} ${company.name}"],
             ["${items.material_name}", "${items.qty}", "${order_no}"],
             [{:s, "${items.qty}"}]
           ]
         )
 
-      assert {:ok, %{fields: fields, items: items}} = Renderer.extract_placeholders(template)
-      assert fields == ["company_name", "order_no"]
-      assert items == ["material_name", "qty"]
+      assert {:ok, %{fields: fields, nested: nested}} = Renderer.extract_placeholders(template)
+      assert fields == ["order_no"]
+      assert nested == %{"company" => ["name"], "items" => ["material_name", "qty"]}
     end
 
-    test "无明细占位符时 items 为空" do
+    test "无点号占位符时 nested 为空" do
       template = PrintingFixture.build(rows: [["${a}"]])
-      assert {:ok, %{fields: ["a"], items: []}} = Renderer.extract_placeholders(template)
+      assert {:ok, %{fields: ["a"], nested: %{}}} = Renderer.extract_placeholders(template)
     end
   end
 

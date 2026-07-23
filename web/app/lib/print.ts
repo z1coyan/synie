@@ -13,10 +13,16 @@ export interface FieldCatalogEntry {
   label: string
 }
 
+export interface FieldCatalogLoop {
+  name: string
+  label: string
+  fields: FieldCatalogEntry[]
+}
+
 export interface FieldCatalog {
   resource: string
   fields: FieldCatalogEntry[]
-  items: FieldCatalogEntry[]
+  loops: FieldCatalogLoop[]
 }
 
 function authHeaders(json = false): Record<string, string> {

@@ -46,7 +46,14 @@ defmodule SynieWeb.PrintController do
           json(conn, %{
             resource: resource,
             fields: Enum.map(cat.fields, &field_json/1),
-            items: Enum.map(cat.items, &field_json/1)
+            loops:
+              Enum.map(cat.loops, fn loop ->
+                %{
+                  name: loop.name,
+                  label: loop.label,
+                  fields: Enum.map(loop.fields, &field_json/1)
+                }
+              end)
           })
       end
     end)
