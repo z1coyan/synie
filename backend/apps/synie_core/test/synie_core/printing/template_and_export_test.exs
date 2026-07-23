@@ -455,6 +455,23 @@ defmodule SynieCore.Printing.TemplateAndExportTest do
     assert rows == [[material.code, "螺丝", "原材料", "千克", "是"]]
   end
 
+  test "含 map 数组属性的资源可装配导出（sys.numbering_rule）" do
+    rule =
+      Ash.Seed.seed!(SynieCore.Numbering.Rule, %{
+        resource: "sales.order",
+        name: "回归测试规则",
+        segments: [%{"type" => "literal", "text" => "SO"}]
+      })
+
+    assert {:ok, %{fields: fields}} =
+             SynieCore.Printing.DocBuilder.build("sys.numbering_rule", rule)
+
+    assert fields["segments"] =~ "literal"
+
+    # 契约：装配结果全部 value 均为字符串（map/嵌套结构安全序列化，不再崩）
+    assert Enum.all?(fields, fn {_, v} -> is_binary(v) end)
+  end
+
   # 带公司授权的 actor：先建用户/角色/权限与公司授权，再构建 actor（actor 快照公司集合）
   defp actor_with_company!(perms, company) do
     user = user!()
