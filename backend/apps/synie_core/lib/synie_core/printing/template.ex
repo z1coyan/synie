@@ -108,6 +108,93 @@ defmodule SynieCore.Printing.Template.SetDefault do
   end
 end
 
+defmodule SynieCore.Printing.Template.SyncFileAttachment do
+  @moduledoc """
+  模板文件挂 `sys_attachment`(owner_type `sys_print_template`),使下载授权走
+  `sys.print_template:read` 而非「仅上传者/超管」的裸文件规则(见
+  `.scratch/print-template-master/spec.md`)。create/update 后(after_action,
+  在动作事务内)对齐挂接与当前 `file_id`:已有且一致则不动,换文件则整删重建,
+  没有则新建。模板全局无公司维度,不传 `company_id`(留空按 `is_nil(company_id)`
+  全站可见,再由权限码把关)。
+
+  挂接的建删是宿主自管自身挂接,受信内部路径,`authorize?: false`(同先例见
+  `SynieCore.Sales.OrderItem.SyncDrawings`)。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  alias SynieCore.Files.Attachment
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.after_action(changeset, fn _changeset, template ->
+      sync!(template)
+      {:ok, template}
+    end)
+  end
+
+  @doc false
+  def sync!(template) do
+    existing =
+      Attachment
+      |> Ash.Query.filter(owner_type == "sys_print_template" and owner_id == ^template.id)
+      |> Ash.read!(authorize?: false)
+
+    case existing do
+      [%Attachment{file_id: file_id}] when file_id == template.file_id ->
+        :ok
+
+      rows ->
+        Enum.each(rows, &Ash.destroy!(&1, authorize?: false))
+        create!(template)
+    end
+  end
+
+  defp create!(template) do
+    Attachment
+    |> Ash.Changeset.for_create(:create, %{
+      file_id: template.file_id,
+      owner_type: "sys_print_template",
+      owner_id: template.id,
+      category: "template"
+    })
+    |> Ash.create!(authorize?: false)
+
+    :ok
+  end
+end
+
+defmodule SynieCore.Printing.Template.ClearFileAttachment do
+  @moduledoc """
+  模板 destroy 后清理其全部文件挂接(容错同 owner 多行);旧文件回归裸文件,
+  由文件管理页/上传者处置去留(文件字节 GC 不在本资源职责内)。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  alias SynieCore.Files.Attachment
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.after_action(changeset, fn _changeset, template ->
+      clear!(template.id)
+      {:ok, template}
+    end)
+  end
+
+  @doc false
+  def clear!(template_id) do
+    Attachment
+    |> Ash.Query.filter(owner_type == "sys_print_template" and owner_id == ^template_id)
+    |> Ash.read!(authorize?: false)
+    |> Enum.each(&Ash.destroy!(&1, authorize?: false))
+  end
+end
+
 defmodule SynieCore.Printing.Template do
   @moduledoc """
   打印模板主数据 `sys_print_template`。全局共享、多模板+单默认；
@@ -173,6 +260,7 @@ defmodule SynieCore.Printing.Template do
 
       validate {SynieCore.Printing.Template.ValidateResource, []}
       validate {SynieCore.Printing.Template.ValidateFile, []}
+      change {SynieCore.Printing.Template.SyncFileAttachment, []}
     end
 
     update :update do
@@ -181,6 +269,7 @@ defmodule SynieCore.Printing.Template do
 
       # resource 创建后不可改
       validate {SynieCore.Printing.Template.ValidateFile, []}
+      change {SynieCore.Printing.Template.SyncFileAttachment, []}
     end
 
     update :set_default do
@@ -198,6 +287,7 @@ defmodule SynieCore.Printing.Template do
     destroy :destroy do
       primary? true
       require_atomic? false
+      change {SynieCore.Printing.Template.ClearFileAttachment, []}
     end
   end
 
