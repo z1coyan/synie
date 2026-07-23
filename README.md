@@ -37,7 +37,12 @@ Synie 是一个多公司财务 ERP，包含两个并列的独立项目：
 │   ├── codegen.ts
 │   ├── package.json
 │   └── vite.config.ts
-└── docs/superpowers/           # 设计文档：各模块 spec + 计划/决策记录
+├── CONTEXT.md                  # 领域术语（ubiquitous language）
+├── docs/
+│   ├── adr/                    # 架构决策记录
+│   ├── agents/                 # agent skills 配置（issue tracker / domain）
+│   └── 产品文档/               # 功能说明书
+└── .scratch/                   # 活跃规格与工单（本地 issue tracker）
 ```
 
 ## 环境要求

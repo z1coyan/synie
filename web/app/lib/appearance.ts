@@ -1,4 +1,4 @@
-/** 外观模式:本机色阶偏好(白天/系统/黑夜)。见 docs/glossary.md */
+/** 外观模式:本机色阶偏好(白天/系统/黑夜)。见 CONTEXT.md */
 
 export type AppearanceMode = 'light' | 'dark' | 'system'
 export type ResolvedAppearance = 'light' | 'dark'

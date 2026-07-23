@@ -4,7 +4,7 @@ defmodule SynieCore.Hr.AttendanceImport.Parser do
   `{:ok, %{rows: 行, total_rows: n, bad_rows: n, dup_rows: n}}`(rows 已文件内去重)
   或 `{:error, 记录级原因}`(空文件/全坏行/超上限)。
 
-  取值规则(spec 拍板,见 docs/superpowers/specs/2026-07-15-attendance-import-design.md):
+  取值规则(spec 拍板,见 docs/adr/2026-07-15-attendance-import.md):
 
     * 行格式:考勤机编号 + 打卡时间 `YYYY-MM-DD HH:MM:SS`,tab 或连续空白分隔;
       其余列(机号/状态键/验证方式)一律忽略不存,原始 .dat 挂批次可回溯;
