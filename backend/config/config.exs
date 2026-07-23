@@ -20,6 +20,10 @@ config :synie_core,
 config :synie_core, bank_import_utc_offset_minutes: 480
 config :synie_core, attendance_import_utc_offset_minutes: 480
 
+# 打印 PDF 转换:LibreOffice soffice 路径与超时(可用 SOFFICE_PATH 环境变量覆盖路径)
+config :synie_core, soffice_path: System.get_env("SOFFICE_PATH") || "soffice"
+config :synie_core, soffice_timeout_ms: 120_000
+
 # 行情拉取:进程内 GenServer 调度(测试关闭);HTTP 客户端可用 req_options 注入桩
 config :synie_core, market_fetch_scheduler: true
 
