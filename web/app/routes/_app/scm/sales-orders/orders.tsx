@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { formatAmount } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
 import { useOrderDrawer, salesOrderAuditConfig } from './-order-drawer'
 import { useAuditDoc } from '../-audit-doc'
 
@@ -46,6 +47,7 @@ const ACTION_VISIBLE = {
 function SalesOrdersTab() {
   const openDrawer = useOrderDrawer()
   const { requestAudit, auditDialog } = useAuditDoc(salesOrderAuditConfig)
+  const { start: startPrint, dialog: printDialog } = useTemplatePrint('sales.order')
 
   return (
     <>
@@ -56,11 +58,30 @@ function SalesOrdersTab() {
         onView={(row) => openDrawer('view', row)}
         onCreate={() => openDrawer('create', null)}
         onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
+        // 模板打印覆盖默认列表 HTML 打印（无模板时弹窗提示去上传）
+        onPrint={(rows) => void startPrint('print', rows)}
         // 审核改走「列出全部条目核对」的确认弹窗(与条目页「审核整单」同一套)
         actionHandlers={{ audit: (rows, ctx) => requestAudit(String(rows[0].id), ctx.refetch) }}
         actionVisible={ACTION_VISIBLE}
+        rowActions={[
+          {
+            key: 'exportExcel',
+            label: '导出 Excel',
+            capability: 'export',
+            onAction: (row) => void startPrint('export', [row]),
+          },
+        ]}
+        bulkActions={[
+          {
+            key: 'batchExportExcel',
+            label: '批量导出 Excel',
+            capability: 'export',
+            onAction: (rows) => void startPrint('export', rows),
+          },
+        ]}
       />
       {auditDialog}
+      {printDialog}
     </>
   )
 }

@@ -4,8 +4,12 @@
 
 **Blocked by:** 07, 08
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 批量打印 batch_print
-- [ ] 批量导出 export 门控
-- [ ] 上限 100
+- [x] 批量打印 batch_print
+- [x] 批量导出 export 门控
+- [x] 上限 100
+
+## Answer
+
+已在 2026-07-23 实现并合入。

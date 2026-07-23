@@ -4,8 +4,12 @@
 
 **Blocked by:** 03, 07
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 门面 print → PDF
-- [ ] UI 打开 PDF
-- [ ] 转换失败中文错误
+- [x] 门面 print → PDF
+- [x] UI 打开 PDF
+- [x] 转换失败中文错误
+
+## Answer
+
+已在 2026-07-23 实现并合入。

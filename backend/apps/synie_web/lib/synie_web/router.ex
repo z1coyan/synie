@@ -31,6 +31,10 @@ defmodule SynieWeb.Router do
     post("/files", FileController, :create)
     get("/files/:id", FileController, :show)
     post("/files/:id/attachments", FileController, :attach)
+
+    get("/print/templates", PrintController, :templates)
+    get("/print/field-catalog", PrintController, :field_catalog)
+    post("/print", PrintController, :create)
   end
 
   scope "/graphql" do

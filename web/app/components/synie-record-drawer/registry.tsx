@@ -1134,6 +1134,7 @@ const registry: Record<string, ResourceDrawerConfig> = {
   // 文件速览:存储配置/对象键是实现细节,不进详情
   sysFiles: { label: '文件', exclude: ['storage', 'key'] },
   sysStorages: { label: '存储接入' },
+  sysPrintTemplates: { label: '打印模板' },
 }
 
 /** 取资源抽屉配置;extra 覆盖时 fields 按字段名深合一层,其余浅覆盖 */

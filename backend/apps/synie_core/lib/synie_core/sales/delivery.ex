@@ -256,7 +256,7 @@ defmodule SynieCore.Sales.Delivery do
 
   def permission_prefix, do: "sales.delivery"
   def permission_label, do: "销售发货单"
-  def permission_actions, do: ~w(create read update delete audit void)
+  def permission_actions, do: ~w(create read update delete audit void print export batch_print)
 
   def grid_actions do
     [

@@ -12,10 +12,21 @@ defmodule SynieCore.Files.File.AttachmentGuard do
       |> Ash.Query.filter(file_id == ^changeset.data.id)
       |> Ash.exists?(authorize?: false)
 
-    if attached? do
-      {:error, message: "该文件仍有业务挂接,请先在业务单据中移除附件"}
-    else
-      :ok
+    template? =
+      Code.ensure_loaded?(SynieCore.Printing.Template) and
+        SynieCore.Printing.Template
+        |> Ash.Query.filter(file_id == ^changeset.data.id)
+        |> Ash.exists?(authorize?: false)
+
+    cond do
+      attached? ->
+        {:error, message: "该文件仍有业务挂接,请先在业务单据中移除附件"}
+
+      template? ->
+        {:error, message: "该文件仍被打印模板引用,请先删除或更换模板"}
+
+      true ->
+        :ok
     end
   end
 end

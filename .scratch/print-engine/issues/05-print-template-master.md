@@ -4,9 +4,13 @@
 
 **Blocked by:** 01 — XLSX 填充：头字段 + 占位符提取
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 资源 + 权限 sys.print_template
-- [ ] 未知占位符拒存点名；非 xlsx 拒存
-- [ ] 同资源至多一个默认（set_default）
-- [ ] FieldCatalog 注册订单与发货
+- [x] 资源 + 权限 sys.print_template
+- [x] 未知占位符拒存点名；非 xlsx 拒存
+- [x] 同资源至多一个默认（set_default）
+- [x] FieldCatalog 注册订单与发货
+
+## Answer
+
+已在 2026-07-23 实现并合入。

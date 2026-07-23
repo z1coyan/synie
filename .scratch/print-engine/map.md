@@ -47,7 +47,7 @@ print-xlsx-engine          print-pdf-deploy
 - 模板全局、打印不留痕；上传即校验未知占位符。
 - 首期 `sales.order` + `sales.delivery`；权限 `print` / `export` / `batch_print`。
 - v1 不做：图片模板、.xls 写、异步大批量、下载 PDF 按钮。
-- **2026-07-23 实现进展**：issues 01–03 已 resolved（Renderer + PdfConverter 单测绿）。Frontier 现为 **04**（Docker）与 **05**（模板主数据，依赖 01）。
+- **2026-07-23 实现进展**：issues 01–10 全部 resolved（引擎 + PDF + Docker + 模板主数据/管理页 + 销单发货打印导出）。
 
 ## Fog
 

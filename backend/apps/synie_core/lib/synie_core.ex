@@ -108,6 +108,7 @@ defmodule SynieCore do
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
       list SynieCore.Numbering.Rule, :sys_numbering_rules, :read, paginate_with: :offset
       list SynieCore.Numbering.Counter, :sys_numbering_counters, :read, paginate_with: :offset
+      list SynieCore.Printing.Template, :sys_print_templates, :read, paginate_with: :offset
       list SynieCore.Files.Attachment, :sys_attachments, :read, paginate_with: :offset
       list SynieCore.Acc.GlEntry, :acc_gl_entries, :read, paginate_with: :offset
 
@@ -435,6 +436,11 @@ defmodule SynieCore do
       # 计数器行由取号自动创建,只暴露改当前值
       update SynieCore.Numbering.Counter, :update_sys_numbering_counter, :update
 
+      create SynieCore.Printing.Template, :create_sys_print_template, :create
+      update SynieCore.Printing.Template, :update_sys_print_template, :update
+      update SynieCore.Printing.Template, :set_default_sys_print_template, :set_default
+      destroy SynieCore.Printing.Template, :destroy_sys_print_template, :destroy
+
       create SynieCore.Acc.GlJournal, :create_acc_gl_journal, :create
       update SynieCore.Acc.GlJournal, :update_acc_gl_journal, :update
       destroy SynieCore.Acc.GlJournal, :destroy_acc_gl_journal, :destroy
@@ -587,6 +593,7 @@ defmodule SynieCore do
     resource SynieCore.Sys.Setting
     resource SynieCore.Numbering.Rule
     resource SynieCore.Numbering.Counter
+    resource SynieCore.Printing.Template
     resource SynieCore.Files.File
     resource SynieCore.Files.Attachment
     resource SynieCore.Files.StorageEndpoint

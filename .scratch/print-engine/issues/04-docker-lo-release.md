@@ -4,8 +4,12 @@
 
 **Blocked by:** 03 — PDF 转换器 + 配置
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] umbrella release 定义
-- [ ] Dockerfile multi-stage + libreoffice + Noto CJK
-- [ ] prod 监听 0.0.0.0/PORT 文档齐全
+- [x] umbrella release 定义
+- [x] Dockerfile multi-stage + libreoffice + Noto CJK
+- [x] prod 监听 0.0.0.0/PORT 文档齐全
+
+## Answer
+
+已在 2026-07-23 实现并合入。

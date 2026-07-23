@@ -4,8 +4,12 @@
 
 **Blocked by:** 09
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] delivery 字段装配
-- [ ] permission_actions 打开 print/export/batch_print
-- [ ] 前端入口对等
+- [x] delivery 字段装配
+- [x] permission_actions 打开 print/export/batch_print
+- [x] 前端入口对等
+
+## Answer
+
+已在 2026-07-23 实现并合入。

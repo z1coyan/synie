@@ -4,9 +4,13 @@
 
 **Blocked by:** 02, 05
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] DocBuilder + Printing 门面 export
-- [ ] 下载 API
-- [ ] 订单 UI「导出 Excel」+ 模板选择
-- [ ] 无模板提示；无权拒绝
+- [x] DocBuilder + Printing 门面 export
+- [x] 下载 API
+- [x] 订单 UI「导出 Excel」+ 模板选择
+- [x] 无模板提示；无权拒绝
+
+## Answer
+
+已在 2026-07-23 实现并合入。

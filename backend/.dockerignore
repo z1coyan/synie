@@ -1,0 +1,15 @@
+_build
+deps
+.doc
+.elixir_ls
+**/test
+**/*_test.exs
+.env
+.env.*
+*.md
+.git
+.gitignore
+cover
+erl_crash.dump
+*.ez
+**/tmp

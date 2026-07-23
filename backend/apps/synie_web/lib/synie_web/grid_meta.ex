@@ -67,6 +67,7 @@ defmodule SynieWeb.GridMeta do
     "sysAuditLogs" => SynieCore.Audit.Log,
     "sysNumberingRules" => SynieCore.Numbering.Rule,
     "sysNumberingCounters" => SynieCore.Numbering.Counter,
+    "sysPrintTemplates" => SynieCore.Printing.Template,
     "accGlJournals" => SynieCore.Acc.GlJournal,
     "accGlJournalLines" => SynieCore.Acc.GlJournalLine,
     "accGlEntries" => SynieCore.Acc.GlEntry,
