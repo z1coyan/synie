@@ -307,11 +307,11 @@ defmodule SynieCore.Setup do
 
   @doc """
   完成初始化:写入当前用户的首选语言;幂等种子内置存储接入、编号规则、物料两级分类、
-  机加工常用计量单位;可选示例业务数据(客户/供应商/物料/销采报价);落完成旗标(同事务)。
+  机加工常用计量单位;可选示例业务数据(覆盖全业务链,见 `Setup.SampleData`);落完成旗标(同事务)。
   落旗后 setup 各接口随之关闭;仅未初始化时可用。
 
   选项:
-  - `seed_sample_data: true` — 为首个公司写入示例客商、物料与报价单(无公司时忽略)
+  - `seed_sample_data: true` — 为首个公司写入全业务链示例数据(无公司时忽略)
   """
   @spec complete(Actor.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def complete(%Actor{user_id: user_id} = actor, language, opts \\ []) do

@@ -158,9 +158,10 @@ defmodule SynieCore.SetupTest do
              Setup.create_first_user(%{username: "latecomer", password: "x"})
   end
 
-  test "complete seed_sample_data 写入示例客商/物料/报价,幂等跳过" do
+  test "complete seed_sample_data 写入全业务链示例数据,幂等跳过" do
     alias SynieCore.Base.Company
     alias SynieCore.Inv.Material
+    alias SynieCore.Inv.Warehouse
     alias SynieCore.Purchase.Supplier
     alias SynieCore.Sales.Customer
     alias SynieCore.Setup.SampleData
@@ -189,6 +190,19 @@ defmodule SynieCore.SetupTest do
 
     actor = Authz.build_actor(user)
 
+    # 示例数据的科目前置(发货/入库/对账必填科目)与仓库前置(调拨三仓):
+    # 真实向导在公司步已初始化科目表与默认仓库,测试同样先补齐(与 synie.demo 同路径)
+    SynieCore.Base.Account
+    |> Ash.ActionInput.for_action(:init_from_template, %{
+      company_id: company.id,
+      template: :small
+    })
+    |> Ash.run_action!(authorize?: false, actor: actor)
+
+    Warehouse
+    |> Ash.ActionInput.for_action(:seed_defaults, %{company_id: company.id})
+    |> Ash.run_action!(authorize?: false, actor: actor)
+
     assert :ok = Setup.complete(actor, "zh-CN", seed_sample_data: true)
 
     customers = Customer |> Ash.read!(authorize?: false)
@@ -197,17 +211,17 @@ defmodule SynieCore.SetupTest do
     sales_qs = SynieCore.Sales.Quotation |> Ash.read!(authorize?: false)
     pur_qs = SynieCore.Purchase.Quotation |> Ash.read!(authorize?: false)
 
-    assert length(customers) == 3
+    assert length(customers) == 6
     assert Enum.any?(customers, &(&1.code == "C01" and &1.short_name == "海纳电气"))
-    assert length(suppliers) == 3
+    assert length(suppliers) == 6
     assert Enum.any?(suppliers, &(&1.code == "S01"))
-    assert length(materials) == 6
-    assert Enum.count(materials, & &1.is_customer_material) == 2
-    assert length(sales_qs) == 2
-    assert Enum.count(sales_qs, &(&1.status == :audited)) == 1
+    assert length(materials) == 17
+    assert Enum.count(materials, & &1.is_customer_material) == 4
+    assert length(sales_qs) == 5
+    assert Enum.count(sales_qs, &(&1.status == :audited)) == 4
     assert Enum.count(sales_qs, &(&1.status == :draft)) == 1
-    assert length(pur_qs) == 2
-    assert Enum.count(pur_qs, &(&1.status == :audited)) == 1
+    assert length(pur_qs) == 5
+    assert Enum.count(pur_qs, &(&1.status == :audited)) == 4
 
     # 幂等:再次 seed 不增行
     {summary, []} = SampleData.seed!(company.id, actor)
@@ -216,12 +230,31 @@ defmodule SynieCore.SetupTest do
              customers: 0,
              suppliers: 0,
              materials: 0,
+             employees: 0,
              sales_quotations: 0,
-             purchase_quotations: 0
+             purchase_quotations: 0,
+             sales_orders: 0,
+             purchase_orders: 0,
+             sales_deliveries: 0,
+             purchase_receipts: 0,
+             sales_reconciliations: 0,
+             purchase_reconciliations: 0,
+             stock_docs: 0,
+             stock_transfers: 0,
+             stock_counts: 0,
+             operations: 0,
+             process_templates: 0,
+             boms: 0,
+             bank_accounts: 0,
+             bank_transactions: 0,
+             gl_journals: 0,
+             expense_reports: 0,
+             payrolls: 0,
+             vat_invoices: 0
            }
 
-    assert length(Customer |> Ash.read!(authorize?: false)) == 3
-    assert length(Material |> Ash.read!(authorize?: false)) == 6
+    assert length(Customer |> Ash.read!(authorize?: false)) == 6
+    assert length(Material |> Ash.read!(authorize?: false)) == 17
   end
 
   test "complete 幂等:已有存储/编号规则/分类时不覆盖" do

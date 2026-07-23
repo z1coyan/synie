@@ -402,14 +402,14 @@ function StepAdmin(props: {
             <PathCard
               active={props.path === 'sample'}
               title="示例数据"
-              description="预填演示账号与公司,完成时写入客户/供应商/物料/报价"
+              description="预填演示账号与公司,完成时写入覆盖全业务链的示例业务数据"
               onPress={() => props.onPathChange('sample')}
               disabled={pending}
             />
           </div>
           {sample && (
             <p className="mt-3 rounded-sm border border-gilt/40 bg-gilt/10 px-3 py-2 text-xs text-ink-500">
-              已预填演示账号(可改)。完成初始化时将写入示例客户、供应商、物料与销采报价单。
+              已预填演示账号(可改)。完成初始化时将写入全业务链示例数据:客商/物料/员工、销采单据、库存/生产主数据与财务。
             </p>
           )}
         </>
@@ -847,7 +847,7 @@ function StepLanguage(props: { seedSampleData: boolean }) {
       <p className="text-sm text-ink-500">选择当前用户的首选语言。</p>
       {props.seedSampleData && (
         <p className="mt-3 rounded-sm border border-gilt/40 bg-gilt/10 px-3 py-2 text-xs text-ink-500">
-          完成时将同时写入示例业务数据:3 家客户、3 家供应商、6 种物料,以及销售/采购报价各 2 张。
+          完成时将同时写入示例业务数据:6 家客户、6 家供应商、17 种物料、4 名员工,以及销售/采购全链单据(报价→订单→发货/入库→对账→发票)、库存出入库/调拨/盘点、工序/工艺模板/BOM 与银行流水/凭证/报销/工资。
         </p>
       )}
 
