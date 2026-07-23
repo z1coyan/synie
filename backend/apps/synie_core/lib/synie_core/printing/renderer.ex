@@ -225,9 +225,9 @@ defmodule SynieCore.Printing.Renderer do
   end
 
   defp stitch_blocks([only]) do
-    %{rows: rows, merges: merges, max_row: max_row, max_col: max_col} = only
+    %{rows: rows, merges: merges, max_row: max_row, max_col: max_col, breaks: breaks} = only
     dim = dimension_ref(max_col, max_row)
-    {rows, merges, [], dim}
+    {rows, merges, breaks, dim}
   end
 
   defp stitch_blocks(blocks) do
@@ -235,16 +235,24 @@ defmodule SynieCore.Printing.Renderer do
       Enum.reduce(blocks, {[], [], [], 0, 1}, fn block, {rs, ms, brs, off, mc} ->
         shifted_rows = Enum.map(block.rows, &shift_row_xml(&1, off))
         shifted_merges = Enum.map(block.merges, &shift_ref(&1, off))
+        shifted_breaks = Enum.map(block.breaks, &(&1 + off))
         new_off = off + block.max_row
         # 分页符在块末行（Excel brk id = 该行之后分页，用块最大行号）
         brk_id = new_off
         mc2 = max(mc, block.max_col)
 
-        {rs ++ shifted_rows, ms ++ shifted_merges, brs ++ [brk_id], new_off, mc2}
+        {rs ++ shifted_rows, ms ++ shifted_merges, brs ++ shifted_breaks ++ [brk_id], new_off,
+         mc2}
       end)
 
-    # 最后一块后不需要分页符
-    breaks = Enum.drop(breaks, -1)
+    # 最后一块后不需要块间分页符；块自带分页符与边界重合时去重
+    breaks =
+      breaks
+      |> List.replace_at(-1, nil)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+
     dim = dimension_ref(max_col, offset)
     {rows, merges, breaks, dim}
   end
@@ -266,7 +274,7 @@ defmodule SynieCore.Printing.Renderer do
             template_sheet,
             block.rows,
             block.merges,
-            [],
+            block.breaks,
             dimension_ref(block.max_col, block.max_row)
           )
 
@@ -439,7 +447,27 @@ defmodule SynieCore.Printing.Renderer do
     max_col = max_column(out_rows)
     max_row = out_rows |> Enum.map(&row_number!/1) |> Enum.max(fn -> 1 end)
 
-    %{rows: out_rows, merges: merges, max_col: max_col, max_row: max_row}
+    # 模板自带手工分页符随循环区展开顺移：传 b+1 使 delta_before 的 `t_r < row`
+    # 判定对「循环模板行自身带分页符」也按整段展开后计入（等价 t_r <= b）
+    breaks =
+      sheet_xml
+      |> extract_row_breaks()
+      |> Enum.map(&(&1 + delta_before(loop_plan, &1 + 1)))
+
+    %{rows: out_rows, merges: merges, max_col: max_col, max_row: max_row, breaks: breaks}
+  end
+
+  # 提取模板 sheet 自带手工分页符（rowBreaks）的行号列表；无则 []
+  defp extract_row_breaks(sheet_xml) do
+    case Regex.run(@brks_re, sheet_xml) do
+      [block] ->
+        ~r/<brk\b[^>]*\bid="(\d+)"/
+        |> Regex.scan(block)
+        |> Enum.map(fn [_, id] -> String.to_integer(id) end)
+
+      _ ->
+        []
+    end
   end
 
   # 多循环区 merge 顺移：整段落在某循环模板行上的 merge 丢弃（约定不跨循环行）；
