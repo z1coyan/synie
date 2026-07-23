@@ -91,15 +91,17 @@
 
 ## Steps
 
-### Step 1: timeout(1) 包裹转换命令
+### Step 1: timeout(1) 包裹转换命令(2026-07-24 修订:默认 TERM + `-k 5` 升级)
 
-`do_convert/3` 改为:若 `System.find_executable("timeout")` 存在,实际执行 `System.cmd(timeout_bin, ["-s", "KILL", "-k", "5", "#{超时秒}", soffice | args], ...)`(超时秒 = `div(timeout, 1000)`,向上取整,至少 1);BEAM 侧 `Task.yield` 兜底超时放宽到 `timeout + 10_000`(防 timeout(1) 自身异常)。`timeout(1)` 超时退出码为 124(TERM)/137(KILL):把「退出码 ∈ [124, 137] 且经 timeout 包裹」映射为 `{:error, :timeout}`,其余非零仍走 `{:convert_failed, ...}`。找不到 `timeout` 可执行文件时维持现行为(直接跑 soffice,BEAM 兜底超时),并在 moduledoc 注明「无 timeout(1) 时超时不能保证杀死 soffice」。
+> **修订背景**:首轮执行发现本机 `timeout (uutils coreutils) 0.2.2` 的 `-s KILL` 路径静默失效(`timeout -v -s KILL -k 5 1 sleep 5` 打印 "sending signal KILL" 但进程照常跑满,exit 125)。默认 TERM 路径实测正常(`timeout 1 sleep 10` 1.01s 终止,exit 124)。soffice 对 TERM 正常响应退出;真·挂死忽略 TERM 的场景由 `-k 5` 的 KILL 升级兜底——该升级在生产镜像(Debian,GNU coreutils)有效,在开发机 uutils 上可能同样失效,属已知残留风险,写入 moduledoc 与本计划维护注记,不阻塞。
 
-**验证**:`cd backend/apps/synie_core && mix test test/synie_core/printing/pdf_converter_test.exs` → 既有 4 个非 tag 用例全绿(假可执行同样被 timeout 包裹,成功/失败路径不变;超时用例现在走 124/137 → `:timeout`)。
+`do_convert/3` 改为:若 `System.find_executable("timeout")` 存在,实际执行 `System.cmd(timeout_bin, ["-k", "5", "#{超时秒}", soffice | args], ...)`(**默认 TERM 信号,不传 `-s KILL`**;超时秒 = `div(timeout, 1000)` 向上取整,至少 1);BEAM 侧 `Task.yield` 兜底超时放宽到 `timeout + 10_000`(防 timeout(1) 自身异常)。退出码映射:经 timeout 包裹时,`124`(超时 TERM)、`137`(KILL 升级)、`125`(timeout 自身异常路径,uutils 已观测到)→ `{:error, :timeout}`;其余非零仍走 `{:convert_failed, ...}`。找不到 `timeout` 可执行文件时维持现行为(直接跑 soffice,BEAM 兜底超时),moduledoc 注明「无 timeout(1) 时超时不能保证杀死 soffice;uutils timeout 的 KILL 升级路径存在已知缺陷」。
+
+**验证**:先冒烟 `timeout -k 5 1 sleep 10; echo $?` → 预期 124 **且命令在约 1 秒返回**(用 `time` 观测,不能等满 10 秒);再 `cd backend/apps/synie_core && mix test test/synie_core/printing/pdf_converter_test.exs` → 既有非 tag 用例全绿,且「超时返回 :timeout」用例耗时应降到 ~1.5s 内(`--trace` 观测,首轮执行时为 10.2s 即为未真杀的信号)。
 
 ### Step 2: 超时确实杀进程的回归测试
 
-新用例「超时后假进程被杀死」:假可执行脚本启动时 `echo $$ > pid文件` 然后 `sleep 60`;调 `convert_xlsx_to_pdf`(配置超时 200ms 左右)→ 断言返回 `{:error, :timeout}`;随后轮询(至多 ~2s)`System.cmd("kill", ["-0", pid])` 非零退出(进程已不在)。注意脚本内 `$$` 是 sh 的 pid,sleep 是其子进程——断言 sh 已死即可代表进程组被 KILL(timeout -s KILL 对组发信号)。若 uutils timeout 行为与 GNU 有出入导致 sleep 残留,以「sh 进程已死」为准并在测试注释说明。
+新用例「超时后假进程被杀死」:假可执行脚本启动时 `echo $$ > pid文件` 然后 `sleep 60`;脚本**不得 trap TERM**(默认信号处置)。调 `convert_xlsx_to_pdf`(配置超时 1000ms 左右,配合 timeout 秒数向上取整至少 1 的语义)→ 断言返回 `{:error, :timeout}`;随后轮询(至多 ~3s)`System.cmd("kill", ["-0", pid])` 非零退出(进程已不在)。断言「sh 已死」即可;若其子 `sleep` 因 uutils KILL 升级缺陷残留,不在断言范围(测试注释说明,生产 GNU coreutils 不受此限)。
 
 **验证**:`mix test test/synie_core/printing/pdf_converter_test.exs` → 全绿含新用例。
 
@@ -138,12 +140,13 @@
 ## STOP conditions
 
 - 「现状」摘录与实际代码不符。
-- uutils timeout 在本机不支持 `-s KILL -k 5` 组合(先 `timeout -s KILL -k 5 1 sleep 10; echo $?` 冒烟,预期 137)——参数不兼容时停下上报,勿自行换 flag 语义。
+- 冒烟 `time timeout -k 5 1 sleep 10` 未在 ~2 秒内返回或退出码非 124——默认 TERM 路径也失效,停下上报(2026-07-24 已实测本机 TERM 路径正常,此条防环境再变)。
 - Step 2 的杀进程断言在两次修复尝试后仍 flaky——停下上报(可能是 uutils 行为差异,需要人工定夺)。
 - 需要新增 Hex 依赖才能完成——超界,停。
 
 ## Maintenance notes
 
+- **uutils timeout 已知缺陷(2026-07-24 实测)**:`-s KILL` 与 KILL 升级路径静默失效(信号显示已发、进程照常运行)。开发机上「soffice 忽略 TERM 的真·挂死」仍可能残留进程;生产镜像(Debian,GNU coreutils)不受此限。若升级开发机 coreutils,可跑 `timeout -v -s KILL -k 5 1 sleep 5` 复核(GNU 应 ~1s 返回 137)。
 - 生产镜像:Debian 自带 coreutils timeout;若未来换 Alpine 基础镜像,busybox timeout 语义不同(无 `-k`),`SOFFICE_PATH` 一带的部署文档要跟着验。
 - `soffice_max_concurrency` 默认 2 是保守值:LO 单实例转换本身较快,排队优于挤爆内存;运维可按容器内存调。
 - 评审重点:limiter 的 DOWN 处理(持有者崩溃不漏令牌);converter 在无 limiter 进程时的直通分支不要吞掉正常路径。
