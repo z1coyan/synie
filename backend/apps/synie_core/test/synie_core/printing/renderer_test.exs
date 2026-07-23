@@ -163,6 +163,12 @@ defmodule SynieCore.Printing.RendererTest do
 
       assert [["仅头 T"]] = PrintingFixture.read_first_sheet(out)
     end
+
+    test "模板仅一行且为明细模板行，0 条目时展开后无行也不报错" do
+      template = PrintingFixture.build(rows: [["${items.name}"]])
+
+      assert {:ok, _out} = Renderer.render_pages(template, [doc(%{}, [])])
+    end
   end
 
   describe "render_pages/2 多循环区" do

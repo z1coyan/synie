@@ -437,7 +437,7 @@ defmodule SynieCore.Printing.Renderer do
       |> Enum.reject(&is_nil/1)
 
     max_col = max_column(out_rows)
-    max_row = out_rows |> Enum.map(&row_number!/1) |> Enum.max()
+    max_row = out_rows |> Enum.map(&row_number!/1) |> Enum.max(fn -> 1 end)
 
     %{rows: out_rows, merges: merges, max_col: max_col, max_row: max_row}
   end
