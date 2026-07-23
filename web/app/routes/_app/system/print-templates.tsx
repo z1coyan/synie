@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Button, Label, ListBox, Select, toast } from '@heroui/react'
+import { DropZone } from '@heroui-pro/react'
 import { gqlFetch } from '~/lib/graphql'
 import { uploadFile } from '~/lib/files'
 import { fetchFieldCatalog, type FieldCatalog } from '~/lib/print'
@@ -93,7 +94,7 @@ function PrintTemplatesPage() {
   }, [drawer, resourcePick])
 
   const onPickFile = async (file: File | null) => {
-    if (!file) return
+    if (!file || uploading) return
     if (!file.name.toLowerCase().endsWith('.xlsx')) {
       toast.danger('只接受 .xlsx 文件')
       return
@@ -229,13 +230,46 @@ function PrintTemplatesPage() {
             {mode !== 'view' && (
               <div className="flex flex-col gap-2">
                 <Label>模板文件（.xlsx）</Label>
-                <input
-                  type="file"
-                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  disabled={uploading}
-                  onChange={(e) => void onPickFile(e.target.files?.[0] ?? null)}
-                />
-                {fileName && <p className="text-sm text-muted">已选：{fileName}</p>}
+                <DropZone>
+                  <DropZone.Area
+                    onDrop={async (e) => {
+                      for (const item of e.items) {
+                        if (item.kind === 'file') {
+                          void onPickFile(await item.getFile())
+                          return
+                        }
+                      }
+                    }}
+                  >
+                    <DropZone.Icon />
+                    <DropZone.Label>拖拽模板文件到此处，或点击选择</DropZone.Label>
+                    <DropZone.Description>
+                      仅支持 .xlsx；占位符对照下方字段清单书写
+                    </DropZone.Description>
+                    <DropZone.Trigger>选择文件</DropZone.Trigger>
+                  </DropZone.Area>
+                  <DropZone.Input
+                    accept=".xlsx"
+                    onSelect={(list) => list[0] && void onPickFile(list[0])}
+                  />
+                  {fileName && (
+                    <DropZone.FileList>
+                      <DropZone.FileItem status="complete">
+                        <DropZone.FileFormatIcon color="green" format="XLSX" />
+                        <DropZone.FileInfo>
+                          <DropZone.FileName>{fileName}</DropZone.FileName>
+                        </DropZone.FileInfo>
+                        <DropZone.FileRemoveTrigger
+                          aria-label={`移除 ${fileName}`}
+                          onPress={() => {
+                            setFileId(null)
+                            setFileName('')
+                          }}
+                        />
+                      </DropZone.FileItem>
+                    </DropZone.FileList>
+                  )}
+                </DropZone>
                 {mode === 'edit' && !fileName && (
                   <p className="text-xs text-muted">不选文件则保留原模板</p>
                 )}
