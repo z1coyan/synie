@@ -37,24 +37,28 @@ defmodule SynieWeb.PrintController do
   def templates(conn, _), do: error(conn, 422, "缺少 resource 参数")
 
   def field_catalog(conn, %{"resource" => resource}) do
-    with_actor(conn, fn _actor ->
-      case SynieCore.Printing.field_catalog(resource) do
-        nil ->
-          error(conn, 404, "未知资源类型")
+    with_actor(conn, fn actor ->
+      if SynieCore.Printing.can_use_templates?(resource, actor) do
+        case SynieCore.Printing.field_catalog(resource) do
+          nil ->
+            error(conn, 404, "未知资源类型")
 
-        cat ->
-          json(conn, %{
-            resource: resource,
-            fields: Enum.map(cat.fields, &field_json/1),
-            loops:
-              Enum.map(cat.loops, fn loop ->
-                %{
-                  name: loop.name,
-                  label: loop.label,
-                  fields: Enum.map(loop.fields, &field_json/1)
-                }
-              end)
-          })
+          cat ->
+            json(conn, %{
+              resource: resource,
+              fields: Enum.map(cat.fields, &field_json/1),
+              loops:
+                Enum.map(cat.loops, fn loop ->
+                  %{
+                    name: loop.name,
+                    label: loop.label,
+                    fields: Enum.map(loop.fields, &field_json/1)
+                  }
+                end)
+            })
+        end
+      else
+        error(conn, 403, "无权限查看字段清单")
       end
     end)
   end

@@ -166,8 +166,16 @@ defmodule SynieCore.Printing.DocBuilder do
       match?(%Decimal{}, value) -> Decimal.to_string(value)
       is_boolean(value) -> if(value, do: "是", else: "否")
       is_atom(value) -> Atom.to_string(value)
-      true -> to_string(value)
+      is_map(value) and not is_struct(value) -> Jason.encode!(value)
+      true -> safe_to_string(value)
     end
+  end
+
+  # 打印容错从宽:无 String.Chars 实现的罕见类型降级为 inspect,不让单条字段崩掉整次打印
+  defp safe_to_string(value) do
+    to_string(value)
+  rescue
+    Protocol.UndefinedError -> inspect(value)
   end
 
   # Ash.Type.Enum 派生类型带 description/1（本仓库枚举统一 `values: [atom: "中文"]` 写法）

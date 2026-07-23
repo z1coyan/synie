@@ -3,8 +3,11 @@ defmodule SynieCore.Printing.TemplateAndExportTest do
 
   import SynieCore.AuthzFixtures
 
+  require Ash.Query
+
   alias SynieCore.Authz
   alias SynieCore.Files
+  alias SynieCore.Files.Attachment
   alias SynieCore.Files.StorageEndpoint
   alias SynieCore.Printing.FieldCatalog
   alias SynieCore.Printing.Template
@@ -453,6 +456,210 @@ defmodule SynieCore.Printing.TemplateAndExportTest do
 
     [{_sheet_name, rows} | _] = PrintingFixture.read_all_sheets(bin)
     assert rows == [[material.code, "螺丝", "原材料", "千克", "是"]]
+  end
+
+  test "含 map 数组属性的资源可装配导出（sys.numbering_rule）" do
+    rule =
+      Ash.Seed.seed!(SynieCore.Numbering.Rule, %{
+        resource: "sales.order",
+        name: "回归测试规则",
+        segments: [%{"type" => "literal", "text" => "SO"}]
+      })
+
+    assert {:ok, %{fields: fields}} =
+             SynieCore.Printing.DocBuilder.build("sys.numbering_rule", rule)
+
+    assert fields["segments"] =~ "literal"
+
+    # 契约：装配结果全部 value 均为字符串（map/嵌套结构安全序列化，不再崩）
+    assert Enum.all?(fields, fn {_, v} -> is_binary(v) end)
+  end
+
+  test "模板管理权限与打印权限解耦：仅打印类权限、无模板管理权限，可导出且可列模板" do
+    company = company!(%{name: "解耦测试公司", code: "JJ"})
+
+    admin =
+      [
+        "sys.file:create",
+        "sys.print_template:create",
+        "sys.print_template:read",
+        "sales.order:read",
+        "sales.order:export"
+      ]
+      |> actor_with_company!(company)
+
+    customer =
+      SynieCore.Sales.Customer
+      |> Ash.Changeset.for_create(:create, %{
+        code: "C-#{System.unique_integer([:positive])}",
+        name: "解耦测试客户"
+      })
+      |> Ash.create!(authorize?: false)
+
+    order =
+      SynieCore.Sales.Order
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        party_type: :customer,
+        party_id: customer.id,
+        order_no: "SO-#{System.unique_integer([:positive])}",
+        order_date: ~D[2026-07-23],
+        order_type: :sample
+      })
+      |> Ash.create!(authorize?: false)
+
+    file = upload_xlsx!(admin, [["${order_no}"]])
+
+    {:ok, template} =
+      Template
+      |> Ash.Changeset.for_create(:create, %{
+        name: "解耦模板",
+        resource: "sales.order",
+        file_id: file.id
+      })
+      |> Ash.create(actor: admin)
+
+    # 无 sys.print_template:* 任何权限，仅有该资源的 read + export
+    actor =
+      ["sales.order:read", "sales.order:export"]
+      |> actor_with_company!(company)
+
+    assert {:ok, list} = SynieCore.Printing.list_templates("sales.order", actor)
+    assert Enum.any?(list, &(&1.id == template.id))
+
+    assert {:ok, %{binary: bin, filename: filename}} =
+             SynieCore.Printing.export("sales.order", [order.id], template.id, actor)
+
+    assert filename =~ order.order_no
+    assert byte_size(bin) > 0
+  end
+
+  test "无打印类权限（仅 read），列模板被拒" do
+    actor = actor!(["sales.order:read"])
+
+    assert {:error, :forbidden} = SynieCore.Printing.list_templates("sales.order", actor)
+  end
+
+  describe "模板文件挂接与下载授权" do
+    test "建模板后文件挂 sys_attachment，非上传者但有模板读权限的管理员可下载" do
+      actor =
+        actor!(["sys.file:create", "sys.print_template:create", "sys.print_template:read"])
+
+      file = upload_xlsx!(actor, [["${order_no}"]])
+
+      {:ok, template} =
+        Template
+        |> Ash.Changeset.for_create(:create, %{
+          name: "挂接模板",
+          resource: "sales.order",
+          file_id: file.id
+        })
+        |> Ash.create(actor: actor)
+
+      attachments =
+        Attachment
+        |> Ash.Query.filter(owner_type == "sys_print_template" and owner_id == ^template.id)
+        |> Ash.read!(authorize?: false)
+
+      assert [%Attachment{file_id: attached_file_id}] = attachments
+      assert attached_file_id == file.id
+
+      # 另一管理员：不是上传者，持 sys.file:read（附件行读权限）+ 模板读权限
+      other_admin = actor!(["sys.file:read", "sys.print_template:read"])
+      refute other_admin.user_id == actor.user_id
+      assert Files.downloadable?(other_admin, file)
+    end
+
+    test "无 sys.print_template:read 的 actor 不能下载（即使能读附件行）" do
+      actor = actor!(["sys.file:create", "sys.print_template:create"])
+      file = upload_xlsx!(actor, [["${order_no}"]])
+
+      {:ok, _template} =
+        Template
+        |> Ash.Changeset.for_create(:create, %{
+          name: "无权限模板",
+          resource: "sales.order",
+          file_id: file.id
+        })
+        |> Ash.create(actor: actor)
+
+      # 持 sys.file:read 能看见附件行，但对模板资源无读权限（仅 sales.order:read）
+      outsider = actor!(["sys.file:read", "sales.order:read"])
+      refute Files.downloadable?(outsider, file)
+    end
+
+    test "update 换文件：旧文件回归裸文件，新文件挂接且非上传者管理员可下载" do
+      actor =
+        actor!([
+          "sys.file:create",
+          "sys.print_template:create",
+          "sys.print_template:read",
+          "sys.print_template:update"
+        ])
+
+      old_file = upload_xlsx!(actor, [["${order_no}"]])
+      new_file = upload_xlsx!(actor, [["${order_no}"]])
+
+      {:ok, template} =
+        Template
+        |> Ash.Changeset.for_create(:create, %{
+          name: "换文件模板",
+          resource: "sales.order",
+          file_id: old_file.id
+        })
+        |> Ash.create(actor: actor)
+
+      {:ok, updated} =
+        template
+        |> Ash.Changeset.for_update(:update, %{file_id: new_file.id})
+        |> Ash.update(actor: actor)
+
+      assert updated.file_id == new_file.id
+
+      old_attachments =
+        Attachment
+        |> Ash.Query.filter(owner_type == "sys_print_template" and file_id == ^old_file.id)
+        |> Ash.read!(authorize?: false)
+
+      assert old_attachments == []
+
+      new_attachments =
+        Attachment
+        |> Ash.Query.filter(owner_type == "sys_print_template" and owner_id == ^updated.id)
+        |> Ash.read!(authorize?: false)
+
+      assert [%Attachment{file_id: attached_file_id}] = new_attachments
+      assert attached_file_id == new_file.id
+
+      other_admin = actor!(["sys.file:read", "sys.print_template:read"])
+      refute other_admin.user_id == actor.user_id
+      assert Files.downloadable?(other_admin, new_file)
+    end
+
+    test "destroy 模板：挂接清空" do
+      actor =
+        actor!(["sys.file:create", "sys.print_template:create", "sys.print_template:delete"])
+
+      file = upload_xlsx!(actor, [["${order_no}"]])
+
+      {:ok, template} =
+        Template
+        |> Ash.Changeset.for_create(:create, %{
+          name: "待删模板",
+          resource: "sales.order",
+          file_id: file.id
+        })
+        |> Ash.create(actor: actor)
+
+      :ok = Ash.destroy(template, actor: actor)
+
+      remaining =
+        Attachment
+        |> Ash.Query.filter(owner_type == "sys_print_template" and owner_id == ^template.id)
+        |> Ash.read!(authorize?: false)
+
+      assert remaining == []
+    end
   end
 
   # 带公司授权的 actor：先建用户/角色/权限与公司授权，再构建 actor（actor 快照公司集合）

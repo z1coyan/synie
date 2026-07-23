@@ -20,10 +20,28 @@ defmodule SynieCore.Printing do
 
   @doc "列出某资源可用模板（含默认标记），供前端弹窗。"
   def list_templates(resource, actor) when is_binary(resource) do
-    Template
-    |> Ash.Query.filter(resource == ^resource)
-    |> Ash.Query.sort(is_default: :desc, name: :asc)
-    |> Ash.read(actor: actor)
+    if can_use_templates?(resource, actor) do
+      # 受信读：模板管理权限与单据打印权限解耦——已按 can_use_templates?/2 校验过
+      # 「该资源打印类权限或模板管理读权限」，模板为全局主数据、无公司维度，读取不产生数据权限绕越。
+      Template
+      |> Ash.Query.filter(resource == ^resource)
+      |> Ash.Query.sort(is_default: :desc, name: :asc)
+      |> Ash.read(authorize?: false)
+    else
+      {:error, :forbidden}
+    end
+  end
+
+  @doc """
+  是否可使用（列出/读取）某资源的打印模板：
+  拥有 `资源:print`、`资源:export`、`资源:batch_print`、
+  `sys.print_template:read` 任一权限即可——模板管理权限与单据打印权限解耦。
+  """
+  def can_use_templates?(resource, actor) do
+    Enum.any?(
+      ["print", "export", "batch_print"],
+      &SynieCore.Authz.has_permission?(actor, "#{resource}:#{&1}")
+    ) or SynieCore.Authz.has_permission?(actor, "sys.print_template:read")
   end
 
   @doc "字段清单（管理页/前端展示）。"
@@ -39,7 +57,7 @@ defmodule SynieCore.Printing do
   def export(resource, ids, template_id, actor) do
     with :ok <- check_perm(resource, actor, "export"),
          :ok <- check_batch(ids),
-         {:ok, template} <- load_template(template_id, resource, actor),
+         {:ok, template} <- load_template(template_id, resource),
          {:ok, tpl_bin} <- read_template_file(template),
          {:ok, records} <- load_records(resource, ids, actor),
          {:ok, named_docs} <- build_named_docs(resource, records),
@@ -55,7 +73,7 @@ defmodule SynieCore.Printing do
 
     with :ok <- check_perm(resource, actor, action),
          :ok <- check_batch(ids),
-         {:ok, template} <- load_template(template_id, resource, actor),
+         {:ok, template} <- load_template(template_id, resource),
          {:ok, tpl_bin} <- read_template_file(template),
          {:ok, records} <- load_records(resource, ids, actor),
          {:ok, docs} <- build_docs(resource, records),
@@ -106,8 +124,11 @@ defmodule SynieCore.Printing do
     end
   end
 
-  defp load_template(template_id, resource, actor) do
-    case Ash.get(Template, template_id, actor: actor) do
+  # 受信读：调用方（print/4、export/4）已先 check_perm/3 显式校验过动作权限
+  # （#{resource}:print/export/batch_print），模板为全局主数据、无公司维度，
+  # 此处再走 Template 的 read 策略只会误伤「无 sys.print_template:read 但有打印权限」的正常调用。
+  defp load_template(template_id, resource) do
+    case Ash.get(Template, template_id, authorize?: false) do
       {:ok, %Template{resource: ^resource} = t} ->
         {:ok, t}
 

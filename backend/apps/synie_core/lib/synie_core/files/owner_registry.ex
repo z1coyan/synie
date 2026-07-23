@@ -15,7 +15,8 @@ defmodule SynieCore.Files.OwnerRegistry do
     "acc_bank_transaction" => SynieCore.Acc.BankTransaction,
     "acc_vat_invoice" => SynieCore.Acc.VatInvoice,
     "acc_bill" => SynieCore.Acc.Bill,
-    "acc_bill_transaction" => SynieCore.Acc.BillTransaction
+    "acc_bill_transaction" => SynieCore.Acc.BillTransaction,
+    "sys_print_template" => SynieCore.Printing.Template
   }
 
   @spec resolve(String.t()) :: {:ok, module()} | :error

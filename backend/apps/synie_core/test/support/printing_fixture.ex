@@ -14,9 +14,13 @@ defmodule SynieCore.PrintingFixture do
   构建模板 xlsx。
 
   ## opts
-    * `:sheets` — `[%{name: "Sheet1", rows: [[cell, ...], ...], merges: ["A1:B1"], print_area: "A1:D10"}]`
+    * `:sheets` — `[%{name: "Sheet1", rows: [[cell, ...], ...], merges: ["A1:B1"], print_area: "A1:D10", row_breaks: [1, 5]}]`
       cell 为 string（inlineStr）或 `{:s, string}`（走 sharedStrings）或 number
-    * 简写：`:rows` 只建单 sheet（可用 `:sheet_name`、`:merges`、`:print_area`、`:page_setup`）
+    * 简写：`:rows` 只建单 sheet（可用 `:sheet_name`、`:merges`、`:print_area`、`:page_setup`、`:row_breaks`）
+    * `rows` 项支持 `{row_no, [cell, ...]}` 二元组显式指定行号（模拟 Excel 省略空白行）；
+      与普通 `[cell, ...]` 混用时，普通项沿用递增行号（下一个隐式行号 = 上一行号 + 1）
+    * `:row_breaks` — 模板自带手工分页符所在行号列表（第 N 行之后分页），生成
+      `<rowBreaks>` 置于 sheet 末尾 `</worksheet>` 前
   """
   def build(opts \\ []) do
     sheets =
@@ -28,7 +32,8 @@ defmodule SynieCore.PrintingFixture do
               rows: Keyword.fetch!(opts, :rows),
               merges: Keyword.get(opts, :merges, []),
               print_area: Keyword.get(opts, :print_area),
-              page_setup: Keyword.get(opts, :page_setup, true)
+              page_setup: Keyword.get(opts, :page_setup, true),
+              row_breaks: Keyword.get(opts, :row_breaks, [])
             }
           ]
 
@@ -62,6 +67,7 @@ defmodule SynieCore.PrintingFixture do
 
           area ->
             name = s[:name] || s["name"] || "Sheet#{i}"
+
             [
               ~s|<definedName name="_xlnm.Print_Area" localSheetId="#{i - 1}">'#{xml_escape(name)}'!#{area}</definedName>|
             ]
@@ -166,8 +172,9 @@ defmodule SynieCore.PrintingFixture do
         Enum.map(sheets, fn sheet ->
           rows = sheet[:rows] || sheet["rows"] || []
           merges = sheet[:merges] || sheet["merges"] || []
+          row_breaks = sheet[:row_breaks] || sheet["row_breaks"] || []
           page_setup? = Map.get(sheet, :page_setup, Map.get(sheet, "page_setup", true))
-          sheet_xml(rows, merges, page_setup?, acc_shared)
+          sheet_xml(rows, merges, row_breaks, page_setup?, acc_shared)
         end)
 
       shared_list =
@@ -181,11 +188,12 @@ defmodule SynieCore.PrintingFixture do
     end
   end
 
-  defp sheet_xml(rows, merges, page_setup?, acc_shared) do
+  defp sheet_xml(rows, merges, row_breaks, page_setup?, acc_shared) do
+    numbered_rows = number_rows(rows)
+
     row_xmls =
-      rows
-      |> Enum.with_index(1)
-      |> Enum.map(fn {cells, r} ->
+      numbered_rows
+      |> Enum.map(fn {r, cells} ->
         cells_xml =
           cells
           |> Enum.with_index(0)
@@ -199,8 +207,11 @@ defmodule SynieCore.PrintingFixture do
       end)
       |> Enum.join()
 
-    last_row = max(length(rows), 1)
-    last_col = rows |> Enum.map(&length/1) |> Enum.max(fn -> 1 end)
+    last_row = numbered_rows |> Enum.map(&elem(&1, 0)) |> Enum.max(fn -> 1 end)
+
+    last_col =
+      numbered_rows |> Enum.map(fn {_r, cells} -> length(cells) end) |> Enum.max(fn -> 1 end)
+
     dim = "A1:#{col_letters(last_col - 1)}#{last_row}"
 
     merge_xml =
@@ -223,6 +234,17 @@ defmodule SynieCore.PrintingFixture do
         ""
       end
 
+    row_breaks_xml =
+      case row_breaks do
+        [] ->
+          ""
+
+        ids ->
+          inner = Enum.map_join(ids, fn id -> ~s|<brk id="#{id}" max="16383" man="1"/>| end)
+
+          ~s|<rowBreaks count="#{length(ids)}" manualBreakCount="#{length(ids)}">#{inner}</rowBreaks>|
+      end
+
     """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <worksheet xmlns="#{@ns_main}" xmlns:r="#{@ns_r}">
@@ -230,8 +252,20 @@ defmodule SynieCore.PrintingFixture do
       <sheetData>#{row_xmls}</sheetData>
       #{merge_xml}
       #{page}
+      #{row_breaks_xml}
     </worksheet>
     """
+  end
+
+  # 行项支持 `{row_no, cells}` 显式行号或纯 `cells` 列表（隐式行号 = 上一行号 + 1）
+  defp number_rows(rows) do
+    {numbered, _last} =
+      Enum.map_reduce(rows, 0, fn
+        {row_no, cells}, _prev -> {{row_no, cells}, row_no}
+        cells, prev -> {{prev + 1, cells}, prev + 1}
+      end)
+
+    numbered
   end
 
   defp cell_xml(ref, {:s, text}, acc_shared) when is_binary(text) do

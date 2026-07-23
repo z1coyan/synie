@@ -163,6 +163,12 @@ defmodule SynieCore.Printing.RendererTest do
 
       assert [["仅头 T"]] = PrintingFixture.read_first_sheet(out)
     end
+
+    test "模板仅一行且为明细模板行，0 条目时展开后无行也不报错" do
+      template = PrintingFixture.build(rows: [["${items.name}"]])
+
+      assert {:ok, _out} = Renderer.render_pages(template, [doc(%{}, [])])
+    end
   end
 
   describe "render_pages/2 多循环区" do
@@ -310,12 +316,156 @@ defmodule SynieCore.Printing.RendererTest do
       assert sheet =~ ~s|id="3"|
     end
 
+    test "模板含空白行（稀疏行号）时批量块不重叠" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            {1, ["头:${a}"]},
+            {3, ["尾:${b}"]}
+          ]
+        )
+
+      docs = [
+        doc(%{"a" => "1", "b" => "1"}),
+        doc(%{"a" => "2", "b" => "2"})
+      ]
+
+      assert {:ok, out} = Renderer.render_pages(template, docs)
+
+      sheet = PrintingFixture.part(out, "xl/worksheets/sheet1.xml")
+
+      row_nos =
+        ~r/<row\b[^>]*\br="(\d+)"/
+        |> Regex.scan(sheet)
+        |> Enum.map(fn [_, r] -> r end)
+
+      # 第二块偏移 = 第一块最大行号（3），而非行元素个数（2）
+      assert row_nos == ["1", "3", "4", "6"]
+      assert length(row_nos) == length(Enum.uniq(row_nos))
+
+      assert sheet =~ ~s|manualBreakCount="1"|
+      assert sheet =~ ~s|<brk id="3"|
+      assert sheet =~ ~s|<dimension ref="A1:A6"/>|
+    end
+
     test "单 doc 不产生额外分页符；docs 为空报错" do
       template = PrintingFixture.build(rows: [["${a}"]])
       assert {:ok, out} = Renderer.render_pages(template, [doc(%{"a" => "1"})])
       refute PrintingFixture.part(out, "xl/worksheets/sheet1.xml") =~ "rowBreaks"
 
       assert {:error, :empty_docs} = Renderer.render_pages(template, [])
+    end
+  end
+
+  describe "模板手工分页符" do
+    test "单份打印:模板自带 rowBreaks 保留" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            ["行1"],
+            ["行2"]
+          ],
+          row_breaks: [1]
+        )
+
+      assert {:ok, out} = Renderer.render_pages(template, [doc(%{})])
+
+      sheet = PrintingFixture.part(out, "xl/worksheets/sheet1.xml")
+      assert sheet =~ "<rowBreaks"
+      assert sheet =~ ~s|manualBreakCount="1"|
+      assert sheet =~ ~s|<brk id="1"|
+      refute sheet =~ ~r/<brk id="1"[^>]*>.*<brk id="1"/s
+    end
+
+    test "批量 2 份:块内分页符随偏移顺移,与块边界分页符合并去重升序" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            ["行1"],
+            ["行2"]
+          ],
+          row_breaks: [1]
+        )
+
+      docs = [doc(%{}), doc(%{})]
+
+      assert {:ok, out} = Renderer.render_pages(template, docs)
+
+      sheet = PrintingFixture.part(out, "xl/worksheets/sheet1.xml")
+
+      ids =
+        ~r/<brk\b[^>]*\bid="(\d+)"/
+        |> Regex.scan(sheet)
+        |> Enum.map(fn [_, id] -> String.to_integer(id) end)
+
+      # 块1 内部 1、块间边界 2、块2 内部 1+偏移2=3
+      assert ids == [1, 2, 3]
+    end
+
+    test "循环区顺移:模板分页符随循环展开整段下移" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            ["头"],
+            ["${items.name}"],
+            ["尾"]
+          ],
+          row_breaks: [3]
+        )
+
+      items = [%{"name" => "a"}, %{"name" => "b"}, %{"name" => "c"}]
+      assert {:ok, out} = Renderer.render_pages(template, [doc(%{}, items)])
+
+      sheet = PrintingFixture.part(out, "xl/worksheets/sheet1.xml")
+      # 模板第3行(尾)顺移到第 3 + (3-1) = 5 行
+      assert sheet =~ ~s|<brk id="5"|
+    end
+
+    test "块尾分页符与模板自带分页符重合时去重" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            ["行1"],
+            ["行2"]
+          ],
+          row_breaks: [2]
+        )
+
+      docs = [doc(%{}), doc(%{})]
+
+      assert {:ok, out} = Renderer.render_pages(template, docs)
+
+      sheet = PrintingFixture.part(out, "xl/worksheets/sheet1.xml")
+
+      ids =
+        ~r/<brk\b[^>]*\bid="(\d+)"/
+        |> Regex.scan(sheet)
+        |> Enum.map(fn [_, id] -> String.to_integer(id) end)
+
+      # 块边界 2 与模板自带 2 重合只出一次;末块自带分页符 2+2=4 无边界重叠,保留
+      assert ids == [2, 4]
+    end
+
+    test "render_sheets:每个输出 sheet 各自保留模板分页符" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            ["行1"],
+            ["行2"]
+          ],
+          row_breaks: [1]
+        )
+
+      assert {:ok, out} =
+               Renderer.render_sheets(template, [
+                 {"S1", doc(%{})},
+                 {"S2", doc(%{})}
+               ])
+
+      sheet1 = PrintingFixture.part(out, "xl/worksheets/sheet_synie_1.xml")
+      sheet2 = PrintingFixture.part(out, "xl/worksheets/sheet_synie_2.xml")
+      assert sheet1 =~ ~s|<brk id="1"|
+      assert sheet2 =~ ~s|<brk id="1"|
     end
   end
 
@@ -355,6 +505,22 @@ defmodule SynieCore.Printing.RendererTest do
       assert Enum.any?(names, &String.contains?(&1, " "))
       assert Enum.all?(names, &(String.length(&1) <= 31))
       assert length(names) == length(Enum.uniq(names))
+    end
+
+    test "稀疏模板（空白行）dimension 按最大行号计，非行元素个数" do
+      template =
+        PrintingFixture.build(
+          rows: [
+            {1, ["${a}"]},
+            {3, ["${b}"]}
+          ]
+        )
+
+      assert {:ok, out} =
+               Renderer.render_sheets(template, [{"S1", doc(%{"a" => "1", "b" => "2"})}])
+
+      sheet = PrintingFixture.part(out, "xl/worksheets/sheet_synie_1.xml")
+      assert sheet =~ ~s|<dimension ref="A1:A3"/>|
     end
   end
 
