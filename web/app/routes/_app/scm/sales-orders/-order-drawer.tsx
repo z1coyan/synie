@@ -2,8 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
 import { gqlFetch, isForbidden } from '~/lib/graphql'
-import { formatAmount, formatPrice } from '~/lib/amount'
+import { formatAmount, formatPrice, formatQty } from '~/lib/amount'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -284,6 +285,45 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
+// 「发货历史」tab:该订单全部发货单行(只读),列口径同发货条目页——全走行上快照/头投影列,
+// 不点 materialId 等触发嵌套授权的 fk;按 orderItem.orderId 关系过滤(Ash 关系 filter)
+const SHIPMENT_COLUMNS = ['deliveryNo', 'deliveryDate', 'deliveryStatus', 'materialName', 'unitName', 'qty']
+const SHIPMENT_OVERRIDES = {
+  deliveryStatus: {
+    label: '发货状态',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+  },
+  materialName: {
+    label: '物料',
+    render: (_v: unknown, r: Row) => {
+      const code = r.materialCode != null ? String(r.materialCode) : ''
+      const name = r.materialName != null ? String(r.materialName) : ''
+      const title = [code, name].filter(Boolean).join(' ')
+      if (!title && r.materialSpec == null && r.customerPartNo == null) return undefined
+      const spec = r.materialSpec != null && r.materialSpec !== '' ? String(r.materialSpec) : null
+      const cpn =
+        r.customerPartNo != null && r.customerPartNo !== '' ? String(r.customerPartNo) : null
+      return (
+        <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
+          {title ? <span className="truncate font-medium">{title}</span> : null}
+          {spec ? (
+            <span className="truncate text-xs text-muted" title={spec}>
+              规格 {spec}
+            </span>
+          ) : null}
+          {cpn ? (
+            <span className="truncate text-xs text-muted" title={cpn}>
+              客户料号 {cpn}
+            </span>
+          ) : null}
+        </div>
+      )
+    },
+  },
+  unitName: { label: '单位' },
+  qty: { label: '数量', render: (v: unknown) => formatQty(v) || undefined },
+} satisfies Record<string, ColumnOverride>
+
 export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; order: OrderRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
@@ -445,6 +485,25 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
         // 表格列是白名单子集,行数据不全(缺交易条款/备注);不传 row,走 rowId 自查完整记录
         rowId={drawer?.order?.id}
         onEdit={drawer?.order?.status === 'DRAFT' ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d)) : undefined}
+        // 首 tab 为现有单页内容(字段+条目表+交易条款,经 extraContent 自动归入);发货历史只读展示
+        tabs={[
+          { key: 'basic', label: '基本信息' },
+          { key: 'shipments', label: '发货历史' },
+        ]}
+        tabExtraContent={{
+          shipments: (_mode, row) =>
+            row?.id == null ? (
+              <p className="text-sm text-muted">订单保存后可查看发货历史</p>
+            ) : (
+              <SynieDataGrid
+                resource="salDeliveryItems"
+                columns={SHIPMENT_COLUMNS}
+                overrides={SHIPMENT_OVERRIDES}
+                fixedFilter={{ orderItem: { orderId: { eq: String(row.id) } } }}
+                defaultSort={{ column: 'deliveryDate', direction: 'descending' }}
+              />
+            ),
+        }}
         extraContent={(mode, row, values, patchValues) => {
           // 整单币种/汇率:编辑态读表单草稿,查看态读行数据(rowId 自查含全字段)。
           // 整单本币只显一套单价/金额;外币展开双套列(展示简化只在单订单上下文,条目 tab 恒全列)
