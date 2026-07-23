@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Button, Label, ListBox, Select, toast } from '@heroui/react'
 import { DropZone } from '@heroui-pro/react'
 import { gqlFetch } from '~/lib/graphql'
-import { uploadFile } from '~/lib/files'
+import { uploadFile, downloadFile } from '~/lib/files'
 import { fetchFieldCatalog, type FieldCatalog } from '~/lib/print'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -32,6 +32,13 @@ const SET_DEFAULT = `
 `
 const PERMISSION_CATALOG = `
   query { permissionCatalog { prefix label } }
+`
+const FETCH_TEMPLATE_FILE = `
+  query ($id: ID!) {
+    sysPrintTemplates(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
+      results { id file { id filename } }
+    }
+  }
 `
 
 interface ResourceOption {
@@ -65,6 +72,7 @@ function PrintTemplatesPage() {
   const [catalog, setCatalog] = useState<FieldCatalog | null>(null)
   const [resourcePick, setResourcePick] = useState('sales.order')
   const [resources, setResources] = useState<ResourceOption[]>([])
+  const [currentFile, setCurrentFile] = useState<{ id: string; filename: string } | null>(null)
   const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
@@ -81,6 +89,22 @@ function PrintTemplatesPage() {
       setResourcePick(resources[0].prefix)
     }
   }, [resources, resourcePick])
+
+  // 查看/编辑时拉取模板当前文件(文件名与下载用)
+  useEffect(() => {
+    if (!drawer || drawer.mode === 'create' || drawer.row?.id == null) {
+      setCurrentFile(null)
+      return
+    }
+    void gqlFetch<{
+      sysPrintTemplates: { results: { file: { id: string; filename: string } | null }[] }
+    }>(FETCH_TEMPLATE_FILE, { id: drawer.row.id })
+      .then((data) => setCurrentFile(data.sysPrintTemplates.results[0]?.file ?? null))
+      .catch((e: unknown) => {
+        setCurrentFile(null)
+        toast.danger(e instanceof Error ? e.message : '加载模板文件失败')
+      })
+  }, [drawer])
 
   useEffect(() => {
     if (!drawer) return
@@ -227,46 +251,70 @@ function PrintTemplatesPage() {
               </div>
             )}
 
-            {mode !== 'view' && (
+            {(mode !== 'view' || currentFile) && (
               <div className="flex flex-col gap-2">
                 <Label>模板文件（.xlsx）</Label>
                 <DropZone>
-                  <DropZone.Area
-                    onDrop={async (e) => {
-                      for (const item of e.items) {
-                        if (item.kind === 'file') {
-                          void onPickFile(await item.getFile())
-                          return
-                        }
-                      }
-                    }}
-                  >
-                    <DropZone.Icon />
-                    <DropZone.Label>拖拽模板文件到此处，或点击选择</DropZone.Label>
-                    <DropZone.Description>
-                      仅支持 .xlsx；占位符对照下方字段清单书写
-                    </DropZone.Description>
-                    <DropZone.Trigger>选择文件</DropZone.Trigger>
-                  </DropZone.Area>
-                  <DropZone.Input
-                    accept=".xlsx"
-                    onSelect={(list) => list[0] && void onPickFile(list[0])}
-                  />
-                  {fileName && (
+                  {mode !== 'view' && (
+                    <>
+                      <DropZone.Area
+                        onDrop={async (e) => {
+                          for (const item of e.items) {
+                            if (item.kind === 'file') {
+                              void onPickFile(await item.getFile())
+                              return
+                            }
+                          }
+                        }}
+                      >
+                        <DropZone.Icon />
+                        <DropZone.Label>拖拽模板文件到此处，或点击选择</DropZone.Label>
+                        <DropZone.Description>
+                          仅支持 .xlsx；占位符对照下方字段清单书写
+                        </DropZone.Description>
+                        <DropZone.Trigger>选择文件</DropZone.Trigger>
+                      </DropZone.Area>
+                      <DropZone.Input
+                        accept=".xlsx"
+                        onSelect={(list) => list[0] && void onPickFile(list[0])}
+                      />
+                    </>
+                  )}
+                  {(fileName || currentFile) && (
                     <DropZone.FileList>
-                      <DropZone.FileItem status="complete">
-                        <DropZone.FileFormatIcon color="green" format="XLSX" />
-                        <DropZone.FileInfo>
-                          <DropZone.FileName>{fileName}</DropZone.FileName>
-                        </DropZone.FileInfo>
-                        <DropZone.FileRemoveTrigger
-                          aria-label={`移除 ${fileName}`}
-                          onPress={() => {
-                            setFileId(null)
-                            setFileName('')
-                          }}
-                        />
-                      </DropZone.FileItem>
+                      {fileName ? (
+                        <DropZone.FileItem status={uploading ? 'uploading' : 'complete'}>
+                          <DropZone.FileFormatIcon color="green" format="XLSX" />
+                          <DropZone.FileInfo>
+                            <DropZone.FileName>{fileName}</DropZone.FileName>
+                          </DropZone.FileInfo>
+                          <DropZone.FileRemoveTrigger
+                            aria-label={`移除 ${fileName}`}
+                            onPress={() => {
+                              setFileId(null)
+                              setFileName('')
+                            }}
+                          />
+                        </DropZone.FileItem>
+                      ) : currentFile ? (
+                        <DropZone.FileItem status="complete">
+                          <DropZone.FileFormatIcon color="green" format="XLSX" />
+                          <DropZone.FileInfo>
+                            <DropZone.FileName>{currentFile.filename}</DropZone.FileName>
+                          </DropZone.FileInfo>
+                          <Button
+                            variant="secondary"
+                            onPress={() =>
+                              void downloadFile(currentFile.id, currentFile.filename).catch(
+                                (e: unknown) =>
+                                  toast.danger(e instanceof Error ? e.message : '下载失败'),
+                              )
+                            }
+                          >
+                            下载
+                          </Button>
+                        </DropZone.FileItem>
+                      ) : null}
                     </DropZone.FileList>
                   )}
                 </DropZone>
