@@ -26,7 +26,7 @@ defmodule SynieWeb.Router do
   end
 
   scope "/api", SynieWeb do
-    pipe_through [:api]
+    pipe_through([:api])
 
     post("/files", FileController, :create)
     get("/files/:id", FileController, :show)
@@ -38,7 +38,7 @@ defmodule SynieWeb.Router do
   end
 
   scope "/graphql" do
-    pipe_through [:graphql]
+    pipe_through([:graphql])
 
     # playground 仅在开关打开时挂载(生产默认关闭,避免暴露交互式查询控制台)
     if Application.compile_env(:synie_web, :graphiql_enabled, false) do

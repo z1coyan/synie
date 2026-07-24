@@ -1,5 +1,7 @@
 defmodule SynieCore.SetupTest do
-  use ExUnit.Case, async: true
+  # 非 async:全量种子集成测试,走生产 SampleData 建规范固定数据(币种/单位等),
+  # 串行运行避免与其它模块并发写共享唯一索引互锁(deadlock)
+  use ExUnit.Case, async: false
 
   require Ash.Query
 

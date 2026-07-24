@@ -814,7 +814,8 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
 function StepLanguage(props: { seedSampleData: boolean }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [language, setLanguage] = useState(
+  // SAMPLE_DEFAULTS 为 as const,不显式标 string 会把 state 推断成字面量 "zh-CN"
+  const [language, setLanguage] = useState<string>(
     props.seedSampleData ? SAMPLE_DEFAULTS.language : 'zh-CN'
   )
 

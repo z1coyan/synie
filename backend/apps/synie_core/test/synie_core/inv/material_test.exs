@@ -247,7 +247,14 @@ defmodule SynieCore.Inv.MaterialTest do
     end
 
     test "同类型单位允许(箱/包等包装单位场景)", %{leaf: leaf, kg: kg} do
-      g = unit!(%{unit_type: :weight, name: "克", symbol: "g", ratio: "0.001"})
+      g =
+        unit!(%{
+          unit_type: :weight,
+          name: "克",
+          symbol: "g-#{System.unique_integer([:positive])}",
+          ratio: "0.001"
+        })
+
       m = material!(%{name: "钢材", category_id: leaf.id, default_unit_id: kg.id})
 
       row = material_unit!(%{material_id: m.id, unit_id: g.id, factor: "1000"})

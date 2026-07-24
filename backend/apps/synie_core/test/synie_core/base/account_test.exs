@@ -171,10 +171,8 @@ defmodule SynieCore.Base.AccountTest do
     end
 
     test "外币科目不能挂角色,人民币科目可以", %{company: co} do
-      usd =
-        SynieCore.Base.Currency
-        |> Ash.Changeset.for_create(:create, %{name: "美元", iso_code: "USD", symbol: "$"})
-        |> Ash.create!(authorize?: false)
+      # 外币:唯一码夹具(iso_code 全局唯一,避免多 async 模块并发建同码互锁)
+      usd = foreign_currency!()
 
       # CNY 已由迁移种入(公司本币兜底),取或建而非直建
       cny = cny!()

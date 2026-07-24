@@ -2,3 +2,10 @@ node_modules
 routeTree.gen.ts
 dist
 .tanstack/
+
+# Playwright 权限冒烟(authz-e2e 工单11)
+/playwright-report/
+/test-results/
+/e2e/.auth/
+/blob-report/
+/.playwright/

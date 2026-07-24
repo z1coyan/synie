@@ -77,13 +77,15 @@ defmodule SynieCore.AuthzFixtures do
     end
   end
 
-  # 外币夹具(改名避开各 acc 测试模块的本地 currency! 助手)
-  def foreign_currency!(attrs) do
+  # 外币夹具(改名避开各 acc 测试模块的本地 currency! 助手)。
+  # iso_code 强制唯一:忽略调用方传入的固定码(许多 async 模块传同一 "USD"),
+  # 否则并发写 bas_currency 唯一索引互锁(deadlock_detected)。code 不参与断言,
+  # 各测试只把返回值当「某外币」用,唯一化透明。
+  def foreign_currency!(attrs \\ %{}) do
     attrs =
-      Map.merge(
-        %{name: "测试货币", iso_code: unique_iso_code(), symbol: "¤"},
-        attrs
-      )
+      %{name: "测试货币", symbol: "¤"}
+      |> Map.merge(attrs)
+      |> Map.put(:iso_code, unique_iso_code())
 
     Currency
     |> Ash.Changeset.for_create(:create, attrs)

@@ -12,15 +12,15 @@ defmodule SynieWeb.Test.GridDoc do
     data_layer: Ash.DataLayer.Simple
 
   actions do
-    defaults [:read]
+    defaults([:read])
   end
 
   attributes do
-    uuid_primary_key :id
+    uuid_primary_key(:id)
 
     attribute :title, :string do
-      public? true
-      description "标题"
+      public?(true)
+      description("标题")
     end
   end
 

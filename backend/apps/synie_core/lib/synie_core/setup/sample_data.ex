@@ -104,7 +104,8 @@ defmodule SynieCore.Setup.SampleData do
 
   @doc false
   # 单据行按创建序转整数键 map,便于按位置引用(如发货/对账挂第 N 行)
-  def index_items(items), do: items |> Enum.with_index() |> Map.new(fn {item, idx} -> {idx, item} end)
+  def index_items(items),
+    do: items |> Enum.with_index() |> Map.new(fn {item, idx} -> {idx, item} end)
 
   @doc false
   def create_opts(nil), do: [authorize?: false, return_notifications?: true]

@@ -70,18 +70,54 @@ defmodule SynieCore.Setup.SampleData.Finance do
     s04 = master.suppliers["S04"]
 
     specs = [
-      %{ago: 80, hour: 10, income: "200000.00", balance: "200000.00",
-        counterparty: "王建国", summary: "股东注资款"},
-      %{ago: 28, hour: 14, income: "36000.00", balance: "236000.00",
-        counterparty: c01.name, summary: "海纳电气货款"},
-      %{ago: 20, hour: 9, expense: "33360.00", balance: "202640.00",
-        counterparty: s01.name, summary: "支付精铜材料货款"},
-      %{ago: 15, hour: 16, expense: "8500.00", balance: "194140.00",
-        counterparty: s04.name, summary: "支付恒力钣金部分货款"},
-      %{ago: 8, hour: 11, income: "12500.00", balance: "206640.00",
-        counterparty: c02.name, summary: "联成机电预付款"},
-      %{ago: 5, hour: 15, expense: "3200.00", balance: "203440.00",
-        counterparty: "陈晓梅", summary: "报销及办公用品采购"}
+      %{
+        ago: 80,
+        hour: 10,
+        income: "200000.00",
+        balance: "200000.00",
+        counterparty: "王建国",
+        summary: "股东注资款"
+      },
+      %{
+        ago: 28,
+        hour: 14,
+        income: "36000.00",
+        balance: "236000.00",
+        counterparty: c01.name,
+        summary: "海纳电气货款"
+      },
+      %{
+        ago: 20,
+        hour: 9,
+        expense: "33360.00",
+        balance: "202640.00",
+        counterparty: s01.name,
+        summary: "支付精铜材料货款"
+      },
+      %{
+        ago: 15,
+        hour: 16,
+        expense: "8500.00",
+        balance: "194140.00",
+        counterparty: s04.name,
+        summary: "支付恒力钣金部分货款"
+      },
+      %{
+        ago: 8,
+        hour: 11,
+        income: "12500.00",
+        balance: "206640.00",
+        counterparty: c02.name,
+        summary: "联成机电预付款"
+      },
+      %{
+        ago: 5,
+        hour: 15,
+        expense: "3200.00",
+        balance: "203440.00",
+        counterparty: "陈晓梅",
+        summary: "报销及办公用品采购"
+      }
     ]
 
     Enum.map_reduce(specs, [], fn spec, acc ->
@@ -290,7 +326,8 @@ defmodule SynieCore.Setup.SampleData.Finance do
     s01 = master.suppliers["S01"]
 
     # 销项:配电箱壳体 50×128 + 汇流铜排组件 20×86.5 = 8130.00(对账行本币合计)
-    sal_gross = reconciliation_total(SynieCore.Sales.Reconciliation, sales.confirmed_reconciliation)
+    sal_gross =
+      reconciliation_total(SynieCore.Sales.Reconciliation, sales.confirmed_reconciliation)
 
     {outbound, n1} =
       invoice!(ctx, actor,

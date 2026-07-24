@@ -1,5 +1,7 @@
 defmodule SynieCore.Base.CurrencyTest do
-  use ExUnit.Case, async: true
+  # 非 async:测试币种 iso_code 唯一性,须用固定码(EUR 重复等);串行运行避免与
+  # 其它模块并发写 bas_currency 唯一索引互锁(deadlock)
+  use ExUnit.Case, async: false
 
   alias SynieCore.Base.Currency
   alias SynieCore.Base.Company

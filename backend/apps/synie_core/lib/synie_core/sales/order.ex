@@ -392,7 +392,9 @@ defmodule SynieCore.Sales.Order do
 
   def permission_prefix, do: "sales.order"
   def permission_label, do: "销售订单"
-  def permission_actions, do: ~w(create read update delete audit close void print export batch_print)
+
+  def permission_actions,
+    do: ~w(create read update delete audit close void print export batch_print)
 
   def grid_actions do
     [

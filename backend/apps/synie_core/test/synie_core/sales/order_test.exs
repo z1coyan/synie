@@ -35,9 +35,29 @@ defmodule SynieCore.Sales.OrderTest do
       |> Ash.create!(authorize?: false)
 
     # 不抢 is_base 与迁移内置的 吨/kg(symbol 全局唯一);测试不依赖基准单位语义
-    kg = unit!(%{unit_type: :weight, name: "千克", symbol: "kgs", ratio: 1})
-    box = unit!(%{unit_type: :quantity, name: "箱", symbol: "箱", ratio: 1})
-    pcs = unit!(%{unit_type: :quantity, name: "只", symbol: "只", ratio: 1})
+    kg =
+      unit!(%{
+        unit_type: :weight,
+        name: "千克",
+        symbol: "kg-#{System.unique_integer([:positive])}",
+        ratio: 1
+      })
+
+    box =
+      unit!(%{
+        unit_type: :quantity,
+        name: "箱",
+        symbol: "bx-#{System.unique_integer([:positive])}",
+        ratio: 1
+      })
+
+    pcs =
+      unit!(%{
+        unit_type: :quantity,
+        name: "只",
+        symbol: "pc-#{System.unique_integer([:positive])}",
+        ratio: 1
+      })
 
     leaf =
       MaterialCategory

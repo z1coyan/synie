@@ -129,7 +129,8 @@ defmodule SynieCore.Setup.SampleData.Purchase do
       confirmed_reconciliation: pcr1.reconciliation
     }
 
-    {result, n1 ++ n2 ++ n3 ++ n4 ++ n5 ++ n6 ++ n7 ++ n8 ++ n9 ++ n10 ++ n11 ++ n12 ++ n13 ++ n14}
+    {result,
+     n1 ++ n2 ++ n3 ++ n4 ++ n5 ++ n6 ++ n7 ++ n8 ++ n9 ++ n10 ++ n11 ++ n12 ++ n13 ++ n14}
   end
 
   # ---------------------------------------------------------------------------
