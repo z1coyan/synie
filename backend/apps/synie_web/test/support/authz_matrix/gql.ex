@@ -26,9 +26,30 @@ defmodule SynieWeb.AuthzMatrix.Gql do
   @doc "list 查询(带 count 聚合;limit 拉满避免分页截断)。"
   def list_query(field), do: "query { #{field}(limit: 200) { count results { id } } }"
 
+  @doc """
+  id 定界 list 查询:`filter: {id: {in: [...]}}` 把扫描面收窄到世界记录。
+  共享资源(种子/主体夹具/审计副产物会产生世界外行)用它,让「恰好等于」
+  断言只对世界记录生效,count 聚合同滤——聚合跨公司泄露仍会被抓。
+  """
+  def bounded_list_query(field, ids) do
+    id_list = Enum.map_join(ids, ", ", &inspect/1)
+    "query { #{field}(limit: 200, filter: {id: {in: [#{id_list}]}}) { count results { id } } }"
+  end
+
   @doc "按 id 查询:list 查询 + id 等值过滤(前端速览/表单取数同款姿势)。"
   def by_id_query(field, id) do
     ~s|query { #{field}(filter: {id: {eq: "#{id}"}}) { count results { id } } }|
+  end
+
+  @doc "read_one 单行查询(设置类单行表的读出口)。"
+  def read_one_query(field), do: "query { #{field} { id } }"
+
+  @doc "read_one 响应中的记录 id;根为 null(被拒或无行)时返回 nil。"
+  def read_one_id(resp, field) do
+    case resp["data"] do
+      %{^field => %{"id" => id}} -> id
+      _denied -> nil
+    end
   end
 
   @doc "读侧枚举源 = 表格元数据白名单:资源模块 → GraphQL list 字段名。"
@@ -42,25 +63,52 @@ defmodule SynieWeb.AuthzMatrix.Gql do
   end
 
   @doc """
-  资源三件套 mutation 的 GraphQL 字段名(经域 mutations 反射,只认主动作;
-  audit/cancel 等衍生 update 不属三件套)。无对应 mutation 时为 nil。
+  资源读出口:GridMeta 白名单资源走 offset list;白名单豁免资源(见
+  `World.whitelist_exempt/0`)回落到域 queries 反射——分页 list(如
+  sysRolePermissions)或 read_one 单行(设置类)。返回 {:list, field} 或
+  {:read_one, field};两者皆无即 raise(声明了 read 就必须有读出口)。
+  """
+  def read_endpoint!(module) do
+    case Enum.find(SynieWeb.GridMeta.resources(), fn {_name, m} -> m == module end) do
+      {name, _module} ->
+        {:list, name}
+
+      nil ->
+        queries = AshGraphql.Domain.Info.queries(SynieCore)
+
+        Enum.find_value(queries, fn q ->
+          case q do
+            %{resource: ^module, type: :list} -> {:list, camelize(q.name)}
+            %{resource: ^module, type: :read_one} -> {:read_one, camelize(q.name)}
+            _other -> nil
+          end
+        end) || raise "资源 #{inspect(module)} 没有任何 GraphQL 读出口,矩阵无法扫描"
+    end
+  end
+
+  @doc """
+  资源三件套 mutation 的 GraphQL 字段名(经域 mutations 反射)。三件套=与类型
+  同名的通用动作(:create/:update/:destroy);audit/cancel 等衍生动作名不同,
+  天然排除。无对应 mutation 时为 nil。
+
+  (不能用 `Ash.Resource.Info.primary_action/2`:资源的通用动作大多没标
+  `primary? true`,按 primary 反射会静默漏掉 create/update 全部写面。)
   """
   def primary_mutation_fields(module) do
     mutations = AshGraphql.Domain.Info.mutations(SynieCore)
 
     Map.new([:create, :update, :destroy], fn type ->
-      primary = Ash.Resource.Info.primary_action(module, type)
-
       field =
-        primary &&
-          Enum.find_value(mutations, fn m ->
-            if m.resource == module and m.type == type and m.action == primary.name,
-              do: Absinthe.Utils.camelize(to_string(m.name), lower: true)
-          end)
+        Enum.find_value(mutations, fn m ->
+          if m.resource == module and m.type == type and m.action == type,
+            do: camelize(m.name)
+        end)
 
       {type, field}
     end)
   end
+
+  defp camelize(name), do: Absinthe.Utils.camelize(to_string(name), lower: true)
 
   @doc "响应中的可见 id 集;查询根为 null(被拒)时返回 nil。"
   def visible_ids(resp, field) do
@@ -132,7 +180,8 @@ defmodule SynieWeb.AuthzMatrix.Gql do
     end
   end
 
-  # GraphQL 输入字面量编码(矩阵输入只有字符串/数字/布尔的平面 map)
+  # GraphQL 输入字面量编码。枚举值用 {:enum, "DEBIT"} 标记(裸写不带引号);
+  # json_string 类字段(如编号段)按契约传 JSON 字符串,走普通 string 分支。
   defp encode_input(input) when is_map(input) do
     inner =
       Enum.map_join(input, ", ", fn {key, value} -> "#{key}: #{encode_value(value)}" end)
@@ -140,6 +189,13 @@ defmodule SynieWeb.AuthzMatrix.Gql do
     "{" <> inner <> "}"
   end
 
+  defp encode_value({:enum, value}), do: to_string(value)
+  defp encode_value(nil), do: "null"
   defp encode_value(value) when is_binary(value), do: inspect(value)
   defp encode_value(value) when is_number(value) or is_boolean(value), do: to_string(value)
+
+  defp encode_value(value) when is_list(value),
+    do: "[#{Enum.map_join(value, ", ", &encode_value/1)}]"
+
+  defp encode_value(value) when is_map(value), do: encode_input(value)
 end

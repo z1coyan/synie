@@ -44,7 +44,9 @@ defmodule SynieWeb.AuthzMatrixCoverageTest do
   end
 
   test "写输入契约:已覆盖资源凡注册 create/update mutation,必须给出对应写输入" do
-    write_inputs = World.write_inputs()
+    # 守卫只查键与函数存在性;write_inputs/1 的契约保证构建 map 字面量不触碰 ctx,
+    # 故此处以占位空 map 调用即可(输入闭包不会被调用)
+    write_inputs = World.write_inputs(%{})
 
     offenders =
       for {module, _builder} <- World.builders(),

@@ -29,13 +29,15 @@ defmodule SynieWeb.AuthzMatrixReadTest do
 
   setup_all do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(SynieCore.Repo, shared: true)
+    world = World.build!()
 
     on_exit(fn ->
+      File.rm_rf!(world.storage_root)
       Ecto.Adapters.SQL.Sandbox.stop_owner(owner)
       Ecto.Adapters.SQL.Sandbox.mode(SynieCore.Repo, :manual)
     end)
 
-    %{world: World.build!()}
+    %{world: world}
   end
 
   for {module, _builder} <- World.builders() do
@@ -49,8 +51,21 @@ defmodule SynieWeb.AuthzMatrixReadTest do
 
   defp run_read_matrix(module, world) do
     prefix = module.permission_prefix()
-    field = Gql.grid_field!(module)
     records = Map.fetch!(world.records, module)
+
+    case Gql.read_endpoint!(module) do
+      {:list, field} -> run_list_matrix(module, world, prefix, field, records)
+      {:read_one, field} -> run_read_one_matrix(module, world, prefix, field, records)
+    end
+  end
+
+  defp run_list_matrix(module, world, prefix, field, records) do
+    # 共享资源(种子/主体夹具/审计副产物产生世界外行)的 list 扫描 id 定界;
+    # 独占资源不定界——「恰好等于+count」顺带证明世界之外无多余可见行
+    list_query =
+      if World.shared?(module),
+        do: Gql.bounded_list_query(field, Enum.map(records, & &1.id)),
+        else: Gql.list_query(field)
 
     scan_anonymous(prefix, field, records)
 
@@ -61,8 +76,37 @@ defmodule SynieWeb.AuthzMatrixReadTest do
 
         access ->
           expected = World.expected_ids(world, module, effective_companies(access))
-          scan_list(prefix, field, subject, expected)
+          scan_list(prefix, field, list_query, subject, expected)
           scan_by_id(prefix, field, records, subject, expected)
+      end
+    end
+  end
+
+  # 单行表(read_one 读出口):有码即见该单行,无码/匿名被拒
+  defp run_read_one_matrix(module, world, prefix, field, _records) do
+    resp = Gql.run(Gql.read_one_query(field))
+    assert Gql.denied?(resp, field), deny_msg(prefix, :anonymous, "read_one", resp)
+
+    for subject <- Subjects.extreme_read_subjects(prefix, world) do
+      resp = Gql.run(Gql.read_one_query(field), subject.token)
+
+      case subject.access do
+        :denied ->
+          assert Gql.denied?(resp, field), deny_msg(prefix, subject.shape, "read_one", resp)
+
+        access ->
+          expected = World.expected_ids(world, module, effective_companies(access))
+          visible = resp |> Gql.read_one_id(field) |> List.wrap() |> MapSet.new()
+
+          assert visible == expected,
+                 matrix_msg(
+                   prefix,
+                   subject.shape,
+                   :positive,
+                   "read_one 可见集应恰好等于应得集 #{inspect(MapSet.to_list(expected))}," <>
+                     "实见 #{inspect(MapSet.to_list(visible))}",
+                   resp
+                 )
       end
     end
   end
@@ -93,8 +137,8 @@ defmodule SynieWeb.AuthzMatrixReadTest do
   end
 
   # list:双向恰好等于 + count 聚合
-  defp scan_list(prefix, field, subject, expected) do
-    resp = Gql.run(Gql.list_query(field), subject.token)
+  defp scan_list(prefix, field, list_query, subject, expected) do
+    resp = Gql.run(list_query, subject.token)
     visible = Gql.visible_ids(resp, field)
 
     assert visible != nil,
