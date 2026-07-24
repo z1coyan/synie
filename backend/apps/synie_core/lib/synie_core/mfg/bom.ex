@@ -38,9 +38,14 @@ end
 
 defmodule SynieCore.Mfg.Bom do
   @moduledoc """
-  BOM(物料清单),对应 `mfg_bom` 表。挂在物料上的单层配方主数据:一物料至多一张、
-  以物料为唯一键、无独立编号、跟随物料全局共享(不分公司);单份可改可删,
-  历史靠审计日志,版本管理待有下游引用时再议(见 BOM 模块 ADR 2026-07-22)。
+  BOM(物料清单),对应 `mfg_bom` 表。挂在物料上的单层配方主数据:一物料可多张
+  (推翻 2026-07-22 BOM 模块 ADR 的「一物料至多一张、以物料为唯一键」定案,
+  见 ADR 2026-07-24 委外采购)、跟随物料全局共享(不分公司);单份可改可删,
+  历史靠审计日志。
+
+  每张 BOM 以独立编号为唯一键:编号留空按 `mfg.bom` 编号规则自动取号(AutoNumber),
+  手填原样保留,全局唯一,创建后不可改;另有可空方案名称辅助区分同物料的多张配方。
+  既有 BOM 数据的编号由迁移兜底补齐(见 `SynieCore.Mfg.BomNumberingBackfill`)。
 
   子表:配料行 `BomComponent`(子物料+单位+单位净用量+可空损耗率)、
   工艺路线行 `BomRoute`(工序引用+工艺要求+外协标记)、副产品行 `BomByproduct`
@@ -64,7 +69,7 @@ defmodule SynieCore.Mfg.Bom do
     repo SynieCore.Repo
 
     references do
-      # BOM 以物料为唯一键,有 BOM 的物料不可删(DB 兜底)
+      # 有 BOM 的物料不可删(DB 兜底)
       reference :material, on_delete: :restrict
     end
   end
@@ -104,12 +109,15 @@ defmodule SynieCore.Mfg.Bom do
     end
 
     create :create do
-      accept [:material_id, :note]
+      accept [:material_id, :code, :plan_name, :note]
+
+      # 编号留空自动取号(须在构建期,见 AutoNumber moduledoc)
+      change {SynieCore.Numbering.AutoNumber, attribute: :code}
     end
 
     update :update do
-      # 不接受 :material_id:BOM 以物料为唯一键,创建后不换物料(换物料=删旧建新)
-      accept [:note]
+      # 不接受 :material_id/:code:创建后不换物料(换物料=删旧建新)、编号不可改(下游引用留痕)
+      accept [:plan_name, :note]
       require_atomic? false
     end
 
@@ -147,6 +155,19 @@ defmodule SynieCore.Mfg.Bom do
   attributes do
     uuid_primary_key :id
 
+    attribute :code, :string do
+      allow_nil? false
+      public? true
+      constraints max_length: 32
+      description "编号"
+    end
+
+    attribute :plan_name, :string do
+      public? true
+      constraints max_length: 64
+      description "方案名称"
+    end
+
     attribute :note, :string do
       public? true
       constraints max_length: 255
@@ -180,8 +201,11 @@ defmodule SynieCore.Mfg.Bom do
   end
 
   identities do
-    identity :unique_material, [:material_id], message: "该物料已存在 BOM"
+    identity :unique_code, [:code], message: "BOM 编号已存在"
   end
+
+  # fk 引用/选择器的显示字段:编号(同物料多张凭编号区分,方案名称为辅助列)
+  def display_field, do: :code
 
   @doc false
   # 模板行按 seq 复制为 BOM 路线私行(行各项校验走 BomRoute create);任一行失败整体回滚

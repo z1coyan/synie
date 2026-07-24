@@ -126,6 +126,8 @@ export const menuModules: MenuModule[] = [
         label: '库存',
         items: [
           { label: '采购入库', path: '/scm/purchase-receipts' },
+          { label: '委外发料', path: '/scm/outsourced-issues' },
+          { label: '委外入库', path: '/scm/outsourced-receipts' },
           { label: '销售发货', path: '/scm/sales-deliveries' },
           { label: '其他库存单', path: '/scm/other-stock' },
           { label: '库存余额', path: '/scm/inventory' },

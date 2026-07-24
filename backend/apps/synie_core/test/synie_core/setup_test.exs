@@ -91,9 +91,13 @@ defmodule SynieCore.SetupTest do
 
     assert {:error, "不支持的语言"} = Setup.complete(actor, "fr-FR")
     assert %{initialized: false} = Setup.status()
-    # 完成前不应有存储接入/编号规则/物料分类
+    # 完成前不应有存储接入/物料分类;编号规则仅迁移随带的 BOM/委外发料/委外入库规则
+    # (放开一物料多张与委外两张单据的迁移种子,老环境免手工配置,
+    # 见 BomNumberingBackfill / OutsourcedIssueNumberingSeed / OutsourcedReceiptNumberingSeed)
     assert [] = StorageEndpoint |> Ash.read!(authorize?: false)
-    assert [] = Rule |> Ash.read!(authorize?: false)
+
+    assert ["mfg.bom", "purchase.outsourced_issue", "purchase.outsourced_receipt"] =
+             Rule |> Ash.read!(authorize?: false) |> Enum.map(& &1.resource) |> Enum.sort()
     assert [] = MaterialCategory |> Ash.read!(authorize?: false)
 
     assert :ok = Setup.complete(actor, "zh-CN")
@@ -112,17 +116,20 @@ defmodule SynieCore.SetupTest do
     assert local.root == "uploads"
 
     # 编号规则:物料 + 员工 + 工序 + 工艺模板 + 18 种业务单据(含履约需求/工单/生产入库)
+    # + 迁移随带的 BOM/委外发料/委外入库规则(不由向导种子,已存在则 ensure 跳过)
     rules = Rule |> Ash.read!(authorize?: false)
-    assert length(rules) == 22
+    assert length(rules) == 25
     resources = MapSet.new(rules, & &1.resource)
     assert "inv.material" in resources
     assert "hr.employee" in resources
     assert "mfg.operation" in resources
     assert "mfg.route_template" in resources
+    assert "mfg.bom" in resources
     assert "mfg.demand" in resources
     assert "mfg.work_order" in resources
     assert "mfg.output" in resources
     assert "sales.order" in resources
+    assert "purchase.outsourced_receipt" in resources
     assert "acc.gl_journal" in resources
 
     material_rule = Enum.find(rules, &(&1.resource == "inv.material"))

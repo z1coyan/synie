@@ -369,6 +369,216 @@ defmodule SynieCore.Inv.WarehouseTest do
     end
   end
 
+  describe "外协仓协作方" do
+    defp supplier! do
+      SynieCore.Purchase.Supplier
+      |> Ash.Changeset.for_create(:create, %{
+        code: "S-#{System.unique_integer([:positive])}",
+        name: "测试供应商"
+      })
+      |> Ash.create!(authorize?: false)
+    end
+
+    test "is_outsourced=true 必挂协作方,false 时协作方必须为空", %{company: co} do
+      su = supplier!()
+
+      assert_raise Ash.Error.Invalid, ~r/外协仓必须绑定协作方/, fn ->
+        warehouse!(%{name: "外协仓", is_outsourced: true, company_id: co.id})
+      end
+
+      # 只给类型不给对手同样拒
+      assert_raise Ash.Error.Invalid, ~r/外协仓必须绑定协作方/, fn ->
+        warehouse!(%{name: "外协仓2", is_outsourced: true, party_type: :supplier, company_id: co.id})
+      end
+
+      assert_raise Ash.Error.Invalid, ~r/非外协仓不能绑定协作方/, fn ->
+        warehouse!(%{name: "普通仓", party_type: :supplier, party_id: su.id, company_id: co.id})
+      end
+
+      wh =
+        warehouse!(%{
+          name: "外协仓",
+          is_outsourced: true,
+          party_type: :supplier,
+          party_id: su.id,
+          company_id: co.id
+        })
+
+      assert wh.party_type == :supplier
+      assert wh.party_id == su.id
+    end
+
+    test "协作方限供应商/内部公司,客户被拒", %{company: co} do
+      customer =
+        SynieCore.Sales.Customer
+        |> Ash.Changeset.for_create(:create, %{
+          code: "C-#{System.unique_integer([:positive])}",
+          name: "客户"
+        })
+        |> Ash.create!(authorize?: false)
+
+      assert_raise Ash.Error.Invalid, ~r/协作方类型只能为供应商或内部公司/, fn ->
+        warehouse!(%{
+          name: "外协仓",
+          is_outsourced: true,
+          party_type: :customer,
+          party_id: customer.id,
+          company_id: co.id
+        })
+      end
+    end
+
+    test "协作方必须存在", %{company: co} do
+      assert_raise Ash.Error.Invalid, ~r/协作方不存在/, fn ->
+        warehouse!(%{
+          name: "外协仓",
+          is_outsourced: true,
+          party_type: :supplier,
+          party_id: Ash.UUID.generate(),
+          company_id: co.id
+        })
+      end
+    end
+
+    test "协作方为内部公司时不能是本公司,可绑其它公司", %{company: co} do
+      assert_raise Ash.Error.Invalid, ~r/协作方不能是本公司/, fn ->
+        warehouse!(%{
+          name: "外协仓",
+          is_outsourced: true,
+          party_type: :company,
+          party_id: co.id,
+          company_id: co.id
+        })
+      end
+
+      other = company!()
+
+      wh =
+        warehouse!(%{
+          name: "外协仓",
+          is_outsourced: true,
+          party_type: :company,
+          party_id: other.id,
+          company_id: co.id
+        })
+
+      assert wh.party_id == other.id
+    end
+
+    test "开启外协标记须同时绑定协作方,关闭须先清空协作方", %{company: co} do
+      su = supplier!()
+      wh = warehouse!(%{name: "仓", company_id: co.id})
+
+      assert_raise Ash.Error.Invalid, ~r/外协仓必须绑定协作方/, fn ->
+        wh
+        |> Ash.Changeset.for_update(:update, %{is_outsourced: true})
+        |> Ash.update!(authorize?: false)
+      end
+
+      wh =
+        wh
+        |> Ash.Changeset.for_update(:update, %{
+          is_outsourced: true,
+          party_type: :supplier,
+          party_id: su.id
+        })
+        |> Ash.update!(authorize?: false)
+
+      assert wh.is_outsourced
+      assert wh.party_id == su.id
+
+      # 挂着协作方直接摘标记被拒
+      assert_raise Ash.Error.Invalid, ~r/非外协仓不能绑定协作方/, fn ->
+        wh
+        |> Ash.Changeset.for_update(:update, %{is_outsourced: false})
+        |> Ash.update!(authorize?: false)
+      end
+
+      # 只清协作方不摘标记同样被拒
+      assert_raise Ash.Error.Invalid, ~r/外协仓必须绑定协作方/, fn ->
+        wh
+        |> Ash.Changeset.for_update(:update, %{party_type: nil, party_id: nil})
+        |> Ash.update!(authorize?: false)
+      end
+
+      wh =
+        wh
+        |> Ash.Changeset.for_update(:update, %{is_outsourced: false, party_type: nil, party_id: nil})
+        |> Ash.update!(authorize?: false)
+
+      refute wh.is_outsourced
+      assert wh.party_type == nil
+      assert wh.party_id == nil
+    end
+  end
+
+  describe "按对手过滤外协仓" do
+    test "outsourced 读动作只返回绑定指定对手的外协仓", %{company: co} do
+      su1 = supplier!()
+      su2 = supplier!()
+      other = company!()
+
+      wh1 =
+        warehouse!(%{
+          name: "外协仓A",
+          is_outsourced: true,
+          party_type: :supplier,
+          party_id: su1.id,
+          company_id: co.id
+        })
+
+      warehouse!(%{
+        name: "外协仓B",
+        is_outsourced: true,
+        party_type: :supplier,
+        party_id: su2.id,
+        company_id: co.id
+      })
+
+      warehouse!(%{
+        name: "外协仓C",
+        is_outsourced: true,
+        party_type: :company,
+        party_id: other.id,
+        company_id: co.id
+      })
+
+      warehouse!(%{name: "普通仓", company_id: co.id})
+
+      rows =
+        Warehouse
+        |> Ash.Query.for_read(:outsourced, %{party_type: :supplier, party_id: su1.id})
+        |> Ash.read!(authorize?: false)
+
+      assert Enum.map(rows, & &1.id) == [wh1.id]
+    end
+
+    test "outsourced 读动作复用 read 权限码与公司数据权限", %{company: co} do
+      su = supplier!()
+
+      wh =
+        warehouse!(%{
+          name: "外协仓A",
+          is_outsourced: true,
+          party_type: :supplier,
+          party_id: su.id,
+          company_id: co.id
+        })
+
+      # 无公司授权读不到(fail-closed)
+      assert Warehouse
+             |> Ash.Query.for_read(:outsourced, %{party_type: :supplier, party_id: su.id})
+             |> Ash.read!(actor: actor(%{})) == []
+
+      rows =
+        Warehouse
+        |> Ash.Query.for_read(:outsourced, %{party_type: :supplier, party_id: su.id})
+        |> Ash.read!(actor: actor(%{company_ids: [co.id]}))
+
+      assert Enum.map(rows, & &1.id) == [wh.id]
+    end
+  end
+
   test "资源声明了权限前缀" do
     assert Warehouse.permission_prefix() == "inv.warehouse"
     assert Warehouse.permission_actions() == ~w(create read update delete)

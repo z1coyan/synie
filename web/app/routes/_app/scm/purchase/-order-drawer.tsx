@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Input, Label, ListBox, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
+import { Button, Input, Label, ListBox, Modal, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
 import { gqlFetch, isForbidden } from '~/lib/graphql'
 import { formatAmount, formatPrice, formatQty } from '~/lib/amount'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
@@ -8,7 +8,7 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
+import { isLocalRow, localRowId } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -79,12 +79,31 @@ const FETCH_DETAIL = `
     }
     purOrderItems(filter: {orderId: {eq: $orderId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
       results {
-        id idx materialId unitId qty price amount basePrice baseAmount taxRate remarks quotationItemId
+        id idx materialId unitId qty price amount basePrice baseAmount taxRate remarks quotationItemId bomId
         materialName unitName
         material { id name }
         unit { id name }
         quotationItem { id pricingMode }
+        bom { id code planName }
       }
+    }
+    purOrderItemMaterials(filter: {orderItem: {orderId: {eq: $orderId}}}, sort: [{field: INSERTED_AT, order: ASC}], limit: 500, offset: 0) {
+      results { id orderItemId materialId unitId quantity issuedQty remarks material { id code name } unit { id name } }
+    }
+    purOrderItemByproducts(filter: {orderItem: {orderId: {eq: $orderId}}}, sort: [{field: INSERTED_AT, order: ASC}], limit: 500, offset: 0) {
+      results { id orderItemId materialId unitId quantity remarks material { id code name } unit { id name } }
+    }
+  }
+`
+// BOM 代入:按条目数量取两清单折算量(后端 applyQty calculation 权威折算:理论耗用=净用量×(1+损耗率,
+// 空按 0)×条目数量;副产物=单位产出量×条目数量);代入是快照复制,代入后与 BOM 脱钩
+const APPLY_BOM = `
+  query ($bomId: ID!, $qty: Decimal!) {
+    mfgBomComponents(filter: {bomId: {eq: $bomId}}, limit: 200, offset: 0) {
+      results { materialId unitId note applyQty(qty: $qty) material { id code name } unit { id name } }
+    }
+    mfgBomByproducts(filter: {bomId: {eq: $bomId}}, limit: 200, offset: 0) {
+      results { materialId unitId note applyQty(qty: $qty) material { id code name } unit { id name } }
     }
   }
 `
@@ -117,6 +136,37 @@ const DESTROY_ITEM = `
     destroyPurOrderItem(id: $id) { errors { message } }
   }
 `
+// 条目委外配置两子表(发料清单/副产物清单)的增删改:前端 diff 持久化,同 BOM 子表先例
+const CREATE_ISSUE_LINE = `
+  mutation ($input: CreatePurOrderItemMaterialInput!) {
+    createPurOrderItemMaterial(input: $input) { result { id } errors { message } }
+  }
+`
+const UPDATE_ISSUE_LINE = `
+  mutation ($id: ID!, $input: UpdatePurOrderItemMaterialInput!) {
+    updatePurOrderItemMaterial(id: $id, input: $input) { result { id } errors { message } }
+  }
+`
+const DESTROY_ISSUE_LINE = `
+  mutation ($id: ID!) {
+    destroyPurOrderItemMaterial(id: $id) { errors { message } }
+  }
+`
+const CREATE_BYPRODUCT_LINE = `
+  mutation ($input: CreatePurOrderItemByproductInput!) {
+    createPurOrderItemByproduct(input: $input) { result { id } errors { message } }
+  }
+`
+const UPDATE_BYPRODUCT_LINE = `
+  mutation ($id: ID!, $input: UpdatePurOrderItemByproductInput!) {
+    updatePurOrderItemByproduct(id: $id, input: $input) { result { id } errors { message } }
+  }
+`
+const DESTROY_BYPRODUCT_LINE = `
+  mutation ($id: ID!) {
+    destroyPurOrderItemByproduct(id: $id) { errors { message } }
+  }
+`
 
 // mutation input 只收行自身字段:amount 后端系统算(writable? false)、companyId 冗余自订单(后端回填)、
 // 快照字段(materialName/unitName 等)由后端保存时重拍,本地草稿 id 与行上挂的 material/unit join 对象一律不进 payload。
@@ -132,16 +182,107 @@ function itemInput(row: Row) {
     taxRate: row.taxRate,
     remarks: row.remarks ?? null,
     quotationItemId: row.quotationItemId ?? null,
+    bomId: row.bomId ?? null,
   }
 }
 
-const ITEM_COMPARE_KEYS = ['idx', 'materialId', 'unitId', 'qty', 'price', 'taxRate', 'remarks', 'quotationItemId'] as const
+const ITEM_COMPARE_KEYS = [
+  'idx',
+  'materialId',
+  'unitId',
+  'qty',
+  'price',
+  'taxRate',
+  'remarks',
+  'quotationItemId',
+  'bomId',
+] as const
 
 function itemChanged(before: Row, after: Row): boolean {
   return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
 }
 
-/** 行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy。全程收集错误文案(带行号定位),不中途抛出(同销售订单先例) */
+// 子表行(发料清单/副产物清单)mutation input:材料/单位/数量/行备注;行上挂的 material/unit
+// join 对象与已发料量投影(后端系统维护)不进 payload
+function subLineInput(row: Row) {
+  return {
+    materialId: row.materialId,
+    unitId: row.unitId,
+    quantity: row.quantity,
+    remarks: row.remarks ?? null,
+  }
+}
+
+const SUB_LINE_COMPARE_KEYS = ['materialId', 'unitId', 'quantity', 'remarks'] as const
+
+function subLineChanged(before: Row, after: Row): boolean {
+  return SUB_LINE_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
+}
+
+interface SubLineGql {
+  create: string
+  update: string
+  destroy: string
+  /** mutation 名主体(如 PurOrderItemMaterial),拼 create/update/destroy 前缀取响应键 */
+  entity: string
+}
+
+const ISSUE_LINE_GQL: SubLineGql = {
+  create: CREATE_ISSUE_LINE,
+  update: UPDATE_ISSUE_LINE,
+  destroy: DESTROY_ISSUE_LINE,
+  entity: 'PurOrderItemMaterial',
+}
+
+const BYPRODUCT_LINE_GQL: SubLineGql = {
+  create: CREATE_BYPRODUCT_LINE,
+  update: UPDATE_BYPRODUCT_LINE,
+  destroy: DESTROY_BYPRODUCT_LINE,
+  entity: 'PurOrderItemByproduct',
+}
+
+/** 子表行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy(同 BOM 子表先例) */
+async function persistSubLines(gql: SubLineGql, orderItemId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
+  const errors: string[] = []
+  const label = (row: Row) => String((row.material as Row | undefined)?.name ?? '清单行')
+  const collect = (row: Row, msgs: { message: string }[] | null | undefined) => {
+    if (msgs?.length) errors.push(...msgs.map((e) => `${label(row)}:${e.message}`))
+  }
+  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
+
+  for (const old of snapshot) {
+    if (currentIds.has(old.id)) continue
+    const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(gql.destroy, { id: old.id })
+    collect(old, data[`destroy${gql.entity}`].errors)
+  }
+
+  for (const row of current) {
+    if (isLocalRow(row)) {
+      const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(gql.create, {
+        input: { orderItemId, ...subLineInput(row) },
+      })
+      collect(row, data[`create${gql.entity}`].errors)
+      continue
+    }
+    const old = snapshot.find((s) => s.id === row.id)
+    if (old && subLineChanged(old, row)) {
+      const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(gql.update, {
+        id: row.id,
+        input: subLineInput(row),
+      })
+      collect(row, data[`update${gql.entity}`].errors)
+    }
+  }
+  return errors
+}
+
+// 行上委外配置子表集合的读取(行对象附加键,不进 mutation payload)
+const issueLinesOf = (row: Row | null | undefined): Row[] => (row?.issueLines as Row[] | undefined) ?? []
+const byproductLinesOf = (row: Row | null | undefined): Row[] => (row?.byproductLines as Row[] | undefined) ?? []
+
+/** 行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy。全程收集错误文案(带行号定位),不中途抛出(同销售订单先例)。
+ *  条目落库后顺带持久化该行委外配置两子表(diff 基准为行上 issueLines/byproductLines 快照);
+ *  被删条目的清单行走 DB 级联,无需显式删 */
 async function persistItems(orderId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
   const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
@@ -160,11 +301,15 @@ async function persistItems(orderId: string, current: Row[], snapshot: Row[]): P
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createPurOrderItem: { errors: { message: string }[] | null } }>(
-        CREATE_ITEM,
-        { input: { orderId, ...itemInput(row) } }
-      )
+      const data = await gqlFetch<{
+        createPurOrderItem: { result: { id: string } | null; errors: { message: string }[] | null }
+      }>(CREATE_ITEM, { input: { orderId, ...itemInput(row) } })
       collect(row.idx, data.createPurOrderItem.errors)
+      const newId = data.createPurOrderItem.result?.id
+      if (newId) {
+        errors.push(...(await persistSubLines(ISSUE_LINE_GQL, newId, issueLinesOf(row), [])))
+        errors.push(...(await persistSubLines(BYPRODUCT_LINE_GQL, newId, byproductLinesOf(row), [])))
+      }
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
@@ -175,12 +320,143 @@ async function persistItems(orderId: string, current: Row[], snapshot: Row[]): P
       )
       collect(row.idx, data.updatePurOrderItem.errors)
     }
+    if (old) {
+      errors.push(...(await persistSubLines(ISSUE_LINE_GQL, row.id, issueLinesOf(row), issueLinesOf(old))))
+      errors.push(...(await persistSubLines(BYPRODUCT_LINE_GQL, row.id, byproductLinesOf(row), byproductLinesOf(old))))
+    }
   }
   return errors
 }
 
 // 税率库存小数(0.13),前端一律按百分比展示/录入(条目 tab 的 taxRate 列也用它渲染)
 export const formatPercent = (v: unknown) => (v == null || v === '' ? '' : `${Math.round(Number(v) * 10000) / 100}%`)
+
+// ── 委外配置(发料清单/副产物清单)─────────────────────────────────────────────
+
+// BOM 选项标签:编号为主(独立编号唯一),方案名称辅助区分同物料多张
+const bomOptionLabel = (bom: Row) =>
+  `${String(bom.code ?? '')}${bom.planName != null && bom.planName !== '' ? `(${String(bom.planName)})` : ''}`
+
+// 两子表共用录入字段:材料切换清单位(候选随材料走);已发料量是后端投影,不进表单
+function subLineFields(withIssued: boolean): Record<string, FieldOverride> {
+  return {
+    materialId: { order: 0, required: true, effects: () => ({ unitId: null }) },
+    unitId: {
+      order: 1,
+      cols: 6,
+      required: true,
+      input: ({ value, onChange, isDisabled, values: lineValues }) => (
+        <MaterialUnitSelect
+          materialId={lineValues.materialId == null ? null : String(lineValues.materialId)}
+          value={value}
+          onChange={onChange}
+          isDisabled={isDisabled}
+        />
+      ),
+    },
+    quantity: { order: 2, cols: 6, required: true, label: '数量' },
+    ...(withIssued ? { issuedQty: { visible: () => false } } : {}),
+    remarks: { order: 3 },
+  }
+}
+
+const subLineValidate = (vals: Record<string, unknown>) => {
+  if (!vals.materialId) return '请选择材料'
+  if (!(Number(vals.quantity) > 0)) return '数量必须大于零'
+}
+
+/**
+ * 条目行抽屉内的委外配置区(仅委外订单渲染):发料清单/副产物清单两个子表 + 「从 BOM 代入」。
+ * 行对象上的 issueLines/byproductLines 是真源(随条目行 diff 持久化,见 persistItems);
+ * 抽屉打开期间由本组件内部 state 接管,经 syncRef 上报,行提交时由 transformItem 并回行对象。
+ * 代入是快照复制:代入后与 BOM 脱钩可自由增删改,改条目数量不自动重算(重算=清空清单再代入)。
+ */
+function OutsourcedConfig({
+  itemRow,
+  itemValues,
+  syncRef,
+}: {
+  itemRow: Row | null
+  itemValues: Record<string, unknown>
+  syncRef: MutableRefObject<{ issue: Row[]; byproduct: Row[] } | null>
+}) {
+  const [issue, setIssue] = useState<Row[]>(() => issueLinesOf(itemRow))
+  const [byproduct, setByproduct] = useState<Row[]>(() => byproductLinesOf(itemRow))
+  const [applying, setApplying] = useState(false)
+
+  useEffect(() => {
+    syncRef.current = { issue, byproduct }
+  }, [issue, byproduct, syncRef])
+
+  const bomId = itemValues.bomId == null || itemValues.bomId === '' ? null : String(itemValues.bomId)
+  const qty = Number(itemValues.qty)
+  // 与 BOM「从模板带入」同例:代入是整表重建,不与手录行混排——清单非空须先清空再代入
+  const canApply = bomId != null && Number.isFinite(qty) && qty > 0 && issue.length === 0 && byproduct.length === 0
+
+  const applyBom = async () => {
+    if (bomId == null) return
+    setApplying(true)
+    try {
+      const d = await gqlFetch<{ mfgBomComponents: { results: Row[] }; mfgBomByproducts: { results: Row[] } }>(
+        APPLY_BOM,
+        { bomId, qty: String(qty) }
+      )
+      const toLine = (r: Row) => ({
+        id: localRowId(),
+        materialId: r.materialId,
+        unitId: r.unitId,
+        quantity: Number(r.applyQty),
+        remarks: r.note ?? null,
+        material: r.material,
+        unit: r.unit,
+      })
+      setIssue(d.mfgBomComponents.results.map(toLine))
+      setByproduct(d.mfgBomByproducts.results.map(toLine))
+      toast.success('已按 BOM 代入发料清单与副产物清单')
+    } catch (e) {
+      toast.danger('BOM 代入失败', { description: (e as Error).message })
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 flex flex-col gap-4 border-t border-separator pt-4">
+      <SynieEditableTable
+        resource="purOrderItemMaterials"
+        label="发料清单"
+        items={issue}
+        onChange={setIssue}
+        exclude={['orderItemId', 'companyId']}
+        columns={['materialId', 'unitId', 'quantity', 'issuedQty', 'remarks']}
+        fields={subLineFields(true)}
+        validateItem={subLineValidate}
+        toolbar={
+          <>
+            {bomId == null ? (
+              <span className="self-center text-xs text-muted">先选成品 BOM 再代入</span>
+            ) : issue.length > 0 || byproduct.length > 0 ? (
+              <span className="self-center text-xs text-muted">清空清单后可重新代入</span>
+            ) : null}
+            <Button size="sm" variant="secondary" isDisabled={!canApply} isPending={applying} onPress={() => void applyBom()}>
+              从 BOM 代入
+            </Button>
+          </>
+        }
+      />
+      <SynieEditableTable
+        resource="purOrderItemByproducts"
+        label="副产物清单"
+        items={byproduct}
+        onChange={setByproduct}
+        exclude={['orderItemId', 'companyId']}
+        columns={['materialId', 'unitId', 'quantity', 'remarks']}
+        fields={subLineFields(false)}
+        validateItem={subLineValidate}
+      />
+    </div>
+  )
+}
 
 // 本地即时换算(展示层;保存时后端权威重算):值×汇率按 dp 位四舍五入,非数值回 null
 function mulRound(v: unknown, rate: number, dp: number): number | null {
@@ -339,6 +615,10 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   // 报价条目缓存(id → 行):选择时写入完整行(物料快照名等即时带出),存量行由 FETCH_DETAIL 回填定价模式;
   // 行表单的梯度判定(tieredSelected)与 transformItem 的快照名带出都读它
   const quotationItemsRef = useRef(new Map<string, Row>())
+  // 条目行抽屉内委外配置两子表的最新草稿(OutsourcedConfig 经 effect 上报),行提交时 transformItem 并回行对象
+  const subSyncRef = useRef<{ issue: Row[]; byproduct: Row[] } | null>(null)
+  // 查看态「委外配置」弹窗:只读展示该行的 BOM 与两清单(行抽屉只在编辑态存在,查看态走这里)
+  const [linesView, setLinesView] = useState<Row | null>(null)
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张订单的行回填到当前订单
   const reqIdRef = useRef(0)
@@ -373,12 +653,25 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
       return
     }
     setDetailLoaded(false)
-    gqlFetch<{ purOrders: { results: { terms: string | null }[] }; purOrderItems: { results: Row[] } }>(
-      FETCH_DETAIL,
-      { orderId: order!.id }
-    )
+    gqlFetch<{
+      purOrders: { results: { terms: string | null }[] }
+      purOrderItems: { results: Row[] }
+      purOrderItemMaterials: { results: Row[] }
+      purOrderItemByproducts: { results: Row[] }
+    }>(FETCH_DETAIL, { orderId: order!.id })
       .then((d) => {
         if (my !== reqIdRef.current) return
+        // 委外配置两子表按 orderItemId 归组挂到条目行(随条目 diff 持久化,快照留作提交基准)
+        const groupByItem = (rows: Row[]) => {
+          const m = new Map<string, Row[]>()
+          for (const r of rows) {
+            const k = String(r.orderItemId)
+            m.set(k, [...(m.get(k) ?? []), r])
+          }
+          return m
+        }
+        const issueByItem = groupByItem(d.purOrderItemMaterials.results)
+        const byproductByItem = groupByItem(d.purOrderItemByproducts.results)
         // 报价条目定价模式摊平到行(价格/金额列的梯度展示判定),并回填缓存供行表单只读派生;
         // 与选择时写入的完整行合并,不覆盖已有的快照名
         const rows = d.purOrderItems.results.map((r) => {
@@ -387,7 +680,12 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             const prev = quotationItemsRef.current.get(String(qitem.id)) ?? ({} as Row)
             quotationItemsRef.current.set(String(qitem.id), { ...prev, id: qitem.id, pricingMode: qitem.pricingMode })
           }
-          return { ...r, pricingMode: qitem?.pricingMode ?? null }
+          return {
+            ...r,
+            pricingMode: qitem?.pricingMode ?? null,
+            issueLines: issueByItem.get(String(r.id)) ?? [],
+            byproductLines: byproductByItem.get(String(r.id)) ?? [],
+          }
         })
         setTerms(d.purOrders.results[0]?.terms ?? '')
         setItems(rows)
@@ -448,6 +746,9 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
         ),
       },
       orderDate: { order: 1, cols: 6, required: true, defaultValue: todayLocal() },
+      // 委外标记:新建期可勾选,保存后锁死(createOnly 编辑态禁用且不进更新 payload,后端 OutsourcedLocked 兜底);
+      // 勾选即委外订单——条目=委外回来的成品、条目含税单价=加工费单价,与订单类型正交
+      isOutsourced: { order: 0, cols: 6, label: '委外标记', edit: 'createOnly' as const, defaultValue: false },
       // 切公司清币种/汇率,由 CompanyCurrencySync 按新公司本币重新带出
       companyId: { ...baseCfg.fields?.companyId, effects: () => ({ currencyId: null, exchangeRate: null }) },
       // 切币种重置汇率:切到本币后端强制 1(字段随即隐藏),切到外币要求重填
@@ -497,13 +798,26 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             row?.id == null ? (
               <p className="text-sm text-muted">订单保存后可查看收货历史</p>
             ) : (
-              <SynieDataGrid
-                resource="purReceiptItems"
-                columns={RECEIPT_COLUMNS}
-                overrides={RECEIPT_OVERRIDES}
-                fixedFilter={{ orderItem: { orderId: { eq: String(row.id) } } }}
-                defaultSort={{ column: 'receiptDate', direction: 'descending' }}
-              />
+              <div className="flex flex-col gap-6">
+                <SynieDataGrid
+                  resource="purReceiptItems"
+                  columns={RECEIPT_COLUMNS}
+                  overrides={RECEIPT_OVERRIDES}
+                  fixedFilter={{ orderItem: { orderId: { eq: String(row.id) } } }}
+                  defaultSort={{ column: 'receiptDate', direction: 'descending' }}
+                />
+                {/* 委外订单的回收进度:委外入库行同 tab 列出(列口径同上,全走行上快照/头投影列) */}
+                <div>
+                  <h3 className="mb-2 text-sm font-medium text-ink-700">委外入库</h3>
+                  <SynieDataGrid
+                    resource="purOutsourcedReceiptItems"
+                    columns={RECEIPT_COLUMNS}
+                    overrides={RECEIPT_OVERRIDES}
+                    fixedFilter={{ orderItem: { orderId: { eq: String(row.id) } } }}
+                    defaultSort={{ column: 'receiptDate', direction: 'descending' }}
+                  />
+                </div>
+              </div>
             ),
         }}
         extraContent={(mode, row, values, patchValues) => {
@@ -518,6 +832,8 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           // 订单类型:编辑态读表单草稿,查看态读行数据;决定条目行表单形态(报价条目选择器 vs 自由录入)
           const orderType = String((mode === 'view' ? row?.orderType : (values.orderType ?? row?.orderType)) ?? 'REGULAR')
           const isSpot = orderType === 'SPOT'
+          // 委外标记:同上按态读取;决定是否出成品 BOM 选择与两清单子表(委外配置全部可选,不配不挡开单)
+          const isOutsourced = Boolean(mode === 'view' ? row?.isOutsourced : (values.isOutsourced ?? row?.isOutsourced))
           // 头四要素(类型/公司/对手/日期)选齐才放开条目新增;缺任一给提示文案
           const headerReady = Boolean(
             values.orderType && values.companyId && values.partyType && values.partyId && values.orderDate
@@ -751,7 +1067,41 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   },
                 }
               : { visible: () => false },
+            // 成品 BOM(委外配置,可空):限选条目物料自身的 BOM(后端 BomMaterialMatch 兜底),
+            // 按编号/方案名称区分同物料多张;仅留痕,选后可在下方「从 BOM 代入」两清单
+            bomId: !isOutsourced
+              ? { visible: () => false }
+              : {
+                  order: fo + 7,
+                  label: '成品 BOM',
+                  input: ({ value, onChange, isDisabled, values: itemValues }) => (
+                    <RemoteSelect
+                      resource="mfgBoms"
+                      label="成品 BOM"
+                      placeholder={itemValues.materialId ? '选择该物料的 BOM(可空)…' : '先选物料'}
+                      labelField="code"
+                      searchFields={['code', 'planName']}
+                      filter={
+                        itemValues.materialId != null
+                          ? `{materialId: {eq: ${JSON.stringify(String(itemValues.materialId))}}}`
+                          : undefined
+                      }
+                      fields={['code', 'planName']}
+                      value={value == null ? null : String(value)}
+                      onChange={onChange}
+                      isDisabled={isDisabled || itemValues.materialId == null}
+                      renderValue={(r) => bomOptionLabel(r)}
+                      renderItem={(r) => (
+                        <div className="flex flex-col">
+                          <span className="text-sm">{bomOptionLabel(r)}</span>
+                        </div>
+                      )}
+                    />
+                  ),
+                },
           }
+          // 条目表只读口径(查看态/非草稿/详情未加载完):行抽屉与委外配置编辑同此闸
+          const itemsReadOnly = mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)
           return (
           <>
             <CompanyCurrencySync
@@ -767,7 +1117,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             label="订单条目"
             items={items}
             onChange={setItems}
-            readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)}
+            readOnly={itemsReadOnly}
             // 头四要素(类型/公司/对手/日期)未选齐禁止新增;币种由公司带出,选择器内部另有兜底
             canCreate={headerReady}
             toolbar={
@@ -836,6 +1186,22 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
               },
             }}
             fields={itemFields}
+            // 行抽屉内挂委外配置区(仅委外订单):成品 BOM 字段在上方表单,两清单子表 + 代入在此
+            extraContent={(itemMode, itemRow, itemValues) =>
+              isOutsourced && itemMode !== 'view' ? (
+                <OutsourcedConfig key={itemRow?.id ?? 'new'} itemRow={itemRow ?? null} itemValues={itemValues} syncRef={subSyncRef} />
+              ) : null
+            }
+            // 查看态行抽屉不存在,委外配置走只读弹窗
+            rowActions={
+              itemsReadOnly && isOutsourced
+                ? (itemRow) => (
+                    <Button size="sm" variant="ghost" onPress={() => setLinesView(itemRow)}>
+                      委外配置
+                    </Button>
+                  )
+                : undefined
+            }
             validateItem={(vals) => {
               if (!(Number(vals.qty) > 0)) return '数量必须大于零'
               // 零星行数量上限:salSetting 查不到(无权限/失败)时跳过客户端校验,后端建行与审核复核兜底
@@ -850,6 +1216,8 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
               const qitem =
                 values.quotationItemId != null ? quotationItemsRef.current.get(String(values.quotationItemId)) : undefined
               const tiered = qitem?.pricingMode === 'QTY_TIERED'
+              // 委外配置两子表:行抽屉打开期间的最新草稿(OutsourcedConfig 上报),并回行对象随条目 diff 持久化
+              const sub = subSyncRef.current
               return {
                 ...values,
                 // 行号自动:存量行保号,新行取当前最大 idx+1(而非 length+1,避免删行后撞号)
@@ -860,8 +1228,11 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   : Math.round(((Number(values.qty) || 0) * (Number(values.price) || 0) + Number.EPSILON) * 100) / 100,
                 // 报价条目定价模式随行走(表格价格/金额列与行表单的梯度展示判定):缓存优先,存量行沿用
                 pricingMode: qitem?.pricingMode ?? editing?.pricingMode ?? null,
-                // 改选物料/单位后旧快照名作废(mergeItem 清旧 join 同理):清空让单元格回落 live 渲染,保存后后端重拍
-                ...(editing != null && values.materialId !== editing.materialId ? { materialName: null } : {}),
+                issueLines: sub?.issue ?? issueLinesOf(editing),
+                byproductLines: sub?.byproduct ?? byproductLinesOf(editing),
+                // 改选物料/单位后旧快照名作废(mergeItem 清旧 join 同理):清空让单元格回落 live 渲染,保存后后端重拍;
+                // 换物料后原 BOM 引用必然不匹配(限条目物料自身),一并清空
+                ...(editing != null && values.materialId !== editing.materialId ? { materialName: null, bomId: null } : {}),
                 ...(editing != null && values.unitId !== editing.unitId ? { unitName: null } : {}),
                 // 新选报价条目即时带出快照名(选择时缓存的是完整行);缓存缺名(存量行)保持原快照不动
                 ...(qitem?.materialName != null ? { materialName: qitem.materialName } : {}),
@@ -921,6 +1292,54 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           return savedId
         }}
       />
+
+      {/* 查看态委外配置(只读):行抽屉只在编辑态存在,查看/非草稿单走此弹窗看 BOM 与两清单 */}
+      <Modal.Backdrop isOpen={linesView != null} onOpenChange={(open) => !open && setLinesView(null)}>
+        <Modal.Container>
+          <Modal.Dialog className="max-w-3xl">
+            <Modal.Header>
+              <Modal.Heading>委外配置</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body>
+              {linesView != null && (
+                <div className="flex flex-col gap-4">
+                  <p className="text-sm">
+                    成品 BOM:
+                    {(linesView.bom as Row | null | undefined) != null
+                      ? bomOptionLabel(linesView.bom as Row)
+                      : '未配置'}
+                  </p>
+                  <SynieEditableTable
+                    resource="purOrderItemMaterials"
+                    label="发料清单"
+                    items={issueLinesOf(linesView)}
+                    onChange={() => {}}
+                    readOnly
+                    exclude={['orderItemId', 'companyId']}
+                    columns={['materialId', 'unitId', 'quantity', 'issuedQty', 'remarks']}
+                    fields={subLineFields(true)}
+                  />
+                  <SynieEditableTable
+                    resource="purOrderItemByproducts"
+                    label="副产物清单"
+                    items={byproductLinesOf(linesView)}
+                    onChange={() => {}}
+                    readOnly
+                    exclude={['orderItemId', 'companyId']}
+                    columns={['materialId', 'unitId', 'quantity', 'remarks']}
+                    fields={subLineFields(false)}
+                  />
+                </div>
+              )}
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="secondary" onPress={() => setLinesView(null)}>
+                关闭
+              </Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     </OrderDrawerContext.Provider>
   )
 }

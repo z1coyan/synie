@@ -1,3 +1,26 @@
+defmodule SynieCore.Mfg.BomComponent.ApplyQty do
+  @moduledoc """
+  委外订单 BOM 代入发料清单的折算口径:理论耗用=净用量×(1+损耗率,空按 0)×条目数量。
+  代入是快照复制:代入结果落库为发料清单行后即与本行脱钩(见 Purchase.OrderItemMaterial)。
+  """
+
+  use Ash.Resource.Calculation
+
+  @impl true
+  def load(_query, _opts, _context), do: [:quantity, :loss_rate]
+
+  @impl true
+  def calculate(records, _opts, %{arguments: %{qty: qty}}) do
+    Enum.map(records, fn r ->
+      loss = r.loss_rate || Decimal.new(0)
+
+      r.quantity
+      |> Decimal.mult(Decimal.add(Decimal.new(1), loss))
+      |> Decimal.mult(qty)
+    end)
+  end
+end
+
 defmodule SynieCore.Mfg.BomComponent do
   @moduledoc """
   BOM 配料行,对应 `mfg_bom_component` 表。一行 = 子物料+单位+单位净用量
@@ -143,6 +166,15 @@ defmodule SynieCore.Mfg.BomComponent do
       attribute_public? true
       attribute_writable? true
       description "单位"
+    end
+  end
+
+  calculations do
+    # 委外订单选 BOM 代入发料清单的折算接缝:理论耗用=净用量×(1+损耗率,空按 0)×条目数量
+    calculate :apply_qty, :decimal, SynieCore.Mfg.BomComponent.ApplyQty do
+      public? true
+      argument :qty, :decimal, allow_nil?: false
+      description "理论耗用(净用量×(1+损耗率,空按 0)×条目数量)"
     end
   end
 end

@@ -558,6 +558,161 @@ const registry: Record<string, ResourceDrawerConfig> = {
     },
   },
   purReceiptItems: { label: '入库条目' },
+  purOutsourcedReceipts: {
+    label: '委外入库单',
+    contentClassName: 'w-full lg:w-[960px]',
+    exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt'],
+    fields: {
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      receiptNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      receiptDate: { order: 1, cols: 6, required: true, label: '入库日期' },
+      postingDate: { order: 2, cols: 6, label: '过账日期' },
+      partyType: {
+        order: 3,
+        cols: 6,
+        required: true,
+        label: '对手类型',
+        effects: () => ({ partyId: null, outsourcedWarehouseId: null }),
+        input: ({ value, onChange, isDisabled }) => (
+          <Select
+            isDisabled={isDisabled}
+            isRequired
+            value={value == null || value === '' ? null : String(value)}
+            onChange={(v) => onChange(v === '' ? null : v)}
+          >
+            <Label>对手类型</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item key="SUPPLIER" id="SUPPLIER" textValue="供应商">
+                  供应商
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                <ListBox.Item key="COMPANY" id="COMPANY" textValue="内部公司">
+                  内部公司
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        ),
+      },
+      partyId: {
+        order: 4,
+        cols: 6,
+        required: true,
+        label: '对手(协作方)',
+        visible: (values) => values.partyType === 'SUPPLIER' || values.partyType === 'COMPANY',
+        effects: () => ({ outsourcedWarehouseId: null }),
+        input: ({ value, onChange, isDisabled, values }) => {
+          const isCompany = values.partyType === 'COMPANY'
+          return (
+            <RemoteSelect
+              resource={isCompany ? 'basCompanies' : 'purSuppliers'}
+              label="对手(协作方)"
+              placeholder={isCompany ? '选择内部公司…' : '选择供应商…'}
+              value={value == null ? null : String(value)}
+              onChange={(id) => onChange(id)}
+              isDisabled={isDisabled}
+            />
+          )
+        },
+      },
+      // 两仓均为可空头仓:默认入仓=成品行/副产物行新建与带出预填;默认外协仓=材料扣减行带出预填;
+      // 选择器需读对手/公司上下文,定制输入在委外入库抽屉里覆盖
+      warehouseId: { order: 5, cols: 6, label: '默认入仓(可空)' },
+      outsourcedWarehouseId: { order: 6, cols: 6, label: '默认外协仓(可空)' },
+      remarks: { order: 7, label: '备注' },
+      // 借贷科目在条目表下方渲染(见委外入库抽屉 extraContent);hidden=不占主栅格但仍必填/提交
+      debitAccountId: { order: 100, cols: 6, required: true, label: '借方科目', hidden: true },
+      creditAccountId: {
+        order: 101,
+        cols: 6,
+        required: true,
+        label: '贷方科目(未开票应付)',
+        hidden: true,
+      },
+    },
+  },
+  purOutsourcedReceiptItems: { label: '委外入库条目' },
+  purOutsourcedReceiptItemMaterials: { label: '委外入库材料扣减行' },
+  purOutsourcedReceiptItemByproducts: { label: '委外入库副产物行' },
+  purOutsourcedIssues: {
+    label: '委外发料单',
+    contentClassName: 'w-full lg:w-[960px]',
+    exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt'],
+    fields: {
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      issueNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      issueDate: { order: 1, cols: 6, required: true, label: '发料日期' },
+      partyType: {
+        order: 2,
+        cols: 6,
+        required: true,
+        label: '对手类型',
+        effects: () => ({ partyId: null, outsourcedWarehouseId: null }),
+        input: ({ value, onChange, isDisabled }) => (
+          <Select
+            isDisabled={isDisabled}
+            isRequired
+            value={value == null || value === '' ? null : String(value)}
+            onChange={(v) => onChange(v === '' ? null : v)}
+          >
+            <Label>对手类型</Label>
+            <Select.Trigger>
+              <Select.Value>
+                {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+              </Select.Value>
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                <ListBox.Item key="SUPPLIER" id="SUPPLIER" textValue="供应商">
+                  供应商
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+                <ListBox.Item key="COMPANY" id="COMPANY" textValue="内部公司">
+                  内部公司
+                  <ListBox.ItemIndicator />
+                </ListBox.Item>
+              </ListBox>
+            </Select.Popover>
+          </Select>
+        ),
+      },
+      partyId: {
+        order: 3,
+        cols: 6,
+        required: true,
+        label: '对手(协作方)',
+        visible: (values) => values.partyType === 'SUPPLIER' || values.partyType === 'COMPANY',
+        effects: () => ({ outsourcedWarehouseId: null }),
+        input: ({ value, onChange, isDisabled, values }) => {
+          const isCompany = values.partyType === 'COMPANY'
+          return (
+            <RemoteSelect
+              resource={isCompany ? 'basCompanies' : 'purSuppliers'}
+              label="对手(协作方)"
+              placeholder={isCompany ? '选择内部公司…' : '选择供应商…'}
+              value={value == null ? null : String(value)}
+              onChange={(id) => onChange(id)}
+              isDisabled={isDisabled}
+            />
+          )
+        },
+      },
+      // 两仓均为可空头仓(仅新建行预填);选择器需读对手上下文,定制输入在发料抽屉里覆盖
+      fromWarehouseId: { order: 4, cols: 6, label: '默认调出仓(可空)' },
+      outsourcedWarehouseId: { order: 5, cols: 6, label: '默认外协仓(可空)' },
+      remarks: { order: 6, label: '备注' },
+    },
+  },
+  purOutsourcedIssueItems: { label: '委外发料条目' },
   purReconciliations: {
     label: '采购对账单',
     contentClassName: 'w-full lg:w-[960px]',
@@ -739,9 +894,13 @@ const registry: Record<string, ResourceDrawerConfig> = {
       { key: 'byproducts', label: '副产品' },
     ],
     fields: {
-      // BOM 以物料为唯一键:建后不可换(update 不收 material_id,换物料=删旧建新);物料量大走弹窗选择
-      materialId: { order: 0, required: true, edit: 'createOnly', picker: 'dialog' },
-      note: { order: 1 },
+      // 编号留空自动取号(后端 AutoNumber:mfg.bom),创建后不可改(update 不收 code)
+      code: { order: 0, cols: 6, edit: 'createOnly', placeholder: '留空自动编号' },
+      // 方案名称可空:同物料多张 BOM 的区分辅助(列表/选择器)
+      planName: { order: 1, cols: 6, placeholder: '如 自用 / 委外' },
+      // BOM 建后不可换物料(update 不收 material_id,换物料=删旧建新);物料量大走弹窗选择
+      materialId: { order: 2, required: true, edit: 'createOnly', picker: 'dialog' },
+      note: { order: 3 },
       // view 态时间戳收编出业务分组并垫底(同物料先例)
       insertedAt: { order: 98, section: '' },
       updatedAt: { order: 99 },

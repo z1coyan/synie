@@ -108,7 +108,11 @@ defmodule SynieCore.Mfg.MfgTest do
     |> Ash.create!(authorize?: false)
   end
 
+  # 夹具一律显式给唯一编号,避免并发测试共用计数器行互锁(同 operation!/template! 先例);
+  # 自动取号本身由「BOM 编号」用例单独覆盖
   defp bom!(material, attrs \\ %{}) do
+    attrs = Map.put_new_lazy(attrs, :code, fn -> "BOM-#{System.unique_integer([:positive])}" end)
+
     Bom
     |> Ash.Changeset.for_create(:create, Map.merge(%{material_id: material.id}, attrs))
     |> Ash.create!(authorize?: false)
@@ -255,30 +259,65 @@ defmodule SynieCore.Mfg.MfgTest do
   end
 
   describe "BOM" do
-    test "一物料一张:material 唯一,创建后不可换物料", ctx do
+    test "一物料可建多张:凭编号与方案名称区分,物料建后仍不可换", ctx do
       m = product(ctx)
-      bom = bom!(m, %{note: "首版"})
-      assert bom.material_id == m.id
-      assert bom.note == "首版"
 
-      assert_raise Ash.Error.Invalid, ~r/该物料已存在 BOM/, fn ->
-        bom!(m)
-      end
+      a = bom!(m, %{code: "BOM-A", plan_name: "自用"})
+      b = bom!(m, %{code: "BOM-B", plan_name: "委外", note: "发给协作方"})
 
+      assert {a.material_id, a.code, a.plan_name} == {m.id, "BOM-A", "自用"}
+      assert {b.material_id, b.code, b.plan_name, b.note} == {m.id, "BOM-B", "委外", "发给协作方"}
+
+      # 方案名称可空、可改
+      updated =
+        b
+        |> Ash.Changeset.for_update(:update, %{plan_name: nil, note: "改注"})
+        |> Ash.update!(authorize?: false)
+
+      assert updated.plan_name == nil
+      assert updated.note == "改注"
+
+      # 物料建后不可换(换物料=删旧建新)
       other = product(ctx, "另一个")
 
       assert_raise Ash.Error.Invalid, fn ->
-        bom
+        a
         |> Ash.Changeset.for_update(:update, %{material_id: other.id})
         |> Ash.update!(authorize?: false)
       end
+    end
 
-      updated =
+    test "编号唯一:重复编号报错", ctx do
+      m = product(ctx)
+      bom!(m, %{code: "BOM-DUP"})
+
+      assert_raise Ash.Error.Invalid, ~r/BOM 编号已存在/, fn ->
+        bom!(m, %{code: "BOM-DUP"})
+      end
+    end
+
+    test "编号创建后不可修改", ctx do
+      bom = product(ctx) |> bom!()
+
+      assert_raise Ash.Error.Invalid, fn ->
         bom
-        |> Ash.Changeset.for_update(:update, %{note: "改注"})
+        |> Ash.Changeset.for_update(:update, %{code: "X-1"})
         |> Ash.update!(authorize?: false)
+      end
+    end
 
-      assert updated.note == "改注"
+    test "留空自动取号:M(B)-4 位序号,编号规则随迁移种子", ctx do
+      # 规则由迁移种子(老环境免手工配置),先断言种子在位再验取号
+      assert Rule
+             |> Ash.Query.filter(resource == "mfg.bom" and enabled == true)
+             |> Ash.exists?(authorize?: false)
+
+      bom =
+        Bom
+        |> Ash.Changeset.for_create(:create, %{material_id: product(ctx).id})
+        |> Ash.create!(authorize?: false)
+
+      assert bom.code == "M(B)-0001"
     end
 
     test "删 BOM 级联删三类行", ctx do
@@ -295,6 +334,50 @@ defmodule SynieCore.Mfg.MfgTest do
       assert [] = Ash.read!(BomComponent, authorize?: false)
       assert [] = Ash.read!(BomRoute, authorize?: false)
       assert [] = Ash.read!(BomByproduct, authorize?: false)
+    end
+  end
+
+  describe "迁移补编号" do
+    # 与放开一物料多张的迁移共用同一份逻辑(SynieCore.Mfg.BomNumberingBackfill):
+    # 存量无编号行按创建顺序补 M(B)-NNNN,计数器垫到已用最大序号
+    test "存量 BOM 补编号并垫计数器,后续自动取号不撞存量", ctx do
+      m = product(ctx)
+
+      # 模拟迁移前的存量行:绕过 Ash 直插 code 为空的行(DDL 在测试事务内,随回滚还原)
+      SynieCore.Repo.query!("ALTER TABLE mfg_bom ALTER COLUMN code DROP NOT NULL")
+
+      for ts <- [~N[2026-07-01 00:00:00], ~N[2026-07-02 00:00:00]] do
+        SynieCore.Repo.query!(
+          "INSERT INTO mfg_bom (id, material_id, inserted_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $2)",
+          [Ecto.UUID.dump!(m.id), ts]
+        )
+      end
+
+      SynieCore.Mfg.BomNumberingBackfill.run!()
+
+      codes =
+        Bom
+        |> Ash.Query.sort(inserted_at: :asc)
+        |> Ash.read!(authorize?: false)
+        |> Enum.map(& &1.code)
+
+      assert codes == ["M(B)-0001", "M(B)-0002"]
+
+      # 幂等:再跑一轮不重复补号
+      SynieCore.Mfg.BomNumberingBackfill.run!()
+
+      assert Bom
+             |> Ash.Query.sort(inserted_at: :asc)
+             |> Ash.read!(authorize?: false)
+             |> Enum.map(& &1.code) == codes
+
+      # 计数器已垫到 2:下一张自动取号从 0003 起
+      bom =
+        Bom
+        |> Ash.Changeset.for_create(:create, %{material_id: product(ctx, "新成品").id})
+        |> Ash.create!(authorize?: false)
+
+      assert bom.code == "M(B)-0003"
     end
   end
 

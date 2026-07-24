@@ -89,6 +89,10 @@ defmodule SynieCore.Purchase.ReconciliationItem.BindReceiptItem do
   绑定入库条目:构建期预检(存在性/入库已审核/公司对手一致/单内同币种/分型约束/
   剩余可对账量)并按金额链算行金额;before_action 事务内 FOR UPDATE 锁入库条目权威复检。
 
+  入库条目双来源(恰挂其一):采购入库条目 `receipt_item_id` 或委外入库条目
+  `outsourced_receipt_item_id`(委外采购工单05,加工费照常对账→开票)——两资源
+  行结构与快照列同名,校验与金额链共用一套口径。
+
   数量口径:对账数量按入库条目行单位录入,base_qty 按入库条目 qty→base_qty
   比例折算(6 位);行金额=对账数量×入库条目快照原币含税单价(2 位),
   本币金额=行金额×源订单汇率(2 位)——均在 before_action 内取数,此时
@@ -104,51 +108,94 @@ defmodule SynieCore.Purchase.ReconciliationItem.BindReceiptItem do
     changeset = precheck(changeset)
 
     Ash.Changeset.before_action(changeset, fn cs ->
-      receipt_item_id = Ash.Changeset.get_attribute(cs, :receipt_item_id)
-
       reconciliation_id =
         Ash.Changeset.get_attribute(cs, :reconciliation_id) || cs.data.reconciliation_id
 
-      with {:ok, receipt_item} <- lock_receipt_item(receipt_item_id),
+      with {:ok, source} <- lock_receipt_item(cs),
            {:ok, reconciliation} <- get_reconciliation(reconciliation_id),
-           {:ok, order} <- get_source_order(receipt_item),
-           :ok <- check_receipt_status(receipt_item),
-           :ok <- check_party_company(reconciliation, receipt_item),
-           :ok <- check_currency(reconciliation_id, receipt_item, cs),
-           :ok <- check_type_rules(reconciliation, receipt_item, order),
-           :ok <- check_qty(cs, receipt_item) do
-        apply_amounts(cs, receipt_item, order)
+           {:ok, order} <- get_source_order(source.item),
+           :ok <- check_receipt_status(source),
+           :ok <- check_party_company(reconciliation, source),
+           :ok <- check_currency(reconciliation_id, source, cs),
+           :ok <- check_type_rules(reconciliation, source.item, order),
+           :ok <- check_qty(cs, source.item) do
+        apply_amounts(cs, source.item, order)
       else
         {:error, field, message} -> Ash.Changeset.add_error(cs, field: field, message: message)
       end
     end)
   end
 
+  # 双来源归一:%{item: 行结构, parent: 母单结构}——两资源快照列同名,后续校验共用
+  defp source(item, parent), do: %{item: item, parent: parent}
+
   # 构建期预检(友好报错,不加锁):入库条目存在性粗检;权威校验在钩子里
   defp precheck(changeset) do
-    case Ash.Changeset.get_attribute(changeset, :receipt_item_id) do
-      nil ->
+    case ref_attrs(changeset) do
+      [] ->
         changeset
 
-      receipt_item_id ->
-        case Ash.get(SynieCore.Purchase.ReceiptItem, receipt_item_id, authorize?: false) do
-          {:ok, _receipt_item} -> changeset
-          _ -> Ash.Changeset.add_error(changeset, field: :receipt_item_id, message: "入库条目不存在")
+      [{field, id} | _] ->
+        case load_item(field, id) do
+          {:ok, _source} -> changeset
+          {:error, _, message} -> Ash.Changeset.add_error(changeset, field: field, message: message)
         end
     end
   end
 
-  defp lock_receipt_item(nil), do: {:error, :receipt_item_id, "入库条目不能为空"}
+  # 行上入库条目引用(恰一个;两个都填或都空都视为未取,由 DB 恰一约束与下方兜底报错)
+  defp ref_attrs(changeset) do
+    [
+      {:receipt_item_id, Ash.Changeset.get_attribute(changeset, :receipt_item_id)},
+      {:outsourced_receipt_item_id,
+       Ash.Changeset.get_attribute(changeset, :outsourced_receipt_item_id)}
+    ]
+    |> Enum.reject(fn {_field, id} -> is_nil(id) end)
+  end
 
-  defp lock_receipt_item(id) do
-    SynieCore.Purchase.ReceiptItem
+  defp lock_receipt_item(changeset) do
+    case ref_attrs(changeset) do
+      [{field, id}] -> lock_item(field, id)
+      [] -> {:error, :receipt_item_id, "入库条目不能为空"}
+      _ -> {:error, :receipt_item_id, "入库条目只能二选一"}
+    end
+  end
+
+  defp lock_item(field, id) do
+    resource = item_resource(field)
+
+    resource
     |> Ash.Query.filter(id == ^id)
     |> Ash.Query.lock("FOR UPDATE")
     |> Ash.read_one(authorize?: false)
     |> case do
-      {:ok, nil} -> {:error, :receipt_item_id, "入库条目不存在"}
-      {:ok, receipt_item} -> {:ok, receipt_item}
-      _ -> {:error, :receipt_item_id, "入库条目不存在"}
+      {:ok, nil} -> {:error, field, "入库条目不存在"}
+      {:ok, item} -> with_parent(field, item)
+      _ -> {:error, field, "入库条目不存在"}
+    end
+  end
+
+  defp load_item(field, id) do
+    case Ash.get(item_resource(field), id, authorize?: false) do
+      {:ok, item} -> with_parent(field, item)
+      _ -> {:error, field, "入库条目不存在"}
+    end
+  end
+
+  defp item_resource(:receipt_item_id), do: SynieCore.Purchase.ReceiptItem
+  defp item_resource(:outsourced_receipt_item_id), do: SynieCore.Purchase.OutsourcedReceiptItem
+
+  defp with_parent(:receipt_item_id, item) do
+    case Ash.get(SynieCore.Purchase.Receipt, item.receipt_id, authorize?: false) do
+      {:ok, parent} -> {:ok, source(item, parent)}
+      _ -> {:error, :receipt_item_id, "入库单不存在"}
+    end
+  end
+
+  defp with_parent(:outsourced_receipt_item_id, item) do
+    case Ash.get(SynieCore.Purchase.OutsourcedReceipt, item.receipt_id, authorize?: false) do
+      {:ok, parent} -> {:ok, source(item, parent)}
+      _ -> {:error, :outsourced_receipt_item_id, "委外入库单不存在"}
     end
   end
 
@@ -173,18 +220,11 @@ defmodule SynieCore.Purchase.ReconciliationItem.BindReceiptItem do
     end
   end
 
-  defp check_receipt_status(receipt_item) do
-    case Ash.get(SynieCore.Purchase.Receipt, receipt_item.receipt_id, authorize?: false) do
-      {:ok, %{status: :audited}} -> :ok
-      {:ok, %{status: :voided}} -> {:error, :receipt_item_id, "入库单已作废,不可对账"}
-      {:ok, _} -> {:error, :receipt_item_id, "仅已审核入库单的条目可对账"}
-      _ -> {:error, :receipt_item_id, "入库单不存在"}
-    end
-  end
+  defp check_receipt_status(%{parent: %{status: :audited}}), do: :ok
+  defp check_receipt_status(%{parent: %{status: :voided}}), do: {:error, :receipt_item_id, "入库单已作废,不可对账"}
+  defp check_receipt_status(_), do: {:error, :receipt_item_id, "仅已审核入库单的条目可对账"}
 
-  defp check_party_company(reconciliation, receipt_item) do
-    receipt = Ash.get!(SynieCore.Purchase.Receipt, receipt_item.receipt_id, authorize?: false)
-
+  defp check_party_company(reconciliation, %{parent: receipt}) do
     cond do
       receipt.company_id != reconciliation.company_id ->
         {:error, :receipt_item_id, "入库单公司与对账单不一致"}
@@ -198,7 +238,7 @@ defmodule SynieCore.Purchase.ReconciliationItem.BindReceiptItem do
     end
   end
 
-  defp check_currency(reconciliation_id, receipt_item, changeset) do
+  defp check_currency(reconciliation_id, %{item: receipt_item}, changeset) do
     # 单内同币种:同单已有其他行时,订单原币必须一致
     siblings =
       SynieCore.Purchase.ReconciliationItem
@@ -219,15 +259,38 @@ defmodule SynieCore.Purchase.ReconciliationItem.BindReceiptItem do
         :ok
 
       [first | _] ->
-        first_receipt_item =
-          Ash.get!(SynieCore.Purchase.ReceiptItem, first.receipt_item_id, authorize?: false)
+        case sibling_currency(first) do
+          {:ok, currency} when currency == receipt_item.order_currency_code ->
+            :ok
 
-        if first_receipt_item.order_currency_code == receipt_item.order_currency_code do
-          :ok
-        else
-          {:error, :receipt_item_id, "同一对账单内订单原币必须一致"}
+          {:ok, _} ->
+            {:error, :receipt_item_id, "同一对账单内订单原币必须一致"}
+
+          {:error, field, message} ->
+            {:error, field, message}
         end
     end
+  end
+
+  defp sibling_currency(sibling) do
+    case ref_attrs_from_data(sibling) do
+      [{field, id}] ->
+        case load_item(field, id) do
+          {:ok, %{item: item}} -> {:ok, item.order_currency_code}
+          err -> err
+        end
+
+      _ ->
+        {:error, :receipt_item_id, "入库条目不存在"}
+    end
+  end
+
+  defp ref_attrs_from_data(data) do
+    [
+      {:receipt_item_id, data.receipt_item_id},
+      {:outsourced_receipt_item_id, data.outsourced_receipt_item_id}
+    ]
+    |> Enum.reject(fn {_field, id} -> is_nil(id) end)
   end
 
   # 分型条目约束(不对称):常规单禁勾零金额行(采购订单无样品类型,零价赠送行走赠送/样品单);
@@ -297,7 +360,9 @@ defmodule SynieCore.Purchase.ReconciliationItem do
   @moduledoc """
   采购对账条目,对应 `pur_reconciliation_item` 表。
 
-  行必挂入库条目;对账数量按入库条目行单位录入,系统折算 base_qty 并校验
+  行必挂入库条目(双来源恰一:采购入库条目 `receipt_item` 或委外入库条目
+  `outsourced_receipt_item`,委外加工费照常对账→开票,见 ADR 2026-07-24);
+  对账数量按入库条目行单位录入,系统折算 base_qty 并校验
   剩余可对账量(入库 base − 已对账);金额两列系统算不可手改(金额链,
   见 `BindReceiptItem`),物料/价税口径沿用入库条目快照(经 calculations 暴露)。
   草稿不占量——生效时点由母单动作累加/回滚入库条目 `reconciled_qty`。
@@ -323,10 +388,15 @@ defmodule SynieCore.Purchase.ReconciliationItem do
 
       # 入库条目长期存在;对账行保留引用,入库条目被入库单级联删除仅限草稿单(无对账行),on_delete nothing
       reference :receipt_item, on_delete: :nothing
+      reference :outsourced_receipt_item, on_delete: :nothing
     end
 
     check_constraints do
       check_constraint :qty, "qty_positive", check: "qty > 0", message: "数量必须大于零"
+
+      check_constraint :receipt_item_id, "receipt_item_exactly_one",
+        check: "num_nonnulls(receipt_item_id, outsourced_receipt_item_id) = 1",
+        message: "入库条目必须恰挂一种来源"
     end
   end
 
@@ -382,7 +452,7 @@ defmodule SynieCore.Purchase.ReconciliationItem do
     end
 
     create :create do
-      accept [:reconciliation_id, :idx, :receipt_item_id, :qty, :remarks]
+      accept [:reconciliation_id, :idx, :receipt_item_id, :outsourced_receipt_item_id, :qty, :remarks]
 
       change {SynieCore.Purchase.ReconciliationItem.SyncReconciliation, []}
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
@@ -390,7 +460,7 @@ defmodule SynieCore.Purchase.ReconciliationItem do
     end
 
     update :update do
-      accept [:idx, :receipt_item_id, :qty, :remarks]
+      accept [:idx, :receipt_item_id, :outsourced_receipt_item_id, :qty, :remarks]
       require_atomic? false
 
       change {SynieCore.Purchase.ReconciliationItem.SyncReconciliation, []}
@@ -475,11 +545,17 @@ defmodule SynieCore.Purchase.ReconciliationItem do
     end
 
     belongs_to :receipt_item, SynieCore.Purchase.ReceiptItem do
-      allow_nil? false
       public? true
       attribute_public? true
       attribute_writable? true
-      description "入库条目"
+      description "入库条目(采购入库;与委外入库条目恰挂其一)"
+    end
+
+    belongs_to :outsourced_receipt_item, SynieCore.Purchase.OutsourcedReceiptItem do
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "委外入库条目(与采购入库条目恰挂其一)"
     end
   end
 
@@ -496,27 +572,63 @@ defmodule SynieCore.Purchase.ReconciliationItem do
       description "对账单状态"
     end
 
-    calculate :receipt_no, :string, expr(receipt_item.receipt.receipt_no) do
+    calculate :receipt_no,
+              :string,
+              expr(
+                if(
+                  is_nil(receipt_item_id),
+                  outsourced_receipt_item.receipt.receipt_no,
+                  receipt_item.receipt.receipt_no
+                )
+              ) do
       public? true
       description "入库单号"
     end
 
-    calculate :receipt_date, :date, expr(receipt_item.receipt.receipt_date) do
+    calculate :receipt_date,
+              :date,
+              expr(
+                if(
+                  is_nil(receipt_item_id),
+                  outsourced_receipt_item.receipt.receipt_date,
+                  receipt_item.receipt.receipt_date
+                )
+              ) do
       public? true
       description "入库日期"
     end
 
-    calculate :material_name, :string, expr(receipt_item.material_name) do
+    calculate :material_name,
+              :string,
+              expr(
+                if(
+                  is_nil(receipt_item_id),
+                  outsourced_receipt_item.material_name,
+                  receipt_item.material_name
+                )
+              ) do
       public? true
       description "物料名称(入库条目快照)"
     end
 
-    calculate :unit_name, :string, expr(receipt_item.unit_name) do
+    calculate :unit_name,
+              :string,
+              expr(
+                if(is_nil(receipt_item_id), outsourced_receipt_item.unit_name, receipt_item.unit_name)
+              ) do
       public? true
       description "单位名称(入库条目快照)"
     end
 
-    calculate :order_currency_code, :string, expr(receipt_item.order_currency_code) do
+    calculate :order_currency_code,
+              :string,
+              expr(
+                if(
+                  is_nil(receipt_item_id),
+                  outsourced_receipt_item.order_currency_code,
+                  receipt_item.order_currency_code
+                )
+              ) do
       public? true
       description "订单原币代码"
     end

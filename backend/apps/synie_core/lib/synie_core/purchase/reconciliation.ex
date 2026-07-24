@@ -843,17 +843,19 @@ defmodule SynieCore.Purchase.Reconciliation do
     end
   end
 
+  # 已对账数量加减:入库条目双来源(采购入库/委外入库)按 {资源, id} 分组,
+  # 两资源行结构与 adjust_reconciled_qty 内部动作同名,共用一套校验与回写
   defp adjust_reconciled(items, direction) do
     items
-    |> Enum.group_by(& &1.receipt_item_id)
-    |> Enum.reduce_while(:ok, fn {receipt_item_id, group}, :ok ->
+    |> Enum.group_by(&receipt_ref/1)
+    |> Enum.reduce_while(:ok, fn {{resource, receipt_item_id}, group}, :ok ->
       delta =
         group
         |> Enum.map(& &1.base_qty)
         |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
 
       receipt_item =
-        SynieCore.Purchase.ReceiptItem
+        resource
         |> Ash.Query.filter(id == ^receipt_item_id)
         |> Ash.Query.lock("FOR UPDATE")
         |> Ash.read_one!(authorize?: false)
@@ -866,6 +868,12 @@ defmodule SynieCore.Purchase.Reconciliation do
       end
     end)
   end
+
+  defp receipt_ref(%{receipt_item_id: id}) when not is_nil(id),
+    do: {SynieCore.Purchase.ReceiptItem, id}
+
+  defp receipt_ref(%{outsourced_receipt_item_id: id}),
+    do: {SynieCore.Purchase.OutsourcedReceiptItem, id}
 
   # 生效方向才校验剩余:剩余可对账 = 入库 base − 已对账(回退方向只由非负约束兜底)
   defp check_remaining(receipt_item, group, delta, :add) do

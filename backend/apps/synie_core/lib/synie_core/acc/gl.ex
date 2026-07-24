@@ -32,6 +32,7 @@ defmodule SynieCore.Acc.GL do
       "sales.delivery" => {SynieCore.Sales.Delivery, "销售发货单"},
       "sales.reconciliation" => {SynieCore.Sales.Reconciliation, "销售对账单"},
       "purchase.receipt" => {SynieCore.Purchase.Receipt, "采购入库单"},
+      "purchase.outsourced_receipt" => {SynieCore.Purchase.OutsourcedReceipt, "委外入库单"},
       "purchase.reconciliation" => {SynieCore.Purchase.Reconciliation, "采购对账单"},
       "acc.expense_report" => {SynieCore.Acc.ExpenseReport, "报销单"}
     }

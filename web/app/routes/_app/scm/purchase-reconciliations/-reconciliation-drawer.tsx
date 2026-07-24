@@ -99,7 +99,7 @@ const FETCH_ITEMS = `
       offset: 0
     ) {
       results {
-        id idx receiptItemId qty baseQty amount baseAmount remarks
+        id idx receiptItemId outsourcedReceiptItemId qty baseQty amount baseAmount remarks
         materialName unitName receiptNo orderCurrencyCode
       }
     }
@@ -109,6 +109,18 @@ const FETCH_ITEMS = `
 const FETCH_RECEIPT_ITEMS = `
   query ($ids: [ID!]!) {
     purReceiptItems(filter: {id: {in: $ids}}, limit: 200, offset: 0) {
+      results {
+        id qty baseQty reconciledQty remainingReconcilableQty
+        orderNo orderPrice orderBasePrice orderCurrencyCode
+        materialCode materialName materialSpec customerPartNo unitName receiptNo
+      }
+    }
+  }
+`
+// 委外入库条目池(双来源恰一,字段口径与采购入库条目一致,见后端 ReconciliationItem)
+const FETCH_OUTSOURCED_RECEIPT_ITEMS = `
+  query ($ids: [ID!]!) {
+    purOutsourcedReceiptItems(filter: {id: {in: $ids}}, limit: 200, offset: 0) {
       results {
         id qty baseQty reconciledQty remainingReconcilableQty
         orderNo orderPrice orderBasePrice orderCurrencyCode
@@ -133,17 +145,18 @@ const DESTROY_ITEM = `
   }
 `
 
-/** 提交 mutation:金额/baseQty 由后端按金额链与折算比例算(不可手改) */
+/** 提交 mutation:金额/baseQty 由后端按金额链与折算比例算(不可手改);入库条目双来源恰一 */
 function itemInput(row: Row) {
   return {
     idx: row.idx,
-    receiptItemId: row.receiptItemId,
+    receiptItemId: row.receiptItemId ?? null,
+    outsourcedReceiptItemId: row.outsourcedReceiptItemId ?? null,
     qty: row.qty,
     remarks: row.remarks ?? null,
   }
 }
 
-const ITEM_COMPARE_KEYS = ['idx', 'receiptItemId', 'qty', 'remarks'] as const
+const ITEM_COMPARE_KEYS = ['idx', 'receiptItemId', 'outsourcedReceiptItemId', 'qty', 'remarks'] as const
 
 function itemChanged(before: Row, after: Row): boolean {
   return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
@@ -464,35 +477,49 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
       .then(async (d) => {
         if (my !== reqIdRef.current) return
         const rows = d.purReconciliationItems.results
-        // 编辑态预热缓存:按行上入库条目 id 取剩余可对账量/快照价/币种
-        const ids = [
+        // 编辑态预热缓存:按行上入库条目 id 取剩余可对账量/快照价/币种(双来源各自拉取)
+        const receiptIds = [
           ...new Set(
             rows
               .map((r) => (r.receiptItemId == null ? null : String(r.receiptItemId)))
               .filter((v): v is string => v != null),
           ),
         ]
-        if (ids.length > 0) {
-          try {
-            const data = await gqlFetch<{ purReceiptItems: { results: Row[] } }>(
-              FETCH_RECEIPT_ITEMS,
-              { ids },
-            )
-            if (my !== reqIdRef.current) return
-            for (const ri of data.purReceiptItems.results) {
-              receiptItemsRef.current.set(String(ri.id), ri)
-            }
-          } catch {
-            /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
+        const outsourcedIds = [
+          ...new Set(
+            rows
+              .map((r) =>
+                r.outsourcedReceiptItemId == null ? null : String(r.outsourcedReceiptItemId),
+              )
+              .filter((v): v is string => v != null),
+          ),
+        ]
+        try {
+          const [normal, outsourced] = await Promise.all([
+            receiptIds.length > 0
+              ? gqlFetch<{ purReceiptItems: { results: Row[] } }>(FETCH_RECEIPT_ITEMS, {
+                  ids: receiptIds,
+                })
+              : Promise.resolve({ purReceiptItems: { results: [] as Row[] } }),
+            outsourcedIds.length > 0
+              ? gqlFetch<{ purOutsourcedReceiptItems: { results: Row[] } }>(
+                  FETCH_OUTSOURCED_RECEIPT_ITEMS,
+                  { ids: outsourcedIds },
+                )
+              : Promise.resolve({ purOutsourcedReceiptItems: { results: [] as Row[] } }),
+          ])
+          if (my !== reqIdRef.current) return
+          for (const ri of [...normal.purReceiptItems.results, ...outsourced.purOutsourcedReceiptItems.results]) {
+            receiptItemsRef.current.set(String(ri.id), ri)
           }
+        } catch {
+          /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
         }
         if (my !== reqIdRef.current) return
         // 行上缺的物料编号/规格/客户料号从预热缓存补齐(表格多行展示用)
         const enriched = rows.map((r) => {
-          const ri =
-            r.receiptItemId != null
-              ? receiptItemsRef.current.get(String(r.receiptItemId))
-              : undefined
+          const refId = r.receiptItemId ?? r.outsourcedReceiptItemId
+          const ri = refId != null ? receiptItemsRef.current.get(String(refId)) : undefined
           if (!ri) return r
           return {
             ...r,
@@ -556,8 +583,8 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
             items.find((r) => r.orderCurrencyCode != null && r.orderCurrencyCode !== '')
               ?.orderCurrencyCode ?? null
 
-          // 「导入所有未对账」:按选择弹窗同口径(riGridFilter)拉全部候选,
-          // 跳过已在清单的入库条目,数量默认=剩余可对账量(折行单位)
+          // 「导入所有未对账」:按选择弹窗同口径(riGridFilter)拉全部候选(采购入库+
+          // 委外入库两池,字段口径一致),跳过已在清单的入库条目,数量默认=剩余可对账量(折行单位)
           const importAllUnreconciled = async () => {
             if (!riGridFilter) return
             setImporting(true)
@@ -565,22 +592,36 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               const filterLit = toGqlLiteral(riGridFilter)
               const fields =
                 'id qty baseQty remainingReconcilableQty orderPrice orderBasePrice orderCurrencyCode materialCode materialName materialSpec customerPartNo unitName receiptNo'
-              const candidates: Row[] = []
-              let offset = 0
-              for (;;) {
-                const data = await gqlFetch<{
-                  purReceiptItems: { count: number; results: Row[] }
-                }>(
-                  `query { purReceiptItems(filter: ${filterLit}, limit: 200, offset: ${offset}, sort: [{field: RECEIPT_DATE, order: ASC}]) { count results { ${fields} } } }`,
-                )
-                const page = data.purReceiptItems
-                candidates.push(...page.results)
-                // 按实际返回行数推进:limit 可能被 max_page_size 钳制(同 fetchAllRows 纪律)
-                offset += page.results.length
-                if (candidates.length >= page.count || page.results.length === 0) break
+              const fetchPool = async (resource: string): Promise<Row[]> => {
+                const candidates: Row[] = []
+                let offset = 0
+                for (;;) {
+                  const data = await gqlFetch<Record<string, { count: number; results: Row[] }>>(
+                    `query { ${resource}(filter: ${filterLit}, limit: 200, offset: ${offset}, sort: [{field: RECEIPT_DATE, order: ASC}]) { count results { ${fields} } } }`,
+                  )
+                  const page = data[resource]
+                  candidates.push(...page.results)
+                  // 按实际返回行数推进:limit 可能被 max_page_size 钳制(同 fetchAllRows 纪律)
+                  offset += page.results.length
+                  if (candidates.length >= page.count || page.results.length === 0) break
+                }
+                return candidates
               }
-              const listed = new Set(items.map((r) => String(r.receiptItemId)))
-              const fresh = candidates.filter((ri) => !listed.has(String(ri.id)))
+              const [normal, outsourced] = await Promise.all([
+                fetchPool('purReceiptItems'),
+                fetchPool('purOutsourcedReceiptItems'),
+              ])
+              const listed = new Set(
+                items.flatMap((r) =>
+                  [r.receiptItemId, r.outsourcedReceiptItemId]
+                    .filter((v) => v != null)
+                    .map((v) => String(v)),
+                ),
+              )
+              const fresh: { ri: Row; source: 'receipt' | 'outsourced' }[] = [
+                ...normal.map((ri) => ({ ri, source: 'receipt' as const })),
+                ...outsourced.map((ri) => ({ ri, source: 'outsourced' as const })),
+              ].filter(({ ri }) => !listed.has(String(ri.id)))
               if (fresh.length === 0) {
                 toast.warning('没有可导入的未对账入库条目')
                 return
@@ -588,13 +629,13 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               // 清单为空时 filter 未钉币种:候选跨币种则无法保证单内同币种,先手工选一行钉住
               if (
                 items.length === 0 &&
-                new Set(fresh.map((ri) => String(ri.orderCurrencyCode ?? ''))).size > 1
+                new Set(fresh.map(({ ri }) => String(ri.orderCurrencyCode ?? ''))).size > 1
               ) {
                 toast.warning('未对账条目存在多个币种,请先手工新增一行钉住币种后再导入')
                 return
               }
               let maxIdx = items.reduce((m, r) => Math.max(m, Number(r.idx) || 0), 0)
-              const imported = fresh.map((ri) => {
+              const imported = fresh.map(({ ri, source }) => {
                 receiptItemsRef.current.set(String(ri.id), ri)
                 const remaining = Number(ri.remainingReconcilableQty)
                 const ratio = Number(ri.baseQty) > 0 ? Number(ri.qty) / Number(ri.baseQty) : 1
@@ -603,7 +644,8 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                 return {
                   id: localRowId(),
                   idx: ++maxIdx,
-                  receiptItemId: ri.id,
+                  receiptItemId: source === 'receipt' ? ri.id : null,
+                  outsourcedReceiptItemId: source === 'outsourced' ? ri.id : null,
                   qty,
                   remarks: null,
                   materialCode: ri.materialCode ?? null,
@@ -626,19 +668,31 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
             }
           }
 
-          // 条目录入:弹窗选入库条目后锁定回填物料/单位/币种快照;用户只填数量/行备注
-          const itemFields: Record<string, FieldOverride> = {
-            idx: { visible: () => false },
-            receiptItemId: {
-              order: 0,
-              required: true,
-              label: '入库条目',
-              input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
+          // 条目录入:弹窗选入库条目后锁定回填物料/单位/币种快照;用户只填数量/行备注。
+          // 入库条目双来源恰一(采购入库/委外入库):两个 picker 互斥,选一个清空另一个
+          const makeItemPicker = (
+            field: 'receiptItemId' | 'outsourcedReceiptItemId',
+            otherField: 'receiptItemId' | 'outsourcedReceiptItemId',
+            resource: 'purReceiptItems' | 'purOutsourcedReceiptItems',
+            label: string,
+          ) =>
+            function ItemPickerInput({
+              value,
+              onChange,
+              isDisabled,
+              patchValues: patchItem,
+            }: {
+              value: unknown
+              onChange: (v: unknown) => void
+              isDisabled: boolean
+              patchValues: (patch: Record<string, unknown>) => void
+            }) {
+              return (
                 <RemoteDialogSelect
-                  resource="purReceiptItems"
-                  label="入库条目"
-                  dialogTitle="选择可对账入库条目"
-                  placeholder={riGridFilter ? '点击选择入库条目…' : '先选齐公司与对手'}
+                  resource={resource}
+                  label={label}
+                  dialogTitle={`选择可对账${label}`}
+                  placeholder={riGridFilter ? `点击选择${label}…` : '先选齐公司与对手'}
                   labelField="materialName"
                   fields={[
                     'materialCode',
@@ -661,8 +715,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                     if (id && ritem) receiptItemsRef.current.set(String(id), ritem)
                     onChange(id)
                     // 物料/单位/币种随入库条目锁定带出;collectValues 会丢 hidden 字段,
-                    // 真正落行靠 transformItem 读 receiptItemsRef
+                    // 真正落行靠 transformItem 读 receiptItemsRef。双来源互斥:选一个清空另一个
                     patchItem({
+                      [otherField]: null,
                       materialCode: ritem?.materialCode ?? null,
                       materialName: ritem?.materialName ?? null,
                       materialSpec: ritem?.materialSpec ?? null,
@@ -673,7 +728,6 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                     })
                   }}
                   isDisabled={isDisabled || riGridFilter == null}
-                  isRequired
                   gridFilter={riGridFilter ?? undefined}
                   gridColumns={[
                     'receiptDate',
@@ -714,6 +768,31 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                   dialogClassName="max-w-6xl"
                   renderValue={(r) => receiptItemDisplay(r)}
                 />
+              )
+            }
+
+          const itemFields: Record<string, FieldOverride> = {
+            idx: { visible: () => false },
+            receiptItemId: {
+              order: 0,
+              cols: 6,
+              label: '入库条目(采购)',
+              input: makeItemPicker(
+                'receiptItemId',
+                'outsourcedReceiptItemId',
+                'purReceiptItems',
+                '入库条目(采购)',
+              ),
+            },
+            outsourcedReceiptItemId: {
+              order: 0,
+              cols: 6,
+              label: '入库条目(委外)',
+              input: makeItemPicker(
+                'outsourcedReceiptItemId',
+                'receiptItemId',
+                'purOutsourcedReceiptItems',
+                '入库条目(委外)',
               ),
             },
             // 物料/单位/币种只读回显(值由入库条目 patch 写入)
@@ -761,10 +840,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               cols: 6,
               label: '金额(原币含税)',
               input: ({ value, values: iv }) => {
+                const refId = iv.receiptItemId ?? iv.outsourcedReceiptItemId
                 const ritem =
-                  iv.receiptItemId != null
-                    ? receiptItemsRef.current.get(String(iv.receiptItemId))
-                    : undefined
+                  refId != null ? receiptItemsRef.current.get(String(refId)) : undefined
                 const preview =
                   value != null && value !== ''
                     ? value
@@ -777,10 +855,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               cols: 6,
               label: '本币金额',
               input: ({ value, values: iv }) => {
+                const refId = iv.receiptItemId ?? iv.outsourcedReceiptItemId
                 const ritem =
-                  iv.receiptItemId != null
-                    ? receiptItemsRef.current.get(String(iv.receiptItemId))
-                    : undefined
+                  refId != null ? receiptItemsRef.current.get(String(refId)) : undefined
                 const preview =
                   value != null && value !== ''
                     ? value
@@ -920,19 +997,24 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                 }}
                 fields={itemFields}
                 validateItem={(vals, curItems, editing) => {
-                  if (!vals.receiptItemId) return '请选择入库条目'
+                  const refId = vals.receiptItemId ?? vals.outsourcedReceiptItemId
+                  if (!refId) return '请选择入库条目(采购或委外,二选一)'
+                  if (vals.receiptItemId && vals.outsourcedReceiptItemId)
+                    return '入库条目只能二选一'
                   if (
                     curItems.some(
                       (r) =>
                         r.id !== editing?.id &&
-                        r.receiptItemId != null &&
-                        String(r.receiptItemId) === String(vals.receiptItemId),
+                        [r.receiptItemId, r.outsourcedReceiptItemId]
+                          .filter((v) => v != null)
+                          .map(String)
+                          .includes(String(refId)),
                     )
                   )
                     return '该入库条目已在清单中'
                   if (!(Number(vals.qty) > 0)) return '对账数量必须大于零'
                   // 单内同币种:以首个他行币种为基准(弹窗已过滤,这里双保险)
-                  const ritem = receiptItemsRef.current.get(String(vals.receiptItemId))
+                  const ritem = receiptItemsRef.current.get(String(refId))
                   const rowCurrency =
                     ritem?.orderCurrencyCode ?? vals.orderCurrencyCode ?? editing?.orderCurrencyCode
                   const other = curItems.find(
@@ -963,17 +1045,23 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                   }
                 }}
                 transformItem={(vals, editing) => {
+                  const refId = vals.receiptItemId ?? vals.outsourcedReceiptItemId
                   const ritem =
-                    vals.receiptItemId != null
-                      ? receiptItemsRef.current.get(String(vals.receiptItemId))
-                      : undefined
+                    refId != null ? receiptItemsRef.current.get(String(refId)) : undefined
                   const pick = (key: string) =>
                     ritem?.[key] ?? editing?.[key] ?? vals[key] ?? null
                   const qty = vals.qty
+                  const sameRef =
+                    editing != null &&
+                    String(editing.receiptItemId ?? '') === String(vals.receiptItemId ?? '') &&
+                    String(editing.outsourcedReceiptItemId ?? '') ===
+                      String(vals.outsourcedReceiptItemId ?? '')
                   // hidden 字段不会进 collectValues:快照以缓存或编辑行补全;
                   // 金额按金额链预算 2 位预览(保存时后端重算为准)
                   return {
                     ...vals,
+                    receiptItemId: vals.receiptItemId ?? null,
+                    outsourcedReceiptItemId: vals.outsourcedReceiptItemId ?? null,
                     idx: editing
                       ? editing.idx
                       : items.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
@@ -986,14 +1074,10 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                     orderCurrencyCode: pick('orderCurrencyCode'),
                     amount:
                       previewAmount(qty, ritem?.orderPrice) ??
-                      (editing && String(editing.receiptItemId) === String(vals.receiptItemId)
-                        ? editing.amount
-                        : null),
+                      (sameRef ? editing?.amount : null),
                     baseAmount:
                       previewAmount(qty, ritem?.orderBasePrice) ??
-                      (editing && String(editing.receiptItemId) === String(vals.receiptItemId)
-                        ? editing.baseAmount
-                        : null),
+                      (sameRef ? editing?.baseAmount : null),
                   }
                 }}
               />

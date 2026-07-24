@@ -142,6 +142,8 @@ defmodule SynieWeb.AuthzMatrix.World do
       SynieCore.Purchase.Supplier => &build_suppliers/1,
       SynieCore.Purchase.Order => &build_purchase_orders/1,
       SynieCore.Purchase.Receipt => &build_receipts/1,
+      SynieCore.Purchase.OutsourcedIssue => &build_outsourced_issues/1,
+      SynieCore.Purchase.OutsourcedReceipt => &build_outsourced_receipts/1,
       SynieCore.Purchase.Quotation => &build_purchase_quotations/1,
       SynieCore.Purchase.Reconciliation => &build_purchase_reconciliations/1,
       # 试点(工单02)
@@ -539,9 +541,14 @@ defmodule SynieWeb.AuthzMatrix.World do
         end,
         update: fn -> %{"name" => "矩阵写工艺路线-改名-#{System.unique_integer([:positive])}"} end
       },
-      # BOM 每物料至多一份:正向落在备用物料上(世界 BOM 在主物料)
+      # BOM 一物料可多张(ADR 2026-07-24):写侧 create 落在备用物料上,编号显式给唯一值
       SynieCore.Mfg.Bom => %{
-        create: fn _company -> %{"materialId" => ctx.material2.id} end,
+        create: fn _company ->
+          %{
+            "materialId" => ctx.material2.id,
+            "code" => "MXBOMW-#{System.unique_integer([:positive])}"
+          }
+        end,
         update: fn -> %{"note" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
       },
       SynieCore.Mfg.Demand => %{
@@ -684,6 +691,34 @@ defmodule SynieWeb.AuthzMatrix.World do
           %{
             "companyId" => company.id,
             "receiptNo" => "MXWRC-#{System.unique_integer([:positive])}",
+            "receiptDate" => "2026-07-02",
+            "partyType" => {:enum, "SUPPLIER"},
+            "partyId" => ctx.supplier.id,
+            "debitAccountId" => account_of(ctx, company).id,
+            "creditAccountId" => unbilled_payable_of(ctx, company).id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      # 委外发料单:无金额不过总账,头=公司+对手+发料日期即可建(头仓可空)
+      SynieCore.Purchase.OutsourcedIssue => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "issueNo" => "MXWOI-#{System.unique_integer([:positive])}",
+            "issueDate" => "2026-07-02",
+            "partyType" => {:enum, "SUPPLIER"},
+            "partyId" => ctx.supplier.id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      # 委外入库单:科目口径同采购入库——借方任意本司科目,贷方须挂未开票应付角色
+      SynieCore.Purchase.OutsourcedReceipt => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "receiptNo" => "MXWOR-#{System.unique_integer([:positive])}",
             "receiptDate" => "2026-07-02",
             "partyType" => {:enum, "SUPPLIER"},
             "partyId" => ctx.supplier.id,
@@ -1361,6 +1396,14 @@ defmodule SynieWeb.AuthzMatrix.World do
   defp build_storages(%{storage: storage}), do: [storage]
 
   defp build_numbering_rules(%{material_rule: material_rule}) do
+    require Ash.Query
+
+    # 认领迁移随带的 BOM/委外发料/委外入库编号规则(迁移种子,同 sys_setting 种子行先例)
+    seeded_rules =
+      SynieCore.Numbering.Rule
+      |> Ash.Query.filter(resource in ["mfg.bom", "purchase.outsourced_issue", "purchase.outsourced_receipt"])
+      |> Ash.read!(authorize?: false)
+
     [
       material_rule,
       SynieCore.Numbering.Rule
@@ -1374,7 +1417,7 @@ defmodule SynieWeb.AuthzMatrix.World do
         per_company: false
       })
       |> Ash.create!(authorize?: false)
-    ]
+    ] ++ seeded_rules
   end
 
   defp build_print_templates(%{template_file: template_file}) do
@@ -1708,7 +1751,10 @@ defmodule SynieWeb.AuthzMatrix.World do
   defp build_boms(%{material: material}) do
     [
       SynieCore.Mfg.Bom
-      |> Ash.Changeset.for_create(:create, %{material_id: material.id})
+      |> Ash.Changeset.for_create(:create, %{
+        material_id: material.id,
+        code: "MXBOM-#{System.unique_integer([:positive])}"
+      })
       |> Ash.create!(authorize?: false)
     ]
   end
@@ -1875,6 +1921,41 @@ defmodule SynieWeb.AuthzMatrix.World do
       |> Ash.Changeset.for_create(:create, %{
         company_id: company.id,
         receipt_no: "MXRC-#{company.code}-#{System.unique_integer([:positive])}",
+        receipt_date: ~D[2026-07-01],
+        party_type: :supplier,
+        party_id: ctx.supplier.id,
+        debit_account_id: debit.id,
+        credit_account_id: credit.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  # 空草稿委外发料单:无金额不过总账,头=公司+对手+发料日期即可建(头仓可空)
+  defp build_outsourced_issues(ctx) do
+    for company <- [ctx.company_a, ctx.company_b] do
+      SynieCore.Purchase.OutsourcedIssue
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        issue_no: "MXOI-#{company.code}-#{System.unique_integer([:positive])}",
+        issue_date: ~D[2026-07-01],
+        party_type: :supplier,
+        party_id: ctx.supplier.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  # 空草稿委外入库单:借方任意本司科目,贷方须挂未开票应付角色(与采购入库同口径)
+  defp build_outsourced_receipts(ctx) do
+    for {company, debit, credit} <- [
+          {ctx.company_a, ctx.account_a, ctx.account_up_a},
+          {ctx.company_b, ctx.account_b, ctx.account_up_b}
+        ] do
+      SynieCore.Purchase.OutsourcedReceipt
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        receipt_no: "MXOR-#{company.code}-#{System.unique_integer([:positive])}",
         receipt_date: ~D[2026-07-01],
         party_type: :supplier,
         party_id: ctx.supplier.id,

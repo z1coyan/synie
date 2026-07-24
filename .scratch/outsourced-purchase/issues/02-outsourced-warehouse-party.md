@@ -6,9 +6,11 @@
 
 **Status:** ready-for-agent
 
-- [ ] 仓库 `is_outsourced=true` 时协作方必填，`false` 时协作方必须为空
-- [ ] 协作方为 Party 多态引用，限供应商/内部公司两类，一仓绑一方
-- [ ] 仓库表单可设置/修改外协标记与协作方（沿用仓库既有可改惯例，受常规约束）
-- [ ] 提供按对手过滤外协仓的查询/选择能力，供委外单据复用
-- [ ] Ash action 层测试：必挂校验、对手类型限制、按对手过滤（prior art: inv/warehouse_test.exs）
-- [ ] 同步根 CONTEXT.md「外协仓」「协作方」词条（若实现与词条口径有出入）
+- [x] 仓库 `is_outsourced=true` 时协作方必填，`false` 时协作方必须为空
+- [x] 协作方为 Party 多态引用，限供应商/内部公司两类，一仓绑一方
+- [x] 仓库表单可设置/修改外协标记与协作方（沿用仓库既有可改惯例，受常规约束）
+- [x] 提供按对手过滤外协仓的查询/选择能力，供委外单据复用
+- [x] Ash action 层测试：必挂校验、对手类型限制、按对手过滤（prior art: inv/warehouse_test.exs）
+- [x] 同步根 CONTEXT.md「外协仓」「协作方」词条（若实现与词条口径有出入）
+
+> 评审补充（实现超出本清单、经 code-review 确认保留）：协作方为内部公司时不能是仓库所属公司自身（`WarehouseOutsourced` 校验，同 `PartyNotSelf` 先例口径），已写入 CONTEXT.md 协作方词条。

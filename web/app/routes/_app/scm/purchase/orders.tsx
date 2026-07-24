@@ -15,6 +15,8 @@ const GRID_OVERRIDES = {
   partyType: { label: '对手类型' },
   // 订单分型:常规灰、零星蓝;枚举筛选由 meta(filterable)自动带出
   orderType: { label: '类型', enumColors: { REGULAR: 'default', SPOT: 'accent' } },
+  // 委外标记:布尔列,勾选即委外订单(条目=成品、单价=加工费)
+  isOutsourced: { label: '委外' },
   currencyId: { label: '币种' },
   grossTotal: { label: '原币含税总额', render: (v: unknown) => formatAmount(v) },
   baseGrossTotal: { label: '本币含税总额', render: (v: unknown) => formatAmount(v) },
@@ -27,6 +29,7 @@ const GRID_COLUMNS = [
   'orderNo',
   'orderDate',
   'orderType',
+  'isOutsourced',
   'partyType',
   'partyId',
   'currencyId',

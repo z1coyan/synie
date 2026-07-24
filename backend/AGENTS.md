@@ -31,6 +31,7 @@
 
 - 单据编号能力一律走 `SynieCore.Numbering`:create action 挂 `change {SynieCore.Numbering.AutoNumber, attribute: :编号字段}`,禁止业务代码自写取号/流水号逻辑。
 - 挂了 AutoNumber 即自动进编号规则页的资源下拉(`numberableResources` 反射 create changes),规则在页面按资源配置,每资源仅一条启用。
+- 老环境已完成初始化、向导不会再跑:新接 AutoNumber 的资源其启用规则须随迁移种子(幂等,含存量补号时一并垫计数器),先例 `SynieCore.Mfg.BomNumberingBackfill`。
 - 计数范围 = 渲染后的非序号段文本 + 是否按公司,没有独立重置周期概念;`per_company` 依赖资源有名为 `company` 的 belongs_to。
 - 编号留空自动取号、手填原样保留;校验/权限失败会跳号(取号在构建期,`allow_nil? false` 的必填校验先于 before_action),序号允许有洞。
 - 前端接入方的编号字段改非必填,placeholder 提示「留空自动编号」。

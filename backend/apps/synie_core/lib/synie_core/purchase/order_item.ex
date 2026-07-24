@@ -1,3 +1,28 @@
+defmodule SynieCore.Purchase.OrderItem.BomMaterialMatch do
+  @moduledoc """
+  成品 BOM 引用限条目物料自身的 BOM(委外订单「按哪张配方发料」的来源留痕)。
+  引用可空;bom_id 为空或物料缺失时跳过,由外键/必填兜底。
+  """
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    bom_id = Ash.Changeset.get_attribute(changeset, :bom_id)
+    material_id = Ash.Changeset.get_attribute(changeset, :material_id)
+
+    if is_nil(bom_id) or is_nil(material_id) do
+      :ok
+    else
+      case Ash.get(SynieCore.Mfg.Bom, bom_id, authorize?: false) do
+        {:ok, %{material_id: ^material_id}} -> :ok
+        {:ok, _bom} -> {:error, field: :bom_id, message: "BOM 必须是条目物料自身的 BOM"}
+        {:error, _} -> {:error, field: :bom_id, message: "BOM 不存在"}
+      end
+    end
+  end
+end
+
 defmodule SynieCore.Purchase.OrderItem.SyncOrder do
   @moduledoc """
   行与父订单同步:订单必须存在且草稿态(增删改行的前提);
@@ -356,6 +381,13 @@ defmodule SynieCore.Purchase.OrderItem do
   行/订单删除时显式清理(见 `ClearDrawings` 与 `Order.ClearItemDrawings`)。
   `received_qty` 是已收数量投影列(默认单位口径):由采购入库审核/作废经
   `:adjust_received_qty` 内部动作同步加减(同销售侧 shipped_qty 先例)。v1 不拆未税金额/税额(将来开票对接时按 含税÷(1+税率) 拆)。
+
+  委外配置(全部可选,不配不挡开单/审核,见 ADR 2026-07-24 委外采购):可空**成品 BOM 引用**
+  (`bom_id`,限条目物料自身的 BOM,仅留痕无活引用——BOM 删除引用自动清空);条目下挂
+  **发料清单**(`OrderItemMaterial`,行带已发料量投影)与**副产物清单**(`OrderItemByproduct`)
+  两个子表,随条目级联删除;选 BOM 按理论耗用/单位产出量×条目数量代入两清单,
+  代入是快照复制——代入后与 BOM 脱钩可自由增删改,改条目数量不自动重算。
+
   无独立权限点:permission_actions 为空(不进权限目录),动作复用 `purchase.order` 权限码。
   """
 
@@ -378,6 +410,9 @@ defmodule SynieCore.Purchase.OrderItem do
 
       # 报价条目是溯源链接(on_delete nothing):作废走状态不删行,行历史不随报价断链
       reference :quotation_item, on_delete: :nothing
+
+      # 成品 BOM 仅留痕:BOM 删除时条目引用自动清空,不挡 BOM 删除
+      reference :bom, on_delete: :nilify
     end
 
     check_constraints do
@@ -419,7 +454,15 @@ defmodule SynieCore.Purchase.OrderItem do
   # 条目视图展示的订单头字段 calculation 白名单,GridMeta 只反射声明在列的 calculation
   # (opt-in 先例见 grid_actions/0、grid_capabilities/0)
   def grid_calculations,
-    do: [:order_date, :order_status, :party_type, :party_id, :currency_code, :remaining_base_qty]
+    do: [
+      :order_date,
+      :order_status,
+      :order_is_outsourced,
+      :party_type,
+      :party_id,
+      :currency_code,
+      :remaining_base_qty
+    ]
 
   # 头字段 party_id 是订单上的多态引用(经 calculation 暴露,判别字段 party_type 同为
   # calculation),声明给 GridMeta 反射成多态 fk 列;variants 与 Order.poly_refs/0 完全一致
@@ -463,15 +506,17 @@ defmodule SynieCore.Purchase.OrderItem do
         :price,
         :tax_rate,
         :remarks,
-        :quotation_item_id
+        :quotation_item_id,
+        :bom_id
       ]
 
       # 顺序敏感:先回填 company_id,再做公司授权校验;
       # 分型派生在 MaterialUnitAllowed/ComputeAmount/SnapshotMaterial 之前,
-      # 派生出的物料/单位/单价再经既有机制校验与计算
+      # 派生出的物料/单位/单价再经既有机制校验与计算;BOM 校验须在派生之后(看最终物料)
       change {SynieCore.Purchase.OrderItem.SyncOrder, []}
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       change {SynieCore.Purchase.OrderItem.DeriveQuotation, []}
+      validate {SynieCore.Purchase.OrderItem.BomMaterialMatch, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
 
       # 折默认单位数量:与已收 received_qty 同口径,供剩余可收筛选与入库超收校验
@@ -482,11 +527,12 @@ defmodule SynieCore.Purchase.OrderItem do
     end
 
     update :update do
-      accept [:idx, :material_id, :unit_id, :qty, :price, :tax_rate, :remarks, :quotation_item_id]
+      accept [:idx, :material_id, :unit_id, :qty, :price, :tax_rate, :remarks, :quotation_item_id, :bom_id]
       require_atomic? false
 
       change {SynieCore.Purchase.OrderItem.SyncOrder, []}
       change {SynieCore.Purchase.OrderItem.DeriveQuotation, []}
+      validate {SynieCore.Purchase.OrderItem.BomMaterialMatch, []}
       validate {SynieCore.Sales.MaterialUnitAllowed, []}
       change {SynieCore.Inv.StockItemBaseQty, []}
       change {SynieCore.Purchase.OrderItem.ComputeAmount, []}
@@ -700,6 +746,16 @@ defmodule SynieCore.Purchase.OrderItem do
       attribute_writable? true
       description "报价条目"
     end
+
+    # 成品 BOM 引用(委外配置,可空):限条目物料自身的 BOM(BomMaterialMatch),
+    # 仅作「按哪张配方发料」的来源留痕、无活引用——BOM 删除引用自动清空(on_delete: :nilify),
+    # BOM 后续变更不回溯已代入的清单(快照语义)
+    belongs_to :bom, SynieCore.Mfg.Bom do
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "成品 BOM(留痕,限条目物料自身)"
+    end
   end
 
   calculations do
@@ -718,6 +774,12 @@ defmodule SynieCore.Purchase.OrderItem do
     calculate :party_type, SynieCore.Acc.PartyType, expr(order.party_type) do
       public? true
       description "对手类型(供应商/内部公司)"
+    end
+
+    # 委外标记(订单头投影):委外入库/发料取行筛 order_is_outsourced = true
+    calculate :order_is_outsourced, :boolean, expr(order.is_outsourced) do
+      public? true
+      description "委外订单"
     end
 
     calculate :party_id, :uuid, expr(order.party_id) do

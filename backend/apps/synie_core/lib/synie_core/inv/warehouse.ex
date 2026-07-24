@@ -1,3 +1,72 @@
+defmodule SynieCore.Inv.WarehouseOutsourced do
+  @moduledoc """
+  外协仓协作方校验(ADR 2026-07-24-outsourced-purchase):
+
+  - `is_outsourced=true` 时必挂协作方(一仓绑一方),`false` 时协作方必须为空;
+  - 协作方类型限供应商/内部公司(客户/员工不可);
+  - 协作方按类型查对应主数据表确认存在(多态引用无真外键);
+  - 协作方为内部公司时不能是仓库所属公司自身。
+  """
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    is_outsourced = Ash.Changeset.get_attribute(changeset, :is_outsourced)
+    party_type = Ash.Changeset.get_attribute(changeset, :party_type)
+    party_id = Ash.Changeset.get_attribute(changeset, :party_id)
+
+    cond do
+      is_outsourced && (is_nil(party_type) or is_nil(party_id)) ->
+        {:error, field: :party_id, message: "外协仓必须绑定协作方"}
+
+      not is_outsourced && (not is_nil(party_type) or not is_nil(party_id)) ->
+        {:error, field: :party_id, message: "非外协仓不能绑定协作方"}
+
+      is_nil(party_type) ->
+        # 非外协空仓:协作方为空,无后续校验
+        :ok
+
+      party_type not in [:supplier, :company] ->
+        {:error, field: :party_type, message: "协作方类型只能为供应商或内部公司"}
+
+      true ->
+        with :ok <- check_exists(party_type, party_id) do
+          check_not_self(changeset, party_type, party_id)
+        end
+    end
+  end
+
+  defp check_exists(party_type, party_id) do
+    case Ash.get(
+           Map.fetch!(SynieCore.Acc.PartyType.party_resources(), party_type),
+           party_id,
+           authorize?: false
+         ) do
+      {:ok, _} -> :ok
+      {:error, _} -> {:error, field: :party_id, message: "协作方不存在"}
+    end
+  end
+
+  defp check_not_self(changeset, :company, party_id) do
+    # update 不收 company_id(不允许换公司),取库内值;create 取 changeset 属性
+    company_id =
+      if changeset.action_type == :create do
+        Ash.Changeset.get_attribute(changeset, :company_id)
+      else
+        changeset.data.company_id
+      end
+
+    if party_id == company_id do
+      {:error, field: :party_id, message: "协作方不能是本公司"}
+    else
+      :ok
+    end
+  end
+
+  defp check_not_self(_changeset, _party_type, _party_id), do: :ok
+end
+
 defmodule SynieCore.Inv.WarehouseParent do
   @moduledoc "校验上级仓库:不能选自身,且上级必须是非叶子、同公司的仓库(叶子仓库不能挂子仓库)。"
 
@@ -138,7 +207,9 @@ defmodule SynieCore.Inv.Warehouse do
   公司下的仓库树(名称同公司内唯一,创建后不允许换公司)。`is_leaf` 为硬约束:
   叶子仓库不能挂子仓库,有下级的仓库不能改为叶子、不能删除;已有库存分录
   (含已作废)的仓禁删、不能改回非叶子(分录只挂叶子仓,见库存分录 ADR)。
-  `is_outsourced` 为占位字段,暂无逻辑;`allow_negative` 在库存分录落地后生效
+  `is_outsourced` 为外协仓标记:为是必挂协作方(Party 多态引用,限供应商/内部公司,
+  一仓绑一方,见 `WarehouseOutsourced` 校验),其结存即协作方处我方材料结存;
+  `allow_negative` 在库存分录落地后生效
   (负库存校验逐仓跳过,见 `SynieCore.Inv.Stock`);`account` 为关联科目(选填)。
   注意与科目 `is_group` 语义相反。
   """
@@ -157,6 +228,13 @@ defmodule SynieCore.Inv.Warehouse do
   postgres do
     table "inv_warehouse"
     repo SynieCore.Repo
+
+    check_constraints do
+      # 与采购订单 party_pair 同约定:多态引用两列同空同有
+      check_constraint :party_type, "party_pair",
+        check: "(party_type IS NULL) = (party_id IS NULL)",
+        message: "协作方类型与协作方必须同时填写"
+    end
   end
 
   graphql do
@@ -177,6 +255,11 @@ defmodule SynieCore.Inv.Warehouse do
       authorize_if {SynieCore.Authz.Checks.HasPermission, as: "create"}
     end
 
+    # 按对手过滤外协仓是读能力的衍生视图,复用 read 码不新设权限点(同库存余额先例)
+    policy action(:outsourced) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "read"}
+    end
+
     # 公司维度 fail-closed;update/destroy 取数走 read,同样被此过滤兜住
     policy action_type(:read) do
       authorize_if SynieCore.Authz.Checks.CompanyScope
@@ -186,6 +269,17 @@ defmodule SynieCore.Inv.Warehouse do
   def permission_prefix, do: "inv.warehouse"
   def permission_label, do: "仓库"
   def permission_actions, do: ~w(create read update delete)
+
+  # 协作方是多态引用(party_type 判别、无 belongs_to),声明给 GridMeta 反射成多态 fk 列;
+  # 取值限供应商/内部公司(见 WarehouseOutsourced 校验),与采购订单同一套 variants
+  def poly_refs do
+    %{
+      party_id: %{
+        discriminator: :party_type,
+        variants: Map.take(SynieCore.Acc.PartyType.party_resources(), [:supplier, :company])
+      }
+    }
+  end
 
   actions do
     read :read do
@@ -201,6 +295,24 @@ defmodule SynieCore.Inv.Warehouse do
       prepare build(sort: [name: :asc])
     end
 
+    # 按对手过滤外协仓:委外单据(发料/入库)选外协仓时只列绑定当前对手的仓
+    read :outsourced do
+      argument :party_type, SynieCore.Acc.PartyType, allow_nil?: false
+      argument :party_id, :uuid, allow_nil?: false
+
+      pagination offset?: true,
+                 countable: true,
+                 required?: false,
+                 default_limit: 20,
+                 max_page_size: 200
+
+      filter expr(
+               is_outsourced and party_type == ^arg(:party_type) and party_id == ^arg(:party_id)
+             )
+
+      prepare build(sort: [name: :asc])
+    end
+
     create :create do
       accept [
         :name,
@@ -210,21 +322,36 @@ defmodule SynieCore.Inv.Warehouse do
         :allow_negative,
         :company_id,
         :parent_id,
-        :account_id
+        :account_id,
+        :party_type,
+        :party_id
       ]
 
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Inv.WarehouseParent, []}
       validate {SynieCore.Inv.WarehouseAccount, []}
+      validate {SynieCore.Inv.WarehouseOutsourced, []}
     end
 
     update :update do
       # 不接受 company_id:仓库不允许换公司(名称唯一性与未来库存都以公司为界)
-      accept [:name, :is_leaf, :active, :is_outsourced, :allow_negative, :parent_id, :account_id]
+      accept [
+        :name,
+        :is_leaf,
+        :active,
+        :is_outsourced,
+        :allow_negative,
+        :parent_id,
+        :account_id,
+        :party_type,
+        :party_id
+      ]
+
       require_atomic? false
 
       validate {SynieCore.Inv.WarehouseParent, []}
       validate {SynieCore.Inv.WarehouseAccount, []}
+      validate {SynieCore.Inv.WarehouseOutsourced, []}
 
       # 有下级仓库的不能改成叶子仓库
       validate fn changeset, _context ->
@@ -321,7 +448,17 @@ defmodule SynieCore.Inv.Warehouse do
       allow_nil? false
       public? true
       default false
-      description "委外仓(占位,暂无逻辑)"
+      description "外协仓(货物存放在协作方处的我方仓,为是必挂协作方)"
+    end
+
+    attribute :party_type, SynieCore.Acc.PartyType do
+      public? true
+      description "协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)"
+    end
+
+    attribute :party_id, :uuid do
+      public? true
+      description "协作方(多态引用,随 party_type 判别;一仓绑一方)"
     end
 
     attribute :allow_negative, :boolean do

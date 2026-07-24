@@ -34,6 +34,8 @@ defmodule SynieCore.Inv.Stock do
       "inv.stock_count" => {SynieCore.Inv.StockCount, "库存盘点单"},
       "sales.delivery" => {SynieCore.Sales.Delivery, "销售发货单"},
       "purchase.receipt" => {SynieCore.Purchase.Receipt, "采购入库单"},
+      "purchase.outsourced_issue" => {SynieCore.Purchase.OutsourcedIssue, "委外发料单"},
+      "purchase.outsourced_receipt" => {SynieCore.Purchase.OutsourcedReceipt, "委外入库单"},
       "mfg.output" => {SynieCore.Mfg.Output, "生产入库单"}
     }
   end

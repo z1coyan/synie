@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, toast } from '@heroui/react'
+import { Label, Link, ListBox, Select, toast } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
@@ -28,7 +28,7 @@ const UPDATE_WAREHOUSE = `
 `
 
 // 列白名单:公司由页面顶部选定不进列,时间戳不进表格
-const GRID_COLUMNS = ['name', 'parentId', 'accountId', 'isLeaf', 'isOutsourced', 'allowNegative', 'active']
+const GRID_COLUMNS = ['name', 'parentId', 'accountId', 'isLeaf', 'isOutsourced', 'partyType', 'partyId', 'allowNegative', 'active']
 
 /** 关联科目列:「编号-名称」,点击开科目速览(join 默认只取 id/name,code 经 joinFields 追加取回,同物料分类列先例) */
 function AccountCell({ row }: { row: Row }) {
@@ -52,8 +52,10 @@ function AccountCell({ row }: { row: Row }) {
 // 模块级稳定引用:内联对象会让 SynieDataGrid 的列 memo 每次渲染失效
 const GRID_OVERRIDES: Record<string, ColumnOverride> = {
   accountId: { render: (_value, row) => <AccountCell row={row} /> },
-  // 两个占位标记:meta 描述带「(占位,暂无逻辑)」太长,列头用短名
+  // 两个标记列头用短名;协作方是多态 fk 列(partyType 判别),由 meta refs 自动解析
   isOutsourced: { label: '外协仓' },
+  partyType: { label: '协作方类型' },
+  partyId: { label: '协作方' },
   allowNegative: { label: '负库存' },
 }
 
@@ -94,7 +96,9 @@ function WarehousesPage() {
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">仓库管理</h1>
-      <p className="mt-2 text-sm text-ink-500">按公司维护仓库树;外协仓/负库存为占位标记,暂无业务联动。</p>
+      <p className="mt-2 text-sm text-ink-500">
+        按公司维护仓库树;外协仓必挂一个协作方(供应商/内部公司),其结存即协作方处的我方材料结存。
+      </p>
 
       <div className="mt-6 max-w-xs">
         <RemoteSelect
@@ -166,9 +170,75 @@ function WarehousesPage() {
             label: '关联科目',
             remote: { filter: accountFilter, searchFields: ['name', 'code'], itemSubtitleFields: ['code'] },
           },
-          // 两个占位开关,默认都关
-          isOutsourced: { order: 4, cols: 6, label: '外协仓', defaultValue: false },
-          allowNegative: { order: 5, cols: 6, label: '允许负库存', defaultValue: false },
+          // 外协仓开关:关掉时一并清空协作方绑定(后端要求非外协仓协作方为空)
+          isOutsourced: {
+            order: 4,
+            cols: 6,
+            label: '外协仓',
+            defaultValue: false,
+            effects: (v) => (v ? undefined : { partyType: null, partyId: null }),
+          },
+          // 协作方限供应商/内部公司(后端 WarehouseOutsourced 校验);仅外协仓出现
+          partyType: {
+            order: 5,
+            cols: 6,
+            required: true,
+            label: '协作方类型',
+            visible: (values) => Boolean(values.isOutsourced),
+            // 切换协作方类型时清掉已选协作方,避免供应商 id 挂在公司数据源下(同销售订单先例)
+            effects: () => ({ partyId: null }),
+            input: ({ value, onChange, isDisabled }) => (
+              <Select
+                isDisabled={isDisabled}
+                isRequired
+                value={value == null || value === '' ? null : String(value)}
+                onChange={(v) => onChange(v === '' ? null : v)}
+              >
+                <Label>协作方类型</Label>
+                <Select.Trigger>
+                  <Select.Value>
+                    {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+                  </Select.Value>
+                  <Select.Indicator />
+                </Select.Trigger>
+                <Select.Popover>
+                  <ListBox>
+                    <ListBox.Item key="SUPPLIER" id="SUPPLIER" textValue="供应商">
+                      供应商
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                    <ListBox.Item key="COMPANY" id="COMPANY" textValue="内部公司">
+                      内部公司
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  </ListBox>
+                </Select.Popover>
+              </Select>
+            ),
+          },
+          partyId: {
+            order: 6,
+            cols: 6,
+            required: true,
+            label: '协作方',
+            // 未选协作方类型时不出现;选定后数据源跟随类型(多态 fk,同销售订单先例)
+            visible: (values) =>
+              Boolean(values.isOutsourced) && (values.partyType === 'SUPPLIER' || values.partyType === 'COMPANY'),
+            input: ({ value, onChange, isDisabled, values }) => {
+              const isCompany = values.partyType === 'COMPANY'
+              return (
+                <RemoteSelect
+                  resource={isCompany ? 'basCompanies' : 'purSuppliers'}
+                  label="协作方"
+                  placeholder={isCompany ? '选择内部公司…' : '选择供应商…'}
+                  value={value == null ? null : String(value)}
+                  onChange={(id) => onChange(id)}
+                  isDisabled={isDisabled}
+                />
+              )
+            },
+          },
+          allowNegative: { order: 7, cols: 6, label: '允许负库存', defaultValue: false },
           // 公司由页面顶部选定,表单不显示,提交时注入
           companyId: { visible: () => false },
         }}

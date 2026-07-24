@@ -54,8 +54,38 @@ defmodule SynieCore do
 
       list SynieCore.Purchase.Order, :pur_orders, :read, paginate_with: :offset
       list SynieCore.Purchase.OrderItem, :pur_order_items, :read, paginate_with: :offset
+
+      list SynieCore.Purchase.OrderItemMaterial, :pur_order_item_materials, :read,
+        paginate_with: :offset
+
+      list SynieCore.Purchase.OrderItemByproduct, :pur_order_item_byproducts, :read,
+        paginate_with: :offset
+
       list SynieCore.Purchase.Receipt, :pur_receipts, :read, paginate_with: :offset
       list SynieCore.Purchase.ReceiptItem, :pur_receipt_items, :read, paginate_with: :offset
+
+      list SynieCore.Purchase.OutsourcedIssue, :pur_outsourced_issues, :read,
+        paginate_with: :offset
+
+      list SynieCore.Purchase.OutsourcedIssueItem, :pur_outsourced_issue_items, :read,
+        paginate_with: :offset
+
+      list SynieCore.Purchase.OutsourcedReceipt, :pur_outsourced_receipts, :read,
+        paginate_with: :offset
+
+      list SynieCore.Purchase.OutsourcedReceiptItem, :pur_outsourced_receipt_items, :read,
+        paginate_with: :offset
+
+      list SynieCore.Purchase.OutsourcedReceiptItemMaterial,
+           :pur_outsourced_receipt_item_materials,
+           :read,
+           paginate_with: :offset
+
+      list SynieCore.Purchase.OutsourcedReceiptItemByproduct,
+           :pur_outsourced_receipt_item_byproducts,
+           :read,
+           paginate_with: :offset
+
       list SynieCore.Purchase.Reconciliation, :pur_reconciliations, :read, paginate_with: :offset
 
       list SynieCore.Purchase.ReconciliationItem, :pur_reconciliation_items, :read,
@@ -66,6 +96,8 @@ defmodule SynieCore do
       list SynieCore.Inv.Material, :inv_materials, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialUnit, :inv_material_units, :read, paginate_with: :offset
       list SynieCore.Inv.Warehouse, :inv_warehouses, :read, paginate_with: :offset
+      # 按对手过滤外协仓(委外单据选仓用,复用 inv.warehouse:read 权限码)
+      list SynieCore.Inv.Warehouse, :inv_outsourced_warehouses, :outsourced, paginate_with: :offset
       list SynieCore.Inv.StockEntry, :inv_stock_entries, :read, paginate_with: :offset
       list SynieCore.Inv.StockDoc, :inv_stock_docs, :read, paginate_with: :offset
       list SynieCore.Inv.StockDocItem, :inv_stock_doc_items, :read, paginate_with: :offset
@@ -294,6 +326,14 @@ defmodule SynieCore do
       update SynieCore.Purchase.OrderItem, :update_pur_order_item, :update
       destroy SynieCore.Purchase.OrderItem, :destroy_pur_order_item, :destroy
 
+      create SynieCore.Purchase.OrderItemMaterial, :create_pur_order_item_material, :create
+      update SynieCore.Purchase.OrderItemMaterial, :update_pur_order_item_material, :update
+      destroy SynieCore.Purchase.OrderItemMaterial, :destroy_pur_order_item_material, :destroy
+
+      create SynieCore.Purchase.OrderItemByproduct, :create_pur_order_item_byproduct, :create
+      update SynieCore.Purchase.OrderItemByproduct, :update_pur_order_item_byproduct, :update
+      destroy SynieCore.Purchase.OrderItemByproduct, :destroy_pur_order_item_byproduct, :destroy
+
       # 采购入库单:审核派生库存+总账+已收数量;作废回滚;行随单头权限码
       create SynieCore.Purchase.Receipt, :create_pur_receipt, :create
       update SynieCore.Purchase.Receipt, :update_pur_receipt, :update
@@ -304,6 +344,54 @@ defmodule SynieCore do
       create SynieCore.Purchase.ReceiptItem, :create_pur_receipt_item, :create
       update SynieCore.Purchase.ReceiptItem, :update_pur_receipt_item, :update
       destroy SynieCore.Purchase.ReceiptItem, :destroy_pur_receipt_item, :destroy
+
+      # 委外发料单:审核派生库存分录+已发料量;作废回滚;行随单头权限码
+      create SynieCore.Purchase.OutsourcedIssue, :create_pur_outsourced_issue, :create
+      update SynieCore.Purchase.OutsourcedIssue, :update_pur_outsourced_issue, :update
+      destroy SynieCore.Purchase.OutsourcedIssue, :destroy_pur_outsourced_issue, :destroy
+      update SynieCore.Purchase.OutsourcedIssue, :audit_pur_outsourced_issue, :audit
+      update SynieCore.Purchase.OutsourcedIssue, :void_pur_outsourced_issue, :void
+
+      create SynieCore.Purchase.OutsourcedIssueItem, :create_pur_outsourced_issue_item, :create
+      update SynieCore.Purchase.OutsourcedIssueItem, :update_pur_outsourced_issue_item, :update
+      destroy SynieCore.Purchase.OutsourcedIssueItem, :destroy_pur_outsourced_issue_item, :destroy
+
+      create SynieCore.Purchase.OutsourcedReceipt, :create_pur_outsourced_receipt, :create
+      update SynieCore.Purchase.OutsourcedReceipt, :update_pur_outsourced_receipt, :update
+      destroy SynieCore.Purchase.OutsourcedReceipt, :destroy_pur_outsourced_receipt, :destroy
+      update SynieCore.Purchase.OutsourcedReceipt, :audit_pur_outsourced_receipt, :audit
+      update SynieCore.Purchase.OutsourcedReceipt, :void_pur_outsourced_receipt, :void
+
+      create SynieCore.Purchase.OutsourcedReceiptItem, :create_pur_outsourced_receipt_item, :create
+      update SynieCore.Purchase.OutsourcedReceiptItem, :update_pur_outsourced_receipt_item, :update
+
+      destroy SynieCore.Purchase.OutsourcedReceiptItem,
+              :destroy_pur_outsourced_receipt_item,
+              :destroy
+
+      create SynieCore.Purchase.OutsourcedReceiptItemMaterial,
+             :create_pur_outsourced_receipt_item_material,
+             :create
+
+      update SynieCore.Purchase.OutsourcedReceiptItemMaterial,
+             :update_pur_outsourced_receipt_item_material,
+             :update
+
+      destroy SynieCore.Purchase.OutsourcedReceiptItemMaterial,
+              :destroy_pur_outsourced_receipt_item_material,
+              :destroy
+
+      create SynieCore.Purchase.OutsourcedReceiptItemByproduct,
+             :create_pur_outsourced_receipt_item_byproduct,
+             :create
+
+      update SynieCore.Purchase.OutsourcedReceiptItemByproduct,
+             :update_pur_outsourced_receipt_item_byproduct,
+             :update
+
+      destroy SynieCore.Purchase.OutsourcedReceiptItemByproduct,
+              :destroy_pur_outsourced_receipt_item_byproduct,
+              :destroy
 
       # 采购对账单:常规单 confirm/unconfirm,赠送/样品单 audit(结单)/void;行随单头权限码
       create SynieCore.Purchase.Reconciliation, :create_pur_reconciliation, :create
@@ -583,8 +671,16 @@ defmodule SynieCore do
     resource SynieCore.Purchase.QuotationTier
     resource SynieCore.Purchase.Order
     resource SynieCore.Purchase.OrderItem
+    resource SynieCore.Purchase.OrderItemMaterial
+    resource SynieCore.Purchase.OrderItemByproduct
     resource SynieCore.Purchase.Receipt
     resource SynieCore.Purchase.ReceiptItem
+    resource SynieCore.Purchase.OutsourcedIssue
+    resource SynieCore.Purchase.OutsourcedIssueItem
+    resource SynieCore.Purchase.OutsourcedReceipt
+    resource SynieCore.Purchase.OutsourcedReceiptItem
+    resource SynieCore.Purchase.OutsourcedReceiptItemMaterial
+    resource SynieCore.Purchase.OutsourcedReceiptItemByproduct
     resource SynieCore.Purchase.Reconciliation
     resource SynieCore.Purchase.ReconciliationItem
     resource SynieCore.Hr.Employee

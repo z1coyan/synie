@@ -1,3 +1,20 @@
+defmodule SynieCore.Mfg.BomByproduct.ApplyQty do
+  @moduledoc """
+  委外订单 BOM 代入副产物清单的折算口径:单位产出量×条目数量。
+  代入是快照复制:代入结果落库为副产物清单行后即与本行脱钩(见 Purchase.OrderItemByproduct)。
+  """
+
+  use Ash.Resource.Calculation
+
+  @impl true
+  def load(_query, _opts, _context), do: [:quantity]
+
+  @impl true
+  def calculate(records, _opts, %{arguments: %{qty: qty}}) do
+    Enum.map(records, fn r -> Decimal.mult(r.quantity, qty) end)
+  end
+end
+
 defmodule SynieCore.Mfg.BomByproduct do
   @moduledoc """
   BOM 副产品行,对应 `mfg_bom_byproduct` 表。BOM 上声明的联产出行:
@@ -135,6 +152,15 @@ defmodule SynieCore.Mfg.BomByproduct do
       attribute_public? true
       attribute_writable? true
       description "单位"
+    end
+  end
+
+  calculations do
+    # 委外订单选 BOM 代入副产物清单的折算接缝:单位产出量×条目数量
+    calculate :apply_qty, :decimal, SynieCore.Mfg.BomByproduct.ApplyQty do
+      public? true
+      argument :qty, :decimal, allow_nil?: false
+      description "代入数量(单位产出量×条目数量)"
     end
   end
 end

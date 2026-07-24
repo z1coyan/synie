@@ -44,6 +44,21 @@ defmodule SynieCore.Purchase.OrderTypeLocked do
   end
 end
 
+defmodule SynieCore.Purchase.OutsourcedLocked do
+  @moduledoc "委外标记锁死:新建期可勾选,保存后不可变更(换标记只能删草稿/作废重开)。仅挂 update 动作。"
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    if Ash.Changeset.get_attribute(changeset, :is_outsourced) != changeset.data.is_outsourced do
+      {:error, field: :is_outsourced, message: "委外标记不可变更"}
+    else
+      :ok
+    end
+  end
+end
+
 defmodule SynieCore.Purchase.Order.HeadFieldsFrozen do
   @moduledoc """
   头关键字段变更闸:订单已有条目(≥ 1 行)时,对手/公司/订单日期/币种不可再改——
@@ -338,6 +353,12 @@ defmodule SynieCore.Purchase.Order do
   零星上限约束。两道闸护航:草稿改头关键字段(对手/公司/订单日期/币种)且已有条目时报错
   先删条目(HeadFieldsFrozen);审核时逐行复核分型规则(VerifyItems),任一不满足即中止。
 
+  委外标记(`is_outsourced`,新建期可勾选、保存后锁死 OutsourcedLocked):勾选即委外订单——
+  条目=委外加工回来的成品、条目含税单价=加工费单价;与订单类型正交(常规委外照常强制
+  报价引用,报价即加工费报价;零星委外手填加工费),状态机/双币金额链/关闭作废规则不分叉。
+  条目下的委外配置(成品 BOM 引用/发料清单/副产物清单)见 `OrderItem`,全部可选不挡开单
+  (ADR 2026-07-24 委外采购)。
+
   生命周期:草稿(可改可删)→ 已审核(audit,锁死,无反审核)→ 已关闭(close)/
   已作废(void)两个终态,均不可逆;仅已审核单可关闭/作废(关闭=生效后提前终止,
   作废=单据不该存在)。订单号全局唯一:留空按 `purchase.order` 编号规则自动取号
@@ -433,6 +454,7 @@ defmodule SynieCore.Purchase.Order do
         :order_no,
         :order_date,
         :order_type,
+        :is_outsourced,
         :party_type,
         :party_id,
         :currency_id,
@@ -469,6 +491,7 @@ defmodule SynieCore.Purchase.Order do
         :order_no,
         :order_date,
         :order_type,
+        :is_outsourced,
         :party_type,
         :party_id,
         :currency_id,
@@ -482,6 +505,7 @@ defmodule SynieCore.Purchase.Order do
       # 构建期预检(用户体验),权威复检在 before_action 钩子内
       validate {SynieCore.Purchase.OrderDraft, []}
       validate {SynieCore.Purchase.OrderTypeLocked, []}
+      validate {SynieCore.Purchase.OutsourcedLocked, []}
       validate {SynieCore.Purchase.Order.HeadFieldsFrozen, []}
       validate {SynieCore.Purchase.OrderPartyType, []}
       validate {SynieCore.Acc.PartyExists, []}
@@ -616,6 +640,14 @@ defmodule SynieCore.Purchase.Order do
         end
       end
 
+      validate fn changeset, _context ->
+        if __MODULE__.has_active_outsourced_receipts?(changeset.data.id) do
+          {:error, message: "订单存在已审核委外入库,请先作废相关委外入库单"}
+        else
+          :ok
+        end
+      end
+
       change fn changeset, _context ->
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :voided)
@@ -623,14 +655,21 @@ defmodule SynieCore.Purchase.Order do
           # 权威复检:事务内 FOR UPDATE 重读,关闭并发竞态(与审核同根因)
           case __MODULE__.lock_order(cs.data.id) do
             {:ok, %{status: :audited}} ->
-              if __MODULE__.has_active_receipts?(cs.data.id) do
-                Ash.Changeset.add_error(cs, message: "订单存在已审核入库,请先作废相关采购入库单")
-              else
-                if __MODULE__.has_draft_receipts?(cs.data.id) do
+              cond do
+                __MODULE__.has_active_receipts?(cs.data.id) ->
+                  Ash.Changeset.add_error(cs, message: "订单存在已审核入库,请先作废相关采购入库单")
+
+                __MODULE__.has_active_outsourced_receipts?(cs.data.id) ->
+                  Ash.Changeset.add_error(cs, message: "订单存在已审核委外入库,请先作废相关委外入库单")
+
+                __MODULE__.has_draft_receipts?(cs.data.id) ->
                   Ash.Changeset.add_error(cs, message: "请先删除引用本订单的草稿采购入库单")
-                else
+
+                __MODULE__.has_draft_outsourced_receipts?(cs.data.id) ->
+                  Ash.Changeset.add_error(cs, message: "请先删除引用本订单的草稿委外入库单")
+
+                true ->
                   cs
-                end
               end
 
             _ ->
@@ -668,6 +707,16 @@ defmodule SynieCore.Purchase.Order do
       default :regular
       public? true
       description "订单类型"
+    end
+
+    # 委外标记(建后锁死,OutsourcedLocked):为是即委外订单——条目=委外回来的成品、
+    # 条目含税单价=加工费单价;与订单类型正交(常规委外照常强制报价引用,零星委外手填加工费);
+    # 状态机/双币金额链/关闭作废规则与普通采购订单一致(ADR 2026-07-24 委外采购)
+    attribute :is_outsourced, :boolean do
+      allow_nil? false
+      default false
+      public? true
+      description "委外标记"
     end
 
     attribute :party_type, SynieCore.Acc.PartyType do
@@ -807,6 +856,22 @@ defmodule SynieCore.Purchase.Order do
   # 草稿入库仍引用本订单时,作废订单会让草稿行失效——要求先删草稿入库
   def has_draft_receipts?(order_id) do
     SynieCore.Purchase.ReceiptItem
+    |> Ash.Query.filter(order_item.order_id == ^order_id and receipt.status == :draft)
+    |> Ash.exists?(authorize?: false)
+  end
+
+  @doc false
+  # 委外入库同口径:存在已审核未作废的委外入库引用本订单任一条目时,订单不可作废
+  def has_active_outsourced_receipts?(order_id) do
+    SynieCore.Purchase.OutsourcedReceiptItem
+    |> Ash.Query.filter(order_item.order_id == ^order_id and receipt.status == :audited)
+    |> Ash.exists?(authorize?: false)
+  end
+
+  @doc false
+  # 委外入库同口径:草稿委外入库仍引用本订单时,要求先删草稿委外入库
+  def has_draft_outsourced_receipts?(order_id) do
+    SynieCore.Purchase.OutsourcedReceiptItem
     |> Ash.Query.filter(order_item.order_id == ^order_id and receipt.status == :draft)
     |> Ash.exists?(authorize?: false)
   end
