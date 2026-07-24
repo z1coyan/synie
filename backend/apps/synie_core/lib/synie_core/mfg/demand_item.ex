@@ -16,84 +16,14 @@ defmodule SynieCore.Mfg.DemandItemStatus do
   def graphql_type(_), do: :mfg_demand_item_status
 end
 
-defmodule SynieCore.Mfg.DemandItem.SyncDemand do
-  @moduledoc """
-  行与母单同步:草稿需求单可增删改物料/数量等;确认后禁止常规增删改
-  (履约方式变更与 complete/生成工单走独立动作)。create 时冗余 company_id。
-  """
-
-  use Ash.Resource.Change
-
-  require Ash.Query
-
-  @impl true
-  def change(changeset, _opts, _context) do
-    demand_id = changeset_demand_id(changeset)
-
-    changeset =
-      case read_demand(demand_id) do
-        {:ok, %{status: :draft} = demand} ->
-          if changeset.action_type == :create do
-            Ash.Changeset.force_change_attribute(changeset, :company_id, demand.company_id)
-          else
-            changeset
-          end
-
-        {:ok, nil} ->
-          Ash.Changeset.add_error(changeset, field: :demand_id, message: "履约需求单不存在")
-
-        {:ok, _demand} ->
-          Ash.Changeset.add_error(changeset,
-            field: :demand_id,
-            message: "仅草稿履约需求单可编辑需求行"
-          )
-
-        _ ->
-          Ash.Changeset.add_error(changeset, field: :demand_id, message: "履约需求单不存在")
-      end
-
-    Ash.Changeset.before_action(changeset, fn cs ->
-      case lock_demand(changeset_demand_id(cs)) do
-        {:ok, %{status: :draft}} ->
-          cs
-
-        {:ok, nil} ->
-          Ash.Changeset.add_error(cs, field: :demand_id, message: "履约需求单不存在")
-
-        _ ->
-          Ash.Changeset.add_error(cs,
-            field: :demand_id,
-            message: "仅草稿履约需求单可编辑需求行"
-          )
-      end
-    end)
-  end
-
-  defp changeset_demand_id(changeset),
-    do: Ash.Changeset.get_attribute(changeset, :demand_id) || changeset.data.demand_id
-
-  defp read_demand(nil), do: {:ok, nil}
-
-  defp read_demand(demand_id) do
-    SynieCore.Mfg.Demand
-    |> Ash.Query.filter(id == ^demand_id)
-    |> Ash.read_one(authorize?: false)
-  end
-
-  defp lock_demand(nil), do: {:ok, nil}
-
-  defp lock_demand(demand_id) do
-    SynieCore.Mfg.Demand
-    |> Ash.Query.filter(id == ^demand_id)
-    |> Ash.Query.lock("FOR UPDATE")
-    |> Ash.read_one(authorize?: false)
-  end
-end
-
 defmodule SynieCore.Mfg.DemandItem.SalesSourceOk do
   @moduledoc """
   有销售来源时:订单条目须同公司、订单已审核未关闭;占用硬校验
   Σ 未作废需求行 base(含草稿,排除本行) + 本行 base ≤ 订单条目订购 base。
+
+  权威复检(before_action)传 `lock: true`:先对销售订单条目行加 FOR UPDATE
+  行锁再算占用,使同一销售条目的占用校验串行化,防两张草稿并发一起超占
+  (US 46;照 lock_demand/lock_output 同一模式)。
   """
 
   use Ash.Resource.Validation
@@ -119,8 +49,8 @@ defmodule SynieCore.Mfg.DemandItem.SalesSourceOk do
   end
 
   @doc false
-  def check(sales_order_item_id, company_id, base_qty, exclude_id) do
-    with {:ok, item, order} <- load_source(sales_order_item_id),
+  def check(sales_order_item_id, company_id, base_qty, exclude_id, opts \\ []) do
+    with {:ok, item, order} <- load_source(sales_order_item_id, Keyword.get(opts, :lock, false)),
          :ok <- check_company(item, company_id),
          :ok <- check_order_status(order),
          :ok <- check_occupancy(item, base_qty, exclude_id) do
@@ -128,17 +58,33 @@ defmodule SynieCore.Mfg.DemandItem.SalesSourceOk do
     end
   end
 
-  defp load_source(id) do
+  defp load_source(id, false) do
     case Ash.get(SynieCore.Sales.OrderItem, id, authorize?: false) do
-      {:ok, item} ->
-        case Ash.get(SynieCore.Sales.Order, item.order_id, authorize?: false) do
-          {:ok, order} -> {:ok, item, order}
-          _ -> {:error, "销售订单条目不存在"}
-        end
-
-      _ ->
-        {:error, "销售订单条目不存在"}
+      {:ok, item} -> load_order(item)
+      _ -> {:error, "销售订单条目不存在"}
     end
+  end
+
+  defp load_source(id, true) do
+    case lock_sales_order_item(id) do
+      {:ok, nil} -> {:error, "销售订单条目不存在"}
+      {:ok, item} -> load_order(item)
+      _ -> {:error, "销售订单条目不存在"}
+    end
+  end
+
+  defp load_order(item) do
+    case Ash.get(SynieCore.Sales.Order, item.order_id, authorize?: false) do
+      {:ok, order} -> {:ok, item, order}
+      _ -> {:error, "销售订单条目不存在"}
+    end
+  end
+
+  defp lock_sales_order_item(id) do
+    SynieCore.Sales.OrderItem
+    |> Ash.Query.filter(id == ^id)
+    |> Ash.Query.lock("FOR UPDATE")
+    |> Ash.read_one(authorize?: false)
   end
 
   defp check_company(item, company_id) do
@@ -237,6 +183,11 @@ defmodule SynieCore.Mfg.DemandItem do
       authorize_if {SynieCore.Authz.Checks.HasPermission, as: "update"}
     end
 
+    # 勾选池占用查询是读取衍生,复用 read 码
+    policy action(:sales_item_occupancy) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "read"}
+    end
+
     policy always() do
       authorize_if SynieCore.Authz.Checks.HasPermission
     end
@@ -281,7 +232,11 @@ defmodule SynieCore.Mfg.DemandItem do
         :remarks
       ]
 
-      change {SynieCore.Mfg.DemandItem.SyncDemand, []}
+      change {SynieCore.Mfg.SyncParentDraft,
+              parent: SynieCore.Mfg.Demand,
+              parent_key: :demand_id,
+              not_found_message: "履约需求单不存在",
+              not_draft_message: "仅草稿履约需求单可编辑需求行"}
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       validate {SynieCore.Inv.StockItemUnitAllowed, []}
       change {SynieCore.Inv.StockItemBaseQty, []}
@@ -296,7 +251,9 @@ defmodule SynieCore.Mfg.DemandItem do
           if is_nil(sales_id) do
             cs
           else
-            case SynieCore.Mfg.DemandItem.SalesSourceOk.check(sales_id, company_id, base_qty, nil) do
+            case SynieCore.Mfg.DemandItem.SalesSourceOk.check(sales_id, company_id, base_qty, nil,
+                   lock: true
+                 ) do
               :ok -> cs
               {:error, message} -> Ash.Changeset.add_error(cs, field: :sales_order_item_id, message: message)
             end
@@ -319,7 +276,11 @@ defmodule SynieCore.Mfg.DemandItem do
 
       require_atomic? false
 
-      change {SynieCore.Mfg.DemandItem.SyncDemand, []}
+      change {SynieCore.Mfg.SyncParentDraft,
+              parent: SynieCore.Mfg.Demand,
+              parent_key: :demand_id,
+              not_found_message: "履约需求单不存在",
+              not_draft_message: "仅草稿履约需求单可编辑需求行"}
       validate {SynieCore.Inv.StockItemUnitAllowed, []}
       change {SynieCore.Inv.StockItemBaseQty, []}
       change {SynieCore.Mfg.DemandItem.SnapshotMaterial, []}
@@ -337,7 +298,8 @@ defmodule SynieCore.Mfg.DemandItem do
                    sales_id,
                    company_id,
                    base_qty,
-                   cs.data.id
+                   cs.data.id,
+                   lock: true
                  ) do
               :ok -> cs
               {:error, message} -> Ash.Changeset.add_error(cs, field: :sales_order_item_id, message: message)
@@ -351,7 +313,11 @@ defmodule SynieCore.Mfg.DemandItem do
       primary? true
       require_atomic? false
 
-      change {SynieCore.Mfg.DemandItem.SyncDemand, []}
+      change {SynieCore.Mfg.SyncParentDraft,
+              parent: SynieCore.Mfg.Demand,
+              parent_key: :demand_id,
+              not_found_message: "履约需求单不存在",
+              not_draft_message: "仅草稿履约需求单可编辑需求行"}
     end
 
     # 外购/委外/库存:待安排 → 已完成(计划一点离开待办)
@@ -461,6 +427,15 @@ defmodule SynieCore.Mfg.DemandItem do
           end
         end)
       end
+    end
+
+    # 勾选池:销售条目订购/已占用/剩余可占用(json 标量数组,不分页)
+    action :sales_item_occupancy, {:array, :map} do
+      description "销售订单条目占用:订购 base、已占用 base、剩余可占用 base(需求单勾选池用)"
+
+      argument :sales_order_item_ids, {:array, :uuid}, allow_nil?: false
+
+      run SynieCore.Mfg.SalesItemOccupancy
     end
   end
 

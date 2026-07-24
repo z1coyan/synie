@@ -95,6 +95,9 @@ defmodule SynieCore do
       list SynieCore.Mfg.Output, :mfg_outputs, :read, paginate_with: :offset
       list SynieCore.Mfg.OutputItem, :mfg_output_items, :read, paginate_with: :offset
       read_one SynieCore.Mfg.Setting, :mfg_setting, :read
+
+      # 需求单勾选池:销售条目订购/已占用/剩余可占用(计划侧复用 mfg.demand:read)
+      action SynieCore.Mfg.DemandItem, :mfg_sales_item_occupancies, :sales_item_occupancy
       list SynieCore.Hr.AttendancePunch, :hr_attendance_punches, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceImport, :hr_attendance_imports, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceDay, :hr_attendance_days, :read, paginate_with: :offset

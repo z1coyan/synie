@@ -20,3 +20,7 @@
 ## Answer
 
 已在 `4c58858` 落地后端主链与基础前端；详见 commit。
+
+## Comments
+
+- 2026-07-24 code review 补认：实现含规格外的工单 `destroy` 动作与 `mfg.work_order:delete` 权限码（动机：authz 矩阵写侧净零与草稿误建清理；仅进行中且无已审核入库可删，删除回写需求行待安排）。已在 spec「生产工单」节补认该行为。

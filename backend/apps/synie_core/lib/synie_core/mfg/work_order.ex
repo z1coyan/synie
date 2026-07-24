@@ -105,21 +105,7 @@ defmodule SynieCore.Mfg.WorkOrder do
 
         case demand_item_id && Ash.get(SynieCore.Mfg.DemandItem, demand_item_id, authorize?: false) do
           {:ok, item} ->
-            changeset
-            |> Ash.Changeset.force_change_attribute(:company_id, item.company_id)
-            |> Ash.Changeset.force_change_attribute(:demand_id, item.demand_id)
-            |> Ash.Changeset.force_change_attribute(:material_id, item.material_id)
-            |> Ash.Changeset.force_change_attribute(:unit_id, item.unit_id)
-            |> Ash.Changeset.force_change_attribute(:qty, item.qty)
-            |> Ash.Changeset.force_change_attribute(:base_qty, item.base_qty)
-            |> Ash.Changeset.force_change_attribute(
-              :need_date,
-              item.need_date || Date.utc_today()
-            )
-            |> Ash.Changeset.force_change_attribute(:material_code, item.material_code)
-            |> Ash.Changeset.force_change_attribute(:material_name, item.material_name)
-            |> Ash.Changeset.force_change_attribute(:material_spec, item.material_spec)
-            |> Ash.Changeset.force_change_attribute(:unit_name, item.unit_name)
+            derive_item_fields(changeset, item)
 
           _ ->
             # 编号 need_date 段兜底
@@ -188,7 +174,7 @@ defmodule SynieCore.Mfg.WorkOrder do
 
       change fn changeset, _context ->
         Ash.Changeset.before_action(changeset, fn cs ->
-          case lock_wo(cs.data.id) do
+          case lock_work_order(cs.data.id) do
             {:ok, %{status: :voided}} ->
               cs
 
@@ -228,7 +214,7 @@ defmodule SynieCore.Mfg.WorkOrder do
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :voided)
         |> Ash.Changeset.before_action(fn cs ->
-          case lock_wo(cs.data.id) do
+          case lock_work_order(cs.data.id) do
             {:ok, %{status: :in_progress} = wo} ->
               if has_audited_output?(wo.id) do
                 Ash.Changeset.add_error(cs, message: "存在已审核生产入库,不可作废工单")
@@ -429,7 +415,7 @@ defmodule SynieCore.Mfg.WorkOrder do
   end
 
   @doc false
-  def lock_wo(id) do
+  def lock_work_order(id) do
     __MODULE__
     |> Ash.Query.filter(id == ^id)
     |> Ash.Query.lock("FOR UPDATE")
@@ -500,27 +486,33 @@ defmodule SynieCore.Mfg.WorkOrder do
 
           cs =
             cs
-            |> Ash.Changeset.force_change_attribute(:company_id, item.company_id)
-            |> Ash.Changeset.force_change_attribute(:demand_id, item.demand_id)
+            |> derive_item_fields(item)
             |> Ash.Changeset.force_change_attribute(:demand_item_id, item.id)
-            |> Ash.Changeset.force_change_attribute(:material_id, item.material_id)
-            |> Ash.Changeset.force_change_attribute(:unit_id, item.unit_id)
-            |> Ash.Changeset.force_change_attribute(:qty, item.qty)
-            |> Ash.Changeset.force_change_attribute(:base_qty, item.base_qty)
-            |> Ash.Changeset.force_change_attribute(
-              :need_date,
-              item.need_date || Date.utc_today()
-            )
-            |> Ash.Changeset.force_change_attribute(:material_code, item.material_code)
-            |> Ash.Changeset.force_change_attribute(:material_name, item.material_name)
-            |> Ash.Changeset.force_change_attribute(:material_spec, item.material_spec)
-            |> Ash.Changeset.force_change_attribute(:unit_name, item.unit_name)
             |> Ash.Changeset.force_change_attribute(:status, :in_progress)
             |> Ash.Changeset.force_change_attribute(:received_base_qty, Decimal.new(0))
 
           {:ok, cs}
       end
     end
+  end
+
+  # 需求行派生字段回填(构建期预填与事务内生成共用)
+  defp derive_item_fields(cs, item) do
+    cs
+    |> Ash.Changeset.force_change_attribute(:company_id, item.company_id)
+    |> Ash.Changeset.force_change_attribute(:demand_id, item.demand_id)
+    |> Ash.Changeset.force_change_attribute(:material_id, item.material_id)
+    |> Ash.Changeset.force_change_attribute(:unit_id, item.unit_id)
+    |> Ash.Changeset.force_change_attribute(:qty, item.qty)
+    |> Ash.Changeset.force_change_attribute(:base_qty, item.base_qty)
+    |> Ash.Changeset.force_change_attribute(
+      :need_date,
+      item.need_date || Date.utc_today()
+    )
+    |> Ash.Changeset.force_change_attribute(:material_code, item.material_code)
+    |> Ash.Changeset.force_change_attribute(:material_name, item.material_name)
+    |> Ash.Changeset.force_change_attribute(:material_spec, item.material_spec)
+    |> Ash.Changeset.force_change_attribute(:unit_name, item.unit_name)
   end
 
   defp active_wo_exists?(demand_item_id) do

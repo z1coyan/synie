@@ -17,3 +17,7 @@
 ## Answer
 
 已在 `4c58858` 落地后端主链与基础前端；详见 commit。
+
+## Comments
+
+- 2026-07-24 code review 补认：本票「CONTEXT/ADR 仅在实现与定案偏差时修订」与根 `AGENTS.md`「术语唯一定义在 `CONTEXT.md`，交付新功能必须同步更新」冲突时，以根约定为准——本次 `CONTEXT.md` 新增 6 条术语属履行根约定，不算违票。

@@ -453,32 +453,19 @@ defmodule SynieCore.Mfg.Output do
     :ok
   end
 
-  defp adjust_work_orders(items, :add) do
+  # 审核(:add)/作废(:sub)回写工单已入数量,两路径仅差符号
+  defp adjust_work_orders(items, sign) when sign in [:add, :sub] do
     items
     |> Enum.group_by(& &1.work_order_id)
     |> Enum.reduce_while(:ok, fn {wo_id, group}, :ok ->
-      add =
+      delta =
         group
         |> Enum.map(& &1.base_qty)
         |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
 
-      case SynieCore.Mfg.WorkOrder.adjust_received!(wo_id, add) do
-        :ok -> {:cont, :ok}
-        {:error, msg} -> {:halt, {:error, msg}}
-      end
-    end)
-  end
+      delta = if sign == :sub, do: Decimal.negate(delta), else: delta
 
-  defp adjust_work_orders(items, :sub) do
-    items
-    |> Enum.group_by(& &1.work_order_id)
-    |> Enum.reduce_while(:ok, fn {wo_id, group}, :ok ->
-      sub =
-        group
-        |> Enum.map(& &1.base_qty)
-        |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
-
-      case SynieCore.Mfg.WorkOrder.adjust_received!(wo_id, Decimal.negate(sub)) do
+      case SynieCore.Mfg.WorkOrder.adjust_received!(wo_id, delta) do
         :ok -> {:cont, :ok}
         {:error, msg} -> {:halt, {:error, msg}}
       end

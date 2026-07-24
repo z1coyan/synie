@@ -161,10 +161,16 @@ defmodule SynieCore.Mfg.FulfillmentTest do
                d |> Ash.Changeset.for_update(:confirm, %{}) |> Ash.update(authorize?: false)
     end
 
-    test "草稿可作废;确认后无工单可作废", %{company: company, material: material, kg: kg} do
+    test "草稿不可作废(走删除);确认后无工单可作废", %{company: company, material: material, kg: kg} do
       d1 = demand!(company)
-      d1 = d1 |> Ash.Changeset.for_update(:void, %{}) |> Ash.update!(authorize?: false)
-      assert d1.status == :voided
+
+      assert {:error, err} =
+               d1 |> Ash.Changeset.for_update(:void, %{}) |> Ash.update(authorize?: false)
+
+      assert Exception.message(err) =~ "草稿"
+
+      # 草稿应走删除而非作废
+      d1 |> Ash.Changeset.for_destroy(:destroy, %{}) |> Ash.destroy!(authorize?: false)
 
       d2 = demand!(company)
       item!(d2, material, kg)
@@ -283,6 +289,7 @@ defmodule SynieCore.Mfg.FulfillmentTest do
 
       assert Decimal.equal?(DemandItem.occupied_base_qty(so_item.id), Decimal.new(10))
 
+      d = d |> Ash.Changeset.for_update(:confirm, %{}) |> Ash.update!(authorize?: false)
       d |> Ash.Changeset.for_update(:void, %{}) |> Ash.update!(authorize?: false)
       assert Decimal.equal?(DemandItem.occupied_base_qty(so_item.id), Decimal.new(0))
     end
@@ -297,6 +304,108 @@ defmodule SynieCore.Mfg.FulfillmentTest do
 
       d = d |> Ash.Changeset.for_update(:confirm, %{}) |> Ash.update!(authorize?: false)
       assert d.status == :confirmed
+    end
+
+    test "占用边界:恰好占满成功,再占一单位被拒", %{
+      company: company,
+      material: material,
+      kg: kg,
+      customer: customer
+    } do
+      {_order, so_item} = audited_sales_item!(company, customer, material, kg, 10)
+
+      d1 = demand!(company)
+
+      item!(d1, material, kg, %{
+        sales_order_item_id: so_item.id,
+        qty: Decimal.new(10)
+      })
+
+      assert Decimal.equal?(DemandItem.remaining_occupiable(so_item.id), Decimal.new(0))
+
+      d2 = demand!(company)
+
+      assert {:error, _} =
+               DemandItem
+               |> Ash.Changeset.for_create(:create, %{
+                 demand_id: d2.id,
+                 idx: 1,
+                 material_id: material.id,
+                 unit_id: kg.id,
+                 qty: Decimal.new(1),
+                 fulfillment_method: :make,
+                 sales_order_item_id: so_item.id
+               })
+               |> Ash.create(authorize?: false)
+    end
+
+    test "占用查询动作:订购/已占用/剩余可占用", %{
+      company: company,
+      material: material,
+      kg: kg,
+      customer: customer
+    } do
+      {_order, so_item} = audited_sales_item!(company, customer, material, kg, 10)
+
+      d = demand!(company)
+
+      item!(d, material, kg, %{
+        sales_order_item_id: so_item.id,
+        qty: Decimal.new(4)
+      })
+
+      assert {:ok, [row]} =
+               DemandItem
+               |> Ash.ActionInput.for_action(:sales_item_occupancy, %{
+                 sales_order_item_ids: [so_item.id]
+               })
+               |> Ash.run_action(authorize?: false)
+
+      assert row["salesOrderItemId"] == so_item.id
+      assert row["orderedBaseQty"] == "10"
+      assert row["occupiedBaseQty"] == "4"
+      assert row["remainingBaseQty"] == "6"
+    end
+
+    test "并发纳入同一销售条目:合计超占仅一条成功", %{
+      company: company,
+      material: material,
+      kg: kg,
+      customer: customer
+    } do
+      {_order, so_item} = audited_sales_item!(company, customer, material, kg, 10)
+
+      d1 = demand!(company)
+      d2 = demand!(company)
+
+      # shared 沙箱下两任务共用一条连接、语句串行执行;占用复检对销售条目行
+      # 加 FOR UPDATE 锁后,合计超占必有一条被拒。单连接沙箱无法复现真实多连接
+      # 竞态,本用例钉死「并发提交合计超占 → 恰好一条成功」的行为契约。
+      Ecto.Adapters.SQL.Sandbox.mode(SynieCore.Repo, {:shared, self()})
+
+      results =
+        [d1, d2]
+        |> Task.async_stream(
+          fn d ->
+            DemandItem
+            |> Ash.Changeset.for_create(:create, %{
+              demand_id: d.id,
+              idx: 1,
+              material_id: material.id,
+              unit_id: kg.id,
+              qty: Decimal.new(8),
+              fulfillment_method: :make,
+              sales_order_item_id: so_item.id
+            })
+            |> Ash.create(authorize?: false)
+          end,
+          max_concurrency: 2
+        )
+        |> Enum.map(fn {:ok, result} -> result end)
+
+      assert Enum.count(results, &match?({:ok, _}, &1)) == 1
+      assert Enum.count(results, &match?({:error, _}, &1)) == 1
+      assert Decimal.equal?(DemandItem.occupied_base_qty(so_item.id), Decimal.new(8))
     end
   end
 

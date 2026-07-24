@@ -155,7 +155,7 @@ export const menuModules: MenuModule[] = [
       {
         label: '执行',
         items: [
-          { label: '需求单', path: '/mfg/demands' },
+          { label: '履约需求单', path: '/mfg/demands' },
           { label: '生产工单', path: '/mfg/work-orders' },
           { label: '生产入库', path: '/mfg/outputs' },
         ],

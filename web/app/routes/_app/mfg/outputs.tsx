@@ -1,15 +1,16 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
+import { useDocItems } from '~/components/synie-editable-table/use-doc-items'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { auditMaterialCell, useAuditDoc, type AuditDocConfig } from '../scm/-audit-doc'
 
 export const Route = createFileRoute('/_app/mfg/outputs')({
   component: OutputsPage,
@@ -25,118 +26,79 @@ const UPDATE_OUTPUT = `
     updateMfgOutput(id: $id, input: $input) { result { id } errors { message } }
   }
 `
-const FETCH_ITEMS = `
-  query ($outputId: ID!) {
-    mfgOutputItems(filter: {outputId: {eq: $outputId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
-      results {
-        id idx workOrderId unitId qty warehouseId remarks
-        workOrder { id workOrderNo materialCode materialName }
-        unit { id name } warehouse { id name }
+
+// 入库行脚手架(取数/持久化)走共用 useDocItems;变量名统一 $docId
+const ITEMS = {
+  label: '入库行',
+  docIdField: 'outputId',
+  fetchQuery: `
+    query ($docId: ID!) {
+      mfgOutputItems(filter: {outputId: {eq: $docId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
+        results {
+          id idx workOrderId unitId qty warehouseId remarks
+          workOrder { id workOrderNo materialCode materialName }
+          unit { id name } warehouse { id name }
+        }
       }
     }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreateMfgOutputItemInput!) {
-    createMfgOutputItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdateMfgOutputItemInput!) {
-    updateMfgOutputItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroyMfgOutputItem(id: $id) { errors { message } }
-  }
-`
-
-function itemInput(row: Row) {
-  return {
+  `,
+  fetchKey: 'mfgOutputItems',
+  createMutation: `
+    mutation ($input: CreateMfgOutputItemInput!) {
+      createMfgOutputItem(input: $input) { result { id } errors { message } }
+    }
+  `,
+  createKey: 'createMfgOutputItem',
+  updateMutation: `
+    mutation ($id: ID!, $input: UpdateMfgOutputItemInput!) {
+      updateMfgOutputItem(id: $id, input: $input) { result { id } errors { message } }
+    }
+  `,
+  updateKey: 'updateMfgOutputItem',
+  destroyMutation: `
+    mutation ($id: ID!) {
+      destroyMfgOutputItem(id: $id) { errors { message } }
+    }
+  `,
+  destroyKey: 'destroyMfgOutputItem',
+  itemInput: (row: Row) => ({
     idx: row.idx,
     workOrderId: row.workOrderId,
     unitId: row.unitId,
     qty: row.qty,
     warehouseId: row.warehouseId,
     remarks: row.remarks ?? null,
-  }
-}
-
-const ITEM_KEYS = ['idx', 'workOrderId', 'unitId', 'qty', 'warehouseId', 'remarks'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-async function persistItems(outputId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const collect = (label: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `${label}:${e.message}`))
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroyMfgOutputItem: { errors: { message: string }[] | null } }>(
-      DESTROY_ITEM,
-      { id: old.id },
-    )
-    collect(old.idx ?? '行', data.destroyMfgOutputItem.errors)
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      const data = await gqlFetch<{
-        createMfgOutputItem: { errors: { message: string }[] | null }
-      }>(CREATE_ITEM, { input: { outputId, ...itemInput(row) } })
-      collect(row.idx ?? '行', data.createMfgOutputItem.errors)
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{
-        updateMfgOutputItem: { errors: { message: string }[] | null }
-      }>(UPDATE_ITEM, { id: row.id, input: itemInput(row) })
-      collect(row.idx ?? '行', data.updateMfgOutputItem.errors)
-    }
-  }
-  return errors
+  }),
+  itemKeys: ['idx', 'workOrderId', 'unitId', 'qty', 'warehouseId', 'remarks'] as const,
 }
 
 const GRID_COLUMNS = ['outputNo', 'outputDate', 'companyId', 'warehouseId', 'status', 'remarks']
 
+// 「审核整单」确认弹窗配置(同 scm 单据先例:只取行快照字段,不 join 工单/单位等 fk)
+const OUTPUT_AUDIT_CONFIG = {
+  docLabel: '生产入库单',
+  mutation: 'auditMfgOutput',
+  itemsResource: 'mfgOutputItems',
+  docIdField: 'outputId',
+  itemFields: 'id idx materialCode materialName materialSpec unitName qty baseQty remarks',
+  columns: [
+    { key: 'materialName', label: '物料', render: auditMaterialCell() },
+    { key: 'unitName', label: '单位' },
+    { key: 'qty', label: '入库数量', align: 'end' },
+    { key: 'baseQty', label: '折算数量', align: 'end' },
+    { key: 'remarks', label: '行备注' },
+  ],
+} satisfies AuditDocConfig
+
 function OutputsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
-  const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
-  const [itemsLoaded, setItemsLoaded] = useState(false)
+  const { items, setItems, itemsLoaded, load, persistItems } = useDocItems(ITEMS)
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
+  const { requestAudit, auditDialog } = useAuditDoc(OUTPUT_AUDIT_CONFIG)
 
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
-    const my = ++reqIdRef.current
     setDrawer({ mode, row })
-    if (mode === 'create' || !row) {
-      setItems([])
-      setItemsSnapshot([])
-      setItemsLoaded(true)
-      return
-    }
-    setItemsLoaded(false)
-    gqlFetch<{ mfgOutputItems: { results: Row[] } }>(FETCH_ITEMS, { outputId: row.id })
-      .then((d) => {
-        if (my !== reqIdRef.current) return
-        setItems(d.mfgOutputItems.results)
-        setItemsSnapshot(d.mfgOutputItems.results)
-        setItemsLoaded(true)
-      })
-      .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('入库行加载失败', { description: (e as Error).message })
-        setItems([])
-        setItemsSnapshot([])
-      })
+    load(mode === 'create' || !row ? null : String(row.id))
   }
 
   const draftOnly = !drawer?.row || drawer.row.status === 'DRAFT'
@@ -155,8 +117,11 @@ function OutputsPage() {
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer('edit', row)}
+          // 审核改走「列出全部条目核对」的确认弹窗(同 scm 单据页先例)
+          actionHandlers={{ audit: (rows, ctx) => requestAudit(String(rows[0].id), ctx.refetch) }}
         />
       </div>
+      {auditDialog}
 
       <SynieRecordDrawer
         resource="mfgOutputs"
@@ -197,6 +162,8 @@ function OutputsPage() {
           ),
         }}
         onSubmit={async (values, mode) => {
+          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          let savedId: string
           if (mode === 'create') {
             const data = await gqlFetch<{
               createMfgOutput: {
@@ -208,9 +175,10 @@ function OutputsPage() {
               throw new Error(data.createMfgOutput.errors.map((e) => e.message).join('; '))
             }
             const id = data.createMfgOutput.result!.id
-            const lineErrors = await persistItems(id, items, [])
+            const lineErrors = await persistItems(id)
             if (lineErrors.length) throw new Error(lineErrors.join('; '))
             toast.success('生产入库单已创建')
+            savedId = id
           } else {
             const data = await gqlFetch<{
               updateMfgOutput: { errors: { message: string }[] | null }
@@ -219,12 +187,14 @@ function OutputsPage() {
               throw new Error(data.updateMfgOutput.errors.map((e) => e.message).join('; '))
             }
             if (draftOnly) {
-              const lineErrors = await persistItems(drawer!.row!.id as string, items, itemsSnapshot)
+              const lineErrors = await persistItems(drawer!.row!.id as string)
               if (lineErrors.length) throw new Error(lineErrors.join('; '))
             }
             toast.success('生产入库单已更新')
+            savedId = drawer!.row!.id as string
           }
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'mfgOutputs'] })
+          return savedId
         }}
       />
     </>

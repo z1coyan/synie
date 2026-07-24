@@ -42,8 +42,13 @@ export interface SynieEditableTableProps<T extends Row = Row> {
   fields?: Record<string, FieldOverride>
   /** 本地列/字段定义,提供时跳过 GridMeta 查询,透传二级 SynieRecordDrawer */
   meta?: LocalGridMeta
-  /** 父表单 view 态传 true:隐藏新增按钮与操作列 */
+  /** 父表单 view 态传 true:隐藏新增按钮与编辑/删除;rowActions 声明时操作列仍保留 */
   readOnly?: boolean
+  /**
+   * 行级附加操作(如需求行的「完成/生成工单」),渲染在编辑/删除按钮左侧;
+   * readOnly 时操作列因它保留(编辑/删除仍隐藏)。返回 null/undefined 该行无附加操作
+   */
+  rowActions?: (row: T) => ReactNode
   /** 关掉新增/删除入口(默认开):行由服务端自动产生、只允许改的子表(如编号计数器)用 */
   canCreate?: boolean
   canDelete?: boolean
@@ -135,6 +140,7 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
                   </Table.Column>
                 ))}
                 {!readOnly && <Table.Column className="w-28 text-end">操作</Table.Column>}
+                {readOnly && props.rowActions && <Table.Column className="text-end">操作</Table.Column>}
               </Table.Header>
               <Table.Body
                 renderEmptyState={() => (
@@ -151,17 +157,22 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
                         <EditableCell col={c} row={row} override={overrides[c.name]} />
                       </Table.Cell>
                     ))}
-                    {!readOnly && (
+                    {(!readOnly || props.rowActions) && (
                       <Table.Cell className="text-end">
-                        <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="ghost" onPress={() => setDrawer({ mode: 'edit', row })}>
-                            编辑
-                          </Button>
-                          {/* ponytail: 草稿行直接删,父表单保存前都可重录;需要挽回再加确认框 */}
-                          {canDelete && (
-                            <Button size="sm" variant="ghost" className="text-danger" onPress={() => props.onChange(removeItem(items, row.id))}>
-                              删除
-                            </Button>
+                        <div className="flex justify-end gap-1 whitespace-nowrap">
+                          {props.rowActions?.(row)}
+                          {!readOnly && (
+                            <>
+                              <Button size="sm" variant="ghost" onPress={() => setDrawer({ mode: 'edit', row })}>
+                                编辑
+                              </Button>
+                              {/* ponytail: 草稿行直接删,父表单保存前都可重录;需要挽回再加确认框 */}
+                              {canDelete && (
+                                <Button size="sm" variant="ghost" className="text-danger" onPress={() => props.onChange(removeItem(items, row.id))}>
+                                  删除
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </Table.Cell>

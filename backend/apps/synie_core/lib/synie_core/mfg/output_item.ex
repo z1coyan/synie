@@ -1,76 +1,3 @@
-defmodule SynieCore.Mfg.OutputItem.SyncOutput do
-  @moduledoc """
-  行与母单同步:仅草稿生产入库可增删改行;create 时冗余 company_id。
-  """
-
-  use Ash.Resource.Change
-
-  require Ash.Query
-
-  @impl true
-  def change(changeset, _opts, _context) do
-    output_id = changeset_output_id(changeset)
-
-    changeset =
-      case read_output(output_id) do
-        {:ok, %{status: :draft} = output} ->
-          if changeset.action_type == :create do
-            Ash.Changeset.force_change_attribute(changeset, :company_id, output.company_id)
-          else
-            changeset
-          end
-
-        {:ok, nil} ->
-          Ash.Changeset.add_error(changeset, field: :output_id, message: "生产入库单不存在")
-
-        {:ok, _} ->
-          Ash.Changeset.add_error(changeset,
-            field: :output_id,
-            message: "仅草稿生产入库单可编辑单据行"
-          )
-
-        _ ->
-          Ash.Changeset.add_error(changeset, field: :output_id, message: "生产入库单不存在")
-      end
-
-    Ash.Changeset.before_action(changeset, fn cs ->
-      case lock_output(changeset_output_id(cs)) do
-        {:ok, %{status: :draft}} ->
-          cs
-
-        {:ok, nil} ->
-          Ash.Changeset.add_error(cs, field: :output_id, message: "生产入库单不存在")
-
-        _ ->
-          Ash.Changeset.add_error(cs,
-            field: :output_id,
-            message: "仅草稿生产入库单可编辑单据行"
-          )
-      end
-    end)
-  end
-
-  defp changeset_output_id(changeset),
-    do: Ash.Changeset.get_attribute(changeset, :output_id) || changeset.data.output_id
-
-  defp read_output(nil), do: {:ok, nil}
-
-  defp read_output(id) do
-    SynieCore.Mfg.Output
-    |> Ash.Query.filter(id == ^id)
-    |> Ash.read_one(authorize?: false)
-  end
-
-  defp lock_output(nil), do: {:ok, nil}
-
-  defp lock_output(id) do
-    SynieCore.Mfg.Output
-    |> Ash.Query.filter(id == ^id)
-    |> Ash.Query.lock("FOR UPDATE")
-    |> Ash.read_one(authorize?: false)
-  end
-end
-
 defmodule SynieCore.Mfg.OutputItem.WorkOrderOk do
   @moduledoc """
   行挂工单:工单须存在、同公司、未作废;物料强制与工单一致(忽略用户传的 material_id)。
@@ -190,7 +117,11 @@ defmodule SynieCore.Mfg.OutputItem do
     create :create do
       accept [:output_id, :idx, :work_order_id, :unit_id, :qty, :warehouse_id, :remarks]
 
-      change {SynieCore.Mfg.OutputItem.SyncOutput, []}
+      change {SynieCore.Mfg.SyncParentDraft,
+              parent: SynieCore.Mfg.Output,
+              parent_key: :output_id,
+              not_found_message: "生产入库单不存在",
+              not_draft_message: "仅草稿生产入库单可编辑单据行"}
       validate {SynieCore.Authz.Validations.CompanyAccessible, []}
       change {SynieCore.Mfg.OutputItem.WorkOrderOk, []}
       validate {SynieCore.Inv.WarehouseUsable, []}
@@ -203,7 +134,11 @@ defmodule SynieCore.Mfg.OutputItem do
       accept [:idx, :work_order_id, :unit_id, :qty, :warehouse_id, :remarks]
       require_atomic? false
 
-      change {SynieCore.Mfg.OutputItem.SyncOutput, []}
+      change {SynieCore.Mfg.SyncParentDraft,
+              parent: SynieCore.Mfg.Output,
+              parent_key: :output_id,
+              not_found_message: "生产入库单不存在",
+              not_draft_message: "仅草稿生产入库单可编辑单据行"}
       change {SynieCore.Mfg.OutputItem.WorkOrderOk, []}
       validate {SynieCore.Inv.WarehouseUsable, []}
       validate {SynieCore.Inv.StockItemUnitAllowed, []}
@@ -215,7 +150,11 @@ defmodule SynieCore.Mfg.OutputItem do
       primary? true
       require_atomic? false
 
-      change {SynieCore.Mfg.OutputItem.SyncOutput, []}
+      change {SynieCore.Mfg.SyncParentDraft,
+              parent: SynieCore.Mfg.Output,
+              parent_key: :output_id,
+              not_found_message: "生产入库单不存在",
+              not_draft_message: "仅草稿生产入库单可编辑单据行"}
     end
   end
 

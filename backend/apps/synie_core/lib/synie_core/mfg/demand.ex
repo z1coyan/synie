@@ -45,7 +45,7 @@ defmodule SynieCore.Mfg.Demand do
   中间层:计划从销售订单条目勾选纳入或手工建独立需求;确认后锁口径,下游按行
   履约方式分流(自制→生产工单,外购/委外/库存→计划点完成)。
 
-  生命周期:草稿 → 已确认 → 已关闭;另可作废(仅无未作废工单时)。
+  生命周期:草稿 → 已确认 → 已关闭;已确认且无未作废工单时可作废(草稿走删除)。
   仅草稿可改可删;关闭后不可再生成工单或点完成。
   单号全局唯一,留空按 `mfg.demand` 编号规则取号。行见 `DemandItem`。
   """
@@ -226,9 +226,9 @@ defmodule SynieCore.Mfg.Demand do
       require_atomic? false
 
       validate fn changeset, _context ->
-        if changeset.data.status in [:draft, :confirmed],
+        if changeset.data.status == :confirmed,
           do: :ok,
-          else: {:error, message: "仅草稿或已确认履约需求单可作废"}
+          else: {:error, message: "仅已确认履约需求单可作废;草稿请直接删除"}
       end
 
       validate {SynieCore.Mfg.Demand.NoActiveWorkOrders, []}
@@ -238,7 +238,7 @@ defmodule SynieCore.Mfg.Demand do
         |> Ash.Changeset.force_change_attribute(:status, :voided)
         |> Ash.Changeset.before_action(fn cs ->
           case __MODULE__.lock_demand(cs.data.id) do
-            {:ok, %{status: status}} when status in [:draft, :confirmed] ->
+            {:ok, %{status: :confirmed}} ->
               if __MODULE__.has_active_work_orders?(cs.data.id) do
                 Ash.Changeset.add_error(cs, message: "存在未作废生产工单,不可作废需求单")
               else
@@ -246,7 +246,7 @@ defmodule SynieCore.Mfg.Demand do
               end
 
             _ ->
-              Ash.Changeset.add_error(cs, message: "仅草稿或已确认履约需求单可作废")
+              Ash.Changeset.add_error(cs, message: "仅已确认履约需求单可作废;草稿请直接删除")
           end
         end)
       end

@@ -31,8 +31,8 @@ function MfgSettingsPage() {
     queryFn: () => gqlFetch<{ mfgSetting: MfgSetting | null }>(SETTING_QUERY),
   })
 
-  // 界面按百分比录入(0–100),落库小数 0–1
-  const [overreceivePct, setOverreceivePct] = useState<number>(NaN)
+  // 界面按百分比录入(0–100),落库小数 0–1;null=设置尚未载入
+  const [overreceivePct, setOverreceivePct] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -43,7 +43,7 @@ function MfgSettingsPage() {
 
   const save = async () => {
     if (!query.data?.mfgSetting) return
-    if (!Number.isFinite(overreceivePct) || overreceivePct < 0 || overreceivePct > 100) {
+    if (overreceivePct === null || overreceivePct < 0 || overreceivePct > 100) {
       toast.danger('生产入库超入比例须在 0%–100% 之间')
       return
     }
@@ -87,6 +87,10 @@ function MfgSettingsPage() {
             </div>
           ) : query.isError ? (
             <p className="text-sm text-danger">加载失败:{(query.error as Error).message}</p>
+          ) : overreceivePct === null ? (
+            <div className="flex justify-center py-6">
+              <Spinner size="sm" />
+            </div>
           ) : (
             <NumberField
               fullWidth
@@ -105,7 +109,7 @@ function MfgSettingsPage() {
         <Card.Footer>
           <Button
             variant="primary"
-            isDisabled={query.isLoading || query.isError}
+            isDisabled={query.isLoading || query.isError || overreceivePct === null}
             isPending={saving}
             onPress={save}
           >

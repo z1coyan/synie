@@ -89,7 +89,7 @@ export const ACTION_LABELS: Record<string, string> = {
   cancel: '取消',
   void: '作废',
   close: '关闭',
-  complete: '已完成',
+  complete: '完成',
   reverse: '红冲',
   ship: '发货',
   receive: '收货',
