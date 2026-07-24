@@ -45,6 +45,36 @@ defmodule SynieWeb.AuthzMatrix.Subjects do
   end
 
   @doc """
+  写侧极值主体(工单03)::no_code(无码,授权公司甲)、:min_write_a(目录内
+  read/create/update/delete 现存码 + 仅公司甲)、:min_write_ab(同码,甲乙双授权
+  ——乙司正向对照用,证明跨公司负向的拒因是公司轴而非输入不合法)、
+  :super_admin(世界不变式检查用)。
+
+  min_write 主体带 read 码:GraphQL update/destroy 先经 read 动作取数,不带 read
+  会在功能权限层就被拒,盖住本要验证的公司隔离轴。
+  """
+  def extreme_write_subjects(prefix, world) do
+    codes =
+      for action <- ~w(read create update delete), catalog_has?(prefix, action) do
+        prefix <> ":" <> action
+      end
+
+    %{
+      no_code: token!([], companies: [world.company_a.id]),
+      min_write_a: token!(codes, companies: [world.company_a.id]),
+      min_write_ab: token!(codes, companies: [world.company_a.id, world.company_b.id]),
+      super_admin: token!([], super_admin: true)
+    }
+  end
+
+  defp catalog_has?(prefix, action) do
+    case Enum.find(Registry.catalog(), &(&1.prefix == prefix)) do
+      nil -> raise "权限目录中不存在前缀 #{prefix}"
+      entry -> action in entry.actions
+    end
+  end
+
+  @doc """
   从权限目录反射出 `前缀:动作` 权限码;前缀不在目录或未声明该动作时直接抛错
   ——极值主体的码永远来自目录,不允许手写。
   """

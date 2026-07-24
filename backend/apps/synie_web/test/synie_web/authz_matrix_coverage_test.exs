@@ -43,6 +43,27 @@ defmodule SynieWeb.AuthzMatrixCoverageTest do
     assert blank == [], "以下豁免项没有书面理由(不允许无理由豁免):#{inspect(blank)}"
   end
 
+  test "写输入契约:已覆盖资源凡注册 create/update mutation,必须给出对应写输入" do
+    write_inputs = World.write_inputs()
+
+    offenders =
+      for {module, _builder} <- World.builders(),
+          fields = SynieWeb.AuthzMatrix.Gql.primary_mutation_fields(module),
+          {kind, field} <- [create: fields.create, update: fields.update],
+          field != nil,
+          not is_function(get_in(write_inputs, [module, kind])) do
+        "#{inspect(module)}: 注册了 #{field} mutation 却没有 write_inputs #{kind} 输入(写矩阵无法展开)"
+      end
+
+    assert offenders == [],
+           "写输入契约破损:\n" <> Enum.map_join(offenders, "\n", &("  - " <> &1))
+
+    stale = Map.keys(write_inputs) -- Map.keys(World.builders())
+
+    assert stale == [],
+           "write_inputs 中以下资源不在世界覆盖内(先补构造函数):#{inspect(stale)}"
+  end
+
   test "声明 read 的资源必在表格元数据白名单,或带理由豁免" do
     read_prefixes = for %{prefix: p, actions: a} <- Registry.catalog(), "read" in a, do: p
     grid_modules = SynieWeb.GridMeta.resources() |> Map.values() |> MapSet.new()

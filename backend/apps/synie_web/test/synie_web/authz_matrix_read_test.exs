@@ -49,7 +49,7 @@ defmodule SynieWeb.AuthzMatrixReadTest do
 
   defp run_read_matrix(module, world) do
     prefix = module.permission_prefix()
-    field = grid_field!(module)
+    field = Gql.grid_field!(module)
     records = Map.fetch!(world.records, module)
 
     scan_anonymous(prefix, field, records)
@@ -170,15 +170,5 @@ defmodule SynieWeb.AuthzMatrixReadTest do
 
   defp deny_msg(prefix, shape, op, resp) do
     "[矩阵] 资源 #{prefix} × 主体 #{shape} × 负向:#{op} 查询应被拒(errors 且无数据)\n响应:#{inspect(resp, limit: 20)}"
-  end
-
-  # 读侧枚举源 = 表格元数据白名单:资源模块 → GraphQL list 字段名
-  defp grid_field!(module) do
-    SynieWeb.GridMeta.resources()
-    |> Enum.find(fn {_name, m} -> m == module end)
-    |> case do
-      {name, _} -> name
-      nil -> flunk("资源 #{inspect(module)} 不在 GridMeta 白名单,读矩阵无法枚举其查询名")
-    end
   end
 end

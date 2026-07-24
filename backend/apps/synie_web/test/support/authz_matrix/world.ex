@@ -18,6 +18,18 @@ defmodule SynieWeb.AuthzMatrix.World do
   - 必须返回**本资源本次创建的全部记录**——应得集 oracle 与 super_admin
     「恰好看到全部」断言都以返回值为准,漏登记会直接把矩阵断红。
 
+  ## 写输入契约(工单03扩展)
+
+  凡已覆盖资源在 GraphQL 注册了 create/update mutation,`write_inputs/0` 必须给出
+  对应输入(完整性守卫强制):
+
+  - `create`:`(公司) -> GraphQL input map`,产出**在该公司下合法可建**的输入
+    ——跨公司 create 负向与写侧正向对照都复用它;
+  - `update`:`() -> GraphQL input map`,一个良性字段变更(改他司负向与正向对照复用)。
+
+  写矩阵对每个有 write_inputs 的资源自动跑正向对照(甲司 create→update→destroy,
+  净零不扰动世界);状态机复杂到正向走不通的资源,由对应批次工单在此契约上再议。
+
   ## 应得集声明(expected-visibility)
 
   默认规则:带 `company_id` 的资源「公司匹配即应得」(`:company`),
@@ -47,6 +59,34 @@ defmodule SynieWeb.AuthzMatrix.World do
   @doc "已覆盖资源的权限前缀集合。"
   def covered_prefixes, do: builders() |> Map.keys() |> Enum.map(& &1.permission_prefix())
 
+  @doc """
+  写输入注册表(契约见 moduledoc):资源模块 => %{create: (公司 -> input), update: (-> input)}。
+  input 键用 GraphQL camelCase 字段名。
+  """
+  def write_inputs do
+    %{
+      SynieCore.Acc.GlJournal => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "voucherNo" => "MXW-#{company.code}-#{System.unique_integer([:positive])}",
+            "date" => "2026-07-02"
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动"} end
+      },
+      SynieCore.Inv.Warehouse => %{
+        create: fn company ->
+          %{
+            "name" => "矩阵写仓-#{System.unique_integer([:positive])}",
+            "companyId" => company.id
+          }
+        end,
+        update: fn -> %{"name" => "矩阵写仓-改名-#{System.unique_integer([:positive])}"} end
+      }
+    }
+  end
+
   # ── 应得集声明 ────────────────────────────────────────────────────────────
 
   # 特例声明:批次工单为特例资源加函数子句(裸文件仅上传者、审计日志无公司行放行等),如
@@ -70,15 +110,11 @@ defmodule SynieWeb.AuthzMatrix.World do
     world.records
     |> Map.fetch!(module)
     |> Enum.filter(fn record ->
+      # 首个 {:custom, fun} 特例声明落地时,在此补分支:fun.(record, effective_companies)
+      # (现在写上会因 override 全空被编译器判死子句)
       case visibility(module) do
-        :company ->
-          effective_companies == :all or record.company_id in effective_companies
-
-        :global ->
-          true
-
-        {:custom, fun} ->
-          fun.(record, effective_companies)
+        :company -> effective_companies == :all or record.company_id in effective_companies
+        :global -> true
       end
     end)
     |> MapSet.new(& &1.id)
