@@ -127,6 +127,19 @@ defmodule SynieWeb.AuthzMatrix.World do
       SynieCore.Mfg.Operation => &build_operations/1,
       SynieCore.Mfg.ProcessTemplate => &build_process_templates/1,
       SynieCore.Mfg.Bom => &build_boms/1,
+      # sales(批次D)
+      SynieCore.Sales.Customer => &build_customers/1,
+      SynieCore.Sales.Order => &build_sales_orders/1,
+      SynieCore.Sales.Delivery => &build_deliveries/1,
+      SynieCore.Sales.Quotation => &build_sales_quotations/1,
+      SynieCore.Sales.Reconciliation => &build_sales_reconciliations/1,
+      SynieCore.Sales.Setting => &build_sales_settings/1,
+      # purchase(批次D)
+      SynieCore.Purchase.Supplier => &build_suppliers/1,
+      SynieCore.Purchase.Order => &build_purchase_orders/1,
+      SynieCore.Purchase.Receipt => &build_receipts/1,
+      SynieCore.Purchase.Quotation => &build_purchase_quotations/1,
+      SynieCore.Purchase.Reconciliation => &build_purchase_reconciliations/1,
       # 试点(工单02)
       SynieCore.Acc.GlJournal => &build_gl_journals/1,
       SynieCore.Inv.Warehouse => &build_warehouses/1
@@ -526,6 +539,137 @@ defmodule SynieWeb.AuthzMatrix.World do
       SynieCore.Mfg.Bom => %{
         create: fn _company -> %{"materialId" => ctx.material2.id} end,
         update: fn -> %{"note" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      # ── sales(批次D)──
+      SynieCore.Sales.Customer => %{
+        create: fn _company ->
+          %{"code" => "MXWC#{System.unique_integer([:positive])}", "name" => "矩阵写客户"}
+        end,
+        update: fn -> %{"name" => "矩阵写客户-改名-#{System.unique_integer([:positive])}"} end
+      },
+      # 正向 create 用样品单免报价链接;币种传本币(GraphQL currencyId 必填),
+      # 本币单汇率被强制为 1,故省略 exchangeRate
+      SynieCore.Sales.Order => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "orderNo" => "MXWSO-#{System.unique_integer([:positive])}",
+            "orderDate" => "2026-07-02",
+            "orderType" => {:enum, "SAMPLE"},
+            "partyType" => {:enum, "CUSTOMER"},
+            "partyId" => ctx.customer.id,
+            "currencyId" => ctx.cny.id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      # 空草稿发货可建可删(无明细即无库存联动);借方未开票应收,贷方任意
+      SynieCore.Sales.Delivery => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "deliveryNo" => "MXWDL-#{System.unique_integer([:positive])}",
+            "deliveryDate" => "2026-07-02",
+            "partyType" => {:enum, "CUSTOMER"},
+            "partyId" => ctx.customer.id,
+            "debitAccountId" => unbilled_receivable_of(ctx, company).id,
+            "creditAccountId" => account_of(ctx, company).id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Sales.Quotation => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "quotationNo" => "MXWSQ-#{System.unique_integer([:positive])}",
+            "quotationDate" => "2026-07-02",
+            "validUntil" => "2026-12-31",
+            "partyType" => {:enum, "CUSTOMER"},
+            "partyId" => ctx.customer.id,
+            "currencyId" => ctx.cny.id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Sales.Reconciliation => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "reconciliationNo" => "MXWSR-#{System.unique_integer([:positive])}",
+            "reconciliationType" => {:enum, "REGULAR"},
+            "partyType" => {:enum, "CUSTOMER"},
+            "partyId" => ctx.customer.id,
+            "debitAccountId" => account_of(ctx, company).id,
+            "creditAccountId" => unbilled_receivable_of(ctx, company).id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Sales.Setting => %{
+        update: fn -> %{"sampleItemMaxQty" => 100} end
+      },
+      # ── purchase(批次D)──
+      SynieCore.Purchase.Supplier => %{
+        create: fn _company ->
+          %{"code" => "MXWS#{System.unique_integer([:positive])}", "name" => "矩阵写供应商"}
+        end,
+        update: fn -> %{"name" => "矩阵写供应商-改名-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Purchase.Order => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "orderNo" => "MXWPO-#{System.unique_integer([:positive])}",
+            "orderDate" => "2026-07-02",
+            "partyType" => {:enum, "SUPPLIER"},
+            "partyId" => ctx.supplier.id,
+            "currencyId" => ctx.cny.id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Purchase.Receipt => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "receiptNo" => "MXWRC-#{System.unique_integer([:positive])}",
+            "receiptDate" => "2026-07-02",
+            "partyType" => {:enum, "SUPPLIER"},
+            "partyId" => ctx.supplier.id,
+            "debitAccountId" => account_of(ctx, company).id,
+            "creditAccountId" => unbilled_payable_of(ctx, company).id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Purchase.Quotation => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "quotationNo" => "MXWPQ-#{System.unique_integer([:positive])}",
+            "quotationDate" => "2026-07-02",
+            "validUntil" => "2026-12-31",
+            "partyType" => {:enum, "SUPPLIER"},
+            "partyId" => ctx.supplier.id,
+            "currencyId" => ctx.cny.id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Purchase.Reconciliation => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "reconciliationNo" => "MXWPR-#{System.unique_integer([:positive])}",
+            "reconciliationType" => {:enum, "REGULAR"},
+            "partyType" => {:enum, "SUPPLIER"},
+            "partyId" => ctx.supplier.id,
+            "debitAccountId" => unbilled_payable_of(ctx, company).id,
+            "creditAccountId" => account_of(ctx, company).id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
       }
     }
   end
@@ -536,6 +680,12 @@ defmodule SynieWeb.AuthzMatrix.World do
 
   defp account_of(ctx, company),
     do: if(company.id == ctx.company_a.id, do: ctx.account_a, else: ctx.account_b)
+
+  defp unbilled_receivable_of(ctx, company),
+    do: if(company.id == ctx.company_a.id, do: ctx.account_ur_a, else: ctx.account_ur_b)
+
+  defp unbilled_payable_of(ctx, company),
+    do: if(company.id == ctx.company_a.id, do: ctx.account_up_a, else: ctx.account_up_b)
 
   defp bill_of(ctx, company),
     do: if(company.id == ctx.company_a.id, do: ctx.bill_a, else: ctx.bill_b)
@@ -592,24 +742,11 @@ defmodule SynieWeb.AuthzMatrix.World do
 
   # ── 覆盖豁免清单(expand–contract:批次工单逐批清空,不允许无理由豁免)──
 
-  @batch_d "夹具构造函数随批次D(工单07:sales+purchase)落地"
-
-  @doc "世界覆盖豁免:权限前缀 => 理由。"
-  def coverage_exempt do
-    %{
-      "sales.customer" => @batch_d,
-      "sales.delivery" => @batch_d,
-      "sales.order" => @batch_d,
-      "sales.quotation" => @batch_d,
-      "sales.reconciliation" => @batch_d,
-      "sales.setting" => @batch_d,
-      "purchase.order" => @batch_d,
-      "purchase.quotation" => @batch_d,
-      "purchase.receipt" => @batch_d,
-      "purchase.reconciliation" => @batch_d,
-      "purchase.supplier" => @batch_d
-    }
-  end
+  @doc """
+  世界覆盖豁免:权限前缀 => 理由。批次A-D 已全部落地,清单为空——
+  自此新资源进权限目录而不写构造函数,完整性守卫即红(工单10 收口)。
+  """
+  def coverage_exempt, do: %{}
 
   @doc """
   「声明 read 必在表格元数据白名单」守卫的豁免:权限前缀 => 理由。
@@ -700,6 +837,43 @@ defmodule SynieWeb.AuthzMatrix.World do
     attendance_import = Ash.Seed.seed!(SynieCore.Hr.AttendanceImport, %{file_id: bare_file.id})
     payroll = payroll!(employee)
 
+    # 批次D标准数据:供应商(全局)+ 带角色科目(发货借方须未开票应收、
+    # 收货贷方须未开票应付,对账镜像),销采单据引用它们与批次B/C的客户/物料/仓库。
+    supplier = supplier!()
+    account_ur_a = role_account!(company_a, "MXUR", :unbilled_receivable)
+    account_ur_b = role_account!(company_b, "MXUR", :unbilled_receivable)
+    account_up_a = role_account!(company_a, "MXUP", :unbilled_payable)
+    account_up_b = role_account!(company_b, "MXUP", :unbilled_payable)
+
+    # 销售订单:已审核 + 含明细行(发货明细须绑已审核订单条目);两司各一张。
+    # 订单是矩阵记录本体(审核后仍是该资源唯一世界记录,读矩阵照常;写矩阵负向
+    # 对已审核订单的 destroy 被公司轴与草稿闸双重挡下,拒即达标)。
+    {sales_order_a, sales_order_item_a} =
+      audited_sales_order!(company_a, customer, material, unit)
+
+    {sales_order_b, sales_order_item_b} =
+      audited_sales_order!(company_b, customer, material, unit)
+
+    delivery_a =
+      delivery_with_item!(
+        company_a,
+        customer,
+        account_ur_a,
+        account_a,
+        sales_order_item_a,
+        hd(warehouses_a)
+      )
+
+    delivery_b =
+      delivery_with_item!(
+        company_b,
+        customer,
+        account_ur_b,
+        account_b,
+        sales_order_item_b,
+        hd(warehouses_b)
+      )
+
     %{
       storage_root: storage_root,
       cny: cny,
@@ -730,7 +904,16 @@ defmodule SynieWeb.AuthzMatrix.World do
       material: material,
       material2: material2,
       attendance_import: attendance_import,
-      payroll: payroll
+      payroll: payroll,
+      supplier: supplier,
+      account_ur_a: account_ur_a,
+      account_ur_b: account_ur_b,
+      account_up_a: account_up_a,
+      account_up_b: account_up_b,
+      sales_order_a: sales_order_a,
+      sales_order_b: sales_order_b,
+      delivery_a: delivery_a,
+      delivery_b: delivery_b
     }
   end
 
@@ -842,6 +1025,28 @@ defmodule SynieWeb.AuthzMatrix.World do
     |> Ash.Changeset.for_create(:create, %{
       code: "MXC#{System.unique_integer([:positive])}",
       name: "矩阵客户"
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp supplier! do
+    SynieCore.Purchase.Supplier
+    |> Ash.Changeset.for_create(:create, %{
+      code: "MXS#{System.unique_integer([:positive])}",
+      name: "矩阵供应商"
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  # 带往来角色的科目(发货/收货/对账的借贷科目须挂特定角色,见各资源 *AccountRole 校验)
+  defp role_account!(company, code_prefix, role) do
+    SynieCore.Base.Account
+    |> Ash.Changeset.for_create(:create, %{
+      code: "#{code_prefix}#{System.unique_integer([:positive])}",
+      name: "矩阵#{role}-#{company.code}",
+      direction: :debit,
+      role: role,
+      company_id: company.id
     })
     |> Ash.create!(authorize?: false)
   end
@@ -959,6 +1164,81 @@ defmodule SynieWeb.AuthzMatrix.World do
     {Ash.load!(bill, :transactions, authorize?: false), txn}
   end
 
+  # 已审核销售订单 + 一行样品条目(样品行免报价链接,qty≤样品上限);返回 {订单, 订单条目}。
+  # 发货明细须绑已审核订单条目,故订单在此审核(本币单省略币种/汇率,SyncCurrency 代入本币)。
+  defp audited_sales_order!(company, customer, material, unit) do
+    suffix = System.unique_integer([:positive])
+
+    order =
+      SynieCore.Sales.Order
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        order_no: "MXSO-#{company.code}-#{suffix}",
+        order_date: ~D[2026-07-01],
+        order_type: :sample,
+        party_type: :customer,
+        party_id: customer.id
+      })
+      |> Ash.create!(authorize?: false)
+
+    item =
+      SynieCore.Sales.OrderItem
+      |> Ash.Changeset.for_create(:create, %{
+        order_id: order.id,
+        idx: 1,
+        material_id: material.id,
+        unit_id: unit.id,
+        qty: Decimal.new("1"),
+        price: Decimal.new("10")
+      })
+      |> Ash.create!(authorize?: false)
+
+    order =
+      order
+      |> Ash.Changeset.for_update(:audit, %{})
+      |> Ash.update!(authorize?: false)
+
+    {order, item}
+  end
+
+  # 草稿发货单 + 一行明细(绑已审核订单条目);借方须挂未开票应收角色,贷方任意本司科目。
+  # 发货保持草稿(审核才动库存/过账,越出全量矩阵射程),明细可挂在草稿发货上。
+  defp delivery_with_item!(
+         company,
+         customer,
+         debit_account,
+         credit_account,
+         order_item,
+         warehouse
+       ) do
+    suffix = System.unique_integer([:positive])
+
+    delivery =
+      SynieCore.Sales.Delivery
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        delivery_no: "MXDL-#{company.code}-#{suffix}",
+        delivery_date: ~D[2026-07-02],
+        party_type: :customer,
+        party_id: customer.id,
+        debit_account_id: debit_account.id,
+        credit_account_id: credit_account.id
+      })
+      |> Ash.create!(authorize?: false)
+
+    SynieCore.Sales.DeliveryItem
+    |> Ash.Changeset.for_create(:create, %{
+      delivery_id: delivery.id,
+      idx: 1,
+      order_item_id: order_item.id,
+      qty: Decimal.new("1"),
+      warehouse_id: warehouse.id
+    })
+    |> Ash.create!(authorize?: false)
+
+    delivery
+  end
+
   # ── 构造函数:sys ─────────────────────────────────────────────────────────
 
   defp build_users(%{user: user}), do: [user]
@@ -1035,7 +1315,17 @@ defmodule SynieWeb.AuthzMatrix.World do
 
   defp build_currencies(%{currency: currency}), do: [currency]
 
-  defp build_bas_accounts(%{account_a: a, account_b: b}), do: [a, b]
+  # 认领全部世界科目:每司普通科目 + 未开票应收/应付角色科目(销采单据借贷用)
+  defp build_bas_accounts(ctx) do
+    [
+      ctx.account_a,
+      ctx.account_b,
+      ctx.account_ur_a,
+      ctx.account_ur_b,
+      ctx.account_up_a,
+      ctx.account_up_b
+    ]
+  end
 
   defp build_market_instruments(%{instrument: instrument}), do: [instrument]
 
@@ -1336,6 +1626,125 @@ defmodule SynieWeb.AuthzMatrix.World do
       |> Ash.Changeset.for_create(:create, %{material_id: material.id})
       |> Ash.create!(authorize?: false)
     ]
+  end
+
+  # ── 构造函数:sales(批次D)───────────────────────────────────────────────
+
+  defp build_customers(%{customer: customer}), do: [customer]
+
+  defp build_sales_orders(%{sales_order_a: a, sales_order_b: b}), do: [a, b]
+
+  defp build_deliveries(%{delivery_a: a, delivery_b: b}), do: [a, b]
+
+  defp build_sales_quotations(ctx) do
+    for company <- [ctx.company_a, ctx.company_b] do
+      SynieCore.Sales.Quotation
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        quotation_no: "MXSQ-#{company.code}-#{System.unique_integer([:positive])}",
+        quotation_date: ~D[2026-07-01],
+        valid_until: ~D[2026-12-31],
+        party_type: :customer,
+        party_id: ctx.customer.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  # 空草稿对账单可建;贷方须挂未开票应收角色,借方任意本司科目
+  defp build_sales_reconciliations(ctx) do
+    for {company, credit, debit} <- [
+          {ctx.company_a, ctx.account_ur_a, ctx.account_a},
+          {ctx.company_b, ctx.account_ur_b, ctx.account_b}
+        ] do
+      SynieCore.Sales.Reconciliation
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        reconciliation_no: "MXSR-#{company.code}-#{System.unique_integer([:positive])}",
+        reconciliation_type: :regular,
+        party_type: :customer,
+        party_id: ctx.customer.id,
+        debit_account_id: debit.id,
+        credit_account_id: credit.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  # sal_setting 单行由迁移种入且资源不开放 create,认领种子行
+  defp build_sales_settings(_ctx), do: [SynieCore.Sales.Setting.get()]
+
+  # ── 构造函数:purchase(批次D)────────────────────────────────────────────
+
+  defp build_suppliers(%{supplier: supplier}), do: [supplier]
+
+  defp build_purchase_orders(ctx) do
+    for company <- [ctx.company_a, ctx.company_b] do
+      SynieCore.Purchase.Order
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        order_no: "MXPO-#{company.code}-#{System.unique_integer([:positive])}",
+        order_date: ~D[2026-07-01],
+        party_type: :supplier,
+        party_id: ctx.supplier.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  # 空草稿收货单:借方任意本司科目,贷方须挂未开票应付角色(与发货借贷镜像)
+  defp build_receipts(ctx) do
+    for {company, debit, credit} <- [
+          {ctx.company_a, ctx.account_a, ctx.account_up_a},
+          {ctx.company_b, ctx.account_b, ctx.account_up_b}
+        ] do
+      SynieCore.Purchase.Receipt
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        receipt_no: "MXRC-#{company.code}-#{System.unique_integer([:positive])}",
+        receipt_date: ~D[2026-07-01],
+        party_type: :supplier,
+        party_id: ctx.supplier.id,
+        debit_account_id: debit.id,
+        credit_account_id: credit.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  defp build_purchase_quotations(ctx) do
+    for company <- [ctx.company_a, ctx.company_b] do
+      SynieCore.Purchase.Quotation
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        quotation_no: "MXPQ-#{company.code}-#{System.unique_integer([:positive])}",
+        quotation_date: ~D[2026-07-01],
+        valid_until: ~D[2026-12-31],
+        party_type: :supplier,
+        party_id: ctx.supplier.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  # 采购对账:借方须挂未开票应付角色,贷方任意本司科目
+  defp build_purchase_reconciliations(ctx) do
+    for {company, debit, credit} <- [
+          {ctx.company_a, ctx.account_up_a, ctx.account_a},
+          {ctx.company_b, ctx.account_up_b, ctx.account_b}
+        ] do
+      SynieCore.Purchase.Reconciliation
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        reconciliation_no: "MXPR-#{company.code}-#{System.unique_integer([:positive])}",
+        reconciliation_type: :regular,
+        party_type: :supplier,
+        party_id: ctx.supplier.id,
+        debit_account_id: debit.id,
+        credit_account_id: credit.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
   end
 
   # ── 构造函数:试点 ────────────────────────────────────────────────────────
