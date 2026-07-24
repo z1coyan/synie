@@ -750,6 +750,62 @@ const registry: Record<string, ResourceDrawerConfig> = {
   mfgBomComponents: { label: '配料' },
   mfgBomRoutes: { label: '工艺路线' },
   mfgBomByproducts: { label: '副产品' },
+  mfgDemands: {
+    label: '履约需求单',
+    contentClassName: 'w-full lg:w-[960px]',
+    exclude: ['status', 'createdById', 'insertedAt', 'updatedAt'],
+    tabs: [
+      { key: 'basic', label: '基本信息' },
+      { key: 'items', label: '需求行' },
+    ],
+    fields: {
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      demandNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      demandDate: { order: 1, cols: 6, required: true },
+      remarks: { order: 2 },
+    },
+  },
+  mfgDemandItems: { label: '需求行' },
+  mfgWorkOrders: {
+    label: '生产工单',
+    exclude: ['status', 'createdById', 'insertedAt', 'updatedAt', 'qty', 'baseQty', 'receivedBaseQty'],
+    fields: {
+      workOrderNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      demandItemId: { order: 1, required: true, edit: 'createOnly', label: '来源需求行' },
+      materialId: { order: 2, edit: 'readOnly' },
+      needDate: { order: 3, edit: 'readOnly' },
+      materialCode: { order: 4, edit: 'readOnly' },
+      materialName: { order: 5, edit: 'readOnly' },
+      unitName: { order: 6, edit: 'readOnly' },
+    },
+  },
+  mfgOutputs: {
+    label: '生产入库单',
+    contentClassName: 'w-full lg:w-[960px]',
+    exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt'],
+    tabs: [
+      { key: 'basic', label: '基本信息' },
+      { key: 'items', label: '入库行' },
+    ],
+    fields: {
+      companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
+      outputNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      outputDate: { order: 1, cols: 6, required: true },
+      warehouseId: { order: 2, label: '默认仓库' },
+      remarks: { order: 3 },
+    },
+  },
+  mfgOutputItems: { label: '入库行' },
+  mfgSetting: {
+    label: '生产设置',
+    fields: {
+      outputOverreceiveRatio: {
+        order: 0,
+        label: '生产入库超入比例',
+        placeholder: '0=禁超入,0.05=5%',
+      },
+    },
+  },
   invMaterials: {
     label: '物料',
     contentClassName: 'w-full lg:w-[640px]',

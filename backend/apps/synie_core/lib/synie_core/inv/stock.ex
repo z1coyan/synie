@@ -33,7 +33,8 @@ defmodule SynieCore.Inv.Stock do
       "inv.stock_transfer" => {SynieCore.Inv.StockTransfer, "手工调拨单"},
       "inv.stock_count" => {SynieCore.Inv.StockCount, "库存盘点单"},
       "sales.delivery" => {SynieCore.Sales.Delivery, "销售发货单"},
-      "purchase.receipt" => {SynieCore.Purchase.Receipt, "采购入库单"}
+      "purchase.receipt" => {SynieCore.Purchase.Receipt, "采购入库单"},
+      "mfg.output" => {SynieCore.Mfg.Output, "生产入库单"}
     }
   end
 

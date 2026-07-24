@@ -111,14 +111,17 @@ defmodule SynieCore.SetupTest do
     assert local.kind == :local
     assert local.root == "uploads"
 
-    # 编号规则:物料 + 员工 + 工序 + 工艺模板 + 15 种业务单据
+    # 编号规则:物料 + 员工 + 工序 + 工艺模板 + 18 种业务单据(含履约需求/工单/生产入库)
     rules = Rule |> Ash.read!(authorize?: false)
-    assert length(rules) == 19
+    assert length(rules) == 22
     resources = MapSet.new(rules, & &1.resource)
     assert "inv.material" in resources
     assert "hr.employee" in resources
     assert "mfg.operation" in resources
     assert "mfg.route_template" in resources
+    assert "mfg.demand" in resources
+    assert "mfg.work_order" in resources
+    assert "mfg.output" in resources
     assert "sales.order" in resources
     assert "acc.gl_journal" in resources
 

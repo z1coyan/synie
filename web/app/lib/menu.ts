@@ -148,10 +148,18 @@ export const menuModules: MenuModule[] = [
   {
     key: 'mfg',
     label: '生产',
-    description: 'BOM 与工艺管理',
+    description: '履约需求、工单、入库与 BOM',
     icon: IconFactory,
-    entry: '/mfg/boms',
+    entry: '/mfg/demands',
     groups: [
+      {
+        label: '执行',
+        items: [
+          { label: '需求单', path: '/mfg/demands' },
+          { label: '生产工单', path: '/mfg/work-orders' },
+          { label: '生产入库', path: '/mfg/outputs' },
+        ],
+      },
       {
         label: '配方',
         items: [{ label: 'BOM', path: '/mfg/boms' }],
@@ -161,6 +169,7 @@ export const menuModules: MenuModule[] = [
         items: [
           { label: '工序', path: '/mfg/operations' },
           { label: '工艺模板', path: '/mfg/process-templates' },
+          { label: '生产设置', path: '/mfg/settings' },
         ],
       },
     ],

@@ -108,6 +108,12 @@ const RESOURCE_LABELS: Record<string, string> = {
   mfg_bom_component: 'BOM 配料行',
   mfg_bom_route: 'BOM 工艺路线行',
   mfg_bom_byproduct: 'BOM 副产品行',
+  mfg_demand: '履约需求单',
+  mfg_demand_item: '履约需求行',
+  mfg_work_order: '生产工单',
+  mfg_output: '生产入库单',
+  mfg_output_item: '生产入库行',
+  mfg_setting: '生产设置',
 }
 
 // changes 键是 snake_case 属性名(后端 Track 落库);新字段接审计后在此补中文,漏了则原样显示

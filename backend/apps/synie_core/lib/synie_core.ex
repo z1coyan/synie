@@ -89,6 +89,12 @@ defmodule SynieCore do
       list SynieCore.Mfg.BomComponent, :mfg_bom_components, :read, paginate_with: :offset
       list SynieCore.Mfg.BomRoute, :mfg_bom_routes, :read, paginate_with: :offset
       list SynieCore.Mfg.BomByproduct, :mfg_bom_byproducts, :read, paginate_with: :offset
+      list SynieCore.Mfg.Demand, :mfg_demands, :read, paginate_with: :offset
+      list SynieCore.Mfg.DemandItem, :mfg_demand_items, :read, paginate_with: :offset
+      list SynieCore.Mfg.WorkOrder, :mfg_work_orders, :read, paginate_with: :offset
+      list SynieCore.Mfg.Output, :mfg_outputs, :read, paginate_with: :offset
+      list SynieCore.Mfg.OutputItem, :mfg_output_items, :read, paginate_with: :offset
+      read_one SynieCore.Mfg.Setting, :mfg_setting, :read
       list SynieCore.Hr.AttendancePunch, :hr_attendance_punches, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceImport, :hr_attendance_imports, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceDay, :hr_attendance_days, :read, paginate_with: :offset
@@ -343,6 +349,37 @@ defmodule SynieCore do
       update SynieCore.Mfg.BomByproduct, :update_mfg_bom_byproduct, :update
       destroy SynieCore.Mfg.BomByproduct, :destroy_mfg_bom_byproduct, :destroy
 
+      # 履约需求/工单/生产入库
+      create SynieCore.Mfg.Demand, :create_mfg_demand, :create
+      update SynieCore.Mfg.Demand, :update_mfg_demand, :update
+      destroy SynieCore.Mfg.Demand, :destroy_mfg_demand, :destroy
+      update SynieCore.Mfg.Demand, :confirm_mfg_demand, :confirm
+      update SynieCore.Mfg.Demand, :close_mfg_demand, :close
+      update SynieCore.Mfg.Demand, :void_mfg_demand, :void
+
+      create SynieCore.Mfg.DemandItem, :create_mfg_demand_item, :create
+      update SynieCore.Mfg.DemandItem, :update_mfg_demand_item, :update
+      destroy SynieCore.Mfg.DemandItem, :destroy_mfg_demand_item, :destroy
+      update SynieCore.Mfg.DemandItem, :complete_mfg_demand_item, :complete
+      update SynieCore.Mfg.DemandItem, :change_fulfillment_mfg_demand_item, :change_fulfillment
+
+      create SynieCore.Mfg.WorkOrder, :create_mfg_work_order, :create
+      update SynieCore.Mfg.WorkOrder, :update_mfg_work_order, :update
+      destroy SynieCore.Mfg.WorkOrder, :destroy_mfg_work_order, :destroy
+      update SynieCore.Mfg.WorkOrder, :void_mfg_work_order, :void
+
+      create SynieCore.Mfg.Output, :create_mfg_output, :create
+      update SynieCore.Mfg.Output, :update_mfg_output, :update
+      destroy SynieCore.Mfg.Output, :destroy_mfg_output, :destroy
+      update SynieCore.Mfg.Output, :audit_mfg_output, :audit
+      update SynieCore.Mfg.Output, :void_mfg_output, :void
+
+      create SynieCore.Mfg.OutputItem, :create_mfg_output_item, :create
+      update SynieCore.Mfg.OutputItem, :update_mfg_output_item, :update
+      destroy SynieCore.Mfg.OutputItem, :destroy_mfg_output_item, :destroy
+
+      update SynieCore.Mfg.Setting, :update_mfg_setting, :update
+
       create SynieCore.Inv.MaterialCategory, :create_inv_material_category, :create
       update SynieCore.Inv.MaterialCategory, :update_inv_material_category, :update
       destroy SynieCore.Inv.MaterialCategory, :destroy_inv_material_category, :destroy
@@ -555,6 +592,12 @@ defmodule SynieCore do
     resource SynieCore.Mfg.BomComponent
     resource SynieCore.Mfg.BomRoute
     resource SynieCore.Mfg.BomByproduct
+    resource SynieCore.Mfg.Demand
+    resource SynieCore.Mfg.DemandItem
+    resource SynieCore.Mfg.WorkOrder
+    resource SynieCore.Mfg.Output
+    resource SynieCore.Mfg.OutputItem
+    resource SynieCore.Mfg.Setting
     resource SynieCore.Inv.MaterialCategory
     resource SynieCore.Inv.Material
     resource SynieCore.Inv.MaterialUnit

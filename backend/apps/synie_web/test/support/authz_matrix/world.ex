@@ -127,6 +127,10 @@ defmodule SynieWeb.AuthzMatrix.World do
       SynieCore.Mfg.Operation => &build_operations/1,
       SynieCore.Mfg.ProcessTemplate => &build_process_templates/1,
       SynieCore.Mfg.Bom => &build_boms/1,
+      SynieCore.Mfg.Demand => &build_demands/1,
+      SynieCore.Mfg.WorkOrder => &build_work_orders/1,
+      SynieCore.Mfg.Output => &build_outputs/1,
+      SynieCore.Mfg.Setting => &build_mfg_settings/1,
       # sales(批次D)
       SynieCore.Sales.Customer => &build_customers/1,
       SynieCore.Sales.Order => &build_sales_orders/1,
@@ -540,6 +544,52 @@ defmodule SynieWeb.AuthzMatrix.World do
         create: fn _company -> %{"materialId" => ctx.material2.id} end,
         update: fn -> %{"note" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
       },
+      SynieCore.Mfg.Demand => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "demandNo" => "MXMD-#{System.unique_integer([:positive])}",
+            "demandDate" => "2026-07-20"
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      # 工单 create 须挂已确认自制需求行;矩阵写侧 create 不测生成路径——用 placeholder
+      # 仅覆盖 update 备注;create 走特例子路径会因前置失败,故不注册 create 依赖矩阵的
+      # 写侧 create 正向(完整性守卫要求 create 键时须有可建输入)。工单 create 依赖
+      # demand_item 状态,矩阵用「草稿工单不可直建」的替代:登记空壳 demand 再在
+      # builders 建空草稿工单不可行。这里提供 create 输入但仍会业务失败——改:
+      # 工单/生产入库的 create 在 write 矩阵中需要合法输入。用 builders 建已确认
+      # 需求行并在 write_inputs 引用 ctx 中预置的可生成行。
+      # 写侧 create 用 ctx 预置的「无工单」已确认自制行(纯输入,无副产物)
+      SynieCore.Mfg.WorkOrder => %{
+        create: fn company ->
+          item =
+            if company.id == ctx.company_a.id,
+              do: ctx.mfg_write_item_a,
+              else: ctx.mfg_write_item_b
+
+          %{
+            "demandItemId" => item.id,
+            "workOrderNo" => "MXWO-#{System.unique_integer([:positive])}"
+          }
+        end,
+        update: fn -> %{"workOrderNo" => "MXWO-U-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Mfg.Output => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "outputNo" => "MXMR-#{System.unique_integer([:positive])}",
+            "outputDate" => "2026-07-22",
+            "warehouseId" => warehouse_of(ctx, company).id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Mfg.Setting => %{
+        update: fn -> %{"outputOverreceiveRatio" => "0"} end
+      },
       # ── sales(批次D)──
       SynieCore.Sales.Customer => %{
         create: fn _company ->
@@ -758,7 +808,8 @@ defmodule SynieWeb.AuthzMatrix.World do
       "sys.role_permission" => "授权行没有独立表格页,读面是角色权限矩阵面板(list 查询 sysRolePermissions);读矩阵经批次A覆盖",
       "sys.setting" => "系统设置单行表,read_one 查询(sysSetting),无表格页;读矩阵经批次A覆盖",
       "acc.setting" => "财务设置单行表,read_one 查询(accSetting),无表格页;读矩阵经批次B覆盖",
-      "sales.setting" => "供应链设置单行表,read_one 查询(salSetting),无表格页;读矩阵经批次D覆盖"
+      "sales.setting" => "供应链设置单行表,read_one 查询(salSetting),无表格页;读矩阵经批次D覆盖",
+      "mfg.setting" => "生产设置单行表,read_one 查询(mfgSetting),无表格页;读矩阵经 mfg 批次覆盖"
     }
   end
 
@@ -874,6 +925,32 @@ defmodule SynieWeb.AuthzMatrix.World do
         hd(warehouses_b)
       )
 
+    # 生产工单世界行前置:已确认自制需求(demand builders 认领头,work_order builders 生成工单)
+    {mfg_demand_a, mfg_demand_item_a} =
+      seed_confirmed_make_demand!(
+        %{material: material, unit: unit},
+        company_a
+      )
+
+    {mfg_demand_b, mfg_demand_item_b} =
+      seed_confirmed_make_demand!(
+        %{material: material, unit: unit},
+        company_b
+      )
+
+    # 写侧工单 create 专用:已确认自制、无工单(纯输入,create 副作用仅建工单)
+    {mfg_write_demand_a, mfg_write_item_a} =
+      seed_confirmed_make_demand!(
+        %{material: material, unit: unit},
+        company_a
+      )
+
+    {mfg_write_demand_b, mfg_write_item_b} =
+      seed_confirmed_make_demand!(
+        %{material: material, unit: unit},
+        company_b
+      )
+
     %{
       storage_root: storage_root,
       cny: cny,
@@ -913,7 +990,15 @@ defmodule SynieWeb.AuthzMatrix.World do
       sales_order_a: sales_order_a,
       sales_order_b: sales_order_b,
       delivery_a: delivery_a,
-      delivery_b: delivery_b
+      delivery_b: delivery_b,
+      mfg_demand_a: mfg_demand_a,
+      mfg_demand_b: mfg_demand_b,
+      mfg_demand_item_a: mfg_demand_item_a,
+      mfg_demand_item_b: mfg_demand_item_b,
+      mfg_write_demand_a: mfg_write_demand_a,
+      mfg_write_demand_b: mfg_write_demand_b,
+      mfg_write_item_a: mfg_write_item_a,
+      mfg_write_item_b: mfg_write_item_b
     }
   end
 
@@ -1627,6 +1712,94 @@ defmodule SynieWeb.AuthzMatrix.World do
       |> Ash.create!(authorize?: false)
     ]
   end
+
+  # 需求单:甲乙各一草稿 + 认领 ctx 工单用已确认单 + 写侧 create 用已确认单
+  defp build_demands(%{
+         company_a: a,
+         company_b: b,
+         mfg_demand_a: da,
+         mfg_demand_b: db,
+         mfg_write_demand_a: wa,
+         mfg_write_demand_b: wb
+       }) do
+    drafts =
+      for company <- [a, b] do
+        SynieCore.Mfg.Demand
+        |> Ash.Changeset.for_create(:create, %{
+          company_id: company.id,
+          demand_no: "MXMD-#{company.code}-#{System.unique_integer([:positive])}",
+          demand_date: ~D[2026-07-20]
+        })
+        |> Ash.create!(authorize?: false)
+      end
+
+    drafts ++ [da, db, wa, wb]
+  end
+
+  # 工单:甲乙各一张——认领 ctx 预置的已确认自制行
+  defp build_work_orders(%{
+         company_a: a,
+         company_b: b,
+         mfg_demand_item_a: ia,
+         mfg_demand_item_b: ib
+       }) do
+    for {company, item} <- [{a, ia}, {b, ib}] do
+      SynieCore.Mfg.WorkOrder
+      |> Ash.Changeset.for_create(:create, %{
+        demand_item_id: item.id,
+        work_order_no: "MXWO-#{company.code}-#{System.unique_integer([:positive])}"
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  defp build_outputs(ctx) do
+    for company <- [ctx.company_a, ctx.company_b] do
+      SynieCore.Mfg.Output
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        output_no: "MXMR-#{company.code}-#{System.unique_integer([:positive])}",
+        output_date: ~D[2026-07-22],
+        warehouse_id: warehouse_of(ctx, company).id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  defp build_mfg_settings(_ctx), do: [SynieCore.Mfg.Setting.get()]
+
+  defp seed_confirmed_make_demand!(ctx, company) do
+    demand =
+      SynieCore.Mfg.Demand
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        demand_no: "MXMD-WO-#{company.code}-#{System.unique_integer([:positive])}",
+        demand_date: ~D[2026-07-20]
+      })
+      |> Ash.create!(authorize?: false)
+
+    item =
+      SynieCore.Mfg.DemandItem
+      |> Ash.Changeset.for_create(:create, %{
+        demand_id: demand.id,
+        idx: 1,
+        material_id: ctx.material.id,
+        unit_id: ctx.unit.id,
+        qty: Decimal.new(1),
+        fulfillment_method: :make,
+        need_date: ~D[2026-07-25]
+      })
+      |> Ash.create!(authorize?: false)
+
+    demand =
+      demand
+      |> Ash.Changeset.for_update(:confirm, %{})
+      |> Ash.update!(authorize?: false)
+
+    {demand, item}
+  end
+
+
 
   # ── 构造函数:sales(批次D)───────────────────────────────────────────────
 

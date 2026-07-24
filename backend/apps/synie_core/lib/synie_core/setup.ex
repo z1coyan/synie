@@ -69,6 +69,10 @@ defmodule SynieCore.Setup do
     {"inv.stock_doc", "手工出入库单编号", "I(D)", "doc_date"},
     {"inv.stock_transfer", "手工调拨单编号", "I(T)", "doc_date"},
     {"inv.stock_count", "库存盘点单编号", "I(C)", "posting_date"},
+    # 生产执行
+    {"mfg.demand", "履约需求单编号", "M(D)", "demand_date"},
+    {"mfg.work_order", "生产工单编号", "M(W)", "need_date"},
+    {"mfg.output", "生产入库单编号", "M(R)", "output_date"},
     # 财务
     {"acc.gl_journal", "会计凭证编号", "A(J)", "date"},
     {"acc.vat_invoice", "增值税发票编号", "A(I)", "invoice_date"},
@@ -487,6 +491,9 @@ defmodule SynieCore.Setup do
   defp date_field_label("occurred_on"), do: "发生日期"
   defp date_field_label("expense_date"), do: "费用日期"
   defp date_field_label("date"), do: "凭证日期"
+  defp date_field_label("demand_date"), do: "业务日期"
+  defp date_field_label("need_date"), do: "需求日"
+  defp date_field_label("output_date"), do: "入库日期"
   defp date_field_label(other), do: other
 
   defp ensure_numbering_rule!(resource, name, per_company, segments) do
