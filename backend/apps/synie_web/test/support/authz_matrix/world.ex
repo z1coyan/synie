@@ -34,8 +34,9 @@ defmodule SynieWeb.AuthzMatrix.World do
 
   默认规则:带 `company_id` 的资源「公司匹配即应得」(`:company`),
   无公司字段的资源「有码即读」(`:global`)。特例(裸文件仅上传者、审计日志
-  无公司行放行等)在 `@visibility_overrides` 里按资源显式声明,矩阵断言循环
-  只消费声明,不硬编码特例。
+  无公司行放行等)以 `visibility/1` 的资源专属函数头显式声明(写法见其 @doc;
+  首个 {:custom, fun} 特例落地时同步在 `expected_ids/3` 启用 custom 分支),
+  矩阵断言循环只消费声明,不硬编码特例。
 
   ## 覆盖豁免清单
 
