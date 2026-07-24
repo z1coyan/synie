@@ -47,7 +47,9 @@ defmodule SynieWeb.AuthzMatrix.World do
   函数头显式声明 `{:custom, fun}`(fun 收记录与生效公司集),矩阵断言循环
   只消费声明,不硬编码特例。现有特例:
 
-  - 审计日志:无公司行放行 + 公司匹配(系统级操作日志人人可查,业务操作随公司)。
+  - 审计日志:无公司行放行 + 公司匹配(系统级操作日志人人可查,业务操作随公司);
+  - 票据(acc.bill):全局票据实体随交易可见——任一笔本司交易触达的票据即应得
+    (构造函数返回**预载 transactions** 的票据,oracle 不回库查询)。
 
   ## 共享资源(世界外行的来源声明)
 
@@ -95,6 +97,17 @@ defmodule SynieWeb.AuthzMatrix.World do
       SynieCore.Base.Account => &build_bas_accounts/1,
       SynieCore.Base.MarketInstrument => &build_market_instruments/1,
       SynieCore.Base.MarketPricePoint => &build_market_prices/1,
+      # acc(批次B)
+      SynieCore.Acc.BankAccount => &build_bank_accounts/1,
+      SynieCore.Acc.BankImportTemplate => &build_bank_import_templates/1,
+      SynieCore.Acc.BankTransaction => &build_bank_transactions/1,
+      SynieCore.Acc.Bill => &build_bills/1,
+      SynieCore.Acc.BillHolding => &build_bill_holdings/1,
+      SynieCore.Acc.BillTransaction => &build_bill_transactions/1,
+      SynieCore.Acc.ExpenseReport => &build_expense_reports/1,
+      SynieCore.Acc.GlEntry => &build_gl_entries/1,
+      SynieCore.Acc.Setting => &build_acc_settings/1,
+      SynieCore.Acc.VatInvoice => &build_vat_invoices/1,
       # 试点(工单02)
       SynieCore.Acc.GlJournal => &build_gl_journals/1,
       SynieCore.Inv.Warehouse => &build_warehouses/1
@@ -282,9 +295,108 @@ defmodule SynieWeb.AuthzMatrix.World do
             "priceKind" => {:enum, "SETTLEMENT"}
           }
         end
+      },
+      SynieCore.Acc.BankAccount => %{
+        create: fn company ->
+          suffix = System.unique_integer([:positive])
+
+          %{
+            "alias" => "矩阵写户#{suffix}",
+            "bankName" => "矩阵写银行",
+            "holderName" => "矩阵写持有人",
+            "accountNo" => "88#{suffix}",
+            "companyId" => company.id,
+            "currencyId" => ctx.cny.id
+          }
+        end,
+        update: fn -> %{"note" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Acc.BankImportTemplate => %{
+        create: fn company ->
+          %{
+            "name" => "矩阵写模板-#{System.unique_integer([:positive])}",
+            "companyId" => company.id,
+            "bankAccountId" => bank_account_of(ctx, company).id,
+            "datetimeCol" => "A",
+            "datetimeFormat" => {:enum, "YMD_DASH_HMS"},
+            "amountCol" => "C"
+          }
+        end,
+        update: fn -> %{"name" => "矩阵写模板-改名-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Acc.BankTransaction => %{
+        create: fn company ->
+          %{
+            "occurredAt" => "2026-07-02T03:00:00Z",
+            "income" => "50",
+            "companyId" => company.id,
+            "bankAccountId" => bank_account_of(ctx, company).id
+          }
+        end,
+        update: fn -> %{"note" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      # 票据不开放通用 create(建档走收票交易),仅良性 update 正向
+      SynieCore.Acc.Bill => %{
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Acc.BillTransaction => %{
+        create: fn company ->
+          %{
+            "docNo" => "MXWBT-#{System.unique_integer([:positive])}",
+            "transactionType" => {:enum, "RECEIVE"},
+            "occurredOn" => "2026-07-02",
+            "subStart" => 1,
+            "subEnd" => 100,
+            "amount" => "1",
+            "partyType" => {:enum, "CUSTOMER"},
+            "partyId" => ctx.customer.id,
+            "companyId" => company.id,
+            "bankAccountId" => bank_account_of(ctx, company).id,
+            "billId" => bill_of(ctx, company).id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Acc.ExpenseReport => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "docNo" => "MXWBX-#{System.unique_integer([:positive])}",
+            "employeeId" => ctx.employee.id,
+            "expenseDate" => "2026-07-02",
+            "paymentAccountId" => account_of(ctx, company).id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Acc.Setting => %{
+        update: fn -> %{"ocrAccessKeyId" => "mx-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Acc.VatInvoice => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "docNo" => "MXWFP-#{System.unique_integer([:positive])}",
+            "direction" => {:enum, "INBOUND"},
+            "partyType" => {:enum, "EMPLOYEE"},
+            "partyId" => ctx.employee.id,
+            "invoiceKind" => {:enum, "NORMAL"}
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
       }
     }
   end
+
+  # 写输入的按公司取数辅助(只在输入闭包内调用)
+  defp bank_account_of(ctx, company),
+    do: if(company.id == ctx.company_a.id, do: ctx.bank_account_a, else: ctx.bank_account_b)
+
+  defp account_of(ctx, company),
+    do: if(company.id == ctx.company_a.id, do: ctx.account_a, else: ctx.account_b)
+
+  defp bill_of(ctx, company),
+    do: if(company.id == ctx.company_a.id, do: ctx.bill_a, else: ctx.bill_b)
 
   # ── 应得集声明 ────────────────────────────────────────────────────────────
 
@@ -295,6 +407,9 @@ defmodule SynieWeb.AuthzMatrix.World do
   # 审计日志:无公司行放行(系统级操作),有公司行按公司匹配
   def visibility(SynieCore.Audit.Log), do: {:custom, &audit_log_visible?/2}
 
+  # 票据:全局票据实体随交易可见(任一笔本司交易触达即应得)
+  def visibility(SynieCore.Acc.Bill), do: {:custom, &bill_visible?/2}
+
   def visibility(module) do
     if Ash.Resource.Info.attribute(module, :company_id), do: :company, else: :global
   end
@@ -302,6 +417,11 @@ defmodule SynieWeb.AuthzMatrix.World do
   defp audit_log_visible?(record, effective_companies) do
     is_nil(record.company_id) or effective_companies == :all or
       record.company_id in effective_companies
+  end
+
+  defp bill_visible?(record, effective_companies) do
+    effective_companies == :all or
+      Enum.any?(record.transactions, &(&1.company_id in effective_companies))
   end
 
   @doc """
@@ -325,23 +445,12 @@ defmodule SynieWeb.AuthzMatrix.World do
 
   # ── 覆盖豁免清单(expand–contract:批次工单逐批清空,不允许无理由豁免)──
 
-  @batch_b "夹具构造函数随批次B(工单05:acc)落地"
   @batch_c "夹具构造函数随批次C(工单06:hr+inv+mfg)落地"
   @batch_d "夹具构造函数随批次D(工单07:sales+purchase)落地"
 
   @doc "世界覆盖豁免:权限前缀 => 理由。"
   def coverage_exempt do
     %{
-      "acc.bank_account" => @batch_b,
-      "acc.bank_import_template" => @batch_b,
-      "acc.bank_transaction" => @batch_b,
-      "acc.bill" => @batch_b,
-      "acc.bill_holding" => @batch_b,
-      "acc.bill_transaction" => @batch_b,
-      "acc.expense_report" => @batch_b,
-      "acc.gl_entry" => @batch_b,
-      "acc.setting" => @batch_b,
-      "acc.vat_invoice" => @batch_b,
       "hr.attendance_correction" => @batch_c,
       "hr.attendance_day" => @batch_c,
       "hr.attendance_punch" => @batch_c,
@@ -432,6 +541,22 @@ defmodule SynieWeb.AuthzMatrix.World do
 
     instrument = instrument!(currency, unit)
 
+    # 跨域标准数据:员工/客户是全局主数据,批次B的单据(报销/发票/票据)引用它们;
+    # 对应资源的构造函数在批次C(hr.employee)/批次D(sales.customer)落地时**必须认领**
+    # 这两条记录,否则该批次的独占「恰好等于」断言会红(守卫即提醒)。
+    employee = employee!()
+    customer = customer!()
+
+    account_a = bas_account!(company_a)
+    account_b = bas_account!(company_b)
+    bank_account_a = bank_account!(company_a, cny)
+    bank_account_b = bank_account!(company_b, cny)
+
+    # 票据流:全局票据实体 + 每司一笔已审核收票交易(Ash.Seed 受信种入,绕状态机)
+    # + 重放引擎推导持仓。票据可见性随交易公司(见 visibility 特例)。
+    {bill_a, bill_txn_a} = bill_with_audited_receive!(company_a, bank_account_a, customer)
+    {bill_b, bill_txn_b} = bill_with_audited_receive!(company_b, bank_account_b, customer)
+
     %{
       storage_root: storage_root,
       cny: cny,
@@ -444,7 +569,17 @@ defmodule SynieWeb.AuthzMatrix.World do
       role: role,
       bare_file: bare_file,
       template_file: template_file,
-      instrument: instrument
+      instrument: instrument,
+      employee: employee,
+      customer: customer,
+      account_a: account_a,
+      account_b: account_b,
+      bank_account_a: bank_account_a,
+      bank_account_b: bank_account_b,
+      bill_a: bill_a,
+      bill_b: bill_b,
+      bill_txn_a: bill_txn_a,
+      bill_txn_b: bill_txn_b
     }
   end
 
@@ -541,6 +676,89 @@ defmodule SynieWeb.AuthzMatrix.World do
     |> Ash.create!(authorize?: false)
   end
 
+  # 员工 code 挂 AutoNumber 但允许手填;显式给 code 免依赖编号规则
+  defp employee! do
+    SynieCore.Hr.Employee
+    |> Ash.Changeset.for_create(:create, %{
+      code: "MXE#{System.unique_integer([:positive])}",
+      name: "矩阵员工"
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp customer! do
+    SynieCore.Sales.Customer
+    |> Ash.Changeset.for_create(:create, %{
+      code: "MXC#{System.unique_integer([:positive])}",
+      name: "矩阵客户"
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp bas_account!(company) do
+    SynieCore.Base.Account
+    |> Ash.Changeset.for_create(:create, %{
+      code: "MX01",
+      name: "矩阵科目-#{company.code}",
+      direction: :debit,
+      company_id: company.id
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp bank_account!(company, currency) do
+    suffix = System.unique_integer([:positive])
+
+    SynieCore.Acc.BankAccount
+    |> Ash.Changeset.for_create(:create, %{
+      alias: "矩阵户-#{company.code}",
+      bank_name: "矩阵银行",
+      holder_name: "矩阵持有人",
+      account_no: "62#{suffix}",
+      company_id: company.id,
+      currency_id: currency.id
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  # 票据 + 已审核收票交易:票据经内部 :register 建档;交易以 Ash.Seed 直接种为
+  # :audited(绕过审核动作的 GL 联动,保住 acc.gl_entry 的独占世界);
+  # 再跑重放引擎推导持仓(BillHolding 的唯一合法写入路径)。
+  defp bill_with_audited_receive!(company, bank_account, customer) do
+    suffix = System.unique_integer([:positive])
+
+    bill =
+      SynieCore.Acc.Bill
+      |> Ash.Changeset.for_create(:register, %{
+        bill_no: "MXB#{suffix}",
+        bill_kind: :bank_acceptance,
+        due_date: ~D[2026-12-31],
+        face_amount: Decimal.new("1")
+      })
+      |> Ash.create!(authorize?: false)
+
+    txn =
+      Ash.Seed.seed!(SynieCore.Acc.BillTransaction, %{
+        doc_no: "MXBT#{suffix}",
+        transaction_type: :receive,
+        occurred_on: ~D[2026-07-01],
+        sub_start: 1,
+        sub_end: 100,
+        amount: Decimal.new("1"),
+        party_type: :customer,
+        party_id: customer.id,
+        status: :audited,
+        company_id: company.id,
+        bank_account_id: bank_account.id,
+        bill_id: bill.id
+      })
+
+    SynieCore.Acc.BillLedger.replay!(bill.id)
+
+    # 票据可见性 oracle 消费预载的 transactions(见 visibility 特例)
+    {Ash.load!(bill, :transactions, authorize?: false), txn}
+  end
+
   # ── 构造函数:sys ─────────────────────────────────────────────────────────
 
   defp build_users(%{user: user}), do: [user]
@@ -616,18 +834,7 @@ defmodule SynieWeb.AuthzMatrix.World do
 
   defp build_currencies(%{currency: currency}), do: [currency]
 
-  defp build_bas_accounts(%{company_a: a, company_b: b}) do
-    for company <- [a, b] do
-      SynieCore.Base.Account
-      |> Ash.Changeset.for_create(:create, %{
-        code: "MX01",
-        name: "矩阵科目-#{company.code}",
-        direction: :debit,
-        company_id: company.id
-      })
-      |> Ash.create!(authorize?: false)
-    end
-  end
+  defp build_bas_accounts(%{account_a: a, account_b: b}), do: [a, b]
 
   defp build_market_instruments(%{instrument: instrument}), do: [instrument]
 
@@ -642,6 +849,110 @@ defmodule SynieWeb.AuthzMatrix.World do
       })
       |> Ash.create!(authorize?: false)
     ]
+  end
+
+  # ── 构造函数:acc(批次B)──────────────────────────────────────────────────
+
+  defp build_bank_accounts(%{bank_account_a: a, bank_account_b: b}), do: [a, b]
+
+  defp build_bank_import_templates(ctx) do
+    for {company, bank_account} <- [
+          {ctx.company_a, ctx.bank_account_a},
+          {ctx.company_b, ctx.bank_account_b}
+        ] do
+      SynieCore.Acc.BankImportTemplate
+      |> Ash.Changeset.for_create(:create, %{
+        name: "矩阵模板-#{company.code}",
+        company_id: company.id,
+        bank_account_id: bank_account.id,
+        datetime_col: "A",
+        datetime_format: :ymd_dash_hms,
+        income_col: "C",
+        expense_col: "D"
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  defp build_bank_transactions(ctx) do
+    for {company, bank_account} <- [
+          {ctx.company_a, ctx.bank_account_a},
+          {ctx.company_b, ctx.bank_account_b}
+        ] do
+      SynieCore.Acc.BankTransaction
+      |> Ash.Changeset.for_create(:create, %{
+        occurred_at: ~U[2026-07-01 10:30:00Z],
+        income: Decimal.new("100.50"),
+        company_id: company.id,
+        bank_account_id: bank_account.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  defp build_bills(%{bill_a: a, bill_b: b}), do: [a, b]
+
+  defp build_bill_transactions(%{bill_txn_a: a, bill_txn_b: b}), do: [a, b]
+
+  # 持仓由重放引擎在 ctx 票据流里推导,此处按世界票据认领
+  defp build_bill_holdings(%{bill_a: bill_a, bill_b: bill_b}) do
+    require Ash.Query
+
+    SynieCore.Acc.BillHolding
+    |> Ash.Query.filter(bill_id in ^[bill_a.id, bill_b.id])
+    |> Ash.read!(authorize?: false)
+  end
+
+  defp build_expense_reports(ctx) do
+    for {company, account} <- [{ctx.company_a, ctx.account_a}, {ctx.company_b, ctx.account_b}] do
+      SynieCore.Acc.ExpenseReport
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        doc_no: "MXBX-#{company.code}-#{System.unique_integer([:positive])}",
+        employee_id: ctx.employee.id,
+        expense_date: ~D[2026-07-01],
+        payment_account_id: account.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  # 总账分录:资源层无动作校验,直建最小合法行(单边非零由 DB 约束把关);
+  # 全量矩阵不走 GL.post!(借贷平衡等业务校验有各自功能测试)
+  defp build_gl_entries(ctx) do
+    for {company, account} <- [{ctx.company_a, ctx.account_a}, {ctx.company_b, ctx.account_b}] do
+      SynieCore.Acc.GlEntry
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        account_id: account.id,
+        posting_date: ~D[2026-07-01],
+        debit: Decimal.new("100"),
+        voucher_type: "authz_matrix",
+        voucher_id: Ash.UUID.generate(),
+        voucher_no: "MXGL-#{company.code}"
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  # acc_setting 单行由迁移种入且资源不开放 create,认领种子行
+  defp build_acc_settings(_ctx), do: [SynieCore.Acc.Setting.get()]
+
+  # 发票取最省依赖形态:进项 + 员工对手(免对账单/客商依赖)
+  defp build_vat_invoices(ctx) do
+    for company <- [ctx.company_a, ctx.company_b] do
+      SynieCore.Acc.VatInvoice
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        doc_no: "MXFP-#{company.code}-#{System.unique_integer([:positive])}",
+        direction: :inbound,
+        invoice_date: ~D[2026-07-01],
+        party_type: :employee,
+        party_id: ctx.employee.id,
+        invoice_kind: :normal
+      })
+      |> Ash.create!(authorize?: false)
+    end
   end
 
   # ── 构造函数:试点 ────────────────────────────────────────────────────────

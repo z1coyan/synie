@@ -56,23 +56,27 @@ defmodule SynieWeb.AuthzMatrixWriteTest do
     inputs = Map.get(World.write_inputs(world.ctx), module)
     records = Map.fetch!(world.records, module)
     subjects = Subjects.extreme_write_subjects(prefix, world)
-    company_scoped? = World.visibility(module) == :company
 
-    # 拒绝/正向的靶记录:公司隔离资源分甲乙,全局资源取世界首条(无公司轴)
+    # 拒绝/正向的靶记录按应得集声明取:甲靶=只授甲应得的首条,乙靶=只授乙应得
+    # 且甲不应得的首条(custom 可见性资源即由此吃上跨公司负向);全局资源无公司轴,
+    # 取世界首条为拒绝靶、无乙靶。
     {record_a, record_b} =
-      if company_scoped? do
-        {Enum.find(records, &(&1.company_id == world.company_a.id)),
-         Enum.find(records, &(&1.company_id == world.company_b.id))}
-      else
+      if World.visibility(module) == :global do
         {List.first(records), nil}
+      else
+        expected_a = World.expected_ids(world, module, [world.company_a.id])
+        expected_b = World.expected_ids(world, module, [world.company_b.id])
+
+        {Enum.find(records, &(&1.id in expected_a)),
+         Enum.find(records, &(&1.id in expected_b and &1.id not in expected_a))}
       end
 
     # 匿名与无码:一切写 mutation 被拒(以本司甲为靶,证明拒因是"无码"而非公司轴)
     scan_no_code(prefix, :anonymous, nil, fields, inputs, world.company_a, record_a)
     scan_no_code(prefix, :no_code, subjects.no_code, fields, inputs, world.company_a, record_a)
 
-    # 跨公司三件套:只授甲的最小写主体,对乙司全拒(全局资源无公司轴,跳过)
-    if company_scoped? do
+    # 跨公司三件套:只授甲的最小写主体,对乙司全拒(全局资源无公司轴,乙靶为空即跳过)
+    if record_b do
       scan_cross_company(prefix, subjects.min_write_a, fields, inputs, world.company_b, record_b)
     end
 
