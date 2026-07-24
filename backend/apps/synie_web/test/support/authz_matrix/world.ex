@@ -108,6 +108,25 @@ defmodule SynieWeb.AuthzMatrix.World do
       SynieCore.Acc.GlEntry => &build_gl_entries/1,
       SynieCore.Acc.Setting => &build_acc_settings/1,
       SynieCore.Acc.VatInvoice => &build_vat_invoices/1,
+      # hr(批次C)
+      SynieCore.Hr.Employee => &build_employees/1,
+      SynieCore.Hr.AttendancePunch => &build_attendance_punches/1,
+      SynieCore.Hr.AttendanceDay => &build_attendance_days/1,
+      SynieCore.Hr.AttendanceCorrection => &build_attendance_corrections/1,
+      SynieCore.Hr.EmployeeLoan => &build_employee_loans/1,
+      SynieCore.Hr.Payroll => &build_payrolls/1,
+      SynieCore.Hr.PayrollPayment => &build_payroll_payments/1,
+      # inv(批次C)
+      SynieCore.Inv.MaterialCategory => &build_material_categories/1,
+      SynieCore.Inv.Material => &build_materials/1,
+      SynieCore.Inv.StockDoc => &build_stock_docs/1,
+      SynieCore.Inv.StockCount => &build_stock_counts/1,
+      SynieCore.Inv.StockTransfer => &build_stock_transfers/1,
+      SynieCore.Inv.StockEntry => &build_stock_entries/1,
+      # mfg(批次C)
+      SynieCore.Mfg.Operation => &build_operations/1,
+      SynieCore.Mfg.ProcessTemplate => &build_process_templates/1,
+      SynieCore.Mfg.Bom => &build_boms/1,
       # 试点(工单02)
       SynieCore.Acc.GlJournal => &build_gl_journals/1,
       SynieCore.Inv.Warehouse => &build_warehouses/1
@@ -128,7 +147,8 @@ defmodule SynieWeb.AuthzMatrix.World do
       SynieCore.Audit.Log => "世界建数与主体夹具的审计副产物",
       SynieCore.Base.Currency => "迁移种子(CNY)",
       SynieCore.Base.Unit => "迁移种子(克/千克)",
-      SynieCore.Base.MarketInstrument => "迁移种子(沪铜等预置品种)"
+      SynieCore.Base.MarketInstrument => "迁移种子(沪铜等预置品种)",
+      SynieCore.Hr.AttendanceDay => "考勤修正增删改触发的重算副产物(世界与写侧正向的补卡日避开世界考勤日)"
     }
   end
 
@@ -384,6 +404,128 @@ defmodule SynieWeb.AuthzMatrix.World do
           }
         end,
         update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Hr.Employee => %{
+        create: fn _company ->
+          %{
+            "code" => "MXWE#{System.unique_integer([:positive])}",
+            "name" => "矩阵写员工"
+          }
+        end,
+        update: fn -> %{"name" => "矩阵写员工-改名-#{System.unique_integer([:positive])}"} end
+      },
+      # 补卡日避开世界考勤日(2026-07-01)与世界补卡日(2026-07-03),防重算互扰
+      SynieCore.Hr.AttendanceCorrection => %{
+        create: fn _company ->
+          %{
+            "employeeId" => ctx.employee.id,
+            "date" => "2026-07-04",
+            "times" => ["08:00:00"]
+          }
+        end,
+        update: fn -> %{"note" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Hr.EmployeeLoan => %{
+        create: fn _company ->
+          %{
+            "employeeId" => ctx.employee.id,
+            "kind" => {:enum, "BORROW"},
+            "occurredOn" => "2026-07-02",
+            "amount" => "10"
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Hr.Payroll => %{
+        create: fn _company ->
+          %{"employeeId" => ctx.employee.id, "month" => "2026-05"}
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      # 发放行不可改只可删重录(无通用 update);正向 create 会翻转世界工资单
+      # 为已发放,destroy 翻回,净零
+      SynieCore.Hr.PayrollPayment => %{
+        create: fn _company ->
+          %{"payrollId" => ctx.payroll.id, "paidOn" => "2026-07-06", "amount" => "1"}
+        end
+      },
+      SynieCore.Inv.MaterialCategory => %{
+        create: fn _company ->
+          %{
+            "code" => "MXW#{System.unique_integer([:positive])}",
+            "name" => "矩阵写分类"
+          }
+        end,
+        update: fn -> %{"name" => "矩阵写分类-改名-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Inv.Material => %{
+        create: fn _company ->
+          %{
+            "name" => "矩阵写物料-#{System.unique_integer([:positive])}",
+            "categoryId" => ctx.category.id,
+            "defaultUnitId" => ctx.unit.id
+          }
+        end,
+        update: fn -> %{"name" => "矩阵写物料-改名-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Inv.StockDoc => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "docNo" => "MXWCRK-#{System.unique_integer([:positive])}",
+            "direction" => {:enum, "IN"},
+            "warehouseId" => warehouse_of(ctx, company).id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Inv.StockCount => %{
+        create: fn company ->
+          %{
+            "companyId" => company.id,
+            "docNo" => "MXWPD-#{System.unique_integer([:positive])}",
+            "warehouseId" => warehouse_of(ctx, company).id,
+            "postingDate" => "2026-07-02"
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Inv.StockTransfer => %{
+        create: fn company ->
+          [wh1, wh2, wh3] = warehouses_of(ctx, company)
+
+          %{
+            "companyId" => company.id,
+            "docNo" => "MXWDB-#{System.unique_integer([:positive])}",
+            "fromWarehouseId" => wh1.id,
+            "toWarehouseId" => wh2.id,
+            "transitWarehouseId" => wh3.id
+          }
+        end,
+        update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Mfg.Operation => %{
+        create: fn _company ->
+          %{
+            "code" => "MXWOP#{System.unique_integer([:positive])}",
+            "name" => "矩阵写工序"
+          }
+        end,
+        update: fn -> %{"name" => "矩阵写工序-改名-#{System.unique_integer([:positive])}"} end
+      },
+      SynieCore.Mfg.ProcessTemplate => %{
+        create: fn _company ->
+          %{
+            "code" => "MXWRT#{System.unique_integer([:positive])}",
+            "name" => "矩阵写工艺路线"
+          }
+        end,
+        update: fn -> %{"name" => "矩阵写工艺路线-改名-#{System.unique_integer([:positive])}"} end
+      },
+      # BOM 每物料至多一份:正向落在备用物料上(世界 BOM 在主物料)
+      SynieCore.Mfg.Bom => %{
+        create: fn _company -> %{"materialId" => ctx.material2.id} end,
+        update: fn -> %{"note" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
       }
     }
   end
@@ -397,6 +539,11 @@ defmodule SynieWeb.AuthzMatrix.World do
 
   defp bill_of(ctx, company),
     do: if(company.id == ctx.company_a.id, do: ctx.bill_a, else: ctx.bill_b)
+
+  defp warehouses_of(ctx, company),
+    do: if(company.id == ctx.company_a.id, do: ctx.warehouses_a, else: ctx.warehouses_b)
+
+  defp warehouse_of(ctx, company), do: ctx |> warehouses_of(company) |> hd()
 
   # ── 应得集声明 ────────────────────────────────────────────────────────────
 
@@ -445,28 +592,11 @@ defmodule SynieWeb.AuthzMatrix.World do
 
   # ── 覆盖豁免清单(expand–contract:批次工单逐批清空,不允许无理由豁免)──
 
-  @batch_c "夹具构造函数随批次C(工单06:hr+inv+mfg)落地"
   @batch_d "夹具构造函数随批次D(工单07:sales+purchase)落地"
 
   @doc "世界覆盖豁免:权限前缀 => 理由。"
   def coverage_exempt do
     %{
-      "hr.attendance_correction" => @batch_c,
-      "hr.attendance_day" => @batch_c,
-      "hr.attendance_punch" => @batch_c,
-      "hr.employee" => @batch_c,
-      "hr.employee_loan" => @batch_c,
-      "hr.payroll" => @batch_c,
-      "hr.payroll_payment" => @batch_c,
-      "inv.material" => @batch_c,
-      "inv.material_category" => @batch_c,
-      "inv.stock_count" => @batch_c,
-      "inv.stock_doc" => @batch_c,
-      "inv.stock_entry" => @batch_c,
-      "inv.stock_transfer" => @batch_c,
-      "mfg.bom" => @batch_c,
-      "mfg.operation" => @batch_c,
-      "mfg.route_template" => @batch_c,
       "sales.customer" => @batch_d,
       "sales.delivery" => @batch_d,
       "sales.order" => @batch_d,
@@ -557,6 +687,19 @@ defmodule SynieWeb.AuthzMatrix.World do
     {bill_a, bill_txn_a} = bill_with_audited_receive!(company_a, bank_account_a, customer)
     {bill_b, bill_txn_b} = bill_with_audited_receive!(company_b, bank_account_b, customer)
 
+    # 批次C标准数据:仓库每司三座(调拨需 from/to/transit 两两不同);物料 code
+    # 强制自动编号(manual_entry: false),须先备好 inv.material 编号规则;
+    # 考勤打卡的 import 外键用 Ash.Seed 种入(真实导入要可解析 .dat,越出矩阵射程);
+    # 工资单进 ctx 供发放行引用。
+    warehouses_a = for n <- 1..3, do: warehouse!(company_a, n)
+    warehouses_b = for n <- 1..3, do: warehouse!(company_b, n)
+    material_rule = material_numbering_rule!()
+    category = material_category!()
+    material = material!(category, unit)
+    material2 = material!(category, unit)
+    attendance_import = Ash.Seed.seed!(SynieCore.Hr.AttendanceImport, %{file_id: bare_file.id})
+    payroll = payroll!(employee)
+
     %{
       storage_root: storage_root,
       cny: cny,
@@ -579,7 +722,15 @@ defmodule SynieWeb.AuthzMatrix.World do
       bill_a: bill_a,
       bill_b: bill_b,
       bill_txn_a: bill_txn_a,
-      bill_txn_b: bill_txn_b
+      bill_txn_b: bill_txn_b,
+      warehouses_a: warehouses_a,
+      warehouses_b: warehouses_b,
+      material_rule: material_rule,
+      category: category,
+      material: material,
+      material2: material2,
+      attendance_import: attendance_import,
+      payroll: payroll
     }
   end
 
@@ -721,6 +872,55 @@ defmodule SynieWeb.AuthzMatrix.World do
     |> Ash.create!(authorize?: false)
   end
 
+  defp warehouse!(company, n) do
+    SynieCore.Inv.Warehouse
+    |> Ash.Changeset.for_create(:create, %{
+      name: "矩阵仓#{n}-#{company.code}",
+      company_id: company.id
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  # 物料 code 强制自动编号(不接受手填),世界须自带启用的编号规则
+  defp material_numbering_rule! do
+    SynieCore.Numbering.Rule
+    |> Ash.Changeset.for_create(:create, %{
+      resource: "inv.material",
+      name: "矩阵物料编号",
+      segments: [
+        %{"type" => "text", "value" => "MXM"},
+        %{"type" => "seq", "padding" => 4}
+      ],
+      per_company: false
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp material_category! do
+    SynieCore.Inv.MaterialCategory
+    |> Ash.Changeset.for_create(:create, %{
+      code: "MX#{System.unique_integer([:positive])}",
+      name: "矩阵分类"
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp material!(category, unit) do
+    SynieCore.Inv.Material
+    |> Ash.Changeset.for_create(:create, %{
+      name: "矩阵物料-#{System.unique_integer([:positive])}",
+      category_id: category.id,
+      default_unit_id: unit.id
+    })
+    |> Ash.create!(authorize?: false)
+  end
+
+  defp payroll!(employee) do
+    SynieCore.Hr.Payroll
+    |> Ash.Changeset.for_create(:create, %{employee_id: employee.id, month: "2026-06"})
+    |> Ash.create!(authorize?: false)
+  end
+
   # 票据 + 已审核收票交易:票据经内部 :register 建档;交易以 Ash.Seed 直接种为
   # :audited(绕过审核动作的 GL 联动,保住 acc.gl_entry 的独占世界);
   # 再跑重放引擎推导持仓(BillHolding 的唯一合法写入路径)。
@@ -795,8 +995,9 @@ defmodule SynieWeb.AuthzMatrix.World do
 
   defp build_storages(%{storage: storage}), do: [storage]
 
-  defp build_numbering_rules(_ctx) do
+  defp build_numbering_rules(%{material_rule: material_rule}) do
     [
+      material_rule,
       SynieCore.Numbering.Rule
       |> Ash.Changeset.for_create(:create, %{
         resource: "acc.gl_journal",
@@ -955,6 +1156,188 @@ defmodule SynieWeb.AuthzMatrix.World do
     end
   end
 
+  # ── 构造函数:hr(批次C,全域全局主数据)───────────────────────────────────
+
+  defp build_employees(%{employee: employee}), do: [employee]
+
+  defp build_attendance_punches(%{employee: employee, attendance_import: import}) do
+    [
+      SynieCore.Hr.AttendancePunch
+      |> Ash.Changeset.for_create(:create, %{
+        employee_id: employee.id,
+        attendance_no: "MXP#{System.unique_integer([:positive])}",
+        punched_at: ~U[2026-07-01 00:10:00Z],
+        import_id: import.id
+      })
+      |> Ash.create!(authorize?: false)
+    ]
+  end
+
+  # 考勤日直建最小合法行(重算引擎的 upsert 动作,受信路径可直用);
+  # 日期避开世界/写输入的补卡日,防重算覆盖(见 shared 声明)
+  defp build_attendance_days(%{employee: employee}) do
+    [
+      SynieCore.Hr.AttendanceDay
+      |> Ash.Changeset.for_create(:create, %{
+        employee_id: employee.id,
+        date: ~D[2026-07-01],
+        normal_hours: Decimal.new("8"),
+        overtime_hours: Decimal.new("0"),
+        bonus_workday: Decimal.new("0"),
+        status: :ok
+      })
+      |> Ash.create!(authorize?: false)
+    ]
+  end
+
+  defp build_attendance_corrections(%{employee: employee}) do
+    [
+      SynieCore.Hr.AttendanceCorrection
+      |> Ash.Changeset.for_create(:create, %{
+        employee_id: employee.id,
+        date: ~D[2026-07-03],
+        times: [~T[08:00:00]]
+      })
+      |> Ash.create!(authorize?: false)
+    ]
+  end
+
+  defp build_employee_loans(%{employee: employee}) do
+    [
+      SynieCore.Hr.EmployeeLoan
+      |> Ash.Changeset.for_create(:create, %{
+        employee_id: employee.id,
+        kind: :borrow,
+        occurred_on: ~D[2026-07-01],
+        amount: Decimal.new("100")
+      })
+      |> Ash.create!(authorize?: false)
+    ]
+  end
+
+  defp build_payrolls(%{payroll: payroll}), do: [payroll]
+
+  # 发放行会把工资单翻为已发放(世界不变式按 id,状态翻转无碍)
+  defp build_payroll_payments(%{payroll: payroll}) do
+    [
+      SynieCore.Hr.PayrollPayment
+      |> Ash.Changeset.for_create(:create, %{
+        payroll_id: payroll.id,
+        paid_on: ~D[2026-07-05],
+        amount: Decimal.new("100")
+      })
+      |> Ash.create!(authorize?: false)
+    ]
+  end
+
+  # ── 构造函数:inv(批次C)─────────────────────────────────────────────────
+
+  defp build_material_categories(%{category: category}), do: [category]
+
+  defp build_materials(%{material: material, material2: material2}), do: [material, material2]
+
+  defp build_stock_docs(ctx) do
+    for {company, [warehouse | _]} <- [
+          {ctx.company_a, ctx.warehouses_a},
+          {ctx.company_b, ctx.warehouses_b}
+        ] do
+      SynieCore.Inv.StockDoc
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        doc_no: "MXCRK-#{company.code}-#{System.unique_integer([:positive])}",
+        direction: :in,
+        warehouse_id: warehouse.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  defp build_stock_counts(ctx) do
+    for {company, [warehouse | _]} <- [
+          {ctx.company_a, ctx.warehouses_a},
+          {ctx.company_b, ctx.warehouses_b}
+        ] do
+      SynieCore.Inv.StockCount
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        doc_no: "MXPD-#{company.code}-#{System.unique_integer([:positive])}",
+        warehouse_id: warehouse.id,
+        posting_date: ~D[2026-07-01]
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  defp build_stock_transfers(ctx) do
+    for {company, [wh1, wh2, wh3]} <- [
+          {ctx.company_a, ctx.warehouses_a},
+          {ctx.company_b, ctx.warehouses_b}
+        ] do
+      SynieCore.Inv.StockTransfer
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        doc_no: "MXDB-#{company.code}-#{System.unique_integer([:positive])}",
+        from_warehouse_id: wh1.id,
+        to_warehouse_id: wh2.id,
+        transit_warehouse_id: wh3.id
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  # 库存分录:资源层无动作校验,直建最小合法行(与 gl_entry 同款裁量)
+  defp build_stock_entries(ctx) do
+    for {company, [warehouse | _]} <- [
+          {ctx.company_a, ctx.warehouses_a},
+          {ctx.company_b, ctx.warehouses_b}
+        ] do
+      SynieCore.Inv.StockEntry
+      |> Ash.Changeset.for_create(:create, %{
+        company_id: company.id,
+        warehouse_id: warehouse.id,
+        material_id: ctx.material.id,
+        quantity: Decimal.new("1"),
+        posting_date: ~D[2026-07-01],
+        voucher_type: "authz_matrix",
+        voucher_id: Ash.UUID.generate(),
+        voucher_no: "MXST-#{company.code}"
+      })
+      |> Ash.create!(authorize?: false)
+    end
+  end
+
+  # ── 构造函数:mfg(批次C,全域全局)─────────────────────────────────────────
+
+  defp build_operations(_ctx) do
+    [
+      SynieCore.Mfg.Operation
+      |> Ash.Changeset.for_create(:create, %{
+        code: "MXOP#{System.unique_integer([:positive])}",
+        name: "矩阵工序"
+      })
+      |> Ash.create!(authorize?: false)
+    ]
+  end
+
+  defp build_process_templates(_ctx) do
+    [
+      SynieCore.Mfg.ProcessTemplate
+      |> Ash.Changeset.for_create(:create, %{
+        code: "MXRT#{System.unique_integer([:positive])}",
+        name: "矩阵工艺路线"
+      })
+      |> Ash.create!(authorize?: false)
+    ]
+  end
+
+  defp build_boms(%{material: material}) do
+    [
+      SynieCore.Mfg.Bom
+      |> Ash.Changeset.for_create(:create, %{material_id: material.id})
+      |> Ash.create!(authorize?: false)
+    ]
+  end
+
   # ── 构造函数:试点 ────────────────────────────────────────────────────────
 
   defp build_gl_journals(%{company_a: a, company_b: b}) do
@@ -969,14 +1352,6 @@ defmodule SynieWeb.AuthzMatrix.World do
     end
   end
 
-  defp build_warehouses(%{company_a: a, company_b: b}) do
-    for company <- [a, b] do
-      SynieCore.Inv.Warehouse
-      |> Ash.Changeset.for_create(:create, %{
-        name: "矩阵仓-#{company.code}",
-        company_id: company.id
-      })
-      |> Ash.create!(authorize?: false)
-    end
-  end
+  defp build_warehouses(%{warehouses_a: warehouses_a, warehouses_b: warehouses_b}),
+    do: warehouses_a ++ warehouses_b
 end
