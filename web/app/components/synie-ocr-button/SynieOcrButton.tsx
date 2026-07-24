@@ -96,7 +96,7 @@ export function SynieOcrButton({
         {label}
       </Button>
       {disabled && (
-        <span className="text-xs text-muted">未配置 OCR 凭证,请到「系统管理→财务设置」配置</span>
+        <span className="text-xs text-muted">未配置 OCR 凭证,请到「财务→财务设置」配置</span>
       )}
     </div>
   )

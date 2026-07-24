@@ -1,7 +1,7 @@
 defmodule SynieCore.Ocr do
   @moduledoc """
   票据 OCR 门面:校验并读取文件字节 → 调阿里云 → 映射为前端表单字段。
-  凭证在 acc_setting(系统管理→财务设置)。仅允许识别本人上传的文件——
+  凭证在 acc_setting(财务→财务设置)。仅允许识别本人上传的文件——
   OCR 动线里文件是刚上传的裸文件(未挂宿主),放开会让任意 file_id 可被探测。
   """
 
@@ -44,7 +44,7 @@ defmodule SynieCore.Ocr do
         {:ok, %{access_key_id: ak, access_key_secret: sk}}
 
       _ ->
-        {:error, "未配置阿里云 OCR 凭证,请到「系统管理→财务设置」配置"}
+        {:error, "未配置阿里云 OCR 凭证,请到「财务→财务设置」配置"}
     end
   end
 

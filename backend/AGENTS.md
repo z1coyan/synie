@@ -18,7 +18,7 @@
 - 新资源/新动作必须同步补前端中文标签:权限矩阵 `web/app/components/synie-permission-sheet/permission-labels.ts`、操作日志 `web/app/routes/_app/system/logs.tsx`(漏了原样显英文码)。
 - 新资源进权限目录必须同步补权限矩阵夹具世界(`apps/synie_web/test/support/authz_matrix/world.ex`):`builders/0` 加构造函数(公司隔离资源甲乙各一条、全局一条,并认领被跨资源引用的记录);注册了通用 create/update mutation 的补 `write_inputs/1`;公司匹配/有码即读之外的可见性特例走 `visibility/1` 的 `{:custom, fun}`。漏补 CI 完整性守卫即红(`authz_matrix_coverage_test`),读写越权矩阵随之自动覆盖新资源——覆盖零维护、不靠自觉。
 - `permission_actions` 只列用户视角的独立能力;衍生动作不设新权限点,策略里用 `{HasPermission, as: "create"}` 复用既有码(如科目模板初始化=批量新增)。
-- 财务域全局配置(非公司维度)加字段进 `acc_setting` 单行资源(系统管理→财务设置),不另建配置表;系统级配置同理进 `sys_setting`(初始化完成时刻由 Setup 内部写;行情拉取节奏等经 GraphQL `sys.setting` 读写,界面在基础数据→基础设置→行情拉取 Tab)。
+- 财务域全局配置(非公司维度)加字段进 `acc_setting` 单行资源(财务→财务设置),不另建配置表;系统级配置同理进 `sys_setting`(初始化完成时刻由 Setup 内部写;行情拉取节奏等经 GraphQL `sys.setting` 读写,界面在基础数据→基础设置→行情拉取 Tab)。
 
 ## GraphQL
 

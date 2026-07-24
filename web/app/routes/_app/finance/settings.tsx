@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Input, Label, Spinner, TextField, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 
-export const Route = createFileRoute('/_app/system/finance')({
+export const Route = createFileRoute('/_app/finance/settings')({
   component: FinanceSettingsPage,
 })
 

@@ -90,6 +90,10 @@ export const menuModules: MenuModule[] = [
           { label: '承兑汇票', path: '/finance/acceptance' },
         ],
       },
+      {
+        label: '设置',
+        items: [{ label: '财务设置', path: '/finance/settings' }],
+      },
     ],
   },
   {
@@ -208,7 +212,6 @@ export const menuModules: MenuModule[] = [
         items: [
           { label: '编号规则', path: '/system/numbering' },
           { label: '打印模板', path: '/system/print-templates' },
-          { label: '财务设置', path: '/system/finance' },
         ],
       },
       {
