@@ -117,3 +117,20 @@ html {
     @apply text-[13px] whitespace-nowrap;
   }
 }
+
+/*
+ * HeroUI NumberField.Group 兜底:其 grid 模板固定为「减 | input | 加」三列
+ * (40px 1fr 40px),未渲染步进按钮时 input 会落进 40px 首列被压窄。
+ * 这里按按钮实际有无自动收窄列模板,页面无需再手写 grid-cols-[1fr]。
+ */
+.number-field__group:not(:has([slot="decrement"])):not(:has([slot="increment"])) {
+  grid-template-columns: 1fr;
+}
+
+.number-field__group:has([slot="decrement"]):not(:has([slot="increment"])) {
+  grid-template-columns: 40px 1fr;
+}
+
+.number-field__group:not(:has([slot="decrement"])):has([slot="increment"]) {
+  grid-template-columns: 1fr 40px;
+}

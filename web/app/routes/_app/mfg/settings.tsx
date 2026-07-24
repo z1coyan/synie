@@ -100,7 +100,7 @@ function MfgSettingsPage() {
               maxValue={100}
             >
               <Label>生产入库超入比例 (%)</Label>
-              <NumberField.Group>
+              <NumberField.Group className="grid-cols-[1fr]">
                 <NumberField.Input />
               </NumberField.Group>
             </NumberField>
