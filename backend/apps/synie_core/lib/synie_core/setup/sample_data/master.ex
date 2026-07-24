@@ -43,14 +43,38 @@ defmodule SynieCore.Setup.SampleData.Master do
   # 物料:key 供单据种子按名引用;原材料(铜棒/钢板/粒料)挂 F(S) 半成品,
   # 与初始化分类树先例一致(紫铜排即在 F(S))
   @materials [
-    %{key: :box_shell, name: "配电箱壳体", spec: "HN-BX-100 定制", category: "F(P)",
-      customer: "C01", customer_part_no: "HN-BX-100"},
-    %{key: :busbar, name: "汇流铜排组件", spec: "HN-BB-08 8 路", category: "F(P)",
-      customer: "C01", customer_part_no: "HN-BB-08"},
-    %{key: :mount_plate, name: "断路器安装板", spec: "LC-MB-63", category: "F(P)",
-      customer: "C02", customer_part_no: "LC-MB-63"},
-    %{key: :terminal_assy, name: "端子排组件", spec: "YJ-TB-12", category: "F(P)",
-      customer: "C03", customer_part_no: "YJ-TB-12"},
+    %{
+      key: :box_shell,
+      name: "配电箱壳体",
+      spec: "HN-BX-100 定制",
+      category: "F(P)",
+      customer: "C01",
+      customer_part_no: "HN-BX-100"
+    },
+    %{
+      key: :busbar,
+      name: "汇流铜排组件",
+      spec: "HN-BB-08 8 路",
+      category: "F(P)",
+      customer: "C01",
+      customer_part_no: "HN-BB-08"
+    },
+    %{
+      key: :mount_plate,
+      name: "断路器安装板",
+      spec: "LC-MB-63",
+      category: "F(P)",
+      customer: "C02",
+      customer_part_no: "LC-MB-63"
+    },
+    %{
+      key: :terminal_assy,
+      name: "端子排组件",
+      spec: "YJ-TB-12",
+      category: "F(P)",
+      customer: "C03",
+      customer_part_no: "YJ-TB-12"
+    },
     %{key: :terminal_block, name: "接线端子座", spec: "UK-2.5B 灰", category: "F(G)"},
     %{key: :copper_terminal, name: "铜接线端子", spec: "OT-6", category: "F(G)"},
     %{key: :rail, name: "导轨", spec: "C45 35×7.5×1000", category: "F(G)"},

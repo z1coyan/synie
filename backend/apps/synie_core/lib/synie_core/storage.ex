@@ -23,7 +23,9 @@ defmodule SynieCore.Storage do
     |> Ash.Query.filter(is_default == true)
     |> Ash.read_one(authorize?: false)
     |> case do
-      {:ok, %StorageEndpoint{name: name}} -> name
+      {:ok, %StorageEndpoint{name: name}} ->
+        name
+
       _ ->
         raise "存储接入未初始化:没有默认接入点,请先完成初始化向导(或在系统管理→存储接入中配置)"
     end
