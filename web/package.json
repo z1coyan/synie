@@ -10,7 +10,9 @@
     "codegen": "graphql-codegen",
     "check": "bun app/components/run-checks.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e": "./e2e/run-smoke.sh",
+    "e2e:test": "playwright test"
   },
   "dependencies": {
     "@fontsource/noto-serif-sc": "^5.2.8",
@@ -54,6 +56,7 @@
   "devDependencies": {
     "@graphql-codegen/cli": "^7.2.0",
     "@graphql-codegen/client-preset": "^6.1.0",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "^1.3.14",
     "@types/node": "^22.0.0",
