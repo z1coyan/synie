@@ -29,7 +29,7 @@ setup(`global-setup.ts` → `helpers/admin-flow.ts`)以**超管走真实 GraphQL
 `createSysUser`(返回一次性密码)→ 指派角色 → 指派公司 → 登录取 token。**动线本身即断言**
 (任一 mutation 失败即整轮红)。跑完 teardown 清理,演示角色/用户不进迁移种子。
 
-spec(`authz-smoke.spec.ts`)以该角色断言:
+spec(`authz-smoke.e2e.ts`,`.e2e.ts` 后缀避开 `bun test` 的默认发现)以该角色断言:
 
 1. **UI 登录**:演示会计用动线所建账号能登录进工作台,token 落 `localStorage`;
 2. **授权页见本司数据**:`/finance/bank-accounts` 出银行账户表格与本司样本账户,无 forbidden;

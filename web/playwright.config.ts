@@ -10,6 +10,9 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
+  // 用 .e2e.ts 后缀:避开 `bun test` 默认的 *.test/*.spec 发现(否则 bun 会误跑
+  // Playwright spec 并在 test.beforeAll 处报错),前端 CI 的 `bun test` 只跑 app/*.test.ts
+  testMatch: '**/*.e2e.ts',
   globalSetup: './e2e/global-setup.ts',
   globalTeardown: './e2e/global-teardown.ts',
   // 单 worker 串行:共用一个演示会计 + 演示库数据,避免并发互扰
