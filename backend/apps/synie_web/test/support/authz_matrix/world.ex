@@ -89,15 +89,15 @@ defmodule SynieWeb.AuthzMatrix.World do
 
   # ── 应得集声明 ────────────────────────────────────────────────────────────
 
-  # 特例声明:批次工单为特例资源加函数子句(裸文件仅上传者、审计日志无公司行放行等),如
-  #   defp visibility_override(SynieCore.Files.File), do: {:custom, &file_visible?/2}
-  # 返回 :company | :global | {:custom, (record, effective_companies -> boolean)} | nil(走默认)。
-  defp visibility_override(_module), do: nil
+  @doc """
+  资源的应得集声明。默认规则:有 company_id 按公司匹配(:company),否则全局有码即读(:global)。
 
-  @doc "资源的应得集声明(默认:有 company_id 按公司匹配,否则全局有码即读)。"
+  特例(裸文件仅上传者、审计日志无公司行放行等)由批次工单在默认子句**上方**加资源专属
+  函数头声明,如:`def visibility(SynieCore.Files.File), do: {:custom, &file_visible?/2}`,
+  并在 `expected_ids/3` 补 {:custom, fun} 分支。
+  """
   def visibility(module) do
-    visibility_override(module) ||
-      if Ash.Resource.Info.attribute(module, :company_id), do: :company, else: :global
+    if Ash.Resource.Info.attribute(module, :company_id), do: :company, else: :global
   end
 
   @doc """
