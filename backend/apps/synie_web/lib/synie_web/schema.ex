@@ -3,89 +3,89 @@ defmodule SynieWeb.Schema do
   use AshGraphql, domains: [SynieCore]
 
   object :session_user do
-    field :id, non_null(:id)
-    field :username, non_null(:string)
-    field :name, :string
+    field(:id, non_null(:id))
+    field(:username, non_null(:string))
+    field(:name, :string)
   end
 
   object :login_result do
-    field :token, non_null(:string)
-    field :user, non_null(:session_user)
+    field(:token, non_null(:string))
+    field(:user, non_null(:session_user))
   end
 
   object :permission_group do
-    field :prefix, non_null(:string)
-    field :label, non_null(:string)
-    field :actions, non_null(list_of(non_null(:string)))
+    field(:prefix, non_null(:string))
+    field(:label, non_null(:string))
+    field(:actions, non_null(list_of(non_null(:string))))
   end
 
   # 明文密码仅在创建/重置的响应里出现一次,后端只存哈希,事后不可再查
   object :sys_user_with_password do
-    field :id, non_null(:id)
-    field :username, non_null(:string)
-    field :password, non_null(:string)
+    field(:id, non_null(:id))
+    field(:username, non_null(:string))
+    field(:password, non_null(:string))
   end
 
   object :reset_password_result do
-    field :password, non_null(:string)
+    field(:password, non_null(:string))
   end
 
   object :setup_status do
-    field :initialized, non_null(:boolean)
-    field :has_users, non_null(:boolean)
+    field(:initialized, non_null(:boolean))
+    field(:has_users, non_null(:boolean))
   end
 
   object :grid_enum_option do
-    field :value, non_null(:string)
-    field :label, non_null(:string)
+    field(:value, non_null(:string))
+    field(:label, non_null(:string))
   end
 
   object :grid_column_ref_variant do
-    field :value, non_null(:string)
-    field :resource, non_null(:string)
-    field :label_field, non_null(:string)
-    field :label, non_null(:string)
+    field(:value, non_null(:string))
+    field(:resource, non_null(:string))
+    field(:label_field, non_null(:string))
+    field(:label, non_null(:string))
   end
 
   object :grid_column_ref do
     # 普通 fk:resource/relation/label_field 三件套;多态 fk 走 discriminator/variants,三件套为 null
-    field :resource, :string
-    field :relation, :string
-    field :label_field, :string
-    field :discriminator, :string
+    field(:resource, :string)
+    field(:relation, :string)
+    field(:label_field, :string)
+    field(:discriminator, :string)
     # 判别列筛选字面量形态:"enum" 裸 token / "string" 带引号;仅多态 fk 有值
-    field :discriminator_type, :string
-    field :variants, list_of(non_null(:grid_column_ref_variant))
+    field(:discriminator_type, :string)
+    field(:variants, list_of(non_null(:grid_column_ref_variant)))
   end
 
   object :grid_column do
-    field :name, non_null(:string)
-    field :type, non_null(:string)
-    field :label, non_null(:string)
-    field :sortable, non_null(:boolean)
-    field :filterable, non_null(:boolean)
-    field :enum_options, list_of(non_null(:grid_enum_option))
-    field :ref, :grid_column_ref
+    field(:name, non_null(:string))
+    field(:type, non_null(:string))
+    field(:label, non_null(:string))
+    field(:sortable, non_null(:boolean))
+    field(:filterable, non_null(:boolean))
+    field(:enum_options, list_of(non_null(:grid_enum_option)))
+    field(:ref, :grid_column_ref)
   end
 
   object :grid_action do
-    field :key, non_null(:string)
-    field :label, non_null(:string)
-    field :scope, non_null(:string)
-    field :mutation, non_null(:string)
-    field :is_danger, non_null(:boolean)
+    field(:key, non_null(:string))
+    field(:label, non_null(:string))
+    field(:scope, non_null(:string))
+    field(:mutation, non_null(:string))
+    field(:is_danger, non_null(:boolean))
   end
 
   object :grid_meta do
-    field :columns, non_null(list_of(non_null(:grid_column)))
-    field :capabilities, non_null(list_of(non_null(:string)))
-    field :extended_actions, non_null(list_of(non_null(:grid_action)))
-    field :destroy_mutation, :string
+    field(:columns, non_null(list_of(non_null(:grid_column))))
+    field(:capabilities, non_null(list_of(non_null(:string))))
+    field(:extended_actions, non_null(list_of(non_null(:grid_action))))
+    field(:destroy_mutation, :string)
   end
 
   object :numberable_resource do
-    field :prefix, non_null(:string)
-    field :grid, non_null(:string)
+    field(:prefix, non_null(:string))
+    field(:grid, non_null(:string))
   end
 
   query do
