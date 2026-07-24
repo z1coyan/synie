@@ -1,5 +1,7 @@
 defmodule SynieCore.Audit.TrackTest do
-  use ExUnit.Case, async: true
+  # 非 async:审计断言比对固定 iso_code "USD",须保留该固定码;串行运行避免与
+  # 其它模块并发写 bas_currency 唯一索引互锁(deadlock)
+  use ExUnit.Case, async: false
 
   import SynieCore.AuthzFixtures
 

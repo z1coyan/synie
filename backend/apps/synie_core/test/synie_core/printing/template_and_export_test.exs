@@ -201,7 +201,7 @@ defmodule SynieCore.Printing.TemplateAndExportTest do
       |> Ash.Changeset.for_create(:create, %{
         unit_type: :weight,
         name: "千克",
-        symbol: "kgs",
+        symbol: "kg-#{System.unique_integer([:positive])}",
         ratio: 1
       })
       |> Ash.create!(authorize?: false)
@@ -290,7 +290,7 @@ defmodule SynieCore.Printing.TemplateAndExportTest do
       |> Ash.Changeset.for_create(:create, %{
         unit_type: :weight,
         name: "千克",
-        symbol: "kgs",
+        symbol: "kg-#{System.unique_integer([:positive])}",
         ratio: 1
       })
       |> Ash.create!(authorize?: false)
@@ -416,7 +416,7 @@ defmodule SynieCore.Printing.TemplateAndExportTest do
       |> Ash.Changeset.for_create(:create, %{
         unit_type: :weight,
         name: "千克",
-        symbol: "kgs",
+        symbol: "kg-#{System.unique_integer([:positive])}",
         ratio: 1
       })
       |> Ash.create!(authorize?: false)
