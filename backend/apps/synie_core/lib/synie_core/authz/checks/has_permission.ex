@@ -9,6 +9,10 @@ defmodule SynieCore.Authz.Checks.HasPermission do
 
   衍生动作可用 `as:` 选项复用既有权限码而不新设权限点,如模板初始化本质是批量新增:
   `policy action(:init_from_template) do authorize_if {HasPermission, as: "create"} end`。
+
+  跨资源读模型(如订单收发货历史 UNION 视图)可用 `code:` 选项直接指定完整权限码,
+  绕开从资源派生前缀;同 policy 内多个 `authorize_if` 为或关系,组合出「任一来源码即可读」:
+  `policy action_type(:read) do authorize_if {HasPermission, code: "purchase.receipt:read"} ... end`。
   """
 
   use Ash.Policy.SimpleCheck
@@ -20,11 +24,18 @@ defmodule SynieCore.Authz.Checks.HasPermission do
 
   @impl true
   def match?(actor, %{resource: resource, action: action}, opts) do
-    code = Keyword.get(opts, :as) || action_code(action)
+    case Keyword.get(opts, :code) do
+      nil ->
+        code = Keyword.get(opts, :as) || action_code(action)
 
-    Code.ensure_loaded?(resource) and
-      function_exported?(resource, :permission_prefix, 0) and
-      Authz.has_permission?(actor, resource.permission_prefix() <> ":" <> code)
+        Code.ensure_loaded?(resource) and
+          function_exported?(resource, :permission_prefix, 0) and
+          Authz.has_permission?(actor, resource.permission_prefix() <> ":" <> code)
+
+      # code: 完整权限码直给(跨资源读模型,如 Scm.OrderFlowItem 任一来源码即可读)
+      full_code ->
+        Authz.has_permission?(actor, full_code)
+    end
   end
 
   defp action_code(%{name: :destroy}), do: "delete"

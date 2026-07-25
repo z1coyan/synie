@@ -45,6 +45,7 @@ defmodule SynieWeb.GridMeta do
     "purOutsourcedReceiptItemMaterials" => SynieCore.Purchase.OutsourcedReceiptItemMaterial,
     "purOutsourcedReceiptItemByproducts" => SynieCore.Purchase.OutsourcedReceiptItemByproduct,
     "purReconciliations" => SynieCore.Purchase.Reconciliation,
+    "scmOrderFlowItems" => SynieCore.Scm.OrderFlowItem,
     "purReconciliationItems" => SynieCore.Purchase.ReconciliationItem,
     "hrEmployees" => SynieCore.Hr.Employee,
     "mfgOperations" => SynieCore.Mfg.Operation,

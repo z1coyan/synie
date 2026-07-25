@@ -91,6 +91,9 @@ defmodule SynieCore do
       list SynieCore.Purchase.ReconciliationItem, :pur_reconciliation_items, :read,
         paginate_with: :offset
 
+      # 订单收发货历史:四类单据行的 UNION 只读视图(销售/采购订单抽屉「收发货历史」tab)
+      list SynieCore.Scm.OrderFlowItem, :scm_order_flow_items, :read, paginate_with: :offset
+
       list SynieCore.Hr.Employee, :hr_employees, :read, paginate_with: :offset
       list SynieCore.Inv.MaterialCategory, :inv_material_categories, :read, paginate_with: :offset
       list SynieCore.Inv.Material, :inv_materials, :read, paginate_with: :offset
@@ -686,6 +689,7 @@ defmodule SynieCore do
     resource SynieCore.Purchase.OutsourcedReceiptItemByproduct
     resource SynieCore.Purchase.Reconciliation
     resource SynieCore.Purchase.ReconciliationItem
+    resource SynieCore.Scm.OrderFlowItem
     resource SynieCore.Hr.Employee
     resource SynieCore.Mfg.Operation
     resource SynieCore.Mfg.ProcessTemplate
