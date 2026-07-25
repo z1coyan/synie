@@ -1,7 +1,6 @@
 import type { ComponentType, SVGProps } from 'react'
 import {
   IconDatabase,
-  IconFactory,
   IconGrid,
   IconLandmark,
   IconPackage,
@@ -99,7 +98,7 @@ export const menuModules: MenuModule[] = [
   {
     key: 'scm',
     label: '供应链',
-    description: '采购、销售与库存',
+    description: '采购、销售、库存与生产',
     icon: IconPackage,
     entry: '/scm/purchase',
     groups: [
@@ -115,14 +114,6 @@ export const menuModules: MenuModule[] = [
         ],
       },
       {
-        label: '仓储',
-        items: [
-          { label: '物料管理', path: '/scm/materials' },
-          { label: '物料分类', path: '/scm/material-categories' },
-          { label: '仓库管理', path: '/scm/warehouses' },
-        ],
-      },
-      {
         label: '库存',
         items: [
           { label: '采购入库', path: '/scm/purchase-receipts' },
@@ -135,10 +126,19 @@ export const menuModules: MenuModule[] = [
         ],
       },
       {
-        label: '往来单位',
+        label: '生产',
         items: [
-          { label: '客户管理', path: '/scm/customers' },
-          { label: '供应商管理', path: '/scm/suppliers' },
+          { label: '履约需求单', path: '/mfg/demands' },
+          { label: '生产工单', path: '/mfg/work-orders' },
+          { label: '生产入库', path: '/mfg/outputs' },
+        ],
+      },
+      {
+        label: '配方与工艺',
+        items: [
+          { label: 'BOM', path: '/mfg/boms' },
+          { label: '工序', path: '/mfg/operations' },
+          { label: '工艺模板', path: '/mfg/process-templates' },
         ],
       },
       {
@@ -148,48 +148,29 @@ export const menuModules: MenuModule[] = [
     ],
   },
   {
-    key: 'mfg',
-    label: '生产',
-    description: '履约需求、工单、入库与 BOM',
-    icon: IconFactory,
-    entry: '/mfg/demands',
-    groups: [
-      {
-        label: '执行',
-        items: [
-          { label: '履约需求单', path: '/mfg/demands' },
-          { label: '生产工单', path: '/mfg/work-orders' },
-          { label: '生产入库', path: '/mfg/outputs' },
-        ],
-      },
-      {
-        label: '配方',
-        items: [{ label: 'BOM', path: '/mfg/boms' }],
-      },
-      {
-        label: '基础设置',
-        items: [
-          { label: '工序', path: '/mfg/operations' },
-          { label: '工艺模板', path: '/mfg/process-templates' },
-          { label: '生产设置', path: '/mfg/settings' },
-        ],
-      },
-    ],
-  },
-  {
     key: 'base',
     label: '基础数据',
-    description: '公司、货币、计量单位与市场行情等主数据',
+    description: '公司、物料、往来单位与计量等主数据',
     icon: IconDatabase,
     entry: '/system/companies',
     groups: [
       {
-        label: '主数据',
+        label: '财务组织',
         items: [
           { label: '公司管理', path: '/system/companies' },
           { label: '科目表', path: '/base/accounts' },
           { label: '货币管理', path: '/base/currencies' },
           { label: '单位管理', path: '/base/units' },
+        ],
+      },
+      {
+        label: '供应链主数据',
+        items: [
+          { label: '物料管理', path: '/scm/materials' },
+          { label: '物料分类', path: '/scm/material-categories' },
+          { label: '仓库管理', path: '/scm/warehouses' },
+          { label: '客户管理', path: '/scm/customers' },
+          { label: '供应商管理', path: '/scm/suppliers' },
         ],
       },
       {

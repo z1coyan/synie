@@ -9,6 +9,7 @@ export const Route = createFileRoute('/_app/scm/settings')({
 const TABS = [
   { id: 'sales', label: '销售' },
   { id: 'purchase', label: '采购' },
+  { id: 'production', label: '生产' },
 ] as const
 
 function ScmSettingsLayout() {
@@ -21,7 +22,7 @@ function ScmSettingsLayout() {
     <>
       <h1 className="font-brand text-3xl tracking-wide">供应链设置</h1>
       <p className="mt-2 text-sm text-ink-500">
-        供应链全局配置（非公司维度）。销售与采购相关项分 Tab 维护，同一配置表落库。
+        供应链全局配置（非公司维度）。销售、采购与生产相关项分 Tab 维护。
       </p>
       <Tabs
         variant="secondary"
