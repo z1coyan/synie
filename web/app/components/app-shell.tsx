@@ -15,6 +15,7 @@ import {
 } from '@heroui/react'
 import { AppearanceSwitch } from '~/components/appearance-switch'
 import { IconMenu } from '~/components/icons'
+import { TodoBell } from '~/components/todo-bell'
 import {
   isPathActive,
   itemForPath,
@@ -153,15 +154,18 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
               <Breadcrumbs.Item key={c}>{c}</Breadcrumbs.Item>
             ))}
           </Breadcrumbs>
-          <div className="ml-auto lg:hidden">
-            <UserMenu
-              displayName={displayName}
-              username={user?.username}
-              onLogout={onLogout}
-              placement="bottom end"
-              avatarClassName="bg-ink-900/10"
-              fallbackClassName="bg-transparent text-ink-900"
-            />
+          <div className="ml-auto flex items-center gap-1">
+            <TodoBell />
+            <div className="lg:hidden">
+              <UserMenu
+                displayName={displayName}
+                username={user?.username}
+                onLogout={onLogout}
+                placement="bottom end"
+                avatarClassName="bg-ink-900/10"
+                fallbackClassName="bg-transparent text-ink-900"
+              />
+            </div>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto">

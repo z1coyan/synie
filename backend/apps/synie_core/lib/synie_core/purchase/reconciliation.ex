@@ -391,7 +391,13 @@ defmodule SynieCore.Purchase.Reconciliation do
         end
       end
 
-      change fn changeset, _context ->
+      change fn changeset, context ->
+        user_id =
+          case context.actor do
+            %SynieCore.Authz.Actor{user_id: id} -> id
+            _ -> nil
+          end
+
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :confirmed)
         |> Ash.Changeset.before_action(fn cs ->
@@ -405,6 +411,11 @@ defmodule SynieCore.Purchase.Reconciliation do
             _ ->
               Ash.Changeset.add_error(cs, message: "仅草稿常规对账单可供应商确认")
           end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, recon ->
+          # 同事务产生收票待办(常规单确认窗口)
+          SynieCore.Sys.Todo.open_for_purchase_reconciliation!(recon, user_id: user_id)
+          {:ok, recon}
         end)
       end
     end
@@ -448,6 +459,10 @@ defmodule SynieCore.Purchase.Reconciliation do
             _ ->
               Ash.Changeset.add_error(cs, message: "仅供应商已确认常规对账单可撤回确认")
           end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, recon ->
+          SynieCore.Sys.Todo.close_for_purchase_reconciliation!(recon.id, :unconfirm)
+          {:ok, recon}
         end)
       end
     end
@@ -556,6 +571,10 @@ defmodule SynieCore.Purchase.Reconciliation do
               Ash.Changeset.add_error(cs, message: "对账单须为供应商已确认状态")
           end
         end)
+        |> Ash.Changeset.after_action(fn _cs, recon ->
+          SynieCore.Sys.Todo.close_for_purchase_reconciliation!(recon.id, :invoice_audit)
+          {:ok, recon}
+        end)
       end
     end
 
@@ -575,6 +594,11 @@ defmodule SynieCore.Purchase.Reconciliation do
             _ ->
               Ash.Changeset.add_error(cs, message: "对账单须为已结单状态")
           end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, recon ->
+          # 复活:新建 active 待办,原 closed 记录留历史
+          SynieCore.Sys.Todo.open_for_purchase_reconciliation!(recon)
+          {:ok, recon}
         end)
       end
     end

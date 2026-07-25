@@ -35,7 +35,15 @@ export const menuModules: MenuModule[] = [
     description: '总览与快捷入口',
     icon: IconGrid,
     entry: '/',
-    groups: [{ items: [{ label: '工作台', path: '/' }] }],
+    groups: [
+      {
+        items: [
+          { label: '工作台', path: '/' },
+          // 待办无独立权限门槛,按圈人(公司授权+发票创建)显示列表内容
+          { label: '待办', path: '/todos' },
+        ],
+      },
+    ],
   },
   {
     key: 'hr',

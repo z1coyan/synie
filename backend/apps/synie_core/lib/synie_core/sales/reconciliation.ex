@@ -390,7 +390,13 @@ defmodule SynieCore.Sales.Reconciliation do
         end
       end
 
-      change fn changeset, _context ->
+      change fn changeset, context ->
+        user_id =
+          case context.actor do
+            %SynieCore.Authz.Actor{user_id: id} -> id
+            _ -> nil
+          end
+
         changeset
         |> Ash.Changeset.force_change_attribute(:status, :confirmed)
         |> Ash.Changeset.before_action(fn cs ->
@@ -404,6 +410,11 @@ defmodule SynieCore.Sales.Reconciliation do
             _ ->
               Ash.Changeset.add_error(cs, message: "仅草稿常规对账单可客户确认")
           end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, recon ->
+          # 同事务产生开票待办(常规单确认窗口)
+          SynieCore.Sys.Todo.open_for_sales_reconciliation!(recon, user_id: user_id)
+          {:ok, recon}
         end)
       end
     end
@@ -447,6 +458,11 @@ defmodule SynieCore.Sales.Reconciliation do
             _ ->
               Ash.Changeset.add_error(cs, message: "仅客户已确认常规对账单可撤回确认")
           end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, recon ->
+          # 同事务关闭开票待办(撤回确认=消失)
+          SynieCore.Sys.Todo.close_for_sales_reconciliation!(recon.id, :unconfirm)
+          {:ok, recon}
         end)
       end
     end
@@ -555,6 +571,10 @@ defmodule SynieCore.Sales.Reconciliation do
               Ash.Changeset.add_error(cs, message: "对账单须为客户已确认状态")
           end
         end)
+        |> Ash.Changeset.after_action(fn _cs, recon ->
+          SynieCore.Sys.Todo.close_for_sales_reconciliation!(recon.id, :invoice_audit)
+          {:ok, recon}
+        end)
       end
     end
 
@@ -574,6 +594,11 @@ defmodule SynieCore.Sales.Reconciliation do
             _ ->
               Ash.Changeset.add_error(cs, message: "对账单须为已结单状态")
           end
+        end)
+        |> Ash.Changeset.after_action(fn _cs, recon ->
+          # 复活:新建 active 待办,原 closed 记录留历史
+          SynieCore.Sys.Todo.open_for_sales_reconciliation!(recon)
+          {:ok, recon}
         end)
       end
     end

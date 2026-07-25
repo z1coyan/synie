@@ -33,7 +33,17 @@ defmodule SynieCore.Authz.MountGuardTest do
     {SynieCore.Acc.Setting, :ocr_configured} =>
       "配置态布尔仅供前端 OCR 按钮防呆,不含凭证内容,策略为 actor_present()(登录即可读)",
     {SynieCore.Sys.Setting, :record_market_fetch} =>
-      "行情拉取运行状态回写,无策略匹配 → Ash 默认拒绝;仅调度器/手动刷新以 authorize?: false 调用"
+      "行情拉取运行状态回写,无策略匹配 → Ash 默认拒绝;仅调度器/手动刷新以 authorize?: false 调用",
+    {SynieCore.Sys.Todo, :create_internal} =>
+      "待办生产者同事务内部写,不注册 GraphQL;仅对账/发票动作以 authorize?: false 调用",
+    {SynieCore.Sys.Todo, :close_internal} =>
+      "待办生产者同事务内部关,不注册 GraphQL;仅对账/发票动作以 authorize?: false 调用",
+    {SynieCore.Sys.TodoState, :read} =>
+      "用户痕迹仅经 Todo 关系/内部查询加载,不进 GraphQL 列表;策略 always 放行由宿主 Todo 圈人",
+    {SynieCore.Sys.TodoState, :create_internal} =>
+      "已读/忽略 upsert 内部写,不注册 GraphQL;仅 Todo.mark_read/dismiss 以 authorize?: false 调用",
+    {SynieCore.Sys.TodoState, :upsert_internal} =>
+      "已读/忽略 upsert 内部写,不注册 GraphQL;仅 Todo.mark_read/dismiss 以 authorize?: false 调用"
   }
 
   # 带 company_id 资源的 read 未被 CompanyScope 覆盖的豁免:资源 => 理由
@@ -54,7 +64,9 @@ defmodule SynieCore.Authz.MountGuardTest do
     {SynieCore.Acc.BillHolding, :rebuild} =>
       "仅 BillLedger.replay! 以 authorize?: false 整删整建,不注册 GraphQL mutation;company_id 派生自票据",
     {SynieCore.Authz.UserCompany, :create} =>
-      "company_id 是授权载荷而非数据归属;持 sys.user:update 者本就在分配公司数据权限,无自限一说"
+      "company_id 是授权载荷而非数据归属;持 sys.user:update 者本就在分配公司数据权限,无自限一说",
+    {SynieCore.Sys.Todo, :create_internal} =>
+      "仅待办生产者 authorize?: false 内部写,不注册 GraphQL;company_id 派生自对账单"
   }
 
   defp resources, do: Ash.Domain.Info.resources(SynieCore)

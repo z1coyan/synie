@@ -153,6 +153,11 @@ defmodule SynieCore do
       action SynieCore.Hr.Payroll, :hr_payroll_month_stats, :month_stats
       action SynieCore.Hr.EmployeeLoan, :hr_employee_loan_balances, :balances
       list SynieCore.Audit.Log, :sys_audit_logs, :read, paginate_with: :offset
+
+      # 待办:活跃/历史列表 + 未读计数(无独立权限码,圈人=公司授权+发票创建)
+      list SynieCore.Sys.Todo, :sys_todos, :read, paginate_with: :offset
+      action SynieCore.Sys.Todo, :sys_todo_unread_count, :unread_count
+
       list SynieCore.Numbering.Rule, :sys_numbering_rules, :read, paginate_with: :offset
       list SynieCore.Numbering.Counter, :sys_numbering_counters, :read, paginate_with: :offset
       list SynieCore.Printing.Template, :sys_print_templates, :read, paginate_with: :offset
@@ -641,6 +646,10 @@ defmodule SynieCore do
 
       update SynieCore.Acc.Setting, :update_acc_setting, :update
 
+      # 待办个人痕迹:已读/忽略(仅影响本人)
+      update SynieCore.Sys.Todo, :mark_read_sys_todo, :mark_read
+      update SynieCore.Sys.Todo, :dismiss_sys_todo, :dismiss
+
       # OCR 识别是有副作用的外部调用(计费),注册为 mutation;权限复用各自 create 码
       action SynieCore.Acc.VatInvoice, :ocr_acc_vat_invoice, :ocr
       action SynieCore.Acc.BillTransaction, :ocr_acc_bill_transaction, :ocr
@@ -740,6 +749,8 @@ defmodule SynieCore do
     resource SynieCore.Acc.Setting
     resource SynieCore.Audit.Log
     resource SynieCore.Sys.Setting
+    resource SynieCore.Sys.Todo
+    resource SynieCore.Sys.TodoState
     resource SynieCore.Numbering.Rule
     resource SynieCore.Numbering.Counter
     resource SynieCore.Printing.Template

@@ -1,6 +1,6 @@
 # Spec: 待办设施（对账→开票提醒）
 
-**Status:** ready-for-agent
+**Status:** done
 **Feature slug:** `todo-facility`
 **ADR:** [docs/adr/2026-07-25-todo-facility.md](../../docs/adr/2026-07-25-todo-facility.md)
 **Domain terms:** 销售对账单、采购对账单、对账类型、客户确认、供应商确认、已对账数量、发票、对手、权限码、工作流动作（见 `CONTEXT.md`）

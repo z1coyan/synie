@@ -4,12 +4,12 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Parent:** [.scratch/todo-facility/spec.md](../spec.md)
 
-- [ ] 待办表迁移 + Ash 资源（类型枚举、多态源引用、公司/对手/金额快照、active/closed 状态、时点、操作人）
-- [ ] 部分唯一索引：一张源单据至多一条 active 待办
-- [ ] 待办用户痕迹表迁移 + Ash 资源（(todo_id,user_id) 唯一、read_at、dismissed_at、复位基准时点）
-- [ ] 权限圈人查询骨架：可见该公司 + 持发票创建权限（超管全见），本票返回空列表
-- [ ] 集成测试：两资源读写、唯一索引约束、空列表权限过滤
+- [x] 待办表迁移 + Ash 资源（类型枚举、多态源引用、公司/对手/金额快照、active/closed 状态、时点、操作人）
+- [x] 部分唯一索引：一张源单据至多一条 active 待办
+- [x] 待办用户痕迹表迁移 + Ash 资源（(todo_id,user_id) 唯一、read_at、dismissed_at、复位基准时点）
+- [x] 权限圈人查询骨架：可见该公司 + 持发票创建权限（超管全见），本票返回空列表
+- [x] 集成测试：两资源读写、唯一索引约束、空列表权限过滤
