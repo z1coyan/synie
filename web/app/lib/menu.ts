@@ -126,19 +126,19 @@ export const menuModules: MenuModule[] = [
         ],
       },
       {
-        label: '生产',
+        label: '计划',
         items: [
           { label: '履约需求单', path: '/mfg/demands' },
-          { label: '生产工单', path: '/mfg/work-orders' },
-          { label: '生产入库', path: '/mfg/outputs' },
-        ],
-      },
-      {
-        label: '配方与工艺',
-        items: [
           { label: 'BOM', path: '/mfg/boms' },
           { label: '工序', path: '/mfg/operations' },
           { label: '工艺模板', path: '/mfg/process-templates' },
+        ],
+      },
+      {
+        label: '生产',
+        items: [
+          { label: '生产工单', path: '/mfg/work-orders' },
+          { label: '生产入库', path: '/mfg/outputs' },
         ],
       },
       {
