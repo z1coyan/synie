@@ -15,10 +15,11 @@ export const Route = createFileRoute('/_app/scm/sales-orders/items')({
 // 行级明细列白名单:头信息(orderDate/partyId/orderStatus/currencyCode 由后端 gridMeta 以
 // calc/多态 fk 列下发,判别列 partyType 不出列也随查询取回,对手列照常解析)
 // + 行自身字段;行号/税率与客户料号不进网格(行号对跨单浏览无意义,税率进抽屉看),
-// companyId/insertedAt/updatedAt 不进表格(兼当 exclude)。
+// companyId 作单据归属公司首列;insertedAt/updatedAt 不进表格(兼当 exclude)。
 // 物料/单位走快照文本列(下单时落库,防主数据改名/换码影响历史单显示)。
 // 跨订单混合行,双币金额恒全列展示(本币单两套同值;简化只在订单抽屉内,ADR 双币)
 const GRID_COLUMNS = [
+  'companyId',
   'orderId',
   'orderDate',
   'partyId',

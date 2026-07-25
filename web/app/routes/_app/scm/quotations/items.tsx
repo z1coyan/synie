@@ -14,10 +14,11 @@ export const Route = createFileRoute('/_app/scm/quotations/items')({
 
 // 行级明细列白名单:头信息(quotationDate/validUntil/partyId/quotationStatus/currencyCode 由
 // 后端 gridMeta 以 calc/多态 fk 列下发)+ 行自身字段;行号/税率不进网格(税率进抽屉看),
-// companyId/insertedAt/updatedAt 不进表格(兼当 exclude)。
+// companyId 作单据归属公司首列;insertedAt/updatedAt 不进表格(兼当 exclude)。
 // 物料/单位走快照文本列(报价时落库,防主数据改名影响历史单显示);
 // 梯度行单价空、档数列提示进抽屉看阶梯
 const GRID_COLUMNS = [
+  'companyId',
   'quotationId',
   'quotationDate',
   'validUntil',
