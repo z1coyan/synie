@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Link } from '@heroui/react'
+import { Chip, Link } from '@heroui/react'
 import { formatAmount, formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -45,7 +45,9 @@ const ACTION_VISIBLE = {
 } satisfies Record<string, (row: Row) => boolean>
 
 // orderId 列覆盖默认 FkLink(速览抽屉):点击开共享完整订单抽屉,与点行的「查看」一致。
-// fk label 走行查询 join(buildRowQuery:order { id orderNo }),拿不到退截断 id
+// fk label 走行查询 join(buildRowQuery:order { id orderNo }),拿不到退截断 id。
+// 委外订单的条目在订单号旁跟一枚 accent「委外」胶囊(普通采购不显示,少数派标记);
+// 委外标记是订单头属性,由 orderIsOutsourced 计算列经 extraFields 随查询取回
 function buildOverrides(openDrawer: OpenOrderDrawer) {
   return {
     orderId: {
@@ -53,12 +55,19 @@ function buildOverrides(openDrawer: OpenOrderDrawer) {
         const order = row.order as Row | null | undefined
         const orderNo = order?.orderNo
         return (
-          <Link
-            onPress={() => openDrawer('view', { id: String(row.orderId), status: row.orderStatus })}
-            className="inline-block max-w-80 cursor-pointer truncate align-bottom text-inherit underline-offset-2 hover:underline"
-          >
-            {orderNo != null ? String(orderNo) : String(row.orderId).slice(0, 8)}
-          </Link>
+          <span className="inline-flex max-w-80 items-center gap-1 align-bottom">
+            <Link
+              onPress={() => openDrawer('view', { id: String(row.orderId), status: row.orderStatus })}
+              className="cursor-pointer truncate text-inherit underline-offset-2 hover:underline"
+            >
+              {orderNo != null ? String(orderNo) : String(row.orderId).slice(0, 8)}
+            </Link>
+            {row.orderIsOutsourced === true ? (
+              <Chip size="sm" color="accent" className="shrink-0">
+                委外
+              </Chip>
+            ) : null}
+          </span>
         )
       },
     },
@@ -95,8 +104,9 @@ function PurchaseOrderItemsTab() {
         resource="purOrderItems"
         columns={GRID_COLUMNS}
         overrides={overrides}
-        // 合并进度列的取数(qty 行单位;baseQty/receivedQty 默认单位投影列)
-        extraFields={['qty', 'baseQty', 'receivedQty']}
+        // 合并进度列的取数(qty 行单位;baseQty/receivedQty 默认单位投影列);
+        // orderIsOutsourced 供订单号旁的「委外」胶囊(订单头计算列,不出独立列)
+        extraFields={['qty', 'baseQty', 'receivedQty', 'orderIsOutsourced']}
         // 行图纸:sys_attachment 挂接(owner_type pur_order_item / category drawing),与销售订单条目同机制
         attachmentImages={{ ownerType: 'pur_order_item', category: 'drawing', label: '图纸' }}
         // 默认订单日期倒序(新单在前);calc 列排序后端已验证支持
