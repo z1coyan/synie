@@ -5,6 +5,7 @@ defmodule SynieCore.Setup.SampleData do
   场景面向电气/机加工制造(如台州京泰电气),近 3 个月真实分布(已完成旧单 +
   进行中单 + 少量草稿),新部署可立刻走通:主数据(客商/物料/单位换算/员工)、
   销售链与采购链(报价→订单→发货/入库→对账→发票,各一条链走到发票结单)、
+  委外链(委外 BOM/外协仓→委外订单→发料→入库→加工费对账)、
   库存(期初入库/领料出库/调拨/盘点)、生产主数据(工序/工艺模板/BOM)与
   财务(银行账户与流水、手工凭证、报销单、工资单与发放)。
 
@@ -13,7 +14,7 @@ defmodule SynieCore.Setup.SampleData do
   数量账按「期初+采购入库 ≥ 销售发货+出库+调拨+盘亏」写死并逐料算平。
   幂等:以客户编号 `C01` 为标记,已有则整组跳过、不覆盖。
   受信内部路径(`authorize?: false`);由 `Setup.complete/3` 在完成旗标落库前调用。
-  分域实现见 `SampleData.Master/Inventory/Purchase/Sales/Mfg/Finance` 子模块。
+  分域实现见 `SampleData.Master/Inventory/Purchase/Sales/Mfg/Outsourced/Finance` 子模块。
   """
 
   require Ash.Query
@@ -25,7 +26,7 @@ defmodule SynieCore.Setup.SampleData do
   alias SynieCore.Inv.MaterialCategory
   alias SynieCore.Inv.Warehouse
   alias SynieCore.Sales.Customer
-  alias SynieCore.Setup.SampleData.{Finance, Inventory, Master, Mfg, Purchase, Sales}
+  alias SynieCore.Setup.SampleData.{Finance, Inventory, Master, Mfg, Outsourced, Purchase, Sales}
 
   # 示例客商固定编号:既作展示用编号,也作幂等标记
   @marker_customer_code "C01"
@@ -55,7 +56,10 @@ defmodule SynieCore.Setup.SampleData do
     :gl_journals,
     :expense_reports,
     :payrolls,
-    :vat_invoices
+    :vat_invoices,
+    :outsourced_orders,
+    :outsourced_issues,
+    :outsourced_receipts
   ]
 
   @doc """
@@ -163,7 +167,8 @@ defmodule SynieCore.Setup.SampleData do
   # ---------------------------------------------------------------------------
 
   # 编排顺序:前置(科目/默认科目/成品仓)→ 主数据 → 期初入库 → 采购链(入库增库存)→
-  # 销售链(发货减库存)→ 库存(出库/调拨/盘点,盘点永远最后)→ 生产 → 财务(发票最后,读对账合计)
+  # 销售链(发货减库存)→ 库存(出库/调拨/盘点,盘点永远最后)→ 生产 →
+  # 委外链(委外 BOM 须在生产主数据后、发料/入库动库存不碰已审盘点)→ 财务(发票最后,读对账合计)
   defp do_seed!(company, actor) do
     {ctx, n0} = Master.seed_prerequisites!(company)
     {master, n1} = Master.seed!(company)
@@ -172,7 +177,8 @@ defmodule SynieCore.Setup.SampleData do
     {sales, n4} = Sales.seed!(ctx, master, actor)
     {inv_docs, n5} = Inventory.seed_documents!(ctx, master, actor)
     {mfg, n6} = Mfg.seed!(master)
-    {finance, n7} = Finance.seed!(ctx, master, sales, purchase, actor)
+    {outsourced, n7} = Outsourced.seed!(ctx, master, actor)
+    {finance, n8} = Finance.seed!(ctx, master, sales, purchase, actor)
 
     summary = %{
       customers: map_size(master.customers),
@@ -186,21 +192,25 @@ defmodule SynieCore.Setup.SampleData do
       sales_deliveries: length(sales.deliveries),
       purchase_receipts: length(purchase.receipts),
       sales_reconciliations: length(sales.reconciliations),
-      purchase_reconciliations: length(purchase.reconciliations),
+      purchase_reconciliations:
+        length(purchase.reconciliations) + length(outsourced.reconciliations),
       stock_docs: length(inv_docs.stock_docs),
       stock_transfers: 1,
       stock_counts: 1,
       operations: length(mfg.operations),
       process_templates: length(mfg.process_templates),
-      boms: length(mfg.boms),
+      boms: length(mfg.boms) + length(outsourced.boms),
       bank_accounts: 1,
       bank_transactions: length(finance.bank_transactions),
       gl_journals: length(finance.gl_journals),
       expense_reports: 1,
       payrolls: length(finance.payrolls),
-      vat_invoices: length(finance.vat_invoices)
+      vat_invoices: length(finance.vat_invoices),
+      outsourced_orders: length(outsourced.orders),
+      outsourced_issues: length(outsourced.issues),
+      outsourced_receipts: length(outsourced.receipts)
     }
 
-    {summary, n0 ++ n1 ++ n2 ++ n3 ++ n4 ++ n5 ++ n6 ++ n7}
+    {summary, n0 ++ n1 ++ n2 ++ n3 ++ n4 ++ n5 ++ n6 ++ n7 ++ n8}
   end
 end

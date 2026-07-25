@@ -235,6 +235,25 @@ defmodule SynieCore.SetupTest do
     assert length(pur_qs) == 5
     assert Enum.count(pur_qs, &(&1.status == :audited)) == 4
 
+    # 委外链:汇流铜排组件第二张 BOM(委外方案)、外协仓 1、委外订单 2(1 审核 1 草稿)、
+    # 发料/入库各 1(均已审核)、采购对账 3(S01 已确认 + S04 常规草稿 + S04 委外草稿)
+    assert length(SynieCore.Mfg.Bom |> Ash.read!(authorize?: false)) == 3
+
+    warehouses = Warehouse |> Ash.read!(authorize?: false)
+    assert Enum.count(warehouses, & &1.is_outsourced) == 1
+
+    pur_orders = SynieCore.Purchase.Order |> Ash.read!(authorize?: false)
+    assert Enum.count(pur_orders, & &1.is_outsourced) == 2
+    assert Enum.count(pur_orders, &(&1.is_outsourced and &1.status == :audited)) == 1
+
+    assert [issue] = SynieCore.Purchase.OutsourcedIssue |> Ash.read!(authorize?: false)
+    assert issue.status == :audited
+
+    assert [out_receipt] = SynieCore.Purchase.OutsourcedReceipt |> Ash.read!(authorize?: false)
+    assert out_receipt.status == :audited
+
+    assert length(SynieCore.Purchase.Reconciliation |> Ash.read!(authorize?: false)) == 3
+
     # 幂等:再次 seed 不增行
     {summary, []} = SampleData.seed!(company.id, actor)
 
@@ -262,7 +281,10 @@ defmodule SynieCore.SetupTest do
              gl_journals: 0,
              expense_reports: 0,
              payrolls: 0,
-             vat_invoices: 0
+             vat_invoices: 0,
+             outsourced_orders: 0,
+             outsourced_issues: 0,
+             outsourced_receipts: 0
            }
 
     assert length(Customer |> Ash.read!(authorize?: false)) == 6
