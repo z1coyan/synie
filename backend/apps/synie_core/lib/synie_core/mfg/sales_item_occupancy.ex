@@ -3,7 +3,7 @@ defmodule SynieCore.Mfg.SalesItemOccupancy do
   销售订单条目占用查询(`DemandItem` `:sales_item_occupancy` 泛型动作实现)。
 
   需求单勾选池用:给定一组销售订单条目 id,返回各条目订购 base、已被履约需求行
-  (未作废需求单上的有来源行,含草稿与已确认)占用的 base、剩余可占用 base。
+  (**已确认**需求单上的有来源行;草稿不占量)占用的 base、剩余可占用 base。
   权限复用 mfg.demand:read(计划侧不必持销售读权限),公司数据权限在本模块
   手动检查(同 StockBalance 做法,与 CompanyScope 同口径)。
 

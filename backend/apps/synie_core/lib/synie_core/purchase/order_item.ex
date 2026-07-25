@@ -382,6 +382,10 @@ defmodule SynieCore.Purchase.OrderItem do
   `received_qty` 是已收数量投影列(默认单位口径):由采购入库审核/作废经
   `:adjust_received_qty` 内部动作同步加减(同销售侧 shipped_qty 先例)。v1 不拆未税金额/税额(将来开票对接时按 含税÷(1+税率) 拆)。
 
+  可空**来源履约需求行**(`demand_line_id`)与**需求日**(`demand_date`):采购侧拉勾选带入;
+  手工行两列皆空;审核时复核来源行并累加需求行 `ordered_qty`,入库沿本行回写
+  需求行 `received_qty`(见 ADR 2026-07-25)。
+
   委外配置(全部可选,不配不挡开单/审核,见 ADR 2026-07-24 委外采购):可空**成品 BOM 引用**
   (`bom_id`,限条目物料自身的 BOM,仅留痕无活引用——BOM 删除引用自动清空);条目下挂
   **发料清单**(`OrderItemMaterial`,行带已发料量投影)与**副产物清单**(`OrderItemByproduct`)
@@ -413,6 +417,9 @@ defmodule SynieCore.Purchase.OrderItem do
 
       # 成品 BOM 仅留痕:BOM 删除时条目引用自动清空,不挡 BOM 删除
       reference :bom, on_delete: :nilify
+
+      # 来源需求行:restrict 防需求行在已有订单条目时被物理删;作废走状态不删行
+      reference :demand_line, on_delete: :restrict
     end
 
     check_constraints do
@@ -436,6 +443,11 @@ defmodule SynieCore.Purchase.OrderItem do
   policies do
     bypass actor_attribute_equals(:super_admin, true) do
       authorize_if always()
+    end
+
+    # 勾选池是读取衍生,复用 read 码(采购员不必持需求单读权限)
+    policy action(:demand_line_pool) do
+      authorize_if {SynieCore.Authz.Checks.HasPermission, as: "read"}
     end
 
     policy always() do
@@ -507,7 +519,9 @@ defmodule SynieCore.Purchase.OrderItem do
         :tax_rate,
         :remarks,
         :quotation_item_id,
-        :bom_id
+        :bom_id,
+        :demand_line_id,
+        :demand_date
       ]
 
       # 顺序敏感:先回填 company_id,再做公司授权校验;
@@ -527,7 +541,20 @@ defmodule SynieCore.Purchase.OrderItem do
     end
 
     update :update do
-      accept [:idx, :material_id, :unit_id, :qty, :price, :tax_rate, :remarks, :quotation_item_id, :bom_id]
+      accept [
+        :idx,
+        :material_id,
+        :unit_id,
+        :qty,
+        :price,
+        :tax_rate,
+        :remarks,
+        :quotation_item_id,
+        :bom_id,
+        :demand_line_id,
+        :demand_date
+      ]
+
       require_atomic? false
 
       change {SynieCore.Purchase.OrderItem.SyncOrder, []}
@@ -577,6 +604,16 @@ defmodule SynieCore.Purchase.OrderItem do
           Ash.Changeset.force_change_attribute(changeset, :received_qty, next)
         end
       end
+    end
+
+    # 勾选池:需求行带入候选(json 标量数组,不分页);权限复用 purchase.order:read
+    action :demand_line_pool, {:array, :map} do
+      description "采购/委外订单从需求单勾选池:已确认未完成剩余可下单>0 的外购或委外行"
+
+      argument :company_id, :uuid, allow_nil?: false
+      argument :is_outsourced, :boolean, allow_nil?: false, default: false
+
+      run SynieCore.Purchase.DemandLinePool
     end
   end
 
@@ -703,6 +740,12 @@ defmodule SynieCore.Purchase.OrderItem do
       description "行备注"
     end
 
+    # 需求日快照:勾选自需求行 need_date,纯展示不驱动逻辑/不校验早晚
+    attribute :demand_date, :date do
+      public? true
+      description "需求日(来自履约需求行,可空)"
+    end
+
     create_timestamp :inserted_at, public?: true, description: "创建时间"
     update_timestamp :updated_at, public?: true, description: "更新时间"
   end
@@ -755,6 +798,14 @@ defmodule SynieCore.Purchase.OrderItem do
       attribute_public? true
       attribute_writable? true
       description "成品 BOM(留痕,限条目物料自身)"
+    end
+
+    # 来源履约需求行(可空):勾选带入;手工行为空。审核累加已下单、入库回写已收。
+    belongs_to :demand_line, SynieCore.Mfg.DemandItem do
+      public? true
+      attribute_public? true
+      attribute_writable? true
+      description "来源履约需求行"
     end
   end
 

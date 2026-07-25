@@ -11,7 +11,7 @@ export const Route = createFileRoute('/_app/scm/settings/purchase')({
 
 const SETTING_QUERY = `
   query {
-    salSetting { id spotItemMaxQty receiptOverreceiveRatio }
+    salSetting { id spotItemMaxQty receiptOverreceiveRatio demandOverorderRatio }
   }
 `
 const UPDATE_SETTING = `
@@ -24,6 +24,7 @@ type SalSetting = {
   id: string
   spotItemMaxQty: number
   receiptOverreceiveRatio: string | number
+  demandOverorderRatio: string | number
 }
 
 function ScmPurchaseSettingsTab() {
@@ -37,6 +38,7 @@ function ScmPurchaseSettingsTab() {
   const [spotMaxQty, setSpotMaxQty] = useState<number>(NaN)
   // 界面按百分比录入(0–100),落库小数 0–1
   const [overreceivePct, setOverreceivePct] = useState<number>(NaN)
+  const [overorderPct, setOverorderPct] = useState<number>(NaN)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -44,6 +46,8 @@ function ScmPurchaseSettingsTab() {
     setSpotMaxQty(query.data.salSetting.spotItemMaxQty)
     const receiveRatio = Number(query.data.salSetting.receiptOverreceiveRatio)
     setOverreceivePct(Number.isFinite(receiveRatio) ? Math.round(receiveRatio * 10000) / 100 : 0)
+    const orderRatio = Number(query.data.salSetting.demandOverorderRatio)
+    setOverorderPct(Number.isFinite(orderRatio) ? Math.round(orderRatio * 10000) / 100 : 0)
   }, [query.data])
 
   const save = async () => {
@@ -56,6 +60,10 @@ function ScmPurchaseSettingsTab() {
       toast.danger('入库超收比例须在 0%–100% 之间')
       return
     }
+    if (!Number.isFinite(overorderPct) || overorderPct < 0 || overorderPct > 100) {
+      toast.danger('需求超下单比例须在 0%–100% 之间')
+      return
+    }
     setSaving(true)
     try {
       const data = await gqlFetch<{ updateSalSetting: { errors: { message: string }[] | null } }>(
@@ -65,6 +73,7 @@ function ScmPurchaseSettingsTab() {
           input: {
             spotItemMaxQty: spotMaxQty,
             receiptOverreceiveRatio: String(overreceivePct / 100),
+            demandOverorderRatio: String(overorderPct / 100),
           },
         },
       )
@@ -128,6 +137,36 @@ function ScmPurchaseSettingsTab() {
               maxValue={100}
             >
               <Label>入库超收比例(%)</Label>
+              <NumberField.Group className="grid-cols-[1fr]">
+                <NumberField.Input placeholder="如 0 或 5" />
+              </NumberField.Group>
+            </NumberField>
+          )}
+        </Card.Content>
+      </Card>
+
+      <Card className="mt-4 max-w-2xl">
+        <Card.Header>
+          <Card.Title>履约需求下单</Card.Title>
+          <Card.Description>
+            超下单比例:采购/委外订单审核时允许累计已下单 ≤ 需求数量 × (1 +
+            比例)。0% 表示禁止超下单(供应商起订量场景可受控放开)。草稿订单不占量。
+          </Card.Description>
+        </Card.Header>
+        <Card.Content>
+          {query.isLoading ? (
+            <div className="flex justify-center py-6">
+              <Spinner size="sm" />
+            </div>
+          ) : query.isError ? null : (
+            <NumberField
+              fullWidth
+              value={overorderPct}
+              onChange={setOverorderPct}
+              minValue={0}
+              maxValue={100}
+            >
+              <Label>需求超下单比例(%)</Label>
               <NumberField.Group className="grid-cols-[1fr]">
                 <NumberField.Input placeholder="如 0 或 5" />
               </NumberField.Group>

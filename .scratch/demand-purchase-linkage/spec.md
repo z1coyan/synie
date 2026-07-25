@@ -1,6 +1,6 @@
 # Spec: 履约需求与采购/委外串联
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Feature slug:** `demand-purchase-linkage`
 **Depends on:** 履约需求单与生产执行（已交付）、采购线报价/订单/入库（已交付）、委外采购（已交付）
 **ADR:** [docs/adr/2026-07-25-demand-purchase-linkage.md](../../docs/adr/2026-07-25-demand-purchase-linkage.md)

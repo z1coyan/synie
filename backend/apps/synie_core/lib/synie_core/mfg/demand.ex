@@ -39,6 +39,70 @@ defmodule SynieCore.Mfg.Demand.NoActiveWorkOrders do
   end
 end
 
+defmodule SynieCore.Mfg.Demand.NoActivePurchaseOrders do
+  @moduledoc """
+  作废前提:不存在已审核未作废的采购/委外订单条目引用本单需求行。
+  草稿采购引用不构成约束(草稿不占量、不锁上游)。
+  """
+
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _opts, _context) do
+    if SynieCore.Mfg.Demand.has_active_purchase_orders?(changeset.data.id) do
+      {:error, message: "存在已审核未作废采购/委外订单,不可作废需求单"}
+    else
+      :ok
+    end
+  end
+end
+
+defmodule SynieCore.Mfg.Demand.ConfirmSalesOccupancy do
+  @moduledoc """
+  确认时销售占用复检:草稿不占量,确认才校验并占量。
+  按销售条目汇总本单有来源行的 base,对销售条目 FOR UPDATE 后与已确认占用合计比对。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.before_action(changeset, fn cs ->
+      case check_occupancy(cs.data.id) do
+        :ok -> cs
+        {:error, message} -> Ash.Changeset.add_error(cs, message: message)
+      end
+    end)
+  end
+
+  defp check_occupancy(demand_id) do
+    items =
+      SynieCore.Mfg.DemandItem
+      |> Ash.Query.filter(demand_id == ^demand_id and not is_nil(sales_order_item_id))
+      |> Ash.read!(authorize?: false)
+
+    items
+    |> Enum.group_by(& &1.sales_order_item_id)
+    |> Enum.reduce_while(:ok, fn {sales_id, group}, :ok ->
+      this_base =
+        group
+        |> Enum.map(& &1.base_qty)
+        |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+
+      case SynieCore.Mfg.DemandItem.SalesSourceOk.check_occupancy_on_confirm(
+             sales_id,
+             demand_id,
+             this_base
+           ) do
+        :ok -> {:cont, :ok}
+        {:error, message} -> {:halt, {:error, message}}
+      end
+    end)
+  end
+end
+
 defmodule SynieCore.Mfg.Demand do
   @moduledoc """
   履约需求单(头),对应 `mfg_demand` 表。销售承诺与车间/采购执行之间的内部需求
@@ -197,6 +261,9 @@ defmodule SynieCore.Mfg.Demand do
           end
         end)
       end
+
+      # 销售占用:确认时校验并占量(草稿建行不占);锁在 ConfirmSalesOccupancy 内按条目加
+      change {SynieCore.Mfg.Demand.ConfirmSalesOccupancy, []}
     end
 
     update :close do
@@ -232,6 +299,7 @@ defmodule SynieCore.Mfg.Demand do
       end
 
       validate {SynieCore.Mfg.Demand.NoActiveWorkOrders, []}
+      validate {SynieCore.Mfg.Demand.NoActivePurchaseOrders, []}
 
       change fn changeset, _context ->
         changeset
@@ -239,10 +307,15 @@ defmodule SynieCore.Mfg.Demand do
         |> Ash.Changeset.before_action(fn cs ->
           case __MODULE__.lock_demand(cs.data.id) do
             {:ok, %{status: :confirmed}} ->
-              if __MODULE__.has_active_work_orders?(cs.data.id) do
-                Ash.Changeset.add_error(cs, message: "存在未作废生产工单,不可作废需求单")
-              else
-                cs
+              cond do
+                __MODULE__.has_active_work_orders?(cs.data.id) ->
+                  Ash.Changeset.add_error(cs, message: "存在未作废生产工单,不可作废需求单")
+
+                __MODULE__.has_active_purchase_orders?(cs.data.id) ->
+                  Ash.Changeset.add_error(cs, message: "存在已审核未作废采购/委外订单,不可作废需求单")
+
+                true ->
+                  cs
               end
 
             _ ->
@@ -335,5 +408,24 @@ defmodule SynieCore.Mfg.Demand do
     SynieCore.Mfg.WorkOrder
     |> Ash.Query.filter(demand_id == ^demand_id and status != :voided)
     |> Ash.exists?(authorize?: false)
+  end
+
+  @doc "本需求单是否有行被已审核未作废采购/委外订单条目引用。"
+  def has_active_purchase_orders?(demand_id) do
+    item_ids =
+      SynieCore.Mfg.DemandItem
+      |> Ash.Query.filter(demand_id == ^demand_id)
+      |> Ash.read!(authorize?: false)
+      |> Enum.map(& &1.id)
+
+    if item_ids == [] do
+      false
+    else
+      SynieCore.Purchase.OrderItem
+      |> Ash.Query.filter(
+        demand_line_id in ^item_ids and order.status in [:audited, :closed]
+      )
+      |> Ash.exists?(authorize?: false)
+    end
   end
 end

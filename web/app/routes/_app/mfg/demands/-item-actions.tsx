@@ -28,7 +28,11 @@ const CREATE_WO = `
 `
 
 /** 行显隐(体验层;需求单状态/下游工单等权威校验在后端,失败经 toast 呈现) */
-export const canCompleteItem = (row: Row) => row.status === 'PENDING' && row.fulfillmentMethod !== 'MAKE'
+// 已下单(orderedQty>0)的行须等入库回写,不展示点完成
+export const canCompleteItem = (row: Row) =>
+  row.status === 'PENDING' &&
+  row.fulfillmentMethod !== 'MAKE' &&
+  !(Number(row.orderedQty) > 0)
 export const canChangeFulfillmentItem = (row: Row) => row.status !== 'COMPLETED'
 export const canGenerateWorkOrder = (row: Row) => row.fulfillmentMethod === 'MAKE' && row.status === 'PENDING'
 

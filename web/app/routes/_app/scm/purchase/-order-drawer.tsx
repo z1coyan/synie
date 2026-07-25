@@ -13,6 +13,7 @@ import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
+import { DemandLinePicker } from './-demand-line-picker'
 
 /**
  * 采购订单共享抽屉:布局层挂载一份,订单 tab(整单 grid)与订单条目 tab(行级 grid)
@@ -80,11 +81,13 @@ const FETCH_DETAIL = `
     purOrderItems(filter: {orderId: {eq: $orderId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
       results {
         id idx materialId unitId qty price amount basePrice baseAmount taxRate remarks quotationItemId bomId
+        demandLineId demandDate
         materialName unitName
         material { id name }
         unit { id name }
         quotationItem { id pricingMode }
         bom { id code planName }
+        demandLine { id demand { id demandNo } }
       }
     }
     purOrderItemMaterials(filter: {orderItem: {orderId: {eq: $orderId}}}, sort: [{field: INSERTED_AT, order: ASC}], limit: 500, offset: 0) {
@@ -183,6 +186,8 @@ function itemInput(row: Row) {
     remarks: row.remarks ?? null,
     quotationItemId: row.quotationItemId ?? null,
     bomId: row.bomId ?? null,
+    demandLineId: row.demandLineId ?? null,
+    demandDate: row.demandDate ?? null,
   }
 }
 
@@ -196,6 +201,8 @@ const ITEM_COMPARE_KEYS = [
   'remarks',
   'quotationItemId',
   'bomId',
+  'demandLineId',
+  'demandDate',
 ] as const
 
 function itemChanged(before: Row, after: Row): boolean {
@@ -1123,6 +1130,16 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             toolbar={
               mode !== 'view' && !headerReady ? (
                 <span className="text-xs text-muted">先选齐订单类型、公司、对手与订单日期</span>
+              ) : !itemsReadOnly && headerReady ? (
+                <DemandLinePicker
+                  companyId={values.companyId ? String(values.companyId) : null}
+                  isOutsourced={isOutsourced}
+                  nextIdx={items.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1}
+                  onConfirm={(rows) => {
+                    setItems([...items, ...rows])
+                    toast.success(`已从需求单带入 ${rows.length} 行`)
+                  }}
+                />
               ) : undefined
             }
             // 行表单物料/数量/单价双列排布,默认 420px 局促,加宽一档
@@ -1147,11 +1164,36 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
               'partyType',
               'partyId',
               'currencyCode',
+              'orderIsOutsourced',
             ]}
             columns={
               isForeign
-                ? ['idx', 'materialId', 'unitId', 'qty', 'basePrice', 'price', 'baseAmount', 'amount', 'taxRate', 'remarks']
-                : ['idx', 'materialId', 'unitId', 'qty', 'price', 'amount', 'taxRate', 'remarks']
+                ? [
+                    'idx',
+                    'materialId',
+                    'unitId',
+                    'qty',
+                    'basePrice',
+                    'price',
+                    'baseAmount',
+                    'amount',
+                    'taxRate',
+                    'demandLineId',
+                    'demandDate',
+                    'remarks',
+                  ]
+                : [
+                    'idx',
+                    'materialId',
+                    'unitId',
+                    'qty',
+                    'price',
+                    'amount',
+                    'taxRate',
+                    'demandLineId',
+                    'demandDate',
+                    'remarks',
+                  ]
             }
             overrides={{
               // 表格列头用短标签(同层级与本币列对齐);行表单字段才用「含税」长标签。

@@ -664,7 +664,10 @@ defmodule SynieWeb.AuthzMatrix.World do
         update: fn -> %{"remarks" => "矩阵写侧改动-#{System.unique_integer([:positive])}"} end
       },
       SynieCore.Sales.Setting => %{
-        update: fn -> %{"sampleItemMaxQty" => 100} end
+        # 含需求超下单比例(demand_overorder_ratio,ADR 2026-07-25),与入库超收同形
+        update: fn ->
+          %{"sampleItemMaxQty" => 100, "demandOverorderRatio" => "0"}
+        end
       },
       # ── purchase(批次D)──
       SynieCore.Purchase.Supplier => %{

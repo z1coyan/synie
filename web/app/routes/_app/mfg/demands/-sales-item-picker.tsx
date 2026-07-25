@@ -10,6 +10,7 @@ import type { Row } from '~/components/synie-data-grid/types'
  * 「从销售订单选择」多选对话框(US 2/6):条目池 = 同公司、订单已审核未关闭、
  * 剩余可占用 > 0,可跨销售订单勾选;每行展示 订购 base / 已占用 / 剩余可占用,
  * 纳入时带出物料与单位,建议数量默认 = 剩余可占用(折回条目单位,行上可改小)。
+ * 占用口径:仅已确认需求单占量(草稿不占;ADR 2026-07-25)。
  *
  * 权限行为(fail-closed):候选条目列表走 salOrderItems(需 sales.order:read),
  * 无销售读权限的计划员会看到取数失败态,不绕过;占用查询 mfgSalesItemOccupancies
@@ -104,7 +105,7 @@ export function SalesItemPicker(props: {
       ),
   })
 
-  // 条目池:剩余可占用 > 0 且不在本单已纳来源里(占用含草稿与已确认未作废需求单)
+  // 条目池:剩余可占用 > 0 且不在本单已纳来源里(占用只认已确认需求单,草稿不占)
   const pool = useMemo(() => {
     const occ = occupancies.data
     if (!candidates.data || !occ) return []

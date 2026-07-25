@@ -899,7 +899,26 @@ defmodule SynieCore.Purchase.Receipt do
       order_item
       |> Ash.Changeset.for_update(:adjust_received_qty, %{delta: delta})
       |> Ash.update!(authorize?: false)
+
+      # 沿订单条目回溯需求行同步已收投影;满量自动完成/作废回退
+      :ok = adjust_demand_received(order_item.demand_line_id, delta)
     end)
+
+    :ok
+  end
+
+  defp adjust_demand_received(nil, _delta), do: :ok
+
+  defp adjust_demand_received(demand_line_id, delta) do
+    line =
+      SynieCore.Mfg.DemandItem
+      |> Ash.Query.filter(id == ^demand_line_id)
+      |> Ash.Query.lock("FOR UPDATE")
+      |> Ash.read_one!(authorize?: false)
+
+    line
+    |> Ash.Changeset.for_update(:adjust_received_qty, %{delta: delta})
+    |> Ash.update!(authorize?: false)
 
     :ok
   end

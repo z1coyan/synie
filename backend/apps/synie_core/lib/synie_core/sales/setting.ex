@@ -3,7 +3,7 @@ defmodule SynieCore.Sales.Setting do
   供应链设置,对应 `sal_setting` 单行表:供应链全局配置(非公司维度)统一加字段进这张表,
   不另建配置表。行由迁移 seed、恒存在——不开放 create/destroy,只有 read/update。
   当前字段:样品订单单行数量上限、零星订单单行数量上限、发货超发比例(发货审核时卡累计已发)、
-  入库超收比例(入库审核时卡累计已收)。
+  入库超收比例(入库审核时卡累计已收)、需求超下单比例(采购/委外订单审核时卡累计已下单)。
   按公司的发货/入库默认过账科目见 `CompanyAccountDefault`(不塞本表)。
   权限前缀仍为 sales.setting(历史资源码,界面中文名「供应链设置」)。
   """
@@ -35,6 +35,10 @@ defmodule SynieCore.Sales.Setting do
       check_constraint :receipt_overreceive_ratio, "receipt_overreceive_ratio_range",
         check: "receipt_overreceive_ratio >= 0 AND receipt_overreceive_ratio <= 1",
         message: "入库超收比例必须在 0(含)与 1(含)之间"
+
+      check_constraint :demand_overorder_ratio, "demand_overorder_ratio_range",
+        check: "demand_overorder_ratio >= 0 AND demand_overorder_ratio <= 1",
+        message: "需求超下单比例必须在 0(含)与 1(含)之间"
     end
   end
 
@@ -66,7 +70,8 @@ defmodule SynieCore.Sales.Setting do
         :sample_item_max_qty,
         :delivery_overship_ratio,
         :spot_item_max_qty,
-        :receipt_overreceive_ratio
+        :receipt_overreceive_ratio,
+        :demand_overorder_ratio
       ]
 
       require_atomic? false
@@ -89,6 +94,12 @@ defmodule SynieCore.Sales.Setting do
 
     validate compare(:receipt_overreceive_ratio, less_than_or_equal_to: 1),
       message: "入库超收比例不能超过 100%"
+
+    validate compare(:demand_overorder_ratio, greater_than_or_equal_to: 0),
+      message: "需求超下单比例不能为负"
+
+    validate compare(:demand_overorder_ratio, less_than_or_equal_to: 1),
+      message: "需求超下单比例不能超过 100%"
   end
 
   attributes do
@@ -120,6 +131,13 @@ defmodule SynieCore.Sales.Setting do
       default Decimal.new(0)
       public? true
       description "入库超收比例(小数,0=禁超收,0.05=5%,上限 1)"
+    end
+
+    attribute :demand_overorder_ratio, :decimal do
+      allow_nil? false
+      default Decimal.new(0)
+      public? true
+      description "需求超下单比例(小数,0=禁超下单,0.05=5%,上限 1)"
     end
 
     create_timestamp :inserted_at, public?: true, description: "创建时间"

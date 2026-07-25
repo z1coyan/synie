@@ -130,6 +130,9 @@ defmodule SynieCore do
 
       # 需求单勾选池:销售条目订购/已占用/剩余可占用(计划侧复用 mfg.demand:read)
       action SynieCore.Mfg.DemandItem, :mfg_sales_item_occupancies, :sales_item_occupancy
+
+      # 采购/委外订单从需求单勾选池(采购侧复用 purchase.order:read,不穿透需求单读权限)
+      action SynieCore.Purchase.OrderItem, :pur_demand_line_pool, :demand_line_pool
       list SynieCore.Hr.AttendancePunch, :hr_attendance_punches, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceImport, :hr_attendance_imports, :read, paginate_with: :offset
       list SynieCore.Hr.AttendanceDay, :hr_attendance_days, :read, paginate_with: :offset

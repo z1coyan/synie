@@ -30,6 +30,9 @@ const GRID_COLUMNS = [
   'unitName',
   'qty',
   'baseQty',
+  'orderedQty',
+  'receivedQty',
+  'ordered',
   'needDate',
   'fulfillmentMethod',
   'status',
@@ -38,10 +41,17 @@ const GRID_COLUMNS = [
   'remarks',
 ]
 
-// 行状态胶囊:待安排灰、已安排蓝、已完成绿
+// 行状态胶囊:待安排灰、已安排蓝、已完成绿;已下单布尔徽标
 const GRID_OVERRIDES = {
   status: { enumColors: { PENDING: 'default', SCHEDULED: 'accent', COMPLETED: 'success' } },
   salesOrderItemId: { label: '来源销售条目' },
+  orderedQty: { label: '已下单数量' },
+  receivedQty: { label: '已收数量' },
+  // 布尔列展示为「已下单」文案(true 时胶囊,同报价「已过期」派生徽标语义)
+  ordered: {
+    label: '状态徽标',
+    render: (v) => (v === true || v === 'true' ? '已下单' : undefined),
+  },
 } satisfies Record<string, ColumnOverride>
 
 function DemandItemsTab() {

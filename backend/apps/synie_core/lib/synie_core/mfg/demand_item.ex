@@ -18,12 +18,12 @@ end
 
 defmodule SynieCore.Mfg.DemandItem.SalesSourceOk do
   @moduledoc """
-  有销售来源时:订单条目须同公司、订单已审核未关闭;占用硬校验
-  Σ 未作废需求行 base(含草稿,排除本行) + 本行 base ≤ 订单条目订购 base。
+  有销售来源时:订单条目须同公司、订单已审核未关闭。
 
-  权威复检(before_action)传 `lock: true`:先对销售订单条目行加 FOR UPDATE
-  行锁再算占用,使同一销售条目的占用校验串行化,防两张草稿并发一起超占
-  (US 46;照 lock_demand/lock_output 同一模式)。
+  占用硬校验不在草稿建行时做——**草稿不占量、确认才占量**(ADR 2026-07-25):
+  确认时由 `Demand.confirm` 对销售条目加 FOR UPDATE 后复检
+  Σ 已确认未作废需求行 base + 本单行 base ≤ 订单条目订购 base。
+  草稿建行只验来源合法性,允许多张草稿同时挂同一销售条目。
   """
 
   use Ash.Resource.Validation
@@ -38,10 +38,8 @@ defmodule SynieCore.Mfg.DemandItem.SalesSourceOk do
       :ok
     else
       company_id = Ash.Changeset.get_attribute(changeset, :company_id) || changeset.data.company_id
-      base_qty = Ash.Changeset.get_attribute(changeset, :base_qty) || changeset.data.base_qty
-      exclude_id = if changeset.action_type == :update, do: changeset.data.id, else: nil
 
-      case check(sales_order_item_id, company_id, base_qty, exclude_id) do
+      case check(sales_order_item_id, company_id) do
         :ok -> :ok
         {:error, message} -> {:error, field: :sales_order_item_id, message: message}
       end
@@ -49,12 +47,31 @@ defmodule SynieCore.Mfg.DemandItem.SalesSourceOk do
   end
 
   @doc false
-  def check(sales_order_item_id, company_id, base_qty, exclude_id, opts \\ []) do
+  def check(sales_order_item_id, company_id, opts \\ []) do
     with {:ok, item, order} <- load_source(sales_order_item_id, Keyword.get(opts, :lock, false)),
          :ok <- check_company(item, company_id),
-         :ok <- check_order_status(order),
-         :ok <- check_occupancy(item, base_qty, exclude_id) do
+         :ok <- check_order_status(order) do
       :ok
+    end
+  end
+
+  @doc """
+  确认占量复检:对销售条目加锁后,已确认占用(不含本需求单) + 本需求单合计 base ≤ 订购 base。
+  """
+  def check_occupancy_on_confirm(sales_order_item_id, demand_id, this_base_qty) do
+    with {:ok, item, order} <- load_source(sales_order_item_id, true),
+         :ok <- check_order_status(order) do
+      occupied = SynieCore.Mfg.DemandItem.occupied_base_qty(item.id, exclude_demand_id: demand_id)
+      total = Decimal.add(occupied, this_base_qty || Decimal.new(0))
+
+      if Decimal.compare(total, item.base_qty) == :gt do
+        remaining = Decimal.sub(item.base_qty, occupied)
+
+        {:error,
+         "超出销售订单可占用数量(已占用#{Decimal.to_string(occupied)},剩余#{Decimal.to_string(remaining)},本单#{Decimal.to_string(this_base_qty)})"}
+      else
+        :ok
+      end
     end
   end
 
@@ -93,21 +110,6 @@ defmodule SynieCore.Mfg.DemandItem.SalesSourceOk do
 
   defp check_order_status(%{status: :audited}), do: :ok
   defp check_order_status(_), do: {:error, "仅已审核未关闭的销售订单条目可纳入"}
-
-  defp check_occupancy(order_item, base_qty, exclude_id) do
-    occupied = SynieCore.Mfg.DemandItem.occupied_base_qty(order_item.id, exclude_id)
-    base_qty = base_qty || Decimal.new(0)
-    total = Decimal.add(occupied, base_qty)
-
-    if Decimal.compare(total, order_item.base_qty) == :gt do
-      remaining = Decimal.sub(order_item.base_qty, occupied)
-
-      {:error,
-       "超出销售订单可占用数量(已占用#{Decimal.to_string(occupied)},剩余#{Decimal.to_string(remaining)},本行#{Decimal.to_string(base_qty)})"}
-    else
-      :ok
-    end
-  end
 end
 
 defmodule SynieCore.Mfg.DemandItem.SnapshotMaterial do
@@ -141,8 +143,12 @@ defmodule SynieCore.Mfg.DemandItem do
   履约需求行,对应 `mfg_demand_item` 表。物料+数量+需求日+履约方式+可选销售来源;
   无独立权限点,跟随 `mfg.demand`。
 
-  行状态:外购/委外/库存 待安排→已完成(complete);自制 待安排→已安排(生成工单)→
-  已完成(入库完工回写)。销售来源占用含草稿与已确认未作废需求单上的行。
+  行状态:外购/委外/库存 待安排→已完成(complete 或入库回写);自制 待安排→已安排(生成工单)→
+  已完成(生产入库完工回写)。销售来源占用只认**已确认未作废**需求单上的行
+  (草稿不占量、确认占量、作废释放;ADR 2026-07-25)。
+
+  投影列 `ordered_qty`/`received_qty`(默认单位):采购/委外订单审核与入库审核
+  经内部动作加减;派生 `ordered` 徽标 = ordered_qty > 0 且未完成。
   """
 
   use Ash.Resource,
@@ -166,6 +172,14 @@ defmodule SynieCore.Mfg.DemandItem do
 
     check_constraints do
       check_constraint :qty, "qty_positive", check: "qty > 0", message: "数量必须大于零"
+
+      check_constraint :ordered_qty, "ordered_qty_nonnegative",
+        check: "ordered_qty >= 0",
+        message: "已下单数量不能为负"
+
+      check_constraint :received_qty, "received_qty_nonnegative",
+        check: "received_qty >= 0",
+        message: "已收数量不能为负"
     end
   end
 
@@ -199,6 +213,9 @@ defmodule SynieCore.Mfg.DemandItem do
 
   def permission_prefix, do: "mfg.demand"
   def permission_actions, do: []
+
+  # 已下单徽标 / 剩余可下单:opt-in 计算列(同 OrderItem.remaining_base_qty 先例)
+  def grid_calculations, do: [:ordered, :remaining_orderable_qty]
 
   actions do
     read :read do
@@ -241,21 +258,21 @@ defmodule SynieCore.Mfg.DemandItem do
       validate {SynieCore.Inv.StockItemUnitAllowed, []}
       change {SynieCore.Inv.StockItemBaseQty, []}
       change {SynieCore.Mfg.DemandItem.SnapshotMaterial, []}
-      # 占用校验依赖 base_qty,放在 before_action 之后的权威复检
+      # 草稿不占量:仅复检来源合法性(公司/订单状态),占用在确认时校验
       change fn changeset, _context ->
         Ash.Changeset.before_action(changeset, fn cs ->
           sales_id = Ash.Changeset.get_attribute(cs, :sales_order_item_id)
-          base_qty = Ash.Changeset.get_attribute(cs, :base_qty)
           company_id = Ash.Changeset.get_attribute(cs, :company_id)
 
           if is_nil(sales_id) do
             cs
           else
-            case SynieCore.Mfg.DemandItem.SalesSourceOk.check(sales_id, company_id, base_qty, nil,
-                   lock: true
-                 ) do
-              :ok -> cs
-              {:error, message} -> Ash.Changeset.add_error(cs, field: :sales_order_item_id, message: message)
+            case SynieCore.Mfg.DemandItem.SalesSourceOk.check(sales_id, company_id) do
+              :ok ->
+                cs
+
+              {:error, message} ->
+                Ash.Changeset.add_error(cs, field: :sales_order_item_id, message: message)
             end
           end
         end)
@@ -288,21 +305,17 @@ defmodule SynieCore.Mfg.DemandItem do
       change fn changeset, _context ->
         Ash.Changeset.before_action(changeset, fn cs ->
           sales_id = Ash.Changeset.get_attribute(cs, :sales_order_item_id)
-          base_qty = Ash.Changeset.get_attribute(cs, :base_qty)
           company_id = Ash.Changeset.get_attribute(cs, :company_id) || cs.data.company_id
 
           if is_nil(sales_id) do
             cs
           else
-            case SynieCore.Mfg.DemandItem.SalesSourceOk.check(
-                   sales_id,
-                   company_id,
-                   base_qty,
-                   cs.data.id,
-                   lock: true
-                 ) do
-              :ok -> cs
-              {:error, message} -> Ash.Changeset.add_error(cs, field: :sales_order_item_id, message: message)
+            case SynieCore.Mfg.DemandItem.SalesSourceOk.check(sales_id, company_id) do
+              :ok ->
+                cs
+
+              {:error, message} ->
+                Ash.Changeset.add_error(cs, field: :sales_order_item_id, message: message)
             end
           end
         end)
@@ -320,13 +333,15 @@ defmodule SynieCore.Mfg.DemandItem do
               not_draft_message: "仅草稿履约需求单可编辑需求行"}
     end
 
-    # 外购/委外/库存:待安排 → 已完成(计划一点离开待办)
+    # 外购/委外/库存:待安排 → 已完成(计划一点离开待办);
+    # 已下单(ordered_qty > 0)的行须等入库回写,不可手工点完成
     update :complete do
       accept []
       require_atomic? false
 
       validate fn changeset, _context ->
         demand = read_demand!(changeset.data.demand_id)
+        ordered = changeset.data.ordered_qty || Decimal.new(0)
 
         cond do
           demand.status != :confirmed ->
@@ -337,6 +352,9 @@ defmodule SynieCore.Mfg.DemandItem do
 
           changeset.data.fulfillment_method == :make ->
             {:error, message: "自制行不能直接点完成,须经生产入库完工"}
+
+          Decimal.compare(ordered, 0) == :gt ->
+            {:error, message: "已下单的行不可手工点完成,须等入库回写"}
 
           true ->
             :ok
@@ -349,6 +367,7 @@ defmodule SynieCore.Mfg.DemandItem do
         |> Ash.Changeset.before_action(fn cs ->
           demand = lock_demand!(cs.data.demand_id)
           item = lock_item!(cs.data.id)
+          ordered = item.ordered_qty || Decimal.new(0)
 
           cond do
             demand.status != :confirmed ->
@@ -359,6 +378,9 @@ defmodule SynieCore.Mfg.DemandItem do
 
             item.fulfillment_method == :make ->
               Ash.Changeset.add_error(cs, message: "自制行不能直接点完成,须经生产入库完工")
+
+            Decimal.compare(ordered, 0) == :gt ->
+              Ash.Changeset.add_error(cs, message: "已下单的行不可手工点完成,须等入库回写")
 
             true ->
               cs
@@ -379,7 +401,57 @@ defmodule SynieCore.Mfg.DemandItem do
       end
     end
 
-    # 确认后改履约方式:无未作废工单且未完成
+    # 内部:采购/委外订单审核/作废时加减已下单数量(默认单位)。不注册 GraphQL。
+    update :adjust_ordered_qty do
+      accept []
+      require_atomic? false
+      argument :delta, :decimal, allow_nil?: false
+
+      change fn changeset, _context ->
+        delta = Ash.Changeset.get_argument(changeset, :delta)
+        current = changeset.data.ordered_qty || Decimal.new(0)
+        next = Decimal.add(current, delta)
+
+        if Decimal.compare(next, 0) == :lt do
+          Ash.Changeset.add_error(changeset, field: :ordered_qty, message: "已下单数量不能为负")
+        else
+          Ash.Changeset.force_change_attribute(changeset, :ordered_qty, next)
+        end
+      end
+    end
+
+    # 内部:采购/委外入库审核/作废时加减已收数量,满量自动完成/不足回退。不注册 GraphQL。
+    update :adjust_received_qty do
+      accept []
+      require_atomic? false
+      argument :delta, :decimal, allow_nil?: false
+
+      change fn changeset, _context ->
+        delta = Ash.Changeset.get_argument(changeset, :delta)
+        current = changeset.data.received_qty || Decimal.new(0)
+        next = Decimal.add(current, delta)
+
+        if Decimal.compare(next, 0) == :lt do
+          Ash.Changeset.add_error(changeset, field: :received_qty, message: "已收数量不能为负")
+        else
+          base_qty = changeset.data.base_qty || Decimal.new(0)
+          # 累计已收 ≥ 需求 base → 已完成;作废回退不足时从已完成回待安排
+          # (库存行无下单路径,不走本动作;自制走工单 set_status)
+          status =
+            if Decimal.compare(next, base_qty) != :lt do
+              :completed
+            else
+              :pending
+            end
+
+          changeset
+          |> Ash.Changeset.force_change_attribute(:received_qty, next)
+          |> Ash.Changeset.force_change_attribute(:status, status)
+        end
+      end
+    end
+
+    # 确认后改履约方式:无未作废工单/已审核采购条目且未完成
     update :change_fulfillment do
       accept [:fulfillment_method]
       require_atomic? false
@@ -396,6 +468,9 @@ defmodule SynieCore.Mfg.DemandItem do
 
           has_active_work_order?(changeset.data.id) ->
             {:error, message: "存在未作废生产工单,不可改履约方式"}
+
+          has_active_purchase_order_item?(changeset.data.id) ->
+            {:error, message: "存在已审核未作废采购/委外订单条目,不可改履约方式"}
 
           true ->
             :ok
@@ -416,6 +491,9 @@ defmodule SynieCore.Mfg.DemandItem do
 
             has_active_work_order?(item.id) ->
               Ash.Changeset.add_error(cs, message: "存在未作废生产工单,不可改履约方式")
+
+            has_active_purchase_order_item?(item.id) ->
+              Ash.Changeset.add_error(cs, message: "存在已审核未作废采购/委外订单条目,不可改履约方式")
 
             true ->
               # 改回/改为自制后保持待安排(已安排仅由工单生成)
@@ -464,6 +542,24 @@ defmodule SynieCore.Mfg.DemandItem do
       writable? false
       default Decimal.new(0)
       description "折算默认单位数量"
+    end
+
+    # 已下单投影(默认单位):采购/委外订单审核加、作废减;草稿订单不占
+    attribute :ordered_qty, :decimal do
+      allow_nil? false
+      public? true
+      writable? false
+      default Decimal.new(0)
+      description "已下单数量(物料默认单位,系统维护)"
+    end
+
+    # 已收投影(默认单位):采购/委外入库审核加、作废减;满量自动完成
+    attribute :received_qty, :decimal do
+      allow_nil? false
+      public? true
+      writable? false
+      default Decimal.new(0)
+      description "已收数量(物料默认单位,系统维护)"
     end
 
     attribute :need_date, :date do
@@ -573,17 +669,47 @@ defmodule SynieCore.Mfg.DemandItem do
     end
   end
 
-  @doc "某销售订单条目在未作废需求单上的已占用 base 数量(可排除自身行)。"
-  def occupied_base_qty(sales_order_item_id, exclude_item_id \\ nil) do
+  calculations do
+    # 已下单徽标:ordered_qty > 0 且未完成(派生展示,不落枚举)
+    calculate :ordered, :boolean, expr(ordered_qty > 0 and status != :completed) do
+      public? true
+      description "已下单(有已审核订单条目且未完成)"
+    end
+
+    # 剩余可下单(默认单位)=需求 base − 已下单;勾选池筛 remaining_orderable_qty > 0
+    calculate :remaining_orderable_qty, :decimal, expr(base_qty - ordered_qty) do
+      public? true
+      description "剩余可下单数量(物料默认单位)"
+    end
+  end
+
+  @doc """
+  某销售订单条目在**已确认**需求单上的已占用 base 数量。
+
+  opts:
+  - `:exclude_item_id` — 排除单行
+  - `:exclude_demand_id` — 排除整张需求单(确认复检时本单尚未计入 confirmed)
+  """
+  def occupied_base_qty(sales_order_item_id, opts \\ []) do
+    exclude_item_id = Keyword.get(opts, :exclude_item_id)
+    exclude_demand_id = Keyword.get(opts, :exclude_demand_id)
+
     query =
       __MODULE__
       |> Ash.Query.filter(
-        sales_order_item_id == ^sales_order_item_id and demand.status != :voided
+        sales_order_item_id == ^sales_order_item_id and demand.status == :confirmed
       )
 
     query =
       if exclude_item_id do
         Ash.Query.filter(query, id != ^exclude_item_id)
+      else
+        query
+      end
+
+    query =
+      if exclude_demand_id do
+        Ash.Query.filter(query, demand_id != ^exclude_demand_id)
       else
         query
       end
@@ -594,7 +720,7 @@ defmodule SynieCore.Mfg.DemandItem do
     |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
   end
 
-  @doc "可占用 = 订购 base − 已占用。"
+  @doc "可占用 = 订购 base − 已占用(仅已确认需求单)。"
   def remaining_occupiable(sales_order_item_id) do
     case Ash.get(SynieCore.Sales.OrderItem, sales_order_item_id, authorize?: false) do
       {:ok, item} ->
@@ -605,9 +731,19 @@ defmodule SynieCore.Mfg.DemandItem do
     end
   end
 
-  defp has_active_work_order?(demand_item_id) do
+  @doc false
+  def has_active_work_order?(demand_item_id) do
     SynieCore.Mfg.WorkOrder
     |> Ash.Query.filter(demand_item_id == ^demand_item_id and status != :voided)
+    |> Ash.exists?(authorize?: false)
+  end
+
+  @doc "是否存在已审核未作废的采购/委外订单条目引用本需求行(草稿引用不构成约束)。"
+  def has_active_purchase_order_item?(demand_item_id) do
+    SynieCore.Purchase.OrderItem
+    |> Ash.Query.filter(
+      demand_line_id == ^demand_item_id and order.status in [:audited, :closed]
+    )
     |> Ash.exists?(authorize?: false)
   end
 

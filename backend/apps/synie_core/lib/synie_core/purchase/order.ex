@@ -341,6 +341,160 @@ defmodule SynieCore.Purchase.Order.ClearItemDrawings do
   end
 end
 
+defmodule SynieCore.Purchase.Order.VerifyDemandLines do
+  @moduledoc """
+  审核复核(需求行):仅挂 `demand_line_id` 的条目须满足——行存在、所属需求单已确认
+  未作废未关闭、行未完成、履约方式匹配单据委外标记、超下单容差
+  (累计已下单含本单 ≤ 需求 base × (1 + demand_overorder_ratio))。
+
+  草稿不占不校验;本 change 在锁内 before_action 执行,与 VerifyItems 同闸。
+  通过后不写投影——投影由 `AdjustDemandOrdered` after_action 在审核成功后累加。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  @impl true
+  def change(changeset, _opts, _context) do
+    Ash.Changeset.before_action(changeset, fn cs ->
+      items =
+        SynieCore.Purchase.OrderItem
+        |> Ash.Query.filter(order_id == ^cs.data.id and not is_nil(demand_line_id))
+        |> Ash.read!(authorize?: false)
+
+      ratio = overorder_ratio()
+      is_outsourced = cs.data.is_outsourced == true
+
+      case verify(items, is_outsourced, ratio) do
+        :ok -> cs
+        {:error, message} -> Ash.Changeset.add_error(cs, message: message)
+      end
+    end)
+  end
+
+  defp overorder_ratio do
+    case SynieCore.Sales.Setting.get() do
+      %{demand_overorder_ratio: r} when not is_nil(r) -> r
+      _ -> Decimal.new(0)
+    end
+  end
+
+  defp verify(items, is_outsourced, ratio) do
+    # 同需求行可被本单多条目引用:先按 demand_line 汇总本单 base,再与行上已有 ordered 比对
+    by_line = Enum.group_by(items, & &1.demand_line_id)
+
+    Enum.reduce_while(by_line, :ok, fn {line_id, group}, :ok ->
+      case verify_line(line_id, group, is_outsourced, ratio) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, "第#{hd(group).idx}行:#{reason}"}}
+      end
+    end)
+  end
+
+  defp verify_line(line_id, group, is_outsourced, ratio) do
+    line =
+      SynieCore.Mfg.DemandItem
+      |> Ash.Query.filter(id == ^line_id)
+      |> Ash.Query.lock("FOR UPDATE")
+      |> Ash.read_one(authorize?: false)
+
+    case line do
+      {:ok, nil} ->
+        {:error, "来源履约需求行不存在"}
+
+      {:ok, item} ->
+        demand = Ash.get!(SynieCore.Mfg.Demand, item.demand_id, authorize?: false)
+        expected_method = if is_outsourced, do: :outsource, else: :buy
+        this_base = group |> Enum.map(& &1.base_qty) |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+        ordered = item.ordered_qty || Decimal.new(0)
+        after_order = Decimal.add(ordered, this_base)
+        limit = Decimal.mult(item.base_qty, Decimal.add(Decimal.new(1), ratio))
+        # 同需求行多条目时物料/公司须一致(带入后改物料不得漂移)
+        material_ok? = Enum.all?(group, &(&1.material_id == item.material_id))
+        company_ok? = Enum.all?(group, &(&1.company_id == item.company_id))
+
+        cond do
+          demand.status != :confirmed ->
+            {:error, "来源需求单须为已确认未关闭未作废"}
+
+          item.status == :completed ->
+            {:error, "来源需求行已完成"}
+
+          item.fulfillment_method != expected_method ->
+            {:error, "来源需求行履约方式与订单委外标记不匹配"}
+
+          not material_ok? ->
+            {:error, "来源需求行物料与订单条目不一致"}
+
+          not company_ok? ->
+            {:error, "来源需求行公司与订单条目不一致"}
+
+          Decimal.compare(after_order, limit) == :gt ->
+            {:error,
+             "超出需求可下单数量(已下单#{Decimal.to_string(ordered)}+本单#{Decimal.to_string(this_base)} > 需求#{Decimal.to_string(item.base_qty)}×(1+#{Decimal.to_string(ratio)}))"}
+
+          true ->
+            :ok
+        end
+
+      _ ->
+        {:error, "来源履约需求行不存在"}
+    end
+  end
+end
+
+defmodule SynieCore.Purchase.Order.AdjustDemandOrdered do
+  @moduledoc """
+  审核成功后累加 / 作废成功后回滚需求行 `ordered_qty`(默认单位,按订单条目 base_qty)。
+  after_action 与订单状态变更同事务;仅处理挂 demand_line_id 的行。
+  """
+
+  use Ash.Resource.Change
+
+  require Ash.Query
+
+  @impl true
+  def change(changeset, opts, _context) do
+    direction = Keyword.fetch!(opts, :direction)
+
+    Ash.Changeset.after_action(changeset, fn _cs, order ->
+      :ok = adjust(order.id, direction)
+      {:ok, order}
+    end)
+  end
+
+  defp adjust(order_id, direction) do
+    items =
+      SynieCore.Purchase.OrderItem
+      |> Ash.Query.filter(order_id == ^order_id and not is_nil(demand_line_id))
+      |> Ash.read!(authorize?: false)
+
+    items
+    |> Enum.group_by(& &1.demand_line_id)
+    |> Enum.each(fn {line_id, group} ->
+      delta =
+        group
+        |> Enum.map(& &1.base_qty)
+        |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+
+      delta = if direction == :sub, do: Decimal.negate(delta), else: delta
+
+      line =
+        SynieCore.Mfg.DemandItem
+        |> Ash.Query.filter(id == ^line_id)
+        |> Ash.Query.lock("FOR UPDATE")
+        |> Ash.read_one!(authorize?: false)
+
+      line
+      |> Ash.Changeset.for_update(:adjust_ordered_qty, %{delta: delta})
+      |> Ash.update!(authorize?: false)
+    end)
+
+    :ok
+  end
+end
+
 defmodule SynieCore.Purchase.Order do
   @moduledoc """
   采购订单(头),对应 `pur_order` 表。公司向供应商/内部公司承诺采购的订货单据,
@@ -599,6 +753,9 @@ defmodule SynieCore.Purchase.Order do
 
       # 审核复核(第二道闸):锁内逐行重验分型规则,任一不满足即中止
       change {SynieCore.Purchase.Order.VerifyItems, []}
+      # 需求行复核 + 超下单容差;通过后累加需求行已下单数量
+      change {SynieCore.Purchase.Order.VerifyDemandLines, []}
+      change {SynieCore.Purchase.Order.AdjustDemandOrdered, direction: :add}
     end
 
     update :close do
@@ -677,6 +834,9 @@ defmodule SynieCore.Purchase.Order do
           end
         end)
       end
+
+      # 作废成功后回滚需求行已下单数量
+      change {SynieCore.Purchase.Order.AdjustDemandOrdered, direction: :sub}
     end
   end
 

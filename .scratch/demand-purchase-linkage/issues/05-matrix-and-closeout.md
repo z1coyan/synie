@@ -4,10 +4,10 @@
 
 **Blocked by:** 04 — 入库回写完成闭环
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent:** [.scratch/demand-purchase-linkage/spec.md](../spec.md)
 
-- [ ] authz_matrix world：新字段写/读两侧登记，CI 不红
-- [ ] 可选：演示数据补外购链 + 委外链各一条
-- [ ] 文档偏差走查（术语表、四篇产品文档、ADR）
+- [x] authz_matrix world：新字段写/读两侧登记，CI 不红
+- [x] 可选：演示数据补外购链 + 委外链各一条
+- [x] 文档偏差走查（术语表、四篇产品文档、ADR）

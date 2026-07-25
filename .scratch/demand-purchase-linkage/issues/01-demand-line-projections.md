@@ -4,12 +4,12 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent:** [.scratch/demand-purchase-linkage/spec.md](../spec.md)
 
-- [ ] 销售占用改确认占量：确认时校验并占量、作废释放；存量含草稿占量的测试口径更新
-- [ ] 需求超下单比例：存储 + 设置页采购 Tab 读写（同入库超收比例先例）
-- [ ] 需求行 `ordered_qty`/`received_qty` 列就位（默认 0，无写入方）
-- [ ] 需求行派生「已下单」只读字段，GraphQL 可读
-- [ ] 集成测试：草稿不占 / 确认占 / 超占失败 / 作废释放；派生字段口径
+- [x] 销售占用改确认占量：确认时校验并占量、作废释放；存量含草稿占量的测试口径更新
+- [x] 需求超下单比例：存储 + 设置页采购 Tab 读写（同入库超收比例先例）
+- [x] 需求行 `ordered_qty`/`received_qty` 列就位（默认 0，无写入方）
+- [x] 需求行派生「已下单」只读字段，GraphQL 可读
+- [x] 集成测试：草稿不占 / 确认占 / 超占失败 / 作废释放；派生字段口径
