@@ -149,22 +149,8 @@ func TestPostgresSetupFirstUserConcurrencyCurrenciesAndComplete(t *testing.T) {
 	}
 
 	actor := &authz.Actor{UserID: winner.User.ID, Username: winner.User.Username, SuperAdmin: true, AllCompanies: true}
-	if err := service.Complete(ctx, actor, "zh-CN", true); err == nil {
-		t.Fatal("seedSampleData=true must fail until the faithful sample migration exists")
-	} else {
-		var appErr *apierror.Error
-		if !errors.As(err, &appErr) || appErr.Code != apierror.CodeNotImplemented {
-			t.Fatalf("sample error=%v", err)
-		}
-	}
-	var completed *time.Time
-	if err := pool.QueryRow(ctx, `SELECT setup_completed_at FROM sys_setting ORDER BY id LIMIT 1`).Scan(&completed); err != nil {
-		t.Fatal(err)
-	}
-	if completed != nil {
-		t.Fatal("not_implemented sample path wrote setup_completed_at")
-	}
-	if err := service.Complete(ctx, actor, "zh-CN", false); err != nil {
+	// 无公司时 seedSampleData=true 应跳过示例并完成空白初始化
+	if err := service.Complete(ctx, actor, "zh-CN", true); err != nil {
 		t.Fatal(err)
 	}
 	var language string
@@ -174,6 +160,7 @@ func TestPostgresSetupFirstUserConcurrencyCurrenciesAndComplete(t *testing.T) {
 	if language != "zh-CN" {
 		t.Fatalf("language=%q", language)
 	}
+	var completed *time.Time
 	if err := pool.QueryRow(ctx, `SELECT setup_completed_at FROM sys_setting ORDER BY id LIMIT 1`).Scan(&completed); err != nil || completed == nil {
 		t.Fatalf("completed=%v err=%v", completed, err)
 	}

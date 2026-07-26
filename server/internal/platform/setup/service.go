@@ -15,6 +15,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/auth"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/setup/sampledata"
 )
 
 const setupLockKey int64 = 0x53594e4945534554
@@ -35,6 +36,7 @@ type Service struct {
 	pool   *pgxpool.Pool
 	hasher auth.PasswordHasher
 	tokens auth.TokenManager
+	sample sampledata.Dependencies
 	now    func() time.Time
 }
 
@@ -50,8 +52,12 @@ type FirstUserResult struct {
 	User      auth.User
 }
 
-func NewService(pool *pgxpool.Pool, hasher auth.PasswordHasher, tokens auth.TokenManager) *Service {
-	return &Service{pool: pool, hasher: hasher, tokens: tokens, now: time.Now}
+func NewService(pool *pgxpool.Pool, hasher auth.PasswordHasher, tokens auth.TokenManager, sample ...sampledata.Dependencies) *Service {
+	svc := &Service{pool: pool, hasher: hasher, tokens: tokens, now: time.Now}
+	if len(sample) > 0 {
+		svc.sample = sample[0]
+	}
+	return svc
 }
 
 func (s *Service) CreateFirstUser(ctx context.Context, input FirstUserInput) (FirstUserResult, error) {
@@ -191,6 +197,30 @@ func (s *Service) Complete(ctx context.Context, actor *authz.Actor, language str
 	if language != "zh-CN" && language != "en-US" {
 		return apierror.Validation("完成初始化参数不合法", map[string][]string{"preferredLanguage": {"仅支持 zh-CN 或 en-US"}})
 	}
+	// 阶段一:写语言与幂等基础种子。领域服务自开事务,示例数据须在提交后才能读到分类/单位。
+	if err := s.completeBaseSeeds(ctx, actor, language); err != nil {
+		return err
+	}
+	// 阶段二:可选示例业务数据。失败不写完成旗标;C01 标记保证幂等跳过。
+	if seedSampleData {
+		if s.sample.Pool == nil {
+			return apierror.New(apierror.CodeNotImplemented, "Go Setup 尚未配置示例数据依赖,初始化未完成且完成旗标未写入")
+		}
+		companyID, err := firstCompanyID(ctx, s.pool)
+		if err != nil {
+			return err
+		}
+		if companyID != nil {
+			if _, err := sampledata.Seed(ctx, s.sample, actor, *companyID); err != nil {
+				return err
+			}
+		}
+	}
+	// 阶段三:落完成旗标。
+	return s.writeCompletedAt(ctx)
+}
+
+func (s *Service) completeBaseSeeds(ctx context.Context, actor *authz.Actor, language string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return apierror.Wrap(apierror.CodeInternal, "完成初始化失败", err)
@@ -201,9 +231,6 @@ func (s *Service) Complete(ctx context.Context, actor *authz.Actor, language str
 	}
 	if err := rejectInitialized(ctx, tx); err != nil {
 		return err
-	}
-	if seedSampleData {
-		return apierror.New(apierror.CodeNotImplemented, "Go Setup 尚未迁移 Elixir 全业务链示例数据,初始化未完成且完成旗标未写入")
 	}
 	command, err := tx.Exec(ctx, `UPDATE sys_user SET preferred_language = $2, updated_at = now() AT TIME ZONE 'utc' WHERE id = $1`, actor.UserID, language)
 	if err != nil {
@@ -224,7 +251,25 @@ func (s *Service) Complete(ctx context.Context, actor *authz.Actor, language str
 	if err := seedUnits(ctx, tx); err != nil {
 		return err
 	}
-	command, err = tx.Exec(ctx, `UPDATE sys_setting SET setup_completed_at = $1, updated_at = now() AT TIME ZONE 'utc' WHERE setup_completed_at IS NULL`, s.now().UTC())
+	if err := tx.Commit(ctx); err != nil {
+		return apierror.Wrap(apierror.CodeInternal, "完成初始化失败", err)
+	}
+	return nil
+}
+
+func (s *Service) writeCompletedAt(ctx context.Context) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return apierror.Wrap(apierror.CodeInternal, "完成初始化失败", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockSetup(ctx, tx); err != nil {
+		return err
+	}
+	if err := rejectInitialized(ctx, tx); err != nil {
+		return err
+	}
+	command, err := tx.Exec(ctx, `UPDATE sys_setting SET setup_completed_at = $1, updated_at = now() AT TIME ZONE 'utc' WHERE setup_completed_at IS NULL`, s.now().UTC())
 	if err != nil {
 		return apierror.Wrap(apierror.CodeInternal, "写入初始化完成旗标失败", err)
 	}
@@ -235,6 +280,18 @@ func (s *Service) Complete(ctx context.Context, actor *authz.Actor, language str
 		return apierror.Wrap(apierror.CodeInternal, "完成初始化失败", err)
 	}
 	return nil
+}
+
+func firstCompanyID(ctx context.Context, pool *pgxpool.Pool) (*uuid.UUID, error) {
+	var id uuid.UUID
+	err := pool.QueryRow(ctx, `SELECT id FROM bas_company ORDER BY inserted_at, id LIMIT 1`).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, apierror.Wrap(apierror.CodeInternal, "读取首个公司失败", err)
+	}
+	return &id, nil
 }
 
 func lockSetup(ctx context.Context, tx pgx.Tx) error {

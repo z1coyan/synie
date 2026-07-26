@@ -41,10 +41,12 @@ describe('Setup 页面 REST 迁移契约', () => {
     expect(page).not.toContain('seedInvWarehouseDefaults')
   })
 
-  test('示例路径临时禁用并明确只提交空白初始化', () => {
-    expect(page).toContain('Go 示例数据迁移尚未完成')
-    expect(page).toContain('completeSetup(language, false)')
-    expect(page).not.toContain("'sample'")
-    expect(page).not.toContain('seedSampleData: true')
+  test('示例路径可选并按选择提交 seedSampleData', () => {
+    expect(page).not.toContain('Go 示例数据迁移尚未完成')
+    expect(page).toContain("'sample'")
+    expect(page).toContain('seedSampleData={path === \'sample\'}')
+    expect(page).toContain('completeSetup(language, props.seedSampleData)')
+    expect(page).toContain('title="示例数据"')
+    expect(page).toContain('title="空白项目"')
   })
 })

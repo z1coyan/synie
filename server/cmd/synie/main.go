@@ -53,6 +53,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/printing"
 	"github.com/z1coyan/synie/server/internal/platform/settings"
 	setupplatform "github.com/z1coyan/synie/server/internal/platform/setup"
+	"github.com/z1coyan/synie/server/internal/platform/setup/sampledata"
 )
 
 func main() {
@@ -98,39 +99,69 @@ func run() error {
 	financeDocumentsService := documents.NewService(pool, documents.Dependencies{
 		Files: fileService, Numberer: numberingService,
 	})
+	accountService := account.NewService(pool)
+	companyAccountDefaultService := companyaccountdefault.NewService(pool)
+	warehouseService := warehouse.NewService(pool)
+	customerService := customer.NewService(pool)
+	supplierService := supplier.NewService(pool)
+	materialService := material.NewService(pool, numberingService)
+	materialUnitService := materialunit.NewService(pool)
+	employeeService := employee.NewService(pool, numberingService)
+	hrOperationsService := hroperations.NewService(pool, fileService, numberingService)
+	quotationService := quotation.NewService(pool, numberingService)
+	orderService := order.NewService(pool, numberingService)
+	standardFulfillmentService := standard.NewService(pool, numberingService)
+	outsourcedFulfillmentService := outsourced.NewService(pool, numberingService)
+	reconciliationService := reconciliation.NewService(pool, numberingService)
+	stockDocService := stockdoc.NewService(pool, numberingService)
+	stockTransferService := stocktransfer.NewService(pool, numberingService)
+	stockCountService := stockcount.NewService(pool, numberingService)
+	manufacturingMasterService := master.NewService(pool, numberingService)
+	glJournalService := gljournal.NewService(pool, numberingService)
+	setupService := setupplatform.NewService(pool, hasher, auth.NewTokenManager(cfg.AuthSecret, cfg.TokenTTL), sampledata.Dependencies{
+		Pool: pool, Accounts: accountService, CompanyAccountDefaults: companyAccountDefaultService,
+		Warehouses: warehouseService, Customers: customerService, Suppliers: supplierService,
+		Materials: materialService, MaterialUnits: materialUnitService, Employees: employeeService,
+		Quotations: quotationService, Orders: orderService,
+		StandardFulfillment: standardFulfillmentService, OutsourcedFulfillment: outsourcedFulfillmentService,
+		Reconciliations: reconciliationService, StockDocs: stockDocService,
+		StockTransfers: stockTransferService, StockCounts: stockCountService,
+		ManufacturingMaster: manufacturingMasterService, Banking: financeBankingService,
+		GLJournals: glJournalService, Documents: financeDocumentsService, HROperations: hrOperationsService,
+	})
 	api := httpapi.New(httpapi.Dependencies{
 		Pool: pool, Auth: authService, Registry: registry,
-		GLEntries: glentry.NewService(pool), GLJournals: gljournal.NewService(pool, numberingService),
+		GLEntries: glentry.NewService(pool), GLJournals: glJournalService,
 		Currencies: currency.NewService(pool), Companies: company.NewService(pool),
-		Units: unit.NewService(pool), Accounts: account.NewService(pool),
-		Customers: customer.NewService(pool), Suppliers: supplier.NewService(pool),
-		Employees:              employee.NewService(pool, numberingService),
-		HROperations:           hroperations.NewService(pool, fileService, numberingService),
+		Units: unit.NewService(pool), Accounts: accountService,
+		Customers: customerService, Suppliers: supplierService,
+		Employees:              employeeService,
+		HROperations:           hrOperationsService,
 		FinanceBanking:         financeBankingService,
 		FinanceDocuments:       financeDocumentsService,
 		MaterialCats:           materialcategory.NewService(pool),
-		Materials:              material.NewService(pool, numberingService),
-		MaterialUnits:          materialunit.NewService(pool),
-		Warehouses:             warehouse.NewService(pool),
+		Materials:              materialService,
+		MaterialUnits:          materialUnitService,
+		Warehouses:             warehouseService,
 		StockEntries:           stockentry.NewService(pool),
-		StockDocs:              stockdoc.NewService(pool, numberingService),
-		StockTransfers:         stocktransfer.NewService(pool, numberingService),
-		StockCounts:            stockcount.NewService(pool, numberingService),
-		Orders:                 order.NewService(pool, numberingService),
-		Quotations:             quotation.NewService(pool, numberingService),
-		ManufacturingMaster:    master.NewService(pool, numberingService),
+		StockDocs:              stockDocService,
+		StockTransfers:         stockTransferService,
+		StockCounts:            stockCountService,
+		Orders:                 orderService,
+		Quotations:             quotationService,
+		ManufacturingMaster:    manufacturingMasterService,
 		ManufacturingExecution: execution.NewService(pool, numberingService),
-		StandardFulfillment:    standard.NewService(pool, numberingService),
-		OutsourcedFulfillment:  outsourced.NewService(pool, numberingService),
-		Reconciliations:        reconciliation.NewService(pool, numberingService),
-		CompanyAccountDefaults: companyaccountdefault.NewService(pool),
+		StandardFulfillment:    standardFulfillmentService,
+		OutsourcedFulfillment:  outsourcedFulfillmentService,
+		Reconciliations:        reconciliationService,
+		CompanyAccountDefaults: companyAccountDefaultService,
 		OrderFlowItems:         orderflow.NewService(pool),
 		SystemOps:              systemops.NewService(pool),
 		FileService:            fileService, StorageService: fileplatform.NewStorageService(pool),
 		IAM: iam.NewService(pool, hasher, registry), Numbering: numberingService,
 		Printing: printing.NewService(pool, fileService, printing.NewFieldCatalog()),
 		Settings: settings.NewService(pool),
-		Setup:    setupplatform.NewService(pool, hasher, auth.NewTokenManager(cfg.AuthSecret, cfg.TokenTTL)), Logger: logger,
+		Setup:    setupService, Logger: logger,
 	})
 	server := &http.Server{
 		Addr: cfg.HTTPAddr, Handler: api.Router(),
