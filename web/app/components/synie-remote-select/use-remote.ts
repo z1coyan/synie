@@ -14,9 +14,11 @@ export function useRemoteOptions(src: ResolvedSource | null, search: string, ena
     queryKey: [
       'remoteOptions',
       src?.resource,
+      src?.client?.id,
       src?.labelField,
       src?.sortField,
       src?.filter,
+      JSON.stringify(src?.filterState ?? null),
       src?.searchFields.join('|'),
       src?.fields.join('|'),
       src?.pageSize,
@@ -25,8 +27,15 @@ export function useRemoteOptions(src: ResolvedSource | null, search: string, ena
     enabled: enabled && src != null,
     staleTime: 30_000,
     initialPageParam: 0,
-    queryFn: ({ pageParam }) =>
-      gqlFetch<Record<string, PageResult>>(buildOptionsQuery(src!, search, pageParam)).then((d) => d[src!.resource]),
+    queryFn: ({ pageParam }) => src!.client
+      ? src!.client.query({
+          limit: src!.pageSize,
+          offset: pageParam,
+          search,
+          sort: { column: src!.sortField, direction: 'ascending' },
+          filter: src!.filterState,
+        })
+      : gqlFetch<Record<string, PageResult>>(buildOptionsQuery(src!, search, pageParam)).then((d) => d[src!.resource]),
     getNextPageParam: (last, pages) => {
       // 按实际返回行数推进(csv fetchAllRows 先例:limit 可能被服务端钳制)
       const loaded = pages.reduce((n, p) => n + p.results.length, 0)
@@ -39,9 +48,11 @@ export function useRemoteOptions(src: ResolvedSource | null, search: string, ena
 export function useRemoteRecords(src: ResolvedSource | null, ids: string[]) {
   const query = src ? buildByIdQuery(src, ids) : null
   return useQuery({
-    queryKey: ['remoteRecords', src?.resource, src?.labelField, src?.fields.join('|'), [...ids].sort().join(',')],
-    enabled: query != null,
+    queryKey: ['remoteRecords', src?.resource, src?.client?.id, src?.labelField, src?.fields.join('|'), [...ids].sort().join(',')],
+    enabled: src?.client ? ids.length > 0 : query != null,
     staleTime: 5 * 60_000,
-    queryFn: () => gqlFetch<Record<string, PageResult>>(query!).then((d) => d[src!.resource].results),
+    queryFn: () => src!.client
+      ? Promise.all(ids.map((id) => src!.client!.get(id))).then((rows) => rows.filter((row): row is Row => row != null))
+      : gqlFetch<Record<string, PageResult>>(query!).then((d) => d[src!.resource].results),
   })
 }

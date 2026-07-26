@@ -149,6 +149,14 @@ eq(
 eq(ivEdit.dueOn, '2026-01-05', 'edit date 原样')
 eq(ivEdit.name, '', 'edit string null 归一空串')
 eq(ivEdit.enabled, true, 'edit boolean 原样')
+const structured = [{ type: 'seq', padding: 4 }]
+const structuredValue = initialValues(
+  resolveFields([col('segments', 'string')], 'edit', [], {
+    segments: { normalize: (raw) => raw },
+  }),
+  { id: '1', segments: structured } as unknown as Row,
+)
+eq(structuredValue.segments, structured, 'normalize 保留结构化编辑初值')
 
 // —— collectValues:createOnly 编辑态剔除;隐藏字段剔除;undefined 归 null ——
 const submitFields = resolveFields(cols, 'edit', [], {

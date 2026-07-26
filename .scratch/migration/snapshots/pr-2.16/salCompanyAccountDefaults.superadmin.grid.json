@@ -1,0 +1,99 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "公司",
+      "name": "companyId",
+      "ref": {
+        "labelField": "name",
+        "relation": "company",
+        "resource": "basCompanies"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "销售发货默认借方科目(未开票应收)",
+      "name": "deliveryDebitAccountId",
+      "ref": {
+        "labelField": "name",
+        "relation": "deliveryDebitAccount",
+        "resource": "basAccounts"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "销售发货默认贷方科目",
+      "name": "deliveryCreditAccountId",
+      "ref": {
+        "labelField": "name",
+        "relation": "deliveryCreditAccount",
+        "resource": "basAccounts"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "采购入库默认借方科目",
+      "name": "receiptDebitAccountId",
+      "ref": {
+        "labelField": "name",
+        "relation": "receiptDebitAccount",
+        "resource": "basAccounts"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "采购入库默认贷方科目(未开票应付)",
+      "name": "receiptCreditAccountId",
+      "ref": {
+        "labelField": "name",
+        "relation": "receiptCreditAccount",
+        "resource": "basAccounts"
+      },
+      "sortable": false,
+      "type": "fk"
+    }
+  ],
+  "destroyMutation": null,
+  "extendedActions": []
+}

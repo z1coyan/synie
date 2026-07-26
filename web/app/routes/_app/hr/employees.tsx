@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -10,21 +9,11 @@ import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { employeeClient } from '~/lib/resources/employees'
 
 export const Route = createFileRoute('/_app/hr/employees')({
   component: EmployeesPage,
 })
-
-const CREATE_EMPLOYEE = `
-  mutation ($input: CreateHrEmployeeInput!) {
-    createHrEmployee(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_EMPLOYEE = `
-  mutation ($id: ID!, $input: UpdateHrEmployeeInput!) {
-    updateHrEmployee(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 // 常用列白名单:户籍/现居住地长文本进详情看,给薪酬列留视口
 const GRID_COLUMNS = [
@@ -55,6 +44,7 @@ function EmployeesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="hrEmployees"
+          client={employeeClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
@@ -65,6 +55,7 @@ function EmployeesPage() {
 
       <SynieRecordDrawer
         resource="hrEmployees"
+        client={employeeClient}
         {...drawerConfig('hrEmployees')}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -73,25 +64,19 @@ function EmployeesPage() {
         rowId={drawer?.row?.id}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
-          if (mode === 'create') {
-            const data = await gqlFetch<{ createHrEmployee: { errors: { message: string }[] | null } }>(
-              CREATE_EMPLOYEE,
-              { input: values }
-            )
-            errors = data.createHrEmployee.errors
-          } else {
-            const data = await gqlFetch<{ updateHrEmployee: { errors: { message: string }[] | null } }>(
-              UPDATE_EMPLOYEE,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updateHrEmployee.errors
-          }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+          const saved =
+            mode === 'create'
+              ? await employeeClient.create(values)
+              : await employeeClient.update(drawer!.row!.id, values)
           toast.success(mode === 'create' ? '员工已创建,进入详情可上传身份证照片' : '员工已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrEmployees'] })
+          queryClient.invalidateQueries({
+            queryKey: ['gridRows', employeeClient.id, 'hrEmployees'],
+          })
           // 抽屉走 rowId 自查,编辑后一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'hrEmployees'] })
+          queryClient.invalidateQueries({
+            queryKey: ['rowById', employeeClient.id, 'hrEmployees'],
+          })
+          return saved.id
         }}
       />
     </>

@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Tabs } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { fetchMe } from '~/lib/api/session'
 
 export const Route = createFileRoute('/_app/scm/other-stock')({
   component: OtherStockLayout,
@@ -27,8 +27,7 @@ function OtherStockLayout() {
 
   const perms = useQuery({
     queryKey: ['myPermissions'],
-    queryFn: () =>
-      gqlFetch<{ myPermissions: string[] }>('query { myPermissions }').then((d) => new Set(d.myPermissions)),
+    queryFn: () => fetchMe().then((d) => new Set(d.permissions)),
     staleTime: 60_000,
   })
 

@@ -6,18 +6,28 @@ import type { Row, RowAction } from './types'
  * 启用/停用行动作对:规范「状态类开关不进创建/编辑表单,独立入口显式翻转」的标准实现。
  * 两个动作都按 update 权限门控;对已处于目标状态的行给警告不发请求。
  */
-export interface StatusToggleOptions {
+interface StatusToggleBase {
   /** 状态字段名(camel,如 active/enabled),读当前值、写翻转值都用它 */
   field: string
-  /** 页面现成的 update mutation 文档(形如 ($id: ID!, $input: ...!) { xxx(id, input) { errors { message } } }) */
-  mutation: string
-  /** mutation 返回数据的顶层 key,如 updateInvMaterial,用于取 errors */
-  resultKey: string
   /** toast 里的记录显示名,缺省取 row.name */
   rowLabel?: (row: Row) => string
   /** 成功后的额外刷新(组件自身 refetch 之外,如树页 remount、失效 rowById 缓存) */
   onDone?: () => void
 }
+
+export type StatusToggleOptions = StatusToggleBase &
+  (
+    | {
+        /** 已迁移资源通过 Resource Client 更新。 */
+        update: (id: string, input: Record<string, unknown>) => Promise<unknown>
+      }
+    | {
+        /** 页面现成的 update mutation 文档。 */
+        mutation: string
+        /** mutation 返回数据的顶层 key,如 updateInvMaterial,用于取 errors。 */
+        resultKey: string
+      }
+  )
 
 export function statusToggleActions(opts: StatusToggleOptions): RowAction[] {
   const label = (row: Row) => String(opts.rowLabel?.(row) ?? row.name ?? '')
@@ -28,12 +38,16 @@ export function statusToggleActions(opts: StatusToggleOptions): RowAction[] {
       return
     }
     try {
-      const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(opts.mutation, {
-        id: row.id,
-        input: { [opts.field]: target },
-      })
-      const errors = data[opts.resultKey]?.errors
-      if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+      if ('update' in opts) {
+        await opts.update(row.id, { [opts.field]: target })
+      } else {
+        const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(opts.mutation, {
+          id: row.id,
+          input: { [opts.field]: target },
+        })
+        const errors = data[opts.resultKey]?.errors
+        if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+      }
       toast.success(`已${verb}「${label(row)}」`)
       ctx.refetch()
       opts.onDone?.()

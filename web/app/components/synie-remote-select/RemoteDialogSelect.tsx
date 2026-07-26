@@ -78,6 +78,7 @@ export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
             <Modal.Body>
               <SynieDataGrid
                 resource={src.resource}
+                client={src.client}
                 columns={props.gridColumns}
                 overrides={props.gridOverrides}
                 fixedFilter={props.gridFilter}

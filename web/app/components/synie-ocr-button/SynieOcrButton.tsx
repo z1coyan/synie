@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Button, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import { uploadFile, type UploadedFile } from '~/lib/files'
+import { getAccountingOCRConfigured } from '~/lib/resources/settings'
 
 /**
  * 票据 OCR 按钮:选图 → 上传裸文件(暂不挂宿主)→ 调 OCR mutation → 识别字段交调用方回填。
@@ -22,8 +23,6 @@ export interface SynieOcrButtonProps {
   variant?: 'primary' | 'secondary'
   onRecognized: (fields: Record<string, unknown>, file: UploadedFile) => void
 }
-
-const OCR_CONFIGURED = `query { accOcrConfigured }`
 
 export function SynieOcrButton({
   mutation,
@@ -47,8 +46,7 @@ export function SynieOcrButton({
 
   const configured = useQuery({
     queryKey: ['accOcrConfigured'],
-    queryFn: () =>
-      gqlFetch<{ accOcrConfigured: boolean }>(OCR_CONFIGURED).then((d) => d.accOcrConfigured),
+    queryFn: () => getAccountingOCRConfigured().then((d) => d.configured),
   })
 
   const handleFile = async (files: FileList | null) => {

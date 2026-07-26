@@ -3,7 +3,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import {
+  attendanceDayClient,
+  recalcAttendanceDays,
+} from '~/lib/resources/hr-operations'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
@@ -12,12 +15,6 @@ import type { Row } from '~/components/synie-data-grid/types'
 export const Route = createFileRoute('/_app/hr/attendance/days')({
   component: AttendanceDaysPage,
 })
-
-const RECALC = `
-  mutation ($input: RecalcHrAttendanceDaysInput!) {
-    recalcHrAttendanceDays(input: $input)
-  }
-`
 
 // 时刻列到秒无意义,收敛为 HH:MM
 const timeHM = (v: unknown) => (v == null || v === '' ? null : String(v).slice(0, 5))
@@ -95,17 +92,15 @@ function AttendanceDaysPage() {
   const [dateTo, setDateTo] = useState(localISO(today))
   const [running, setRunning] = useState(false)
   const queryClient = useQueryClient()
-  const meta = useGridMeta('hrAttendanceDays')
+  const meta = useGridMeta('hrAttendanceDays', true, attendanceDayClient)
   const canRecalc = (meta.data?.capabilities ?? []).includes('recalc')
 
   const runRecalc = async () => {
     if (!dateFrom || !dateTo) return
     setRunning(true)
     try {
-      const data = await gqlFetch<{ recalcHrAttendanceDays: number }>(RECALC, {
-        input: { dateFrom, dateTo },
-      })
-      toast.success(`已重算 ${data.recalcHrAttendanceDays} 个员工日`)
+      const count = await recalcAttendanceDays(dateFrom, dateTo)
+      toast.success(`已重算 ${count} 个员工日`)
       queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrAttendanceDays'] })
       queryClient.invalidateQueries({ queryKey: ['rowById', 'hrAttendanceDays'] })
       setRecalcOpen(false)
@@ -133,6 +128,7 @@ function AttendanceDaysPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrAttendanceDays"
+          client={attendanceDayClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'date', direction: 'descending' }}
@@ -142,6 +138,7 @@ function AttendanceDaysPage() {
 
       <SynieRecordDrawer
         resource="hrAttendanceDays"
+        client={attendanceDayClient}
         label="日考勤"
         mode="view"
         isOpen={viewRow !== null}

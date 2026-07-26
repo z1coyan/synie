@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
+import { glEntryClient } from '~/lib/resources/accounting'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 
 // 应收应付报表下钻参数:预置列筛选打开本页(全部可选,普通访问不带)
@@ -94,6 +95,7 @@ function EntriesPage() {
         <SynieDataGrid
           key={JSON.stringify(search)}
           resource="accGlEntries"
+          client={glEntryClient}
           columns={GRID_COLUMNS}
           defaultFilters={drillFilters(search)}
           onView={(row) => setViewRow(row)}
@@ -102,6 +104,7 @@ function EntriesPage() {
 
       <SynieRecordDrawer
         resource="accGlEntries"
+        client={glEntryClient}
         label="分录"
         mode="view"
         isOpen={viewRow !== null}

@@ -2,37 +2,19 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { getSalesSetting, updateSalesSetting } from '~/lib/resources/settings'
 import { CompanyAccountDefaultsCard } from './-company-account-defaults'
 
 export const Route = createFileRoute('/_app/scm/settings/purchase')({
   component: ScmPurchaseSettingsTab,
 })
 
-const SETTING_QUERY = `
-  query {
-    salSetting { id spotItemMaxQty receiptOverreceiveRatio demandOverorderRatio }
-  }
-`
-const UPDATE_SETTING = `
-  mutation ($id: ID!, $input: UpdateSalSettingInput!) {
-    updateSalSetting(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-
-type SalSetting = {
-  id: string
-  spotItemMaxQty: number
-  receiptOverreceiveRatio: string | number
-  demandOverorderRatio: string | number
-}
-
 function ScmPurchaseSettingsTab() {
   const queryClient = useQueryClient()
   const query = useQuery({
-    // 与销售 tab / 订单抽屉分 key,避免 GraphQL 字段集不同互相污染缓存
+    // 与销售 tab / 订单抽屉分 key,避免不同表单草稿互相污染缓存
     queryKey: ['salSetting', 'purchase'],
-    queryFn: () => gqlFetch<{ salSetting: SalSetting | null }>(SETTING_QUERY),
+    queryFn: getSalesSetting,
   })
 
   const [spotMaxQty, setSpotMaxQty] = useState<number>(NaN)
@@ -42,16 +24,16 @@ function ScmPurchaseSettingsTab() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!query.data?.salSetting) return
-    setSpotMaxQty(query.data.salSetting.spotItemMaxQty)
-    const receiveRatio = Number(query.data.salSetting.receiptOverreceiveRatio)
+    if (!query.data) return
+    setSpotMaxQty(query.data.spotItemMaxQty)
+    const receiveRatio = Number(query.data.receiptOverreceiveRatio)
     setOverreceivePct(Number.isFinite(receiveRatio) ? Math.round(receiveRatio * 10000) / 100 : 0)
-    const orderRatio = Number(query.data.salSetting.demandOverorderRatio)
+    const orderRatio = Number(query.data.demandOverorderRatio)
     setOverorderPct(Number.isFinite(orderRatio) ? Math.round(orderRatio * 10000) / 100 : 0)
   }, [query.data])
 
   const save = async () => {
-    if (!query.data?.salSetting) return
+    if (!query.data) return
     if (!Number.isInteger(spotMaxQty) || spotMaxQty <= 0) {
       toast.danger('零星条目数量上限必须是正整数')
       return
@@ -66,20 +48,11 @@ function ScmPurchaseSettingsTab() {
     }
     setSaving(true)
     try {
-      const data = await gqlFetch<{ updateSalSetting: { errors: { message: string }[] | null } }>(
-        UPDATE_SETTING,
-        {
-          id: query.data.salSetting.id,
-          input: {
-            spotItemMaxQty: spotMaxQty,
-            receiptOverreceiveRatio: String(overreceivePct / 100),
-            demandOverorderRatio: String(overorderPct / 100),
-          },
-        },
-      )
-      if (data.updateSalSetting.errors && data.updateSalSetting.errors.length > 0) {
-        throw new Error(data.updateSalSetting.errors.map((e) => e.message).join('; '))
-      }
+      await updateSalesSetting({
+        spotItemMaxQty: spotMaxQty,
+        receiptOverreceiveRatio: String(overreceivePct / 100),
+        demandOverorderRatio: String(overorderPct / 100),
+      })
       toast.success('采购设置已保存')
       queryClient.invalidateQueries({ queryKey: ['salSetting'] })
     } catch (e) {

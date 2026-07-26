@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button, Label, ListBox, Select, toast } from '@heroui/react'
 import { DropZone } from '@heroui-pro/react'
-import { gqlFetch } from '~/lib/graphql'
+import { apiClient, apiData } from '~/lib/api/client'
 import { uploadFile, downloadFile } from '~/lib/files'
 import { fetchFieldCatalog, type FieldCatalog } from '~/lib/print'
+import { fetchPermissionCatalog } from '~/lib/resources/iam'
+import {
+  listPrintResources,
+  printTemplateClient,
+  setDefaultPrintTemplate,
+  unsetDefaultPrintTemplate,
+} from '~/lib/resources/printing'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
@@ -15,38 +23,11 @@ export const Route = createFileRoute('/_app/system/print-templates')({
   component: PrintTemplatesPage,
 })
 
-const CREATE = `
-  mutation ($input: CreateSysPrintTemplateInput!) {
-    createSysPrintTemplate(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE = `
-  mutation ($id: ID!, $input: UpdateSysPrintTemplateInput!) {
-    updateSysPrintTemplate(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const SET_DEFAULT = `
-  mutation ($id: ID!) {
-    setDefaultSysPrintTemplate(id: $id) { result { id } errors { message } }
-  }
-`
-const PERMISSION_CATALOG = `
-  query { permissionCatalog { prefix label } }
-`
-const FETCH_TEMPLATE_FILE = `
-  query ($id: ID!) {
-    sysPrintTemplates(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
-      results { id file { id filename } }
-    }
-  }
-`
-
 interface ResourceOption {
   prefix: string
   label: string
 }
 
-// 权限目录按「域.资源」组织;下拉按域中文名分域展示
 const DOMAIN_LABELS: Record<string, string> = {
   sales: '销售',
   purchase: '采购',
@@ -58,14 +39,15 @@ const DOMAIN_LABELS: Record<string, string> = {
   mfg: '生产',
 }
 
-function resourceOptionText(r: ResourceOption) {
-  const domain = r.prefix.split('.')[0]
-  return `${DOMAIN_LABELS[domain] ?? domain} · ${r.label}`
+function resourceOptionText(resource: ResourceOption) {
+  const domain = resource.prefix.split('.')[0]
+  return `${DOMAIN_LABELS[domain] ?? domain} · ${resource.label}`
 }
 
 const GRID_COLUMNS = ['name', 'resource', 'isDefault', 'remarks', 'updatedAt']
 
 function PrintTemplatesPage() {
+  const queryClient = useQueryClient()
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [fileId, setFileId] = useState<string | null>(null)
   const [fileName, setFileName] = useState('')
@@ -76,43 +58,54 @@ function PrintTemplatesPage() {
   const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
-    void gqlFetch<{ permissionCatalog: ResourceOption[] }>(PERMISSION_CATALOG)
-      .then((data) => setResources(data.permissionCatalog))
-      .catch((e: unknown) => {
+    void Promise.all([listPrintResources(), fetchPermissionCatalog()])
+      .then(([printResources, permissionCatalog]) => {
+        const labels = new Map(
+          permissionCatalog.groups.map((group) => [group.prefix, group.label]),
+        )
+        setResources(
+          printResources.resources.map((prefix) => ({
+            prefix,
+            label: labels.get(prefix) ?? prefix,
+          })),
+        )
+      })
+      .catch((error: unknown) => {
         setResources([])
-        toast.danger(e instanceof Error ? e.message : '加载资源目录失败')
+        toast.danger(error instanceof Error ? error.message : '加载资源目录失败')
       })
   }, [])
 
   useEffect(() => {
-    if (resources.length > 0 && !resources.some((r) => r.prefix === resourcePick)) {
+    if (resources.length > 0 && !resources.some((resource) => resource.prefix === resourcePick)) {
       setResourcePick(resources[0].prefix)
     }
   }, [resources, resourcePick])
 
-  // 查看/编辑时拉取模板当前文件(文件名与下载用)
   useEffect(() => {
-    if (!drawer || drawer.mode === 'create' || drawer.row?.id == null) {
+    const currentFileId =
+      drawer && drawer.mode !== 'create' && typeof drawer.row?.fileId === 'string'
+        ? drawer.row.fileId
+        : null
+    if (!currentFileId) {
       setCurrentFile(null)
       return
     }
-    void gqlFetch<{
-      sysPrintTemplates: { results: { file: { id: string; filename: string } | null }[] }
-    }>(FETCH_TEMPLATE_FILE, { id: drawer.row.id })
-      .then((data) => setCurrentFile(data.sysPrintTemplates.results[0]?.file ?? null))
-      .catch((e: unknown) => {
+    void apiData(
+      apiClient.GET('/files/{id}/metadata', { params: { path: { id: currentFileId } } }),
+    )
+      .then((file) => setCurrentFile({ id: file.id, filename: file.filename }))
+      .catch((error: unknown) => {
         setCurrentFile(null)
-        toast.danger(e instanceof Error ? e.message : '加载模板文件失败')
+        toast.danger(error instanceof Error ? error.message : '加载模板文件失败')
       })
   }, [drawer])
 
   useEffect(() => {
     if (!drawer) return
-    const res =
-      drawer.mode === 'create'
-        ? resourcePick
-        : String(drawer.row?.resource ?? resourcePick)
-    void fetchFieldCatalog(res)
+    const resource =
+      drawer.mode === 'create' ? resourcePick : String(drawer.row?.resource ?? resourcePick)
+    void fetchFieldCatalog(resource)
       .then(setCatalog)
       .catch(() => setCatalog(null))
   }, [drawer, resourcePick])
@@ -129,8 +122,8 @@ function PrintTemplatesPage() {
       setFileId(uploaded.id)
       setFileName(uploaded.filename)
       toast.success('模板文件已上传')
-    } catch (e) {
-      toast.danger(e instanceof Error ? e.message : '上传失败')
+    } catch (error) {
+      toast.danger(error instanceof Error ? error.message : '上传失败')
     } finally {
       setUploading(false)
     }
@@ -147,11 +140,14 @@ function PrintTemplatesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="sysPrintTemplates"
+          client={printTemplateClient}
           columns={GRID_COLUMNS}
           overrides={{
             resource: {
               label: '资源',
-              render: (v) => resources.find((r) => r.prefix === v)?.label ?? String(v ?? ''),
+              render: (value) =>
+                resources.find((resource) => resource.prefix === value)?.label ??
+                String(value ?? ''),
             },
           }}
           onView={(row) => {
@@ -170,26 +166,36 @@ function PrintTemplatesPage() {
             setFileName('')
             setDrawer({ mode: 'edit', row })
           }}
+          actionVisible={{
+            setDefault: (row) => !row.isDefault,
+            unsetDefault: (row) => Boolean(row.isDefault),
+          }}
           rowActions={[
             {
               key: 'setDefault',
               label: '设为默认',
               capability: 'update',
-              onAction: async (row, ctx) => {
-                if (row.isDefault) {
-                  toast.warning('已是默认模板')
-                  return
-                }
+              onAction: async (row, context) => {
                 try {
-                  const data = await gqlFetch<{
-                    setDefaultSysPrintTemplate: { errors: { message: string }[] | null }
-                  }>(SET_DEFAULT, { id: row.id })
-                  const errors = data.setDefaultSysPrintTemplate.errors
-                  if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '))
+                  await setDefaultPrintTemplate(String(row.id))
                   toast.success(`已将「${String(row.name)}」设为默认`)
-                  ctx.refetch()
-                } catch (e) {
-                  toast.danger(e instanceof Error ? e.message : '设为默认失败')
+                  context.refetch()
+                } catch (error) {
+                  toast.danger(error instanceof Error ? error.message : '设为默认失败')
+                }
+              },
+            },
+            {
+              key: 'unsetDefault',
+              label: '取消默认',
+              capability: 'update',
+              onAction: async (row, context) => {
+                try {
+                  await unsetDefaultPrintTemplate(String(row.id))
+                  toast.success(`已取消「${String(row.name)}」的默认标记`)
+                  context.refetch()
+                } catch (error) {
+                  toast.danger(error instanceof Error ? error.message : '取消默认失败')
                 }
               },
             },
@@ -200,19 +206,19 @@ function PrintTemplatesPage() {
       <SynieRecordDrawer
         {...drawerConfig('sysPrintTemplates')}
         resource="sysPrintTemplates"
+        client={printTemplateClient}
+        label="打印模板"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => {
-          if (!open) {
-            setDrawer(null)
-            setFileId(null)
-            setFileName('')
-          }
+          if (open) return
+          setDrawer(null)
+          setFileId(null)
+          setFileName('')
         }}
-        rowId={drawer?.row?.id}
+        row={drawer?.row}
         fields={{
           name: { order: 1, cols: 6, required: true },
-          // 创建用 extraContent 选择器提交；详情只读展示 resource 列自 meta
           resource: {
             order: 2,
             cols: 6,
@@ -230,7 +236,7 @@ function PrintTemplatesPage() {
                 <Label>资源类型</Label>
                 <Select
                   selectedKey={resourcePick}
-                  onSelectionChange={(k) => setResourcePick(String(k))}
+                  onSelectionChange={(key) => setResourcePick(String(key))}
                   aria-label="资源类型"
                 >
                   <Select.Trigger>
@@ -239,9 +245,13 @@ function PrintTemplatesPage() {
                   </Select.Trigger>
                   <Select.Popover>
                     <ListBox>
-                      {resources.map((r) => (
-                        <ListBox.Item key={r.prefix} id={r.prefix} textValue={resourceOptionText(r)}>
-                          {resourceOptionText(r)}
+                      {resources.map((resource) => (
+                        <ListBox.Item
+                          key={resource.prefix}
+                          id={resource.prefix}
+                          textValue={resourceOptionText(resource)}
+                        >
+                          {resourceOptionText(resource)}
                           <ListBox.ItemIndicator />
                         </ListBox.Item>
                       ))}
@@ -258,8 +268,8 @@ function PrintTemplatesPage() {
                   {mode !== 'view' && (
                     <>
                       <DropZone.Area
-                        onDrop={async (e) => {
-                          for (const item of e.items) {
+                        onDrop={async (event) => {
+                          for (const item of event.items) {
                             if (item.kind === 'file') {
                               void onPickFile(await item.getFile())
                               return
@@ -306,8 +316,10 @@ function PrintTemplatesPage() {
                             variant="secondary"
                             onPress={() =>
                               void downloadFile(currentFile.id, currentFile.filename).catch(
-                                (e: unknown) =>
-                                  toast.danger(e instanceof Error ? e.message : '下载失败'),
+                                (error: unknown) =>
+                                  toast.danger(
+                                    error instanceof Error ? error.message : '下载失败',
+                                  ),
                               )
                             }
                           >
@@ -329,8 +341,8 @@ function PrintTemplatesPage() {
                 <p className="mb-2 font-medium">字段清单（占位符写 ${'{name}'}）</p>
                 <p className="mb-1 text-muted">头字段</p>
                 <ul className="mb-2 list-inside list-disc font-mono text-xs">
-                  {catalog.fields.map((f) => (
-                    <li key={f.name}>{`\${${f.name}}`}</li>
+                  {catalog.fields.map((field) => (
+                    <li key={field.name}>{`\${${field.name}}`}</li>
                   ))}
                 </ul>
                 {catalog.loops.map((loop) => (
@@ -338,8 +350,10 @@ function PrintTemplatesPage() {
                     <p className="mb-1 text-muted">循环区（{loop.name}.* 写在同一行）</p>
                     <ul className="mb-2 list-inside list-disc font-mono text-xs">
                       <li>{`\${${loop.name}._seq}`} — 行序号</li>
-                      {loop.fields.map((f) => (
-                        <li key={`${loop.name}.${f.name}`}>{`\${${loop.name}.${f.name}}`}</li>
+                      {loop.fields.map((field) => (
+                        <li key={`${loop.name}.${field.name}`}>
+                          {`\${${loop.name}.${field.name}}`}
+                        </li>
                       ))}
                     </ul>
                   </div>
@@ -348,34 +362,26 @@ function PrintTemplatesPage() {
             )}
           </div>
         )}
-        onSubmit={async (values) => {
-          if (drawer?.mode === 'create') {
+        onSubmit={async (values, mode) => {
+          if (mode === 'create') {
             if (!fileId) throw new Error('请上传模板文件')
-            const data = await gqlFetch<{
-              createSysPrintTemplate: { errors: { message: string }[] | null }
-            }>(CREATE, {
-              input: {
-                name: values.name,
-                resource: resourcePick,
-                fileId,
-                remarks: values.remarks ?? null,
-              },
+            const created = await printTemplateClient.create({
+              name: values.name,
+              resource: resourcePick,
+              fileId,
+              remarks: values.remarks ?? null,
             })
-            const errors = data.createSysPrintTemplate.errors
-            if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '))
-            return
+            await queryClient.invalidateQueries({ queryKey: ['gridRows'] })
+            return String(created.id)
           }
-          if (drawer?.mode === 'edit' && drawer.row) {
+          if (mode === 'edit' && drawer?.row) {
             const input: Record<string, unknown> = {
               name: values.name,
               remarks: values.remarks ?? null,
             }
             if (fileId) input.fileId = fileId
-            const data = await gqlFetch<{
-              updateSysPrintTemplate: { errors: { message: string }[] | null }
-            }>(UPDATE, { id: drawer.row.id, input })
-            const errors = data.updateSysPrintTemplate.errors
-            if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '))
+            await printTemplateClient.update(String(drawer.row.id), input)
+            await queryClient.invalidateQueries({ queryKey: ['gridRows'] })
           }
         }}
       />

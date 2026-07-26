@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useAuditDoc } from '../-audit-doc'
+import { purchaseOutsourcedIssueClient } from '~/lib/resources/fulfillment'
 import { issueAuditConfig, useIssueDrawer } from './-issue-drawer'
 
 export const Route = createFileRoute('/_app/scm/outsourced-issues/issues')({
@@ -40,6 +41,7 @@ function IssuesTab() {
     <>
       <SynieDataGrid
         resource="purOutsourcedIssues"
+        client={purchaseOutsourcedIssueClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'issueDate', direction: 'descending' }}

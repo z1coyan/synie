@@ -2,110 +2,25 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { useAuditDoc, type AuditDocConfig } from '../scm/-audit-doc'
 import { ExpenseRoleSelect, expenseRoleLabel, findRoleAccounts } from './-expense-role'
+import {
+  expenseReportClient,
+  expenseReportItemClient,
+  queryExpenseReportItems,
+  saveExpenseReportItems,
+  vatInvoiceClient,
+} from '~/lib/resources/finance-operations'
 
 export const Route = createFileRoute('/_app/finance/expense-reports')({
   component: ExpenseReportsPage,
 })
-
-const CREATE_REPORT = `
-  mutation ($input: CreateAccExpenseReportInput!) {
-    createAccExpenseReport(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_REPORT = `
-  mutation ($id: ID!, $input: UpdateAccExpenseReportInput!) {
-    updateAccExpenseReport(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-// 报销行是独立资源(不随头表单提交),开抽屉时单独取一次;发票号码/价税合计经 nullable
-// invoice join 带出供核对/展示(嵌套加载走发票读权限,无权限退化为 null,行本身仍在)
-const FETCH_ITEMS = `
-  query ($reportId: ID!) {
-    accExpenseReportItems(
-      filter: {reportId: {eq: $reportId}}
-      sort: [{field: IDX, order: ASC}]
-      limit: 200
-      offset: 0
-    ) {
-      results {
-        id idx kind invoiceId summary amount expenseAccountId remarks
-        invoice { docNo invoiceNo grossTotal }
-      }
-    }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreateAccExpenseReportItemInput!) {
-    createAccExpenseReportItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdateAccExpenseReportItemInput!) {
-    updateAccExpenseReportItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroyAccExpenseReportItem(id: $id) { errors { message } }
-  }
-`
-
-// 「审核」确认弹窗:列出整单报销行核对(与 scm/-audit-doc 同一套,条目页/单据页共用)
-const AUDIT_COLUMNS: AuditDocConfig['columns'] = [
-  { key: 'idx', label: '行号' },
-  {
-    key: 'kind',
-    label: '类型',
-    render: (v) => (v === 'INVOICED' ? '挂票' : v === 'MANUAL' ? '无票' : String(v ?? '—')),
-  },
-  {
-    key: 'summary',
-    label: '内容',
-    render: (_v, r) =>
-      r.kind === 'INVOICED' ? invoiceText(r.invoice as Row | null) : String(r.summary ?? '—'),
-  },
-  {
-    key: 'amount',
-    label: '金额',
-    align: 'end',
-    render: (v, r) =>
-      formatAmount(r.kind === 'INVOICED' ? (r.invoice as Row | null)?.grossTotal : v),
-  },
-  { key: 'remarks', label: '行备注' },
-]
-
-const expenseReportAuditConfig = {
-  docLabel: '报销单',
-  mutation: 'auditAccExpenseReport',
-  itemsResource: 'accExpenseReportItems',
-  docIdField: 'reportId',
-  itemFields: 'id idx kind summary amount remarks invoice { docNo invoiceNo grossTotal }',
-  columns: AUDIT_COLUMNS,
-} satisfies AuditDocConfig
-
-/** 挂票行内容展示:单号 + 票面号码 */
-function invoiceText(inv: Row | null | undefined): string {
-  if (!inv) return '—'
-  const docNo = inv.docNo != null ? String(inv.docNo) : ''
-  const no = inv.invoiceNo != null && inv.invoiceNo !== '' ? `号码 ${String(inv.invoiceNo)}` : ''
-  return [docNo, no].filter(Boolean).join(' · ') || '—'
-}
-
-interface MutationResult {
-  result?: { id: string } | null
-  errors: { message: string }[] | null
-}
 
 /** 提交 mutation:两类行互斥槽位在此归一(后端 KindRules 同口径);展示用发票字段不带 */
 function itemInput(row: Row) {
@@ -119,48 +34,6 @@ function itemInput(row: Row) {
     expenseAccountId: invoiced ? null : (row.expenseAccountId ?? null),
     remarks: row.remarks ?? null,
   }
-}
-
-const ITEM_COMPARE_KEYS = ['idx', 'kind', 'invoiceId', 'summary', 'amount', 'expenseAccountId', 'remarks'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-/** 行增删改 diff 持久化(同采购对账抽屉 persistItems 先例):逐行收集错误,不让一行失败阻断整单 */
-async function persistItems(reportId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroyAccExpenseReportItem: MutationResult }>(DESTROY_ITEM, {
-      id: old.id,
-    })
-    collect(old.idx, data.destroyAccExpenseReportItem?.errors)
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createAccExpenseReportItem: MutationResult }>(CREATE_ITEM, {
-        input: { reportId, ...itemInput(row) },
-      })
-      collect(row.idx, data.createAccExpenseReportItem?.errors)
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{ updateAccExpenseReportItem: MutationResult }>(UPDATE_ITEM, {
-        id: row.id,
-        input: itemInput(row),
-      })
-      collect(row.idx, data.updateAccExpenseReportItem?.errors)
-    }
-  }
-  return errors
 }
 
 // 科目候选限:本公司、非汇总、启用(同发票页 accountInput 先例)
@@ -346,8 +219,6 @@ function ExpenseReportsPage() {
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
 
-  const { requestAudit, auditDialog } = useAuditDoc(expenseReportAuditConfig)
-
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
@@ -361,14 +232,27 @@ function ExpenseReportsPage() {
       return
     }
     setDetailLoaded(false)
-    gqlFetch<{ accExpenseReportItems: { results: Row[] } }>(FETCH_ITEMS, { reportId: row.id })
-      .then((d) => {
+    queryExpenseReportItems(row.id)
+      .then(async (result) => {
         if (my !== reqIdRef.current) return
-        // 展示用发票字段(单号/号码/价税合计)冗余到行上并进缓存,提交时由 itemInput 剔除
-        const rows = d.accExpenseReportItems.results.map((r) => {
-          const inv = (r.invoice as Row | null) ?? null
-          if (inv && r.invoiceId != null) invoiceCacheRef.current.set(String(r.invoiceId), inv)
-          return { ...r, invoiceGrossTotal: inv?.grossTotal ?? null }
+        // REST 行不做 relationship join；只对挂票行按公开发票 get 补展示信息。
+        const invoices = await Promise.all(
+          result.map((item) =>
+            item.invoiceId
+              ? vatInvoiceClient.get(String(item.invoiceId)).catch(() => null)
+              : Promise.resolve(null),
+          ),
+        )
+        const rows = result.map((item, index) => {
+          const invoice = invoices[index]
+          if (invoice && item.invoiceId) {
+            invoiceCacheRef.current.set(String(item.invoiceId), invoice)
+          }
+          return {
+            ...item,
+            invoice,
+            invoiceGrossTotal: invoice?.grossTotal ?? null,
+          }
         })
         setItems(rows)
         setItemsSnapshot(rows)
@@ -393,21 +277,19 @@ function ExpenseReportsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accExpenseReports"
+          client={expenseReportClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
-          // 审核走条目核对弹窗;作废走默认通用确认框
-          actionHandlers={{
-            audit: (rows, ctx) => requestAudit(String(rows[0].id), ctx.refetch),
-          }}
           actionVisible={ACTION_VISIBLE}
         />
       </div>
 
       <SynieRecordDrawer
         resource="accExpenseReports"
+        client={expenseReportClient}
         label="报销单"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -549,6 +431,7 @@ function ExpenseReportsPage() {
               />
               <SynieEditableTable
                 resource="accExpenseReportItems"
+                client={expenseReportItemClient}
                 label="报销行"
                 items={items}
                 onChange={setItems}
@@ -619,13 +502,13 @@ function ExpenseReportsPage() {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{ createAccExpenseReport: MutationResult }>(CREATE_REPORT, {
-              input: values,
-            })
-            const res = data.createAccExpenseReport
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const reportId = res!.result!.id
-            const itemErrors = await persistItems(reportId, items, [])
+            const reportId = (await expenseReportClient.create(values)).id
+            const itemErrors = await saveExpenseReportItems(
+              reportId,
+              items,
+              [],
+              itemInput,
+            )
             if (itemErrors.length > 0) {
               toast.danger('报销单已创建,但部分报销行保存失败', { description: itemErrors.join('; ') })
             } else {
@@ -634,13 +517,13 @@ function ExpenseReportsPage() {
             savedId = reportId
           } else {
             const reportId = drawer!.row!.id
-            const data = await gqlFetch<{ updateAccExpenseReport: MutationResult }>(UPDATE_REPORT, {
-              id: reportId,
-              input: values,
-            })
-            const res = data.updateAccExpenseReport
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const itemErrors = await persistItems(reportId, items, itemsSnapshot)
+            await expenseReportClient.update(reportId, values)
+            const itemErrors = await saveExpenseReportItems(
+              reportId,
+              items,
+              itemsSnapshot,
+              itemInput,
+            )
             if (itemErrors.length > 0) {
               toast.danger('报销单已更新,但部分报销行保存失败', { description: itemErrors.join('; ') })
             } else {
@@ -654,7 +537,6 @@ function ExpenseReportsPage() {
           return savedId
         }}
       />
-      {auditDialog}
     </>
   )
 }

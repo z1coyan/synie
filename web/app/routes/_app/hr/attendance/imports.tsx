@@ -2,14 +2,12 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { attendanceImportClient } from '~/lib/resources/hr-operations'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { ActionContext, Row } from '~/components/synie-data-grid/types'
 import {
   AttendanceImportCreateDrawer,
   AttendanceImportRecordDrawer,
-  DESTROY_ATTENDANCE_IMPORT,
-  throwOnErrors,
 } from './-import-drawers'
 
 export const Route = createFileRoute('/_app/hr/attendance/imports')({
@@ -52,11 +50,7 @@ function AttendanceImportsPage() {
     if (!deleteAsk) return
     setRunning(true)
     try {
-      const data = await gqlFetch<{ destroyHrAttendanceImport: { errors: { message: string }[] | null } }>(
-        DESTROY_ATTENDANCE_IMPORT,
-        { id: deleteAsk.row.id }
-      )
-      throwOnErrors(data.destroyHrAttendanceImport.errors)
+      await attendanceImportClient.delete(deleteAsk.row.id)
       toast.success(
         deleteAsk.row.status === 'IMPORTED' ? '批次已删除,其导入的打卡已整批撤销' : '批次已删除'
       )
@@ -79,6 +73,7 @@ function AttendanceImportsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrAttendanceImports"
+          client={attendanceImportClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'insertedAt', direction: 'descending' }}

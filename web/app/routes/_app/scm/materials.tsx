@@ -2,7 +2,8 @@ import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { materialClient, materialUnitClient } from '~/lib/resources/inventory'
+import { unitClient } from '~/lib/resources/units'
 import { attachFile, type UploadedFile } from '~/lib/files'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
@@ -19,45 +20,6 @@ export const Route = createFileRoute('/_app/scm/materials')({
   component: MaterialsPage,
 })
 
-const CREATE_MATERIAL = `
-  mutation ($input: CreateInvMaterialInput!) {
-    createInvMaterial(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_MATERIAL = `
-  mutation ($id: ID!, $input: UpdateInvMaterialInput!) {
-    updateInvMaterial(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const FETCH_UNITS = `
-  query ($materialId: ID!) {
-    invMaterialUnits(filter: {materialId: {eq: $materialId}}, sort: [{field: INSERTED_AT, order: ASC}], limit: 200, offset: 0) {
-      results { id unitId factor unit { id name symbol } }
-    }
-  }
-`
-// 单位转换 tab 的基准单位提示:按默认单位 id 反查名称(单位主数据量小,全量拉取缓存)
-const FETCH_UNIT_NAMES = `
-  query {
-    basUnits(limit: 200, offset: 0) { results { id name } }
-  }
-`
-const CREATE_UNIT = `
-  mutation ($input: CreateInvMaterialUnitInput!) {
-    createInvMaterialUnit(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_UNIT = `
-  mutation ($id: ID!, $input: UpdateInvMaterialUnitInput!) {
-    updateInvMaterialUnit(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_UNIT = `
-  mutation ($id: ID!) {
-    destroyInvMaterialUnit(id: $id) { errors { message } }
-  }
-`
-
 // mutation input 只收行自身字段,行上挂的 unit join 对象不进 payload
 function unitInput(row: Row) {
   return { unitId: row.unitId, factor: row.factor }
@@ -70,41 +32,34 @@ function unitChanged(before: Row, after: Row): boolean {
 /** 转换行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy(同凭证分录行先例) */
 async function persistUnits(materialId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
-  const collect = (label: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `${label}:${e.message}`))
-  }
   const unitLabel = (row: Row) => (row.unit as Row | undefined)?.name ?? '转换行'
+  const attempt = async (row: Row, operation: () => Promise<unknown>) => {
+    try {
+      await operation()
+    } catch (error) {
+      errors.push(`${unitLabel(row)}:${(error as Error).message}`)
+    }
+  }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroyInvMaterialUnit: { errors: { message: string }[] | null } }>(
-      DESTROY_UNIT,
-      { id: old.id }
-    )
-    collect(unitLabel(old), data.destroyInvMaterialUnit.errors)
+    await attempt(old, () => materialUnitClient.delete(old.id))
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createInvMaterialUnit: { errors: { message: string }[] | null } }>(
-        CREATE_UNIT,
-        { input: { materialId, ...unitInput(row) } }
-      )
-      collect(unitLabel(row), data.createInvMaterialUnit.errors)
+      await attempt(row, () => materialUnitClient.create({ materialId, ...unitInput(row) }))
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && unitChanged(old, row)) {
-      const data = await gqlFetch<{ updateInvMaterialUnit: { errors: { message: string }[] | null } }>(
-        UPDATE_UNIT,
-        { id: row.id, input: unitInput(row) }
-      )
-      collect(unitLabel(row), data.updateInvMaterialUnit.errors)
+      await attempt(row, () => materialUnitClient.update(row.id, unitInput(row)))
     }
   }
   return errors
 }
+
 
 // 常用列白名单:时间戳不进表格,图纸走 attachmentImages 虚拟列;分类列置顶
 const GRID_COLUMNS = [
@@ -154,7 +109,12 @@ function MaterialsPage() {
   // 单位名称表:单位转换 tab 的「基准单位」提示按默认单位 id 反查名称
   const { data: unitNames } = useQuery({
     queryKey: ['basUnitNames'],
-    queryFn: () => gqlFetch<{ basUnits: { results: Row[] } }>(FETCH_UNIT_NAMES).then((d) => d.basUnits.results),
+    queryFn: () =>
+      unitClient.query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'name', direction: 'ascending' },
+      }).then((result) => result.results),
     enabled: drawer !== null,
     staleTime: 60_000,
   })
@@ -172,11 +132,16 @@ function MaterialsPage() {
       return
     }
     setUnitsLoaded(false)
-    gqlFetch<{ invMaterialUnits: { results: Row[] } }>(FETCH_UNITS, { materialId: row.id })
-      .then((d) => {
+    materialUnitClient.query({
+      limit: 200,
+      offset: 0,
+      sort: { column: 'insertedAt', direction: 'ascending' },
+      filter: { materialId: { kind: 'fk', op: 'in', values: [row.id], labels: [] } },
+    })
+      .then((result) => {
         if (my !== reqIdRef.current) return
-        setUnits(d.invMaterialUnits.results)
-        setUnitsSnapshot(d.invMaterialUnits.results)
+        setUnits(result.results)
+        setUnitsSnapshot(result.results)
         setUnitsLoaded(true)
       })
       .catch((e) => {
@@ -197,6 +162,7 @@ function MaterialsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="invMaterials"
+          client={materialClient}
           columns={GRID_COLUMNS}
           joinFields={{ category: ['code'] }}
           overrides={{ categoryId: { render: (_value, row) => <CategoryCell row={row} /> } }}
@@ -206,16 +172,16 @@ function MaterialsPage() {
           onEdit={(row) => openDrawer('edit', row)}
           rowActions={statusToggleActions({
             field: 'active',
-            mutation: UPDATE_MATERIAL,
-            resultKey: 'updateInvMaterial',
+            update: materialClient.update,
             // 抽屉走 rowId 自查,状态翻转后一并失效行缓存
-            onDone: () => queryClient.invalidateQueries({ queryKey: ['rowById', 'invMaterials'] }),
+            onDone: () => queryClient.invalidateQueries({ queryKey: ['rowById', materialClient.id, 'invMaterials'] }),
           })}
         />
       </div>
 
       <SynieRecordDrawer
         resource="invMaterials"
+        client={materialClient}
         {...drawerConfig('invMaterials')}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -273,6 +239,7 @@ function MaterialsPage() {
             return (
               <SynieEditableTable
                 resource="invMaterialUnits"
+                client={materialUnitClient}
                 label="单位转换"
                 title={
                   <span>
@@ -303,13 +270,8 @@ function MaterialsPage() {
         }}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            const data = await gqlFetch<{
-              createInvMaterial: { result: { id: string } | null; errors: { message: string }[] | null }
-            }>(CREATE_MATERIAL, { input: values })
-            if (data.createInvMaterial.errors && data.createInvMaterial.errors.length > 0) {
-              throw new Error(data.createInvMaterial.errors.map((e) => e.message).join('; '))
-            }
-            const materialId = data.createInvMaterial.result!.id
+            const created = await materialClient.create(values)
+            const materialId = created.id
             const unitErrors = await persistUnits(materialId, units, [])
             // 暂存附件按槽位统一挂接;个别失败不阻断建料,提示手工补传即可
             const failed: string[] = []
@@ -333,13 +295,7 @@ function MaterialsPage() {
             }
           } else {
             const materialId = drawer!.row!.id
-            const data = await gqlFetch<{ updateInvMaterial: { errors: { message: string }[] | null } }>(
-              UPDATE_MATERIAL,
-              { id: materialId, input: values }
-            )
-            if (data.updateInvMaterial.errors && data.updateInvMaterial.errors.length > 0) {
-              throw new Error(data.updateInvMaterial.errors.map((e) => e.message).join('; '))
-            }
+            await materialClient.update(materialId, values)
             const unitErrors = await persistUnits(materialId, units, unitsSnapshot)
             if (unitErrors.length > 0) {
               toast.danger('物料已更新,但部分单位转换保存失败', { description: unitErrors.join('; ') })
@@ -347,9 +303,9 @@ function MaterialsPage() {
               toast.success('物料已更新')
             }
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'invMaterials'] })
+          queryClient.invalidateQueries({ queryKey: ['gridRows', materialClient.id, 'invMaterials'] })
           // 抽屉走 rowId 自查,一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'invMaterials'] })
+          queryClient.invalidateQueries({ queryKey: ['rowById', materialClient.id, 'invMaterials'] })
         }}
       />
     </>

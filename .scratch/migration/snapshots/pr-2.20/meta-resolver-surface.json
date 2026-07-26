@@ -1,0 +1,22 @@
+{
+  "gridMetaResolver": {
+    "function": "resolve/2",
+    "module": "SynieWeb.GridMeta",
+    "resources": [
+      "accBankAccounts",
+      "accBankTransactions",
+      "accBankImportTemplates",
+      "accBankImports",
+      "accBankImportItems",
+      "accVatInvoices",
+      "accExpenseReports",
+      "accExpenseReportItems",
+      "accBills",
+      "accBillTransactions",
+      "accBillHoldings",
+      "accBankReconciliations"
+    ]
+  },
+  "recordDrawerUsesGridMeta": true,
+  "recordMetaResolver": null
+}

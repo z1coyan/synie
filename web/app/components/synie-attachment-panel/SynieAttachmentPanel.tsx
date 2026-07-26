@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { fetchMe } from '~/lib/api/session'
+import { deleteAttachment, fileClient } from '~/lib/resources/files'
 import { downloadFile, uploadFile, type UploadedFile } from '~/lib/files'
 import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
 import { FileThumb } from '../synie-preview/FileThumb'
@@ -14,7 +15,7 @@ import { SyniePreview } from '../synie-preview/SyniePreview'
  * 保存成功后由父级统一 attachFile 挂接(见 acceptance/-transaction-drawer.tsx)。
  */
 export interface SynieAttachmentPanelProps {
-  /** 宿主资源标识(graphql type 名,如 sal_customer) */
+  /** 宿主资源标识(owner_type,如 sal_customer) */
   ownerType: string
   /** 宿主记录 id;create 模式下还没有,面板显示提示(或走 pending 暂存) */
   ownerId?: string | null
@@ -37,17 +38,6 @@ export interface SynieAttachmentPanelProps {
     onRemove: (fileId: string) => void
   }
 }
-
-const DESTROY_ATTACHMENT = `
-  mutation ($id: ID!) {
-    destroySysAttachment(id: $id) { result { id } errors { message } }
-  }
-`
-const DESTROY_FILE = `
-  mutation ($id: ID!) {
-    destroySysFile(id: $id) { result { id } errors { message } }
-  }
-`
 
 function formatBytes(size: number | null): string {
   if (size == null) return ''
@@ -77,8 +67,7 @@ export function SynieAttachmentPanel({
   // 无共享权限 hook,面板自查;queryKey 共享,多实例只发一次。fail-closed:拉不到=无权限
   const perms = useQuery({
     queryKey: ['myPermissions'],
-    queryFn: () =>
-      gqlFetch<{ myPermissions: string[] }>('query { myPermissions }').then((d) => new Set(d.myPermissions)),
+    queryFn: () => fetchMe().then((d) => new Set(d.permissions)),
   })
   const canCreate = (perms.data?.has('sys.file:create') ?? false) && !readonly
   const canDelete = (perms.data?.has('sys.file:delete') ?? false) && !readonly
@@ -121,7 +110,7 @@ export function SynieAttachmentPanel({
   // 暂存移除:先出列表(不挂接即不可见),再尽力清理裸文件(失败静默,同 OCR 孤儿文件债)
   const handleRemovePending = (fileId: string) => {
     pending!.onRemove(fileId)
-    void gqlFetch(DESTROY_FILE, { id: fileId }).catch(() => undefined)
+    void fileClient.delete(fileId).catch(() => undefined)
   }
 
   // 图片类附件文件名可点开全屏预览,items 携全部图片可循环切换;
@@ -144,15 +133,9 @@ export function SynieAttachmentPanel({
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      const res = await gqlFetch<{ destroySysAttachment: { errors: { message: string }[] | null } }>(
-        DESTROY_ATTACHMENT,
-        { id: deleteTarget.id }
-      )
-      if (res.destroySysAttachment.errors?.length) {
-        throw new Error(res.destroySysAttachment.errors.map((e) => e.message).join('; '))
-      }
+      await deleteAttachment(deleteTarget.id)
       // 文件行与物理对象一并清理;若文件仍被他处引用会被 FK 挡住,忽略即可
-      await gqlFetch(DESTROY_FILE, { id: deleteTarget.file.id }).catch(() => undefined)
+      await fileClient.delete(deleteTarget.file.id).catch(() => undefined)
       toast.success('附件已删除')
       setDeleteTarget(null)
       await queryClient.invalidateQueries({ queryKey: listKey })

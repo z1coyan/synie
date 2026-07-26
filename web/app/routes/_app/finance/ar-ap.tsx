@@ -4,8 +4,13 @@ import { useQuery } from '@tanstack/react-query'
 import { parseDate, today, getLocalTimeZone } from '@internationalized/date'
 import { Calendar, DateField, DatePicker, Label, Spinner, Table, Tabs } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
-import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
+import {
+  fetchARAPReport,
+  type ARAPReportRow as ReportRow,
+  type ARAPRoleAccount as RoleAccount,
+} from '~/lib/resources/accounting'
+import { companyClient } from '~/lib/resources/companies'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -13,37 +18,11 @@ export const Route = createFileRoute('/_app/finance/ar-ap')({
   component: ArApPage,
 })
 
-const REPORT = `
-  query ($companyId: ID!, $asOf: Date!) {
-    accArApReport(companyId: $companyId, asOf: $asOf)
-  }
-`
-
-interface RoleAccount {
-  id: string
-  code: string
-  name: string
-}
-
-interface ReportRow {
-  partyType: string | null
-  partyId: string | null
-  partyLabel: string
-  balances: Record<string, string>
-  netReceivable: string
-  netPayable: string
-}
-
-interface ArApReport {
-  asOf: string
-  roleAccounts: Record<string, RoleAccount[]>
-  rows: ReportRow[]
-}
-
 const PARTY_TYPE_LABEL: Record<string, string> = {
   customer: '客户',
   supplier: '供应商',
   company: '内部公司',
+  employee: '员工',
 }
 
 // 两 tab 各三角色+净额(列序即角色自然流转:未开票→挂账→预收/预付抵减)
@@ -93,9 +72,11 @@ function ArApPage() {
   const companies = useQuery({
     queryKey: ['arApCompanies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { count: number; results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { count results { id name } } }`
-      ).then((d) => d.basCompanies),
+      companyClient.query({
+        limit: 50,
+        offset: 0,
+        sort: { column: 'code', direction: 'ascending' },
+      }),
   })
 
   useEffect(() => {
@@ -109,11 +90,7 @@ function ArApPage() {
   const report = useQuery({
     queryKey: ['arApReport', companyId, asOf],
     enabled: companyId != null && asOf !== '',
-    queryFn: () =>
-      gqlFetch<{ accArApReport: string | ArApReport }>(REPORT, { companyId, asOf }),
-    // generic action 的 map 经 GraphQL 是 json 串(照工资月度统计先例)
-    select: (d) =>
-      (typeof d.accArApReport === 'string' ? JSON.parse(d.accArApReport) : d.accArApReport) as ArApReport,
+    queryFn: () => fetchARAPReport(companyId!, asOf),
   })
 
   const data = report.data
@@ -175,6 +152,7 @@ function ArApPage() {
         <div className="w-full lg:max-w-xs">
           <RemoteSelect
             resource="basCompanies"
+            client={companyClient}
             label="公司"
             placeholder="选择公司…"
             value={companyId}

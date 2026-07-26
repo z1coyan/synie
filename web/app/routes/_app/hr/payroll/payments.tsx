@@ -5,6 +5,7 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import type { Row } from '~/components/synie-data-grid/types'
+import { payrollPaymentClient } from '~/lib/resources/hr-operations'
 
 export const Route = createFileRoute('/_app/hr/payroll/payments')({
   component: PayrollPaymentsPage,
@@ -41,6 +42,7 @@ function PayrollPaymentsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrPayrollPayments"
+          client={payrollPaymentClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'paidOn', direction: 'descending' }}
@@ -52,6 +54,7 @@ function PayrollPaymentsPage() {
       <SynieRecordDrawer
         {...drawerConfig('hrPayrollPayments')}
         resource="hrPayrollPayments"
+        client={payrollPaymentClient}
         mode="view"
         isOpen={viewRow !== null}
         onOpenChange={(open) => !open && setViewRow(null)}

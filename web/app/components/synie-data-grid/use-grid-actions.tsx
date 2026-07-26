@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { AlertDialog, Button, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
+import type { ResourceClient } from '~/lib/resources/types'
 import type { ActionContext, BulkAction, GridActionMeta, GridMeta, Row, RowAction } from './types'
 
 export interface ResolvedAction {
@@ -21,13 +22,22 @@ interface PendingConfirm {
 // ponytail: 前端逐条循环,量大或需事务性时后端加 Ash bulk action 再切
 async function runIdMutation(
   mutation: string,
-  ids: string[]
+  ids: string[],
+  client?: ResourceClient,
+  actionKey?: string,
 ): Promise<{ ok: number; fail: number; messages: string[] }> {
   let ok = 0
   let fail = 0
   const messages: string[] = []
   for (const id of ids) {
     try {
+      if (client) {
+        if (actionKey === 'delete') await client.delete(id)
+        else if (actionKey && client.action) await client.action(actionKey, [id])
+        else throw new Error(`Resource Client 未实现动作 ${actionKey ?? mutation}`)
+        ok += 1
+        continue
+      }
       const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
         `mutation ($id: ID!) { ${mutation}(id: $id) { errors { message } } }`,
         { id }
@@ -70,6 +80,7 @@ function failureDescription(fail: number, ok: number, messages: string[]): strin
 
 export function useGridActions(opts: {
   meta: GridMeta | undefined
+  client?: ResourceClient
   /** 覆盖 meta.capabilities(资源复用他人权限码、meta 为空时页面显式声明);不传用 meta 下发值 */
   capabilities?: string[]
   refetch: () => void
@@ -96,7 +107,7 @@ export function useGridActions(opts: {
     !capability || (opts.capabilities ?? meta?.capabilities ?? []).includes(capability)
   const ctx: ActionContext = { refetch }
 
-  const confirmThenMutate = (label: string, isDanger: boolean, mutation: string) => (rows: Row[]) =>
+  const confirmThenMutate = (label: string, isDanger: boolean, mutation: string, actionKey?: string) => (rows: Row[]) =>
     setPending({
       label,
       isDanger,
@@ -104,7 +115,9 @@ export function useGridActions(opts: {
       execute: async (rs) => {
         const { ok, fail, messages } = await runIdMutation(
           mutation,
-          rs.map((r) => r.id)
+          rs.map((r) => r.id),
+          opts.client,
+          actionKey,
         )
         // 三分支:全部成功 / 整批失败(下方 ok>0 门控自然不 refetch)/ 部分失败
         if (fail === 0) toast.success(`${label}成功(${ok} 条)`)
@@ -128,7 +141,7 @@ export function useGridActions(opts: {
     isDanger: a.isDanger,
     run: opts.actionHandlers?.[a.key]
       ? (rows) => opts.actionHandlers![a.key](rows, ctx)
-      : confirmThenMutate(a.label, a.isDanger, a.mutation),
+      : confirmThenMutate(a.label, a.isDanger, a.mutation, a.key),
   })
 
   const extended = (scope: 'row' | 'bulk') =>
@@ -171,7 +184,7 @@ export function useGridActions(opts: {
         run: () => a.onAction(row, ctx),
       })),
     ...(can('delete') && meta?.destroyMutation && vis('delete', row)
-      ? [{ key: 'delete', label: '删除', isDanger: true, run: confirmThenMutate('删除', true, meta.destroyMutation) }]
+      ? [{ key: 'delete', label: '删除', isDanger: true, run: confirmThenMutate('删除', true, meta.destroyMutation, 'delete') }]
       : []),
   ]
 
@@ -191,7 +204,7 @@ export function useGridActions(opts: {
       })),
     // 批量码叠加在基础码之上:服务端逐条按 delete 校验,只授 batch_delete 不授 delete 会全拒
     ...(can('batch_delete') && can('delete') && meta?.destroyMutation
-      ? [{ key: 'batch_delete', label: '批量删除', isDanger: true, run: confirmThenMutate('批量删除', true, meta.destroyMutation) }]
+      ? [{ key: 'batch_delete', label: '批量删除', isDanger: true, run: confirmThenMutate('批量删除', true, meta.destroyMutation, 'delete') }]
       : []),
   ]
 

@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useAuditDoc } from '../-audit-doc'
+import { purchaseOutsourcedReceiptItemClient } from '~/lib/resources/fulfillment'
 import { receiptAuditConfig, useReceiptDrawer } from './-receipt-drawer'
 
 export const Route = createFileRoute('/_app/scm/outsourced-receipts/items')({
@@ -79,6 +80,7 @@ function ReceiptItemsTab() {
     <>
       <SynieDataGrid
         resource="purOutsourcedReceiptItems"
+        client={purchaseOutsourcedReceiptItemClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'receiptDate', direction: 'descending' }}

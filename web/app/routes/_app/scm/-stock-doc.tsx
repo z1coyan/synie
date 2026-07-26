@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -11,6 +10,8 @@ import { SynieEditableTable } from '~/components/synie-editable-table/SynieEdita
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
+import { companyClient } from '~/lib/resources/companies'
+import type { ResourceClient } from '~/lib/resources/types'
 
 /**
  * 手工出入库单页面实现(其他库存单 → 出入库 tab)。
@@ -33,22 +34,8 @@ export interface StockDocConfig {
   createLabel: string
   /** 行上指向头的 fk 字段(camel):stockDocId */
   docIdField: string
-  /** 行查询名(GraphQL list):invStockDocItems */
-  itemQuery: string
-  mutations: {
-    createDoc: string
-    updateDoc: string
-    createItem: string
-    updateItem: string
-    destroyItem: string
-  }
-  resultKeys: {
-    createDoc: string
-    updateDoc: string
-    createItem: string
-    updateItem: string
-    destroyItem: string
-  }
+  docClient: ResourceClient
+  itemClient: ResourceClient
   /** 摘要占位(「货从哪来/到哪去」) */
   summaryPlaceholder: string
 }
@@ -97,6 +84,17 @@ export function warehouseFilterLiteral(companyId: string | null): string | undef
   return `{companyId: {eq: ${JSON.stringify(companyId)}}, isLeaf: {eq: true}, active: {eq: true}}`
 }
 
+
+/** 与 warehouseFilterLiteral 同口径的 REST FilterState。迁移期两者同时传给 RemoteSelect。 */
+export function warehouseFilterState(companyId: string | null): FilterState | undefined {
+  if (companyId == null || companyId === '') return undefined
+  return {
+    companyId: { kind: 'fk', op: 'in', values: [companyId], labels: [] },
+    isLeaf: { kind: 'bool', eq: true },
+    active: { kind: 'bool', eq: true },
+  }
+}
+
 /** 仓 RemoteSelect:候选绑表单公司,未选公司禁用 */
 export function WarehouseRemoteSelect({
   value,
@@ -120,6 +118,7 @@ export function WarehouseRemoteSelect({
       onChange={(id) => onChange(id)}
       isDisabled={isDisabled || companyId == null}
       filter={warehouseFilterLiteral(companyId)}
+      filterState={warehouseFilterState(companyId)}
     />
   )
 }
@@ -148,11 +147,6 @@ export function CompanyDefaultSync({
   return null
 }
 
-interface MutationResult {
-  result?: { id: string } | null
-  errors: { message: string }[] | null
-}
-
 function itemInput(row: Row) {
   return {
     idx: row.idx,
@@ -171,32 +165,30 @@ function itemChanged(before: Row, after: Row): boolean {
 
 async function persistItems(cfg: StockDocConfig, docId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
+  const run = async (idx: unknown, operation: () => Promise<unknown>) => {
+    try {
+      await operation()
+    } catch (error) {
+      errors.push(`第${idx}行:${error instanceof Error ? error.message : String(error)}`)
+    }
   }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<Record<string, MutationResult>>(cfg.mutations.destroyItem, { id: old.id })
-    collect(old.idx, data[cfg.resultKeys.destroyItem]?.errors)
+    await run(old.idx, () => cfg.itemClient.delete(old.id))
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<Record<string, MutationResult>>(cfg.mutations.createItem, {
-        input: { [cfg.docIdField]: docId, ...itemInput(row) },
-      })
-      collect(row.idx, data[cfg.resultKeys.createItem]?.errors)
+      await run(row.idx, () =>
+        cfg.itemClient.create({ [cfg.docIdField]: docId, ...itemInput(row) }),
+      )
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<Record<string, MutationResult>>(cfg.mutations.updateItem, {
-        id: row.id,
-        input: itemInput(row),
-      })
-      collect(row.idx, data[cfg.resultKeys.updateItem]?.errors)
+      await run(row.idx, () => cfg.itemClient.update(row.id, itemInput(row)))
     }
   }
   return errors
@@ -214,9 +206,11 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
   const companies = useQuery({
     queryKey: [cfg.resource, 'companies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { count: number; results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { count results { id name } } }`
-      ).then((d) => d.basCompanies.results),
+      companyClient.query({
+        limit: 50,
+        offset: 0,
+        sort: { column: 'code', direction: 'ascending' },
+      }).then((result) => result.results),
   })
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
@@ -231,17 +225,18 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
       return
     }
     setDetailLoaded(false)
-    const FETCH_ITEMS = `
-      query ($docId: ID!) {
-        ${cfg.itemQuery}(filter: {${cfg.docIdField}: {eq: $docId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
-          results { id idx materialId unitId qty baseQty remark materialName unitName material { id name } unit { id name } }
-        }
-      }
-    `
-    gqlFetch<Record<string, { results: Row[] }>>(FETCH_ITEMS, { docId: row!.id })
-      .then((d) => {
+    cfg.itemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          [cfg.docIdField]: { kind: 'fk', op: 'in', values: [row!.id], labels: [] },
+        },
+      })
+      .then((result) => {
         if (my !== reqIdRef.current) return
-        const rows = d[cfg.itemQuery].results
+        const rows = result.results
         setItems(rows)
         setItemsSnapshot(rows)
         setDetailLoaded(true)
@@ -333,6 +328,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
 
       <SynieDataGrid
         resource={cfg.resource}
+        client={cfg.docClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'docDate', direction: 'descending' }}
@@ -346,6 +342,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
 
       <SynieRecordDrawer
         resource={cfg.resource}
+        client={cfg.docClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -370,6 +367,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
             />
             <SynieEditableTable
               resource={cfg.itemResource}
+              client={cfg.itemClient}
               label={cfg.itemLabel}
               items={items}
               onChange={setItems}
@@ -412,12 +410,8 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<Record<string, MutationResult>>(cfg.mutations.createDoc, {
-              input: values,
-            })
-            const res = data[cfg.resultKeys.createDoc]
-            if (res?.errors && res.errors.length > 0) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const docId = res!.result!.id
+            const saved = await cfg.docClient.create(values)
+            const docId = saved.id
             const itemErrors = await persistItems(cfg, docId, items, [])
             if (itemErrors.length > 0) {
               toast.danger(`${cfg.label}已创建,但部分单据行保存失败`, { description: itemErrors.join('; ') })
@@ -426,12 +420,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
             }
             savedId = docId
           } else {
-            const data = await gqlFetch<Record<string, MutationResult>>(cfg.mutations.updateDoc, {
-              id: drawer!.row!.id,
-              input: values,
-            })
-            const res = data[cfg.resultKeys.updateDoc]
-            if (res?.errors && res.errors.length > 0) throw new Error(res.errors.map((e) => e.message).join('; '))
+            await cfg.docClient.update(drawer!.row!.id, values)
             const itemErrors = await persistItems(cfg, drawer!.row!.id, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger(`${cfg.label}已更新,但部分单据行保存失败`, { description: itemErrors.join('; ') })

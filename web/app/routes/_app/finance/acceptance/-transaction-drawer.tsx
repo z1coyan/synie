@@ -17,19 +17,25 @@ import {
   TextField,
   toast,
 } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
 import { BANKS } from '~/lib/banks'
 import { attachFile, type UploadedFile } from '~/lib/files'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
-import { SynieOcrButton } from '~/components/synie-ocr-button/SynieOcrButton'
+import { FinanceOcrButton } from '../-ocr-button'
 import { FileThumb } from '~/components/synie-preview/FileThumb'
 import { SyniePreview } from '~/components/synie-preview/SyniePreview'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { FkLink } from '~/components/synie-record-drawer/fk-preview'
 import type { FieldInputProps } from '~/components/synie-record-drawer/fields'
 import type { GridColumnMeta, Row } from '~/components/synie-data-grid/types'
+import {
+  billClient,
+  billHoldingClient,
+  billTransactionClient,
+  ocrBillTransaction,
+} from '~/lib/resources/finance-operations'
+import { fileClient } from '~/lib/resources/files'
 
 /**
  * 承兑交易三态抽屉(交易/持有两 tab 共用,TanStack Router 按 `-` 前缀不当路由)。
@@ -49,37 +55,6 @@ export const TX_TYPE_LABEL: Record<TxType, string> = {
 export type TransactionDrawerState =
   | { mode: 'create'; txType: TxType; holding?: Row | null }
   | { mode: 'view' | 'edit'; row: Row }
-
-const CREATE_BILL_TRANSACTION = `
-  mutation ($input: CreateAccBillTransactionInput!) {
-    createAccBillTransaction(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_BILL_TRANSACTION = `
-  mutation ($id: ID!, $input: UpdateAccBillTransactionInput!) {
-    updateAccBillTransaction(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-// 票号查档:命中已建档票据(接收票面区,详见 ReceiveBillSection)
-const LOOKUP_BILL = `
-  query ($billNo: String!) {
-    accBills(filter: {billNo: {eq: $billNo}}, limit: 1, offset: 0) {
-      results { id billNo billKind dueDate drawerName acceptorName }
-    }
-  }
-`
-// OCR generic action:返回票面草稿(snake_case)+ 子票段字段(sub_start/sub_end/amount)JSON,不落库
-const OCR_BILL = `
-  mutation ($input: OcrAccBillTransactionInput!) {
-    ocrAccBillTransaction(input: $input)
-  }
-`
-// 暂存附件被替换(重复 OCR)时尽力清理旧裸文件;失败静默(不挂接即不可见)
-const DESTROY_FILE = `
-  mutation ($id: ID!) {
-    destroySysFile(id: $id) { result { id } errors { message } }
-  }
-`
 
 // 详情/表单不展示:状态与审核元数据由审核动作单独维护;插入/更新时间戳照系统字段惯例
 const EXCLUDE = ['status', 'auditedAt', 'auditedById', 'createdById', 'postingDate', 'insertedAt', 'updatedAt']
@@ -417,8 +392,12 @@ function ReceiveBillSection({
     if (!billNo) return
     setLoading(true)
     try {
-      const data = await gqlFetch<{ accBills: { results: Row[] } }>(LOOKUP_BILL, { billNo })
-      const hit = data.accBills.results[0] ?? null
+      const data = await billClient.query({
+        limit: 1,
+        offset: 0,
+        filter: { billNo: { kind: 'text', op: 'eq', value: billNo } },
+      })
+      const hit = data.results[0] ?? null
       setBillLookup(hit)
       patchValues({ billId: hit ? hit.id : null })
     } catch (e) {
@@ -435,9 +414,8 @@ function ReceiveBillSection({
           <span className="text-sm font-medium">票面信息</span>
           <span className="text-xs text-muted">上传票面自动识别回填;票号命中已有档案自动挂接</span>
         </div>
-        <SynieOcrButton
-          mutation={OCR_BILL}
-          resultKey="ocrAccBillTransaction"
+        <FinanceOcrButton
+          recognize={ocrBillTransaction}
           accept="image/*"
           variant="primary"
           label={ocrFile ? '重新识别' : '上传票面识别'}
@@ -599,13 +577,13 @@ export function AcceptanceTransactionDrawer({
   const handleOcrFile = (file: UploadedFile) => {
     const prev = ocrFile
     setOcrFile(file)
-    if (prev) void gqlFetch(DESTROY_FILE, { id: prev.id }).catch(() => undefined)
+    if (prev) void fileClient.delete(prev.id).catch(() => undefined)
   }
 
   const handleOcrRemove = () => {
     const prev = ocrFile
     setOcrFile(null)
-    if (prev) void gqlFetch(DESTROY_FILE, { id: prev.id }).catch(() => undefined)
+    if (prev) void fileClient.delete(prev.id).catch(() => undefined)
   }
 
   // 打开时初始化组件态:从持有段发起的创建把该段整行灌入选段状态
@@ -628,6 +606,7 @@ export function AcceptanceTransactionDrawer({
   return (
     <SynieRecordDrawer
       resource="accBillTransactions"
+      client={billTransactionClient}
       label={createType ? `承兑${TX_TYPE_LABEL[createType]}` : '承兑交易'}
       mode={mode}
       isOpen={state !== null}
@@ -711,6 +690,7 @@ export function AcceptanceTransactionDrawer({
           input: ({ isDisabled, values, patchValues }) => (
             <RemoteSelect
               resource="accBillHoldings"
+              client={billHoldingClient}
               labelField="label"
               isRequired
               searchFields={['billNo']}
@@ -972,26 +952,20 @@ export function AcceptanceTransactionDrawer({
             ]
             const missing = required.filter(([k]) => billDraft[k] == null || billDraft[k] === '').map(([, l]) => l)
             if (missing.length > 0) throw new Error(`请完善票面信息:${missing.join('、')}`)
-            // bill_attrs 是 :map 参数,GraphQL 暴露为 JsonString 标量,写入前须序列化(照 invoices.tsx lines 先例)
-            input.billAttrs = JSON.stringify(billDraft)
+            // REST 直接发送结构化票面对象，保留 snake_case OCR 字段。
+            input.billAttrs = billDraft
           }
         }
 
         if (mode === 'create') {
-          const data = await gqlFetch<{
-            createAccBillTransaction: { result: { id: string } | null; errors: { message: string }[] | null }
-          }>(CREATE_BILL_TRANSACTION, { input })
-          if (data.createAccBillTransaction.errors && data.createAccBillTransaction.errors.length > 0) {
-            throw new Error(data.createAccBillTransaction.errors.map((e) => e.message).join('; '))
-          }
-          savedId = data.createAccBillTransaction.result!.id
+          savedId = (await billTransactionClient.create(input)).id
           // 暂存附件(票面原图+额外文件)统一挂接;个别失败不阻断建单,提示手工补传即可
           const failed: string[] = []
           for (const f of [...(ocrFile ? [ocrFile] : []), ...pendingFiles]) {
             try {
               await attachFile(f.id, {
                 ownerType: 'acc_bill_transaction',
-                ownerId: data.createAccBillTransaction.result!.id,
+                ownerId: savedId,
               })
             } catch {
               failed.push(f.filename)
@@ -1002,13 +976,7 @@ export function AcceptanceTransactionDrawer({
           }
           toast.success(`承兑${TX_TYPE_LABEL[(txType ?? 'RECEIVE') as TxType] ?? '交易'}已创建`)
         } else {
-          const data = await gqlFetch<{ updateAccBillTransaction: { errors: { message: string }[] | null } }>(
-            UPDATE_BILL_TRANSACTION,
-            { id: row!.id, input }
-          )
-          if (data.updateAccBillTransaction.errors && data.updateAccBillTransaction.errors.length > 0) {
-            throw new Error(data.updateAccBillTransaction.errors.map((e) => e.message).join('; '))
-          }
+          await billTransactionClient.update(row!.id, input)
           toast.success('承兑交易已更新')
           savedId = row!.id
         }

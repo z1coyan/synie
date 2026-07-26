@@ -1,7 +1,11 @@
 import { useRef } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
+import {
+  SynieDataGrid,
+  type ColumnOverride,
+} from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { demandItemClient } from '~/lib/resources/manufacturing'
 import {
   canChangeFulfillmentItem,
   canCompleteItem,
@@ -43,7 +47,13 @@ const GRID_COLUMNS = [
 
 // 行状态胶囊:待安排灰、已安排蓝、已完成绿;已下单布尔徽标
 const GRID_OVERRIDES = {
-  status: { enumColors: { PENDING: 'default', SCHEDULED: 'accent', COMPLETED: 'success' } },
+  status: {
+    enumColors: {
+      PENDING: 'default',
+      SCHEDULED: 'accent',
+      COMPLETED: 'success',
+    },
+  },
   salesOrderItemId: { label: '来源销售条目' },
   orderedQty: { label: '已下单数量' },
   receivedQty: { label: '已收数量' },
@@ -66,6 +76,7 @@ function DemandItemsTab() {
     <>
       <SynieDataGrid
         resource="mfgDemandItems"
+        client={demandItemClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         // mfgDemandItems 复用 mfg.demand 权限码,meta capabilities 为空:显式声明本视图

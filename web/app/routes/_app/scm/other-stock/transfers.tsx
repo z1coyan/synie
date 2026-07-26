@@ -3,7 +3,13 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, Label, NumberField, Spinner, toast } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
-import { gqlFetch } from '~/lib/graphql'
+import { companyClient } from '~/lib/resources/companies'
+import {
+  receiveStockTransfer,
+  stockTransferClient,
+  stockTransferItemClient,
+  warehouseClient,
+} from '~/lib/resources/inventory'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -26,55 +32,6 @@ export const Route = createFileRoute('/_app/scm/other-stock/transfers')({
  * 手工调拨单(其他库存单 → 调拨 tab):同公司三仓走在途,一单两动作。
  * 公司为首列可筛;建单时公司表单头字段,仓候选绑表单公司;在途仓预填种子仓。
  */
-
-const CREATE_DOC = `
-  mutation ($input: CreateInvStockTransferInput!) {
-    createInvStockTransfer(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_DOC = `
-  mutation ($id: ID!, $input: UpdateInvStockTransferInput!) {
-    updateInvStockTransfer(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreateInvStockTransferItemInput!) {
-    createInvStockTransferItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdateInvStockTransferItemInput!) {
-    updateInvStockTransferItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroyInvStockTransferItem(id: $id) { errors { message } }
-  }
-`
-const RECEIVE_DOC = `
-  mutation ($id: ID!, $input: ReceiveInvStockTransferInput!) {
-    receiveInvStockTransfer(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const FETCH_ITEMS = `
-  query ($docId: ID!) {
-    invStockTransferItems(filter: {stockTransferId: {eq: $docId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
-      results {
-        id idx materialId unitId qty baseQty receivedQty remark materialName unitName
-        material { id name }
-        unit { id name }
-      }
-    }
-  }
-`
-const FETCH_LEAF_WAREHOUSES = `
-  query ($companyId: ID!) {
-    invWarehouses(filter: {companyId: {eq: $companyId}, isLeaf: {eq: true}}, limit: 200, offset: 0) {
-      results { id name }
-    }
-  }
-`
 
 const GRID_COLUMNS = [
   'companyId',
@@ -105,11 +62,6 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-interface MutationResult {
-  result?: { id: string } | null
-  errors: { message: string }[] | null
-}
-
 function itemInput(row: Row) {
   return {
     idx: row.idx,
@@ -128,32 +80,30 @@ function itemChanged(before: Row, after: Row): boolean {
 
 async function persistItems(docId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
+  const run = async (idx: unknown, operation: () => Promise<unknown>) => {
+    try {
+      await operation()
+    } catch (error) {
+      errors.push(`第${idx}行:${error instanceof Error ? error.message : String(error)}`)
+    }
   }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroyInvStockTransferItem: MutationResult }>(DESTROY_ITEM, { id: old.id })
-    collect(old.idx, data.destroyInvStockTransferItem.errors)
+    await run(old.idx, () => stockTransferItemClient.delete(old.id))
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createInvStockTransferItem: MutationResult }>(CREATE_ITEM, {
-        input: { stockTransferId: docId, ...itemInput(row) },
-      })
-      collect(row.idx, data.createInvStockTransferItem.errors)
+      await run(row.idx, () =>
+        stockTransferItemClient.create({ stockTransferId: docId, ...itemInput(row) }),
+      )
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{ updateInvStockTransferItem: MutationResult }>(UPDATE_ITEM, {
-        id: row.id,
-        input: itemInput(row),
-      })
-      collect(row.idx, data.updateInvStockTransferItem.errors)
+      await run(row.idx, () => stockTransferItemClient.update(row.id, itemInput(row)))
     }
   }
   return errors
@@ -174,15 +124,22 @@ function TransitWarehouseSync({
   patchValues: (patch: Record<string, unknown>) => void
 }) {
   const query = useQuery({
-    queryKey: ['transitWarehouse', companyId, companyCode],
+    queryKey: ['transitWarehouse', warehouseClient.id, companyId, companyCode],
     enabled: mode === 'create' && companyId != null && companyCode != null,
     staleTime: 300_000,
     queryFn: () =>
-      gqlFetch<{ invWarehouses: { results: { id: string; name: string }[] } }>(FETCH_LEAF_WAREHOUSES, {
-        companyId,
-      }).then(
-        (d) => d.invWarehouses.results.find((w) => w.name === `${companyCode} - 在途`)?.id ?? null
-      ),
+      warehouseClient
+        .query({
+          limit: 200,
+          offset: 0,
+          filter: {
+            companyId: { kind: 'fk', op: 'in', values: [companyId!], labels: [] },
+            isLeaf: { kind: 'bool', eq: true },
+          },
+        })
+        .then((result) =>
+          result.results.find((warehouse) => warehouse.name === String(companyCode) + ' - 在途')?.id ?? null,
+        ),
   })
   const found = query.data ?? null
   const current = values.transitWarehouseId
@@ -212,9 +169,11 @@ function StockTransfersTab() {
   const companies = useQuery({
     queryKey: ['stockTransferCompanies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { results { id name code } } }`
-      ).then((d) => d.basCompanies.results),
+      companyClient.query({
+        limit: 50,
+        offset: 0,
+        sort: { column: 'code', direction: 'ascending' },
+      }).then((result) => result.results),
   })
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
@@ -230,10 +189,18 @@ function StockTransfersTab() {
       return
     }
     setDetailLoaded(false)
-    gqlFetch<{ invStockTransferItems: { results: Row[] } }>(FETCH_ITEMS, { docId: row!.id })
-      .then((d) => {
+    stockTransferItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          stockTransferId: { kind: 'fk', op: 'in', values: [row!.id], labels: [] },
+        },
+      })
+      .then((result) => {
         if (my !== reqIdRef.current) return
-        const rows = d.invStockTransferItems.results
+        const rows = result.results
         setItems(rows)
         setItemsSnapshot(rows)
         setDetailLoaded(true)
@@ -250,9 +217,14 @@ function StockTransfersTab() {
     queryKey: ['transferReceiveItems', receiveDoc?.id],
     enabled: receiveDoc != null,
     queryFn: () =>
-      gqlFetch<{ invStockTransferItems: { results: Row[] } }>(FETCH_ITEMS, {
-        docId: receiveDoc!.id,
-      }).then((d) => d.invStockTransferItems.results),
+      stockTransferItemClient.query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          stockTransferId: { kind: 'fk', op: 'in', values: [receiveDoc!.id], labels: [] },
+        },
+      }).then((result) => result.results),
   })
 
   useEffect(() => {
@@ -271,16 +243,12 @@ function StockTransfersTab() {
     setReceiving(true)
     try {
       const input = {
-        receipts: receiveItems.data.map((r) =>
-          JSON.stringify({ item_id: r.id, qty: Number.isFinite(receipts[r.id]) ? receipts[r.id] : 0 })
-        ),
+        receipts: receiveItems.data.map((r) => ({
+          itemId: r.id,
+          qty: String(Number.isFinite(receipts[r.id]) ? receipts[r.id] : 0),
+        })),
       }
-      const data = await gqlFetch<{ receiveInvStockTransfer: MutationResult }>(RECEIVE_DOC, {
-        id: receiveDoc.id,
-        input,
-      })
-      const errors = data.receiveInvStockTransfer.errors
-      if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+      await receiveStockTransfer(receiveDoc.id, input)
       toast.success('调拨单已收货')
       setReceiveDoc(null)
       invalidateGrids()
@@ -412,6 +380,7 @@ function StockTransfersTab() {
 
       <SynieDataGrid
         resource="invStockTransfers"
+        client={stockTransferClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'docDate', direction: 'descending' }}
@@ -426,6 +395,7 @@ function StockTransfersTab() {
 
       <SynieRecordDrawer
         resource="invStockTransfers"
+        client={stockTransferClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -459,6 +429,7 @@ function StockTransfersTab() {
               />
               <SynieEditableTable
                 resource="invStockTransferItems"
+                client={stockTransferItemClient}
                 label="调拨行"
                 items={items}
                 onChange={setItems}
@@ -510,24 +481,15 @@ function StockTransfersTab() {
             throw new Error('调出、调入与在途仓库必须两两不同')
           }
           if (mode === 'create') {
-            const data = await gqlFetch<{ createInvStockTransfer: MutationResult }>(CREATE_DOC, {
-              input: values,
-            })
-            const res = data.createInvStockTransfer
-            if (res.errors && res.errors.length > 0) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const itemErrors = await persistItems(res.result!.id, items, [])
+            const saved = await stockTransferClient.create(values)
+            const itemErrors = await persistItems(saved.id, items, [])
             if (itemErrors.length > 0) {
               toast.danger('调拨单已创建,但部分调拨行保存失败', { description: itemErrors.join('; ') })
             } else {
               toast.success('调拨单已创建')
             }
           } else {
-            const data = await gqlFetch<{ updateInvStockTransfer: MutationResult }>(UPDATE_DOC, {
-              id: drawer!.row!.id,
-              input: values,
-            })
-            const res = data.updateInvStockTransfer
-            if (res.errors && res.errors.length > 0) throw new Error(res.errors.map((e) => e.message).join('; '))
+            await stockTransferClient.update(drawer!.row!.id, values)
             const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('调拨单已更新,但部分调拨行保存失败', { description: itemErrors.join('; ') })

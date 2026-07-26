@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Chip } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { salesQuotationClient } from '~/lib/resources/quotations'
 import { useAuditDoc } from '../-audit-doc'
 import { salesQuotationAuditConfig, useQuotationDrawer } from './-quotation-drawer'
 
@@ -64,6 +65,7 @@ function QuotationsTab() {
     <>
       <SynieDataGrid
         resource="salQuotations"
+        client={salesQuotationClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         onView={(row) => openDrawer('view', row)}

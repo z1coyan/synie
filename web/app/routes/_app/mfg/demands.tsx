@@ -1,4 +1,10 @@
-import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
+import {
+  Link,
+  Outlet,
+  createFileRoute,
+  useLocation,
+  useNavigate,
+} from '@tanstack/react-router'
 import { Tabs } from '@heroui/react'
 
 export const Route = createFileRoute('/_app/mfg/demands')({
@@ -15,7 +21,8 @@ const TABS = [
 function DemandsLayout() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const selected = TABS.find((t) => pathname.includes(`/mfg/demands/${t.id}`))?.id ?? 'items'
+  const selected =
+    TABS.find((t) => pathname.includes(`/mfg/demands/${t.id}`))?.id ?? 'items'
 
   return (
     <>
@@ -27,7 +34,9 @@ function DemandsLayout() {
         variant="secondary"
         selectedKey={selected}
         // 鼠标点击由 Link 自己导航(保留中键新开等锚点语义),这里兜底键盘方向键切换
-        onSelectionChange={(key) => navigate({ to: `/mfg/demands/${String(key)}` })}
+        onSelectionChange={(key) =>
+          navigate({ to: `/mfg/demands/${String(key)}` })
+        }
         className="mt-4"
       >
         <Tabs.ListContainer>
@@ -37,7 +46,9 @@ function DemandsLayout() {
               <Tabs.Tab
                 key={t.id}
                 id={t.id}
-                render={(domProps) => <Link {...(domProps as object)} to={`/mfg/demands/${t.id}`} />}
+                render={(domProps) => (
+                  <Link {...(domProps as object)} to={`/mfg/demands/${t.id}`} />
+                )}
               >
                 {t.label}
                 <Tabs.Indicator />

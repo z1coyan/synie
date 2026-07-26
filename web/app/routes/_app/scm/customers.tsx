@@ -2,27 +2,16 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { customerClient } from '~/lib/resources/customers'
 
 export const Route = createFileRoute('/_app/scm/customers')({
   component: CustomersPage,
 })
-
-const CREATE_CUSTOMER = `
-  mutation ($input: CreateSalCustomerInput!) {
-    createSalCustomer(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_CUSTOMER = `
-  mutation ($id: ID!, $input: UpdateSalCustomerInput!) {
-    updateSalCustomer(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 function CustomersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
@@ -36,6 +25,7 @@ function CustomersPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="salCustomers"
+          client={customerClient}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
@@ -44,6 +34,7 @@ function CustomersPage() {
 
       <SynieRecordDrawer
         resource="salCustomers"
+        client={customerClient}
         label="客户"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -63,23 +54,15 @@ function CustomersPage() {
         )}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
-          if (mode === 'create') {
-            const data = await gqlFetch<{ createSalCustomer: { errors: { message: string }[] | null } }>(
-              CREATE_CUSTOMER,
-              { input: values }
-            )
-            errors = data.createSalCustomer.errors
-          } else {
-            const data = await gqlFetch<{ updateSalCustomer: { errors: { message: string }[] | null } }>(
-              UPDATE_CUSTOMER,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updateSalCustomer.errors
-          }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+          const saved =
+            mode === 'create'
+              ? await customerClient.create(values)
+              : await customerClient.update(drawer!.row!.id, values)
           toast.success(mode === 'create' ? '客户已创建' : '客户已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'salCustomers'] })
+          queryClient.invalidateQueries({
+            queryKey: ['gridRows', customerClient.id, 'salCustomers'],
+          })
+          return saved.id
         }}
       />
     </>

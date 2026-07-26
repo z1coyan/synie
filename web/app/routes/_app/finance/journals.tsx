@@ -3,12 +3,21 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
+import {
+  auditGlJournal,
+  glJournalClient,
+  glJournalLineClient,
+} from '~/lib/resources/accounting'
+import { accountClient } from '~/lib/resources/accounts'
+import { companyClient } from '~/lib/resources/companies'
+import { customerClient } from '~/lib/resources/customers'
+import { employeeClient } from '~/lib/resources/employees'
+import { supplierClient } from '~/lib/resources/suppliers'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -16,49 +25,7 @@ export const Route = createFileRoute('/_app/finance/journals')({
   component: JournalsPage,
 })
 
-const CREATE_JOURNAL = `
-  mutation ($input: CreateAccGlJournalInput!) {
-    createAccGlJournal(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_JOURNAL = `
-  mutation ($id: ID!, $input: UpdateAccGlJournalInput!) {
-    updateAccGlJournal(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const AUDIT_JOURNAL = `
-  mutation ($id: ID!, $input: AuditAccGlJournalInput!) {
-    auditAccGlJournal(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const FETCH_LINES = `
-  query ($journalId: ID!) {
-    accGlJournalLines(filter: {journalId: {eq: $journalId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
-      results {
-        id idx accountId debit credit partyType partyId remarks currencyId
-        account { id name }
-        currency { id name }
-      }
-    }
-  }
-`
-const CREATE_LINE = `
-  mutation ($input: CreateAccGlJournalLineInput!) {
-    createAccGlJournalLine(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_LINE = `
-  mutation ($id: ID!, $input: UpdateAccGlJournalLineInput!) {
-    updateAccGlJournalLine(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_LINE = `
-  mutation ($id: ID!) {
-    destroyAccGlJournalLine(id: $id) { errors { message } }
-  }
-`
-
-// mutation input 只收行自身字段:本地草稿 id、companyId(冗余自凭证,后端回填)、currencyId(科目复制,不可手改)
+// REST input 只收行自身字段:本地草稿 id、companyId(冗余自凭证,后端回填)、currencyId(科目复制,不可手改)
 // 与行上挂的 account/currency join 对象一律不进 payload
 function lineInput(row: Row) {
   return {
@@ -82,36 +49,28 @@ function lineChanged(before: Row, after: Row): boolean {
 async function persistLines(journalId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
   // 多行部分失败时用户要能定位到行,错误文案统一冠以行号(destroy 分支用被删行的 idx)
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
+  const run = async (idx: unknown, request: () => Promise<unknown>) => {
+    try {
+      await request()
+    } catch (error) {
+      errors.push(`第${idx}行:${error instanceof Error ? error.message : String(error)}`)
+    }
   }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroyAccGlJournalLine: { errors: { message: string }[] | null } }>(
-      DESTROY_LINE,
-      { id: old.id }
-    )
-    collect(old.idx, data.destroyAccGlJournalLine.errors)
+    await run(old.idx, () => glJournalLineClient.delete(old.id))
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createAccGlJournalLine: { errors: { message: string }[] | null } }>(
-        CREATE_LINE,
-        { input: { journalId, ...lineInput(row) } }
-      )
-      collect(row.idx, data.createAccGlJournalLine.errors)
+      await run(row.idx, () => glJournalLineClient.create({ journalId, ...lineInput(row) }))
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && lineChanged(old, row)) {
-      const data = await gqlFetch<{ updateAccGlJournalLine: { errors: { message: string }[] | null } }>(
-        UPDATE_LINE,
-        { id: row.id, input: lineInput(row) }
-      )
-      collect(row.idx, data.updateAccGlJournalLine.errors)
+      await run(row.idx, () => glJournalLineClient.update(row.id, lineInput(row)))
     }
   }
   return errors
@@ -149,38 +108,34 @@ function JournalsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [lines, setLines] = useState<Row[]>([])
   const [linesSnapshot, setLinesSnapshot] = useState<Row[]>([])
-  // edit/view 态分录行靠 FETCH_LINES 异步拉取,未完成前禁止编辑,防回填覆盖在输行
+  // edit/view 态分录行靠 REST 异步拉取,未完成前禁止编辑,防回填覆盖在输行
   const [linesLoaded, setLinesLoaded] = useState(false)
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张凭证的行回填到当前凭证
   const reqIdRef = useRef(0)
 
-  // 审核过账确认框:行内「审核」动作与新增后带过账日期的顺手审核共用;
-  // 过账日期在此填入/修正(草稿可不填,审核时必填)
-  const [auditDialog, setAuditDialog] = useState<{ id: string; fromCreate: boolean } | null>(null)
+  // 行内「审核」确认框允许补填/修正过账日期(草稿可不填,审核时必填);
+  // 抽屉「保存并审核」由标准组件在保存成功后调用同一 REST client action
+  const [auditDialog, setAuditDialog] = useState<{ id: string } | null>(null)
   const [auditDate, setAuditDate] = useState<string | null>(null)
   const [auditing, setAuditing] = useState(false)
 
-  const openAudit = (row: Row, fromCreate = false) => {
+  const openAudit = (row: Row) => {
     // 默认过账日期:凭证已填的优先,否则用单据日期
     setAuditDate((row.postingDate as string | null) ?? (row.date as string | null) ?? null)
-    setAuditDialog({ id: row.id, fromCreate })
+    setAuditDialog({ id: row.id })
   }
 
   const confirmAudit = async () => {
     if (!auditDialog || !auditDate) return
     setAuditing(true)
     try {
-      const data = await gqlFetch<{ auditAccGlJournal: { errors: { message: string }[] | null } }>(
-        AUDIT_JOURNAL,
-        { id: auditDialog.id, input: { postingDate: auditDate } }
-      )
-      if (data.auditAccGlJournal.errors && data.auditAccGlJournal.errors.length > 0) {
-        throw new Error(data.auditAccGlJournal.errors.map((e) => e.message).join('; '))
-      }
+      await auditGlJournal(auditDialog.id, auditDate)
       toast.success('凭证已审核过账')
       setAuditDialog(null)
-      queryClient.invalidateQueries({ queryKey: ['gridRows', 'accGlJournals'] })
+      queryClient.invalidateQueries({
+        queryKey: ['gridRows', glJournalClient.id, 'accGlJournals'],
+      })
     } catch (e) {
       toast.danger('审核失败', { description: (e as Error).message })
     } finally {
@@ -199,11 +154,17 @@ function JournalsPage() {
       return
     }
     setLinesLoaded(false)
-    gqlFetch<{ accGlJournalLines: { results: Row[] } }>(FETCH_LINES, { journalId: row!.id })
+    glJournalLineClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: { journalId: { kind: 'fk', values: [row!.id], labels: [] } },
+      })
       .then((d) => {
         if (my !== reqIdRef.current) return
-        setLines(d.accGlJournalLines.results)
-        setLinesSnapshot(d.accGlJournalLines.results)
+        setLines(d.results)
+        setLinesSnapshot(d.results)
         setLinesLoaded(true)
       })
       .catch((e) => {
@@ -222,17 +183,25 @@ function JournalsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accGlJournals"
+          client={glJournalClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
           actionHandlers={{ audit: (rows) => openAudit(rows[0]) }}
+          actionVisible={{
+            audit: (row) => row.status === 'DRAFT',
+            cancel: (row) => row.status === 'AUDITED',
+            edit: (row) => row.status === 'DRAFT',
+            delete: (row) => row.status === 'DRAFT',
+          }}
         />
       </div>
 
       <SynieRecordDrawer
         resource="accGlJournals"
+        client={glJournalClient}
         label="凭证"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -274,6 +243,7 @@ function JournalsPage() {
           return (
             <SynieEditableTable
               resource="accGlJournalLines"
+              client={glJournalLineClient}
               label="分录行"
               items={lines}
               onChange={setLines}
@@ -294,7 +264,16 @@ function JournalsPage() {
                   required: true,
                   // 候选限定在凭证公司、非汇总、启用科目(后端另有同公司/汇总/停用校验兜底)
                   remote: {
-                    filter: `{companyId: {eq: ${JSON.stringify(journalCompanyId)}}, isGroup: {eq: false}, active: {eq: true}}`,
+                    client: accountClient,
+                    filterState: {
+                      companyId: {
+                        kind: 'fk',
+                        values: journalCompanyId ? [journalCompanyId] : [],
+                        labels: [],
+                      },
+                      isGroup: { kind: 'bool', eq: false },
+                      active: { kind: 'bool', eq: true },
+                    },
                   },
                 },
                 debit: { cols: 6, defaultValue: 0 },
@@ -303,15 +282,41 @@ function JournalsPage() {
                 partyType: { cols: 6, effects: () => ({ partyId: null }) },
                 partyId: {
                   cols: 6,
-                  // 未选对手类型时不出现;选定后 label 跟随类型显示 供应商/客户
-                  visible: (values) => values.partyType === 'SUPPLIER' || values.partyType === 'CUSTOMER',
+                  // 未选对手类型时不出现;四类往来对手均使用已经迁移的 REST 主数据 client
+                  visible: (values) =>
+                    ['SUPPLIER', 'CUSTOMER', 'COMPANY', 'EMPLOYEE'].includes(
+                      String(values.partyType ?? ''),
+                    ),
                   input: ({ value, onChange, isDisabled, values }) => {
-                    const isSupplier = values.partyType === 'SUPPLIER'
+                    const party = {
+                      SUPPLIER: {
+                        resource: 'purSuppliers',
+                        label: '供应商',
+                        client: supplierClient,
+                      },
+                      CUSTOMER: {
+                        resource: 'salCustomers',
+                        label: '客户',
+                        client: customerClient,
+                      },
+                      COMPANY: {
+                        resource: 'basCompanies',
+                        label: '内部公司',
+                        client: companyClient,
+                      },
+                      EMPLOYEE: {
+                        resource: 'hrEmployees',
+                        label: '员工',
+                        client: employeeClient,
+                      },
+                    }[String(values.partyType ?? '')]
+                    if (!party) return null
                     return (
                       <RemoteSelect
-                        resource={isSupplier ? 'purSuppliers' : 'salCustomers'}
-                        label={isSupplier ? '供应商' : '客户'}
-                        placeholder={isSupplier ? '选择供应商…' : '选择客户…'}
+                        resource={party.resource}
+                        client={party.client}
+                        label={party.label}
+                        placeholder={`选择${party.label}…`}
                         value={value == null ? null : String(value)}
                         onChange={(id) => onChange(id)}
                         isDisabled={isDisabled}
@@ -331,35 +336,21 @@ function JournalsPage() {
           )
         }}
         onSubmit={async (values, mode) => {
-          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          // 返回值供抽屉「保存并审核」取 id 调审核动作(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{
-              createAccGlJournal: { result: { id: string } | null; errors: { message: string }[] | null }
-            }>(CREATE_JOURNAL, { input: values })
-            if (data.createAccGlJournal.errors && data.createAccGlJournal.errors.length > 0) {
-              throw new Error(data.createAccGlJournal.errors.map((e) => e.message).join('; '))
-            }
-            const journalId = data.createAccGlJournal.result!.id
+            const journal = await glJournalClient.create(values)
+            const journalId = journal.id
             const lineErrors = await persistLines(journalId, lines, [])
             if (lineErrors.length > 0) {
               toast.danger('凭证已创建,但部分分录行保存失败', { description: lineErrors.join('; ') })
             } else {
               toast.success('凭证已创建')
-              // 新增时已填过账日期 → 顺手提示直接审核过账
-              if (values.postingDate) {
-                openAudit({ id: journalId, postingDate: values.postingDate, date: values.date } as Row, true)
-              }
             }
             savedId = journalId
           } else {
             const journalId = drawer!.row!.id
-            const data = await gqlFetch<{
-              updateAccGlJournal: { errors: { message: string }[] | null }
-            }>(UPDATE_JOURNAL, { id: journalId, input: values })
-            if (data.updateAccGlJournal.errors && data.updateAccGlJournal.errors.length > 0) {
-              throw new Error(data.updateAccGlJournal.errors.map((e) => e.message).join('; '))
-            }
+            await glJournalClient.update(journalId, values)
             const lineErrors = await persistLines(journalId, lines, linesSnapshot)
             if (lineErrors.length > 0) {
               toast.danger('凭证已更新,但部分分录行保存失败', { description: lineErrors.join('; ') })
@@ -368,7 +359,9 @@ function JournalsPage() {
             }
             savedId = journalId
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accGlJournals'] })
+          queryClient.invalidateQueries({
+            queryKey: ['gridRows', glJournalClient.id, 'accGlJournals'],
+          })
           return savedId
         }}
       />
@@ -381,16 +374,10 @@ function JournalsPage() {
               <>
                 <AlertDialog.Header>
                   <AlertDialog.Icon status="accent" />
-                  <AlertDialog.Heading>
-                    {auditDialog.fromCreate ? '是否直接审核过账?' : '审核过账'}
-                  </AlertDialog.Heading>
+                  <AlertDialog.Heading>审核过账</AlertDialog.Heading>
                 </AlertDialog.Header>
                 <AlertDialog.Body>
-                  <p className="mb-3">
-                    {auditDialog.fromCreate
-                      ? '凭证已创建并填写了过账日期,确认后立即审核并生成总账分录。'
-                      : '确认后凭证将审核并生成总账分录。'}
-                  </p>
+                  <p className="mb-3">确认后凭证将审核并生成总账分录。</p>
                   <DatePicker
                     value={safeParseDate(auditDate)}
                     onChange={(v) => setAuditDate(v ? v.toString() : null)}
@@ -431,7 +418,7 @@ function JournalsPage() {
                 </AlertDialog.Body>
                 <AlertDialog.Footer>
                   <Button slot="close" variant="tertiary" isDisabled={auditing}>
-                    {auditDialog.fromCreate ? '暂不审核' : '取消'}
+                    取消
                   </Button>
                   <Button isPending={auditing} isDisabled={!auditDate} onPress={confirmAudit}>
                     审核过账

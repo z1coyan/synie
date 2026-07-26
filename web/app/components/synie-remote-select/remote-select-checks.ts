@@ -16,6 +16,7 @@ const ref = { resource: 'basCompanies', relation: 'parent', labelField: 'name' }
 // —— resolveSource:ref 提供默认,config 覆盖;都无 resource 为 null ——
 eq(resolveSource({}, ref), {
   resource: 'basCompanies',
+  client: { id: 'rest:basCompanies' },
   labelField: 'name',
   sortField: 'name',
   searchFields: ['name'],

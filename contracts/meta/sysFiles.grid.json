@@ -1,0 +1,24 @@
+{
+  "capabilities": ["create", "delete"],
+  "columns": [
+    {"enumOptions": null, "filterable": false, "label": "id", "name": "id", "ref": null, "sortable": true, "type": "string"},
+    {"enumOptions": null, "filterable": true, "label": "存储接入", "name": "storage", "ref": null, "sortable": true, "type": "string"},
+    {"enumOptions": null, "filterable": true, "label": "对象键", "name": "key", "ref": null, "sortable": true, "type": "string"},
+    {"enumOptions": null, "filterable": true, "label": "文件名", "name": "filename", "ref": null, "sortable": true, "type": "string"},
+    {"enumOptions": null, "filterable": true, "label": "MIME 类型", "name": "contentType", "ref": null, "sortable": true, "type": "string"},
+    {"enumOptions": null, "filterable": true, "label": "大小", "name": "size", "ref": null, "sortable": true, "type": "integer"},
+    {"enumOptions": null, "filterable": true, "label": "SHA-256 摘要", "name": "sha256", "ref": null, "sortable": true, "type": "string"},
+    {"enumOptions": null, "filterable": true, "label": "上传时间", "name": "insertedAt", "ref": null, "sortable": true, "type": "datetime"},
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "上传人",
+      "name": "uploadedById",
+      "ref": {"labelField": "name", "relation": "uploadedBy", "resource": "sysUsers"},
+      "sortable": false,
+      "type": "fk"
+    }
+  ],
+  "destroyMutation": "destroySysFile",
+  "extendedActions": []
+}

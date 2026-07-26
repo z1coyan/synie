@@ -1,17 +1,28 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { formatAmount, formatQty } from '~/lib/amount'
-import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
+import {
+  SynieDataGrid,
+  type ColumnOverride,
+} from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { purchaseReconciliationItemClient } from '~/lib/resources/reconciliations'
 import { useReconciliationDrawer } from './-reconciliation-drawer'
 
-export const Route = createFileRoute('/_app/scm/purchase-reconciliations/items')({
+export const Route = createFileRoute(
+  '/_app/scm/purchase-reconciliations/items',
+)({
   component: ReconciliationItemsTab,
 })
 
 const GRID_OVERRIDES = {
   reconciliationStatus: {
     label: '对账单状态',
-    enumColors: { DRAFT: 'default', CONFIRMED: 'accent', CLOSED: 'success', VOIDED: 'danger' },
+    enumColors: {
+      DRAFT: 'default',
+      CONFIRMED: 'accent',
+      CLOSED: 'success',
+      VOIDED: 'danger',
+    },
   },
   receiptNo: { label: '入库单号' },
   orderCurrencyCode: { label: '币种' },
@@ -20,7 +31,10 @@ const GRID_OVERRIDES = {
   materialName: { label: '物料' },
   unitName: { label: '单位' },
   qty: { label: '数量', render: (v: unknown) => formatQty(v) || undefined },
-  baseQty: { label: '折算数量', render: (v: unknown) => formatQty(v) || undefined },
+  baseQty: {
+    label: '折算数量',
+    render: (v: unknown) => formatQty(v) || undefined,
+  },
   amount: { label: '金额(原币)', render: (v: unknown) => formatAmount(v) },
   baseAmount: { label: '本币金额', render: (v: unknown) => formatAmount(v) },
 } satisfies Record<string, ColumnOverride>
@@ -52,6 +66,7 @@ function ReconciliationItemsTab() {
   return (
     <SynieDataGrid
       resource="purReconciliationItems"
+      client={purchaseReconciliationItemClient}
       columns={GRID_COLUMNS}
       overrides={GRID_OVERRIDES}
       defaultSort={{ column: 'receiptDate', direction: 'descending' }}

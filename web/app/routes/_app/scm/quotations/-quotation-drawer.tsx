@@ -1,8 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, TextArea, TextField, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { formatPrice } from '~/lib/amount'
+import { companyClient } from '~/lib/resources/companies'
+import {
+  auditSalesQuotation,
+  salesQuotationClient,
+  salesQuotationItemClient,
+  salesQuotationTierClient,
+} from '~/lib/resources/quotations'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
@@ -36,74 +42,6 @@ export function useQuotationDrawer(): OpenQuotationDrawer {
   return useContext(QuotationDrawerContext)
 }
 
-const CREATE_QUOTATION = `
-  mutation ($input: CreateSalQuotationInput!) {
-    createSalQuotation(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_QUOTATION = `
-  mutation ($id: ID!, $input: UpdateSalQuotationInput!) {
-    updateSalQuotation(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-// 价格档整单一次取回(经条目关系过滤),按 itemId 归组挂到行上
-const FETCH_DETAIL = `
-  query ($quotationId: ID!) {
-    salQuotations(filter: {id: {eq: $quotationId}}, limit: 1, offset: 0) {
-      results { id terms }
-    }
-    salQuotationItems(filter: {quotationId: {eq: $quotationId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
-      results {
-        id idx materialId unitId pricingMode price taxRate remarks
-        materialName unitName
-        material { id name }
-        unit { id name }
-      }
-    }
-    salQuotationTiers(filter: {item: {quotationId: {eq: $quotationId}}}, sort: [{field: MIN_QTY, order: ASC}], limit: 1000, offset: 0) {
-      results { id itemId minQty price }
-    }
-  }
-`
-// 单据公司的本币:create/edit 态币种默认值(报价单无汇率,不需要外币联动)
-const FETCH_COMPANY_BASE = `
-  query ($companyId: ID!) {
-    basCompanies(filter: {id: {eq: $companyId}}, limit: 1, offset: 0) {
-      results { id baseCurrencyId }
-    }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreateSalQuotationItemInput!) {
-    createSalQuotationItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdateSalQuotationItemInput!) {
-    updateSalQuotationItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroySalQuotationItem(id: $id) { errors { message } }
-  }
-`
-const CREATE_TIER = `
-  mutation ($input: CreateSalQuotationTierInput!) {
-    createSalQuotationTier(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_TIER = `
-  mutation ($id: ID!, $input: UpdateSalQuotationTierInput!) {
-    updateSalQuotationTier(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_TIER = `
-  mutation ($id: ID!) {
-    destroySalQuotationTier(id: $id) { errors { message } }
-  }
-`
-
 // mutation input 只收行自身字段:companyId 冗余自报价单(后端回填)、快照字段由后端保存时
 // 重拍;梯度行单价强制空置(后端 PricingRules 兜底);tiers/join 对象不进 payload
 function itemInput(row: Row) {
@@ -134,8 +72,12 @@ function tierChanged(before: Row, after: Row): boolean {
 
 /** 单个条目的价格档差异持久化(条目已存在/已更新后调用);切回固定价由后端清档,不在此发删除 */
 async function persistTiers(itemId: string, itemIdx: unknown, row: Row, snapshot: Row[], errors: string[]) {
-  const collect = (msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${itemIdx}行价格档:${e.message}`))
+  const attempt = async (operation: () => Promise<unknown>) => {
+    try {
+      await operation()
+    } catch (error) {
+      errors.push(`第${itemIdx}行价格档:${(error as Error).message}`)
+    }
   }
   if (row.pricingMode !== 'QTY_TIERED') return
 
@@ -144,29 +86,28 @@ async function persistTiers(itemId: string, itemIdx: unknown, row: Row, snapshot
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroySalQuotationTier: { errors: { message: string }[] | null } }>(
-      DESTROY_TIER,
-      { id: old.id }
-    )
-    collect(data.destroySalQuotationTier.errors)
+    await attempt(() => salesQuotationTierClient.delete(String(old.id)))
   }
 
   for (const tier of current) {
     if (isLocalRow(tier)) {
-      const data = await gqlFetch<{ createSalQuotationTier: { errors: { message: string }[] | null } }>(
-        CREATE_TIER,
-        { input: { itemId, minQty: tier.minQty, price: tier.price } }
+      await attempt(() =>
+        salesQuotationTierClient.create({
+          itemId,
+          minQty: tier.minQty,
+          price: tier.price,
+        }),
       )
-      collect(data.createSalQuotationTier.errors)
       continue
     }
     const old = snapshot.find((s) => s.id === tier.id)
     if (old && tierChanged(old, tier)) {
-      const data = await gqlFetch<{ updateSalQuotationTier: { errors: { message: string }[] | null } }>(
-        UPDATE_TIER,
-        { id: tier.id, input: { minQty: tier.minQty, price: tier.price } }
+      await attempt(() =>
+        salesQuotationTierClient.update(String(tier.id), {
+          minQty: tier.minQty,
+          price: tier.price,
+        }),
       )
-      collect(data.updateSalQuotationTier.errors)
     }
   }
 }
@@ -178,37 +119,32 @@ async function persistTiers(itemId: string, itemIdx: unknown, row: Row, snapshot
  */
 async function persistItems(quotationId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
+  const attempt = async <T,>(idx: unknown, operation: () => Promise<T>): Promise<T | null> => {
+    try {
+      return await operation()
+    } catch (error) {
+      errors.push(`第${idx}行:${(error as Error).message}`)
+      return null
+    }
   }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroySalQuotationItem: { errors: { message: string }[] | null } }>(
-      DESTROY_ITEM,
-      { id: old.id }
-    )
-    collect(old.idx, data.destroySalQuotationItem.errors)
+    await attempt(old.idx, () => salesQuotationItemClient.delete(String(old.id)))
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{
-        createSalQuotationItem: { result: { id: string } | null; errors: { message: string }[] | null }
-      }>(CREATE_ITEM, { input: { quotationId, ...itemInput(row) } })
-      collect(row.idx, data.createSalQuotationItem.errors)
-      const newId = data.createSalQuotationItem.result?.id
-      if (newId) await persistTiers(newId, row.idx, row, [], errors)
+      const created = await attempt(row.idx, () =>
+        salesQuotationItemClient.create({ quotationId, ...itemInput(row) }),
+      )
+      if (created?.id) await persistTiers(String(created.id), row.idx, row, [], errors)
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{ updateSalQuotationItem: { errors: { message: string }[] | null } }>(
-        UPDATE_ITEM,
-        { id: row.id, input: itemInput(row) }
-      )
-      collect(row.idx, data.updateSalQuotationItem.errors)
+      await attempt(row.idx, () => salesQuotationItemClient.update(String(row.id), itemInput(row)))
     }
     await persistTiers(String(row.id), row.idx, row, old ? rowTiers(old) : [], errors)
   }
@@ -241,6 +177,18 @@ export const salesQuotationAuditConfig = {
   docIdField: 'quotationId',
   itemFields:
     'id idx materialCode materialName materialSpec customerPartNo unitName pricingMode price taxRate tierCount remarks',
+  loadItems: (quotationId: string) =>
+    salesQuotationItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          quotationId: { kind: 'fk', op: 'in', values: [quotationId], labels: [] },
+        },
+      })
+      .then((result) => result.results),
+  audit: auditSalesQuotation,
   columns: [
     {
       key: 'materialName',
@@ -286,10 +234,7 @@ function CompanyCurrencyDefault({
     queryKey: ['companyBaseCurrency', companyId],
     enabled: companyId !== '',
     staleTime: 300_000,
-    queryFn: () =>
-      gqlFetch<{ basCompanies: { results: { baseCurrencyId: string | null }[] } }>(FETCH_COMPANY_BASE, {
-        companyId,
-      }).then((d) => d.basCompanies.results[0]?.baseCurrencyId ?? null),
+    queryFn: () => companyClient.get(companyId).then((company) => company?.baseCurrencyId ?? null),
   })
   const base = companyId === '' ? null : (query.data ?? null)
 
@@ -336,6 +281,7 @@ function TierEditor({
   return (
     <SynieEditableTable
       resource="salQuotationTiers"
+      client={salesQuotationTierClient}
       label="价格档"
       items={tiers}
       onChange={onChange}
@@ -365,7 +311,7 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   // 报价条款不走抽屉字段(要排在条目表之下,抽屉 extraContent 固定在字段后渲染),由页面自持
   const [terms, setTerms] = useState('')
-  // edit/view 态条目与条款靠 FETCH_DETAIL 异步拉取,未完成前禁止编辑,防回填覆盖在输行
+  // edit/view 态条目与条款靠 REST 异步拉取,未完成前禁止编辑,防回填覆盖在输行
   const [detailLoaded, setDetailLoaded] = useState(false)
   // 条目二级抽屉在编条目的价格档草稿(collectValues 剥离非字段键,不能进抽屉 values)
   const [tierDraft, setTierDraft] = useState<Row[]>([])
@@ -384,21 +330,42 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
       return
     }
     setDetailLoaded(false)
-    gqlFetch<{
-      salQuotations: { results: { terms: string | null }[] }
-      salQuotationItems: { results: Row[] }
-      salQuotationTiers: { results: Row[] }
-    }>(FETCH_DETAIL, { quotationId: quotation!.id })
-      .then((d) => {
+    Promise.all([
+      salesQuotationClient.get(quotation!.id),
+      salesQuotationItemClient.query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          quotationId: { kind: 'fk', op: 'in', values: [quotation!.id], labels: [] },
+        },
+      }),
+    ])
+      .then(async ([head, itemResult]) => {
+        const itemIds = itemResult.results.map((row) => String(row.id))
+        const tierResult =
+          itemIds.length === 0
+            ? { results: [] as Row[] }
+            : await salesQuotationTierClient.query({
+                limit: 1000,
+                offset: 0,
+                sort: { column: 'minQty', direction: 'ascending' },
+                fixedFilter: {
+                  itemId: { kind: 'fk', op: 'in', values: itemIds, labels: [] },
+                },
+              })
         if (my !== reqIdRef.current) return
         // 价格档按 itemId 归组挂上行(行内 tiers 保持起订量升序,查询已排序)
         const byItem = new Map<string, Row[]>()
-        for (const t of d.salQuotationTiers.results) {
+        for (const t of tierResult.results) {
           const key = String(t.itemId)
           byItem.set(key, [...(byItem.get(key) ?? []), t])
         }
-        const rows = d.salQuotationItems.results.map((r) => ({ ...r, tiers: byItem.get(String(r.id)) ?? [] }))
-        setTerms(d.salQuotations.results[0]?.terms ?? '')
+        const rows = itemResult.results.map((r) => ({
+          ...r,
+          tiers: byItem.get(String(r.id)) ?? [],
+        }))
+        setTerms(String(head?.terms ?? ''))
         setItems(rows)
         setItemsSnapshot(rows)
         setDetailLoaded(true)
@@ -431,6 +398,7 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
 
       <SynieRecordDrawer
         resource="salQuotations"
+        client={salesQuotationClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -455,6 +423,7 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
             <CompanyCurrencyDefault mode={mode} row={row} values={values} patchValues={patchValues} />
             <SynieEditableTable
               resource="salQuotationItems"
+              client={salesQuotationItemClient}
               label="报价条目"
               items={items}
               onChange={setItems}
@@ -626,16 +595,14 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
           </>
         )}
         onSubmit={async (values, mode) => {
-          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          // 返回值供抽屉「保存并审核」取 id 调 REST action(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{
-              createSalQuotation: { result: { id: string } | null; errors: { message: string }[] | null }
-            }>(CREATE_QUOTATION, { input: { ...values, terms: terms === '' ? null : terms } })
-            if (data.createSalQuotation.errors && data.createSalQuotation.errors.length > 0) {
-              throw new Error(data.createSalQuotation.errors.map((e) => e.message).join('; '))
-            }
-            const quotationId = data.createSalQuotation.result!.id
+            const created = await salesQuotationClient.create({
+              ...values,
+              terms: terms === '' ? null : terms,
+            })
+            const quotationId = String(created.id)
             const itemErrors = await persistItems(quotationId, items, [])
             if (itemErrors.length > 0) {
               toast.danger('报价单已创建,但部分条目保存失败', { description: itemErrors.join('; ') })
@@ -645,12 +612,10 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
             savedId = quotationId
           } else {
             const quotationId = drawer!.quotation!.id
-            const data = await gqlFetch<{
-              updateSalQuotation: { errors: { message: string }[] | null }
-            }>(UPDATE_QUOTATION, { id: quotationId, input: { ...values, terms: terms === '' ? null : terms } })
-            if (data.updateSalQuotation.errors && data.updateSalQuotation.errors.length > 0) {
-              throw new Error(data.updateSalQuotation.errors.map((e) => e.message).join('; '))
-            }
+            await salesQuotationClient.update(quotationId, {
+              ...values,
+              terms: terms === '' ? null : terms,
+            })
             const itemErrors = await persistItems(quotationId, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('报价单已更新,但部分条目保存失败', { description: itemErrors.join('; ') })

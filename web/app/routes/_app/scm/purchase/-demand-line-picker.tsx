@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Checkbox, Modal, Spinner, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
-import { gqlFetch } from '~/lib/graphql'
 import { localRowId } from '~/components/synie-editable-table/editable'
 import type { Row } from '~/components/synie-data-grid/types'
+import { queryPurchaseOrderDemandLines } from '~/lib/resources/orders'
 
 /**
  * 「从需求单勾选」多选对话框:池 = 已确认未关闭未作废 + 未完成 + 剩余可下单>0 +
@@ -13,48 +13,29 @@ import type { Row } from '~/components/synie-data-grid/types'
  * 权限挂 purchase.order:read,采购员不必持需求单读权限。
  */
 
-const POOL = `
-  query ($companyId: ID!, $isOutsourced: Boolean!) {
-    purDemandLinePool(companyId: $companyId, isOutsourced: $isOutsourced)
-  }
-`
-
 interface PoolLine {
-  demandLineId: string
+  id: string
   demandId: string
   demandNo: string
+  idx: number
+  companyId: string
   materialId: string
   unitId: string
   materialCode: string
   materialName: string
   materialSpec: string | null
   unitName: string
-  qty: string
   baseQty: string
   orderedQty: string
-  remainingOrderableQty: string
+  remainingBaseQty: string
+  suggestedQty: string
   needDate: string | null
-  fulfillmentMethod: string
-}
-
-function parsePool(raw: unknown): PoolLine[] {
-  const list = Array.isArray(raw) ? raw : []
-  return list.map((r) => (typeof r === 'string' ? JSON.parse(r) : r) as PoolLine)
 }
 
 function formatQty(v: string): string {
   const n = Number(v)
   if (!Number.isFinite(n)) return v
   return n.toFixed(6).replace(/\.?0+$/, '')
-}
-
-/** 剩余可下单(base) 折回需求行单位数量 */
-function suggestQty(line: PoolLine): number {
-  const base = Number(line.baseQty)
-  const qty = Number(line.qty)
-  const remaining = Number(line.remainingOrderableQty)
-  if (!Number.isFinite(base) || base <= 0 || !Number.isFinite(qty)) return remaining
-  return Number(((remaining * qty) / base).toFixed(6))
 }
 
 export function DemandLinePicker(props: {
@@ -67,13 +48,13 @@ export function DemandLinePicker(props: {
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const poolQuery = useQuery({
-    queryKey: ['purDemandLinePool', props.companyId, props.isOutsourced],
+    queryKey: ['purchaseOrderDemandLinePool', props.companyId, props.isOutsourced],
     enabled: open && !!props.companyId,
     queryFn: () =>
-      gqlFetch<{ purDemandLinePool: unknown }>(POOL, {
-        companyId: props.companyId,
+      queryPurchaseOrderDemandLines({
+        companyId: props.companyId!,
         isOutsourced: props.isOutsourced,
-      }).then((d) => parsePool(d.purDemandLinePool)),
+      }).then((lines) => lines as PoolLine[]),
   })
 
   const pool = useMemo(() => poolQuery.data ?? [], [poolQuery.data])
@@ -88,20 +69,20 @@ export function DemandLinePicker(props: {
 
   const confirm = () => {
     const rows = pool
-      .filter((r) => selected.has(r.demandLineId))
+      .filter((r) => selected.has(r.id))
       .map((r, i) => {
         return {
           id: localRowId(),
           idx: props.nextIdx + i,
           materialId: r.materialId,
           unitId: r.unitId,
-          qty: suggestQty(r),
+          qty: Number(r.suggestedQty),
           price: 0,
           taxRate: 0.13,
           remarks: null,
           quotationItemId: null,
           bomId: null,
-          demandLineId: r.demandLineId,
+          demandLineId: r.id,
           demandDate: r.needDate,
           material: { id: r.materialId, code: r.materialCode, name: r.materialName },
           unit: { id: r.unitId, name: r.unitName },
@@ -179,11 +160,11 @@ export function DemandLinePicker(props: {
                       </Table.Header>
                       <Table.Body>
                         {pool.map((r) => (
-                          <Table.Row key={r.demandLineId}>
+                          <Table.Row key={r.id}>
                             <Table.Cell>
                               <Checkbox
-                                isSelected={selected.has(r.demandLineId)}
-                                onChange={(v) => toggle(r.demandLineId, v)}
+                                isSelected={selected.has(r.id)}
+                                onChange={(v) => toggle(r.id, v)}
                               >
                                 <span className="sr-only">选择</span>
                               </Checkbox>
@@ -202,7 +183,7 @@ export function DemandLinePicker(props: {
                             {/* 投影列与剩余可下单同默认单位口径,避免与行单位混显 */}
                             <Table.Cell>{formatQty(r.baseQty)}</Table.Cell>
                             <Table.Cell>{formatQty(r.orderedQty)}</Table.Cell>
-                            <Table.Cell>{formatQty(r.remainingOrderableQty)}</Table.Cell>
+                            <Table.Cell>{formatQty(r.remainingBaseQty)}</Table.Cell>
                             <Table.Cell>{r.needDate ?? '—'}</Table.Cell>
                           </Table.Row>
                         ))}

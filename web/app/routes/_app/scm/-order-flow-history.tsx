@@ -1,69 +1,116 @@
-import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
-import type { Row } from '~/components/synie-data-grid/types'
+import { useQuery } from '@tanstack/react-query'
+import { Chip, Spinner, Table } from '@heroui/react'
 import { formatQty } from '~/lib/amount'
+import { getPurchaseOrderHistory, getSalesOrderHistory } from '~/lib/resources/orders'
 
-// 「收发货历史」tab(销售/采购订单抽屉共用):该订单全部收发货单据行的统一只读视图。
-// 后端 scm_order_flow_item 视图 UNION 采购入库/委外发料/委外入库/销售发货四类单据行,
-// 未来退货等单据类型在后端视图扩展即自动出现;列全走视图内的行快照/头投影列,
-// 不点 materialId 等触发嵌套授权的 fk;按 orderId 普通列过滤(不再走关系 filter)
-const FLOW_COLUMNS = ['flowType', 'voucherNo', 'voucherDate', 'status', 'materialName', 'unitName', 'qty']
-const FLOW_OVERRIDES = {
-  flowType: {
-    label: '单据类型',
-    // 入库类绿、出库类蓝,未配的新类型(如退货)自动落 default 灰
-    enumColors: {
-      PURCHASE_RECEIPT: 'success',
-      OUTSOURCED_RECEIPT: 'success',
-      OUTSOURCED_ISSUE: 'accent',
-      SALES_DELIVERY: 'accent',
-    },
-  },
-  voucherNo: { label: '单据编号' },
-  voucherDate: { label: '单据日期' },
-  status: {
-    label: '单据状态',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
-  },
-  materialName: {
-    label: '物料',
-    render: (_v: unknown, r: Row) => {
-      const code = r.materialCode != null ? String(r.materialCode) : ''
-      const name = r.materialName != null ? String(r.materialName) : ''
-      const title = [code, name].filter(Boolean).join(' ')
-      if (!title && r.materialSpec == null && r.customerPartNo == null) return undefined
-      const spec = r.materialSpec != null && r.materialSpec !== '' ? String(r.materialSpec) : null
-      const cpn =
-        r.customerPartNo != null && r.customerPartNo !== '' ? String(r.customerPartNo) : null
-      return (
-        <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
-          {title ? <span className="truncate font-medium">{title}</span> : null}
-          {spec ? (
-            <span className="truncate text-xs text-muted" title={spec}>
-              规格 {spec}
-            </span>
-          ) : null}
-          {cpn ? (
-            <span className="truncate text-xs text-muted" title={cpn}>
-              客户料号 {cpn}
-            </span>
-          ) : null}
-        </div>
-      )
-    },
-  },
-  unitName: { label: '单位' },
-  qty: { label: '数量', render: (v: unknown) => formatQty(v) || undefined },
-} satisfies Record<string, ColumnOverride>
+interface FlowRow {
+  flowType: string
+  voucherNo: string
+  voucherDate: string
+  status: string
+  materialCode?: string | null
+  materialName?: string | null
+  materialSpec?: string | null
+  customerPartNo?: string | null
+  unitName?: string | null
+  qty: string
+}
 
-/** 订单「收发货历史」表格:按单据日期倒序,只读 */
-export function OrderFlowHistory({ orderId }: { orderId: string }) {
+const FLOW_LABELS: Record<string, string> = {
+  PURCHASE_RECEIPT: '采购入库',
+  OUTSOURCED_RECEIPT: '委外入库',
+  OUTSOURCED_ISSUE: '委外发料',
+  SALES_DELIVERY: '销售发货',
+}
+
+/** 订单「收发货历史」只读表；历史由订单专用 REST 端点聚合，不再查询 GraphQL 视图。 */
+export function OrderFlowHistory({
+  orderId,
+  side,
+}: {
+  orderId: string
+  side: 'sales' | 'purchase'
+}) {
+  const history = useQuery({
+    queryKey: ['orderFlowHistory', side, orderId],
+    queryFn: () =>
+      (side === 'sales'
+        ? getSalesOrderHistory(orderId)
+        : getPurchaseOrderHistory(orderId)),
+  })
+
+  if (history.isPending) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <Spinner />
+      </div>
+    )
+  }
+  if (history.error) {
+    return <div className="p-4 text-sm text-danger">收发货历史加载失败：{history.error.message}</div>
+  }
+  if (!history.data?.length) {
+    return <div className="p-8 text-center text-sm text-muted">暂无收发货记录</div>
+  }
+
   return (
-    <SynieDataGrid
-      resource="scmOrderFlowItems"
-      columns={FLOW_COLUMNS}
-      overrides={FLOW_OVERRIDES}
-      fixedFilter={{ orderId: { eq: orderId } }}
-      defaultSort={{ column: 'voucherDate', direction: 'descending' }}
-    />
+    <Table aria-label="收发货历史">
+      <Table.ScrollContainer>
+        <Table.Content>
+          <Table.Header>
+            <Table.Column isRowHeader>单据类型</Table.Column>
+            <Table.Column>单据编号</Table.Column>
+            <Table.Column>单据日期</Table.Column>
+            <Table.Column>状态</Table.Column>
+            <Table.Column>物料</Table.Column>
+            <Table.Column>单位</Table.Column>
+            <Table.Column>数量</Table.Column>
+          </Table.Header>
+          <Table.Body>
+            {history.data.map((row, index) => {
+              const material = [row.materialCode, row.materialName].filter(Boolean).join(' ')
+              return (
+                <Table.Row
+                  key={`${row.flowType}:${row.voucherNo}:${row.voucherDate}:${index}`}
+                >
+                  <Table.Cell>{FLOW_LABELS[row.flowType] ?? row.flowType}</Table.Cell>
+                  <Table.Cell>{row.voucherNo}</Table.Cell>
+                  <Table.Cell>{row.voucherDate}</Table.Cell>
+                  <Table.Cell>
+                    <Chip
+                      size="sm"
+                      color={
+                        row.status === 'AUDITED'
+                          ? 'success'
+                          : row.status === 'VOIDED'
+                            ? 'danger'
+                            : 'default'
+                      }
+                    >
+                      {row.status}
+                    </Chip>
+                  </Table.Cell>
+                  <Table.Cell>
+                    <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
+                      <span className="truncate font-medium">{material || '—'}</span>
+                      {row.materialSpec ? (
+                        <span className="truncate text-xs text-muted">规格 {row.materialSpec}</span>
+                      ) : null}
+                      {row.customerPartNo ? (
+                        <span className="truncate text-xs text-muted">
+                          客户料号 {row.customerPartNo}
+                        </span>
+                      ) : null}
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell>{row.unitName ?? '—'}</Table.Cell>
+                  <Table.Cell>{formatQty(row.qty) || '—'}</Table.Cell>
+                </Table.Row>
+              )
+            })}
+          </Table.Body>
+        </Table.Content>
+      </Table.ScrollContainer>
+    </Table>
   )
 }

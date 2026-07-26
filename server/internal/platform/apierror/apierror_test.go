@@ -1,0 +1,26 @@
+package apierror
+
+import (
+	"net/http"
+	"testing"
+)
+
+func TestStatus(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		code Code
+		want int
+	}{
+		{CodeUnauthorized, http.StatusUnauthorized},
+		{CodeRateLimited, http.StatusTooManyRequests},
+		{CodeForbidden, http.StatusForbidden},
+		{CodeValidation, http.StatusBadRequest},
+		{CodeNotFound, http.StatusNotFound},
+		{CodeConflict, http.StatusConflict},
+	}
+	for _, test := range tests {
+		if got := Status(New(test.code, "test")); got != test.want {
+			t.Fatalf("Status(%s) = %d, want %d", test.code, got, test.want)
+		}
+	}
+}

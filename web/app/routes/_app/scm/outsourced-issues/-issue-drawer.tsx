@@ -9,13 +9,18 @@ import {
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextField, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { companyClient } from '~/lib/resources/companies'
+import {
+  purchaseOutsourcedIssueClient,
+  purchaseOutsourcedIssueItemClient,
+} from '~/lib/resources/fulfillment'
+import { queryOutsourcedWarehouses } from '~/lib/resources/inventory'
+import { purchaseOrderItemMaterialClient } from '~/lib/resources/orders'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
-import { gqlEnum } from '~/components/synie-data-grid/query'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
@@ -42,6 +47,18 @@ export const issueAuditConfig = {
     { key: 'baseQty', label: '折算数量', align: 'end' },
     { key: 'remarks', label: '行备注' },
   ],
+  loadItems: (issueId: string) =>
+    purchaseOutsourcedIssueItemClient
+      .query({
+        limit: 500,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          issueId: { kind: 'fk', op: 'in', values: [issueId], labels: [] },
+        },
+      })
+      .then((result) => result.results),
+  audit: (issueId: string) => purchaseOutsourcedIssueClient.action!('audit', [issueId]),
 } satisfies AuditDocConfig
 
 const IssueDrawerContext = createContext<OpenIssueDrawer>(() => {})
@@ -49,50 +66,6 @@ const IssueDrawerContext = createContext<OpenIssueDrawer>(() => {})
 export function useIssueDrawer(): OpenIssueDrawer {
   return useContext(IssueDrawerContext)
 }
-
-const CREATE_ISSUE = `
-  mutation ($input: CreatePurOutsourcedIssueInput!) {
-    createPurOutsourcedIssue(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ISSUE = `
-  mutation ($id: ID!, $input: UpdatePurOutsourcedIssueInput!) {
-    updatePurOutsourcedIssue(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-// 只取快照与 id 字段,不 join material/unit/warehouse——
-// 嵌套加载会走对方资源权限,无 read 时 GraphQL 非空关系变 null 整查询失败。
-const FETCH_ITEMS = `
-  query ($issueId: ID!) {
-    purOutsourcedIssueItems(
-      filter: {issueId: {eq: $issueId}}
-      sort: [{field: IDX, order: ASC}]
-      limit: 200
-      offset: 0
-    ) {
-      results {
-        id idx orderItemMaterialId qty baseQty remarks
-        fromWarehouseId outsourcedWarehouseId
-        materialCode materialName materialSpec unitName orderNo
-      }
-    }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreatePurOutsourcedIssueItemInput!) {
-    createPurOutsourcedIssueItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdatePurOutsourcedIssueItemInput!) {
-    updatePurOutsourcedIssueItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroyPurOutsourcedIssueItem(id: $id) { errors { message } }
-  }
-`
 
 function todayLocal(): string {
   const d = new Date()
@@ -125,11 +98,6 @@ function itemChanged(before: Row, after: Row): boolean {
   return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
 }
 
-interface MutationResult {
-  result?: { id: string } | null
-  errors: { message: string }[] | null
-}
-
 async function persistItems(issueId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
   const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
@@ -139,34 +107,36 @@ async function persistItems(issueId: string, current: Row[], snapshot: Row[]): P
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroyPurOutsourcedIssueItem: MutationResult }>(DESTROY_ITEM, {
-      id: old.id,
-    })
-    collect(old.idx, data.destroyPurOutsourcedIssueItem?.errors)
+    try {
+      await purchaseOutsourcedIssueItemClient.delete(String(old.id))
+    } catch (error) {
+      collect(old.idx, [{ message: (error as Error).message }])
+    }
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createPurOutsourcedIssueItem: MutationResult }>(CREATE_ITEM, {
-        input: { issueId, ...itemInput(row) },
-      })
-      collect(row.idx, data.createPurOutsourcedIssueItem?.errors)
+      try {
+        await purchaseOutsourcedIssueItemClient.create({ issueId, ...itemInput(row) })
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{ updatePurOutsourcedIssueItem: MutationResult }>(UPDATE_ITEM, {
-        id: row.id,
-        input: itemInput(row),
-      })
-      collect(row.idx, data.updatePurOutsourcedIssueItem?.errors)
+      try {
+        await purchaseOutsourcedIssueItemClient.update(String(row.id), itemInput(row))
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
     }
   }
   return errors
 }
 
 /**
- * 外协仓选择器:接 invOutsourcedWarehouses 按对手过滤(02 的过滤能力),
+ * 外协仓选择器:通过 warehouse REST 按协作方过滤,
  * 未选齐对手类型与对手时禁用。候选少(一对手几个仓),一次拉全量不做远程搜索。
  */
 function OutsourcedWarehouseSelect({
@@ -186,12 +156,10 @@ function OutsourcedWarehouseSelect({
 }) {
   const ready = Boolean(partyType && partyId)
   const warehouses = useQuery({
-    queryKey: ['invOutsourcedWarehouses', partyType, partyId],
+    queryKey: ['outsourcedWarehouses', partyType, partyId],
     enabled: ready,
     queryFn: () =>
-      gqlFetch<{ invOutsourcedWarehouses: { results: Row[] } }>(
-        `query { invOutsourcedWarehouses(partyType: ${partyType}, partyId: ${JSON.stringify(partyId)}, limit: 100, offset: 0, sort: [{field: NAME, order: ASC}]) { results { id name } } }`,
-      ).then((d) => d.invOutsourcedWarehouses.results),
+      queryOutsourcedWarehouses(partyType as 'SUPPLIER' | 'COMPANY', partyId!),
   })
 
   const strValue = value == null || value === '' ? null : String(value)
@@ -237,20 +205,24 @@ function OutsourcedWarehouseSelect({
 /**
  * 有效发料清单行固定筛选(弹窗 SynieDataGrid fixedFilter):
  * 1. 已审核委外订单 2. 公司/对手与发料头一致 3. 剩余可发 > 0
- * 枚举值用 gqlEnum 包装(不可 JSON 字符串)。
+ * 使用 REST FilterState，权限与公司/对手/剩余数量条件由服务端白名单解释。
  */
-function materialLineGridFilter(values: Record<string, unknown>): Record<string, unknown> | null {
+function materialLineGridFilter(values: Record<string, unknown>): FilterState | null {
   const { companyId, partyType, partyId } = values
   if (!companyId || !partyType || !partyId) return null
   return {
-    and: [
-      { orderStatus: { eq: gqlEnum('AUDITED') } },
-      { orderIsOutsourced: { eq: true } },
-      { companyId: { eq: String(companyId) } },
-      { partyType: { eq: gqlEnum(String(partyType)) } },
-      { partyId: { eq: String(partyId) } },
-      { remainingIssueQty: { greaterThan: '0' } },
-    ],
+    orderStatus: { kind: 'enum', values: ['AUDITED'] },
+    orderIsOutsourced: { kind: 'bool', eq: true },
+    companyId: { kind: 'fk', op: 'in', values: [String(companyId)], labels: [] },
+    partyType: { kind: 'enum', values: [String(partyType)] },
+    partyId: {
+      kind: 'polyFk',
+      op: 'in',
+      variant: String(partyType),
+      values: [String(partyId)],
+      labels: [],
+    },
+    remainingIssueQty: { kind: 'number', op: 'gt', value: '0' },
   }
 }
 
@@ -319,9 +291,13 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
   const companies = useQuery({
     queryKey: ['purOutsourcedIssues', 'companies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { results { id name } } }`,
-      ).then((d) => d.basCompanies.results),
+      companyClient
+        .query({
+          limit: 50,
+          offset: 0,
+          sort: { column: 'code', direction: 'ascending' },
+        })
+        .then((result) => result.results),
   })
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
@@ -348,12 +324,18 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
       return
     }
     setDetailLoaded(false)
-    gqlFetch<{ purOutsourcedIssueItems: { results: Row[] } }>(FETCH_ITEMS, {
-      issueId,
-    })
-      .then((d) => {
+    purchaseOutsourcedIssueItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          issueId: { kind: 'fk', op: 'in', values: [issueId], labels: [] },
+        },
+      })
+      .then((result) => {
         if (my !== reqIdRef.current) return
-        const rows = d.purOutsourcedIssueItems.results
+        const rows = result.results
         // 编辑态预热缓存:存量行不必再点选清单行也能过校验/回填(快照即显示源)
         for (const r of rows) {
           if (r.orderItemMaterialId != null) {
@@ -443,6 +425,7 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
       {children}
       <SynieRecordDrawer
         resource="purOutsourcedIssues"
+        client={purchaseOutsourcedIssueClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -479,6 +462,7 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
               input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
                 <RemoteDialogSelect
                   resource="purOrderItemMaterials"
+                  client={purchaseOrderItemMaterialClient}
                   label="发料清单行"
                   dialogTitle="选择发料清单行"
                   placeholder={lineGridFilter ? '点击选择发料清单行…' : '先选齐公司与对手'}
@@ -491,32 +475,17 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
                       let row = line
                       if (id) {
                         try {
-                          const data = await gqlFetch<{
-                            purOrderItemMaterials: { results: Row[] }
-                          }>(
-                            `query ($id: ID!) {
-                              purOrderItemMaterials(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
-                                results {
-                                  id orderNo quantity issuedQty remainingIssueQty
-                                  material { id code name spec }
-                                  unit { id name }
-                                }
-                              }
-                            }`,
-                            { id },
-                          )
-                          const full = data.purOrderItemMaterials.results[0]
+                          const full = await purchaseOrderItemMaterialClient.get(id)
                           if (full) {
-                            const material = full.material as Row | null | undefined
-                            const unit = full.unit as Row | null | undefined
                             row = {
                               ...full,
-                              materialId: material?.id,
-                              unitId: unit?.id,
-                              materialCode: material?.code,
-                              materialName: material?.name,
-                              materialSpec: material?.spec,
-                              unitName: unit?.name,
+                              material: {
+                                id: full.materialId,
+                                code: full.materialCode,
+                                name: full.materialName,
+                                spec: full.materialSpec,
+                              },
+                              unit: { id: full.unitId, name: full.unitName },
                             } as Row
                           }
                         } catch {
@@ -681,6 +650,7 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
               />
               <SynieEditableTable
                 resource="purOutsourcedIssueItems"
+                client={purchaseOutsourcedIssueItemClient}
                 label="发料条目"
                 items={items}
                 onChange={setItems}
@@ -803,13 +773,8 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{ createPurOutsourcedIssue: MutationResult }>(
-              CREATE_ISSUE,
-              { input: values },
-            )
-            const res = data.createPurOutsourcedIssue
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const issueId = res!.result!.id
+            const saved = await purchaseOutsourcedIssueClient.create(values)
+            const issueId = String(saved.id)
             const itemErrors = await persistItems(issueId, items, [])
             if (itemErrors.length > 0) {
               toast.danger('发料单已创建,但部分条目保存失败', {
@@ -820,15 +785,7 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
             }
             savedId = issueId
           } else {
-            const data = await gqlFetch<{ updatePurOutsourcedIssue: MutationResult }>(
-              UPDATE_ISSUE,
-              {
-                id: drawer!.row!.id,
-                input: values,
-              },
-            )
-            const res = data.updatePurOutsourcedIssue
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
+            await purchaseOutsourcedIssueClient.update(drawer!.row!.id, values)
             const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('发料单已更新,但部分条目保存失败', {

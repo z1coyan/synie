@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { materialCategoryClient } from '~/lib/resources/inventory'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -12,17 +12,6 @@ import type { Row } from '~/components/synie-data-grid/types'
 export const Route = createFileRoute('/_app/scm/material-categories')({
   component: MaterialCategoriesPage,
 })
-
-const CREATE_CATEGORY = `
-  mutation ($input: CreateInvMaterialCategoryInput!) {
-    createInvMaterialCategory(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_CATEGORY = `
-  mutation ($id: ID!, $input: UpdateInvMaterialCategoryInput!) {
-    updateInvMaterialCategory(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 function MaterialCategoriesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
@@ -39,6 +28,7 @@ function MaterialCategoriesPage() {
         <SynieDataGrid
           key={reloadKey}
           resource="invMaterialCategories"
+          client={materialCategoryClient}
           exclude={['parentId', 'hasChildren']}
           tree={{ hasChildrenField: 'hasChildren', sort: { field: 'code', order: 'ASC' } }}
           onView={(row) => setDrawer({ mode: 'view', row })}
@@ -46,8 +36,7 @@ function MaterialCategoriesPage() {
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
           rowActions={statusToggleActions({
             field: 'active',
-            mutation: UPDATE_CATEGORY,
-            resultKey: 'updateInvMaterialCategory',
+            update: materialCategoryClient.update,
             // 树的子层缓存在组件本地,refetch 只刷根层,remount 一并清子层
             onDone: () => setReloadKey((k) => k + 1),
           })}
@@ -56,6 +45,7 @@ function MaterialCategoriesPage() {
 
       <SynieRecordDrawer
         resource="invMaterialCategories"
+        client={materialCategoryClient}
         label="物料分类"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -70,31 +60,24 @@ function MaterialCategoriesPage() {
           parentId: {
             label: '上级分类',
             // 候选限定非叶子分类(叶子不能挂子分类,后端另有校验兜底)
-            remote: { filter: '{isLeaf: {eq: false}}' },
+            remote: {
+              filter: '{isLeaf: {eq: false}}',
+              filterState: { isLeaf: { kind: 'bool', eq: false } },
+            },
           },
           hasChildren: { visible: () => false },
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
           if (mode === 'create') {
-            const data = await gqlFetch<{ createInvMaterialCategory: { errors: { message: string }[] | null } }>(
-              CREATE_CATEGORY,
-              { input: values }
-            )
-            errors = data.createInvMaterialCategory.errors
+            await materialCategoryClient.create(values)
           } else {
-            const data = await gqlFetch<{ updateInvMaterialCategory: { errors: { message: string }[] | null } }>(
-              UPDATE_CATEGORY,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updateInvMaterialCategory.errors
+            await materialCategoryClient.update(drawer!.row!.id, values)
           }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '分类已创建' : '分类已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'invMaterialCategories'] })
+          queryClient.invalidateQueries({ queryKey: ['gridRows', materialCategoryClient.id, 'invMaterialCategories'] })
           // 抽屉走 rowId 自查,编辑后一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'invMaterialCategories'] })
+          queryClient.invalidateQueries({ queryKey: ['rowById', materialCategoryClient.id, 'invMaterialCategories'] })
           setReloadKey((k) => k + 1)
         }}
       />

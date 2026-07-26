@@ -23,14 +23,30 @@ import {
   Segment,
   TrendChip,
 } from '@heroui-pro/react'
-import { gqlFetch, isForbidden } from '~/lib/graphql'
+import { isForbidden } from '~/lib/errors'
+import { currencyClient } from '~/lib/resources/currencies'
+import {
+  getMarketChartInstruments,
+  getMarketPriceSeries,
+  marketInstrumentClient,
+  marketPricePointClient,
+  refreshMarketPricePoints,
+  type MarketChartInstrument,
+  type MarketPriceSeries,
+  type MarketPriceSeriesItem,
+  type MarketRefreshResult,
+  type MarketSeriesPriceKind,
+} from '~/lib/resources/market'
+import { getSystemSetting } from '~/lib/resources/settings'
+import { unitClient } from '~/lib/resources/units'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 
 type TabId = 'prices' | 'instruments'
-type PriceKind = 'settlement' | 'average' | 'last'
+type PriceKind = MarketSeriesPriceKind
 type RangePreset = '7' | '30' | '90' | '365' | 'custom'
 /** 对比模式:绝对价(限同币种同单位) | 涨跌幅(窗内首点=0%,任意口径可同图) */
 type CompareMode = 'absolute' | 'percent'
@@ -48,102 +64,11 @@ export const Route = createFileRoute('/_app/base/market')({
   component: MarketPage,
 })
 
-// ── GraphQL ──────────────────────────────────────────────
-
-const CHART_INSTRUMENTS = `
-  query {
-    basMarketChartInstruments
-  }
-`
-
-const PRICE_SERIES = `
-  query ($instrumentIds: [ID!]!, $priceKind: MarketPriceKind!, $from: DateTime!, $to: DateTime!) {
-    basMarketPriceSeries(
-      instrumentIds: $instrumentIds
-      priceKind: $priceKind
-      from: $from
-      to: $to
-    )
-  }
-`
-
-const CREATE_PRICE = `
-  mutation ($input: CreateBasMarketPricePointInput!) {
-    createBasMarketPricePoint(input: $input) { result { id } errors { message } }
-  }
-`
-
-const CREATE_INSTRUMENT = `
-  mutation ($input: CreateBasMarketInstrumentInput!) {
-    createBasMarketInstrument(input: $input) { result { id } errors { message } }
-  }
-`
-
-const UPDATE_INSTRUMENT = `
-  mutation ($id: ID!, $input: UpdateBasMarketInstrumentInput!) {
-    updateBasMarketInstrument(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-
-const REFRESH = `
-  mutation ($input: RefreshBasMarketPricePointsInput) {
-    refreshBasMarketPricePoints(input: $input)
-  }
-`
-
-const STATUS_QUERY = `
-  query {
-    sysSetting {
-      marketFetchScheduleEnabled
-      marketFetchLastIntervalMinutes
-      marketFetchSettlementEnabled
-      marketFetchLastRunAt
-      marketFetchLastSummary
-    }
-  }
-`
-
 // ── Types ────────────────────────────────────────────────
 
-type ChartInstrument = {
-  id: string
-  code: string
-  name: string
-  currencyId: string
-  unitId: string
-  currencyCode: string | null
-  unitName: string | null
-  defaultPriceKind: string
-}
-
-type SeriesPoint = { observedAt: string; price: string }
-
-type SeriesItem = ChartInstrument & {
-  instrumentId: string
-  points: SeriesPoint[]
-}
-
-type SeriesPayload = {
-  priceKind: string
-  from: string
-  to: string
-  series: SeriesItem[]
-}
-
-type FetchStatus = {
-  marketFetchScheduleEnabled: boolean
-  marketFetchLastIntervalMinutes: number
-  marketFetchSettlementEnabled: boolean
-  marketFetchLastRunAt: string | null
-  marketFetchLastSummary: string | null
-}
-
-type RefreshItem = {
-  code?: string
-  kind?: string
-  status?: string
-  message?: string | null
-}
+type ChartInstrument = MarketChartInstrument
+type SeriesItem = MarketPriceSeriesItem
+type SeriesPayload = MarketPriceSeries
 
 type ChartPrefs = {
   instrumentIds?: string[]
@@ -298,7 +223,7 @@ function rangeBounds(
   return { from: from.toISOString(), to: to.toISOString() }
 }
 
-function formatRunAt(iso: string | null): string {
+function formatRunAt(iso: string | null | undefined): string {
   if (!iso) return '尚未运行'
   try {
     return new Date(iso).toLocaleString('zh-CN', { hour12: false })
@@ -307,9 +232,8 @@ function formatRunAt(iso: string | null): string {
   }
 }
 
-function summarizeRefresh(raw: unknown): string {
-  const payload = raw as { items?: RefreshItem[] } | null
-  const items = payload?.items ?? []
+function summarizeRefresh(payload: MarketRefreshResult): string {
+  const items = payload.items
   if (items.length === 0) return '没有可刷新的品种（请检查是否启用拉取）'
   const ok = items.filter((i) => i.status === 'ok').length
   const skipped = items.filter((i) => i.status === 'skipped').length
@@ -343,87 +267,6 @@ function formatAxisTime(iso: string): string {
   }
 }
 
-/** generic action 的 map 经 GraphQL 常是 JsonString(整段或数组元素为 JSON 串),兼容已解析对象 */
-function parseJsonValue(raw: unknown): unknown {
-  if (typeof raw !== 'string') return raw
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return raw
-  }
-}
-
-function parseSeriesPayload(raw: unknown): SeriesPayload | null {
-  const data = parseJsonValue(raw)
-  if (!data || typeof data !== 'object') return null
-  const obj = data as Record<string, unknown>
-  const seriesRaw = Array.isArray(obj.series) ? obj.series : []
-  const series = seriesRaw
-    .map((item) => {
-      const row = parseJsonValue(item)
-      if (!row || typeof row !== 'object') return null
-      const r = row as Record<string, unknown>
-      const instrumentId = String(r.instrumentId ?? r.id ?? '')
-      if (!instrumentId) return null
-      const pointsRaw = Array.isArray(r.points) ? r.points : []
-      const points = pointsRaw
-        .map((p) => {
-          const pt = parseJsonValue(p)
-          if (!pt || typeof pt !== 'object') return null
-          const o = pt as Record<string, unknown>
-          return {
-            observedAt: String(o.observedAt ?? ''),
-            price: String(o.price ?? ''),
-          } satisfies SeriesPoint
-        })
-        .filter((p): p is SeriesPoint => p != null && p.observedAt !== '')
-      return {
-        id: instrumentId,
-        instrumentId,
-        code: String(r.code ?? ''),
-        name: String(r.name ?? ''),
-        currencyId: String(r.currencyId ?? ''),
-        unitId: String(r.unitId ?? ''),
-        currencyCode: r.currencyCode == null ? null : String(r.currencyCode),
-        unitName: r.unitName == null ? null : String(r.unitName),
-        defaultPriceKind: String(r.defaultPriceKind ?? 'settlement'),
-        points,
-      } satisfies SeriesItem
-    })
-    .filter((s): s is SeriesItem => s != null)
-
-  return {
-    priceKind: String(obj.priceKind ?? ''),
-    from: String(obj.from ?? ''),
-    to: String(obj.to ?? ''),
-    series,
-  }
-}
-
-function parseInstruments(raw: unknown): ChartInstrument[] {
-  const list = parseJsonValue(raw)
-  const arr = Array.isArray(list) ? list : []
-  return arr
-    .map((row) => {
-      const parsed = parseJsonValue(row)
-      if (!parsed || typeof parsed !== 'object') return null
-      const r = parsed as Record<string, unknown>
-      const id = String(r.id ?? r.instrumentId ?? '')
-      if (!id) return null
-      return {
-        id,
-        code: String(r.code ?? ''),
-        name: String(r.name ?? ''),
-        currencyId: String(r.currencyId ?? ''),
-        unitId: String(r.unitId ?? ''),
-        currencyCode: r.currencyCode == null ? null : String(r.currencyCode),
-        unitName: r.unitName == null ? null : String(r.unitName),
-        defaultPriceKind: String(r.defaultPriceKind ?? 'settlement'),
-      } satisfies ChartInstrument
-    })
-    .filter((x): x is ChartInstrument => x != null)
-}
-
 // ── Page ─────────────────────────────────────────────────
 
 function MarketPage() {
@@ -455,41 +298,35 @@ function MarketPage() {
     row: Row | null
   } | null>(null)
 
-  const perms = useQuery({
-    queryKey: ['myPermissions'],
-    queryFn: () =>
-      gqlFetch<{ myPermissions: string[] }>('query { myPermissions }').then(
-        (d) => new Set(d.myPermissions),
-      ),
-    staleTime: 60_000,
-  })
+  const priceMeta = useGridMeta('basMarketPricePoints', true, marketPricePointClient)
+  const instrumentMeta = useGridMeta('basMarketInstruments', true, marketInstrumentClient)
+  const canPriceRead = priceMeta.data != null
+  const canInstrumentRead = instrumentMeta.data != null
+  const canPriceCreate = (priceMeta.data?.capabilities ?? []).includes('create')
+  const permissionsPending = priceMeta.isPending || instrumentMeta.isPending
+  const permissionsError = [priceMeta.error, instrumentMeta.error].find(
+    (error) => error != null && !isForbidden(error),
+  )
 
-  const canPriceRead = !perms.data || perms.data.has('base.market_price:read')
-  const canInstrumentRead = !perms.data || perms.data.has('base.market_instrument:read')
-  const canPriceCreate = perms.data?.has('base.market_price:create') ?? false
-
-  // 权限落地后:无对应 tab 则静默切到可访问 tab
+  // 两个资源独立取 Meta，保留仅能查看其中一个资源的部分权限。
   useEffect(() => {
-    if (!perms.data) return
-    const priceOk = perms.data.has('base.market_price:read')
-    const instOk = perms.data.has('base.market_instrument:read')
-    if (tab === 'prices' && !priceOk && instOk) {
+    if (permissionsPending) return
+    if (tab === 'prices' && !canPriceRead && canInstrumentRead) {
       navigate({ search: { tab: 'instruments' }, replace: true })
-    } else if (tab === 'instruments' && !instOk && priceOk) {
+    } else if (tab === 'instruments' && !canInstrumentRead && canPriceRead) {
       navigate({ search: { tab: 'prices' }, replace: true })
     }
-  }, [perms.data, tab, navigate])
+  }, [permissionsPending, canPriceRead, canInstrumentRead, tab, navigate])
 
   const instrumentsQuery = useQuery({
-    queryKey: ['basMarketChartInstruments'],
+    queryKey: ['marketChartInstruments'],
     enabled: canPriceRead,
     queryFn: async () => {
       try {
-        const data = await gqlFetch<{ basMarketChartInstruments: unknown }>(CHART_INSTRUMENTS)
-        return parseInstruments(data.basMarketChartInstruments)
-      } catch (e) {
-        if (isForbidden(e)) return [] as ChartInstrument[]
-        throw e
+        return await getMarketChartInstruments()
+      } catch (error) {
+        if (isForbidden(error)) return [] as ChartInstrument[]
+        throw error
       }
     },
     staleTime: 30_000,
@@ -528,7 +365,7 @@ function MarketPage() {
   )
 
   const seriesQuery = useQuery({
-    queryKey: ['basMarketPriceSeries', selectedIds, priceKind, bounds.from, bounds.to],
+    queryKey: ['marketPriceSeries', selectedIds, priceKind, bounds.from, bounds.to],
     enabled: canPriceRead && selectionReady && selectedIds.length > 0,
     // 切换价类/区间/品种时保留上一帧数据,避免 KPI 与图表闪烁
     placeholderData: keepPreviousData,
@@ -543,18 +380,18 @@ function MarketPage() {
         groups.set(key, [...(groups.get(key) ?? []), id])
       }
       const payloads = await Promise.all(
-        [...groups.values()].map((ids) =>
-          gqlFetch<{ basMarketPriceSeries: unknown }>(PRICE_SERIES, {
-            instrumentIds: ids,
-            priceKind: priceKind.toUpperCase(),
+        [...groups.values()].map((instrumentIds) =>
+          getMarketPriceSeries({
+            instrumentIds,
+            priceKind,
             from: bounds.from,
             to: bounds.to,
-          }).then((d) => parseSeriesPayload(d.basMarketPriceSeries)),
+          }),
         ),
       )
       const order = new Map(selectedIds.map((id, idx) => [id, idx]))
       const series = payloads
-        .flatMap((p) => p?.series ?? [])
+        .flatMap((payload) => payload.series)
         .sort(
           (a, b) => (order.get(a.instrumentId) ?? 0) - (order.get(b.instrumentId) ?? 0),
         )
@@ -572,8 +409,7 @@ function MarketPage() {
     enabled: canPriceRead,
     queryFn: async () => {
       try {
-        const data = await gqlFetch<{ sysSetting: FetchStatus | null }>(STATUS_QUERY)
-        return data.sysSetting
+        return await getSystemSetting()
       } catch (e) {
         if (isForbidden(e)) return null
         throw e
@@ -726,13 +562,13 @@ function MarketPage() {
   async function handleRefresh() {
     setRefreshing(true)
     try {
-      const data = await gqlFetch<{ refreshBasMarketPricePoints: unknown }>(REFRESH, {
-        input: {},
+      const result = await refreshMarketPricePoints()
+      toast.success(summarizeRefresh(result))
+      queryClient.invalidateQueries({
+        queryKey: ['gridRows', marketPricePointClient.id, 'basMarketPricePoints'],
       })
-      toast.success(summarizeRefresh(data.refreshBasMarketPricePoints))
-      queryClient.invalidateQueries({ queryKey: ['gridRows', 'basMarketPricePoints'] })
-      queryClient.invalidateQueries({ queryKey: ['basMarketPriceSeries'] })
-      queryClient.invalidateQueries({ queryKey: ['basMarketChartInstruments'] })
+      queryClient.invalidateQueries({ queryKey: ['marketPriceSeries'] })
+      queryClient.invalidateQueries({ queryKey: ['marketChartInstruments'] })
       queryClient.invalidateQueries({ queryKey: ['sysSetting'] })
     } catch (e) {
       toast.danger(e instanceof Error ? e.message : '刷新失败')
@@ -783,10 +619,24 @@ function MarketPage() {
 
   const showKpis =
     showChart && selectedIds.length > 0 && (kpis.length > 0 || seriesQuery.isLoading)
-  const noAccess =
-    perms.data &&
-    !perms.data.has('base.market_price:read') &&
-    !perms.data.has('base.market_instrument:read')
+  const noAccess = !permissionsPending && !canPriceRead && !canInstrumentRead
+
+  if (permissionsPending) {
+    return <Spinner className="mx-auto mt-12" aria-label="正在加载行情权限" />
+  }
+
+  if (permissionsError) {
+    return (
+      <EmptyState className="mt-12">
+        <EmptyState.Header>
+          <EmptyState.Title>行情加载失败</EmptyState.Title>
+          <EmptyState.Description>
+            {permissionsError instanceof Error ? permissionsError.message : '无法读取行情权限'}
+          </EmptyState.Description>
+        </EmptyState.Header>
+      </EmptyState>
+    )
+  }
 
   if (noAccess) {
     return (
@@ -1242,6 +1092,7 @@ function MarketPage() {
               <SynieDataGrid
                 key={`prices-${gridFilterKey}`}
                 resource="basMarketPricePoints"
+                client={marketPricePointClient}
                 columns={PRICE_COLUMNS}
                 defaultFilters={priceFilters}
                 onView={(row) => setPriceDrawer({ mode: 'view', row })}
@@ -1255,6 +1106,7 @@ function MarketPage() {
             <Tabs.Panel id="instruments" className="pt-4">
               <SynieDataGrid
                 resource="basMarketInstruments"
+                client={marketInstrumentClient}
                 columns={INSTRUMENT_COLUMNS}
                 onView={(row) => setInstrumentDrawer({ mode: 'view', row })}
                 onCreate={() => setInstrumentDrawer({ mode: 'create', row: null })}
@@ -1268,6 +1120,7 @@ function MarketPage() {
       {/* 价点抽屉 */}
       <SynieRecordDrawer
         resource="basMarketPricePoints"
+        client={marketPricePointClient}
         label="行情价点"
         mode={priceDrawer?.mode ?? 'view'}
         isOpen={priceDrawer !== null}
@@ -1279,7 +1132,11 @@ function MarketPage() {
             : ['insertedAt', 'updatedAt']
         }
         fields={{
-          instrumentId: { required: true, edit: 'createOnly' },
+          instrumentId: {
+            required: true,
+            edit: 'createOnly',
+            remote: { client: marketInstrumentClient },
+          },
           observedAt: { required: true, edit: 'createOnly' },
           price: { required: true, edit: 'createOnly', placeholder: '如 72000' },
           priceKind: { required: true, edit: 'createOnly' },
@@ -1287,21 +1144,20 @@ function MarketPage() {
         }}
         onSubmit={async (values, mode) => {
           if (mode !== 'create') return
-          const input = { ...values, source: 'MANUAL' } as Record<string, unknown>
-          const data = await gqlFetch<{
-            createBasMarketPricePoint: { errors: { message: string }[] | null }
-          }>(CREATE_PRICE, { input })
-          const errors = data.createBasMarketPricePoint.errors
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+          const saved = await marketPricePointClient.create(values)
           toast.success('行情价点已录入')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'basMarketPricePoints'] })
-          queryClient.invalidateQueries({ queryKey: ['basMarketPriceSeries'] })
+          queryClient.invalidateQueries({
+            queryKey: ['gridRows', marketPricePointClient.id, 'basMarketPricePoints'],
+          })
+          queryClient.invalidateQueries({ queryKey: ['marketPriceSeries'] })
+          return saved.id
         }}
       />
 
       {/* 品种抽屉 */}
       <SynieRecordDrawer
         resource="basMarketInstruments"
+        client={marketInstrumentClient}
         label="行情品种"
         mode={instrumentDrawer?.mode ?? 'view'}
         isOpen={instrumentDrawer !== null}
@@ -1316,9 +1172,17 @@ function MarketPage() {
             required: true,
             edit: 'createOnly',
             cols: 6,
-            remote: { filter: '{active: {eq: true}}' },
+            remote: {
+              client: currencyClient,
+              filterState: { active: { kind: 'bool', eq: true } },
+            },
           },
-          unitId: { required: true, edit: 'createOnly', cols: 6 },
+          unitId: {
+            required: true,
+            edit: 'createOnly',
+            cols: 6,
+            remote: { client: unitClient },
+          },
           active: { defaultValue: true },
           fetchEnabled: { defaultValue: false },
           externalLastCode: { placeholder: '主连如 CU0', cols: 6 },
@@ -1329,29 +1193,25 @@ function MarketPage() {
           setInstrumentDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
         }
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
+          let saved: Row
           if (mode === 'create') {
-            const data = await gqlFetch<{
-              createBasMarketInstrument: { errors: { message: string }[] | null }
-            }>(CREATE_INSTRUMENT, { input: values })
-            errors = data.createBasMarketInstrument.errors
+            saved = await marketInstrumentClient.create(values)
           } else {
             const {
-              code: _c,
-              currencyId: _cu,
-              unitId: _u,
-              sourceType: _s,
-              ...rest
-            } = values as Record<string, unknown>
-            const data = await gqlFetch<{
-              updateBasMarketInstrument: { errors: { message: string }[] | null }
-            }>(UPDATE_INSTRUMENT, { id: instrumentDrawer!.row!.id, input: rest })
-            errors = data.updateBasMarketInstrument.errors
+              code: _code,
+              currencyId: _currencyId,
+              unitId: _unitId,
+              sourceType: _sourceType,
+              ...update
+            } = values
+            saved = await marketInstrumentClient.update(instrumentDrawer!.row!.id, update)
           }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '行情品种已创建' : '行情品种已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'basMarketInstruments'] })
-          queryClient.invalidateQueries({ queryKey: ['basMarketChartInstruments'] })
+          queryClient.invalidateQueries({
+            queryKey: ['gridRows', marketInstrumentClient.id, 'basMarketInstruments'],
+          })
+          queryClient.invalidateQueries({ queryKey: ['marketChartInstruments'] })
+          return saved.id
         }}
       />
     </>

@@ -2,34 +2,27 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Input, Label, Spinner, TextField, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import {
+  getAccountingOCRConfigured,
+  getAccountingSetting,
+  updateAccountingSetting,
+} from '~/lib/resources/settings'
 
 export const Route = createFileRoute('/_app/finance/settings')({
   component: FinanceSettingsPage,
 })
 
-const SETTING_QUERY = `
-  query {
-    accSetting { id ocrAccessKeyId }
-    accOcrConfigured
-  }
-`
-const UPDATE_SETTING = `
-  mutation ($id: ID!, $input: UpdateAccSettingInput!) {
-    updateAccSetting(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-
-interface Setting {
-  id: string
-  ocrAccessKeyId: string | null
-}
-
 function FinanceSettingsPage() {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: ['accSetting'],
-    queryFn: () => gqlFetch<{ accSetting: Setting | null; accOcrConfigured: boolean }>(SETTING_QUERY),
+    queryFn: async () => {
+      const [accSetting, ocr] = await Promise.all([
+        getAccountingSetting(),
+        getAccountingOCRConfigured(),
+      ])
+      return { accSetting, accOcrConfigured: ocr.configured }
+    },
   })
 
   const [keyId, setKeyId] = useState('')
@@ -47,16 +40,10 @@ function FinanceSettingsPage() {
     if (!query.data?.accSetting) return
     setSaving(true)
     try {
-      const data = await gqlFetch<{ updateAccSetting: { errors: { message: string }[] | null } }>(
-        UPDATE_SETTING,
-        {
-          id: query.data.accSetting.id,
-          input: { ocrAccessKeyId: keyId || null, ...(secret.trim() ? { ocrAccessKeySecret: secret } : {}) },
-        }
-      )
-      if (data.updateAccSetting.errors && data.updateAccSetting.errors.length > 0) {
-        throw new Error(data.updateAccSetting.errors.map((e) => e.message).join('; '))
-      }
+      await updateAccountingSetting({
+        ocrAccessKeyId: keyId || null,
+        ...(secret.trim() ? { ocrAccessKeySecret: secret } : {}),
+      })
       toast.success('财务设置已保存')
       setSecret('')
       queryClient.invalidateQueries({ queryKey: ['accSetting'] })

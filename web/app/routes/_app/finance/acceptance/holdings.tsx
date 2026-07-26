@@ -2,13 +2,17 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import type { Row, RowAction } from '~/components/synie-data-grid/types'
+import {
+  billClient,
+  billHoldingClient,
+  billTransactionClient,
+} from '~/lib/resources/finance-operations'
 import {
   AcceptanceTransactionDrawer,
   TX_TYPE_LABEL,
@@ -19,12 +23,6 @@ import {
 export const Route = createFileRoute('/_app/finance/acceptance/holdings')({
   component: BillHoldingsPage,
 })
-
-const UPDATE_BILL = `
-  mutation ($id: ID!, $input: UpdateAccBillInput!) {
-    updateAccBill(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 // billNo 不进表格:billId 已 fk 链接到票据(labelField=billNo),再列一次是冗余(同 entries.tsx
 // voucherNo 先例);金额/到期日/取得日/来源交易紧随票据段(子票起止)之后,来源交易 fk 链接为
@@ -60,8 +58,8 @@ function BillHoldingsPage() {
 
   // 行操作跨资源写数据,门控按目标资源的能力反射:发起交易看 accBillTransactions:create,
   // 票面修正看 accBills:update(挂在持有 meta 的 capability 字段上会查错资源,fail-closed 隐藏)
-  const txMeta = useGridMeta('accBillTransactions')
-  const billMeta = useGridMeta('accBills')
+  const txMeta = useGridMeta('accBillTransactions', true, billTransactionClient)
+  const billMeta = useGridMeta('accBills', true, billClient)
   const canCreateTx = (txMeta.data?.capabilities ?? []).includes('create')
   const canEditBill = (billMeta.data?.capabilities ?? []).includes('update')
 
@@ -99,6 +97,7 @@ function BillHoldingsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="accBillHoldings"
+          client={billHoldingClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'dueDate', direction: 'ascending' }}
@@ -114,6 +113,7 @@ function BillHoldingsPage() {
 
       <SynieRecordDrawer
         resource="accBillHoldings"
+        client={billHoldingClient}
         label="持有承兑"
         mode="view"
         isOpen={viewRow !== null}
@@ -128,18 +128,13 @@ function BillHoldingsPage() {
       <SynieRecordDrawer
         {...drawerConfig('accBills')}
         resource="accBills"
+        client={billClient}
         mode="edit"
         isOpen={billEdit !== null}
         onOpenChange={(open) => !open && setBillEdit(null)}
         rowId={billEdit?.billId}
         onSubmit={async (values) => {
-          const data = await gqlFetch<{ updateAccBill: { errors: { message: string }[] | null } }>(UPDATE_BILL, {
-            id: billEdit!.billId,
-            input: values,
-          })
-          if (data.updateAccBill.errors && data.updateAccBill.errors.length > 0) {
-            throw new Error(data.updateAccBill.errors.map((e) => e.message).join('; '))
-          }
+          await billClient.update(billEdit!.billId, values)
           toast.success('票据已更新')
           // 持有段冗余票号/到期日取自票据主档,一并失效
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBills'] })

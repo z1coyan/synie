@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
 import type { Row } from '../synie-data-grid/types'
+import type { ResourceClient } from '~/lib/resources/types'
 import { isLocalRow } from './editable'
 
 /**
@@ -13,18 +14,20 @@ export interface DocItemsConfig {
   /** 条目中文名(加载失败 toast 用),如 "需求行" */
   label: string
   /** 条目 list query 文档:变量固定 ($docId: ID!),母单外键 filter 内联在文档里 */
-  fetchQuery: string
+  fetchQuery?: string
   /** 查询返回顶层 key,如 "mfgDemandItems" */
-  fetchKey: string
+  fetchKey?: string
   /** create mutation 文档与返回顶层 key(input 里母单外键由 hook 补) */
-  createMutation: string
-  createKey: string
+  createMutation?: string
+  createKey?: string
   /** update mutation 文档与返回顶层 key */
-  updateMutation: string
-  updateKey: string
+  updateMutation?: string
+  updateKey?: string
   /** destroy mutation 文档与返回顶层 key */
-  destroyMutation: string
-  destroyKey: string
+  destroyMutation?: string
+  destroyKey?: string
+  /** 已迁移资源直接走 REST；未传时保留旧 GraphQL 脚手架。 */
+  client?: ResourceClient
   /** create input 的母单外键字段名,如 "demandId" */
   docIdField: string
   /** 行 → create/update input(母单外键除外) */
@@ -50,17 +53,36 @@ export function useDocItems(cfg: DocItemsConfig) {
       return
     }
     setItemsLoaded(false)
-    gqlFetch<Record<string, { results: Row[] }>>(cfg.fetchQuery, { docId })
+    const request = cfg.client
+      ? cfg.client.query({
+          limit: 200,
+          offset: 0,
+          filter: {
+            [cfg.docIdField]: {
+              kind: 'fk',
+              op: 'in',
+              values: [docId],
+              labels: [],
+            },
+          },
+          sort: { column: 'idx', direction: 'ascending' },
+        })
+      : gqlFetch<Record<string, { results: Row[] }>>(cfg.fetchQuery!, {
+          docId,
+        }).then((data) => data[cfg.fetchKey!] ?? { count: 0, results: [] })
+    request
       .then((d) => {
         if (my !== reqIdRef.current) return
-        const rows = d[cfg.fetchKey]?.results ?? []
+        const rows = d.results ?? []
         setItems(rows)
         setItemsSnapshot(rows)
         setItemsLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
-        toast.danger(`${cfg.label}加载失败`, { description: (e as Error).message })
+        toast.danger(`${cfg.label}加载失败`, {
+          description: (e as Error).message,
+        })
         setItems([])
         setItemsSnapshot([])
       })
@@ -72,36 +94,61 @@ export function useDocItems(cfg: DocItemsConfig) {
   /** 父表单提交时调:删除消失的存量行 → 新建 local: 行 → 更新变更行;返回逐行错误 */
   const persistItems = async (docId: string): Promise<string[]> => {
     const errors: string[] = []
-    const collect = (label: unknown, msgs: { message: string }[] | null | undefined) => {
+    const collect = (
+      label: unknown,
+      msgs: { message: string }[] | null | undefined,
+    ) => {
       if (msgs?.length) errors.push(...msgs.map((e) => `${label}:${e.message}`))
     }
-    const currentIds = new Set(items.filter((r) => !isLocalRow(r)).map((r) => r.id))
+    const currentIds = new Set(
+      items.filter((r) => !isLocalRow(r)).map((r) => r.id),
+    )
 
     for (const old of itemsSnapshot) {
       if (currentIds.has(old.id)) continue
-      const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
-        cfg.destroyMutation,
-        { id: old.id },
-      )
-      collect(old.idx ?? '行', data[cfg.destroyKey]?.errors)
+      try {
+        if (cfg.client) await cfg.client.delete(old.id)
+        else {
+          const data = await gqlFetch<
+            Record<string, { errors: { message: string }[] | null }>
+          >(cfg.destroyMutation!, { id: old.id })
+          collect(old.idx ?? '行', data[cfg.destroyKey!]?.errors)
+        }
+      } catch (error) {
+        errors.push(`${String(old.idx ?? '行')}:${(error as Error).message}`)
+      }
     }
 
     for (const row of items) {
       if (isLocalRow(row)) {
-        const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
-          cfg.createMutation,
-          { input: { [cfg.docIdField]: docId, ...cfg.itemInput(row) } },
-        )
-        collect(row.idx ?? '行', data[cfg.createKey]?.errors)
+        try {
+          const input = { [cfg.docIdField]: docId, ...cfg.itemInput(row) }
+          if (cfg.client) await cfg.client.create(input)
+          else {
+            const data = await gqlFetch<
+              Record<string, { errors: { message: string }[] | null }>
+            >(cfg.createMutation!, { input })
+            collect(row.idx ?? '行', data[cfg.createKey!]?.errors)
+          }
+        } catch (error) {
+          errors.push(`${String(row.idx ?? '行')}:${(error as Error).message}`)
+        }
         continue
       }
       const old = itemsSnapshot.find((s) => s.id === row.id)
       if (old && itemChanged(old, row)) {
-        const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
-          cfg.updateMutation,
-          { id: row.id, input: cfg.itemInput(row) },
-        )
-        collect(row.idx ?? '行', data[cfg.updateKey]?.errors)
+        try {
+          const input = cfg.itemInput(row)
+          if (cfg.client) await cfg.client.update(row.id, input)
+          else {
+            const data = await gqlFetch<
+              Record<string, { errors: { message: string }[] | null }>
+            >(cfg.updateMutation!, { id: row.id, input })
+            collect(row.idx ?? '行', data[cfg.updateKey!]?.errors)
+          }
+        } catch (error) {
+          errors.push(`${String(row.idx ?? '行')}:${(error as Error).message}`)
+        }
       }
     }
     return errors

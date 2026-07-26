@@ -3,6 +3,7 @@ import { formatQty } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useAuditDoc } from '../-audit-doc'
+import { salesDeliveryItemClient } from '~/lib/resources/fulfillment'
 import { deliveryAuditConfig, useDeliveryDrawer } from './-delivery-drawer'
 
 export const Route = createFileRoute('/_app/scm/sales-deliveries/items')({
@@ -82,6 +83,7 @@ function DeliveryItemsTab() {
     <>
       <SynieDataGrid
         resource="salDeliveryItems"
+        client={salesDeliveryItemClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         // 行图纸:sys_attachment 挂接(owner_type sal_delivery_item / category drawing),与订单条目同机制

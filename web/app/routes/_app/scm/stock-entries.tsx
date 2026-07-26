@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
+import { stockEntryClient } from '~/lib/resources/inventory'
 
 export const Route = createFileRoute('/_app/scm/stock-entries')({
   component: StockEntriesPage,
@@ -56,6 +57,7 @@ function StockEntriesPage() {
         {/* 分录只读:不传 onCreate/onEdit 即无新增/编辑入口;来源单据是多态 fk 链接列(GridMeta poly_refs 反射) */}
         <SynieDataGrid
           resource="invStockEntries"
+          client={stockEntryClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'postingDate', direction: 'descending' }}
@@ -65,6 +67,7 @@ function StockEntriesPage() {
 
       <SynieRecordDrawer
         resource="invStockEntries"
+        client={stockEntryClient}
         label="库存分录"
         mode="view"
         isOpen={viewRow !== null}

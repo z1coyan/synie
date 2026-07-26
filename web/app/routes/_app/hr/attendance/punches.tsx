@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
+import { attendancePunchClient } from '~/lib/resources/hr-operations'
 
 export const Route = createFileRoute('/_app/hr/attendance/punches')({
   component: AttendancePunchesPage,
@@ -43,6 +44,7 @@ function AttendancePunchesPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrAttendancePunches"
+          client={attendancePunchClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'punchedAt', direction: 'descending' }}
@@ -52,6 +54,7 @@ function AttendancePunchesPage() {
 
       <SynieRecordDrawer
         resource="hrAttendancePunches"
+        client={attendancePunchClient}
         label="打卡记录"
         mode="view"
         isOpen={viewRow !== null}

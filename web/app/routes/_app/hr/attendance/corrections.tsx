@@ -3,7 +3,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseTime } from '@internationalized/date'
 import { Button, DateField, Label, TimeField, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import {
+  attendanceCorrectionClient,
+  saveAttendanceCorrection,
+} from '~/lib/resources/hr-operations'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -12,17 +15,6 @@ import type { Row } from '~/components/synie-data-grid/types'
 export const Route = createFileRoute('/_app/hr/attendance/corrections')({
   component: AttendanceCorrectionsPage,
 })
-
-const CREATE_CORRECTION = `
-  mutation ($input: CreateHrAttendanceCorrectionInput!) {
-    createHrAttendanceCorrection(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_CORRECTION = `
-  mutation ($id: ID!, $input: UpdateHrAttendanceCorrectionInput!) {
-    updateHrAttendanceCorrection(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 // times 数组列经表格行/表单草稿会退化为逗号串,两种形态都归一为 HH:MM:SS 数组
 const parseTimes = (v: unknown): string[] => {
@@ -119,6 +111,7 @@ function AttendanceCorrectionsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrAttendanceCorrections"
+          client={attendanceCorrectionClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'insertedAt', direction: 'descending' }}
@@ -131,6 +124,7 @@ function AttendanceCorrectionsPage() {
 
       <SynieRecordDrawer
         resource="hrAttendanceCorrections"
+        client={attendanceCorrectionClient}
         label="补卡单"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -157,19 +151,10 @@ function AttendanceCorrectionsPage() {
           if (times.length === 0) throw new Error('至少需要一个补卡时刻')
           const input = { ...values, times }
 
-          let errors: { message: string }[] | null
-          if (mode === 'create') {
-            const data = await gqlFetch<{
-              createHrAttendanceCorrection: { errors: { message: string }[] | null }
-            }>(CREATE_CORRECTION, { input })
-            errors = data.createHrAttendanceCorrection.errors
-          } else {
-            const data = await gqlFetch<{
-              updateHrAttendanceCorrection: { errors: { message: string }[] | null }
-            }>(UPDATE_CORRECTION, { id: drawer!.row!.id, input })
-            errors = data.updateHrAttendanceCorrection.errors
-          }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+          await saveAttendanceCorrection(
+            mode === 'create' ? null : drawer!.row!.id,
+            input,
+          )
           toast.success(mode === 'create' ? '补卡单已保存,当天日考勤已重算' : '补卡单已更新,当天日考勤已重算')
           invalidateAll()
         }}

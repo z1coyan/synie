@@ -1,42 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Spinner, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import type { FilterState } from '~/components/synie-data-grid/types'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
-
-const FETCH_DEFAULTS = `
-  query ($companyId: ID!) {
-    salCompanyAccountDefaults(
-      filter: {companyId: {eq: $companyId}}
-      limit: 1
-      offset: 0
-    ) {
-      results {
-        id
-        deliveryDebitAccountId
-        deliveryCreditAccountId
-        receiptDebitAccountId
-        receiptCreditAccountId
-      }
-    }
-  }
-`
-const CREATE_DEFAULTS = `
-  mutation ($input: CreateSalCompanyAccountDefaultInput!) {
-    createSalCompanyAccountDefault(input: $input) {
-      result { id }
-      errors { message }
-    }
-  }
-`
-const UPDATE_DEFAULTS = `
-  mutation ($id: ID!, $input: UpdateSalCompanyAccountDefaultInput!) {
-    updateSalCompanyAccountDefault(id: $id, input: $input) {
-      result { id }
-      errors { message }
-    }
-  }
-`
+import { fetchSalesCompanyAccountDefaults } from '~/lib/resources/fulfillment'
+import { companyAccountDefaultClient } from '~/lib/resources/reconciliations'
 
 type CompanyDefaultRow = {
   id: string
@@ -46,11 +14,14 @@ type CompanyDefaultRow = {
   receiptCreditAccountId: string | null
 }
 
-function accountFilter(companyId: string | null, roleEnum?: string): string | undefined {
+function accountFilter(companyId: string | null, roleEnum?: string): FilterState | undefined {
   if (!companyId) return undefined
-  const base = `companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}`
-  if (roleEnum) return `{${base}, role: {eq: ${roleEnum}}}`
-  return `{${base}}`
+  return {
+    companyId: { kind: 'fk', op: 'in', values: [companyId], labels: [] },
+    isGroup: { kind: 'bool', eq: false },
+    active: { kind: 'bool', eq: true },
+    ...(roleEnum ? { role: { kind: 'enum' as const, values: [roleEnum] } } : {}),
+  }
 }
 
 export type CompanyAccountSide = 'delivery' | 'receipt'
@@ -71,12 +42,8 @@ export function CompanyAccountDefaultsCard({ side }: { side: CompanyAccountSide 
   const defaultsQuery = useQuery({
     queryKey: ['salCompanyAccountDefaults', companyId],
     enabled: companyId != null && companyId !== '',
-    queryFn: async () => {
-      const data = await gqlFetch<{
-        salCompanyAccountDefaults: { results: CompanyDefaultRow[] }
-      }>(FETCH_DEFAULTS, { companyId })
-      return data.salCompanyAccountDefaults.results[0] ?? null
-    },
+    queryFn: () =>
+      fetchSalesCompanyAccountDefaults(String(companyId)) as Promise<CompanyDefaultRow | null>,
   })
 
   useEffect(() => {
@@ -117,12 +84,7 @@ export function CompanyAccountDefaultsCard({ side }: { side: CompanyAccountSide 
                 receiptDebitAccountId: debitId,
                 receiptCreditAccountId: creditId,
               }
-        const data = await gqlFetch<{
-          updateSalCompanyAccountDefault: { errors: { message: string }[] | null }
-        }>(UPDATE_DEFAULTS, { id: rowId, input })
-        if (data.updateSalCompanyAccountDefault.errors?.length) {
-          throw new Error(data.updateSalCompanyAccountDefault.errors.map((e) => e.message).join('; '))
-        }
+        await companyAccountDefaultClient.update?.(rowId, input)
       } else {
         const input =
           side === 'delivery'
@@ -136,12 +98,7 @@ export function CompanyAccountDefaultsCard({ side }: { side: CompanyAccountSide 
                 receiptDebitAccountId: debitId,
                 receiptCreditAccountId: creditId,
               }
-        const data = await gqlFetch<{
-          createSalCompanyAccountDefault: { errors: { message: string }[] | null }
-        }>(CREATE_DEFAULTS, { input })
-        if (data.createSalCompanyAccountDefault.errors?.length) {
-          throw new Error(data.createSalCompanyAccountDefault.errors.map((e) => e.message).join('; '))
-        }
+        await companyAccountDefaultClient.create?.(input)
       }
       toast.success(side === 'delivery' ? '发货默认科目已保存' : '入库默认科目已保存')
       queryClient.invalidateQueries({ queryKey: ['salCompanyAccountDefaults'] })
@@ -190,7 +147,7 @@ export function CompanyAccountDefaultsCard({ side }: { side: CompanyAccountSide 
               placeholder="可空,选择默认借方…"
               value={debitId}
               onChange={(id) => setDebitId(id)}
-              filter={accountFilter(companyId, debitRole)}
+              filterState={accountFilter(companyId, debitRole)}
               labelField="name"
               searchFields={['name', 'code']}
               itemSubtitleFields={['code']}
@@ -201,7 +158,7 @@ export function CompanyAccountDefaultsCard({ side }: { side: CompanyAccountSide 
               placeholder="可空,选择默认贷方…"
               value={creditId}
               onChange={(id) => setCreditId(id)}
-              filter={accountFilter(companyId, creditRole)}
+              filterState={accountFilter(companyId, creditRole)}
               labelField="name"
               searchFields={['name', 'code']}
               itemSubtitleFields={['code']}
@@ -226,12 +183,5 @@ export function CompanyAccountDefaultsCard({ side }: { side: CompanyAccountSide 
 export async function fetchCompanyAccountDefaults(
   companyId: string,
 ): Promise<CompanyDefaultRow | null> {
-  try {
-    const data = await gqlFetch<{
-      salCompanyAccountDefaults: { results: CompanyDefaultRow[] }
-    }>(FETCH_DEFAULTS, { companyId })
-    return data.salCompanyAccountDefaults.results[0] ?? null
-  } catch {
-    return null
-  }
+  return fetchSalesCompanyAccountDefaults(companyId)
 }

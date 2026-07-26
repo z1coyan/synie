@@ -2,26 +2,15 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { supplierClient } from '~/lib/resources/suppliers'
 
 export const Route = createFileRoute('/_app/scm/suppliers')({
   component: SuppliersPage,
 })
-
-const CREATE_SUPPLIER = `
-  mutation ($input: CreatePurSupplierInput!) {
-    createPurSupplier(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_SUPPLIER = `
-  mutation ($id: ID!, $input: UpdatePurSupplierInput!) {
-    updatePurSupplier(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 function SuppliersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
@@ -35,6 +24,7 @@ function SuppliersPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="purSuppliers"
+          client={supplierClient}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
@@ -43,6 +33,7 @@ function SuppliersPage() {
 
       <SynieRecordDrawer
         resource="purSuppliers"
+        client={supplierClient}
         label="供应商"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -55,23 +46,15 @@ function SuppliersPage() {
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
-          if (mode === 'create') {
-            const data = await gqlFetch<{ createPurSupplier: { errors: { message: string }[] | null } }>(
-              CREATE_SUPPLIER,
-              { input: values }
-            )
-            errors = data.createPurSupplier.errors
-          } else {
-            const data = await gqlFetch<{ updatePurSupplier: { errors: { message: string }[] | null } }>(
-              UPDATE_SUPPLIER,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updatePurSupplier.errors
-          }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+          const saved =
+            mode === 'create'
+              ? await supplierClient.create(values)
+              : await supplierClient.update(drawer!.row!.id, values)
           toast.success(mode === 'create' ? '供应商已创建' : '供应商已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purSuppliers'] })
+          queryClient.invalidateQueries({
+            queryKey: ['gridRows', supplierClient.id, 'purSuppliers'],
+          })
+          return saved.id
         }}
       />
     </>

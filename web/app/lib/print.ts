@@ -1,4 +1,6 @@
 import { getToken } from './auth'
+import { apiClient, apiData } from './api/client'
+import type { components } from './api/schema'
 
 export interface PrintTemplateOption {
   id: string
@@ -45,20 +47,16 @@ async function errorMessage(res: Response): Promise<string> {
 }
 
 export async function fetchPrintTemplates(resource: string): Promise<PrintTemplateOption[]> {
-  const res = await fetch(`/api/print/templates?resource=${encodeURIComponent(resource)}`, {
-    headers: authHeaders(),
-  })
-  if (!res.ok) throw new Error(await errorMessage(res))
-  const data = (await res.json()) as { templates: PrintTemplateOption[] }
-  return data.templates
+  const data = await apiData(
+    apiClient.GET('/printing/templates', { params: { query: { resource } } }),
+  )
+  return data.results as PrintTemplateOption[]
 }
 
 export async function fetchFieldCatalog(resource: string): Promise<FieldCatalog> {
-  const res = await fetch(`/api/print/field-catalog?resource=${encodeURIComponent(resource)}`, {
-    headers: authHeaders(),
-  })
-  if (!res.ok) throw new Error(await errorMessage(res))
-  return (await res.json()) as FieldCatalog
+  return (await apiData(
+    apiClient.GET('/printing/field-catalog', { params: { query: { resource } } }),
+  )) as components['schemas']['PrintFieldCatalog']
 }
 
 /** 调用后端打印/导出；返回 blob 与文件名。 */

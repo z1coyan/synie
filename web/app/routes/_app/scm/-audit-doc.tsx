@@ -26,6 +26,10 @@ export interface AuditDocConfig {
   itemFields: string
   /** 确认弹窗展示的条目列 */
   columns: AuditItemColumn[]
+  /** 已迁移资源可直接提供 REST 条目读取；未提供时保留 GraphQL 兼容路径 */
+  loadItems?: (docId: string) => Promise<Row[]>
+  /** 已迁移资源可直接提供 REST 审核；未提供时保留 GraphQL 兼容路径 */
+  audit?: (docId: string) => Promise<unknown>
 }
 
 /** 物料快照单元格:编号+名称一行,规格/客户料号等次行小字(与各条目网格同一套展示) */
@@ -69,18 +73,20 @@ export function useAuditDoc(cfg: AuditDocConfig) {
   const itemsQuery = useQuery({
     queryKey: ['auditDocItems', cfg.itemsResource, pending?.docId],
     enabled: pending != null,
-    queryFn: () =>
-      gqlFetch<Record<string, { results: Row[] }>>(
+    queryFn: () => {
+      if (cfg.loadItems) return cfg.loadItems(pending!.docId)
+      return gqlFetch<Record<string, { results: Row[] }>>(
         `query ($id: ID!) {
-          ${cfg.itemsResource}(
-            filter: {${cfg.docIdField}: {eq: $id}}
-            sort: [{field: IDX, order: ASC}]
-            limit: 500
-            offset: 0
-          ) { results { ${cfg.itemFields} } }
-        }`,
+            ${cfg.itemsResource}(
+              filter: {${cfg.docIdField}: {eq: $id}}
+              sort: [{field: IDX, order: ASC}]
+              limit: 500
+              offset: 0
+            ) { results { ${cfg.itemFields} } }
+          }`,
         { id: pending!.docId },
-      ).then((d) => d[cfg.itemsResource]?.results ?? []),
+      ).then((d) => d[cfg.itemsResource]?.results ?? [])
+    },
   })
   const itemRows = itemsQuery.data ?? []
 
@@ -88,17 +94,21 @@ export function useAuditDoc(cfg: AuditDocConfig) {
     if (!pending) return
     setRunning(true)
     try {
-      const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
-        `mutation ($id: ID!) { ${cfg.mutation}(id: $id) { errors { message } } }`,
-        { id: pending.docId },
-      )
-      const errors = data[cfg.mutation]?.errors
-      // 业务校验(负库存/超发/科目等)走 payload.errors:留在弹窗里让用户看完原因再决定
-      if (errors?.length) {
-        toast.danger(`${cfg.docLabel}审核失败`, {
-          description: errors.map((e) => e.message).join('; '),
-        })
-        return
+      if (cfg.audit) {
+        await cfg.audit(pending.docId)
+      } else {
+        const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
+          `mutation ($id: ID!) { ${cfg.mutation}(id: $id) { errors { message } } }`,
+          { id: pending.docId },
+        )
+        const errors = data[cfg.mutation]?.errors
+        // 未迁移资源的业务校验仍走 GraphQL payload.errors。
+        if (errors?.length) {
+          toast.danger(`${cfg.docLabel}审核失败`, {
+            description: errors.map((e) => e.message).join('; '),
+          })
+          return
+        }
       }
       toast.success(`${cfg.docLabel}已审核`)
       queryClient.invalidateQueries({ queryKey: ['gridRows'] })

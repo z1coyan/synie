@@ -1,7 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Input, Label, ListBox, Modal, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
-import { gqlFetch, isForbidden } from '~/lib/graphql'
+import { isForbidden } from '~/lib/graphql'
+import { companyClient } from '~/lib/resources/companies'
+import {
+  auditPurchaseOrder,
+  expandPurchaseOrderBom,
+  purchaseOrderClient,
+  purchaseOrderItemByproductClient,
+  purchaseOrderItemClient,
+  purchaseOrderItemMaterialClient,
+} from '~/lib/resources/orders'
+import { getSalesSetting } from '~/lib/resources/settings'
 import { formatAmount, formatPrice } from '~/lib/amount'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -10,7 +20,9 @@ import { SynieEditableTable } from '~/components/synie-editable-table/SynieEdita
 import { isLocalRow, localRowId } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
+import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { purchaseQuotationItemClient } from '~/lib/resources/quotations'
+import type { ResourceClient } from '~/lib/resources/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { OrderFlowHistory } from '../-order-flow-history'
 import { DemandLinePicker } from './-demand-line-picker'
@@ -42,6 +54,18 @@ export const purchaseOrderAuditConfig = {
   docIdField: 'orderId',
   itemFields:
     'id idx materialCode materialName materialSpec customerPartNo unitName qty price amount remarks',
+  loadItems: (orderId: string) =>
+    purchaseOrderItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          orderId: { kind: 'fk', op: 'in', values: [orderId], labels: [] },
+        },
+      })
+      .then((result) => result.results),
+  audit: auditPurchaseOrder,
   columns: [
     {
       key: 'materialName',
@@ -62,114 +86,6 @@ const OrderDrawerContext = createContext<OpenOrderDrawer>(() => {})
 export function useOrderDrawer(): OpenOrderDrawer {
   return useContext(OrderDrawerContext)
 }
-
-const CREATE_ORDER = `
-  mutation ($input: CreatePurOrderInput!) {
-    createPurOrder(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ORDER = `
-  mutation ($id: ID!, $input: UpdatePurOrderInput!) {
-    updatePurOrder(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const FETCH_DETAIL = `
-  query ($orderId: ID!) {
-    purOrders(filter: {id: {eq: $orderId}}, limit: 1, offset: 0) {
-      results { id terms }
-    }
-    purOrderItems(filter: {orderId: {eq: $orderId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
-      results {
-        id idx materialId unitId qty price amount basePrice baseAmount taxRate remarks quotationItemId bomId
-        demandLineId demandDate
-        materialName unitName
-        material { id name }
-        unit { id name }
-        quotationItem { id pricingMode }
-        bom { id code planName }
-        demandLine { id demand { id demandNo } }
-      }
-    }
-    purOrderItemMaterials(filter: {orderItem: {orderId: {eq: $orderId}}}, sort: [{field: INSERTED_AT, order: ASC}], limit: 500, offset: 0) {
-      results { id orderItemId materialId unitId quantity issuedQty remarks material { id code name } unit { id name } }
-    }
-    purOrderItemByproducts(filter: {orderItem: {orderId: {eq: $orderId}}}, sort: [{field: INSERTED_AT, order: ASC}], limit: 500, offset: 0) {
-      results { id orderItemId materialId unitId quantity remarks material { id code name } unit { id name } }
-    }
-  }
-`
-// BOM 代入:按条目数量取两清单折算量(后端 applyQty calculation 权威折算:理论耗用=净用量×(1+损耗率,
-// 空按 0)×条目数量;副产物=单位产出量×条目数量);代入是快照复制,代入后与 BOM 脱钩
-const APPLY_BOM = `
-  query ($bomId: ID!, $qty: Decimal!) {
-    mfgBomComponents(filter: {bomId: {eq: $bomId}}, limit: 200, offset: 0) {
-      results { materialId unitId note applyQty(qty: $qty) material { id code name } unit { id name } }
-    }
-    mfgBomByproducts(filter: {bomId: {eq: $bomId}}, limit: 200, offset: 0) {
-      results { materialId unitId note applyQty(qty: $qty) material { id code name } unit { id name } }
-    }
-  }
-`
-// 单据公司的本币:决定汇率字段显隐、币种默认值与条目表双币列(整单本币时只显一套)
-const FETCH_COMPANY_BASE = `
-  query ($companyId: ID!) {
-    basCompanies(filter: {id: {eq: $companyId}}, limit: 1, offset: 0) {
-      results { id baseCurrencyId }
-    }
-  }
-`
-// 零星订单单行数量上限(单行配置);无 sales.setting:read 权限的录单员查不到,客户端校验跳过,后端建行/审核兜底
-const FETCH_SAL_SETTING = `
-  query {
-    salSetting { id spotItemMaxQty }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreatePurOrderItemInput!) {
-    createPurOrderItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdatePurOrderItemInput!) {
-    updatePurOrderItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroyPurOrderItem(id: $id) { errors { message } }
-  }
-`
-// 条目委外配置两子表(发料清单/副产物清单)的增删改:前端 diff 持久化,同 BOM 子表先例
-const CREATE_ISSUE_LINE = `
-  mutation ($input: CreatePurOrderItemMaterialInput!) {
-    createPurOrderItemMaterial(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ISSUE_LINE = `
-  mutation ($id: ID!, $input: UpdatePurOrderItemMaterialInput!) {
-    updatePurOrderItemMaterial(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ISSUE_LINE = `
-  mutation ($id: ID!) {
-    destroyPurOrderItemMaterial(id: $id) { errors { message } }
-  }
-`
-const CREATE_BYPRODUCT_LINE = `
-  mutation ($input: CreatePurOrderItemByproductInput!) {
-    createPurOrderItemByproduct(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_BYPRODUCT_LINE = `
-  mutation ($id: ID!, $input: UpdatePurOrderItemByproductInput!) {
-    updatePurOrderItemByproduct(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_BYPRODUCT_LINE = `
-  mutation ($id: ID!) {
-    destroyPurOrderItemByproduct(id: $id) { errors { message } }
-  }
-`
 
 // mutation input 只收行自身字段:amount 后端系统算(writable? false)、companyId 冗余自订单(后端回填)、
 // 快照字段(materialName/unitName 等)由后端保存时重拍,本地草稿 id 与行上挂的 material/unit join 对象一律不进 payload。
@@ -226,58 +142,38 @@ function subLineChanged(before: Row, after: Row): boolean {
   return SUB_LINE_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
 }
 
-interface SubLineGql {
-  create: string
-  update: string
-  destroy: string
-  /** mutation 名主体(如 PurOrderItemMaterial),拼 create/update/destroy 前缀取响应键 */
-  entity: string
-}
-
-const ISSUE_LINE_GQL: SubLineGql = {
-  create: CREATE_ISSUE_LINE,
-  update: UPDATE_ISSUE_LINE,
-  destroy: DESTROY_ISSUE_LINE,
-  entity: 'PurOrderItemMaterial',
-}
-
-const BYPRODUCT_LINE_GQL: SubLineGql = {
-  create: CREATE_BYPRODUCT_LINE,
-  update: UPDATE_BYPRODUCT_LINE,
-  destroy: DESTROY_BYPRODUCT_LINE,
-  entity: 'PurOrderItemByproduct',
-}
-
 /** 子表行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy(同 BOM 子表先例) */
-async function persistSubLines(gql: SubLineGql, orderItemId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
+async function persistSubLines(
+  client: ResourceClient,
+  orderItemId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
   const errors: string[] = []
   const label = (row: Row) => String((row.material as Row | undefined)?.name ?? '清单行')
-  const collect = (row: Row, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `${label(row)}:${e.message}`))
+  const attempt = async <T,>(row: Row, operation: () => Promise<T>): Promise<T | null> => {
+    try {
+      return await operation()
+    } catch (error) {
+      errors.push(`${label(row)}:${(error as Error).message}`)
+      return null
+    }
   }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(gql.destroy, { id: old.id })
-    collect(old, data[`destroy${gql.entity}`].errors)
+    await attempt(old, () => client.delete(String(old.id)))
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(gql.create, {
-        input: { orderItemId, ...subLineInput(row) },
-      })
-      collect(row, data[`create${gql.entity}`].errors)
+      await attempt(row, () => client.create({ orderItemId, ...subLineInput(row) }))
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && subLineChanged(old, row)) {
-      const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(gql.update, {
-        id: row.id,
-        input: subLineInput(row),
-      })
-      collect(row, data[`update${gql.entity}`].errors)
+      await attempt(row, () => client.update(String(row.id), subLineInput(row)))
     }
   }
   return errors
@@ -292,44 +188,70 @@ const byproductLinesOf = (row: Row | null | undefined): Row[] => (row?.byproduct
  *  被删条目的清单行走 DB 级联,无需显式删 */
 async function persistItems(orderId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
+  const attempt = async <T,>(idx: unknown, operation: () => Promise<T>): Promise<T | null> => {
+    try {
+      return await operation()
+    } catch (error) {
+      errors.push(`第${idx}行:${(error as Error).message}`)
+      return null
+    }
   }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroyPurOrderItem: { errors: { message: string }[] | null } }>(
-      DESTROY_ITEM,
-      { id: old.id }
-    )
-    collect(old.idx, data.destroyPurOrderItem.errors)
+    await attempt(old.idx, () => purchaseOrderItemClient.delete(String(old.id)))
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{
-        createPurOrderItem: { result: { id: string } | null; errors: { message: string }[] | null }
-      }>(CREATE_ITEM, { input: { orderId, ...itemInput(row) } })
-      collect(row.idx, data.createPurOrderItem.errors)
-      const newId = data.createPurOrderItem.result?.id
+      const created = await attempt(row.idx, () =>
+        purchaseOrderItemClient.create({ orderId, ...itemInput(row) }),
+      )
+      const newId = created?.id == null ? null : String(created.id)
       if (newId) {
-        errors.push(...(await persistSubLines(ISSUE_LINE_GQL, newId, issueLinesOf(row), [])))
-        errors.push(...(await persistSubLines(BYPRODUCT_LINE_GQL, newId, byproductLinesOf(row), [])))
+        errors.push(
+          ...(await persistSubLines(
+            purchaseOrderItemMaterialClient,
+            newId,
+            issueLinesOf(row),
+            [],
+          )),
+        )
+        errors.push(
+          ...(await persistSubLines(
+            purchaseOrderItemByproductClient,
+            newId,
+            byproductLinesOf(row),
+            [],
+          )),
+        )
       }
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{ updatePurOrderItem: { errors: { message: string }[] | null } }>(
-        UPDATE_ITEM,
-        { id: row.id, input: itemInput(row) }
+      await attempt(row.idx, () =>
+        purchaseOrderItemClient.update(String(row.id), itemInput(row)),
       )
-      collect(row.idx, data.updatePurOrderItem.errors)
     }
     if (old) {
-      errors.push(...(await persistSubLines(ISSUE_LINE_GQL, row.id, issueLinesOf(row), issueLinesOf(old))))
-      errors.push(...(await persistSubLines(BYPRODUCT_LINE_GQL, row.id, byproductLinesOf(row), byproductLinesOf(old))))
+      errors.push(
+        ...(await persistSubLines(
+          purchaseOrderItemMaterialClient,
+          String(row.id),
+          issueLinesOf(row),
+          issueLinesOf(old),
+        )),
+      )
+      errors.push(
+        ...(await persistSubLines(
+          purchaseOrderItemByproductClient,
+          String(row.id),
+          byproductLinesOf(row),
+          byproductLinesOf(old),
+        )),
+      )
     }
   }
   return errors
@@ -404,21 +326,24 @@ function OutsourcedConfig({
     if (bomId == null) return
     setApplying(true)
     try {
-      const d = await gqlFetch<{ mfgBomComponents: { results: Row[] }; mfgBomByproducts: { results: Row[] } }>(
-        APPLY_BOM,
-        { bomId, qty: String(qty) }
-      )
-      const toLine = (r: Row) => ({
+      const result = await expandPurchaseOrderBom(bomId, qty)
+      const toLine = (r: (typeof result.materials)[number]) => ({
         id: localRowId(),
         materialId: r.materialId,
         unitId: r.unitId,
-        quantity: Number(r.applyQty),
-        remarks: r.note ?? null,
-        material: r.material,
-        unit: r.unit,
+        quantity: Number(r.quantity),
+        remarks: r.remarks ?? null,
+        materialName: r.materialName,
+        unitName: r.unitName,
+        material: {
+          id: String(r.materialId),
+          code: r.materialCode,
+          name: r.materialName,
+        },
+        unit: { id: String(r.unitId), name: r.unitName },
       })
-      setIssue(d.mfgBomComponents.results.map(toLine))
-      setByproduct(d.mfgBomByproducts.results.map(toLine))
+      setIssue(result.materials.map(toLine))
+      setByproduct(result.byproducts.map(toLine))
       toast.success('已按 BOM 代入发料清单与副产物清单')
     } catch (e) {
       toast.danger('BOM 代入失败', { description: (e as Error).message })
@@ -431,6 +356,7 @@ function OutsourcedConfig({
     <div className="mt-4 flex flex-col gap-4 border-t border-separator pt-4">
       <SynieEditableTable
         resource="purOrderItemMaterials"
+        client={purchaseOrderItemMaterialClient}
         label="发料清单"
         items={issue}
         onChange={setIssue}
@@ -453,6 +379,7 @@ function OutsourcedConfig({
       />
       <SynieEditableTable
         resource="purOrderItemByproducts"
+        client={purchaseOrderItemByproductClient}
         label="副产物清单"
         items={byproduct}
         onChange={setByproduct}
@@ -498,9 +425,9 @@ function CompanyCurrencySync({
     enabled: companyId !== '',
     staleTime: 300_000,
     queryFn: () =>
-      gqlFetch<{ basCompanies: { results: { baseCurrencyId: string | null }[] } }>(FETCH_COMPANY_BASE, {
-        companyId,
-      }).then((d) => d.basCompanies.results[0]?.baseCurrencyId ?? null),
+      companyClient.get(companyId).then((company) =>
+        typeof company?.baseCurrencyId === 'string' ? company.baseCurrencyId : null,
+      ),
   })
   const base = companyId === '' ? null : (query.data ?? null)
 
@@ -576,11 +503,11 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   // 交易条款不走抽屉字段(要排在条目表之下,抽屉 extraContent 固定在字段后渲染),由页面自持
   const [terms, setTerms] = useState('')
-  // edit/view 态条目与条款靠 FETCH_DETAIL 异步拉取,未完成前禁止编辑,防回填覆盖在输行
+  // edit/view 态条目与条款靠订单 REST 异步拉取,未完成前禁止编辑,防回填覆盖在输行
   const [detailLoaded, setDetailLoaded] = useState(false)
   // 单据公司本币(CompanyCurrencySync 上报):汇率显隐、币种默认、条目表双币列都依赖它
   const [baseCurrencyId, setBaseCurrencyId] = useState<string | null>(null)
-  // 报价条目缓存(id → 行):选择时写入完整行(物料快照名等即时带出),存量行由 FETCH_DETAIL 回填定价模式;
+  // 报价条目缓存(id → 行):选择时写入完整行(物料快照名等即时带出),存量行由 REST 详情回填定价模式;
   // 行表单的梯度判定(tieredSelected)与 transformItem 的快照名带出都读它
   const quotationItemsRef = useRef(new Map<string, Row>())
   // 条目行抽屉内委外配置两子表的最新草稿(OutsourcedConfig 经 effect 上报),行提交时 transformItem 并回行对象
@@ -598,12 +525,12 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
     staleTime: 300_000,
     retry: false,
     queryFn: () =>
-      gqlFetch<{ salSetting: { id: string; spotItemMaxQty: number } | null }>(FETCH_SAL_SETTING).catch((e) => {
+      getSalesSetting().catch((e) => {
         if (!isForbidden(e)) console.warn('供应链设置查询失败,零星数量上限客户端校验跳过:', (e as Error).message)
-        return { salSetting: null }
+        return null
       }),
   })
-  const spotMaxQty = salSettingQuery.data?.salSetting?.spotItemMaxQty ?? null
+  const spotMaxQty = salSettingQuery.data?.spotItemMaxQty ?? null
 
   // 头四要素/币种变化清空条目草稿;空集合并保留原引用,避免无谓重渲染
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
@@ -621,13 +548,38 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
       return
     }
     setDetailLoaded(false)
-    gqlFetch<{
-      purOrders: { results: { terms: string | null }[] }
-      purOrderItems: { results: Row[] }
-      purOrderItemMaterials: { results: Row[] }
-      purOrderItemByproducts: { results: Row[] }
-    }>(FETCH_DETAIL, { orderId: order!.id })
-      .then((d) => {
+    Promise.all([
+      purchaseOrderClient.get(order!.id),
+      purchaseOrderItemClient.query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          orderId: { kind: 'fk', op: 'in', values: [order!.id], labels: [] },
+        },
+      }),
+    ])
+      .then(async ([head, itemResult]) => {
+        if (my !== reqIdRef.current) return
+        const itemIds = itemResult.results.map((item) => String(item.id))
+        const sublineFilter = {
+          orderItemId: { kind: 'fk', op: 'in', values: itemIds, labels: [] },
+        }
+        const [issueResult, byproductResult] =
+          itemIds.length === 0
+            ? [{ results: [] as Row[] }, { results: [] as Row[] }]
+            : await Promise.all([
+                purchaseOrderItemMaterialClient.query({
+                  limit: 200,
+                  offset: 0,
+                  fixedFilter: sublineFilter,
+                }),
+                purchaseOrderItemByproductClient.query({
+                  limit: 200,
+                  offset: 0,
+                  fixedFilter: sublineFilter,
+                }),
+              ])
         if (my !== reqIdRef.current) return
         // 委外配置两子表按 orderItemId 归组挂到条目行(随条目 diff 持久化,快照留作提交基准)
         const groupByItem = (rows: Row[]) => {
@@ -638,24 +590,33 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           }
           return m
         }
-        const issueByItem = groupByItem(d.purOrderItemMaterials.results)
-        const byproductByItem = groupByItem(d.purOrderItemByproducts.results)
+        const issueByItem = groupByItem(issueResult.results)
+        const byproductByItem = groupByItem(byproductResult.results)
         // 报价条目定价模式摊平到行(价格/金额列的梯度展示判定),并回填缓存供行表单只读派生;
         // 与选择时写入的完整行合并,不覆盖已有的快照名
-        const rows = d.purOrderItems.results.map((r) => {
-          const qitem = r.quotationItem as { id: string; pricingMode: string } | null | undefined
-          if (qitem) {
-            const prev = quotationItemsRef.current.get(String(qitem.id)) ?? ({} as Row)
-            quotationItemsRef.current.set(String(qitem.id), { ...prev, id: qitem.id, pricingMode: qitem.pricingMode })
+        const rows = itemResult.results.map((r) => {
+          const quotationItemId =
+            r.quotationItemId == null ? null : String(r.quotationItemId)
+          if (quotationItemId && r.pricingMode) {
+            const prev = quotationItemsRef.current.get(quotationItemId) ?? ({} as Row)
+            quotationItemsRef.current.set(quotationItemId, {
+              ...prev,
+              id: quotationItemId,
+              pricingMode: r.pricingMode,
+            })
           }
           return {
             ...r,
-            pricingMode: qitem?.pricingMode ?? null,
+            bom:
+              r.bomId == null
+                ? null
+                : { id: r.bomId, code: r.bomCode, planName: r.bomPlanName },
+            pricingMode: r.pricingMode ?? null,
             issueLines: issueByItem.get(String(r.id)) ?? [],
             byproductLines: byproductByItem.get(String(r.id)) ?? [],
           }
         })
-        setTerms(d.purOrders.results[0]?.terms ?? '')
+        setTerms(String(head?.terms ?? ''))
         setItems(rows)
         setItemsSnapshot(rows)
         setDetailLoaded(true)
@@ -741,6 +702,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
 
       <SynieRecordDrawer
         resource="purOrders"
+        client={purchaseOrderClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -767,7 +729,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
               <p className="text-sm text-muted">订单保存后可查看收发货历史</p>
             ) : (
               // 采购入库/委外发料/委外入库同表列出(委外订单的发出与回收进度同视角)
-              <OrderFlowHistory orderId={String(row.id)} />
+              <OrderFlowHistory orderId={String(row.id)} side="purchase" />
             ),
         }}
         extraContent={(mode, row, values, patchValues) => {
@@ -793,8 +755,21 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           const quotationFilter = (() => {
             const { companyId, partyType, partyId, currencyId: cid, orderDate } = values
             if (!companyId || !partyType || !partyId || !cid || !orderDate) return null
-            const q = (v: unknown) => JSON.stringify(String(v))
-            return `{quotation: {status: {eq: AUDITED}, companyId: {eq: ${q(companyId)}}, partyType: {eq: ${String(partyType)}}, partyId: {eq: ${q(partyId)}}, currencyId: {eq: ${q(cid)}}, quotationDate: {lessThanOrEqual: ${q(orderDate)}}, validUntil: {greaterThanOrEqual: ${q(orderDate)}}}}`
+            return {
+              quotationStatus: { kind: 'enum', values: ['AUDITED'] },
+              companyId: { kind: 'fk', op: 'in', values: [String(companyId)], labels: [] },
+              partyType: { kind: 'enum', values: [String(partyType)] },
+              partyId: {
+                kind: 'polyFk',
+                op: 'in',
+                variant: String(partyType),
+                values: [String(partyId)],
+                labels: [],
+              },
+              currencyId: { kind: 'fk', op: 'in', values: [String(cid)], labels: [] },
+              quotationDate: { kind: 'date', op: 'between', lte: String(orderDate) },
+              validUntil: { kind: 'date', op: 'between', gte: String(orderDate) },
+            } satisfies FilterState
           })()
           // 梯度报价条目判定:选中条目的定价模式从缓存取(选择时写完整行;存量行由 FETCH_DETAIL 回填)
           const tieredSelected = (vals: Record<string, unknown>) =>
@@ -824,11 +799,12 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
                     <RemoteSelect
                       resource="purQuotationItems"
+                      client={purchaseQuotationItemClient}
                       label="报价条目"
                       placeholder={quotationFilter ? '选择有效报价条目…' : '订单头信息未选齐'}
                       labelField="materialName"
                       searchFields={['materialName', 'materialCode']}
-                      filter={quotationFilter ?? undefined}
+                      filterState={quotationFilter ?? undefined}
                       fields={[
                         'materialCode',
                         'unitName',
@@ -1064,6 +1040,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             <ItemsResetGuard mode={mode} row={row} values={values} onReset={resetItems} />
             <SynieEditableTable
             resource="purOrderItems"
+            client={purchaseOrderItemClient}
             label="订单条目"
             items={items}
             onChange={setItems}
@@ -1239,13 +1216,11 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{
-              createPurOrder: { result: { id: string } | null; errors: { message: string }[] | null }
-            }>(CREATE_ORDER, { input: { ...values, terms: terms === '' ? null : terms } })
-            if (data.createPurOrder.errors && data.createPurOrder.errors.length > 0) {
-              throw new Error(data.createPurOrder.errors.map((e) => e.message).join('; '))
-            }
-            const orderId = data.createPurOrder.result!.id
+            const created = await purchaseOrderClient.create({
+              ...values,
+              terms: terms === '' ? null : terms,
+            })
+            const orderId = String(created.id)
             const itemErrors = await persistItems(orderId, items, [])
             if (itemErrors.length > 0) {
               toast.danger('订单已创建,但部分条目保存失败', { description: itemErrors.join('; ') })
@@ -1255,12 +1230,10 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             savedId = orderId
           } else {
             const orderId = drawer!.order!.id
-            const data = await gqlFetch<{
-              updatePurOrder: { errors: { message: string }[] | null }
-            }>(UPDATE_ORDER, { id: orderId, input: { ...values, terms: terms === '' ? null : terms } })
-            if (data.updatePurOrder.errors && data.updatePurOrder.errors.length > 0) {
-              throw new Error(data.updatePurOrder.errors.map((e) => e.message).join('; '))
-            }
+            await purchaseOrderClient.update(orderId, {
+              ...values,
+              terms: terms === '' ? null : terms,
+            })
             const itemErrors = await persistItems(orderId, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('订单已更新,但部分条目保存失败', { description: itemErrors.join('; ') })
@@ -1296,6 +1269,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   </p>
                   <SynieEditableTable
                     resource="purOrderItemMaterials"
+                    client={purchaseOrderItemMaterialClient}
                     label="发料清单"
                     items={issueLinesOf(linesView)}
                     onChange={() => {}}
@@ -1306,6 +1280,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   />
                   <SynieEditableTable
                     resource="purOrderItemByproducts"
+                    client={purchaseOrderItemByproductClient}
                     label="副产物清单"
                     items={byproductLinesOf(linesView)}
                     onChange={() => {}}

@@ -1,0 +1,179 @@
+{
+  "capabilities": [
+    "create",
+    "update",
+    "delete",
+    "audit",
+    "cancel"
+  ],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "凭证编号",
+      "name": "voucherNo",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "单据日期",
+      "name": "date",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "过账日期",
+      "name": "postingDate",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "凭证备注",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "草稿",
+          "value": "DRAFT"
+        },
+        {
+          "label": "已审核",
+          "value": "AUDITED"
+        },
+        {
+          "label": "已取消",
+          "value": "CANCELLED"
+        }
+      ],
+      "filterable": true,
+      "label": "状态",
+      "name": "status",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "提交时间",
+      "name": "submittedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "公司",
+      "name": "companyId",
+      "ref": {
+        "labelField": "name",
+        "relation": "company",
+        "resource": "basCompanies"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "编写人",
+      "name": "createdById",
+      "ref": {
+        "labelField": "name",
+        "relation": "createdBy",
+        "resource": "sysUsers"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "提交人",
+      "name": "submittedById",
+      "ref": {
+        "labelField": "name",
+        "relation": "submittedBy",
+        "resource": "sysUsers"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "借方总金额",
+      "name": "debitTotal",
+      "ref": null,
+      "sortable": false,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "贷方总金额",
+      "name": "creditTotal",
+      "ref": null,
+      "sortable": false,
+      "type": "decimal"
+    }
+  ],
+  "destroyMutation": "destroyAccGlJournal",
+  "extendedActions": [
+    {
+      "isDanger": false,
+      "key": "audit",
+      "label": "审核",
+      "mutation": "auditAccGlJournal",
+      "scope": "row"
+    },
+    {
+      "isDanger": true,
+      "key": "cancel",
+      "label": "取消",
+      "mutation": "cancelAccGlJournal",
+      "scope": "row"
+    }
+  ]
+}

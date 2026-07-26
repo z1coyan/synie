@@ -2,7 +2,12 @@ import { useCallback, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Label, NumberField, Switch, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { companyClient } from '~/lib/resources/companies'
+import {
+  refreshStockCount,
+  stockCountClient,
+  stockCountItemClient,
+} from '~/lib/resources/inventory'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -26,48 +31,6 @@ export const Route = createFileRoute('/_app/scm/other-stock/counts')({
  * 公司为首列可筛;建单时公司表单头字段,仓候选绑表单公司。
  */
 
-const CREATE_DOC = `
-  mutation ($input: CreateInvStockCountInput!) {
-    createInvStockCount(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_DOC = `
-  mutation ($id: ID!, $input: UpdateInvStockCountInput!) {
-    updateInvStockCount(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreateInvStockCountItemInput!) {
-    createInvStockCountItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdateInvStockCountItemInput!) {
-    updateInvStockCountItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroyInvStockCountItem(id: $id) { errors { message } }
-  }
-`
-const REFRESH_DOC = `
-  mutation ($id: ID!) {
-    refreshInvStockCount(id: $id) { result { id } errors { message } }
-  }
-`
-const FETCH_ITEMS = `
-  query ($docId: ID!) {
-    invStockCountItems(filter: {countId: {eq: $docId}}, sort: [{field: INSERTED_AT, order: ASC}], limit: 200, offset: 0) {
-      results {
-        id materialId unitId countedQuantity convertedCounted bookQuantity remark materialName unitName
-        material { id name }
-        unit { id name }
-      }
-    }
-  }
-`
-
 const GRID_COLUMNS = ['companyId', 'docNo', 'postingDate', 'warehouseId', 'status', 'summary', 'auditedAt']
 
 const GRID_OVERRIDES = {
@@ -88,11 +51,6 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-interface MutationResult {
-  result?: { id: string } | null
-  errors: { message: string }[] | null
-}
-
 function itemInput(row: Row) {
   return {
     materialId: row.materialId,
@@ -110,33 +68,31 @@ function itemChanged(before: Row, after: Row): boolean {
 
 async function persistItems(docId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
-  const collect = (at: string, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `${at}:${e.message}`))
+  const run = async (at: string, operation: () => Promise<unknown>) => {
+    try {
+      await operation()
+    } catch (error) {
+      errors.push(`${at}:${error instanceof Error ? error.message : String(error)}`)
+    }
   }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroyInvStockCountItem: MutationResult }>(DESTROY_ITEM, { id: old.id })
-    collect(`行「${String(old.materialName ?? old.id)}」`, data.destroyInvStockCountItem.errors)
+    await run(`行「${String(old.materialName ?? old.id)}」`, () =>
+      stockCountItemClient.delete(old.id),
+    )
   }
 
   for (const [i, row] of current.entries()) {
     const at = `第${i + 1}行`
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createInvStockCountItem: MutationResult }>(CREATE_ITEM, {
-        input: { countId: docId, ...itemInput(row) },
-      })
-      collect(at, data.createInvStockCountItem.errors)
+      await run(at, () => stockCountItemClient.create({ countId: docId, ...itemInput(row) }))
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{ updateInvStockCountItem: MutationResult }>(UPDATE_ITEM, {
-        id: row.id,
-        input: itemInput(row),
-      })
-      collect(at, data.updateInvStockCountItem.errors)
+      await run(at, () => stockCountItemClient.update(row.id, itemInput(row)))
     }
   }
   return errors
@@ -156,16 +112,25 @@ function StockCountsTab() {
   const companies = useQuery({
     queryKey: ['stockCountCompanies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { results { id name } } }`
-      ).then((d) => d.basCompanies.results),
+      companyClient.query({
+        limit: 50,
+        offset: 0,
+        sort: { column: 'code', direction: 'ascending' },
+      }).then((result) => result.results),
   })
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 
   const fetchItems = useCallback(async (docId: string): Promise<Row[]> => {
-    const d = await gqlFetch<{ invStockCountItems: { results: Row[] } }>(FETCH_ITEMS, { docId })
-    return d.invStockCountItems.results
+    const result = await stockCountItemClient.query({
+      limit: 200,
+      offset: 0,
+      sort: { column: 'insertedAt', direction: 'ascending' },
+      fixedFilter: {
+        countId: { kind: 'fk', op: 'in', values: [docId], labels: [] },
+      },
+    })
+    return result.results
   }, [])
 
   const openDrawer = useCallback(
@@ -207,9 +172,7 @@ function StockCountsTab() {
     if (!docId) return
     setRefreshing(true)
     try {
-      const data = await gqlFetch<{ refreshInvStockCount: MutationResult }>(REFRESH_DOC, { id: docId })
-      const res = data.refreshInvStockCount
-      if (res.errors && res.errors.length > 0) throw new Error(res.errors.map((e) => e.message).join('; '))
+      await refreshStockCount(docId)
       const rows = await fetchItems(docId)
       setItems(rows)
       setItemsSnapshot(rows)
@@ -318,6 +281,7 @@ function StockCountsTab() {
 
       <SynieDataGrid
         resource="invStockCounts"
+        client={stockCountClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'postingDate', direction: 'descending' }}
@@ -331,6 +295,7 @@ function StockCountsTab() {
 
       <SynieRecordDrawer
         resource="invStockCounts"
+        client={stockCountClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -362,7 +327,13 @@ function StockCountsTab() {
             />
             {mode === 'create' && (
               <div className="mb-3">
-                <Switch isSelected={loadAll} onChange={setLoadAll}>
+                <Switch
+                  isSelected={loadAll}
+                  onChange={(selected) => {
+                    setLoadAll(selected)
+                    if (selected) setItems([])
+                  }}
+                >
                   <Switch.Content className="text-sm">
                     <Switch.Control>
                       <Switch.Thumb />
@@ -377,11 +348,15 @@ function StockCountsTab() {
             )}
             <SynieEditableTable
               resource="invStockCountItems"
+              client={stockCountItemClient}
               label="盘点行"
               items={items}
               onChange={setItems}
               readOnly={
-                mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)
+                mode === 'view' ||
+                (mode === 'create' && loadAll) ||
+                (row != null && row.status !== 'DRAFT') ||
+                (mode !== 'create' && !detailLoaded)
               }
               drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
               exclude={[
@@ -431,24 +406,14 @@ function StockCountsTab() {
         )}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            const data = await gqlFetch<{ createInvStockCount: MutationResult }>(CREATE_DOC, {
-              input: { ...values, loadAll },
+            await stockCountClient.create({
+              ...values,
+              loadAll,
+              items: loadAll ? undefined : items.map(itemInput),
             })
-            const res = data.createInvStockCount
-            if (res.errors && res.errors.length > 0) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const itemErrors = await persistItems(res.result!.id, items, [])
-            if (itemErrors.length > 0) {
-              toast.danger('库存盘点单已创建,但部分盘点行保存失败', { description: itemErrors.join('; ') })
-            } else {
-              toast.success('库存盘点单已创建')
-            }
+            toast.success('库存盘点单已创建')
           } else {
-            const data = await gqlFetch<{ updateInvStockCount: MutationResult }>(UPDATE_DOC, {
-              id: drawer!.row!.id,
-              input: values,
-            })
-            const res = data.updateInvStockCount
-            if (res.errors && res.errors.length > 0) throw new Error(res.errors.map((e) => e.message).join('; '))
+            await stockCountClient.update(drawer!.row!.id, values)
             const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('库存盘点单已更新,但部分盘点行保存失败', { description: itemErrors.join('; ') })

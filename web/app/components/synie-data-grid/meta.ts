@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { gqlFetch } from '~/lib/graphql'
+import type { ResourceClient } from '~/lib/resources/types'
 import type { GridMeta } from './types'
 
 const GRID_META_QUERY = `
@@ -13,11 +14,13 @@ const GRID_META_QUERY = `
   }
 `
 
-export function useGridMeta(resource: string, enabled = true) {
+export function useGridMeta(resource: string, enabled = true, client?: ResourceClient) {
   return useQuery({
-    queryKey: ['gridMeta', resource],
+    queryKey: ['gridMeta', client?.id ?? 'graphql', resource],
     queryFn: () =>
-      gqlFetch<{ gridMeta: GridMeta }>(GRID_META_QUERY, { resource }).then((d) => d.gridMeta),
+      client
+        ? client.meta()
+        : gqlFetch<{ gridMeta: GridMeta }>(GRID_META_QUERY, { resource }).then((d) => d.gridMeta),
     staleTime: 5 * 60_000,
     enabled,
   })
