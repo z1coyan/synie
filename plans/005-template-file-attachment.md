@@ -39,7 +39,7 @@
 - `backend/apps/synie_core/lib/synie_core/files.ex` 的 `downloadable?/2`(93 行起):有可见 attachment → 按宿主资源 `permission_prefix() <> ":read"` 判;裸文件 → 仅上传者/超管。attachment 的读策略:`is_nil(company_id)` 放行(全局宿主),模板无公司维度 → attachment 的 `company_id` 留空即全站可见、再由权限码把关。
 - `backend/apps/synie_core/lib/synie_core/files/attachment.ex` — `sys_attachment` 资源;create 接受 `[:file_id, :owner_type, :owner_id, :category, :company_id]`,有 destroy。
 - `backend/apps/synie_core/lib/synie_core/printing/template.ex` — 模板资源:create 接受 `[:name, :resource, :file_id, :remarks]`,update 接受 `[:name, :file_id, :remarks]`(`require_atomic? false`),destroy 已 `require_atomic? false`、`primary? true`。资源挂审计 fragment(`fragments: [SynieCore.Audit.Fragment]`)。
-- 受信内部写约定(`backend/CLAUDE.md`):`authorize?: false` 仅限受信内部路径——本计划 after_action 里维护自身文件挂接属于宿主自管,理由写注释。
+- 受信内部写约定(`backend/AGENTS.md`):`authorize?: false` 仅限受信内部路径——本计划 after_action 里维护自身文件挂接属于宿主自管,理由写注释。
 - 测试样板:`backend/apps/synie_core/test/synie_core/printing/template_and_export_test.exs`(`actor!/1`、`upload_xlsx!/2` 已有;沙箱 + 临时本地存储 setup 已有)。
 
 ## 需要的命令

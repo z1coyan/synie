@@ -57,7 +57,7 @@
 - `backend/apps/synie_web/lib/synie_web/controllers/print_controller.ex`:
   - `templates/2`:调 `Printing.list_templates(resource, actor)`,错误一律 403「无权查看打印模板」。
   - `field_catalog/2`:`with_actor(conn, fn _actor -> ...)` —— 只验登录,不验权限。
-- 受信内部读的仓库约定(`backend/CLAUDE.md`):「`authorize?: false` 仅限受信内部路径」。本计划的受信理由:动作权限(`资源:print/export/batch_print`)已在进入前显式校验,模板是全局主数据、无公司维度,读它不产生数据权限绕越;在函数注释写明这一句。
+- 受信内部读的仓库约定(`backend/AGENTS.md`):「`authorize?: false` 仅限受信内部路径」。本计划的受信理由:动作权限(`资源:print/export/batch_print`)已在进入前显式校验,模板是全局主数据、无公司维度,读它不产生数据权限绕越;在函数注释写明这一句。
 - 权限判定函数:`SynieCore.Authz.has_permission?(actor, "sales.order:print")`。
 - 测试样板:
   - 门面级:`backend/apps/synie_core/test/synie_core/printing/template_and_export_test.exs`(`actor!/1` 造带权限 actor;`actor_with_company!/2` 造带公司授权 actor)。

@@ -139,11 +139,11 @@ bash /tmp/heroui-install.sh heroui-react-pro
 bash /tmp/heroui-install.sh heroui-pro-design-taste
 ```
 
-安装脚本会自动检测本机的 Claude Code / Cursor 等工具并把 skill 解压到对应目录（如 `~/.claude/skills/`）。
+安装脚本会把 skill 解压到本机 agent 工具对应目录（如 Cursor / Grok 的 skills 路径）。项目内 skills 以 `.agents/skills/` 与根目录 `AGENTS.md` 为准。
 
-### MCP server
+### MCP server（HeroUI Pro）
 
-在项目根目录创建 `.mcp.json`（Claude Code 会从环境变量展开 token，需先在 shell 中导出 `HEROUI_PERSONAL_TOKEN`）：
+在所用 agent 的 MCP 配置里接入 HeroUI Pro（需先导出 `HEROUI_PERSONAL_TOKEN`）。示例（HTTP MCP）：
 
 ```json
 {
