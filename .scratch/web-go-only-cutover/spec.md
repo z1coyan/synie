@@ -1,6 +1,6 @@
 # Web Go-only 切流收官
 
-Status: ready-for-agent
+Status: resolved
 
 ## 背景
 
@@ -42,3 +42,12 @@ Go 已覆盖 100 个资源及专用操作；前端已在两批提交中引入 Op
 ## 文档影响
 
 这是传输层与部署路径变更，不改变业务规则，因此不改产品规则正文或 `CONTEXT.md` 术语；更新迁移设计现状、README/开发启动说明及本验收记录。若实施中发现用户可见规则变化，再同步对应产品文档与 `CONTEXT.md`。
+
+## Comments
+
+### 2026-07-26
+
+- 01 共享 seam、02 专用流程（含 setup 切 Go REST）已合入 `feat/web-go-only-cutover`。
+- 03 收官：删除 GraphQL 生成物/依赖/Vite Elixir 代理；更新 README、迁移规划实施注记、本 scratch。
+- JWT 与 Phoenix.Token 不兼容、切流须重登已写入 README 与 `docs/migration/2026-07-25-fullstack-meta-and-go-migration.md`。
+- **不删除** `backend/`。

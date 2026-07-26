@@ -9,12 +9,13 @@
 | **相关** | `CONTEXT.md`、`docs/adr/*`、`docs/产品文档/*`、`docs/adr/2026-07-25-go-fullstack-meta-migration.md` |
 | **与既有 ADR 冲突** | 见 [§ 与既有 ADR 的关系](#与既有-adr-的关系)：supersede scaffold 中 GraphQL 与「非 monorepo」定案 |
 | **部署前提（R3）** | **系统尚未上线**；无生产用户、无停机窗口约束；**不要求**与 Elixir 双活兼容 |
+| **实施现状（2026-07-26）** | **Web Go-only 切流已完成**：前端产品流量仅访问 Go `/api/v1`；已删除 GraphQL client/codegen/Vite `/graphql` 与 Elixir `/api` 代理。`backend/` 仍保留作参考，**不在本切流删除**。**JWT 与旧 Phoenix.Token 不兼容，切流后须重新登录。** |
 
 ---
 
 ## Overview
 
-Synie 是面向中小企业的多公司财务 ERP。当前后端为 Elixir umbrella（Ash / AshPostgres / AshGraphql / Phoenix / Bandit），前端为 TanStack Start + React 19 + HeroUI + GraphQL。领域已覆盖销售/采购/库存/制造/总账/银行票据发票/HR 等完整链路。
+Synie 是面向中小企业的多公司财务 ERP。目标栈后端为 **Go**（`server/`，chi + OpenAPI）；前端为 TanStack Start + React 19 + HeroUI + **openapi-fetch**。Elixir umbrella（`backend/`，Ash / AshGraphql / Phoenix）为迁移期行为与契约参考源。领域已覆盖销售/采购/库存/制造/总账/银行票据发票/HR 等完整链路。
 
 本规划将后端目标语言定为 **Go**，并以**模块化重构式迁移**（非 1:1 翻译）为目标，同时把前后端统一纳入「**全栈元数据框架**」：后端 Go Meta Registry 为资源元数据权威源；前端通过 **Meta 客户端框架**（Grid / Form / Filter / Command 一等公民契约，而非仅换传输层）声明式驱动列表、表单、权限、打印；复杂页允许定制，但仍走统一 Resource Client + Command API。后端重构是先锋站（vanguard），用来验证内核；架构从第一天按全栈元数据框架设计，避免后端迁完前端再推倒。
 
@@ -763,10 +764,11 @@ flowchart LR
 #### D.9 完成定义（关停 Elixir）
 
 1. 规划中的业务模块均在 Go 实现并通过契约/E2E
-2. 前端无 `graphql` / codegen gql 依赖
-3. CI 仅 `server/` + `web/`；`backend/` 删除或归档
+2. 前端无 `graphql` / codegen gql 依赖 — **已于 2026-07-26 Web Go-only 切流完成**（`web/app/graphql/`、`codegen.ts`、`graphql` 依赖与 Vite `/graphql` 代理已删）
+3. CI 仅 `server/` + `web/`；`backend/` 删除或归档 — **本切流不删 `backend/`**，仅保证产品路径不依赖它
 4. goose 为唯一迁移；demo/setup 在 Go 可用
 5. ADR：Elixir Removed
+6. **认证**：产品路径 JWT HS256；**不兼容** Phoenix.Token；开发/演示环境切流后清除旧 `localStorage` 并重新登录
 
 ---
 
@@ -1293,3 +1295,4 @@ func (a *Actor) CompanyFilter() (bypass bool, ids []uuid.UUID) {
 | 2026-07-25 | Draft R1 | 审阅全量：双活兼容、CutoverSlice、前端 Meta、Print、Decimal、PR 细化 |
 | 2026-07-25 | Draft R2 | Write Surface、Token 二进制、filter builder、Appendix A/G |
 | 2026-07-25 | **R3** | **未上线**：取消双活/停机/Token·密码兼容/Ash 独占 DDL；单目标栈；goose 自始接管；JWT/PASETO+argon2id；工作量 14–22 人月；PR Plan 简化 |
+| 2026-07-26 | 实施注记 | Web Go-only 切流：前端删除 GraphQL/codegen 与 Vite Elixir 代理；产品路径 JWT-only（须重登）；`backend/` 仍保留参考 |

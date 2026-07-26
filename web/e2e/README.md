@@ -19,15 +19,17 @@ bunx playwright install chromium   # 首次:装浏览器
 ```bash
 cd web
 E2E_BASE_URL=http://localhost:3000 npx playwright test
-# 若管理动线要直连后端(绕过 vite 代理):再加 E2E_GRAPHQL_URL=http://localhost:4000/graphql
+# Go 栈 smoke / 全量见 package.json 的 e2e:go 与各 *.go.e2e.ts
 ```
+
+产品路径已 **Go-only**：Vite 只代理 `/api/v1`，E2E 中对 `/graphql` 的监听用于断言**零业务 GraphQL**。认证为 JWT，与旧 Phoenix.Token 不兼容。
 
 ## 场景(一条,五断言)
 
-setup(`global-setup.ts` → `helpers/admin-flow.ts`)以**超管走真实 GraphQL 管理动线**
-建「演示会计」:建角色 → `syncSysRolePermissions` 只授 `acc.bank_account:read` →
-`createSysUser`(返回一次性密码)→ 指派角色 → 指派公司 → 登录取 token。**动线本身即断言**
-(任一 mutation 失败即整轮红)。跑完 teardown 清理,演示角色/用户不进迁移种子。
+setup(`global-setup.ts` → `helpers/admin-flow.ts`)以**超管走真实管理动线**
+建「演示会计」:建角色 → 同步角色权限只授 `acc.bank_account:read` →
+建用户(返回一次性密码)→ 指派角色 → 指派公司 → 登录取 token。**动线本身即断言**
+(任一步失败即整轮红)。跑完 teardown 清理,演示角色/用户不进迁移种子。
 
 spec(`authz-smoke.e2e.ts`,`.e2e.ts` 后缀避开 `bun test` 的默认发现)以该角色断言:
 

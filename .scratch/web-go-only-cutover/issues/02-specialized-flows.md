@@ -1,6 +1,6 @@
 # 专用流程切到 Go REST
 
-Status: ready-for-agent
+Status: resolved
 
 Blocked by: 01
 
@@ -16,3 +16,8 @@ Blocked by: 01
 `web/app` 非测试生产代码不存在 `gqlFetch`；所有保留流程均走 OpenAPI client 或资源 client。
 
 ## Comments
+
+### 2026-07-26
+
+- 银行/OCR 等旧 GraphQL 组件已删；字面量构造层已删。
+- Setup 向导：`feat(web): 将初始化向导切到 Go REST`（worktree cherry-pick 至主工作树）。
