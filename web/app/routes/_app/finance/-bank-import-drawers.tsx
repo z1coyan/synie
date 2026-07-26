@@ -129,7 +129,10 @@ export function FinanceBankImportDrawers(props: Props) {
                   value={value == null ? null : String(value)}
                   onChange={onChange}
                   isDisabled={isDisabled || !companyId}
-                  filter={`{companyId: {eq: ${JSON.stringify(companyId)}}, active: {eq: true}}`}
+                  filterState={{
+                    companyId: { kind: 'fk', values: [companyId!], labels: [] },
+                    active: { kind: 'bool', eq: true },
+                  }}
                 />
               )
             },
@@ -151,7 +154,9 @@ export function FinanceBankImportDrawers(props: Props) {
                   value={value == null ? null : String(value)}
                   onChange={onChange}
                   isDisabled={isDisabled || !bankAccountId}
-                  filter={`{bankAccountId: {eq: ${JSON.stringify(bankAccountId)}}}`}
+                  filterState={{
+                    bankAccountId: { kind: 'fk', values: [bankAccountId!], labels: [] },
+                  }}
                 />
               )
             },

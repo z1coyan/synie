@@ -192,7 +192,7 @@ const dtSubmitted = collectValues(
 )
 eq(dtSubmitted.happenedAt, '2026-01-05T08:30:00.000Z', 'datetime 提交转回 ISO UTC')
 
-// —— collectValues:fk 空串归 null(全裁剪退化 TextField 清空时提交 '',GraphQL uuid 不吃空串);非 fk string 字段 '' 不受影响 ——
+// —— collectValues：fk 空串归 null（资源 id 不接受空串）；非 fk string 字段 '' 不受影响 ——
 const fkSubmitted = collectValues(resolveFields([parentCol, col('name', 'string')], 'edit', [], {}), { parentId: '', name: '' }, 'edit')
 eq(fkSubmitted.parentId, null, 'fk 空串归 null')
 eq(fkSubmitted.name, '', '非 fk string 字段空串保持空串')

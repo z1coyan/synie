@@ -14,7 +14,7 @@ const entries = read('entries.tsx')
 const arAp = read('ar-ap.tsx')
 const accounting = read('../../../lib/resources/accounting.ts')
 const recordDrawer = read('../../../components/synie-record-drawer/SynieRecordDrawer.tsx')
-const bankReconcile = read('../../../components/bank-reconcile/ReconcileDrawer.tsx')
+const bankReconcile = read('-reconcile-drawer.tsx')
 
 describe('PR-2.12 财务页面 REST 迁移契约', () => {
   test('三个消费面不再包含 GraphQL 请求或 operation', () => {
@@ -87,8 +87,8 @@ describe('PR-2.12 财务页面 REST 迁移契约', () => {
     expect(resolveSource({ resource: 'accGlJournalLines' })?.client?.id).toBe(
       'rest:accGlJournalLines',
     )
-    expect(recordDrawer).toContain('if (props.client?.action)')
-    expect(recordDrawer).toContain('await props.client.action(auditAction.key, [auditId])')
+    expect(recordDrawer).toContain('if (!client?.action)')
+    expect(recordDrawer).toContain('await client.action(auditAction.key, [auditId])')
     expect(bankReconcile).toContain("useGridMeta('accGlJournals', true, glJournalClient)")
     expect(bankReconcile).toMatch(
       /resource="accGlJournals"\s+client=\{glJournalClient\}/,

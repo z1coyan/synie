@@ -61,7 +61,6 @@ function MaterialCategoriesPage() {
             label: '上级分类',
             // 候选限定非叶子分类(叶子不能挂子分类,后端另有校验兜底)
             remote: {
-              filter: '{isLeaf: {eq: false}}',
               filterState: { isLeaf: { kind: 'bool', eq: false } },
             },
           },

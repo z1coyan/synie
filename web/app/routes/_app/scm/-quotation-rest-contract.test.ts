@@ -22,6 +22,19 @@ const salesOrder = read('sales-orders/-order-drawer.tsx')
 const purchaseOrder = read('purchase/-order-drawer.tsx')
 const clients = read('../../../lib/resources/quotations.ts')
 const auditDoc = read('-audit-doc.tsx')
+const auditConfigSources = [
+  read('../mfg/outputs.tsx'),
+  salesDrawer,
+  purchaseDrawer,
+  salesOrder,
+  purchaseOrder,
+  read('sales-deliveries/-delivery-drawer.tsx'),
+  read('purchase-receipts/-receipt-drawer.tsx'),
+  read('outsourced-issues/-issue-drawer.tsx'),
+  read('outsourced-receipts/-receipt-drawer.tsx'),
+  read('sales-reconciliations/-reconciliation-drawer.tsx'),
+  read('purchase-reconciliations/-reconciliation-drawer.tsx'),
+]
 
 describe('PR-2.13 销售/采购报价 REST 迁移契约', () => {
   test('两个报价消费面不再包含目标 GraphQL operation', () => {
@@ -74,9 +87,22 @@ describe('PR-2.13 销售/采购报价 REST 迁移契约', () => {
     expect(purchaseQuotationTierClient.id).toBe('rest:purQuotationTiers')
   })
 
-  test('共享审核弹窗对已迁移报价走 REST 回调', () => {
-    expect(auditDoc).toContain('loadItems?: (docId: string) => Promise<Row[]>')
-    expect(auditDoc).toContain('audit?: (docId: string) => Promise<unknown>')
+  test('共享审核弹窗强制通过 REST 回调加载条目并审核', () => {
+    expect(auditDoc).toContain('loadItems: (docId: string) => Promise<Row[]>')
+    expect(auditDoc).toContain('audit: (docId: string) => Promise<unknown>')
+    expect(auditDoc).not.toContain('gqlFetch')
+    expect(auditDoc).not.toContain('mutation: string')
+    expect(auditDoc).not.toContain('docIdField: string')
+    expect(auditDoc).not.toContain('itemFields: string')
+    const configs = auditConfigSources.flatMap((source) =>
+      [...source.matchAll(/(?:const|export const) \w*(?:Audit|AUDIT|Confirm)\w* = \{[\s\S]*?\} satisfies AuditDocConfig/g)].map(
+        ([config]) => config,
+      ),
+    )
+    expect(configs).toHaveLength(13)
+    for (const config of configs) {
+      expect(config).not.toMatch(/^  (?:mutation|docIdField|itemFields):/m)
+    }
     expect(salesDrawer).toContain('loadItems: (quotationId: string)')
     expect(salesDrawer).toContain('audit: auditSalesQuotation')
     expect(purchaseDrawer).toContain('loadItems: (quotationId: string)')

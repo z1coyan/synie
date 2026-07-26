@@ -79,7 +79,7 @@ function BankAccountsPage() {
             order: 6,
             required: true,
             cols: 6,
-            remote: { filter: '{active: {eq: true}}' },
+            remote: { filterState: { active: { kind: 'bool', eq: true } } },
           },
           accountId: {
             order: 7,
@@ -95,7 +95,11 @@ function BankAccountsPage() {
                   value={value == null ? null : String(value)}
                   onChange={(id) => onChange(id)}
                   isDisabled={isDisabled || companyId == null}
-                  filter={`{companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}}`}
+                  filterState={{
+                    companyId: { kind: 'fk', values: [companyId!], labels: [] },
+                    isGroup: { kind: 'bool', eq: false },
+                    active: { kind: 'bool', eq: true },
+                  }}
                 />
               )
             },

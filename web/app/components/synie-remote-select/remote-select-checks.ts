@@ -1,5 +1,5 @@
 // bun app/components/synie-remote-select/remote-select-checks.ts 可直接运行的纯函数自检
-import { buildByIdQuery, buildOptionsQuery, optionLabel, resolveFkTarget, resolveSource } from './remote-query'
+import { optionLabel, resolveFkTarget, resolveSource } from './remote-query'
 import type { Row } from '../synie-data-grid/types'
 
 function eq(actual: unknown, expected: unknown, label: string) {
@@ -13,84 +13,41 @@ function eq(actual: unknown, expected: unknown, label: string) {
 
 const ref = { resource: 'basCompanies', relation: 'parent', labelField: 'name' }
 
-// —— resolveSource:ref 提供默认,config 覆盖;都无 resource 为 null ——
+// resolveSource：ref 提供默认，config 覆盖；都无 resource 为 null。
 eq(resolveSource({}, ref), {
   resource: 'basCompanies',
   client: { id: 'rest:basCompanies' },
   labelField: 'name',
   sortField: 'name',
   searchFields: ['name'],
-  filter: null,
   fields: [],
   pageSize: 20,
   itemSubtitleFields: [],
 }, 'ref 默认值')
 
-// —— 资源级默认:员工三字段搜索 + 编号副行;页面 config 仍可覆盖 ——
-const emp = resolveSource({ resource: 'hrEmployees' })!
-eq(emp.searchFields, ['name', 'code', 'attendanceNo'], '员工资源级默认搜索字段')
-eq(emp.itemSubtitleFields, ['code', 'attendanceNo'], '员工资源级默认副行字段')
+// 资源级默认：员工三字段搜索 + 编号副行；页面 config 仍可覆盖。
+const employee = resolveSource({ resource: 'hrEmployees' })!
+eq(employee.searchFields, ['name', 'code', 'attendanceNo'], '员工资源级默认搜索字段')
+eq(employee.itemSubtitleFields, ['code', 'attendanceNo'], '员工资源级默认副行字段')
+eq(resolveSource({ resource: 'hrEmployees', searchFields: ['name'] })!.searchFields, ['name'], 'config 覆盖资源级默认')
 eq(
-  resolveSource({ resource: 'hrEmployees', searchFields: ['name'] })!.searchFields,
-  ['name'],
-  'config 覆盖资源级默认'
-)
-eq(
-  buildOptionsQuery(emp, '9001', 0).includes(
-    '{or: [{name: {contains: "9001"}}, {code: {contains: "9001"}}, {attendanceNo: {contains: "9001"}}]}'
-  ),
-  true,
-  '员工搜索拼三字段 contains OR'
-)
-eq(buildOptionsQuery(emp, '', 0).includes('results { id name code attendanceNo }'), true, '副行字段并入取回')
-eq(
-  resolveSource({ resource: 'sysUsers', labelField: 'username', searchFields: ['username', 'name'], filter: '{enabled: {eq: true}}', fields: ['name'], pageSize: 50 }, ref)!.resource,
+  resolveSource({ resource: 'sysUsers', labelField: 'username', searchFields: ['username', 'name'], fields: ['name'], pageSize: 50 }, ref)!.resource,
   'sysUsers',
   'config 覆盖 ref'
 )
 eq(resolveSource({ searchFields: [] }, ref)!.searchFields, ['name'], '空 searchFields 回落 labelField')
 eq(resolveSource({}), null, '无 resource 为 null')
-// sortField:默认回落 labelField(计算字段场景);显式传入时用它排序而非 labelField
 eq(resolveSource({ labelField: 'label' }, ref)!.sortField, 'label', 'sortField 默认回落 labelField')
 eq(resolveSource({ labelField: 'label', sortField: 'dueDate' }, ref)!.sortField, 'dueDate', 'sortField 显式覆盖')
 
-const src = resolveSource({ searchFields: ['name', 'code'], filter: '{enabled: {eq: true}}' }, ref)!
-
-// —— buildOptionsQuery:固定过滤 and 搜索 or;搜索词 JSON 转义;labelField 升序 ——
 eq(
-  buildOptionsQuery(src, '', 0),
-  'query { basCompanies(limit: 20, offset: 0, sort: [{field: NAME, order: ASC}], filter: {enabled: {eq: true}}) { count results { id name } } }',
-  '无搜索词只有固定过滤'
-)
-eq(
-  buildOptionsQuery(src, ' 华东"x" ', 20),
-  `query { basCompanies(limit: 20, offset: 20, sort: [{field: NAME, order: ASC}], filter: {and: [{enabled: {eq: true}}, {or: [{name: {contains: ${JSON.stringify('华东"x"')}}}, {code: {contains: ${JSON.stringify('华东"x"')}}}]}]}) { count results { id name } } }`,
-  '搜索词 trim+转义,多字段 or'
-)
-eq(
-  buildOptionsQuery(resolveSource({}, ref)!, 'a', 0),
-  'query { basCompanies(limit: 20, offset: 0, sort: [{field: NAME, order: ASC}], filter: {name: {contains: "a"}}) { count results { id name } } }',
-  '单条件不包 and/or'
-)
-// labelField 为计算字段(不可排序)时,sortField 显式指定真实可排序字段,排序改按它而非 labelField
-eq(
-  buildOptionsQuery(resolveSource({ labelField: 'label', sortField: 'dueDate' }, ref)!, '', 0),
-  'query { basCompanies(limit: 20, offset: 0, sort: [{field: DUE_DATE, order: ASC}]) { count results { id label } } }',
-  'sortField 覆盖排序字段(计算字段 labelField 场景)'
+  resolveSource({ filterState: { enabled: { kind: 'bool', eq: true } } }, ref)!.filterState,
+  { enabled: { kind: 'bool', eq: true } },
+  '保留结构化固定筛选'
 )
 
-// —— buildByIdQuery:去重 + uuid 白名单;全非法为 null ——
-const u1 = '11111111-1111-1111-1111-111111111111'
-const u2 = '22222222-2222-2222-2222-222222222222'
-eq(
-  buildByIdQuery(resolveSource({}, ref)!, [u1, u2, u1, 'DROP']),
-  `query { basCompanies(limit: 2, offset: 0, filter: {id: {in: ["${u1}", "${u2}"]}}) { count results { id name } } }`,
-  '回显反查批量 in'
-)
-eq(buildByIdQuery(resolveSource({}, ref)!, ['nope']), null, '全非法为 null')
-eq(buildByIdQuery(resolveSource({ fields: ['code', 'name'] }, ref)!, [u1])!.includes('{ id name code }'), true, 'fields 去重合并')
-
-// —— resolveFkTarget:普通 fk 取三件套;多态按行判别值选变体;解析不了为 null ——
+// resolveFkTarget：普通 fk 取资源配置；多态按行判别值选变体；解析不了为 null。
+const id = '11111111-1111-1111-1111-111111111111'
 const polyRef = {
   resource: null,
   relation: null,
@@ -101,15 +58,11 @@ const polyRef = {
     { value: 'SUPPLIER', resource: 'purSuppliers', labelField: 'name', label: '供应商' },
   ],
 }
-eq(resolveFkTarget(ref, { id: u1 }), { resource: 'basCompanies', labelField: 'name' }, '普通 fk 取自身')
-eq(
-  resolveFkTarget(polyRef, { id: u1, partyType: 'SUPPLIER' }),
-  { resource: 'purSuppliers', labelField: 'name' },
-  '多态按判别值选变体'
-)
-eq(resolveFkTarget(polyRef, { id: u1, partyType: null }), null, '判别值为空解析不了')
-eq(resolveFkTarget(polyRef, { id: u1, partyType: 'EMPLOYEE' }), null, '未知判别值解析不了')
-// 字符串判别(分录来源单据):行值原样比较,不走大写 token
+eq(resolveFkTarget(ref, { id }), { resource: 'basCompanies', labelField: 'name' }, '普通 fk 取自身')
+eq(resolveFkTarget(polyRef, { id, partyType: 'SUPPLIER' }), { resource: 'purSuppliers', labelField: 'name' }, '多态按判别值选变体')
+eq(resolveFkTarget(polyRef, { id, partyType: null }), null, '判别值为空解析不了')
+eq(resolveFkTarget(polyRef, { id, partyType: 'EMPLOYEE' }), null, '未知判别值解析不了')
+
 const voucherRef = {
   resource: null,
   relation: null,
@@ -117,16 +70,12 @@ const voucherRef = {
   discriminator: 'voucherType',
   variants: [{ value: 'acc.gl_journal', resource: 'accGlJournals', labelField: 'voucherNo', label: '凭证' }],
 }
-eq(
-  resolveFkTarget(voucherRef, { id: u1, voucherType: 'acc.gl_journal' }),
-  { resource: 'accGlJournals', labelField: 'voucherNo' },
-  '字符串判别值原样匹配变体'
-)
-eq(resolveFkTarget({ resource: null, relation: null, labelField: null }, { id: u1 }), null, '普通 fk 无 resource 为 null')
+eq(resolveFkTarget(voucherRef, { id, voucherType: 'acc.gl_journal' }), { resource: 'accGlJournals', labelField: 'voucherNo' }, '字符串判别值原样匹配变体')
+eq(resolveFkTarget({ resource: null, relation: null, labelField: null }, { id }), null, '普通 fk 无 resource 为 null')
 
-// —— optionLabel ——
-eq(optionLabel(src, { id: u1, name: '集团总部' } as unknown as Row), '集团总部', 'label 字段')
-eq(optionLabel(src, { id: u1, name: null } as unknown as Row), '11111111', 'label 缺失退截断 id')
-eq(optionLabel(src, null), '', '空行为空串')
+const source = resolveSource({ searchFields: ['name', 'code'] }, ref)!
+eq(optionLabel(source, { id, name: '集团总部' } as unknown as Row), '集团总部', 'label 字段')
+eq(optionLabel(source, { id, name: null } as unknown as Row), '11111111', 'label 缺失退截断 id')
+eq(optionLabel(source, null), '', '空行为空串')
 
 console.log('remote-select-checks ok')

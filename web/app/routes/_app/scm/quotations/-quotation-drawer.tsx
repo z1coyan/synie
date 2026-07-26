@@ -172,11 +172,7 @@ export function tierSummary(tiers: Row[]): string {
 // 价格档是独立资源、确认弹窗只查条目,梯度行以档数提示,阶梯明细仍需进抽屉核对
 export const salesQuotationAuditConfig = {
   docLabel: '销售报价单',
-  mutation: 'auditSalQuotation',
   itemsResource: 'salQuotationItems',
-  docIdField: 'quotationId',
-  itemFields:
-    'id idx materialCode materialName materialSpec customerPartNo unitName pricingMode price taxRate tierCount remarks',
   loadItems: (quotationId: string) =>
     salesQuotationItemClient
       .query({
@@ -479,17 +475,7 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
                   required: true,
                   // 切换物料时清掉已选单位,避免单位候选跟着旧物料走
                   effects: () => ({ unitId: null }),
-                  // 销侧客户料约束:通用料 ∪ 本客户料;内部公司/未选对手仅通用料
-                  remote: {
-                    filter: (() => {
-                      const partyType = String(values.partyType ?? '')
-                      const partyId = values.partyId == null ? '' : String(values.partyId)
-                      if (partyType === 'CUSTOMER' && partyId) {
-                        return `{or: [{isCustomerMaterial: {eq: false}}, {customerId: {eq: ${JSON.stringify(partyId)}}}]}`
-                      }
-                      return '{isCustomerMaterial: {eq: false}}'
-                    })(),
-                  },
+                  // 客户物料适配由资源端校验兜底。
                 },
                 unitId: {
                   order: 1,

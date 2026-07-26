@@ -41,11 +41,7 @@ export type OpenReceiptDrawer = (mode: DrawerMode, receipt: ReceiptRef | null) =
 // 「审核整单」确认弹窗配置:条目页行操作与入库单页「审核」动作共用(见 scm/-audit-doc)
 export const receiptAuditConfig = {
   docLabel: '采购入库单',
-  mutation: 'auditPurReceipt',
   itemsResource: 'purReceiptItems',
-  docIdField: 'receiptId',
-  itemFields:
-    'id idx materialCode materialName materialSpec customerPartNo unitName qty baseQty remarks',
   columns: [
     {
       key: 'materialName',
@@ -143,9 +139,7 @@ async function persistItems(
   return errors
 }
 
-/**
- * 科目候选 filter。枚举值必须是 GraphQL enum 裸 token(不可 JSON 字符串)。
- */
+/** 科目候选的 REST 结构化筛选。 */
 function accountFilter(companyId: string | null, roleEnum?: string): FilterState | undefined {
   if (!companyId) return undefined
   return {

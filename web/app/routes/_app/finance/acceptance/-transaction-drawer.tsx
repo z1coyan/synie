@@ -28,7 +28,7 @@ import { SyniePreview } from '~/components/synie-preview/SyniePreview'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { FkLink } from '~/components/synie-record-drawer/fk-preview'
 import type { FieldInputProps } from '~/components/synie-record-drawer/fields'
-import type { GridColumnMeta, Row } from '~/components/synie-data-grid/types'
+import type { FilterState, GridColumnMeta, Row } from '~/components/synie-data-grid/types'
 import {
   billClient,
   billHoldingClient,
@@ -138,10 +138,14 @@ function numberInput(
   )
 }
 
-// 银行账户候选:同公司、启用,照 bank-transactions.tsx 的动态 filter 拼法
-function bankAccountFilter(values: Record<string, unknown>): string {
+// 银行账户候选：同公司、启用。
+function bankAccountFilter(values: Record<string, unknown>): FilterState | undefined {
   const companyId = (values.companyId ?? null) as string | null
-  return `{companyId: {eq: ${JSON.stringify(companyId)}}, active: {eq: true}}`
+  if (!companyId) return undefined
+  return {
+    companyId: { kind: 'fk', values: [companyId], labels: [] },
+    active: { kind: 'bool', eq: true },
+  }
 }
 
 // onPicked:选中后追加的页面态处理(如清 pickedHolding)——不放 effects,effects 在 setValues updater 内必须纯
@@ -162,16 +166,21 @@ function bankAccountInput(label: string, placeholderWhenReady: string, onPicked?
           onPicked?.()
         }}
         isDisabled={isDisabled || companyId == null}
-        filter={bankAccountFilter(values)}
+        filterState={bankAccountFilter(values)}
       />
     )
   }
 }
 
-// 往来/票据/结算/利息科目候选:同公司、非汇总、启用科目,照 invoices.tsx accountInput
-function accountFilter(values: Record<string, unknown>): string {
+// 往来/票据/结算/利息科目候选：同公司、非汇总、启用科目。
+function accountFilter(values: Record<string, unknown>): FilterState | undefined {
   const companyId = (values.companyId ?? null) as string | null
-  return `{companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}}`
+  if (!companyId) return undefined
+  return {
+    companyId: { kind: 'fk', values: [companyId], labels: [] },
+    isGroup: { kind: 'bool', eq: false },
+    active: { kind: 'bool', eq: true },
+  }
 }
 
 function accountInput(label: string) {
@@ -185,17 +194,21 @@ function accountInput(label: string) {
         value={value == null ? null : String(value)}
         onChange={(id) => onChange(id)}
         isDisabled={isDisabled || companyId == null}
-        filter={accountFilter(values)}
+        filterState={accountFilter(values)}
       />
     )
   }
 }
 
-// 持有段候选:当前公司+当前银行账户下的在手票据段
-function holdingFilter(values: Record<string, unknown>): string {
+// 持有段候选：当前公司 + 当前银行账户下的在手票据段。
+function holdingFilter(values: Record<string, unknown>): FilterState | undefined {
   const companyId = (values.companyId ?? null) as string | null
   const bankAccountId = (values.bankAccountId ?? null) as string | null
-  return `{companyId: {eq: ${JSON.stringify(companyId)}}, bankAccountId: {eq: ${JSON.stringify(bankAccountId)}}}`
+  if (!companyId || !bankAccountId) return undefined
+  return {
+    companyId: { kind: 'fk', values: [companyId], labels: [] },
+    bankAccountId: { kind: 'fk', values: [bankAccountId], labels: [] },
+  }
 }
 
 // 关联票据 fk 速览(接收交易 billId 字段本身对该类型隐藏,extraContent 里单独展示只读链接)
@@ -696,7 +709,7 @@ export function AcceptanceTransactionDrawer({
               searchFields={['billNo']}
               sortField="dueDate"
               fields={['billId', 'subStart', 'subEnd', 'amount', 'dueDate']}
-              filter={holdingFilter(values)}
+              filterState={holdingFilter(values)}
               label="持有段"
               placeholder="从当前持有中选择票据段…"
               value={pickedHolding?.id ?? null}
@@ -762,9 +775,6 @@ export function AcceptanceTransactionDrawer({
           // 多态对手 input,照 invoices.tsx partyId 原样(供应商/客户/内部公司三源切换)
           input: ({ value, onChange, isDisabled, values }) => {
             const [resource, label] = PARTY_SOURCE[String(values.partyType)] ?? ['salCustomers', '对手']
-            const companyId = (values.companyId ?? null) as string | null
-            const filter =
-              resource === 'basCompanies' && companyId ? `{id: {notEq: ${JSON.stringify(companyId)}}}` : undefined
             return (
               <RemoteSelect
                 resource={resource}
@@ -774,7 +784,6 @@ export function AcceptanceTransactionDrawer({
                 value={value == null ? null : String(value)}
                 onChange={onChange}
                 isDisabled={isDisabled}
-                filter={filter}
               />
             )
           },

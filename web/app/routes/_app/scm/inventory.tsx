@@ -148,7 +148,6 @@ function InventoryPage() {
             resource="invWarehouses"
             label="仓库"
             placeholder="全部仓库…"
-            filter={companyId ? `{companyId: {eq: ${JSON.stringify(companyId)}}, isLeaf: {eq: true}}` : undefined}
             filterState={warehouseFilterState(companyId)}
             value={warehouseId}
             onChange={(id) => setWarehouseId(id)}

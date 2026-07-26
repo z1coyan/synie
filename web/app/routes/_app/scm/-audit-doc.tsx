@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, Spinner, Table, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import type { Row } from '~/components/synie-data-grid/types'
 
 /** 审核确认弹窗的条目列定义(render 缺省时按文本原样展示) */
@@ -16,20 +15,14 @@ export interface AuditItemColumn {
 export interface AuditDocConfig {
   /** 单据中文名(弹窗标题/toast),如「销售发货单」 */
   docLabel: string
-  /** 审核 mutation 名(与后端 grid_actions 下发一致),如 auditSalDelivery */
-  mutation: string
-  /** 条目资源名,如 salDeliveryItems */
+  /** 条目资源名,如 salDeliveryItems(用于隔离查询缓存) */
   itemsResource: string
-  /** 条目上的母单外键字段(camelCase),如 deliveryId */
-  docIdField: string
-  /** 条目查询字段集(只取快照/计算字段,不 join 会触发嵌套授权的 fk) */
-  itemFields: string
   /** 确认弹窗展示的条目列 */
   columns: AuditItemColumn[]
-  /** 已迁移资源可直接提供 REST 条目读取；未提供时保留 GraphQL 兼容路径 */
-  loadItems?: (docId: string) => Promise<Row[]>
-  /** 已迁移资源可直接提供 REST 审核；未提供时保留 GraphQL 兼容路径 */
-  audit?: (docId: string) => Promise<unknown>
+  /** 通过资源 REST client 读取整单条目 */
+  loadItems: (docId: string) => Promise<Row[]>
+  /** 通过资源 REST client 审核整单 */
+  audit: (docId: string) => Promise<unknown>
 }
 
 /** 物料快照单元格:编号+名称一行,规格/客户料号等次行小字(与各条目网格同一套展示) */
@@ -73,20 +66,7 @@ export function useAuditDoc(cfg: AuditDocConfig) {
   const itemsQuery = useQuery({
     queryKey: ['auditDocItems', cfg.itemsResource, pending?.docId],
     enabled: pending != null,
-    queryFn: () => {
-      if (cfg.loadItems) return cfg.loadItems(pending!.docId)
-      return gqlFetch<Record<string, { results: Row[] }>>(
-        `query ($id: ID!) {
-            ${cfg.itemsResource}(
-              filter: {${cfg.docIdField}: {eq: $id}}
-              sort: [{field: IDX, order: ASC}]
-              limit: 500
-              offset: 0
-            ) { results { ${cfg.itemFields} } }
-          }`,
-        { id: pending!.docId },
-      ).then((d) => d[cfg.itemsResource]?.results ?? [])
-    },
+    queryFn: () => cfg.loadItems(pending!.docId),
   })
   const itemRows = itemsQuery.data ?? []
 
@@ -94,22 +74,7 @@ export function useAuditDoc(cfg: AuditDocConfig) {
     if (!pending) return
     setRunning(true)
     try {
-      if (cfg.audit) {
-        await cfg.audit(pending.docId)
-      } else {
-        const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
-          `mutation ($id: ID!) { ${cfg.mutation}(id: $id) { errors { message } } }`,
-          { id: pending.docId },
-        )
-        const errors = data[cfg.mutation]?.errors
-        // 未迁移资源的业务校验仍走 GraphQL payload.errors。
-        if (errors?.length) {
-          toast.danger(`${cfg.docLabel}审核失败`, {
-            description: errors.map((e) => e.message).join('; '),
-          })
-          return
-        }
-      }
+      await cfg.audit(pending.docId)
       toast.success(`${cfg.docLabel}已审核`)
       queryClient.invalidateQueries({ queryKey: ['gridRows'] })
       queryClient.invalidateQueries({ queryKey: ['rowById'] })

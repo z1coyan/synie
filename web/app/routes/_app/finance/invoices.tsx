@@ -41,7 +41,7 @@ import {
   OTHER_PAYABLE_ROLE,
 } from './-expense-role'
 import type { DrawerMode, FieldInputProps } from '~/components/synie-record-drawer/fields'
-import type { LocalGridMeta, Row } from '~/components/synie-data-grid/types'
+import type { FilterState, LocalGridMeta, Row } from '~/components/synie-data-grid/types'
 
 export const Route = createFileRoute('/_app/finance/invoices')({
   component: InvoicesPage,
@@ -141,18 +141,27 @@ function accountInput(label: string) {
         value={value == null ? null : String(value)}
         onChange={(id) => onChange(id)}
         isDisabled={isDisabled || companyId == null}
-        filter={`{companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}}`}
+        filterState={companyId ? {
+          companyId: { kind: 'fk', values: [companyId], labels: [] },
+          isGroup: { kind: 'bool', eq: false },
+          active: { kind: 'bool', eq: true },
+        } : undefined}
       />
     )
   }
 }
 
-// 关联对账单候选限:本公司、本对手、对方已确认、常规类型(与后端 VatInvoiceReconciliationLink/审核校验同口径,
-// 销售/采购两侧同一函数);对手类型是枚举,filter 里用裸 token(同 accountFilter 先例)
-function reconciliationFilter(values: Record<string, unknown>): string | undefined {
+// 关联对账单候选限：本公司、本对手、对方已确认、常规类型。
+function reconciliationFilter(values: Record<string, unknown>): FilterState | undefined {
   const { companyId, partyType, partyId } = values
   if (!companyId || !partyType || !partyId) return undefined
-  return `{and: [{companyId: {eq: ${JSON.stringify(String(companyId))}}}, {partyType: {eq: ${String(partyType)}}}, {partyId: {eq: ${JSON.stringify(String(partyId))}}}, {status: {eq: CONFIRMED}}, {reconciliationType: {eq: REGULAR}}]}`
+  return {
+    companyId: { kind: 'fk', values: [String(companyId)], labels: [] },
+    partyType: { kind: 'enum', values: [String(partyType)] },
+    partyId: { kind: 'fk', values: [String(partyId)], labels: [] },
+    status: { kind: 'enum', values: ['CONFIRMED'] },
+    reconciliationType: { kind: 'enum', values: ['REGULAR'] },
+  }
 }
 
 /**
@@ -187,7 +196,7 @@ function ReconciliationLinkInput({ value, onChange, isDisabled, values }: FieldI
         value={id}
         onChange={(rid) => onChange(rid)}
         isDisabled={isDisabled || filter == null}
-        filter={filter}
+        filterState={filter}
       />
       {rec && (
         <p className={`text-xs ${mismatch ? 'text-danger' : 'text-muted'}`}>
@@ -231,7 +240,7 @@ function PurReconciliationLinkInput({ value, onChange, isDisabled, values }: Fie
         value={id}
         onChange={(rid) => onChange(rid)}
         isDisabled={isDisabled || filter == null}
-        filter={filter}
+        filterState={filter}
       />
       {rec && (
         <p className={`text-xs ${mismatch ? 'text-danger' : 'text-muted'}`}>
@@ -723,12 +732,6 @@ function InvoicesPage() {
             effects: () => ({ salReconciliationId: null, purReconciliationId: null }),
             input: ({ value, onChange, isDisabled, values }) => {
               const [resource, label] = PARTY_SOURCE[String(values.partyType)] ?? ['salCustomers', '对手']
-              const companyId = (values.companyId ?? null) as string | null
-              // 对手是内部公司时排除本公司自身(不能给自己开票),同 accountInput 按公司过滤写法
-              const filter =
-                resource === 'basCompanies' && companyId
-                  ? `{id: {notEq: ${JSON.stringify(companyId)}}}`
-                  : undefined
               return (
                 <RemoteSelect
                   resource={resource}
@@ -737,7 +740,6 @@ function InvoicesPage() {
                   value={value == null ? null : String(value)}
                   onChange={onChange}
                   isDisabled={isDisabled}
-                  filter={filter}
                 />
               )
             },

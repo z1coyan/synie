@@ -1,5 +1,4 @@
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import type { Row, RowAction } from './types'
 
 /**
@@ -15,19 +14,10 @@ interface StatusToggleBase {
   onDone?: () => void
 }
 
-export type StatusToggleOptions = StatusToggleBase &
-  (
-    | {
-        /** 已迁移资源通过 Resource Client 更新。 */
-        update: (id: string, input: Record<string, unknown>) => Promise<unknown>
-      }
-    | {
-        /** 页面现成的 update mutation 文档。 */
-        mutation: string
-        /** mutation 返回数据的顶层 key,如 updateInvMaterial,用于取 errors。 */
-        resultKey: string
-      }
-  )
+export type StatusToggleOptions = StatusToggleBase & {
+  /** 资源通过 REST ResourceClient 更新。 */
+  update: (id: string, input: Record<string, unknown>) => Promise<unknown>
+}
 
 export function statusToggleActions(opts: StatusToggleOptions): RowAction[] {
   const label = (row: Row) => String(opts.rowLabel?.(row) ?? row.name ?? '')
@@ -38,16 +28,7 @@ export function statusToggleActions(opts: StatusToggleOptions): RowAction[] {
       return
     }
     try {
-      if ('update' in opts) {
-        await opts.update(row.id, { [opts.field]: target })
-      } else {
-        const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(opts.mutation, {
-          id: row.id,
-          input: { [opts.field]: target },
-        })
-        const errors = data[opts.resultKey]?.errors
-        if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
-      }
+      await opts.update(row.id, { [opts.field]: target })
       toast.success(`已${verb}「${label(row)}」`)
       ctx.refetch()
       opts.onDone?.()

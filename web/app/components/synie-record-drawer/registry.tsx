@@ -36,7 +36,7 @@ const registry: Record<string, ResourceDrawerConfig> = {
     label: '公司',
     fields: {
       // 本币仅可选启用币种(拦新不拦旧)
-      baseCurrencyId: { remote: { filter: '{active: {eq: true}}' } },
+      baseCurrencyId: { remote: { filterState: { active: { kind: 'bool', eq: true } } } },
     },
   },
   basCurrencies: {
@@ -180,7 +180,7 @@ const registry: Record<string, ResourceDrawerConfig> = {
         cols: 6,
         required: true,
         label: '币种',
-        remote: { filter: '{active: {eq: true}}' },
+        remote: { filterState: { active: { kind: 'bool', eq: true } } },
       },
       exchangeRate: { order: 5, cols: 6, label: '汇率', placeholder: '如 7.25' },
       remarks: { order: 6, label: '订单备注' },
@@ -276,7 +276,7 @@ const registry: Record<string, ResourceDrawerConfig> = {
         cols: 6,
         required: true,
         label: '币种',
-        remote: { filter: '{active: {eq: true}}' },
+        remote: { filterState: { active: { kind: 'bool', eq: true } } },
       },
       remarks: { order: 6, label: '报价备注' },
       // 报价条款是对客户的自由多行文本,置表单底部
@@ -373,7 +373,7 @@ const registry: Record<string, ResourceDrawerConfig> = {
         cols: 6,
         required: true,
         label: '币种',
-        remote: { filter: '{active: {eq: true}}' },
+        remote: { filterState: { active: { kind: 'bool', eq: true } } },
       },
       remarks: { order: 6, label: '报价备注' },
       // 报价条款是对供应商的自由多行文本,置表单底部
@@ -477,7 +477,7 @@ const registry: Record<string, ResourceDrawerConfig> = {
         cols: 6,
         required: true,
         label: '币种',
-        remote: { filter: '{active: {eq: true}}' },
+        remote: { filterState: { active: { kind: 'bool', eq: true } } },
       },
       exchangeRate: { order: 5, cols: 6, label: '汇率', placeholder: '如 7.25' },
       remarks: { order: 6, label: '订单备注' },
@@ -1005,7 +1005,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
         cols: 6,
         required: true,
         remote: {
-          filter: '{isLeaf: {eq: true}, active: {eq: true}}',
           filterState: {
             isLeaf: { kind: 'bool', eq: true },
             active: { kind: 'bool', eq: true },

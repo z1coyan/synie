@@ -154,14 +154,17 @@ function BankTransactionsPage() {
                 <RemoteSelect
                   resource="accBankAccounts"
                   label="银行账户"
-                  // 直连资源(非 fk ref 反射),显示字段须显式给 alias(缺省 name 拼出非法查询)
+                  // 直连资源（非 fk ref 反射），显示字段须显式使用 alias。
                   labelField="alias"
                   searchFields={['alias', 'accountNo']}
                   placeholder={companyId ? '选择账户…' : '先选择公司'}
                   value={value == null ? null : String(value)}
                   onChange={(id) => onChange(id)}
                   isDisabled={isDisabled || companyId == null}
-                  filter={`{companyId: {eq: ${JSON.stringify(companyId)}}, active: {eq: true}}`}
+                  filterState={{
+                    companyId: { kind: 'fk', values: [companyId!], labels: [] },
+                    active: { kind: 'bool', eq: true },
+                  }}
                 />
               )
             },

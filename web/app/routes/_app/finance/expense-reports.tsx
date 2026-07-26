@@ -8,7 +8,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
+import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { ExpenseRoleSelect, expenseRoleLabel, findRoleAccounts } from './-expense-role'
 import {
   expenseReportClient,
@@ -36,10 +36,14 @@ function itemInput(row: Row) {
   }
 }
 
-// 科目候选限:本公司、非汇总、启用(同发票页 accountInput 先例)
-function accountFilter(companyId: string | null): string | undefined {
+// 科目候选限：本公司、非汇总、启用。
+function accountFilter(companyId: string | null): FilterState | undefined {
   if (!companyId) return undefined
-  return `{companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}}`
+  return {
+    companyId: { kind: 'fk', values: [companyId], labels: [] },
+    isGroup: { kind: 'bool', eq: false },
+    active: { kind: 'bool', eq: true },
+  }
 }
 
 function todayLocal(): string {
@@ -57,13 +61,13 @@ function InvoicePickInput({
   value,
   onChange,
   isDisabled,
-  filter,
+  filterState,
   invoiceCache,
 }: {
   value: unknown
   onChange: (id: string | null) => void
   isDisabled: boolean
-  filter: string | undefined
+  filterState: FilterState | undefined
   invoiceCache: Map<string, Row>
 }) {
   const id = value == null || value === '' ? null : String(value)
@@ -74,7 +78,7 @@ function InvoicePickInput({
         resource="accVatInvoices"
         label="挂票发票"
         isRequired
-        placeholder={filter ? '选择该员工已审核的报销发票…' : '先选齐公司与员工'}
+        placeholder={filterState ? '选择该员工已审核的报销发票…' : '先选齐公司与员工'}
         labelField="docNo"
         searchFields={['docNo', 'invoiceNo']}
         itemSubtitleFields={['invoiceNo']}
@@ -84,8 +88,8 @@ function InvoicePickInput({
           if (iid && row) invoiceCache.set(iid, row)
           onChange(iid)
         }}
-        isDisabled={isDisabled || filter == null}
-        filter={filter}
+        isDisabled={isDisabled || filterState == null}
+        filterState={filterState}
       />
       {inv && (
         <p className="text-xs text-muted">
@@ -144,7 +148,7 @@ function ManualExpenseAccountInput({
         value={value == null || value === '' ? null : String(value)}
         onChange={(id) => onChange(id)}
         isDisabled={isDisabled || companyId == null}
-        filter={accountFilter(companyId)}
+        filterState={accountFilter(companyId)}
         labelField="name"
         searchFields={['name', 'code']}
         itemSubtitleFields={['code']}
@@ -334,7 +338,7 @@ function ExpenseReportsPage() {
                   value={value == null ? null : String(value)}
                   onChange={(id) => onChange(id)}
                   isDisabled={isDisabled || companyId == null}
-                  filter={accountFilter(companyId)}
+                  filterState={accountFilter(companyId)}
                   labelField="name"
                   searchFields={['name', 'code']}
                   itemSubtitleFields={['code']}
@@ -353,9 +357,15 @@ function ExpenseReportsPage() {
           const companyId = (values.companyId ?? null) as string | null
           const employeeId = (values.employeeId ?? null) as string | null
           const headerReady = Boolean(companyId && employeeId)
-          // 挂票候选:本公司、开入、员工对手、当前员工名下、已审核(枚举值裸 token,同发票页先例)
-          const invoiceFilter = headerReady
-            ? `{and: [{companyId: {eq: ${JSON.stringify(companyId)}}}, {direction: {eq: INBOUND}}, {partyType: {eq: EMPLOYEE}}, {partyId: {eq: ${JSON.stringify(employeeId)}}}, {status: {eq: AUDITED}}]}`
+          // 挂票候选：本公司、开入、员工对手、当前员工名下、已审核。
+          const invoiceFilterState: FilterState | undefined = headerReady
+            ? {
+                companyId: { kind: 'fk', values: [companyId!], labels: [] },
+                direction: { kind: 'enum', values: ['INBOUND'] },
+                partyType: { kind: 'enum', values: ['EMPLOYEE'] },
+                partyId: { kind: 'fk', values: [employeeId!], labels: [] },
+                status: { kind: 'enum', values: ['AUDITED'] },
+              }
             : undefined
           const itemsReadOnly =
             mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)
@@ -381,7 +391,7 @@ function ExpenseReportsPage() {
                   value={value}
                   onChange={onChange}
                   isDisabled={isDisabled}
-                  filter={invoiceFilter}
+                  filterState={invoiceFilterState}
                   invoiceCache={invoiceCacheRef.current}
                 />
               ),

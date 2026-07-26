@@ -19,11 +19,11 @@ import {
 } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { gqlFetch } from '~/lib/graphql'
+import { resourceClientFor } from '~/lib/resources/registry'
 import type { ResourceClient } from '~/lib/resources/types'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
-import { UUID_RE, buildRowQuery } from '../synie-data-grid/query'
+import { UUID_RE } from '../synie-data-grid/query'
 import type { GridColumnMeta, LocalGridMeta, Row } from '../synie-data-grid/types'
 import { RemoteDialogSelect } from '../synie-remote-select/RemoteDialogSelect'
 import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
@@ -59,7 +59,7 @@ export interface DrawerTab {
 export interface SynieRecordDrawerProps {
   /** 与后端 GridMeta 白名单同名,如 "sysRoles" */
   resource: string
-  /** 已迁移资源显式传入 REST client;未传时使用现有 GraphQL adapter。 */
+  /** 可显式传入 REST client；未传时由资源 registry 解析，未知资源立即报错。 */
   client?: ResourceClient
   mode: DrawerMode
   isOpen: boolean
@@ -150,7 +150,8 @@ const EMPTY_COLUMNS: GridColumnMeta[] = []
 
 export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const { resource, mode, isOpen, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
-  const remoteMeta = useGridMeta(resource, !props.meta, props.client) // 本地模式不发请求
+  const client = props.client ?? (!props.meta ? resourceClientFor(resource) : undefined)
+  const remoteMeta = useGridMeta(resource, !props.meta, client) // 本地模式不发请求
   const columns = props.meta?.columns ?? remoteMeta.data?.columns ?? EMPTY_COLUMNS
   const metaPending = !props.meta && remoteMeta.isPending
   const metaError = !props.meta && remoteMeta.isError
@@ -162,18 +163,9 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const wantsFetch = !props.meta && !props.row && !!props.rowId
   const validId = !!props.rowId && UUID_RE.test(props.rowId)
   const byId = useQuery({
-    queryKey: ['rowById', props.client?.id ?? 'graphql', resource, props.rowId],
+    queryKey: ['rowById', client?.id, resource, props.rowId],
     enabled: isOpen && wantsFetch && validId && !!remoteMeta.data,
-    queryFn: () => {
-      if (props.client) return props.client.get(props.rowId!)
-      const q = buildRowQuery(resource, remoteMeta.data!.columns, {
-        limit: 1,
-        offset: 0,
-        sortLiteral: null,
-        filterLiteral: `{id: {eq: ${JSON.stringify(props.rowId)}}}`,
-      })
-      return gqlFetch<Record<string, { results: Row[] }>>(q).then((d) => d[resource]?.results[0] ?? null)
-    },
+    queryFn: () => client!.get(props.rowId!),
   })
   const row = props.row ?? byId.data ?? null
   // isPending 含 enabled 未就绪(等 meta)阶段;data === null 是「查过了但没有」(未查完是 undefined)
@@ -273,15 +265,10 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
         } else {
           let errors: { message: string }[] | null | undefined
           try {
-            if (props.client?.action) {
-              await props.client.action(auditAction.key, [auditId])
-            } else {
-              const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
-                `mutation ($id: ID!) { ${auditAction.mutation}(id: $id) { errors { message } } }`,
-                { id: auditId },
-              )
-              errors = data[auditAction.mutation]?.errors
+            if (!client?.action) {
+              throw new Error(`Resource Client ${client?.id ?? resource} 未实现动作 ${auditAction.key}`)
             }
+            await client.action(auditAction.key, [auditId])
           } catch (error) {
             errors = [{ message: error instanceof Error ? error.message : String(error) }]
           }

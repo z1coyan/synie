@@ -51,9 +51,6 @@ export type OpenReconciliationDrawer = (
   reconciliation: ReconciliationRef | null,
 ) => void
 
-const AUDIT_ITEM_FIELDS =
-  'id idx deliveryNo materialName unitName qty baseQty amount baseAmount remarks'
-
 const AUDIT_COLUMNS: AuditDocConfig['columns'] = [
   { key: 'deliveryNo', label: '发货单号' },
   {
@@ -71,10 +68,7 @@ const AUDIT_COLUMNS: AuditDocConfig['columns'] = [
 // 「客户确认」(常规单)确认弹窗:列出整单条目核对,与赠送/样品单「结单审核」同一套(见 scm/-audit-doc)
 export const reconciliationConfirmConfig = {
   docLabel: '销售对账单',
-  mutation: 'confirmSalReconciliation',
   itemsResource: 'salReconciliationItems',
-  docIdField: 'reconciliationId',
-  itemFields: AUDIT_ITEM_FIELDS,
   columns: AUDIT_COLUMNS,
   loadItems: (reconciliationId: string) =>
     salesReconciliationItemClient
@@ -99,10 +93,7 @@ export const reconciliationConfirmConfig = {
 // 「结单审核」(赠送/样品单)确认弹窗
 export const reconciliationAuditConfig = {
   docLabel: '销售对账单',
-  mutation: 'auditSalReconciliation',
   itemsResource: 'salReconciliationItems',
-  docIdField: 'reconciliationId',
-  itemFields: AUDIT_ITEM_FIELDS,
   columns: AUDIT_COLUMNS,
   loadItems: reconciliationConfirmConfig.loadItems,
   audit: (reconciliationId: string) =>

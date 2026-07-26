@@ -57,11 +57,19 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 	"github.com/z1coyan/synie/server/internal/platform/printing"
 	"github.com/z1coyan/synie/server/internal/platform/settings"
+	setupplatform "github.com/z1coyan/synie/server/internal/platform/setup"
 )
 
 const maxJSONBody = 1 << 20
 
 type actorContextKey struct{}
+
+type setupHTTPService interface {
+	CreateFirstUser(context.Context, setupplatform.FirstUserInput) (setupplatform.FirstUserResult, error)
+	SeedCommonCurrencies(context.Context) (int, error)
+	ActivateBaseCurrency(context.Context, uuid.UUID) error
+	Complete(context.Context, *authz.Actor, string, bool) error
+}
 
 type Server struct {
 	pool                   *pgxpool.Pool
@@ -103,6 +111,7 @@ type Server struct {
 	numbering              *numbering.Service
 	printing               *printing.Service
 	settings               *settings.Service
+	setup                  setupHTTPService
 	logger                 *slog.Logger
 }
 
@@ -146,6 +155,7 @@ type Dependencies struct {
 	Numbering              *numbering.Service
 	Printing               *printing.Service
 	Settings               *settings.Service
+	Setup                  setupHTTPService
 	Logger                 *slog.Logger
 }
 
@@ -170,7 +180,7 @@ func New(deps Dependencies) *Server {
 		companyAccountDefaults: deps.CompanyAccountDefaults,
 		orderFlowItems:         deps.OrderFlowItems,
 		systemOps:              deps.SystemOps,
-		iam:                    deps.IAM, numbering: deps.Numbering, printing: deps.Printing, settings: deps.Settings, fileService: deps.FileService, storageService: deps.StorageService, logger: deps.Logger,
+		iam:                    deps.IAM, numbering: deps.Numbering, printing: deps.Printing, settings: deps.Settings, setup: deps.Setup, fileService: deps.FileService, storageService: deps.StorageService, logger: deps.Logger,
 	}
 }
 
@@ -446,7 +456,7 @@ func currencyDTO(item currency.Currency) gen.Currency {
 func (s *Server) authenticationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/healthz" || r.URL.Path == "/api/v1/auth/login" ||
-			r.URL.Path == "/api/v1/setup/status" {
+			r.URL.Path == "/api/v1/setup/status" || r.URL.Path == "/api/v1/setup/first-user" {
 			next.ServeHTTP(w, r)
 			return
 		}

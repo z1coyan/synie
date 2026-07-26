@@ -47,7 +47,7 @@ const ACTION_VISIBLE = {
 } satisfies Record<string, (row: Row) => boolean>
 
 // orderId 列覆盖默认 FkLink(速览抽屉):点击开共享完整订单抽屉,与点行的「查看」一致。
-// fk label 走行查询 join(buildRowQuery:order { id orderNo }),拿不到退截断 id。
+// fk label 读取资源返回的 order 关系标签，拿不到时退回截断 id。
 // 委外订单的条目在订单号旁跟一枚 accent「委外」胶囊(普通采购不显示,少数派标记);
 // 委外标记是订单头属性,由 orderIsOutsourced 计算列经 extraFields 随查询取回
 function buildOverrides(openDrawer: OpenOrderDrawer) {

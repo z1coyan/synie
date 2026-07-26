@@ -106,6 +106,7 @@ import {
   salesSettingClient,
   systemSettingClient,
 } from './settings'
+import { auditLogClient } from './system-ops'
 import { unitClient } from './units'
 import type { ResourceClient } from './types'
 
@@ -201,14 +202,21 @@ const clients: Record<string, ResourceClient> = {
   mfgSettings: manufacturingSettingClient,
   salSettings: salesSettingClient,
   sysSettings: systemSettingClient,
+  sysAuditLogs: auditLogClient,
   sysRoles: roleClient,
   sysStorages: storageClient,
   sysUsers: userClient,
   scmOrderFlowItems: orderFlowItemClient,
 }
 
-export function resourceClientFor(
-  resource: string,
-): ResourceClient | undefined {
-  return clients[resource]
+/**
+ * 共享资源组件的唯一默认解析入口。
+ * 调用方未显式传 client 时必须命中 registry；禁止静默回退到其他传输层。
+ */
+export function resourceClientFor(resource: string): ResourceClient {
+  const client = clients[resource]
+  if (!client) {
+    throw new Error(`资源「${resource}」未注册 REST ResourceClient`)
+  }
+  return client
 }

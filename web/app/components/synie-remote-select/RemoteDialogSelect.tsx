@@ -8,7 +8,7 @@ import type { RemoteSelectProps } from './RemoteSelect'
 
 export interface RemoteDialogSelectProps extends RemoteSelectProps {
   dialogTitle?: string
-  /** 弹窗表格的恒定过滤(透传 SynieDataGrid fixedFilter);枚举值用 gqlEnum() 包装 */
+  /** 弹窗表格的结构化恒定过滤（透传 SynieDataGrid fixedFilter）。 */
   gridFilter?: Record<string, unknown>
   /** 弹窗表格显示列(有序白名单),缺省 meta 全列 */
   gridColumns?: string[]

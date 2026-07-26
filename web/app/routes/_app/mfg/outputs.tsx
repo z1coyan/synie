@@ -59,11 +59,7 @@ const GRID_COLUMNS = [
 // 「审核整单」确认弹窗配置(同 scm 单据先例:只取行快照字段,不 join 工单/单位等 fk)
 const OUTPUT_AUDIT_CONFIG = {
   docLabel: '生产入库单',
-  mutation: 'auditMfgOutput',
   itemsResource: 'mfgOutputItems',
-  docIdField: 'outputId',
-  itemFields:
-    'id idx materialCode materialName materialSpec unitName qty baseQty remarks',
   loadItems: (docId) =>
     outputItemClient
       .query({

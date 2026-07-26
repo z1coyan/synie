@@ -3,7 +3,8 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
 import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, Popover, SearchField, Separator, Spinner, toast } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
-import { gqlFetch, isForbidden } from '~/lib/graphql'
+import { isForbidden } from '~/lib/errors'
+import { resourceClientFor } from '~/lib/resources/registry'
 import type { ResourceClient } from '~/lib/resources/types'
 import { downloadCsv, fetchAllRows, toCsv } from './csv'
 import { ColumnFilterButton, filterSummary } from './filter-popover'
@@ -11,7 +12,7 @@ import { cellText } from './format'
 import { mergePick } from './pick'
 import { useGridMeta } from './meta'
 import { printRows } from './print'
-import { buildFilterLiteral, buildRowQuery, mergeFilterLiterals, nextSort, toGqlLiteral, toSortField, toSortLiteral } from './query'
+import { nextSort } from './query'
 import type { ActionContext, BulkAction, EnumChipColor, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
 import { FkLink } from '../synie-record-drawer/fk-preview'
 import { attachmentListKey, fetchAttachmentList } from '../synie-attachment-panel/attachments'
@@ -55,7 +56,7 @@ function imageFilename(img: true | GridImageOverride, row: Row): string | undefi
 }
 
 export interface AttachmentImagesOptions {
-  /** sys_attachment.owner_type(graphql type 名,如 acc_vat_invoice) */
+  /** sys_attachment.owner_type 资源类型名，如 acc_vat_invoice。 */
   ownerType: string
   /** 限定槽位;缺省全部槽位 */
   category?: string
@@ -81,7 +82,7 @@ export interface TreeOptions {
 export interface SynieDataGridProps {
   /** 与后端 GridMeta 白名单同名,如 "sysRoles" */
   resource: string
-  /** 已迁移资源显式传入 REST client;未传时使用现有 GraphQL adapter。 */
+  /** 可显式传入 REST client；未传时由资源 registry 解析，未知资源立即报错。 */
   client?: ResourceClient
   /** 显示列及其顺序(有序白名单);缺省 = meta 全列。与 exclude 二选一即可 */
   columns?: string[]
@@ -258,8 +259,9 @@ export function defaultCell(
 
 export function SynieDataGrid(props: SynieDataGridProps) {
   const { resource, exclude = EMPTY_EXCLUDE, overrides = EMPTY_OVERRIDES } = props
+  const client = props.client ?? resourceClientFor(resource)
 
-  const meta = useGridMeta(resource, true, props.client)
+  const meta = useGridMeta(resource, true, client)
   const pickMode = props.pick != null
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
@@ -287,12 +289,10 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const treeActive = treeMode && !userQuerying
   const parentField = props.tree?.parentField ?? 'parentId'
   const hasChildrenField = props.tree?.hasChildrenField ?? 'childrenCount'
-  const treeSortLiteral = props.tree?.sort
-    ? `[{field: ${toSortField(props.tree.sort.field)}, order: ${props.tree.sort.order}}]`
-    : null
   const treeExtraFields = treeMode ? [parentField, hasChildrenField] : undefined
   const queryExtraFields = [...new Set([...(treeExtraFields ?? []), ...(props.extraFields ?? [])])]
   const queryExtraFieldsOrUndef = queryExtraFields.length > 0 ? queryExtraFields : undefined
+  const fixedFilterKey = JSON.stringify(props.fixedFilter ?? null)
 
   const [expanded, setExpanded] = useState<Selection>(new Set())
   const [childrenByParent, setChildrenByParent] = useState<Map<string, Row[]>>(new Map())
@@ -303,69 +303,46 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   // 附件图片列全屏预览:items 即被点行的全部图片附件
   const [attachmentPreview, setAttachmentPreview] = useState<{ items: SyniePreviewItem[]; open: boolean } | null>(null)
 
-  // 搜索/筛选列用组件内已排除 id/exclude 的 columns,被 exclude 隐藏的列不应参与搜索
-  // 防抖在输入源头(useDraft:搜索框/筛选草稿),这里拿到的已是停稳值,离散操作(勾选/日期/清除)即时生效
-  const userFilterLiteral = meta.data ? buildFilterLiteral(filters, search, columns) : null
-  // fixedFilter 是组件受信条件(如公司过滤),平铺/树形都恒定并入,不进列筛选 UI
-  const fixedFilterLiteral = props.fixedFilter ? toGqlLiteral(props.fixedFilter) : null
-  const sortLiteral = toSortLiteral(sort)
-
-  // 树形激活:只查根层(parentField isNil)、一次取满一层、按 tree.sort 排;否则常规分页
-  const effectiveFilterLiteral = treeActive
-    ? mergeFilterLiterals([`{${parentField}: {isNil: true}}`, fixedFilterLiteral])
-    : mergeFilterLiterals([userFilterLiteral, fixedFilterLiteral])
-  const effectiveSortLiteral = treeActive ? treeSortLiteral : sortLiteral
-
   // 切公司(fixedFilter 变)时已加载的子层缓存与展开态失效,重置;
   // 筛选进出(treeActive 翻转)不重置——清空筛选回树形时保留原展开状态
   useEffect(() => {
     setExpanded(new Set())
     setChildrenByParent(new Map())
     setLoadingParents(new Set())
-  }, [fixedFilterLiteral])
+  }, [fixedFilterKey])
 
   const rowsQuery = useQuery({
     queryKey: [
       'gridRows',
-      props.client?.id ?? 'graphql',
+      client.id,
       resource,
       treeActive,
       page,
       pageSize,
-      effectiveSortLiteral,
-      effectiveFilterLiteral,
+      search,
+      JSON.stringify(sort),
+      JSON.stringify(filters),
+      fixedFilterKey,
       // extraFields 影响 results 形状,进 key 防与无 extra 的列表缓存串味
       queryExtraFieldsOrUndef?.slice().sort().join(',') ?? '',
     ],
     enabled: !!meta.data,
     placeholderData: keepPreviousData,
-    queryFn: () => {
-      if (props.client) {
-        return props.client.query({
-          limit: treeActive ? TREE_LEVEL_LIMIT : pageSize,
-          offset: treeActive ? 0 : (page - 1) * pageSize,
-          search: treeActive ? undefined : search,
-          sort: treeActive && props.tree?.sort
-            ? { column: props.tree.sort.field, direction: props.tree.sort.order === 'ASC' ? 'ascending' : 'descending' }
-            : sort,
-          filter: treeActive
-            ? { ...filters, [parentField]: { kind: 'fk', op: 'isNil', values: [], labels: [] } }
-            : filters,
-          fixedFilter: props.fixedFilter,
-          extraFields: queryExtraFieldsOrUndef,
-          joinFields: props.joinFields,
-        })
-      }
-      const query = buildRowQuery(resource, columns, {
+    queryFn: () =>
+      client.query({
         limit: treeActive ? TREE_LEVEL_LIMIT : pageSize,
         offset: treeActive ? 0 : (page - 1) * pageSize,
-        sortLiteral: effectiveSortLiteral,
-        filterLiteral: effectiveFilterLiteral,
+        search: treeActive ? undefined : search,
+        sort: treeActive && props.tree?.sort
+          ? { column: props.tree.sort.field, direction: props.tree.sort.order === 'ASC' ? 'ascending' : 'descending' }
+          : sort,
+        filter: treeActive
+          ? { ...filters, [parentField]: { kind: 'fk', op: 'isNil', values: [], labels: [] } }
+          : filters,
+        fixedFilter: props.fixedFilter,
         extraFields: queryExtraFieldsOrUndef,
         joinFields: props.joinFields,
-      })
-      return gqlFetch<Record<string, { count: number; results: Row[] }>>(query).then((d) => d[resource])
-    },
+      }),
   })
 
   const rows = rowsQuery.data?.results ?? []
@@ -375,51 +352,26 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   // 展开某节点时按 parentField eq 拉它的直接子层,结果进缓存;getChildren 从缓存读,折叠不清缓存
   const fetchChildren = (parentId: string) => {
     setLoadingParents((prev) => new Set(prev).add(parentId))
-    if (props.client) {
-      props.client
-        .query({
-          limit: TREE_LEVEL_LIMIT,
-          offset: 0,
-          sort: props.tree?.sort
-            ? { column: props.tree.sort.field, direction: props.tree.sort.order === 'ASC' ? 'ascending' : 'descending' }
-            : null,
-          filter: { ...filters, [parentField]: { kind: 'fk', values: [parentId], labels: [] } },
-          fixedFilter: props.fixedFilter,
-          extraFields: queryExtraFieldsOrUndef,
-          joinFields: props.joinFields,
-        })
-        .then((data) => setChildrenByParent((prev) => new Map(prev).set(parentId, data.results)))
-        .catch((e) => toast.danger('加载下级失败', { description: (e as Error).message }))
-        .finally(() =>
-          setLoadingParents((prev) => {
-            const next = new Set(prev)
-            next.delete(parentId)
-            return next
-          }),
-        )
-      return
-    }
-    const childFilterLiteral = mergeFilterLiterals([
-      `{${parentField}: {eq: ${JSON.stringify(parentId)}}}`,
-      fixedFilterLiteral,
-    ])
-    const query = buildRowQuery(resource, columns, {
-      limit: TREE_LEVEL_LIMIT,
-      offset: 0,
-      sortLiteral: treeSortLiteral,
-      filterLiteral: childFilterLiteral,
-      extraFields: queryExtraFieldsOrUndef,
-      joinFields: props.joinFields,
-    })
-    gqlFetch<Record<string, { count: number; results: Row[] }>>(query)
-      .then((d) => setChildrenByParent((prev) => new Map(prev).set(parentId, d[resource].results)))
+    client
+      .query({
+        limit: TREE_LEVEL_LIMIT,
+        offset: 0,
+        sort: props.tree?.sort
+          ? { column: props.tree.sort.field, direction: props.tree.sort.order === 'ASC' ? 'ascending' : 'descending' }
+          : null,
+        filter: { ...filters, [parentField]: { kind: 'fk', values: [parentId], labels: [] } },
+        fixedFilter: props.fixedFilter,
+        extraFields: queryExtraFieldsOrUndef,
+        joinFields: props.joinFields,
+      })
+      .then((data) => setChildrenByParent((prev) => new Map(prev).set(parentId, data.results)))
       .catch((e) => toast.danger('加载下级失败', { description: (e as Error).message }))
       .finally(() =>
         setLoadingParents((prev) => {
           const next = new Set(prev)
           next.delete(parentId)
           return next
-        })
+        }),
       )
   }
 
@@ -542,30 +494,14 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     setExporting(true)
     const id = toast(`正在导出…`, { isLoading: true, timeout: 0 })
     try {
-      let all: Row[]
-      if (props.client) {
-        all = []
-        let offset = 0
-        let count = 0
-        do {
-          const pageResult = await props.client.query({
-            limit: 200,
-            offset,
-            search,
-            sort,
-            filter: filters,
-            fixedFilter: props.fixedFilter,
-            extraFields: queryExtraFieldsOrUndef,
-            joinFields: props.joinFields,
-          })
-          all.push(...pageResult.results)
-          count = pageResult.count
-          offset += pageResult.results.length
-          if (pageResult.results.length === 0) break
-        } while (offset < count)
-      } else {
-        all = await fetchAllRows(resource, columns, effectiveFilterLiteral, effectiveSortLiteral)
-      }
+      const all = await fetchAllRows(client, {
+        search,
+        sort,
+        filter: filters,
+        fixedFilter: props.fixedFilter,
+        extraFields: queryExtraFieldsOrUndef,
+        joinFields: props.joinFields,
+      })
       // 传 cellText:CSV 单元格与表格/打印视图同一套格式化(是/否、本地化时间、enum label)
       downloadCsv(`${resource}-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(columns, all, cellText))
       toast.close(id)
@@ -591,7 +527,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   const actions = useGridActions({
     meta: meta.data,
-    client: props.client,
+    client,
     capabilities: props.capabilities,
     refetch: () => {
       rowsQuery.refetch()

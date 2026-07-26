@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from 'react'
 import { AlertDialog, Button, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import type { ResourceClient } from '~/lib/resources/types'
 import type { ActionContext, BulkAction, GridActionMeta, GridMeta, Row, RowAction } from './types'
 
@@ -21,39 +20,21 @@ interface PendingConfirm {
 /** 逐条执行仅吃 id 的 mutation(destroy/扩展工作流动作)。 */
 // ponytail: 前端逐条循环,量大或需事务性时后端加 Ash bulk action 再切
 async function runIdMutation(
-  mutation: string,
   ids: string[],
-  client?: ResourceClient,
-  actionKey?: string,
+  client: ResourceClient,
+  actionKey: string,
 ): Promise<{ ok: number; fail: number; messages: string[] }> {
   let ok = 0
   let fail = 0
   const messages: string[] = []
   for (const id of ids) {
     try {
-      if (client) {
-        if (actionKey === 'delete') await client.delete(id)
-        else if (actionKey && client.action) await client.action(actionKey, [id])
-        else throw new Error(`Resource Client 未实现动作 ${actionKey ?? mutation}`)
-        ok += 1
-        continue
-      }
-      const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
-        `mutation ($id: ID!) { ${mutation}(id: $id) { errors { message } } }`,
-        { id }
-      )
-      const errors = data[mutation]?.errors
-      if (errors && errors.length > 0) {
-        fail += 1
-        // 业务校验(负库存/超发/科目等)走 payload.errors,逐条汇总给用户
-        for (const e of errors) {
-          if (e.message) messages.push(e.message)
-        }
-      } else {
-        ok += 1
-      }
+      if (actionKey === 'delete') await client.delete(id)
+      else if (client.action) await client.action(actionKey, [id])
+      else throw new Error(`Resource Client 未实现动作 ${actionKey}`)
+      ok += 1
     } catch (e) {
-      // GraphQL 顶层错误(gqlFetch 抛 GqlError)或网络异常
+      // REST 业务错误或网络异常
       fail += 1
       const msg = e instanceof Error ? e.message : String(e)
       if (msg) messages.push(msg)
@@ -80,7 +61,7 @@ function failureDescription(fail: number, ok: number, messages: string[]): strin
 
 export function useGridActions(opts: {
   meta: GridMeta | undefined
-  client?: ResourceClient
+  client: ResourceClient
   /** 覆盖 meta.capabilities(资源复用他人权限码、meta 为空时页面显式声明);不传用 meta 下发值 */
   capabilities?: string[]
   refetch: () => void
@@ -107,14 +88,13 @@ export function useGridActions(opts: {
     !capability || (opts.capabilities ?? meta?.capabilities ?? []).includes(capability)
   const ctx: ActionContext = { refetch }
 
-  const confirmThenMutate = (label: string, isDanger: boolean, mutation: string, actionKey?: string) => (rows: Row[]) =>
+  const confirmThenMutate = (label: string, isDanger: boolean, actionKey: string) => (rows: Row[]) =>
     setPending({
       label,
       isDanger,
       rows,
       execute: async (rs) => {
         const { ok, fail, messages } = await runIdMutation(
-          mutation,
           rs.map((r) => r.id),
           opts.client,
           actionKey,
@@ -141,7 +121,7 @@ export function useGridActions(opts: {
     isDanger: a.isDanger,
     run: opts.actionHandlers?.[a.key]
       ? (rows) => opts.actionHandlers![a.key](rows, ctx)
-      : confirmThenMutate(a.label, a.isDanger, a.mutation, a.key),
+      : confirmThenMutate(a.label, a.isDanger, a.key),
   })
 
   const extended = (scope: 'row' | 'bulk') =>
@@ -184,7 +164,7 @@ export function useGridActions(opts: {
         run: () => a.onAction(row, ctx),
       })),
     ...(can('delete') && meta?.destroyMutation && vis('delete', row)
-      ? [{ key: 'delete', label: '删除', isDanger: true, run: confirmThenMutate('删除', true, meta.destroyMutation, 'delete') }]
+      ? [{ key: 'delete', label: '删除', isDanger: true, run: confirmThenMutate('删除', true, 'delete') }]
       : []),
   ]
 
@@ -204,7 +184,7 @@ export function useGridActions(opts: {
       })),
     // 批量码叠加在基础码之上:服务端逐条按 delete 校验,只授 batch_delete 不授 delete 会全拒
     ...(can('batch_delete') && can('delete') && meta?.destroyMutation
-      ? [{ key: 'batch_delete', label: '批量删除', isDanger: true, run: confirmThenMutate('批量删除', true, meta.destroyMutation, 'delete') }]
+      ? [{ key: 'batch_delete', label: '批量删除', isDanger: true, run: confirmThenMutate('批量删除', true, 'delete') }]
       : []),
   ]
 
