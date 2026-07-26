@@ -1,0 +1,170 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "已解析",
+          "value": "PARSED"
+        },
+        {
+          "label": "解析失败",
+          "value": "FAILED"
+        },
+        {
+          "label": "已导入",
+          "value": "IMPORTED"
+        }
+      ],
+      "filterable": true,
+      "label": "状态",
+      "name": "status",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "解析失败原因",
+      "name": "error",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "导入时间",
+      "name": "importedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "公司",
+      "name": "companyId",
+      "ref": {
+        "labelField": "name",
+        "relation": "company",
+        "resource": "basCompanies"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "银行账户",
+      "name": "bankAccountId",
+      "ref": {
+        "labelField": "alias",
+        "relation": "bankAccount",
+        "resource": "accBankAccounts"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "导入模板",
+      "name": "templateId",
+      "ref": {
+        "labelField": "name",
+        "relation": "template",
+        "resource": "accBankImportTemplates"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "导入文件",
+      "name": "fileId",
+      "ref": {
+        "labelField": "filename",
+        "relation": "file",
+        "resource": "sysFiles"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "发起人",
+      "name": "createdById",
+      "ref": {
+        "labelField": "name",
+        "relation": "createdBy",
+        "resource": "sysUsers"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "导入人",
+      "name": "importedById",
+      "ref": {
+        "labelField": "name",
+        "relation": "importedBy",
+        "resource": "sysUsers"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "行数",
+      "name": "itemCount",
+      "ref": null,
+      "sortable": false,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "错误行数",
+      "name": "errorCount",
+      "ref": null,
+      "sortable": false,
+      "type": "integer"
+    }
+  ],
+  "destroyMutation": "destroyAccBankImport",
+  "extendedActions": []
+}

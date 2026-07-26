@@ -41,6 +41,7 @@ func (r *Registry) MustRegister(resource ResourceMeta) {
 	}
 	resource.Fields = slices.Clone(resource.Fields)
 	resource.Actions = slices.Clone(resource.Actions)
+	resource.ReadPermissionsAny = slices.Clone(resource.ReadPermissionsAny)
 	r.resources[resource.Name] = resource
 	r.permissionLabels[resource.PermissionPrefix] = resource.PermissionLabel
 }
@@ -57,7 +58,7 @@ func (r *Registry) BuildDocument(name string, actor *authz.Actor) (ResourceMetaD
 	if !ok {
 		return ResourceMetaDocument{}, apierror.New(apierror.CodeNotFound, "未知的 Meta 资源")
 	}
-	if !actor.HasPermission(resource.PermissionPrefix + ":read") {
+	if !canReadResource(resource, actor) {
 		return ResourceMetaDocument{}, apierror.New(apierror.CodeForbidden, "无权限访问该资源")
 	}
 
@@ -145,7 +146,7 @@ func (r *Registry) visibleRef(ref *GridColumnRef, actor *authz.Actor) *GridColum
 	}
 	if ref.Resource != nil {
 		target, ok := r.Get(*ref.Resource)
-		if !ok || !actor.HasPermission(target.PermissionPrefix+":read") {
+		if !ok || !canReadResource(target, actor) {
 			return nil
 		}
 		return ref
@@ -156,7 +157,7 @@ func (r *Registry) visibleRef(ref *GridColumnRef, actor *authz.Actor) *GridColum
 	variants := make([]GridColumnRefVariant, 0, len(ref.Variants))
 	for _, variant := range ref.Variants {
 		target, ok := r.Get(variant.Resource)
-		if ok && actor.HasPermission(target.PermissionPrefix+":read") {
+		if ok && canReadResource(target, actor) {
 			variants = append(variants, variant)
 		}
 	}
@@ -173,7 +174,7 @@ func (r *Registry) Summaries(actor *authz.Actor) []ResourceSummary {
 	defer r.mu.RUnlock()
 	result := make([]ResourceSummary, 0, len(r.resources))
 	for _, resource := range r.resources {
-		if !actor.HasPermission(resource.PermissionPrefix + ":read") {
+		if !canReadResource(resource, actor) {
 			continue
 		}
 		result = append(result, ResourceSummary{
@@ -191,6 +192,9 @@ func (r *Registry) PermissionCatalog() []PermissionGroup {
 	defer r.mu.RUnlock()
 	groups := make(map[string]map[string]struct{}, len(r.permissionLabels))
 	for _, resource := range r.resources {
+		if len(resource.ReadPermissionsAny) > 0 {
+			continue
+		}
 		actions, ok := groups[resource.PermissionPrefix]
 		if !ok {
 			actions = make(map[string]struct{})
@@ -215,6 +219,21 @@ func (r *Registry) PermissionCatalog() []PermissionGroup {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Prefix < result[j].Prefix })
 	return result
+}
+
+func canReadResource(resource ResourceMeta, actor *authz.Actor) bool {
+	if actor == nil {
+		return false
+	}
+	if len(resource.ReadPermissionsAny) == 0 {
+		return actor.HasPermission(resource.PermissionPrefix + ":read")
+	}
+	for _, permission := range resource.ReadPermissionsAny {
+		if actor.HasPermission(permission) {
+			return true
+		}
+	}
+	return false
 }
 
 func validate(resource ResourceMeta) error {

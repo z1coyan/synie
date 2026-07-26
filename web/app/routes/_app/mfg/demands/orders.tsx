@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
-import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
+import {
+  SynieDataGrid,
+  type ColumnOverride,
+} from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { useDocItems } from '~/components/synie-editable-table/use-doc-items'
@@ -11,6 +13,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { demandClient, demandItemClient } from '~/lib/resources/manufacturing'
 import { SalesItemPicker } from './-sales-item-picker'
 import {
   canChangeFulfillmentItem,
@@ -24,50 +27,11 @@ export const Route = createFileRoute('/_app/mfg/demands/orders')({
   component: DemandOrdersTab,
 })
 
-const CREATE_DEMAND = `
-  mutation ($input: CreateMfgDemandInput!) {
-    createMfgDemand(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_DEMAND = `
-  mutation ($id: ID!, $input: UpdateMfgDemandInput!) {
-    updateMfgDemand(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-
 // 需求行脚手架(取数/持久化)走共用 useDocItems;变量名统一 $docId
 const ITEMS = {
   label: '需求行',
   docIdField: 'demandId',
-  fetchQuery: `
-    query ($docId: ID!) {
-      mfgDemandItems(filter: {demandId: {eq: $docId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
-        results {
-          id idx materialId unitId qty needDate fulfillmentMethod salesOrderItemId remarks status
-          material { id code name } unit { id name }
-        }
-      }
-    }
-  `,
-  fetchKey: 'mfgDemandItems',
-  createMutation: `
-    mutation ($input: CreateMfgDemandItemInput!) {
-      createMfgDemandItem(input: $input) { result { id } errors { message } }
-    }
-  `,
-  createKey: 'createMfgDemandItem',
-  updateMutation: `
-    mutation ($id: ID!, $input: UpdateMfgDemandItemInput!) {
-      updateMfgDemandItem(id: $id, input: $input) { result { id } errors { message } }
-    }
-  `,
-  updateKey: 'updateMfgDemandItem',
-  destroyMutation: `
-    mutation ($id: ID!) {
-      destroyMfgDemandItem(id: $id) { errors { message } }
-    }
-  `,
-  destroyKey: 'destroyMfgDemandItem',
+  client: demandItemClient,
   itemInput: (row: Row) => ({
     idx: row.idx,
     materialId: row.materialId,
@@ -78,10 +42,25 @@ const ITEMS = {
     salesOrderItemId: row.salesOrderItemId || null,
     remarks: row.remarks ?? null,
   }),
-  itemKeys: ['idx', 'materialId', 'unitId', 'qty', 'needDate', 'fulfillmentMethod', 'salesOrderItemId', 'remarks'] as const,
+  itemKeys: [
+    'idx',
+    'materialId',
+    'unitId',
+    'qty',
+    'needDate',
+    'fulfillmentMethod',
+    'salesOrderItemId',
+    'remarks',
+  ] as const,
 }
 
-const GRID_COLUMNS = ['demandNo', 'demandDate', 'companyId', 'status', 'remarks']
+const GRID_COLUMNS = [
+  'demandNo',
+  'demandDate',
+  'companyId',
+  'status',
+  'remarks',
+]
 
 // 状态机动作显隐(后端权威校验兜底,这里做体验层):确认/删除/编辑仅草稿;
 // 关闭/作废仅已确认(后端已收紧:草稿不可作废,走删除)
@@ -95,12 +74,23 @@ const ACTION_VISIBLE = {
 
 // 状态胶囊配色:草稿灰、已确认绿、已关闭黄、已作废红
 const GRID_OVERRIDES = {
-  status: { enumColors: { DRAFT: 'default', CONFIRMED: 'success', CLOSED: 'warning', VOIDED: 'danger' } },
+  status: {
+    enumColors: {
+      DRAFT: 'default',
+      CONFIRMED: 'success',
+      CLOSED: 'warning',
+      VOIDED: 'danger',
+    },
+  },
 } satisfies Record<string, ColumnOverride>
 
 function DemandOrdersTab() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
-  const { items, setItems, itemsLoaded, load, persistItems } = useDocItems(ITEMS)
+  const [drawer, setDrawer] = useState<{
+    mode: DrawerMode
+    row: Row | null
+  } | null>(null)
+  const { items, setItems, itemsLoaded, load, persistItems } =
+    useDocItems(ITEMS)
   const queryClient = useQueryClient()
   const perms = useMyPermissions()
   // 行级操作后重拉抽屉里的需求行(行状态已变)
@@ -123,16 +113,20 @@ function DemandOrdersTab() {
     <>
       <SynieDataGrid
         resource="mfgDemands"
+        client={demandClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         onView={(row) => openDrawer('view', row)}
         onCreate={() => openDrawer('create', null)}
-        onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
+        onEdit={(row) =>
+          openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)
+        }
         actionVisible={ACTION_VISIBLE}
       />
 
       <SynieRecordDrawer
         resource="mfgDemands"
+        client={demandClient}
         {...drawerConfig('mfgDemands')}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -141,12 +135,17 @@ function DemandOrdersTab() {
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         tabExtraContent={{
           items: (mode, row, values) => {
-            const editable = mode !== 'view' && (!row || row.status === 'DRAFT') && (mode === 'create' || itemsLoaded)
+            const editable =
+              mode !== 'view' &&
+              (!row || row.status === 'DRAFT') &&
+              (mode === 'create' || itemsLoaded)
             // create 态公司取自表单草稿,edit/view 态取自行数据
-            const companyId = (row?.companyId ?? values.companyId) as string | null | undefined
+            const companyId = (row?.companyId ?? values.companyId) as
+              string | null | undefined
             return (
               <SynieEditableTable
                 resource="mfgDemandItems"
+                client={demandItemClient}
                 label="需求行"
                 items={items}
                 onChange={setItems}
@@ -155,7 +154,9 @@ function DemandOrdersTab() {
                   editable ? (
                     <SalesItemPicker
                       companyId={companyId ? String(companyId) : null}
-                      excludeItemIds={items.map((r) => String(r.salesOrderItemId ?? '')).filter(Boolean)}
+                      excludeItemIds={items
+                        .map((r) => String(r.salesOrderItemId ?? ''))
+                        .filter(Boolean)}
                       nextIdx={nextIdx}
                       onConfirm={(rows) => {
                         setItems([...items, ...rows])
@@ -173,17 +174,29 @@ function DemandOrdersTab() {
                         return (
                           <>
                             {canUpdateDemand && canCompleteItem(r) && (
-                              <Button size="sm" variant="ghost" onPress={() => itemActions.requestComplete(r)}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onPress={() => itemActions.requestComplete(r)}
+                              >
                                 完成
                               </Button>
                             )}
                             {canUpdateDemand && canChangeFulfillmentItem(r) && (
-                              <Button size="sm" variant="ghost" onPress={() => itemActions.requestChange(r)}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onPress={() => itemActions.requestChange(r)}
+                              >
                                 改履约方式
                               </Button>
                             )}
                             {canCreateWorkOrder && canGenerateWorkOrder(r) && (
-                              <Button size="sm" variant="ghost" onPress={() => itemActions.requestGenerate(r)}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onPress={() => itemActions.requestGenerate(r)}
+                              >
                                 生成工单
                               </Button>
                             )}
@@ -191,7 +204,16 @@ function DemandOrdersTab() {
                         )
                       }
                 }
-                exclude={['demandId', 'companyId', 'baseQty', 'status', 'materialCode', 'materialName', 'materialSpec', 'unitName']}
+                exclude={[
+                  'demandId',
+                  'companyId',
+                  'baseQty',
+                  'status',
+                  'materialCode',
+                  'materialName',
+                  'materialSpec',
+                  'unitName',
+                ]}
                 columns={[
                   'idx',
                   'materialId',
@@ -208,7 +230,11 @@ function DemandOrdersTab() {
                   unitId: { order: 2, required: true },
                   qty: { order: 3, required: true },
                   needDate: { order: 4 },
-                  fulfillmentMethod: { order: 5, required: true, defaultValue: 'MAKE' },
+                  fulfillmentMethod: {
+                    order: 5,
+                    required: true,
+                    defaultValue: 'MAKE',
+                  },
                   salesOrderItemId: { order: 6, label: '来源销售条目' },
                   remarks: { order: 7 },
                 }}
@@ -220,27 +246,14 @@ function DemandOrdersTab() {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{
-              createMfgDemand: {
-                result: { id: string } | null
-                errors: { message: string }[] | null
-              }
-            }>(CREATE_DEMAND, { input: values })
-            if (data.createMfgDemand.errors?.length) {
-              throw new Error(data.createMfgDemand.errors.map((e) => e.message).join('; '))
-            }
-            const id = data.createMfgDemand.result!.id
+            const created = await demandClient.create(values)
+            const id = created.id
             const lineErrors = await persistItems(id)
             if (lineErrors.length) throw new Error(lineErrors.join('; '))
             toast.success('需求单已创建')
             savedId = id
           } else {
-            const data = await gqlFetch<{
-              updateMfgDemand: { errors: { message: string }[] | null }
-            }>(UPDATE_DEMAND, { id: drawer!.row!.id, input: values })
-            if (data.updateMfgDemand.errors?.length) {
-              throw new Error(data.updateMfgDemand.errors.map((e) => e.message).join('; '))
-            }
+            await demandClient.update(drawer!.row!.id, values)
             if (draftOnly) {
               const lineErrors = await persistItems(drawer!.row!.id as string)
               if (lineErrors.length) throw new Error(lineErrors.join('; '))
@@ -248,7 +261,9 @@ function DemandOrdersTab() {
             toast.success('需求单已更新')
             savedId = drawer!.row!.id as string
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'mfgDemands'] })
+          queryClient.invalidateQueries({
+            queryKey: ['gridRows', 'mfgDemands'],
+          })
           queryClient.invalidateQueries({ queryKey: ['rowById', 'mfgDemands'] })
           return savedId
         }}

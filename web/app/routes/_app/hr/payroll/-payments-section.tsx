@@ -1,38 +1,20 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Chip, Spinner, Table, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
+import {
+  createPayrollPayment,
+  deletePayrollPayment,
+  payrollPaymentClient,
+  queryPayrollPayments,
+  type PayrollPaymentRow,
+} from '~/lib/resources/hr-operations'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
 import { PAYMENT_KIND_LABELS, today } from './-shared'
 
-const FETCH_PAYMENTS = `
-  query ($payrollId: ID!) {
-    hrPayrollPayments(filter: {payrollId: {eq: $payrollId}}, sort: [{field: PAID_ON, order: ASC}], limit: 200, offset: 0) {
-      results { id paidOn amount kind remarks }
-    }
-  }
-`
-const CREATE_PAYMENT = `
-  mutation ($input: CreateHrPayrollPaymentInput!) {
-    createHrPayrollPayment(input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_PAYMENT = `
-  mutation ($id: ID!) {
-    destroyHrPayrollPayment(id: $id) { result { id } errors { message } }
-  }
-`
-
-interface PaymentRow {
-  id: string
-  paidOn: string
-  amount: string
-  kind: 'NORMAL' | 'SUPPLEMENT'
-  remarks: string | null
-}
+type PaymentRow = PayrollPaymentRow
 
 /**
  * 工资单抽屉的发放记录区:列表 + 登记发放/补发(二级抽屉)+ 删除。
@@ -45,13 +27,16 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
   const queryClient = useQueryClient()
 
   // 门控按 hrPayrollPayments 自身权限码(发放≠改单)
-  const meta = useGridMeta('hrPayrollPayments')
+  const meta = useGridMeta(
+    'hrPayrollPayments',
+    true,
+    payrollPaymentClient,
+  )
   const can = (action: string) => (meta.data?.capabilities ?? []).includes(action)
 
   const payments = useQuery({
     queryKey: ['payrollPayments', payrollId],
-    queryFn: () => gqlFetch<{ hrPayrollPayments: { results: PaymentRow[] } }>(FETCH_PAYMENTS, { payrollId }),
-    select: (d) => d.hrPayrollPayments.results,
+    queryFn: () => queryPayrollPayments(payrollId),
   })
 
   const rows = payments.data ?? []
@@ -68,12 +53,7 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
   const remove = async (row: PaymentRow) => {
     setDeleting(row.id)
     try {
-      const data = await gqlFetch<{ destroyHrPayrollPayment: { errors: { message: string }[] | null } }>(
-        DESTROY_PAYMENT,
-        { id: row.id },
-      )
-      const errors = data.destroyHrPayrollPayment.errors
-      if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+      await deletePayrollPayment(row.id)
       toast.success('发放记录已删除;该单已无发放记录时自动翻回待发放')
       refreshAll()
     } catch (e) {
@@ -154,6 +134,7 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
       {/* 登记发放/补发:二级抽屉复用 RecordDrawer 表单机制;payrollId 固定注入不进表单 */}
       <SynieRecordDrawer
         resource="hrPayrollPayments"
+        client={payrollPaymentClient}
         label={isPaid ? '补发' : '发放'}
         mode="create"
         isOpen={createOpen}
@@ -167,12 +148,7 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
         }}
         onSubmit={async (values) => {
           const input = { payrollId, paidOn: values.paidOn, amount: values.amount, remarks: values.remarks }
-          const data = await gqlFetch<{ createHrPayrollPayment: { errors: { message: string }[] | null } }>(
-            CREATE_PAYMENT,
-            { input },
-          )
-          const errors = data.createHrPayrollPayment.errors
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+          await createPayrollPayment(input)
           toast.success(isPaid ? '补发已登记' : '发放已登记,本单标记为已发放')
           refreshAll()
         }}

@@ -318,12 +318,20 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
     await expect(editEmployee.getByLabel("日薪")).toHaveValue("300.5");
     await editEmployee.getByLabel("日薪").fill("301.25");
     await editEmployee.getByLabel("月补贴").clear();
-    await editEmployee
-      .getByRole("checkbox", { name: "公积金", exact: true })
-      .uncheck({ force: true });
-    await editEmployee
-      .getByRole("checkbox", { name: "商保工伤", exact: true })
-      .check({ force: true });
+    const housingFund = editEmployee.getByRole("checkbox", {
+      name: "公积金",
+      exact: true,
+    });
+    const commercialInjury = editEmployee.getByRole("checkbox", {
+      name: "商保工伤",
+      exact: true,
+    });
+    await expect(housingFund).toBeChecked();
+    await editEmployee.getByText("公积金", { exact: true }).click();
+    await expect(housingFund).not.toBeChecked();
+    await expect(commercialInjury).not.toBeChecked();
+    await editEmployee.getByText("商保工伤", { exact: true }).click();
+    await expect(commercialInjury).toBeChecked();
     const updateEmployeeResponse = page.waitForResponse(
       (response) =>
         response.request().method() === "PATCH" &&

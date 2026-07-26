@@ -1,110 +1,13 @@
-import { apiClient, apiData } from './api/client'
-import { isForbidden } from './errors'
-import { gqlFetch } from './graphql'
+import type { SysTodo, TodoType } from './resources/system-ops'
 
-export type TodoType = 'ISSUE_INVOICE' | 'RECEIVE_INVOICE'
-export type TodoStatus = 'ACTIVE' | 'CLOSED'
-export type TodoClosedReason = 'UNCONFIRM' | 'INVOICE_AUDIT' | null
-export type TodoTab = 'active' | 'history' | 'recent'
-
-export interface SysTodo {
-  id: string
-  type: TodoType
-  sourceType: string
-  sourceId: string
-  sourceNo: string
-  partyType: string
-  partyId: string
-  partyName: string
-  amount: string | number
-  status: TodoStatus
-  closedReason: TodoClosedReason
-  sourceChangedAt: string
-  closedAt: string | null
-  insertedAt: string
-  draftInvoiceLinked: boolean
-  myReadAt: string | null
-  myDismissedAt: string | null
-  dismissed: boolean
-  companyId: string
-  company?: { id: string; name: string; shortName?: string | null } | null
-}
-
-const TODO_FIELDS = `
-  id
-  type
-  sourceType
-  sourceId
-  sourceNo
-  partyType
-  partyId
-  partyName
-  amount
-  status
-  closedReason
-  sourceChangedAt
-  closedAt
-  insertedAt
-  draftInvoiceLinked
-  myReadAt
-  myDismissedAt
-  dismissed
-  companyId
-  company { id name shortName }
-`
-
-export async function fetchTodos(
-  tab: TodoTab,
-  opts?: { limit?: number; offset?: number }
-): Promise<{ results: SysTodo[]; count: number }> {
-  const limit = opts?.limit ?? 20
-  const offset = opts?.offset ?? 0
-  try {
-    const data = await gqlFetch<{
-      sysTodos: { results: SysTodo[]; count: number }
-    }>(
-      `query ($tab: String, $limit: Int, $offset: Int) {
-        sysTodos(tab: $tab, limit: $limit, offset: $offset) {
-          results { ${TODO_FIELDS} }
-          count
-        }
-      }`,
-      { tab, limit, offset }
-    )
-    return data.sysTodos
-  } catch (e) {
-    if (isForbidden(e)) return { results: [], count: 0 }
-    throw e
-  }
-}
-
-export async function fetchUnreadCount(): Promise<number> {
-  try {
-    const data = await apiData(apiClient.GET('/todos/unread-count'))
-    return data.count ?? 0
-  } catch (e) {
-    if (isForbidden(e)) return 0
-    throw e
-  }
-}
-
-export async function markTodoRead(id: string): Promise<void> {
-  await gqlFetch(
-    `mutation ($id: ID!) {
-      markReadSysTodo(id: $id) { result { id } errors { message } }
-    }`,
-    { id }
-  )
-}
-
-export async function dismissTodo(id: string): Promise<void> {
-  await gqlFetch(
-    `mutation ($id: ID!) {
-      dismissSysTodo(id: $id) { result { id } errors { message } }
-    }`,
-    { id }
-  )
-}
+export { dismissTodo, fetchTodos, fetchUnreadCount, markTodoRead } from './resources/system-ops'
+export type {
+  SysTodo,
+  TodoClosedReason,
+  TodoStatus,
+  TodoTab,
+  TodoType,
+} from './resources/system-ops'
 
 export function todoTypeLabel(type: TodoType): string {
   return type === 'ISSUE_INVOICE' ? '开票' : '收票'

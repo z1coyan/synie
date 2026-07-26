@@ -145,6 +145,258 @@ func (e AccountTemplateInitializeTemplate) Valid() bool {
 	}
 }
 
+// Defines values for AttendanceDayStatus.
+const (
+	MISSING AttendanceDayStatus = "MISSING"
+	OK      AttendanceDayStatus = "OK"
+)
+
+// Valid indicates whether the value is a known member of the AttendanceDayStatus enum.
+func (e AttendanceDayStatus) Valid() bool {
+	switch e {
+	case MISSING:
+		return true
+	case OK:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AttendanceImportStatus.
+const (
+	AttendanceImportStatusFAILED   AttendanceImportStatus = "FAILED"
+	AttendanceImportStatusIMPORTED AttendanceImportStatus = "IMPORTED"
+	AttendanceImportStatusPARSED   AttendanceImportStatus = "PARSED"
+)
+
+// Valid indicates whether the value is a known member of the AttendanceImportStatus enum.
+func (e AttendanceImportStatus) Valid() bool {
+	switch e {
+	case AttendanceImportStatusFAILED:
+		return true
+	case AttendanceImportStatusIMPORTED:
+		return true
+	case AttendanceImportStatusPARSED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BankDateFormat.
+const (
+	DMYDASH    BankDateFormat = "DMY_DASH"
+	DMYSLASH   BankDateFormat = "DMY_SLASH"
+	MDYSLASH   BankDateFormat = "MDY_SLASH"
+	YMDCN      BankDateFormat = "YMD_CN"
+	YMDCOMPACT BankDateFormat = "YMD_COMPACT"
+	YMDDASH    BankDateFormat = "YMD_DASH"
+	YMDDOT     BankDateFormat = "YMD_DOT"
+	YMDSLASH   BankDateFormat = "YMD_SLASH"
+)
+
+// Valid indicates whether the value is a known member of the BankDateFormat enum.
+func (e BankDateFormat) Valid() bool {
+	switch e {
+	case DMYDASH:
+		return true
+	case DMYSLASH:
+		return true
+	case MDYSLASH:
+		return true
+	case YMDCN:
+		return true
+	case YMDCOMPACT:
+		return true
+	case YMDDASH:
+		return true
+	case YMDDOT:
+		return true
+	case YMDSLASH:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BankDatetimeFormat.
+const (
+	CNHMS        BankDatetimeFormat = "CN_HMS"
+	COMPACT      BankDatetimeFormat = "COMPACT"
+	COMPACTSPACE BankDatetimeFormat = "COMPACT_SPACE"
+	DMYSLASHHMS  BankDatetimeFormat = "DMY_SLASH_HMS"
+	ISOT         BankDatetimeFormat = "ISO_T"
+	MDYSLASHHMS  BankDatetimeFormat = "MDY_SLASH_HMS"
+	YMDDASHHM    BankDatetimeFormat = "YMD_DASH_HM"
+	YMDDASHHMS   BankDatetimeFormat = "YMD_DASH_HMS"
+	YMDSLASHHM   BankDatetimeFormat = "YMD_SLASH_HM"
+	YMDSLASHHMS  BankDatetimeFormat = "YMD_SLASH_HMS"
+)
+
+// Valid indicates whether the value is a known member of the BankDatetimeFormat enum.
+func (e BankDatetimeFormat) Valid() bool {
+	switch e {
+	case CNHMS:
+		return true
+	case COMPACT:
+		return true
+	case COMPACTSPACE:
+		return true
+	case DMYSLASHHMS:
+		return true
+	case ISOT:
+		return true
+	case MDYSLASHHMS:
+		return true
+	case YMDDASHHM:
+		return true
+	case YMDDASHHMS:
+		return true
+	case YMDSLASHHM:
+		return true
+	case YMDSLASHHMS:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BankImportStatus.
+const (
+	BankImportStatusFAILED   BankImportStatus = "FAILED"
+	BankImportStatusIMPORTED BankImportStatus = "IMPORTED"
+	BankImportStatusPARSED   BankImportStatus = "PARSED"
+)
+
+// Valid indicates whether the value is a known member of the BankImportStatus enum.
+func (e BankImportStatus) Valid() bool {
+	switch e {
+	case BankImportStatusFAILED:
+		return true
+	case BankImportStatusIMPORTED:
+		return true
+	case BankImportStatusPARSED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BankReconcileStatus.
+const (
+	PARTIAL      BankReconcileStatus = "PARTIAL"
+	RECONCILED   BankReconcileStatus = "RECONCILED"
+	UNRECONCILED BankReconcileStatus = "UNRECONCILED"
+)
+
+// Valid indicates whether the value is a known member of the BankReconcileStatus enum.
+func (e BankReconcileStatus) Valid() bool {
+	switch e {
+	case PARTIAL:
+		return true
+	case RECONCILED:
+		return true
+	case UNRECONCILED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BankTimeFormat.
+const (
+	HM         BankTimeFormat = "HM"
+	HMS        BankTimeFormat = "HMS"
+	HMSCN      BankTimeFormat = "HMS_CN"
+	HMSCOMPACT BankTimeFormat = "HMS_COMPACT"
+)
+
+// Valid indicates whether the value is a known member of the BankTimeFormat enum.
+func (e BankTimeFormat) Valid() bool {
+	switch e {
+	case HM:
+		return true
+	case HMS:
+		return true
+	case HMSCN:
+		return true
+	case HMSCOMPACT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillKind.
+const (
+	BANKACCEPTANCE           BillKind = "BANK_ACCEPTANCE"
+	COMMERCIALACCEPTANCE     BillKind = "COMMERCIAL_ACCEPTANCE"
+	FINANCECOMPANYACCEPTANCE BillKind = "FINANCE_COMPANY_ACCEPTANCE"
+)
+
+// Valid indicates whether the value is a known member of the BillKind enum.
+func (e BillKind) Valid() bool {
+	switch e {
+	case BANKACCEPTANCE:
+		return true
+	case COMMERCIALACCEPTANCE:
+		return true
+	case FINANCECOMPANYACCEPTANCE:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillTransactionStatus.
+const (
+	BillTransactionStatusAUDITED BillTransactionStatus = "AUDITED"
+	BillTransactionStatusDRAFT   BillTransactionStatus = "DRAFT"
+	BillTransactionStatusVOIDED  BillTransactionStatus = "VOIDED"
+)
+
+// Valid indicates whether the value is a known member of the BillTransactionStatus enum.
+func (e BillTransactionStatus) Valid() bool {
+	switch e {
+	case BillTransactionStatusAUDITED:
+		return true
+	case BillTransactionStatusDRAFT:
+		return true
+	case BillTransactionStatusVOIDED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BillTransactionType.
+const (
+	DISCOUNT   BillTransactionType = "DISCOUNT"
+	ENDORSE    BillTransactionType = "ENDORSE"
+	REALLOCATE BillTransactionType = "REALLOCATE"
+	RECEIVE    BillTransactionType = "RECEIVE"
+	SETTLE     BillTransactionType = "SETTLE"
+)
+
+// Valid indicates whether the value is a known member of the BillTransactionType enum.
+func (e BillTransactionType) Valid() bool {
+	switch e {
+	case DISCOUNT:
+		return true
+	case ENDORSE:
+		return true
+	case REALLOCATE:
+		return true
+	case RECEIVE:
+		return true
+	case SETTLE:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EmployeeInsuranceType.
 const (
 	COMMERCIALINJURY   EmployeeInsuranceType = "COMMERCIAL_INJURY"
@@ -181,6 +433,63 @@ func (e EmployeeInsuranceType) Valid() bool {
 	}
 }
 
+// Defines values for EmployeeLoanKind.
+const (
+	BORROW EmployeeLoanKind = "BORROW"
+	REPAY  EmployeeLoanKind = "REPAY"
+)
+
+// Valid indicates whether the value is a known member of the EmployeeLoanKind enum.
+func (e EmployeeLoanKind) Valid() bool {
+	switch e {
+	case BORROW:
+		return true
+	case REPAY:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpenseReportItemKind.
+const (
+	ExpenseReportItemKindINVOICED ExpenseReportItemKind = "INVOICED"
+	ExpenseReportItemKindMANUAL   ExpenseReportItemKind = "MANUAL"
+)
+
+// Valid indicates whether the value is a known member of the ExpenseReportItemKind enum.
+func (e ExpenseReportItemKind) Valid() bool {
+	switch e {
+	case ExpenseReportItemKindINVOICED:
+		return true
+	case ExpenseReportItemKindMANUAL:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpenseReportStatus.
+const (
+	ExpenseReportStatusAUDITED ExpenseReportStatus = "AUDITED"
+	ExpenseReportStatusDRAFT   ExpenseReportStatus = "DRAFT"
+	ExpenseReportStatusVOIDED  ExpenseReportStatus = "VOIDED"
+)
+
+// Valid indicates whether the value is a known member of the ExpenseReportStatus enum.
+func (e ExpenseReportStatus) Valid() bool {
+	switch e {
+	case ExpenseReportStatusAUDITED:
+		return true
+	case ExpenseReportStatusDRAFT:
+		return true
+	case ExpenseReportStatusVOIDED:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FilterStateKind.
 const (
 	FilterStateKindBool      FilterStateKind = "bool"
@@ -211,6 +520,75 @@ func (e FilterStateKind) Valid() bool {
 	case FilterStateKindPolyFk:
 		return true
 	case FilterStateKindText:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FinancePartyType.
+const (
+	FinancePartyTypeCOMPANY  FinancePartyType = "COMPANY"
+	FinancePartyTypeCUSTOMER FinancePartyType = "CUSTOMER"
+	FinancePartyTypeEMPLOYEE FinancePartyType = "EMPLOYEE"
+	FinancePartyTypeSUPPLIER FinancePartyType = "SUPPLIER"
+)
+
+// Valid indicates whether the value is a known member of the FinancePartyType enum.
+func (e FinancePartyType) Valid() bool {
+	switch e {
+	case FinancePartyTypeCOMPANY:
+		return true
+	case FinancePartyTypeCUSTOMER:
+		return true
+	case FinancePartyTypeEMPLOYEE:
+		return true
+	case FinancePartyTypeSUPPLIER:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FulfillmentPartyType.
+const (
+	FulfillmentPartyTypeCOMPANY  FulfillmentPartyType = "COMPANY"
+	FulfillmentPartyTypeCUSTOMER FulfillmentPartyType = "CUSTOMER"
+	FulfillmentPartyTypeEMPLOYEE FulfillmentPartyType = "EMPLOYEE"
+	FulfillmentPartyTypeSUPPLIER FulfillmentPartyType = "SUPPLIER"
+)
+
+// Valid indicates whether the value is a known member of the FulfillmentPartyType enum.
+func (e FulfillmentPartyType) Valid() bool {
+	switch e {
+	case FulfillmentPartyTypeCOMPANY:
+		return true
+	case FulfillmentPartyTypeCUSTOMER:
+		return true
+	case FulfillmentPartyTypeEMPLOYEE:
+		return true
+	case FulfillmentPartyTypeSUPPLIER:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FulfillmentStatus.
+const (
+	FulfillmentStatusAUDITED FulfillmentStatus = "AUDITED"
+	FulfillmentStatusDRAFT   FulfillmentStatus = "DRAFT"
+	FulfillmentStatusVOIDED  FulfillmentStatus = "VOIDED"
+)
+
+// Valid indicates whether the value is a known member of the FulfillmentStatus enum.
+func (e FulfillmentStatus) Valid() bool {
+	switch e {
+	case FulfillmentStatusAUDITED:
+		return true
+	case FulfillmentStatusDRAFT:
+		return true
+	case FulfillmentStatusVOIDED:
 		return true
 	default:
 		return false
@@ -391,6 +769,189 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for InvoiceDirection.
+const (
+	INBOUND  InvoiceDirection = "INBOUND"
+	OUTBOUND InvoiceDirection = "OUTBOUND"
+)
+
+// Valid indicates whether the value is a known member of the InvoiceDirection enum.
+func (e InvoiceDirection) Valid() bool {
+	switch e {
+	case INBOUND:
+		return true
+	case OUTBOUND:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InvoiceKind.
+const (
+	InvoiceKindDIGITALNORMAL     InvoiceKind = "DIGITAL_NORMAL"
+	InvoiceKindDIGITALSPECIAL    InvoiceKind = "DIGITAL_SPECIAL"
+	InvoiceKindELECTRONICNORMAL  InvoiceKind = "ELECTRONIC_NORMAL"
+	InvoiceKindELECTRONICSPECIAL InvoiceKind = "ELECTRONIC_SPECIAL"
+	InvoiceKindNORMAL            InvoiceKind = "NORMAL"
+	InvoiceKindSPECIAL           InvoiceKind = "SPECIAL"
+)
+
+// Valid indicates whether the value is a known member of the InvoiceKind enum.
+func (e InvoiceKind) Valid() bool {
+	switch e {
+	case InvoiceKindDIGITALNORMAL:
+		return true
+	case InvoiceKindDIGITALSPECIAL:
+		return true
+	case InvoiceKindELECTRONICNORMAL:
+		return true
+	case InvoiceKindELECTRONICSPECIAL:
+		return true
+	case InvoiceKindNORMAL:
+		return true
+	case InvoiceKindSPECIAL:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InvoiceStatus.
+const (
+	InvoiceStatusAUDITED  InvoiceStatus = "AUDITED"
+	InvoiceStatusDRAFT    InvoiceStatus = "DRAFT"
+	InvoiceStatusREVERSED InvoiceStatus = "REVERSED"
+	InvoiceStatusVOIDED   InvoiceStatus = "VOIDED"
+)
+
+// Valid indicates whether the value is a known member of the InvoiceStatus enum.
+func (e InvoiceStatus) Valid() bool {
+	switch e {
+	case InvoiceStatusAUDITED:
+		return true
+	case InvoiceStatusDRAFT:
+		return true
+	case InvoiceStatusREVERSED:
+		return true
+	case InvoiceStatusVOIDED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManufacturingDemandItemStatus.
+const (
+	ManufacturingDemandItemStatusCOMPLETED ManufacturingDemandItemStatus = "COMPLETED"
+	ManufacturingDemandItemStatusPENDING   ManufacturingDemandItemStatus = "PENDING"
+	ManufacturingDemandItemStatusSCHEDULED ManufacturingDemandItemStatus = "SCHEDULED"
+)
+
+// Valid indicates whether the value is a known member of the ManufacturingDemandItemStatus enum.
+func (e ManufacturingDemandItemStatus) Valid() bool {
+	switch e {
+	case ManufacturingDemandItemStatusCOMPLETED:
+		return true
+	case ManufacturingDemandItemStatusPENDING:
+		return true
+	case ManufacturingDemandItemStatusSCHEDULED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManufacturingDemandStatus.
+const (
+	ManufacturingDemandStatusCLOSED    ManufacturingDemandStatus = "CLOSED"
+	ManufacturingDemandStatusCONFIRMED ManufacturingDemandStatus = "CONFIRMED"
+	ManufacturingDemandStatusDRAFT     ManufacturingDemandStatus = "DRAFT"
+	ManufacturingDemandStatusVOIDED    ManufacturingDemandStatus = "VOIDED"
+)
+
+// Valid indicates whether the value is a known member of the ManufacturingDemandStatus enum.
+func (e ManufacturingDemandStatus) Valid() bool {
+	switch e {
+	case ManufacturingDemandStatusCLOSED:
+		return true
+	case ManufacturingDemandStatusCONFIRMED:
+		return true
+	case ManufacturingDemandStatusDRAFT:
+		return true
+	case ManufacturingDemandStatusVOIDED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManufacturingFulfillmentMethod.
+const (
+	BUY       ManufacturingFulfillmentMethod = "BUY"
+	MAKE      ManufacturingFulfillmentMethod = "MAKE"
+	OUTSOURCE ManufacturingFulfillmentMethod = "OUTSOURCE"
+	STOCK     ManufacturingFulfillmentMethod = "STOCK"
+)
+
+// Valid indicates whether the value is a known member of the ManufacturingFulfillmentMethod enum.
+func (e ManufacturingFulfillmentMethod) Valid() bool {
+	switch e {
+	case BUY:
+		return true
+	case MAKE:
+		return true
+	case OUTSOURCE:
+		return true
+	case STOCK:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManufacturingOutputStatus.
+const (
+	ManufacturingOutputStatusAUDITED ManufacturingOutputStatus = "AUDITED"
+	ManufacturingOutputStatusDRAFT   ManufacturingOutputStatus = "DRAFT"
+	ManufacturingOutputStatusVOIDED  ManufacturingOutputStatus = "VOIDED"
+)
+
+// Valid indicates whether the value is a known member of the ManufacturingOutputStatus enum.
+func (e ManufacturingOutputStatus) Valid() bool {
+	switch e {
+	case ManufacturingOutputStatusAUDITED:
+		return true
+	case ManufacturingOutputStatusDRAFT:
+		return true
+	case ManufacturingOutputStatusVOIDED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ManufacturingWorkOrderStatus.
+const (
+	ManufacturingWorkOrderStatusCOMPLETED  ManufacturingWorkOrderStatus = "COMPLETED"
+	ManufacturingWorkOrderStatusINPROGRESS ManufacturingWorkOrderStatus = "IN_PROGRESS"
+	ManufacturingWorkOrderStatusVOIDED     ManufacturingWorkOrderStatus = "VOIDED"
+)
+
+// Valid indicates whether the value is a known member of the ManufacturingWorkOrderStatus enum.
+func (e ManufacturingWorkOrderStatus) Valid() bool {
+	switch e {
+	case ManufacturingWorkOrderStatusCOMPLETED:
+		return true
+	case ManufacturingWorkOrderStatusINPROGRESS:
+		return true
+	case ManufacturingWorkOrderStatusVOIDED:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MarketInstrumentSourceType.
 const (
 	EXCHANGE  MarketInstrumentSourceType = "EXCHANGE"
@@ -435,16 +996,16 @@ func (e MarketPriceKind) Valid() bool {
 
 // Defines values for MarketPricePointSource.
 const (
-	FETCH  MarketPricePointSource = "FETCH"
-	MANUAL MarketPricePointSource = "MANUAL"
+	MarketPricePointSourceFETCH  MarketPricePointSource = "FETCH"
+	MarketPricePointSourceMANUAL MarketPricePointSource = "MANUAL"
 )
 
 // Valid indicates whether the value is a known member of the MarketPricePointSource enum.
 func (e MarketPricePointSource) Valid() bool {
 	switch e {
-	case FETCH:
+	case MarketPricePointSourceFETCH:
 		return true
-	case MANUAL:
+	case MarketPricePointSourceMANUAL:
 		return true
 	default:
 		return false
@@ -606,19 +1167,55 @@ func (e OrderStatus) Valid() bool {
 
 // Defines values for OrderType.
 const (
-	REGULAR OrderType = "REGULAR"
-	SAMPLE  OrderType = "SAMPLE"
-	SPOT    OrderType = "SPOT"
+	OrderTypeREGULAR OrderType = "REGULAR"
+	OrderTypeSAMPLE  OrderType = "SAMPLE"
+	OrderTypeSPOT    OrderType = "SPOT"
 )
 
 // Valid indicates whether the value is a known member of the OrderType enum.
 func (e OrderType) Valid() bool {
 	switch e {
-	case REGULAR:
+	case OrderTypeREGULAR:
 		return true
-	case SAMPLE:
+	case OrderTypeSAMPLE:
 		return true
-	case SPOT:
+	case OrderTypeSPOT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PayrollPaymentKind.
+const (
+	PayrollPaymentKindNORMAL     PayrollPaymentKind = "NORMAL"
+	PayrollPaymentKindSUPPLEMENT PayrollPaymentKind = "SUPPLEMENT"
+)
+
+// Valid indicates whether the value is a known member of the PayrollPaymentKind enum.
+func (e PayrollPaymentKind) Valid() bool {
+	switch e {
+	case PayrollPaymentKindNORMAL:
+		return true
+	case PayrollPaymentKindSUPPLEMENT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PayrollStatus.
+const (
+	PayrollStatusPAID    PayrollStatus = "PAID"
+	PayrollStatusPENDING PayrollStatus = "PENDING"
+)
+
+// Valid indicates whether the value is a known member of the PayrollStatus enum.
+func (e PayrollStatus) Valid() bool {
+	switch e {
+	case PayrollStatusPAID:
+		return true
+	case PayrollStatusPENDING:
 		return true
 	default:
 		return false
@@ -682,6 +1279,93 @@ func (e QuotationStatus) Valid() bool {
 	case QuotationStatusDRAFT:
 		return true
 	case QuotationStatusVOIDED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReconciliationStatus.
+const (
+	ReconciliationStatusCLOSED    ReconciliationStatus = "CLOSED"
+	ReconciliationStatusCONFIRMED ReconciliationStatus = "CONFIRMED"
+	ReconciliationStatusDRAFT     ReconciliationStatus = "DRAFT"
+	ReconciliationStatusVOIDED    ReconciliationStatus = "VOIDED"
+)
+
+// Valid indicates whether the value is a known member of the ReconciliationStatus enum.
+func (e ReconciliationStatus) Valid() bool {
+	switch e {
+	case ReconciliationStatusCLOSED:
+		return true
+	case ReconciliationStatusCONFIRMED:
+		return true
+	case ReconciliationStatusDRAFT:
+		return true
+	case ReconciliationStatusVOIDED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReconciliationType.
+const (
+	ReconciliationTypeGIFTSAMPLE ReconciliationType = "GIFT_SAMPLE"
+	ReconciliationTypeREGULAR    ReconciliationType = "REGULAR"
+)
+
+// Valid indicates whether the value is a known member of the ReconciliationType enum.
+func (e ReconciliationType) Valid() bool {
+	switch e {
+	case ReconciliationTypeGIFTSAMPLE:
+		return true
+	case ReconciliationTypeREGULAR:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScmFlowType.
+const (
+	OUTSOURCEDISSUE   ScmFlowType = "OUTSOURCED_ISSUE"
+	OUTSOURCEDRECEIPT ScmFlowType = "OUTSOURCED_RECEIPT"
+	PURCHASERECEIPT   ScmFlowType = "PURCHASE_RECEIPT"
+	SALESDELIVERY     ScmFlowType = "SALES_DELIVERY"
+)
+
+// Valid indicates whether the value is a known member of the ScmFlowType enum.
+func (e ScmFlowType) Valid() bool {
+	switch e {
+	case OUTSOURCEDISSUE:
+		return true
+	case OUTSOURCEDRECEIPT:
+		return true
+	case PURCHASERECEIPT:
+		return true
+	case SALESDELIVERY:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScmOrderFlowStatus.
+const (
+	ScmOrderFlowStatusAUDITED ScmOrderFlowStatus = "AUDITED"
+	ScmOrderFlowStatusDRAFT   ScmOrderFlowStatus = "DRAFT"
+	ScmOrderFlowStatusVOIDED  ScmOrderFlowStatus = "VOIDED"
+)
+
+// Valid indicates whether the value is a known member of the ScmOrderFlowStatus enum.
+func (e ScmOrderFlowStatus) Valid() bool {
+	switch e {
+	case ScmOrderFlowStatusAUDITED:
+		return true
+	case ScmOrderFlowStatusDRAFT:
+		return true
+	case ScmOrderFlowStatusVOIDED:
 		return true
 	default:
 		return false
@@ -844,6 +1528,81 @@ func (e SystemSettingUpdateMarketFetchLastIntervalMinutes) Valid() bool {
 	case SystemSettingUpdateMarketFetchLastIntervalMinutesN30:
 		return true
 	case SystemSettingUpdateMarketFetchLastIntervalMinutesN60:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoClosedReason.
+const (
+	INVOICEAUDIT TodoClosedReason = "INVOICE_AUDIT"
+	UNCONFIRM    TodoClosedReason = "UNCONFIRM"
+)
+
+// Valid indicates whether the value is a known member of the TodoClosedReason enum.
+func (e TodoClosedReason) Valid() bool {
+	switch e {
+	case INVOICEAUDIT:
+		return true
+	case UNCONFIRM:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoStatus.
+const (
+	TodoStatusACTIVE TodoStatus = "ACTIVE"
+	TodoStatusCLOSED TodoStatus = "CLOSED"
+)
+
+// Valid indicates whether the value is a known member of the TodoStatus enum.
+func (e TodoStatus) Valid() bool {
+	switch e {
+	case TodoStatusACTIVE:
+		return true
+	case TodoStatusCLOSED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoType.
+const (
+	ISSUEINVOICE   TodoType = "ISSUE_INVOICE"
+	RECEIVEINVOICE TodoType = "RECEIVE_INVOICE"
+)
+
+// Valid indicates whether the value is a known member of the TodoType enum.
+func (e TodoType) Valid() bool {
+	switch e {
+	case ISSUEINVOICE:
+		return true
+	case RECEIVEINVOICE:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoQueryTab.
+const (
+	Active  TodoQueryTab = "active"
+	History TodoQueryTab = "history"
+	Recent  TodoQueryTab = "recent"
+)
+
+// Valid indicates whether the value is a known member of the TodoQueryTab enum.
+func (e TodoQueryTab) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case History:
+		return true
+	case Recent:
 		return true
 	default:
 		return false
@@ -1092,6 +1851,626 @@ type AttachmentQuery struct {
 	OwnerType *string             `json:"ownerType,omitempty"`
 }
 
+// AttendanceCorrection defines model for AttendanceCorrection.
+type AttendanceCorrection struct {
+	CreatedById *openapi_types.UUID `json:"createdById"`
+	Date        openapi_types.Date  `json:"date"`
+	EmployeeId  openapi_types.UUID  `json:"employeeId"`
+	Id          openapi_types.UUID  `json:"id"`
+	InsertedAt  time.Time           `json:"insertedAt"`
+	Note        *string             `json:"note"`
+	Times       []string            `json:"times"`
+	UpdatedAt   time.Time           `json:"updatedAt"`
+}
+
+// AttendanceCorrectionCreate defines model for AttendanceCorrectionCreate.
+type AttendanceCorrectionCreate struct {
+	Date       openapi_types.Date `json:"date"`
+	EmployeeId openapi_types.UUID `json:"employeeId"`
+	Note       *string            `json:"note,omitempty"`
+	Times      []string           `json:"times"`
+}
+
+// AttendanceCorrectionList defines model for AttendanceCorrectionList.
+type AttendanceCorrectionList struct {
+	Count   int64                  `json:"count"`
+	Results []AttendanceCorrection `json:"results"`
+}
+
+// AttendanceCorrectionUpdate defines model for AttendanceCorrectionUpdate.
+type AttendanceCorrectionUpdate struct {
+	Date       *openapi_types.Date `json:"date,omitempty"`
+	EmployeeId *openapi_types.UUID `json:"employeeId,omitempty"`
+	Note       *string             `json:"note,omitempty"`
+	Times      *[]string           `json:"times,omitempty"`
+}
+
+// AttendanceDay defines model for AttendanceDay.
+type AttendanceDay struct {
+	AfternoonIn   *string             `json:"afternoonIn"`
+	AfternoonOut  *string             `json:"afternoonOut"`
+	BonusWorkday  string              `json:"bonusWorkday"`
+	Date          openapi_types.Date  `json:"date"`
+	EmployeeId    openapi_types.UUID  `json:"employeeId"`
+	Id            openapi_types.UUID  `json:"id"`
+	InsertedAt    time.Time           `json:"insertedAt"`
+	MorningIn     *string             `json:"morningIn"`
+	MorningOut    *string             `json:"morningOut"`
+	NormalHours   string              `json:"normalHours"`
+	OvertimeHours string              `json:"overtimeHours"`
+	Status        AttendanceDayStatus `json:"status"`
+	UpdatedAt     time.Time           `json:"updatedAt"`
+}
+
+// AttendanceDayList defines model for AttendanceDayList.
+type AttendanceDayList struct {
+	Count   int64           `json:"count"`
+	Results []AttendanceDay `json:"results"`
+}
+
+// AttendanceDayRecalc defines model for AttendanceDayRecalc.
+type AttendanceDayRecalc struct {
+	DateFrom openapi_types.Date `json:"dateFrom"`
+	DateTo   openapi_types.Date `json:"dateTo"`
+}
+
+// AttendanceDayRecalcResult defines model for AttendanceDayRecalcResult.
+type AttendanceDayRecalcResult struct {
+	Count int `json:"count"`
+}
+
+// AttendanceDayStatus defines model for AttendanceDayStatus.
+type AttendanceDayStatus string
+
+// AttendanceImport defines model for AttendanceImport.
+type AttendanceImport struct {
+	AutoCreatedCount     *int                   `json:"autoCreatedCount"`
+	BadRows              *int                   `json:"badRows"`
+	CreatedById          *openapi_types.UUID    `json:"createdById"`
+	DupRows              *int                   `json:"dupRows"`
+	Error                *string                `json:"error"`
+	FileId               openapi_types.UUID     `json:"fileId"`
+	Id                   openapi_types.UUID     `json:"id"`
+	ImportedAt           *time.Time             `json:"importedAt"`
+	ImportedById         *openapi_types.UUID    `json:"importedById"`
+	ImportedCount        *int                   `json:"importedCount"`
+	InsertedAt           time.Time              `json:"insertedAt"`
+	MatchedRows          *int                   `json:"matchedRows"`
+	PunchCount           int                    `json:"punchCount"`
+	SkippedExistingRows  *int                   `json:"skippedExistingRows"`
+	SkippedUnmatchedRows *int                   `json:"skippedUnmatchedRows"`
+	Status               AttendanceImportStatus `json:"status"`
+	TotalRows            *int                   `json:"totalRows"`
+	UnmatchedDetail      *string                `json:"unmatchedDetail"`
+	UnmatchedRows        *int                   `json:"unmatchedRows"`
+	UpdatedAt            time.Time              `json:"updatedAt"`
+}
+
+// AttendanceImportCreate defines model for AttendanceImportCreate.
+type AttendanceImportCreate struct {
+	FileId openapi_types.UUID `json:"fileId"`
+}
+
+// AttendanceImportExecute defines model for AttendanceImportExecute.
+type AttendanceImportExecute struct {
+	AutoCreateEmployees *bool `json:"autoCreateEmployees,omitempty"`
+}
+
+// AttendanceImportList defines model for AttendanceImportList.
+type AttendanceImportList struct {
+	Count   int64              `json:"count"`
+	Results []AttendanceImport `json:"results"`
+}
+
+// AttendanceImportStatus defines model for AttendanceImportStatus.
+type AttendanceImportStatus string
+
+// AttendanceMonthSummary defines model for AttendanceMonthSummary.
+type AttendanceMonthSummary struct {
+	BonusWorkdays string             `json:"bonusWorkdays"`
+	Days          int                `json:"days"`
+	EmployeeCode  *string            `json:"employeeCode"`
+	EmployeeId    openapi_types.UUID `json:"employeeId"`
+	EmployeeName  *string            `json:"employeeName"`
+	MissingDays   int                `json:"missingDays"`
+	NormalHours   string             `json:"normalHours"`
+	OvertimeHours string             `json:"overtimeHours"`
+	Workdays      string             `json:"workdays"`
+}
+
+// AttendanceMonthSummaryList defines model for AttendanceMonthSummaryList.
+type AttendanceMonthSummaryList = []AttendanceMonthSummary
+
+// AttendancePunch defines model for AttendancePunch.
+type AttendancePunch struct {
+	AttendanceNo string             `json:"attendanceNo"`
+	EmployeeId   openapi_types.UUID `json:"employeeId"`
+	Id           openapi_types.UUID `json:"id"`
+	ImportId     openapi_types.UUID `json:"importId"`
+	InsertedAt   time.Time          `json:"insertedAt"`
+	PunchedAt    time.Time          `json:"punchedAt"`
+}
+
+// AttendancePunchList defines model for AttendancePunchList.
+type AttendancePunchList struct {
+	Count   int64             `json:"count"`
+	Results []AttendancePunch `json:"results"`
+}
+
+// BankAccount defines model for BankAccount.
+type BankAccount struct {
+	AccountId  *openapi_types.UUID `json:"accountId"`
+	AccountNo  string              `json:"accountNo"`
+	Active     bool                `json:"active"`
+	Alias      string              `json:"alias"`
+	BankName   string              `json:"bankName"`
+	BranchName *string             `json:"branchName"`
+	CompanyId  openapi_types.UUID  `json:"companyId"`
+	CurrencyId openapi_types.UUID  `json:"currencyId"`
+	HolderName string              `json:"holderName"`
+	Id         openapi_types.UUID  `json:"id"`
+	InsertedAt time.Time           `json:"insertedAt"`
+	Note       *string             `json:"note"`
+	UpdatedAt  time.Time           `json:"updatedAt"`
+}
+
+// BankAccountCreate defines model for BankAccountCreate.
+type BankAccountCreate struct {
+	AccountId  *openapi_types.UUID `json:"accountId,omitempty"`
+	AccountNo  string              `json:"accountNo"`
+	Active     *bool               `json:"active,omitempty"`
+	Alias      string              `json:"alias"`
+	BankName   string              `json:"bankName"`
+	BranchName *string             `json:"branchName,omitempty"`
+	CompanyId  openapi_types.UUID  `json:"companyId"`
+	CurrencyId openapi_types.UUID  `json:"currencyId"`
+	HolderName string              `json:"holderName"`
+	Note       *string             `json:"note,omitempty"`
+}
+
+// BankAccountList defines model for BankAccountList.
+type BankAccountList struct {
+	Count   int64         `json:"count"`
+	Results []BankAccount `json:"results"`
+}
+
+// BankAccountUpdate defines model for BankAccountUpdate.
+type BankAccountUpdate struct {
+	AccountId  *openapi_types.UUID `json:"accountId,omitempty"`
+	AccountNo  *string             `json:"accountNo,omitempty"`
+	Active     *bool               `json:"active,omitempty"`
+	Alias      *string             `json:"alias,omitempty"`
+	BankName   *string             `json:"bankName,omitempty"`
+	BranchName *string             `json:"branchName,omitempty"`
+	CurrencyId *openapi_types.UUID `json:"currencyId,omitempty"`
+	HolderName *string             `json:"holderName,omitempty"`
+	Note       *string             `json:"note,omitempty"`
+}
+
+// BankDateFormat defines model for BankDateFormat.
+type BankDateFormat string
+
+// BankDatetimeFormat defines model for BankDatetimeFormat.
+type BankDatetimeFormat string
+
+// BankImport defines model for BankImport.
+type BankImport struct {
+	BankAccountId openapi_types.UUID  `json:"bankAccountId"`
+	CompanyId     openapi_types.UUID  `json:"companyId"`
+	CreatedById   *openapi_types.UUID `json:"createdById"`
+	Error         *string             `json:"error"`
+	ErrorCount    int64               `json:"errorCount"`
+	FileId        openapi_types.UUID  `json:"fileId"`
+	Id            openapi_types.UUID  `json:"id"`
+	ImportedAt    *time.Time          `json:"importedAt"`
+	ImportedById  *openapi_types.UUID `json:"importedById"`
+	InsertedAt    time.Time           `json:"insertedAt"`
+	ItemCount     int64               `json:"itemCount"`
+	Status        BankImportStatus    `json:"status"`
+	TemplateId    openapi_types.UUID  `json:"templateId"`
+	UpdatedAt     time.Time           `json:"updatedAt"`
+}
+
+// BankImportCreate defines model for BankImportCreate.
+type BankImportCreate struct {
+	BankAccountId openapi_types.UUID `json:"bankAccountId"`
+	CompanyId     openapi_types.UUID `json:"companyId"`
+	FileId        openapi_types.UUID `json:"fileId"`
+	TemplateId    openapi_types.UUID `json:"templateId"`
+}
+
+// BankImportItem defines model for BankImportItem.
+type BankImportItem struct {
+	Balance             *string             `json:"balance"`
+	CompanyId           openapi_types.UUID  `json:"companyId"`
+	CounterpartyAccount *string             `json:"counterpartyAccount"`
+	CounterpartyName    *string             `json:"counterpartyName"`
+	Error               *string             `json:"error"`
+	Expense             *string             `json:"expense"`
+	Id                  openapi_types.UUID  `json:"id"`
+	ImportId            openapi_types.UUID  `json:"importId"`
+	Income              *string             `json:"income"`
+	InsertedAt          time.Time           `json:"insertedAt"`
+	Note                *string             `json:"note"`
+	OccurredAt          *time.Time          `json:"occurredAt"`
+	RowNo               int64               `json:"rowNo"`
+	Summary             *string             `json:"summary"`
+	TransactionId       *openapi_types.UUID `json:"transactionId"`
+	UpdatedAt           time.Time           `json:"updatedAt"`
+}
+
+// BankImportItemList defines model for BankImportItemList.
+type BankImportItemList struct {
+	Count   int64            `json:"count"`
+	Results []BankImportItem `json:"results"`
+}
+
+// BankImportItemUpdate defines model for BankImportItemUpdate.
+type BankImportItemUpdate struct {
+	Balance             *string    `json:"balance,omitempty"`
+	CounterpartyAccount *string    `json:"counterpartyAccount,omitempty"`
+	CounterpartyName    *string    `json:"counterpartyName,omitempty"`
+	Expense             *string    `json:"expense,omitempty"`
+	Income              *string    `json:"income,omitempty"`
+	Note                *string    `json:"note,omitempty"`
+	OccurredAt          *time.Time `json:"occurredAt,omitempty"`
+	Summary             *string    `json:"summary,omitempty"`
+}
+
+// BankImportList defines model for BankImportList.
+type BankImportList struct {
+	Count   int64        `json:"count"`
+	Results []BankImport `json:"results"`
+}
+
+// BankImportStatus defines model for BankImportStatus.
+type BankImportStatus string
+
+// BankImportTemplate defines model for BankImportTemplate.
+type BankImportTemplate struct {
+	AmountCol              *string             `json:"amountCol"`
+	BalanceCol             *string             `json:"balanceCol"`
+	BankAccountId          openapi_types.UUID  `json:"bankAccountId"`
+	CompanyId              openapi_types.UUID  `json:"companyId"`
+	CounterpartyAccountCol *string             `json:"counterpartyAccountCol"`
+	CounterpartyNameCol    *string             `json:"counterpartyNameCol"`
+	DateCol                *string             `json:"dateCol"`
+	DateFormat             *BankDateFormat     `json:"dateFormat"`
+	DatetimeCol            *string             `json:"datetimeCol"`
+	DatetimeFormat         *BankDatetimeFormat `json:"datetimeFormat"`
+	ExpenseCol             *string             `json:"expenseCol"`
+	Id                     openapi_types.UUID  `json:"id"`
+	IncomeCol              *string             `json:"incomeCol"`
+	InsertedAt             time.Time           `json:"insertedAt"`
+	Name                   string              `json:"name"`
+	NoteCol                *string             `json:"noteCol"`
+	StartRow               int                 `json:"startRow"`
+	SummaryCol             *string             `json:"summaryCol"`
+	TimeCol                *string             `json:"timeCol"`
+	TimeFormat             *BankTimeFormat     `json:"timeFormat"`
+	UpdatedAt              time.Time           `json:"updatedAt"`
+}
+
+// BankImportTemplateCreate defines model for BankImportTemplateCreate.
+type BankImportTemplateCreate struct {
+	AmountCol              *string             `json:"amountCol,omitempty"`
+	BalanceCol             *string             `json:"balanceCol,omitempty"`
+	BankAccountId          openapi_types.UUID  `json:"bankAccountId"`
+	CompanyId              openapi_types.UUID  `json:"companyId"`
+	CounterpartyAccountCol *string             `json:"counterpartyAccountCol,omitempty"`
+	CounterpartyNameCol    *string             `json:"counterpartyNameCol,omitempty"`
+	DateCol                *string             `json:"dateCol,omitempty"`
+	DateFormat             *BankDateFormat     `json:"dateFormat,omitempty"`
+	DatetimeCol            *string             `json:"datetimeCol,omitempty"`
+	DatetimeFormat         *BankDatetimeFormat `json:"datetimeFormat,omitempty"`
+	ExpenseCol             *string             `json:"expenseCol,omitempty"`
+	IncomeCol              *string             `json:"incomeCol,omitempty"`
+	Name                   string              `json:"name"`
+	NoteCol                *string             `json:"noteCol,omitempty"`
+	StartRow               *int                `json:"startRow,omitempty"`
+	SummaryCol             *string             `json:"summaryCol,omitempty"`
+	TimeCol                *string             `json:"timeCol,omitempty"`
+	TimeFormat             *BankTimeFormat     `json:"timeFormat,omitempty"`
+}
+
+// BankImportTemplateList defines model for BankImportTemplateList.
+type BankImportTemplateList struct {
+	Count   int64                `json:"count"`
+	Results []BankImportTemplate `json:"results"`
+}
+
+// BankImportTemplateUpdate defines model for BankImportTemplateUpdate.
+type BankImportTemplateUpdate struct {
+	AmountCol              *string             `json:"amountCol,omitempty"`
+	BalanceCol             *string             `json:"balanceCol,omitempty"`
+	BankAccountId          *openapi_types.UUID `json:"bankAccountId,omitempty"`
+	CounterpartyAccountCol *string             `json:"counterpartyAccountCol,omitempty"`
+	CounterpartyNameCol    *string             `json:"counterpartyNameCol,omitempty"`
+	DateCol                *string             `json:"dateCol,omitempty"`
+	DateFormat             *BankDateFormat     `json:"dateFormat,omitempty"`
+	DatetimeCol            *string             `json:"datetimeCol,omitempty"`
+	DatetimeFormat         *BankDatetimeFormat `json:"datetimeFormat,omitempty"`
+	ExpenseCol             *string             `json:"expenseCol,omitempty"`
+	IncomeCol              *string             `json:"incomeCol,omitempty"`
+	Name                   *string             `json:"name,omitempty"`
+	NoteCol                *string             `json:"noteCol,omitempty"`
+	StartRow               *int                `json:"startRow,omitempty"`
+	SummaryCol             *string             `json:"summaryCol,omitempty"`
+	TimeCol                *string             `json:"timeCol,omitempty"`
+	TimeFormat             *BankTimeFormat     `json:"timeFormat,omitempty"`
+}
+
+// BankReconcileStatus defines model for BankReconcileStatus.
+type BankReconcileStatus string
+
+// BankReconciliation defines model for BankReconciliation.
+type BankReconciliation struct {
+	Amount            string             `json:"amount"`
+	BankTransactionId openapi_types.UUID `json:"bankTransactionId"`
+	CompanyId         openapi_types.UUID `json:"companyId"`
+	Id                openapi_types.UUID `json:"id"`
+	InsertedAt        time.Time          `json:"insertedAt"`
+	JournalId         openapi_types.UUID `json:"journalId"`
+	UpdatedAt         time.Time          `json:"updatedAt"`
+}
+
+// BankReconciliationCreate defines model for BankReconciliationCreate.
+type BankReconciliationCreate struct {
+	Amount            string             `json:"amount"`
+	BankTransactionId openapi_types.UUID `json:"bankTransactionId"`
+	JournalId         openapi_types.UUID `json:"journalId"`
+}
+
+// BankReconciliationList defines model for BankReconciliationList.
+type BankReconciliationList struct {
+	Count   int64                `json:"count"`
+	Results []BankReconciliation `json:"results"`
+}
+
+// BankReconciliationQuickCreate defines model for BankReconciliationQuickCreate.
+type BankReconciliationQuickCreate struct {
+	Amount            string             `json:"amount"`
+	BankTransactionId openapi_types.UUID `json:"bankTransactionId"`
+	CounterAccountId  openapi_types.UUID `json:"counterAccountId"`
+	PostingDate       openapi_types.Date `json:"postingDate"`
+	Summary           *string            `json:"summary,omitempty"`
+}
+
+// BankReconciliationRemaining defines model for BankReconciliationRemaining.
+type BankReconciliationRemaining struct {
+	Amount string `json:"amount"`
+}
+
+// BankTimeFormat defines model for BankTimeFormat.
+type BankTimeFormat string
+
+// BankTransaction defines model for BankTransaction.
+type BankTransaction struct {
+	Balance             *string             `json:"balance"`
+	BankAccountId       openapi_types.UUID  `json:"bankAccountId"`
+	CompanyId           openapi_types.UUID  `json:"companyId"`
+	CounterpartyAccount *string             `json:"counterpartyAccount"`
+	CounterpartyName    *string             `json:"counterpartyName"`
+	Expense             *string             `json:"expense"`
+	Id                  openapi_types.UUID  `json:"id"`
+	Income              *string             `json:"income"`
+	InsertedAt          time.Time           `json:"insertedAt"`
+	Note                *string             `json:"note"`
+	OccurredAt          time.Time           `json:"occurredAt"`
+	ReconcileStatus     BankReconcileStatus `json:"reconcileStatus"`
+	ReconciledAmount    string              `json:"reconciledAmount"`
+	Summary             *string             `json:"summary"`
+	UnreconciledAmount  string              `json:"unreconciledAmount"`
+	UpdatedAt           time.Time           `json:"updatedAt"`
+}
+
+// BankTransactionCreate defines model for BankTransactionCreate.
+type BankTransactionCreate struct {
+	Balance             *string            `json:"balance,omitempty"`
+	BankAccountId       openapi_types.UUID `json:"bankAccountId"`
+	CompanyId           openapi_types.UUID `json:"companyId"`
+	CounterpartyAccount *string            `json:"counterpartyAccount,omitempty"`
+	CounterpartyName    *string            `json:"counterpartyName,omitempty"`
+	Expense             *string            `json:"expense,omitempty"`
+	Income              *string            `json:"income,omitempty"`
+	Note                *string            `json:"note,omitempty"`
+	OccurredAt          time.Time          `json:"occurredAt"`
+	Summary             *string            `json:"summary,omitempty"`
+}
+
+// BankTransactionList defines model for BankTransactionList.
+type BankTransactionList struct {
+	Count   int64             `json:"count"`
+	Results []BankTransaction `json:"results"`
+}
+
+// BankTransactionUpdate defines model for BankTransactionUpdate.
+type BankTransactionUpdate struct {
+	Balance             *string             `json:"balance,omitempty"`
+	BankAccountId       *openapi_types.UUID `json:"bankAccountId,omitempty"`
+	CounterpartyAccount *string             `json:"counterpartyAccount,omitempty"`
+	CounterpartyName    *string             `json:"counterpartyName,omitempty"`
+	Expense             *string             `json:"expense,omitempty"`
+	Income              *string             `json:"income,omitempty"`
+	Note                *string             `json:"note,omitempty"`
+	OccurredAt          *time.Time          `json:"occurredAt,omitempty"`
+	Summary             *string             `json:"summary,omitempty"`
+}
+
+// Bill defines model for Bill.
+type Bill struct {
+	AcceptanceDate   *openapi_types.Date `json:"acceptanceDate"`
+	AcceptorAccount  *string             `json:"acceptorAccount"`
+	AcceptorBankName *string             `json:"acceptorBankName"`
+	AcceptorBankNo   *string             `json:"acceptorBankNo"`
+	AcceptorName     *string             `json:"acceptorName"`
+	BillKind         BillKind            `json:"billKind"`
+	BillNo           string              `json:"billNo"`
+	DrawerAccount    *string             `json:"drawerAccount"`
+	DrawerBankName   *string             `json:"drawerBankName"`
+	DrawerBankNo     *string             `json:"drawerBankNo"`
+	DrawerName       *string             `json:"drawerName"`
+	DueDate          openapi_types.Date  `json:"dueDate"`
+	FaceAmount       *string             `json:"faceAmount"`
+	Id               openapi_types.UUID  `json:"id"`
+	InsertedAt       time.Time           `json:"insertedAt"`
+	IssueDate        *openapi_types.Date `json:"issueDate"`
+	PayeeAccount     *string             `json:"payeeAccount"`
+	PayeeBankName    *string             `json:"payeeBankName"`
+	PayeeBankNo      *string             `json:"payeeBankNo"`
+	PayeeName        *string             `json:"payeeName"`
+	Remarks          *string             `json:"remarks"`
+	Transferable     bool                `json:"transferable"`
+	UpdatedAt        time.Time           `json:"updatedAt"`
+}
+
+// BillHolding defines model for BillHolding.
+type BillHolding struct {
+	AcquiredOn          openapi_types.Date `json:"acquiredOn"`
+	Amount              string             `json:"amount"`
+	BankAccountId       openapi_types.UUID `json:"bankAccountId"`
+	BillId              openapi_types.UUID `json:"billId"`
+	BillNo              string             `json:"billNo"`
+	CompanyId           openapi_types.UUID `json:"companyId"`
+	DueDate             openapi_types.Date `json:"dueDate"`
+	Id                  openapi_types.UUID `json:"id"`
+	InsertedAt          time.Time          `json:"insertedAt"`
+	SourceTransactionId openapi_types.UUID `json:"sourceTransactionId"`
+	SubEnd              int64              `json:"subEnd"`
+	SubStart            int64              `json:"subStart"`
+}
+
+// BillHoldingList defines model for BillHoldingList.
+type BillHoldingList struct {
+	Count   int64         `json:"count"`
+	Results []BillHolding `json:"results"`
+}
+
+// BillKind defines model for BillKind.
+type BillKind string
+
+// BillList defines model for BillList.
+type BillList struct {
+	Count   int64  `json:"count"`
+	Results []Bill `json:"results"`
+}
+
+// BillTransaction defines model for BillTransaction.
+type BillTransaction struct {
+	Amount            string                `json:"amount"`
+	AuditedAt         *time.Time            `json:"auditedAt"`
+	AuditedById       *openapi_types.UUID   `json:"auditedById"`
+	BankAccountId     openapi_types.UUID    `json:"bankAccountId"`
+	BillAccountId     *openapi_types.UUID   `json:"billAccountId"`
+	BillId            *openapi_types.UUID   `json:"billId"`
+	CompanyId         openapi_types.UUID    `json:"companyId"`
+	CreatedById       *openapi_types.UUID   `json:"createdById"`
+	DiscountOrg       *string               `json:"discountOrg"`
+	DiscountRate      *string               `json:"discountRate"`
+	DocNo             *string               `json:"docNo"`
+	Id                openapi_types.UUID    `json:"id"`
+	InsertedAt        time.Time             `json:"insertedAt"`
+	Interest          *string               `json:"interest"`
+	InterestAccountId *openapi_types.UUID   `json:"interestAccountId"`
+	NetAmount         *string               `json:"netAmount"`
+	OccurredOn        openapi_types.Date    `json:"occurredOn"`
+	PartyId           *openapi_types.UUID   `json:"partyId"`
+	PartyType         *FinancePartyType     `json:"partyType"`
+	PostingDate       *openapi_types.Date   `json:"postingDate"`
+	Remarks           *string               `json:"remarks"`
+	SettleAccountId   *openapi_types.UUID   `json:"settleAccountId"`
+	Status            BillTransactionStatus `json:"status"`
+	SubEnd            int64                 `json:"subEnd"`
+	SubStart          int64                 `json:"subStart"`
+	ToBankAccountId   *openapi_types.UUID   `json:"toBankAccountId"`
+	TransactionType   BillTransactionType   `json:"transactionType"`
+	UpdatedAt         time.Time             `json:"updatedAt"`
+}
+
+// BillTransactionCreate defines model for BillTransactionCreate.
+type BillTransactionCreate struct {
+	Amount            string                  `json:"amount"`
+	BankAccountId     openapi_types.UUID      `json:"bankAccountId"`
+	BillAccountId     *openapi_types.UUID     `json:"billAccountId,omitempty"`
+	BillAttrs         *map[string]interface{} `json:"billAttrs,omitempty"`
+	BillId            *openapi_types.UUID     `json:"billId,omitempty"`
+	CompanyId         openapi_types.UUID      `json:"companyId"`
+	DiscountOrg       *string                 `json:"discountOrg,omitempty"`
+	DiscountRate      *string                 `json:"discountRate,omitempty"`
+	DocNo             *string                 `json:"docNo,omitempty"`
+	Interest          *string                 `json:"interest,omitempty"`
+	InterestAccountId *openapi_types.UUID     `json:"interestAccountId,omitempty"`
+	NetAmount         *string                 `json:"netAmount,omitempty"`
+	OccurredOn        openapi_types.Date      `json:"occurredOn"`
+	PartyId           *openapi_types.UUID     `json:"partyId,omitempty"`
+	PartyType         *FinancePartyType       `json:"partyType,omitempty"`
+	PostingDate       *openapi_types.Date     `json:"postingDate,omitempty"`
+	Remarks           *string                 `json:"remarks,omitempty"`
+	SettleAccountId   *openapi_types.UUID     `json:"settleAccountId,omitempty"`
+	SubEnd            int64                   `json:"subEnd"`
+	SubStart          int64                   `json:"subStart"`
+	ToBankAccountId   *openapi_types.UUID     `json:"toBankAccountId,omitempty"`
+	TransactionType   BillTransactionType     `json:"transactionType"`
+}
+
+// BillTransactionList defines model for BillTransactionList.
+type BillTransactionList struct {
+	Count   int64             `json:"count"`
+	Results []BillTransaction `json:"results"`
+}
+
+// BillTransactionStatus defines model for BillTransactionStatus.
+type BillTransactionStatus string
+
+// BillTransactionType defines model for BillTransactionType.
+type BillTransactionType string
+
+// BillTransactionUpdate defines model for BillTransactionUpdate.
+type BillTransactionUpdate struct {
+	Amount            *string             `json:"amount,omitempty"`
+	BankAccountId     *openapi_types.UUID `json:"bankAccountId,omitempty"`
+	BillAccountId     *openapi_types.UUID `json:"billAccountId,omitempty"`
+	BillId            *openapi_types.UUID `json:"billId,omitempty"`
+	DiscountOrg       *string             `json:"discountOrg,omitempty"`
+	DiscountRate      *string             `json:"discountRate,omitempty"`
+	DocNo             *string             `json:"docNo,omitempty"`
+	Interest          *string             `json:"interest,omitempty"`
+	InterestAccountId *openapi_types.UUID `json:"interestAccountId,omitempty"`
+	NetAmount         *string             `json:"netAmount,omitempty"`
+	OccurredOn        *openapi_types.Date `json:"occurredOn,omitempty"`
+	PartyId           *openapi_types.UUID `json:"partyId,omitempty"`
+	PartyType         *FinancePartyType   `json:"partyType,omitempty"`
+	PostingDate       *openapi_types.Date `json:"postingDate,omitempty"`
+	Remarks           *string             `json:"remarks,omitempty"`
+	SettleAccountId   *openapi_types.UUID `json:"settleAccountId,omitempty"`
+	SubEnd            *int64              `json:"subEnd,omitempty"`
+	SubStart          *int64              `json:"subStart,omitempty"`
+	ToBankAccountId   *openapi_types.UUID `json:"toBankAccountId,omitempty"`
+}
+
+// BillUpdate defines model for BillUpdate.
+type BillUpdate struct {
+	AcceptanceDate   *openapi_types.Date `json:"acceptanceDate,omitempty"`
+	AcceptorAccount  *string             `json:"acceptorAccount,omitempty"`
+	AcceptorBankName *string             `json:"acceptorBankName,omitempty"`
+	AcceptorBankNo   *string             `json:"acceptorBankNo,omitempty"`
+	AcceptorName     *string             `json:"acceptorName,omitempty"`
+	BillKind         *BillKind           `json:"billKind,omitempty"`
+	DrawerAccount    *string             `json:"drawerAccount,omitempty"`
+	DrawerBankName   *string             `json:"drawerBankName,omitempty"`
+	DrawerBankNo     *string             `json:"drawerBankNo,omitempty"`
+	DrawerName       *string             `json:"drawerName,omitempty"`
+	DueDate          *openapi_types.Date `json:"dueDate,omitempty"`
+	FaceAmount       *string             `json:"faceAmount,omitempty"`
+	IssueDate        *openapi_types.Date `json:"issueDate,omitempty"`
+	PayeeAccount     *string             `json:"payeeAccount,omitempty"`
+	PayeeBankName    *string             `json:"payeeBankName,omitempty"`
+	PayeeBankNo      *string             `json:"payeeBankNo,omitempty"`
+	PayeeName        *string             `json:"payeeName,omitempty"`
+	Remarks          *string             `json:"remarks,omitempty"`
+	Transferable     *bool               `json:"transferable,omitempty"`
+}
+
 // Company defines model for Company.
 type Company struct {
 	BaseCurrency   CompanyReference    `json:"baseCurrency"`
@@ -1104,6 +2483,41 @@ type Company struct {
 	ParentId       *openapi_types.UUID `json:"parentId,omitempty"`
 	ShortName      string              `json:"shortName"`
 	UpdatedAt      time.Time           `json:"updatedAt"`
+}
+
+// CompanyAccountDefaults defines model for CompanyAccountDefaults.
+type CompanyAccountDefaults struct {
+	CompanyId               openapi_types.UUID  `json:"companyId"`
+	DeliveryCreditAccountId *openapi_types.UUID `json:"deliveryCreditAccountId"`
+	DeliveryDebitAccountId  *openapi_types.UUID `json:"deliveryDebitAccountId"`
+	Id                      openapi_types.UUID  `json:"id"`
+	InsertedAt              time.Time           `json:"insertedAt"`
+	ReceiptCreditAccountId  *openapi_types.UUID `json:"receiptCreditAccountId"`
+	ReceiptDebitAccountId   *openapi_types.UUID `json:"receiptDebitAccountId"`
+	UpdatedAt               time.Time           `json:"updatedAt"`
+}
+
+// CompanyAccountDefaultsCreate defines model for CompanyAccountDefaultsCreate.
+type CompanyAccountDefaultsCreate struct {
+	CompanyId               openapi_types.UUID  `json:"companyId"`
+	DeliveryCreditAccountId *openapi_types.UUID `json:"deliveryCreditAccountId,omitempty"`
+	DeliveryDebitAccountId  *openapi_types.UUID `json:"deliveryDebitAccountId,omitempty"`
+	ReceiptCreditAccountId  *openapi_types.UUID `json:"receiptCreditAccountId,omitempty"`
+	ReceiptDebitAccountId   *openapi_types.UUID `json:"receiptDebitAccountId,omitempty"`
+}
+
+// CompanyAccountDefaultsList defines model for CompanyAccountDefaultsList.
+type CompanyAccountDefaultsList struct {
+	Count   int64                    `json:"count"`
+	Results []CompanyAccountDefaults `json:"results"`
+}
+
+// CompanyAccountDefaultsUpdate 只更新请求中出现的槽位；显式 null 清空槽位，未出现的槽位保持原值。
+type CompanyAccountDefaultsUpdate struct {
+	DeliveryCreditAccountId *openapi_types.UUID `json:"deliveryCreditAccountId,omitempty"`
+	DeliveryDebitAccountId  *openapi_types.UUID `json:"deliveryDebitAccountId,omitempty"`
+	ReceiptCreditAccountId  *openapi_types.UUID `json:"receiptCreditAccountId,omitempty"`
+	ReceiptDebitAccountId   *openapi_types.UUID `json:"receiptDebitAccountId,omitempty"`
 }
 
 // CompanyCreate defines model for CompanyCreate.
@@ -1237,6 +2651,60 @@ type EmployeeList struct {
 	Results []Employee `json:"results"`
 }
 
+// EmployeeLoan defines model for EmployeeLoan.
+type EmployeeLoan struct {
+	Amount      string              `json:"amount"`
+	CreatedById *openapi_types.UUID `json:"createdById"`
+	EmployeeId  openapi_types.UUID  `json:"employeeId"`
+	Id          openapi_types.UUID  `json:"id"`
+	InsertedAt  time.Time           `json:"insertedAt"`
+	Kind        EmployeeLoanKind    `json:"kind"`
+	OccurredOn  openapi_types.Date  `json:"occurredOn"`
+	PayrollId   *openapi_types.UUID `json:"payrollId"`
+	Remarks     *string             `json:"remarks"`
+	UpdatedAt   time.Time           `json:"updatedAt"`
+}
+
+// EmployeeLoanBalance defines model for EmployeeLoanBalance.
+type EmployeeLoanBalance struct {
+	Balance      string             `json:"balance"`
+	Borrowed     string             `json:"borrowed"`
+	EmployeeCode *string            `json:"employeeCode"`
+	EmployeeId   openapi_types.UUID `json:"employeeId"`
+	EmployeeName *string            `json:"employeeName"`
+	Repaid       string             `json:"repaid"`
+}
+
+// EmployeeLoanBalanceList defines model for EmployeeLoanBalanceList.
+type EmployeeLoanBalanceList = []EmployeeLoanBalance
+
+// EmployeeLoanCreate defines model for EmployeeLoanCreate.
+type EmployeeLoanCreate struct {
+	Amount     string             `json:"amount"`
+	EmployeeId openapi_types.UUID `json:"employeeId"`
+	Kind       EmployeeLoanKind   `json:"kind"`
+	OccurredOn openapi_types.Date `json:"occurredOn"`
+	Remarks    *string            `json:"remarks,omitempty"`
+}
+
+// EmployeeLoanKind defines model for EmployeeLoanKind.
+type EmployeeLoanKind string
+
+// EmployeeLoanList defines model for EmployeeLoanList.
+type EmployeeLoanList struct {
+	Count   int64          `json:"count"`
+	Results []EmployeeLoan `json:"results"`
+}
+
+// EmployeeLoanUpdate defines model for EmployeeLoanUpdate.
+type EmployeeLoanUpdate struct {
+	Amount     *string             `json:"amount,omitempty"`
+	EmployeeId *openapi_types.UUID `json:"employeeId,omitempty"`
+	Kind       *EmployeeLoanKind   `json:"kind,omitempty"`
+	OccurredOn *openapi_types.Date `json:"occurredOn,omitempty"`
+	Remarks    *string             `json:"remarks,omitempty"`
+}
+
 // EmployeeUpdate defines model for EmployeeUpdate.
 type EmployeeUpdate struct {
 	AttendanceNo          *string                  `json:"attendanceNo,omitempty"`
@@ -1260,6 +2728,102 @@ type EnumOption struct {
 // ErrorEnvelope defines model for ErrorEnvelope.
 type ErrorEnvelope struct {
 	Error APIError `json:"error"`
+}
+
+// ExpenseReport defines model for ExpenseReport.
+type ExpenseReport struct {
+	AuditedAt        *time.Time          `json:"auditedAt"`
+	AuditedById      *openapi_types.UUID `json:"auditedById"`
+	CompanyId        openapi_types.UUID  `json:"companyId"`
+	CreatedById      *openapi_types.UUID `json:"createdById"`
+	DocNo            string              `json:"docNo"`
+	EmployeeId       openapi_types.UUID  `json:"employeeId"`
+	ExpenseDate      openapi_types.Date  `json:"expenseDate"`
+	Id               openapi_types.UUID  `json:"id"`
+	InsertedAt       time.Time           `json:"insertedAt"`
+	PaymentAccountId openapi_types.UUID  `json:"paymentAccountId"`
+	PostingDate      *openapi_types.Date `json:"postingDate"`
+	Remarks          *string             `json:"remarks"`
+	Status           ExpenseReportStatus `json:"status"`
+	UpdatedAt        time.Time           `json:"updatedAt"`
+}
+
+// ExpenseReportCreate defines model for ExpenseReportCreate.
+type ExpenseReportCreate struct {
+	CompanyId        openapi_types.UUID  `json:"companyId"`
+	DocNo            string              `json:"docNo"`
+	EmployeeId       openapi_types.UUID  `json:"employeeId"`
+	ExpenseDate      openapi_types.Date  `json:"expenseDate"`
+	PaymentAccountId openapi_types.UUID  `json:"paymentAccountId"`
+	PostingDate      *openapi_types.Date `json:"postingDate,omitempty"`
+	Remarks          *string             `json:"remarks,omitempty"`
+}
+
+// ExpenseReportItem defines model for ExpenseReportItem.
+type ExpenseReportItem struct {
+	Amount           *string               `json:"amount"`
+	CompanyId        openapi_types.UUID    `json:"companyId"`
+	ExpenseAccountId *openapi_types.UUID   `json:"expenseAccountId"`
+	Id               openapi_types.UUID    `json:"id"`
+	Idx              int64                 `json:"idx"`
+	InsertedAt       time.Time             `json:"insertedAt"`
+	InvoiceId        *openapi_types.UUID   `json:"invoiceId"`
+	Kind             ExpenseReportItemKind `json:"kind"`
+	Remarks          *string               `json:"remarks"`
+	ReportId         openapi_types.UUID    `json:"reportId"`
+	Summary          *string               `json:"summary"`
+	UpdatedAt        time.Time             `json:"updatedAt"`
+}
+
+// ExpenseReportItemCreate defines model for ExpenseReportItemCreate.
+type ExpenseReportItemCreate struct {
+	Amount           *string               `json:"amount,omitempty"`
+	ExpenseAccountId *openapi_types.UUID   `json:"expenseAccountId,omitempty"`
+	Idx              int64                 `json:"idx"`
+	InvoiceId        *openapi_types.UUID   `json:"invoiceId,omitempty"`
+	Kind             ExpenseReportItemKind `json:"kind"`
+	Remarks          *string               `json:"remarks,omitempty"`
+	ReportId         openapi_types.UUID    `json:"reportId"`
+	Summary          *string               `json:"summary,omitempty"`
+}
+
+// ExpenseReportItemKind defines model for ExpenseReportItemKind.
+type ExpenseReportItemKind string
+
+// ExpenseReportItemList defines model for ExpenseReportItemList.
+type ExpenseReportItemList struct {
+	Count   int64               `json:"count"`
+	Results []ExpenseReportItem `json:"results"`
+}
+
+// ExpenseReportItemUpdate defines model for ExpenseReportItemUpdate.
+type ExpenseReportItemUpdate struct {
+	Amount           *string                `json:"amount,omitempty"`
+	ExpenseAccountId *openapi_types.UUID    `json:"expenseAccountId,omitempty"`
+	Idx              *int64                 `json:"idx,omitempty"`
+	InvoiceId        *openapi_types.UUID    `json:"invoiceId,omitempty"`
+	Kind             *ExpenseReportItemKind `json:"kind,omitempty"`
+	Remarks          *string                `json:"remarks,omitempty"`
+	Summary          *string                `json:"summary,omitempty"`
+}
+
+// ExpenseReportList defines model for ExpenseReportList.
+type ExpenseReportList struct {
+	Count   int64           `json:"count"`
+	Results []ExpenseReport `json:"results"`
+}
+
+// ExpenseReportStatus defines model for ExpenseReportStatus.
+type ExpenseReportStatus string
+
+// ExpenseReportUpdate defines model for ExpenseReportUpdate.
+type ExpenseReportUpdate struct {
+	DocNo            *string             `json:"docNo,omitempty"`
+	EmployeeId       *openapi_types.UUID `json:"employeeId,omitempty"`
+	ExpenseDate      *openapi_types.Date `json:"expenseDate,omitempty"`
+	PaymentAccountId *openapi_types.UUID `json:"paymentAccountId,omitempty"`
+	PostingDate      *openapi_types.Date `json:"postingDate,omitempty"`
+	Remarks          *string             `json:"remarks,omitempty"`
 }
 
 // FileUpload defines model for FileUpload.
@@ -1288,6 +2852,9 @@ type FilterState_AdditionalProperties struct {
 	AdditionalProperties map[string]interface{} `json:"-"`
 }
 
+// FinancePartyType defines model for FinancePartyType.
+type FinancePartyType string
+
 // FormMeta defines model for FormMeta.
 type FormMeta struct {
 	Exclude  *[]string               `json:"exclude,omitempty"`
@@ -1295,6 +2862,17 @@ type FormMeta struct {
 	Sections *[]interface{}          `json:"sections,omitempty"`
 	Tabs     *[]interface{}          `json:"tabs,omitempty"`
 }
+
+// FulfillmentAuditRequest defines model for FulfillmentAuditRequest.
+type FulfillmentAuditRequest struct {
+	PostingDate *openapi_types.Date `json:"postingDate,omitempty"`
+}
+
+// FulfillmentPartyType defines model for FulfillmentPartyType.
+type FulfillmentPartyType string
+
+// FulfillmentStatus defines model for FulfillmentStatus.
+type FulfillmentStatus string
 
 // GLAccountReference defines model for GLAccountReference.
 type GLAccountReference struct {
@@ -1541,6 +3119,15 @@ type InventoryReference struct {
 	Symbol *string            `json:"symbol,omitempty"`
 }
 
+// InvoiceDirection defines model for InvoiceDirection.
+type InvoiceDirection string
+
+// InvoiceKind defines model for InvoiceKind.
+type InvoiceKind string
+
+// InvoiceStatus defines model for InvoiceStatus.
+type InvoiceStatus string
+
 // ListQuery defines model for ListQuery.
 type ListQuery struct {
 	Filter *FilterState `json:"filter,omitempty"`
@@ -1563,6 +3150,493 @@ type LoginResponse struct {
 	User      SessionUser `json:"user"`
 }
 
+// ManufacturingBom defines model for ManufacturingBom.
+type ManufacturingBom struct {
+	Code       string                  `json:"code"`
+	Id         openapi_types.UUID      `json:"id"`
+	InsertedAt time.Time               `json:"insertedAt"`
+	Material   *ManufacturingReference `json:"material,omitempty"`
+	MaterialId openapi_types.UUID      `json:"materialId"`
+	Note       *string                 `json:"note,omitempty"`
+	PlanName   *string                 `json:"planName,omitempty"`
+	UpdatedAt  time.Time               `json:"updatedAt"`
+}
+
+// ManufacturingBomApplyRouteTemplate defines model for ManufacturingBomApplyRouteTemplate.
+type ManufacturingBomApplyRouteTemplate struct {
+	TemplateId openapi_types.UUID `json:"templateId"`
+}
+
+// ManufacturingBomByproduct defines model for ManufacturingBomByproduct.
+type ManufacturingBomByproduct struct {
+	Bom        *ManufacturingReference `json:"bom,omitempty"`
+	BomId      openapi_types.UUID      `json:"bomId"`
+	Id         openapi_types.UUID      `json:"id"`
+	InsertedAt time.Time               `json:"insertedAt"`
+	Material   *ManufacturingReference `json:"material,omitempty"`
+	MaterialId openapi_types.UUID      `json:"materialId"`
+	Note       *string                 `json:"note,omitempty"`
+	Quantity   string                  `json:"quantity"`
+	Unit       *ManufacturingReference `json:"unit,omitempty"`
+	UnitId     openapi_types.UUID      `json:"unitId"`
+	UpdatedAt  time.Time               `json:"updatedAt"`
+}
+
+// ManufacturingBomByproductCreate defines model for ManufacturingBomByproductCreate.
+type ManufacturingBomByproductCreate struct {
+	BomId      openapi_types.UUID `json:"bomId"`
+	MaterialId openapi_types.UUID `json:"materialId"`
+	Note       *string            `json:"note,omitempty"`
+	Quantity   string             `json:"quantity"`
+	UnitId     openapi_types.UUID `json:"unitId"`
+}
+
+// ManufacturingBomByproductList defines model for ManufacturingBomByproductList.
+type ManufacturingBomByproductList struct {
+	Count   int64                       `json:"count"`
+	Results []ManufacturingBomByproduct `json:"results"`
+}
+
+// ManufacturingBomByproductUpdate defines model for ManufacturingBomByproductUpdate.
+type ManufacturingBomByproductUpdate struct {
+	MaterialId *openapi_types.UUID `json:"materialId,omitempty"`
+	Note       *string             `json:"note,omitempty"`
+	Quantity   *string             `json:"quantity,omitempty"`
+	UnitId     *openapi_types.UUID `json:"unitId,omitempty"`
+}
+
+// ManufacturingBomComponent defines model for ManufacturingBomComponent.
+type ManufacturingBomComponent struct {
+	Bom        *ManufacturingReference `json:"bom,omitempty"`
+	BomId      openapi_types.UUID      `json:"bomId"`
+	Id         openapi_types.UUID      `json:"id"`
+	InsertedAt time.Time               `json:"insertedAt"`
+	LossRate   *string                 `json:"lossRate,omitempty"`
+	Material   *ManufacturingReference `json:"material,omitempty"`
+	MaterialId openapi_types.UUID      `json:"materialId"`
+	Note       *string                 `json:"note,omitempty"`
+	Quantity   string                  `json:"quantity"`
+	Unit       *ManufacturingReference `json:"unit,omitempty"`
+	UnitId     openapi_types.UUID      `json:"unitId"`
+	UpdatedAt  time.Time               `json:"updatedAt"`
+}
+
+// ManufacturingBomComponentCreate defines model for ManufacturingBomComponentCreate.
+type ManufacturingBomComponentCreate struct {
+	BomId      openapi_types.UUID `json:"bomId"`
+	LossRate   *string            `json:"lossRate,omitempty"`
+	MaterialId openapi_types.UUID `json:"materialId"`
+	Note       *string            `json:"note,omitempty"`
+	Quantity   string             `json:"quantity"`
+	UnitId     openapi_types.UUID `json:"unitId"`
+}
+
+// ManufacturingBomComponentList defines model for ManufacturingBomComponentList.
+type ManufacturingBomComponentList struct {
+	Count   int64                       `json:"count"`
+	Results []ManufacturingBomComponent `json:"results"`
+}
+
+// ManufacturingBomComponentUpdate defines model for ManufacturingBomComponentUpdate.
+type ManufacturingBomComponentUpdate struct {
+	LossRate   *string             `json:"lossRate,omitempty"`
+	MaterialId *openapi_types.UUID `json:"materialId,omitempty"`
+	Note       *string             `json:"note,omitempty"`
+	Quantity   *string             `json:"quantity,omitempty"`
+	UnitId     *openapi_types.UUID `json:"unitId,omitempty"`
+}
+
+// ManufacturingBomCreate defines model for ManufacturingBomCreate.
+type ManufacturingBomCreate struct {
+	Code       *string            `json:"code,omitempty"`
+	MaterialId openapi_types.UUID `json:"materialId"`
+	Note       *string            `json:"note,omitempty"`
+	PlanName   *string            `json:"planName,omitempty"`
+}
+
+// ManufacturingBomList defines model for ManufacturingBomList.
+type ManufacturingBomList struct {
+	Count   int64              `json:"count"`
+	Results []ManufacturingBom `json:"results"`
+}
+
+// ManufacturingBomRoute defines model for ManufacturingBomRoute.
+type ManufacturingBomRoute struct {
+	Bom          *ManufacturingReference `json:"bom,omitempty"`
+	BomId        openapi_types.UUID      `json:"bomId"`
+	Id           openapi_types.UUID      `json:"id"`
+	InsertedAt   time.Time               `json:"insertedAt"`
+	IsOutsourced bool                    `json:"isOutsourced"`
+	Operation    *ManufacturingReference `json:"operation,omitempty"`
+	OperationId  openapi_types.UUID      `json:"operationId"`
+	Requirement  *string                 `json:"requirement,omitempty"`
+	Seq          int64                   `json:"seq"`
+	UpdatedAt    time.Time               `json:"updatedAt"`
+}
+
+// ManufacturingBomRouteCreate defines model for ManufacturingBomRouteCreate.
+type ManufacturingBomRouteCreate struct {
+	BomId        openapi_types.UUID `json:"bomId"`
+	IsOutsourced *bool              `json:"isOutsourced,omitempty"`
+	OperationId  openapi_types.UUID `json:"operationId"`
+	Requirement  *string            `json:"requirement,omitempty"`
+	Seq          int64              `json:"seq"`
+}
+
+// ManufacturingBomRouteList defines model for ManufacturingBomRouteList.
+type ManufacturingBomRouteList struct {
+	Count   int64                   `json:"count"`
+	Results []ManufacturingBomRoute `json:"results"`
+}
+
+// ManufacturingBomRouteUpdate defines model for ManufacturingBomRouteUpdate.
+type ManufacturingBomRouteUpdate struct {
+	IsOutsourced *bool               `json:"isOutsourced,omitempty"`
+	OperationId  *openapi_types.UUID `json:"operationId,omitempty"`
+	Requirement  *string             `json:"requirement,omitempty"`
+	Seq          *int64              `json:"seq,omitempty"`
+}
+
+// ManufacturingBomUpdate defines model for ManufacturingBomUpdate.
+type ManufacturingBomUpdate struct {
+	Note     *string `json:"note,omitempty"`
+	PlanName *string `json:"planName,omitempty"`
+}
+
+// ManufacturingDemand defines model for ManufacturingDemand.
+type ManufacturingDemand struct {
+	Company     *ManufacturingReference   `json:"company,omitempty"`
+	CompanyId   openapi_types.UUID        `json:"companyId"`
+	CreatedBy   *ManufacturingReference   `json:"createdBy,omitempty"`
+	CreatedById *openapi_types.UUID       `json:"createdById,omitempty"`
+	DemandDate  openapi_types.Date        `json:"demandDate"`
+	DemandNo    string                    `json:"demandNo"`
+	Id          openapi_types.UUID        `json:"id"`
+	InsertedAt  time.Time                 `json:"insertedAt"`
+	Remarks     *string                   `json:"remarks,omitempty"`
+	Status      ManufacturingDemandStatus `json:"status"`
+	UpdatedAt   time.Time                 `json:"updatedAt"`
+}
+
+// ManufacturingDemandCreate defines model for ManufacturingDemandCreate.
+type ManufacturingDemandCreate struct {
+	CompanyId  openapi_types.UUID  `json:"companyId"`
+	DemandDate *openapi_types.Date `json:"demandDate,omitempty"`
+	DemandNo   *string             `json:"demandNo,omitempty"`
+	Remarks    *string             `json:"remarks,omitempty"`
+}
+
+// ManufacturingDemandItem defines model for ManufacturingDemandItem.
+type ManufacturingDemandItem struct {
+	BaseQty               string                         `json:"baseQty"`
+	Company               *ManufacturingReference        `json:"company,omitempty"`
+	CompanyId             openapi_types.UUID             `json:"companyId"`
+	Demand                *ManufacturingReference        `json:"demand,omitempty"`
+	DemandId              openapi_types.UUID             `json:"demandId"`
+	FulfillmentMethod     ManufacturingFulfillmentMethod `json:"fulfillmentMethod"`
+	Id                    openapi_types.UUID             `json:"id"`
+	Idx                   int64                          `json:"idx"`
+	InsertedAt            time.Time                      `json:"insertedAt"`
+	Material              *ManufacturingReference        `json:"material,omitempty"`
+	MaterialCode          string                         `json:"materialCode"`
+	MaterialId            openapi_types.UUID             `json:"materialId"`
+	MaterialName          string                         `json:"materialName"`
+	MaterialSpec          *string                        `json:"materialSpec,omitempty"`
+	NeedDate              *openapi_types.Date            `json:"needDate,omitempty"`
+	Ordered               bool                           `json:"ordered"`
+	OrderedQty            string                         `json:"orderedQty"`
+	Qty                   string                         `json:"qty"`
+	ReceivedQty           string                         `json:"receivedQty"`
+	RemainingOrderableQty string                         `json:"remainingOrderableQty"`
+	Remarks               *string                        `json:"remarks,omitempty"`
+	SalesOrderItem        *ManufacturingReference        `json:"salesOrderItem,omitempty"`
+	SalesOrderItemId      *openapi_types.UUID            `json:"salesOrderItemId,omitempty"`
+	Status                ManufacturingDemandItemStatus  `json:"status"`
+	Unit                  *ManufacturingReference        `json:"unit,omitempty"`
+	UnitId                openapi_types.UUID             `json:"unitId"`
+	UnitName              string                         `json:"unitName"`
+	UpdatedAt             time.Time                      `json:"updatedAt"`
+}
+
+// ManufacturingDemandItemCreate defines model for ManufacturingDemandItemCreate.
+type ManufacturingDemandItemCreate struct {
+	DemandId          openapi_types.UUID             `json:"demandId"`
+	FulfillmentMethod ManufacturingFulfillmentMethod `json:"fulfillmentMethod"`
+	Idx               int64                          `json:"idx"`
+	MaterialId        openapi_types.UUID             `json:"materialId"`
+	NeedDate          *openapi_types.Date            `json:"needDate,omitempty"`
+	Qty               string                         `json:"qty"`
+	Remarks           *string                        `json:"remarks,omitempty"`
+	SalesOrderItemId  *openapi_types.UUID            `json:"salesOrderItemId,omitempty"`
+	UnitId            openapi_types.UUID             `json:"unitId"`
+}
+
+// ManufacturingDemandItemFulfillmentUpdate defines model for ManufacturingDemandItemFulfillmentUpdate.
+type ManufacturingDemandItemFulfillmentUpdate struct {
+	FulfillmentMethod ManufacturingFulfillmentMethod `json:"fulfillmentMethod"`
+}
+
+// ManufacturingDemandItemList defines model for ManufacturingDemandItemList.
+type ManufacturingDemandItemList struct {
+	Count   int64                     `json:"count"`
+	Results []ManufacturingDemandItem `json:"results"`
+}
+
+// ManufacturingDemandItemStatus defines model for ManufacturingDemandItemStatus.
+type ManufacturingDemandItemStatus string
+
+// ManufacturingDemandItemUpdate defines model for ManufacturingDemandItemUpdate.
+type ManufacturingDemandItemUpdate struct {
+	FulfillmentMethod *ManufacturingFulfillmentMethod `json:"fulfillmentMethod,omitempty"`
+	Idx               *int64                          `json:"idx,omitempty"`
+	MaterialId        *openapi_types.UUID             `json:"materialId,omitempty"`
+	NeedDate          *openapi_types.Date             `json:"needDate,omitempty"`
+	Qty               *string                         `json:"qty,omitempty"`
+	Remarks           *string                         `json:"remarks,omitempty"`
+	SalesOrderItemId  *openapi_types.UUID             `json:"salesOrderItemId,omitempty"`
+	UnitId            *openapi_types.UUID             `json:"unitId,omitempty"`
+}
+
+// ManufacturingDemandList defines model for ManufacturingDemandList.
+type ManufacturingDemandList struct {
+	Count   int64                 `json:"count"`
+	Results []ManufacturingDemand `json:"results"`
+}
+
+// ManufacturingDemandStatus defines model for ManufacturingDemandStatus.
+type ManufacturingDemandStatus string
+
+// ManufacturingDemandUpdate defines model for ManufacturingDemandUpdate.
+type ManufacturingDemandUpdate struct {
+	DemandDate *openapi_types.Date `json:"demandDate,omitempty"`
+	DemandNo   *string             `json:"demandNo,omitempty"`
+	Remarks    *string             `json:"remarks,omitempty"`
+}
+
+// ManufacturingFulfillmentMethod defines model for ManufacturingFulfillmentMethod.
+type ManufacturingFulfillmentMethod string
+
+// ManufacturingOperation defines model for ManufacturingOperation.
+type ManufacturingOperation struct {
+	Code       string             `json:"code"`
+	Id         openapi_types.UUID `json:"id"`
+	InsertedAt time.Time          `json:"insertedAt"`
+	Name       string             `json:"name"`
+	Note       *string            `json:"note,omitempty"`
+	UpdatedAt  time.Time          `json:"updatedAt"`
+}
+
+// ManufacturingOperationCreate defines model for ManufacturingOperationCreate.
+type ManufacturingOperationCreate struct {
+	Code *string `json:"code,omitempty"`
+	Name string  `json:"name"`
+	Note *string `json:"note,omitempty"`
+}
+
+// ManufacturingOperationList defines model for ManufacturingOperationList.
+type ManufacturingOperationList struct {
+	Count   int64                    `json:"count"`
+	Results []ManufacturingOperation `json:"results"`
+}
+
+// ManufacturingOperationUpdate defines model for ManufacturingOperationUpdate.
+type ManufacturingOperationUpdate struct {
+	Name *string `json:"name,omitempty"`
+	Note *string `json:"note,omitempty"`
+}
+
+// ManufacturingOutput defines model for ManufacturingOutput.
+type ManufacturingOutput struct {
+	AuditedAt   *time.Time                `json:"auditedAt,omitempty"`
+	AuditedBy   *ManufacturingReference   `json:"auditedBy,omitempty"`
+	AuditedById *openapi_types.UUID       `json:"auditedById,omitempty"`
+	Company     *ManufacturingReference   `json:"company,omitempty"`
+	CompanyId   openapi_types.UUID        `json:"companyId"`
+	CreatedBy   *ManufacturingReference   `json:"createdBy,omitempty"`
+	CreatedById *openapi_types.UUID       `json:"createdById,omitempty"`
+	Id          openapi_types.UUID        `json:"id"`
+	InsertedAt  time.Time                 `json:"insertedAt"`
+	OutputDate  openapi_types.Date        `json:"outputDate"`
+	OutputNo    string                    `json:"outputNo"`
+	Remarks     *string                   `json:"remarks,omitempty"`
+	Status      ManufacturingOutputStatus `json:"status"`
+	UpdatedAt   time.Time                 `json:"updatedAt"`
+	Warehouse   *ManufacturingReference   `json:"warehouse,omitempty"`
+	WarehouseId *openapi_types.UUID       `json:"warehouseId,omitempty"`
+}
+
+// ManufacturingOutputCreate defines model for ManufacturingOutputCreate.
+type ManufacturingOutputCreate struct {
+	CompanyId   openapi_types.UUID  `json:"companyId"`
+	OutputDate  *openapi_types.Date `json:"outputDate,omitempty"`
+	OutputNo    *string             `json:"outputNo,omitempty"`
+	Remarks     *string             `json:"remarks,omitempty"`
+	WarehouseId *openapi_types.UUID `json:"warehouseId,omitempty"`
+}
+
+// ManufacturingOutputItem defines model for ManufacturingOutputItem.
+type ManufacturingOutputItem struct {
+	BaseQty      string                  `json:"baseQty"`
+	Company      *ManufacturingReference `json:"company,omitempty"`
+	CompanyId    openapi_types.UUID      `json:"companyId"`
+	Id           openapi_types.UUID      `json:"id"`
+	Idx          int64                   `json:"idx"`
+	InsertedAt   time.Time               `json:"insertedAt"`
+	Material     *ManufacturingReference `json:"material,omitempty"`
+	MaterialCode string                  `json:"materialCode"`
+	MaterialId   openapi_types.UUID      `json:"materialId"`
+	MaterialName string                  `json:"materialName"`
+	MaterialSpec *string                 `json:"materialSpec,omitempty"`
+	Output       *ManufacturingReference `json:"output,omitempty"`
+	OutputId     openapi_types.UUID      `json:"outputId"`
+	Qty          string                  `json:"qty"`
+	Remarks      *string                 `json:"remarks,omitempty"`
+	Unit         *ManufacturingReference `json:"unit,omitempty"`
+	UnitId       openapi_types.UUID      `json:"unitId"`
+	UnitName     string                  `json:"unitName"`
+	UpdatedAt    time.Time               `json:"updatedAt"`
+	Warehouse    *ManufacturingReference `json:"warehouse,omitempty"`
+	WarehouseId  openapi_types.UUID      `json:"warehouseId"`
+	WorkOrder    *ManufacturingReference `json:"workOrder,omitempty"`
+	WorkOrderId  openapi_types.UUID      `json:"workOrderId"`
+}
+
+// ManufacturingOutputItemCreate defines model for ManufacturingOutputItemCreate.
+type ManufacturingOutputItemCreate struct {
+	Idx         int64              `json:"idx"`
+	OutputId    openapi_types.UUID `json:"outputId"`
+	Qty         string             `json:"qty"`
+	Remarks     *string            `json:"remarks,omitempty"`
+	UnitId      openapi_types.UUID `json:"unitId"`
+	WarehouseId openapi_types.UUID `json:"warehouseId"`
+	WorkOrderId openapi_types.UUID `json:"workOrderId"`
+}
+
+// ManufacturingOutputItemList defines model for ManufacturingOutputItemList.
+type ManufacturingOutputItemList struct {
+	Count   int64                     `json:"count"`
+	Results []ManufacturingOutputItem `json:"results"`
+}
+
+// ManufacturingOutputItemUpdate defines model for ManufacturingOutputItemUpdate.
+type ManufacturingOutputItemUpdate struct {
+	Idx         *int64              `json:"idx,omitempty"`
+	Qty         *string             `json:"qty,omitempty"`
+	Remarks     *string             `json:"remarks,omitempty"`
+	UnitId      *openapi_types.UUID `json:"unitId,omitempty"`
+	WarehouseId *openapi_types.UUID `json:"warehouseId,omitempty"`
+	WorkOrderId *openapi_types.UUID `json:"workOrderId,omitempty"`
+}
+
+// ManufacturingOutputList defines model for ManufacturingOutputList.
+type ManufacturingOutputList struct {
+	Count   int64                 `json:"count"`
+	Results []ManufacturingOutput `json:"results"`
+}
+
+// ManufacturingOutputStatus defines model for ManufacturingOutputStatus.
+type ManufacturingOutputStatus string
+
+// ManufacturingOutputUpdate defines model for ManufacturingOutputUpdate.
+type ManufacturingOutputUpdate struct {
+	OutputDate  *openapi_types.Date `json:"outputDate,omitempty"`
+	OutputNo    *string             `json:"outputNo,omitempty"`
+	Remarks     *string             `json:"remarks,omitempty"`
+	WarehouseId *openapi_types.UUID `json:"warehouseId,omitempty"`
+}
+
+// ManufacturingProcessTemplate defines model for ManufacturingProcessTemplate.
+type ManufacturingProcessTemplate struct {
+	Code       string             `json:"code"`
+	Id         openapi_types.UUID `json:"id"`
+	InsertedAt time.Time          `json:"insertedAt"`
+	Name       string             `json:"name"`
+	Note       *string            `json:"note,omitempty"`
+	UpdatedAt  time.Time          `json:"updatedAt"`
+}
+
+// ManufacturingProcessTemplateCreate defines model for ManufacturingProcessTemplateCreate.
+type ManufacturingProcessTemplateCreate struct {
+	Code *string `json:"code,omitempty"`
+	Name string  `json:"name"`
+	Note *string `json:"note,omitempty"`
+}
+
+// ManufacturingProcessTemplateItem defines model for ManufacturingProcessTemplateItem.
+type ManufacturingProcessTemplateItem struct {
+	Id           openapi_types.UUID      `json:"id"`
+	InsertedAt   time.Time               `json:"insertedAt"`
+	IsOutsourced bool                    `json:"isOutsourced"`
+	Operation    *ManufacturingReference `json:"operation,omitempty"`
+	OperationId  openapi_types.UUID      `json:"operationId"`
+	Requirement  *string                 `json:"requirement,omitempty"`
+	Seq          int64                   `json:"seq"`
+	Template     *ManufacturingReference `json:"template,omitempty"`
+	TemplateId   openapi_types.UUID      `json:"templateId"`
+	UpdatedAt    time.Time               `json:"updatedAt"`
+}
+
+// ManufacturingProcessTemplateItemCreate defines model for ManufacturingProcessTemplateItemCreate.
+type ManufacturingProcessTemplateItemCreate struct {
+	IsOutsourced *bool              `json:"isOutsourced,omitempty"`
+	OperationId  openapi_types.UUID `json:"operationId"`
+	Requirement  *string            `json:"requirement,omitempty"`
+	Seq          int64              `json:"seq"`
+	TemplateId   openapi_types.UUID `json:"templateId"`
+}
+
+// ManufacturingProcessTemplateItemList defines model for ManufacturingProcessTemplateItemList.
+type ManufacturingProcessTemplateItemList struct {
+	Count   int64                              `json:"count"`
+	Results []ManufacturingProcessTemplateItem `json:"results"`
+}
+
+// ManufacturingProcessTemplateItemUpdate defines model for ManufacturingProcessTemplateItemUpdate.
+type ManufacturingProcessTemplateItemUpdate struct {
+	IsOutsourced *bool               `json:"isOutsourced,omitempty"`
+	OperationId  *openapi_types.UUID `json:"operationId,omitempty"`
+	Requirement  *string             `json:"requirement,omitempty"`
+	Seq          *int64              `json:"seq,omitempty"`
+}
+
+// ManufacturingProcessTemplateList defines model for ManufacturingProcessTemplateList.
+type ManufacturingProcessTemplateList struct {
+	Count   int64                          `json:"count"`
+	Results []ManufacturingProcessTemplate `json:"results"`
+}
+
+// ManufacturingProcessTemplateUpdate defines model for ManufacturingProcessTemplateUpdate.
+type ManufacturingProcessTemplateUpdate struct {
+	Name *string `json:"name,omitempty"`
+	Note *string `json:"note,omitempty"`
+}
+
+// ManufacturingReference defines model for ManufacturingReference.
+type ManufacturingReference struct {
+	Code  *string            `json:"code,omitempty"`
+	Id    openapi_types.UUID `json:"id"`
+	Label *string            `json:"label,omitempty"`
+	Name  *string            `json:"name,omitempty"`
+}
+
+// ManufacturingSalesItemOccupancy defines model for ManufacturingSalesItemOccupancy.
+type ManufacturingSalesItemOccupancy struct {
+	OccupiedBaseQty  string             `json:"occupiedBaseQty"`
+	OrderedBaseQty   string             `json:"orderedBaseQty"`
+	RemainingBaseQty string             `json:"remainingBaseQty"`
+	SalesOrderItemId openapi_types.UUID `json:"salesOrderItemId"`
+}
+
+// ManufacturingSalesItemOccupancyList defines model for ManufacturingSalesItemOccupancyList.
+type ManufacturingSalesItemOccupancyList struct {
+	Results []ManufacturingSalesItemOccupancy `json:"results"`
+}
+
+// ManufacturingSalesItemOccupancyRequest defines model for ManufacturingSalesItemOccupancyRequest.
+type ManufacturingSalesItemOccupancyRequest struct {
+	SalesOrderItemIds []openapi_types.UUID `json:"salesOrderItemIds"`
+}
+
 // ManufacturingSetting defines model for ManufacturingSetting.
 type ManufacturingSetting struct {
 	Id                     openapi_types.UUID `json:"id"`
@@ -1574,6 +3648,56 @@ type ManufacturingSetting struct {
 // ManufacturingSettingUpdate defines model for ManufacturingSettingUpdate.
 type ManufacturingSettingUpdate struct {
 	OutputOverreceiveRatio *string `json:"outputOverreceiveRatio,omitempty"`
+}
+
+// ManufacturingWorkOrder defines model for ManufacturingWorkOrder.
+type ManufacturingWorkOrder struct {
+	BaseQty          string                       `json:"baseQty"`
+	Company          *ManufacturingReference      `json:"company,omitempty"`
+	CompanyId        openapi_types.UUID           `json:"companyId"`
+	CreatedBy        *ManufacturingReference      `json:"createdBy,omitempty"`
+	CreatedById      *openapi_types.UUID          `json:"createdById,omitempty"`
+	Demand           *ManufacturingReference      `json:"demand,omitempty"`
+	DemandId         openapi_types.UUID           `json:"demandId"`
+	DemandItem       *ManufacturingReference      `json:"demandItem,omitempty"`
+	DemandItemId     openapi_types.UUID           `json:"demandItemId"`
+	Id               openapi_types.UUID           `json:"id"`
+	InsertedAt       time.Time                    `json:"insertedAt"`
+	Material         *ManufacturingReference      `json:"material,omitempty"`
+	MaterialCode     *string                      `json:"materialCode,omitempty"`
+	MaterialId       openapi_types.UUID           `json:"materialId"`
+	MaterialName     *string                      `json:"materialName,omitempty"`
+	MaterialSpec     *string                      `json:"materialSpec,omitempty"`
+	NeedDate         *openapi_types.Date          `json:"needDate,omitempty"`
+	Qty              string                       `json:"qty"`
+	ReceivedBaseQty  string                       `json:"receivedBaseQty"`
+	RemainingBaseQty string                       `json:"remainingBaseQty"`
+	Status           ManufacturingWorkOrderStatus `json:"status"`
+	Unit             *ManufacturingReference      `json:"unit,omitempty"`
+	UnitId           openapi_types.UUID           `json:"unitId"`
+	UnitName         *string                      `json:"unitName,omitempty"`
+	UpdatedAt        time.Time                    `json:"updatedAt"`
+	WorkOrderNo      string                       `json:"workOrderNo"`
+}
+
+// ManufacturingWorkOrderCreate defines model for ManufacturingWorkOrderCreate.
+type ManufacturingWorkOrderCreate struct {
+	DemandItemId openapi_types.UUID `json:"demandItemId"`
+	WorkOrderNo  *string            `json:"workOrderNo,omitempty"`
+}
+
+// ManufacturingWorkOrderList defines model for ManufacturingWorkOrderList.
+type ManufacturingWorkOrderList struct {
+	Count   int64                    `json:"count"`
+	Results []ManufacturingWorkOrder `json:"results"`
+}
+
+// ManufacturingWorkOrderStatus defines model for ManufacturingWorkOrderStatus.
+type ManufacturingWorkOrderStatus string
+
+// ManufacturingWorkOrderUpdate defines model for ManufacturingWorkOrderUpdate.
+type ManufacturingWorkOrderUpdate struct {
+	WorkOrderNo *string `json:"workOrderNo,omitempty"`
 }
 
 // MarketChartInstrument defines model for MarketChartInstrument.
@@ -1965,6 +4089,14 @@ type OCRConfigured struct {
 	Configured bool `json:"configured"`
 }
 
+// OCRRequest defines model for OCRRequest.
+type OCRRequest struct {
+	FileId openapi_types.UUID `json:"fileId"`
+}
+
+// OCRResult defines model for OCRResult.
+type OCRResult map[string]interface{}
+
 // OneTimePassword defines model for OneTimePassword.
 type OneTimePassword struct {
 	Password string `json:"password"`
@@ -2283,11 +4415,136 @@ type OrderUpdate struct {
 	Terms        *string             `json:"terms,omitempty"`
 }
 
+// Payroll defines model for Payroll.
+type Payroll struct {
+	Allowance      string             `json:"allowance"`
+	AttendanceDays int                `json:"attendanceDays"`
+	BaseAmount     string             `json:"baseAmount"`
+	Bonus          string             `json:"bonus"`
+	DailyWage      string             `json:"dailyWage"`
+	EmployeeId     openapi_types.UUID `json:"employeeId"`
+	Fine           string             `json:"fine"`
+	Id             openapi_types.UUID `json:"id"`
+	InsertedAt     time.Time          `json:"insertedAt"`
+	LoanDeduction  string             `json:"loanDeduction"`
+	MissingDays    int                `json:"missingDays"`
+	Month          string             `json:"month"`
+	OvertimeHours  string             `json:"overtimeHours"`
+	PaidTotal      *string            `json:"paidTotal"`
+	Payable        string             `json:"payable"`
+	Remarks        *string            `json:"remarks"`
+	Status         PayrollStatus      `json:"status"`
+	UpdatedAt      time.Time          `json:"updatedAt"`
+	Workdays       string             `json:"workdays"`
+}
+
+// PayrollCreate defines model for PayrollCreate.
+type PayrollCreate struct {
+	Allowance      *string            `json:"allowance,omitempty"`
+	AttendanceDays *int               `json:"attendanceDays,omitempty"`
+	Bonus          *string            `json:"bonus,omitempty"`
+	DailyWage      *string            `json:"dailyWage,omitempty"`
+	EmployeeId     openapi_types.UUID `json:"employeeId"`
+	Fine           *string            `json:"fine,omitempty"`
+	LoanDeduction  *string            `json:"loanDeduction,omitempty"`
+	MissingDays    *int               `json:"missingDays,omitempty"`
+	Month          string             `json:"month"`
+	OvertimeHours  *string            `json:"overtimeHours,omitempty"`
+	Remarks        *string            `json:"remarks,omitempty"`
+	Workdays       *string            `json:"workdays,omitempty"`
+}
+
+// PayrollGenerate defines model for PayrollGenerate.
+type PayrollGenerate struct {
+	Month string `json:"month"`
+}
+
+// PayrollGenerateResult defines model for PayrollGenerateResult.
+type PayrollGenerateResult struct {
+	Created int `json:"created"`
+	Skipped int `json:"skipped"`
+}
+
+// PayrollList defines model for PayrollList.
+type PayrollList struct {
+	Count   int64     `json:"count"`
+	Results []Payroll `json:"results"`
+}
+
+// PayrollMonthStats defines model for PayrollMonthStats.
+type PayrollMonthStats struct {
+	Count        int    `json:"count"`
+	PaidTotal    string `json:"paidTotal"`
+	PayableTotal string `json:"payableTotal"`
+	PendingCount int    `json:"pendingCount"`
+}
+
+// PayrollPayment defines model for PayrollPayment.
+type PayrollPayment struct {
+	Amount      string              `json:"amount"`
+	CreatedById *openapi_types.UUID `json:"createdById"`
+	EmployeeId  *openapi_types.UUID `json:"employeeId"`
+	Id          openapi_types.UUID  `json:"id"`
+	InsertedAt  time.Time           `json:"insertedAt"`
+	Kind        *PayrollPaymentKind `json:"kind"`
+	Month       *string             `json:"month"`
+	PaidOn      openapi_types.Date  `json:"paidOn"`
+	PayrollId   openapi_types.UUID  `json:"payrollId"`
+	Remarks     *string             `json:"remarks"`
+	UpdatedAt   time.Time           `json:"updatedAt"`
+}
+
+// PayrollPaymentCreate defines model for PayrollPaymentCreate.
+type PayrollPaymentCreate struct {
+	Amount    string             `json:"amount"`
+	PaidOn    openapi_types.Date `json:"paidOn"`
+	PayrollId openapi_types.UUID `json:"payrollId"`
+	Remarks   *string            `json:"remarks,omitempty"`
+}
+
+// PayrollPaymentKind defines model for PayrollPaymentKind.
+type PayrollPaymentKind string
+
+// PayrollPaymentList defines model for PayrollPaymentList.
+type PayrollPaymentList struct {
+	Count   int64            `json:"count"`
+	Results []PayrollPayment `json:"results"`
+}
+
+// PayrollPaymentPayRemaining defines model for PayrollPaymentPayRemaining.
+type PayrollPaymentPayRemaining struct {
+	PaidOn    openapi_types.Date `json:"paidOn"`
+	PayrollId openapi_types.UUID `json:"payrollId"`
+	Remarks   *string            `json:"remarks,omitempty"`
+}
+
+// PayrollStatus defines model for PayrollStatus.
+type PayrollStatus string
+
+// PayrollUpdate defines model for PayrollUpdate.
+type PayrollUpdate struct {
+	Allowance      *string `json:"allowance,omitempty"`
+	AttendanceDays *int    `json:"attendanceDays,omitempty"`
+	Bonus          *string `json:"bonus,omitempty"`
+	DailyWage      *string `json:"dailyWage,omitempty"`
+	Fine           *string `json:"fine,omitempty"`
+	LoanDeduction  *string `json:"loanDeduction,omitempty"`
+	MissingDays    *int    `json:"missingDays,omitempty"`
+	OvertimeHours  *string `json:"overtimeHours,omitempty"`
+	Remarks        *string `json:"remarks,omitempty"`
+	Workdays       *string `json:"workdays,omitempty"`
+}
+
 // PermissionGroup defines model for PermissionGroup.
 type PermissionGroup struct {
 	Actions []string `json:"actions"`
 	Label   string   `json:"label"`
 	Prefix  string   `json:"prefix"`
+}
+
+// PostingDateAction defines model for PostingDateAction.
+type PostingDateAction struct {
+	PostingDate *openapi_types.Date `json:"postingDate,omitempty"`
 }
 
 // PrintField defines model for PrintField.
@@ -2346,6 +4603,546 @@ type PrintTemplateUpdate struct {
 	FileId  *openapi_types.UUID `json:"fileId,omitempty"`
 	Name    *string             `json:"name,omitempty"`
 	Remarks *string             `json:"remarks,omitempty"`
+}
+
+// PurchaseOutsourcedIssue defines model for PurchaseOutsourcedIssue.
+type PurchaseOutsourcedIssue struct {
+	AuditedAt             *time.Time           `json:"auditedAt"`
+	AuditedById           *openapi_types.UUID  `json:"auditedById"`
+	CompanyId             openapi_types.UUID   `json:"companyId"`
+	CreatedById           *openapi_types.UUID  `json:"createdById"`
+	FromWarehouseId       *openapi_types.UUID  `json:"fromWarehouseId"`
+	Id                    openapi_types.UUID   `json:"id"`
+	InsertedAt            time.Time            `json:"insertedAt"`
+	IssueDate             openapi_types.Date   `json:"issueDate"`
+	IssueNo               string               `json:"issueNo"`
+	OutsourcedWarehouseId *openapi_types.UUID  `json:"outsourcedWarehouseId"`
+	PartyId               openapi_types.UUID   `json:"partyId"`
+	PartyType             FulfillmentPartyType `json:"partyType"`
+	Remarks               *string              `json:"remarks"`
+	Status                FulfillmentStatus    `json:"status"`
+	UpdatedAt             time.Time            `json:"updatedAt"`
+}
+
+// PurchaseOutsourcedIssueCreate defines model for PurchaseOutsourcedIssueCreate.
+type PurchaseOutsourcedIssueCreate struct {
+	CompanyId             openapi_types.UUID   `json:"companyId"`
+	FromWarehouseId       *openapi_types.UUID  `json:"fromWarehouseId,omitempty"`
+	IssueDate             *openapi_types.Date  `json:"issueDate,omitempty"`
+	IssueNo               *string              `json:"issueNo,omitempty"`
+	OutsourcedWarehouseId *openapi_types.UUID  `json:"outsourcedWarehouseId,omitempty"`
+	PartyId               openapi_types.UUID   `json:"partyId"`
+	PartyType             FulfillmentPartyType `json:"partyType"`
+	Remarks               *string              `json:"remarks,omitempty"`
+}
+
+// PurchaseOutsourcedIssueItem defines model for PurchaseOutsourcedIssueItem.
+type PurchaseOutsourcedIssueItem struct {
+	BaseQty               string               `json:"baseQty"`
+	CompanyId             openapi_types.UUID   `json:"companyId"`
+	FromWarehouseId       openapi_types.UUID   `json:"fromWarehouseId"`
+	Id                    openapi_types.UUID   `json:"id"`
+	Idx                   int64                `json:"idx"`
+	InsertedAt            time.Time            `json:"insertedAt"`
+	IssueDate             openapi_types.Date   `json:"issueDate"`
+	IssueId               openapi_types.UUID   `json:"issueId"`
+	IssueNo               string               `json:"issueNo"`
+	IssueStatus           FulfillmentStatus    `json:"issueStatus"`
+	MaterialCode          string               `json:"materialCode"`
+	MaterialId            openapi_types.UUID   `json:"materialId"`
+	MaterialName          string               `json:"materialName"`
+	MaterialSpec          *string              `json:"materialSpec"`
+	OrderItemMaterialId   openapi_types.UUID   `json:"orderItemMaterialId"`
+	OrderNo               string               `json:"orderNo"`
+	OutsourcedWarehouseId openapi_types.UUID   `json:"outsourcedWarehouseId"`
+	PartyId               openapi_types.UUID   `json:"partyId"`
+	PartyType             FulfillmentPartyType `json:"partyType"`
+	Qty                   string               `json:"qty"`
+	Remarks               *string              `json:"remarks"`
+	UnitId                openapi_types.UUID   `json:"unitId"`
+	UnitName              string               `json:"unitName"`
+	UpdatedAt             time.Time            `json:"updatedAt"`
+}
+
+// PurchaseOutsourcedIssueItemCreate defines model for PurchaseOutsourcedIssueItemCreate.
+type PurchaseOutsourcedIssueItemCreate struct {
+	FromWarehouseId       openapi_types.UUID `json:"fromWarehouseId"`
+	Idx                   int64              `json:"idx"`
+	IssueId               openapi_types.UUID `json:"issueId"`
+	OrderItemMaterialId   openapi_types.UUID `json:"orderItemMaterialId"`
+	OutsourcedWarehouseId openapi_types.UUID `json:"outsourcedWarehouseId"`
+	Qty                   string             `json:"qty"`
+	Remarks               *string            `json:"remarks,omitempty"`
+}
+
+// PurchaseOutsourcedIssueItemList defines model for PurchaseOutsourcedIssueItemList.
+type PurchaseOutsourcedIssueItemList struct {
+	Count   int64                         `json:"count"`
+	Results []PurchaseOutsourcedIssueItem `json:"results"`
+}
+
+// PurchaseOutsourcedIssueItemUpdate defines model for PurchaseOutsourcedIssueItemUpdate.
+type PurchaseOutsourcedIssueItemUpdate struct {
+	FromWarehouseId       *openapi_types.UUID `json:"fromWarehouseId,omitempty"`
+	Idx                   *int64              `json:"idx,omitempty"`
+	OrderItemMaterialId   *openapi_types.UUID `json:"orderItemMaterialId,omitempty"`
+	OutsourcedWarehouseId *openapi_types.UUID `json:"outsourcedWarehouseId,omitempty"`
+	Qty                   *string             `json:"qty,omitempty"`
+	Remarks               *string             `json:"remarks,omitempty"`
+}
+
+// PurchaseOutsourcedIssueList defines model for PurchaseOutsourcedIssueList.
+type PurchaseOutsourcedIssueList struct {
+	Count   int64                     `json:"count"`
+	Results []PurchaseOutsourcedIssue `json:"results"`
+}
+
+// PurchaseOutsourcedIssueUpdate defines model for PurchaseOutsourcedIssueUpdate.
+type PurchaseOutsourcedIssueUpdate struct {
+	FromWarehouseId       *openapi_types.UUID   `json:"fromWarehouseId,omitempty"`
+	IssueDate             *openapi_types.Date   `json:"issueDate,omitempty"`
+	IssueNo               *string               `json:"issueNo,omitempty"`
+	OutsourcedWarehouseId *openapi_types.UUID   `json:"outsourcedWarehouseId,omitempty"`
+	PartyId               *openapi_types.UUID   `json:"partyId,omitempty"`
+	PartyType             *FulfillmentPartyType `json:"partyType,omitempty"`
+	Remarks               *string               `json:"remarks,omitempty"`
+}
+
+// PurchaseOutsourcedReceipt defines model for PurchaseOutsourcedReceipt.
+type PurchaseOutsourcedReceipt struct {
+	AuditedAt             *time.Time           `json:"auditedAt"`
+	AuditedById           *openapi_types.UUID  `json:"auditedById"`
+	CompanyId             openapi_types.UUID   `json:"companyId"`
+	CreatedById           *openapi_types.UUID  `json:"createdById"`
+	CreditAccountId       openapi_types.UUID   `json:"creditAccountId"`
+	DebitAccountId        openapi_types.UUID   `json:"debitAccountId"`
+	Id                    openapi_types.UUID   `json:"id"`
+	InsertedAt            time.Time            `json:"insertedAt"`
+	OutsourcedWarehouseId *openapi_types.UUID  `json:"outsourcedWarehouseId"`
+	PartyId               openapi_types.UUID   `json:"partyId"`
+	PartyType             FulfillmentPartyType `json:"partyType"`
+	PostingDate           *openapi_types.Date  `json:"postingDate"`
+	ReceiptDate           openapi_types.Date   `json:"receiptDate"`
+	ReceiptNo             string               `json:"receiptNo"`
+	Remarks               *string              `json:"remarks"`
+	Status                FulfillmentStatus    `json:"status"`
+	UpdatedAt             time.Time            `json:"updatedAt"`
+	WarehouseId           *openapi_types.UUID  `json:"warehouseId"`
+}
+
+// PurchaseOutsourcedReceiptCreate defines model for PurchaseOutsourcedReceiptCreate.
+type PurchaseOutsourcedReceiptCreate struct {
+	CompanyId             openapi_types.UUID   `json:"companyId"`
+	CreditAccountId       *openapi_types.UUID  `json:"creditAccountId,omitempty"`
+	DebitAccountId        *openapi_types.UUID  `json:"debitAccountId,omitempty"`
+	OutsourcedWarehouseId *openapi_types.UUID  `json:"outsourcedWarehouseId,omitempty"`
+	PartyId               openapi_types.UUID   `json:"partyId"`
+	PartyType             FulfillmentPartyType `json:"partyType"`
+	PostingDate           *openapi_types.Date  `json:"postingDate,omitempty"`
+	ReceiptDate           *openapi_types.Date  `json:"receiptDate,omitempty"`
+	ReceiptNo             *string              `json:"receiptNo,omitempty"`
+	Remarks               *string              `json:"remarks,omitempty"`
+	WarehouseId           *openapi_types.UUID  `json:"warehouseId,omitempty"`
+}
+
+// PurchaseOutsourcedReceiptItem defines model for PurchaseOutsourcedReceiptItem.
+type PurchaseOutsourcedReceiptItem struct {
+	BaseQty                  string               `json:"baseQty"`
+	CompanyId                openapi_types.UUID   `json:"companyId"`
+	CustomerPartNo           *string              `json:"customerPartNo"`
+	Id                       openapi_types.UUID   `json:"id"`
+	Idx                      int64                `json:"idx"`
+	InsertedAt               time.Time            `json:"insertedAt"`
+	MaterialCode             string               `json:"materialCode"`
+	MaterialId               openapi_types.UUID   `json:"materialId"`
+	MaterialName             string               `json:"materialName"`
+	MaterialSpec             *string              `json:"materialSpec"`
+	OrderAmount              string               `json:"orderAmount"`
+	OrderBaseAmount          string               `json:"orderBaseAmount"`
+	OrderBasePrice           string               `json:"orderBasePrice"`
+	OrderBaseQty             string               `json:"orderBaseQty"`
+	OrderCurrencyCode        string               `json:"orderCurrencyCode"`
+	OrderItemId              openapi_types.UUID   `json:"orderItemId"`
+	OrderNo                  string               `json:"orderNo"`
+	OrderPrice               string               `json:"orderPrice"`
+	OrderQty                 string               `json:"orderQty"`
+	OrderTaxRate             string               `json:"orderTaxRate"`
+	OrderUnitName            string               `json:"orderUnitName"`
+	PartyId                  openapi_types.UUID   `json:"partyId"`
+	PartyType                FulfillmentPartyType `json:"partyType"`
+	Qty                      string               `json:"qty"`
+	ReceiptDate              openapi_types.Date   `json:"receiptDate"`
+	ReceiptId                openapi_types.UUID   `json:"receiptId"`
+	ReceiptNo                string               `json:"receiptNo"`
+	ReceiptStatus            FulfillmentStatus    `json:"receiptStatus"`
+	ReconciledQty            string               `json:"reconciledQty"`
+	RemainingReconcilableQty string               `json:"remainingReconcilableQty"`
+	Remarks                  *string              `json:"remarks"`
+	UnitId                   openapi_types.UUID   `json:"unitId"`
+	UnitName                 string               `json:"unitName"`
+	UpdatedAt                time.Time            `json:"updatedAt"`
+	WarehouseId              openapi_types.UUID   `json:"warehouseId"`
+}
+
+// PurchaseOutsourcedReceiptItemByproduct defines model for PurchaseOutsourcedReceiptItemByproduct.
+type PurchaseOutsourcedReceiptItemByproduct struct {
+	BaseQty              string              `json:"baseQty"`
+	CompanyId            openapi_types.UUID  `json:"companyId"`
+	Id                   openapi_types.UUID  `json:"id"`
+	Idx                  int64               `json:"idx"`
+	InsertedAt           time.Time           `json:"insertedAt"`
+	MaterialCode         string              `json:"materialCode"`
+	MaterialId           openapi_types.UUID  `json:"materialId"`
+	MaterialName         string              `json:"materialName"`
+	MaterialSpec         *string             `json:"materialSpec"`
+	OrderItemByproductId openapi_types.UUID  `json:"orderItemByproductId"`
+	OrderNo              string              `json:"orderNo"`
+	Qty                  string              `json:"qty"`
+	ReceiptItemId        openapi_types.UUID  `json:"receiptItemId"`
+	ReceiptNo            string              `json:"receiptNo"`
+	Remarks              *string             `json:"remarks"`
+	UnitId               openapi_types.UUID  `json:"unitId"`
+	UnitName             string              `json:"unitName"`
+	UpdatedAt            time.Time           `json:"updatedAt"`
+	WarehouseId          *openapi_types.UUID `json:"warehouseId"`
+}
+
+// PurchaseOutsourcedReceiptItemByproductCreate defines model for PurchaseOutsourcedReceiptItemByproductCreate.
+type PurchaseOutsourcedReceiptItemByproductCreate struct {
+	Idx                  int64               `json:"idx"`
+	OrderItemByproductId openapi_types.UUID  `json:"orderItemByproductId"`
+	Qty                  string              `json:"qty"`
+	ReceiptItemId        openapi_types.UUID  `json:"receiptItemId"`
+	Remarks              *string             `json:"remarks,omitempty"`
+	WarehouseId          *openapi_types.UUID `json:"warehouseId,omitempty"`
+}
+
+// PurchaseOutsourcedReceiptItemByproductList defines model for PurchaseOutsourcedReceiptItemByproductList.
+type PurchaseOutsourcedReceiptItemByproductList struct {
+	Count   int64                                    `json:"count"`
+	Results []PurchaseOutsourcedReceiptItemByproduct `json:"results"`
+}
+
+// PurchaseOutsourcedReceiptItemByproductUpdate defines model for PurchaseOutsourcedReceiptItemByproductUpdate.
+type PurchaseOutsourcedReceiptItemByproductUpdate struct {
+	Idx                  *int64              `json:"idx,omitempty"`
+	OrderItemByproductId *openapi_types.UUID `json:"orderItemByproductId,omitempty"`
+	Qty                  *string             `json:"qty,omitempty"`
+	Remarks              *string             `json:"remarks,omitempty"`
+	WarehouseId          *openapi_types.UUID `json:"warehouseId,omitempty"`
+}
+
+// PurchaseOutsourcedReceiptItemCreate defines model for PurchaseOutsourcedReceiptItemCreate.
+type PurchaseOutsourcedReceiptItemCreate struct {
+	Idx         int64               `json:"idx"`
+	OrderItemId openapi_types.UUID  `json:"orderItemId"`
+	Qty         string              `json:"qty"`
+	ReceiptId   openapi_types.UUID  `json:"receiptId"`
+	Remarks     *string             `json:"remarks,omitempty"`
+	UnitId      *openapi_types.UUID `json:"unitId,omitempty"`
+	WarehouseId openapi_types.UUID  `json:"warehouseId"`
+}
+
+// PurchaseOutsourcedReceiptItemList defines model for PurchaseOutsourcedReceiptItemList.
+type PurchaseOutsourcedReceiptItemList struct {
+	Count   int64                           `json:"count"`
+	Results []PurchaseOutsourcedReceiptItem `json:"results"`
+}
+
+// PurchaseOutsourcedReceiptItemMaterial defines model for PurchaseOutsourcedReceiptItemMaterial.
+type PurchaseOutsourcedReceiptItemMaterial struct {
+	BaseQty               string              `json:"baseQty"`
+	CompanyId             openapi_types.UUID  `json:"companyId"`
+	Id                    openapi_types.UUID  `json:"id"`
+	Idx                   int64               `json:"idx"`
+	InsertedAt            time.Time           `json:"insertedAt"`
+	MaterialCode          string              `json:"materialCode"`
+	MaterialId            openapi_types.UUID  `json:"materialId"`
+	MaterialName          string              `json:"materialName"`
+	MaterialSpec          *string             `json:"materialSpec"`
+	OrderItemMaterialId   openapi_types.UUID  `json:"orderItemMaterialId"`
+	OrderNo               string              `json:"orderNo"`
+	OutsourcedWarehouseId *openapi_types.UUID `json:"outsourcedWarehouseId"`
+	Qty                   string              `json:"qty"`
+	ReceiptItemId         openapi_types.UUID  `json:"receiptItemId"`
+	ReceiptNo             string              `json:"receiptNo"`
+	Remarks               *string             `json:"remarks"`
+	UnitId                openapi_types.UUID  `json:"unitId"`
+	UnitName              string              `json:"unitName"`
+	UpdatedAt             time.Time           `json:"updatedAt"`
+}
+
+// PurchaseOutsourcedReceiptItemMaterialCreate defines model for PurchaseOutsourcedReceiptItemMaterialCreate.
+type PurchaseOutsourcedReceiptItemMaterialCreate struct {
+	Idx                   int64               `json:"idx"`
+	OrderItemMaterialId   openapi_types.UUID  `json:"orderItemMaterialId"`
+	OutsourcedWarehouseId *openapi_types.UUID `json:"outsourcedWarehouseId,omitempty"`
+	Qty                   string              `json:"qty"`
+	ReceiptItemId         openapi_types.UUID  `json:"receiptItemId"`
+	Remarks               *string             `json:"remarks,omitempty"`
+}
+
+// PurchaseOutsourcedReceiptItemMaterialList defines model for PurchaseOutsourcedReceiptItemMaterialList.
+type PurchaseOutsourcedReceiptItemMaterialList struct {
+	Count   int64                                   `json:"count"`
+	Results []PurchaseOutsourcedReceiptItemMaterial `json:"results"`
+}
+
+// PurchaseOutsourcedReceiptItemMaterialUpdate defines model for PurchaseOutsourcedReceiptItemMaterialUpdate.
+type PurchaseOutsourcedReceiptItemMaterialUpdate struct {
+	Idx                   *int64              `json:"idx,omitempty"`
+	OrderItemMaterialId   *openapi_types.UUID `json:"orderItemMaterialId,omitempty"`
+	OutsourcedWarehouseId *openapi_types.UUID `json:"outsourcedWarehouseId,omitempty"`
+	Qty                   *string             `json:"qty,omitempty"`
+	Remarks               *string             `json:"remarks,omitempty"`
+}
+
+// PurchaseOutsourcedReceiptItemUpdate defines model for PurchaseOutsourcedReceiptItemUpdate.
+type PurchaseOutsourcedReceiptItemUpdate struct {
+	Idx         *int64              `json:"idx,omitempty"`
+	OrderItemId *openapi_types.UUID `json:"orderItemId,omitempty"`
+	Qty         *string             `json:"qty,omitempty"`
+	Remarks     *string             `json:"remarks,omitempty"`
+	UnitId      *openapi_types.UUID `json:"unitId,omitempty"`
+	WarehouseId *openapi_types.UUID `json:"warehouseId,omitempty"`
+}
+
+// PurchaseOutsourcedReceiptList defines model for PurchaseOutsourcedReceiptList.
+type PurchaseOutsourcedReceiptList struct {
+	Count   int64                       `json:"count"`
+	Results []PurchaseOutsourcedReceipt `json:"results"`
+}
+
+// PurchaseOutsourcedReceiptUpdate defines model for PurchaseOutsourcedReceiptUpdate.
+type PurchaseOutsourcedReceiptUpdate struct {
+	CreditAccountId       *openapi_types.UUID   `json:"creditAccountId,omitempty"`
+	DebitAccountId        *openapi_types.UUID   `json:"debitAccountId,omitempty"`
+	OutsourcedWarehouseId *openapi_types.UUID   `json:"outsourcedWarehouseId,omitempty"`
+	PartyId               *openapi_types.UUID   `json:"partyId,omitempty"`
+	PartyType             *FulfillmentPartyType `json:"partyType,omitempty"`
+	PostingDate           *openapi_types.Date   `json:"postingDate,omitempty"`
+	ReceiptDate           *openapi_types.Date   `json:"receiptDate,omitempty"`
+	ReceiptNo             *string               `json:"receiptNo,omitempty"`
+	Remarks               *string               `json:"remarks,omitempty"`
+	WarehouseId           *openapi_types.UUID   `json:"warehouseId,omitempty"`
+}
+
+// PurchaseReceipt defines model for PurchaseReceipt.
+type PurchaseReceipt struct {
+	AuditedAt       *time.Time           `json:"auditedAt"`
+	AuditedById     *openapi_types.UUID  `json:"auditedById"`
+	CompanyId       openapi_types.UUID   `json:"companyId"`
+	CreatedById     *openapi_types.UUID  `json:"createdById"`
+	CreditAccountId openapi_types.UUID   `json:"creditAccountId"`
+	DebitAccountId  openapi_types.UUID   `json:"debitAccountId"`
+	Id              openapi_types.UUID   `json:"id"`
+	InsertedAt      time.Time            `json:"insertedAt"`
+	PartyId         openapi_types.UUID   `json:"partyId"`
+	PartyType       FulfillmentPartyType `json:"partyType"`
+	PostingDate     *openapi_types.Date  `json:"postingDate"`
+	ReceiptDate     openapi_types.Date   `json:"receiptDate"`
+	ReceiptNo       string               `json:"receiptNo"`
+	Remarks         *string              `json:"remarks"`
+	Status          FulfillmentStatus    `json:"status"`
+	UpdatedAt       time.Time            `json:"updatedAt"`
+	WarehouseId     *openapi_types.UUID  `json:"warehouseId"`
+}
+
+// PurchaseReceiptCreate defines model for PurchaseReceiptCreate.
+type PurchaseReceiptCreate struct {
+	CompanyId       openapi_types.UUID   `json:"companyId"`
+	CreditAccountId openapi_types.UUID   `json:"creditAccountId"`
+	DebitAccountId  openapi_types.UUID   `json:"debitAccountId"`
+	PartyId         openapi_types.UUID   `json:"partyId"`
+	PartyType       FulfillmentPartyType `json:"partyType"`
+	PostingDate     *openapi_types.Date  `json:"postingDate,omitempty"`
+	ReceiptDate     *openapi_types.Date  `json:"receiptDate,omitempty"`
+	ReceiptNo       *string              `json:"receiptNo,omitempty"`
+	Remarks         *string              `json:"remarks,omitempty"`
+	WarehouseId     *openapi_types.UUID  `json:"warehouseId,omitempty"`
+}
+
+// PurchaseReceiptItem defines model for PurchaseReceiptItem.
+type PurchaseReceiptItem struct {
+	BaseQty                  string               `json:"baseQty"`
+	CompanyId                openapi_types.UUID   `json:"companyId"`
+	CustomerPartNo           *string              `json:"customerPartNo"`
+	Id                       openapi_types.UUID   `json:"id"`
+	Idx                      int64                `json:"idx"`
+	InsertedAt               time.Time            `json:"insertedAt"`
+	MaterialCode             string               `json:"materialCode"`
+	MaterialId               openapi_types.UUID   `json:"materialId"`
+	MaterialName             string               `json:"materialName"`
+	MaterialSpec             *string              `json:"materialSpec"`
+	OrderAmount              string               `json:"orderAmount"`
+	OrderBaseAmount          string               `json:"orderBaseAmount"`
+	OrderBasePrice           string               `json:"orderBasePrice"`
+	OrderBaseQty             string               `json:"orderBaseQty"`
+	OrderCurrencyCode        string               `json:"orderCurrencyCode"`
+	OrderItemId              openapi_types.UUID   `json:"orderItemId"`
+	OrderNo                  string               `json:"orderNo"`
+	OrderPrice               string               `json:"orderPrice"`
+	OrderQty                 string               `json:"orderQty"`
+	OrderTaxRate             string               `json:"orderTaxRate"`
+	OrderUnitName            string               `json:"orderUnitName"`
+	PartyId                  openapi_types.UUID   `json:"partyId"`
+	PartyType                FulfillmentPartyType `json:"partyType"`
+	Qty                      string               `json:"qty"`
+	ReceiptDate              openapi_types.Date   `json:"receiptDate"`
+	ReceiptId                openapi_types.UUID   `json:"receiptId"`
+	ReceiptNo                string               `json:"receiptNo"`
+	ReceiptStatus            FulfillmentStatus    `json:"receiptStatus"`
+	ReconciledQty            string               `json:"reconciledQty"`
+	RemainingReconcilableQty string               `json:"remainingReconcilableQty"`
+	Remarks                  *string              `json:"remarks"`
+	UnitId                   openapi_types.UUID   `json:"unitId"`
+	UnitName                 string               `json:"unitName"`
+	UpdatedAt                time.Time            `json:"updatedAt"`
+	WarehouseId              openapi_types.UUID   `json:"warehouseId"`
+}
+
+// PurchaseReceiptItemCreate defines model for PurchaseReceiptItemCreate.
+type PurchaseReceiptItemCreate struct {
+	Idx         int64               `json:"idx"`
+	OrderItemId openapi_types.UUID  `json:"orderItemId"`
+	Qty         string              `json:"qty"`
+	ReceiptId   openapi_types.UUID  `json:"receiptId"`
+	Remarks     *string             `json:"remarks,omitempty"`
+	UnitId      *openapi_types.UUID `json:"unitId,omitempty"`
+	WarehouseId openapi_types.UUID  `json:"warehouseId"`
+}
+
+// PurchaseReceiptItemList defines model for PurchaseReceiptItemList.
+type PurchaseReceiptItemList struct {
+	Count   int64                 `json:"count"`
+	Results []PurchaseReceiptItem `json:"results"`
+}
+
+// PurchaseReceiptItemUpdate defines model for PurchaseReceiptItemUpdate.
+type PurchaseReceiptItemUpdate struct {
+	Idx         *int64              `json:"idx,omitempty"`
+	OrderItemId *openapi_types.UUID `json:"orderItemId,omitempty"`
+	Qty         *string             `json:"qty,omitempty"`
+	Remarks     *string             `json:"remarks,omitempty"`
+	UnitId      *openapi_types.UUID `json:"unitId,omitempty"`
+	WarehouseId *openapi_types.UUID `json:"warehouseId,omitempty"`
+}
+
+// PurchaseReceiptList defines model for PurchaseReceiptList.
+type PurchaseReceiptList struct {
+	Count   int64             `json:"count"`
+	Results []PurchaseReceipt `json:"results"`
+}
+
+// PurchaseReceiptUpdate defines model for PurchaseReceiptUpdate.
+type PurchaseReceiptUpdate struct {
+	CreditAccountId *openapi_types.UUID   `json:"creditAccountId,omitempty"`
+	DebitAccountId  *openapi_types.UUID   `json:"debitAccountId,omitempty"`
+	PartyId         *openapi_types.UUID   `json:"partyId,omitempty"`
+	PartyType       *FulfillmentPartyType `json:"partyType,omitempty"`
+	PostingDate     *openapi_types.Date   `json:"postingDate,omitempty"`
+	ReceiptDate     *openapi_types.Date   `json:"receiptDate,omitempty"`
+	ReceiptNo       *string               `json:"receiptNo,omitempty"`
+	Remarks         *string               `json:"remarks,omitempty"`
+	WarehouseId     *openapi_types.UUID   `json:"warehouseId,omitempty"`
+}
+
+// PurchaseReconciliation defines model for PurchaseReconciliation.
+type PurchaseReconciliation struct {
+	BaseGrossTotal     string               `json:"baseGrossTotal"`
+	CompanyId          openapi_types.UUID   `json:"companyId"`
+	CreatedById        *openapi_types.UUID  `json:"createdById"`
+	CreditAccountId    openapi_types.UUID   `json:"creditAccountId"`
+	DebitAccountId     openapi_types.UUID   `json:"debitAccountId"`
+	GrossTotal         string               `json:"grossTotal"`
+	Id                 openapi_types.UUID   `json:"id"`
+	InsertedAt         time.Time            `json:"insertedAt"`
+	PartyId            openapi_types.UUID   `json:"partyId"`
+	PartyType          FulfillmentPartyType `json:"partyType"`
+	PostingDate        *openapi_types.Date  `json:"postingDate"`
+	ReconciliationNo   string               `json:"reconciliationNo"`
+	ReconciliationType ReconciliationType   `json:"reconciliationType"`
+	Remarks            *string              `json:"remarks"`
+	Status             ReconciliationStatus `json:"status"`
+	UpdatedAt          time.Time            `json:"updatedAt"`
+}
+
+// PurchaseReconciliationCreate defines model for PurchaseReconciliationCreate.
+type PurchaseReconciliationCreate struct {
+	CompanyId          openapi_types.UUID   `json:"companyId"`
+	CreditAccountId    *openapi_types.UUID  `json:"creditAccountId,omitempty"`
+	DebitAccountId     *openapi_types.UUID  `json:"debitAccountId,omitempty"`
+	PartyId            openapi_types.UUID   `json:"partyId"`
+	PartyType          FulfillmentPartyType `json:"partyType"`
+	ReconciliationNo   *string              `json:"reconciliationNo,omitempty"`
+	ReconciliationType ReconciliationType   `json:"reconciliationType"`
+	Remarks            *string              `json:"remarks,omitempty"`
+}
+
+// PurchaseReconciliationItem defines model for PurchaseReconciliationItem.
+type PurchaseReconciliationItem struct {
+	Amount                  string               `json:"amount"`
+	BaseAmount              string               `json:"baseAmount"`
+	BaseQty                 string               `json:"baseQty"`
+	CompanyId               openapi_types.UUID   `json:"companyId"`
+	Id                      openapi_types.UUID   `json:"id"`
+	Idx                     int64                `json:"idx"`
+	InsertedAt              time.Time            `json:"insertedAt"`
+	MaterialName            string               `json:"materialName"`
+	OrderCurrencyCode       string               `json:"orderCurrencyCode"`
+	OutsourcedReceiptItemId *openapi_types.UUID  `json:"outsourcedReceiptItemId"`
+	Qty                     string               `json:"qty"`
+	ReceiptDate             openapi_types.Date   `json:"receiptDate"`
+	ReceiptItemId           *openapi_types.UUID  `json:"receiptItemId"`
+	ReceiptNo               string               `json:"receiptNo"`
+	ReconciliationId        openapi_types.UUID   `json:"reconciliationId"`
+	ReconciliationNo        string               `json:"reconciliationNo"`
+	ReconciliationStatus    ReconciliationStatus `json:"reconciliationStatus"`
+	Remarks                 *string              `json:"remarks"`
+	UnitName                string               `json:"unitName"`
+	UpdatedAt               time.Time            `json:"updatedAt"`
+}
+
+// PurchaseReconciliationItemCreate receiptItemId 与 outsourcedReceiptItemId 必须恰有一个非 null。
+type PurchaseReconciliationItemCreate struct {
+	Idx                     int64               `json:"idx"`
+	OutsourcedReceiptItemId *openapi_types.UUID `json:"outsourcedReceiptItemId,omitempty"`
+	Qty                     string              `json:"qty"`
+	ReceiptItemId           *openapi_types.UUID `json:"receiptItemId,omitempty"`
+	ReconciliationId        openapi_types.UUID  `json:"reconciliationId"`
+	Remarks                 *string             `json:"remarks,omitempty"`
+}
+
+// PurchaseReconciliationItemList defines model for PurchaseReconciliationItemList.
+type PurchaseReconciliationItemList struct {
+	Count   int64                        `json:"count"`
+	Results []PurchaseReconciliationItem `json:"results"`
+}
+
+// PurchaseReconciliationItemUpdate 更新来源时 receiptItemId 与 outsourcedReceiptItemId 必须恰有一个非 null。
+type PurchaseReconciliationItemUpdate struct {
+	Idx                     *int64              `json:"idx,omitempty"`
+	OutsourcedReceiptItemId *openapi_types.UUID `json:"outsourcedReceiptItemId,omitempty"`
+	Qty                     *string             `json:"qty,omitempty"`
+	ReceiptItemId           *openapi_types.UUID `json:"receiptItemId,omitempty"`
+	Remarks                 *string             `json:"remarks,omitempty"`
+}
+
+// PurchaseReconciliationList defines model for PurchaseReconciliationList.
+type PurchaseReconciliationList struct {
+	Count   int64                    `json:"count"`
+	Results []PurchaseReconciliation `json:"results"`
+}
+
+// PurchaseReconciliationUpdate defines model for PurchaseReconciliationUpdate.
+type PurchaseReconciliationUpdate struct {
+	CreditAccountId    *openapi_types.UUID   `json:"creditAccountId,omitempty"`
+	DebitAccountId     *openapi_types.UUID   `json:"debitAccountId,omitempty"`
+	PartyId            *openapi_types.UUID   `json:"partyId,omitempty"`
+	PartyType          *FulfillmentPartyType `json:"partyType,omitempty"`
+	ReconciliationNo   *string               `json:"reconciliationNo,omitempty"`
+	ReconciliationType *ReconciliationType   `json:"reconciliationType,omitempty"`
+	Remarks            *string               `json:"remarks,omitempty"`
 }
 
 // Quotation defines model for Quotation.
@@ -2533,6 +5330,17 @@ type QuotationUpdate struct {
 	ValidUntil    *openapi_types.Date `json:"validUntil,omitempty"`
 }
 
+// ReconciliationAuditRequest defines model for ReconciliationAuditRequest.
+type ReconciliationAuditRequest struct {
+	PostingDate *openapi_types.Date `json:"postingDate,omitempty"`
+}
+
+// ReconciliationStatus defines model for ReconciliationStatus.
+type ReconciliationStatus string
+
+// ReconciliationType defines model for ReconciliationType.
+type ReconciliationType string
+
 // ResourceMetaDocument defines model for ResourceMetaDocument.
 type ResourceMetaDocument struct {
 	Form *FormMeta `json:"form,omitempty"`
@@ -2568,6 +5376,221 @@ type RolePermissionSync struct {
 	Permissions []string `json:"permissions"`
 }
 
+// SalesDelivery defines model for SalesDelivery.
+type SalesDelivery struct {
+	AuditedAt       *time.Time           `json:"auditedAt"`
+	AuditedById     *openapi_types.UUID  `json:"auditedById"`
+	CompanyId       openapi_types.UUID   `json:"companyId"`
+	CreatedById     *openapi_types.UUID  `json:"createdById"`
+	CreditAccountId openapi_types.UUID   `json:"creditAccountId"`
+	DebitAccountId  openapi_types.UUID   `json:"debitAccountId"`
+	DeliveryDate    openapi_types.Date   `json:"deliveryDate"`
+	DeliveryNo      string               `json:"deliveryNo"`
+	Id              openapi_types.UUID   `json:"id"`
+	InsertedAt      time.Time            `json:"insertedAt"`
+	PartyId         openapi_types.UUID   `json:"partyId"`
+	PartyType       FulfillmentPartyType `json:"partyType"`
+	PostingDate     *openapi_types.Date  `json:"postingDate"`
+	Remarks         *string              `json:"remarks"`
+	Status          FulfillmentStatus    `json:"status"`
+	UpdatedAt       time.Time            `json:"updatedAt"`
+	WarehouseId     *openapi_types.UUID  `json:"warehouseId"`
+}
+
+// SalesDeliveryCreate defines model for SalesDeliveryCreate.
+type SalesDeliveryCreate struct {
+	CompanyId       openapi_types.UUID   `json:"companyId"`
+	CreditAccountId openapi_types.UUID   `json:"creditAccountId"`
+	DebitAccountId  openapi_types.UUID   `json:"debitAccountId"`
+	DeliveryDate    *openapi_types.Date  `json:"deliveryDate,omitempty"`
+	DeliveryNo      *string              `json:"deliveryNo,omitempty"`
+	PartyId         openapi_types.UUID   `json:"partyId"`
+	PartyType       FulfillmentPartyType `json:"partyType"`
+	PostingDate     *openapi_types.Date  `json:"postingDate,omitempty"`
+	Remarks         *string              `json:"remarks,omitempty"`
+	WarehouseId     *openapi_types.UUID  `json:"warehouseId,omitempty"`
+}
+
+// SalesDeliveryItem defines model for SalesDeliveryItem.
+type SalesDeliveryItem struct {
+	BaseQty                  string               `json:"baseQty"`
+	CompanyId                openapi_types.UUID   `json:"companyId"`
+	CustomerPartNo           *string              `json:"customerPartNo"`
+	DeliveryDate             openapi_types.Date   `json:"deliveryDate"`
+	DeliveryId               openapi_types.UUID   `json:"deliveryId"`
+	DeliveryNo               string               `json:"deliveryNo"`
+	DeliveryStatus           FulfillmentStatus    `json:"deliveryStatus"`
+	Id                       openapi_types.UUID   `json:"id"`
+	Idx                      int64                `json:"idx"`
+	InsertedAt               time.Time            `json:"insertedAt"`
+	MaterialCode             string               `json:"materialCode"`
+	MaterialId               openapi_types.UUID   `json:"materialId"`
+	MaterialName             string               `json:"materialName"`
+	MaterialSpec             *string              `json:"materialSpec"`
+	OrderAmount              string               `json:"orderAmount"`
+	OrderBaseAmount          string               `json:"orderBaseAmount"`
+	OrderBasePrice           string               `json:"orderBasePrice"`
+	OrderBaseQty             string               `json:"orderBaseQty"`
+	OrderCurrencyCode        string               `json:"orderCurrencyCode"`
+	OrderItemId              openapi_types.UUID   `json:"orderItemId"`
+	OrderNo                  string               `json:"orderNo"`
+	OrderPrice               string               `json:"orderPrice"`
+	OrderQty                 string               `json:"orderQty"`
+	OrderTaxRate             string               `json:"orderTaxRate"`
+	OrderUnitName            string               `json:"orderUnitName"`
+	PartyId                  openapi_types.UUID   `json:"partyId"`
+	PartyType                FulfillmentPartyType `json:"partyType"`
+	Qty                      string               `json:"qty"`
+	ReconciledQty            string               `json:"reconciledQty"`
+	RemainingReconcilableQty string               `json:"remainingReconcilableQty"`
+	Remarks                  *string              `json:"remarks"`
+	UnitId                   openapi_types.UUID   `json:"unitId"`
+	UnitName                 string               `json:"unitName"`
+	UpdatedAt                time.Time            `json:"updatedAt"`
+	WarehouseId              openapi_types.UUID   `json:"warehouseId"`
+}
+
+// SalesDeliveryItemCreate defines model for SalesDeliveryItemCreate.
+type SalesDeliveryItemCreate struct {
+	DeliveryId  openapi_types.UUID  `json:"deliveryId"`
+	Idx         int64               `json:"idx"`
+	OrderItemId openapi_types.UUID  `json:"orderItemId"`
+	Qty         string              `json:"qty"`
+	Remarks     *string             `json:"remarks,omitempty"`
+	UnitId      *openapi_types.UUID `json:"unitId,omitempty"`
+	WarehouseId openapi_types.UUID  `json:"warehouseId"`
+}
+
+// SalesDeliveryItemList defines model for SalesDeliveryItemList.
+type SalesDeliveryItemList struct {
+	Count   int64               `json:"count"`
+	Results []SalesDeliveryItem `json:"results"`
+}
+
+// SalesDeliveryItemUpdate defines model for SalesDeliveryItemUpdate.
+type SalesDeliveryItemUpdate struct {
+	Idx         *int64              `json:"idx,omitempty"`
+	OrderItemId *openapi_types.UUID `json:"orderItemId,omitempty"`
+	Qty         *string             `json:"qty,omitempty"`
+	Remarks     *string             `json:"remarks,omitempty"`
+	UnitId      *openapi_types.UUID `json:"unitId,omitempty"`
+	WarehouseId *openapi_types.UUID `json:"warehouseId,omitempty"`
+}
+
+// SalesDeliveryList defines model for SalesDeliveryList.
+type SalesDeliveryList struct {
+	Count   int64           `json:"count"`
+	Results []SalesDelivery `json:"results"`
+}
+
+// SalesDeliveryUpdate defines model for SalesDeliveryUpdate.
+type SalesDeliveryUpdate struct {
+	CreditAccountId *openapi_types.UUID   `json:"creditAccountId,omitempty"`
+	DebitAccountId  *openapi_types.UUID   `json:"debitAccountId,omitempty"`
+	DeliveryDate    *openapi_types.Date   `json:"deliveryDate,omitempty"`
+	DeliveryNo      *string               `json:"deliveryNo,omitempty"`
+	PartyId         *openapi_types.UUID   `json:"partyId,omitempty"`
+	PartyType       *FulfillmentPartyType `json:"partyType,omitempty"`
+	PostingDate     *openapi_types.Date   `json:"postingDate,omitempty"`
+	Remarks         *string               `json:"remarks,omitempty"`
+	WarehouseId     *openapi_types.UUID   `json:"warehouseId,omitempty"`
+}
+
+// SalesReconciliation defines model for SalesReconciliation.
+type SalesReconciliation struct {
+	BaseGrossTotal     string               `json:"baseGrossTotal"`
+	CompanyId          openapi_types.UUID   `json:"companyId"`
+	CreatedById        *openapi_types.UUID  `json:"createdById"`
+	CreditAccountId    openapi_types.UUID   `json:"creditAccountId"`
+	DebitAccountId     openapi_types.UUID   `json:"debitAccountId"`
+	GrossTotal         string               `json:"grossTotal"`
+	Id                 openapi_types.UUID   `json:"id"`
+	InsertedAt         time.Time            `json:"insertedAt"`
+	PartyId            openapi_types.UUID   `json:"partyId"`
+	PartyType          FulfillmentPartyType `json:"partyType"`
+	PostingDate        *openapi_types.Date  `json:"postingDate"`
+	ReconciliationNo   string               `json:"reconciliationNo"`
+	ReconciliationType ReconciliationType   `json:"reconciliationType"`
+	Remarks            *string              `json:"remarks"`
+	Status             ReconciliationStatus `json:"status"`
+	UpdatedAt          time.Time            `json:"updatedAt"`
+}
+
+// SalesReconciliationCreate defines model for SalesReconciliationCreate.
+type SalesReconciliationCreate struct {
+	CompanyId          openapi_types.UUID   `json:"companyId"`
+	CreditAccountId    *openapi_types.UUID  `json:"creditAccountId,omitempty"`
+	DebitAccountId     *openapi_types.UUID  `json:"debitAccountId,omitempty"`
+	PartyId            openapi_types.UUID   `json:"partyId"`
+	PartyType          FulfillmentPartyType `json:"partyType"`
+	ReconciliationNo   *string              `json:"reconciliationNo,omitempty"`
+	ReconciliationType ReconciliationType   `json:"reconciliationType"`
+	Remarks            *string              `json:"remarks,omitempty"`
+}
+
+// SalesReconciliationItem defines model for SalesReconciliationItem.
+type SalesReconciliationItem struct {
+	Amount               string               `json:"amount"`
+	BaseAmount           string               `json:"baseAmount"`
+	BaseQty              string               `json:"baseQty"`
+	CompanyId            openapi_types.UUID   `json:"companyId"`
+	DeliveryDate         openapi_types.Date   `json:"deliveryDate"`
+	DeliveryItemId       openapi_types.UUID   `json:"deliveryItemId"`
+	DeliveryNo           string               `json:"deliveryNo"`
+	Id                   openapi_types.UUID   `json:"id"`
+	Idx                  int64                `json:"idx"`
+	InsertedAt           time.Time            `json:"insertedAt"`
+	MaterialName         string               `json:"materialName"`
+	OrderCurrencyCode    string               `json:"orderCurrencyCode"`
+	Qty                  string               `json:"qty"`
+	ReconciliationId     openapi_types.UUID   `json:"reconciliationId"`
+	ReconciliationNo     string               `json:"reconciliationNo"`
+	ReconciliationStatus ReconciliationStatus `json:"reconciliationStatus"`
+	Remarks              *string              `json:"remarks"`
+	UnitName             string               `json:"unitName"`
+	UpdatedAt            time.Time            `json:"updatedAt"`
+}
+
+// SalesReconciliationItemCreate defines model for SalesReconciliationItemCreate.
+type SalesReconciliationItemCreate struct {
+	DeliveryItemId   openapi_types.UUID `json:"deliveryItemId"`
+	Idx              int64              `json:"idx"`
+	Qty              string             `json:"qty"`
+	ReconciliationId openapi_types.UUID `json:"reconciliationId"`
+	Remarks          *string            `json:"remarks,omitempty"`
+}
+
+// SalesReconciliationItemList defines model for SalesReconciliationItemList.
+type SalesReconciliationItemList struct {
+	Count   int64                     `json:"count"`
+	Results []SalesReconciliationItem `json:"results"`
+}
+
+// SalesReconciliationItemUpdate defines model for SalesReconciliationItemUpdate.
+type SalesReconciliationItemUpdate struct {
+	DeliveryItemId *openapi_types.UUID `json:"deliveryItemId,omitempty"`
+	Idx            *int64              `json:"idx,omitempty"`
+	Qty            *string             `json:"qty,omitempty"`
+	Remarks        *string             `json:"remarks,omitempty"`
+}
+
+// SalesReconciliationList defines model for SalesReconciliationList.
+type SalesReconciliationList struct {
+	Count   int64                 `json:"count"`
+	Results []SalesReconciliation `json:"results"`
+}
+
+// SalesReconciliationUpdate defines model for SalesReconciliationUpdate.
+type SalesReconciliationUpdate struct {
+	CreditAccountId    *openapi_types.UUID   `json:"creditAccountId,omitempty"`
+	DebitAccountId     *openapi_types.UUID   `json:"debitAccountId,omitempty"`
+	PartyId            *openapi_types.UUID   `json:"partyId,omitempty"`
+	PartyType          *FulfillmentPartyType `json:"partyType,omitempty"`
+	ReconciliationNo   *string               `json:"reconciliationNo,omitempty"`
+	ReconciliationType *ReconciliationType   `json:"reconciliationType,omitempty"`
+	Remarks            *string               `json:"remarks,omitempty"`
+}
+
 // SalesSetting defines model for SalesSetting.
 type SalesSetting struct {
 	DeliveryOvershipRatio   string             `json:"deliveryOvershipRatio"`
@@ -2588,6 +5611,40 @@ type SalesSettingUpdate struct {
 	SampleItemMaxQty        *int64  `json:"sampleItemMaxQty,omitempty"`
 	SpotItemMaxQty          *int64  `json:"spotItemMaxQty,omitempty"`
 }
+
+// ScmFlowType defines model for ScmFlowType.
+type ScmFlowType string
+
+// ScmOrderFlowItem defines model for ScmOrderFlowItem.
+type ScmOrderFlowItem struct {
+	CompanyId      openapi_types.UUID `json:"companyId"`
+	CustomerPartNo *string            `json:"customerPartNo"`
+	FlowType       ScmFlowType        `json:"flowType"`
+
+	// Id 单据类型与来源行 UUID 拼接的稳定行标识。
+	//
+	// Example: sales_delivery:00000000-0000-0000-0000-000000000000
+	Id           string             `json:"id"`
+	MaterialCode string             `json:"materialCode"`
+	MaterialName string             `json:"materialName"`
+	MaterialSpec *string            `json:"materialSpec"`
+	OrderId      openapi_types.UUID `json:"orderId"`
+	OrderItemId  openapi_types.UUID `json:"orderItemId"`
+	Qty          string             `json:"qty"`
+	Status       ScmOrderFlowStatus `json:"status"`
+	UnitName     string             `json:"unitName"`
+	VoucherDate  openapi_types.Date `json:"voucherDate"`
+	VoucherNo    string             `json:"voucherNo"`
+}
+
+// ScmOrderFlowItemList defines model for ScmOrderFlowItemList.
+type ScmOrderFlowItemList struct {
+	Count   int64              `json:"count"`
+	Results []ScmOrderFlowItem `json:"results"`
+}
+
+// ScmOrderFlowStatus defines model for ScmOrderFlowStatus.
+type ScmOrderFlowStatus string
 
 // SessionUser defines model for SessionUser.
 type SessionUser struct {
@@ -3066,6 +6123,36 @@ type SupplierUpdate struct {
 	ShortName *string `json:"shortName,omitempty"`
 }
 
+// SystemAuditLog defines model for SystemAuditLog.
+type SystemAuditLog struct {
+	ActionName  string                 `json:"actionName"`
+	ActionType  string                 `json:"actionType"`
+	ActorId     *openapi_types.UUID    `json:"actorId"`
+	ActorName   *string                `json:"actorName"`
+	Changes     map[string]interface{} `json:"changes"`
+	CompanyId   *openapi_types.UUID    `json:"companyId"`
+	Id          openapi_types.UUID     `json:"id"`
+	InsertedAt  time.Time              `json:"insertedAt"`
+	RecordId    openapi_types.UUID     `json:"recordId"`
+	RecordLabel *string                `json:"recordLabel"`
+	Resource    string                 `json:"resource"`
+}
+
+// SystemAuditLogList defines model for SystemAuditLogList.
+type SystemAuditLogList struct {
+	Count   int64            `json:"count"`
+	Results []SystemAuditLog `json:"results"`
+}
+
+// SystemAuditLogQuery defines model for SystemAuditLogQuery.
+type SystemAuditLogQuery struct {
+	Filter *FilterState `json:"filter,omitempty"`
+	Limit  *int         `json:"limit,omitempty"`
+	Offset *int         `json:"offset,omitempty"`
+	Search *string      `json:"search,omitempty"`
+	Sort   *Sort        `json:"sort,omitempty"`
+}
+
 // SystemRole defines model for SystemRole.
 type SystemRole struct {
 	Builtin    bool               `json:"builtin"`
@@ -3164,9 +6251,79 @@ type SystemUserUpdate struct {
 	RoleIds    *[]openapi_types.UUID `json:"roleIds,omitempty"`
 }
 
+// Todo defines model for Todo.
+type Todo struct {
+	Amount             string                `json:"amount"`
+	ClosedAt           *time.Time            `json:"closedAt"`
+	ClosedReason       *TodoClosedReason     `json:"closedReason"`
+	Company            *TodoCompanyReference `json:"company"`
+	CompanyId          openapi_types.UUID    `json:"companyId"`
+	CreatedBy          *TodoUserReference    `json:"createdBy"`
+	CreatedById        *openapi_types.UUID   `json:"createdById"`
+	Dismissed          bool                  `json:"dismissed"`
+	DraftInvoiceLinked bool                  `json:"draftInvoiceLinked"`
+	Id                 openapi_types.UUID    `json:"id"`
+	InsertedAt         time.Time             `json:"insertedAt"`
+	MyDismissedAt      *time.Time            `json:"myDismissedAt"`
+	MyReadAt           *time.Time            `json:"myReadAt"`
+	PartyId            openapi_types.UUID    `json:"partyId"`
+	PartyName          string                `json:"partyName"`
+	PartyType          string                `json:"partyType"`
+	SourceChangedAt    time.Time             `json:"sourceChangedAt"`
+	SourceId           openapi_types.UUID    `json:"sourceId"`
+	SourceNo           string                `json:"sourceNo"`
+	SourceType         string                `json:"sourceType"`
+	Status             TodoStatus            `json:"status"`
+	Type               TodoType              `json:"type"`
+	UpdatedAt          time.Time             `json:"updatedAt"`
+}
+
+// TodoClosedReason defines model for Todo.ClosedReason.
+type TodoClosedReason string
+
+// TodoStatus defines model for Todo.Status.
+type TodoStatus string
+
+// TodoType defines model for Todo.Type.
+type TodoType string
+
+// TodoCompanyReference defines model for TodoCompanyReference.
+type TodoCompanyReference struct {
+	Id        openapi_types.UUID `json:"id"`
+	Name      string             `json:"name"`
+	ShortName *string            `json:"shortName"`
+}
+
+// TodoList defines model for TodoList.
+type TodoList struct {
+	Count   int64  `json:"count"`
+	Results []Todo `json:"results"`
+}
+
+// TodoQuery defines model for TodoQuery.
+type TodoQuery struct {
+	Filter           *FilterState  `json:"filter,omitempty"`
+	IncludeDismissed *bool         `json:"includeDismissed,omitempty"`
+	Limit            *int          `json:"limit,omitempty"`
+	Offset           *int          `json:"offset,omitempty"`
+	Search           *string       `json:"search,omitempty"`
+	Sort             *Sort         `json:"sort,omitempty"`
+	Tab              *TodoQueryTab `json:"tab,omitempty"`
+}
+
+// TodoQueryTab defines model for TodoQuery.Tab.
+type TodoQueryTab string
+
 // TodoUnreadCount defines model for TodoUnreadCount.
 type TodoUnreadCount struct {
 	Count int64 `json:"count"`
+}
+
+// TodoUserReference defines model for TodoUserReference.
+type TodoUserReference struct {
+	Id       openapi_types.UUID `json:"id"`
+	Name     *string            `json:"name"`
+	Username string             `json:"username"`
 }
 
 // Unit defines model for Unit.
@@ -3206,6 +6363,131 @@ type UnitUpdate struct {
 	Ratio    *string   `json:"ratio,omitempty"`
 	Symbol   *string   `json:"symbol,omitempty"`
 	UnitType *UnitType `json:"unitType,omitempty"`
+}
+
+// VatInvoice defines model for VatInvoice.
+type VatInvoice struct {
+	AmountAccountId     *openapi_types.UUID      `json:"amountAccountId"`
+	AuditedAt           *time.Time               `json:"auditedAt"`
+	AuditedById         *openapi_types.UUID      `json:"auditedById"`
+	BuyerAddressPhone   *string                  `json:"buyerAddressPhone"`
+	BuyerBankAccount    *string                  `json:"buyerBankAccount"`
+	BuyerName           *string                  `json:"buyerName"`
+	BuyerTaxNo          *string                  `json:"buyerTaxNo"`
+	CompanyId           openapi_types.UUID       `json:"companyId"`
+	CreatedById         *openapi_types.UUID      `json:"createdById"`
+	Direction           InvoiceDirection         `json:"direction"`
+	DocNo               *string                  `json:"docNo"`
+	GrossTotal          *string                  `json:"grossTotal"`
+	Id                  openapi_types.UUID       `json:"id"`
+	InsertedAt          time.Time                `json:"insertedAt"`
+	InvoiceCode         string                   `json:"invoiceCode"`
+	InvoiceDate         *openapi_types.Date      `json:"invoiceDate"`
+	InvoiceKind         InvoiceKind              `json:"invoiceKind"`
+	InvoiceNo           *string                  `json:"invoiceNo"`
+	Issuer              *string                  `json:"issuer"`
+	Items               []map[string]interface{} `json:"items"`
+	MirrorInvoiceId     *openapi_types.UUID      `json:"mirrorInvoiceId"`
+	NetTotal            *string                  `json:"netTotal"`
+	PartyAccountId      *openapi_types.UUID      `json:"partyAccountId"`
+	PartyId             openapi_types.UUID       `json:"partyId"`
+	PartyType           FinancePartyType         `json:"partyType"`
+	Payee               *string                  `json:"payee"`
+	PostingDate         *openapi_types.Date      `json:"postingDate"`
+	PurReconciliationId *openapi_types.UUID      `json:"purReconciliationId"`
+	RedInvoiceNo        *string                  `json:"redInvoiceNo"`
+	Remarks             *string                  `json:"remarks"`
+	Reviewer            *string                  `json:"reviewer"`
+	SalReconciliationId *openapi_types.UUID      `json:"salReconciliationId"`
+	SellerAddressPhone  *string                  `json:"sellerAddressPhone"`
+	SellerBankAccount   *string                  `json:"sellerBankAccount"`
+	SellerName          *string                  `json:"sellerName"`
+	SellerTaxNo         *string                  `json:"sellerTaxNo"`
+	Status              InvoiceStatus            `json:"status"`
+	TaxAccountId        *openapi_types.UUID      `json:"taxAccountId"`
+	TaxTotal            *string                  `json:"taxTotal"`
+	UpdatedAt           time.Time                `json:"updatedAt"`
+}
+
+// VatInvoiceCreate defines model for VatInvoiceCreate.
+type VatInvoiceCreate struct {
+	AmountAccountId     *openapi_types.UUID       `json:"amountAccountId,omitempty"`
+	BuyerAddressPhone   *string                   `json:"buyerAddressPhone,omitempty"`
+	BuyerBankAccount    *string                   `json:"buyerBankAccount,omitempty"`
+	BuyerName           *string                   `json:"buyerName,omitempty"`
+	BuyerTaxNo          *string                   `json:"buyerTaxNo,omitempty"`
+	CompanyId           openapi_types.UUID        `json:"companyId"`
+	Direction           InvoiceDirection          `json:"direction"`
+	DocNo               *string                   `json:"docNo,omitempty"`
+	GrossTotal          *string                   `json:"grossTotal,omitempty"`
+	InvoiceCode         *string                   `json:"invoiceCode,omitempty"`
+	InvoiceDate         *openapi_types.Date       `json:"invoiceDate,omitempty"`
+	InvoiceKind         InvoiceKind               `json:"invoiceKind"`
+	InvoiceNo           *string                   `json:"invoiceNo,omitempty"`
+	Issuer              *string                   `json:"issuer,omitempty"`
+	Items               *[]map[string]interface{} `json:"items,omitempty"`
+	MirrorInvoiceId     *openapi_types.UUID       `json:"mirrorInvoiceId,omitempty"`
+	NetTotal            *string                   `json:"netTotal,omitempty"`
+	PartyAccountId      *openapi_types.UUID       `json:"partyAccountId,omitempty"`
+	PartyId             openapi_types.UUID        `json:"partyId"`
+	PartyType           FinancePartyType          `json:"partyType"`
+	Payee               *string                   `json:"payee,omitempty"`
+	PurReconciliationId *openapi_types.UUID       `json:"purReconciliationId,omitempty"`
+	Remarks             *string                   `json:"remarks,omitempty"`
+	Reviewer            *string                   `json:"reviewer,omitempty"`
+	SalReconciliationId *openapi_types.UUID       `json:"salReconciliationId,omitempty"`
+	SellerAddressPhone  *string                   `json:"sellerAddressPhone,omitempty"`
+	SellerBankAccount   *string                   `json:"sellerBankAccount,omitempty"`
+	SellerName          *string                   `json:"sellerName,omitempty"`
+	SellerTaxNo         *string                   `json:"sellerTaxNo,omitempty"`
+	TaxAccountId        *openapi_types.UUID       `json:"taxAccountId,omitempty"`
+	TaxTotal            *string                   `json:"taxTotal,omitempty"`
+}
+
+// VatInvoiceList defines model for VatInvoiceList.
+type VatInvoiceList struct {
+	Count   int64        `json:"count"`
+	Results []VatInvoice `json:"results"`
+}
+
+// VatInvoiceReverse defines model for VatInvoiceReverse.
+type VatInvoiceReverse struct {
+	PostingDate  openapi_types.Date `json:"postingDate"`
+	RedInvoiceNo *string            `json:"redInvoiceNo,omitempty"`
+}
+
+// VatInvoiceUpdate defines model for VatInvoiceUpdate.
+type VatInvoiceUpdate struct {
+	AmountAccountId     *openapi_types.UUID       `json:"amountAccountId,omitempty"`
+	BuyerAddressPhone   *string                   `json:"buyerAddressPhone,omitempty"`
+	BuyerBankAccount    *string                   `json:"buyerBankAccount,omitempty"`
+	BuyerName           *string                   `json:"buyerName,omitempty"`
+	BuyerTaxNo          *string                   `json:"buyerTaxNo,omitempty"`
+	Direction           *InvoiceDirection         `json:"direction,omitempty"`
+	DocNo               *string                   `json:"docNo,omitempty"`
+	GrossTotal          *string                   `json:"grossTotal,omitempty"`
+	InvoiceCode         *string                   `json:"invoiceCode,omitempty"`
+	InvoiceDate         *openapi_types.Date       `json:"invoiceDate,omitempty"`
+	InvoiceKind         *InvoiceKind              `json:"invoiceKind,omitempty"`
+	InvoiceNo           *string                   `json:"invoiceNo,omitempty"`
+	Issuer              *string                   `json:"issuer,omitempty"`
+	Items               *[]map[string]interface{} `json:"items,omitempty"`
+	MirrorInvoiceId     *openapi_types.UUID       `json:"mirrorInvoiceId,omitempty"`
+	NetTotal            *string                   `json:"netTotal,omitempty"`
+	PartyAccountId      *openapi_types.UUID       `json:"partyAccountId,omitempty"`
+	PartyId             *openapi_types.UUID       `json:"partyId,omitempty"`
+	PartyType           *FinancePartyType         `json:"partyType,omitempty"`
+	Payee               *string                   `json:"payee,omitempty"`
+	PurReconciliationId *openapi_types.UUID       `json:"purReconciliationId,omitempty"`
+	Remarks             *string                   `json:"remarks,omitempty"`
+	Reviewer            *string                   `json:"reviewer,omitempty"`
+	SalReconciliationId *openapi_types.UUID       `json:"salReconciliationId,omitempty"`
+	SellerAddressPhone  *string                   `json:"sellerAddressPhone,omitempty"`
+	SellerBankAccount   *string                   `json:"sellerBankAccount,omitempty"`
+	SellerName          *string                   `json:"sellerName,omitempty"`
+	SellerTaxNo         *string                   `json:"sellerTaxNo,omitempty"`
+	TaxAccountId        *openapi_types.UUID       `json:"taxAccountId,omitempty"`
+	TaxTotal            *string                   `json:"taxTotal,omitempty"`
 }
 
 // Warehouse defines model for Warehouse.
@@ -3302,6 +6584,22 @@ type Error = ErrorEnvelope
 type GetAccARAPReportParams struct {
 	CompanyId *string `form:"companyId,omitempty" json:"companyId,omitempty"`
 	AsOf      *string `form:"asOf,omitempty" json:"asOf,omitempty"`
+}
+
+// GetFinanceBankReconciliationRemainingParams defines parameters for GetFinanceBankReconciliationRemaining.
+type GetFinanceBankReconciliationRemainingParams struct {
+	BankTransactionId openapi_types.UUID `form:"bankTransactionId" json:"bankTransactionId"`
+	JournalId         openapi_types.UUID `form:"journalId" json:"journalId"`
+}
+
+// GetHrAttendanceMonthSummaryParams defines parameters for GetHrAttendanceMonthSummary.
+type GetHrAttendanceMonthSummaryParams struct {
+	Month string `form:"month" json:"month"`
+}
+
+// GetHrPayrollMonthStatsParams defines parameters for GetHrPayrollMonthStats.
+type GetHrPayrollMonthStatsParams struct {
+	Month string `form:"month" json:"month"`
 }
 
 // GetPrintFieldCatalogParams defines parameters for GetPrintFieldCatalog.
@@ -3413,6 +6711,153 @@ type QuerySysFilesJSONRequestBody = ListQuery
 // AttachFileJSONRequestBody defines body for AttachFile for application/json ContentType.
 type AttachFileJSONRequestBody = AttachmentCreate
 
+// CreateFinanceBankAccountJSONRequestBody defines body for CreateFinanceBankAccount for application/json ContentType.
+type CreateFinanceBankAccountJSONRequestBody = BankAccountCreate
+
+// QueryFinanceBankAccountsJSONRequestBody defines body for QueryFinanceBankAccounts for application/json ContentType.
+type QueryFinanceBankAccountsJSONRequestBody = ListQuery
+
+// UpdateFinanceBankAccountJSONRequestBody defines body for UpdateFinanceBankAccount for application/json ContentType.
+type UpdateFinanceBankAccountJSONRequestBody = BankAccountUpdate
+
+// QueryFinanceBankImportItemsJSONRequestBody defines body for QueryFinanceBankImportItems for application/json ContentType.
+type QueryFinanceBankImportItemsJSONRequestBody = ListQuery
+
+// UpdateFinanceBankImportItemJSONRequestBody defines body for UpdateFinanceBankImportItem for application/json ContentType.
+type UpdateFinanceBankImportItemJSONRequestBody = BankImportItemUpdate
+
+// CreateFinanceBankImportTemplateJSONRequestBody defines body for CreateFinanceBankImportTemplate for application/json ContentType.
+type CreateFinanceBankImportTemplateJSONRequestBody = BankImportTemplateCreate
+
+// QueryFinanceBankImportTemplatesJSONRequestBody defines body for QueryFinanceBankImportTemplates for application/json ContentType.
+type QueryFinanceBankImportTemplatesJSONRequestBody = ListQuery
+
+// UpdateFinanceBankImportTemplateJSONRequestBody defines body for UpdateFinanceBankImportTemplate for application/json ContentType.
+type UpdateFinanceBankImportTemplateJSONRequestBody = BankImportTemplateUpdate
+
+// CreateFinanceBankImportJSONRequestBody defines body for CreateFinanceBankImport for application/json ContentType.
+type CreateFinanceBankImportJSONRequestBody = BankImportCreate
+
+// QueryFinanceBankImportsJSONRequestBody defines body for QueryFinanceBankImports for application/json ContentType.
+type QueryFinanceBankImportsJSONRequestBody = ListQuery
+
+// CreateFinanceBankReconciliationJSONRequestBody defines body for CreateFinanceBankReconciliation for application/json ContentType.
+type CreateFinanceBankReconciliationJSONRequestBody = BankReconciliationCreate
+
+// QueryFinanceBankReconciliationsJSONRequestBody defines body for QueryFinanceBankReconciliations for application/json ContentType.
+type QueryFinanceBankReconciliationsJSONRequestBody = ListQuery
+
+// QuickCreateFinanceBankReconciliationJSONRequestBody defines body for QuickCreateFinanceBankReconciliation for application/json ContentType.
+type QuickCreateFinanceBankReconciliationJSONRequestBody = BankReconciliationQuickCreate
+
+// CreateFinanceBankTransactionJSONRequestBody defines body for CreateFinanceBankTransaction for application/json ContentType.
+type CreateFinanceBankTransactionJSONRequestBody = BankTransactionCreate
+
+// QueryFinanceBankTransactionsJSONRequestBody defines body for QueryFinanceBankTransactions for application/json ContentType.
+type QueryFinanceBankTransactionsJSONRequestBody = ListQuery
+
+// UpdateFinanceBankTransactionJSONRequestBody defines body for UpdateFinanceBankTransaction for application/json ContentType.
+type UpdateFinanceBankTransactionJSONRequestBody = BankTransactionUpdate
+
+// QueryFinanceBillHoldingsJSONRequestBody defines body for QueryFinanceBillHoldings for application/json ContentType.
+type QueryFinanceBillHoldingsJSONRequestBody = ListQuery
+
+// CreateFinanceBillTransactionJSONRequestBody defines body for CreateFinanceBillTransaction for application/json ContentType.
+type CreateFinanceBillTransactionJSONRequestBody = BillTransactionCreate
+
+// OcrFinanceBillTransactionJSONRequestBody defines body for OcrFinanceBillTransaction for application/json ContentType.
+type OcrFinanceBillTransactionJSONRequestBody = OCRRequest
+
+// QueryFinanceBillTransactionsJSONRequestBody defines body for QueryFinanceBillTransactions for application/json ContentType.
+type QueryFinanceBillTransactionsJSONRequestBody = ListQuery
+
+// UpdateFinanceBillTransactionJSONRequestBody defines body for UpdateFinanceBillTransaction for application/json ContentType.
+type UpdateFinanceBillTransactionJSONRequestBody = BillTransactionUpdate
+
+// AuditFinanceBillTransactionJSONRequestBody defines body for AuditFinanceBillTransaction for application/json ContentType.
+type AuditFinanceBillTransactionJSONRequestBody = PostingDateAction
+
+// QueryFinanceBillsJSONRequestBody defines body for QueryFinanceBills for application/json ContentType.
+type QueryFinanceBillsJSONRequestBody = ListQuery
+
+// UpdateFinanceBillJSONRequestBody defines body for UpdateFinanceBill for application/json ContentType.
+type UpdateFinanceBillJSONRequestBody = BillUpdate
+
+// CreateFinanceExpenseReportItemJSONRequestBody defines body for CreateFinanceExpenseReportItem for application/json ContentType.
+type CreateFinanceExpenseReportItemJSONRequestBody = ExpenseReportItemCreate
+
+// QueryFinanceExpenseReportItemsJSONRequestBody defines body for QueryFinanceExpenseReportItems for application/json ContentType.
+type QueryFinanceExpenseReportItemsJSONRequestBody = ListQuery
+
+// UpdateFinanceExpenseReportItemJSONRequestBody defines body for UpdateFinanceExpenseReportItem for application/json ContentType.
+type UpdateFinanceExpenseReportItemJSONRequestBody = ExpenseReportItemUpdate
+
+// CreateFinanceExpenseReportJSONRequestBody defines body for CreateFinanceExpenseReport for application/json ContentType.
+type CreateFinanceExpenseReportJSONRequestBody = ExpenseReportCreate
+
+// QueryFinanceExpenseReportsJSONRequestBody defines body for QueryFinanceExpenseReports for application/json ContentType.
+type QueryFinanceExpenseReportsJSONRequestBody = ListQuery
+
+// UpdateFinanceExpenseReportJSONRequestBody defines body for UpdateFinanceExpenseReport for application/json ContentType.
+type UpdateFinanceExpenseReportJSONRequestBody = ExpenseReportUpdate
+
+// AuditFinanceExpenseReportJSONRequestBody defines body for AuditFinanceExpenseReport for application/json ContentType.
+type AuditFinanceExpenseReportJSONRequestBody = PostingDateAction
+
+// CreateFinanceVatInvoiceJSONRequestBody defines body for CreateFinanceVatInvoice for application/json ContentType.
+type CreateFinanceVatInvoiceJSONRequestBody = VatInvoiceCreate
+
+// OcrFinanceVatInvoiceJSONRequestBody defines body for OcrFinanceVatInvoice for application/json ContentType.
+type OcrFinanceVatInvoiceJSONRequestBody = OCRRequest
+
+// QueryFinanceVatInvoicesJSONRequestBody defines body for QueryFinanceVatInvoices for application/json ContentType.
+type QueryFinanceVatInvoicesJSONRequestBody = ListQuery
+
+// UpdateFinanceVatInvoiceJSONRequestBody defines body for UpdateFinanceVatInvoice for application/json ContentType.
+type UpdateFinanceVatInvoiceJSONRequestBody = VatInvoiceUpdate
+
+// AuditFinanceVatInvoiceJSONRequestBody defines body for AuditFinanceVatInvoice for application/json ContentType.
+type AuditFinanceVatInvoiceJSONRequestBody = PostingDateAction
+
+// ReverseFinanceVatInvoiceJSONRequestBody defines body for ReverseFinanceVatInvoice for application/json ContentType.
+type ReverseFinanceVatInvoiceJSONRequestBody = VatInvoiceReverse
+
+// CreateHrAttendanceCorrectionJSONRequestBody defines body for CreateHrAttendanceCorrection for application/json ContentType.
+type CreateHrAttendanceCorrectionJSONRequestBody = AttendanceCorrectionCreate
+
+// QueryHrAttendanceCorrectionsJSONRequestBody defines body for QueryHrAttendanceCorrections for application/json ContentType.
+type QueryHrAttendanceCorrectionsJSONRequestBody = ListQuery
+
+// UpdateHrAttendanceCorrectionJSONRequestBody defines body for UpdateHrAttendanceCorrection for application/json ContentType.
+type UpdateHrAttendanceCorrectionJSONRequestBody = AttendanceCorrectionUpdate
+
+// QueryHrAttendanceDaysJSONRequestBody defines body for QueryHrAttendanceDays for application/json ContentType.
+type QueryHrAttendanceDaysJSONRequestBody = ListQuery
+
+// RecalcHrAttendanceDaysJSONRequestBody defines body for RecalcHrAttendanceDays for application/json ContentType.
+type RecalcHrAttendanceDaysJSONRequestBody = AttendanceDayRecalc
+
+// CreateHrAttendanceImportJSONRequestBody defines body for CreateHrAttendanceImport for application/json ContentType.
+type CreateHrAttendanceImportJSONRequestBody = AttendanceImportCreate
+
+// QueryHrAttendanceImportsJSONRequestBody defines body for QueryHrAttendanceImports for application/json ContentType.
+type QueryHrAttendanceImportsJSONRequestBody = ListQuery
+
+// ImportHrAttendanceImportJSONRequestBody defines body for ImportHrAttendanceImport for application/json ContentType.
+type ImportHrAttendanceImportJSONRequestBody = AttendanceImportExecute
+
+// QueryHrAttendancePunchesJSONRequestBody defines body for QueryHrAttendancePunches for application/json ContentType.
+type QueryHrAttendancePunchesJSONRequestBody = ListQuery
+
+// CreateHrEmployeeLoanJSONRequestBody defines body for CreateHrEmployeeLoan for application/json ContentType.
+type CreateHrEmployeeLoanJSONRequestBody = EmployeeLoanCreate
+
+// QueryHrEmployeeLoansJSONRequestBody defines body for QueryHrEmployeeLoans for application/json ContentType.
+type QueryHrEmployeeLoansJSONRequestBody = ListQuery
+
+// UpdateHrEmployeeLoanJSONRequestBody defines body for UpdateHrEmployeeLoan for application/json ContentType.
+type UpdateHrEmployeeLoanJSONRequestBody = EmployeeLoanUpdate
+
 // CreateHrEmployeeJSONRequestBody defines body for CreateHrEmployee for application/json ContentType.
 type CreateHrEmployeeJSONRequestBody = EmployeeCreate
 
@@ -3421,6 +6866,27 @@ type QueryHrEmployeesJSONRequestBody = ListQuery
 
 // UpdateHrEmployeeJSONRequestBody defines body for UpdateHrEmployee for application/json ContentType.
 type UpdateHrEmployeeJSONRequestBody = EmployeeUpdate
+
+// CreateHrPayrollPaymentJSONRequestBody defines body for CreateHrPayrollPayment for application/json ContentType.
+type CreateHrPayrollPaymentJSONRequestBody = PayrollPaymentCreate
+
+// PayRemainingHrPayrollPaymentJSONRequestBody defines body for PayRemainingHrPayrollPayment for application/json ContentType.
+type PayRemainingHrPayrollPaymentJSONRequestBody = PayrollPaymentPayRemaining
+
+// QueryHrPayrollPaymentsJSONRequestBody defines body for QueryHrPayrollPayments for application/json ContentType.
+type QueryHrPayrollPaymentsJSONRequestBody = ListQuery
+
+// CreateHrPayrollJSONRequestBody defines body for CreateHrPayroll for application/json ContentType.
+type CreateHrPayrollJSONRequestBody = PayrollCreate
+
+// GenerateHrPayrollsJSONRequestBody defines body for GenerateHrPayrolls for application/json ContentType.
+type GenerateHrPayrollsJSONRequestBody = PayrollGenerate
+
+// QueryHrPayrollsJSONRequestBody defines body for QueryHrPayrolls for application/json ContentType.
+type QueryHrPayrollsJSONRequestBody = ListQuery
+
+// UpdateHrPayrollJSONRequestBody defines body for UpdateHrPayroll for application/json ContentType.
+type UpdateHrPayrollJSONRequestBody = PayrollUpdate
 
 // CreateInvMaterialCategoryJSONRequestBody defines body for CreateInvMaterialCategory for application/json ContentType.
 type CreateInvMaterialCategoryJSONRequestBody = MaterialCategoryCreate
@@ -3527,6 +6993,123 @@ type SeedInvWarehouseDefaultsJSONRequestBody = WarehouseSeedDefaultsInput
 // UpdateInvWarehouseJSONRequestBody defines body for UpdateInvWarehouse for application/json ContentType.
 type UpdateInvWarehouseJSONRequestBody = WarehouseUpdate
 
+// CreateManufacturingBomByproductJSONRequestBody defines body for CreateManufacturingBomByproduct for application/json ContentType.
+type CreateManufacturingBomByproductJSONRequestBody = ManufacturingBomByproductCreate
+
+// QueryManufacturingBomByproductsJSONRequestBody defines body for QueryManufacturingBomByproducts for application/json ContentType.
+type QueryManufacturingBomByproductsJSONRequestBody = ListQuery
+
+// UpdateManufacturingBomByproductJSONRequestBody defines body for UpdateManufacturingBomByproduct for application/json ContentType.
+type UpdateManufacturingBomByproductJSONRequestBody = ManufacturingBomByproductUpdate
+
+// CreateManufacturingBomComponentJSONRequestBody defines body for CreateManufacturingBomComponent for application/json ContentType.
+type CreateManufacturingBomComponentJSONRequestBody = ManufacturingBomComponentCreate
+
+// QueryManufacturingBomComponentsJSONRequestBody defines body for QueryManufacturingBomComponents for application/json ContentType.
+type QueryManufacturingBomComponentsJSONRequestBody = ListQuery
+
+// UpdateManufacturingBomComponentJSONRequestBody defines body for UpdateManufacturingBomComponent for application/json ContentType.
+type UpdateManufacturingBomComponentJSONRequestBody = ManufacturingBomComponentUpdate
+
+// CreateManufacturingBomRouteJSONRequestBody defines body for CreateManufacturingBomRoute for application/json ContentType.
+type CreateManufacturingBomRouteJSONRequestBody = ManufacturingBomRouteCreate
+
+// QueryManufacturingBomRoutesJSONRequestBody defines body for QueryManufacturingBomRoutes for application/json ContentType.
+type QueryManufacturingBomRoutesJSONRequestBody = ListQuery
+
+// UpdateManufacturingBomRouteJSONRequestBody defines body for UpdateManufacturingBomRoute for application/json ContentType.
+type UpdateManufacturingBomRouteJSONRequestBody = ManufacturingBomRouteUpdate
+
+// CreateManufacturingBomJSONRequestBody defines body for CreateManufacturingBom for application/json ContentType.
+type CreateManufacturingBomJSONRequestBody = ManufacturingBomCreate
+
+// QueryManufacturingBomsJSONRequestBody defines body for QueryManufacturingBoms for application/json ContentType.
+type QueryManufacturingBomsJSONRequestBody = ListQuery
+
+// UpdateManufacturingBomJSONRequestBody defines body for UpdateManufacturingBom for application/json ContentType.
+type UpdateManufacturingBomJSONRequestBody = ManufacturingBomUpdate
+
+// ApplyManufacturingBomRouteTemplateJSONRequestBody defines body for ApplyManufacturingBomRouteTemplate for application/json ContentType.
+type ApplyManufacturingBomRouteTemplateJSONRequestBody = ManufacturingBomApplyRouteTemplate
+
+// CreateManufacturingDemandItemJSONRequestBody defines body for CreateManufacturingDemandItem for application/json ContentType.
+type CreateManufacturingDemandItemJSONRequestBody = ManufacturingDemandItemCreate
+
+// QueryManufacturingDemandItemsJSONRequestBody defines body for QueryManufacturingDemandItems for application/json ContentType.
+type QueryManufacturingDemandItemsJSONRequestBody = ListQuery
+
+// UpdateManufacturingDemandItemJSONRequestBody defines body for UpdateManufacturingDemandItem for application/json ContentType.
+type UpdateManufacturingDemandItemJSONRequestBody = ManufacturingDemandItemUpdate
+
+// ChangeManufacturingDemandItemFulfillmentJSONRequestBody defines body for ChangeManufacturingDemandItemFulfillment for application/json ContentType.
+type ChangeManufacturingDemandItemFulfillmentJSONRequestBody = ManufacturingDemandItemFulfillmentUpdate
+
+// CreateManufacturingDemandJSONRequestBody defines body for CreateManufacturingDemand for application/json ContentType.
+type CreateManufacturingDemandJSONRequestBody = ManufacturingDemandCreate
+
+// QueryManufacturingDemandsJSONRequestBody defines body for QueryManufacturingDemands for application/json ContentType.
+type QueryManufacturingDemandsJSONRequestBody = ListQuery
+
+// UpdateManufacturingDemandJSONRequestBody defines body for UpdateManufacturingDemand for application/json ContentType.
+type UpdateManufacturingDemandJSONRequestBody = ManufacturingDemandUpdate
+
+// CreateManufacturingOperationJSONRequestBody defines body for CreateManufacturingOperation for application/json ContentType.
+type CreateManufacturingOperationJSONRequestBody = ManufacturingOperationCreate
+
+// QueryManufacturingOperationsJSONRequestBody defines body for QueryManufacturingOperations for application/json ContentType.
+type QueryManufacturingOperationsJSONRequestBody = ListQuery
+
+// UpdateManufacturingOperationJSONRequestBody defines body for UpdateManufacturingOperation for application/json ContentType.
+type UpdateManufacturingOperationJSONRequestBody = ManufacturingOperationUpdate
+
+// CreateManufacturingOutputItemJSONRequestBody defines body for CreateManufacturingOutputItem for application/json ContentType.
+type CreateManufacturingOutputItemJSONRequestBody = ManufacturingOutputItemCreate
+
+// QueryManufacturingOutputItemsJSONRequestBody defines body for QueryManufacturingOutputItems for application/json ContentType.
+type QueryManufacturingOutputItemsJSONRequestBody = ListQuery
+
+// UpdateManufacturingOutputItemJSONRequestBody defines body for UpdateManufacturingOutputItem for application/json ContentType.
+type UpdateManufacturingOutputItemJSONRequestBody = ManufacturingOutputItemUpdate
+
+// CreateManufacturingOutputJSONRequestBody defines body for CreateManufacturingOutput for application/json ContentType.
+type CreateManufacturingOutputJSONRequestBody = ManufacturingOutputCreate
+
+// QueryManufacturingOutputsJSONRequestBody defines body for QueryManufacturingOutputs for application/json ContentType.
+type QueryManufacturingOutputsJSONRequestBody = ListQuery
+
+// UpdateManufacturingOutputJSONRequestBody defines body for UpdateManufacturingOutput for application/json ContentType.
+type UpdateManufacturingOutputJSONRequestBody = ManufacturingOutputUpdate
+
+// CreateManufacturingProcessTemplateItemJSONRequestBody defines body for CreateManufacturingProcessTemplateItem for application/json ContentType.
+type CreateManufacturingProcessTemplateItemJSONRequestBody = ManufacturingProcessTemplateItemCreate
+
+// QueryManufacturingProcessTemplateItemsJSONRequestBody defines body for QueryManufacturingProcessTemplateItems for application/json ContentType.
+type QueryManufacturingProcessTemplateItemsJSONRequestBody = ListQuery
+
+// UpdateManufacturingProcessTemplateItemJSONRequestBody defines body for UpdateManufacturingProcessTemplateItem for application/json ContentType.
+type UpdateManufacturingProcessTemplateItemJSONRequestBody = ManufacturingProcessTemplateItemUpdate
+
+// CreateManufacturingProcessTemplateJSONRequestBody defines body for CreateManufacturingProcessTemplate for application/json ContentType.
+type CreateManufacturingProcessTemplateJSONRequestBody = ManufacturingProcessTemplateCreate
+
+// QueryManufacturingProcessTemplatesJSONRequestBody defines body for QueryManufacturingProcessTemplates for application/json ContentType.
+type QueryManufacturingProcessTemplatesJSONRequestBody = ListQuery
+
+// UpdateManufacturingProcessTemplateJSONRequestBody defines body for UpdateManufacturingProcessTemplate for application/json ContentType.
+type UpdateManufacturingProcessTemplateJSONRequestBody = ManufacturingProcessTemplateUpdate
+
+// GetManufacturingSalesItemOccupanciesJSONRequestBody defines body for GetManufacturingSalesItemOccupancies for application/json ContentType.
+type GetManufacturingSalesItemOccupanciesJSONRequestBody = ManufacturingSalesItemOccupancyRequest
+
+// CreateManufacturingWorkOrderJSONRequestBody defines body for CreateManufacturingWorkOrder for application/json ContentType.
+type CreateManufacturingWorkOrderJSONRequestBody = ManufacturingWorkOrderCreate
+
+// QueryManufacturingWorkOrdersJSONRequestBody defines body for QueryManufacturingWorkOrders for application/json ContentType.
+type QueryManufacturingWorkOrdersJSONRequestBody = ListQuery
+
+// UpdateManufacturingWorkOrderJSONRequestBody defines body for UpdateManufacturingWorkOrder for application/json ContentType.
+type UpdateManufacturingWorkOrderJSONRequestBody = ManufacturingWorkOrderUpdate
+
 // ExpandPurchaseOrderBomJSONRequestBody defines body for ExpandPurchaseOrderBom for application/json ContentType.
 type ExpandPurchaseOrderBomJSONRequestBody = OrderBomExpandRequest
 
@@ -3569,6 +7152,63 @@ type QueryPurchaseOrdersJSONRequestBody = ListQuery
 // UpdatePurchaseOrderJSONRequestBody defines body for UpdatePurchaseOrder for application/json ContentType.
 type UpdatePurchaseOrderJSONRequestBody = OrderUpdate
 
+// CreatePurchaseOutsourcedIssueItemJSONRequestBody defines body for CreatePurchaseOutsourcedIssueItem for application/json ContentType.
+type CreatePurchaseOutsourcedIssueItemJSONRequestBody = PurchaseOutsourcedIssueItemCreate
+
+// QueryPurchaseOutsourcedIssueItemsJSONRequestBody defines body for QueryPurchaseOutsourcedIssueItems for application/json ContentType.
+type QueryPurchaseOutsourcedIssueItemsJSONRequestBody = ListQuery
+
+// UpdatePurchaseOutsourcedIssueItemJSONRequestBody defines body for UpdatePurchaseOutsourcedIssueItem for application/json ContentType.
+type UpdatePurchaseOutsourcedIssueItemJSONRequestBody = PurchaseOutsourcedIssueItemUpdate
+
+// CreatePurchaseOutsourcedIssueJSONRequestBody defines body for CreatePurchaseOutsourcedIssue for application/json ContentType.
+type CreatePurchaseOutsourcedIssueJSONRequestBody = PurchaseOutsourcedIssueCreate
+
+// QueryPurchaseOutsourcedIssuesJSONRequestBody defines body for QueryPurchaseOutsourcedIssues for application/json ContentType.
+type QueryPurchaseOutsourcedIssuesJSONRequestBody = ListQuery
+
+// UpdatePurchaseOutsourcedIssueJSONRequestBody defines body for UpdatePurchaseOutsourcedIssue for application/json ContentType.
+type UpdatePurchaseOutsourcedIssueJSONRequestBody = PurchaseOutsourcedIssueUpdate
+
+// CreatePurchaseOutsourcedReceiptItemByproductJSONRequestBody defines body for CreatePurchaseOutsourcedReceiptItemByproduct for application/json ContentType.
+type CreatePurchaseOutsourcedReceiptItemByproductJSONRequestBody = PurchaseOutsourcedReceiptItemByproductCreate
+
+// QueryPurchaseOutsourcedReceiptItemByproductsJSONRequestBody defines body for QueryPurchaseOutsourcedReceiptItemByproducts for application/json ContentType.
+type QueryPurchaseOutsourcedReceiptItemByproductsJSONRequestBody = ListQuery
+
+// UpdatePurchaseOutsourcedReceiptItemByproductJSONRequestBody defines body for UpdatePurchaseOutsourcedReceiptItemByproduct for application/json ContentType.
+type UpdatePurchaseOutsourcedReceiptItemByproductJSONRequestBody = PurchaseOutsourcedReceiptItemByproductUpdate
+
+// CreatePurchaseOutsourcedReceiptItemMaterialJSONRequestBody defines body for CreatePurchaseOutsourcedReceiptItemMaterial for application/json ContentType.
+type CreatePurchaseOutsourcedReceiptItemMaterialJSONRequestBody = PurchaseOutsourcedReceiptItemMaterialCreate
+
+// QueryPurchaseOutsourcedReceiptItemMaterialsJSONRequestBody defines body for QueryPurchaseOutsourcedReceiptItemMaterials for application/json ContentType.
+type QueryPurchaseOutsourcedReceiptItemMaterialsJSONRequestBody = ListQuery
+
+// UpdatePurchaseOutsourcedReceiptItemMaterialJSONRequestBody defines body for UpdatePurchaseOutsourcedReceiptItemMaterial for application/json ContentType.
+type UpdatePurchaseOutsourcedReceiptItemMaterialJSONRequestBody = PurchaseOutsourcedReceiptItemMaterialUpdate
+
+// CreatePurchaseOutsourcedReceiptItemJSONRequestBody defines body for CreatePurchaseOutsourcedReceiptItem for application/json ContentType.
+type CreatePurchaseOutsourcedReceiptItemJSONRequestBody = PurchaseOutsourcedReceiptItemCreate
+
+// QueryPurchaseOutsourcedReceiptItemsJSONRequestBody defines body for QueryPurchaseOutsourcedReceiptItems for application/json ContentType.
+type QueryPurchaseOutsourcedReceiptItemsJSONRequestBody = ListQuery
+
+// UpdatePurchaseOutsourcedReceiptItemJSONRequestBody defines body for UpdatePurchaseOutsourcedReceiptItem for application/json ContentType.
+type UpdatePurchaseOutsourcedReceiptItemJSONRequestBody = PurchaseOutsourcedReceiptItemUpdate
+
+// CreatePurchaseOutsourcedReceiptJSONRequestBody defines body for CreatePurchaseOutsourcedReceipt for application/json ContentType.
+type CreatePurchaseOutsourcedReceiptJSONRequestBody = PurchaseOutsourcedReceiptCreate
+
+// QueryPurchaseOutsourcedReceiptsJSONRequestBody defines body for QueryPurchaseOutsourcedReceipts for application/json ContentType.
+type QueryPurchaseOutsourcedReceiptsJSONRequestBody = ListQuery
+
+// UpdatePurchaseOutsourcedReceiptJSONRequestBody defines body for UpdatePurchaseOutsourcedReceipt for application/json ContentType.
+type UpdatePurchaseOutsourcedReceiptJSONRequestBody = PurchaseOutsourcedReceiptUpdate
+
+// AuditPurchaseOutsourcedReceiptJSONRequestBody defines body for AuditPurchaseOutsourcedReceipt for application/json ContentType.
+type AuditPurchaseOutsourcedReceiptJSONRequestBody = FulfillmentAuditRequest
+
 // CreatePurchaseQuotationItemJSONRequestBody defines body for CreatePurchaseQuotationItem for application/json ContentType.
 type CreatePurchaseQuotationItemJSONRequestBody = QuotationItemCreate
 
@@ -3596,6 +7236,48 @@ type QueryPurchaseQuotationsJSONRequestBody = ListQuery
 // UpdatePurchaseQuotationJSONRequestBody defines body for UpdatePurchaseQuotation for application/json ContentType.
 type UpdatePurchaseQuotationJSONRequestBody = QuotationUpdate
 
+// CreatePurchaseReceiptItemJSONRequestBody defines body for CreatePurchaseReceiptItem for application/json ContentType.
+type CreatePurchaseReceiptItemJSONRequestBody = PurchaseReceiptItemCreate
+
+// QueryPurchaseReceiptItemsJSONRequestBody defines body for QueryPurchaseReceiptItems for application/json ContentType.
+type QueryPurchaseReceiptItemsJSONRequestBody = ListQuery
+
+// UpdatePurchaseReceiptItemJSONRequestBody defines body for UpdatePurchaseReceiptItem for application/json ContentType.
+type UpdatePurchaseReceiptItemJSONRequestBody = PurchaseReceiptItemUpdate
+
+// CreatePurchaseReceiptJSONRequestBody defines body for CreatePurchaseReceipt for application/json ContentType.
+type CreatePurchaseReceiptJSONRequestBody = PurchaseReceiptCreate
+
+// QueryPurchaseReceiptsJSONRequestBody defines body for QueryPurchaseReceipts for application/json ContentType.
+type QueryPurchaseReceiptsJSONRequestBody = ListQuery
+
+// UpdatePurchaseReceiptJSONRequestBody defines body for UpdatePurchaseReceipt for application/json ContentType.
+type UpdatePurchaseReceiptJSONRequestBody = PurchaseReceiptUpdate
+
+// AuditPurchaseReceiptJSONRequestBody defines body for AuditPurchaseReceipt for application/json ContentType.
+type AuditPurchaseReceiptJSONRequestBody = FulfillmentAuditRequest
+
+// CreatePurchaseReconciliationItemJSONRequestBody defines body for CreatePurchaseReconciliationItem for application/json ContentType.
+type CreatePurchaseReconciliationItemJSONRequestBody = PurchaseReconciliationItemCreate
+
+// QueryPurchaseReconciliationItemsJSONRequestBody defines body for QueryPurchaseReconciliationItems for application/json ContentType.
+type QueryPurchaseReconciliationItemsJSONRequestBody = ListQuery
+
+// UpdatePurchaseReconciliationItemJSONRequestBody defines body for UpdatePurchaseReconciliationItem for application/json ContentType.
+type UpdatePurchaseReconciliationItemJSONRequestBody = PurchaseReconciliationItemUpdate
+
+// CreatePurchaseReconciliationJSONRequestBody defines body for CreatePurchaseReconciliation for application/json ContentType.
+type CreatePurchaseReconciliationJSONRequestBody = PurchaseReconciliationCreate
+
+// QueryPurchaseReconciliationsJSONRequestBody defines body for QueryPurchaseReconciliations for application/json ContentType.
+type QueryPurchaseReconciliationsJSONRequestBody = ListQuery
+
+// UpdatePurchaseReconciliationJSONRequestBody defines body for UpdatePurchaseReconciliation for application/json ContentType.
+type UpdatePurchaseReconciliationJSONRequestBody = PurchaseReconciliationUpdate
+
+// AuditPurchaseReconciliationJSONRequestBody defines body for AuditPurchaseReconciliation for application/json ContentType.
+type AuditPurchaseReconciliationJSONRequestBody = ReconciliationAuditRequest
+
 // CreatePurchaseSupplierJSONRequestBody defines body for CreatePurchaseSupplier for application/json ContentType.
 type CreatePurchaseSupplierJSONRequestBody = SupplierCreate
 
@@ -3605,6 +7287,15 @@ type QueryPurchaseSuppliersJSONRequestBody = ListQuery
 // UpdatePurchaseSupplierJSONRequestBody defines body for UpdatePurchaseSupplier for application/json ContentType.
 type UpdatePurchaseSupplierJSONRequestBody = SupplierUpdate
 
+// CreateSalesCompanyAccountDefaultJSONRequestBody defines body for CreateSalesCompanyAccountDefault for application/json ContentType.
+type CreateSalesCompanyAccountDefaultJSONRequestBody = CompanyAccountDefaultsCreate
+
+// QuerySalesCompanyAccountDefaultsJSONRequestBody defines body for QuerySalesCompanyAccountDefaults for application/json ContentType.
+type QuerySalesCompanyAccountDefaultsJSONRequestBody = ListQuery
+
+// UpdateSalesCompanyAccountDefaultJSONRequestBody defines body for UpdateSalesCompanyAccountDefault for application/json ContentType.
+type UpdateSalesCompanyAccountDefaultJSONRequestBody = CompanyAccountDefaultsUpdate
+
 // CreateSalesCustomerJSONRequestBody defines body for CreateSalesCustomer for application/json ContentType.
 type CreateSalesCustomerJSONRequestBody = CustomerCreate
 
@@ -3613,6 +7304,27 @@ type QuerySalesCustomersJSONRequestBody = ListQuery
 
 // UpdateSalesCustomerJSONRequestBody defines body for UpdateSalesCustomer for application/json ContentType.
 type UpdateSalesCustomerJSONRequestBody = CustomerUpdate
+
+// CreateSalesDeliveryJSONRequestBody defines body for CreateSalesDelivery for application/json ContentType.
+type CreateSalesDeliveryJSONRequestBody = SalesDeliveryCreate
+
+// QuerySalesDeliveriesJSONRequestBody defines body for QuerySalesDeliveries for application/json ContentType.
+type QuerySalesDeliveriesJSONRequestBody = ListQuery
+
+// UpdateSalesDeliveryJSONRequestBody defines body for UpdateSalesDelivery for application/json ContentType.
+type UpdateSalesDeliveryJSONRequestBody = SalesDeliveryUpdate
+
+// AuditSalesDeliveryJSONRequestBody defines body for AuditSalesDelivery for application/json ContentType.
+type AuditSalesDeliveryJSONRequestBody = FulfillmentAuditRequest
+
+// CreateSalesDeliveryItemJSONRequestBody defines body for CreateSalesDeliveryItem for application/json ContentType.
+type CreateSalesDeliveryItemJSONRequestBody = SalesDeliveryItemCreate
+
+// QuerySalesDeliveryItemsJSONRequestBody defines body for QuerySalesDeliveryItems for application/json ContentType.
+type QuerySalesDeliveryItemsJSONRequestBody = ListQuery
+
+// UpdateSalesDeliveryItemJSONRequestBody defines body for UpdateSalesDeliveryItem for application/json ContentType.
+type UpdateSalesDeliveryItemJSONRequestBody = SalesDeliveryItemUpdate
 
 // CreateSalesOrderItemJSONRequestBody defines body for CreateSalesOrderItem for application/json ContentType.
 type CreateSalesOrderItemJSONRequestBody = OrderItemCreate
@@ -3659,6 +7371,30 @@ type QuerySalesQuotationsJSONRequestBody = ListQuery
 // UpdateSalesQuotationJSONRequestBody defines body for UpdateSalesQuotation for application/json ContentType.
 type UpdateSalesQuotationJSONRequestBody = QuotationUpdate
 
+// CreateSalesReconciliationItemJSONRequestBody defines body for CreateSalesReconciliationItem for application/json ContentType.
+type CreateSalesReconciliationItemJSONRequestBody = SalesReconciliationItemCreate
+
+// QuerySalesReconciliationItemsJSONRequestBody defines body for QuerySalesReconciliationItems for application/json ContentType.
+type QuerySalesReconciliationItemsJSONRequestBody = ListQuery
+
+// UpdateSalesReconciliationItemJSONRequestBody defines body for UpdateSalesReconciliationItem for application/json ContentType.
+type UpdateSalesReconciliationItemJSONRequestBody = SalesReconciliationItemUpdate
+
+// CreateSalesReconciliationJSONRequestBody defines body for CreateSalesReconciliation for application/json ContentType.
+type CreateSalesReconciliationJSONRequestBody = SalesReconciliationCreate
+
+// QuerySalesReconciliationsJSONRequestBody defines body for QuerySalesReconciliations for application/json ContentType.
+type QuerySalesReconciliationsJSONRequestBody = ListQuery
+
+// UpdateSalesReconciliationJSONRequestBody defines body for UpdateSalesReconciliation for application/json ContentType.
+type UpdateSalesReconciliationJSONRequestBody = SalesReconciliationUpdate
+
+// AuditSalesReconciliationJSONRequestBody defines body for AuditSalesReconciliation for application/json ContentType.
+type AuditSalesReconciliationJSONRequestBody = ReconciliationAuditRequest
+
+// QueryScmOrderFlowItemsJSONRequestBody defines body for QueryScmOrderFlowItems for application/json ContentType.
+type QueryScmOrderFlowItemsJSONRequestBody = ListQuery
+
 // UpdateAccountingSettingJSONRequestBody defines body for UpdateAccountingSetting for application/json ContentType.
 type UpdateAccountingSettingJSONRequestBody = AccountingSettingUpdate
 
@@ -3670,6 +7406,9 @@ type UpdateSalesSettingJSONRequestBody = SalesSettingUpdate
 
 // UpdateSystemSettingJSONRequestBody defines body for UpdateSystemSetting for application/json ContentType.
 type UpdateSystemSettingJSONRequestBody = SystemSettingUpdate
+
+// QuerySystemAuditLogsJSONRequestBody defines body for QuerySystemAuditLogs for application/json ContentType.
+type QuerySystemAuditLogsJSONRequestBody = SystemAuditLogQuery
 
 // QuerySysNumberingCountersJSONRequestBody defines body for QuerySysNumberingCounters for application/json ContentType.
 type QuerySysNumberingCountersJSONRequestBody = ListQuery
@@ -3724,6 +7463,9 @@ type QuerySystemUsersJSONRequestBody = ListQuery
 
 // UpdateSystemUserJSONRequestBody defines body for UpdateSystemUser for application/json ContentType.
 type UpdateSystemUserJSONRequestBody = SystemUserUpdate
+
+// QueryTodosJSONRequestBody defines body for QueryTodos for application/json ContentType.
+type QueryTodosJSONRequestBody = TodoQuery
 
 // Getter for additional properties for FilterState_AdditionalProperties. Returns the specified
 // element and whether it was found
@@ -3968,8 +7710,269 @@ type ServerInterface interface {
 	// (GET /files/{id}/metadata)
 	GetSysFileMetadata(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (POST /finance/bank-accounts)
+	CreateFinanceBankAccount(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/bank-accounts/query)
+	QueryFinanceBankAccounts(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /finance/bank-accounts/{id})
+	DeleteFinanceBankAccount(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/bank-accounts/{id})
+	GetFinanceBankAccount(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /finance/bank-accounts/{id})
+	UpdateFinanceBankAccount(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bank-import-items/query)
+	QueryFinanceBankImportItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /finance/bank-import-items/{id})
+	DeleteFinanceBankImportItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/bank-import-items/{id})
+	GetFinanceBankImportItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /finance/bank-import-items/{id})
+	UpdateFinanceBankImportItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bank-import-templates)
+	CreateFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/bank-import-templates/query)
+	QueryFinanceBankImportTemplates(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /finance/bank-import-templates/{id})
+	DeleteFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/bank-import-templates/{id})
+	GetFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /finance/bank-import-templates/{id})
+	UpdateFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bank-imports)
+	CreateFinanceBankImport(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/bank-imports/query)
+	QueryFinanceBankImports(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /finance/bank-imports/{id})
+	DeleteFinanceBankImport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/bank-imports/{id})
+	GetFinanceBankImport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bank-imports/{id}/import)
+	ImportFinanceBankImport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bank-reconciliations)
+	CreateFinanceBankReconciliation(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/bank-reconciliations/query)
+	QueryFinanceBankReconciliations(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/bank-reconciliations/quick-create)
+	QuickCreateFinanceBankReconciliation(w http.ResponseWriter, r *http.Request)
+
+	// (GET /finance/bank-reconciliations/remaining)
+	GetFinanceBankReconciliationRemaining(w http.ResponseWriter, r *http.Request, params GetFinanceBankReconciliationRemainingParams)
+
+	// (DELETE /finance/bank-reconciliations/{id})
+	DeleteFinanceBankReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/bank-reconciliations/{id})
+	GetFinanceBankReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bank-transactions)
+	CreateFinanceBankTransaction(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/bank-transactions/query)
+	QueryFinanceBankTransactions(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /finance/bank-transactions/{id})
+	DeleteFinanceBankTransaction(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/bank-transactions/{id})
+	GetFinanceBankTransaction(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /finance/bank-transactions/{id})
+	UpdateFinanceBankTransaction(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bill-holdings/query)
+	QueryFinanceBillHoldings(w http.ResponseWriter, r *http.Request)
+
+	// (GET /finance/bill-holdings/{id})
+	GetFinanceBillHolding(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bill-transactions)
+	CreateFinanceBillTransaction(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/bill-transactions/ocr)
+	OcrFinanceBillTransaction(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/bill-transactions/query)
+	QueryFinanceBillTransactions(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /finance/bill-transactions/{id})
+	DeleteFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/bill-transactions/{id})
+	GetFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /finance/bill-transactions/{id})
+	UpdateFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bill-transactions/{id}/audit)
+	AuditFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bill-transactions/{id}/void)
+	VoidFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/bills/query)
+	QueryFinanceBills(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /finance/bills/{id})
+	DeleteFinanceBill(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/bills/{id})
+	GetFinanceBill(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /finance/bills/{id})
+	UpdateFinanceBill(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/expense-report-items)
+	CreateFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/expense-report-items/query)
+	QueryFinanceExpenseReportItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /finance/expense-report-items/{id})
+	DeleteFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/expense-report-items/{id})
+	GetFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /finance/expense-report-items/{id})
+	UpdateFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/expense-reports)
+	CreateFinanceExpenseReport(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/expense-reports/query)
+	QueryFinanceExpenseReports(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /finance/expense-reports/{id})
+	DeleteFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/expense-reports/{id})
+	GetFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /finance/expense-reports/{id})
+	UpdateFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/expense-reports/{id}/audit)
+	AuditFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/expense-reports/{id}/void)
+	VoidFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/vat-invoices)
+	CreateFinanceVatInvoice(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/vat-invoices/ocr)
+	OcrFinanceVatInvoice(w http.ResponseWriter, r *http.Request)
+
+	// (POST /finance/vat-invoices/query)
+	QueryFinanceVatInvoices(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /finance/vat-invoices/{id})
+	DeleteFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /finance/vat-invoices/{id})
+	GetFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /finance/vat-invoices/{id})
+	UpdateFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/vat-invoices/{id}/audit)
+	AuditFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/vat-invoices/{id}/reverse)
+	ReverseFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /finance/vat-invoices/{id}/void)
+	VoidFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID)
+
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+
+	// (POST /hr/attendance-corrections)
+	CreateHrAttendanceCorrection(w http.ResponseWriter, r *http.Request)
+
+	// (POST /hr/attendance-corrections/query)
+	QueryHrAttendanceCorrections(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /hr/attendance-corrections/{id})
+	DeleteHrAttendanceCorrection(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /hr/attendance-corrections/{id})
+	GetHrAttendanceCorrection(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /hr/attendance-corrections/{id})
+	UpdateHrAttendanceCorrection(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /hr/attendance-days/month-summary)
+	GetHrAttendanceMonthSummary(w http.ResponseWriter, r *http.Request, params GetHrAttendanceMonthSummaryParams)
+
+	// (POST /hr/attendance-days/query)
+	QueryHrAttendanceDays(w http.ResponseWriter, r *http.Request)
+
+	// (POST /hr/attendance-days/recalc)
+	RecalcHrAttendanceDays(w http.ResponseWriter, r *http.Request)
+
+	// (GET /hr/attendance-days/{id})
+	GetHrAttendanceDay(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /hr/attendance-imports)
+	CreateHrAttendanceImport(w http.ResponseWriter, r *http.Request)
+
+	// (POST /hr/attendance-imports/query)
+	QueryHrAttendanceImports(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /hr/attendance-imports/{id})
+	DeleteHrAttendanceImport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /hr/attendance-imports/{id})
+	GetHrAttendanceImport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /hr/attendance-imports/{id}/import)
+	ImportHrAttendanceImport(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /hr/attendance-punches/query)
+	QueryHrAttendancePunches(w http.ResponseWriter, r *http.Request)
+
+	// (GET /hr/attendance-punches/{id})
+	GetHrAttendancePunch(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /hr/employee-loans)
+	CreateHrEmployeeLoan(w http.ResponseWriter, r *http.Request)
+
+	// (GET /hr/employee-loans/balances)
+	GetHrEmployeeLoanBalances(w http.ResponseWriter, r *http.Request)
+
+	// (POST /hr/employee-loans/query)
+	QueryHrEmployeeLoans(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /hr/employee-loans/{id})
+	DeleteHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /hr/employee-loans/{id})
+	GetHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /hr/employee-loans/{id})
+	UpdateHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id ID)
 
 	// (POST /hr/employees)
 	CreateHrEmployee(w http.ResponseWriter, r *http.Request)
@@ -3985,6 +7988,45 @@ type ServerInterface interface {
 
 	// (PATCH /hr/employees/{id})
 	UpdateHrEmployee(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /hr/payroll-payments)
+	CreateHrPayrollPayment(w http.ResponseWriter, r *http.Request)
+
+	// (POST /hr/payroll-payments/pay-remaining)
+	PayRemainingHrPayrollPayment(w http.ResponseWriter, r *http.Request)
+
+	// (POST /hr/payroll-payments/query)
+	QueryHrPayrollPayments(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /hr/payroll-payments/{id})
+	DeleteHrPayrollPayment(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /hr/payroll-payments/{id})
+	GetHrPayrollPayment(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /hr/payrolls)
+	CreateHrPayroll(w http.ResponseWriter, r *http.Request)
+
+	// (POST /hr/payrolls/generate)
+	GenerateHrPayrolls(w http.ResponseWriter, r *http.Request)
+
+	// (GET /hr/payrolls/month-stats)
+	GetHrPayrollMonthStats(w http.ResponseWriter, r *http.Request, params GetHrPayrollMonthStatsParams)
+
+	// (POST /hr/payrolls/query)
+	QueryHrPayrolls(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /hr/payrolls/{id})
+	DeleteHrPayroll(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /hr/payrolls/{id})
+	GetHrPayroll(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /hr/payrolls/{id})
+	UpdateHrPayroll(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /hr/payrolls/{id}/refresh)
+	RefreshHrPayroll(w http.ResponseWriter, r *http.Request, id ID)
 
 	// (POST /inventory/material-categories)
 	CreateInvMaterialCategory(w http.ResponseWriter, r *http.Request)
@@ -4172,6 +8214,216 @@ type ServerInterface interface {
 	// (PATCH /inventory/warehouses/{id})
 	UpdateInvWarehouse(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (POST /manufacturing/bom-byproducts)
+	CreateManufacturingBomByproduct(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/bom-byproducts/query)
+	QueryManufacturingBomByproducts(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/bom-byproducts/{id})
+	DeleteManufacturingBomByproduct(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/bom-byproducts/{id})
+	GetManufacturingBomByproduct(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/bom-byproducts/{id})
+	UpdateManufacturingBomByproduct(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/bom-components)
+	CreateManufacturingBomComponent(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/bom-components/query)
+	QueryManufacturingBomComponents(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/bom-components/{id})
+	DeleteManufacturingBomComponent(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/bom-components/{id})
+	GetManufacturingBomComponent(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/bom-components/{id})
+	UpdateManufacturingBomComponent(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/bom-routes)
+	CreateManufacturingBomRoute(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/bom-routes/query)
+	QueryManufacturingBomRoutes(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/bom-routes/{id})
+	DeleteManufacturingBomRoute(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/bom-routes/{id})
+	GetManufacturingBomRoute(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/bom-routes/{id})
+	UpdateManufacturingBomRoute(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/boms)
+	CreateManufacturingBom(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/boms/query)
+	QueryManufacturingBoms(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/boms/{id})
+	DeleteManufacturingBom(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/boms/{id})
+	GetManufacturingBom(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/boms/{id})
+	UpdateManufacturingBom(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/boms/{id}/apply-route-template)
+	ApplyManufacturingBomRouteTemplate(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/demand-items)
+	CreateManufacturingDemandItem(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/demand-items/query)
+	QueryManufacturingDemandItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/demand-items/{id})
+	DeleteManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/demand-items/{id})
+	GetManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/demand-items/{id})
+	UpdateManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/demand-items/{id}/complete)
+	CompleteManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/demand-items/{id}/fulfillment)
+	ChangeManufacturingDemandItemFulfillment(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/demands)
+	CreateManufacturingDemand(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/demands/query)
+	QueryManufacturingDemands(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/demands/{id})
+	DeleteManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/demands/{id})
+	GetManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/demands/{id})
+	UpdateManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/demands/{id}/close)
+	CloseManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/demands/{id}/confirm)
+	ConfirmManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/demands/{id}/void)
+	VoidManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/operations)
+	CreateManufacturingOperation(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/operations/query)
+	QueryManufacturingOperations(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/operations/{id})
+	DeleteManufacturingOperation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/operations/{id})
+	GetManufacturingOperation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/operations/{id})
+	UpdateManufacturingOperation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/output-items)
+	CreateManufacturingOutputItem(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/output-items/query)
+	QueryManufacturingOutputItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/output-items/{id})
+	DeleteManufacturingOutputItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/output-items/{id})
+	GetManufacturingOutputItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/output-items/{id})
+	UpdateManufacturingOutputItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/outputs)
+	CreateManufacturingOutput(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/outputs/query)
+	QueryManufacturingOutputs(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/outputs/{id})
+	DeleteManufacturingOutput(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/outputs/{id})
+	GetManufacturingOutput(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/outputs/{id})
+	UpdateManufacturingOutput(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/outputs/{id}/audit)
+	AuditManufacturingOutput(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/outputs/{id}/void)
+	VoidManufacturingOutput(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/process-template-items)
+	CreateManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/process-template-items/query)
+	QueryManufacturingProcessTemplateItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/process-template-items/{id})
+	DeleteManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/process-template-items/{id})
+	GetManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/process-template-items/{id})
+	UpdateManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/process-templates)
+	CreateManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/process-templates/query)
+	QueryManufacturingProcessTemplates(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/process-templates/{id})
+	DeleteManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/process-templates/{id})
+	GetManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/process-templates/{id})
+	UpdateManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/sales-item-occupancies)
+	GetManufacturingSalesItemOccupancies(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/work-orders)
+	CreateManufacturingWorkOrder(w http.ResponseWriter, r *http.Request)
+
+	// (POST /manufacturing/work-orders/query)
+	QueryManufacturingWorkOrders(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /manufacturing/work-orders/{id})
+	DeleteManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /manufacturing/work-orders/{id})
+	GetManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /manufacturing/work-orders/{id})
+	UpdateManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /manufacturing/work-orders/{id}/void)
+	VoidManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id ID)
+
 	// (GET /meta/permission-catalog)
 	GetPermissionCatalog(w http.ResponseWriter, r *http.Request)
 
@@ -4268,6 +8520,108 @@ type ServerInterface interface {
 	// (POST /purchase/orders/{id}/void)
 	VoidPurchaseOrder(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (POST /purchase/outsourced-issue-items)
+	CreatePurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request)
+
+	// (POST /purchase/outsourced-issue-items/query)
+	QueryPurchaseOutsourcedIssueItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /purchase/outsourced-issue-items/{id})
+	DeletePurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /purchase/outsourced-issue-items/{id})
+	GetPurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /purchase/outsourced-issue-items/{id})
+	UpdatePurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/outsourced-issues)
+	CreatePurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request)
+
+	// (POST /purchase/outsourced-issues/query)
+	QueryPurchaseOutsourcedIssues(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /purchase/outsourced-issues/{id})
+	DeletePurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /purchase/outsourced-issues/{id})
+	GetPurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /purchase/outsourced-issues/{id})
+	UpdatePurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/outsourced-issues/{id}/audit)
+	AuditPurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/outsourced-issues/{id}/void)
+	VoidPurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/outsourced-receipt-item-byproducts)
+	CreatePurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request)
+
+	// (POST /purchase/outsourced-receipt-item-byproducts/query)
+	QueryPurchaseOutsourcedReceiptItemByproducts(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /purchase/outsourced-receipt-item-byproducts/{id})
+	DeletePurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /purchase/outsourced-receipt-item-byproducts/{id})
+	GetPurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /purchase/outsourced-receipt-item-byproducts/{id})
+	UpdatePurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/outsourced-receipt-item-materials)
+	CreatePurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request)
+
+	// (POST /purchase/outsourced-receipt-item-materials/query)
+	QueryPurchaseOutsourcedReceiptItemMaterials(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /purchase/outsourced-receipt-item-materials/{id})
+	DeletePurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /purchase/outsourced-receipt-item-materials/{id})
+	GetPurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /purchase/outsourced-receipt-item-materials/{id})
+	UpdatePurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/outsourced-receipt-items)
+	CreatePurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request)
+
+	// (POST /purchase/outsourced-receipt-items/query)
+	QueryPurchaseOutsourcedReceiptItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /purchase/outsourced-receipt-items/{id})
+	DeletePurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /purchase/outsourced-receipt-items/{id})
+	GetPurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /purchase/outsourced-receipt-items/{id})
+	UpdatePurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/outsourced-receipts)
+	CreatePurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request)
+
+	// (POST /purchase/outsourced-receipts/query)
+	QueryPurchaseOutsourcedReceipts(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /purchase/outsourced-receipts/{id})
+	DeletePurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /purchase/outsourced-receipts/{id})
+	GetPurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /purchase/outsourced-receipts/{id})
+	UpdatePurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/outsourced-receipts/{id}/audit)
+	AuditPurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/outsourced-receipts/{id}/void)
+	VoidPurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request, id ID)
+
 	// (POST /purchase/quotation-items)
 	CreatePurchaseQuotationItem(w http.ResponseWriter, r *http.Request)
 
@@ -4319,6 +8673,84 @@ type ServerInterface interface {
 	// (POST /purchase/quotations/{id}/void)
 	VoidPurchaseQuotation(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (POST /purchase/receipt-items)
+	CreatePurchaseReceiptItem(w http.ResponseWriter, r *http.Request)
+
+	// (POST /purchase/receipt-items/query)
+	QueryPurchaseReceiptItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /purchase/receipt-items/{id})
+	DeletePurchaseReceiptItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /purchase/receipt-items/{id})
+	GetPurchaseReceiptItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /purchase/receipt-items/{id})
+	UpdatePurchaseReceiptItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/receipts)
+	CreatePurchaseReceipt(w http.ResponseWriter, r *http.Request)
+
+	// (POST /purchase/receipts/query)
+	QueryPurchaseReceipts(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /purchase/receipts/{id})
+	DeletePurchaseReceipt(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /purchase/receipts/{id})
+	GetPurchaseReceipt(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /purchase/receipts/{id})
+	UpdatePurchaseReceipt(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/receipts/{id}/audit)
+	AuditPurchaseReceipt(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/receipts/{id}/void)
+	VoidPurchaseReceipt(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/reconciliation-items)
+	CreatePurchaseReconciliationItem(w http.ResponseWriter, r *http.Request)
+
+	// (POST /purchase/reconciliation-items/query)
+	QueryPurchaseReconciliationItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /purchase/reconciliation-items/{id})
+	DeletePurchaseReconciliationItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /purchase/reconciliation-items/{id})
+	GetPurchaseReconciliationItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /purchase/reconciliation-items/{id})
+	UpdatePurchaseReconciliationItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/reconciliations)
+	CreatePurchaseReconciliation(w http.ResponseWriter, r *http.Request)
+
+	// (POST /purchase/reconciliations/query)
+	QueryPurchaseReconciliations(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /purchase/reconciliations/{id})
+	DeletePurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /purchase/reconciliations/{id})
+	GetPurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /purchase/reconciliations/{id})
+	UpdatePurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/reconciliations/{id}/audit)
+	AuditPurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/reconciliations/{id}/confirm)
+	ConfirmPurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/reconciliations/{id}/unconfirm)
+	UnconfirmPurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /purchase/reconciliations/{id}/void)
+	VoidPurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
 	// (POST /purchase/suppliers)
 	CreatePurchaseSupplier(w http.ResponseWriter, r *http.Request)
 
@@ -4334,6 +8766,21 @@ type ServerInterface interface {
 	// (PATCH /purchase/suppliers/{id})
 	UpdatePurchaseSupplier(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (POST /sales/company-account-defaults)
+	CreateSalesCompanyAccountDefault(w http.ResponseWriter, r *http.Request)
+
+	// (GET /sales/company-account-defaults/by-company/{companyId})
+	GetSalesCompanyAccountDefaultsByCompany(w http.ResponseWriter, r *http.Request, companyId openapi_types.UUID)
+
+	// (POST /sales/company-account-defaults/query)
+	QuerySalesCompanyAccountDefaults(w http.ResponseWriter, r *http.Request)
+
+	// (GET /sales/company-account-defaults/{id})
+	GetSalesCompanyAccountDefault(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /sales/company-account-defaults/{id})
+	UpdateSalesCompanyAccountDefault(w http.ResponseWriter, r *http.Request, id ID)
+
 	// (POST /sales/customers)
 	CreateSalesCustomer(w http.ResponseWriter, r *http.Request)
 
@@ -4348,6 +8795,42 @@ type ServerInterface interface {
 
 	// (PATCH /sales/customers/{id})
 	UpdateSalesCustomer(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /sales/deliveries)
+	CreateSalesDelivery(w http.ResponseWriter, r *http.Request)
+
+	// (POST /sales/deliveries/query)
+	QuerySalesDeliveries(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /sales/deliveries/{id})
+	DeleteSalesDelivery(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /sales/deliveries/{id})
+	GetSalesDelivery(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /sales/deliveries/{id})
+	UpdateSalesDelivery(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /sales/deliveries/{id}/audit)
+	AuditSalesDelivery(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /sales/deliveries/{id}/void)
+	VoidSalesDelivery(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /sales/delivery-items)
+	CreateSalesDeliveryItem(w http.ResponseWriter, r *http.Request)
+
+	// (POST /sales/delivery-items/query)
+	QuerySalesDeliveryItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /sales/delivery-items/{id})
+	DeleteSalesDeliveryItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /sales/delivery-items/{id})
+	GetSalesDeliveryItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /sales/delivery-items/{id})
+	UpdateSalesDeliveryItem(w http.ResponseWriter, r *http.Request, id ID)
 
 	// (POST /sales/order-items)
 	CreateSalesOrderItem(w http.ResponseWriter, r *http.Request)
@@ -4442,6 +8925,54 @@ type ServerInterface interface {
 	// (POST /sales/quotations/{id}/void)
 	VoidSalesQuotation(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (POST /sales/reconciliation-items)
+	CreateSalesReconciliationItem(w http.ResponseWriter, r *http.Request)
+
+	// (POST /sales/reconciliation-items/query)
+	QuerySalesReconciliationItems(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /sales/reconciliation-items/{id})
+	DeleteSalesReconciliationItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /sales/reconciliation-items/{id})
+	GetSalesReconciliationItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /sales/reconciliation-items/{id})
+	UpdateSalesReconciliationItem(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /sales/reconciliations)
+	CreateSalesReconciliation(w http.ResponseWriter, r *http.Request)
+
+	// (POST /sales/reconciliations/query)
+	QuerySalesReconciliations(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /sales/reconciliations/{id})
+	DeleteSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /sales/reconciliations/{id})
+	GetSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PATCH /sales/reconciliations/{id})
+	UpdateSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /sales/reconciliations/{id}/audit)
+	AuditSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /sales/reconciliations/{id}/confirm)
+	ConfirmSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /sales/reconciliations/{id}/unconfirm)
+	UnconfirmSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /sales/reconciliations/{id}/void)
+	VoidSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /scm/order-flow-items/query)
+	QueryScmOrderFlowItems(w http.ResponseWriter, r *http.Request)
+
+	// (GET /scm/order-flow-items/{id})
+	GetScmOrderFlowItem(w http.ResponseWriter, r *http.Request, id string)
+
 	// (GET /settings/finance)
 	GetAccountingSetting(w http.ResponseWriter, r *http.Request)
 
@@ -4471,6 +9002,12 @@ type ServerInterface interface {
 
 	// (GET /setup/status)
 	GetSetupStatus(w http.ResponseWriter, r *http.Request)
+
+	// (POST /system/audit-logs/query)
+	QuerySystemAuditLogs(w http.ResponseWriter, r *http.Request)
+
+	// (GET /system/audit-logs/{id})
+	GetSystemAuditLog(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 
 	// (POST /system/numbering/counters/query)
 	QuerySysNumberingCounters(w http.ResponseWriter, r *http.Request)
@@ -4580,8 +9117,17 @@ type ServerInterface interface {
 	// (POST /system/users/{id}/password)
 	ResetSystemUserPassword(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (POST /todos/query)
+	QueryTodos(w http.ResponseWriter, r *http.Request)
+
 	// (GET /todos/unread-count)
 	GetTodoUnreadCount(w http.ResponseWriter, r *http.Request)
+
+	// (POST /todos/{id}/dismiss)
+	DismissTodo(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+
+	// (POST /todos/{id}/read)
+	MarkTodoRead(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -4878,8 +9424,443 @@ func (_ Unimplemented) GetSysFileMetadata(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (POST /finance/bank-accounts)
+func (_ Unimplemented) CreateFinanceBankAccount(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-accounts/query)
+func (_ Unimplemented) QueryFinanceBankAccounts(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/bank-accounts/{id})
+func (_ Unimplemented) DeleteFinanceBankAccount(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/bank-accounts/{id})
+func (_ Unimplemented) GetFinanceBankAccount(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /finance/bank-accounts/{id})
+func (_ Unimplemented) UpdateFinanceBankAccount(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-import-items/query)
+func (_ Unimplemented) QueryFinanceBankImportItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/bank-import-items/{id})
+func (_ Unimplemented) DeleteFinanceBankImportItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/bank-import-items/{id})
+func (_ Unimplemented) GetFinanceBankImportItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /finance/bank-import-items/{id})
+func (_ Unimplemented) UpdateFinanceBankImportItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-import-templates)
+func (_ Unimplemented) CreateFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-import-templates/query)
+func (_ Unimplemented) QueryFinanceBankImportTemplates(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/bank-import-templates/{id})
+func (_ Unimplemented) DeleteFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/bank-import-templates/{id})
+func (_ Unimplemented) GetFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /finance/bank-import-templates/{id})
+func (_ Unimplemented) UpdateFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-imports)
+func (_ Unimplemented) CreateFinanceBankImport(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-imports/query)
+func (_ Unimplemented) QueryFinanceBankImports(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/bank-imports/{id})
+func (_ Unimplemented) DeleteFinanceBankImport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/bank-imports/{id})
+func (_ Unimplemented) GetFinanceBankImport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-imports/{id}/import)
+func (_ Unimplemented) ImportFinanceBankImport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-reconciliations)
+func (_ Unimplemented) CreateFinanceBankReconciliation(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-reconciliations/query)
+func (_ Unimplemented) QueryFinanceBankReconciliations(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-reconciliations/quick-create)
+func (_ Unimplemented) QuickCreateFinanceBankReconciliation(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/bank-reconciliations/remaining)
+func (_ Unimplemented) GetFinanceBankReconciliationRemaining(w http.ResponseWriter, r *http.Request, params GetFinanceBankReconciliationRemainingParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/bank-reconciliations/{id})
+func (_ Unimplemented) DeleteFinanceBankReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/bank-reconciliations/{id})
+func (_ Unimplemented) GetFinanceBankReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-transactions)
+func (_ Unimplemented) CreateFinanceBankTransaction(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bank-transactions/query)
+func (_ Unimplemented) QueryFinanceBankTransactions(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/bank-transactions/{id})
+func (_ Unimplemented) DeleteFinanceBankTransaction(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/bank-transactions/{id})
+func (_ Unimplemented) GetFinanceBankTransaction(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /finance/bank-transactions/{id})
+func (_ Unimplemented) UpdateFinanceBankTransaction(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bill-holdings/query)
+func (_ Unimplemented) QueryFinanceBillHoldings(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/bill-holdings/{id})
+func (_ Unimplemented) GetFinanceBillHolding(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bill-transactions)
+func (_ Unimplemented) CreateFinanceBillTransaction(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bill-transactions/ocr)
+func (_ Unimplemented) OcrFinanceBillTransaction(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bill-transactions/query)
+func (_ Unimplemented) QueryFinanceBillTransactions(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/bill-transactions/{id})
+func (_ Unimplemented) DeleteFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/bill-transactions/{id})
+func (_ Unimplemented) GetFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /finance/bill-transactions/{id})
+func (_ Unimplemented) UpdateFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bill-transactions/{id}/audit)
+func (_ Unimplemented) AuditFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bill-transactions/{id}/void)
+func (_ Unimplemented) VoidFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/bills/query)
+func (_ Unimplemented) QueryFinanceBills(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/bills/{id})
+func (_ Unimplemented) DeleteFinanceBill(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/bills/{id})
+func (_ Unimplemented) GetFinanceBill(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /finance/bills/{id})
+func (_ Unimplemented) UpdateFinanceBill(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/expense-report-items)
+func (_ Unimplemented) CreateFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/expense-report-items/query)
+func (_ Unimplemented) QueryFinanceExpenseReportItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/expense-report-items/{id})
+func (_ Unimplemented) DeleteFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/expense-report-items/{id})
+func (_ Unimplemented) GetFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /finance/expense-report-items/{id})
+func (_ Unimplemented) UpdateFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/expense-reports)
+func (_ Unimplemented) CreateFinanceExpenseReport(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/expense-reports/query)
+func (_ Unimplemented) QueryFinanceExpenseReports(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/expense-reports/{id})
+func (_ Unimplemented) DeleteFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/expense-reports/{id})
+func (_ Unimplemented) GetFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /finance/expense-reports/{id})
+func (_ Unimplemented) UpdateFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/expense-reports/{id}/audit)
+func (_ Unimplemented) AuditFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/expense-reports/{id}/void)
+func (_ Unimplemented) VoidFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/vat-invoices)
+func (_ Unimplemented) CreateFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/vat-invoices/ocr)
+func (_ Unimplemented) OcrFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/vat-invoices/query)
+func (_ Unimplemented) QueryFinanceVatInvoices(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /finance/vat-invoices/{id})
+func (_ Unimplemented) DeleteFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /finance/vat-invoices/{id})
+func (_ Unimplemented) GetFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /finance/vat-invoices/{id})
+func (_ Unimplemented) UpdateFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/vat-invoices/{id}/audit)
+func (_ Unimplemented) AuditFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/vat-invoices/{id}/reverse)
+func (_ Unimplemented) ReverseFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /finance/vat-invoices/{id}/void)
+func (_ Unimplemented) VoidFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /healthz)
 func (_ Unimplemented) GetHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/attendance-corrections)
+func (_ Unimplemented) CreateHrAttendanceCorrection(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/attendance-corrections/query)
+func (_ Unimplemented) QueryHrAttendanceCorrections(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /hr/attendance-corrections/{id})
+func (_ Unimplemented) DeleteHrAttendanceCorrection(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /hr/attendance-corrections/{id})
+func (_ Unimplemented) GetHrAttendanceCorrection(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /hr/attendance-corrections/{id})
+func (_ Unimplemented) UpdateHrAttendanceCorrection(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /hr/attendance-days/month-summary)
+func (_ Unimplemented) GetHrAttendanceMonthSummary(w http.ResponseWriter, r *http.Request, params GetHrAttendanceMonthSummaryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/attendance-days/query)
+func (_ Unimplemented) QueryHrAttendanceDays(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/attendance-days/recalc)
+func (_ Unimplemented) RecalcHrAttendanceDays(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /hr/attendance-days/{id})
+func (_ Unimplemented) GetHrAttendanceDay(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/attendance-imports)
+func (_ Unimplemented) CreateHrAttendanceImport(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/attendance-imports/query)
+func (_ Unimplemented) QueryHrAttendanceImports(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /hr/attendance-imports/{id})
+func (_ Unimplemented) DeleteHrAttendanceImport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /hr/attendance-imports/{id})
+func (_ Unimplemented) GetHrAttendanceImport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/attendance-imports/{id}/import)
+func (_ Unimplemented) ImportHrAttendanceImport(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/attendance-punches/query)
+func (_ Unimplemented) QueryHrAttendancePunches(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /hr/attendance-punches/{id})
+func (_ Unimplemented) GetHrAttendancePunch(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/employee-loans)
+func (_ Unimplemented) CreateHrEmployeeLoan(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /hr/employee-loans/balances)
+func (_ Unimplemented) GetHrEmployeeLoanBalances(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/employee-loans/query)
+func (_ Unimplemented) QueryHrEmployeeLoans(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /hr/employee-loans/{id})
+func (_ Unimplemented) DeleteHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /hr/employee-loans/{id})
+func (_ Unimplemented) GetHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /hr/employee-loans/{id})
+func (_ Unimplemented) UpdateHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id ID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4905,6 +9886,71 @@ func (_ Unimplemented) GetHrEmployee(w http.ResponseWriter, r *http.Request, id 
 
 // (PATCH /hr/employees/{id})
 func (_ Unimplemented) UpdateHrEmployee(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/payroll-payments)
+func (_ Unimplemented) CreateHrPayrollPayment(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/payroll-payments/pay-remaining)
+func (_ Unimplemented) PayRemainingHrPayrollPayment(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/payroll-payments/query)
+func (_ Unimplemented) QueryHrPayrollPayments(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /hr/payroll-payments/{id})
+func (_ Unimplemented) DeleteHrPayrollPayment(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /hr/payroll-payments/{id})
+func (_ Unimplemented) GetHrPayrollPayment(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/payrolls)
+func (_ Unimplemented) CreateHrPayroll(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/payrolls/generate)
+func (_ Unimplemented) GenerateHrPayrolls(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /hr/payrolls/month-stats)
+func (_ Unimplemented) GetHrPayrollMonthStats(w http.ResponseWriter, r *http.Request, params GetHrPayrollMonthStatsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/payrolls/query)
+func (_ Unimplemented) QueryHrPayrolls(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /hr/payrolls/{id})
+func (_ Unimplemented) DeleteHrPayroll(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /hr/payrolls/{id})
+func (_ Unimplemented) GetHrPayroll(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /hr/payrolls/{id})
+func (_ Unimplemented) UpdateHrPayroll(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /hr/payrolls/{id}/refresh)
+func (_ Unimplemented) RefreshHrPayroll(w http.ResponseWriter, r *http.Request, id ID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5218,6 +10264,356 @@ func (_ Unimplemented) UpdateInvWarehouse(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (POST /manufacturing/bom-byproducts)
+func (_ Unimplemented) CreateManufacturingBomByproduct(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/bom-byproducts/query)
+func (_ Unimplemented) QueryManufacturingBomByproducts(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/bom-byproducts/{id})
+func (_ Unimplemented) DeleteManufacturingBomByproduct(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/bom-byproducts/{id})
+func (_ Unimplemented) GetManufacturingBomByproduct(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/bom-byproducts/{id})
+func (_ Unimplemented) UpdateManufacturingBomByproduct(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/bom-components)
+func (_ Unimplemented) CreateManufacturingBomComponent(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/bom-components/query)
+func (_ Unimplemented) QueryManufacturingBomComponents(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/bom-components/{id})
+func (_ Unimplemented) DeleteManufacturingBomComponent(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/bom-components/{id})
+func (_ Unimplemented) GetManufacturingBomComponent(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/bom-components/{id})
+func (_ Unimplemented) UpdateManufacturingBomComponent(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/bom-routes)
+func (_ Unimplemented) CreateManufacturingBomRoute(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/bom-routes/query)
+func (_ Unimplemented) QueryManufacturingBomRoutes(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/bom-routes/{id})
+func (_ Unimplemented) DeleteManufacturingBomRoute(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/bom-routes/{id})
+func (_ Unimplemented) GetManufacturingBomRoute(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/bom-routes/{id})
+func (_ Unimplemented) UpdateManufacturingBomRoute(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/boms)
+func (_ Unimplemented) CreateManufacturingBom(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/boms/query)
+func (_ Unimplemented) QueryManufacturingBoms(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/boms/{id})
+func (_ Unimplemented) DeleteManufacturingBom(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/boms/{id})
+func (_ Unimplemented) GetManufacturingBom(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/boms/{id})
+func (_ Unimplemented) UpdateManufacturingBom(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/boms/{id}/apply-route-template)
+func (_ Unimplemented) ApplyManufacturingBomRouteTemplate(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/demand-items)
+func (_ Unimplemented) CreateManufacturingDemandItem(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/demand-items/query)
+func (_ Unimplemented) QueryManufacturingDemandItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/demand-items/{id})
+func (_ Unimplemented) DeleteManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/demand-items/{id})
+func (_ Unimplemented) GetManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/demand-items/{id})
+func (_ Unimplemented) UpdateManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/demand-items/{id}/complete)
+func (_ Unimplemented) CompleteManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/demand-items/{id}/fulfillment)
+func (_ Unimplemented) ChangeManufacturingDemandItemFulfillment(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/demands)
+func (_ Unimplemented) CreateManufacturingDemand(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/demands/query)
+func (_ Unimplemented) QueryManufacturingDemands(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/demands/{id})
+func (_ Unimplemented) DeleteManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/demands/{id})
+func (_ Unimplemented) GetManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/demands/{id})
+func (_ Unimplemented) UpdateManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/demands/{id}/close)
+func (_ Unimplemented) CloseManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/demands/{id}/confirm)
+func (_ Unimplemented) ConfirmManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/demands/{id}/void)
+func (_ Unimplemented) VoidManufacturingDemand(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/operations)
+func (_ Unimplemented) CreateManufacturingOperation(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/operations/query)
+func (_ Unimplemented) QueryManufacturingOperations(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/operations/{id})
+func (_ Unimplemented) DeleteManufacturingOperation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/operations/{id})
+func (_ Unimplemented) GetManufacturingOperation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/operations/{id})
+func (_ Unimplemented) UpdateManufacturingOperation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/output-items)
+func (_ Unimplemented) CreateManufacturingOutputItem(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/output-items/query)
+func (_ Unimplemented) QueryManufacturingOutputItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/output-items/{id})
+func (_ Unimplemented) DeleteManufacturingOutputItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/output-items/{id})
+func (_ Unimplemented) GetManufacturingOutputItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/output-items/{id})
+func (_ Unimplemented) UpdateManufacturingOutputItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/outputs)
+func (_ Unimplemented) CreateManufacturingOutput(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/outputs/query)
+func (_ Unimplemented) QueryManufacturingOutputs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/outputs/{id})
+func (_ Unimplemented) DeleteManufacturingOutput(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/outputs/{id})
+func (_ Unimplemented) GetManufacturingOutput(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/outputs/{id})
+func (_ Unimplemented) UpdateManufacturingOutput(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/outputs/{id}/audit)
+func (_ Unimplemented) AuditManufacturingOutput(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/outputs/{id}/void)
+func (_ Unimplemented) VoidManufacturingOutput(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/process-template-items)
+func (_ Unimplemented) CreateManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/process-template-items/query)
+func (_ Unimplemented) QueryManufacturingProcessTemplateItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/process-template-items/{id})
+func (_ Unimplemented) DeleteManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/process-template-items/{id})
+func (_ Unimplemented) GetManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/process-template-items/{id})
+func (_ Unimplemented) UpdateManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/process-templates)
+func (_ Unimplemented) CreateManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/process-templates/query)
+func (_ Unimplemented) QueryManufacturingProcessTemplates(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/process-templates/{id})
+func (_ Unimplemented) DeleteManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/process-templates/{id})
+func (_ Unimplemented) GetManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/process-templates/{id})
+func (_ Unimplemented) UpdateManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/sales-item-occupancies)
+func (_ Unimplemented) GetManufacturingSalesItemOccupancies(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/work-orders)
+func (_ Unimplemented) CreateManufacturingWorkOrder(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/work-orders/query)
+func (_ Unimplemented) QueryManufacturingWorkOrders(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /manufacturing/work-orders/{id})
+func (_ Unimplemented) DeleteManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /manufacturing/work-orders/{id})
+func (_ Unimplemented) GetManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /manufacturing/work-orders/{id})
+func (_ Unimplemented) UpdateManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /manufacturing/work-orders/{id}/void)
+func (_ Unimplemented) VoidManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /meta/permission-catalog)
 func (_ Unimplemented) GetPermissionCatalog(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -5378,6 +10774,176 @@ func (_ Unimplemented) VoidPurchaseOrder(w http.ResponseWriter, r *http.Request,
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (POST /purchase/outsourced-issue-items)
+func (_ Unimplemented) CreatePurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-issue-items/query)
+func (_ Unimplemented) QueryPurchaseOutsourcedIssueItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /purchase/outsourced-issue-items/{id})
+func (_ Unimplemented) DeletePurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /purchase/outsourced-issue-items/{id})
+func (_ Unimplemented) GetPurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /purchase/outsourced-issue-items/{id})
+func (_ Unimplemented) UpdatePurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-issues)
+func (_ Unimplemented) CreatePurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-issues/query)
+func (_ Unimplemented) QueryPurchaseOutsourcedIssues(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /purchase/outsourced-issues/{id})
+func (_ Unimplemented) DeletePurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /purchase/outsourced-issues/{id})
+func (_ Unimplemented) GetPurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /purchase/outsourced-issues/{id})
+func (_ Unimplemented) UpdatePurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-issues/{id}/audit)
+func (_ Unimplemented) AuditPurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-issues/{id}/void)
+func (_ Unimplemented) VoidPurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-receipt-item-byproducts)
+func (_ Unimplemented) CreatePurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-receipt-item-byproducts/query)
+func (_ Unimplemented) QueryPurchaseOutsourcedReceiptItemByproducts(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /purchase/outsourced-receipt-item-byproducts/{id})
+func (_ Unimplemented) DeletePurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /purchase/outsourced-receipt-item-byproducts/{id})
+func (_ Unimplemented) GetPurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /purchase/outsourced-receipt-item-byproducts/{id})
+func (_ Unimplemented) UpdatePurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-receipt-item-materials)
+func (_ Unimplemented) CreatePurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-receipt-item-materials/query)
+func (_ Unimplemented) QueryPurchaseOutsourcedReceiptItemMaterials(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /purchase/outsourced-receipt-item-materials/{id})
+func (_ Unimplemented) DeletePurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /purchase/outsourced-receipt-item-materials/{id})
+func (_ Unimplemented) GetPurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /purchase/outsourced-receipt-item-materials/{id})
+func (_ Unimplemented) UpdatePurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-receipt-items)
+func (_ Unimplemented) CreatePurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-receipt-items/query)
+func (_ Unimplemented) QueryPurchaseOutsourcedReceiptItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /purchase/outsourced-receipt-items/{id})
+func (_ Unimplemented) DeletePurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /purchase/outsourced-receipt-items/{id})
+func (_ Unimplemented) GetPurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /purchase/outsourced-receipt-items/{id})
+func (_ Unimplemented) UpdatePurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-receipts)
+func (_ Unimplemented) CreatePurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-receipts/query)
+func (_ Unimplemented) QueryPurchaseOutsourcedReceipts(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /purchase/outsourced-receipts/{id})
+func (_ Unimplemented) DeletePurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /purchase/outsourced-receipts/{id})
+func (_ Unimplemented) GetPurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /purchase/outsourced-receipts/{id})
+func (_ Unimplemented) UpdatePurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-receipts/{id}/audit)
+func (_ Unimplemented) AuditPurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/outsourced-receipts/{id}/void)
+func (_ Unimplemented) VoidPurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (POST /purchase/quotation-items)
 func (_ Unimplemented) CreatePurchaseQuotationItem(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -5463,6 +11029,136 @@ func (_ Unimplemented) VoidPurchaseQuotation(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (POST /purchase/receipt-items)
+func (_ Unimplemented) CreatePurchaseReceiptItem(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/receipt-items/query)
+func (_ Unimplemented) QueryPurchaseReceiptItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /purchase/receipt-items/{id})
+func (_ Unimplemented) DeletePurchaseReceiptItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /purchase/receipt-items/{id})
+func (_ Unimplemented) GetPurchaseReceiptItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /purchase/receipt-items/{id})
+func (_ Unimplemented) UpdatePurchaseReceiptItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/receipts)
+func (_ Unimplemented) CreatePurchaseReceipt(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/receipts/query)
+func (_ Unimplemented) QueryPurchaseReceipts(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /purchase/receipts/{id})
+func (_ Unimplemented) DeletePurchaseReceipt(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /purchase/receipts/{id})
+func (_ Unimplemented) GetPurchaseReceipt(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /purchase/receipts/{id})
+func (_ Unimplemented) UpdatePurchaseReceipt(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/receipts/{id}/audit)
+func (_ Unimplemented) AuditPurchaseReceipt(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/receipts/{id}/void)
+func (_ Unimplemented) VoidPurchaseReceipt(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/reconciliation-items)
+func (_ Unimplemented) CreatePurchaseReconciliationItem(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/reconciliation-items/query)
+func (_ Unimplemented) QueryPurchaseReconciliationItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /purchase/reconciliation-items/{id})
+func (_ Unimplemented) DeletePurchaseReconciliationItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /purchase/reconciliation-items/{id})
+func (_ Unimplemented) GetPurchaseReconciliationItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /purchase/reconciliation-items/{id})
+func (_ Unimplemented) UpdatePurchaseReconciliationItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/reconciliations)
+func (_ Unimplemented) CreatePurchaseReconciliation(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/reconciliations/query)
+func (_ Unimplemented) QueryPurchaseReconciliations(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /purchase/reconciliations/{id})
+func (_ Unimplemented) DeletePurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /purchase/reconciliations/{id})
+func (_ Unimplemented) GetPurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /purchase/reconciliations/{id})
+func (_ Unimplemented) UpdatePurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/reconciliations/{id}/audit)
+func (_ Unimplemented) AuditPurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/reconciliations/{id}/confirm)
+func (_ Unimplemented) ConfirmPurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/reconciliations/{id}/unconfirm)
+func (_ Unimplemented) UnconfirmPurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /purchase/reconciliations/{id}/void)
+func (_ Unimplemented) VoidPurchaseReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (POST /purchase/suppliers)
 func (_ Unimplemented) CreatePurchaseSupplier(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -5488,6 +11184,31 @@ func (_ Unimplemented) UpdatePurchaseSupplier(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (POST /sales/company-account-defaults)
+func (_ Unimplemented) CreateSalesCompanyAccountDefault(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /sales/company-account-defaults/by-company/{companyId})
+func (_ Unimplemented) GetSalesCompanyAccountDefaultsByCompany(w http.ResponseWriter, r *http.Request, companyId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/company-account-defaults/query)
+func (_ Unimplemented) QuerySalesCompanyAccountDefaults(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /sales/company-account-defaults/{id})
+func (_ Unimplemented) GetSalesCompanyAccountDefault(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /sales/company-account-defaults/{id})
+func (_ Unimplemented) UpdateSalesCompanyAccountDefault(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (POST /sales/customers)
 func (_ Unimplemented) CreateSalesCustomer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -5510,6 +11231,66 @@ func (_ Unimplemented) GetSalesCustomer(w http.ResponseWriter, r *http.Request, 
 
 // (PATCH /sales/customers/{id})
 func (_ Unimplemented) UpdateSalesCustomer(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/deliveries)
+func (_ Unimplemented) CreateSalesDelivery(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/deliveries/query)
+func (_ Unimplemented) QuerySalesDeliveries(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /sales/deliveries/{id})
+func (_ Unimplemented) DeleteSalesDelivery(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /sales/deliveries/{id})
+func (_ Unimplemented) GetSalesDelivery(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /sales/deliveries/{id})
+func (_ Unimplemented) UpdateSalesDelivery(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/deliveries/{id}/audit)
+func (_ Unimplemented) AuditSalesDelivery(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/deliveries/{id}/void)
+func (_ Unimplemented) VoidSalesDelivery(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/delivery-items)
+func (_ Unimplemented) CreateSalesDeliveryItem(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/delivery-items/query)
+func (_ Unimplemented) QuerySalesDeliveryItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /sales/delivery-items/{id})
+func (_ Unimplemented) DeleteSalesDeliveryItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /sales/delivery-items/{id})
+func (_ Unimplemented) GetSalesDeliveryItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /sales/delivery-items/{id})
+func (_ Unimplemented) UpdateSalesDeliveryItem(w http.ResponseWriter, r *http.Request, id ID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5668,6 +11449,86 @@ func (_ Unimplemented) VoidSalesQuotation(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (POST /sales/reconciliation-items)
+func (_ Unimplemented) CreateSalesReconciliationItem(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/reconciliation-items/query)
+func (_ Unimplemented) QuerySalesReconciliationItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /sales/reconciliation-items/{id})
+func (_ Unimplemented) DeleteSalesReconciliationItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /sales/reconciliation-items/{id})
+func (_ Unimplemented) GetSalesReconciliationItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /sales/reconciliation-items/{id})
+func (_ Unimplemented) UpdateSalesReconciliationItem(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/reconciliations)
+func (_ Unimplemented) CreateSalesReconciliation(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/reconciliations/query)
+func (_ Unimplemented) QuerySalesReconciliations(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /sales/reconciliations/{id})
+func (_ Unimplemented) DeleteSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /sales/reconciliations/{id})
+func (_ Unimplemented) GetSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PATCH /sales/reconciliations/{id})
+func (_ Unimplemented) UpdateSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/reconciliations/{id}/audit)
+func (_ Unimplemented) AuditSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/reconciliations/{id}/confirm)
+func (_ Unimplemented) ConfirmSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/reconciliations/{id}/unconfirm)
+func (_ Unimplemented) UnconfirmSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /sales/reconciliations/{id}/void)
+func (_ Unimplemented) VoidSalesReconciliation(w http.ResponseWriter, r *http.Request, id ID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /scm/order-flow-items/query)
+func (_ Unimplemented) QueryScmOrderFlowItems(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /scm/order-flow-items/{id})
+func (_ Unimplemented) GetScmOrderFlowItem(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /settings/finance)
 func (_ Unimplemented) GetAccountingSetting(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -5715,6 +11576,16 @@ func (_ Unimplemented) UpdateSystemSetting(w http.ResponseWriter, r *http.Reques
 
 // (GET /setup/status)
 func (_ Unimplemented) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /system/audit-logs/query)
+func (_ Unimplemented) QuerySystemAuditLogs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /system/audit-logs/{id})
+func (_ Unimplemented) GetSystemAuditLog(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5898,8 +11769,23 @@ func (_ Unimplemented) ResetSystemUserPassword(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (POST /todos/query)
+func (_ Unimplemented) QueryTodos(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /todos/unread-count)
 func (_ Unimplemented) GetTodoUnreadCount(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /todos/{id}/dismiss)
+func (_ Unimplemented) DismissTodo(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /todos/{id}/read)
+func (_ Unimplemented) MarkTodoRead(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -7128,11 +13014,1892 @@ func (siw *ServerInterfaceWrapper) GetSysFileMetadata(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// CreateFinanceBankAccount operation middleware
+func (siw *ServerInterfaceWrapper) CreateFinanceBankAccount(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFinanceBankAccount(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceBankAccounts operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceBankAccounts(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceBankAccounts(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceBankAccount operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceBankAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceBankAccount(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceBankAccount operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceBankAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceBankAccount(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFinanceBankAccount operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFinanceBankAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFinanceBankAccount(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceBankImportItems operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceBankImportItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceBankImportItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceBankImportItem operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceBankImportItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceBankImportItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceBankImportItem operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceBankImportItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceBankImportItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFinanceBankImportItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFinanceBankImportItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFinanceBankImportItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFinanceBankImportTemplate operation middleware
+func (siw *ServerInterfaceWrapper) CreateFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFinanceBankImportTemplate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceBankImportTemplates operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceBankImportTemplates(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceBankImportTemplates(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceBankImportTemplate operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceBankImportTemplate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceBankImportTemplate operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceBankImportTemplate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFinanceBankImportTemplate operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFinanceBankImportTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFinanceBankImportTemplate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFinanceBankImport operation middleware
+func (siw *ServerInterfaceWrapper) CreateFinanceBankImport(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFinanceBankImport(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceBankImports operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceBankImports(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceBankImports(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceBankImport operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceBankImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceBankImport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceBankImport operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceBankImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceBankImport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ImportFinanceBankImport operation middleware
+func (siw *ServerInterfaceWrapper) ImportFinanceBankImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportFinanceBankImport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFinanceBankReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) CreateFinanceBankReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFinanceBankReconciliation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceBankReconciliations operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceBankReconciliations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceBankReconciliations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QuickCreateFinanceBankReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) QuickCreateFinanceBankReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QuickCreateFinanceBankReconciliation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceBankReconciliationRemaining operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceBankReconciliationRemaining(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetFinanceBankReconciliationRemainingParams
+
+	// ------------- Required query parameter "bankTransactionId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "bankTransactionId", r.URL.Query(), &params.BankTransactionId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "bankTransactionId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bankTransactionId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "journalId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "journalId", r.URL.Query(), &params.JournalId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "journalId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "journalId", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceBankReconciliationRemaining(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceBankReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceBankReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceBankReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceBankReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceBankReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceBankReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFinanceBankTransaction operation middleware
+func (siw *ServerInterfaceWrapper) CreateFinanceBankTransaction(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFinanceBankTransaction(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceBankTransactions operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceBankTransactions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceBankTransactions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceBankTransaction operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceBankTransaction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceBankTransaction(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceBankTransaction operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceBankTransaction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceBankTransaction(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFinanceBankTransaction operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFinanceBankTransaction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFinanceBankTransaction(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceBillHoldings operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceBillHoldings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceBillHoldings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceBillHolding operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceBillHolding(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceBillHolding(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFinanceBillTransaction operation middleware
+func (siw *ServerInterfaceWrapper) CreateFinanceBillTransaction(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFinanceBillTransaction(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// OcrFinanceBillTransaction operation middleware
+func (siw *ServerInterfaceWrapper) OcrFinanceBillTransaction(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OcrFinanceBillTransaction(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceBillTransactions operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceBillTransactions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceBillTransactions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceBillTransaction operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceBillTransaction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceBillTransaction(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceBillTransaction operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceBillTransaction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceBillTransaction(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFinanceBillTransaction operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFinanceBillTransaction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFinanceBillTransaction(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditFinanceBillTransaction operation middleware
+func (siw *ServerInterfaceWrapper) AuditFinanceBillTransaction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditFinanceBillTransaction(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidFinanceBillTransaction operation middleware
+func (siw *ServerInterfaceWrapper) VoidFinanceBillTransaction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidFinanceBillTransaction(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceBills operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceBills(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceBills(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceBill operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceBill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceBill(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceBill operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceBill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceBill(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFinanceBill operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFinanceBill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFinanceBill(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFinanceExpenseReportItem operation middleware
+func (siw *ServerInterfaceWrapper) CreateFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFinanceExpenseReportItem(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceExpenseReportItems operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceExpenseReportItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceExpenseReportItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceExpenseReportItem operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceExpenseReportItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceExpenseReportItem operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceExpenseReportItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFinanceExpenseReportItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFinanceExpenseReportItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFinanceExpenseReport operation middleware
+func (siw *ServerInterfaceWrapper) CreateFinanceExpenseReport(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFinanceExpenseReport(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceExpenseReports operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceExpenseReports(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceExpenseReports(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceExpenseReport operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceExpenseReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceExpenseReport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceExpenseReport operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceExpenseReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceExpenseReport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFinanceExpenseReport operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFinanceExpenseReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFinanceExpenseReport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditFinanceExpenseReport operation middleware
+func (siw *ServerInterfaceWrapper) AuditFinanceExpenseReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditFinanceExpenseReport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidFinanceExpenseReport operation middleware
+func (siw *ServerInterfaceWrapper) VoidFinanceExpenseReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidFinanceExpenseReport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFinanceVatInvoice operation middleware
+func (siw *ServerInterfaceWrapper) CreateFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFinanceVatInvoice(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// OcrFinanceVatInvoice operation middleware
+func (siw *ServerInterfaceWrapper) OcrFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OcrFinanceVatInvoice(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryFinanceVatInvoices operation middleware
+func (siw *ServerInterfaceWrapper) QueryFinanceVatInvoices(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryFinanceVatInvoices(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFinanceVatInvoice operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFinanceVatInvoice(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFinanceVatInvoice operation middleware
+func (siw *ServerInterfaceWrapper) GetFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFinanceVatInvoice(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFinanceVatInvoice operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFinanceVatInvoice(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditFinanceVatInvoice operation middleware
+func (siw *ServerInterfaceWrapper) AuditFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditFinanceVatInvoice(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReverseFinanceVatInvoice operation middleware
+func (siw *ServerInterfaceWrapper) ReverseFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReverseFinanceVatInvoice(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidFinanceVatInvoice operation middleware
+func (siw *ServerInterfaceWrapper) VoidFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidFinanceVatInvoice(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateHrAttendanceCorrection operation middleware
+func (siw *ServerInterfaceWrapper) CreateHrAttendanceCorrection(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateHrAttendanceCorrection(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryHrAttendanceCorrections operation middleware
+func (siw *ServerInterfaceWrapper) QueryHrAttendanceCorrections(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryHrAttendanceCorrections(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteHrAttendanceCorrection operation middleware
+func (siw *ServerInterfaceWrapper) DeleteHrAttendanceCorrection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteHrAttendanceCorrection(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetHrAttendanceCorrection operation middleware
+func (siw *ServerInterfaceWrapper) GetHrAttendanceCorrection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHrAttendanceCorrection(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateHrAttendanceCorrection operation middleware
+func (siw *ServerInterfaceWrapper) UpdateHrAttendanceCorrection(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateHrAttendanceCorrection(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetHrAttendanceMonthSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetHrAttendanceMonthSummary(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetHrAttendanceMonthSummaryParams
+
+	// ------------- Required query parameter "month" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "month", r.URL.Query(), &params.Month, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "month"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "month", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHrAttendanceMonthSummary(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryHrAttendanceDays operation middleware
+func (siw *ServerInterfaceWrapper) QueryHrAttendanceDays(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryHrAttendanceDays(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RecalcHrAttendanceDays operation middleware
+func (siw *ServerInterfaceWrapper) RecalcHrAttendanceDays(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RecalcHrAttendanceDays(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetHrAttendanceDay operation middleware
+func (siw *ServerInterfaceWrapper) GetHrAttendanceDay(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHrAttendanceDay(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateHrAttendanceImport operation middleware
+func (siw *ServerInterfaceWrapper) CreateHrAttendanceImport(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateHrAttendanceImport(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryHrAttendanceImports operation middleware
+func (siw *ServerInterfaceWrapper) QueryHrAttendanceImports(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryHrAttendanceImports(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteHrAttendanceImport operation middleware
+func (siw *ServerInterfaceWrapper) DeleteHrAttendanceImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteHrAttendanceImport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetHrAttendanceImport operation middleware
+func (siw *ServerInterfaceWrapper) GetHrAttendanceImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHrAttendanceImport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ImportHrAttendanceImport operation middleware
+func (siw *ServerInterfaceWrapper) ImportHrAttendanceImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportHrAttendanceImport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryHrAttendancePunches operation middleware
+func (siw *ServerInterfaceWrapper) QueryHrAttendancePunches(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryHrAttendancePunches(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetHrAttendancePunch operation middleware
+func (siw *ServerInterfaceWrapper) GetHrAttendancePunch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHrAttendancePunch(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateHrEmployeeLoan operation middleware
+func (siw *ServerInterfaceWrapper) CreateHrEmployeeLoan(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateHrEmployeeLoan(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetHrEmployeeLoanBalances operation middleware
+func (siw *ServerInterfaceWrapper) GetHrEmployeeLoanBalances(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHrEmployeeLoanBalances(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryHrEmployeeLoans operation middleware
+func (siw *ServerInterfaceWrapper) QueryHrEmployeeLoans(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryHrEmployeeLoans(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteHrEmployeeLoan operation middleware
+func (siw *ServerInterfaceWrapper) DeleteHrEmployeeLoan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteHrEmployeeLoan(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetHrEmployeeLoan operation middleware
+func (siw *ServerInterfaceWrapper) GetHrEmployeeLoan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHrEmployeeLoan(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateHrEmployeeLoan operation middleware
+func (siw *ServerInterfaceWrapper) UpdateHrEmployeeLoan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateHrEmployeeLoan(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7239,6 +15006,279 @@ func (siw *ServerInterfaceWrapper) UpdateHrEmployee(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateHrEmployee(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateHrPayrollPayment operation middleware
+func (siw *ServerInterfaceWrapper) CreateHrPayrollPayment(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateHrPayrollPayment(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PayRemainingHrPayrollPayment operation middleware
+func (siw *ServerInterfaceWrapper) PayRemainingHrPayrollPayment(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PayRemainingHrPayrollPayment(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryHrPayrollPayments operation middleware
+func (siw *ServerInterfaceWrapper) QueryHrPayrollPayments(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryHrPayrollPayments(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteHrPayrollPayment operation middleware
+func (siw *ServerInterfaceWrapper) DeleteHrPayrollPayment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteHrPayrollPayment(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetHrPayrollPayment operation middleware
+func (siw *ServerInterfaceWrapper) GetHrPayrollPayment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHrPayrollPayment(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateHrPayroll operation middleware
+func (siw *ServerInterfaceWrapper) CreateHrPayroll(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateHrPayroll(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GenerateHrPayrolls operation middleware
+func (siw *ServerInterfaceWrapper) GenerateHrPayrolls(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GenerateHrPayrolls(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetHrPayrollMonthStats operation middleware
+func (siw *ServerInterfaceWrapper) GetHrPayrollMonthStats(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetHrPayrollMonthStatsParams
+
+	// ------------- Required query parameter "month" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "month", r.URL.Query(), &params.Month, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "month"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "month", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHrPayrollMonthStats(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryHrPayrolls operation middleware
+func (siw *ServerInterfaceWrapper) QueryHrPayrolls(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryHrPayrolls(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteHrPayroll operation middleware
+func (siw *ServerInterfaceWrapper) DeleteHrPayroll(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteHrPayroll(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetHrPayroll operation middleware
+func (siw *ServerInterfaceWrapper) GetHrPayroll(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetHrPayroll(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateHrPayroll operation middleware
+func (siw *ServerInterfaceWrapper) UpdateHrPayroll(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateHrPayroll(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefreshHrPayroll operation middleware
+func (siw *ServerInterfaceWrapper) RefreshHrPayroll(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshHrPayroll(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8572,6 +16612,1526 @@ func (siw *ServerInterfaceWrapper) UpdateInvWarehouse(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// CreateManufacturingBomByproduct operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingBomByproduct(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingBomByproduct(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingBomByproducts operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingBomByproducts(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingBomByproducts(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingBomByproduct operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingBomByproduct(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingBomByproduct(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingBomByproduct operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingBomByproduct(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingBomByproduct(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingBomByproduct operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingBomByproduct(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingBomByproduct(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingBomComponent operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingBomComponent(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingBomComponent(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingBomComponents operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingBomComponents(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingBomComponents(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingBomComponent operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingBomComponent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingBomComponent(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingBomComponent operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingBomComponent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingBomComponent(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingBomComponent operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingBomComponent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingBomComponent(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingBomRoute operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingBomRoute(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingBomRoute(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingBomRoutes operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingBomRoutes(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingBomRoutes(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingBomRoute operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingBomRoute(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingBomRoute(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingBomRoute operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingBomRoute(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingBomRoute(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingBomRoute operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingBomRoute(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingBomRoute(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingBom operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingBom(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingBom(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingBoms operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingBoms(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingBoms(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingBom operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingBom(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingBom(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingBom operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingBom(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingBom(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingBom operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingBom(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingBom(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApplyManufacturingBomRouteTemplate operation middleware
+func (siw *ServerInterfaceWrapper) ApplyManufacturingBomRouteTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApplyManufacturingBomRouteTemplate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingDemandItem operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingDemandItem(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingDemandItem(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingDemandItems operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingDemandItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingDemandItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingDemandItem operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingDemandItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingDemandItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingDemandItem operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingDemandItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingDemandItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingDemandItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingDemandItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingDemandItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CompleteManufacturingDemandItem operation middleware
+func (siw *ServerInterfaceWrapper) CompleteManufacturingDemandItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteManufacturingDemandItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ChangeManufacturingDemandItemFulfillment operation middleware
+func (siw *ServerInterfaceWrapper) ChangeManufacturingDemandItemFulfillment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ChangeManufacturingDemandItemFulfillment(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingDemand operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingDemand(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingDemand(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingDemands operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingDemands(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingDemands(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingDemand operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingDemand(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingDemand(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingDemand operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingDemand(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingDemand(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingDemand operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingDemand(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingDemand(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CloseManufacturingDemand operation middleware
+func (siw *ServerInterfaceWrapper) CloseManufacturingDemand(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CloseManufacturingDemand(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmManufacturingDemand operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmManufacturingDemand(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmManufacturingDemand(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidManufacturingDemand operation middleware
+func (siw *ServerInterfaceWrapper) VoidManufacturingDemand(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidManufacturingDemand(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingOperation operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingOperation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingOperation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingOperations operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingOperations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingOperations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingOperation operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingOperation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingOperation operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingOperation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingOperation operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingOperation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingOperation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingOutputItem operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingOutputItem(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingOutputItem(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingOutputItems operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingOutputItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingOutputItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingOutputItem operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingOutputItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingOutputItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingOutputItem operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingOutputItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingOutputItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingOutputItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingOutputItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingOutputItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingOutput operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingOutput(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingOutput(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingOutputs operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingOutputs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingOutputs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingOutput operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingOutput(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingOutput(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingOutput operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingOutput(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingOutput(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingOutput operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingOutput(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingOutput(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditManufacturingOutput operation middleware
+func (siw *ServerInterfaceWrapper) AuditManufacturingOutput(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditManufacturingOutput(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidManufacturingOutput operation middleware
+func (siw *ServerInterfaceWrapper) VoidManufacturingOutput(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidManufacturingOutput(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingProcessTemplateItem operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingProcessTemplateItem(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingProcessTemplateItems operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingProcessTemplateItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingProcessTemplateItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingProcessTemplateItem operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingProcessTemplateItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingProcessTemplateItem operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingProcessTemplateItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingProcessTemplateItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingProcessTemplateItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingProcessTemplateItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingProcessTemplate operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingProcessTemplate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingProcessTemplates operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingProcessTemplates(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingProcessTemplates(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingProcessTemplate operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingProcessTemplate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingProcessTemplate operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingProcessTemplate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingProcessTemplate operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingProcessTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingProcessTemplate(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingSalesItemOccupancies operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingSalesItemOccupancies(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingSalesItemOccupancies(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateManufacturingWorkOrder operation middleware
+func (siw *ServerInterfaceWrapper) CreateManufacturingWorkOrder(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateManufacturingWorkOrder(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryManufacturingWorkOrders operation middleware
+func (siw *ServerInterfaceWrapper) QueryManufacturingWorkOrders(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryManufacturingWorkOrders(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteManufacturingWorkOrder operation middleware
+func (siw *ServerInterfaceWrapper) DeleteManufacturingWorkOrder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteManufacturingWorkOrder(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManufacturingWorkOrder operation middleware
+func (siw *ServerInterfaceWrapper) GetManufacturingWorkOrder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManufacturingWorkOrder(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateManufacturingWorkOrder operation middleware
+func (siw *ServerInterfaceWrapper) UpdateManufacturingWorkOrder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateManufacturingWorkOrder(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidManufacturingWorkOrder operation middleware
+func (siw *ServerInterfaceWrapper) VoidManufacturingWorkOrder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidManufacturingWorkOrder(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetPermissionCatalog operation middleware
 func (siw *ServerInterfaceWrapper) GetPermissionCatalog(w http.ResponseWriter, r *http.Request) {
 
@@ -9262,6 +18822,746 @@ func (siw *ServerInterfaceWrapper) VoidPurchaseOrder(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// CreatePurchaseOutsourcedIssueItem operation middleware
+func (siw *ServerInterfaceWrapper) CreatePurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePurchaseOutsourcedIssueItem(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryPurchaseOutsourcedIssueItems operation middleware
+func (siw *ServerInterfaceWrapper) QueryPurchaseOutsourcedIssueItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryPurchaseOutsourcedIssueItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePurchaseOutsourcedIssueItem operation middleware
+func (siw *ServerInterfaceWrapper) DeletePurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePurchaseOutsourcedIssueItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPurchaseOutsourcedIssueItem operation middleware
+func (siw *ServerInterfaceWrapper) GetPurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPurchaseOutsourcedIssueItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePurchaseOutsourcedIssueItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePurchaseOutsourcedIssueItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePurchaseOutsourcedIssueItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePurchaseOutsourcedIssue operation middleware
+func (siw *ServerInterfaceWrapper) CreatePurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePurchaseOutsourcedIssue(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryPurchaseOutsourcedIssues operation middleware
+func (siw *ServerInterfaceWrapper) QueryPurchaseOutsourcedIssues(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryPurchaseOutsourcedIssues(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePurchaseOutsourcedIssue operation middleware
+func (siw *ServerInterfaceWrapper) DeletePurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePurchaseOutsourcedIssue(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPurchaseOutsourcedIssue operation middleware
+func (siw *ServerInterfaceWrapper) GetPurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPurchaseOutsourcedIssue(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePurchaseOutsourcedIssue operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePurchaseOutsourcedIssue(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditPurchaseOutsourcedIssue operation middleware
+func (siw *ServerInterfaceWrapper) AuditPurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditPurchaseOutsourcedIssue(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidPurchaseOutsourcedIssue operation middleware
+func (siw *ServerInterfaceWrapper) VoidPurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidPurchaseOutsourcedIssue(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePurchaseOutsourcedReceiptItemByproduct operation middleware
+func (siw *ServerInterfaceWrapper) CreatePurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePurchaseOutsourcedReceiptItemByproduct(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryPurchaseOutsourcedReceiptItemByproducts operation middleware
+func (siw *ServerInterfaceWrapper) QueryPurchaseOutsourcedReceiptItemByproducts(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryPurchaseOutsourcedReceiptItemByproducts(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePurchaseOutsourcedReceiptItemByproduct operation middleware
+func (siw *ServerInterfaceWrapper) DeletePurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePurchaseOutsourcedReceiptItemByproduct(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPurchaseOutsourcedReceiptItemByproduct operation middleware
+func (siw *ServerInterfaceWrapper) GetPurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPurchaseOutsourcedReceiptItemByproduct(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePurchaseOutsourcedReceiptItemByproduct operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePurchaseOutsourcedReceiptItemByproduct(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePurchaseOutsourcedReceiptItemByproduct(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePurchaseOutsourcedReceiptItemMaterial operation middleware
+func (siw *ServerInterfaceWrapper) CreatePurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePurchaseOutsourcedReceiptItemMaterial(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryPurchaseOutsourcedReceiptItemMaterials operation middleware
+func (siw *ServerInterfaceWrapper) QueryPurchaseOutsourcedReceiptItemMaterials(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryPurchaseOutsourcedReceiptItemMaterials(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePurchaseOutsourcedReceiptItemMaterial operation middleware
+func (siw *ServerInterfaceWrapper) DeletePurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePurchaseOutsourcedReceiptItemMaterial(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPurchaseOutsourcedReceiptItemMaterial operation middleware
+func (siw *ServerInterfaceWrapper) GetPurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPurchaseOutsourcedReceiptItemMaterial(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePurchaseOutsourcedReceiptItemMaterial operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePurchaseOutsourcedReceiptItemMaterial(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePurchaseOutsourcedReceiptItemMaterial(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePurchaseOutsourcedReceiptItem operation middleware
+func (siw *ServerInterfaceWrapper) CreatePurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePurchaseOutsourcedReceiptItem(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryPurchaseOutsourcedReceiptItems operation middleware
+func (siw *ServerInterfaceWrapper) QueryPurchaseOutsourcedReceiptItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryPurchaseOutsourcedReceiptItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePurchaseOutsourcedReceiptItem operation middleware
+func (siw *ServerInterfaceWrapper) DeletePurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePurchaseOutsourcedReceiptItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPurchaseOutsourcedReceiptItem operation middleware
+func (siw *ServerInterfaceWrapper) GetPurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPurchaseOutsourcedReceiptItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePurchaseOutsourcedReceiptItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePurchaseOutsourcedReceiptItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePurchaseOutsourcedReceipt operation middleware
+func (siw *ServerInterfaceWrapper) CreatePurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePurchaseOutsourcedReceipt(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryPurchaseOutsourcedReceipts operation middleware
+func (siw *ServerInterfaceWrapper) QueryPurchaseOutsourcedReceipts(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryPurchaseOutsourcedReceipts(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePurchaseOutsourcedReceipt operation middleware
+func (siw *ServerInterfaceWrapper) DeletePurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePurchaseOutsourcedReceipt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPurchaseOutsourcedReceipt operation middleware
+func (siw *ServerInterfaceWrapper) GetPurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPurchaseOutsourcedReceipt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePurchaseOutsourcedReceipt operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePurchaseOutsourcedReceipt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditPurchaseOutsourcedReceipt operation middleware
+func (siw *ServerInterfaceWrapper) AuditPurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditPurchaseOutsourcedReceipt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidPurchaseOutsourcedReceipt operation middleware
+func (siw *ServerInterfaceWrapper) VoidPurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidPurchaseOutsourcedReceipt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreatePurchaseQuotationItem operation middleware
 func (siw *ServerInterfaceWrapper) CreatePurchaseQuotationItem(w http.ResponseWriter, r *http.Request) {
 
@@ -9632,6 +19932,586 @@ func (siw *ServerInterfaceWrapper) VoidPurchaseQuotation(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// CreatePurchaseReceiptItem operation middleware
+func (siw *ServerInterfaceWrapper) CreatePurchaseReceiptItem(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePurchaseReceiptItem(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryPurchaseReceiptItems operation middleware
+func (siw *ServerInterfaceWrapper) QueryPurchaseReceiptItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryPurchaseReceiptItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePurchaseReceiptItem operation middleware
+func (siw *ServerInterfaceWrapper) DeletePurchaseReceiptItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePurchaseReceiptItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPurchaseReceiptItem operation middleware
+func (siw *ServerInterfaceWrapper) GetPurchaseReceiptItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPurchaseReceiptItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePurchaseReceiptItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePurchaseReceiptItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePurchaseReceiptItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePurchaseReceipt operation middleware
+func (siw *ServerInterfaceWrapper) CreatePurchaseReceipt(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePurchaseReceipt(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryPurchaseReceipts operation middleware
+func (siw *ServerInterfaceWrapper) QueryPurchaseReceipts(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryPurchaseReceipts(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePurchaseReceipt operation middleware
+func (siw *ServerInterfaceWrapper) DeletePurchaseReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePurchaseReceipt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPurchaseReceipt operation middleware
+func (siw *ServerInterfaceWrapper) GetPurchaseReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPurchaseReceipt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePurchaseReceipt operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePurchaseReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePurchaseReceipt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditPurchaseReceipt operation middleware
+func (siw *ServerInterfaceWrapper) AuditPurchaseReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditPurchaseReceipt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidPurchaseReceipt operation middleware
+func (siw *ServerInterfaceWrapper) VoidPurchaseReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidPurchaseReceipt(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePurchaseReconciliationItem operation middleware
+func (siw *ServerInterfaceWrapper) CreatePurchaseReconciliationItem(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePurchaseReconciliationItem(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryPurchaseReconciliationItems operation middleware
+func (siw *ServerInterfaceWrapper) QueryPurchaseReconciliationItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryPurchaseReconciliationItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePurchaseReconciliationItem operation middleware
+func (siw *ServerInterfaceWrapper) DeletePurchaseReconciliationItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePurchaseReconciliationItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPurchaseReconciliationItem operation middleware
+func (siw *ServerInterfaceWrapper) GetPurchaseReconciliationItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPurchaseReconciliationItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePurchaseReconciliationItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePurchaseReconciliationItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePurchaseReconciliationItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePurchaseReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) CreatePurchaseReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePurchaseReconciliation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryPurchaseReconciliations operation middleware
+func (siw *ServerInterfaceWrapper) QueryPurchaseReconciliations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryPurchaseReconciliations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePurchaseReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) DeletePurchaseReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePurchaseReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPurchaseReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) GetPurchaseReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPurchaseReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePurchaseReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePurchaseReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePurchaseReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditPurchaseReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) AuditPurchaseReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditPurchaseReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmPurchaseReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmPurchaseReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmPurchaseReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnconfirmPurchaseReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) UnconfirmPurchaseReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnconfirmPurchaseReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidPurchaseReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) VoidPurchaseReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidPurchaseReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreatePurchaseSupplier operation middleware
 func (siw *ServerInterfaceWrapper) CreatePurchaseSupplier(w http.ResponseWriter, r *http.Request) {
 
@@ -9738,6 +20618,112 @@ func (siw *ServerInterfaceWrapper) UpdatePurchaseSupplier(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// CreateSalesCompanyAccountDefault operation middleware
+func (siw *ServerInterfaceWrapper) CreateSalesCompanyAccountDefault(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSalesCompanyAccountDefault(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSalesCompanyAccountDefaultsByCompany operation middleware
+func (siw *ServerInterfaceWrapper) GetSalesCompanyAccountDefaultsByCompany(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "companyId" -------------
+	var companyId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "companyId", chi.URLParam(r, "companyId"), &companyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "companyId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSalesCompanyAccountDefaultsByCompany(w, r, companyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QuerySalesCompanyAccountDefaults operation middleware
+func (siw *ServerInterfaceWrapper) QuerySalesCompanyAccountDefaults(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QuerySalesCompanyAccountDefaults(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSalesCompanyAccountDefault operation middleware
+func (siw *ServerInterfaceWrapper) GetSalesCompanyAccountDefault(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSalesCompanyAccountDefault(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSalesCompanyAccountDefault operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSalesCompanyAccountDefault(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSalesCompanyAccountDefault(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateSalesCustomer operation middleware
 func (siw *ServerInterfaceWrapper) CreateSalesCustomer(w http.ResponseWriter, r *http.Request) {
 
@@ -9835,6 +20821,270 @@ func (siw *ServerInterfaceWrapper) UpdateSalesCustomer(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateSalesCustomer(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSalesDelivery operation middleware
+func (siw *ServerInterfaceWrapper) CreateSalesDelivery(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSalesDelivery(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QuerySalesDeliveries operation middleware
+func (siw *ServerInterfaceWrapper) QuerySalesDeliveries(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QuerySalesDeliveries(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSalesDelivery operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSalesDelivery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSalesDelivery(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSalesDelivery operation middleware
+func (siw *ServerInterfaceWrapper) GetSalesDelivery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSalesDelivery(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSalesDelivery operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSalesDelivery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSalesDelivery(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditSalesDelivery operation middleware
+func (siw *ServerInterfaceWrapper) AuditSalesDelivery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditSalesDelivery(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidSalesDelivery operation middleware
+func (siw *ServerInterfaceWrapper) VoidSalesDelivery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidSalesDelivery(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSalesDeliveryItem operation middleware
+func (siw *ServerInterfaceWrapper) CreateSalesDeliveryItem(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSalesDeliveryItem(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QuerySalesDeliveryItems operation middleware
+func (siw *ServerInterfaceWrapper) QuerySalesDeliveryItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QuerySalesDeliveryItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSalesDeliveryItem operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSalesDeliveryItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSalesDeliveryItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSalesDeliveryItem operation middleware
+func (siw *ServerInterfaceWrapper) GetSalesDeliveryItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSalesDeliveryItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSalesDeliveryItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSalesDeliveryItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSalesDeliveryItem(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10530,6 +21780,362 @@ func (siw *ServerInterfaceWrapper) VoidSalesQuotation(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// CreateSalesReconciliationItem operation middleware
+func (siw *ServerInterfaceWrapper) CreateSalesReconciliationItem(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSalesReconciliationItem(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QuerySalesReconciliationItems operation middleware
+func (siw *ServerInterfaceWrapper) QuerySalesReconciliationItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QuerySalesReconciliationItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSalesReconciliationItem operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSalesReconciliationItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSalesReconciliationItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSalesReconciliationItem operation middleware
+func (siw *ServerInterfaceWrapper) GetSalesReconciliationItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSalesReconciliationItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSalesReconciliationItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSalesReconciliationItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSalesReconciliationItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSalesReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) CreateSalesReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSalesReconciliation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QuerySalesReconciliations operation middleware
+func (siw *ServerInterfaceWrapper) QuerySalesReconciliations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QuerySalesReconciliations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSalesReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSalesReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSalesReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSalesReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) GetSalesReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSalesReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSalesReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSalesReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSalesReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditSalesReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) AuditSalesReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditSalesReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmSalesReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmSalesReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmSalesReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnconfirmSalesReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) UnconfirmSalesReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnconfirmSalesReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VoidSalesReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) VoidSalesReconciliation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VoidSalesReconciliation(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueryScmOrderFlowItems operation middleware
+func (siw *ServerInterfaceWrapper) QueryScmOrderFlowItems(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryScmOrderFlowItems(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetScmOrderFlowItem operation middleware
+func (siw *ServerInterfaceWrapper) GetScmOrderFlowItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetScmOrderFlowItem(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetAccountingSetting operation middleware
 func (siw *ServerInterfaceWrapper) GetAccountingSetting(w http.ResponseWriter, r *http.Request) {
 
@@ -10661,6 +22267,46 @@ func (siw *ServerInterfaceWrapper) GetSetupStatus(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSetupStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QuerySystemAuditLogs operation middleware
+func (siw *ServerInterfaceWrapper) QuerySystemAuditLogs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QuerySystemAuditLogs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSystemAuditLog operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemAuditLog(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemAuditLog(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -11462,11 +23108,77 @@ func (siw *ServerInterfaceWrapper) ResetSystemUserPassword(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
+// QueryTodos operation middleware
+func (siw *ServerInterfaceWrapper) QueryTodos(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueryTodos(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetTodoUnreadCount operation middleware
 func (siw *ServerInterfaceWrapper) GetTodoUnreadCount(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetTodoUnreadCount(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DismissTodo operation middleware
+func (siw *ServerInterfaceWrapper) DismissTodo(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DismissTodo(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MarkTodoRead operation middleware
+func (siw *ServerInterfaceWrapper) MarkTodoRead(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MarkTodoRead(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -11603,6 +23315,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/todos/unread-count", wrapper.GetTodoUnreadCount)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/todos/query", wrapper.QueryTodos)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/todos/{id}/read", wrapper.MarkTodoRead)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/todos/{id}/dismiss", wrapper.DismissTodo)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/system/audit-logs/query", wrapper.QuerySystemAuditLogs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/system/audit-logs/{id}", wrapper.GetSystemAuditLog)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/meta/resources", wrapper.ListResourceMeta)
@@ -11965,6 +23692,285 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/purchase/order-bom/expand", wrapper.ExpandPurchaseOrderBom)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/deliveries/query", wrapper.QuerySalesDeliveries)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/deliveries", wrapper.CreateSalesDelivery)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/sales/deliveries/{id}", wrapper.DeleteSalesDelivery)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sales/deliveries/{id}", wrapper.GetSalesDelivery)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/sales/deliveries/{id}", wrapper.UpdateSalesDelivery)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/deliveries/{id}/audit", wrapper.AuditSalesDelivery)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/deliveries/{id}/void", wrapper.VoidSalesDelivery)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/delivery-items/query", wrapper.QuerySalesDeliveryItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/delivery-items", wrapper.CreateSalesDeliveryItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/sales/delivery-items/{id}", wrapper.DeleteSalesDeliveryItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sales/delivery-items/{id}", wrapper.GetSalesDeliveryItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/sales/delivery-items/{id}", wrapper.UpdateSalesDeliveryItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/receipts/query", wrapper.QueryPurchaseReceipts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/receipts", wrapper.CreatePurchaseReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/purchase/receipts/{id}", wrapper.DeletePurchaseReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/purchase/receipts/{id}", wrapper.GetPurchaseReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/purchase/receipts/{id}", wrapper.UpdatePurchaseReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/receipts/{id}/audit", wrapper.AuditPurchaseReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/receipts/{id}/void", wrapper.VoidPurchaseReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/receipt-items/query", wrapper.QueryPurchaseReceiptItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/receipt-items", wrapper.CreatePurchaseReceiptItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/purchase/receipt-items/{id}", wrapper.DeletePurchaseReceiptItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/purchase/receipt-items/{id}", wrapper.GetPurchaseReceiptItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/purchase/receipt-items/{id}", wrapper.UpdatePurchaseReceiptItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/reconciliations/query", wrapper.QuerySalesReconciliations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/reconciliations", wrapper.CreateSalesReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/sales/reconciliations/{id}", wrapper.DeleteSalesReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sales/reconciliations/{id}", wrapper.GetSalesReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/sales/reconciliations/{id}", wrapper.UpdateSalesReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/reconciliations/{id}/confirm", wrapper.ConfirmSalesReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/reconciliations/{id}/unconfirm", wrapper.UnconfirmSalesReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/reconciliations/{id}/audit", wrapper.AuditSalesReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/reconciliations/{id}/void", wrapper.VoidSalesReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/reconciliation-items/query", wrapper.QuerySalesReconciliationItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/reconciliation-items", wrapper.CreateSalesReconciliationItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/sales/reconciliation-items/{id}", wrapper.DeleteSalesReconciliationItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sales/reconciliation-items/{id}", wrapper.GetSalesReconciliationItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/sales/reconciliation-items/{id}", wrapper.UpdateSalesReconciliationItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/reconciliations/query", wrapper.QueryPurchaseReconciliations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/reconciliations", wrapper.CreatePurchaseReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/purchase/reconciliations/{id}", wrapper.DeletePurchaseReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/purchase/reconciliations/{id}", wrapper.GetPurchaseReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/purchase/reconciliations/{id}", wrapper.UpdatePurchaseReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/reconciliations/{id}/confirm", wrapper.ConfirmPurchaseReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/reconciliations/{id}/unconfirm", wrapper.UnconfirmPurchaseReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/reconciliations/{id}/audit", wrapper.AuditPurchaseReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/reconciliations/{id}/void", wrapper.VoidPurchaseReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/reconciliation-items/query", wrapper.QueryPurchaseReconciliationItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/reconciliation-items", wrapper.CreatePurchaseReconciliationItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/purchase/reconciliation-items/{id}", wrapper.DeletePurchaseReconciliationItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/purchase/reconciliation-items/{id}", wrapper.GetPurchaseReconciliationItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/purchase/reconciliation-items/{id}", wrapper.UpdatePurchaseReconciliationItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/company-account-defaults/query", wrapper.QuerySalesCompanyAccountDefaults)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sales/company-account-defaults", wrapper.CreateSalesCompanyAccountDefault)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sales/company-account-defaults/{id}", wrapper.GetSalesCompanyAccountDefault)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/sales/company-account-defaults/{id}", wrapper.UpdateSalesCompanyAccountDefault)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/scm/order-flow-items/query", wrapper.QueryScmOrderFlowItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/scm/order-flow-items/{id}", wrapper.GetScmOrderFlowItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sales/company-account-defaults/by-company/{companyId}", wrapper.GetSalesCompanyAccountDefaultsByCompany)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-issues/query", wrapper.QueryPurchaseOutsourcedIssues)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-issues", wrapper.CreatePurchaseOutsourcedIssue)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/purchase/outsourced-issues/{id}", wrapper.DeletePurchaseOutsourcedIssue)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/purchase/outsourced-issues/{id}", wrapper.GetPurchaseOutsourcedIssue)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/purchase/outsourced-issues/{id}", wrapper.UpdatePurchaseOutsourcedIssue)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-issues/{id}/audit", wrapper.AuditPurchaseOutsourcedIssue)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-issues/{id}/void", wrapper.VoidPurchaseOutsourcedIssue)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-issue-items/query", wrapper.QueryPurchaseOutsourcedIssueItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-issue-items", wrapper.CreatePurchaseOutsourcedIssueItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/purchase/outsourced-issue-items/{id}", wrapper.DeletePurchaseOutsourcedIssueItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/purchase/outsourced-issue-items/{id}", wrapper.GetPurchaseOutsourcedIssueItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/purchase/outsourced-issue-items/{id}", wrapper.UpdatePurchaseOutsourcedIssueItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-receipts/query", wrapper.QueryPurchaseOutsourcedReceipts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-receipts", wrapper.CreatePurchaseOutsourcedReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/purchase/outsourced-receipts/{id}", wrapper.DeletePurchaseOutsourcedReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/purchase/outsourced-receipts/{id}", wrapper.GetPurchaseOutsourcedReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/purchase/outsourced-receipts/{id}", wrapper.UpdatePurchaseOutsourcedReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-receipts/{id}/audit", wrapper.AuditPurchaseOutsourcedReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-receipts/{id}/void", wrapper.VoidPurchaseOutsourcedReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-receipt-items/query", wrapper.QueryPurchaseOutsourcedReceiptItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-receipt-items", wrapper.CreatePurchaseOutsourcedReceiptItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/purchase/outsourced-receipt-items/{id}", wrapper.DeletePurchaseOutsourcedReceiptItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/purchase/outsourced-receipt-items/{id}", wrapper.GetPurchaseOutsourcedReceiptItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/purchase/outsourced-receipt-items/{id}", wrapper.UpdatePurchaseOutsourcedReceiptItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-receipt-item-materials/query", wrapper.QueryPurchaseOutsourcedReceiptItemMaterials)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-receipt-item-materials", wrapper.CreatePurchaseOutsourcedReceiptItemMaterial)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/purchase/outsourced-receipt-item-materials/{id}", wrapper.DeletePurchaseOutsourcedReceiptItemMaterial)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/purchase/outsourced-receipt-item-materials/{id}", wrapper.GetPurchaseOutsourcedReceiptItemMaterial)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/purchase/outsourced-receipt-item-materials/{id}", wrapper.UpdatePurchaseOutsourcedReceiptItemMaterial)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-receipt-item-byproducts/query", wrapper.QueryPurchaseOutsourcedReceiptItemByproducts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/purchase/outsourced-receipt-item-byproducts", wrapper.CreatePurchaseOutsourcedReceiptItemByproduct)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/purchase/outsourced-receipt-item-byproducts/{id}", wrapper.DeletePurchaseOutsourcedReceiptItemByproduct)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/purchase/outsourced-receipt-item-byproducts/{id}", wrapper.GetPurchaseOutsourcedReceiptItemByproduct)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/purchase/outsourced-receipt-item-byproducts/{id}", wrapper.UpdatePurchaseOutsourcedReceiptItemByproduct)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/hr/employees/query", wrapper.QueryHrEmployees)
 	})
 	r.Group(func(r chi.Router) {
@@ -11978,6 +23984,306 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/hr/employees/{id}", wrapper.UpdateHrEmployee)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/attendance-punches/query", wrapper.QueryHrAttendancePunches)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/hr/attendance-punches/{id}", wrapper.GetHrAttendancePunch)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/attendance-imports/query", wrapper.QueryHrAttendanceImports)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/attendance-imports", wrapper.CreateHrAttendanceImport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/hr/attendance-imports/{id}", wrapper.DeleteHrAttendanceImport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/hr/attendance-imports/{id}", wrapper.GetHrAttendanceImport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/attendance-imports/{id}/import", wrapper.ImportHrAttendanceImport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/attendance-days/query", wrapper.QueryHrAttendanceDays)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/hr/attendance-days/{id}", wrapper.GetHrAttendanceDay)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/attendance-days/recalc", wrapper.RecalcHrAttendanceDays)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/hr/attendance-days/month-summary", wrapper.GetHrAttendanceMonthSummary)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/attendance-corrections/query", wrapper.QueryHrAttendanceCorrections)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/attendance-corrections", wrapper.CreateHrAttendanceCorrection)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/hr/attendance-corrections/{id}", wrapper.DeleteHrAttendanceCorrection)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/hr/attendance-corrections/{id}", wrapper.GetHrAttendanceCorrection)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/hr/attendance-corrections/{id}", wrapper.UpdateHrAttendanceCorrection)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/payrolls/query", wrapper.QueryHrPayrolls)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/payrolls", wrapper.CreateHrPayroll)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/hr/payrolls/{id}", wrapper.DeleteHrPayroll)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/hr/payrolls/{id}", wrapper.GetHrPayroll)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/hr/payrolls/{id}", wrapper.UpdateHrPayroll)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/payrolls/{id}/refresh", wrapper.RefreshHrPayroll)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/payrolls/generate", wrapper.GenerateHrPayrolls)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/hr/payrolls/month-stats", wrapper.GetHrPayrollMonthStats)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/payroll-payments/query", wrapper.QueryHrPayrollPayments)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/payroll-payments", wrapper.CreateHrPayrollPayment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/hr/payroll-payments/{id}", wrapper.DeleteHrPayrollPayment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/hr/payroll-payments/{id}", wrapper.GetHrPayrollPayment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/payroll-payments/pay-remaining", wrapper.PayRemainingHrPayrollPayment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/employee-loans/query", wrapper.QueryHrEmployeeLoans)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/hr/employee-loans", wrapper.CreateHrEmployeeLoan)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/hr/employee-loans/{id}", wrapper.DeleteHrEmployeeLoan)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/hr/employee-loans/{id}", wrapper.GetHrEmployeeLoan)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/hr/employee-loans/{id}", wrapper.UpdateHrEmployeeLoan)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/hr/employee-loans/balances", wrapper.GetHrEmployeeLoanBalances)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-accounts/query", wrapper.QueryFinanceBankAccounts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-accounts", wrapper.CreateFinanceBankAccount)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/bank-accounts/{id}", wrapper.DeleteFinanceBankAccount)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/bank-accounts/{id}", wrapper.GetFinanceBankAccount)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/finance/bank-accounts/{id}", wrapper.UpdateFinanceBankAccount)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-transactions/query", wrapper.QueryFinanceBankTransactions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-transactions", wrapper.CreateFinanceBankTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/bank-transactions/{id}", wrapper.DeleteFinanceBankTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/bank-transactions/{id}", wrapper.GetFinanceBankTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/finance/bank-transactions/{id}", wrapper.UpdateFinanceBankTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-import-templates/query", wrapper.QueryFinanceBankImportTemplates)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-import-templates", wrapper.CreateFinanceBankImportTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/bank-import-templates/{id}", wrapper.DeleteFinanceBankImportTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/bank-import-templates/{id}", wrapper.GetFinanceBankImportTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/finance/bank-import-templates/{id}", wrapper.UpdateFinanceBankImportTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-imports/query", wrapper.QueryFinanceBankImports)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-imports", wrapper.CreateFinanceBankImport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/bank-imports/{id}", wrapper.DeleteFinanceBankImport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/bank-imports/{id}", wrapper.GetFinanceBankImport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-imports/{id}/import", wrapper.ImportFinanceBankImport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-import-items/query", wrapper.QueryFinanceBankImportItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/bank-import-items/{id}", wrapper.DeleteFinanceBankImportItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/bank-import-items/{id}", wrapper.GetFinanceBankImportItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/finance/bank-import-items/{id}", wrapper.UpdateFinanceBankImportItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-reconciliations/query", wrapper.QueryFinanceBankReconciliations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-reconciliations", wrapper.CreateFinanceBankReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/bank-reconciliations/{id}", wrapper.DeleteFinanceBankReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/bank-reconciliations/{id}", wrapper.GetFinanceBankReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/bank-reconciliations/remaining", wrapper.GetFinanceBankReconciliationRemaining)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bank-reconciliations/quick-create", wrapper.QuickCreateFinanceBankReconciliation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/vat-invoices/query", wrapper.QueryFinanceVatInvoices)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/vat-invoices", wrapper.CreateFinanceVatInvoice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/vat-invoices/{id}", wrapper.DeleteFinanceVatInvoice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/vat-invoices/{id}", wrapper.GetFinanceVatInvoice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/finance/vat-invoices/{id}", wrapper.UpdateFinanceVatInvoice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/vat-invoices/{id}/audit", wrapper.AuditFinanceVatInvoice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/vat-invoices/{id}/void", wrapper.VoidFinanceVatInvoice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/vat-invoices/{id}/reverse", wrapper.ReverseFinanceVatInvoice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/vat-invoices/ocr", wrapper.OcrFinanceVatInvoice)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/expense-reports/query", wrapper.QueryFinanceExpenseReports)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/expense-reports", wrapper.CreateFinanceExpenseReport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/expense-reports/{id}", wrapper.DeleteFinanceExpenseReport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/expense-reports/{id}", wrapper.GetFinanceExpenseReport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/finance/expense-reports/{id}", wrapper.UpdateFinanceExpenseReport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/expense-reports/{id}/audit", wrapper.AuditFinanceExpenseReport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/expense-reports/{id}/void", wrapper.VoidFinanceExpenseReport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/expense-report-items/query", wrapper.QueryFinanceExpenseReportItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/expense-report-items", wrapper.CreateFinanceExpenseReportItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/expense-report-items/{id}", wrapper.DeleteFinanceExpenseReportItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/expense-report-items/{id}", wrapper.GetFinanceExpenseReportItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/finance/expense-report-items/{id}", wrapper.UpdateFinanceExpenseReportItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bills/query", wrapper.QueryFinanceBills)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/bills/{id}", wrapper.DeleteFinanceBill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/bills/{id}", wrapper.GetFinanceBill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/finance/bills/{id}", wrapper.UpdateFinanceBill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bill-transactions/query", wrapper.QueryFinanceBillTransactions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bill-transactions", wrapper.CreateFinanceBillTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/finance/bill-transactions/{id}", wrapper.DeleteFinanceBillTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/bill-transactions/{id}", wrapper.GetFinanceBillTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/finance/bill-transactions/{id}", wrapper.UpdateFinanceBillTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bill-transactions/{id}/audit", wrapper.AuditFinanceBillTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bill-transactions/{id}/void", wrapper.VoidFinanceBillTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bill-transactions/ocr", wrapper.OcrFinanceBillTransaction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/finance/bill-holdings/query", wrapper.QueryFinanceBillHoldings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/finance/bill-holdings/{id}", wrapper.GetFinanceBillHolding)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/accounting/gl-entries/query", wrapper.QueryAccGlEntries)
@@ -12373,6 +24679,216 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/settings/finance/ocr-configured", wrapper.GetAccountingOCRConfigured)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/operations/query", wrapper.QueryManufacturingOperations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/operations", wrapper.CreateManufacturingOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/operations/{id}", wrapper.DeleteManufacturingOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/operations/{id}", wrapper.GetManufacturingOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/operations/{id}", wrapper.UpdateManufacturingOperation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/process-templates/query", wrapper.QueryManufacturingProcessTemplates)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/process-templates", wrapper.CreateManufacturingProcessTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/process-templates/{id}", wrapper.DeleteManufacturingProcessTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/process-templates/{id}", wrapper.GetManufacturingProcessTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/process-templates/{id}", wrapper.UpdateManufacturingProcessTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/process-template-items/query", wrapper.QueryManufacturingProcessTemplateItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/process-template-items", wrapper.CreateManufacturingProcessTemplateItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/process-template-items/{id}", wrapper.DeleteManufacturingProcessTemplateItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/process-template-items/{id}", wrapper.GetManufacturingProcessTemplateItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/process-template-items/{id}", wrapper.UpdateManufacturingProcessTemplateItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/boms/query", wrapper.QueryManufacturingBoms)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/boms", wrapper.CreateManufacturingBom)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/boms/{id}", wrapper.DeleteManufacturingBom)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/boms/{id}", wrapper.GetManufacturingBom)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/boms/{id}", wrapper.UpdateManufacturingBom)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/boms/{id}/apply-route-template", wrapper.ApplyManufacturingBomRouteTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/bom-components/query", wrapper.QueryManufacturingBomComponents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/bom-components", wrapper.CreateManufacturingBomComponent)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/bom-components/{id}", wrapper.DeleteManufacturingBomComponent)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/bom-components/{id}", wrapper.GetManufacturingBomComponent)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/bom-components/{id}", wrapper.UpdateManufacturingBomComponent)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/bom-routes/query", wrapper.QueryManufacturingBomRoutes)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/bom-routes", wrapper.CreateManufacturingBomRoute)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/bom-routes/{id}", wrapper.DeleteManufacturingBomRoute)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/bom-routes/{id}", wrapper.GetManufacturingBomRoute)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/bom-routes/{id}", wrapper.UpdateManufacturingBomRoute)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/bom-byproducts/query", wrapper.QueryManufacturingBomByproducts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/bom-byproducts", wrapper.CreateManufacturingBomByproduct)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/bom-byproducts/{id}", wrapper.DeleteManufacturingBomByproduct)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/bom-byproducts/{id}", wrapper.GetManufacturingBomByproduct)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/bom-byproducts/{id}", wrapper.UpdateManufacturingBomByproduct)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/demands/query", wrapper.QueryManufacturingDemands)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/demands", wrapper.CreateManufacturingDemand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/demands/{id}", wrapper.DeleteManufacturingDemand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/demands/{id}", wrapper.GetManufacturingDemand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/demands/{id}", wrapper.UpdateManufacturingDemand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/demands/{id}/confirm", wrapper.ConfirmManufacturingDemand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/demands/{id}/close", wrapper.CloseManufacturingDemand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/demands/{id}/void", wrapper.VoidManufacturingDemand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/demand-items/query", wrapper.QueryManufacturingDemandItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/demand-items", wrapper.CreateManufacturingDemandItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/demand-items/{id}", wrapper.DeleteManufacturingDemandItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/demand-items/{id}", wrapper.GetManufacturingDemandItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/demand-items/{id}", wrapper.UpdateManufacturingDemandItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/demand-items/{id}/complete", wrapper.CompleteManufacturingDemandItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/demand-items/{id}/fulfillment", wrapper.ChangeManufacturingDemandItemFulfillment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/sales-item-occupancies", wrapper.GetManufacturingSalesItemOccupancies)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/work-orders/query", wrapper.QueryManufacturingWorkOrders)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/work-orders", wrapper.CreateManufacturingWorkOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/work-orders/{id}", wrapper.DeleteManufacturingWorkOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/work-orders/{id}", wrapper.GetManufacturingWorkOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/work-orders/{id}", wrapper.UpdateManufacturingWorkOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/work-orders/{id}/void", wrapper.VoidManufacturingWorkOrder)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/outputs/query", wrapper.QueryManufacturingOutputs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/outputs", wrapper.CreateManufacturingOutput)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/outputs/{id}", wrapper.DeleteManufacturingOutput)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/outputs/{id}", wrapper.GetManufacturingOutput)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/outputs/{id}", wrapper.UpdateManufacturingOutput)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/outputs/{id}/audit", wrapper.AuditManufacturingOutput)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/outputs/{id}/void", wrapper.VoidManufacturingOutput)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/output-items/query", wrapper.QueryManufacturingOutputItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/manufacturing/output-items", wrapper.CreateManufacturingOutputItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/manufacturing/output-items/{id}", wrapper.DeleteManufacturingOutputItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/manufacturing/output-items/{id}", wrapper.GetManufacturingOutputItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/manufacturing/output-items/{id}", wrapper.UpdateManufacturingOutputItem)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/settings/system", wrapper.GetSystemSetting)
 	})
 	r.Group(func(r chi.Router) {
@@ -12387,270 +24903,494 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"S2kDSNYbS2dPnv3/AQAA//8=",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

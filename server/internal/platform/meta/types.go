@@ -20,13 +20,16 @@ type ResourceMeta struct {
 	Name             string
 	PermissionPrefix string
 	PermissionLabel  string
-	Table            string
-	Fields           []FieldMeta
-	Actions          []ActionMeta
-	Form             *FormMetaDTO
-	Print            bool
-	Audit            AuditMeta
-	DestroyMutation  *string
+	// ReadPermissionsAny 用于没有独立权限点的只读投影视图：Actor
+	// 持有任一完整权限码即可读取，且该资源不向权限目录新增虚假分组。
+	ReadPermissionsAny []string
+	Table              string
+	Fields             []FieldMeta
+	Actions            []ActionMeta
+	Form               *FormMetaDTO
+	Print              bool
+	Audit              AuditMeta
+	DestroyMutation    *string
 }
 
 type AuditMeta struct {

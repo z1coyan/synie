@@ -8,17 +8,37 @@ import {
   type ReactNode,
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Input, Label, NumberField, TextField, Button, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import {
+  Input,
+  Label,
+  NumberField,
+  TextField,
+  Button,
+  toast,
+} from '@heroui/react'
 import { formatAmount, formatQty } from '~/lib/amount'
+import { companyClient } from '~/lib/resources/companies'
+import {
+  purchaseOutsourcedReceiptItemClient,
+  purchaseReceiptItemClient,
+} from '~/lib/resources/fulfillment'
+import {
+  purchaseReconciliationClient,
+  purchaseReconciliationItemClient,
+} from '~/lib/resources/reconciliations'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow, localRowId } from '~/components/synie-editable-table/editable'
+import {
+  isLocalRow,
+  localRowId,
+} from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
-import { gqlEnum, toGqlLiteral } from '~/components/synie-data-grid/query'
-import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
+import type {
+  DrawerMode,
+  FieldOverride,
+} from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { CompanyDefaultSync, defaultCompanyId } from '../-stock-doc'
@@ -59,6 +79,24 @@ export const reconciliationConfirmConfig = {
   docIdField: 'reconciliationId',
   itemFields: AUDIT_ITEM_FIELDS,
   columns: AUDIT_COLUMNS,
+  loadItems: (reconciliationId: string) =>
+    purchaseReconciliationItemClient
+      .query({
+        limit: 500,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          reconciliationId: {
+            kind: 'fk',
+            op: 'in',
+            values: [reconciliationId],
+            labels: [],
+          },
+        },
+      })
+      .then((result) => result.results),
+  audit: (reconciliationId: string) =>
+    purchaseReconciliationClient.action!('confirm', [reconciliationId]),
 } satisfies AuditDocConfig
 
 // 「结单审核」(赠送/样品单)确认弹窗
@@ -69,81 +107,18 @@ export const reconciliationAuditConfig = {
   docIdField: 'reconciliationId',
   itemFields: AUDIT_ITEM_FIELDS,
   columns: AUDIT_COLUMNS,
+  loadItems: reconciliationConfirmConfig.loadItems,
+  audit: (reconciliationId: string) =>
+    purchaseReconciliationClient.action!('audit', [reconciliationId]),
 } satisfies AuditDocConfig
 
-const ReconciliationDrawerContext = createContext<OpenReconciliationDrawer>(() => {})
+const ReconciliationDrawerContext = createContext<OpenReconciliationDrawer>(
+  () => {},
+)
 
 export function useReconciliationDrawer(): OpenReconciliationDrawer {
   return useContext(ReconciliationDrawerContext)
 }
-
-const CREATE_RECONCILIATION = `
-  mutation ($input: CreatePurReconciliationInput!) {
-    createPurReconciliation(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_RECONCILIATION = `
-  mutation ($id: ID!, $input: UpdatePurReconciliationInput!) {
-    updatePurReconciliation(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-// 只取快照/calculation 与 id 字段,不 join material/receipt——
-// 嵌套加载会走对方资源权限,无 read 时 GraphQL 非空关系变 null 整查询失败(同发货抽屉先例)。
-// 物料编号/规格/客户料号不在行 calculation 上,由入库条目预热缓存按 receiptItemId 补(见 openDrawer)。
-const FETCH_ITEMS = `
-  query ($reconciliationId: ID!) {
-    purReconciliationItems(
-      filter: {reconciliationId: {eq: $reconciliationId}}
-      sort: [{field: IDX, order: ASC}]
-      limit: 200
-      offset: 0
-    ) {
-      results {
-        id idx receiptItemId outsourcedReceiptItemId qty baseQty amount baseAmount remarks
-        materialName unitName receiptNo orderCurrencyCode
-      }
-    }
-  }
-`
-// 编辑态预热入库条目缓存:剩余可对账量/快照单价/币种等,存量行不点选入库条目也能过校验/回填
-const FETCH_RECEIPT_ITEMS = `
-  query ($ids: [ID!]!) {
-    purReceiptItems(filter: {id: {in: $ids}}, limit: 200, offset: 0) {
-      results {
-        id qty baseQty reconciledQty remainingReconcilableQty
-        orderNo orderPrice orderBasePrice orderCurrencyCode
-        materialCode materialName materialSpec customerPartNo unitName receiptNo
-      }
-    }
-  }
-`
-// 委外入库条目池(双来源恰一,字段口径与采购入库条目一致,见后端 ReconciliationItem)
-const FETCH_OUTSOURCED_RECEIPT_ITEMS = `
-  query ($ids: [ID!]!) {
-    purOutsourcedReceiptItems(filter: {id: {in: $ids}}, limit: 200, offset: 0) {
-      results {
-        id qty baseQty reconciledQty remainingReconcilableQty
-        orderNo orderPrice orderBasePrice orderCurrencyCode
-        materialCode materialName materialSpec customerPartNo unitName receiptNo
-      }
-    }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreatePurReconciliationItemInput!) {
-    createPurReconciliationItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdatePurReconciliationItemInput!) {
-    updatePurReconciliationItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroyPurReconciliationItem(id: $id) { errors { message } }
-  }
-`
 
 /** 提交 mutation:金额/baseQty 由后端按金额链与折算比例算(不可手改);入库条目双来源恰一 */
 function itemInput(row: Row) {
@@ -156,15 +131,18 @@ function itemInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = ['idx', 'receiptItemId', 'outsourcedReceiptItemId', 'qty', 'remarks'] as const
+const ITEM_COMPARE_KEYS = [
+  'idx',
+  'receiptItemId',
+  'outsourcedReceiptItemId',
+  'qty',
+  'remarks',
+] as const
 
 function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-interface MutationResult {
-  result?: { id: string } | null
-  errors: { message: string }[] | null
+  return ITEM_COMPARE_KEYS.some(
+    (k) => String(before[k] ?? '') !== String(after[k] ?? ''),
+  )
 }
 
 async function persistItems(
@@ -173,48 +151,66 @@ async function persistItems(
   snapshot: Row[],
 ): Promise<string[]> {
   const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
+  const collect = (
+    idx: unknown,
+    msgs: { message: string }[] | null | undefined,
+  ) => {
     if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
   }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
+  const currentIds = new Set(
+    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
+  )
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroyPurReconciliationItem: MutationResult }>(DESTROY_ITEM, {
-      id: old.id,
-    })
-    collect(old.idx, data.destroyPurReconciliationItem?.errors)
+    try {
+      await purchaseReconciliationItemClient.delete(String(old.id))
+    } catch (error) {
+      collect(old.idx, [{ message: (error as Error).message }])
+    }
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createPurReconciliationItem: MutationResult }>(CREATE_ITEM, {
-        input: { reconciliationId, ...itemInput(row) },
-      })
-      collect(row.idx, data.createPurReconciliationItem?.errors)
+      try {
+        await purchaseReconciliationItemClient.create({
+          reconciliationId,
+          ...itemInput(row),
+        })
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{ updatePurReconciliationItem: MutationResult }>(UPDATE_ITEM, {
-        id: row.id,
-        input: itemInput(row),
-      })
-      collect(row.idx, data.updatePurReconciliationItem?.errors)
+      try {
+        await purchaseReconciliationItemClient.update(
+          String(row.id),
+          itemInput(row),
+        )
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
     }
   }
   return errors
 }
 
-/**
- * 科目候选 filter。枚举值必须是 GraphQL enum 裸 token(不可 JSON 字符串)。
- * 借方强制未开票应付(同后端校验);贷方角色不限(常规=入库借方口径,赠送/样品=收益类)。
- */
-function accountFilter(companyId: string | null, roleEnum?: string): string | undefined {
+/** 科目候选使用结构化 REST FilterState。 */
+function accountFilter(
+  companyId: string | null,
+  roleEnum?: string,
+): FilterState | undefined {
   if (!companyId) return undefined
-  const base = `companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}`
-  if (roleEnum) return `{${base}, role: {eq: ${roleEnum}}}`
-  return `{${base}}`
+  return {
+    companyId: { kind: 'fk', op: 'in', values: [companyId], labels: [] },
+    isGroup: { kind: 'bool', eq: false },
+    active: { kind: 'bool', eq: true },
+    ...(roleEnum
+      ? { role: { kind: 'enum' as const, values: [roleEnum] } }
+      : {}),
+  }
 }
 
 /**
@@ -272,9 +268,14 @@ function ReconciliationAccountFooter({
   const companyId = (values.companyId as string | null) ?? null
   const isGift = values.reconciliationType === 'GIFT_SAMPLE'
   const creditLabel = isGift ? '贷方科目(收益类)' : '贷方科目(入库借方口径)'
-  const debit = values.debitAccountId == null || values.debitAccountId === '' ? null : String(values.debitAccountId)
+  const debit =
+    values.debitAccountId == null || values.debitAccountId === ''
+      ? null
+      : String(values.debitAccountId)
   const credit =
-    values.creditAccountId == null || values.creditAccountId === '' ? null : String(values.creditAccountId)
+    values.creditAccountId == null || values.creditAccountId === ''
+      ? null
+      : String(values.creditAccountId)
 
   return (
     <div className="mt-6 grid grid-cols-1 gap-4 border-t border-separator pt-4 lg:grid-cols-2">
@@ -286,7 +287,7 @@ function ReconciliationAccountFooter({
         onChange={(id) => patchValues({ debitAccountId: id })}
         isDisabled={isDisabled || !companyId || mode === 'view'}
         isRequired={mode !== 'view'}
-        filter={accountFilter(companyId, 'UNBILLED_PAYABLE')}
+        filterState={accountFilter(companyId, 'UNBILLED_PAYABLE')}
         labelField="name"
         searchFields={['name', 'code']}
         itemSubtitleFields={['code']}
@@ -299,7 +300,7 @@ function ReconciliationAccountFooter({
         onChange={(id) => patchValues({ creditAccountId: id })}
         isDisabled={isDisabled || !companyId || mode === 'view'}
         isRequired={mode !== 'view'}
-        filter={accountFilter(companyId)}
+        filterState={accountFilter(companyId)}
         labelField="name"
         searchFields={['name', 'code']}
         itemSubtitleFields={['code']}
@@ -313,27 +314,52 @@ function ReconciliationAccountFooter({
  * 1. 已审核入库 2. 公司/对手与对账头一致 3. 剩余可对账量 > 0 4. 单内同币种(已有行时)
  * 5. 常规单:禁零金额行(采购订单无样品类型,无"样品来源"禁用——零价赠送行走赠送/样品单;
  *    后端均另有强校验)
- * 枚举值用 gqlEnum 包装(不可 JSON 字符串)。
+ * 使用结构化 REST FilterState。
  */
 function receiptItemGridFilter(
   values: Record<string, unknown>,
   items: Row[],
-): Record<string, unknown> | null {
+): FilterState | null {
   const { companyId, partyType, partyId } = values
   if (!companyId || !partyType || !partyId) return null
-  const currency = items.find((r) => r.orderCurrencyCode != null && r.orderCurrencyCode !== '')
-    ?.orderCurrencyCode
-  const isRegular = values.reconciliationType !== 'GIFT_SAMPLE'
+  const currency = items.find(
+    (r) => r.orderCurrencyCode != null && r.orderCurrencyCode !== '',
+  )?.orderCurrencyCode
   return {
-    and: [
-      { receiptStatus: { eq: gqlEnum('AUDITED') } },
-      { companyId: { eq: String(companyId) } },
-      { partyType: { eq: gqlEnum(String(partyType)) } },
-      { partyId: { eq: String(partyId) } },
-      { remainingReconcilableQty: { greaterThan: '0' } },
-      ...(currency ? [{ orderCurrencyCode: { eq: String(currency) } }] : []),
-      ...(isRegular ? [{ orderPrice: { greaterThan: '0' } }] : []),
-    ],
+    receiptStatus: { kind: 'enum', values: ['AUDITED'] },
+    companyId: {
+      kind: 'fk',
+      op: 'in',
+      values: [String(companyId)],
+      labels: [],
+    },
+    partyType: { kind: 'enum', values: [String(partyType)] },
+    partyId: {
+      kind: 'polyFk',
+      op: 'in',
+      variant: String(partyType),
+      values: [String(partyId)],
+      labels: [],
+    },
+    remainingReconcilableQty: { kind: 'number', op: 'gt', value: '0' },
+    ...(currency
+      ? {
+          orderCurrencyCode: {
+            kind: 'text' as const,
+            op: 'eq' as const,
+            value: String(currency),
+          },
+        }
+      : {}),
+    ...(values.reconciliationType !== 'GIFT_SAMPLE'
+      ? {
+          orderPrice: {
+            kind: 'number' as const,
+            op: 'gt' as const,
+            value: '0',
+          },
+        }
+      : {}),
   }
 }
 
@@ -341,10 +367,17 @@ function receiptItemDisplay(r: Row): string {
   const code = r.materialCode != null ? String(r.materialCode) : ''
   const name = r.materialName != null ? String(r.materialName) : ''
   const material = [code, name].filter(Boolean).join(' ')
-  const remaining = r.remainingReconcilableQty != null ? String(r.remainingReconcilableQty) : null
+  const remaining =
+    r.remainingReconcilableQty != null
+      ? String(r.remainingReconcilableQty)
+      : null
   const unit = r.unitName != null ? String(r.unitName) : ''
-  const rem = remaining != null ? `剩余可对账${remaining}${unit ? `(默认单位折算,行单位${unit})` : ''}` : ''
-  const receiptNo = r.receiptNo != null && r.receiptNo !== '' ? String(r.receiptNo) : null
+  const rem =
+    remaining != null
+      ? `剩余可对账${remaining}${unit ? `(默认单位折算,行单位${unit})` : ''}`
+      : ''
+  const receiptNo =
+    r.receiptNo != null && r.receiptNo !== '' ? String(r.receiptNo) : null
   return [material || '入库条目', rem, receiptNo].filter(Boolean).join(' · ')
 }
 
@@ -425,10 +458,15 @@ function previewAmount(qty: unknown, price: unknown): number | null {
   return Math.round(q * p * 100) / 100
 }
 
-export function ReconciliationDrawerProvider({ children }: { children: ReactNode }) {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: ReconciliationRef | null } | null>(
-    null,
-  )
+export function ReconciliationDrawerProvider({
+  children,
+}: {
+  children: ReactNode
+}) {
+  const [drawer, setDrawer] = useState<{
+    mode: DrawerMode
+    row: ReconciliationRef | null
+  } | null>(null)
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
@@ -442,103 +480,140 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
   const companies = useQuery({
     queryKey: ['purReconciliations', 'companies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { results { id name } } }`,
-      ).then((d) => d.basCompanies.results),
+      companyClient
+        .query({
+          limit: 50,
+          offset: 0,
+          sort: { column: 'code', direction: 'ascending' },
+        })
+        .then((result) => result.results),
   })
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 
-  const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
+  const resetItems = useCallback(
+    () => setItems((cur) => (cur.length === 0 ? cur : [])),
+    [],
+  )
 
-  const openDrawer = useCallback<OpenReconciliationDrawer>((mode, reconciliation) => {
-    const my = ++reqIdRef.current
-    setDrawer({ mode, row: reconciliation })
-    receiptItemsRef.current = new Map()
-    if (mode === 'create') {
-      setItems([])
-      setItemsSnapshot([])
-      setDetailLoaded(true)
-      return
-    }
-    const reconciliationId = reconciliation?.id
-    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
-    if (reconciliationId == null || reconciliationId === '' || reconciliationId === 'undefined') {
-      toast.danger('无法打开采购对账单', { description: '缺少对账单 id' })
-      setItems([])
-      setItemsSnapshot([])
-      setDetailLoaded(true)
-      return
-    }
-    setDetailLoaded(false)
-    gqlFetch<{ purReconciliationItems: { results: Row[] } }>(FETCH_ITEMS, {
-      reconciliationId,
-    })
-      .then(async (d) => {
-        if (my !== reqIdRef.current) return
-        const rows = d.purReconciliationItems.results
-        // 编辑态预热缓存:按行上入库条目 id 取剩余可对账量/快照价/币种(双来源各自拉取)
-        const receiptIds = [
-          ...new Set(
-            rows
-              .map((r) => (r.receiptItemId == null ? null : String(r.receiptItemId)))
-              .filter((v): v is string => v != null),
-          ),
-        ]
-        const outsourcedIds = [
-          ...new Set(
-            rows
-              .map((r) =>
-                r.outsourcedReceiptItemId == null ? null : String(r.outsourcedReceiptItemId),
-              )
-              .filter((v): v is string => v != null),
-          ),
-        ]
-        try {
-          const [normal, outsourced] = await Promise.all([
-            receiptIds.length > 0
-              ? gqlFetch<{ purReceiptItems: { results: Row[] } }>(FETCH_RECEIPT_ITEMS, {
-                  ids: receiptIds,
-                })
-              : Promise.resolve({ purReceiptItems: { results: [] as Row[] } }),
-            outsourcedIds.length > 0
-              ? gqlFetch<{ purOutsourcedReceiptItems: { results: Row[] } }>(
-                  FETCH_OUTSOURCED_RECEIPT_ITEMS,
-                  { ids: outsourcedIds },
-                )
-              : Promise.resolve({ purOutsourcedReceiptItems: { results: [] as Row[] } }),
-          ])
-          if (my !== reqIdRef.current) return
-          for (const ri of [...normal.purReceiptItems.results, ...outsourced.purOutsourcedReceiptItems.results]) {
-            receiptItemsRef.current.set(String(ri.id), ri)
-          }
-        } catch {
-          /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
-        }
-        if (my !== reqIdRef.current) return
-        // 行上缺的物料编号/规格/客户料号从预热缓存补齐(表格多行展示用)
-        const enriched = rows.map((r) => {
-          const refId = r.receiptItemId ?? r.outsourcedReceiptItemId
-          const ri = refId != null ? receiptItemsRef.current.get(String(refId)) : undefined
-          if (!ri) return r
-          return {
-            ...r,
-            materialCode: r.materialCode ?? ri.materialCode ?? null,
-            materialSpec: r.materialSpec ?? ri.materialSpec ?? null,
-            customerPartNo: r.customerPartNo ?? ri.customerPartNo ?? null,
-          }
-        })
-        setItems(enriched)
-        setItemsSnapshot(enriched)
-        setDetailLoaded(true)
-      })
-      .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('对账条目加载失败', { description: (e as Error).message })
+  const openDrawer = useCallback<OpenReconciliationDrawer>(
+    (mode, reconciliation) => {
+      const my = ++reqIdRef.current
+      setDrawer({ mode, row: reconciliation })
+      receiptItemsRef.current = new Map()
+      if (mode === 'create') {
         setItems([])
         setItemsSnapshot([])
-      })
-  }, [])
+        setDetailLoaded(true)
+        return
+      }
+      const reconciliationId = reconciliation?.id
+      // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
+      if (
+        reconciliationId == null ||
+        reconciliationId === '' ||
+        reconciliationId === 'undefined'
+      ) {
+        toast.danger('无法打开采购对账单', { description: '缺少对账单 id' })
+        setItems([])
+        setItemsSnapshot([])
+        setDetailLoaded(true)
+        return
+      }
+      setDetailLoaded(false)
+      purchaseReconciliationItemClient
+        .query({
+          limit: 200,
+          offset: 0,
+          sort: { column: 'idx', direction: 'ascending' },
+          filter: {
+            reconciliationId: {
+              kind: 'fk',
+              op: 'in',
+              values: [reconciliationId],
+              labels: [],
+            },
+          },
+        })
+        .then(async (d) => {
+          if (my !== reqIdRef.current) return
+          const rows = d.results
+          // 编辑态预热缓存:按行上入库条目 id 取剩余可对账量/快照价/币种(双来源各自拉取)
+          const receiptIds = [
+            ...new Set(
+              rows
+                .map((r) =>
+                  r.receiptItemId == null ? null : String(r.receiptItemId),
+                )
+                .filter((v): v is string => v != null),
+            ),
+          ]
+          const outsourcedIds = [
+            ...new Set(
+              rows
+                .map((r) =>
+                  r.outsourcedReceiptItemId == null
+                    ? null
+                    : String(r.outsourcedReceiptItemId),
+                )
+                .filter((v): v is string => v != null),
+            ),
+          ]
+          try {
+            const [normal, outsourced] = await Promise.all([
+              receiptIds.length > 0
+                ? Promise.all(
+                    receiptIds.map((id) => purchaseReceiptItemClient.get(id)),
+                  )
+                : Promise.resolve([] as Row[]),
+              outsourcedIds.length > 0
+                ? Promise.all(
+                    outsourcedIds.map((id) =>
+                      purchaseOutsourcedReceiptItemClient.get(id),
+                    ),
+                  )
+                : Promise.resolve([] as Row[]),
+            ])
+            if (my !== reqIdRef.current) return
+            for (const ri of [...normal, ...outsourced].filter(
+              (row): row is Row => row != null,
+            )) {
+              receiptItemsRef.current.set(String(ri.id), ri)
+            }
+          } catch {
+            /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
+          }
+          if (my !== reqIdRef.current) return
+          // 行上缺的物料编号/规格/客户料号从预热缓存补齐(表格多行展示用)
+          const enriched = rows.map((r) => {
+            const refId = r.receiptItemId ?? r.outsourcedReceiptItemId
+            const ri =
+              refId != null
+                ? receiptItemsRef.current.get(String(refId))
+                : undefined
+            if (!ri) return r
+            return {
+              ...r,
+              materialCode: r.materialCode ?? ri.materialCode ?? null,
+              materialSpec: r.materialSpec ?? ri.materialSpec ?? null,
+              customerPartNo: r.customerPartNo ?? ri.customerPartNo ?? null,
+            }
+          })
+          setItems(enriched)
+          setItemsSnapshot(enriched)
+          setDetailLoaded(true)
+        })
+        .catch((e) => {
+          if (my !== reqIdRef.current) return
+          toast.danger('对账条目加载失败', {
+            description: (e as Error).message,
+          })
+          setItems([])
+          setItemsSnapshot([])
+        })
+    },
+    [],
+  )
 
   const baseCfg = drawerConfig('purReconciliations')
   const drawerCfg = {
@@ -558,6 +633,7 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
       {children}
       <SynieRecordDrawer
         resource="purReconciliations"
+        client={purchaseReconciliationClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -577,11 +653,14 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
         }
         extraContent={(mode, row, values, patchValues) => {
           const isGift = values.reconciliationType === 'GIFT_SAMPLE'
-          const headerReady = Boolean(values.companyId && values.partyType && values.partyId)
+          const headerReady = Boolean(
+            values.companyId && values.partyType && values.partyId,
+          )
           const riGridFilter = receiptItemGridFilter(values, items)
           const docCurrency =
-            items.find((r) => r.orderCurrencyCode != null && r.orderCurrencyCode !== '')
-              ?.orderCurrencyCode ?? null
+            items.find(
+              (r) => r.orderCurrencyCode != null && r.orderCurrencyCode !== '',
+            )?.orderCurrencyCode ?? null
 
           // 「导入所有未对账」:按选择弹窗同口径(riGridFilter)拉全部候选(采购入库+
           // 委外入库两池,字段口径一致),跳过已在清单的入库条目,数量默认=剩余可对账量(折行单位)
@@ -589,27 +668,34 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
             if (!riGridFilter) return
             setImporting(true)
             try {
-              const filterLit = toGqlLiteral(riGridFilter)
-              const fields =
-                'id qty baseQty remainingReconcilableQty orderPrice orderBasePrice orderCurrencyCode materialCode materialName materialSpec customerPartNo unitName receiptNo'
-              const fetchPool = async (resource: string): Promise<Row[]> => {
+              const fetchPool = async (
+                client:
+                  | typeof purchaseReceiptItemClient
+                  | typeof purchaseOutsourcedReceiptItemClient,
+              ): Promise<Row[]> => {
                 const candidates: Row[] = []
                 let offset = 0
                 for (;;) {
-                  const data = await gqlFetch<Record<string, { count: number; results: Row[] }>>(
-                    `query { ${resource}(filter: ${filterLit}, limit: 200, offset: ${offset}, sort: [{field: RECEIPT_DATE, order: ASC}]) { count results { ${fields} } } }`,
-                  )
-                  const page = data[resource]
+                  const page = await client.query({
+                    limit: 200,
+                    offset,
+                    sort: { column: 'receiptDate', direction: 'ascending' },
+                    filter: riGridFilter,
+                  })
                   candidates.push(...page.results)
                   // 按实际返回行数推进:limit 可能被 max_page_size 钳制(同 fetchAllRows 纪律)
                   offset += page.results.length
-                  if (candidates.length >= page.count || page.results.length === 0) break
+                  if (
+                    candidates.length >= page.count ||
+                    page.results.length === 0
+                  )
+                    break
                 }
                 return candidates
               }
               const [normal, outsourced] = await Promise.all([
-                fetchPool('purReceiptItems'),
-                fetchPool('purOutsourcedReceiptItems'),
+                fetchPool(purchaseReceiptItemClient),
+                fetchPool(purchaseOutsourcedReceiptItemClient),
               ])
               const listed = new Set(
                 items.flatMap((r) =>
@@ -620,7 +706,10 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               )
               const fresh: { ri: Row; source: 'receipt' | 'outsourced' }[] = [
                 ...normal.map((ri) => ({ ri, source: 'receipt' as const })),
-                ...outsourced.map((ri) => ({ ri, source: 'outsourced' as const })),
+                ...outsourced.map((ri) => ({
+                  ri,
+                  source: 'outsourced' as const,
+                })),
               ].filter(({ ri }) => !listed.has(String(ri.id)))
               if (fresh.length === 0) {
                 toast.warning('没有可导入的未对账入库条目')
@@ -629,23 +718,34 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               // 清单为空时 filter 未钉币种:候选跨币种则无法保证单内同币种,先手工选一行钉住
               if (
                 items.length === 0 &&
-                new Set(fresh.map(({ ri }) => String(ri.orderCurrencyCode ?? ''))).size > 1
+                new Set(
+                  fresh.map(({ ri }) => String(ri.orderCurrencyCode ?? '')),
+                ).size > 1
               ) {
-                toast.warning('未对账条目存在多个币种,请先手工新增一行钉住币种后再导入')
+                toast.warning(
+                  '未对账条目存在多个币种,请先手工新增一行钉住币种后再导入',
+                )
                 return
               }
-              let maxIdx = items.reduce((m, r) => Math.max(m, Number(r.idx) || 0), 0)
+              let maxIdx = items.reduce(
+                (m, r) => Math.max(m, Number(r.idx) || 0),
+                0,
+              )
               const imported = fresh.map(({ ri, source }) => {
                 receiptItemsRef.current.set(String(ri.id), ri)
                 const remaining = Number(ri.remainingReconcilableQty)
-                const ratio = Number(ri.baseQty) > 0 ? Number(ri.qty) / Number(ri.baseQty) : 1
+                const ratio =
+                  Number(ri.baseQty) > 0
+                    ? Number(ri.qty) / Number(ri.baseQty)
+                    : 1
                 // 数量默认=剩余可对账量(折行单位,6 位去尾差);金额按金额链 2 位预览,落库以后端为准
                 const qty = Math.round(remaining * ratio * 1e6) / 1e6
                 return {
                   id: localRowId(),
                   idx: ++maxIdx,
                   receiptItemId: source === 'receipt' ? ri.id : null,
-                  outsourcedReceiptItemId: source === 'outsourced' ? ri.id : null,
+                  outsourcedReceiptItemId:
+                    source === 'outsourced' ? ri.id : null,
                   qty,
                   remarks: null,
                   materialCode: ri.materialCode ?? null,
@@ -662,7 +762,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               setItems((cur) => [...cur, ...imported])
               toast.success(`已导入 ${imported.length} 条未对账入库条目`)
             } catch (e) {
-              toast.danger('导入未对账条目失败', { description: (e as Error).message })
+              toast.danger('导入未对账条目失败', {
+                description: (e as Error).message,
+              })
             } finally {
               setImporting(false)
             }
@@ -692,7 +794,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                   resource={resource}
                   label={label}
                   dialogTitle={`选择可对账${label}`}
-                  placeholder={riGridFilter ? `点击选择${label}…` : '先选齐公司与对手'}
+                  placeholder={
+                    riGridFilter ? `点击选择${label}…` : '先选齐公司与对手'
+                  }
                   labelField="materialName"
                   fields={[
                     'materialCode',
@@ -712,7 +816,8 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                   ]}
                   value={value == null ? null : String(value)}
                   onChange={(id, ritem) => {
-                    if (id && ritem) receiptItemsRef.current.set(String(id), ritem)
+                    if (id && ritem)
+                      receiptItemsRef.current.set(String(id), ritem)
                     onChange(id)
                     // 物料/单位/币种随入库条目锁定带出;collectValues 会丢 hidden 字段,
                     // 真正落行靠 transformItem 读 receiptItemsRef。双来源互斥:选一个清空另一个
@@ -751,13 +856,25 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                     materialName: { label: '物料名称' },
                     customerPartNo: { label: '客户料号' },
                     unitName: { label: '单位' },
-                    qty: { label: '入库数量', render: (v: unknown) => formatQty(v) || undefined },
-                    reconciledQty: { label: '已对账数量', render: (v: unknown) => formatQty(v) || undefined },
-                    remainingReconcilableQty: { label: '剩余可对账', render: (v: unknown) => formatQty(v) || undefined },
+                    qty: {
+                      label: '入库数量',
+                      render: (v: unknown) => formatQty(v) || undefined,
+                    },
+                    reconciledQty: {
+                      label: '已对账数量',
+                      render: (v: unknown) => formatQty(v) || undefined,
+                    },
+                    remainingReconcilableQty: {
+                      label: '剩余可对账',
+                      render: (v: unknown) => formatQty(v) || undefined,
+                    },
                     orderPrice: { label: '含税单价' },
                     orderCurrencyCode: { label: '币种' },
                   }}
-                  gridDefaultSort={{ column: 'receiptDate', direction: 'descending' }}
+                  gridDefaultSort={{
+                    column: 'receiptDate',
+                    direction: 'descending',
+                  }}
                   gridExtraFields={[
                     'baseQty',
                     'orderBasePrice',
@@ -800,9 +917,13 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               order: 1,
               label: '物料',
               input: ({ values: iv }) => {
-                const code = iv.materialCode != null ? String(iv.materialCode) : ''
-                const name = iv.materialName != null ? String(iv.materialName) : ''
-                const text = [code, name].filter(Boolean).join(' ') || '选入库条目后自动带出'
+                const code =
+                  iv.materialCode != null ? String(iv.materialCode) : ''
+                const name =
+                  iv.materialName != null ? String(iv.materialName) : ''
+                const text =
+                  [code, name].filter(Boolean).join(' ') ||
+                  '选入库条目后自动带出'
                 return <LockedText label="物料" value={text} />
               },
             },
@@ -813,7 +934,11 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               input: ({ values: iv }) => (
                 <LockedText
                   label="单位"
-                  value={iv.unitName != null ? String(iv.unitName) : '选入库条目后自动带出'}
+                  value={
+                    iv.unitName != null
+                      ? String(iv.unitName)
+                      : '选入库条目后自动带出'
+                  }
                 />
               ),
             },
@@ -824,7 +949,11 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               input: ({ values: iv }) => (
                 <LockedText
                   label="币种(订单原币,单内须一致)"
-                  value={iv.orderCurrencyCode != null ? String(iv.orderCurrencyCode) : '—'}
+                  value={
+                    iv.orderCurrencyCode != null
+                      ? String(iv.orderCurrencyCode)
+                      : '—'
+                  }
                 />
               ),
             },
@@ -833,7 +962,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               order: 5,
               cols: 6,
               label: '折算数量',
-              input: ({ value }) => <LockedNumber label="折算数量(默认单位)" value={value} />,
+              input: ({ value }) => (
+                <LockedNumber label="折算数量(默认单位)" value={value} />
+              ),
             },
             amount: {
               order: 6,
@@ -842,12 +973,19 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               input: ({ value, values: iv }) => {
                 const refId = iv.receiptItemId ?? iv.outsourcedReceiptItemId
                 const ritem =
-                  refId != null ? receiptItemsRef.current.get(String(refId)) : undefined
+                  refId != null
+                    ? receiptItemsRef.current.get(String(refId))
+                    : undefined
                 const preview =
                   value != null && value !== ''
                     ? value
                     : previewAmount(iv.qty, ritem?.orderPrice)
-                return <LockedNumber label="金额(原币含税,数量×快照单价)" value={preview} />
+                return (
+                  <LockedNumber
+                    label="金额(原币含税,数量×快照单价)"
+                    value={preview}
+                  />
+                )
               },
             },
             baseAmount: {
@@ -857,7 +995,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               input: ({ value, values: iv }) => {
                 const refId = iv.receiptItemId ?? iv.outsourcedReceiptItemId
                 const ritem =
-                  refId != null ? receiptItemsRef.current.get(String(refId)) : undefined
+                  refId != null
+                    ? receiptItemsRef.current.get(String(refId))
+                    : undefined
                 const preview =
                   value != null && value !== ''
                     ? value
@@ -873,8 +1013,14 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
             receiptNo: { visible: () => false },
           }
 
-          const totalAmount = items.reduce((acc, r) => acc + (Number(r.amount) || 0), 0)
-          const totalBaseAmount = items.reduce((acc, r) => acc + (Number(r.baseAmount) || 0), 0)
+          const totalAmount = items.reduce(
+            (acc, r) => acc + (Number(r.amount) || 0),
+            0,
+          )
+          const totalBaseAmount = items.reduce(
+            (acc, r) => acc + (Number(r.baseAmount) || 0),
+            0,
+          )
           const itemsReadOnly =
             mode === 'view' ||
             (row != null && row.status !== 'DRAFT') ||
@@ -904,6 +1050,7 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
               />
               <SynieEditableTable
                 resource="purReconciliationItems"
+                client={purchaseReconciliationItemClient}
                 label="对账条目"
                 items={items}
                 onChange={setItems}
@@ -913,7 +1060,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                   itemsReadOnly ? undefined : (
                     <div className="flex items-center gap-2">
                       {!headerReady && (
-                        <span className="text-xs text-muted">先选齐公司、对手类型与对手</span>
+                        <span className="text-xs text-muted">
+                          先选齐公司、对手类型与对手
+                        </span>
                       )}
                       <Button
                         size="sm"
@@ -955,10 +1104,16 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                     // 多行展示编号/名称/规格/客户料号,避免横向撑宽
                     className: 'min-w-[12rem] max-w-[18rem]',
                     render: (_v, r) => {
-                      const code = r.materialCode != null ? String(r.materialCode) : ''
-                      const name = r.materialName != null ? String(r.materialName) : ''
+                      const code =
+                        r.materialCode != null ? String(r.materialCode) : ''
+                      const name =
+                        r.materialName != null ? String(r.materialName) : ''
                       const title = [code, name].filter(Boolean).join(' ')
-                      if (!title && r.materialSpec == null && r.customerPartNo == null)
+                      if (
+                        !title &&
+                        r.materialSpec == null &&
+                        r.customerPartNo == null
+                      )
                         return undefined
                       const spec =
                         r.materialSpec != null && r.materialSpec !== ''
@@ -970,14 +1125,24 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                           : null
                       return (
                         <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
-                          {title ? <span className="truncate font-medium">{title}</span> : null}
+                          {title ? (
+                            <span className="truncate font-medium">
+                              {title}
+                            </span>
+                          ) : null}
                           {spec ? (
-                            <span className="truncate text-xs text-muted" title={spec}>
+                            <span
+                              className="truncate text-xs text-muted"
+                              title={spec}
+                            >
                               规格 {spec}
                             </span>
                           ) : null}
                           {cpn ? (
-                            <span className="truncate text-xs text-muted" title={cpn}>
+                            <span
+                              className="truncate text-xs text-muted"
+                              title={cpn}
+                            >
                               客户料号 {cpn}
                             </span>
                           ) : null}
@@ -987,8 +1152,14 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                   },
                   unitName: { label: '单位' },
                   qty: { render: (v) => formatQty(v) || undefined },
-                  baseQty: { label: '折算数量', render: (v) => formatQty(v) || undefined },
-                  amount: { label: '金额(原币)', render: (v) => formatAmount(v) || undefined },
+                  baseQty: {
+                    label: '折算数量',
+                    render: (v) => formatQty(v) || undefined,
+                  },
+                  amount: {
+                    label: '金额(原币)',
+                    render: (v) => formatAmount(v) || undefined,
+                  },
                   baseAmount: {
                     label: '本币金额',
                     render: (v) => formatAmount(v) || undefined,
@@ -997,7 +1168,8 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                 }}
                 fields={itemFields}
                 validateItem={(vals, curItems, editing) => {
-                  const refId = vals.receiptItemId ?? vals.outsourcedReceiptItemId
+                  const refId =
+                    vals.receiptItemId ?? vals.outsourcedReceiptItemId
                   if (!refId) return '请选择入库条目(采购或委外,二选一)'
                   if (vals.receiptItemId && vals.outsourcedReceiptItemId)
                     return '入库条目只能二选一'
@@ -1016,7 +1188,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                   // 单内同币种:以首个他行币种为基准(弹窗已过滤,这里双保险)
                   const ritem = receiptItemsRef.current.get(String(refId))
                   const rowCurrency =
-                    ritem?.orderCurrencyCode ?? vals.orderCurrencyCode ?? editing?.orderCurrencyCode
+                    ritem?.orderCurrencyCode ??
+                    vals.orderCurrencyCode ??
+                    editing?.orderCurrencyCode
                   const other = curItems.find(
                     (r) =>
                       r.id !== editing?.id &&
@@ -1045,15 +1219,19 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                   }
                 }}
                 transformItem={(vals, editing) => {
-                  const refId = vals.receiptItemId ?? vals.outsourcedReceiptItemId
+                  const refId =
+                    vals.receiptItemId ?? vals.outsourcedReceiptItemId
                   const ritem =
-                    refId != null ? receiptItemsRef.current.get(String(refId)) : undefined
+                    refId != null
+                      ? receiptItemsRef.current.get(String(refId))
+                      : undefined
                   const pick = (key: string) =>
                     ritem?.[key] ?? editing?.[key] ?? vals[key] ?? null
                   const qty = vals.qty
                   const sameRef =
                     editing != null &&
-                    String(editing.receiptItemId ?? '') === String(vals.receiptItemId ?? '') &&
+                    String(editing.receiptItemId ?? '') ===
+                      String(vals.receiptItemId ?? '') &&
                     String(editing.outsourcedReceiptItemId ?? '') ===
                       String(vals.outsourcedReceiptItemId ?? '')
                   // hidden 字段不会进 collectValues:快照以缓存或编辑行补全;
@@ -1061,10 +1239,14 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                   return {
                     ...vals,
                     receiptItemId: vals.receiptItemId ?? null,
-                    outsourcedReceiptItemId: vals.outsourcedReceiptItemId ?? null,
+                    outsourcedReceiptItemId:
+                      vals.outsourcedReceiptItemId ?? null,
                     idx: editing
                       ? editing.idx
-                      : items.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
+                      : items.reduce(
+                          (max, r) => Math.max(max, Number(r.idx) || 0),
+                          0,
+                        ) + 1,
                     materialCode: pick('materialCode'),
                     materialName: pick('materialName'),
                     materialSpec: pick('materialSpec'),
@@ -1101,7 +1283,9 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
                 mode={mode}
                 values={values}
                 patchValues={patchValues}
-                isDisabled={mode === 'view' || (row != null && row.status !== 'DRAFT')}
+                isDisabled={
+                  mode === 'view' || (row != null && row.status !== 'DRAFT')
+                }
               />
             </>
           )
@@ -1110,13 +1294,8 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{ createPurReconciliation: MutationResult }>(
-              CREATE_RECONCILIATION,
-              { input: values },
-            )
-            const res = data.createPurReconciliation
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const reconciliationId = res!.result!.id
+            const created = await purchaseReconciliationClient.create(values)
+            const reconciliationId = String(created.id)
             const itemErrors = await persistItems(reconciliationId, items, [])
             if (itemErrors.length > 0) {
               toast.danger('采购对账单已创建,但部分条目保存失败', {
@@ -1127,13 +1306,12 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
             }
             savedId = reconciliationId
           } else {
-            const data = await gqlFetch<{ updatePurReconciliation: MutationResult }>(
-              UPDATE_RECONCILIATION,
-              { id: drawer!.row!.id, input: values },
+            await purchaseReconciliationClient.update(drawer!.row!.id, values)
+            const itemErrors = await persistItems(
+              drawer!.row!.id,
+              items,
+              itemsSnapshot,
             )
-            const res = data.updatePurReconciliation
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('采购对账单已更新,但部分条目保存失败', {
                 description: itemErrors.join('; '),
@@ -1143,9 +1321,15 @@ export function ReconciliationDrawerProvider({ children }: { children: ReactNode
             }
             savedId = drawer!.row!.id
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purReconciliations'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purReconciliationItems'] })
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'purReconciliations'] })
+          queryClient.invalidateQueries({
+            queryKey: ['gridRows', 'purReconciliations'],
+          })
+          queryClient.invalidateQueries({
+            queryKey: ['gridRows', 'purReconciliationItems'],
+          })
+          queryClient.invalidateQueries({
+            queryKey: ['rowById', 'purReconciliations'],
+          })
           return savedId
         }}
       />

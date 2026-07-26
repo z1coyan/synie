@@ -9,7 +9,11 @@ import {
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, NumberField, TextField, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { companyClient } from '~/lib/resources/companies'
+import {
+  salesDeliveryClient,
+  salesDeliveryItemClient,
+} from '~/lib/resources/fulfillment'
 import { salesOrderItemClient } from '~/lib/resources/orders'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
@@ -53,6 +57,18 @@ export const deliveryAuditConfig = {
     { key: 'baseQty', label: '折算数量', align: 'end' },
     { key: 'remarks', label: '行备注' },
   ],
+  loadItems: (deliveryId: string) =>
+    salesDeliveryItemClient
+      .query({
+        limit: 500,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          deliveryId: { kind: 'fk', op: 'in', values: [deliveryId], labels: [] },
+        },
+      })
+      .then((result) => result.results),
+  audit: (deliveryId: string) => salesDeliveryClient.action!('audit', [deliveryId]),
 } satisfies AuditDocConfig
 
 const DeliveryDrawerContext = createContext<OpenDeliveryDrawer>(() => {})
@@ -60,50 +76,6 @@ const DeliveryDrawerContext = createContext<OpenDeliveryDrawer>(() => {})
 export function useDeliveryDrawer(): OpenDeliveryDrawer {
   return useContext(DeliveryDrawerContext)
 }
-
-const CREATE_DELIVERY = `
-  mutation ($input: CreateSalDeliveryInput!) {
-    createSalDelivery(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_DELIVERY = `
-  mutation ($id: ID!, $input: UpdateSalDeliveryInput!) {
-    updateSalDelivery(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-// 只取快照与 id 字段,不 join material/unit/warehouse——
-// 嵌套加载会走对方资源权限,无 read 时 GraphQL 非空关系变 null 整查询失败。
-const FETCH_ITEMS = `
-  query ($deliveryId: ID!) {
-    salDeliveryItems(
-      filter: {deliveryId: {eq: $deliveryId}}
-      sort: [{field: IDX, order: ASC}]
-      limit: 200
-      offset: 0
-    ) {
-      results {
-        id idx orderItemId materialId unitId qty baseQty warehouseId remarks
-        materialCode materialName materialSpec customerPartNo unitName
-        orderNo orderQty orderUnitName
-      }
-    }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreateSalDeliveryItemInput!) {
-    createSalDeliveryItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdateSalDeliveryItemInput!) {
-    updateSalDeliveryItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroySalDeliveryItem(id: $id) { errors { message } }
-  }
-`
 
 function todayLocal(): string {
   const d = new Date()
@@ -130,11 +102,6 @@ function itemChanged(before: Row, after: Row): boolean {
   return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
 }
 
-interface MutationResult {
-  result?: { id: string } | null
-  errors: { message: string }[] | null
-}
-
 async function persistItems(
   deliveryId: string,
   current: Row[],
@@ -148,40 +115,45 @@ async function persistItems(
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroySalDeliveryItem: MutationResult }>(DESTROY_ITEM, {
-      id: old.id,
-    })
-    collect(old.idx, data.destroySalDeliveryItem?.errors)
+    try {
+      await salesDeliveryItemClient.delete(String(old.id))
+    } catch (error) {
+      collect(old.idx, [{ message: (error as Error).message }])
+    }
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createSalDeliveryItem: MutationResult }>(CREATE_ITEM, {
-        input: { deliveryId, ...itemInput(row) },
-      })
-      collect(row.idx, data.createSalDeliveryItem?.errors)
+      try {
+        await salesDeliveryItemClient.create({ deliveryId, ...itemInput(row) })
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{ updateSalDeliveryItem: MutationResult }>(UPDATE_ITEM, {
-        id: row.id,
-        input: itemInput(row),
-      })
-      collect(row.idx, data.updateSalDeliveryItem?.errors)
+      try {
+        await salesDeliveryItemClient.update(String(row.id), itemInput(row))
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
     }
   }
   return errors
 }
 
 /**
- * 科目候选 filter。枚举值必须是 GraphQL enum 裸 token(不可 JSON 字符串)。
+ * 科目候选使用结构化 REST FilterState。
  */
-function accountFilter(companyId: string | null, roleEnum?: string): string | undefined {
+function accountFilter(companyId: string | null, roleEnum?: string): FilterState | undefined {
   if (!companyId) return undefined
-  const base = `companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}`
-  if (roleEnum) return `{${base}, role: {eq: ${roleEnum}}}`
-  return `{${base}}`
+  return {
+    companyId: { kind: 'fk', op: 'in', values: [companyId], labels: [] },
+    isGroup: { kind: 'bool', eq: false },
+    active: { kind: 'bool', eq: true },
+    ...(roleEnum ? { role: { kind: 'enum' as const, values: [roleEnum] } } : {}),
+  }
 }
 
 /**
@@ -250,7 +222,7 @@ function DeliveryAccountFooter({
         onChange={(id) => patchValues({ debitAccountId: id })}
         isDisabled={isDisabled || !companyId || mode === 'view'}
         isRequired={mode !== 'view'}
-        filter={accountFilter(companyId, 'UNBILLED_RECEIVABLE')}
+        filterState={accountFilter(companyId, 'UNBILLED_RECEIVABLE')}
         labelField="name"
         searchFields={['name', 'code']}
         itemSubtitleFields={['code']}
@@ -263,7 +235,7 @@ function DeliveryAccountFooter({
         onChange={(id) => patchValues({ creditAccountId: id })}
         isDisabled={isDisabled || !companyId || mode === 'view'}
         isRequired={mode !== 'view'}
-        filter={accountFilter(companyId)}
+        filterState={accountFilter(companyId)}
         labelField="name"
         searchFields={['name', 'code']}
         itemSubtitleFields={['code']}
@@ -370,9 +342,13 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
   const companies = useQuery({
     queryKey: ['salDeliveries', 'companies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { results { id name } } }`,
-      ).then((d) => d.basCompanies.results),
+      companyClient
+        .query({
+          limit: 50,
+          offset: 0,
+          sort: { column: 'code', direction: 'ascending' },
+        })
+        .then((result) => result.results),
   })
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
@@ -399,12 +375,18 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
       return
     }
     setDetailLoaded(false)
-    gqlFetch<{ salDeliveryItems: { results: Row[] } }>(FETCH_ITEMS, {
-      deliveryId,
-    })
-      .then((d) => {
+    salesDeliveryItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          deliveryId: { kind: 'fk', op: 'in', values: [deliveryId], labels: [] },
+        },
+      })
+      .then((result) => {
         if (my !== reqIdRef.current) return
-        const rows = d.salDeliveryItems.results
+        const rows = result.results
         // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
         for (const r of rows) {
           if (r.orderItemId != null) {
@@ -478,6 +460,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
       {children}
       <SynieRecordDrawer
         resource="salDeliveries"
+        client={salesDeliveryClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -710,6 +693,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
               />
               <SynieEditableTable
                 resource="salDeliveryItems"
+                client={salesDeliveryItemClient}
                 label="发货条目"
                 items={items}
                 onChange={setItems}
@@ -866,12 +850,8 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{ createSalDelivery: MutationResult }>(CREATE_DELIVERY, {
-              input: values,
-            })
-            const res = data.createSalDelivery
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const deliveryId = res!.result!.id
+            const saved = await salesDeliveryClient.create(values)
+            const deliveryId = String(saved.id)
             const itemErrors = await persistItems(deliveryId, items, [])
             if (itemErrors.length > 0) {
               toast.danger('发货单已创建,但部分条目保存失败', {
@@ -882,12 +862,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
             }
             savedId = deliveryId
           } else {
-            const data = await gqlFetch<{ updateSalDelivery: MutationResult }>(UPDATE_DELIVERY, {
-              id: drawer!.row!.id,
-              input: values,
-            })
-            const res = data.updateSalDelivery
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
+            await salesDeliveryClient.update(drawer!.row!.id, values)
             const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('发货单已更新,但部分条目保存失败', {

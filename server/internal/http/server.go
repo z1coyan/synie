@@ -24,7 +24,12 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/base/company"
 	"github.com/z1coyan/synie/server/internal/domain/base/currency"
 	"github.com/z1coyan/synie/server/internal/domain/base/unit"
+	"github.com/z1coyan/synie/server/internal/domain/finance/banking"
+	"github.com/z1coyan/synie/server/internal/domain/finance/documents"
+	"github.com/z1coyan/synie/server/internal/domain/fulfillment/outsourced"
+	"github.com/z1coyan/synie/server/internal/domain/fulfillment/standard"
 	"github.com/z1coyan/synie/server/internal/domain/hr/employee"
+	hroperations "github.com/z1coyan/synie/server/internal/domain/hr/operations"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/material"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/materialcategory"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/materialunit"
@@ -33,9 +38,15 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stockentry"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stocktransfer"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/warehouse"
+	"github.com/z1coyan/synie/server/internal/domain/manufacturing/execution"
+	"github.com/z1coyan/synie/server/internal/domain/manufacturing/master"
 	"github.com/z1coyan/synie/server/internal/domain/purchase/supplier"
+	"github.com/z1coyan/synie/server/internal/domain/sales/companyaccountdefault"
 	"github.com/z1coyan/synie/server/internal/domain/sales/customer"
+	"github.com/z1coyan/synie/server/internal/domain/scm/orderflow"
+	"github.com/z1coyan/synie/server/internal/domain/systemops"
 	"github.com/z1coyan/synie/server/internal/domain/trading/quotation"
+	"github.com/z1coyan/synie/server/internal/domain/trading/reconciliation"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/auth"
@@ -53,67 +64,89 @@ const maxJSONBody = 1 << 20
 type actorContextKey struct{}
 
 type Server struct {
-	pool           *pgxpool.Pool
-	auth           *auth.Service
-	registry       *meta.Registry
-	glEntries      *glentry.Service
-	glJournals     *gljournal.Service
-	currencies     *currency.Service
-	companies      *company.Service
-	accounts       *account.Service
-	units          *unit.Service
-	customers      *customer.Service
-	suppliers      *supplier.Service
-	employees      *employee.Service
-	materials      *material.Service
-	materialCats   *materialcategory.Service
-	materialUnits  *materialunit.Service
-	warehouses     *warehouse.Service
-	stockEntries   *stockentry.Service
-	stockDocs      *stockdoc.Service
-	stockTransfers *stocktransfer.Service
-	stockCounts    *stockcount.Service
-	orders         orderHTTPService
-	quotations     quotationHTTPService
-	fileService    *fileplatform.Service
-	storageService *fileplatform.StorageService
-	iam            *iam.Service
-	numbering      *numbering.Service
-	printing       *printing.Service
-	settings       *settings.Service
-	logger         *slog.Logger
+	pool                   *pgxpool.Pool
+	auth                   *auth.Service
+	registry               *meta.Registry
+	glEntries              *glentry.Service
+	glJournals             *gljournal.Service
+	currencies             *currency.Service
+	companies              *company.Service
+	accounts               *account.Service
+	units                  *unit.Service
+	customers              *customer.Service
+	suppliers              *supplier.Service
+	employees              *employee.Service
+	hrOperations           *hroperations.Service
+	financeBanking         *banking.Service
+	financeDocuments       *documents.Service
+	materials              *material.Service
+	materialCats           *materialcategory.Service
+	materialUnits          *materialunit.Service
+	warehouses             *warehouse.Service
+	stockEntries           *stockentry.Service
+	stockDocs              *stockdoc.Service
+	stockTransfers         *stocktransfer.Service
+	stockCounts            *stockcount.Service
+	orders                 orderHTTPService
+	quotations             quotationHTTPService
+	manufacturingMaster    *master.Service
+	manufacturingExecution *execution.Service
+	standardFulfillment    *standard.Service
+	outsourcedFulfillment  *outsourced.Service
+	reconciliations        *reconciliation.Service
+	companyAccountDefaults *companyaccountdefault.Service
+	orderFlowItems         *orderflow.Service
+	systemOps              *systemops.Service
+	fileService            *fileplatform.Service
+	storageService         *fileplatform.StorageService
+	iam                    *iam.Service
+	numbering              *numbering.Service
+	printing               *printing.Service
+	settings               *settings.Service
+	logger                 *slog.Logger
 }
 
 type Dependencies struct {
-	Pool           *pgxpool.Pool
-	Auth           *auth.Service
-	Registry       *meta.Registry
-	GLEntries      *glentry.Service
-	GLJournals     *gljournal.Service
-	Currencies     *currency.Service
-	Companies      *company.Service
-	Accounts       *account.Service
-	Units          *unit.Service
-	Customers      *customer.Service
-	Suppliers      *supplier.Service
-	Employees      *employee.Service
-	Materials      *material.Service
-	MaterialCats   *materialcategory.Service
-	MaterialUnits  *materialunit.Service
-	Warehouses     *warehouse.Service
-	StockEntries   *stockentry.Service
-	StockDocs      *stockdoc.Service
-	StockTransfers *stocktransfer.Service
-	StockCounts    *stockcount.Service
-	Orders         orderHTTPService
-	Quotations     *quotation.Service
-	FileService    *fileplatform.Service
-	StorageService *fileplatform.StorageService
-	IAM            *iam.Service
-	Numbering      *numbering.Service
-	Printing       *printing.Service
-	Settings       *settings.Service
-	Logger         *slog.Logger
+	Pool                   *pgxpool.Pool
+	Auth                   *auth.Service
+	Registry               *meta.Registry
+	GLEntries              *glentry.Service
+	GLJournals             *gljournal.Service
+	Currencies             *currency.Service
+	Companies              *company.Service
+	Accounts               *account.Service
+	Units                  *unit.Service
+	Customers              *customer.Service
+	Suppliers              *supplier.Service
+	Employees              *employee.Service
+	HROperations           *hroperations.Service
+	FinanceBanking         *banking.Service
+	FinanceDocuments       *documents.Service
+	Materials              *material.Service
+	MaterialCats           *materialcategory.Service
+	MaterialUnits          *materialunit.Service
+	Warehouses             *warehouse.Service
+	StockEntries           *stockentry.Service
+	StockDocs              *stockdoc.Service
+	StockTransfers         *stocktransfer.Service
+	StockCounts            *stockcount.Service
+	Orders                 orderHTTPService
+	Quotations             *quotation.Service
+	ManufacturingMaster    *master.Service
+	ManufacturingExecution *execution.Service
+	StandardFulfillment    *standard.Service
+	OutsourcedFulfillment  *outsourced.Service
+	Reconciliations        *reconciliation.Service
+	CompanyAccountDefaults *companyaccountdefault.Service
+	OrderFlowItems         *orderflow.Service
+	SystemOps              *systemops.Service
+	FileService            *fileplatform.Service
+	StorageService         *fileplatform.StorageService
+	IAM                    *iam.Service
+	Numbering              *numbering.Service
+	Printing               *printing.Service
+	Settings               *settings.Service
+	Logger                 *slog.Logger
 }
 
 func New(deps Dependencies) *Server {
@@ -122,12 +155,22 @@ func New(deps Dependencies) *Server {
 		glEntries: deps.GLEntries, glJournals: deps.GLJournals,
 		currencies: deps.Currencies, companies: deps.Companies, accounts: deps.Accounts, units: deps.Units,
 		customers: deps.Customers, suppliers: deps.Suppliers, employees: deps.Employees,
+		hrOperations:   deps.HROperations,
+		financeBanking: deps.FinanceBanking, financeDocuments: deps.FinanceDocuments,
 		materials: deps.Materials, materialCats: deps.MaterialCats,
 		materialUnits: deps.MaterialUnits, warehouses: deps.Warehouses,
 		stockEntries: deps.StockEntries, stockDocs: deps.StockDocs,
 		stockTransfers: deps.StockTransfers, stockCounts: deps.StockCounts,
 		orders: deps.Orders, quotations: deps.Quotations,
-		iam: deps.IAM, numbering: deps.Numbering, printing: deps.Printing, settings: deps.Settings, fileService: deps.FileService, storageService: deps.StorageService, logger: deps.Logger,
+		manufacturingMaster:    deps.ManufacturingMaster,
+		manufacturingExecution: deps.ManufacturingExecution,
+		standardFulfillment:    deps.StandardFulfillment,
+		outsourcedFulfillment:  deps.OutsourcedFulfillment,
+		reconciliations:        deps.Reconciliations,
+		companyAccountDefaults: deps.CompanyAccountDefaults,
+		orderFlowItems:         deps.OrderFlowItems,
+		systemOps:              deps.SystemOps,
+		iam:                    deps.IAM, numbering: deps.Numbering, printing: deps.Printing, settings: deps.Settings, fileService: deps.FileService, storageService: deps.StorageService, logger: deps.Logger,
 	}
 }
 
@@ -231,12 +274,9 @@ func (s *Server) GetTodoUnreadCount(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	bypass, companyIDs := actor.CompanyFilter()
-	count, err := dbgen.New(s.pool).CountUnreadTodos(r.Context(), dbgen.CountUnreadTodosParams{
-		UserID: actor.UserID, BypassCompanyScope: bypass, CompanyIds: companyIDs,
-	})
+	count, err := s.systemOps.UnreadCount(r.Context(), actor)
 	if err != nil {
-		s.writeError(w, r, apierror.Wrap(apierror.CodeInternal, "读取待办未读数失败", err))
+		s.writeError(w, r, err)
 		return
 	}
 	s.writeJSON(w, http.StatusOK, gen.TodoUnreadCount{Count: count})

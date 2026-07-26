@@ -10,10 +10,13 @@ import {
   Label,
   toast,
 } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import {
+  auditBillTransaction,
+  billTransactionClient,
+} from '~/lib/resources/finance-operations'
 import {
   AcceptanceTransactionDrawer,
   safeParseDate,
@@ -23,12 +26,6 @@ import {
 export const Route = createFileRoute('/_app/finance/acceptance/transactions')({
   component: BillTransactionsPage,
 })
-
-const AUDIT_BILL_TRANSACTION = `
-  mutation ($id: ID!, $input: AuditAccBillTransactionInput!) {
-    auditAccBillTransaction(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 const GRID_COLUMNS = [
   'docNo',
@@ -86,13 +83,7 @@ function BillTransactionsPage() {
     if (!auditDialog || !auditDate) return
     setAuditing(true)
     try {
-      const data = await gqlFetch<{ auditAccBillTransaction: { errors: { message: string }[] | null } }>(
-        AUDIT_BILL_TRANSACTION,
-        { id: auditDialog.id, input: { postingDate: auditDate } }
-      )
-      if (data.auditAccBillTransaction.errors && data.auditAccBillTransaction.errors.length > 0) {
-        throw new Error(data.auditAccBillTransaction.errors.map((e) => e.message).join('; '))
-      }
+      await auditBillTransaction(auditDialog.id, auditDate)
       toast.success('承兑交易已审核过账')
       setAuditDialog(null)
       invalidateAcceptance()
@@ -107,13 +98,7 @@ function BillTransactionsPage() {
     if (!reallocateAuditDialog) return
     setReallocateAuditing(true)
     try {
-      const data = await gqlFetch<{ auditAccBillTransaction: { errors: { message: string }[] | null } }>(
-        AUDIT_BILL_TRANSACTION,
-        { id: reallocateAuditDialog.id, input: {} }
-      )
-      if (data.auditAccBillTransaction.errors && data.auditAccBillTransaction.errors.length > 0) {
-        throw new Error(data.auditAccBillTransaction.errors.map((e) => e.message).join('; '))
-      }
+      await auditBillTransaction(reallocateAuditDialog.id)
       toast.success('调拨已审核')
       setReallocateAuditDialog(null)
       invalidateAcceptance()
@@ -134,6 +119,7 @@ function BillTransactionsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="accBillTransactions"
+          client={billTransactionClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           attachmentImages={{ ownerType: 'acc_bill_transaction', label: '票面' }}

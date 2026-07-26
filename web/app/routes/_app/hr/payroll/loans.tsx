@@ -2,8 +2,13 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Spinner, Table, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
+import {
+  employeeLoanClient,
+  fetchEmployeeLoanBalances,
+  saveEmployeeLoan,
+  type EmployeeLoanBalance,
+} from '~/lib/resources/hr-operations'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
@@ -14,30 +19,7 @@ export const Route = createFileRoute('/_app/hr/payroll/loans')({
   component: EmployeeLoansPage,
 })
 
-const BALANCES = `
-  query {
-    hrEmployeeLoanBalances
-  }
-`
-const CREATE_LOAN = `
-  mutation ($input: CreateHrEmployeeLoanInput!) {
-    createHrEmployeeLoan(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_LOAN = `
-  mutation ($id: ID!, $input: UpdateHrEmployeeLoanInput!) {
-    updateHrEmployeeLoan(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-
-interface BalanceRow {
-  employeeId: string
-  employeeCode: string | null
-  employeeName: string | null
-  borrowed: string
-  repaid: string
-  balance: string
-}
+type BalanceRow = EmployeeLoanBalance
 
 const GRID_COLUMNS = ['employeeId', 'kind', 'occurredOn', 'amount', 'payrollId', 'remarks', 'createdById']
 
@@ -51,10 +33,7 @@ function EmployeeLoansPage() {
 
   const balances = useQuery({
     queryKey: ['loanBalances'],
-    queryFn: () => gqlFetch<{ hrEmployeeLoanBalances: (string | BalanceRow)[] }>(BALANCES),
-    // generic action 的 map 数组经 GraphQL 是 json_string:每个元素一个 JSON 串(照考勤月汇总先例)
-    select: (d) =>
-      (d.hrEmployeeLoanBalances ?? []).map((r) => (typeof r === 'string' ? JSON.parse(r) : r) as BalanceRow),
+    queryFn: fetchEmployeeLoanBalances,
   })
 
   const invalidateAll = () => {
@@ -115,6 +94,7 @@ function EmployeeLoansPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrEmployeeLoans"
+          client={employeeLoanClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'occurredOn', direction: 'descending' }}
@@ -130,6 +110,7 @@ function EmployeeLoansPage() {
       <SynieRecordDrawer
         {...drawerConfig('hrEmployeeLoans')}
         resource="hrEmployeeLoans"
+        client={employeeLoanClient}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
@@ -153,21 +134,10 @@ function EmployeeLoansPage() {
             remarks: values.remarks,
           }
 
-          let errors: { message: string }[] | null
-          if (mode === 'create') {
-            const data = await gqlFetch<{ createHrEmployeeLoan: { errors: { message: string }[] | null } }>(
-              CREATE_LOAN,
-              { input },
-            )
-            errors = data.createHrEmployeeLoan.errors
-          } else {
-            const data = await gqlFetch<{ updateHrEmployeeLoan: { errors: { message: string }[] | null } }>(
-              UPDATE_LOAN,
-              { id: drawer!.row!.id, input },
-            )
-            errors = data.updateHrEmployeeLoan.errors
-          }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+          await saveEmployeeLoan(
+            mode === 'create' ? null : drawer!.row!.id,
+            input,
+          )
           toast.success(mode === 'create' ? '台账已记账' : '台账已更新')
           invalidateAll()
         }}

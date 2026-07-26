@@ -1,0 +1,203 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行号",
+      "name": "idx",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "对账数量(发货条目行单位)",
+      "name": "qty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "折算数量(物料默认单位,6 位;与已对账数量同口径)",
+      "name": "baseQty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "原币含税金额(数量×快照原币含税单价,2 位)",
+      "name": "amount",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "本币含税金额(原币金额×源订单汇率,2 位)",
+      "name": "baseAmount",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行备注",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "销售对账单",
+      "name": "reconciliationId",
+      "ref": {
+        "labelField": "reconciliationNo",
+        "relation": "reconciliation",
+        "resource": "salReconciliations"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "公司",
+      "name": "companyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "发货条目",
+      "name": "deliveryItemId",
+      "ref": {
+        "labelField": "materialCode",
+        "relation": "deliveryItem",
+        "resource": "salDeliveryItems"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "对账单号",
+      "name": "reconciliationNo",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "草稿",
+          "value": "DRAFT"
+        },
+        {
+          "label": "客户已确认",
+          "value": "CONFIRMED"
+        },
+        {
+          "label": "已结单",
+          "value": "CLOSED"
+        },
+        {
+          "label": "已作废",
+          "value": "VOIDED"
+        }
+      ],
+      "filterable": true,
+      "label": "对账单状态",
+      "name": "reconciliationStatus",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "发货单号",
+      "name": "deliveryNo",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "发货日期",
+      "name": "deliveryDate",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "物料名称(发货条目快照)",
+      "name": "materialName",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "单位名称(发货条目快照)",
+      "name": "unitName",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "订单原币代码",
+      "name": "orderCurrencyCode",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    }
+  ],
+  "destroyMutation": "destroySalReconciliationItem",
+  "extendedActions": []
+}

@@ -3,29 +3,16 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Label, ListBox, Select, Spinner, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
-import { gqlFetch } from '~/lib/graphql'
+import {
+  fetchAttendanceMonthSummary,
+  type AttendanceMonthSummary,
+} from '~/lib/resources/hr-operations'
 
 export const Route = createFileRoute('/_app/hr/attendance/monthly')({
   component: AttendanceMonthlyPage,
 })
 
-const MONTH_SUMMARY = `
-  query ($month: String!) {
-    hrAttendanceMonthSummary(month: $month)
-  }
-`
-
-interface SummaryRow {
-  employeeId: string
-  employeeCode: string | null
-  employeeName: string | null
-  days: number
-  missingDays: number
-  normalHours: string
-  overtimeHours: string
-  bonusWorkdays: string
-  workdays: string
-}
+type SummaryRow = AttendanceMonthSummary
 
 // 近 24 个月候选(考勤数据从上线月起,更早无意义)
 function monthOptions(): { value: string; label: string }[] {
@@ -49,10 +36,7 @@ function AttendanceMonthlyPage() {
 
   const summary = useQuery({
     queryKey: ['attendanceMonthSummary', month],
-    queryFn: () => gqlFetch<{ hrAttendanceMonthSummary: (string | SummaryRow)[] }>(MONTH_SUMMARY, { month }),
-    // generic action 的 map 数组经 GraphQL 是 json_string:每个元素一个 JSON 串(照编号规则 segments 先例)
-    select: (d) =>
-      (d.hrAttendanceMonthSummary ?? []).map((r) => (typeof r === 'string' ? JSON.parse(r) : r) as SummaryRow),
+    queryFn: () => fetchAttendanceMonthSummary(month),
   })
 
   const rows = summary.data ?? []

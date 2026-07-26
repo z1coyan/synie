@@ -121,3 +121,38 @@ func TestRegistryDescribesExtendedActionsWithoutGrantingCapability(t *testing.T)
 		t.Fatalf("extended actions = %#v", got)
 	}
 }
+
+func TestRegistryCompositeReadPermissionDoesNotCreatePermissionGroup(t *testing.T) {
+	registry := NewRegistry()
+	registry.MustRegister(ResourceMeta{
+		Name:               "scmOrderFlowItems",
+		PermissionPrefix:   "scm.order_flow",
+		PermissionLabel:    "订单收发货历史",
+		ReadPermissionsAny: []string{"sales.delivery:read", "purchase.receipt:read"},
+		Table:              "scm_order_flow_item",
+		Fields: []FieldMeta{
+			{Name: "id", APIName: "id", DBColumn: "id", Type: TypeString, Label: "id"},
+		},
+	})
+
+	actor := &authz.Actor{
+		Permissions: map[string]struct{}{"sales.delivery:read": {}},
+	}
+	if _, err := registry.BuildDocument("scmOrderFlowItems", actor); err != nil {
+		t.Fatal(err)
+	}
+	if got := registry.Summaries(actor); len(got) != 1 || got[0].Name != "scmOrderFlowItems" {
+		t.Fatalf("summaries = %#v", got)
+	}
+	for _, group := range registry.PermissionCatalog() {
+		if group.Prefix == "scm.order_flow" {
+			t.Fatalf("复合读取资源不得生成虚假权限组: %#v", group)
+		}
+	}
+	if _, err := registry.BuildDocument(
+		"scmOrderFlowItems",
+		&authz.Actor{Permissions: map[string]struct{}{}},
+	); apierror.Status(err) != 403 {
+		t.Fatalf("want forbidden, got %v", err)
+	}
+}

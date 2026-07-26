@@ -1,0 +1,651 @@
+{
+  "mutation": {
+    "expectedFields": [
+      "markReadSysTodo",
+      "dismissSysTodo"
+    ],
+    "missingFields": [],
+    "publishedFields": [
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "name": "id",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "name": "includeDismissed",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          },
+          {
+            "defaultValue": null,
+            "name": "tab",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        ],
+        "description": null,
+        "name": "dismissSysTodo",
+        "type": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "OBJECT",
+            "name": "DismissSysTodoResult",
+            "ofType": null
+          }
+        }
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "name": "id",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "name": "includeDismissed",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          },
+          {
+            "defaultValue": null,
+            "name": "tab",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        ],
+        "description": null,
+        "name": "markReadSysTodo",
+        "type": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "OBJECT",
+            "name": "MarkReadSysTodoResult",
+            "ofType": null
+          }
+        }
+      }
+    ]
+  },
+  "query": {
+    "expectedFields": [
+      "sysAuditLogs",
+      "sysTodos",
+      "sysTodoUnreadCount"
+    ],
+    "missingFields": [],
+    "publishedFields": [
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "name": "filter",
+            "type": {
+              "kind": "INPUT_OBJECT",
+              "name": "SysAuditLogFilterInput",
+              "ofType": null
+            }
+          },
+          {
+            "defaultValue": "50",
+            "name": "limit",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          {
+            "defaultValue": null,
+            "name": "offset",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          {
+            "defaultValue": null,
+            "name": "sort",
+            "type": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "INPUT_OBJECT",
+                "name": "SysAuditLogSortInput",
+                "ofType": null
+              }
+            }
+          }
+        ],
+        "description": null,
+        "name": "sysAuditLogs",
+        "type": {
+          "kind": "OBJECT",
+          "name": "PageOfSysAuditLog",
+          "ofType": null
+        }
+      },
+      {
+        "args": [],
+        "description": "当前用户未读数:活跃且未有效忽略且未读",
+        "name": "sysTodoUnreadCount",
+        "type": {
+          "kind": "NON_NULL",
+          "name": null,
+          "ofType": {
+            "kind": "SCALAR",
+            "name": "Int",
+            "ofType": null
+          }
+        }
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "name": "filter",
+            "type": {
+              "kind": "INPUT_OBJECT",
+              "name": "SysTodoFilterInput",
+              "ofType": null
+            }
+          },
+          {
+            "defaultValue": null,
+            "name": "includeDismissed",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Boolean",
+              "ofType": null
+            }
+          },
+          {
+            "defaultValue": "20",
+            "name": "limit",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          {
+            "defaultValue": null,
+            "name": "offset",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          {
+            "defaultValue": null,
+            "name": "sort",
+            "type": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "INPUT_OBJECT",
+                "name": "SysTodoSortInput",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "name": "tab",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        ],
+        "description": null,
+        "name": "sysTodos",
+        "type": {
+          "kind": "OBJECT",
+          "name": "PageOfSysTodo",
+          "ofType": null
+        }
+      }
+    ]
+  },
+  "recordTypes": {
+    "SysAuditLog": {
+      "fields": [
+        {
+          "description": "动作",
+          "name": "actionName",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "操作类型",
+          "name": "actionType",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "操作人ID",
+          "name": "actorId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "ID",
+            "ofType": null
+          }
+        },
+        {
+          "description": "操作人",
+          "name": "actorName",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "description": "变更内容",
+          "name": "changes",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "JsonString",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "公司ID",
+          "name": "companyId",
+          "type": {
+            "kind": "SCALAR",
+            "name": "ID",
+            "ofType": null
+          }
+        },
+        {
+          "description": null,
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "操作时间",
+          "name": "insertedAt",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "DateTime",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "记录ID",
+          "name": "recordId",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "记录名称",
+          "name": "recordLabel",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "description": "资源",
+          "name": "resource",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "name": "SysAuditLog"
+    },
+    "SysTodo": {
+      "fields": [
+        {
+          "description": "金额快照(对账单本币合计)",
+          "name": "amount",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Decimal",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "关闭时点",
+          "name": "closedAt",
+          "type": {
+            "kind": "SCALAR",
+            "name": "DateTime",
+            "ofType": null
+          }
+        },
+        {
+          "description": "关闭触发来源",
+          "name": "closedReason",
+          "type": {
+            "kind": "ENUM",
+            "name": "SysTodoClosedReason",
+            "ofType": null
+          }
+        },
+        {
+          "description": "公司",
+          "name": "company",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "BasCompany",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": null,
+          "name": "companyId",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "触发操作人",
+          "name": "createdBy",
+          "type": {
+            "kind": "OBJECT",
+            "name": "SysUser",
+            "ofType": null
+          }
+        },
+        {
+          "description": null,
+          "name": "createdById",
+          "type": {
+            "kind": "SCALAR",
+            "name": "ID",
+            "ofType": null
+          }
+        },
+        {
+          "description": "当前用户是否有效忽略",
+          "name": "dismissed",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        },
+        {
+          "description": "草稿关联中(存在草稿态关联发票)",
+          "name": "draftInvoiceLinked",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        },
+        {
+          "description": null,
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "产生时间",
+          "name": "insertedAt",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "DateTime",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "当前用户忽略时点",
+          "name": "myDismissedAt",
+          "type": {
+            "kind": "SCALAR",
+            "name": "DateTime",
+            "ofType": null
+          }
+        },
+        {
+          "description": "当前用户已读时点",
+          "name": "myReadAt",
+          "type": {
+            "kind": "SCALAR",
+            "name": "DateTime",
+            "ofType": null
+          }
+        },
+        {
+          "description": "对手快照",
+          "name": "partyId",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "对手显示名",
+          "name": "partyName",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "description": "对手类型快照",
+          "name": "partyType",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "AccPartyType",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "源单状态变化时点(忽略复位基准)",
+          "name": "sourceChangedAt",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "DateTime",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "源单据",
+          "name": "sourceId",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ID",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "源单据号快照",
+          "name": "sourceNo",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "源单据类型(多态判别,如 sales.reconciliation)",
+          "name": "sourceType",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "状态",
+          "name": "status",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "SysTodoStatus",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "待办类型(开票/收票)",
+          "name": "type",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "ENUM",
+              "name": "SysTodoType",
+              "ofType": null
+            }
+          }
+        },
+        {
+          "description": "更新时间",
+          "name": "updatedAt",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "DateTime",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "name": "SysTodo"
+    },
+    "SysTodoState": null
+  },
+  "sysTodoStatePublished": false
+}

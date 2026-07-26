@@ -2,8 +2,16 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { formatAmount } from '~/lib/amount'
+import {
+  fetchPayrollMonthStats,
+  generatePayrolls,
+  payRemainingPayroll,
+  payrollClient,
+  payrollPaymentClient,
+  refreshPayroll,
+  savePayroll,
+} from '~/lib/resources/hr-operations'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -17,46 +25,8 @@ export const Route = createFileRoute('/_app/hr/payroll/slips')({
   component: PayrollSlipsPage,
 })
 
-const MONTH_STATS = `
-  query ($month: String!) {
-    hrPayrollMonthStats(month: $month)
-  }
-`
-const GENERATE = `
-  mutation ($input: GenerateHrPayrollsInput!) {
-    generateHrPayrolls(input: $input)
-  }
-`
-const CREATE_PAYROLL = `
-  mutation ($input: CreateHrPayrollInput!) {
-    createHrPayroll(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_PAYROLL = `
-  mutation ($id: ID!, $input: UpdateHrPayrollInput!) {
-    updateHrPayroll(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const REFRESH_PAYROLL = `
-  mutation ($id: ID!) {
-    refreshHrPayroll(id: $id) { result { id } errors { message } }
-  }
-`
-const PAY_REMAINING = `
-  mutation ($input: PayRemainingHrPayrollPaymentInput!) {
-    payRemainingHrPayrollPayment(input: $input) { result { id } errors { message } }
-  }
-`
-
 // 未发差额(以行数据估算,仅作展示;实发金额由后端锁内权威计算)
 const remainingOf = (row: Row) => Number(row.payable || 0) - Number(row.paidTotal || 0)
-
-interface MonthStats {
-  count: number
-  pendingCount: number
-  payableTotal: string
-  paidTotal: string
-}
 
 // 月份由页面月份选择器锁定(fixedFilter),不进表格;备注/时间戳进抽屉不占列宽
 const GRID_COLUMNS = [
@@ -101,17 +71,16 @@ function PayrollSlipsPage() {
   const queryClient = useQueryClient()
 
   // 发放按 hr_payroll_payment 自身权限码门控(发放≠改单)
-  const paymentsMeta = useGridMeta('hrPayrollPayments')
+  const paymentsMeta = useGridMeta(
+    'hrPayrollPayments',
+    true,
+    payrollPaymentClient,
+  )
   const canPay = (paymentsMeta.data?.capabilities ?? []).includes('create')
 
   const stats = useQuery({
     queryKey: ['payrollMonthStats', month],
-    queryFn: () => gqlFetch<{ hrPayrollMonthStats: string | MonthStats }>(MONTH_STATS, { month }),
-    // generic action 的 map 经 GraphQL 是 json_string(照考勤月汇总先例)
-    select: (d) =>
-      (typeof d.hrPayrollMonthStats === 'string'
-        ? JSON.parse(d.hrPayrollMonthStats)
-        : d.hrPayrollMonthStats) as MonthStats,
+    queryFn: () => fetchPayrollMonthStats(month),
   })
 
   // 发放/借款联动跨资源,一律广播失效(staleTime 下重挂不重取,必须显式失效)
@@ -127,13 +96,7 @@ function PayrollSlipsPage() {
   const generate = async () => {
     setGenerating(true)
     try {
-      const data = await gqlFetch<{ generateHrPayrolls: string | { created: number; skipped: number } }>(
-        GENERATE,
-        { input: { month } },
-      )
-      const result = (
-        typeof data.generateHrPayrolls === 'string' ? JSON.parse(data.generateHrPayrolls) : data.generateHrPayrolls
-      ) as { created: number; skipped: number }
+      const result = await generatePayrolls(month)
       toast.success(`已生成 ${result.created} 张工资单`, {
         description: result.skipped > 0 ? `${result.skipped} 张已存在,跳过不覆盖` : undefined,
       })
@@ -154,11 +117,7 @@ function PayrollSlipsPage() {
 
     for (const row of targets) {
       try {
-        const data = await gqlFetch<{
-          payRemainingHrPayrollPayment: { errors: { message: string }[] | null }
-        }>(PAY_REMAINING, { input: { payrollId: row.id, paidOn: today() } })
-        const errors = data.payRemainingHrPayrollPayment.errors
-        if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+        await payRemainingPayroll(row.id, today())
         done += 1
       } catch (e) {
         failures.push((e as Error).message)
@@ -175,12 +134,7 @@ function PayrollSlipsPage() {
 
   const refresh = async (row: Row) => {
     try {
-      const data = await gqlFetch<{ refreshHrPayroll: { errors: { message: string }[] | null } }>(
-        REFRESH_PAYROLL,
-        { id: row.id },
-      )
-      const errors = data.refreshHrPayroll.errors
-      if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+      await refreshPayroll(row.id)
       toast.success('已按当前考勤与员工档案重取快照')
       invalidateAll()
     } catch (e) {
@@ -217,9 +171,12 @@ function PayrollSlipsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrPayrolls"
+          client={payrollClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
-          fixedFilter={{ month: { eq: month } }}
+          fixedFilter={{
+            month: { kind: 'text', op: 'eq', value: month },
+          }}
           createLabel="手工建单"
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -248,6 +205,7 @@ function PayrollSlipsPage() {
       <SynieRecordDrawer
         {...drawerConfig('hrPayrolls')}
         resource="hrPayrolls"
+        client={payrollClient}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
@@ -284,21 +242,12 @@ function PayrollSlipsPage() {
             remarks: values.remarks,
           }
 
-          let errors: { message: string }[] | null
-          if (mode === 'create') {
-            const data = await gqlFetch<{ createHrPayroll: { errors: { message: string }[] | null } }>(
-              CREATE_PAYROLL,
-              { input: { ...base, employeeId: values.employeeId, month: values.month } },
-            )
-            errors = data.createHrPayroll.errors
-          } else {
-            const data = await gqlFetch<{ updateHrPayroll: { errors: { message: string }[] | null } }>(
-              UPDATE_PAYROLL,
-              { id: drawer!.row!.id, input: base },
-            )
-            errors = data.updateHrPayroll.errors
-          }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+          await savePayroll(
+            mode === 'create' ? null : drawer!.row!.id,
+            mode === 'create'
+              ? { ...base, employeeId: values.employeeId, month: values.month }
+              : base,
+          )
           toast.success(mode === 'create' ? '工资单已创建' : '工资单已更新,应发已重算')
           invalidateAll()
         }}

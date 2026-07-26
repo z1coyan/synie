@@ -9,9 +9,20 @@ import {
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextField, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { companyClient } from '~/lib/resources/companies'
+import {
+  purchaseOutsourcedReceiptClient,
+  purchaseOutsourcedReceiptItemByproductClient,
+  purchaseOutsourcedReceiptItemClient,
+  purchaseOutsourcedReceiptItemMaterialClient,
+} from '~/lib/resources/fulfillment'
 import { queryOutsourcedWarehouses } from '~/lib/resources/inventory'
-import { purchaseOrderItemClient } from '~/lib/resources/orders'
+import {
+  purchaseOrderItemByproductClient,
+  purchaseOrderItemClient,
+  purchaseOrderItemMaterialClient,
+} from '~/lib/resources/orders'
+import type { ResourceClient } from '~/lib/resources/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -50,6 +61,19 @@ export const receiptAuditConfig = {
     { key: 'baseQty', label: '折算数量', align: 'end' },
     { key: 'remarks', label: '行备注' },
   ],
+  loadItems: (receiptId: string) =>
+    purchaseOutsourcedReceiptItemClient
+      .query({
+        limit: 500,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          receiptId: { kind: 'fk', op: 'in', values: [receiptId], labels: [] },
+        },
+      })
+      .then((result) => result.results),
+  audit: (receiptId: string) =>
+    purchaseOutsourcedReceiptClient.action!('audit', [receiptId]),
 } satisfies AuditDocConfig
 
 const ReceiptDrawerContext = createContext<OpenReceiptDrawer>(() => {})
@@ -57,102 +81,6 @@ const ReceiptDrawerContext = createContext<OpenReceiptDrawer>(() => {})
 export function useReceiptDrawer(): OpenReceiptDrawer {
   return useContext(ReceiptDrawerContext)
 }
-
-const CREATE_RECEIPT = `
-  mutation ($input: CreatePurOutsourcedReceiptInput!) {
-    createPurOutsourcedReceipt(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_RECEIPT = `
-  mutation ($id: ID!, $input: UpdatePurOutsourcedReceiptInput!) {
-    updatePurOutsourcedReceipt(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-// 只取快照与 id 字段,不 join material/unit/warehouse——
-// 嵌套加载会走对方资源权限,无 read 时 GraphQL 非空关系变 null 整查询失败。
-const FETCH_DETAIL = `
-  query ($receiptId: ID!) {
-    purOutsourcedReceiptItems(
-      filter: {receiptId: {eq: $receiptId}}
-      sort: [{field: IDX, order: ASC}]
-      limit: 200
-      offset: 0
-    ) {
-      results {
-        id idx orderItemId materialId unitId qty baseQty warehouseId remarks
-        materialCode materialName materialSpec customerPartNo unitName
-        orderNo orderQty orderUnitName
-      }
-    }
-    purOutsourcedReceiptItemMaterials(
-      filter: {receiptItem: {receiptId: {eq: $receiptId}}}
-      sort: [{field: IDX, order: ASC}]
-      limit: 500
-      offset: 0
-    ) {
-      results {
-        id idx receiptItemId orderItemMaterialId qty baseQty outsourcedWarehouseId remarks
-        materialCode materialName materialSpec unitName orderNo
-      }
-    }
-    purOutsourcedReceiptItemByproducts(
-      filter: {receiptItem: {receiptId: {eq: $receiptId}}}
-      sort: [{field: IDX, order: ASC}]
-      limit: 500
-      offset: 0
-    ) {
-      results {
-        id idx receiptItemId orderItemByproductId qty baseQty warehouseId remarks
-        materialCode materialName materialSpec unitName orderNo
-      }
-    }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreatePurOutsourcedReceiptItemInput!) {
-    createPurOutsourcedReceiptItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdatePurOutsourcedReceiptItemInput!) {
-    updatePurOutsourcedReceiptItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroyPurOutsourcedReceiptItem(id: $id) { errors { message } }
-  }
-`
-const CREATE_MATERIAL_ROW = `
-  mutation ($input: CreatePurOutsourcedReceiptItemMaterialInput!) {
-    createPurOutsourcedReceiptItemMaterial(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_MATERIAL_ROW = `
-  mutation ($id: ID!, $input: UpdatePurOutsourcedReceiptItemMaterialInput!) {
-    updatePurOutsourcedReceiptItemMaterial(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_MATERIAL_ROW = `
-  mutation ($id: ID!) {
-    destroyPurOutsourcedReceiptItemMaterial(id: $id) { errors { message } }
-  }
-`
-const CREATE_BYPRODUCT_ROW = `
-  mutation ($input: CreatePurOutsourcedReceiptItemByproductInput!) {
-    createPurOutsourcedReceiptItemByproduct(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_BYPRODUCT_ROW = `
-  mutation ($id: ID!, $input: UpdatePurOutsourcedReceiptItemByproductInput!) {
-    updatePurOutsourcedReceiptItemByproduct(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_BYPRODUCT_ROW = `
-  mutation ($id: ID!) {
-    destroyPurOutsourcedReceiptItemByproduct(id: $id) { errors { message } }
-  }
-`
 
 function todayLocal(): string {
   const d = new Date()
@@ -216,11 +144,6 @@ const itemChanged = changedBy(ITEM_COMPARE_KEYS)
 const materialRowChanged = changedBy(MATERIAL_ROW_COMPARE_KEYS)
 const byproductRowChanged = changedBy(BYPRODUCT_ROW_COMPARE_KEYS)
 
-interface MutationResult {
-  result?: { id: string } | null
-  errors: { message: string }[] | null
-}
-
 /**
  * 行持久化通用件:先删(跳过将随父条目级联删的行)、再增、后改。
  * deletedItemIds=本次被删的入库条目 id——其扣减/副产物行由 DB 级联清理,不必(也不能)逐行删。
@@ -231,12 +154,7 @@ async function persistRows(opts: {
   deletedItemIds: Set<string>
   inputOf: (row: Row) => Record<string, unknown>
   changed: (before: Row, after: Row) => boolean
-  createMutation: string
-  updateMutation: string
-  destroyMutation: string
-  createKey: string
-  updateKey: string
-  destroyKey: string
+  client: ResourceClient
 }): Promise<string[]> {
   const errors: string[] = []
   const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
@@ -247,38 +165,43 @@ async function persistRows(opts: {
   for (const old of opts.snapshot) {
     if (currentIds.has(old.id)) continue
     if (opts.deletedItemIds.has(String(old.receiptItemId ?? ''))) continue
-    const data = await gqlFetch<Record<string, MutationResult>>(opts.destroyMutation, {
-      id: old.id,
-    })
-    collect(old.idx, data[opts.destroyKey]?.errors)
+    try {
+      await opts.client.delete(String(old.id))
+    } catch (error) {
+      collect(old.idx, [{ message: (error as Error).message }])
+    }
   }
 
   for (const row of opts.current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<Record<string, MutationResult>>(opts.createMutation, {
-        input: opts.inputOf(row),
-      })
-      collect(row.idx, data[opts.createKey]?.errors)
+      try {
+        await opts.client.create(opts.inputOf(row))
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
       continue
     }
     const old = opts.snapshot.find((s) => s.id === row.id)
     if (old && opts.changed(old, row)) {
-      const data = await gqlFetch<Record<string, MutationResult>>(opts.updateMutation, {
-        id: row.id,
-        input: opts.inputOf(row),
-      })
-      collect(row.idx, data[opts.updateKey]?.errors)
+      try {
+        await opts.client.update(String(row.id), opts.inputOf(row))
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
     }
   }
   return errors
 }
 
-/** 科目候选 filter。枚举值必须是 GraphQL enum 裸 token(不可 JSON 字符串)。 */
-function accountFilter(companyId: string | null, roleEnum?: string): string | undefined {
+/** 科目候选使用结构化 REST FilterState。 */
+function accountFilter(companyId: string | null, roleEnum?: string): FilterState | undefined {
   if (!companyId) return undefined
-  const base = `companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, active: {eq: true}`
-  if (roleEnum) return `{${base}, role: {eq: ${roleEnum}}}`
-  return `{${base}}`
+  return {
+    companyId: { kind: 'fk', op: 'in', values: [companyId], labels: [] },
+    isGroup: { kind: 'bool', eq: false },
+    active: { kind: 'bool', eq: true },
+    ...(roleEnum ? { role: { kind: 'enum' as const, values: [roleEnum] } } : {}),
+  }
 }
 
 /**
@@ -348,7 +271,7 @@ function ReceiptAccountFooter({
         onChange={(id) => patchValues({ debitAccountId: id })}
         isDisabled={isDisabled || !companyId || mode === 'view'}
         isRequired={mode !== 'view'}
-        filter={accountFilter(companyId)}
+        filterState={accountFilter(companyId)}
         labelField="name"
         searchFields={['name', 'code']}
         itemSubtitleFields={['code']}
@@ -361,7 +284,7 @@ function ReceiptAccountFooter({
         onChange={(id) => patchValues({ creditAccountId: id })}
         isDisabled={isDisabled || !companyId || mode === 'view'}
         isRequired={mode !== 'view'}
-        filter={accountFilter(companyId, 'UNBILLED_PAYABLE')}
+        filterState={accountFilter(companyId, 'UNBILLED_PAYABLE')}
         labelField="name"
         searchFields={['name', 'code']}
         itemSubtitleFields={['code']}
@@ -538,9 +461,13 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
   const companies = useQuery({
     queryKey: ['purOutsourcedReceipts', 'companies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { results { id name } } }`,
-      ).then((d) => d.basCompanies.results),
+      companyClient
+        .query({
+          limit: 50,
+          offset: 0,
+          sort: { column: 'code', direction: 'ascending' },
+        })
+        .then((result) => result.results),
   })
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
@@ -576,14 +503,39 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
       return
     }
     setDetailLoaded(false)
-    gqlFetch<{
-      purOutsourcedReceiptItems: { results: Row[] }
-      purOutsourcedReceiptItemMaterials: { results: Row[] }
-      purOutsourcedReceiptItemByproducts: { results: Row[] }
-    }>(FETCH_DETAIL, { receiptId })
-      .then((d) => {
+    purchaseOutsourcedReceiptItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          receiptId: { kind: 'fk', op: 'in', values: [receiptId], labels: [] },
+        },
+      })
+      .then(async (itemResult) => {
+        const itemIds = itemResult.results.map((item) => String(item.id))
+        const childFilter: FilterState = {
+          receiptItemId: { kind: 'fk', op: 'in', values: itemIds, labels: [] },
+        }
+        const [materialResult, byproductResult] =
+          itemIds.length === 0
+            ? [{ results: [] as Row[] }, { results: [] as Row[] }]
+            : await Promise.all([
+                purchaseOutsourcedReceiptItemMaterialClient.query({
+                  limit: 500,
+                  offset: 0,
+                  sort: { column: 'idx', direction: 'ascending' },
+                  filter: childFilter,
+                }),
+                purchaseOutsourcedReceiptItemByproductClient.query({
+                  limit: 500,
+                  offset: 0,
+                  sort: { column: 'idx', direction: 'ascending' },
+                  filter: childFilter,
+                }),
+              ])
         if (my !== reqIdRef.current) return
-        const rows = d.purOutsourcedReceiptItems.results
+        const rows = itemResult.results
         // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
         for (const r of rows) {
           if (r.orderItemId != null) {
@@ -601,8 +553,8 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             } as Row)
           }
         }
-        const materialRowList = d.purOutsourcedReceiptItemMaterials.results
-        const byproductRowList = d.purOutsourcedReceiptItemByproducts.results
+        const materialRowList = materialResult.results
+        const byproductRowList = byproductResult.results
         // 扣减/副产物行的清单行缓存预热(材料/单位快照名回显用)
         for (const r of [...materialRowList, ...byproductRowList]) {
           const lineId = r.orderItemMaterialId ?? r.orderItemByproductId
@@ -706,6 +658,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
       {children}
       <SynieRecordDrawer
         resource="purOutsourcedReceipts"
+        client={purchaseOutsourcedReceiptClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -939,6 +892,9 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             const isMaterial = kind === 'material'
             const lineField = isMaterial ? 'orderItemMaterialId' : 'orderItemByproductId'
             const lineResource = isMaterial ? 'purOrderItemMaterials' : 'purOrderItemByproducts'
+            const lineClient = isMaterial
+              ? purchaseOrderItemMaterialClient
+              : purchaseOrderItemByproductClient
             const lineLabel = isMaterial ? '发料清单行' : '副产物清单行'
             return {
               idx: { visible: () => false },
@@ -996,11 +952,19 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                     rv.receiptItemId != null ? itemById.get(String(rv.receiptItemId)) : undefined
                   const lineFilter =
                     parentItem?.orderItemId != null
-                      ? { orderItemId: { eq: String(parentItem.orderItemId) } }
+                      ? ({
+                          orderItemId: {
+                            kind: 'fk',
+                            op: 'in',
+                            values: [String(parentItem.orderItemId)],
+                            labels: [],
+                          },
+                        } satisfies FilterState)
                       : undefined
                   return (
                     <RemoteDialogSelect
                       resource={lineResource}
+                      client={lineClient}
                       label={lineLabel}
                       dialogTitle={`选择${lineLabel}`}
                       placeholder={lineFilter ? `点击选择${lineLabel}…` : '先选所属入库条目'}
@@ -1013,28 +977,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                           let row = line
                           if (id) {
                             try {
-                              const data = await gqlFetch<Record<string, { results: Row[] }>>(
-                                `query ($id: ID!) {
-                                  ${lineResource}(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
-                                    results { id quantity material { id code name spec } unit { id name } }
-                                  }
-                                }`,
-                                { id },
-                              )
-                              const full = data[lineResource].results[0]
-                              if (full) {
-                                const material = full.material as Row | null | undefined
-                                const unit = full.unit as Row | null | undefined
-                                row = {
-                                  ...full,
-                                  materialId: material?.id,
-                                  unitId: unit?.id,
-                                  materialCode: material?.code,
-                                  materialName: material?.name,
-                                  materialSpec: material?.spec,
-                                  unitName: unit?.name,
-                                } as Row
-                              }
+                              row = (await lineClient.get(id)) ?? row
                             } catch {
                               /* 回填失败时仍写入 id,提交靠后端强制带出兜底 */
                             }
@@ -1219,6 +1162,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               />
               <SynieEditableTable
                 resource="purOutsourcedReceiptItems"
+                client={purchaseOutsourcedReceiptItemClient}
                 label="入库条目"
                 items={items}
                 onChange={setItems}
@@ -1365,6 +1309,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               </p>
               <SynieEditableTable
                 resource="purOutsourcedReceiptItemMaterials"
+                client={purchaseOutsourcedReceiptItemMaterialClient}
                 label="材料扣减行"
                 items={materialRows}
                 onChange={setMaterialRows}
@@ -1418,6 +1363,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               />
               <SynieEditableTable
                 resource="purOutsourcedReceiptItemByproducts"
+                client={purchaseOutsourcedReceiptItemByproductClient}
                 label="副产物行"
                 items={byproductRows}
                 onChange={setByproductRows}
@@ -1481,7 +1427,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               .filter((old) => !items.some((r) => !isLocalRow(r) && r.id === old.id))
               .map((old) => String(old.id)),
           )
-          const persistSideRows = (receiptId: string) =>
+          const persistSideRows = () =>
             Promise.all([
               persistRows({
                 current: materialRows,
@@ -1489,12 +1435,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                 deletedItemIds,
                 inputOf: materialRowInput,
                 changed: materialRowChanged,
-                createMutation: CREATE_MATERIAL_ROW,
-                updateMutation: UPDATE_MATERIAL_ROW,
-                destroyMutation: DESTROY_MATERIAL_ROW,
-                createKey: 'createPurOutsourcedReceiptItemMaterial',
-                updateKey: 'updatePurOutsourcedReceiptItemMaterial',
-                destroyKey: 'destroyPurOutsourcedReceiptItemMaterial',
+                client: purchaseOutsourcedReceiptItemMaterialClient,
               }),
               persistRows({
                 current: byproductRows,
@@ -1502,12 +1443,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                 deletedItemIds,
                 inputOf: byproductRowInput,
                 changed: byproductRowChanged,
-                createMutation: CREATE_BYPRODUCT_ROW,
-                updateMutation: UPDATE_BYPRODUCT_ROW,
-                destroyMutation: DESTROY_BYPRODUCT_ROW,
-                createKey: 'createPurOutsourcedReceiptItemByproduct',
-                updateKey: 'updatePurOutsourcedReceiptItemByproduct',
-                destroyKey: 'destroyPurOutsourcedReceiptItemByproduct',
+                client: purchaseOutsourcedReceiptItemByproductClient,
               }),
             ]).then(([a, b]) => [...a, ...b])
 
@@ -1519,41 +1455,42 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
             for (const old of snapshot) {
               if (currentIds.has(old.id)) continue
-              const data = await gqlFetch<{ destroyPurOutsourcedReceiptItem: MutationResult }>(
-                DESTROY_ITEM,
-                { id: old.id },
-              )
-              collect(old.idx, data.destroyPurOutsourcedReceiptItem?.errors)
+              try {
+                await purchaseOutsourcedReceiptItemClient.delete(String(old.id))
+              } catch (error) {
+                collect(old.idx, [{ message: (error as Error).message }])
+              }
             }
             for (const row of current) {
               if (isLocalRow(row)) {
-                const data = await gqlFetch<{ createPurOutsourcedReceiptItem: MutationResult }>(
-                  CREATE_ITEM,
-                  { input: { receiptId, ...itemInput(row) } },
-                )
-                collect(row.idx, data.createPurOutsourcedReceiptItem?.errors)
+                try {
+                  await purchaseOutsourcedReceiptItemClient.create({
+                    receiptId,
+                    ...itemInput(row),
+                  })
+                } catch (error) {
+                  collect(row.idx, [{ message: (error as Error).message }])
+                }
                 continue
               }
               const old = snapshot.find((s) => s.id === row.id)
               if (old && itemChanged(old, row)) {
-                const data = await gqlFetch<{ updatePurOutsourcedReceiptItem: MutationResult }>(
-                  UPDATE_ITEM,
-                  { id: row.id, input: itemInput(row) },
-                )
-                collect(row.idx, data.updatePurOutsourcedReceiptItem?.errors)
+                try {
+                  await purchaseOutsourcedReceiptItemClient.update(
+                    String(row.id),
+                    itemInput(row),
+                  )
+                } catch (error) {
+                  collect(row.idx, [{ message: (error as Error).message }])
+                }
               }
             }
             return errors
           }
 
           if (mode === 'create') {
-            const data = await gqlFetch<{ createPurOutsourcedReceipt: MutationResult }>(
-              CREATE_RECEIPT,
-              { input: values },
-            )
-            const res = data.createPurOutsourcedReceipt
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const receiptId = res!.result!.id
+            const saved = await purchaseOutsourcedReceiptClient.create(values)
+            const receiptId = String(saved.id)
             const itemErrors = await persistItemRows(receiptId, items, [])
             if (itemErrors.length > 0) {
               toast.danger('入库单已创建,但部分条目保存失败', {
@@ -1564,17 +1501,9 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             }
             savedId = receiptId
           } else {
-            const data = await gqlFetch<{ updatePurOutsourcedReceipt: MutationResult }>(
-              UPDATE_RECEIPT,
-              {
-                id: drawer!.row!.id,
-                input: values,
-              },
-            )
-            const res = data.updatePurOutsourcedReceipt
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
+            await purchaseOutsourcedReceiptClient.update(drawer!.row!.id, values)
             const itemErrors = await persistItemRows(drawer!.row!.id, items, itemsSnapshot)
-            const rowErrors = await persistSideRows(drawer!.row!.id)
+            const rowErrors = await persistSideRows()
             const allErrors = [...itemErrors, ...rowErrors]
             if (allErrors.length > 0) {
               toast.danger('入库单已更新,但部分行保存失败', {

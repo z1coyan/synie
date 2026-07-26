@@ -4,6 +4,7 @@ import { CodeBlock } from '@heroui-pro/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
+import { auditLogClient } from '~/lib/resources/system-ops'
 
 export const Route = createFileRoute('/_app/system/logs')({
   component: LogsPage,
@@ -34,7 +35,7 @@ const ACTION_LABELS: Record<string, string> = {
   auto_destroy: '联动删除',
 }
 
-// 值为 Track 落库的 GraphQL type 名;新资源接审计后在此补中文,漏了则原样显示英文
+// 值为 Track 落库的资源名;新资源接审计后在此补中文,漏了则原样显示英文
 const RESOURCE_LABELS: Record<string, string> = {
   sys_role: '角色',
   sys_user: '用户',
@@ -137,7 +138,7 @@ const FIELD_LABELS: Record<string, string> = {
 // id 列展示原始 uuid 无阅读价值,记录名称/操作人已够定位;需要按 id 排查时直接查库
 const EXCLUDE = ['recordId', 'actorId', 'companyId']
 
-/** changes 经 GraphQL JsonString 标量到达是 JSON 串;兼容将来切 Json 标量直接给对象的情况 */
+/** REST 直接返回 JSON 对象;兼容迁移前已缓存的 JsonString 形态 */
 function parseChanges(value: unknown): Record<string, { from?: unknown; to?: unknown }> | null {
   const parsed = typeof value === 'string' && value ? safeJsonParse(value) : value
   return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
@@ -201,6 +202,7 @@ function LogsPage() {
         {/* 审计日志只读:不传 onCreate/onEdit 即无新增/编辑入口 */}
         <SynieDataGrid
           resource="sysAuditLogs"
+          client={auditLogClient}
           exclude={EXCLUDE}
           overrides={GRID_OVERRIDES}
           onView={setRow}
@@ -209,6 +211,7 @@ function LogsPage() {
 
       <SynieRecordDrawer
         resource="sysAuditLogs"
+        client={auditLogClient}
         label="操作日志"
         mode="view"
         isOpen={row !== null}

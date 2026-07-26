@@ -3,11 +3,6 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
-import { gqlFetch } from '~/lib/graphql'
-import { BankImportCreateDrawer } from '~/components/bank-import/BankImportCreateDrawer'
-import { BankImportHistoryDrawer } from '~/components/bank-import/BankImportHistoryDrawer'
-import { BankImportRecordDrawer } from '~/components/bank-import/BankImportRecordDrawer'
-import { ReconcileDrawer } from '~/components/bank-reconcile/ReconcileDrawer'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -15,21 +10,15 @@ import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import {
+  bankTransactionClient,
+} from '~/lib/resources/finance-operations'
+import { FinanceBankImportDrawers } from './-bank-import-drawers'
+import { FinanceReconcileDrawer } from './-reconcile-drawer'
 
 export const Route = createFileRoute('/_app/finance/bank-transactions')({
   component: BankTransactionsPage,
 })
-
-const CREATE_BANK_TRANSACTION = `
-  mutation ($input: CreateAccBankTransactionInput!) {
-    createAccBankTransaction(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_BANK_TRANSACTION = `
-  mutation ($id: ID!, $input: UpdateAccBankTransactionInput!) {
-    updateAccBankTransaction(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 // 列序对齐银行流水单心智:身份(公司/账户)→ 时间 → 交易内容(摘要/对方)→ 金额(收/支)
 // → 对账扩展区(状态/未对账)收尾。余额是银行口径快照(常空、扫读噪音)不进表格,
@@ -106,6 +95,7 @@ function BankTransactionsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accBankTransactions"
+          client={bankTransactionClient}
           columns={GRID_COLUMNS}
           attachmentImages={{ ownerType: 'acc_bank_transaction', label: '回单' }}
           defaultSort={{ column: 'occurredAt', direction: 'descending' }}
@@ -123,33 +113,25 @@ function BankTransactionsPage() {
         />
       </div>
 
-      <BankImportCreateDrawer
-        isOpen={importCreateOpen}
-        onOpenChange={setImportCreateOpen}
-        onParsed={(result) => {
-          setHistoryKey((k) => k + 1)
-          setImportRecordId(result.id)
-        }}
-      />
-
-      <BankImportRecordDrawer
+      <FinanceBankImportDrawers
+        createOpen={importCreateOpen}
+        onCreateOpenChange={setImportCreateOpen}
+        historyOpen={historyOpen}
+        onHistoryOpenChange={setHistoryOpen}
+        historyKey={historyKey}
         importId={importRecordId}
-        onOpenChange={(open) => !open && setImportRecordId(null)}
-        onImported={() => {
-          setHistoryKey((k) => k + 1)
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankTransactions'] })
+        onImportIdChange={setImportRecordId}
+        onChanged={() => {
+          setHistoryKey((key) => key + 1)
+          queryClient.invalidateQueries({
+            queryKey: ['gridRows', 'accBankTransactions'],
+          })
         }}
-      />
-
-      <BankImportHistoryDrawer
-        isOpen={historyOpen}
-        onOpenChange={setHistoryOpen}
-        onOpenRecord={(id) => setImportRecordId(id)}
-        reloadKey={historyKey}
       />
 
       <SynieRecordDrawer
         resource="accBankTransactions"
+        client={bankTransactionClient}
         label="银行流水"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -213,27 +195,17 @@ function BankTransactionsPage() {
         )}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
           if (mode === 'create') {
-            const data = await gqlFetch<{ createAccBankTransaction: { errors: { message: string }[] | null } }>(
-              CREATE_BANK_TRANSACTION,
-              { input: values }
-            )
-            errors = data.createAccBankTransaction.errors
+            await bankTransactionClient.create(values)
           } else {
-            const data = await gqlFetch<{ updateAccBankTransaction: { errors: { message: string }[] | null } }>(
-              UPDATE_BANK_TRANSACTION,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updateAccBankTransaction.errors
+            await bankTransactionClient.update(drawer!.row!.id, values)
           }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '银行流水已登记' : '银行流水已更新')
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankTransactions'] })
         }}
       />
 
-      <ReconcileDrawer
+      <FinanceReconcileDrawer
         txn={reconcileTxn}
         onOpenChange={(open) => !open && setReconcileTxn(null)}
         // 对账增删改变派生列:失效列表查询即可,分页/筛选状态得以保留(main 的 query 失效范式)

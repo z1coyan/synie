@@ -9,7 +9,11 @@ import {
 } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextField, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { companyClient } from '~/lib/resources/companies'
+import {
+  purchaseOutsourcedIssueClient,
+  purchaseOutsourcedIssueItemClient,
+} from '~/lib/resources/fulfillment'
 import { queryOutsourcedWarehouses } from '~/lib/resources/inventory'
 import { purchaseOrderItemMaterialClient } from '~/lib/resources/orders'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -43,6 +47,18 @@ export const issueAuditConfig = {
     { key: 'baseQty', label: '折算数量', align: 'end' },
     { key: 'remarks', label: '行备注' },
   ],
+  loadItems: (issueId: string) =>
+    purchaseOutsourcedIssueItemClient
+      .query({
+        limit: 500,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          issueId: { kind: 'fk', op: 'in', values: [issueId], labels: [] },
+        },
+      })
+      .then((result) => result.results),
+  audit: (issueId: string) => purchaseOutsourcedIssueClient.action!('audit', [issueId]),
 } satisfies AuditDocConfig
 
 const IssueDrawerContext = createContext<OpenIssueDrawer>(() => {})
@@ -50,50 +66,6 @@ const IssueDrawerContext = createContext<OpenIssueDrawer>(() => {})
 export function useIssueDrawer(): OpenIssueDrawer {
   return useContext(IssueDrawerContext)
 }
-
-const CREATE_ISSUE = `
-  mutation ($input: CreatePurOutsourcedIssueInput!) {
-    createPurOutsourcedIssue(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ISSUE = `
-  mutation ($id: ID!, $input: UpdatePurOutsourcedIssueInput!) {
-    updatePurOutsourcedIssue(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-// 只取快照与 id 字段,不 join material/unit/warehouse——
-// 嵌套加载会走对方资源权限,无 read 时 GraphQL 非空关系变 null 整查询失败。
-const FETCH_ITEMS = `
-  query ($issueId: ID!) {
-    purOutsourcedIssueItems(
-      filter: {issueId: {eq: $issueId}}
-      sort: [{field: IDX, order: ASC}]
-      limit: 200
-      offset: 0
-    ) {
-      results {
-        id idx orderItemMaterialId qty baseQty remarks
-        fromWarehouseId outsourcedWarehouseId
-        materialCode materialName materialSpec unitName orderNo
-      }
-    }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreatePurOutsourcedIssueItemInput!) {
-    createPurOutsourcedIssueItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdatePurOutsourcedIssueItemInput!) {
-    updatePurOutsourcedIssueItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroyPurOutsourcedIssueItem(id: $id) { errors { message } }
-  }
-`
 
 function todayLocal(): string {
   const d = new Date()
@@ -126,11 +98,6 @@ function itemChanged(before: Row, after: Row): boolean {
   return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
 }
 
-interface MutationResult {
-  result?: { id: string } | null
-  errors: { message: string }[] | null
-}
-
 async function persistItems(issueId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
   const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
@@ -140,27 +107,29 @@ async function persistItems(issueId: string, current: Row[], snapshot: Row[]): P
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroyPurOutsourcedIssueItem: MutationResult }>(DESTROY_ITEM, {
-      id: old.id,
-    })
-    collect(old.idx, data.destroyPurOutsourcedIssueItem?.errors)
+    try {
+      await purchaseOutsourcedIssueItemClient.delete(String(old.id))
+    } catch (error) {
+      collect(old.idx, [{ message: (error as Error).message }])
+    }
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createPurOutsourcedIssueItem: MutationResult }>(CREATE_ITEM, {
-        input: { issueId, ...itemInput(row) },
-      })
-      collect(row.idx, data.createPurOutsourcedIssueItem?.errors)
+      try {
+        await purchaseOutsourcedIssueItemClient.create({ issueId, ...itemInput(row) })
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{ updatePurOutsourcedIssueItem: MutationResult }>(UPDATE_ITEM, {
-        id: row.id,
-        input: itemInput(row),
-      })
-      collect(row.idx, data.updatePurOutsourcedIssueItem?.errors)
+      try {
+        await purchaseOutsourcedIssueItemClient.update(String(row.id), itemInput(row))
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
     }
   }
   return errors
@@ -322,9 +291,13 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
   const companies = useQuery({
     queryKey: ['purOutsourcedIssues', 'companies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { results { id name } } }`,
-      ).then((d) => d.basCompanies.results),
+      companyClient
+        .query({
+          limit: 50,
+          offset: 0,
+          sort: { column: 'code', direction: 'ascending' },
+        })
+        .then((result) => result.results),
   })
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
@@ -351,12 +324,18 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
       return
     }
     setDetailLoaded(false)
-    gqlFetch<{ purOutsourcedIssueItems: { results: Row[] } }>(FETCH_ITEMS, {
-      issueId,
-    })
-      .then((d) => {
+    purchaseOutsourcedIssueItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          issueId: { kind: 'fk', op: 'in', values: [issueId], labels: [] },
+        },
+      })
+      .then((result) => {
         if (my !== reqIdRef.current) return
-        const rows = d.purOutsourcedIssueItems.results
+        const rows = result.results
         // 编辑态预热缓存:存量行不必再点选清单行也能过校验/回填(快照即显示源)
         for (const r of rows) {
           if (r.orderItemMaterialId != null) {
@@ -446,6 +425,7 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
       {children}
       <SynieRecordDrawer
         resource="purOutsourcedIssues"
+        client={purchaseOutsourcedIssueClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -670,6 +650,7 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
               />
               <SynieEditableTable
                 resource="purOutsourcedIssueItems"
+                client={purchaseOutsourcedIssueItemClient}
                 label="发料条目"
                 items={items}
                 onChange={setItems}
@@ -792,13 +773,8 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{ createPurOutsourcedIssue: MutationResult }>(
-              CREATE_ISSUE,
-              { input: values },
-            )
-            const res = data.createPurOutsourcedIssue
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
-            const issueId = res!.result!.id
+            const saved = await purchaseOutsourcedIssueClient.create(values)
+            const issueId = String(saved.id)
             const itemErrors = await persistItems(issueId, items, [])
             if (itemErrors.length > 0) {
               toast.danger('发料单已创建,但部分条目保存失败', {
@@ -809,15 +785,7 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
             }
             savedId = issueId
           } else {
-            const data = await gqlFetch<{ updatePurOutsourcedIssue: MutationResult }>(
-              UPDATE_ISSUE,
-              {
-                id: drawer!.row!.id,
-                input: values,
-              },
-            )
-            const res = data.updatePurOutsourcedIssue
-            if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join('; '))
+            await purchaseOutsourcedIssueClient.update(drawer!.row!.id, values)
             const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('发料单已更新,但部分条目保存失败', {

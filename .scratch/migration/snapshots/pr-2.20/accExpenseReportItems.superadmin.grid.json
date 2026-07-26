@@ -1,0 +1,140 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行号",
+      "name": "idx",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "挂票",
+          "value": "INVOICED"
+        },
+        {
+          "label": "无票",
+          "value": "MANUAL"
+        }
+      ],
+      "filterable": true,
+      "label": "行类型(挂票/无票)",
+      "name": "kind",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "摘要(无票行必填)",
+      "name": "summary",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "金额(无票行必填;挂票行金额取发票价税合计,不冗余存储)",
+      "name": "amount",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行备注",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "报销单",
+      "name": "reportId",
+      "ref": {
+        "labelField": "docNo",
+        "relation": "report",
+        "resource": "accExpenseReports"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "公司",
+      "name": "companyId",
+      "ref": {
+        "labelField": "name",
+        "relation": "company",
+        "resource": "basCompanies"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "挂票发票(挂票行必填)",
+      "name": "invoiceId",
+      "ref": {
+        "labelField": "docNo",
+        "relation": "invoice",
+        "resource": "accVatInvoices"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "费用科目(无票行必填)",
+      "name": "expenseAccountId",
+      "ref": {
+        "labelField": "name",
+        "relation": "expenseAccount",
+        "resource": "basAccounts"
+      },
+      "sortable": false,
+      "type": "fk"
+    }
+  ],
+  "destroyMutation": "destroyAccExpenseReportItem",
+  "extendedActions": []
+}

@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
@@ -10,21 +9,11 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { bankAccountClient } from '~/lib/resources/finance-operations'
 
 export const Route = createFileRoute('/_app/finance/bank-accounts')({
   component: BankAccountsPage,
 })
-
-const CREATE_BANK_ACCOUNT = `
-  mutation ($input: CreateAccBankAccountInput!) {
-    createAccBankAccount(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_BANK_ACCOUNT = `
-  mutation ($id: ID!, $input: UpdateAccBankAccountInput!) {
-    updateAccBankAccount(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 // 公司放首列;支行/备注/时间戳不进表格(有序白名单,兼当 exclude)
 const GRID_COLUMNS = [
@@ -50,14 +39,14 @@ function BankAccountsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accBankAccounts"
+          client={bankAccountClient}
           columns={GRID_COLUMNS}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
           rowActions={statusToggleActions({
             field: 'active',
-            mutation: UPDATE_BANK_ACCOUNT,
-            resultKey: 'updateAccBankAccount',
+            update: bankAccountClient.update,
             rowLabel: (row) => String(row.alias ?? ''),
             // 抽屉走 rowId 自查,状态翻转后一并失效行缓存
             onDone: () => queryClient.invalidateQueries({ queryKey: ['rowById', 'accBankAccounts'] }),
@@ -67,6 +56,7 @@ function BankAccountsPage() {
 
       <SynieRecordDrawer
         resource="accBankAccounts"
+        client={bankAccountClient}
         label="银行账户"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -121,21 +111,11 @@ function BankAccountsPage() {
         )}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
           if (mode === 'create') {
-            const data = await gqlFetch<{ createAccBankAccount: { errors: { message: string }[] | null } }>(
-              CREATE_BANK_ACCOUNT,
-              { input: values }
-            )
-            errors = data.createAccBankAccount.errors
+            await bankAccountClient.create(values)
           } else {
-            const data = await gqlFetch<{ updateAccBankAccount: { errors: { message: string }[] | null } }>(
-              UPDATE_BANK_ACCOUNT,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updateAccBankAccount.errors
+            await bankAccountClient.update(drawer!.row!.id, values)
           }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '银行账户已创建' : '银行账户已更新')
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankAccounts'] })
         }}

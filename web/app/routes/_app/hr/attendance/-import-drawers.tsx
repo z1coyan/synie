@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, Checkbox, toast } from '@heroui/react'
 import { DropZone } from '@heroui-pro/react'
-import { gqlFetch } from '~/lib/graphql'
 import { uploadFile } from '~/lib/files'
 import { employeeClient } from '~/lib/resources/employees'
+import {
+  attendanceImportClient,
+  createAttendanceImport,
+  importAttendanceImport,
+} from '~/lib/resources/hr-operations'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-
-/** 考勤导入的 GraphQL 操作与结果形状 */
 
 export interface ParseResult {
   id: string
@@ -17,35 +19,6 @@ export interface ParseResult {
   totalRows: number | null
   matchedRows: number | null
   unmatchedRows: number | null
-}
-
-const CREATE_ATTENDANCE_IMPORT = `
-  mutation ($input: CreateHrAttendanceImportInput!) {
-    createHrAttendanceImport(input: $input) {
-      result { id status error totalRows matchedRows unmatchedRows }
-      errors { message }
-    }
-  }
-`
-
-const IMPORT_ATTENDANCE_IMPORT = `
-  mutation ($id: ID!, $input: ImportHrAttendanceImportInput) {
-    importHrAttendanceImport(id: $id, input: $input) {
-      result { id importedCount skippedExistingRows skippedUnmatchedRows autoCreatedCount }
-      errors { message }
-    }
-  }
-`
-
-export const DESTROY_ATTENDANCE_IMPORT = `
-  mutation ($id: ID!) {
-    destroyHrAttendanceImport(id: $id) { errors { message } }
-  }
-`
-
-/** AshGraphql mutation 的业务错误不走异常通道,统一在此抛出交给调用方 toast */
-export function throwOnErrors(errors: { message: string }[] | null | undefined): void {
-  if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
 }
 
 function formatFileSize(bytes: number): string {
@@ -84,6 +57,7 @@ export function AttendanceImportCreateDrawer({ isOpen, onOpenChange, onParsed }:
   return (
     <SynieRecordDrawer
       resource="hrAttendanceImports"
+      client={attendanceImportClient}
       label="考勤导入"
       mode="create"
       isOpen={isOpen}
@@ -150,12 +124,7 @@ export function AttendanceImportCreateDrawer({ isOpen, onOpenChange, onParsed }:
         // 先传文件字节(REST),拿到 fileId 再建批次;create 失败会留下孤儿文件,可接受(照银行导入)
         const uploaded = await uploadFile(file)
 
-        const data = await gqlFetch<{
-          createHrAttendanceImport: { result: ParseResult | null; errors: { message: string }[] | null }
-        }>(CREATE_ATTENDANCE_IMPORT, { input: { fileId: uploaded.file.id } })
-        throwOnErrors(data.createHrAttendanceImport.errors)
-
-        const result = data.createHrAttendanceImport.result!
+        const result = await createAttendanceImport(uploaded.file.id)
         if (result.status === 'FAILED') {
           // 解析失败也算批次建成:不抛错(抛错不关抽屉且暗示可重试),开批次抽屉看原因
           toast.danger('解析失败', { description: result.error ?? '请检查文件内容' })
@@ -204,20 +173,7 @@ export function AttendanceImportRecordDrawer({ importId, onOpenChange, onImporte
     if (!importAsk) return
     setRunning(true)
     try {
-      const data = await gqlFetch<{
-        importHrAttendanceImport: {
-          result: {
-            importedCount: number
-            skippedExistingRows: number
-            skippedUnmatchedRows: number
-            autoCreatedCount: number
-          } | null
-          errors: { message: string }[] | null
-        }
-      }>(IMPORT_ATTENDANCE_IMPORT, { id: importAsk.id, input: { autoCreateEmployees: autoCreate } })
-      throwOnErrors(data.importHrAttendanceImport.errors)
-
-      const r = data.importHrAttendanceImport.result!
+      const r = await importAttendanceImport(importAsk.id, autoCreate)
       const skipped = [
         r.skippedExistingRows > 0 ? `跳过已存在 ${r.skippedExistingRows} 条` : null,
         r.skippedUnmatchedRows > 0 ? `跳过未匹配 ${r.skippedUnmatchedRows} 条` : null,
@@ -241,6 +197,7 @@ export function AttendanceImportRecordDrawer({ importId, onOpenChange, onImporte
     <>
       <SynieRecordDrawer
         resource="hrAttendanceImports"
+        client={attendanceImportClient}
         label="考勤导入"
         mode="view"
         isOpen={importId !== null}

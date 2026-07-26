@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
+import { salesDeliveryClient } from '~/lib/resources/fulfillment'
 import { useAuditDoc } from '../-audit-doc'
 import { deliveryAuditConfig, useDeliveryDrawer } from './-delivery-drawer'
 
@@ -39,6 +40,7 @@ function DeliveriesTab() {
     <>
       <SynieDataGrid
         resource="salDeliveries"
+        client={salesDeliveryClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'deliveryDate', direction: 'descending' }}

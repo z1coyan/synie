@@ -1,0 +1,214 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "入库单号",
+      "name": "receiptNo",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "入库日期(库存分录业务日)",
+      "name": "receiptDate",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "过账日期(总账;有金额审核时必填)",
+      "name": "postingDate",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "供应商",
+          "value": "SUPPLIER"
+        },
+        {
+          "label": "客户",
+          "value": "CUSTOMER"
+        },
+        {
+          "label": "内部公司",
+          "value": "COMPANY"
+        },
+        {
+          "label": "员工",
+          "value": "EMPLOYEE"
+        }
+      ],
+      "filterable": true,
+      "label": "对手类型(供应商/内部公司,须与所引委外订单一致)",
+      "name": "partyType",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "对手",
+      "name": "partyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "备注(对内;可带入库存分录)",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "草稿",
+          "value": "DRAFT"
+        },
+        {
+          "label": "已审核",
+          "value": "AUDITED"
+        },
+        {
+          "label": "已作废",
+          "value": "VOIDED"
+        }
+      ],
+      "filterable": true,
+      "label": "状态",
+      "name": "status",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "审核时间",
+      "name": "auditedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "公司",
+      "name": "companyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "默认入仓(可空,成品行/副产物行新建与带出预填)",
+      "name": "warehouseId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "默认外协仓(可空,材料扣减行带出预填;限绑定当前对手)",
+      "name": "outsourcedWarehouseId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "借方科目(自选:存货/费用等;草稿必填)",
+      "name": "debitAccountId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "贷方科目(未开票应付;草稿必填)",
+      "name": "creditAccountId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "录入人",
+      "name": "createdById",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "审核人",
+      "name": "auditedById",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    }
+  ],
+  "destroyMutation": "destroyPurOutsourcedReceipt",
+  "extendedActions": [
+    {
+      "isDanger": false,
+      "key": "audit",
+      "label": "审核",
+      "mutation": "auditPurOutsourcedReceipt",
+      "scope": "row"
+    },
+    {
+      "isDanger": true,
+      "key": "void",
+      "label": "作废",
+      "mutation": "voidPurOutsourcedReceipt",
+      "scope": "row"
+    }
+  ]
+}

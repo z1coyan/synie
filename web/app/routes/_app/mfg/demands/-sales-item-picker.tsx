@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Checkbox, Modal, Spinner, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
-import { gqlFetch } from '~/lib/graphql'
 import { localRowId } from '~/components/synie-editable-table/editable'
 import type { Row } from '~/components/synie-data-grid/types'
+import { apiClient, apiData } from '~/lib/api/client'
+import { salesOrderItemClient } from '~/lib/resources/orders'
 
 /**
  * 「从销售订单选择」多选对话框(US 2/6):条目池 = 同公司、订单已审核未关闭、
@@ -17,28 +18,6 @@ import type { Row } from '~/components/synie-data-grid/types'
  * 复用 mfg.demand:read,本身不需要销售权限。
  */
 
-const CANDIDATES = `
-  query ($companyId: ID!) {
-    salOrderItems(
-      filter: {and: [{companyId: {eq: $companyId}}, {orderStatus: {eq: AUDITED}}]}
-      sort: [{field: ORDER_DATE, order: DESC}]
-      limit: 200
-      offset: 0
-    ) {
-      results {
-        id qty baseQty materialId unitId materialCode materialName materialSpec unitName
-        order { id orderNo }
-      }
-    }
-  }
-`
-
-const OCCUPANCIES = `
-  query ($ids: [UUID!]!) {
-    mfgSalesItemOccupancies(salesOrderItemIds: $ids)
-  }
-`
-
 interface Occupancy {
   salesOrderItemId: string
   orderedBaseQty: string
@@ -46,7 +25,6 @@ interface Occupancy {
   remainingBaseQty: string
 }
 
-// generic action 的 map 数组经 GraphQL 是 JsonString 标量(照 invStockBalance 先例)
 function parseOccupancies(raw: unknown): Map<string, Occupancy> {
   const list = Array.isArray(raw) ? raw : []
   const map = new Map<string, Occupancy>()
@@ -69,7 +47,8 @@ function suggestQty(item: Row, remainingBaseQty: string): number {
   const base = Number(item.baseQty)
   const qty = Number(item.qty)
   const remaining = Number(remainingBaseQty)
-  if (!Number.isFinite(base) || base <= 0 || !Number.isFinite(qty)) return remaining
+  if (!Number.isFinite(base) || base <= 0 || !Number.isFinite(qty))
+    return remaining
   return Number(((remaining * qty) / base).toFixed(6))
 }
 
@@ -90,19 +69,37 @@ export function SalesItemPicker(props: {
     queryKey: ['salesItemPool', props.companyId],
     enabled: open && !!props.companyId,
     queryFn: () =>
-      gqlFetch<{ salOrderItems: { results: Row[] } }>(CANDIDATES, { companyId: props.companyId }).then(
-        (d) => d.salOrderItems.results,
-      ),
+      salesOrderItemClient
+        .query({
+          limit: 200,
+          offset: 0,
+          sort: { column: 'orderDate', direction: 'descending' },
+          filter: {
+            companyId: {
+              kind: 'fk',
+              op: 'in',
+              values: [props.companyId!],
+              labels: [],
+            },
+            orderStatus: { kind: 'enum', values: ['AUDITED'] },
+          },
+        })
+        .then((result) => result.results),
   })
 
-  const ids = useMemo(() => (candidates.data ?? []).map((r) => r.id), [candidates.data])
+  const ids = useMemo(
+    () => (candidates.data ?? []).map((r) => r.id),
+    [candidates.data],
+  )
   const occupancies = useQuery({
     queryKey: ['mfgSalesItemOccupancies', ids],
     enabled: open && ids.length > 0,
     queryFn: () =>
-      gqlFetch<{ mfgSalesItemOccupancies: unknown }>(OCCUPANCIES, { ids }).then((d) =>
-        parseOccupancies(d.mfgSalesItemOccupancies),
-      ),
+      apiData(
+        apiClient.POST('/manufacturing/sales-item-occupancies', {
+          body: { salesOrderItemIds: ids },
+        }),
+      ).then((result) => parseOccupancies(result.results)),
   })
 
   // 条目池:剩余可占用 > 0 且不在本单已纳来源里(占用只认已确认需求单,草稿不占)
@@ -142,7 +139,11 @@ export function SalesItemPicker(props: {
           salesOrderItemId: r.id,
           remarks: null,
           // 带上 join 对象,表格 fk 单元格零反查直接显示标签
-          material: { id: r.materialId, code: r.materialCode, name: r.materialName },
+          material: {
+            id: r.materialId,
+            code: r.materialCode,
+            name: r.materialName,
+          },
           unit: { id: r.unitId, name: r.unitName },
         } as Row
       })
@@ -150,7 +151,8 @@ export function SalesItemPicker(props: {
     setOpen(false)
   }
 
-  const loading = candidates.isPending || (ids.length > 0 && occupancies.isPending)
+  const loading =
+    candidates.isPending || (ids.length > 0 && occupancies.isPending)
   const loadError = candidates.error ?? occupancies.error
 
   return (
@@ -183,7 +185,9 @@ export function SalesItemPicker(props: {
                 <EmptyState size="sm" className="h-48 justify-center">
                   <EmptyState.Header>
                     <EmptyState.Title>候选条目加载失败</EmptyState.Title>
-                    <EmptyState.Description>{(loadError as Error).message}</EmptyState.Description>
+                    <EmptyState.Description>
+                      {(loadError as Error).message}
+                    </EmptyState.Description>
                   </EmptyState.Header>
                   <EmptyState.Content>
                     <Button
@@ -218,7 +222,9 @@ export function SalesItemPicker(props: {
                         <Table.Column>单位</Table.Column>
                         <Table.Column className="text-end">订购</Table.Column>
                         <Table.Column className="text-end">已占用</Table.Column>
-                        <Table.Column className="text-end">剩余可占用</Table.Column>
+                        <Table.Column className="text-end">
+                          剩余可占用
+                        </Table.Column>
                       </Table.Header>
                       <Table.Body>
                         {pool.map((r) => {
@@ -239,21 +245,37 @@ export function SalesItemPicker(props: {
                                   </Checkbox.Content>
                                 </Checkbox>
                               </Table.Cell>
-                              <Table.Cell>{String((r.order as Row | null)?.orderNo ?? '—')}</Table.Cell>
+                              <Table.Cell>
+                                {String(
+                                  (r.order as Row | null)?.orderNo ?? '—',
+                                )}
+                              </Table.Cell>
                               <Table.Cell>
                                 <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
                                   <span className="truncate font-medium">
-                                    {String(r.materialCode ?? '')} {String(r.materialName ?? '')}
+                                    {String(r.materialCode ?? '')}{' '}
+                                    {String(r.materialName ?? '')}
                                   </span>
-                                  {r.materialSpec != null && r.materialSpec !== '' && (
-                                    <span className="truncate text-xs text-muted">规格 {String(r.materialSpec)}</span>
-                                  )}
+                                  {r.materialSpec != null &&
+                                    r.materialSpec !== '' && (
+                                      <span className="truncate text-xs text-muted">
+                                        规格 {String(r.materialSpec)}
+                                      </span>
+                                    )}
                                 </div>
                               </Table.Cell>
-                              <Table.Cell>{String(r.unitName ?? '—')}</Table.Cell>
-                              <Table.Cell className="text-end">{formatQty(o.orderedBaseQty)}</Table.Cell>
-                              <Table.Cell className="text-end">{formatQty(o.occupiedBaseQty)}</Table.Cell>
-                              <Table.Cell className="text-end">{formatQty(o.remainingBaseQty)}</Table.Cell>
+                              <Table.Cell>
+                                {String(r.unitName ?? '—')}
+                              </Table.Cell>
+                              <Table.Cell className="text-end">
+                                {formatQty(o.orderedBaseQty)}
+                              </Table.Cell>
+                              <Table.Cell className="text-end">
+                                {formatQty(o.occupiedBaseQty)}
+                              </Table.Cell>
+                              <Table.Cell className="text-end">
+                                {formatQty(o.remainingBaseQty)}
+                              </Table.Cell>
                             </Table.Row>
                           )
                         })}
@@ -264,7 +286,9 @@ export function SalesItemPicker(props: {
               )}
             </Modal.Body>
             <Modal.Footer>
-              <span className="mr-auto text-sm text-muted">已选 {selected.size} 条</span>
+              <span className="mr-auto text-sm text-muted">
+                已选 {selected.size} 条
+              </span>
               <Button variant="secondary" onPress={() => setOpen(false)}>
                 取消
               </Button>

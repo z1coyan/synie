@@ -13,7 +13,6 @@ import {
   TextField,
   toast,
 } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { amountInWords, formatAmount } from '~/lib/amount'
 import { UUID_RE } from '~/components/synie-data-grid/query'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
@@ -23,7 +22,17 @@ import { localRowId } from '~/components/synie-editable-table/editable'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { attachFile, type UploadedFile } from '~/lib/files'
-import { SynieOcrButton } from '~/components/synie-ocr-button/SynieOcrButton'
+import { FinanceOcrButton } from './-ocr-button'
+import {
+  auditVatInvoice,
+  ocrVatInvoice,
+  reverseVatInvoice,
+  vatInvoiceClient,
+} from '~/lib/resources/finance-operations'
+import {
+  purchaseReconciliationClient,
+  salesReconciliationClient,
+} from '~/lib/resources/reconciliations'
 import {
   EXPENSE_ROLES,
   ExpenseRoleSelect,
@@ -37,42 +46,6 @@ import type { LocalGridMeta, Row } from '~/components/synie-data-grid/types'
 export const Route = createFileRoute('/_app/finance/invoices')({
   component: InvoicesPage,
 })
-
-const CREATE_INVOICE = `
-  mutation ($input: CreateAccVatInvoiceInput!) {
-    createAccVatInvoice(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_INVOICE = `
-  mutation ($id: ID!, $input: UpdateAccVatInvoiceInput!) {
-    updateAccVatInvoice(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const AUDIT_INVOICE = `
-  mutation ($id: ID!, $input: AuditAccVatInvoiceInput!) {
-    auditAccVatInvoice(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const REVERSE_INVOICE = `
-  mutation ($id: ID!, $input: ReverseAccVatInvoiceInput!) {
-    reverseAccVatInvoice(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-// OCR generic action:返回识别字段 JSON,不落库
-const OCR_INVOICE = `
-  mutation ($input: OcrAccVatInvoiceInput!) {
-    ocrAccVatInvoice(input: $input)
-  }
-`
-// 发票明细(items)与头一起挂在同一条记录上,不是独立资源;开抽屉时单独取一次
-// (rowId 自查已覆盖表单字段,这里只为局部初始化本地清单状态,轻量、不重复整行)
-const FETCH_ITEMS = `
-  query ($id: ID!) {
-    accVatInvoices(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
-      results { items }
-    }
-  }
-`
 
 // 销售清单行结构 = OCR 目标 schema;纯文本档案,不关联物料
 const ITEM_META: LocalGridMeta = {
@@ -108,8 +81,8 @@ function parseItems(raw: unknown): Row[] {
   return []
 }
 
-function serializeItems(items: Row[]): string[] {
-  return items.map(({ id: _id, ...rest }) => JSON.stringify(rest))
+function serializeItems(items: Row[]): Record<string, unknown>[] {
+  return items.map(({ id: _id, ...rest }) => rest)
 }
 
 const GRID_COLUMNS = [
@@ -194,15 +167,7 @@ function ReconciliationLinkInput({ value, onChange, isDisabled, values }: FieldI
   const recQuery = useQuery({
     queryKey: ['salReconciliations', 'linkHint', id],
     enabled: id != null && UUID_RE.test(id),
-    queryFn: () =>
-      gqlFetch<{ salReconciliations: { results: Row[] } }>(
-        `query ($id: ID!) {
-          salReconciliations(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
-            results { id reconciliationNo status baseGrossTotal }
-          }
-        }`,
-        { id },
-      ).then((d) => d.salReconciliations.results[0] ?? null),
+    queryFn: () => salesReconciliationClient.get(id!),
   })
 
   const rec = recQuery.data ?? null
@@ -246,15 +211,7 @@ function PurReconciliationLinkInput({ value, onChange, isDisabled, values }: Fie
   const recQuery = useQuery({
     queryKey: ['purReconciliations', 'linkHint', id],
     enabled: id != null && UUID_RE.test(id),
-    queryFn: () =>
-      gqlFetch<{ purReconciliations: { results: Row[] } }>(
-        `query ($id: ID!) {
-          purReconciliations(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
-            results { id reconciliationNo status baseGrossTotal }
-          }
-        }`,
-        { id },
-      ).then((d) => d.purReconciliations.results[0] ?? null),
+    queryFn: () => purchaseReconciliationClient.get(id!),
   })
 
   const rec = recQuery.data ?? null
@@ -501,9 +458,8 @@ function InvoicesPage() {
     if (mode !== 'create') return null
     return (
       <div className="flex flex-col gap-4">
-        <SynieOcrButton
-          mutation={OCR_INVOICE}
-          resultKey="ocrAccVatInvoice"
+        <FinanceOcrButton
+          recognize={ocrVatInvoice}
           accept="image/*,.pdf"
           onRecognized={(fields, file) => {
             // items 走本地清单状态,其余字段直接回填表单草稿
@@ -564,13 +520,7 @@ function InvoicesPage() {
     if (!auditDialog || !auditDate) return
     setAuditing(true)
     try {
-      const data = await gqlFetch<{ auditAccVatInvoice: { errors: { message: string }[] | null } }>(
-        AUDIT_INVOICE,
-        { id: auditDialog.id, input: { postingDate: auditDate } }
-      )
-      if (data.auditAccVatInvoice.errors && data.auditAccVatInvoice.errors.length > 0) {
-        throw new Error(data.auditAccVatInvoice.errors.map((e) => e.message).join('; '))
-      }
+      await auditVatInvoice(auditDialog.id, auditDate)
       toast.success('发票已审核过账')
       setAuditDialog(null)
       queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
@@ -591,13 +541,10 @@ function InvoicesPage() {
     if (!reverseDialog || !reverseDate) return
     setReversing(true)
     try {
-      const data = await gqlFetch<{ reverseAccVatInvoice: { errors: { message: string }[] | null } }>(
-        REVERSE_INVOICE,
-        { id: reverseDialog.id, input: { postingDate: reverseDate, redInvoiceNo: redInvoiceNo || null } }
-      )
-      if (data.reverseAccVatInvoice.errors && data.reverseAccVatInvoice.errors.length > 0) {
-        throw new Error(data.reverseAccVatInvoice.errors.map((e) => e.message).join('; '))
-      }
+      await reverseVatInvoice(reverseDialog.id, {
+        postingDate: reverseDate,
+        redInvoiceNo: redInvoiceNo || null,
+      })
       toast.success('发票已红冲')
       setReverseDialog(null)
       queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
@@ -627,13 +574,7 @@ function InvoicesPage() {
       // 第一步:创建镜像发票。失败即整件事没发生,原票未改——照旧提示手工登记
       let mirrorId: string
       try {
-        const data = await gqlFetch<{
-          createAccVatInvoice: { result: { id: string } | null; errors: { message: string }[] | null }
-        }>(CREATE_INVOICE, { input })
-        if (data.createAccVatInvoice.errors && data.createAccVatInvoice.errors.length > 0) {
-          throw new Error(data.createAccVatInvoice.errors.map((e) => e.message).join('; '))
-        }
-        mirrorId = data.createAccVatInvoice.result!.id
+        mirrorId = (await vatInvoiceClient.create(input)).id
       } catch (e) {
         toast.danger('对向发票创建失败,请到对方公司手工登记', { description: (e as Error).message })
         return
@@ -641,13 +582,9 @@ function InvoicesPage() {
 
       // 第二步:原票回写互链。此时镜像已建成,失败不能再提示手工登记(会造成重复建票)
       try {
-        const linkData = await gqlFetch<{ updateAccVatInvoice: { errors: { message: string }[] | null } }>(
-          UPDATE_INVOICE,
-          { id: mirrorAsk.source.id, input: { mirrorInvoiceId: mirrorId } }
-        )
-        if (linkData.updateAccVatInvoice.errors && linkData.updateAccVatInvoice.errors.length > 0) {
-          throw new Error(linkData.updateAccVatInvoice.errors.map((e) => e.message).join('; '))
-        }
+        await vatInvoiceClient.update(mirrorAsk.source.id, {
+          mirrorInvoiceId: mirrorId,
+        })
         toast.success('对向发票草稿已创建并互链')
       } catch (e) {
         toast.warning('对向发票已创建,但原票互链回写失败', { description: (e as Error).message })
@@ -672,10 +609,11 @@ function InvoicesPage() {
       return
     }
     setItemsLoaded(false)
-    gqlFetch<{ accVatInvoices: { results: { items: unknown }[] } }>(FETCH_ITEMS, { id: row.id })
-      .then((d) => {
+    vatInvoiceClient
+      .get(row.id)
+      .then((record) => {
         if (my !== reqIdRef.current) return
-        setItems(parseItems(d.accVatInvoices.results[0]?.items))
+        setItems(parseItems(record?.items))
         setItemsLoaded(true)
       })
       .catch((e) => {
@@ -696,6 +634,7 @@ function InvoicesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accVatInvoices"
+          client={vatInvoiceClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           attachmentImages={{ ownerType: 'acc_vat_invoice', category: 'original', label: '票面' }}
@@ -711,6 +650,7 @@ function InvoicesPage() {
 
       <SynieRecordDrawer
         resource="accVatInvoices"
+        client={vatInvoiceClient}
         label="发票"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -942,13 +882,7 @@ function InvoicesPage() {
           const omitItems = mode === 'edit' && !itemsLoaded
           const input = omitItems ? values : { ...values, items: serializeItems(items) }
           if (mode === 'create') {
-            const data = await gqlFetch<{
-              createAccVatInvoice: { result: { id: string } | null; errors: { message: string }[] | null }
-            }>(CREATE_INVOICE, { input })
-            if (data.createAccVatInvoice.errors && data.createAccVatInvoice.errors.length > 0) {
-              throw new Error(data.createAccVatInvoice.errors.map((e) => e.message).join('; '))
-            }
-            const createdId = data.createAccVatInvoice.result!.id
+            const createdId = (await vatInvoiceClient.create(input)).id
             // OCR 原图补挂为附件;挂接失败不阻断建票,提示手工补传即可
             if (ocrFileRef.current) {
               const fid = ocrFileRef.current
@@ -988,12 +922,7 @@ function InvoicesPage() {
             savedId = createdId
           } else {
             const invoiceId = drawer!.row!.id
-            const data = await gqlFetch<{
-              updateAccVatInvoice: { errors: { message: string }[] | null }
-            }>(UPDATE_INVOICE, { id: invoiceId, input })
-            if (data.updateAccVatInvoice.errors && data.updateAccVatInvoice.errors.length > 0) {
-              throw new Error(data.updateAccVatInvoice.errors.map((e) => e.message).join('; '))
-            }
+            await vatInvoiceClient.update(invoiceId, input)
             toast.success(omitItems ? '发票已更新(销售清单未加载,本次未修改)' : '发票已更新')
             queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
             savedId = invoiceId

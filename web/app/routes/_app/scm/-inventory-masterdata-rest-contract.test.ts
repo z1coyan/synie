@@ -69,7 +69,7 @@ describe('库存四主数据 REST 迁移契约', () => {
     expect(drawerRegistry).toContain("filterState: {\n            isLeaf: { kind: 'bool', eq: true },")
   })
 
-  test('跨业务页持续复用库存 REST client，未迁移资源保留原调用', () => {
+  test('跨业务页持续复用库存 REST client，履约页面同步切换 REST', () => {
     expect(transfers).not.toContain('invWarehouses(')
     expect(outsourcedIssues).not.toContain('invOutsourcedWarehouses')
     expect(outsourcedReceipts).not.toContain('invOutsourcedWarehouses')
@@ -83,8 +83,10 @@ describe('库存四主数据 REST 迁移契约', () => {
     expect(otherStock).toContain('fetchMe')
     expect(transfers).toContain('stockTransferClient')
     expect(transfers).toContain('stockTransferItemClient')
-    expect(outsourcedIssues).toContain('gqlFetch')
-    expect(outsourcedReceipts).toContain('gqlFetch')
+    expect(outsourcedIssues).not.toContain('gqlFetch')
+    expect(outsourcedReceipts).not.toContain('gqlFetch')
+    expect(outsourcedIssues).toContain('purchaseOutsourcedIssueClient')
+    expect(outsourcedReceipts).toContain('purchaseOutsourcedReceiptClient')
   })
 
   test('库存流水与三类单据把 Grid、Drawer、明细表全部接到 REST client', () => {

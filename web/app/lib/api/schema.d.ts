@@ -84,6 +84,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/todos/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryTodos"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/todos/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["markTodoRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/todos/{id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["dismissTodo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/audit-logs/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["querySystemAuditLogs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/audit-logs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getSystemAuditLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/meta/resources": {
         parameters: {
             query?: never;
@@ -1464,6 +1550,1097 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sales/deliveries/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["querySalesDeliveries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createSalesDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/deliveries/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getSalesDelivery"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteSalesDelivery"];
+        options?: never;
+        head?: never;
+        patch: operations["updateSalesDelivery"];
+        trace?: never;
+    };
+    "/sales/deliveries/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auditSalesDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/deliveries/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidSalesDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/delivery-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["querySalesDeliveryItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/delivery-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createSalesDeliveryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/delivery-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getSalesDeliveryItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteSalesDeliveryItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updateSalesDeliveryItem"];
+        trace?: never;
+    };
+    "/purchase/receipts/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryPurchaseReceipts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPurchaseReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/receipts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPurchaseReceipt"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePurchaseReceipt"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePurchaseReceipt"];
+        trace?: never;
+    };
+    "/purchase/receipts/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auditPurchaseReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/receipts/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidPurchaseReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/receipt-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryPurchaseReceiptItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/receipt-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPurchaseReceiptItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/receipt-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPurchaseReceiptItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePurchaseReceiptItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePurchaseReceiptItem"];
+        trace?: never;
+    };
+    "/sales/reconciliations/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["querySalesReconciliations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/reconciliations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createSalesReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/reconciliations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getSalesReconciliation"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteSalesReconciliation"];
+        options?: never;
+        head?: never;
+        patch: operations["updateSalesReconciliation"];
+        trace?: never;
+    };
+    "/sales/reconciliations/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["confirmSalesReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/reconciliations/{id}/unconfirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["unconfirmSalesReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/reconciliations/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auditSalesReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/reconciliations/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidSalesReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/reconciliation-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["querySalesReconciliationItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/reconciliation-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createSalesReconciliationItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/reconciliation-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getSalesReconciliationItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteSalesReconciliationItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updateSalesReconciliationItem"];
+        trace?: never;
+    };
+    "/purchase/reconciliations/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryPurchaseReconciliations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/reconciliations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPurchaseReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/reconciliations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPurchaseReconciliation"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePurchaseReconciliation"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePurchaseReconciliation"];
+        trace?: never;
+    };
+    "/purchase/reconciliations/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["confirmPurchaseReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/reconciliations/{id}/unconfirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["unconfirmPurchaseReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/reconciliations/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auditPurchaseReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/reconciliations/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidPurchaseReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/reconciliation-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryPurchaseReconciliationItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/reconciliation-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPurchaseReconciliationItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/reconciliation-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPurchaseReconciliationItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePurchaseReconciliationItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePurchaseReconciliationItem"];
+        trace?: never;
+    };
+    "/sales/company-account-defaults/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["querySalesCompanyAccountDefaults"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/company-account-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createSalesCompanyAccountDefault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/company-account-defaults/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getSalesCompanyAccountDefault"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateSalesCompanyAccountDefault"];
+        trace?: never;
+    };
+    "/scm/order-flow-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryScmOrderFlowItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scm/order-flow-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 收发货历史字符串行标识（flow_type:source_uuid） */
+                id: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getScmOrderFlowItem"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/company-account-defaults/by-company/{companyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getSalesCompanyAccountDefaultsByCompany"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-issues/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryPurchaseOutsourcedIssues"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPurchaseOutsourcedIssue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-issues/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPurchaseOutsourcedIssue"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePurchaseOutsourcedIssue"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePurchaseOutsourcedIssue"];
+        trace?: never;
+    };
+    "/purchase/outsourced-issues/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auditPurchaseOutsourcedIssue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-issues/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidPurchaseOutsourcedIssue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-issue-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryPurchaseOutsourcedIssueItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-issue-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPurchaseOutsourcedIssueItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-issue-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPurchaseOutsourcedIssueItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePurchaseOutsourcedIssueItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePurchaseOutsourcedIssueItem"];
+        trace?: never;
+    };
+    "/purchase/outsourced-receipts/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryPurchaseOutsourcedReceipts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPurchaseOutsourcedReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-receipts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPurchaseOutsourcedReceipt"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePurchaseOutsourcedReceipt"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePurchaseOutsourcedReceipt"];
+        trace?: never;
+    };
+    "/purchase/outsourced-receipts/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auditPurchaseOutsourcedReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-receipts/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidPurchaseOutsourcedReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-receipt-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryPurchaseOutsourcedReceiptItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-receipt-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPurchaseOutsourcedReceiptItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-receipt-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPurchaseOutsourcedReceiptItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePurchaseOutsourcedReceiptItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePurchaseOutsourcedReceiptItem"];
+        trace?: never;
+    };
+    "/purchase/outsourced-receipt-item-materials/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryPurchaseOutsourcedReceiptItemMaterials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-receipt-item-materials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPurchaseOutsourcedReceiptItemMaterial"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-receipt-item-materials/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPurchaseOutsourcedReceiptItemMaterial"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePurchaseOutsourcedReceiptItemMaterial"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePurchaseOutsourcedReceiptItemMaterial"];
+        trace?: never;
+    };
+    "/purchase/outsourced-receipt-item-byproducts/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryPurchaseOutsourcedReceiptItemByproducts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-receipt-item-byproducts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createPurchaseOutsourcedReceiptItemByproduct"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/purchase/outsourced-receipt-item-byproducts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPurchaseOutsourcedReceiptItemByproduct"];
+        put?: never;
+        post?: never;
+        delete: operations["deletePurchaseOutsourcedReceiptItemByproduct"];
+        options?: never;
+        head?: never;
+        patch: operations["updatePurchaseOutsourcedReceiptItemByproduct"];
+        trace?: never;
+    };
     "/hr/employees/query": {
         parameters: {
             query?: never;
@@ -1512,6 +2689,1216 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["updateHrEmployee"];
+        trace?: never;
+    };
+    "/hr/attendance-punches/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryHrAttendancePunches"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-punches/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getHrAttendancePunch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-imports/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryHrAttendanceImports"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createHrAttendanceImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-imports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getHrAttendanceImport"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteHrAttendanceImport"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-imports/{id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importHrAttendanceImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-days/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryHrAttendanceDays"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-days/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getHrAttendanceDay"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-days/recalc": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["recalcHrAttendanceDays"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-days/month-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getHrAttendanceMonthSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-corrections/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryHrAttendanceCorrections"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createHrAttendanceCorrection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/attendance-corrections/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getHrAttendanceCorrection"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteHrAttendanceCorrection"];
+        options?: never;
+        head?: never;
+        patch: operations["updateHrAttendanceCorrection"];
+        trace?: never;
+    };
+    "/hr/payrolls/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryHrPayrolls"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/payrolls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createHrPayroll"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/payrolls/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getHrPayroll"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteHrPayroll"];
+        options?: never;
+        head?: never;
+        patch: operations["updateHrPayroll"];
+        trace?: never;
+    };
+    "/hr/payrolls/{id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["refreshHrPayroll"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/payrolls/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["generateHrPayrolls"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/payrolls/month-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getHrPayrollMonthStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/payroll-payments/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryHrPayrollPayments"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/payroll-payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createHrPayrollPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/payroll-payments/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getHrPayrollPayment"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteHrPayrollPayment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/payroll-payments/pay-remaining": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["payRemainingHrPayrollPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/employee-loans/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryHrEmployeeLoans"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/employee-loans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createHrEmployeeLoan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr/employee-loans/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getHrEmployeeLoan"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteHrEmployeeLoan"];
+        options?: never;
+        head?: never;
+        patch: operations["updateHrEmployeeLoan"];
+        trace?: never;
+    };
+    "/hr/employee-loans/balances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getHrEmployeeLoanBalances"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-accounts/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceBankAccounts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFinanceBankAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceBankAccount"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceBankAccount"];
+        options?: never;
+        head?: never;
+        patch: operations["updateFinanceBankAccount"];
+        trace?: never;
+    };
+    "/finance/bank-transactions/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceBankTransactions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFinanceBankTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-transactions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceBankTransaction"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceBankTransaction"];
+        options?: never;
+        head?: never;
+        patch: operations["updateFinanceBankTransaction"];
+        trace?: never;
+    };
+    "/finance/bank-import-templates/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceBankImportTemplates"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-import-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFinanceBankImportTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-import-templates/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceBankImportTemplate"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceBankImportTemplate"];
+        options?: never;
+        head?: never;
+        patch: operations["updateFinanceBankImportTemplate"];
+        trace?: never;
+    };
+    "/finance/bank-imports/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceBankImports"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFinanceBankImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-imports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceBankImport"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceBankImport"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-imports/{id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importFinanceBankImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-import-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceBankImportItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-import-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceBankImportItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceBankImportItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updateFinanceBankImportItem"];
+        trace?: never;
+    };
+    "/finance/bank-reconciliations/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceBankReconciliations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-reconciliations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFinanceBankReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-reconciliations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceBankReconciliation"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceBankReconciliation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-reconciliations/remaining": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getFinanceBankReconciliationRemaining"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bank-reconciliations/quick-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["quickCreateFinanceBankReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/vat-invoices/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceVatInvoices"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/vat-invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFinanceVatInvoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/vat-invoices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceVatInvoice"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceVatInvoice"];
+        options?: never;
+        head?: never;
+        patch: operations["updateFinanceVatInvoice"];
+        trace?: never;
+    };
+    "/finance/vat-invoices/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auditFinanceVatInvoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/vat-invoices/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidFinanceVatInvoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/vat-invoices/{id}/reverse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reverseFinanceVatInvoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/vat-invoices/ocr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ocrFinanceVatInvoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/expense-reports/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceExpenseReports"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/expense-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFinanceExpenseReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/expense-reports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceExpenseReport"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceExpenseReport"];
+        options?: never;
+        head?: never;
+        patch: operations["updateFinanceExpenseReport"];
+        trace?: never;
+    };
+    "/finance/expense-reports/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auditFinanceExpenseReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/expense-reports/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidFinanceExpenseReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/expense-report-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceExpenseReportItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/expense-report-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFinanceExpenseReportItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/expense-report-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceExpenseReportItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceExpenseReportItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updateFinanceExpenseReportItem"];
+        trace?: never;
+    };
+    "/finance/bills/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceBills"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bills/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceBill"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceBill"];
+        options?: never;
+        head?: never;
+        patch: operations["updateFinanceBill"];
+        trace?: never;
+    };
+    "/finance/bill-transactions/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceBillTransactions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bill-transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFinanceBillTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bill-transactions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceBillTransaction"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFinanceBillTransaction"];
+        options?: never;
+        head?: never;
+        patch: operations["updateFinanceBillTransaction"];
+        trace?: never;
+    };
+    "/finance/bill-transactions/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auditFinanceBillTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bill-transactions/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidFinanceBillTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bill-transactions/ocr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ocrFinanceBillTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bill-holdings/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryFinanceBillHoldings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/bill-holdings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFinanceBillHolding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/accounting/gl-entries/query": {
@@ -3048,6 +5435,784 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/manufacturing/operations/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingOperations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingOperation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/operations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingOperation"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingOperation"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingOperation"];
+        trace?: never;
+    };
+    "/manufacturing/process-templates/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingProcessTemplates"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/process-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingProcessTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/process-templates/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingProcessTemplate"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingProcessTemplate"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingProcessTemplate"];
+        trace?: never;
+    };
+    "/manufacturing/process-template-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingProcessTemplateItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/process-template-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingProcessTemplateItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/process-template-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingProcessTemplateItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingProcessTemplateItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingProcessTemplateItem"];
+        trace?: never;
+    };
+    "/manufacturing/boms/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingBoms"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/boms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingBom"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/boms/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingBom"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingBom"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingBom"];
+        trace?: never;
+    };
+    "/manufacturing/boms/{id}/apply-route-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["applyManufacturingBomRouteTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/bom-components/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingBomComponents"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/bom-components": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingBomComponent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/bom-components/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingBomComponent"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingBomComponent"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingBomComponent"];
+        trace?: never;
+    };
+    "/manufacturing/bom-routes/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingBomRoutes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/bom-routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingBomRoute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/bom-routes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingBomRoute"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingBomRoute"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingBomRoute"];
+        trace?: never;
+    };
+    "/manufacturing/bom-byproducts/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingBomByproducts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/bom-byproducts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingBomByproduct"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/bom-byproducts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingBomByproduct"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingBomByproduct"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingBomByproduct"];
+        trace?: never;
+    };
+    "/manufacturing/demands/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingDemands"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/demands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingDemand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/demands/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingDemand"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingDemand"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingDemand"];
+        trace?: never;
+    };
+    "/manufacturing/demands/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["confirmManufacturingDemand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/demands/{id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["closeManufacturingDemand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/demands/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidManufacturingDemand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/demand-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingDemandItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/demand-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingDemandItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/demand-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingDemandItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingDemandItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingDemandItem"];
+        trace?: never;
+    };
+    "/manufacturing/demand-items/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeManufacturingDemandItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/demand-items/{id}/fulfillment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["changeManufacturingDemandItemFulfillment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/sales-item-occupancies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["getManufacturingSalesItemOccupancies"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/work-orders/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingWorkOrders"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/work-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingWorkOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/work-orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingWorkOrder"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingWorkOrder"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingWorkOrder"];
+        trace?: never;
+    };
+    "/manufacturing/work-orders/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidManufacturingWorkOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/outputs/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingOutputs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/outputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingOutput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/outputs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingOutput"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingOutput"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingOutput"];
+        trace?: never;
+    };
+    "/manufacturing/outputs/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["auditManufacturingOutput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/outputs/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["voidManufacturingOutput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/output-items/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["queryManufacturingOutputItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/output-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createManufacturingOutputItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/manufacturing/output-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getManufacturingOutputItem"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteManufacturingOutputItem"];
+        options?: never;
+        head?: never;
+        patch: operations["updateManufacturingOutputItem"];
+        trace?: never;
+    };
     "/settings/system": {
         parameters: {
             query?: never;
@@ -3400,6 +6565,112 @@ export interface components {
         TodoUnreadCount: {
             /** Format: int64 */
             count: number;
+        };
+        TodoQuery: {
+            /**
+             * @default active
+             * @enum {string}
+             */
+            tab: "active" | "history" | "recent";
+            /** @default false */
+            includeDismissed: boolean;
+            /** @default 20 */
+            limit: number;
+            /** @default 0 */
+            offset: number;
+            search?: string;
+            sort?: components["schemas"]["Sort"];
+            filter?: components["schemas"]["FilterState"];
+        };
+        TodoCompanyReference: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            shortName: string | null;
+        };
+        TodoUserReference: {
+            /** Format: uuid */
+            id: string;
+            username: string;
+            name: string | null;
+        };
+        Todo: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "ISSUE_INVOICE" | "RECEIVE_INVOICE";
+            sourceType: string;
+            /** Format: uuid */
+            sourceId: string;
+            sourceNo: string;
+            partyType: string;
+            /** Format: uuid */
+            partyId: string;
+            partyName: string;
+            amount: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "CLOSED";
+            /** @enum {string|null} */
+            closedReason: "UNCONFIRM" | "INVOICE_AUDIT" | null;
+            /** Format: date-time */
+            sourceChangedAt: string;
+            /** Format: date-time */
+            closedAt: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            draftInvoiceLinked: boolean;
+            /** Format: date-time */
+            myReadAt: string | null;
+            /** Format: date-time */
+            myDismissedAt: string | null;
+            dismissed: boolean;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            createdById: string | null;
+            company: components["schemas"]["TodoCompanyReference"] | null;
+            createdBy: components["schemas"]["TodoUserReference"] | null;
+        };
+        TodoList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["Todo"][];
+        };
+        SystemAuditLog: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            insertedAt: string;
+            resource: string;
+            /** Format: uuid */
+            recordId: string;
+            recordLabel: string | null;
+            actionType: string;
+            actionName: string;
+            /** Format: uuid */
+            actorId: string | null;
+            actorName: string | null;
+            /** Format: uuid */
+            companyId: string | null;
+            changes: {
+                [key: string]: unknown;
+            };
+        };
+        SystemAuditLogQuery: {
+            /** @default 50 */
+            limit: number;
+            /** @default 0 */
+            offset: number;
+            search?: string;
+            sort?: components["schemas"]["Sort"];
+            filter?: components["schemas"]["FilterState"];
+        };
+        SystemAuditLogList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["SystemAuditLog"][];
         };
         ErrorEnvelope: {
             error: components["schemas"]["APIError"];
@@ -4501,6 +7772,1041 @@ export interface components {
             results: components["schemas"]["OrderFlow"][];
         };
         /** @enum {string} */
+        FulfillmentStatus: "DRAFT" | "AUDITED" | "VOIDED";
+        /** @enum {string} */
+        FulfillmentPartyType: "SUPPLIER" | "CUSTOMER" | "COMPANY" | "EMPLOYEE";
+        FulfillmentAuditRequest: {
+            /** Format: date */
+            postingDate?: string;
+        };
+        CompanyAccountDefaults: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            deliveryDebitAccountId: string | null;
+            /** Format: uuid */
+            deliveryCreditAccountId: string | null;
+            /** Format: uuid */
+            receiptDebitAccountId: string | null;
+            /** Format: uuid */
+            receiptCreditAccountId: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CompanyAccountDefaultsCreate: {
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            deliveryDebitAccountId?: string | null;
+            /** Format: uuid */
+            deliveryCreditAccountId?: string | null;
+            /** Format: uuid */
+            receiptDebitAccountId?: string | null;
+            /** Format: uuid */
+            receiptCreditAccountId?: string | null;
+        };
+        /** @description 只更新请求中出现的槽位；显式 null 清空槽位，未出现的槽位保持原值。 */
+        CompanyAccountDefaultsUpdate: {
+            /** Format: uuid */
+            deliveryDebitAccountId?: string | null;
+            /** Format: uuid */
+            deliveryCreditAccountId?: string | null;
+            /** Format: uuid */
+            receiptDebitAccountId?: string | null;
+            /** Format: uuid */
+            receiptCreditAccountId?: string | null;
+        };
+        CompanyAccountDefaultsList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["CompanyAccountDefaults"][];
+        };
+        /** @enum {string} */
+        ReconciliationType: "REGULAR" | "GIFT_SAMPLE";
+        /** @enum {string} */
+        ReconciliationStatus: "DRAFT" | "CONFIRMED" | "CLOSED" | "VOIDED";
+        ReconciliationAuditRequest: {
+            /** Format: date */
+            postingDate?: string | null;
+        };
+        SalesReconciliation: {
+            /** Format: uuid */
+            id: string;
+            reconciliationNo: string;
+            reconciliationType: components["schemas"]["ReconciliationType"];
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            /** Format: date */
+            postingDate: string | null;
+            remarks: string | null;
+            status: components["schemas"]["ReconciliationStatus"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            debitAccountId: string;
+            /** Format: uuid */
+            creditAccountId: string;
+            /** Format: uuid */
+            createdById: string | null;
+            grossTotal: string;
+            baseGrossTotal: string;
+        };
+        SalesReconciliationCreate: {
+            reconciliationNo?: string | null;
+            reconciliationType: components["schemas"]["ReconciliationType"];
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            debitAccountId?: string;
+            /** Format: uuid */
+            creditAccountId?: string;
+        };
+        SalesReconciliationUpdate: {
+            reconciliationNo?: string;
+            reconciliationType?: components["schemas"]["ReconciliationType"];
+            partyType?: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId?: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            debitAccountId?: string;
+            /** Format: uuid */
+            creditAccountId?: string;
+        };
+        SalesReconciliationList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["SalesReconciliation"][];
+        };
+        SalesReconciliationItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            baseQty: string;
+            amount: string;
+            baseAmount: string;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            reconciliationId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            deliveryItemId: string;
+            reconciliationNo: string;
+            reconciliationStatus: components["schemas"]["ReconciliationStatus"];
+            deliveryNo: string;
+            /** Format: date */
+            deliveryDate: string;
+            materialName: string;
+            unitName: string;
+            orderCurrencyCode: string;
+        };
+        SalesReconciliationItemCreate: {
+            /** Format: uuid */
+            reconciliationId: string;
+            /** Format: int64 */
+            idx: number;
+            /** Format: uuid */
+            deliveryItemId: string;
+            qty: string;
+            remarks?: string | null;
+        };
+        SalesReconciliationItemUpdate: {
+            /** Format: int64 */
+            idx?: number;
+            /** Format: uuid */
+            deliveryItemId?: string;
+            qty?: string;
+            remarks?: string | null;
+        };
+        SalesReconciliationItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["SalesReconciliationItem"][];
+        };
+        PurchaseReconciliation: {
+            /** Format: uuid */
+            id: string;
+            reconciliationNo: string;
+            reconciliationType: components["schemas"]["ReconciliationType"];
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            /** Format: date */
+            postingDate: string | null;
+            remarks: string | null;
+            status: components["schemas"]["ReconciliationStatus"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            debitAccountId: string;
+            /** Format: uuid */
+            creditAccountId: string;
+            /** Format: uuid */
+            createdById: string | null;
+            grossTotal: string;
+            baseGrossTotal: string;
+        };
+        PurchaseReconciliationCreate: {
+            reconciliationNo?: string | null;
+            reconciliationType: components["schemas"]["ReconciliationType"];
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            debitAccountId?: string;
+            /** Format: uuid */
+            creditAccountId?: string;
+        };
+        PurchaseReconciliationUpdate: {
+            reconciliationNo?: string;
+            reconciliationType?: components["schemas"]["ReconciliationType"];
+            partyType?: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId?: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            debitAccountId?: string;
+            /** Format: uuid */
+            creditAccountId?: string;
+        };
+        PurchaseReconciliationList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PurchaseReconciliation"][];
+        };
+        PurchaseReconciliationItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            baseQty: string;
+            amount: string;
+            baseAmount: string;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            reconciliationId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            receiptItemId: string | null;
+            /** Format: uuid */
+            outsourcedReceiptItemId: string | null;
+            reconciliationNo: string;
+            reconciliationStatus: components["schemas"]["ReconciliationStatus"];
+            receiptNo: string;
+            /** Format: date */
+            receiptDate: string;
+            materialName: string;
+            unitName: string;
+            orderCurrencyCode: string;
+        };
+        /** @description receiptItemId 与 outsourcedReceiptItemId 必须恰有一个非 null。 */
+        PurchaseReconciliationItemCreate: {
+            /** Format: uuid */
+            reconciliationId: string;
+            /** Format: int64 */
+            idx: number;
+            /** Format: uuid */
+            receiptItemId?: string | null;
+            /** Format: uuid */
+            outsourcedReceiptItemId?: string | null;
+            qty: string;
+            remarks?: string | null;
+        };
+        /** @description 更新来源时 receiptItemId 与 outsourcedReceiptItemId 必须恰有一个非 null。 */
+        PurchaseReconciliationItemUpdate: {
+            /** Format: int64 */
+            idx?: number;
+            /** Format: uuid */
+            receiptItemId?: string | null;
+            /** Format: uuid */
+            outsourcedReceiptItemId?: string | null;
+            qty?: string;
+            remarks?: string | null;
+        };
+        PurchaseReconciliationItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PurchaseReconciliationItem"][];
+        };
+        /** @enum {string} */
+        ScmFlowType: "PURCHASE_RECEIPT" | "OUTSOURCED_ISSUE" | "OUTSOURCED_RECEIPT" | "SALES_DELIVERY";
+        /** @enum {string} */
+        ScmOrderFlowStatus: "DRAFT" | "AUDITED" | "VOIDED";
+        ScmOrderFlowItem: {
+            /**
+             * @description 单据类型与来源行 UUID 拼接的稳定行标识。
+             * @example sales_delivery:00000000-0000-0000-0000-000000000000
+             */
+            id: string;
+            flowType: components["schemas"]["ScmFlowType"];
+            voucherNo: string;
+            /** Format: date */
+            voucherDate: string;
+            status: components["schemas"]["ScmOrderFlowStatus"];
+            qty: string;
+            materialCode: string;
+            materialName: string;
+            materialSpec: string | null;
+            customerPartNo: string | null;
+            unitName: string;
+            /** Format: uuid */
+            orderId: string;
+            /** Format: uuid */
+            orderItemId: string;
+            /** Format: uuid */
+            companyId: string;
+        };
+        ScmOrderFlowItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ScmOrderFlowItem"][];
+        };
+        SalesDelivery: {
+            /** Format: uuid */
+            id: string;
+            deliveryNo: string;
+            /** Format: date */
+            deliveryDate: string;
+            /** Format: date */
+            postingDate: string | null;
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remarks: string | null;
+            status: components["schemas"]["FulfillmentStatus"];
+            /** Format: date-time */
+            auditedAt: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            warehouseId: string | null;
+            /** Format: uuid */
+            debitAccountId: string;
+            /** Format: uuid */
+            creditAccountId: string;
+            /** Format: uuid */
+            createdById: string | null;
+            /** Format: uuid */
+            auditedById: string | null;
+        };
+        SalesDeliveryCreate: {
+            deliveryNo?: string | null;
+            /** Format: date */
+            deliveryDate?: string;
+            /** Format: date */
+            postingDate?: string | null;
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            /** Format: uuid */
+            debitAccountId: string;
+            /** Format: uuid */
+            creditAccountId: string;
+        };
+        SalesDeliveryUpdate: {
+            deliveryNo?: string;
+            /** Format: date */
+            deliveryDate?: string;
+            /** Format: date */
+            postingDate?: string | null;
+            partyType?: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId?: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            /** Format: uuid */
+            debitAccountId?: string;
+            /** Format: uuid */
+            creditAccountId?: string;
+        };
+        SalesDeliveryList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["SalesDelivery"][];
+        };
+        SalesDeliveryItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            baseQty: string;
+            materialCode: string;
+            materialName: string;
+            materialSpec: string | null;
+            customerPartNo: string | null;
+            unitName: string;
+            orderNo: string;
+            orderQty: string;
+            orderBaseQty: string;
+            orderUnitName: string;
+            orderPrice: string;
+            orderAmount: string;
+            orderBasePrice: string;
+            orderBaseAmount: string;
+            orderTaxRate: string;
+            orderCurrencyCode: string;
+            reconciledQty: string;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            deliveryId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            orderItemId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            warehouseId: string;
+            deliveryNo: string;
+            /** Format: date */
+            deliveryDate: string;
+            deliveryStatus: components["schemas"]["FulfillmentStatus"];
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remainingReconcilableQty: string;
+        };
+        SalesDeliveryItemCreate: {
+            /** Format: uuid */
+            deliveryId: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            /** Format: uuid */
+            orderItemId: string;
+            /** Format: uuid */
+            unitId?: string | null;
+            /** Format: uuid */
+            warehouseId: string;
+            remarks?: string | null;
+        };
+        SalesDeliveryItemUpdate: {
+            /** Format: int64 */
+            idx?: number;
+            qty?: string;
+            /** Format: uuid */
+            orderItemId?: string;
+            /** Format: uuid */
+            unitId?: string | null;
+            /** Format: uuid */
+            warehouseId?: string;
+            remarks?: string | null;
+        };
+        SalesDeliveryItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["SalesDeliveryItem"][];
+        };
+        PurchaseReceipt: {
+            /** Format: uuid */
+            id: string;
+            receiptNo: string;
+            /** Format: date */
+            receiptDate: string;
+            /** Format: date */
+            postingDate: string | null;
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remarks: string | null;
+            status: components["schemas"]["FulfillmentStatus"];
+            /** Format: date-time */
+            auditedAt: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            warehouseId: string | null;
+            /** Format: uuid */
+            debitAccountId: string;
+            /** Format: uuid */
+            creditAccountId: string;
+            /** Format: uuid */
+            createdById: string | null;
+            /** Format: uuid */
+            auditedById: string | null;
+        };
+        PurchaseReceiptCreate: {
+            receiptNo?: string | null;
+            /** Format: date */
+            receiptDate?: string;
+            /** Format: date */
+            postingDate?: string | null;
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            /** Format: uuid */
+            debitAccountId: string;
+            /** Format: uuid */
+            creditAccountId: string;
+        };
+        PurchaseReceiptUpdate: {
+            receiptNo?: string;
+            /** Format: date */
+            receiptDate?: string;
+            /** Format: date */
+            postingDate?: string | null;
+            partyType?: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId?: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            /** Format: uuid */
+            debitAccountId?: string;
+            /** Format: uuid */
+            creditAccountId?: string;
+        };
+        PurchaseReceiptList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PurchaseReceipt"][];
+        };
+        PurchaseReceiptItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            baseQty: string;
+            materialCode: string;
+            materialName: string;
+            materialSpec: string | null;
+            customerPartNo: string | null;
+            unitName: string;
+            orderNo: string;
+            orderQty: string;
+            orderBaseQty: string;
+            orderUnitName: string;
+            orderPrice: string;
+            orderAmount: string;
+            orderBasePrice: string;
+            orderBaseAmount: string;
+            orderTaxRate: string;
+            orderCurrencyCode: string;
+            reconciledQty: string;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            orderItemId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            warehouseId: string;
+            receiptNo: string;
+            /** Format: date */
+            receiptDate: string;
+            receiptStatus: components["schemas"]["FulfillmentStatus"];
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remainingReconcilableQty: string;
+        };
+        PurchaseReceiptItemCreate: {
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            /** Format: uuid */
+            orderItemId: string;
+            /** Format: uuid */
+            unitId?: string | null;
+            /** Format: uuid */
+            warehouseId: string;
+            remarks?: string | null;
+        };
+        PurchaseReceiptItemUpdate: {
+            /** Format: int64 */
+            idx?: number;
+            qty?: string;
+            /** Format: uuid */
+            orderItemId?: string;
+            /** Format: uuid */
+            unitId?: string | null;
+            /** Format: uuid */
+            warehouseId?: string;
+            remarks?: string | null;
+        };
+        PurchaseReceiptItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PurchaseReceiptItem"][];
+        };
+        PurchaseOutsourcedIssue: {
+            /** Format: uuid */
+            id: string;
+            issueNo: string;
+            /** Format: date */
+            issueDate: string;
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remarks: string | null;
+            status: components["schemas"]["FulfillmentStatus"];
+            /** Format: date-time */
+            auditedAt: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            fromWarehouseId: string | null;
+            /** Format: uuid */
+            outsourcedWarehouseId: string | null;
+            /** Format: uuid */
+            createdById: string | null;
+            /** Format: uuid */
+            auditedById: string | null;
+        };
+        PurchaseOutsourcedIssueCreate: {
+            issueNo?: string | null;
+            /** Format: date */
+            issueDate?: string;
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            fromWarehouseId?: string | null;
+            /** Format: uuid */
+            outsourcedWarehouseId?: string | null;
+        };
+        PurchaseOutsourcedIssueUpdate: {
+            issueNo?: string;
+            /** Format: date */
+            issueDate?: string;
+            partyType?: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId?: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            fromWarehouseId?: string | null;
+            /** Format: uuid */
+            outsourcedWarehouseId?: string | null;
+        };
+        PurchaseOutsourcedIssueList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PurchaseOutsourcedIssue"][];
+        };
+        PurchaseOutsourcedIssueItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            baseQty: string;
+            materialCode: string;
+            materialName: string;
+            materialSpec: string | null;
+            unitName: string;
+            orderNo: string;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            issueId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            orderItemMaterialId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            fromWarehouseId: string;
+            /** Format: uuid */
+            outsourcedWarehouseId: string;
+            issueNo: string;
+            /** Format: date */
+            issueDate: string;
+            issueStatus: components["schemas"]["FulfillmentStatus"];
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+        };
+        PurchaseOutsourcedIssueItemCreate: {
+            /** Format: uuid */
+            issueId: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            /** Format: uuid */
+            orderItemMaterialId: string;
+            /** Format: uuid */
+            fromWarehouseId: string;
+            /** Format: uuid */
+            outsourcedWarehouseId: string;
+            remarks?: string | null;
+        };
+        PurchaseOutsourcedIssueItemUpdate: {
+            /** Format: int64 */
+            idx?: number;
+            qty?: string;
+            /** Format: uuid */
+            orderItemMaterialId?: string;
+            /** Format: uuid */
+            fromWarehouseId?: string;
+            /** Format: uuid */
+            outsourcedWarehouseId?: string;
+            remarks?: string | null;
+        };
+        PurchaseOutsourcedIssueItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PurchaseOutsourcedIssueItem"][];
+        };
+        PurchaseOutsourcedReceipt: {
+            /** Format: uuid */
+            id: string;
+            receiptNo: string;
+            /** Format: date */
+            receiptDate: string;
+            /** Format: date */
+            postingDate: string | null;
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remarks: string | null;
+            status: components["schemas"]["FulfillmentStatus"];
+            /** Format: date-time */
+            auditedAt: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            warehouseId: string | null;
+            /** Format: uuid */
+            outsourcedWarehouseId: string | null;
+            /** Format: uuid */
+            debitAccountId: string;
+            /** Format: uuid */
+            creditAccountId: string;
+            /** Format: uuid */
+            createdById: string | null;
+            /** Format: uuid */
+            auditedById: string | null;
+        };
+        PurchaseOutsourcedReceiptCreate: {
+            receiptNo?: string | null;
+            /** Format: date */
+            receiptDate?: string;
+            /** Format: date */
+            postingDate?: string | null;
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            /** Format: uuid */
+            outsourcedWarehouseId?: string | null;
+            /** Format: uuid */
+            debitAccountId?: string | null;
+            /** Format: uuid */
+            creditAccountId?: string | null;
+        };
+        PurchaseOutsourcedReceiptUpdate: {
+            receiptNo?: string;
+            /** Format: date */
+            receiptDate?: string;
+            /** Format: date */
+            postingDate?: string | null;
+            partyType?: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId?: string;
+            remarks?: string | null;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            /** Format: uuid */
+            outsourcedWarehouseId?: string | null;
+            /** Format: uuid */
+            debitAccountId?: string;
+            /** Format: uuid */
+            creditAccountId?: string;
+        };
+        PurchaseOutsourcedReceiptList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PurchaseOutsourcedReceipt"][];
+        };
+        PurchaseOutsourcedReceiptItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            baseQty: string;
+            materialCode: string;
+            materialName: string;
+            materialSpec: string | null;
+            customerPartNo: string | null;
+            unitName: string;
+            orderNo: string;
+            orderQty: string;
+            orderBaseQty: string;
+            orderUnitName: string;
+            orderPrice: string;
+            orderAmount: string;
+            orderBasePrice: string;
+            orderBaseAmount: string;
+            orderTaxRate: string;
+            orderCurrencyCode: string;
+            reconciledQty: string;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            orderItemId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            warehouseId: string;
+            receiptNo: string;
+            /** Format: date */
+            receiptDate: string;
+            receiptStatus: components["schemas"]["FulfillmentStatus"];
+            partyType: components["schemas"]["FulfillmentPartyType"];
+            /** Format: uuid */
+            partyId: string;
+            remainingReconcilableQty: string;
+        };
+        PurchaseOutsourcedReceiptItemCreate: {
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            /** Format: uuid */
+            orderItemId: string;
+            /** Format: uuid */
+            unitId?: string | null;
+            /** Format: uuid */
+            warehouseId: string;
+            remarks?: string | null;
+        };
+        PurchaseOutsourcedReceiptItemUpdate: {
+            /** Format: int64 */
+            idx?: number;
+            qty?: string;
+            /** Format: uuid */
+            orderItemId?: string;
+            /** Format: uuid */
+            unitId?: string | null;
+            /** Format: uuid */
+            warehouseId?: string;
+            remarks?: string | null;
+        };
+        PurchaseOutsourcedReceiptItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PurchaseOutsourcedReceiptItem"][];
+        };
+        PurchaseOutsourcedReceiptItemMaterial: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            baseQty: string;
+            materialCode: string;
+            materialName: string;
+            materialSpec: string | null;
+            unitName: string;
+            orderNo: string;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            receiptItemId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            orderItemMaterialId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            outsourcedWarehouseId: string | null;
+            receiptNo: string;
+        };
+        PurchaseOutsourcedReceiptItemMaterialCreate: {
+            /** Format: uuid */
+            receiptItemId: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            /** Format: uuid */
+            orderItemMaterialId: string;
+            /** Format: uuid */
+            outsourcedWarehouseId?: string | null;
+            remarks?: string | null;
+        };
+        PurchaseOutsourcedReceiptItemMaterialUpdate: {
+            /** Format: int64 */
+            idx?: number;
+            qty?: string;
+            /** Format: uuid */
+            orderItemMaterialId?: string;
+            /** Format: uuid */
+            outsourcedWarehouseId?: string | null;
+            remarks?: string | null;
+        };
+        PurchaseOutsourcedReceiptItemMaterialList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PurchaseOutsourcedReceiptItemMaterial"][];
+        };
+        PurchaseOutsourcedReceiptItemByproduct: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            baseQty: string;
+            materialCode: string;
+            materialName: string;
+            materialSpec: string | null;
+            unitName: string;
+            orderNo: string;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            receiptItemId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            orderItemByproductId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            warehouseId: string | null;
+            receiptNo: string;
+        };
+        PurchaseOutsourcedReceiptItemByproductCreate: {
+            /** Format: uuid */
+            receiptItemId: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            /** Format: uuid */
+            orderItemByproductId: string;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            remarks?: string | null;
+        };
+        PurchaseOutsourcedReceiptItemByproductUpdate: {
+            /** Format: int64 */
+            idx?: number;
+            qty?: string;
+            /** Format: uuid */
+            orderItemByproductId?: string;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            remarks?: string | null;
+        };
+        PurchaseOutsourcedReceiptItemByproductList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PurchaseOutsourcedReceiptItemByproduct"][];
+        };
+        /** @enum {string} */
         EmployeeInsuranceType: "SOCIAL_INJURY" | "SOCIAL_UNEMPLOYMENT" | "SOCIAL_MEDICAL" | "SOCIAL_PENSION" | "SOCIAL_MATERNITY" | "HOUSING_FUND" | "COMMERCIAL_INJURY" | "COMMERCIAL_MEDICAL";
         Employee: {
             /** Format: uuid */
@@ -4550,6 +8856,331 @@ export interface components {
             count: number;
             results: components["schemas"]["Employee"][];
         };
+        AttendancePunch: {
+            /** Format: uuid */
+            id: string;
+            attendanceNo: string;
+            /** Format: date-time */
+            punchedAt: string;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: uuid */
+            employeeId: string;
+            /** Format: uuid */
+            importId: string;
+        };
+        AttendancePunchList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["AttendancePunch"][];
+        };
+        /** @enum {string} */
+        AttendanceImportStatus: "PARSED" | "FAILED" | "IMPORTED";
+        AttendanceImport: {
+            /** Format: uuid */
+            id: string;
+            status: components["schemas"]["AttendanceImportStatus"];
+            error: string | null;
+            totalRows: number | null;
+            badRows: number | null;
+            dupRows: number | null;
+            matchedRows: number | null;
+            unmatchedRows: number | null;
+            unmatchedDetail: string | null;
+            importedCount: number | null;
+            skippedExistingRows: number | null;
+            skippedUnmatchedRows: number | null;
+            autoCreatedCount: number | null;
+            /** Format: date-time */
+            importedAt: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            fileId: string;
+            /** Format: uuid */
+            createdById: string | null;
+            /** Format: uuid */
+            importedById: string | null;
+            punchCount: number;
+        };
+        AttendanceImportList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["AttendanceImport"][];
+        };
+        AttendanceImportCreate: {
+            /** Format: uuid */
+            fileId: string;
+        };
+        AttendanceImportExecute: {
+            /** @default false */
+            autoCreateEmployees: boolean;
+        };
+        /** @enum {string} */
+        AttendanceDayStatus: "OK" | "MISSING";
+        AttendanceDay: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date */
+            date: string;
+            morningIn: string | null;
+            morningOut: string | null;
+            afternoonIn: string | null;
+            afternoonOut: string | null;
+            normalHours: string;
+            overtimeHours: string;
+            bonusWorkday: string;
+            status: components["schemas"]["AttendanceDayStatus"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            employeeId: string;
+        };
+        AttendanceDayList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["AttendanceDay"][];
+        };
+        AttendanceDayRecalc: {
+            /** Format: date */
+            dateFrom: string;
+            /** Format: date */
+            dateTo: string;
+        };
+        AttendanceDayRecalcResult: {
+            count: number;
+        };
+        AttendanceMonthSummary: {
+            /** Format: uuid */
+            employeeId: string;
+            employeeCode: string | null;
+            employeeName: string | null;
+            days: number;
+            missingDays: number;
+            normalHours: string;
+            overtimeHours: string;
+            bonusWorkdays: string;
+            workdays: string;
+        };
+        AttendanceMonthSummaryList: components["schemas"]["AttendanceMonthSummary"][];
+        AttendanceCorrection: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date */
+            date: string;
+            times: string[];
+            note: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            employeeId: string;
+            /** Format: uuid */
+            createdById: string | null;
+        };
+        AttendanceCorrectionCreate: {
+            /** Format: uuid */
+            employeeId: string;
+            /** Format: date */
+            date: string;
+            times: string[];
+            note?: string | null;
+        };
+        AttendanceCorrectionUpdate: {
+            /** Format: uuid */
+            employeeId?: string;
+            /** Format: date */
+            date?: string;
+            times?: string[];
+            note?: string | null;
+        };
+        AttendanceCorrectionList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["AttendanceCorrection"][];
+        };
+        /** @enum {string} */
+        PayrollStatus: "PENDING" | "PAID";
+        Payroll: {
+            /** Format: uuid */
+            id: string;
+            month: string;
+            workdays: string;
+            attendanceDays: number;
+            missingDays: number;
+            overtimeHours: string;
+            dailyWage: string;
+            baseAmount: string;
+            allowance: string;
+            bonus: string;
+            fine: string;
+            loanDeduction: string;
+            payable: string;
+            status: components["schemas"]["PayrollStatus"];
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            employeeId: string;
+            paidTotal: string | null;
+        };
+        PayrollCreate: {
+            /** Format: uuid */
+            employeeId: string;
+            month: string;
+            /** @default 0 */
+            workdays: string;
+            /** @default 0 */
+            attendanceDays: number;
+            /** @default 0 */
+            missingDays: number;
+            /** @default 0 */
+            overtimeHours: string;
+            /** @default 0 */
+            dailyWage: string;
+            /** @default 0 */
+            allowance: string;
+            /** @default 0 */
+            bonus: string;
+            /** @default 0 */
+            fine: string;
+            /** @default 0 */
+            loanDeduction: string;
+            remarks?: string | null;
+        };
+        PayrollUpdate: {
+            workdays?: string;
+            attendanceDays?: number;
+            missingDays?: number;
+            overtimeHours?: string;
+            dailyWage?: string;
+            allowance?: string;
+            bonus?: string;
+            fine?: string;
+            loanDeduction?: string;
+            remarks?: string | null;
+        };
+        PayrollList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["Payroll"][];
+        };
+        PayrollGenerate: {
+            month: string;
+        };
+        PayrollGenerateResult: {
+            created: number;
+            skipped: number;
+        };
+        PayrollMonthStats: {
+            count: number;
+            pendingCount: number;
+            payableTotal: string;
+            paidTotal: string;
+        };
+        /** @enum {string} */
+        PayrollPaymentKind: "NORMAL" | "SUPPLEMENT";
+        PayrollPayment: {
+            /** Format: uuid */
+            id: string;
+            month: string | null;
+            /** Format: date */
+            paidOn: string;
+            amount: string;
+            kind: components["schemas"]["PayrollPaymentKind"] | null;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            payrollId: string;
+            /** Format: uuid */
+            employeeId: string | null;
+            /** Format: uuid */
+            createdById: string | null;
+        };
+        PayrollPaymentCreate: {
+            /** Format: uuid */
+            payrollId: string;
+            /** Format: date */
+            paidOn: string;
+            amount: string;
+            remarks?: string | null;
+        };
+        PayrollPaymentPayRemaining: {
+            /** Format: uuid */
+            payrollId: string;
+            /** Format: date */
+            paidOn: string;
+            remarks?: string | null;
+        };
+        PayrollPaymentList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["PayrollPayment"][];
+        };
+        /** @enum {string} */
+        EmployeeLoanKind: "BORROW" | "REPAY";
+        EmployeeLoan: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["EmployeeLoanKind"];
+            /** Format: date */
+            occurredOn: string;
+            amount: string;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            employeeId: string;
+            /** Format: uuid */
+            payrollId: string | null;
+            /** Format: uuid */
+            createdById: string | null;
+        };
+        EmployeeLoanCreate: {
+            /** Format: uuid */
+            employeeId: string;
+            kind: components["schemas"]["EmployeeLoanKind"];
+            /** Format: date */
+            occurredOn: string;
+            amount: string;
+            remarks?: string | null;
+        };
+        EmployeeLoanUpdate: {
+            /** Format: uuid */
+            employeeId?: string;
+            kind?: components["schemas"]["EmployeeLoanKind"];
+            /** Format: date */
+            occurredOn?: string;
+            amount?: string;
+            remarks?: string | null;
+        };
+        EmployeeLoanList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["EmployeeLoan"][];
+        };
+        EmployeeLoanBalance: {
+            /** Format: uuid */
+            employeeId: string;
+            employeeCode: string | null;
+            employeeName: string | null;
+            borrowed: string;
+            repaid: string;
+            balance: string;
+        };
+        EmployeeLoanBalanceList: components["schemas"]["EmployeeLoanBalance"][];
         GLEntry: {
             /** Format: uuid */
             id: string;
@@ -5448,6 +10079,1407 @@ export interface components {
         AccountTemplateResult: {
             createdCount: number;
         };
+        ManufacturingReference: {
+            /** Format: uuid */
+            id: string;
+            code?: string;
+            name?: string;
+            label?: string;
+        };
+        ManufacturingOperation: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name: string;
+            note?: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingOperationCreate: {
+            code?: string | null;
+            name: string;
+            note?: string | null;
+        };
+        ManufacturingOperationUpdate: {
+            name?: string;
+            note?: string | null;
+        };
+        ManufacturingOperationList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingOperation"][];
+        };
+        ManufacturingProcessTemplate: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            name: string;
+            note?: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingProcessTemplateCreate: {
+            code?: string | null;
+            name: string;
+            note?: string | null;
+        };
+        ManufacturingProcessTemplateUpdate: {
+            name?: string;
+            note?: string | null;
+        };
+        ManufacturingProcessTemplateList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingProcessTemplate"][];
+        };
+        ManufacturingProcessTemplateItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            templateId: string;
+            /** Format: uuid */
+            operationId: string;
+            /** Format: int64 */
+            seq: number;
+            requirement?: string | null;
+            isOutsourced: boolean;
+            template?: components["schemas"]["ManufacturingReference"];
+            operation?: components["schemas"]["ManufacturingReference"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingProcessTemplateItemCreate: {
+            /** Format: uuid */
+            templateId: string;
+            /** Format: uuid */
+            operationId: string;
+            /** Format: int64 */
+            seq: number;
+            requirement?: string | null;
+            /** @default false */
+            isOutsourced: boolean;
+        };
+        ManufacturingProcessTemplateItemUpdate: {
+            /** Format: uuid */
+            operationId?: string;
+            /** Format: int64 */
+            seq?: number;
+            requirement?: string | null;
+            isOutsourced?: boolean;
+        };
+        ManufacturingProcessTemplateItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingProcessTemplateItem"][];
+        };
+        ManufacturingBom: {
+            /** Format: uuid */
+            id: string;
+            code: string;
+            planName?: string | null;
+            note?: string | null;
+            /** Format: uuid */
+            materialId: string;
+            material?: components["schemas"]["ManufacturingReference"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingBomCreate: {
+            code?: string | null;
+            /** Format: uuid */
+            materialId: string;
+            planName?: string | null;
+            note?: string | null;
+        };
+        ManufacturingBomUpdate: {
+            planName?: string | null;
+            note?: string | null;
+        };
+        ManufacturingBomApplyRouteTemplate: {
+            /** Format: uuid */
+            templateId: string;
+        };
+        ManufacturingBomList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingBom"][];
+        };
+        ManufacturingBomComponent: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            bomId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            quantity: string;
+            lossRate?: string | null;
+            note?: string | null;
+            bom?: components["schemas"]["ManufacturingReference"];
+            material?: components["schemas"]["ManufacturingReference"];
+            unit?: components["schemas"]["ManufacturingReference"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingBomComponentCreate: {
+            /** Format: uuid */
+            bomId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            quantity: string;
+            lossRate?: string | null;
+            note?: string | null;
+        };
+        ManufacturingBomComponentUpdate: {
+            /** Format: uuid */
+            materialId?: string;
+            /** Format: uuid */
+            unitId?: string;
+            quantity?: string;
+            lossRate?: string | null;
+            note?: string | null;
+        };
+        ManufacturingBomComponentList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingBomComponent"][];
+        };
+        ManufacturingBomRoute: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            bomId: string;
+            /** Format: uuid */
+            operationId: string;
+            /** Format: int64 */
+            seq: number;
+            requirement?: string | null;
+            isOutsourced: boolean;
+            bom?: components["schemas"]["ManufacturingReference"];
+            operation?: components["schemas"]["ManufacturingReference"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingBomRouteCreate: {
+            /** Format: uuid */
+            bomId: string;
+            /** Format: uuid */
+            operationId: string;
+            /** Format: int64 */
+            seq: number;
+            requirement?: string | null;
+            /** @default false */
+            isOutsourced: boolean;
+        };
+        ManufacturingBomRouteUpdate: {
+            /** Format: uuid */
+            operationId?: string;
+            /** Format: int64 */
+            seq?: number;
+            requirement?: string | null;
+            isOutsourced?: boolean;
+        };
+        ManufacturingBomRouteList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingBomRoute"][];
+        };
+        ManufacturingBomByproduct: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            bomId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            quantity: string;
+            note?: string | null;
+            bom?: components["schemas"]["ManufacturingReference"];
+            material?: components["schemas"]["ManufacturingReference"];
+            unit?: components["schemas"]["ManufacturingReference"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingBomByproductCreate: {
+            /** Format: uuid */
+            bomId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            quantity: string;
+            note?: string | null;
+        };
+        ManufacturingBomByproductUpdate: {
+            /** Format: uuid */
+            materialId?: string;
+            /** Format: uuid */
+            unitId?: string;
+            quantity?: string;
+            note?: string | null;
+        };
+        ManufacturingBomByproductList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingBomByproduct"][];
+        };
+        /** @enum {string} */
+        ManufacturingDemandStatus: "DRAFT" | "CONFIRMED" | "CLOSED" | "VOIDED";
+        /** @enum {string} */
+        ManufacturingFulfillmentMethod: "MAKE" | "BUY" | "OUTSOURCE" | "STOCK";
+        /** @enum {string} */
+        ManufacturingDemandItemStatus: "PENDING" | "SCHEDULED" | "COMPLETED";
+        ManufacturingDemand: {
+            /** Format: uuid */
+            id: string;
+            demandNo: string;
+            /** Format: date */
+            demandDate: string;
+            remarks?: string | null;
+            status: components["schemas"]["ManufacturingDemandStatus"];
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            createdById?: string | null;
+            company?: components["schemas"]["ManufacturingReference"];
+            createdBy?: components["schemas"]["ManufacturingReference"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingDemandCreate: {
+            /** Format: uuid */
+            companyId: string;
+            demandNo?: string | null;
+            /** Format: date */
+            demandDate?: string;
+            remarks?: string | null;
+        };
+        ManufacturingDemandUpdate: {
+            demandNo?: string;
+            /** Format: date */
+            demandDate?: string;
+            remarks?: string | null;
+        };
+        ManufacturingDemandList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingDemand"][];
+        };
+        ManufacturingDemandItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            demandId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            salesOrderItemId?: string | null;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            baseQty: string;
+            orderedQty: string;
+            receivedQty: string;
+            /** Format: date */
+            needDate?: string | null;
+            fulfillmentMethod: components["schemas"]["ManufacturingFulfillmentMethod"];
+            status: components["schemas"]["ManufacturingDemandItemStatus"];
+            materialCode: string;
+            materialName: string;
+            materialSpec?: string | null;
+            unitName: string;
+            remarks?: string | null;
+            ordered: boolean;
+            remainingOrderableQty: string;
+            demand?: components["schemas"]["ManufacturingReference"];
+            company?: components["schemas"]["ManufacturingReference"];
+            material?: components["schemas"]["ManufacturingReference"];
+            unit?: components["schemas"]["ManufacturingReference"];
+            salesOrderItem?: components["schemas"]["ManufacturingReference"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingDemandItemCreate: {
+            /** Format: uuid */
+            demandId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            salesOrderItemId?: string | null;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            /** Format: date */
+            needDate?: string | null;
+            fulfillmentMethod: components["schemas"]["ManufacturingFulfillmentMethod"];
+            remarks?: string | null;
+        };
+        ManufacturingDemandItemUpdate: {
+            /** Format: uuid */
+            materialId?: string;
+            /** Format: uuid */
+            unitId?: string;
+            /** Format: uuid */
+            salesOrderItemId?: string | null;
+            /** Format: int64 */
+            idx?: number;
+            qty?: string;
+            /** Format: date */
+            needDate?: string | null;
+            fulfillmentMethod?: components["schemas"]["ManufacturingFulfillmentMethod"];
+            remarks?: string | null;
+        };
+        ManufacturingDemandItemFulfillmentUpdate: {
+            fulfillmentMethod: components["schemas"]["ManufacturingFulfillmentMethod"];
+        };
+        ManufacturingDemandItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingDemandItem"][];
+        };
+        ManufacturingSalesItemOccupancyRequest: {
+            salesOrderItemIds: string[];
+        };
+        ManufacturingSalesItemOccupancy: {
+            /** Format: uuid */
+            salesOrderItemId: string;
+            orderedBaseQty: string;
+            occupiedBaseQty: string;
+            remainingBaseQty: string;
+        };
+        ManufacturingSalesItemOccupancyList: {
+            results: components["schemas"]["ManufacturingSalesItemOccupancy"][];
+        };
+        /** @enum {string} */
+        ManufacturingWorkOrderStatus: "IN_PROGRESS" | "COMPLETED" | "VOIDED";
+        ManufacturingWorkOrder: {
+            /** Format: uuid */
+            id: string;
+            workOrderNo: string;
+            qty: string;
+            baseQty: string;
+            receivedBaseQty: string;
+            remainingBaseQty: string;
+            /** Format: date */
+            needDate?: string | null;
+            materialCode?: string;
+            materialName?: string;
+            materialSpec?: string | null;
+            unitName?: string;
+            status: components["schemas"]["ManufacturingWorkOrderStatus"];
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            demandId: string;
+            /** Format: uuid */
+            demandItemId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            createdById?: string | null;
+            company?: components["schemas"]["ManufacturingReference"];
+            demand?: components["schemas"]["ManufacturingReference"];
+            demandItem?: components["schemas"]["ManufacturingReference"];
+            material?: components["schemas"]["ManufacturingReference"];
+            unit?: components["schemas"]["ManufacturingReference"];
+            createdBy?: components["schemas"]["ManufacturingReference"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingWorkOrderCreate: {
+            workOrderNo?: string | null;
+            /** Format: uuid */
+            demandItemId: string;
+        };
+        ManufacturingWorkOrderUpdate: {
+            workOrderNo?: string;
+        };
+        ManufacturingWorkOrderList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingWorkOrder"][];
+        };
+        /** @enum {string} */
+        ManufacturingOutputStatus: "DRAFT" | "AUDITED" | "VOIDED";
+        ManufacturingOutput: {
+            /** Format: uuid */
+            id: string;
+            outputNo: string;
+            /** Format: date */
+            outputDate: string;
+            remarks?: string | null;
+            status: components["schemas"]["ManufacturingOutputStatus"];
+            /** Format: date-time */
+            auditedAt?: string | null;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            /** Format: uuid */
+            createdById?: string | null;
+            /** Format: uuid */
+            auditedById?: string | null;
+            company?: components["schemas"]["ManufacturingReference"];
+            warehouse?: components["schemas"]["ManufacturingReference"];
+            createdBy?: components["schemas"]["ManufacturingReference"];
+            auditedBy?: components["schemas"]["ManufacturingReference"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingOutputCreate: {
+            /** Format: uuid */
+            companyId: string;
+            outputNo?: string | null;
+            /** Format: date */
+            outputDate?: string;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            remarks?: string | null;
+        };
+        ManufacturingOutputUpdate: {
+            outputNo?: string;
+            /** Format: date */
+            outputDate?: string;
+            /** Format: uuid */
+            warehouseId?: string | null;
+            remarks?: string | null;
+        };
+        ManufacturingOutputList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingOutput"][];
+        };
+        ManufacturingOutputItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            outputId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            workOrderId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            warehouseId: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            baseQty: string;
+            materialCode: string;
+            materialName: string;
+            materialSpec?: string | null;
+            unitName: string;
+            remarks?: string | null;
+            output?: components["schemas"]["ManufacturingReference"];
+            company?: components["schemas"]["ManufacturingReference"];
+            workOrder?: components["schemas"]["ManufacturingReference"];
+            material?: components["schemas"]["ManufacturingReference"];
+            unit?: components["schemas"]["ManufacturingReference"];
+            warehouse?: components["schemas"]["ManufacturingReference"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ManufacturingOutputItemCreate: {
+            /** Format: uuid */
+            outputId: string;
+            /** Format: uuid */
+            workOrderId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            warehouseId: string;
+            /** Format: int64 */
+            idx: number;
+            qty: string;
+            remarks?: string | null;
+        };
+        ManufacturingOutputItemUpdate: {
+            /** Format: uuid */
+            workOrderId?: string;
+            /** Format: uuid */
+            unitId?: string;
+            /** Format: uuid */
+            warehouseId?: string;
+            /** Format: int64 */
+            idx?: number;
+            qty?: string;
+            remarks?: string | null;
+        };
+        ManufacturingOutputItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ManufacturingOutputItem"][];
+        };
+        /** @enum {string} */
+        BankImportStatus: "PARSED" | "FAILED" | "IMPORTED";
+        /** @enum {string} */
+        BankReconcileStatus: "UNRECONCILED" | "PARTIAL" | "RECONCILED";
+        /** @enum {string} */
+        BankDatetimeFormat: "YMD_DASH_HMS" | "YMD_DASH_HM" | "YMD_SLASH_HMS" | "YMD_SLASH_HM" | "COMPACT_SPACE" | "COMPACT" | "ISO_T" | "CN_HMS" | "MDY_SLASH_HMS" | "DMY_SLASH_HMS";
+        /** @enum {string} */
+        BankDateFormat: "YMD_DASH" | "YMD_SLASH" | "YMD_COMPACT" | "YMD_DOT" | "YMD_CN" | "MDY_SLASH" | "DMY_SLASH" | "DMY_DASH";
+        /** @enum {string} */
+        BankTimeFormat: "HMS" | "HM" | "HMS_COMPACT" | "HMS_CN";
+        BankAccount: {
+            /** Format: uuid */
+            id: string;
+            alias: string;
+            bankName: string;
+            branchName: string | null;
+            holderName: string;
+            accountNo: string;
+            active: boolean;
+            note: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            currencyId: string;
+            /** Format: uuid */
+            accountId: string | null;
+        };
+        BankAccountCreate: {
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            currencyId: string;
+            /** Format: uuid */
+            accountId?: string | null;
+            alias: string;
+            bankName: string;
+            branchName?: string | null;
+            holderName: string;
+            accountNo: string;
+            /** @default true */
+            active: boolean;
+            note?: string | null;
+        };
+        BankAccountUpdate: {
+            /** Format: uuid */
+            currencyId?: string;
+            /** Format: uuid */
+            accountId?: string | null;
+            alias?: string;
+            bankName?: string;
+            branchName?: string | null;
+            holderName?: string;
+            accountNo?: string;
+            active?: boolean;
+            note?: string | null;
+        };
+        BankAccountList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["BankAccount"][];
+        };
+        BankTransaction: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            occurredAt: string;
+            income: string | null;
+            expense: string | null;
+            balance: string | null;
+            counterpartyName: string | null;
+            counterpartyAccount: string | null;
+            summary: string | null;
+            note: string | null;
+            reconciledAmount: string;
+            unreconciledAmount: string;
+            reconcileStatus: components["schemas"]["BankReconcileStatus"];
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            bankAccountId: string;
+        };
+        BankTransactionCreate: {
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            bankAccountId: string;
+            /** Format: date-time */
+            occurredAt: string;
+            income?: string | null;
+            expense?: string | null;
+            balance?: string | null;
+            counterpartyName?: string | null;
+            counterpartyAccount?: string | null;
+            summary?: string | null;
+            note?: string | null;
+        };
+        BankTransactionUpdate: {
+            /** Format: uuid */
+            bankAccountId?: string;
+            /** Format: date-time */
+            occurredAt?: string;
+            income?: string | null;
+            expense?: string | null;
+            balance?: string | null;
+            counterpartyName?: string | null;
+            counterpartyAccount?: string | null;
+            summary?: string | null;
+            note?: string | null;
+        };
+        BankTransactionList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["BankTransaction"][];
+        };
+        BankImportTemplate: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            startRow: number;
+            datetimeCol: string | null;
+            datetimeFormat: components["schemas"]["BankDatetimeFormat"] | null;
+            dateCol: string | null;
+            dateFormat: components["schemas"]["BankDateFormat"] | null;
+            timeCol: string | null;
+            timeFormat: components["schemas"]["BankTimeFormat"] | null;
+            incomeCol: string | null;
+            expenseCol: string | null;
+            amountCol: string | null;
+            balanceCol: string | null;
+            counterpartyNameCol: string | null;
+            counterpartyAccountCol: string | null;
+            summaryCol: string | null;
+            noteCol: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            bankAccountId: string;
+        };
+        BankImportTemplateCreate: {
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            bankAccountId: string;
+            name: string;
+            /** @default 2 */
+            startRow: number;
+            datetimeCol?: string | null;
+            datetimeFormat?: components["schemas"]["BankDatetimeFormat"] | null;
+            dateCol?: string | null;
+            dateFormat?: components["schemas"]["BankDateFormat"] | null;
+            timeCol?: string | null;
+            timeFormat?: components["schemas"]["BankTimeFormat"] | null;
+            incomeCol?: string | null;
+            expenseCol?: string | null;
+            amountCol?: string | null;
+            balanceCol?: string | null;
+            counterpartyNameCol?: string | null;
+            counterpartyAccountCol?: string | null;
+            summaryCol?: string | null;
+            noteCol?: string | null;
+        };
+        BankImportTemplateUpdate: {
+            /** Format: uuid */
+            bankAccountId?: string;
+            name?: string;
+            startRow?: number;
+            datetimeCol?: string | null;
+            datetimeFormat?: components["schemas"]["BankDatetimeFormat"] | null;
+            dateCol?: string | null;
+            dateFormat?: components["schemas"]["BankDateFormat"] | null;
+            timeCol?: string | null;
+            timeFormat?: components["schemas"]["BankTimeFormat"] | null;
+            incomeCol?: string | null;
+            expenseCol?: string | null;
+            amountCol?: string | null;
+            balanceCol?: string | null;
+            counterpartyNameCol?: string | null;
+            counterpartyAccountCol?: string | null;
+            summaryCol?: string | null;
+            noteCol?: string | null;
+        };
+        BankImportTemplateList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["BankImportTemplate"][];
+        };
+        BankImport: {
+            /** Format: uuid */
+            id: string;
+            status: components["schemas"]["BankImportStatus"];
+            error: string | null;
+            /** Format: date-time */
+            importedAt: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            bankAccountId: string;
+            /** Format: uuid */
+            templateId: string;
+            /** Format: uuid */
+            fileId: string;
+            /** Format: uuid */
+            createdById: string | null;
+            /** Format: uuid */
+            importedById: string | null;
+            /** Format: int64 */
+            itemCount: number;
+            /** Format: int64 */
+            errorCount: number;
+        };
+        BankImportCreate: {
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            bankAccountId: string;
+            /** Format: uuid */
+            templateId: string;
+            /** Format: uuid */
+            fileId: string;
+        };
+        BankImportList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["BankImport"][];
+        };
+        BankImportItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            rowNo: number;
+            /** Format: date-time */
+            occurredAt: string | null;
+            income: string | null;
+            expense: string | null;
+            balance: string | null;
+            counterpartyName: string | null;
+            counterpartyAccount: string | null;
+            summary: string | null;
+            note: string | null;
+            error: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            importId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            transactionId: string | null;
+        };
+        BankImportItemUpdate: {
+            /** Format: date-time */
+            occurredAt?: string | null;
+            income?: string | null;
+            expense?: string | null;
+            balance?: string | null;
+            counterpartyName?: string | null;
+            counterpartyAccount?: string | null;
+            summary?: string | null;
+            note?: string | null;
+        };
+        BankImportItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["BankImportItem"][];
+        };
+        BankReconciliation: {
+            /** Format: uuid */
+            id: string;
+            amount: string;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            bankTransactionId: string;
+            /** Format: uuid */
+            journalId: string;
+        };
+        BankReconciliationCreate: {
+            /** Format: uuid */
+            bankTransactionId: string;
+            /** Format: uuid */
+            journalId: string;
+            amount: string;
+        };
+        BankReconciliationQuickCreate: {
+            /** Format: uuid */
+            bankTransactionId: string;
+            /** Format: uuid */
+            counterAccountId: string;
+            amount: string;
+            summary?: string | null;
+            /** Format: date */
+            postingDate: string;
+        };
+        BankReconciliationRemaining: {
+            amount: string;
+        };
+        BankReconciliationList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["BankReconciliation"][];
+        };
+        /** @enum {string} */
+        InvoiceDirection: "INBOUND" | "OUTBOUND";
+        /** @enum {string} */
+        InvoiceStatus: "DRAFT" | "AUDITED" | "VOIDED" | "REVERSED";
+        /** @enum {string} */
+        InvoiceKind: "SPECIAL" | "NORMAL" | "ELECTRONIC_SPECIAL" | "ELECTRONIC_NORMAL" | "DIGITAL_SPECIAL" | "DIGITAL_NORMAL";
+        /** @enum {string} */
+        FinancePartyType: "SUPPLIER" | "CUSTOMER" | "COMPANY" | "EMPLOYEE";
+        VatInvoice: {
+            /** Format: uuid */
+            id: string;
+            docNo: string | null;
+            direction: components["schemas"]["InvoiceDirection"];
+            /** Format: date */
+            invoiceDate: string | null;
+            /** Format: date */
+            postingDate: string | null;
+            partyType: components["schemas"]["FinancePartyType"];
+            /** Format: uuid */
+            partyId: string;
+            invoiceKind: components["schemas"]["InvoiceKind"];
+            invoiceCode: string;
+            invoiceNo: string | null;
+            sellerName: string | null;
+            sellerTaxNo: string | null;
+            sellerAddressPhone: string | null;
+            sellerBankAccount: string | null;
+            buyerName: string | null;
+            buyerTaxNo: string | null;
+            buyerAddressPhone: string | null;
+            buyerBankAccount: string | null;
+            items: {
+                [key: string]: unknown;
+            }[];
+            netTotal: string | null;
+            taxTotal: string | null;
+            grossTotal: string | null;
+            issuer: string | null;
+            reviewer: string | null;
+            payee: string | null;
+            remarks: string | null;
+            redInvoiceNo: string | null;
+            status: components["schemas"]["InvoiceStatus"];
+            /** Format: date-time */
+            auditedAt: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            partyAccountId: string | null;
+            /** Format: uuid */
+            amountAccountId: string | null;
+            /** Format: uuid */
+            taxAccountId: string | null;
+            /** Format: uuid */
+            mirrorInvoiceId: string | null;
+            /** Format: uuid */
+            salReconciliationId: string | null;
+            /** Format: uuid */
+            purReconciliationId: string | null;
+            /** Format: uuid */
+            createdById: string | null;
+            /** Format: uuid */
+            auditedById: string | null;
+        };
+        VatInvoiceCreate: {
+            /** Format: uuid */
+            companyId: string;
+            direction: components["schemas"]["InvoiceDirection"];
+            partyType: components["schemas"]["FinancePartyType"];
+            /** Format: uuid */
+            partyId: string;
+            invoiceKind: components["schemas"]["InvoiceKind"];
+            docNo?: string | null;
+            /** Format: date */
+            invoiceDate?: string | null;
+            invoiceCode?: string | null;
+            invoiceNo?: string | null;
+            sellerName?: string | null;
+            sellerTaxNo?: string | null;
+            sellerAddressPhone?: string | null;
+            sellerBankAccount?: string | null;
+            buyerName?: string | null;
+            buyerTaxNo?: string | null;
+            buyerAddressPhone?: string | null;
+            buyerBankAccount?: string | null;
+            items?: {
+                [key: string]: unknown;
+            }[] | null;
+            netTotal?: string | null;
+            taxTotal?: string | null;
+            grossTotal?: string | null;
+            issuer?: string | null;
+            reviewer?: string | null;
+            payee?: string | null;
+            remarks?: string | null;
+            /** Format: uuid */
+            partyAccountId?: string | null;
+            /** Format: uuid */
+            amountAccountId?: string | null;
+            /** Format: uuid */
+            taxAccountId?: string | null;
+            /** Format: uuid */
+            mirrorInvoiceId?: string | null;
+            /** Format: uuid */
+            salReconciliationId?: string | null;
+            /** Format: uuid */
+            purReconciliationId?: string | null;
+        };
+        VatInvoiceUpdate: {
+            direction?: components["schemas"]["InvoiceDirection"];
+            partyType?: components["schemas"]["FinancePartyType"];
+            /** Format: uuid */
+            partyId?: string;
+            invoiceKind?: components["schemas"]["InvoiceKind"];
+            docNo?: string | null;
+            /** Format: date */
+            invoiceDate?: string | null;
+            invoiceCode?: string | null;
+            invoiceNo?: string | null;
+            sellerName?: string | null;
+            sellerTaxNo?: string | null;
+            sellerAddressPhone?: string | null;
+            sellerBankAccount?: string | null;
+            buyerName?: string | null;
+            buyerTaxNo?: string | null;
+            buyerAddressPhone?: string | null;
+            buyerBankAccount?: string | null;
+            items?: {
+                [key: string]: unknown;
+            }[] | null;
+            netTotal?: string | null;
+            taxTotal?: string | null;
+            grossTotal?: string | null;
+            issuer?: string | null;
+            reviewer?: string | null;
+            payee?: string | null;
+            remarks?: string | null;
+            /** Format: uuid */
+            partyAccountId?: string | null;
+            /** Format: uuid */
+            amountAccountId?: string | null;
+            /** Format: uuid */
+            taxAccountId?: string | null;
+            /** Format: uuid */
+            mirrorInvoiceId?: string | null;
+            /** Format: uuid */
+            salReconciliationId?: string | null;
+            /** Format: uuid */
+            purReconciliationId?: string | null;
+        };
+        VatInvoiceReverse: {
+            /** Format: date */
+            postingDate: string;
+            redInvoiceNo?: string | null;
+        };
+        VatInvoiceList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["VatInvoice"][];
+        };
+        PostingDateAction: {
+            /** Format: date */
+            postingDate?: string | null;
+        };
+        OCRRequest: {
+            /** Format: uuid */
+            fileId: string;
+        };
+        OCRResult: {
+            [key: string]: unknown;
+        };
+        /** @enum {string} */
+        ExpenseReportStatus: "DRAFT" | "AUDITED" | "VOIDED";
+        /** @enum {string} */
+        ExpenseReportItemKind: "INVOICED" | "MANUAL";
+        ExpenseReport: {
+            /** Format: uuid */
+            id: string;
+            docNo: string;
+            /** Format: date */
+            expenseDate: string;
+            /** Format: date */
+            postingDate: string | null;
+            remarks: string | null;
+            status: components["schemas"]["ExpenseReportStatus"];
+            /** Format: date-time */
+            auditedAt: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            employeeId: string;
+            /** Format: uuid */
+            paymentAccountId: string;
+            /** Format: uuid */
+            createdById: string | null;
+            /** Format: uuid */
+            auditedById: string | null;
+        };
+        ExpenseReportCreate: {
+            /** Format: uuid */
+            companyId: string;
+            docNo: string;
+            /** Format: date */
+            expenseDate: string;
+            /** Format: date */
+            postingDate?: string | null;
+            /** Format: uuid */
+            employeeId: string;
+            /** Format: uuid */
+            paymentAccountId: string;
+            remarks?: string | null;
+        };
+        ExpenseReportUpdate: {
+            docNo?: string;
+            /** Format: date */
+            expenseDate?: string;
+            /** Format: date */
+            postingDate?: string | null;
+            /** Format: uuid */
+            employeeId?: string;
+            /** Format: uuid */
+            paymentAccountId?: string;
+            remarks?: string | null;
+        };
+        ExpenseReportList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ExpenseReport"][];
+        };
+        ExpenseReportItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            idx: number;
+            kind: components["schemas"]["ExpenseReportItemKind"];
+            summary: string | null;
+            amount: string | null;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            reportId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            invoiceId: string | null;
+            /** Format: uuid */
+            expenseAccountId: string | null;
+        };
+        ExpenseReportItemCreate: {
+            /** Format: uuid */
+            reportId: string;
+            /** Format: int64 */
+            idx: number;
+            kind: components["schemas"]["ExpenseReportItemKind"];
+            summary?: string | null;
+            amount?: string | null;
+            remarks?: string | null;
+            /** Format: uuid */
+            invoiceId?: string | null;
+            /** Format: uuid */
+            expenseAccountId?: string | null;
+        };
+        ExpenseReportItemUpdate: {
+            /** Format: int64 */
+            idx?: number;
+            kind?: components["schemas"]["ExpenseReportItemKind"];
+            summary?: string | null;
+            amount?: string | null;
+            remarks?: string | null;
+            /** Format: uuid */
+            invoiceId?: string | null;
+            /** Format: uuid */
+            expenseAccountId?: string | null;
+        };
+        ExpenseReportItemList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["ExpenseReportItem"][];
+        };
+        /** @enum {string} */
+        BillKind: "BANK_ACCEPTANCE" | "COMMERCIAL_ACCEPTANCE" | "FINANCE_COMPANY_ACCEPTANCE";
+        /** @enum {string} */
+        BillTransactionType: "RECEIVE" | "ENDORSE" | "SETTLE" | "DISCOUNT" | "REALLOCATE";
+        /** @enum {string} */
+        BillTransactionStatus: "DRAFT" | "AUDITED" | "VOIDED";
+        Bill: {
+            /** Format: uuid */
+            id: string;
+            billNo: string;
+            billKind: components["schemas"]["BillKind"];
+            /** Format: date */
+            issueDate: string | null;
+            /** Format: date */
+            dueDate: string;
+            faceAmount: string | null;
+            drawerName: string | null;
+            drawerAccount: string | null;
+            drawerBankName: string | null;
+            drawerBankNo: string | null;
+            payeeName: string | null;
+            payeeAccount: string | null;
+            payeeBankName: string | null;
+            payeeBankNo: string | null;
+            acceptorName: string | null;
+            acceptorAccount: string | null;
+            acceptorBankName: string | null;
+            acceptorBankNo: string | null;
+            transferable: boolean;
+            /** Format: date */
+            acceptanceDate: string | null;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        BillUpdate: {
+            billKind?: components["schemas"]["BillKind"];
+            /** Format: date */
+            issueDate?: string | null;
+            /** Format: date */
+            dueDate?: string;
+            faceAmount?: string | null;
+            drawerName?: string | null;
+            drawerAccount?: string | null;
+            drawerBankName?: string | null;
+            drawerBankNo?: string | null;
+            payeeName?: string | null;
+            payeeAccount?: string | null;
+            payeeBankName?: string | null;
+            payeeBankNo?: string | null;
+            acceptorName?: string | null;
+            acceptorAccount?: string | null;
+            acceptorBankName?: string | null;
+            acceptorBankNo?: string | null;
+            transferable?: boolean;
+            /** Format: date */
+            acceptanceDate?: string | null;
+            remarks?: string | null;
+        };
+        BillList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["Bill"][];
+        };
+        BillTransaction: {
+            /** Format: uuid */
+            id: string;
+            docNo: string | null;
+            transactionType: components["schemas"]["BillTransactionType"];
+            /** Format: date */
+            occurredOn: string;
+            /** Format: int64 */
+            subStart: number;
+            /** Format: int64 */
+            subEnd: number;
+            amount: string;
+            partyType: components["schemas"]["FinancePartyType"] | null;
+            /** Format: uuid */
+            partyId: string | null;
+            discountOrg: string | null;
+            discountRate: string | null;
+            interest: string | null;
+            netAmount: string | null;
+            /** Format: date */
+            postingDate: string | null;
+            status: components["schemas"]["BillTransactionStatus"];
+            /** Format: date-time */
+            auditedAt: string | null;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            bankAccountId: string;
+            /** Format: uuid */
+            toBankAccountId: string | null;
+            /** Format: uuid */
+            billId: string | null;
+            /** Format: uuid */
+            billAccountId: string | null;
+            /** Format: uuid */
+            settleAccountId: string | null;
+            /** Format: uuid */
+            interestAccountId: string | null;
+            /** Format: uuid */
+            createdById: string | null;
+            /** Format: uuid */
+            auditedById: string | null;
+        };
+        BillTransactionCreate: {
+            transactionType: components["schemas"]["BillTransactionType"];
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            bankAccountId: string;
+            /** Format: uuid */
+            billId?: string | null;
+            billAttrs?: {
+                [key: string]: unknown;
+            } | null;
+            docNo?: string | null;
+            /** Format: date */
+            occurredOn: string;
+            /** Format: int64 */
+            subStart: number;
+            /** Format: int64 */
+            subEnd: number;
+            amount: string;
+            partyType?: components["schemas"]["FinancePartyType"] | null;
+            /** Format: uuid */
+            partyId?: string | null;
+            discountOrg?: string | null;
+            discountRate?: string | null;
+            interest?: string | null;
+            netAmount?: string | null;
+            /** Format: date */
+            postingDate?: string | null;
+            /** Format: uuid */
+            toBankAccountId?: string | null;
+            /** Format: uuid */
+            billAccountId?: string | null;
+            /** Format: uuid */
+            settleAccountId?: string | null;
+            /** Format: uuid */
+            interestAccountId?: string | null;
+            remarks?: string | null;
+        };
+        BillTransactionUpdate: {
+            /** Format: uuid */
+            bankAccountId?: string;
+            /** Format: uuid */
+            billId?: string;
+            docNo?: string;
+            /** Format: date */
+            occurredOn?: string;
+            /** Format: int64 */
+            subStart?: number;
+            /** Format: int64 */
+            subEnd?: number;
+            amount?: string;
+            partyType?: components["schemas"]["FinancePartyType"] | null;
+            /** Format: uuid */
+            partyId?: string | null;
+            discountOrg?: string | null;
+            discountRate?: string | null;
+            interest?: string | null;
+            netAmount?: string | null;
+            /** Format: date */
+            postingDate?: string | null;
+            /** Format: uuid */
+            toBankAccountId?: string | null;
+            /** Format: uuid */
+            billAccountId?: string | null;
+            /** Format: uuid */
+            settleAccountId?: string | null;
+            /** Format: uuid */
+            interestAccountId?: string | null;
+            remarks?: string | null;
+        };
+        BillTransactionList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["BillTransaction"][];
+        };
+        BillHolding: {
+            /** Format: uuid */
+            id: string;
+            billNo: string;
+            /** Format: int64 */
+            subStart: number;
+            /** Format: int64 */
+            subEnd: number;
+            amount: string;
+            /** Format: date */
+            dueDate: string;
+            /** Format: date */
+            acquiredOn: string;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            bankAccountId: string;
+            /** Format: uuid */
+            billId: string;
+            /** Format: uuid */
+            sourceTransactionId: string;
+        };
+        BillHoldingList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["BillHolding"][];
+        };
     };
     responses: {
         /** @description 请求失败 */
@@ -5577,6 +11609,128 @@ export interface operations {
                 };
             };
             403: components["responses"]["Error"];
+        };
+    };
+    queryTodos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TodoQuery"];
+            };
+        };
+        responses: {
+            /** @description 当前用户可见的待办列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodoList"];
+                };
+            };
+            403: components["responses"]["Error"];
+        };
+    };
+    markTodoRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已读后的待办 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Todo"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    dismissTodo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 忽略后的待办 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Todo"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    querySystemAuditLogs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemAuditLogQuery"];
+            };
+        };
+        responses: {
+            /** @description 当前 Actor 可见的操作日志 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemAuditLogList"];
+                };
+            };
+            403: components["responses"]["Error"];
+        };
+    };
+    getSystemAuditLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 操作日志详情 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemAuditLog"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     listResourceMeta: {
@@ -8679,6 +14833,2452 @@ export interface operations {
             404: components["responses"]["Error"];
         };
     };
+    querySalesDeliveries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 销售发货单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDeliveryList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createSalesDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesDeliveryCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDelivery"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getSalesDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 销售发货单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDelivery"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteSalesDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateSalesDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesDeliveryUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDelivery"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    auditSalesDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["FulfillmentAuditRequest"];
+            };
+        };
+        responses: {
+            /** @description 已审核 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDelivery"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidSalesDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDelivery"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    querySalesDeliveryItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 销售发货条目分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDeliveryItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createSalesDeliveryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesDeliveryItemCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDeliveryItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getSalesDeliveryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 销售发货条目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDeliveryItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteSalesDeliveryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateSalesDeliveryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesDeliveryItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDeliveryItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryPurchaseReceipts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 采购入库单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReceiptList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createPurchaseReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseReceiptCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReceipt"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getPurchaseReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 采购入库单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReceipt"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePurchaseReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePurchaseReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseReceiptUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReceipt"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    auditPurchaseReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["FulfillmentAuditRequest"];
+            };
+        };
+        responses: {
+            /** @description 已审核 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReceipt"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidPurchaseReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReceipt"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryPurchaseReceiptItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 采购入库条目分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReceiptItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createPurchaseReceiptItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseReceiptItemCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReceiptItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getPurchaseReceiptItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 采购入库条目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReceiptItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePurchaseReceiptItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePurchaseReceiptItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseReceiptItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReceiptItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    querySalesReconciliations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 销售对账单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliationList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createSalesReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesReconciliationCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getSalesReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 销售对账单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliation"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteSalesReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateSalesReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesReconciliationUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    confirmSalesReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 客户已确认 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    unconfirmSalesReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已撤回确认 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    auditSalesReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ReconciliationAuditRequest"];
+            };
+        };
+        responses: {
+            /** @description 已结单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidSalesReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    querySalesReconciliationItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 销售对账条目分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliationItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createSalesReconciliationItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesReconciliationItemCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliationItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getSalesReconciliationItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 销售对账条目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliationItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteSalesReconciliationItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateSalesReconciliationItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesReconciliationItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesReconciliationItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryPurchaseReconciliations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 采购对账单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliationList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createPurchaseReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseReconciliationCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getPurchaseReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 采购对账单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliation"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePurchaseReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePurchaseReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseReconciliationUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    confirmPurchaseReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 供应商已确认 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    unconfirmPurchaseReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已撤回确认 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    auditPurchaseReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ReconciliationAuditRequest"];
+            };
+        };
+        responses: {
+            /** @description 已结单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidPurchaseReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryPurchaseReconciliationItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 采购对账条目分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliationItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createPurchaseReconciliationItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseReconciliationItemCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliationItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getPurchaseReconciliationItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 采购对账条目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliationItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePurchaseReconciliationItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePurchaseReconciliationItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseReconciliationItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseReconciliationItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    querySalesCompanyAccountDefaults: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 公司默认过账科目分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyAccountDefaultsList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createSalesCompanyAccountDefault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyAccountDefaultsCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyAccountDefaults"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getSalesCompanyAccountDefault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 公司默认过账科目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyAccountDefaults"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    updateSalesCompanyAccountDefault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyAccountDefaultsUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyAccountDefaults"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryScmOrderFlowItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 订单收发货历史分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScmOrderFlowItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    getScmOrderFlowItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 收发货历史字符串行标识（flow_type:source_uuid） */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 订单收发货历史行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScmOrderFlowItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    getSalesCompanyAccountDefaultsByCompany: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 公司履约默认过账科目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyAccountDefaults"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    queryPurchaseOutsourcedIssues: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 委外发料单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedIssueList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createPurchaseOutsourcedIssue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedIssueCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedIssue"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getPurchaseOutsourcedIssue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 委外发料单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedIssue"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePurchaseOutsourcedIssue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePurchaseOutsourcedIssue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedIssueUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedIssue"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    auditPurchaseOutsourcedIssue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已审核 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedIssue"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidPurchaseOutsourcedIssue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedIssue"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryPurchaseOutsourcedIssueItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 委外发料条目分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedIssueItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createPurchaseOutsourcedIssueItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedIssueItemCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedIssueItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getPurchaseOutsourcedIssueItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 委外发料条目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedIssueItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePurchaseOutsourcedIssueItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePurchaseOutsourcedIssueItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedIssueItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedIssueItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryPurchaseOutsourcedReceipts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 委外入库单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createPurchaseOutsourcedReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedReceiptCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceipt"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getPurchaseOutsourcedReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 委外入库单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceipt"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePurchaseOutsourcedReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePurchaseOutsourcedReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedReceiptUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceipt"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    auditPurchaseOutsourcedReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["FulfillmentAuditRequest"];
+            };
+        };
+        responses: {
+            /** @description 已审核 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceipt"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidPurchaseOutsourcedReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceipt"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryPurchaseOutsourcedReceiptItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 委外入库成品条目分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createPurchaseOutsourcedReceiptItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getPurchaseOutsourcedReceiptItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 委外入库成品条目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePurchaseOutsourcedReceiptItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePurchaseOutsourcedReceiptItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryPurchaseOutsourcedReceiptItemMaterials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 委外入库材料扣减条目分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemMaterialList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createPurchaseOutsourcedReceiptItemMaterial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemMaterialCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemMaterial"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getPurchaseOutsourcedReceiptItemMaterial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 委外入库材料扣减条目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemMaterial"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePurchaseOutsourcedReceiptItemMaterial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePurchaseOutsourcedReceiptItemMaterial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemMaterialUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemMaterial"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryPurchaseOutsourcedReceiptItemByproducts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 委外入库副产物条目分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemByproductList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createPurchaseOutsourcedReceiptItemByproduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemByproductCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemByproduct"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getPurchaseOutsourcedReceiptItemByproduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 委外入库副产物条目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemByproduct"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deletePurchaseOutsourcedReceiptItemByproduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updatePurchaseOutsourcedReceiptItemByproduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemByproductUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseOutsourcedReceiptItemByproduct"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
     queryHrEmployees: {
         parameters: {
             query?: never;
@@ -8807,6 +17407,2596 @@ export interface operations {
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+        };
+    };
+    queryHrAttendancePunches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 原始打卡分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendancePunchList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    getHrAttendancePunch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 原始打卡 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendancePunch"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    queryHrAttendanceImports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 考勤导入批次分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceImportList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createHrAttendanceImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttendanceImportCreate"];
+            };
+        };
+        responses: {
+            /** @description 已解析导入预览 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceImport"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getHrAttendanceImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 考勤导入批次 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceImport"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteHrAttendanceImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已撤销并删除批次 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    importHrAttendanceImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttendanceImportExecute"];
+            };
+        };
+        responses: {
+            /** @description 已执行导入 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceImport"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryHrAttendanceDays: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 日考勤分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceDayList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    getHrAttendanceDay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 日考勤 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceDay"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    recalcHrAttendanceDays: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttendanceDayRecalc"];
+            };
+        };
+        responses: {
+            /** @description 重算结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceDayRecalcResult"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    getHrAttendanceMonthSummary: {
+        parameters: {
+            query: {
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 月考勤汇总 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceMonthSummaryList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    queryHrAttendanceCorrections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 补卡分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceCorrectionList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createHrAttendanceCorrection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttendanceCorrectionCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceCorrection"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getHrAttendanceCorrection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 补卡 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceCorrection"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteHrAttendanceCorrection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateHrAttendanceCorrection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttendanceCorrectionUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttendanceCorrection"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryHrPayrolls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 工资单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createHrPayroll: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payroll"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getHrPayroll: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 工资单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payroll"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteHrPayroll: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateHrPayroll: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payroll"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    refreshHrPayroll: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已重取工资快照 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payroll"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    generateHrPayrolls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollGenerate"];
+            };
+        };
+        responses: {
+            /** @description 批量生成结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollGenerateResult"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getHrPayrollMonthStats: {
+        parameters: {
+            query: {
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 工资月统计 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollMonthStats"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    queryHrPayrollPayments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 工资发放分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollPaymentList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createHrPayrollPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollPaymentCreate"];
+            };
+        };
+        responses: {
+            /** @description 已发放 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollPayment"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getHrPayrollPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 工资发放 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollPayment"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteHrPayrollPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除发放并联动工资/借款 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    payRemainingHrPayrollPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollPaymentPayRemaining"];
+            };
+        };
+        responses: {
+            /** @description 已发放剩余工资 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollPayment"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryHrEmployeeLoans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 员工借款台账分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeLoanList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createHrEmployeeLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeLoanCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeLoan"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getHrEmployeeLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 员工借款台账 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeLoan"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteHrEmployeeLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateHrEmployeeLoan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeLoanUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeLoan"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getHrEmployeeLoanBalances: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 员工借款余额 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeLoanBalanceList"];
+                };
+            };
+            403: components["responses"]["Error"];
+        };
+    };
+    queryFinanceBankAccounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 银行账户分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAccountList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createFinanceBankAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankAccountCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAccount"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getFinanceBankAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 银行账户 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAccount"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceBankAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateFinanceBankAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankAccountUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAccount"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryFinanceBankTransactions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 银行流水分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankTransactionList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createFinanceBankTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankTransactionCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankTransaction"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getFinanceBankTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 银行流水 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankTransaction"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceBankTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateFinanceBankTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankTransactionUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankTransaction"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryFinanceBankImportTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 银行导入模板分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImportTemplateList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createFinanceBankImportTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankImportTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImportTemplate"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getFinanceBankImportTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 银行导入模板 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImportTemplate"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceBankImportTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateFinanceBankImportTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankImportTemplateUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImportTemplate"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryFinanceBankImports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 银行导入批次分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImportList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createFinanceBankImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankImportCreate"];
+            };
+        };
+        responses: {
+            /** @description 已解析导入预览 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImport"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getFinanceBankImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 银行导入批次 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImport"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceBankImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除批次 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    importFinanceBankImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已导入流水 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImport"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryFinanceBankImportItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 银行导入行分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImportItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    getFinanceBankImportItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 银行导入行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImportItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceBankImportItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除导入行 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateFinanceBankImportItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankImportItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankImportItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryFinanceBankReconciliations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 银行对账分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankReconciliationList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createFinanceBankReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankReconciliationCreate"];
+            };
+        };
+        responses: {
+            /** @description 已关联 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getFinanceBankReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 银行对账 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankReconciliation"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceBankReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已解除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getFinanceBankReconciliationRemaining: {
+        parameters: {
+            query: {
+                bankTransactionId: string;
+                journalId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 可对账额度 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankReconciliationRemaining"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    quickCreateFinanceBankReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankReconciliationQuickCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建凭证并关联 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankReconciliation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryFinanceVatInvoices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 增值税发票分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VatInvoiceList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createFinanceVatInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VatInvoiceCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VatInvoice"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getFinanceVatInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 增值税发票 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VatInvoice"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceVatInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateFinanceVatInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VatInvoiceUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VatInvoice"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    auditFinanceVatInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostingDateAction"];
+            };
+        };
+        responses: {
+            /** @description 已审核 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VatInvoice"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidFinanceVatInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VatInvoice"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    reverseFinanceVatInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VatInvoiceReverse"];
+            };
+        };
+        responses: {
+            /** @description 已红冲 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VatInvoice"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    ocrFinanceVatInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OCRRequest"];
+            };
+        };
+        responses: {
+            /** @description OCR 预填结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OCRResult"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    queryFinanceExpenseReports: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 报销单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReportList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createFinanceExpenseReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseReportCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReport"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getFinanceExpenseReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 报销单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReport"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceExpenseReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateFinanceExpenseReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseReportUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReport"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    auditFinanceExpenseReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostingDateAction"];
+            };
+        };
+        responses: {
+            /** @description 已审核 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReport"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidFinanceExpenseReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReport"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryFinanceExpenseReportItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 报销行分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReportItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createFinanceExpenseReportItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseReportItemCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReportItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getFinanceExpenseReportItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 报销行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReportItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceExpenseReportItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateFinanceExpenseReportItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpenseReportItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpenseReportItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryFinanceBills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 承兑票据分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    getFinanceBill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 承兑票据 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bill"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceBill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateFinanceBill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bill"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryFinanceBillTransactions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 承兑交易分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillTransactionList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createFinanceBillTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillTransactionCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillTransaction"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getFinanceBillTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 承兑交易 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillTransaction"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteFinanceBillTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateFinanceBillTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillTransactionUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillTransaction"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    auditFinanceBillTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostingDateAction"];
+            };
+        };
+        responses: {
+            /** @description 已审核 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillTransaction"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidFinanceBillTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillTransaction"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    ocrFinanceBillTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OCRRequest"];
+            };
+        };
+        responses: {
+            /** @description OCR 预填结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OCRResult"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    queryFinanceBillHoldings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 票据持有投影分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillHoldingList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    getFinanceBillHolding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 票据持有投影 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillHolding"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     queryAccGlEntries: {
@@ -12175,6 +23365,1834 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingOperations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 工序分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOperationList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingOperationCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOperation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 工序 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOperation"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingOperationUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOperation"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingProcessTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 工艺模板分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingProcessTemplateList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingProcessTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingProcessTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingProcessTemplate"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingProcessTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 工艺模板 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingProcessTemplate"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingProcessTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingProcessTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingProcessTemplateUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingProcessTemplate"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingProcessTemplateItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 工艺模板行分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingProcessTemplateItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingProcessTemplateItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingProcessTemplateItemCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingProcessTemplateItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingProcessTemplateItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 工艺模板行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingProcessTemplateItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingProcessTemplateItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingProcessTemplateItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingProcessTemplateItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingProcessTemplateItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingBoms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description BOM 分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingBom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingBomCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBom"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingBom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description BOM */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBom"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingBom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingBom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingBomUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBom"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    applyManufacturingBomRouteTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingBomApplyRouteTemplate"];
+            };
+        };
+        responses: {
+            /** @description 已复制工艺路线 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomRouteList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingBomComponents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description BOM 配料行分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomComponentList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingBomComponent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingBomComponentCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomComponent"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingBomComponent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description BOM 配料行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomComponent"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingBomComponent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingBomComponent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingBomComponentUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomComponent"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingBomRoutes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description BOM 工艺路线分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomRouteList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingBomRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingBomRouteCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomRoute"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingBomRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description BOM 工艺路线 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomRoute"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingBomRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingBomRoute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingBomRouteUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomRoute"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingBomByproducts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description BOM 副产品行分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomByproductList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingBomByproduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingBomByproductCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomByproduct"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingBomByproduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description BOM 副产品行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomByproduct"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingBomByproduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingBomByproduct: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingBomByproductUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingBomByproduct"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingDemands: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 履约需求单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemandList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingDemand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingDemandCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemand"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingDemand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 履约需求单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemand"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingDemand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingDemand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingDemandUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemand"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    confirmManufacturingDemand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已确认 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemand"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    closeManufacturingDemand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已关闭 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemand"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidManufacturingDemand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemand"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingDemandItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 履约需求行分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemandItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingDemandItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingDemandItemCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemandItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingDemandItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 履约需求行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemandItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingDemandItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingDemandItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingDemandItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemandItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    completeManufacturingDemandItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已完成 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemandItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    changeManufacturingDemandItemFulfillment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingDemandItemFulfillmentUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已变更履约方式 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingDemandItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingSalesItemOccupancies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingSalesItemOccupancyRequest"];
+            };
+        };
+        responses: {
+            /** @description 销售条目履约需求占用 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingSalesItemOccupancyList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingWorkOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 生产工单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingWorkOrderList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingWorkOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingWorkOrderCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingWorkOrder"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingWorkOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 生产工单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingWorkOrder"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingWorkOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingWorkOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingWorkOrderUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingWorkOrder"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidManufacturingWorkOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingWorkOrder"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingOutputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 生产入库单分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOutputList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingOutputCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOutput"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 生产入库单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOutput"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingOutputUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOutput"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    auditManufacturingOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已审核 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOutput"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    voidManufacturingOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已作废 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOutput"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    queryManufacturingOutputItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 生产入库行分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOutputItemList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createManufacturingOutputItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingOutputItemCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOutputItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getManufacturingOutputItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 生产入库行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOutputItem"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteManufacturingOutputItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateManufacturingOutputItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManufacturingOutputItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManufacturingOutputItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     getSystemSetting: {

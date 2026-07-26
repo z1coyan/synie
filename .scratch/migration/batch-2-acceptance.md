@@ -339,6 +339,170 @@ PR-2.1 至 PR-2.13。
 - 产品文档、`CONTEXT.md` 及订单/委外/需求/收发货历史 ADR 已复核；本批只迁移实现，没有
   修改业务规则或术语，故未重复改写领域文档。旧 `backend/` 未编辑、未删除。
 
+## PR-2.15 标准与委外履约超级批次（已关闭）
+
+2026-07-26 一次关闭销售发货头/条目、采购入库头/条目、委外发料头/条目，以及委外入库
+头/条目/材料扣减/副产物共 10 个资源；严格进度由 **50/100** 更新为 **60/100**。
+
+- 迁移前 Elixir 捕获的 superadmin/read-only 共 20 份 GridMeta 快照固化在
+  `snapshots/pr-2.15/`；Go Meta 逐 JSON 语义对拍，四类头动作与十资源能力按权限裁剪。
+- sqlc、两个 Go 深模块、OpenAPI、58 个 HTTP operation 与 10 个 ResourceClient 已接通。
+  标准履约在同一事务串联状态、库存、GL、订单发/收投影、需求投影和审计；委外发料串联
+  双仓库存与 issued 投影，委外入库串联成品/材料/副产物库存、加工费 GL、received/需求
+  投影和审计。作废一律调用事实模块 `Cancel`，不生成 Reverse 分录。
+- 真实 PostgreSQL 覆盖两侧 CRUD、来源与快照、单位折算、默认科目、同币、零金额、20%
+  容差、对账阻挡、负库存与后续材料耗用的整事务回滚，以及审核/编辑、双单抢余量和同头
+  双审核并发；订单投影专项 6 组测试通过。
+- HTTP 契约覆盖全部履约 operation 在 JSON 解码和服务调用前先做权限拒绝，并钉住日期
+  `YYYY-MM-DD`、decimal string 和大写枚举的 REST wire 口径。
+- 四个头 Grid、四个条目 Grid、四个三态抽屉、六类嵌套编辑表、审核弹窗及默认科目读取
+  全部显式使用 REST；科目、订单行、发料清单和委外清单候选使用结构化 FilterState。
+  目标履约页面业务 `gqlFetch` 静态扫描为 0，专项契约 5/5 通过。
+- REST 严格验收输出
+  `fulfillment REST acceptance ok: meta=20 permissionFirst=10 queries=10 heads=4 defaults=1 cleanup=0`；
+  Chromium `fulfillment.go.e2e.ts` 定向 1/1 通过，四类单据均由真实 REST 创建并在对应 Grid
+  可见，目标页面会话 `/graphql=0`，业务夹具与审计精确归零。
+- 固定 `golang:1.26.4-alpine`、真实 PostgreSQL 执行 `go test ./...` 全量通过；前端
+  `check`、`typecheck` 与当前 SCM 契约测试 32/32 通过。迁移保持既有业务规则和术语，
+  `docs/产品文档/` 与 `CONTEXT.md` 已复核，无需制造“已迁移”类领域定义；旧 `backend/`
+  未编辑、未删除。
+
+## PR-2.16 销售/采购对账与订单流批次（已关闭）
+
+2026-07-26 一次关闭销售/采购对账头行、公司默认过账科目与统一订单收发货历史共 6 个资源；
+严格进度由 **60/100** 更新为 **66/100**。
+
+- 从迁移前 Elixir 捕获 6 资源 superadmin/read-only 共 12 份 GridMeta，并由 Go Meta 逐 JSON
+  对拍。公司默认科目只开放 read/create/update、无 DELETE；订单流读取保持四个来源权限
+  任一满足的 OR 语义并继续按公司裁剪，资源本身不制造虚假权限码。
+- sqlc、销售/采购对称的统一对账深模块、默认科目模块、订单流只读模块、OpenAPI 34 个
+  operation 与 6 个 ResourceClient 已接通。对账模块覆盖头行 CRUD、常规确认/撤回、
+  赠送样品结单/作废、发票 close/reopen 事务 seam、金额与数量投影、todo、GL、审计及
+  RepeatableRead 列表。
+- 真实 PostgreSQL 覆盖销售/采购来源恰一、默认科目代入、金额链、状态机、同单与跨单并发
+  恰好一次、投影/待办/总账回滚；常规销售候选另以查询专用 `orderType=REGULAR` 过滤样品
+  订单来源，不扩张迁移前 GridMeta，测试先红后绿并验证来源切为 SAMPLE 后候选归零。
+- HTTP 契约钉住全部入口权限先于 JSON 解码/服务调用，日期、decimal string、大写枚举及
+  订单流 string ID wire 口径。增强后的真实 REST 验收输出：
+  `supply reconciliation REST acceptance ok: meta=12 permissionFirst=41 sides=2 actions=8 defaults=1 nullSlots=4 noDelete=1 orderFlowOR=4 stringIds=1 candidateOrderType=2 graphql=0 cleanup=0`。
+- 销售/采购头行 Grid、头 Drawer、Drawer 内条目表、审核确认弹窗和供应链默认科目设置均
+  显式绑定 REST client；Chromium `reconciliation.go.e2e.ts` 定向 1/1 通过并断言会话
+  `/graphql=0`。全量 Go Chromium 回归 17/17 通过；库存回归改为在多公司环境显式选公司，
+  不再依赖“仅一家时自动选择”的数据库偶然性。
+- 固定 `golang:1.26.4-alpine` 在真实 PostgreSQL 下执行 `go test ./... -count=1` 全量通过；
+  前端 typecheck、71/71 测试、组件 `check` 与 client/SSR build 全部通过，build 仅保留既有
+  大 chunk 警告。对账测试清理改为失败即报错并把可能等待锁的单位删除放到最后；历史遗留的
+  5 组可识别 `RC/RO` 测试夹具已清理，重跑后公司/币种残留均为 0。
+- `docs/产品文档/`、`CONTEXT.md` 及销售/采购对账、默认科目、订单流 ADR 已复核；本批仅迁移
+  实现，没有修改业务规则或术语，故不重复改写领域文档。旧 `backend/` 未编辑、未删除，
+  `.orig` 基线文件仍保留。
+
+## PR-2.17 制造主数据与制造执行超级批次（已关闭）
+
+2026-07-26 一次关闭工序、工艺模板头行、BOM 头及三类明细、需求头行、生产工单、生产入库
+头行共 12 个资源；严格进度由 **66/100** 更新为 **78/100**。
+
+- 从迁移前 Elixir 捕获 12 资源 superadmin/read-only 共 24 份 GridMeta；旧运行时没有独立
+  RecordMeta，Drawer 复用 GridMeta。Go 的 12 个 Meta 构造逐 JSON 语义对拍，并保留模板/BOM
+  子行复用父权限、制造主数据全局可见、执行数据按公司裁剪的边界。
+- sqlc、制造主数据与制造执行两个深模块、OpenAPI 72 个 operation、HTTP 适配层与 12 个
+  ResourceClient 已接通。主数据模块覆盖自动编号、引用删除、合法单位、多 BOM、模板路线
+  事务快照；执行模块覆盖需求占用与状态机、并发工单唯一、入库库存事实、工单/需求投影、
+  超入容差、审计及原路作废回滚。
+- 真实 PostgreSQL 深行为测试覆盖搜索/筛选/排序、父子 CRUD、并发模板带入、并发销售占用、
+  并发工单生成、同头双审核、审核与行编辑竞态、超入、负库存阻止作废，以及全部状态与库存
+  投影回滚。固定 `golang:1.26.4-alpine` 执行 `go test ./... -count=1` 全量通过。
+- REST 严格验收输出：
+  `manufacturing REST acceptance ok: meta=24 permissionFirst=82 parentPermissions=18 global=3 scoped=2 crud=12 demandActions=5 salesOccupancy=1 concurrentConfirm=1 concurrentWorkOrder=1 outputAuditVoid=2 concurrentAudit=1 stockProjectionRollback=1 graphql=0 cleanup=0`。
+  生产入库作废后，入库行仍按迁移前 `ON DELETE RESTRICT` 引用工单，因此工单 destroy 返回
+  409；作废工单已足以释放需求行与需求单，此处按旧实现约束验收。
+- 工序、工艺模板、BOM、需求、工单与生产入库六页及所有子表/动作显式绑定 REST client；
+  目标制造页面静态 GraphQL 扫描为 0。Chromium 定向 1/1 通过（38.3 秒），六页 Grid、
+  Drawer、子表和需求确认均走 Go REST，会话 `/graphql=0`，夹具与审计精确归零。
+- 前端 OpenAPI 生成、typecheck、75/75 测试、组件 `check` 与 client/SSR build 全部通过，
+  build 仅保留既有大 chunk 警告。`docs/产品文档/`、`CONTEXT.md` 与制造相关 ADR 已复核；
+  本批只迁移实现，没有修改业务规则或术语。旧 `backend/` 未编辑、未删除，`.orig` 基线
+  文件仍保留。
+
+## PR-2.18 操作日志、待办与用户痕迹批次（已关闭）
+
+2026-07-26 关闭操作日志、待办和逐用户待办痕迹共 3 个资源；严格进度由 **78/100** 更新为
+**81/100**。
+
+- 迁移前捕获证明只有 `sysAuditLogs` 是真实 GridMeta；superadmin/read-only 两份 11 列
+  快照完全一致。`sysTodos` 与 `sysTodoStates` 的公开 resolver 均返回未知资源，后者也没有
+  GraphQL 类型，因此 Go 端只注册操作日志 Meta，没有为两个内部资源制造虚假 Grid。
+- systemops 深模块与 sqlc 查询目录覆盖操作日志只读查询、global/company 范围，以及 Todo
+  active/history/recent、五个计算字段、逐用户已读/忽略、未读数；内部 Open/Close/StateUpsert
+  保持 caller-owned 事务、同源 active partial unique 与 `(todo,user)` 唯一痕迹。公开 Todo
+  wire enum 为大写，`sourceType` 保持 dotted lowercase，decimal 保持字符串。
+- OpenAPI/HTTP 接通 Audit query/get 与 Todo query/read/dismiss/unread；所有公开动作先做权限
+  拒绝，Todo/TodoState 不开放通用 CRUD。审计 `changes` 作为 JSON object 输出；Todo 返回
+  company/createdBy 关系并保持 `acc.vat_invoice:create` 的旧权限复用。
+- 操作日志 Grid/Drawer 显式使用只读 REST client；Todo 页面与铃铛经兼容 facade 全部切到
+  REST，目标消费面 GraphQL operation 为 0。专项前端契约 3/3、22 assertions 通过。
+- 固定 `golang:1.26.4-alpine` 的真实 PostgreSQL 测试覆盖 snapshot exact、权限优先、公司
+  fail-closed、派生字段、逐用户隔离、mark/dismiss 并发、同源 active 并发以及内部事务提交/
+  回滚。REST 严格验收输出：
+  `system ops REST acceptance ok: meta=2 unavailableMeta=6 permissionFirst=7 readOnly=12 auditScope=6 todoBehavior=7 todoState=9 internalInvariants=3 graphql=0 cleanup=0`。
+- Chromium 目标用例重复 2/2 通过，加入清理强断言后最终 1/1 通过（10.5 秒），覆盖日志
+  Grid/Drawer、铃铛 recent、active/history、忽略与已读，会话 `/graphql=0`、夹具残留 0。
+  验收中旧 `acc.vat_invoice:create` 在 VAT Invoice 尚未迁移、未进入 Go 权限目录时以既存
+  数据库角色授权夹具恢复，登录、JWT 和 handler 仍走真实边界；财务批次注册该权限后消除此
+  过渡夹具。
+- 产品文档、`CONTEXT.md` 与既有领域定义已复核；本批只迁移实现，没有改变业务规则或术语，
+  故不重复改写。旧 `backend/` 未编辑、未删除，`.orig` 基线文件仍保留。
+
+## PR-2.19 考勤、补卡、薪酬与借款批次（已关闭）
+
+2026-07-26 关闭原始打卡、考勤导入、日考勤、补卡、工资单、工资发放和员工借款共 7 个
+资源；严格进度由 **81/100** 更新为 **88/100**。
+
+- 从迁移前 Elixir 捕获 7 资源 superadmin/read-only 共 14 份 GridMeta，并逐 JSON 对拍。
+  七资源保持全局 HR 范围；考勤导入完整复用 `hr.attendance_punch:import`，没有伪造独立
+  权限或内部写接口。
+- Go 深模块、sqlc、OpenAPI 35 个 operation、HTTP 适配与 7 个 ResourceClient 已接通；
+  前端 5 个考勤页面和 3 个薪酬页面全部改用 REST，专项测试 4/4、42 assertions，全量前端
+  82/82、539 assertions 与 TypeScript 检查通过。
+- 真实 PostgreSQL 覆盖 `.dat` 解析、同 SHA 防重、不同批次相同打卡唯一冲突整批回滚、
+  12:00 分桶与工时奖励、补卡重算、工资公式/刷新/批量生成整批回滚、工资发放行锁、正常/
+  补发删除回退、自动借款归还与审计同事务；并发付余款精确 1 成功/1 冲突。
+- REST 严格验收输出：
+  `HR operations REST acceptance ok: meta=14 permissionFirst=19 internal=8 imports=31 attendance=17 corrections=8 payroll=24 payments=12 loans=9 audits=17 concurrency=5 graphql=0 cleanup=0`。
+  Chromium 1/1 通过（40.1 秒），覆盖 8 页、9 个 HR REST 路径，会话 `/graphql=0`、
+  `pageErrors=0`、夹具残留 0。
+- 固定 `golang:1.26.4-alpine` 的 Go 全包与真实 PostgreSQL 测试通过；产品文档、
+  `CONTEXT.md` 与既有 ADR 已复核，本批只迁移 transport/实现，没有修改业务规则或术语。
+  旧 `backend/` 未编辑、未删除，`.orig` 基线文件仍保留。
+
+## PR-2.20 资金银行、发票、费用报销与承兑票据批次（已关闭）
+
+2026-07-26 关闭银行账户、银行流水、导入模板、导入批次、导入暂存行、银行对账、增值税发票、
+报销单、报销行、承兑票据、承兑交易和持有承兑共 12 个资源；严格进度由 **88/100** 更新为
+**100/100**。
+
+- 从迁移前 Elixir 捕获 12 资源 superadmin/read-only 共 24 份 GridMeta，另冻结 GraphQL
+  与 resolver 表面；Go Meta 逐 JSON 对拍。内部 refresh/link/register/rebuild 等 6 个写
+  seam 没有被伪造成公开 REST，BillHolding 继续保持只读、无独立审计的单写者投影。
+- 资金银行与财务单据两个深模块、两组 sqlc 查询、OpenAPI 65 个 REST operation、HTTP 适配
+  与 12 个 ResourceClient 已接通。银行侧覆盖账户/流水约束、原生 xlsx 与 BIFF8 xls、
+  FAILED 留痕、父批次锁与整批导入、双边容量对账、remaining 和 quick journal；单据侧覆盖
+  发票/报销/承兑状态机、编号、对账与待办联动、GL A/B/C/D 原子事务、BillLedger 全链重放、
+  持有段单写者和阿里云 OCR 稀疏预填。
+- 固定 `golang:1.26.4-alpine` 在真实 PostgreSQL 下执行 `go test ./... -count=1` 全量通过；
+  专项测试证明导入与对账并发串行、quick-create 失败不留凭证、发票/报销 GL 与引用保护、
+  承兑并发双审恰一成功、后续已消费时前序作废的状态/GL/持有投影整体回滚。
+- REST 严格验收输出：
+  `finance operations REST acceptance ok meta=24 permissionFirst=40 internal=6 wire=46 scope=40 states=84 audits=9 concurrency=2 graphql=0 cleanup=0`。
+  Finance Chromium 定向 1/1 通过（48.2 秒），九页与导入三层 Drawer、对账、发票/报销、
+  承兑交易及持有动作均走 Go REST，`graphql=0`、`pageErrors=0`、`cleanup=0`。
+- 前端 OpenAPI 生成、typecheck、86/86 测试（615 assertions）、组件 `check` 与 client/SSR
+  build 全部通过；build 只保留既有大 chunk 警告。全量 Go Chromium 回归 21/21 通过
+  （6.1 分钟），Finance 用例在全量序列中再次通过。
+- `docs/产品文档/资金银行.md`、`发票.md`、`费用报销.md`、`票据.md` 与 `CONTEXT.md`
+  已复核；本批只迁移 transport/实现，没有修改业务规则或术语，故无需重复改写领域文档。
+  旧 `backend/` 未编辑、未删除，`.orig` 基线文件仍保留。
+
 ## 当前复核命令
 
 - `SYNIE_TEST_DATABASE_URL=... go test ./...`

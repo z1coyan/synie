@@ -39,7 +39,7 @@ export function MonthSelect(props: { value: string; onChange: (v: string) => voi
   )
 }
 
-// 枚举值(GraphQL 大写)→ 中文;发放类型与工资单状态两组共用此形态
+// 枚举 wire 大写值 → 中文;发放类型与工资单状态两组共用此形态
 export const PAYMENT_KIND_LABELS: Record<string, string> = {
   NORMAL: '发放',
   SUPPLEMENT: '补发',

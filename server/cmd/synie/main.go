@@ -19,7 +19,12 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/base/currency"
 	"github.com/z1coyan/synie/server/internal/domain/base/market"
 	"github.com/z1coyan/synie/server/internal/domain/base/unit"
+	"github.com/z1coyan/synie/server/internal/domain/finance/banking"
+	"github.com/z1coyan/synie/server/internal/domain/finance/documents"
+	"github.com/z1coyan/synie/server/internal/domain/fulfillment/outsourced"
+	"github.com/z1coyan/synie/server/internal/domain/fulfillment/standard"
 	"github.com/z1coyan/synie/server/internal/domain/hr/employee"
+	hroperations "github.com/z1coyan/synie/server/internal/domain/hr/operations"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/material"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/materialcategory"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/materialunit"
@@ -28,10 +33,16 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stockentry"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stocktransfer"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/warehouse"
+	"github.com/z1coyan/synie/server/internal/domain/manufacturing/execution"
+	"github.com/z1coyan/synie/server/internal/domain/manufacturing/master"
 	"github.com/z1coyan/synie/server/internal/domain/purchase/supplier"
+	"github.com/z1coyan/synie/server/internal/domain/sales/companyaccountdefault"
 	"github.com/z1coyan/synie/server/internal/domain/sales/customer"
+	"github.com/z1coyan/synie/server/internal/domain/scm/orderflow"
+	"github.com/z1coyan/synie/server/internal/domain/systemops"
 	"github.com/z1coyan/synie/server/internal/domain/trading/order"
 	"github.com/z1coyan/synie/server/internal/domain/trading/quotation"
+	"github.com/z1coyan/synie/server/internal/domain/trading/reconciliation"
 	httpapi "github.com/z1coyan/synie/server/internal/http"
 	"github.com/z1coyan/synie/server/internal/platform/auth"
 	"github.com/z1coyan/synie/server/internal/platform/config"
@@ -80,6 +91,15 @@ func run() error {
 	registry.MustRegister(customer.ResourceMeta())
 	registry.MustRegister(supplier.ResourceMeta())
 	registry.MustRegister(employee.ResourceMeta())
+	for _, resource := range hroperations.ResourceMetas() {
+		registry.MustRegister(resource)
+	}
+	for _, resource := range banking.ResourceMetas() {
+		registry.MustRegister(resource)
+	}
+	for _, resource := range documents.ResourceMetas() {
+		registry.MustRegister(resource)
+	}
 	registry.MustRegister(materialcategory.ResourceMeta())
 	registry.MustRegister(material.ResourceMeta())
 	registry.MustRegister(materialunit.ResourceMeta())
@@ -102,6 +122,40 @@ func run() error {
 	}
 	registry.MustRegister(order.MaterialResourceMeta())
 	registry.MustRegister(order.ByproductResourceMeta())
+	registry.MustRegister(master.OperationResourceMeta())
+	registry.MustRegister(master.TemplateResourceMeta())
+	registry.MustRegister(master.TemplateItemResourceMeta())
+	registry.MustRegister(master.BOMResourceMeta())
+	registry.MustRegister(master.ComponentResourceMeta())
+	registry.MustRegister(master.RouteResourceMeta())
+	registry.MustRegister(master.ByproductResourceMeta())
+	registry.MustRegister(execution.DemandResourceMeta())
+	registry.MustRegister(execution.DemandItemResourceMeta())
+	registry.MustRegister(execution.WorkOrderResourceMeta())
+	registry.MustRegister(execution.OutputResourceMeta())
+	registry.MustRegister(execution.OutputItemResourceMeta())
+	for _, side := range []standard.Side{standard.SideSales, standard.SidePurchase} {
+		registry.MustRegister(standard.HeadResourceMeta(side))
+		registry.MustRegister(standard.ItemResourceMeta(side))
+	}
+	registry.MustRegister(outsourced.IssueResourceMeta())
+	registry.MustRegister(outsourced.IssueItemResourceMeta())
+	registry.MustRegister(outsourced.ReceiptResourceMeta())
+	registry.MustRegister(outsourced.ReceiptItemResourceMeta())
+	registry.MustRegister(outsourced.ReceiptMaterialResourceMeta())
+	registry.MustRegister(outsourced.ReceiptByproductResourceMeta())
+	for _, side := range []reconciliation.Side{
+		reconciliation.SideSales,
+		reconciliation.SidePurchase,
+	} {
+		registry.MustRegister(reconciliation.HeadResourceMeta(side))
+		registry.MustRegister(reconciliation.ItemResourceMeta(side))
+	}
+	registry.MustRegister(companyaccountdefault.ResourceMeta())
+	registry.MustRegister(orderflow.ResourceMeta())
+	for _, resource := range systemops.ResourceMetas() {
+		registry.MustRegister(resource)
+	}
 	registry.MustRegister(fileplatform.FileResourceMeta())
 	registry.MustRegister(fileplatform.StorageResourceMeta())
 	hasher := auth.NewPasswordHasher(auth.DefaultArgon2Params())
@@ -125,24 +179,41 @@ func run() error {
 	}
 	fileService := fileplatform.NewService(pool)
 	numberingService := numbering.NewService(pool)
+	financeBankingService := banking.NewService(pool, banking.Dependencies{
+		Files: fileService, Numberer: numberingService,
+	})
+	financeDocumentsService := documents.NewService(pool, documents.Dependencies{
+		Files: fileService, Numberer: numberingService,
+	})
 	api := httpapi.New(httpapi.Dependencies{
 		Pool: pool, Auth: authService, Registry: registry,
 		GLEntries: glentry.NewService(pool), GLJournals: gljournal.NewService(pool, numberingService),
 		Currencies: currency.NewService(pool), Companies: company.NewService(pool),
 		Units: unit.NewService(pool), Accounts: account.NewService(pool),
 		Customers: customer.NewService(pool), Suppliers: supplier.NewService(pool),
-		Employees:      employee.NewService(pool, numberingService),
-		MaterialCats:   materialcategory.NewService(pool),
-		Materials:      material.NewService(pool, numberingService),
-		MaterialUnits:  materialunit.NewService(pool),
-		Warehouses:     warehouse.NewService(pool),
-		StockEntries:   stockentry.NewService(pool),
-		StockDocs:      stockdoc.NewService(pool, numberingService),
-		StockTransfers: stocktransfer.NewService(pool, numberingService),
-		StockCounts:    stockcount.NewService(pool, numberingService),
-		Orders:         order.NewService(pool, numberingService),
-		Quotations:     quotation.NewService(pool, numberingService),
-		FileService:    fileService, StorageService: fileplatform.NewStorageService(pool),
+		Employees:              employee.NewService(pool, numberingService),
+		HROperations:           hroperations.NewService(pool, fileService, numberingService),
+		FinanceBanking:         financeBankingService,
+		FinanceDocuments:       financeDocumentsService,
+		MaterialCats:           materialcategory.NewService(pool),
+		Materials:              material.NewService(pool, numberingService),
+		MaterialUnits:          materialunit.NewService(pool),
+		Warehouses:             warehouse.NewService(pool),
+		StockEntries:           stockentry.NewService(pool),
+		StockDocs:              stockdoc.NewService(pool, numberingService),
+		StockTransfers:         stocktransfer.NewService(pool, numberingService),
+		StockCounts:            stockcount.NewService(pool, numberingService),
+		Orders:                 order.NewService(pool, numberingService),
+		Quotations:             quotation.NewService(pool, numberingService),
+		ManufacturingMaster:    master.NewService(pool, numberingService),
+		ManufacturingExecution: execution.NewService(pool, numberingService),
+		StandardFulfillment:    standard.NewService(pool, numberingService),
+		OutsourcedFulfillment:  outsourced.NewService(pool, numberingService),
+		Reconciliations:        reconciliation.NewService(pool, numberingService),
+		CompanyAccountDefaults: companyaccountdefault.NewService(pool),
+		OrderFlowItems:         orderflow.NewService(pool),
+		SystemOps:              systemops.NewService(pool),
+		FileService:            fileService, StorageService: fileplatform.NewStorageService(pool),
 		IAM: iam.NewService(pool, hasher, registry), Numbering: numberingService,
 		Printing: printing.NewService(pool, fileService, printing.NewFieldCatalog()),
 		Settings: settings.NewService(pool), Logger: logger,

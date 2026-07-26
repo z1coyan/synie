@@ -2,27 +2,16 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { bankImportTemplateClient } from '~/lib/resources/finance-operations'
 
 export const Route = createFileRoute('/_app/finance/bank-import-templates')({
   component: BankImportTemplatesPage,
 })
-
-const CREATE_TEMPLATE = `
-  mutation ($input: CreateAccBankImportTemplateInput!) {
-    createAccBankImportTemplate(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_TEMPLATE = `
-  mutation ($id: ID!, $input: UpdateAccBankImportTemplateInput!) {
-    updateAccBankImportTemplate(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 // 概览列;列配置细节抽屉里看(有序白名单,兼当 exclude)
 const GRID_COLUMNS = ['companyId', 'name', 'bankAccountId', 'startRow', 'datetimeCol', 'dateCol', 'amountCol']
@@ -41,6 +30,7 @@ function BankImportTemplatesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accBankImportTemplates"
+          client={bankImportTemplateClient}
           columns={GRID_COLUMNS}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -50,6 +40,7 @@ function BankImportTemplatesPage() {
 
       <SynieRecordDrawer
         resource="accBankImportTemplates"
+        client={bankImportTemplateClient}
         label="导入模板"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -102,21 +93,11 @@ function BankImportTemplatesPage() {
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
           if (mode === 'create') {
-            const data = await gqlFetch<{ createAccBankImportTemplate: { errors: { message: string }[] | null } }>(
-              CREATE_TEMPLATE,
-              { input: values }
-            )
-            errors = data.createAccBankImportTemplate.errors
+            await bankImportTemplateClient.create(values)
           } else {
-            const data = await gqlFetch<{ updateAccBankImportTemplate: { errors: { message: string }[] | null } }>(
-              UPDATE_TEMPLATE,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updateAccBankImportTemplate.errors
+            await bankImportTemplateClient.update(drawer!.row!.id, values)
           }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '导入模板已创建' : '导入模板已更新')
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankImportTemplates'] })
         }}

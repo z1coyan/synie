@@ -1,31 +1,29 @@
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertDialog, Button, Label, ListBox, Modal, Select, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import {
+  AlertDialog,
+  Button,
+  Label,
+  ListBox,
+  Modal,
+  Select,
+  toast,
+} from '@heroui/react'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import type { Row } from '~/components/synie-data-grid/types'
+import { apiClient, apiData } from '~/lib/api/client'
+import {
+  changeDemandItemFulfillment,
+  completeDemandItem,
+  demandItemClient,
+  workOrderClient,
+} from '~/lib/resources/manufacturing'
 
 /**
  * 需求行行级操作(US 12/14-16、自制行生成工单):完成 / 改履约方式 / 生成工单。
  * 条目视图(SynieDataGrid rowActions)与需求单抽屉(SynieEditableTable rowActions)
  * 共用同一套 mutation、确认弹窗与 toast;after 回调由使用方注入(刷新当下列表)。
  */
-
-const COMPLETE_ITEM = `
-  mutation ($id: ID!) {
-    completeMfgDemandItem(id: $id) { errors { message } }
-  }
-`
-const CHANGE_FULFILLMENT = `
-  mutation ($id: ID!, $input: ChangeFulfillmentMfgDemandItemInput!) {
-    changeFulfillmentMfgDemandItem(id: $id, input: $input) { errors { message } }
-  }
-`
-const CREATE_WO = `
-  mutation ($input: CreateMfgWorkOrderInput!) {
-    createMfgWorkOrder(input: $input) { result { id workOrderNo } errors { message } }
-  }
-`
 
 /** 行显隐(体验层;需求单状态/下游工单等权威校验在后端,失败经 toast 呈现) */
 // 已下单(orderedQty>0)的行须等入库回写,不展示点完成
@@ -34,19 +32,23 @@ export const canCompleteItem = (row: Row) =>
   row.fulfillmentMethod !== 'MAKE' &&
   !(Number(row.orderedQty) > 0)
 export const canChangeFulfillmentItem = (row: Row) => row.status !== 'COMPLETED'
-export const canGenerateWorkOrder = (row: Row) => row.fulfillmentMethod === 'MAKE' && row.status === 'PENDING'
+export const canGenerateWorkOrder = (row: Row) =>
+  row.fulfillmentMethod === 'MAKE' && row.status === 'PENDING'
 
 /** 当前用户权限集(other-stock 页同一取法;60s 缓存) */
 export function useMyPermissions() {
   return useQuery({
     queryKey: ['myPermissions'],
     queryFn: () =>
-      gqlFetch<{ myPermissions: string[] }>('query { myPermissions }').then((d) => new Set(d.myPermissions)),
+      apiData(apiClient.GET('/auth/me')).then(
+        (result) => new Set(result.permissions),
+      ),
     staleTime: 60_000,
   })
 }
 
-const rowLabel = (row: Row) => String(row.materialName ?? row.materialCode ?? '该需求行')
+const rowLabel = (row: Row) =>
+  String(row.materialName ?? row.materialCode ?? '该需求行')
 
 type Pending = { kind: 'complete' | 'generate' | 'change'; row: Row }
 
@@ -55,8 +57,10 @@ export function useDemandItemActions(after: () => void) {
   const [pending, setPending] = useState<Pending | null>(null)
   const [method, setMethod] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
-  const meta = useGridMeta('mfgDemandItems')
-  const methodOptions = meta.data?.columns.find((c) => c.name === 'fulfillmentMethod')?.enumOptions ?? []
+  const meta = useGridMeta('mfgDemandItems', true, demandItemClient)
+  const methodOptions =
+    meta.data?.columns.find((c) => c.name === 'fulfillmentMethod')
+      ?.enumOptions ?? []
 
   const done = () => {
     // 行状态变化会影响需求行/工单两个网格与抽屉行数据
@@ -78,12 +82,7 @@ export function useDemandItemActions(after: () => void) {
     run(async () => {
       const row = pending!.row
       try {
-        const data = await gqlFetch<{ completeMfgDemandItem: { errors: { message: string }[] | null } }>(
-          COMPLETE_ITEM,
-          { id: row.id },
-        )
-        const errors = data.completeMfgDemandItem.errors
-        if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '))
+        await completeDemandItem(row.id)
         toast.success(`「${rowLabel(row)}」已完成`)
         setPending(null)
         done()
@@ -96,12 +95,11 @@ export function useDemandItemActions(after: () => void) {
     run(async () => {
       const row = pending!.row
       try {
-        const data = await gqlFetch<{
-          createMfgWorkOrder: { result: { id: string; workOrderNo: string } | null; errors: { message: string }[] | null }
-        }>(CREATE_WO, { input: { demandItemId: row.id, workOrderNo: null } })
-        const errors = data.createMfgWorkOrder.errors
-        if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '))
-        toast.success(`生产工单已生成(${data.createMfgWorkOrder.result?.workOrderNo ?? ''})`)
+        const created = await workOrderClient.create({
+          demandItemId: row.id,
+          workOrderNo: null,
+        })
+        toast.success(`生产工单已生成(${String(created.workOrderNo ?? '')})`)
         setPending(null)
         done()
       } catch (e) {
@@ -113,12 +111,7 @@ export function useDemandItemActions(after: () => void) {
     run(async () => {
       const row = pending!.row
       try {
-        const data = await gqlFetch<{ changeFulfillmentMfgDemandItem: { errors: { message: string }[] | null } }>(
-          CHANGE_FULFILLMENT,
-          { id: row.id, input: { fulfillmentMethod: method } },
-        )
-        const errors = data.changeFulfillmentMfgDemandItem.errors
-        if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '))
+        await changeDemandItemFulfillment(row.id, method!)
         toast.success(`「${rowLabel(row)}」履约方式已改`)
         setPending(null)
         done()
@@ -127,8 +120,16 @@ export function useDemandItemActions(after: () => void) {
       }
     })
 
-  const confirmDialog = (kind: 'complete' | 'generate', title: string, body: string, onConfirm: () => void) => (
-    <AlertDialog.Backdrop isOpen={pending?.kind === kind} onOpenChange={(open) => !open && setPending(null)}>
+  const confirmDialog = (
+    kind: 'complete' | 'generate',
+    title: string,
+    body: string,
+    onConfirm: () => void,
+  ) => (
+    <AlertDialog.Backdrop
+      isOpen={pending?.kind === kind}
+      onOpenChange={(open) => !open && setPending(null)}
+    >
       <AlertDialog.Container>
         <AlertDialog.Dialog className="sm:max-w-[400px]" aria-label={title}>
           {pending?.kind === kind && (
@@ -144,7 +145,11 @@ export function useDemandItemActions(after: () => void) {
                 <Button slot="close" variant="tertiary" isDisabled={running}>
                   取消
                 </Button>
-                <Button variant="primary" isPending={running} onPress={onConfirm}>
+                <Button
+                  variant="primary"
+                  isPending={running}
+                  onPress={onConfirm}
+                >
                   确认
                 </Button>
               </AlertDialog.Footer>
@@ -170,7 +175,10 @@ export function useDemandItemActions(after: () => void) {
         `将按「${pending?.kind === 'generate' ? rowLabel(pending.row) : ''}」的数量生成一张生产工单(单号自动取号)。`,
         () => void confirmGenerate(),
       )}
-      <Modal.Backdrop isOpen={pending?.kind === 'change'} onOpenChange={(open) => !open && setPending(null)}>
+      <Modal.Backdrop
+        isOpen={pending?.kind === 'change'}
+        onOpenChange={(open) => !open && setPending(null)}
+      >
         <Modal.Container>
           <Modal.Dialog className="max-w-md" aria-label="改履约方式">
             {pending?.kind === 'change' && (
@@ -180,20 +188,30 @@ export function useDemandItemActions(after: () => void) {
                 </Modal.Header>
                 <Modal.Body>
                   <p className="mb-3 text-sm text-muted">
-                    「{rowLabel(pending.row)}」的新履约方式(已有未作废工单或已完成行不可改,后端权威校验)。
+                    「{rowLabel(pending.row)}
+                    」的新履约方式(已有未作废工单或已完成行不可改,后端权威校验)。
                   </p>
-                  <Select value={method} onChange={(v) => setMethod(v === '' ? null : String(v))}>
+                  <Select
+                    value={method}
+                    onChange={(v) => setMethod(v === '' ? null : String(v))}
+                  >
                     <Label>履约方式</Label>
                     <Select.Trigger>
                       <Select.Value>
-                        {({ isPlaceholder, defaultChildren }) => (isPlaceholder ? '请选择…' : defaultChildren)}
+                        {({ isPlaceholder, defaultChildren }) =>
+                          isPlaceholder ? '请选择…' : defaultChildren
+                        }
                       </Select.Value>
                       <Select.Indicator />
                     </Select.Trigger>
                     <Select.Popover>
                       <ListBox>
                         {methodOptions.map((o) => (
-                          <ListBox.Item key={o.value} id={o.value} textValue={o.label}>
+                          <ListBox.Item
+                            key={o.value}
+                            id={o.value}
+                            textValue={o.label}
+                          >
                             {o.label}
                             <ListBox.ItemIndicator />
                           </ListBox.Item>
@@ -203,12 +221,18 @@ export function useDemandItemActions(after: () => void) {
                   </Select>
                 </Modal.Body>
                 <Modal.Footer>
-                  <Button variant="secondary" isDisabled={running} onPress={() => setPending(null)}>
+                  <Button
+                    variant="secondary"
+                    isDisabled={running}
+                    onPress={() => setPending(null)}
+                  >
                     取消
                   </Button>
                   <Button
                     isPending={running}
-                    isDisabled={!method || method === pending.row.fulfillmentMethod}
+                    isDisabled={
+                      !method || method === pending.row.fulfillmentMethod
+                    }
                     onPress={() => void confirmChange()}
                   >
                     确认
@@ -226,7 +250,9 @@ export function useDemandItemActions(after: () => void) {
     requestComplete: (row: Row) => setPending({ kind: 'complete', row }),
     requestGenerate: (row: Row) => setPending({ kind: 'generate', row }),
     requestChange: (row: Row) => {
-      setMethod(row.fulfillmentMethod == null ? null : String(row.fulfillmentMethod))
+      setMethod(
+        row.fulfillmentMethod == null ? null : String(row.fulfillmentMethod),
+      )
       setPending({ kind: 'change', row })
     },
     dialogs,

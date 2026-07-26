@@ -1,9 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
-/** Go 订单迁移独立验收：不依赖旧 Elixir GraphQL 全局夹具。 */
+/** Go REST 迁移独立验收：不依赖旧 Elixir GraphQL 全局夹具。 */
 export default defineConfig({
   testDir: '.',
-  testMatch: 'order.go.e2e.ts',
+  testMatch: '*.go.e2e.ts',
   workers: 1,
   fullyParallel: false,
   retries: 0,
