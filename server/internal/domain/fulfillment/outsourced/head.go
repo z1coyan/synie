@@ -446,7 +446,7 @@ func validateReceiptAccounts(ctx context.Context, tx pgx.Tx, item Receipt) error
 		if !ok || value.companyID != item.CompanyID || value.group || !value.active {
 			return apierror.Validation("委外入库科目不合法", map[string][]string{field: {"须属于单据公司、启用且非汇总"}})
 		}
-		if field == "creditAccountId" && (!value.role.Valid || value.role.String != "unbilled_payable") {
+		if field == "creditAccountId" && (!value.role.Valid || !strings.EqualFold(value.role.String, "unbilled_payable")) {
 			return apierror.Validation("委外入库科目不合法", map[string][]string{field: {"须为未开票应付角色科目"}})
 		}
 	}

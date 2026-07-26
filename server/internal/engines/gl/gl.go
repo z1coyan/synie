@@ -263,7 +263,7 @@ func loadAccounts(
 func validateRoleParties(accounts map[uuid.UUID]account, entries []Entry) error {
 	for _, entry := range entries {
 		item := accounts[entry.AccountID]
-		if _, ok := partyAccountRoles[item.role]; ok && entry.PartyID == nil && !entry.IsReversal {
+		if _, ok := partyAccountRoles[strings.ToLower(item.role)]; ok && entry.PartyID == nil && !entry.IsReversal {
 			return ledgerValidation(fmt.Sprintf("往来科目「%s」的分录必须填写对手", item.name))
 		}
 	}

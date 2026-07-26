@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -315,7 +316,7 @@ func validateAccounts(ctx context.Context, tx pgx.Tx, item CompanyAccountDefault
 			return accountValidation(rule.field, "不能选择汇总科目")
 		case !active:
 			return accountValidation(rule.field, "科目已停用")
-		case rule.role != "" && (!role.Valid || role.String != rule.role):
+		case rule.role != "" && (!role.Valid || !strings.EqualFold(role.String, rule.role)):
 			return accountValidation(rule.field, "科目角色不符合默认过账要求")
 		}
 	}

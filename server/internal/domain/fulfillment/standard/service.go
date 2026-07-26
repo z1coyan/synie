@@ -202,7 +202,7 @@ func validateHeadReferences(ctx context.Context, tx pgx.Tx, spec sideSpec, item 
 		if account.role.Valid {
 			role = account.role.String
 		}
-		if field == spec.requiredRoleSide+"AccountId" && role != spec.requiredRole {
+		if field == spec.requiredRoleSide+"AccountId" && !strings.EqualFold(role, spec.requiredRole) {
 			return apierror.Validation(spec.label+"参数不合法",
 				map[string][]string{field: {"科目角色不符合履约要求"}})
 		}

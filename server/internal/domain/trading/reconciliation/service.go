@@ -287,7 +287,7 @@ func validateReferences(
 		if spec.side == "purchase" {
 			wantRole = "unbilled_payable"
 		}
-		if requiredRole && (!value.role.Valid || value.role.String != wantRole) {
+		if requiredRole && (!value.role.Valid || !strings.EqualFold(value.role.String, wantRole)) {
 			return apierror.Validation(spec.label+"参数不合法",
 				map[string][]string{field: {"科目角色不符合对账要求"}})
 		}
