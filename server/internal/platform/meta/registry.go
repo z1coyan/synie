@@ -53,6 +53,18 @@ func (r *Registry) Get(name string) (ResourceMeta, bool) {
 	return resource, ok
 }
 
+// Resources returns a snapshot of every registered resource, sorted by name.
+func (r *Registry) Resources() []ResourceMeta {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make([]ResourceMeta, 0, len(r.resources))
+	for _, resource := range r.resources {
+		result = append(result, resource)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result
+}
+
 func (r *Registry) BuildDocument(name string, actor *authz.Actor) (ResourceMetaDocument, error) {
 	resource, ok := r.Get(name)
 	if !ok {

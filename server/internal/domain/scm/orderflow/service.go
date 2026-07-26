@@ -166,23 +166,7 @@ func appendWhere(where string, args []any, column string) (string, []any) {
 }
 
 func scopedWhere(actor *authz.Actor, where string, args []any) (string, []any) {
-	bypass, companyIDs := actor.CompanyFilter()
-	if bypass {
-		return where, args
-	}
-	if len(companyIDs) == 0 {
-		if where == "" {
-			return " WHERE false", args
-		}
-		return where + " AND false", args
-	}
-	clause := fmt.Sprintf(`"company_id"=ANY($%d::uuid[])`, len(args)+1)
-	if where == "" {
-		where = " WHERE " + clause
-	} else {
-		where += " AND " + clause
-	}
-	return where, append(args, companyIDs)
+	return filterbuild.ApplyCompanyFilter(actor, where, args, "company_id")
 }
 
 const selectColumns = `SELECT id,flow_type,voucher_no,voucher_date,status,company_id,

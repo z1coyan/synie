@@ -94,8 +94,8 @@ func (s *Service) List(ctx context.Context, actor *authz.Actor, query ListQuery)
 		}
 		built.Args = append(built.Args, lineFilter.accountID, lineFilter.amount)
 	}
-	where, args := scopedWhere(actor, built.Where, built.Args)
-	if where == impossibleWhere {
+	where, args, empty := scopedWhere(actor, built.Where, built.Args)
+	if empty {
 		return ListResult{Results: []Journal{}}, nil
 	}
 	order := built.OrderBy
@@ -456,8 +456,6 @@ func (s *Service) Cancel(ctx context.Context, actor *authz.Actor, id uuid.UUID) 
 	return after, nil
 }
 
-const impossibleWhere = " IMPOSSIBLE"
-
 type journalLineFilter struct {
 	accountID uuid.UUID
 	side      string
@@ -511,23 +509,9 @@ func splitJournalLineFilter(source map[string]json.RawMessage) (map[string]json.
 	return filter, &journalLineFilter{accountID: accountID, side: side, amount: amount}, nil
 }
 
-func scopedWhere(actor *authz.Actor, where string, sourceArgs []any) (string, []any) {
+func scopedWhere(actor *authz.Actor, where string, sourceArgs []any) (string, []any, bool) {
 	args := append([]any(nil), sourceArgs...)
-	bypass, ids := actor.CompanyFilter()
-	if bypass {
-		return where, args
-	}
-	if len(ids) == 0 {
-		return impossibleWhere, args
-	}
-	clause := fmt.Sprintf(`"company_id" = ANY($%d::uuid[])`, len(args)+1)
-	args = append(args, ids)
-	if where == "" {
-		where = " WHERE " + clause
-	} else {
-		where += " AND " + clause
-	}
-	return where, args
+	return filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
 }
 
 func require(actor *authz.Actor, action string) error {

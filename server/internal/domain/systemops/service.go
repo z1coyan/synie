@@ -240,11 +240,11 @@ func (s *Service) changeTodoState(ctx context.Context, actor *authz.Actor, id uu
 		return Todo{}, apierror.Wrap(apierror.CodeInternal, "开始待办事务失败", err)
 	}
 	defer tx.Rollback(ctx)
-	bypass, companies := actor.CompanyFilter()
+	scope := filterbuild.ResolveCompanyScope(actor)
 	var sourceChangedAt time.Time
 	err = tx.QueryRow(ctx, `SELECT source_changed_at FROM sys_todo
 		WHERE id=$1 AND ($2 OR company_id=ANY($3::uuid[])) FOR UPDATE`,
-		id, bypass, companies).Scan(&sourceChangedAt)
+		id, scope.Bypass, scope.CompanyIDs).Scan(&sourceChangedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Todo{}, apierror.New(apierror.CodeNotFound, "待办不存在或无权访问")
 	}
@@ -278,7 +278,7 @@ func (s *Service) UnreadCount(ctx context.Context, actor *authz.Actor) (int64, e
 	if err := requirePermission(actor, "acc.vat_invoice:create", "无权限查看待办"); err != nil {
 		return 0, err
 	}
-	bypass, companies := actor.CompanyFilter()
+	scope := filterbuild.ResolveCompanyScope(actor)
 	var count int64
 	err := s.pool.QueryRow(ctx, `
 		SELECT count(*)::bigint
@@ -289,7 +289,7 @@ func (s *Service) UnreadCount(ctx context.Context, actor *authz.Actor) (int64, e
 		  AND state.read_at IS NULL
 		  AND NOT (state.dismissed_at IS NOT NULL AND state.reset_basis_at IS NOT NULL
 		           AND state.reset_basis_at=todo.source_changed_at)
-	`, actor.UserID, bypass, companies).Scan(&count)
+	`, actor.UserID, scope.Bypass, scope.CompanyIDs).Scan(&count)
 	if err != nil {
 		return 0, apierror.Wrap(apierror.CodeInternal, "读取待办未读数失败", err)
 	}
@@ -475,20 +475,20 @@ func utcTimePtr(value *time.Time) {
 }
 
 func addCompanyScope(where string, args []any, actor *authz.Actor, allowGlobal bool) (string, []any) {
-	bypass, companies := actor.CompanyFilter()
-	if bypass {
+	scope := filterbuild.ResolveCompanyScope(actor)
+	if scope.Bypass {
 		return where, args
 	}
 	if allowGlobal {
-		if len(companies) == 0 {
+		if scope.Empty {
 			return addPredicate(where, args, `"company_id" IS NULL`)
 		}
-		return addPredicate(where, args, `("company_id" IS NULL OR "company_id"=ANY($%d::uuid[]))`, companies)
+		return addPredicate(where, args, `("company_id" IS NULL OR "company_id"=ANY($%d::uuid[]))`, scope.CompanyIDs)
 	}
-	if len(companies) == 0 {
+	if scope.Empty {
 		return addPredicate(where, args, `false`)
 	}
-	return addPredicate(where, args, `"company_id"=ANY($%d::uuid[])`, companies)
+	return addPredicate(where, args, `"company_id"=ANY($%d::uuid[])`, scope.CompanyIDs)
 }
 
 func addPredicate(where string, args []any, format string, values ...any) (string, []any) {

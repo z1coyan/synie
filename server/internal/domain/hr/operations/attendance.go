@@ -475,11 +475,12 @@ func (s *Service) RecalcAttendanceDays(
 	if int(to.Sub(from).Hours()/24) > 366 {
 		return 0, apierror.Validation("重算区间不合法", map[string][]string{"dateTo": {"重算区间不能超过一年"}})
 	}
+	// interval 与 attendanceImportUTCOffset 对齐（ADR：固定 UTC+8，不引 tzdata）。
 	rows, err := s.pool.Query(ctx, `
 		SELECT employee_id,local_date FROM (
-			SELECT employee_id,(punched_at + interval '8 hours')::date local_date
+			SELECT employee_id,(punched_at + interval '`+attendanceOffsetInterval+`')::date local_date
 			  FROM hr_attendance_punch
-			 WHERE (punched_at + interval '8 hours')::date BETWEEN $1 AND $2
+			 WHERE (punched_at + interval '`+attendanceOffsetInterval+`')::date BETWEEN $1 AND $2
 			UNION
 			SELECT employee_id,date FROM hr_attendance_correction WHERE date BETWEEN $1 AND $2
 			UNION
@@ -530,12 +531,13 @@ func (s *Service) AttendanceMonthSummary(
 		return nil, err
 	}
 	next := first.AddDate(0, 1, 0)
+	// /fullDayHours：月工日 = Σ正常工时 ÷ 标准工日小时 + Σ奖励工日（ADR）。
 	rows, err := s.pool.Query(ctx, `
 		SELECT d.employee_id,e.code,e.name,count(*)::bigint,
 		       count(*) FILTER (WHERE d.status='missing')::bigint,
 		       COALESCE(sum(d.normal_hours),0),COALESCE(sum(d.overtime_hours),0),
 		       COALESCE(sum(d.bonus_workday),0),
-		       COALESCE(sum(d.normal_hours),0)/8+COALESCE(sum(d.bonus_workday),0)
+		       COALESCE(sum(d.normal_hours),0)/`+fullDayHoursSQL+`+COALESCE(sum(d.bonus_workday),0)
 		  FROM hr_attendance_day d
 		  JOIN hr_employees e ON e.id=d.employee_id
 		 WHERE d.date >= $1 AND d.date < $2
@@ -939,7 +941,7 @@ type attendancePair struct {
 }
 
 func localDate(value time.Time) string {
-	return value.UTC().Add(localOffset).Format("2006-01-02")
+	return value.UTC().Add(attendanceImportUTCOffset).Format("2006-01-02")
 }
 
 func recomputePairs(ctx context.Context, tx pgx.Tx, pairs map[attendancePair]struct{}) error {
@@ -966,11 +968,12 @@ func recomputePair(ctx context.Context, tx pgx.Tx, pair attendancePair) error {
 	if err != nil {
 		return apierror.Wrap(apierror.CodeInternal, "日考勤日期无效", err)
 	}
-	start := date.Add(-localOffset).UTC()
+	start := date.Add(-attendanceImportUTCOffset).UTC()
 	end := start.Add(24 * time.Hour)
+	// interval 与 attendanceImportUTCOffset 对齐（ADR：固定 UTC+8，不引 tzdata）。
 	rows, err := tx.Query(ctx, `
 		SELECT to_char(local_time,'HH24:MI:SS') FROM (
-			SELECT (punched_at + interval '8 hours')::time local_time
+			SELECT (punched_at + interval '`+attendanceOffsetInterval+`')::time local_time
 			  FROM hr_attendance_punch
 			 WHERE employee_id=$1 AND punched_at >= $2 AND punched_at < $3
 			UNION ALL
@@ -1034,7 +1037,7 @@ func computeAttendanceDay(raw []string) (computedDay, error) {
 		if err != nil {
 			return computedDay{}, apierror.Wrap(apierror.CodeInternal, "解析日考勤时刻失败", err)
 		}
-		if parsed.Hour() < 12 {
+		if parsed.Hour() < morningAfternoonSplitHour {
 			morning = append(morning, parsed)
 		} else {
 			afternoon = append(afternoon, parsed)
@@ -1044,14 +1047,14 @@ func computeAttendanceDay(raw []string) (computedDay, error) {
 	sort.Slice(afternoon, func(i, j int) bool { return afternoon[i].Before(afternoon[j]) })
 	mIn, mOut := timeBounds(morning)
 	aIn, aOut := timeBounds(afternoon)
-	mUnits := minInt(spanUnits(morning), 8)
+	mUnits := minInt(spanUnits(morning), halfDayUnits)
 	aUnits := spanUnits(afternoon)
-	otUnits := maxInt(aUnits-8, 0)
-	normal := decimal.NewFromInt(int64(mUnits + minInt(aUnits, 8))).Div(decimal.NewFromInt(2))
-	overtime := decimal.NewFromInt(int64(otUnits)).Div(decimal.NewFromInt(2))
+	otUnits := maxInt(aUnits-halfDayUnits, 0)
+	normal := decimal.NewFromInt(int64(mUnits + minInt(aUnits, halfDayUnits))).Div(unitsPerHour)
+	overtime := decimal.NewFromInt(int64(otUnits)).Div(unitsPerHour)
 	bonus := decimal.Zero
-	if otUnits >= 7 {
-		bonus = decimal.RequireFromString("0.5")
+	if otUnits >= bonusThresholdUnits {
+		bonus = bonusWorkday
 	}
 	status := "ok"
 	if len(morning) == 1 || len(afternoon) == 1 {
@@ -1076,7 +1079,7 @@ func spanUnits(values []time.Time) int {
 	if len(values) < 2 {
 		return 0
 	}
-	return int(values[len(values)-1].Sub(values[0]) / (30 * time.Minute))
+	return int(values[len(values)-1].Sub(values[0]) / segmentRound)
 }
 
 func minInt(a, b int) int {

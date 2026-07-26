@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/domain/trading/order"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
@@ -75,20 +76,7 @@ func validatePage(query *ListQuery) error {
 }
 
 func scopedWhere(actor *authz.Actor, where string, args []any) (string, []any) {
-	bypass, companyIDs := actor.CompanyFilter()
-	if bypass {
-		return where, args
-	}
-	if len(companyIDs) == 0 {
-		return " WHERE false", nil
-	}
-	clause := fmt.Sprintf(`"company_id"=ANY($%d::uuid[])`, len(args)+1)
-	if where == "" {
-		where = " WHERE " + clause
-	} else {
-		where += " AND " + clause
-	}
-	return where, append(args, companyIDs)
+	return filterbuild.ApplyCompanyFilter(actor, where, args, "company_id")
 }
 
 func validateCommonHead(companyID uuid.UUID, no string, documentDate time.Time, partyType string, partyID uuid.UUID, remarks *string) error {

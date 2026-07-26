@@ -113,20 +113,8 @@ func buildFilter(resourceName string, query ListQuery) (filterbuild.SQL, error) 
 }
 
 func scopedWhere(actor *authz.Actor, where string, args []any, column string) (string, []any, bool) {
-	bypass, companies := actor.CompanyFilter()
-	if bypass {
-		return where, args, true
-	}
-	if len(companies) == 0 {
-		return where, args, false
-	}
-	clause := fmt.Sprintf(`"%s"=ANY($%d::uuid[])`, column, len(args)+1)
-	if where == "" {
-		where = " WHERE " + clause
-	} else {
-		where += " AND " + clause
-	}
-	return where, append(args, companies), true
+	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, column)
+	return where, args, !empty
 }
 
 func appendPage(sql string, args []any, query ListQuery) (string, []any) {

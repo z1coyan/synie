@@ -99,20 +99,7 @@ func (s *Service) ListHeads(
 }
 
 func scopedWhere(actor *authz.Actor, where string, args []any) (string, []any) {
-	bypass, ids := actor.CompanyFilter()
-	if bypass {
-		return where, args
-	}
-	if len(ids) == 0 {
-		return " WHERE false", nil
-	}
-	clause := fmt.Sprintf(`"company_id"=ANY($%d::uuid[])`, len(args)+1)
-	if where == "" {
-		where = " WHERE " + clause
-	} else {
-		where += " AND " + clause
-	}
-	return where, append(args, ids)
+	return filterbuild.ApplyCompanyFilter(actor, where, args, "company_id")
 }
 
 func headListSelect() string {

@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/domain/trading/reconciliation"
 	"github.com/z1coyan/synie/server/internal/engines/gl"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
@@ -294,22 +295,24 @@ func appendPagination(sql string, args []any, query ListQuery) (string, []any) {
 func companyScope(
 	actor *authz.Actor, where string, args []any, column string,
 ) (string, []any) {
-	bypass, companies := actor.CompanyFilter()
-	if bypass {
-		return where, args
-	}
-	return appendPredicate(where, args, column+"=ANY(?::uuid[])", companies)
+	return filterbuild.ApplyCompanyFilter(actor, where, args, column)
 }
 
 func billScope(actor *authz.Actor, where string, args []any, billColumn string) (string, []any) {
-	bypass, companies := actor.CompanyFilter()
+	ids, bypass, ok := filterbuild.CompanyIDsOrNil(actor)
 	if bypass {
 		return where, args
+	}
+	if !ok {
+		if where == "" {
+			return filterbuild.ImpossibleWhere, args
+		}
+		return where + " AND false", args
 	}
 	return appendPredicate(where, args, `EXISTS(
 		SELECT 1 FROM acc_bill_transaction scope_tx
 		WHERE scope_tx.bill_id=`+billColumn+` AND scope_tx.company_id=ANY(?::uuid[])
-	)`, companies)
+	)`, ids)
 }
 
 func writeAudit(

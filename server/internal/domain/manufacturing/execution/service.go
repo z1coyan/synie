@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -74,14 +75,14 @@ func scopedCompany(actor *authz.Actor, explicit *uuid.UUID) (string, []any, erro
 		}
 		return "company_id=$1", []any{*explicit}, nil
 	}
-	bypass, companyIDs := actor.CompanyFilter()
-	if bypass {
+	scope := filterbuild.ResolveCompanyScope(actor)
+	if scope.Bypass {
 		return "true", nil, nil
 	}
-	if len(companyIDs) == 0 {
+	if scope.Empty {
 		return "false", nil, nil
 	}
-	return "company_id=ANY($1::uuid[])", []any{companyIDs}, nil
+	return "company_id=ANY($1::uuid[])", []any{scope.CompanyIDs}, nil
 }
 
 func writeAudit(

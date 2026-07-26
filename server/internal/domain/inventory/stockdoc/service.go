@@ -76,18 +76,9 @@ func (s *Service) List(ctx context.Context, actor *authz.Actor, query ListQuery)
 		return ListResult{}, err
 	}
 	where, args := built.Where, append([]any(nil), built.Args...)
-	bypass, companyIDs := actor.CompanyFilter()
-	if !bypass {
-		if len(companyIDs) == 0 {
-			return ListResult{Results: []Doc{}}, nil
-		}
-		clause := fmt.Sprintf(`"company_id" = ANY($%d::uuid[])`, len(args)+1)
-		args = append(args, companyIDs)
-		if where == "" {
-			where = " WHERE " + clause
-		} else {
-			where += " AND " + clause
-		}
+	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
+	if empty {
+		return ListResult{Results: []Doc{}}, nil
 	}
 	order := built.OrderBy
 	if order == "" {

@@ -9,10 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const (
-	maxImportRows = 100_000
-	localOffset   = 8 * time.Hour
-)
+const maxImportRows = 100_000
 
 type parsedPunch struct {
 	AttendanceNo string
@@ -54,7 +51,7 @@ func parseAttendanceFile(value []byte) (parsedFile, error) {
 			result.BadRows++
 			continue
 		}
-		punchedAt := local.Add(-localOffset).UTC()
+		punchedAt := local.Add(-attendanceImportUTCOffset).UTC()
 		key := fields[0] + "\x00" + punchedAt.Format(time.RFC3339Nano)
 		if _, exists := seen[key]; exists {
 			result.DupRows++

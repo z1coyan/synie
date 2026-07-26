@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -63,21 +64,7 @@ func pagination(query *ListQuery) error {
 }
 
 func scopedWhere(actor *authz.Actor, where string, args []any) (string, []any) {
-	bypass, companyIDs := actor.CompanyFilter()
-	if bypass {
-		return where, args
-	}
-	if len(companyIDs) == 0 {
-		return " WHERE false", nil
-	}
-	at := len(args) + 1
-	clause := fmt.Sprintf(`"company_id" = ANY($%d::uuid[])`, at)
-	if where == "" {
-		where = " WHERE " + clause
-	} else {
-		where += " AND " + clause
-	}
-	return where, append(args, companyIDs)
+	return filterbuild.ApplyCompanyFilter(actor, where, args, "company_id")
 }
 
 func validateQuotationShape(

@@ -1055,11 +1055,14 @@ func lockBillForActor(
 	if err != nil {
 		return item, err
 	}
-	bypass, companies := actor.CompanyFilter()
+	ids, bypass, ok := filterbuild.CompanyIDsOrNil(actor)
 	if !bypass {
+		if !ok {
+			return Bill{}, apierror.New(apierror.CodeNotFound, "承兑票据不存在")
+		}
 		var accessible bool
 		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM acc_bill_transaction
-			WHERE bill_id=$1 AND company_id=ANY($2::uuid[]))`, id, companies).
+			WHERE bill_id=$1 AND company_id=ANY($2::uuid[]))`, id, ids).
 			Scan(&accessible); err != nil {
 			return Bill{}, apierror.Wrap(apierror.CodeInternal, "检查票据公司范围失败", err)
 		}

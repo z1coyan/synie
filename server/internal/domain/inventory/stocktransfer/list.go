@@ -141,21 +141,7 @@ func buildList(resourceMeta meta.ResourceMeta, query ListQuery) (filterbuild.SQL
 
 func applyCompanyScope(actor *authz.Actor, where string, initial []any) (string, []any, bool) {
 	args := append([]any(nil), initial...)
-	bypass, companyIDs := actor.CompanyFilter()
-	if bypass {
-		return where, args, false
-	}
-	if len(companyIDs) == 0 {
-		return where, args, true
-	}
-	clause := fmt.Sprintf(`"company_id" = ANY($%d::uuid[])`, len(args)+1)
-	args = append(args, companyIDs)
-	if where == "" {
-		where = " WHERE " + clause
-	} else {
-		where += " AND " + clause
-	}
-	return where, args, false
+	return filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
 }
 
 func queryPage(ctx context.Context, tx pgx.Tx, sql string, args []any, query ListQuery) (pgx.Rows, error) {

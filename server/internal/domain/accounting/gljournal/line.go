@@ -52,8 +52,8 @@ func (s *Service) ListLines(ctx context.Context, actor *authz.Actor, query ListL
 	if err != nil {
 		return LineListResult{}, err
 	}
-	where, args := scopedWhere(actor, built.Where, built.Args)
-	if where == impossibleWhere {
+	where, args, empty := scopedWhere(actor, built.Where, built.Args)
+	if empty {
 		return LineListResult{Results: []Line{}}, nil
 	}
 	order := built.OrderBy

@@ -199,20 +199,8 @@ func scopedListWhere(
 		}
 		return where, append(args, *explicit), nil
 	}
-	bypass, ids := actor.CompanyFilter()
-	if bypass {
-		return where, args, nil
-	}
-	if len(ids) == 0 {
-		return " WHERE false", nil, nil
-	}
-	clause := fmt.Sprintf(`"company_id"=ANY($%d::uuid[])`, len(args)+1)
-	if where == "" {
-		where = " WHERE " + clause
-	} else {
-		where += " AND " + clause
-	}
-	return where, append(args, ids), nil
+	where, args = filterbuild.ApplyCompanyFilter(actor, where, args, "company_id")
+	return where, args, nil
 }
 
 func (s *Service) GetDemand(

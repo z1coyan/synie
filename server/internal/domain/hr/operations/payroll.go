@@ -304,7 +304,7 @@ func (s *Service) GeneratePayrolls(
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT d.employee_id,
-		       COALESCE(sum(d.normal_hours),0)/8+COALESCE(sum(d.bonus_workday),0),
+		       COALESCE(sum(d.normal_hours),0)/`+fullDayHoursSQL+`+COALESCE(sum(d.bonus_workday),0),
 		       count(*)::bigint,count(*) FILTER (WHERE d.status='missing')::bigint,
 		       COALESCE(sum(d.overtime_hours),0),
 		       COALESCE(e.daily_wage,0),COALESCE(e.monthly_allowance,0)
@@ -995,7 +995,7 @@ func payrollSnapshotForEmployee(
 	var result payrollRefreshSnapshot
 	var workdays, overtime, wage, allowance pgtype.Numeric
 	err := tx.QueryRow(ctx, `
-		SELECT COALESCE(sum(d.normal_hours),0)/8+COALESCE(sum(d.bonus_workday),0),
+		SELECT COALESCE(sum(d.normal_hours),0)/`+fullDayHoursSQL+`+COALESCE(sum(d.bonus_workday),0),
 		       count(d.id)::bigint,count(d.id) FILTER (WHERE d.status='missing')::bigint,
 		       COALESCE(sum(d.overtime_hours),0),COALESCE(e.daily_wage,0),
 		       COALESCE(e.monthly_allowance,0)

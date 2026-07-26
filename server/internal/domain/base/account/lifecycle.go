@@ -26,15 +26,13 @@ const accountSource = ` FROM (
 ) account`
 
 func (s *Service) Get(ctx context.Context, actor *authz.Actor, id uuid.UUID) (Account, error) {
-	bypass, companyIDs := actor.CompanyFilter()
+	where, args, empty := filterbuild.AppendCompanyFilter(actor, ` WHERE id = $1`, []any{id}, "company_id")
+	if empty {
+		return Account{}, apierror.New(apierror.CodeNotFound, "会计科目不存在")
+	}
 	query := `SELECT id, code, name, direction, is_group, active, role,
 		parent_id, company_id, currency_id, inserted_at, updated_at,
-		parent_name, company_name, currency_name, has_children` + accountSource + ` WHERE id = $1`
-	args := []any{id}
-	if !bypass {
-		query += ` AND company_id = ANY($2)`
-		args = append(args, companyIDs)
-	}
+		parent_name, company_name, currency_name, has_children` + accountSource + where
 	item, err := scanAccount(s.pool.QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Account{}, apierror.New(apierror.CodeNotFound, "会计科目不存在")
@@ -67,15 +65,9 @@ func (s *Service) List(ctx context.Context, actor *authz.Actor, query ListQuery)
 		return ListResult{}, err
 	}
 	where, args := built.Where, append([]any(nil), built.Args...)
-	bypass, companyIDs := actor.CompanyFilter()
-	if !bypass {
-		predicate := fmt.Sprintf(`company_id = ANY($%d)`, len(args)+1)
-		if where == "" {
-			where = ` WHERE ` + predicate
-		} else {
-			where += ` AND ` + predicate
-		}
-		args = append(args, companyIDs)
+	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
+	if empty {
+		return ListResult{Results: []Account{}}, nil
 	}
 	order := built.OrderBy
 	if order == "" {

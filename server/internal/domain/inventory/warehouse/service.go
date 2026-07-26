@@ -39,13 +39,11 @@ func (s *Service) Get(ctx context.Context, actor *authz.Actor, id uuid.UUID) (Wa
 	if actor == nil {
 		return Warehouse{}, apierror.New(apierror.CodeForbidden, "无权访问仓库")
 	}
-	query := warehouseSelect + warehouseSource + ` WHERE id=$1`
-	args := []any{id}
-	bypass, companyIDs := actor.CompanyFilter()
-	if !bypass {
-		query += ` AND company_id=ANY($2)`
-		args = append(args, companyIDs)
+	where, args, empty := filterbuild.AppendCompanyFilter(actor, ` WHERE id=$1`, []any{id}, "company_id")
+	if empty {
+		return Warehouse{}, apierror.New(apierror.CodeNotFound, "仓库不存在")
 	}
+	query := warehouseSelect + warehouseSource + where
 	item, err := scanWarehouse(s.pool.QueryRow(ctx, query, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Warehouse{}, apierror.New(apierror.CodeNotFound, "仓库不存在")
@@ -117,10 +115,9 @@ func (s *Service) list(
 		))
 		args = append(args, outsourced.partyType, outsourced.partyID)
 	}
-	bypass, companyIDs := actor.CompanyFilter()
-	if !bypass {
-		where = appendWarehousePredicate(where, fmt.Sprintf(`company_id=ANY($%d)`, len(args)+1))
-		args = append(args, companyIDs)
+	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
+	if empty {
+		return ListResult{Results: []Warehouse{}}, nil
 	}
 	order := built.OrderBy
 	if order == "" {
