@@ -68,6 +68,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/setup/first-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createSetupFirstUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/currencies/seed-common": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["seedSetupCommonCurrencies"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/currencies/activate-base": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["activateSetupBaseCurrency"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeSetup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/todos/unread-count": {
         parameters: {
             query?: never;
@@ -6562,6 +6626,27 @@ export interface components {
             initialized: boolean;
             hasUsers: boolean;
         };
+        SetupFirstUserRequest: {
+            username: string;
+            name?: string | null;
+            password: string;
+        };
+        SetupSeedCurrenciesResponse: {
+            created: number;
+        };
+        SetupActivateBaseCurrencyRequest: {
+            /** Format: uuid */
+            currencyId: string;
+        };
+        SetupCompleteRequest: {
+            /** @enum {string} */
+            preferredLanguage: "zh-CN" | "en-US";
+            /** @default false */
+            seedSampleData: boolean;
+        };
+        SetupSuccessResponse: {
+            success: boolean;
+        };
         TodoUnreadCount: {
             /** Format: int64 */
             count: number;
@@ -11588,6 +11673,113 @@ export interface operations {
                     "application/json": components["schemas"]["SetupStatus"];
                 };
             };
+        };
+    };
+    createSetupFirstUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupFirstUserRequest"];
+            };
+        };
+        responses: {
+            /** @description 首个超级管理员创建成功并签发登录态 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    seedSetupCommonCurrencies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 常用货币幂等预置结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupSeedCurrenciesResponse"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    activateSetupBaseCurrency: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupActivateBaseCurrencyRequest"];
+            };
+        };
+        responses: {
+            /** @description 仅选定本币保持启用 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupSuccessResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    completeSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description 初始化完成 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupSuccessResponse"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
         };
     };
     getTodoUnreadCount: {

@@ -14,103 +14,38 @@ import {
   toast,
 } from '@heroui/react'
 import { AppearanceSwitch } from '~/components/appearance-switch'
+import { login as loginSession } from '~/lib/api/session'
 import { setToken } from '~/lib/auth'
-import { gqlFetch } from '~/lib/graphql'
-import { fetchSetupStatus } from '~/lib/setup'
-import { seedWarehouseDefaults } from '~/lib/resources/inventory'
+import {
+  activateSetupBaseCurrency,
+  completeSetup,
+  createSetupFirstUser,
+  fetchSetupStatus,
+  seedSetupCommonCurrencies,
+} from '~/lib/setup'
+import type { SetupLanguage } from '~/lib/setup'
+import { accountClient, initializeAccountTemplate } from '~/lib/resources/accounts'
+import { companyClient } from '~/lib/resources/companies'
+import { currencyClient } from '~/lib/resources/currencies'
 
-// —— GraphQL 文档(setup 四个操作无 codegen 生成,照 login.tsx 手写) ——
-const LOGIN_MUTATION = `
-  mutation Login($username: String!, $password: String!) {
-    login(username: $username, password: $password) {
-      token
-      user { id username name }
-    }
-  }
-`
-const CREATE_FIRST_USER = `
-  mutation ($username: String!, $name: String, $password: String!) {
-    setupCreateFirstUser(username: $username, name: $name, password: $password) {
-      token
-      user { id username name }
-    }
-  }
-`
-const SEED_CURRENCIES = `
-  mutation { setupSeedCommonCurrencies }
-`
-const ACTIVATE_ONLY_BASE_CURRENCY = `
-  mutation ($currencyId: ID!) {
-    setupActivateOnlyBaseCurrency(currencyId: $currencyId)
-  }
-`
-const COMPANIES_QUERY = `
-  query { basCompanies(limit: 1, offset: 0) { count results { id name } } }
-`
-const CURRENCIES_QUERY = `
-  query { basCurrencies(limit: 200, offset: 0) { count results { id name isoCode symbol } } }
-`
-const accountCountQuery = (companyId: string) => `
-  query { basAccounts(limit: 1, offset: 0, filter: {companyId: {eq: ${JSON.stringify(companyId)}}}) { count } }
-`
-const CREATE_COMPANY = `
-  mutation ($input: CreateBasCompanyInput!) {
-    createBasCompany(input: $input) { result { id } errors { message } }
-  }
-`
-// 泛型 action 返回标量(创建条数),同 accounts.tsx;错误走 top-level errors 由 gqlFetch 抛出
-const INIT_FROM_TEMPLATE = `
-  mutation ($input: InitBasAccountFromTemplateInput!) {
-    initBasAccountFromTemplate(input: $input)
-  }
-`
-const COMPLETE_SETUP = `
-  mutation ($preferredLanguage: String!, $seedSampleData: Boolean) {
-    setupComplete(preferredLanguage: $preferredLanguage, seedSampleData: $seedSampleData)
-  }
-`
-
-interface SessionUser {
-  id: string
-  username: string
-  name: string | null
-}
-interface LoginResult {
-  token: string
-  user: SessionUser
-}
 interface Currency {
   id: string
   name: string
   isoCode: string
-  symbol: string | null
 }
+
 interface CompanyRow {
   id: string
   name: string
 }
-
-/** 初始化路径:空白只建底座;示例另写客商/物料/报价,并预填演示公司与管理员 */
-type SetupPath = 'blank' | 'sample'
-
-// 示例数据路径预填(与 mix synie.demo 一致,可在向导中改)
-const SAMPLE_DEFAULTS = {
-  username: 'admin',
-  name: '管理员',
-  password: 'admin123',
-  companyCode: 'JT',
-  companyName: '台州京泰电气有限公司',
-  companyShortName: '台州京泰',
-  language: 'zh-CN',
-  template: 'SMALL',
-} as const
 
 // 与 accounts.tsx 的模板清单一致;必选、无默认
 const TEMPLATES = [
   { value: 'CAS', label: '企业会计准则' },
   { value: 'SMALL', label: '小企业会计准则' },
   { value: 'INTL', label: '国际通用(精简)' },
-]
+] as const
+type AccountTemplate = (typeof TEMPLATES)[number]['value']
 
 const LANGUAGES = [
   { value: 'zh-CN', label: '简体中文' },
@@ -132,8 +67,6 @@ export const Route = createFileRoute('/setup')({
 function SetupPage() {
   const navigate = useNavigate()
   const [step, setStep] = useState(1)
-  // 默认空白;选「示例数据」后预填管理员/公司并在完成时落示例业务数据
-  const [path, setPath] = useState<SetupPath>('blank')
   const goStep2 = useCallback(() => setStep(2), [])
   const goStep3 = useCallback(() => setStep(3), [])
 
@@ -175,7 +108,7 @@ function SetupPage() {
             万象待启。
           </h1>
           <p className="mt-6 text-sm leading-relaxed text-brand-porcelain/55">
-            首次启动,三步完成初始化:管理员、公司与首选语言。可选从示例业务数据起步。
+            首次启动,三步完成空白初始化:管理员、公司与首选语言。
           </p>
           <div className="mt-10 flex items-center gap-4 text-[11px] tracking-[0.3em] text-brand-porcelain/35">
             <span className="h-px w-10 bg-gilt/50" aria-hidden />
@@ -217,16 +150,11 @@ function SetupPage() {
           ) : status.data.initialized ? (
             <Loading /> // 即将跳转工作台
           ) : step === 1 ? (
-            <StepAdmin
-              hasUsers={status.data.hasUsers}
-              path={path}
-              onPathChange={setPath}
-              onDone={goStep2}
-            />
+            <StepAdmin hasUsers={status.data.hasUsers} onDone={goStep2} />
           ) : step === 2 ? (
-            <StepCompany path={path} onDone={goStep3} />
+            <StepCompany onDone={goStep3} />
           ) : (
-            <StepLanguage seedSampleData={path === 'sample'} />
+            <StepLanguage />
           )}
 
           <p className="mt-16 text-xs text-ink-500/60">
@@ -296,37 +224,18 @@ function LoadError(props: { message: string; onRetry: () => void }) {
 }
 
 /** 步骤 1 · 管理员:无用户建首个超管;已有用户(断线续作)改走登录 */
-function StepAdmin(props: {
-  hasUsers: boolean
-  path: SetupPath
-  onPathChange: (path: SetupPath) => void
-  onDone: () => void
-}) {
+function StepAdmin(props: { hasUsers: boolean; onDone: () => void }) {
   const queryClient = useQueryClient()
-  const sample = props.path === 'sample'
-  const [username, setUsername] = useState(sample ? SAMPLE_DEFAULTS.username : '')
-  const [name, setName] = useState(sample ? SAMPLE_DEFAULTS.name : '')
-  const [password, setPassword] = useState(sample ? SAMPLE_DEFAULTS.password : '')
-  const [confirm, setConfirm] = useState(sample ? SAMPLE_DEFAULTS.password : '')
+  const [username, setUsername] = useState('')
+  const [name, setName] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
-  // 切换路径时回填/清空示例默认值(仅新建管理员场景;续作登录不改口令框)
-  useEffect(() => {
-    if (props.hasUsers) return
-    if (props.path === 'sample') {
-      setUsername(SAMPLE_DEFAULTS.username)
-      setName(SAMPLE_DEFAULTS.name)
-      setPassword(SAMPLE_DEFAULTS.password)
-      setConfirm(SAMPLE_DEFAULTS.password)
-    } else {
-      setUsername('')
-      setName('')
-      setPassword('')
-      setConfirm('')
-    }
-  }, [props.path, props.hasUsers])
-
-  const onAuthed = (result: LoginResult, message: string) => {
+  const onAuthed = (
+    result: Awaited<ReturnType<typeof loginSession>>,
+    message: string,
+  ) => {
     setToken(result.token)
     // 清掉可能缓存的 me:null,否则进入下一步后布局会误判登录态失效(同 login.tsx)
     queryClient.removeQueries({ queryKey: ['me'] })
@@ -335,14 +244,13 @@ function StepAdmin(props: {
   }
 
   const createUser = useMutation({
-    mutationFn: () =>
-      gqlFetch<{ setupCreateFirstUser: LoginResult }>(CREATE_FIRST_USER, {
-        username,
-        name: name.trim() === '' ? null : name.trim(),
-        password,
-      }),
+    mutationFn: () => createSetupFirstUser({
+      username,
+      name: name.trim() === '' ? null : name.trim(),
+      password,
+    }),
     onSuccess: (data) =>
-      onAuthed(data.setupCreateFirstUser, `管理员 ${data.setupCreateFirstUser.user.name ?? data.setupCreateFirstUser.user.username} 已创建`),
+      onAuthed(data, `管理员 ${data.user.name ?? data.user.username} 已创建`),
     onError: (error) => {
       toast.danger('创建管理员失败', {
         description: error instanceof Error ? error.message : '请稍后再试',
@@ -351,9 +259,9 @@ function StepAdmin(props: {
   })
 
   const login = useMutation({
-    mutationFn: () => gqlFetch<{ login: LoginResult }>(LOGIN_MUTATION, { username, password }),
+    mutationFn: () => loginSession(username, password),
     onSuccess: (data) =>
-      onAuthed(data.login, `欢迎回来,${data.login.user.name ?? data.login.user.username}`),
+      onAuthed(data, `欢迎回来,${data.user.name ?? data.user.username}`),
     onError: (error) => {
       toast.danger('登录失败', {
         description: error instanceof Error ? error.message : '请稍后再试',
@@ -385,28 +293,12 @@ function StepAdmin(props: {
         </p>
       ) : (
         <>
-          <p className="text-sm text-ink-500">选择起步方式,再创建首个管理员账号(超级管理员)。</p>
-          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <PathCard
-              active={props.path === 'blank'}
-              title="空白项目"
-              description="仅建管理员与公司底座,业务数据自行维护"
-              onPress={() => props.onPathChange('blank')}
-              disabled={pending}
-            />
-            <PathCard
-              active={props.path === 'sample'}
-              title="示例数据"
-              description="预填演示账号与公司,完成时写入覆盖全业务链的示例业务数据"
-              onPress={() => props.onPathChange('sample')}
-              disabled={pending}
-            />
-          </div>
-          {sample && (
-            <p className="mt-3 rounded-sm border border-gilt/40 bg-gilt/10 px-3 py-2 text-xs text-ink-500">
-              已预填演示账号(可改)。完成初始化时将写入全业务链示例数据:客商/物料/员工、销采单据、库存/生产主数据与财务。
-            </p>
-          )}
+          <p className="text-sm text-ink-500">
+            空白初始化将创建管理员、公司与基础资料，请创建首个管理员账号(超级管理员)。
+          </p>
+          <p className="mt-3 rounded-sm border border-gilt/40 bg-gilt/10 px-3 py-2 text-xs text-ink-500">
+            Go 示例数据迁移尚未完成，当前仅支持完整的空白初始化。
+          </p>
         </>
       )}
 
@@ -465,49 +357,20 @@ function StepAdmin(props: {
   )
 }
 
-function PathCard(props: {
-  active: boolean
-  title: string
-  description: string
-  onPress: () => void
-  disabled?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      disabled={props.disabled}
-      onClick={props.onPress}
-      className={`rounded-sm border px-3 py-3 text-left transition-colors ${
-        props.active
-          ? 'border-ink-900 bg-ink-900 text-porcelain'
-          : 'border-ink-500/25 bg-transparent text-ink-900 hover:border-ink-500/50'
-      } ${props.disabled ? 'opacity-50' : ''}`}
-    >
-      <div className={`text-sm font-medium tracking-wide ${props.active ? 'text-porcelain' : ''}`}>
-        {props.title}
-      </div>
-      <div className={`mt-1 text-xs leading-relaxed ${props.active ? 'text-porcelain/70' : 'text-ink-500'}`}>
-        {props.description}
-      </div>
-    </button>
-  )
-}
-
 /** 步骤 2 · 公司:先静默预置常用货币;无公司走创建,已有公司(续作)按科目数分流 */
-function StepCompany(props: { path: SetupPath; onDone: () => void }) {
-  const sample = props.path === 'sample'
+function StepCompany(props: { onDone: () => void }) {
   const [seeded, setSeeded] = useState(false)
-  const [code, setCode] = useState(sample ? SAMPLE_DEFAULTS.companyCode : '')
-  const [name, setName] = useState(sample ? SAMPLE_DEFAULTS.companyName : '')
-  const [shortName, setShortName] = useState(sample ? SAMPLE_DEFAULTS.companyShortName : '')
+  const [code, setCode] = useState('')
+  const [name, setName] = useState('')
+  const [shortName, setShortName] = useState('')
   const [baseCurrencyId, setBaseCurrencyId] = useState<string | null>(null)
-  const [template, setTemplate] = useState<string | null>(sample ? SAMPLE_DEFAULTS.template : null)
+  const [template, setTemplate] = useState<AccountTemplate | null>(null)
   const [pending, setPending] = useState(false)
 
   // 进入公司步:幂等预置约 20 种常用货币(静默,成功不提示;失败仅告警,不阻塞后续选币)
   useEffect(() => {
     let cancelled = false
-    gqlFetch<{ setupSeedCommonCurrencies: number }>(SEED_CURRENCIES)
+    seedSetupCommonCurrencies()
       .catch((e) => toast.danger('预置常用货币失败', { description: (e as Error).message }))
       .finally(() => {
         if (!cancelled) setSeeded(true)
@@ -519,38 +382,42 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
 
   const companies = useQuery({
     queryKey: ['setupCompanies'],
-    queryFn: () =>
-      gqlFetch<{ basCompanies: { count: number; results: CompanyRow[] } }>(COMPANIES_QUERY).then(
-        (d) => d.basCompanies
-      ),
+    queryFn: () => companyClient.query({ limit: 1, offset: 0 }),
   })
 
   // 货币选项在预置完成后拉取,否则可能拿不到刚补进来的币种
   const currencies = useQuery({
     queryKey: ['setupCurrencies'],
     enabled: seeded,
-    queryFn: () =>
-      gqlFetch<{ basCurrencies: { count: number; results: Currency[] } }>(CURRENCIES_QUERY).then(
-        (d) => d.basCurrencies
-      ),
+    queryFn: () => currencyClient.query({ limit: 200, offset: 0 }),
   })
 
-  const existing = (companies.data?.count ?? 0) > 0 ? (companies.data!.results[0] ?? null) : null
+  const existing = (companies.data?.count ?? 0) > 0
+    ? (companies.data!.results[0] as unknown as CompanyRow | undefined) ?? null
+    : null
 
   // 续作语义:已有公司时查其科目数,0 走模板初始化,>0 由下方 effect 直接进步骤 3
   const accountCount = useQuery({
     queryKey: ['setupAccountCount', existing?.id],
     enabled: existing != null,
-    queryFn: () =>
-      gqlFetch<{ basAccounts: { count: number } }>(accountCountQuery(existing!.id)).then(
-        (d) => d.basAccounts.count
-      ),
+    queryFn: () => accountClient.query({
+      limit: 1,
+      offset: 0,
+      filter: {
+        companyId: {
+          kind: 'fk',
+          op: 'in',
+          values: [existing!.id],
+          labels: [],
+        },
+      },
+    }).then((result) => result.count),
   })
 
   // 本位币默认选中 CNY(预置清单含人民币)
   useEffect(() => {
     if (baseCurrencyId == null && currencies.data) {
-      const cny = currencies.data.results.find((c) => c.isoCode === 'CNY')
+      const cny = currencies.data.results.find((row) => row.isoCode === 'CNY')
       if (cny) setBaseCurrencyId(cny.id)
     }
   }, [currencies.data, baseCurrencyId])
@@ -578,33 +445,18 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
     const id = toast('正在创建公司并初始化科目…', { isLoading: true, timeout: 0 })
     try {
       // 选定本币后仅启用该币种(预置货币默认全停);须在建公司前完成,公司本币校验要求启用中的货币
-      await gqlFetch<{ setupActivateOnlyBaseCurrency: boolean }>(ACTIVATE_ONLY_BASE_CURRENCY, {
-        currencyId: baseCurrencyId,
+      await activateSetupBaseCurrency(baseCurrencyId)
+      // Go 公司创建在同一事务内原子初始化三个默认仓库,向导不可重复 seed
+      const created = await companyClient.create({
+        code: code.trim(),
+        name: name.trim(),
+        shortName: shortName.trim(),
+        baseCurrencyId,
       })
-      const created = await gqlFetch<{
-        createBasCompany: { result: { id: string } | null; errors: { message: string }[] | null }
-      }>(CREATE_COMPANY, {
-        input: { code: code.trim(), name: name.trim(), shortName: shortName.trim(), baseCurrencyId },
-      })
-      const errors = created.createBasCompany.errors
-      if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
-      const companyId = created.createBasCompany.result!.id
-      const init = await gqlFetch<{ initBasAccountFromTemplate: number }>(INIT_FROM_TEMPLATE, {
-        input: { companyId, template },
-      })
-      // 建仓失败不阻断向导(公司/科目已就位):报错提示,仓库可事后手工补建
-      let warehouseCount = 0
-      let seedError: string | null = null
-      try {
-        const seed = await seedWarehouseDefaults(companyId)
-        warehouseCount = seed.count
-      } catch (e) {
-        seedError = (e as Error).message
-      }
+      const init = await initializeAccountTemplate(created.id, template)
       toast.close(id)
-      if (seedError) toast.danger('初始化默认仓库失败', { description: seedError })
       toast.success(
-        `公司「${name.trim()}」已创建,并按模板初始化 ${init.initBasAccountFromTemplate} 个科目、${warehouseCount} 个仓库`
+        `公司「${name.trim()}」已创建,并按模板初始化 ${init.createdCount} 个科目、3 个默认仓库`
       )
       props.onDone()
     } catch (e) {
@@ -626,11 +478,9 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
     setPending(true)
     const id = toast('正在初始化科目表…', { isLoading: true, timeout: 0 })
     try {
-      const init = await gqlFetch<{ initBasAccountFromTemplate: number }>(INIT_FROM_TEMPLATE, {
-        input: { companyId: existing.id, template },
-      })
+      const init = await initializeAccountTemplate(existing.id, template)
       toast.close(id)
-      toast.success(`已按模板初始化 ${init.initBasAccountFromTemplate} 个科目`)
+      toast.success(`已按模板初始化 ${init.createdCount} 个科目`)
       props.onDone()
     } catch (e) {
       toast.close(id)
@@ -667,7 +517,7 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
           公司已存在:{existing.name}。其科目表尚未初始化,选择模板一键初始化后继续。
         </p>
         <div className="mt-6 flex flex-col gap-5">
-          <Select value={template} onChange={(v) => setTemplate(v == null ? null : String(v))}>
+          <Select value={template} onChange={(v) => setTemplate(v == null ? null : String(v) as AccountTemplate)}>
             <Label>科目表模板</Label>
             <Select.Trigger>
               <Select.Value>
@@ -715,9 +565,7 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
   return (
     <div className="mt-8">
       <p className="text-sm text-ink-500">
-        {sample
-          ? '已预填演示公司(可改)。创建后将按模板初始化科目表,完成初始化时再写入示例业务数据。'
-          : '创建第一家公司(记账主体),并按模板初始化其科目表。'}
+        创建第一家公司(记账主体),同时原子初始化三个默认仓库,并按模板初始化科目表。
       </p>
 
       <form
@@ -757,18 +605,21 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              {currencies.data.results.map((c) => (
-                <ListBox.Item key={c.id} id={c.id} textValue={`${c.name}(${c.isoCode})`}>
-                  {c.name}({c.isoCode})
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-              ))}
+              {currencies.data.results.map((row) => {
+                const c = row as unknown as Currency
+                return (
+                  <ListBox.Item key={c.id} id={c.id} textValue={`${c.name}(${c.isoCode})`}>
+                    {c.name}({c.isoCode})
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                )
+              })}
             </ListBox>
           </Select.Popover>
         </Select>
         <p className="-mt-3 text-xs text-ink-500">记账货币,单据双币换算的目标口径。</p>
 
-        <Select value={template} onChange={(v) => setTemplate(v == null ? null : String(v))} isDisabled={pending}>
+        <Select value={template} onChange={(v) => setTemplate(v == null ? null : String(v) as AccountTemplate)} isDisabled={pending}>
           <Label>科目表模板</Label>
           <Select.Trigger>
             <Select.Value>
@@ -804,29 +655,19 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
 }
 
 /** 步骤 3 · 首选语言:写当前用户偏好并落完成旗标,随后回工作台 */
-function StepLanguage(props: { seedSampleData: boolean }) {
+function StepLanguage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  // SAMPLE_DEFAULTS 为 as const,不显式标 string 会把 state 推断成字面量 "zh-CN"
-  const [language, setLanguage] = useState<string>(
-    props.seedSampleData ? SAMPLE_DEFAULTS.language : 'zh-CN'
-  )
+  const [language, setLanguage] = useState<SetupLanguage>('zh-CN')
 
   const complete = useMutation({
-    mutationFn: () =>
-      gqlFetch<{ setupComplete: boolean }>(COMPLETE_SETUP, {
-        preferredLanguage: language,
-        seedSampleData: props.seedSampleData,
-      }),
+    // 示例路径在 Go 完整迁移前不暴露,始终明确提交空白初始化
+    mutationFn: () => completeSetup(language, false),
     onSuccess: () => {
       // 落旗后门控即刻反转:清掉向导期缓存的 setupStatus/me,回 _app 重新判定
       queryClient.removeQueries({ queryKey: ['setupStatus'] })
       queryClient.removeQueries({ queryKey: ['me'] })
-      toast.success(
-        props.seedSampleData
-          ? '初始化完成,示例客户/供应商/物料/报价已就绪'
-          : '初始化完成,欢迎使用 Synie'
-      )
+      toast.success('初始化完成,欢迎使用 Synie')
       navigate({ to: '/' })
     },
     onError: (error) => {
@@ -839,11 +680,9 @@ function StepLanguage(props: { seedSampleData: boolean }) {
   return (
     <div className="mt-8">
       <p className="text-sm text-ink-500">选择当前用户的首选语言。</p>
-      {props.seedSampleData && (
-        <p className="mt-3 rounded-sm border border-gilt/40 bg-gilt/10 px-3 py-2 text-xs text-ink-500">
-          完成时将同时写入示例业务数据:6 家客户、6 家供应商、17 种物料、4 名员工,以及销售/采购全链单据(报价→订单→发货/入库→对账→发票)、库存出入库/调拨/盘点、工序/工艺模板/BOM 与银行流水/凭证/报销/工资。
-        </p>
-      )}
+      <p className="mt-3 rounded-sm border border-gilt/40 bg-gilt/10 px-3 py-2 text-xs text-ink-500">
+        Go 示例数据迁移尚未完成，本次将完成空白初始化，不会写入示例业务数据。
+      </p>
 
       <form
         onSubmit={(e) => {
@@ -852,7 +691,11 @@ function StepLanguage(props: { seedSampleData: boolean }) {
         }}
         className="mt-6 flex flex-col gap-5"
       >
-        <Select value={language} onChange={(v) => v != null && setLanguage(String(v))} isDisabled={complete.isPending}>
+        <Select
+          value={language}
+          onChange={(v) => v != null && setLanguage(String(v) as SetupLanguage)}
+          isDisabled={complete.isPending}
+        >
           <Label>首选语言</Label>
           <Select.Trigger>
             <Select.Value />
