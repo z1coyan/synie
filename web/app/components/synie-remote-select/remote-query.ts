@@ -7,7 +7,7 @@ import { resourceClientFor } from '~/lib/resources/registry'
 export interface RemoteSourceConfig {
   /** GridMeta 白名单资源名(即 GraphQL list query 名),如 "basCompanies" */
   resource: string
-  /** 显式 REST 数据源；缺省时优先查资源 registry，未迁移资源再沿用 GraphQL adapter。 */
+  /** 显式 REST 数据源；缺省时从资源 registry 解析，未知资源立即报错。 */
   client?: ResourceClient
   /** 显示字段,默认 gridMeta ref.labelField,再兜底 'name' */
   labelField?: string
@@ -32,7 +32,7 @@ export interface RemoteSourceConfig {
 
 export interface ResolvedSource {
   resource: string
-  client?: ResourceClient
+  client: ResourceClient
   labelField: string
   sortField: string
   searchFields: string[]

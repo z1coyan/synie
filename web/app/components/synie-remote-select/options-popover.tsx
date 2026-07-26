@@ -72,7 +72,7 @@ export function RemoteOptionsPopover({
             renderEmptyState={() => (
               <EmptyState>
                 {options.isError ? (
-                  // gqlFetch 抛错时不能落到「无匹配记录」——那是误报,掩盖了真实的请求失败
+                  // 请求抛错时不能落到「无匹配记录」——那是误报,掩盖了真实的请求失败
                   <span className="text-danger">加载失败:{(options.error as Error).message}</span>
                 ) : options.isPending ? (
                   '加载中…'

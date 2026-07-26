@@ -1,5 +1,4 @@
-import { gqlFetch } from '~/lib/graphql'
-import { buildRowQuery } from './query'
+import type { ResourceClient, ResourceQuery } from '~/lib/resources/types'
 import type { GridColumnMeta, Row } from './types'
 
 export function toCsv<C extends Pick<GridColumnMeta, 'name' | 'label'>>(
@@ -21,19 +20,15 @@ export function toCsv<C extends Pick<GridColumnMeta, 'name' | 'label'>>(
 const EXPORT_PAGE = 200
 // ponytail: 前端循环拉页导出,万行级数据再改后端流式导出
 export async function fetchAllRows(
-  resource: string,
-  columns: GridColumnMeta[],
-  filterLiteral: string | null,
-  sortLiteral: string | null
+  client: ResourceClient,
+  query: Omit<ResourceQuery, 'limit' | 'offset'>,
 ): Promise<Row[]> {
   const rows: Row[] = []
   let offset = 0
   for (;;) {
-    const query = buildRowQuery(resource, columns, { limit: EXPORT_PAGE, offset, sortLiteral, filterLiteral })
-    const data = await gqlFetch<Record<string, { count: number; results: Row[] }>>(query)
-    const page = data[resource]
+    const page = await client.query({ ...query, limit: EXPORT_PAGE, offset })
     rows.push(...page.results)
-    // 按实际返回行数推进:Ash 会把超出 max_page_size 的 limit 静默钳制,固定步进 EXPORT_PAGE 会跳行丢数据
+    // 按实际返回行数推进:服务端可能钳制 limit,固定步进 EXPORT_PAGE 会跳行丢数据
     offset += page.results.length
     if (rows.length >= page.count || page.results.length === 0) return rows
   }

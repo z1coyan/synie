@@ -1,26 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { gqlFetch } from '~/lib/graphql'
+import { resourceClientFor } from '~/lib/resources/registry'
 import type { ResourceClient } from '~/lib/resources/types'
-import type { GridMeta } from './types'
-
-const GRID_META_QUERY = `
-  query GridMeta($resource: String!) {
-    gridMeta(resource: $resource) {
-      columns { name type label sortable filterable enumOptions { value label } ref { resource relation labelField discriminator discriminatorType variants { value resource labelField label } } }
-      capabilities
-      extendedActions { key label scope mutation isDanger }
-      destroyMutation
-    }
-  }
-`
 
 export function useGridMeta(resource: string, enabled = true, client?: ResourceClient) {
+  const resolvedClient = client ?? (enabled ? resourceClientFor(resource) : undefined)
   return useQuery({
-    queryKey: ['gridMeta', client?.id ?? 'graphql', resource],
-    queryFn: () =>
-      client
-        ? client.meta()
-        : gqlFetch<{ gridMeta: GridMeta }>(GRID_META_QUERY, { resource }).then((d) => d.gridMeta),
+    queryKey: ['gridMeta', resolvedClient?.id, resource],
+    queryFn: () => resolvedClient!.meta(),
     staleTime: 5 * 60_000,
     enabled,
   })
