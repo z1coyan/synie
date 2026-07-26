@@ -14,6 +14,10 @@ import (
 
 const markerCustomerCode = "C01"
 
+// 财务种子写入的银行账号,作为「示例数据整组成功」标记。
+// 不能只用 C01:中途失败时客户已存在,整组跳过会导致 BOM/委外/财务永久缺失。
+const markerBankAccountNo = "377601886688901"
+
 func ptr[T any](v T) *T { return &v }
 
 func dec(s string) decimal.Decimal { return decimal.RequireFromString(s) }
@@ -27,11 +31,107 @@ func dateString(t time.Time) string { return t.Format("2006-01-02") }
 
 func alreadySeeded(ctx context.Context, pool *pgxpool.Pool) (bool, error) {
 	var exists bool
-	err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sal_customers WHERE code = $1)`, markerCustomerCode).Scan(&exists)
+	err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM acc_bank_account WHERE account_no = $1)`, markerBankAccountNo).Scan(&exists)
 	if err != nil {
 		return false, apierror.Wrap(apierror.CodeInternal, "检查示例数据标记失败", err)
 	}
 	return exists, nil
+}
+
+// partialSampleStarted 表示上次示例种子中途失败(有 C01 但无完成标记)。
+func partialSampleStarted(ctx context.Context, pool *pgxpool.Pool) (bool, error) {
+	var hasCustomer, hasBank bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sal_customers WHERE code = $1)`, markerCustomerCode).Scan(&hasCustomer); err != nil {
+		return false, apierror.Wrap(apierror.CodeInternal, "检查示例数据进度失败", err)
+	}
+	if !hasCustomer {
+		return false, nil
+	}
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM acc_bank_account WHERE account_no = $1)`, markerBankAccountNo).Scan(&hasBank); err != nil {
+		return false, apierror.Wrap(apierror.CodeInternal, "检查示例数据进度失败", err)
+	}
+	return !hasBank, nil
+}
+
+// wipePartialSample 清掉中断的示例业务数据,保留公司/科目/仓库/用户与基础种子。
+// 仅在 setup 未完成、且检测到半成品示例时调用。
+func wipePartialSample(ctx context.Context, pool *pgxpool.Pool) error {
+	// RESTART IDENTITY 非必须;CASCADE 按外键清掉示例单据与主数据。
+	_, err := pool.Exec(ctx, `
+		TRUNCATE TABLE
+			acc_vat_invoice,
+			acc_expense_report_item,
+			acc_expense_report,
+			hr_payroll_payment,
+			hr_payroll,
+			acc_gl_journal_line,
+			acc_gl_journal,
+			acc_bank_transaction,
+			acc_bank_reconciliation,
+			acc_bank_import_item,
+			acc_bank_import,
+			acc_bank_account,
+			acc_gl_entry,
+			pur_reconciliation_item,
+			pur_reconciliation,
+			pur_outsourced_receipt_item_byproduct,
+			pur_outsourced_receipt_item_material,
+			pur_outsourced_receipt_item,
+			pur_outsourced_receipt,
+			pur_outsourced_issue_item,
+			pur_outsourced_issue,
+			pur_receipt_item,
+			pur_receipt,
+			pur_order_item_byproduct,
+			pur_order_item_material,
+			pur_order_item,
+			pur_order,
+			pur_quotation_tier,
+			pur_quotation_item,
+			pur_quotation,
+			sal_reconciliation_item,
+			sal_reconciliation,
+			sal_delivery_item,
+			sal_delivery,
+			sal_order_item,
+			sal_order,
+			sal_quotation_tier,
+			sal_quotation_item,
+			sal_quotation,
+			inv_stock_count_item,
+			inv_stock_count,
+			inv_stock_transfer_item,
+			inv_stock_transfer,
+			inv_stock_doc_item,
+			inv_stock_doc,
+			inv_stock_entry,
+			mfg_output_item,
+			mfg_output,
+			mfg_work_order,
+			mfg_demand_item,
+			mfg_demand,
+			mfg_bom_route,
+			mfg_bom_byproduct,
+			mfg_bom_component,
+			mfg_bom,
+			mfg_process_template_item,
+			mfg_process_template,
+			mfg_operation,
+			inv_material_unit,
+			inv_material,
+			hr_attendance_correction,
+			hr_attendance_day,
+			hr_attendance_punch,
+			hr_attendance_import,
+			hr_employee_loan,
+			hr_employees,
+			pur_supplier,
+			sal_customers
+		RESTART IDENTITY CASCADE`)
+	if err != nil {
+		return apierror.Wrap(apierror.CodeInternal, "清理中断的示例数据失败", err)
+	}
+	return nil
 }
 
 func unitBySymbol(ctx context.Context, pool *pgxpool.Pool, symbol string) (uuid.UUID, error) {

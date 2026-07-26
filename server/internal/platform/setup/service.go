@@ -348,12 +348,16 @@ func seedNumberingRules(ctx context.Context, tx pgx.Tx) error {
 		{"hr.employee", "员工编号", false, `[{"type":"text","value":"H(E)-"},{"type":"seq","padding":4}]`},
 		{"mfg.operation", "工序编号", false, `[{"type":"text","value":"M(O)-"},{"type":"seq","padding":4}]`},
 		{"mfg.route_template", "工艺模板编号", false, `[{"type":"text","value":"M(T)-"},{"type":"seq","padding":4}]`},
+		// 示例数据与制造主数据需要;numberables.json 已登记,此前完成种子漏了
+		{"mfg.bom", "BOM编号", false, `[{"type":"text","value":"M(B)-"},{"type":"seq","padding":4}]`},
 	}
 	docs := []struct{ resource, name, prefix, field, label string }{
 		{"sales.order", "销售订单编号", "S(O)", "order_date", "订单日期"}, {"sales.quotation", "销售报价编号", "S(Q)", "quotation_date", "报价日期"},
 		{"sales.delivery", "销售发货编号", "S(D)", "delivery_date", "发货日期"}, {"sales.reconciliation", "销售对账编号", "S(R)", "posting_date", "业务日期"},
 		{"purchase.order", "采购订单编号", "P(O)", "order_date", "订单日期"}, {"purchase.quotation", "采购报价编号", "P(Q)", "quotation_date", "报价日期"},
 		{"purchase.receipt", "采购入库单编号", "P(R)", "receipt_date", "入库日期"}, {"purchase.reconciliation", "采购对账编号", "P(C)", "posting_date", "业务日期"},
+		{"purchase.outsourced_issue", "委外发料编号", "P(OI)", "issue_date", "发料日期"},
+		{"purchase.outsourced_receipt", "委外入库编号", "P(OR)", "receipt_date", "入库日期"},
 		{"inv.stock_doc", "手工出入库单编号", "I(D)", "doc_date", "业务日期"}, {"inv.stock_transfer", "手工调拨单编号", "I(T)", "doc_date", "业务日期"},
 		{"inv.stock_count", "库存盘点单编号", "I(C)", "posting_date", "业务日期"}, {"mfg.demand", "履约需求单编号", "M(D)", "demand_date", "业务日期"},
 		{"mfg.work_order", "生产工单编号", "M(W)", "need_date", "需求日"}, {"mfg.output", "生产入库单编号", "M(R)", "output_date", "入库日期"},

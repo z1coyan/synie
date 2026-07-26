@@ -191,7 +191,8 @@ type financeResult struct {
 	VatInvoices      int
 }
 
-// Seed 为指定公司写入示例业务数据。已存在客户 C01 时整组跳过并返回零计数。
+// Seed 为指定公司写入示例业务数据。
+// 整组成功标记为示例银行账号;中途失败留下半成品时返回明确错误,要求空库重跑而非静默跳过。
 func Seed(ctx context.Context, deps Dependencies, actor *authz.Actor, companyID uuid.UUID) (Summary, error) {
 	if deps.Pool == nil {
 		return Summary{}, apierror.New(apierror.CodeInternal, "示例数据依赖未配置")
@@ -202,6 +203,16 @@ func Seed(ctx context.Context, deps Dependencies, actor *authz.Actor, companyID 
 	}
 	if seeded {
 		return Summary{}, nil
+	}
+	partial, err := partialSampleStarted(ctx, deps.Pool)
+	if err != nil {
+		return Summary{}, err
+	}
+	if partial {
+		// 中途失败留下半成品(如缺编号规则导致 BOM 建不出来);清掉后整组重跑。
+		if err := wipePartialSample(ctx, deps.Pool); err != nil {
+			return Summary{}, err
+		}
 	}
 	if companyID == uuid.Nil {
 		return Summary{}, nil
