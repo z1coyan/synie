@@ -49,11 +49,7 @@ export type OpenOrderDrawer = (mode: DrawerMode, order: OrderRef | null) => void
 // 列只取行上快照/计算字段(materialCode 等保存时已冻结),不 join 会触发嵌套授权的 fk
 export const purchaseOrderAuditConfig = {
   docLabel: '采购订单',
-  mutation: 'auditPurOrder',
   itemsResource: 'purOrderItems',
-  docIdField: 'orderId',
-  itemFields:
-    'id idx materialCode materialName materialSpec customerPartNo unitName qty price amount remarks',
   loadItems: (orderId: string) =>
     purchaseOrderItemClient
       .query({

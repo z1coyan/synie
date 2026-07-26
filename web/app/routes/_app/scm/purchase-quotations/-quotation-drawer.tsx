@@ -41,11 +41,7 @@ export type OpenQuotationDrawer = (mode: DrawerMode, quotation: QuotationRef | n
 // 梯度行单价为空属正常(价在价格档上),定价模式列已标明
 export const purchaseQuotationAuditConfig = {
   docLabel: '采购报价单',
-  mutation: 'auditPurQuotation',
   itemsResource: 'purQuotationItems',
-  docIdField: 'quotationId',
-  itemFields:
-    'id idx materialCode materialName materialSpec unitName pricingMode price taxRate remarks',
   loadItems: (quotationId: string) =>
     purchaseQuotationItemClient
       .query({

@@ -42,11 +42,7 @@ export type OpenOrderDrawer = (mode: DrawerMode, order: OrderRef | null) => void
 // 「审核整单」确认弹窗配置:条目页行操作与订单页「审核」动作共用(见 scm/-audit-doc)
 export const salesOrderAuditConfig = {
   docLabel: '销售订单',
-  mutation: 'auditSalOrder',
   itemsResource: 'salOrderItems',
-  docIdField: 'orderId',
-  itemFields:
-    'id idx materialCode materialName materialSpec customerPartNo unitName qty price amount remarks',
   loadItems: (orderId: string) =>
     salesOrderItemClient
       .query({

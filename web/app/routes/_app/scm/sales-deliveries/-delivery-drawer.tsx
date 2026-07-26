@@ -41,11 +41,7 @@ export type OpenDeliveryDrawer = (mode: DrawerMode, delivery: DeliveryRef | null
 // 「审核整单」确认弹窗配置:条目页行操作与发货单页「审核」动作共用(见 scm/-audit-doc)
 export const deliveryAuditConfig = {
   docLabel: '销售发货单',
-  mutation: 'auditSalDelivery',
   itemsResource: 'salDeliveryItems',
-  docIdField: 'deliveryId',
-  itemFields:
-    'id idx materialCode materialName materialSpec customerPartNo unitName qty baseQty remarks',
   columns: [
     {
       key: 'materialName',

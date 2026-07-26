@@ -36,10 +36,7 @@ export type OpenIssueDrawer = (mode: DrawerMode, issue: IssueRef | null) => void
 // 「审核整单」确认弹窗配置:条目页行操作与发料单页「审核」动作共用(见 scm/-audit-doc)
 export const issueAuditConfig = {
   docLabel: '委外发料单',
-  mutation: 'auditPurOutsourcedIssue',
   itemsResource: 'purOutsourcedIssueItems',
-  docIdField: 'issueId',
-  itemFields: 'id idx materialCode materialName materialSpec unitName qty baseQty remarks',
   columns: [
     { key: 'materialName', label: '材料', render: auditMaterialCell() },
     { key: 'unitName', label: '单位' },

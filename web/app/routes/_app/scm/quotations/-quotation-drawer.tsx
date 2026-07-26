@@ -172,11 +172,7 @@ export function tierSummary(tiers: Row[]): string {
 // 价格档是独立资源、确认弹窗只查条目,梯度行以档数提示,阶梯明细仍需进抽屉核对
 export const salesQuotationAuditConfig = {
   docLabel: '销售报价单',
-  mutation: 'auditSalQuotation',
   itemsResource: 'salQuotationItems',
-  docIdField: 'quotationId',
-  itemFields:
-    'id idx materialCode materialName materialSpec customerPartNo unitName pricingMode price taxRate tierCount remarks',
   loadItems: (quotationId: string) =>
     salesQuotationItemClient
       .query({

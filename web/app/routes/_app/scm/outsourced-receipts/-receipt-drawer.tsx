@@ -45,11 +45,7 @@ export type OpenReceiptDrawer = (mode: DrawerMode, receipt: ReceiptRef | null) =
 // 「审核整单」确认弹窗配置:条目页行操作与入库单页「审核」动作共用(见 scm/-audit-doc)
 export const receiptAuditConfig = {
   docLabel: '委外入库单',
-  mutation: 'auditPurOutsourcedReceipt',
   itemsResource: 'purOutsourcedReceiptItems',
-  docIdField: 'receiptId',
-  itemFields:
-    'id idx materialCode materialName materialSpec customerPartNo unitName qty baseQty remarks',
   columns: [
     {
       key: 'materialName',
