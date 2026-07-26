@@ -52,6 +52,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 	"github.com/z1coyan/synie/server/internal/platform/printing"
 	"github.com/z1coyan/synie/server/internal/platform/settings"
+	setupplatform "github.com/z1coyan/synie/server/internal/platform/setup"
 )
 
 func main() {
@@ -128,7 +129,8 @@ func run() error {
 		FileService:            fileService, StorageService: fileplatform.NewStorageService(pool),
 		IAM: iam.NewService(pool, hasher, registry), Numbering: numberingService,
 		Printing: printing.NewService(pool, fileService, printing.NewFieldCatalog()),
-		Settings: settings.NewService(pool), Logger: logger,
+		Settings: settings.NewService(pool),
+		Setup:    setupplatform.NewService(pool, hasher, auth.NewTokenManager(cfg.AuthSecret, cfg.TokenTTL)), Logger: logger,
 	})
 	server := &http.Server{
 		Addr: cfg.HTTPAddr, Handler: api.Router(),

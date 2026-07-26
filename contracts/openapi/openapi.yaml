@@ -87,6 +87,99 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SetupStatus"
+  /setup/first-user:
+    post:
+      operationId: createSetupFirstUser
+      tags: [system]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupFirstUserRequest"
+      responses:
+        "201":
+          description: 首个超级管理员创建成功并签发登录态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /setup/currencies/seed-common:
+    post:
+      operationId: seedSetupCommonCurrencies
+      tags: [system]
+      responses:
+        "200":
+          description: 常用货币幂等预置结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupSeedCurrenciesResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /setup/currencies/activate-base:
+    post:
+      operationId: activateSetupBaseCurrency
+      tags: [system]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupActivateBaseCurrencyRequest"
+      responses:
+        "200":
+          description: 仅选定本币保持启用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupSuccessResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /setup/complete:
+    post:
+      operationId: completeSetup
+      tags: [system]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupCompleteRequest"
+      responses:
+        "200":
+          description: 初始化完成
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupSuccessResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
   /todos/unread-count:
     get:
       operationId: getTodoUnreadCount
@@ -5977,6 +6070,55 @@ components:
         initialized:
           type: boolean
         hasUsers:
+          type: boolean
+    SetupFirstUserRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+        name:
+          type: string
+          nullable: true
+          maxLength: 64
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    SetupSeedCurrenciesResponse:
+      type: object
+      required: [created]
+      properties:
+        created:
+          type: integer
+          minimum: 0
+    SetupActivateBaseCurrencyRequest:
+      type: object
+      additionalProperties: false
+      required: [currencyId]
+      properties:
+        currencyId:
+          type: string
+          format: uuid
+    SetupCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [preferredLanguage]
+      properties:
+        preferredLanguage:
+          type: string
+          enum: [zh-CN, en-US]
+        seedSampleData:
+          type: boolean
+          default: false
+    SetupSuccessResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
           type: boolean
     TodoUnreadCount:
       type: object
