@@ -76,14 +76,7 @@ function WarehousesPage() {
     }
   }, [companies.data, companyId])
 
-  // 上级候选:同公司、非叶子,编辑时排除自身(下级的排除后端兜底)
-  const parentFilter = [
-    `{companyId: {eq: ${JSON.stringify(companyId)}}}`,
-    '{isLeaf: {eq: false}}',
-    ...(drawer?.row?.id ? [`{id: {notEq: ${JSON.stringify(drawer.row.id)}}}`] : []),
-  ].join(', ')
-  // 关联科目候选:本公司、非汇总、本币(未指定币种)科目(后端另有同公司/汇总/币种校验兜底)
-  const accountFilter = `{companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, currencyId: {isNil: true}}`
+  // 上级候选：同公司、非叶子；循环关系由后端校验兜底。
   const companyFilterState: FilterState = {
     companyId: { kind: 'fk', op: 'in', values: companyId ? [companyId] : [], labels: [] },
   }
@@ -91,6 +84,7 @@ function WarehousesPage() {
     companyId: { kind: 'fk', op: 'in', values: companyId ? [companyId] : [], labels: [] },
     isLeaf: { kind: 'bool', eq: false },
   }
+  // 关联科目候选：本公司、非汇总、本币（未指定币种）科目。
   const accountFilterState: FilterState = {
     companyId: { kind: 'fk', op: 'in', values: companyId ? [companyId] : [], labels: [] },
     isGroup: { kind: 'bool', eq: false },
@@ -165,7 +159,7 @@ function WarehousesPage() {
           parentId: {
             order: 1,
             label: '上级仓库',
-            remote: { filter: `{and: [${parentFilter}]}`, filterState: parentFilterState },
+            remote: { filterState: parentFilterState },
           },
           // 默认叶子;要建归集节点(挂子仓)手动关掉,与物料分类同语义
           isLeaf: { order: 2, cols: 6, defaultValue: true },
@@ -174,7 +168,6 @@ function WarehousesPage() {
             cols: 6,
             label: '关联科目',
             remote: {
-              filter: accountFilter,
               filterState: accountFilterState,
               searchFields: ['name', 'code'],
               itemSubtitleFields: ['code'],

@@ -3,7 +3,7 @@ import type { Row } from '../synie-data-grid/types'
 import { UUID_RE } from '../synie-data-grid/query'
 import type { ResolvedSource } from './remote-query'
 
-/** 选项无限滚动:enabled=弹层打开才发请求;凡进查询串的维度都进 key,防同资源不同配置串缓存 */
+/** 选项无限滚动：弹层打开后查询 REST 资源；影响结果的维度全部进入缓存 key。 */
 export function useRemoteOptions(src: ResolvedSource | null, search: string, enabled: boolean) {
   return useInfiniteQuery({
     queryKey: [
@@ -12,7 +12,6 @@ export function useRemoteOptions(src: ResolvedSource | null, search: string, ena
       src?.client?.id,
       src?.labelField,
       src?.sortField,
-      src?.filter,
       JSON.stringify(src?.filterState ?? null),
       src?.searchFields.join('|'),
       src?.fields.join('|'),
@@ -37,7 +36,7 @@ export function useRemoteOptions(src: ResolvedSource | null, search: string, ena
   })
 }
 
-/** id → 行数据批量反查(回显);ids 空/全非法跳过;回显数据不常变,staleTime 放长;凡进查询串的维度都进 key,防同资源不同配置串缓存 */
+/** id → 资源记录批量反查（回显）；空或非法 id 跳过，影响结果的维度进入缓存 key。 */
 export function useRemoteRecords(src: ResolvedSource | null, ids: string[]) {
   const validIds = [...new Set(ids)].filter((id) => UUID_RE.test(id))
   return useQuery({

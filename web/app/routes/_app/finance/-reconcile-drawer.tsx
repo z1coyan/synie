@@ -357,7 +357,11 @@ function QuickCreateModal({
                 searchFields={['code', 'name']}
                 value={accountId}
                 onChange={setAccountId}
-                filter={`{companyId: {eq: ${JSON.stringify(txn.companyId)}}, isGroup: {eq: false}, active: {eq: true}}`}
+                filterState={{
+                  companyId: { kind: 'fk', values: [String(txn.companyId)], labels: [] },
+                  isGroup: { kind: 'bool', eq: false },
+                  active: { kind: 'bool', eq: true },
+                }}
               />
               <NumberField
                 fullWidth

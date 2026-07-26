@@ -139,9 +139,7 @@ async function persistItems(
   return errors
 }
 
-/**
- * 科目候选 filter。枚举值必须是 GraphQL enum 裸 token(不可 JSON 字符串)。
- */
+/** 科目候选的 REST 结构化筛选。 */
 function accountFilter(companyId: string | null, roleEnum?: string): FilterState | undefined {
   if (!companyId) return undefined
   return {

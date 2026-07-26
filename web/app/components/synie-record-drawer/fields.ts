@@ -162,7 +162,7 @@ export function initialValues(fields: ResolvedField[], row: Row | null | undefin
         break
       case 'integer':
       case 'decimal': {
-        // Ash decimal 经 GraphQL 常序列化为字符串,归一为 number
+        // REST 资源 decimal 可能序列化为字符串，表单统一归一为 number。
         const n = raw == null || raw === '' ? null : Number(raw)
         out[f.name] = row ? (typeof n === 'number' && Number.isFinite(n) ? n : null) : (f.defaultValue ?? null)
         break
@@ -177,7 +177,7 @@ export function initialValues(fields: ResolvedField[], row: Row | null | undefin
         break
       case 'enum':
       case 'fk':
-        // fk 值语义同 enum:id 串或 null,空不得归一为空串(GraphQL uuid 不吃空串)
+        // fk 值语义同 enum：资源 id 字符串或 null，空值不得归一为空串。
         out[f.name] = row ? (raw == null ? null : String(raw)) : (f.defaultValue ?? null)
         break
       case 'enumArray':
@@ -220,7 +220,7 @@ export function collectValues(
       out[f.name] = Number.isNaN(d.getTime()) ? null : d.toISOString()
       continue
     }
-    // fk 全裁剪退化 TextField 被清空时草稿是 '' 而非 null;GraphQL uuid 类型不吃空串,归 null
+    // fk 全裁剪退化 TextField 被清空时草稿是 '' 而非 null；资源 id 空串统一归 null。
     out[f.name] = f.col.type === 'fk' && v === '' ? null : v
   }
   return out

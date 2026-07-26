@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
-import { isForbidden } from '~/lib/graphql'
+import { isForbidden } from '~/lib/errors'
 import { companyClient } from '~/lib/resources/companies'
 import {
   auditSalesOrder,
@@ -80,7 +80,7 @@ export function useOrderDrawer(): OpenOrderDrawer {
 
 // mutation input 只收行自身字段:amount 后端系统算(writable? false)、companyId 冗余自订单(后端回填)、
 // 快照字段(materialName/unitName 等)由后端保存时重拍,本地草稿 id 与行上挂的 material/unit join 对象一律不进 payload。
-// 常规订单行的物料/单位/单价由后端按报价条目强制派生(DeriveQuotation),传值只是过 GraphQL 非空校验:
+// 常规订单行的物料/单位/单价由后端按报价条目强制派生（DeriveQuotation），传值用于满足资源必填约束：
 // 数量梯度行本地无价(price 为 null),占位 0——与后端测试惯例一致,保存后以后端返回的套档价为准
 function itemInput(row: Row) {
   return {
@@ -550,17 +550,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   required: true,
                   // 切换物料时清掉已选单位,避免单位候选跟着旧物料走
                   effects: () => ({ unitId: null }),
-                  // 销侧客户料约束:通用料 ∪ 本客户料;内部公司/未选对手仅通用料
-                  remote: {
-                    filter: (() => {
-                      const partyType = String(values.partyType ?? '')
-                      const partyId = values.partyId == null ? '' : String(values.partyId)
-                      if (partyType === 'CUSTOMER' && partyId) {
-                        return `{or: [{isCustomerMaterial: {eq: false}}, {customerId: {eq: ${JSON.stringify(partyId)}}}]}`
-                      }
-                      return '{isCustomerMaterial: {eq: false}}'
-                    })(),
-                  },
+                  // 客户物料适配由资源端校验兜底。
                 }
               : {
                   order: fo,

@@ -19,8 +19,7 @@ export const expenseRoleLabel = (value: string) =>
 export const OTHER_PAYABLE_ROLE = 'OTHER_PAYABLE'
 
 /**
- * 按 公司+科目角色 查启用中的非汇总科目(角色枚举值是 GraphQL 裸 token,同对账抽屉
- * accountFilter 先例;role 只传本文件枚举常量,非用户输入)。
+ * 按公司 + 科目角色查询启用中的非汇总科目；role 只传本文件枚举常量。
  * 恰好一个 → 调用方自动带科目;零个/多个 → 调用方提示手选。
  */
 export async function findRoleAccounts(companyId: string, role: string): Promise<Row[]> {

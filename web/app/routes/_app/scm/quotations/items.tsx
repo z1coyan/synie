@@ -43,7 +43,7 @@ const ACTION_VISIBLE = {
 } satisfies Record<string, (row: Row) => boolean>
 
 // quotationId 列覆盖默认 FkLink(速览抽屉):点击开共享完整报价抽屉,与点行的「查看」一致。
-// fk label 走行查询 join(buildRowQuery:quotation { id quotationNo }),拿不到退截断 id
+// fk label 读取资源返回的 quotation 关系标签，拿不到时退回截断 id。
 function buildOverrides(openDrawer: OpenQuotationDrawer) {
   return {
     quotationId: {

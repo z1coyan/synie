@@ -56,7 +56,7 @@ function imageFilename(img: true | GridImageOverride, row: Row): string | undefi
 }
 
 export interface AttachmentImagesOptions {
-  /** sys_attachment.owner_type(graphql type 名,如 acc_vat_invoice) */
+  /** sys_attachment.owner_type 资源类型名，如 acc_vat_invoice。 */
   ownerType: string
   /** 限定槽位;缺省全部槽位 */
   category?: string

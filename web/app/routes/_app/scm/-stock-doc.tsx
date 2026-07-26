@@ -78,14 +78,7 @@ export function defaultCompanyId(filters: FilterState, companies: Row[]): string
   return null
 }
 
-/** 本公司启用叶子仓 filter 字面量;未选公司返回 null(禁用选择器) */
-export function warehouseFilterLiteral(companyId: string | null): string | undefined {
-  if (companyId == null || companyId === '') return undefined
-  return `{companyId: {eq: ${JSON.stringify(companyId)}}, isLeaf: {eq: true}, active: {eq: true}}`
-}
-
-
-/** 与 warehouseFilterLiteral 同口径的 REST FilterState。迁移期两者同时传给 RemoteSelect。 */
+/** 本公司启用叶子仓的 REST 结构化筛选；未选公司时不发起候选查询。 */
 export function warehouseFilterState(companyId: string | null): FilterState | undefined {
   if (companyId == null || companyId === '') return undefined
   return {
@@ -117,7 +110,6 @@ export function WarehouseRemoteSelect({
       value={value == null || value === '' ? null : String(value)}
       onChange={(id) => onChange(id)}
       isDisabled={isDisabled || companyId == null}
-      filter={warehouseFilterLiteral(companyId)}
       filterState={warehouseFilterState(companyId)}
     />
   )
