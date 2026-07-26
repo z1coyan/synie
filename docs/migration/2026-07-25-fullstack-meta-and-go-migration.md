@@ -5,7 +5,7 @@
 | **文档类型** | 架构设计 / 迁移总体规划 |
 | **作者** | TBD |
 | **日期** | 2026-07-25 |
-| **状态** | **Review-approved R3**（未上线；大刀阔斧 / 无双活兼容） |
+| **状态** | **Web Go-only 已于 2026-07-26 完成；`backend/` 保留作参考** |
 | **相关** | `CONTEXT.md`、`docs/adr/*`、`docs/产品文档/*`、`docs/adr/2026-07-25-go-fullstack-meta-migration.md` |
 | **与既有 ADR 冲突** | 见 [§ 与既有 ADR 的关系](#与既有-adr-的关系)：supersede scaffold 中 GraphQL 与「非 monorepo」定案 |
 | **部署前提（R3）** | **系统尚未上线**；无生产用户、无停机窗口约束；**不要求**与 Elixir 双活兼容 |
@@ -24,7 +24,7 @@ Synie 是面向中小企业的多公司财务 ERP。目标栈后端为 **Go**（
 | 原 R2 假设 | **R3 定案（未上线）** |
 |------------|----------------------|
 | 双活 strangler、资源/切片 flag 切流 | **目标栈单写**：产品流量只走 Go+新前端契约；Elixir 仅作**行为参考与契约提取源**，不必长期并行服务用户 |
-| Phoenix.Token / Pbkdf2 双栈兼容 | **可换现代 Auth**：JWT 或 PASETO + **argon2id**（或 bcrypt）；demo/开发用户可重置，不必 bit 兼容旧 token/hash |
+| Phoenix.Token / Pbkdf2 双栈兼容 | **可换现代 Auth**：JWT HS256 + **argon2id**（或 bcrypt）；demo/开发用户可重置，不必 bit 兼容旧 token/hash |
 | 双活期 DDL 仅 Ash | **schema 所有权一次交接**：导出当前 PG schema → **goose 唯一真相**；允许破坏性整理表/索引/辅助函数（删 Ash helper 等） |
 | 打印/OCR reverse-proxy 到 Elixir | **直接移植或重写**到 Go；无「proxy 到关停」运维阶段 |
 | 停机/回滚/48h 观察 | **不要求**；以测试绿与模块 DoD 为准，开发库可随时 `db reset` |
@@ -50,7 +50,7 @@ Synie 是面向中小企业的多公司财务 ERP。目标栈后端为 **Go**（
 | 打印子系统 | ~1.99k LOC（`printing/*.ex`，含 Renderer 949 行 + LibreOffice） |
 | 最大 Resource 文件 | `vat_invoice.ex` 1147 行；订单/入库/对账等 800–1100 行 |
 | 密码算法（现状 Elixir） | Pbkdf2（`$pbkdf2-…`）——**目标栈可换 argon2id，不必兼容**（R3） |
-| 登录 Token（现状 Elixir） | Phoenix.Token ——**目标栈可换 JWT/PASETO，不必兼容**（R3） |
+| 登录 Token（现状 Elixir） | Phoenix.Token ——**目标栈可换 JWT HS256，不必兼容**（R3） |
 
 **核心痛点**：Ash Resource 把 schema + validation + 审核副作用（GL/Stock）+ GraphQL + policy 捆在同一文件；元数据反射正确但权威源锁在 BEAM 内省，无法跨语言共享。
 
@@ -152,7 +152,7 @@ flowchart LR
 4. 不追求复杂零停机多版本 schema 魔法。
 5. 不把 Elixir+Go 长期双活当目标架构。
 6. 不换 PostgreSQL、不拆微服务库。
-7. **OCR / LibreOffice 打印渲染**：迁移期默认可 **反向代理到 Elixir** 直至对应阶段原生移植（见 KD21、§A.7）；非永久 Non-Goal。
+7. 产品运行时不反向代理到 Elixir；OCR、打印与文件均由 Go 原生 endpoint 提供。
 
 ---
 
@@ -217,7 +217,6 @@ scope            # row | bulk | both
 isDanger
 permission       # 完整码或动作名
 confirmKind      # none | generic | audit_doc（对齐「保存并审核」/ useAuditDoc）
-wireMutationName # 过渡兼容：旧 GraphQL mutation 名，仅文档/映射用
 ```
 
 #### A.3 Wire DTO（前端稳定契约）
@@ -257,8 +256,8 @@ wireMutationName # 过渡兼容：旧 GraphQL mutation 名，仅文档/映射用
 说明：
 
 - `type` 使用前端 `GridColumnType`（含 **`fk`**）。
-- `extendedActions[]` 元素在过渡期保留 `mutation` 字符串（兼容 TS）；**同时**下发 `http: { method, path }`；前端 Resource Client 优先 `http`，无则走映射表。
-- `destroyMutation` 保留字段名以减 diff；值可为逻辑名，Client 解析为 `DELETE …`。
+- `extendedActions[]` 必须下发或由 registry 解析出 `http: { method, path }`；Resource Client 只执行 HTTP action，缺失映射时 fail-fast。
+- 删除动作由 Resource Client 解析为对应 `DELETE …` endpoint，不保留 GraphQL mutation 映射。
 - **枚举 Chip 颜色**：默认仍 **客户端** map（现状）；服务端不强制下发 color（避免 scope creep）。若某枚举需服务端驱动再扩 `enumOptions[].color`。
 
 **FormMetaDTO**（`form` 字段，阶段 1 可选）：
@@ -395,7 +394,7 @@ flowchart TB
 | **createResourceClient(name)** | `list/query/get/create/update/delete/command` + meta；页面不直接拼 path | `web/src/meta/resource-client.ts` |
 | **filterSerializer** | `FilterState` → query body；单测钉算子 | `web/src/meta/filter.ts` |
 | **commandRunner** | 读 ActionMeta：`confirmKind=audit_doc` → `useAuditDoc`；Toast 错误 | `web/src/meta/commands.ts` |
-| **api-base / flags** | 见 §D.8 Strangler ops | `web/src/meta/routing.ts` |
+| **api-base** | 固定 `/api/v1`；无 GraphQL fallback 或运行时切流 flag | `web/src/meta/routing.ts` |
 | **registry.tsx** | 保留 page/form override；逐步可与 FormMeta 合并 | 现路径 |
 
 **「保存并审核」**（`web/AGENTS.md`）：Resource Client `create`/`update` 返回 id；若 meta 含 `audit` 且 capability 具备，Drawer 显示按钮 → `command('audit')` + `confirmKind: audit_doc`。**不**在各业务页复制审核弹窗逻辑。
@@ -562,7 +561,7 @@ web/
 
 | 模块 | 现锚点 | Go 职责 |
 |------|--------|---------|
-| Auth | Phoenix.Token + Pbkdf2 + LoginRateLimiter | **JWT/PASETO + argon2id**（R3 不兼容旧格式） |
+| Auth | Phoenix.Token + Pbkdf2 + LoginRateLimiter | **JWT HS256 + argon2id**（R3 不兼容旧格式） |
 | Authz | Actor / Permission.matches / company scope | 算法附录 B；fail-closed |
 | Audit | Fragment | service 钩子 |
 | Meta | GridMeta + Registry | ResourceMeta + DTO |
@@ -693,7 +692,7 @@ func Cancel(ctx, tx, voucherType, voucherID string) error
 | 阶段 | 内容 | 前后端 |
 |------|------|--------|
 | **0** | 边界/清单/契约模板；**goose baseline 接管 schema** | 文档 + 空 `server/` |
-| **1** | Meta+Authz+Auth(JWT/PASETO+argon2id) + Resource Client + **货币端到端** | 同轴证明内核 |
+| **1** | Meta+Authz+Auth(JWT HS256+argon2id) + Resource Client + **货币端到端** | 同轴证明内核 |
 | **2** | 用户角色公司权限、主数据、files、numbering、settings | 每资源 REST+Meta |
 | **3** | GL/Stock 引擎 + 手工凭证/库存 | 引擎契约测试 |
 | **4** | 销采单据链（报价→订单→发货/入库→对账） | 垂直模块 |
@@ -712,7 +711,7 @@ func Cancel(ctx, tx, voucherType, voucherID string) error
 | 后端 | 前端 |
 |------|------|
 | chi + pgx + sqlc + slog | openapi-typescript + openapi-fetch |
-| argon2id + JWT/PASETO login/me | 新 token 存 localStorage（可换键名） |
+| argon2id + JWT HS256 login/me | 新 token 存 localStorage（可换键名） |
 | Authz Permission.matches + Actor | capabilities 来自 Meta |
 | Meta Registry + GridMetaDTO | Resource Client + useResourceMeta + FilterState |
 | basCurrencies CRUD + audit | 货币页 100% 新 client |
@@ -784,7 +783,7 @@ flowchart LR
 | amount chain | `contracts/fixtures/amount_chain.yaml` |
 | grid filters | FilterState 全算子 contract |
 | password | Go argon2id 单测；可选：旧 Pbkdf2 仅当要导入 demo 库时写一次性迁移 |
-| token | JWT/PASETO 签发校验单测 |
+| token | JWT HS256 签发校验单测 |
 | Playwright | helpers 改 REST；每模块 happy + 权限拒绝 |
 
 #### E.2 不变量
@@ -829,7 +828,7 @@ GL 平衡；库存非负（仓级）；权限 fail-closed；审核闸与下游 v
 | R8 | 前端回归 | 中 | meta 框架+E2E |
 | R9 | 绕过引擎写分录 | 高 | 引擎唯一写入口 + 代码审查 |
 | R10 | 范围膨胀 | 中 | Non-Goals；清单 |
-| R11 | Auth 实现粗糙 | 中 | 标准库 JWT/PASETO + argon2id |
+| R11 | Auth 实现粗糙 | 中 | 标准库 JWT HS256 + argon2id |
 | R12 | Schema 混乱 | 中 | goose 唯一；reset 纪律 |
 
 ---
@@ -843,7 +842,7 @@ GL 平衡；库存非负（仓级）；权限 fail-closed；审核闸与下游 v
 | list GQL | `POST …/query` → `{count,results}` |
 | `auditSalOrder` | `POST …/orders/{id}/audit` + ActionMeta |
 | `/api/files`、`/api/print` | `/api/v1/files`、`/api/v1/print`（Go 实现） |
-| Phoenix.Token Bearer | **JWT 或 PASETO** Bearer（R3） |
+| Phoenix.Token Bearer | **JWT HS256** Bearer（R3） |
 
 错误模型：
 
@@ -914,7 +913,7 @@ GL 平衡；库存非负（仓级）；权限 fail-closed；审核闸与下游 v
 
 | 主题 | 设计 |
 |------|------|
-| 认证 | Bearer **JWT 或 PASETO**；独立 `AUTH_SECRET`；过期/刷新策略简单即可（如 7d access） |
+| 认证 | Bearer **JWT HS256**；独立 `AUTH_SECRET`；过期/刷新策略简单即可（如 7d access） |
 | 密码 | **argon2id**；等时失败；不区分用户存在 |
 | 授权 | 服务端强制；capabilities 仅 UI |
 | 公司隔离 | **Appendix G**：`ANY(company_ids)` / super_admin fail-closed |
@@ -981,7 +980,7 @@ slog JSON（request_id, user_id, latency, route）；OTEL 方向；metrics：HTT
 | KD13 | 测试：契约 + 不变量 + API + E2E | 行为对齐产品文档/ExUnit 意图 |
 | KD14 | 打印/权限/Grid **进 Meta** | 单一真相 |
 | KD15 | **GL/Inventory 深模块** | 继承 ADR |
-| **KD16** | **Auth Token = JWT 或 PASETO**（自选一种实现）；**不**兼容 Phoenix.Token | R3 |
+| **KD16** | **Auth Token = JWT HS256**（自选一种实现）；**不**兼容 Phoenix.Token | R3 |
 | **KD17** | **密码 = argon2id**（推荐）；demo 用户可 seed 重置；**不**强制兼容 Pbkdf2 | R3 |
 | **KD18** | **goose 自始为唯一 DDL**；baseline 后可破坏性整理 | R3 |
 | **KD19** | **过账在同一 Go 事务**；单据经引擎写 GL/Stock | 原子性 |
@@ -1028,7 +1027,7 @@ slog JSON（request_id, user_id, latency, route）；OTEL 方向；metrics：HTT
 | **PR-1.0** | Meta DTO + FilterState + Resource Client | `web/app/lib/meta/*` 或 `web/src/meta/*` |
 | **PR-1.1** | chi + `/healthz` + config + pgx | `server/cmd/synie` |
 | **PR-1.2** | OpenAPI 流水线 + oapi-codegen | `contracts/openapi/` |
-| **PR-1.3** | Auth：argon2id + JWT/PASETO login/me + 限流 | `internal/platform/auth` |
+| **PR-1.3** | Auth：argon2id + JWT HS256 login/me + 限流 | `internal/platform/auth` |
 | **PR-1.4** | Authz Permission.matches + Actor + 公司范围 | `internal/platform/authz` |
 | **PR-1.5** | Meta Registry + BuildGridDTO | `internal/platform/meta` |
 | **PR-1.6** | basCurrencies 全栈 + audit | `domain/base` + 货币页 |
@@ -1223,7 +1222,7 @@ E2E / API smoke:
 
 ## Appendix F — （R3 历史附录 · 可忽略）
 
-Phoenix.Token / Pbkdf2 双栈兼容细节已 **废弃**。实现用 JWT/PASETO + argon2id。
+Phoenix.Token / Pbkdf2 双栈兼容细节已 **废弃**。实现用 JWT HS256 + argon2id。
 
 ## Appendix G — Actor 与公司范围 SQL（对齐 `Authz.Actor` / `CompanyScope`）
 
@@ -1294,5 +1293,5 @@ func (a *Actor) CompanyFilter() (bypass bool, ids []uuid.UUID) {
 | 2026-07-25 | Draft | 初稿 |
 | 2026-07-25 | Draft R1 | 审阅全量：双活兼容、CutoverSlice、前端 Meta、Print、Decimal、PR 细化 |
 | 2026-07-25 | Draft R2 | Write Surface、Token 二进制、filter builder、Appendix A/G |
-| 2026-07-25 | **R3** | **未上线**：取消双活/停机/Token·密码兼容/Ash 独占 DDL；单目标栈；goose 自始接管；JWT/PASETO+argon2id；工作量 14–22 人月；PR Plan 简化 |
+| 2026-07-25 | **R3** | **未上线**：取消双活/停机/Token·密码兼容/Ash 独占 DDL；单目标栈；goose 自始接管；JWT HS256+argon2id；工作量 14–22 人月；PR Plan 简化 |
 | 2026-07-26 | 实施注记 | Web Go-only 切流：前端删除 GraphQL/codegen 与 Vite Elixir 代理；产品路径 JWT-only（须重登）；`backend/` 仍保留参考 |
