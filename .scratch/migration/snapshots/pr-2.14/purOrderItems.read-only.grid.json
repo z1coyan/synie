@@ -1,0 +1,342 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行号",
+      "name": "idx",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "数量",
+      "name": "qty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "订购数量(物料默认单位,系统折算)",
+      "name": "baseQty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "已收数量(物料默认单位,系统维护)",
+      "name": "receivedQty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "原币含税单价",
+      "name": "price",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "原币含税金额(系统算:数量×原币单价)",
+      "name": "amount",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "本币含税单价(系统算:原币单价×汇率,4位,仅展示参考)",
+      "name": "basePrice",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "本币含税金额(系统算:原币金额×汇率)",
+      "name": "baseAmount",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "税率(小数,如 0.13)",
+      "name": "taxRate",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "物料编号",
+      "name": "materialCode",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "物料名称",
+      "name": "materialName",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "规格",
+      "name": "materialSpec",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "客户料号",
+      "name": "customerPartNo",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "单位名称",
+      "name": "unitName",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行备注",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "需求日(来自履约需求行,可空)",
+      "name": "demandDate",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "订单",
+      "name": "orderId",
+      "ref": {
+        "labelField": "orderNo",
+        "relation": "order",
+        "resource": "purOrders"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "公司",
+      "name": "companyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "物料",
+      "name": "materialId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "单位",
+      "name": "unitId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "报价条目",
+      "name": "quotationItemId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "成品 BOM(留痕,限条目物料自身)",
+      "name": "bomId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "来源履约需求行",
+      "name": "demandLineId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "订单日期",
+      "name": "orderDate",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "草稿",
+          "value": "DRAFT"
+        },
+        {
+          "label": "已审核",
+          "value": "AUDITED"
+        },
+        {
+          "label": "已关闭",
+          "value": "CLOSED"
+        },
+        {
+          "label": "已作废",
+          "value": "VOIDED"
+        }
+      ],
+      "filterable": true,
+      "label": "状态",
+      "name": "orderStatus",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "委外订单",
+      "name": "orderIsOutsourced",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "供应商",
+          "value": "SUPPLIER"
+        },
+        {
+          "label": "客户",
+          "value": "CUSTOMER"
+        },
+        {
+          "label": "内部公司",
+          "value": "COMPANY"
+        },
+        {
+          "label": "员工",
+          "value": "EMPLOYEE"
+        }
+      ],
+      "filterable": true,
+      "label": "对手类型(供应商/内部公司)",
+      "name": "partyType",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "对手",
+      "name": "partyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "币种",
+      "name": "currencyCode",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "未收数量(物料默认单位)",
+      "name": "remainingBaseQty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    }
+  ],
+  "destroyMutation": "destroyPurOrderItem",
+  "extendedActions": []
+}

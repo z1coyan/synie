@@ -2,6 +2,7 @@ import { useCallback, useState, type ReactNode } from 'react'
 import { FkPreviewContext } from './fk-preview'
 import { SynieRecordDrawer } from './SynieRecordDrawer'
 import { drawerConfig } from './registry'
+import { resourceClientFor } from '~/lib/resources/registry'
 
 interface Entry {
   key: number
@@ -31,6 +32,7 @@ export function FkPreviewProvider({ children }: { children: ReactNode }) {
         <SynieRecordDrawer
           key={e.key}
           resource={e.resource}
+          client={resourceClientFor(e.resource)}
           mode="view"
           rowId={e.id}
           isOpen={e.open}

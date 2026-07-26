@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Checkbox, Chip, SearchField, Spinner, Table, toast } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
-import { gqlFetch } from '~/lib/graphql'
+import { fetchPermissionCatalog, fetchRolePermissions, syncRolePermissions } from '~/lib/resources/iam'
 import {
   CANONICAL_ACTIONS,
   buildSubmit,
@@ -39,25 +39,6 @@ interface MatrixCtx {
   toggleMany: (codes: string[], selected: boolean) => void
   toggleExpand: (prefix: string) => void
 }
-
-// roleId 内插进查询串,JSON.stringify 转义(同 remote-query.ts buildOptionsQuery/buildByIdQuery 的转义先例)。
-// list 统一 offset 分页(backend/CLAUDE.md);limit 200 = max_page_size,权限行数量级远小于此,一页取足。
-const loadQuery = (roleId: string) => `
-  query {
-    permissionCatalog { prefix label actions }
-    sysRolePermissions(filter: { roleId: { eq: ${JSON.stringify(roleId)} } }, limit: 200, offset: 0) {
-      count
-      results { id permission }
-    }
-  }
-`
-
-// 单次 sync:传目标勾选的具体码集合,后端事务内 diff;通配行与目录外码后端保留(见 matrix.ts buildSubmit)
-const SYNC = `
-  mutation ($roleId: ID!, $permissions: [String!]!) {
-    syncSysRolePermissions(roleId: $roleId, permissions: $permissions)
-  }
-`
 
 /** 某域/某搜索结果分组的一张权限矩阵:行=资源,列=固定 10 动作 + 行尾"更多" */
 function MatrixTable(props: { ariaLabel: string; groups: CatalogGroup[]; ctx: MatrixCtx }) {
@@ -210,21 +191,13 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
     let cancelled = false
     setData(null)
     setError(null)
-    gqlFetch<{
-      permissionCatalog: CatalogGroup[]
-      sysRolePermissions: { count: number; results: GrantedRow[] }
-    }>(loadQuery(roleId))
-      .then((res) => {
+    Promise.all([fetchPermissionCatalog(), fetchRolePermissions(roleId)])
+      .then(([catalogResponse, permissionResponse]) => {
         if (cancelled) return
-        const { count, results } = res.sysRolePermissions
-        // limit 200 = max_page_size;count 超出已取回行数说明单页被截断,若照常渲染会把没
-        // 取到的授权行当成"未授予"展示,勾选/保存都会 fail-open 地把它们错误回收掉。
-        if (count > results.length) {
-          setError('权限行数超出单页容量(200),请联系开发处理')
-          return
-        }
-        setData({ roleId, catalog: res.permissionCatalog, rows: results })
-        setChecked(initialChecked(res.permissionCatalog, results))
+        const catalog = catalogResponse.groups as CatalogGroup[]
+        const rows = permissionResponse.rows as GrantedRow[]
+        setData({ roleId, catalog, rows })
+        setChecked(initialChecked(catalog, rows))
         // 换角色后视图状态归零:搜索、选中域、"更多"展开行
         setKeyword('')
         setDomain(null)
@@ -275,10 +248,7 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
     if (!loaded || !roleId) return
     setSaving(true)
     try {
-      await gqlFetch<{ syncSysRolePermissions: string[] }>(SYNC, {
-        roleId,
-        permissions: buildSubmit(loaded.catalog, loaded.rows, checked),
-      })
+      await syncRolePermissions(roleId, buildSubmit(loaded.catalog, loaded.rows, checked))
       toast.success('权限已保存')
       props.onOpenChange(false)
     } catch (e) {

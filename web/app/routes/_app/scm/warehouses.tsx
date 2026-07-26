@@ -3,29 +3,19 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, Link, ListBox, Select, toast } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
-import { gqlFetch } from '~/lib/graphql'
+import { companyClient } from '~/lib/resources/companies'
+import { warehouseClient } from '~/lib/resources/inventory'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
+import type { FilterState, Row } from '~/components/synie-data-grid/types'
 
 export const Route = createFileRoute('/_app/scm/warehouses')({
   component: WarehousesPage,
 })
-
-const CREATE_WAREHOUSE = `
-  mutation ($input: CreateInvWarehouseInput!) {
-    createInvWarehouse(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_WAREHOUSE = `
-  mutation ($id: ID!, $input: UpdateInvWarehouseInput!) {
-    updateInvWarehouse(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 // 列白名单:公司由页面顶部选定不进列,时间戳不进表格
 const GRID_COLUMNS = ['name', 'parentId', 'accountId', 'isLeaf', 'isOutsourced', 'partyType', 'partyId', 'allowNegative', 'active']
@@ -71,9 +61,11 @@ function WarehousesPage() {
   const companies = useQuery({
     queryKey: ['warehouseCompanies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { count: number; results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { count results { id name } } }`
-      ).then((d) => d.basCompanies),
+      companyClient.query({
+        limit: 50,
+        offset: 0,
+        sort: { column: 'code', direction: 'ascending' },
+      }),
   })
 
   useEffect(() => {
@@ -92,6 +84,18 @@ function WarehousesPage() {
   ].join(', ')
   // 关联科目候选:本公司、非汇总、本币(未指定币种)科目(后端另有同公司/汇总/币种校验兜底)
   const accountFilter = `{companyId: {eq: ${JSON.stringify(companyId)}}, isGroup: {eq: false}, currencyId: {isNil: true}}`
+  const companyFilterState: FilterState = {
+    companyId: { kind: 'fk', op: 'in', values: companyId ? [companyId] : [], labels: [] },
+  }
+  const parentFilterState: FilterState = {
+    companyId: { kind: 'fk', op: 'in', values: companyId ? [companyId] : [], labels: [] },
+    isLeaf: { kind: 'bool', eq: false },
+  }
+  const accountFilterState: FilterState = {
+    companyId: { kind: 'fk', op: 'in', values: companyId ? [companyId] : [], labels: [] },
+    isGroup: { kind: 'bool', eq: false },
+    currencyId: { kind: 'fk', op: 'isNil', values: [], labels: [] },
+  }
 
   return (
     <>
@@ -126,9 +130,10 @@ function WarehousesPage() {
           <SynieDataGrid
             key={`${companyId}-${reloadKey}`}
             resource="invWarehouses"
+            client={warehouseClient}
             columns={GRID_COLUMNS}
             tree={{ hasChildrenField: 'hasChildren', sort: { field: 'name', order: 'ASC' } }}
-            fixedFilter={{ companyId: { eq: companyId } }}
+            fixedFilter={companyFilterState}
             joinFields={{ account: ['code'] }}
             overrides={GRID_OVERRIDES}
             onView={(row) => setDrawer({ mode: 'view', row })}
@@ -136,8 +141,7 @@ function WarehousesPage() {
             onEdit={(row) => setDrawer({ mode: 'edit', row })}
             rowActions={statusToggleActions({
               field: 'active',
-              mutation: UPDATE_WAREHOUSE,
-              resultKey: 'updateInvWarehouse',
+              update: warehouseClient.update,
               // 树的子层缓存在组件本地,refetch 只刷根层,remount 一并清子层
               onDone: () => setReloadKey((k) => k + 1),
             })}
@@ -147,6 +151,7 @@ function WarehousesPage() {
 
       <SynieRecordDrawer
         resource="invWarehouses"
+        client={warehouseClient}
         label="仓库"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -160,7 +165,7 @@ function WarehousesPage() {
           parentId: {
             order: 1,
             label: '上级仓库',
-            remote: { filter: `{and: [${parentFilter}]}` },
+            remote: { filter: `{and: [${parentFilter}]}`, filterState: parentFilterState },
           },
           // 默认叶子;要建归集节点(挂子仓)手动关掉,与物料分类同语义
           isLeaf: { order: 2, cols: 6, defaultValue: true },
@@ -168,7 +173,12 @@ function WarehousesPage() {
             order: 3,
             cols: 6,
             label: '关联科目',
-            remote: { filter: accountFilter, searchFields: ['name', 'code'], itemSubtitleFields: ['code'] },
+            remote: {
+              filter: accountFilter,
+              filterState: accountFilterState,
+              searchFields: ['name', 'code'],
+              itemSubtitleFields: ['code'],
+            },
           },
           // 外协仓开关:关掉时一并清空协作方绑定(后端要求非外协仓协作方为空)
           isOutsourced: {
@@ -244,25 +254,15 @@ function WarehousesPage() {
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
           if (mode === 'create') {
-            const data = await gqlFetch<{ createInvWarehouse: { errors: { message: string }[] | null } }>(
-              CREATE_WAREHOUSE,
-              { input: { ...values, companyId } }
-            )
-            errors = data.createInvWarehouse.errors
+            await warehouseClient.create({ ...values, companyId })
           } else {
-            const data = await gqlFetch<{ updateInvWarehouse: { errors: { message: string }[] | null } }>(
-              UPDATE_WAREHOUSE,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updateInvWarehouse.errors
+            await warehouseClient.update(drawer!.row!.id, values)
           }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '仓库已创建' : '仓库已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'invWarehouses'] })
+          queryClient.invalidateQueries({ queryKey: ['gridRows', warehouseClient.id, 'invWarehouses'] })
           // 抽屉走 rowId 自查,编辑后一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'invWarehouses'] })
+          queryClient.invalidateQueries({ queryKey: ['rowById', warehouseClient.id, 'invWarehouses'] })
           setReloadKey((k) => k + 1)
         }}
       />

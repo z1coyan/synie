@@ -11,29 +11,9 @@ import {
   toast,
 } from '@heroui/react'
 import { AppearanceSwitch } from '~/components/appearance-switch'
-import { gqlFetch } from '~/lib/graphql'
+import { login as loginSession } from '~/lib/api/session'
 import { getToken, setToken } from '~/lib/auth'
 import { fetchSetupStatus } from '~/lib/setup'
-
-const LOGIN_MUTATION = `
-  mutation Login($username: String!, $password: String!) {
-    login(username: $username, password: $password) {
-      token
-      user {
-        id
-        username
-        name
-      }
-    }
-  }
-`
-
-interface LoginData {
-  login: {
-    token: string
-    user: { id: string; username: string; name: string | null }
-  }
-}
 
 export const Route = createFileRoute('/login')({
   beforeLoad: async () => {
@@ -70,13 +50,12 @@ function LoginPage() {
   }, [setupStatus, navigate])
 
   const login = useMutation({
-    mutationFn: () =>
-      gqlFetch<LoginData>(LOGIN_MUTATION, { username, password }),
+    mutationFn: () => loginSession(username, password),
     onSuccess: (data) => {
-      setToken(data.login.token)
+      setToken(data.token)
       // 清掉登录前可能缓存的 me:null,否则回到布局会被误判为登录态失效
       queryClient.removeQueries({ queryKey: ['me'] })
-      toast.success(`欢迎回来,${data.login.user.name ?? data.login.user.username}`)
+      toast.success(`欢迎回来,${data.user.name ?? data.user.username}`)
       navigate({ to: '/' })
     },
     onError: (error) => {

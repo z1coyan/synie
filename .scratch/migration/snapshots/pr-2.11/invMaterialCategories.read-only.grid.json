@@ -1,0 +1,83 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "分类编号",
+      "name": "code",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "分类名称",
+      "name": "name",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "叶子分类",
+      "name": "isLeaf",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "启用",
+      "name": "active",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "上级分类",
+      "name": "parentId",
+      "ref": {
+        "labelField": "name",
+        "relation": "parent",
+        "resource": "invMaterialCategories"
+      },
+      "sortable": false,
+      "type": "fk"
+    }
+  ],
+  "destroyMutation": "destroyInvMaterialCategory",
+  "extendedActions": []
+}

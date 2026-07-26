@@ -20,6 +20,7 @@ import {
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { gqlFetch } from '~/lib/graphql'
+import type { ResourceClient } from '~/lib/resources/types'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
 import { UUID_RE, buildRowQuery } from '../synie-data-grid/query'
@@ -58,6 +59,8 @@ export interface DrawerTab {
 export interface SynieRecordDrawerProps {
   /** 与后端 GridMeta 白名单同名,如 "sysRoles" */
   resource: string
+  /** 已迁移资源显式传入 REST client;未传时使用现有 GraphQL adapter。 */
+  client?: ResourceClient
   mode: DrawerMode
   isOpen: boolean
   onOpenChange: (open: boolean) => void
@@ -147,7 +150,7 @@ const EMPTY_COLUMNS: GridColumnMeta[] = []
 
 export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const { resource, mode, isOpen, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
-  const remoteMeta = useGridMeta(resource, !props.meta) // 本地模式不发请求
+  const remoteMeta = useGridMeta(resource, !props.meta, props.client) // 本地模式不发请求
   const columns = props.meta?.columns ?? remoteMeta.data?.columns ?? EMPTY_COLUMNS
   const metaPending = !props.meta && remoteMeta.isPending
   const metaError = !props.meta && remoteMeta.isError
@@ -159,9 +162,10 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const wantsFetch = !props.meta && !props.row && !!props.rowId
   const validId = !!props.rowId && UUID_RE.test(props.rowId)
   const byId = useQuery({
-    queryKey: ['rowById', resource, props.rowId],
+    queryKey: ['rowById', props.client?.id ?? 'graphql', resource, props.rowId],
     enabled: isOpen && wantsFetch && validId && !!remoteMeta.data,
     queryFn: () => {
+      if (props.client) return props.client.get(props.rowId!)
       const q = buildRowQuery(resource, remoteMeta.data!.columns, {
         limit: 1,
         offset: 0,
@@ -267,11 +271,20 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
         if (auditId == null || auditId === '') {
           toast.warning('单据已保存,但未取得单据 id,请在列表中执行审核')
         } else {
-          const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
-            `mutation ($id: ID!) { ${auditAction.mutation}(id: $id) { errors { message } } }`,
-            { id: auditId },
-          )
-          const errors = data[auditAction.mutation]?.errors
+          let errors: { message: string }[] | null | undefined
+          try {
+            if (props.client?.action) {
+              await props.client.action(auditAction.key, [auditId])
+            } else {
+              const data = await gqlFetch<Record<string, { errors: { message: string }[] | null }>>(
+                `mutation ($id: ID!) { ${auditAction.mutation}(id: $id) { errors { message } } }`,
+                { id: auditId },
+              )
+              errors = data[auditAction.mutation]?.errors
+            }
+          } catch (error) {
+            errors = [{ message: error instanceof Error ? error.message : String(error) }]
+          }
           if (errors?.length) {
             // 单据已落库(草稿),审核未过:如实告知,不关抽屉外的任何状态
             toast.danger('单据已保存,但审核失败', {

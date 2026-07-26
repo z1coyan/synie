@@ -4,9 +4,11 @@ import { useQuery } from '@tanstack/react-query'
 import { parseDate, today, getLocalTimeZone } from '@internationalized/date'
 import { Calendar, Button, DateField, DatePicker, Label, Spinner, Switch, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
-import { gqlFetch } from '~/lib/graphql'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { Row } from '~/components/synie-data-grid/types'
+import { companyClient } from '~/lib/resources/companies'
+import { queryStockBalance } from '~/lib/resources/inventory'
+import { warehouseFilterState } from './-stock-doc'
 
 export const Route = createFileRoute('/_app/scm/inventory')({
   component: InventoryPage,
@@ -18,12 +20,6 @@ export const Route = createFileRoute('/_app/scm/inventory')({
  * 页面形态照应收应付报表:顶部公司选择器 + 筛选行(截至日/仓/物料/含零开关)+ 结果表格。
  */
 
-const BALANCE = `
-  query ($companyId: ID!, $asOf: Date, $warehouseId: ID, $materialId: ID, $hideZero: Boolean) {
-    invStockBalance(companyId: $companyId, asOf: $asOf, warehouseId: $warehouseId, materialId: $materialId, hideZero: $hideZero)
-  }
-`
-
 interface BalanceRow {
   warehouseId: string
   warehouseName: string
@@ -33,12 +29,6 @@ interface BalanceRow {
   materialSpec: string | null
   unitName: string
   quantity: string
-}
-
-// generic action 的 map 数组经 GraphQL 是 JsonString 标量(元素为 JSON 串,照应收应付报表先例)
-function parseRows(raw: unknown): BalanceRow[] {
-  const list = Array.isArray(raw) ? raw : []
-  return list.map((r) => (typeof r === 'string' ? (JSON.parse(r) as BalanceRow) : (r as BalanceRow)))
 }
 
 // 数量是物料默认单位口径、6 位小数:定点去尾零展示,避免科学计数法与长串零
@@ -61,9 +51,11 @@ function InventoryPage() {
   const companies = useQuery({
     queryKey: ['inventoryCompanies'],
     queryFn: () =>
-      gqlFetch<{ basCompanies: { count: number; results: Row[] } }>(
-        `query { basCompanies(limit: 50, offset: 0, sort: [{field: CODE, order: ASC}]) { count results { id name } } }`
-      ).then((d) => d.basCompanies),
+      companyClient.query({
+        limit: 50,
+        offset: 0,
+        sort: { column: 'code', direction: 'ascending' },
+      }),
   })
 
   useEffect(() => {
@@ -78,14 +70,14 @@ function InventoryPage() {
     queryKey: ['invStockBalance', companyId, asOf, warehouseId, materialId, showZero],
     enabled: companyId != null,
     queryFn: () =>
-      gqlFetch<{ invStockBalance: unknown }>(BALANCE, {
-        companyId,
-        asOf: asOf === '' ? null : asOf,
-        warehouseId,
-        materialId,
+      queryStockBalance({
+        companyId: companyId!,
+        asOf: asOf === '' ? undefined : asOf,
+        warehouseId: warehouseId ?? undefined,
+        materialId: materialId ?? undefined,
         hideZero: !showZero,
       }),
-    select: (d) => parseRows(d.invStockBalance),
+    select: (data) => data.results as BalanceRow[],
   })
 
   const rows = balance.data ?? []
@@ -157,6 +149,7 @@ function InventoryPage() {
             label="仓库"
             placeholder="全部仓库…"
             filter={companyId ? `{companyId: {eq: ${JSON.stringify(companyId)}}, isLeaf: {eq: true}}` : undefined}
+            filterState={warehouseFilterState(companyId)}
             value={warehouseId}
             onChange={(id) => setWarehouseId(id)}
             isDisabled={companyId == null}

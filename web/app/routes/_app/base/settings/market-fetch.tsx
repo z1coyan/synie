@@ -2,39 +2,11 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Checkbox, Label, ListBox, Select, Spinner, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { getSystemSetting, updateSystemSetting } from '~/lib/resources/settings'
 
 export const Route = createFileRoute('/_app/base/settings/market-fetch')({
   component: MarketFetchSettingsTab,
 })
-
-type SysSetting = {
-  id: string
-  marketFetchScheduleEnabled: boolean
-  marketFetchLastIntervalMinutes: number
-  marketFetchSettlementEnabled: boolean
-  marketFetchLastRunAt: string | null
-  marketFetchLastSummary: string | null
-}
-
-const SETTING_QUERY = `
-  query {
-    sysSetting {
-      id
-      marketFetchScheduleEnabled
-      marketFetchLastIntervalMinutes
-      marketFetchSettlementEnabled
-      marketFetchLastRunAt
-      marketFetchLastSummary
-    }
-  }
-`
-
-const UPDATE_SETTING = `
-  mutation ($id: ID!, $input: UpdateSysSettingInput!) {
-    updateSysSetting(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 const INTERVALS = [
   { value: '30', label: '30 分钟' },
@@ -64,7 +36,7 @@ function MarketFetchSettingsTab() {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: ['sysSetting', 'marketFetch'],
-    queryFn: () => gqlFetch<{ sysSetting: SysSetting | null }>(SETTING_QUERY),
+    queryFn: getSystemSetting,
   })
 
   const [scheduleEnabled, setScheduleEnabled] = useState(true)
@@ -73,7 +45,7 @@ function MarketFetchSettingsTab() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    const s = query.data?.sysSetting
+    const s = query.data
     if (!s) return
     setScheduleEnabled(s.marketFetchScheduleEnabled)
     setIntervalMinutes(String(s.marketFetchLastIntervalMinutes))
@@ -83,27 +55,18 @@ function MarketFetchSettingsTab() {
   const intervalNum = Number(interval)
 
   const save = async () => {
-    if (!query.data?.sysSetting) return
+    if (!query.data) return
     if (![30, 60, 120].includes(intervalNum)) {
       toast.danger('最新价间隔仅允许 30 / 60 / 120 分钟')
       return
     }
     setSaving(true)
     try {
-      const data = await gqlFetch<{ updateSysSetting: { errors: { message: string }[] | null } }>(
-        UPDATE_SETTING,
-        {
-          id: query.data.sysSetting.id,
-          input: {
-            marketFetchScheduleEnabled: scheduleEnabled,
-            marketFetchLastIntervalMinutes: intervalNum,
-            marketFetchSettlementEnabled: settlementEnabled,
-          },
-        },
-      )
-      if (data.updateSysSetting.errors?.length) {
-        throw new Error(data.updateSysSetting.errors.map((e) => e.message).join('; '))
-      }
+      await updateSystemSetting({
+        marketFetchScheduleEnabled: scheduleEnabled,
+        marketFetchLastIntervalMinutes: intervalNum as 30 | 60 | 120,
+        marketFetchSettlementEnabled: settlementEnabled,
+      })
       toast.success('行情拉取设置已保存')
       queryClient.invalidateQueries({ queryKey: ['sysSetting'] })
     } catch (e) {
@@ -113,7 +76,7 @@ function MarketFetchSettingsTab() {
     }
   }
 
-  const s = query.data?.sysSetting
+  const s = query.data
 
   return (
     <>

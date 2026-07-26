@@ -1,0 +1,160 @@
+{
+  "capabilities": [
+    "create",
+    "void"
+  ],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "观测时刻",
+      "name": "observedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "价格",
+      "name": "price",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "结算价",
+          "value": "SETTLEMENT"
+        },
+        {
+          "label": "均价",
+          "value": "AVERAGE"
+        },
+        {
+          "label": "最新价",
+          "value": "LAST"
+        }
+      ],
+      "filterable": true,
+      "label": "价类",
+      "name": "priceKind",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "手工",
+          "value": "MANUAL"
+        },
+        {
+          "label": "拉取",
+          "value": "FETCH"
+        }
+      ],
+      "filterable": true,
+      "label": "来源",
+      "name": "source",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "已作废",
+      "name": "isVoided",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "备注",
+      "name": "note",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行情品种",
+      "name": "instrumentId",
+      "ref": {
+        "labelField": "name",
+        "relation": "instrument",
+        "resource": "basMarketInstruments"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "币种",
+      "name": "currencyId",
+      "ref": {
+        "labelField": "name",
+        "relation": "currency",
+        "resource": "basCurrencies"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "计量单位",
+      "name": "unitId",
+      "ref": {
+        "labelField": "name",
+        "relation": "unit",
+        "resource": "basUnits"
+      },
+      "sortable": false,
+      "type": "fk"
+    }
+  ],
+  "destroyMutation": null,
+  "extendedActions": [
+    {
+      "isDanger": true,
+      "key": "void",
+      "label": "作废",
+      "mutation": "voidBasMarketPricePoint",
+      "scope": "row"
+    }
+  ]
+}

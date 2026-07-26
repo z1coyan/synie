@@ -1,10 +1,14 @@
 import type { ReactNode } from 'react'
 import { toSortField, UUID_RE } from '../synie-data-grid/query'
-import type { GridColumnRef, Row } from '../synie-data-grid/types'
+import type { FilterState, GridColumnRef, Row } from '../synie-data-grid/types'
+import type { ResourceClient } from '~/lib/resources/types'
+import { resourceClientFor } from '~/lib/resources/registry'
 
 export interface RemoteSourceConfig {
   /** GridMeta 白名单资源名(即 GraphQL list query 名),如 "basCompanies" */
   resource: string
+  /** 显式 REST 数据源；缺省时优先查资源 registry，未迁移资源再沿用 GraphQL adapter。 */
+  client?: ResourceClient
   /** 显示字段,默认 gridMeta ref.labelField,再兜底 'name' */
   labelField?: string
   /** 排序字段,默认 labelField;labelField 为计算字段不可排序时用 */
@@ -13,6 +17,8 @@ export interface RemoteSourceConfig {
   searchFields?: string[]
   /** 固定过滤字面量,如 `{enabled: {eq: true}}` */
   filter?: string
+  /** REST ResourceClient 使用的结构化固定筛选；与 GraphQL filter 字面量并存于迁移期。 */
+  filterState?: FilterState
   /** 额外取回字段(renderItem/renderValue 用) */
   fields?: string[]
   pageSize?: number
@@ -26,10 +32,12 @@ export interface RemoteSourceConfig {
 
 export interface ResolvedSource {
   resource: string
+  client?: ResourceClient
   labelField: string
   sortField: string
   searchFields: string[]
   filter: string | null
+  filterState?: FilterState
   fields: string[]
   pageSize: number
   itemSubtitleFields: string[]
@@ -69,10 +77,12 @@ export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumn
   const searchFields = cfg.searchFields?.length ? cfg.searchFields : defaults.searchFields
   return {
     resource,
+    client: cfg.client ?? resourceClientFor(resource),
     labelField,
     sortField: cfg.sortField ?? labelField,
     searchFields: searchFields?.length ? searchFields : [labelField],
     filter: cfg.filter ?? null,
+    filterState: cfg.filterState,
     fields: cfg.fields ?? defaults.fields ?? [],
     pageSize: cfg.pageSize ?? 20,
     itemSubtitleFields: cfg.renderItem ? [] : (cfg.itemSubtitleFields ?? defaults.itemSubtitleFields ?? []),

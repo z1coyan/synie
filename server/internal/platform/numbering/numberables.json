@@ -1,0 +1,6282 @@
+[
+  {
+    "prefix": "acc.bill_transaction",
+    "fields": [
+      {
+        "label": "单据编号",
+        "type": "string",
+        "path": "doc_no",
+        "sourceField": "doc_no"
+      },
+      {
+        "label": "交易类型",
+        "type": "enum",
+        "path": "transaction_type",
+        "sourceField": "transaction_type"
+      },
+      {
+        "label": "发生日期",
+        "type": "date",
+        "path": "occurred_on",
+        "sourceField": "occurred_on"
+      },
+      {
+        "label": "子票起",
+        "type": "integer",
+        "path": "sub_start",
+        "sourceField": "sub_start"
+      },
+      {
+        "label": "子票止",
+        "type": "integer",
+        "path": "sub_end",
+        "sourceField": "sub_end"
+      },
+      {
+        "label": "交易金额(段金额)",
+        "type": "decimal",
+        "path": "amount",
+        "sourceField": "amount"
+      },
+      {
+        "label": "对手类型",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "交易对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "贴现机构",
+        "type": "string",
+        "path": "discount_org",
+        "sourceField": "discount_org"
+      },
+      {
+        "label": "贴现利率(年化%)",
+        "type": "decimal",
+        "path": "discount_rate",
+        "sourceField": "discount_rate"
+      },
+      {
+        "label": "贴现利息",
+        "type": "decimal",
+        "path": "interest",
+        "sourceField": "interest"
+      },
+      {
+        "label": "实收金额",
+        "type": "decimal",
+        "path": "net_amount",
+        "sourceField": "net_amount"
+      },
+      {
+        "label": "过账日期",
+        "type": "date",
+        "path": "posting_date",
+        "sourceField": "posting_date"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "备注",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "本方银行账户(调拨为转出账户)·账户别名",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "alias"
+        },
+        "path": "bank_account.alias",
+        "sourceField": "bank_account_id"
+      },
+      {
+        "label": "本方银行账户(调拨为转出账户)·所属银行",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "bank_name"
+        },
+        "path": "bank_account.bank_name",
+        "sourceField": "bank_account_id"
+      },
+      {
+        "label": "本方银行账户(调拨为转出账户)·开户支行",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "branch_name"
+        },
+        "path": "bank_account.branch_name",
+        "sourceField": "bank_account_id"
+      },
+      {
+        "label": "本方银行账户(调拨为转出账户)·户名",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "holder_name"
+        },
+        "path": "bank_account.holder_name",
+        "sourceField": "bank_account_id"
+      },
+      {
+        "label": "本方银行账户(调拨为转出账户)·银行账号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "account_no"
+        },
+        "path": "bank_account.account_no",
+        "sourceField": "bank_account_id"
+      },
+      {
+        "label": "本方银行账户(调拨为转出账户)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "active"
+        },
+        "path": "bank_account.active",
+        "sourceField": "bank_account_id"
+      },
+      {
+        "label": "本方银行账户(调拨为转出账户)·备注",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "note"
+        },
+        "path": "bank_account.note",
+        "sourceField": "bank_account_id"
+      },
+      {
+        "label": "调拨转入账户·账户别名",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "alias"
+        },
+        "path": "to_bank_account.alias",
+        "sourceField": "to_bank_account_id"
+      },
+      {
+        "label": "调拨转入账户·所属银行",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "bank_name"
+        },
+        "path": "to_bank_account.bank_name",
+        "sourceField": "to_bank_account_id"
+      },
+      {
+        "label": "调拨转入账户·开户支行",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "branch_name"
+        },
+        "path": "to_bank_account.branch_name",
+        "sourceField": "to_bank_account_id"
+      },
+      {
+        "label": "调拨转入账户·户名",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "holder_name"
+        },
+        "path": "to_bank_account.holder_name",
+        "sourceField": "to_bank_account_id"
+      },
+      {
+        "label": "调拨转入账户·银行账号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "account_no"
+        },
+        "path": "to_bank_account.account_no",
+        "sourceField": "to_bank_account_id"
+      },
+      {
+        "label": "调拨转入账户·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "active"
+        },
+        "path": "to_bank_account.active",
+        "sourceField": "to_bank_account_id"
+      },
+      {
+        "label": "调拨转入账户·备注",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bank_account",
+          "valueColumn": "note"
+        },
+        "path": "to_bank_account.note",
+        "sourceField": "to_bank_account_id"
+      },
+      {
+        "label": "关联票据·票据号码",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "bill_no"
+        },
+        "path": "bill.bill_no",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·票据种类",
+        "type": "enum",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "bill_kind"
+        },
+        "path": "bill.bill_kind",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·出票日期",
+        "type": "date",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "issue_date"
+        },
+        "path": "bill.issue_date",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·到期日",
+        "type": "date",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "due_date"
+        },
+        "path": "bill.due_date",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·票据包金额",
+        "type": "decimal",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "face_amount"
+        },
+        "path": "bill.face_amount",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·出票人名称",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "drawer_name"
+        },
+        "path": "bill.drawer_name",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·出票人账号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "drawer_account"
+        },
+        "path": "bill.drawer_account",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·出票人开户行",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "drawer_bank_name"
+        },
+        "path": "bill.drawer_bank_name",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·出票人开户行联行号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "drawer_bank_no"
+        },
+        "path": "bill.drawer_bank_no",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·收款人名称",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "payee_name"
+        },
+        "path": "bill.payee_name",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·收款人账号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "payee_account"
+        },
+        "path": "bill.payee_account",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·收款人开户行",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "payee_bank_name"
+        },
+        "path": "bill.payee_bank_name",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·收款人开户行联行号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "payee_bank_no"
+        },
+        "path": "bill.payee_bank_no",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·承兑人名称",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "acceptor_name"
+        },
+        "path": "bill.acceptor_name",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·承兑人账号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "acceptor_account"
+        },
+        "path": "bill.acceptor_account",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·承兑人开户行",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "acceptor_bank_name"
+        },
+        "path": "bill.acceptor_bank_name",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·承兑人开户行联行号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "acceptor_bank_no"
+        },
+        "path": "bill.acceptor_bank_no",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·能否转让",
+        "type": "boolean",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "transferable"
+        },
+        "path": "bill.transferable",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·承兑日期",
+        "type": "date",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "acceptance_date"
+        },
+        "path": "bill.acceptance_date",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "关联票据·备注",
+        "type": "string",
+        "lookup": {
+          "table": "acc_bill",
+          "valueColumn": "remarks"
+        },
+        "path": "bill.remarks",
+        "sourceField": "bill_id"
+      },
+      {
+        "label": "票据科目·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "bill_account.code",
+        "sourceField": "bill_account_id"
+      },
+      {
+        "label": "票据科目·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "bill_account.name",
+        "sourceField": "bill_account_id"
+      },
+      {
+        "label": "票据科目·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "bill_account.direction",
+        "sourceField": "bill_account_id"
+      },
+      {
+        "label": "票据科目·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "bill_account.is_group",
+        "sourceField": "bill_account_id"
+      },
+      {
+        "label": "票据科目·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "bill_account.active",
+        "sourceField": "bill_account_id"
+      },
+      {
+        "label": "票据科目·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "bill_account.role",
+        "sourceField": "bill_account_id"
+      },
+      {
+        "label": "结算科目·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "settle_account.code",
+        "sourceField": "settle_account_id"
+      },
+      {
+        "label": "结算科目·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "settle_account.name",
+        "sourceField": "settle_account_id"
+      },
+      {
+        "label": "结算科目·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "settle_account.direction",
+        "sourceField": "settle_account_id"
+      },
+      {
+        "label": "结算科目·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "settle_account.is_group",
+        "sourceField": "settle_account_id"
+      },
+      {
+        "label": "结算科目·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "settle_account.active",
+        "sourceField": "settle_account_id"
+      },
+      {
+        "label": "结算科目·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "settle_account.role",
+        "sourceField": "settle_account_id"
+      },
+      {
+        "label": "利息科目·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "interest_account.code",
+        "sourceField": "interest_account_id"
+      },
+      {
+        "label": "利息科目·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "interest_account.name",
+        "sourceField": "interest_account_id"
+      },
+      {
+        "label": "利息科目·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "interest_account.direction",
+        "sourceField": "interest_account_id"
+      },
+      {
+        "label": "利息科目·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "interest_account.is_group",
+        "sourceField": "interest_account_id"
+      },
+      {
+        "label": "利息科目·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "interest_account.active",
+        "sourceField": "interest_account_id"
+      },
+      {
+        "label": "利息科目·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "interest_account.role",
+        "sourceField": "interest_account_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "accBillTransactions"
+  },
+  {
+    "prefix": "acc.expense_report",
+    "fields": [
+      {
+        "label": "单据编号(留空自动取号)",
+        "type": "string",
+        "path": "doc_no",
+        "sourceField": "doc_no"
+      },
+      {
+        "label": "报销日期",
+        "type": "date",
+        "path": "expense_date",
+        "sourceField": "expense_date"
+      },
+      {
+        "label": "过账日期",
+        "type": "date",
+        "path": "posting_date",
+        "sourceField": "posting_date"
+      },
+      {
+        "label": "备注",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "员工(报销对象)·员工编号",
+        "type": "string",
+        "lookup": {
+          "table": "hr_employees",
+          "valueColumn": "code"
+        },
+        "path": "employee.code",
+        "sourceField": "employee_id"
+      },
+      {
+        "label": "员工(报销对象)·员工姓名",
+        "type": "string",
+        "lookup": {
+          "table": "hr_employees",
+          "valueColumn": "name"
+        },
+        "path": "employee.name",
+        "sourceField": "employee_id"
+      },
+      {
+        "label": "员工(报销对象)·考勤设备编号",
+        "type": "string",
+        "lookup": {
+          "table": "hr_employees",
+          "valueColumn": "attendance_no"
+        },
+        "path": "employee.attendance_no",
+        "sourceField": "employee_id"
+      },
+      {
+        "label": "员工(报销对象)·身份证号",
+        "type": "string",
+        "lookup": {
+          "table": "hr_employees",
+          "valueColumn": "id_number"
+        },
+        "path": "employee.id_number",
+        "sourceField": "employee_id"
+      },
+      {
+        "label": "员工(报销对象)·户籍",
+        "type": "string",
+        "lookup": {
+          "table": "hr_employees",
+          "valueColumn": "household_registration"
+        },
+        "path": "employee.household_registration",
+        "sourceField": "employee_id"
+      },
+      {
+        "label": "员工(报销对象)·手机号码",
+        "type": "string",
+        "lookup": {
+          "table": "hr_employees",
+          "valueColumn": "phone"
+        },
+        "path": "employee.phone",
+        "sourceField": "employee_id"
+      },
+      {
+        "label": "员工(报销对象)·现居住地",
+        "type": "string",
+        "lookup": {
+          "table": "hr_employees",
+          "valueColumn": "current_address"
+        },
+        "path": "employee.current_address",
+        "sourceField": "employee_id"
+      },
+      {
+        "label": "员工(报销对象)·日薪",
+        "type": "decimal",
+        "lookup": {
+          "table": "hr_employees",
+          "valueColumn": "daily_wage"
+        },
+        "path": "employee.daily_wage",
+        "sourceField": "employee_id"
+      },
+      {
+        "label": "员工(报销对象)·月补贴",
+        "type": "decimal",
+        "lookup": {
+          "table": "hr_employees",
+          "valueColumn": "monthly_allowance"
+        },
+        "path": "employee.monthly_allowance",
+        "sourceField": "employee_id"
+      },
+      {
+        "label": "员工(报销对象)·参保类型",
+        "type": "enumArray",
+        "lookup": {
+          "table": "hr_employees",
+          "valueColumn": "insurance_types"
+        },
+        "path": "employee.insurance_types",
+        "sourceField": "employee_id"
+      },
+      {
+        "label": "付款科目(贷方,银行存款/库存现金类;草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "payment_account.code",
+        "sourceField": "payment_account_id"
+      },
+      {
+        "label": "付款科目(贷方,银行存款/库存现金类;草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "payment_account.name",
+        "sourceField": "payment_account_id"
+      },
+      {
+        "label": "付款科目(贷方,银行存款/库存现金类;草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "payment_account.direction",
+        "sourceField": "payment_account_id"
+      },
+      {
+        "label": "付款科目(贷方,银行存款/库存现金类;草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "payment_account.is_group",
+        "sourceField": "payment_account_id"
+      },
+      {
+        "label": "付款科目(贷方,银行存款/库存现金类;草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "payment_account.active",
+        "sourceField": "payment_account_id"
+      },
+      {
+        "label": "付款科目(贷方,银行存款/库存现金类;草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "payment_account.role",
+        "sourceField": "payment_account_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "accExpenseReports"
+  },
+  {
+    "prefix": "acc.gl_journal",
+    "fields": [
+      {
+        "label": "凭证编号",
+        "type": "string",
+        "path": "voucher_no",
+        "sourceField": "voucher_no"
+      },
+      {
+        "label": "单据日期",
+        "type": "date",
+        "path": "date",
+        "sourceField": "date"
+      },
+      {
+        "label": "过账日期",
+        "type": "date",
+        "path": "posting_date",
+        "sourceField": "posting_date"
+      },
+      {
+        "label": "凭证备注",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "提交时间",
+        "type": "datetime",
+        "path": "submitted_at",
+        "sourceField": "submitted_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "编写人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "编写人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "编写人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "提交人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "submitted_by.username",
+        "sourceField": "submitted_by_id"
+      },
+      {
+        "label": "提交人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "submitted_by.name",
+        "sourceField": "submitted_by_id"
+      },
+      {
+        "label": "提交人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "submitted_by.preferred_language",
+        "sourceField": "submitted_by_id"
+      }
+    ],
+    "grid": "accGlJournals"
+  },
+  {
+    "prefix": "acc.vat_invoice",
+    "fields": [
+      {
+        "label": "内部单据编号",
+        "type": "string",
+        "path": "doc_no",
+        "sourceField": "doc_no"
+      },
+      {
+        "label": "开票方向",
+        "type": "enum",
+        "path": "direction",
+        "sourceField": "direction"
+      },
+      {
+        "label": "开票日期",
+        "type": "date",
+        "path": "invoice_date",
+        "sourceField": "invoice_date"
+      },
+      {
+        "label": "过账日期",
+        "type": "date",
+        "path": "posting_date",
+        "sourceField": "posting_date"
+      },
+      {
+        "label": "对手类型",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "发票种类",
+        "type": "enum",
+        "path": "invoice_kind",
+        "sourceField": "invoice_kind"
+      },
+      {
+        "label": "发票代码(数电票为空串)",
+        "type": "string",
+        "path": "invoice_code",
+        "sourceField": "invoice_code"
+      },
+      {
+        "label": "发票号码",
+        "type": "string",
+        "path": "invoice_no",
+        "sourceField": "invoice_no"
+      },
+      {
+        "label": "销方名称",
+        "type": "string",
+        "path": "seller_name",
+        "sourceField": "seller_name"
+      },
+      {
+        "label": "销方纳税人识别号",
+        "type": "string",
+        "path": "seller_tax_no",
+        "sourceField": "seller_tax_no"
+      },
+      {
+        "label": "销方地址、电话",
+        "type": "string",
+        "path": "seller_address_phone",
+        "sourceField": "seller_address_phone"
+      },
+      {
+        "label": "销方开户行及账号",
+        "type": "string",
+        "path": "seller_bank_account",
+        "sourceField": "seller_bank_account"
+      },
+      {
+        "label": "购方名称",
+        "type": "string",
+        "path": "buyer_name",
+        "sourceField": "buyer_name"
+      },
+      {
+        "label": "购方纳税人识别号",
+        "type": "string",
+        "path": "buyer_tax_no",
+        "sourceField": "buyer_tax_no"
+      },
+      {
+        "label": "购方地址、电话",
+        "type": "string",
+        "path": "buyer_address_phone",
+        "sourceField": "buyer_address_phone"
+      },
+      {
+        "label": "购方开户行及账号",
+        "type": "string",
+        "path": "buyer_bank_account",
+        "sourceField": "buyer_bank_account"
+      },
+      {
+        "label": "发票明细",
+        "type": "string",
+        "path": "items",
+        "sourceField": "items"
+      },
+      {
+        "label": "不含税金额",
+        "type": "decimal",
+        "path": "net_total",
+        "sourceField": "net_total"
+      },
+      {
+        "label": "税额",
+        "type": "decimal",
+        "path": "tax_total",
+        "sourceField": "tax_total"
+      },
+      {
+        "label": "价税合计",
+        "type": "decimal",
+        "path": "gross_total",
+        "sourceField": "gross_total"
+      },
+      {
+        "label": "开票人",
+        "type": "string",
+        "path": "issuer",
+        "sourceField": "issuer"
+      },
+      {
+        "label": "复核人",
+        "type": "string",
+        "path": "reviewer",
+        "sourceField": "reviewer"
+      },
+      {
+        "label": "收款人",
+        "type": "string",
+        "path": "payee",
+        "sourceField": "payee"
+      },
+      {
+        "label": "备注",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "红冲对应原发票号码",
+        "type": "string",
+        "path": "red_invoice_no",
+        "sourceField": "red_invoice_no"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "往来科目·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "party_account.code",
+        "sourceField": "party_account_id"
+      },
+      {
+        "label": "往来科目·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "party_account.name",
+        "sourceField": "party_account_id"
+      },
+      {
+        "label": "往来科目·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "party_account.direction",
+        "sourceField": "party_account_id"
+      },
+      {
+        "label": "往来科目·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "party_account.is_group",
+        "sourceField": "party_account_id"
+      },
+      {
+        "label": "往来科目·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "party_account.active",
+        "sourceField": "party_account_id"
+      },
+      {
+        "label": "往来科目·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "party_account.role",
+        "sourceField": "party_account_id"
+      },
+      {
+        "label": "金额科目·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "amount_account.code",
+        "sourceField": "amount_account_id"
+      },
+      {
+        "label": "金额科目·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "amount_account.name",
+        "sourceField": "amount_account_id"
+      },
+      {
+        "label": "金额科目·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "amount_account.direction",
+        "sourceField": "amount_account_id"
+      },
+      {
+        "label": "金额科目·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "amount_account.is_group",
+        "sourceField": "amount_account_id"
+      },
+      {
+        "label": "金额科目·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "amount_account.active",
+        "sourceField": "amount_account_id"
+      },
+      {
+        "label": "金额科目·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "amount_account.role",
+        "sourceField": "amount_account_id"
+      },
+      {
+        "label": "税额科目·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "tax_account.code",
+        "sourceField": "tax_account_id"
+      },
+      {
+        "label": "税额科目·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "tax_account.name",
+        "sourceField": "tax_account_id"
+      },
+      {
+        "label": "税额科目·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "tax_account.direction",
+        "sourceField": "tax_account_id"
+      },
+      {
+        "label": "税额科目·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "tax_account.is_group",
+        "sourceField": "tax_account_id"
+      },
+      {
+        "label": "税额科目·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "tax_account.active",
+        "sourceField": "tax_account_id"
+      },
+      {
+        "label": "税额科目·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "tax_account.role",
+        "sourceField": "tax_account_id"
+      },
+      {
+        "label": "对向发票·内部单据编号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "doc_no"
+        },
+        "path": "mirror_invoice.doc_no",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·开票方向",
+        "type": "enum",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "direction"
+        },
+        "path": "mirror_invoice.direction",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·开票日期",
+        "type": "date",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "invoice_date"
+        },
+        "path": "mirror_invoice.invoice_date",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·过账日期",
+        "type": "date",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "posting_date"
+        },
+        "path": "mirror_invoice.posting_date",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·对手类型",
+        "type": "enum",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "party_type"
+        },
+        "path": "mirror_invoice.party_type",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·发票种类",
+        "type": "enum",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "invoice_kind"
+        },
+        "path": "mirror_invoice.invoice_kind",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·发票代码(数电票为空串)",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "invoice_code"
+        },
+        "path": "mirror_invoice.invoice_code",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·发票号码",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "invoice_no"
+        },
+        "path": "mirror_invoice.invoice_no",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·销方名称",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "seller_name"
+        },
+        "path": "mirror_invoice.seller_name",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·销方纳税人识别号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "seller_tax_no"
+        },
+        "path": "mirror_invoice.seller_tax_no",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·销方地址、电话",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "seller_address_phone"
+        },
+        "path": "mirror_invoice.seller_address_phone",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·销方开户行及账号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "seller_bank_account"
+        },
+        "path": "mirror_invoice.seller_bank_account",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·购方名称",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "buyer_name"
+        },
+        "path": "mirror_invoice.buyer_name",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·购方纳税人识别号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "buyer_tax_no"
+        },
+        "path": "mirror_invoice.buyer_tax_no",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·购方地址、电话",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "buyer_address_phone"
+        },
+        "path": "mirror_invoice.buyer_address_phone",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·购方开户行及账号",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "buyer_bank_account"
+        },
+        "path": "mirror_invoice.buyer_bank_account",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·发票明细",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "items"
+        },
+        "path": "mirror_invoice.items",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·不含税金额",
+        "type": "decimal",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "net_total"
+        },
+        "path": "mirror_invoice.net_total",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·税额",
+        "type": "decimal",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "tax_total"
+        },
+        "path": "mirror_invoice.tax_total",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·价税合计",
+        "type": "decimal",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "gross_total"
+        },
+        "path": "mirror_invoice.gross_total",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·开票人",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "issuer"
+        },
+        "path": "mirror_invoice.issuer",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·复核人",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "reviewer"
+        },
+        "path": "mirror_invoice.reviewer",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·收款人",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "payee"
+        },
+        "path": "mirror_invoice.payee",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·备注",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "remarks"
+        },
+        "path": "mirror_invoice.remarks",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·红冲对应原发票号码",
+        "type": "string",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "red_invoice_no"
+        },
+        "path": "mirror_invoice.red_invoice_no",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·状态",
+        "type": "enum",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "status"
+        },
+        "path": "mirror_invoice.status",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "对向发票·审核时间",
+        "type": "datetime",
+        "lookup": {
+          "table": "acc_vat_invoice",
+          "valueColumn": "audited_at"
+        },
+        "path": "mirror_invoice.audited_at",
+        "sourceField": "mirror_invoice_id"
+      },
+      {
+        "label": "关联销售对账单(仅开出发票、草稿可改;审核一对一结单)·对账单号",
+        "type": "string",
+        "lookup": {
+          "table": "sal_reconciliation",
+          "valueColumn": "reconciliation_no"
+        },
+        "path": "sal_reconciliation.reconciliation_no",
+        "sourceField": "sal_reconciliation_id"
+      },
+      {
+        "label": "关联销售对账单(仅开出发票、草稿可改;审核一对一结单)·对账类型(常规/赠送样品;保存后锁死)",
+        "type": "enum",
+        "lookup": {
+          "table": "sal_reconciliation",
+          "valueColumn": "reconciliation_type"
+        },
+        "path": "sal_reconciliation.reconciliation_type",
+        "sourceField": "sal_reconciliation_id"
+      },
+      {
+        "label": "关联销售对账单(仅开出发票、草稿可改;审核一对一结单)·对手类型",
+        "type": "enum",
+        "lookup": {
+          "table": "sal_reconciliation",
+          "valueColumn": "party_type"
+        },
+        "path": "sal_reconciliation.party_type",
+        "sourceField": "sal_reconciliation_id"
+      },
+      {
+        "label": "关联销售对账单(仅开出发票、草稿可改;审核一对一结单)·过账日期(赠送/样品单结单总账;有金额结单时必填,默认结单当日)",
+        "type": "date",
+        "lookup": {
+          "table": "sal_reconciliation",
+          "valueColumn": "posting_date"
+        },
+        "path": "sal_reconciliation.posting_date",
+        "sourceField": "sal_reconciliation_id"
+      },
+      {
+        "label": "关联销售对账单(仅开出发票、草稿可改;审核一对一结单)·备注",
+        "type": "string",
+        "lookup": {
+          "table": "sal_reconciliation",
+          "valueColumn": "remarks"
+        },
+        "path": "sal_reconciliation.remarks",
+        "sourceField": "sal_reconciliation_id"
+      },
+      {
+        "label": "关联销售对账单(仅开出发票、草稿可改;审核一对一结单)·状态",
+        "type": "enum",
+        "lookup": {
+          "table": "sal_reconciliation",
+          "valueColumn": "status"
+        },
+        "path": "sal_reconciliation.status",
+        "sourceField": "sal_reconciliation_id"
+      },
+      {
+        "label": "关联采购对账单(仅开入发票、对手非员工时草稿必填;审核一对一结单)·对账单号",
+        "type": "string",
+        "lookup": {
+          "table": "pur_reconciliation",
+          "valueColumn": "reconciliation_no"
+        },
+        "path": "pur_reconciliation.reconciliation_no",
+        "sourceField": "pur_reconciliation_id"
+      },
+      {
+        "label": "关联采购对账单(仅开入发票、对手非员工时草稿必填;审核一对一结单)·对账类型(常规/赠送样品;保存后锁死)",
+        "type": "enum",
+        "lookup": {
+          "table": "pur_reconciliation",
+          "valueColumn": "reconciliation_type"
+        },
+        "path": "pur_reconciliation.reconciliation_type",
+        "sourceField": "pur_reconciliation_id"
+      },
+      {
+        "label": "关联采购对账单(仅开入发票、对手非员工时草稿必填;审核一对一结单)·对手类型(供应商/内部公司)",
+        "type": "enum",
+        "lookup": {
+          "table": "pur_reconciliation",
+          "valueColumn": "party_type"
+        },
+        "path": "pur_reconciliation.party_type",
+        "sourceField": "pur_reconciliation_id"
+      },
+      {
+        "label": "关联采购对账单(仅开入发票、对手非员工时草稿必填;审核一对一结单)·过账日期(赠送/样品单结单总账;有金额结单时必填,默认结单当日)",
+        "type": "date",
+        "lookup": {
+          "table": "pur_reconciliation",
+          "valueColumn": "posting_date"
+        },
+        "path": "pur_reconciliation.posting_date",
+        "sourceField": "pur_reconciliation_id"
+      },
+      {
+        "label": "关联采购对账单(仅开入发票、对手非员工时草稿必填;审核一对一结单)·备注",
+        "type": "string",
+        "lookup": {
+          "table": "pur_reconciliation",
+          "valueColumn": "remarks"
+        },
+        "path": "pur_reconciliation.remarks",
+        "sourceField": "pur_reconciliation_id"
+      },
+      {
+        "label": "关联采购对账单(仅开入发票、对手非员工时草稿必填;审核一对一结单)·状态",
+        "type": "enum",
+        "lookup": {
+          "table": "pur_reconciliation",
+          "valueColumn": "status"
+        },
+        "path": "pur_reconciliation.status",
+        "sourceField": "pur_reconciliation_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "accVatInvoices"
+  },
+  {
+    "prefix": "hr.employee",
+    "fields": [
+      {
+        "label": "员工编号",
+        "type": "string",
+        "path": "code",
+        "sourceField": "code"
+      },
+      {
+        "label": "员工姓名",
+        "type": "string",
+        "path": "name",
+        "sourceField": "name"
+      },
+      {
+        "label": "考勤设备编号",
+        "type": "string",
+        "path": "attendance_no",
+        "sourceField": "attendance_no"
+      },
+      {
+        "label": "身份证号",
+        "type": "string",
+        "path": "id_number",
+        "sourceField": "id_number"
+      },
+      {
+        "label": "户籍",
+        "type": "string",
+        "path": "household_registration",
+        "sourceField": "household_registration"
+      },
+      {
+        "label": "手机号码",
+        "type": "string",
+        "path": "phone",
+        "sourceField": "phone"
+      },
+      {
+        "label": "现居住地",
+        "type": "string",
+        "path": "current_address",
+        "sourceField": "current_address"
+      },
+      {
+        "label": "日薪",
+        "type": "decimal",
+        "path": "daily_wage",
+        "sourceField": "daily_wage"
+      },
+      {
+        "label": "月补贴",
+        "type": "decimal",
+        "path": "monthly_allowance",
+        "sourceField": "monthly_allowance"
+      },
+      {
+        "label": "参保类型",
+        "type": "enumArray",
+        "path": "insurance_types",
+        "sourceField": "insurance_types"
+      }
+    ],
+    "grid": "hrEmployees"
+  },
+  {
+    "prefix": "inv.material",
+    "fields": [
+      {
+        "label": "物料编号",
+        "type": "string",
+        "path": "code",
+        "sourceField": "code"
+      },
+      {
+        "label": "物料名称",
+        "type": "string",
+        "path": "name",
+        "sourceField": "name"
+      },
+      {
+        "label": "物料规格",
+        "type": "string",
+        "path": "spec",
+        "sourceField": "spec"
+      },
+      {
+        "label": "客户方产品编号(仅客户物料可填)",
+        "type": "string",
+        "path": "customer_part_no",
+        "sourceField": "customer_part_no"
+      },
+      {
+        "label": "是否客户物料",
+        "type": "boolean",
+        "path": "is_customer_material",
+        "sourceField": "is_customer_material"
+      },
+      {
+        "label": "启用",
+        "type": "boolean",
+        "path": "active",
+        "sourceField": "active"
+      },
+      {
+        "label": "物料分类·分类编号",
+        "type": "string",
+        "lookup": {
+          "table": "inv_material_category",
+          "valueColumn": "code"
+        },
+        "path": "category.code",
+        "sourceField": "category_id"
+      },
+      {
+        "label": "物料分类·分类名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_material_category",
+          "valueColumn": "name"
+        },
+        "path": "category.name",
+        "sourceField": "category_id"
+      },
+      {
+        "label": "物料分类·叶子分类",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_material_category",
+          "valueColumn": "is_leaf"
+        },
+        "path": "category.is_leaf",
+        "sourceField": "category_id"
+      },
+      {
+        "label": "物料分类·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_material_category",
+          "valueColumn": "active"
+        },
+        "path": "category.active",
+        "sourceField": "category_id"
+      },
+      {
+        "label": "默认单位·单位类型",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_unit",
+          "valueColumn": "unit_type"
+        },
+        "path": "default_unit.unit_type",
+        "sourceField": "default_unit_id"
+      },
+      {
+        "label": "默认单位·基准单位",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_unit",
+          "valueColumn": "is_base"
+        },
+        "path": "default_unit.is_base",
+        "sourceField": "default_unit_id"
+      },
+      {
+        "label": "默认单位·单位名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_unit",
+          "valueColumn": "name"
+        },
+        "path": "default_unit.name",
+        "sourceField": "default_unit_id"
+      },
+      {
+        "label": "默认单位·单位符号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_unit",
+          "valueColumn": "symbol"
+        },
+        "path": "default_unit.symbol",
+        "sourceField": "default_unit_id"
+      },
+      {
+        "label": "默认单位·换算比例",
+        "type": "decimal",
+        "lookup": {
+          "table": "bas_unit",
+          "valueColumn": "ratio"
+        },
+        "path": "default_unit.ratio",
+        "sourceField": "default_unit_id"
+      },
+      {
+        "label": "所属客户(仅客户物料)·客户编号",
+        "type": "string",
+        "lookup": {
+          "table": "sal_customers",
+          "valueColumn": "code"
+        },
+        "path": "customer.code",
+        "sourceField": "customer_id"
+      },
+      {
+        "label": "所属客户(仅客户物料)·客户名称",
+        "type": "string",
+        "lookup": {
+          "table": "sal_customers",
+          "valueColumn": "name"
+        },
+        "path": "customer.name",
+        "sourceField": "customer_id"
+      },
+      {
+        "label": "所属客户(仅客户物料)·简称",
+        "type": "string",
+        "lookup": {
+          "table": "sal_customers",
+          "valueColumn": "short_name"
+        },
+        "path": "customer.short_name",
+        "sourceField": "customer_id"
+      }
+    ],
+    "grid": "invMaterials"
+  },
+  {
+    "prefix": "inv.stock_count",
+    "fields": [
+      {
+        "label": "单据编号",
+        "type": "string",
+        "path": "doc_no",
+        "sourceField": "doc_no"
+      },
+      {
+        "label": "业务日期",
+        "type": "date",
+        "path": "posting_date",
+        "sourceField": "posting_date"
+      },
+      {
+        "label": "摘要(带入库存分录)",
+        "type": "string",
+        "path": "summary",
+        "sourceField": "summary"
+      },
+      {
+        "label": "备注(对内)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "账面快照时间",
+        "type": "datetime",
+        "path": "snapshot_taken_at",
+        "sourceField": "snapshot_taken_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "warehouse.name",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "warehouse.is_leaf",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "warehouse.active",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "warehouse.is_outsourced",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "warehouse.party_type",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "warehouse.allow_negative",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "invStockCounts"
+  },
+  {
+    "prefix": "inv.stock_doc",
+    "fields": [
+      {
+        "label": "单据编号",
+        "type": "string",
+        "path": "doc_no",
+        "sourceField": "doc_no"
+      },
+      {
+        "label": "出入库方向",
+        "type": "enum",
+        "path": "direction",
+        "sourceField": "direction"
+      },
+      {
+        "label": "业务日期",
+        "type": "date",
+        "path": "doc_date",
+        "sourceField": "doc_date"
+      },
+      {
+        "label": "摘要(带入库存分录)",
+        "type": "string",
+        "path": "summary",
+        "sourceField": "summary"
+      },
+      {
+        "label": "备注(对内)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "warehouse.name",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "warehouse.is_leaf",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "warehouse.active",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "warehouse.is_outsourced",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "warehouse.party_type",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "仓库(限本公司叶子仓)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "warehouse.allow_negative",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "invStockDocs"
+  },
+  {
+    "prefix": "inv.stock_transfer",
+    "fields": [
+      {
+        "label": "单据编号",
+        "type": "string",
+        "path": "doc_no",
+        "sourceField": "doc_no"
+      },
+      {
+        "label": "业务日期",
+        "type": "date",
+        "path": "doc_date",
+        "sourceField": "doc_date"
+      },
+      {
+        "label": "摘要(带入库存分录)",
+        "type": "string",
+        "path": "summary",
+        "sourceField": "summary"
+      },
+      {
+        "label": "备注(对内)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "发货时间",
+        "type": "datetime",
+        "path": "shipped_at",
+        "sourceField": "shipped_at"
+      },
+      {
+        "label": "收货时间",
+        "type": "datetime",
+        "path": "received_at",
+        "sourceField": "received_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "调出仓库(限本公司叶子仓)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "from_warehouse.name",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "调出仓库(限本公司叶子仓)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "from_warehouse.is_leaf",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "调出仓库(限本公司叶子仓)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "from_warehouse.active",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "调出仓库(限本公司叶子仓)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "from_warehouse.is_outsourced",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "调出仓库(限本公司叶子仓)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "from_warehouse.party_type",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "调出仓库(限本公司叶子仓)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "from_warehouse.allow_negative",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "调入仓库(限本公司叶子仓)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "to_warehouse.name",
+        "sourceField": "to_warehouse_id"
+      },
+      {
+        "label": "调入仓库(限本公司叶子仓)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "to_warehouse.is_leaf",
+        "sourceField": "to_warehouse_id"
+      },
+      {
+        "label": "调入仓库(限本公司叶子仓)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "to_warehouse.active",
+        "sourceField": "to_warehouse_id"
+      },
+      {
+        "label": "调入仓库(限本公司叶子仓)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "to_warehouse.is_outsourced",
+        "sourceField": "to_warehouse_id"
+      },
+      {
+        "label": "调入仓库(限本公司叶子仓)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "to_warehouse.party_type",
+        "sourceField": "to_warehouse_id"
+      },
+      {
+        "label": "调入仓库(限本公司叶子仓)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "to_warehouse.allow_negative",
+        "sourceField": "to_warehouse_id"
+      },
+      {
+        "label": "在途仓库(限本公司叶子仓)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "transit_warehouse.name",
+        "sourceField": "transit_warehouse_id"
+      },
+      {
+        "label": "在途仓库(限本公司叶子仓)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "transit_warehouse.is_leaf",
+        "sourceField": "transit_warehouse_id"
+      },
+      {
+        "label": "在途仓库(限本公司叶子仓)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "transit_warehouse.active",
+        "sourceField": "transit_warehouse_id"
+      },
+      {
+        "label": "在途仓库(限本公司叶子仓)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "transit_warehouse.is_outsourced",
+        "sourceField": "transit_warehouse_id"
+      },
+      {
+        "label": "在途仓库(限本公司叶子仓)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "transit_warehouse.party_type",
+        "sourceField": "transit_warehouse_id"
+      },
+      {
+        "label": "在途仓库(限本公司叶子仓)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "transit_warehouse.allow_negative",
+        "sourceField": "transit_warehouse_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "发货人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "shipped_by.username",
+        "sourceField": "shipped_by_id"
+      },
+      {
+        "label": "发货人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "shipped_by.name",
+        "sourceField": "shipped_by_id"
+      },
+      {
+        "label": "发货人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "shipped_by.preferred_language",
+        "sourceField": "shipped_by_id"
+      },
+      {
+        "label": "收货人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "received_by.username",
+        "sourceField": "received_by_id"
+      },
+      {
+        "label": "收货人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "received_by.name",
+        "sourceField": "received_by_id"
+      },
+      {
+        "label": "收货人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "received_by.preferred_language",
+        "sourceField": "received_by_id"
+      }
+    ],
+    "grid": "invStockTransfers"
+  },
+  {
+    "prefix": "mfg.bom",
+    "fields": [
+      {
+        "label": "编号",
+        "type": "string",
+        "path": "code",
+        "sourceField": "code"
+      },
+      {
+        "label": "方案名称",
+        "type": "string",
+        "path": "plan_name",
+        "sourceField": "plan_name"
+      },
+      {
+        "label": "备注",
+        "type": "string",
+        "path": "note",
+        "sourceField": "note"
+      },
+      {
+        "label": "物料·物料编号",
+        "type": "string",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "code"
+        },
+        "path": "material.code",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "物料·物料名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "name"
+        },
+        "path": "material.name",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "物料·物料规格",
+        "type": "string",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "spec"
+        },
+        "path": "material.spec",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "物料·客户方产品编号(仅客户物料可填)",
+        "type": "string",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "customer_part_no"
+        },
+        "path": "material.customer_part_no",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "物料·是否客户物料",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "is_customer_material"
+        },
+        "path": "material.is_customer_material",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "物料·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "active"
+        },
+        "path": "material.active",
+        "sourceField": "material_id"
+      }
+    ],
+    "grid": "mfgBoms"
+  },
+  {
+    "prefix": "mfg.demand",
+    "fields": [
+      {
+        "label": "需求单号",
+        "type": "string",
+        "path": "demand_no",
+        "sourceField": "demand_no"
+      },
+      {
+        "label": "业务日期",
+        "type": "date",
+        "path": "demand_date",
+        "sourceField": "demand_date"
+      },
+      {
+        "label": "备注",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      }
+    ],
+    "grid": "mfgDemands"
+  },
+  {
+    "prefix": "mfg.operation",
+    "fields": [
+      {
+        "label": "工序编号",
+        "type": "string",
+        "path": "code",
+        "sourceField": "code"
+      },
+      {
+        "label": "工序名称",
+        "type": "string",
+        "path": "name",
+        "sourceField": "name"
+      },
+      {
+        "label": "备注",
+        "type": "string",
+        "path": "note",
+        "sourceField": "note"
+      }
+    ],
+    "grid": "mfgOperations"
+  },
+  {
+    "prefix": "mfg.output",
+    "fields": [
+      {
+        "label": "入库单号",
+        "type": "string",
+        "path": "output_no",
+        "sourceField": "output_no"
+      },
+      {
+        "label": "入库日期(库存分录业务日)",
+        "type": "date",
+        "path": "output_date",
+        "sourceField": "output_date"
+      },
+      {
+        "label": "备注",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "warehouse.name",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "warehouse.is_leaf",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "warehouse.active",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "warehouse.is_outsourced",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "warehouse.party_type",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "warehouse.allow_negative",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "mfgOutputs"
+  },
+  {
+    "prefix": "mfg.route_template",
+    "fields": [
+      {
+        "label": "模板编号",
+        "type": "string",
+        "path": "code",
+        "sourceField": "code"
+      },
+      {
+        "label": "模板名称",
+        "type": "string",
+        "path": "name",
+        "sourceField": "name"
+      },
+      {
+        "label": "备注",
+        "type": "string",
+        "path": "note",
+        "sourceField": "note"
+      }
+    ],
+    "grid": "mfgProcessTemplates"
+  },
+  {
+    "prefix": "mfg.work_order",
+    "fields": [
+      {
+        "label": "工单号",
+        "type": "string",
+        "path": "work_order_no",
+        "sourceField": "work_order_no"
+      },
+      {
+        "label": "工单数量(与需求行同单位)",
+        "type": "decimal",
+        "path": "qty",
+        "sourceField": "qty"
+      },
+      {
+        "label": "工单数量(默认单位)",
+        "type": "decimal",
+        "path": "base_qty",
+        "sourceField": "base_qty"
+      },
+      {
+        "label": "累计已入(默认单位)",
+        "type": "decimal",
+        "path": "received_base_qty",
+        "sourceField": "received_base_qty"
+      },
+      {
+        "label": "需求日/交期",
+        "type": "date",
+        "path": "need_date",
+        "sourceField": "need_date"
+      },
+      {
+        "label": "物料编号快照",
+        "type": "string",
+        "path": "material_code",
+        "sourceField": "material_code"
+      },
+      {
+        "label": "物料名称快照",
+        "type": "string",
+        "path": "material_name",
+        "sourceField": "material_name"
+      },
+      {
+        "label": "物料规格快照",
+        "type": "string",
+        "path": "material_spec",
+        "sourceField": "material_spec"
+      },
+      {
+        "label": "单位名称快照",
+        "type": "string",
+        "path": "unit_name",
+        "sourceField": "unit_name"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "来源需求单·需求单号",
+        "type": "string",
+        "lookup": {
+          "table": "mfg_demand",
+          "valueColumn": "demand_no"
+        },
+        "path": "demand.demand_no",
+        "sourceField": "demand_id"
+      },
+      {
+        "label": "来源需求单·业务日期",
+        "type": "date",
+        "lookup": {
+          "table": "mfg_demand",
+          "valueColumn": "demand_date"
+        },
+        "path": "demand.demand_date",
+        "sourceField": "demand_id"
+      },
+      {
+        "label": "来源需求单·备注",
+        "type": "string",
+        "lookup": {
+          "table": "mfg_demand",
+          "valueColumn": "remarks"
+        },
+        "path": "demand.remarks",
+        "sourceField": "demand_id"
+      },
+      {
+        "label": "来源需求单·状态",
+        "type": "enum",
+        "lookup": {
+          "table": "mfg_demand",
+          "valueColumn": "status"
+        },
+        "path": "demand.status",
+        "sourceField": "demand_id"
+      },
+      {
+        "label": "来源需求行·行号",
+        "type": "integer",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "idx"
+        },
+        "path": "demand_item.idx",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·数量",
+        "type": "decimal",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "qty"
+        },
+        "path": "demand_item.qty",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·折算默认单位数量",
+        "type": "decimal",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "base_qty"
+        },
+        "path": "demand_item.base_qty",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·已下单数量(物料默认单位,系统维护)",
+        "type": "decimal",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "ordered_qty"
+        },
+        "path": "demand_item.ordered_qty",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·已收数量(物料默认单位,系统维护)",
+        "type": "decimal",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "received_qty"
+        },
+        "path": "demand_item.received_qty",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·需求日",
+        "type": "date",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "need_date"
+        },
+        "path": "demand_item.need_date",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·履约方式",
+        "type": "enum",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "fulfillment_method"
+        },
+        "path": "demand_item.fulfillment_method",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·行状态",
+        "type": "enum",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "status"
+        },
+        "path": "demand_item.status",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·物料编号快照",
+        "type": "string",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "material_code"
+        },
+        "path": "demand_item.material_code",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·物料名称快照",
+        "type": "string",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "material_name"
+        },
+        "path": "demand_item.material_name",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·物料规格快照",
+        "type": "string",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "material_spec"
+        },
+        "path": "demand_item.material_spec",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·单位名称快照",
+        "type": "string",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "unit_name"
+        },
+        "path": "demand_item.unit_name",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "来源需求行·行备注",
+        "type": "string",
+        "lookup": {
+          "table": "mfg_demand_item",
+          "valueColumn": "remarks"
+        },
+        "path": "demand_item.remarks",
+        "sourceField": "demand_item_id"
+      },
+      {
+        "label": "物料·物料编号",
+        "type": "string",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "code"
+        },
+        "path": "material.code",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "物料·物料名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "name"
+        },
+        "path": "material.name",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "物料·物料规格",
+        "type": "string",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "spec"
+        },
+        "path": "material.spec",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "物料·客户方产品编号(仅客户物料可填)",
+        "type": "string",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "customer_part_no"
+        },
+        "path": "material.customer_part_no",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "物料·是否客户物料",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "is_customer_material"
+        },
+        "path": "material.is_customer_material",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "物料·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_material",
+          "valueColumn": "active"
+        },
+        "path": "material.active",
+        "sourceField": "material_id"
+      },
+      {
+        "label": "单位·单位类型",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_unit",
+          "valueColumn": "unit_type"
+        },
+        "path": "unit.unit_type",
+        "sourceField": "unit_id"
+      },
+      {
+        "label": "单位·基准单位",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_unit",
+          "valueColumn": "is_base"
+        },
+        "path": "unit.is_base",
+        "sourceField": "unit_id"
+      },
+      {
+        "label": "单位·单位名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_unit",
+          "valueColumn": "name"
+        },
+        "path": "unit.name",
+        "sourceField": "unit_id"
+      },
+      {
+        "label": "单位·单位符号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_unit",
+          "valueColumn": "symbol"
+        },
+        "path": "unit.symbol",
+        "sourceField": "unit_id"
+      },
+      {
+        "label": "单位·换算比例",
+        "type": "decimal",
+        "lookup": {
+          "table": "bas_unit",
+          "valueColumn": "ratio"
+        },
+        "path": "unit.ratio",
+        "sourceField": "unit_id"
+      },
+      {
+        "label": "生成人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "生成人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "生成人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      }
+    ],
+    "grid": "mfgWorkOrders"
+  },
+  {
+    "prefix": "purchase.order",
+    "fields": [
+      {
+        "label": "订单号",
+        "type": "string",
+        "path": "order_no",
+        "sourceField": "order_no"
+      },
+      {
+        "label": "订单日期",
+        "type": "date",
+        "path": "order_date",
+        "sourceField": "order_date"
+      },
+      {
+        "label": "订单类型",
+        "type": "enum",
+        "path": "order_type",
+        "sourceField": "order_type"
+      },
+      {
+        "label": "委外标记",
+        "type": "boolean",
+        "path": "is_outsourced",
+        "sourceField": "is_outsourced"
+      },
+      {
+        "label": "对手类型(供应商/内部公司)",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "汇率(原币→本币)",
+        "type": "decimal",
+        "path": "exchange_rate",
+        "sourceField": "exchange_rate"
+      },
+      {
+        "label": "交易条款(对供应商,自由文本)",
+        "type": "string",
+        "path": "terms",
+        "sourceField": "terms"
+      },
+      {
+        "label": "订单备注(对内)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "币种(原币)·货币名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "name"
+        },
+        "path": "currency.name",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种(原币)·ISO 编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "iso_code"
+        },
+        "path": "currency.iso_code",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种(原币)·符号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "symbol"
+        },
+        "path": "currency.symbol",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种(原币)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "active"
+        },
+        "path": "currency.active",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "purOrders"
+  },
+  {
+    "prefix": "purchase.outsourced_issue",
+    "fields": [
+      {
+        "label": "发料单号",
+        "type": "string",
+        "path": "issue_no",
+        "sourceField": "issue_no"
+      },
+      {
+        "label": "发料日期(库存分录业务日)",
+        "type": "date",
+        "path": "issue_date",
+        "sourceField": "issue_date"
+      },
+      {
+        "label": "对手类型(供应商/内部公司,须与所引委外订单一致)",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "备注(对内;可带入库存分录)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "默认调出仓(可空,仅新建行预填)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "from_warehouse.name",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "默认调出仓(可空,仅新建行预填)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "from_warehouse.is_leaf",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "默认调出仓(可空,仅新建行预填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "from_warehouse.active",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "默认调出仓(可空,仅新建行预填)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "from_warehouse.is_outsourced",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "默认调出仓(可空,仅新建行预填)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "from_warehouse.party_type",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "默认调出仓(可空,仅新建行预填)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "from_warehouse.allow_negative",
+        "sourceField": "from_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,仅新建行预填)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "outsourced_warehouse.name",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,仅新建行预填)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "outsourced_warehouse.is_leaf",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,仅新建行预填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "outsourced_warehouse.active",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,仅新建行预填)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "outsourced_warehouse.is_outsourced",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,仅新建行预填)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "outsourced_warehouse.party_type",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,仅新建行预填)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "outsourced_warehouse.allow_negative",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "purOutsourcedIssues"
+  },
+  {
+    "prefix": "purchase.outsourced_receipt",
+    "fields": [
+      {
+        "label": "入库单号",
+        "type": "string",
+        "path": "receipt_no",
+        "sourceField": "receipt_no"
+      },
+      {
+        "label": "入库日期(库存分录业务日)",
+        "type": "date",
+        "path": "receipt_date",
+        "sourceField": "receipt_date"
+      },
+      {
+        "label": "过账日期(总账;有金额审核时必填)",
+        "type": "date",
+        "path": "posting_date",
+        "sourceField": "posting_date"
+      },
+      {
+        "label": "对手类型(供应商/内部公司,须与所引委外订单一致)",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "备注(对内;可带入库存分录)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "默认入仓(可空,成品行/副产物行新建与带出预填)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "warehouse.name",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认入仓(可空,成品行/副产物行新建与带出预填)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "warehouse.is_leaf",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认入仓(可空,成品行/副产物行新建与带出预填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "warehouse.active",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认入仓(可空,成品行/副产物行新建与带出预填)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "warehouse.is_outsourced",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认入仓(可空,成品行/副产物行新建与带出预填)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "warehouse.party_type",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认入仓(可空,成品行/副产物行新建与带出预填)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "warehouse.allow_negative",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,材料扣减行带出预填;限绑定当前对手)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "outsourced_warehouse.name",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,材料扣减行带出预填;限绑定当前对手)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "outsourced_warehouse.is_leaf",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,材料扣减行带出预填;限绑定当前对手)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "outsourced_warehouse.active",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,材料扣减行带出预填;限绑定当前对手)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "outsourced_warehouse.is_outsourced",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,材料扣减行带出预填;限绑定当前对手)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "outsourced_warehouse.party_type",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "默认外协仓(可空,材料扣减行带出预填;限绑定当前对手)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "outsourced_warehouse.allow_negative",
+        "sourceField": "outsourced_warehouse_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "debit_account.code",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "debit_account.name",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "debit_account.direction",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "debit_account.is_group",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "debit_account.active",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "debit_account.role",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "credit_account.code",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "credit_account.name",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "credit_account.direction",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "credit_account.is_group",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "credit_account.active",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "credit_account.role",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "purOutsourcedReceipts"
+  },
+  {
+    "prefix": "purchase.quotation",
+    "fields": [
+      {
+        "label": "报价单号",
+        "type": "string",
+        "path": "quotation_no",
+        "sourceField": "quotation_no"
+      },
+      {
+        "label": "报价日期",
+        "type": "date",
+        "path": "quotation_date",
+        "sourceField": "quotation_date"
+      },
+      {
+        "label": "报价截止(含当日)",
+        "type": "date",
+        "path": "valid_until",
+        "sourceField": "valid_until"
+      },
+      {
+        "label": "对手类型(供应商/内部公司)",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "报价条款(对供应商,自由文本)",
+        "type": "string",
+        "path": "terms",
+        "sourceField": "terms"
+      },
+      {
+        "label": "报价备注(对内)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "币种·货币名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "name"
+        },
+        "path": "currency.name",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种·ISO 编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "iso_code"
+        },
+        "path": "currency.iso_code",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种·符号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "symbol"
+        },
+        "path": "currency.symbol",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "active"
+        },
+        "path": "currency.active",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "purQuotations"
+  },
+  {
+    "prefix": "purchase.receipt",
+    "fields": [
+      {
+        "label": "入库单号",
+        "type": "string",
+        "path": "receipt_no",
+        "sourceField": "receipt_no"
+      },
+      {
+        "label": "入库日期(库存分录业务日)",
+        "type": "date",
+        "path": "receipt_date",
+        "sourceField": "receipt_date"
+      },
+      {
+        "label": "过账日期(总账;有金额审核时必填)",
+        "type": "date",
+        "path": "posting_date",
+        "sourceField": "posting_date"
+      },
+      {
+        "label": "对手类型(供应商/内部公司)",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "备注(对内;可带入库存分录)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "warehouse.name",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "warehouse.is_leaf",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "warehouse.active",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "warehouse.is_outsourced",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "warehouse.party_type",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "warehouse.allow_negative",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "debit_account.code",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "debit_account.name",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "debit_account.direction",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "debit_account.is_group",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "debit_account.active",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(自选:存货/费用等;草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "debit_account.role",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "credit_account.code",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "credit_account.name",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "credit_account.direction",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "credit_account.is_group",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "credit_account.active",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应付;草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "credit_account.role",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "purReceipts"
+  },
+  {
+    "prefix": "purchase.reconciliation",
+    "fields": [
+      {
+        "label": "对账单号",
+        "type": "string",
+        "path": "reconciliation_no",
+        "sourceField": "reconciliation_no"
+      },
+      {
+        "label": "对账类型(常规/赠送样品;保存后锁死)",
+        "type": "enum",
+        "path": "reconciliation_type",
+        "sourceField": "reconciliation_type"
+      },
+      {
+        "label": "对手类型(供应商/内部公司)",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "过账日期(赠送/样品单结单总账;有金额结单时必填,默认结单当日)",
+        "type": "date",
+        "path": "posting_date",
+        "sourceField": "posting_date"
+      },
+      {
+        "label": "备注",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "借方科目(未开票应付;草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "debit_account.code",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(未开票应付;草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "debit_account.name",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(未开票应付;草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "debit_account.direction",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(未开票应付;草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "debit_account.is_group",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(未开票应付;草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "debit_account.active",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(未开票应付;草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "debit_account.role",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "贷方科目(常规单=入库借方口径;赠送/样品单=收益类;草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "credit_account.code",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(常规单=入库借方口径;赠送/样品单=收益类;草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "credit_account.name",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(常规单=入库借方口径;赠送/样品单=收益类;草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "credit_account.direction",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(常规单=入库借方口径;赠送/样品单=收益类;草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "credit_account.is_group",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(常规单=入库借方口径;赠送/样品单=收益类;草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "credit_account.active",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(常规单=入库借方口径;赠送/样品单=收益类;草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "credit_account.role",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      }
+    ],
+    "grid": "purReconciliations"
+  },
+  {
+    "prefix": "sales.delivery",
+    "fields": [
+      {
+        "label": "发货单号",
+        "type": "string",
+        "path": "delivery_no",
+        "sourceField": "delivery_no"
+      },
+      {
+        "label": "发货日期(库存分录业务日)",
+        "type": "date",
+        "path": "delivery_date",
+        "sourceField": "delivery_date"
+      },
+      {
+        "label": "过账日期(总账;有金额审核时必填)",
+        "type": "date",
+        "path": "posting_date",
+        "sourceField": "posting_date"
+      },
+      {
+        "label": "对手类型",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "备注(对内;可带入库存分录)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·仓库名称",
+        "type": "string",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "name"
+        },
+        "path": "warehouse.name",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·叶子仓库",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_leaf"
+        },
+        "path": "warehouse.is_leaf",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "active"
+        },
+        "path": "warehouse.active",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·外协仓(货物存放在协作方处的我方仓,为是必挂协作方)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "is_outsourced"
+        },
+        "path": "warehouse.is_outsourced",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·协作方类型(供应商/内部公司;外协仓必填,非外协仓必须为空)",
+        "type": "enum",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "party_type"
+        },
+        "path": "warehouse.party_type",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "默认仓库(可空,仅新建行预填)·允许负库存(库存分录审核/作废的负库存校验逐仓跳过)",
+        "type": "boolean",
+        "lookup": {
+          "table": "inv_warehouse",
+          "valueColumn": "allow_negative"
+        },
+        "path": "warehouse.allow_negative",
+        "sourceField": "warehouse_id"
+      },
+      {
+        "label": "借方科目(未开票应收;草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "debit_account.code",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(未开票应收;草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "debit_account.name",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(未开票应收;草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "debit_account.direction",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(未开票应收;草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "debit_account.is_group",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(未开票应收;草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "debit_account.active",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(未开票应收;草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "debit_account.role",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "贷方科目(草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "credit_account.code",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "credit_account.name",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "credit_account.direction",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "credit_account.is_group",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "credit_account.active",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "credit_account.role",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "salDeliveries"
+  },
+  {
+    "prefix": "sales.order",
+    "fields": [
+      {
+        "label": "订单号",
+        "type": "string",
+        "path": "order_no",
+        "sourceField": "order_no"
+      },
+      {
+        "label": "订单日期",
+        "type": "date",
+        "path": "order_date",
+        "sourceField": "order_date"
+      },
+      {
+        "label": "订单类型",
+        "type": "enum",
+        "path": "order_type",
+        "sourceField": "order_type"
+      },
+      {
+        "label": "对手类型(客户/内部公司)",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "汇率(原币→本币)",
+        "type": "decimal",
+        "path": "exchange_rate",
+        "sourceField": "exchange_rate"
+      },
+      {
+        "label": "交易条款(对客户,自由文本)",
+        "type": "string",
+        "path": "terms",
+        "sourceField": "terms"
+      },
+      {
+        "label": "订单备注(对内)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "币种(原币)·货币名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "name"
+        },
+        "path": "currency.name",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种(原币)·ISO 编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "iso_code"
+        },
+        "path": "currency.iso_code",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种(原币)·符号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "symbol"
+        },
+        "path": "currency.symbol",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种(原币)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "active"
+        },
+        "path": "currency.active",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "salOrders"
+  },
+  {
+    "prefix": "sales.quotation",
+    "fields": [
+      {
+        "label": "报价单号",
+        "type": "string",
+        "path": "quotation_no",
+        "sourceField": "quotation_no"
+      },
+      {
+        "label": "报价日期",
+        "type": "date",
+        "path": "quotation_date",
+        "sourceField": "quotation_date"
+      },
+      {
+        "label": "报价截止(含当日)",
+        "type": "date",
+        "path": "valid_until",
+        "sourceField": "valid_until"
+      },
+      {
+        "label": "对手类型(客户/内部公司)",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "报价条款(对客户,自由文本)",
+        "type": "string",
+        "path": "terms",
+        "sourceField": "terms"
+      },
+      {
+        "label": "报价备注(对内)",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "审核时间",
+        "type": "datetime",
+        "path": "audited_at",
+        "sourceField": "audited_at"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "币种·货币名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "name"
+        },
+        "path": "currency.name",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种·ISO 编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "iso_code"
+        },
+        "path": "currency.iso_code",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种·符号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "symbol"
+        },
+        "path": "currency.symbol",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "币种·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_currency",
+          "valueColumn": "active"
+        },
+        "path": "currency.active",
+        "sourceField": "currency_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "审核人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "audited_by.username",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "audited_by.name",
+        "sourceField": "audited_by_id"
+      },
+      {
+        "label": "审核人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "audited_by.preferred_language",
+        "sourceField": "audited_by_id"
+      }
+    ],
+    "grid": "salQuotations"
+  },
+  {
+    "prefix": "sales.reconciliation",
+    "fields": [
+      {
+        "label": "对账单号",
+        "type": "string",
+        "path": "reconciliation_no",
+        "sourceField": "reconciliation_no"
+      },
+      {
+        "label": "对账类型(常规/赠送样品;保存后锁死)",
+        "type": "enum",
+        "path": "reconciliation_type",
+        "sourceField": "reconciliation_type"
+      },
+      {
+        "label": "对手类型",
+        "type": "enum",
+        "path": "party_type",
+        "sourceField": "party_type"
+      },
+      {
+        "label": "对手",
+        "type": "fk",
+        "path": "party_id",
+        "sourceField": "party_id"
+      },
+      {
+        "label": "过账日期(赠送/样品单结单总账;有金额结单时必填,默认结单当日)",
+        "type": "date",
+        "path": "posting_date",
+        "sourceField": "posting_date"
+      },
+      {
+        "label": "备注",
+        "type": "string",
+        "path": "remarks",
+        "sourceField": "remarks"
+      },
+      {
+        "label": "状态",
+        "type": "enum",
+        "path": "status",
+        "sourceField": "status"
+      },
+      {
+        "label": "公司·公司编号",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "code"
+        },
+        "path": "company.code",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "name"
+        },
+        "path": "company.name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "公司·公司简称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_company",
+          "valueColumn": "short_name"
+        },
+        "path": "company.short_name",
+        "sourceField": "company_id"
+      },
+      {
+        "label": "借方科目(常规单=发货贷方口径;赠送/样品单=费用损失类;草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "debit_account.code",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(常规单=发货贷方口径;赠送/样品单=费用损失类;草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "debit_account.name",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(常规单=发货贷方口径;赠送/样品单=费用损失类;草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "debit_account.direction",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(常规单=发货贷方口径;赠送/样品单=费用损失类;草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "debit_account.is_group",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(常规单=发货贷方口径;赠送/样品单=费用损失类;草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "debit_account.active",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "借方科目(常规单=发货贷方口径;赠送/样品单=费用损失类;草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "debit_account.role",
+        "sourceField": "debit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应收;草稿必填)·科目编码",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "code"
+        },
+        "path": "credit_account.code",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应收;草稿必填)·科目名称",
+        "type": "string",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "name"
+        },
+        "path": "credit_account.name",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应收;草稿必填)·余额方向",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "direction"
+        },
+        "path": "credit_account.direction",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应收;草稿必填)·汇总科目",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "is_group"
+        },
+        "path": "credit_account.is_group",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应收;草稿必填)·启用",
+        "type": "boolean",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "active"
+        },
+        "path": "credit_account.active",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "贷方科目(未开票应收;草稿必填)·科目角色",
+        "type": "enum",
+        "lookup": {
+          "table": "bas_account",
+          "valueColumn": "role"
+        },
+        "path": "credit_account.role",
+        "sourceField": "credit_account_id"
+      },
+      {
+        "label": "录入人·用户名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "username"
+        },
+        "path": "created_by.username",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·姓名",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "name"
+        },
+        "path": "created_by.name",
+        "sourceField": "created_by_id"
+      },
+      {
+        "label": "录入人·首选语言",
+        "type": "string",
+        "lookup": {
+          "table": "sys_user",
+          "valueColumn": "preferred_language"
+        },
+        "path": "created_by.preferred_language",
+        "sourceField": "created_by_id"
+      }
+    ],
+    "grid": "salReconciliations"
+  }
+]

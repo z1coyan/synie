@@ -4,6 +4,7 @@ import { AlertDialog, Button, Checkbox, toast } from '@heroui/react'
 import { DropZone } from '@heroui-pro/react'
 import { gqlFetch } from '~/lib/graphql'
 import { uploadFile } from '~/lib/files'
+import { employeeClient } from '~/lib/resources/employees'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 
@@ -191,7 +192,7 @@ export function AttendanceImportRecordDrawer({ importId, onOpenChange, onImporte
   const [running, setRunning] = useState(false)
 
   // 自动建员工是真实的员工创建,按员工资源 create 能力门控(后端同样 fail-closed 兜底)
-  const employeeMeta = useGridMeta('hrEmployees')
+  const employeeMeta = useGridMeta('hrEmployees', true, employeeClient)
   const canCreateEmployee = (employeeMeta.data?.capabilities ?? []).includes('create')
 
   // 每次换批次重置勾选

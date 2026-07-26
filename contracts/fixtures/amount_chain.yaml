@@ -1,0 +1,18 @@
+version: 1
+rounding: half-up
+wire: string
+cases:
+  - name: 基本金額链
+    qty: "3.000000"
+    price: "12.3456"
+    rate: "7.250000"
+    amount: "37.04"
+    baseAmount: "268.54"
+    basePrice: "89.5056"
+  - name: 五入与负数远离零
+    qty: "1.000000"
+    price: "-1.0050"
+    rate: "1.000000"
+    amount: "-1.01"
+    baseAmount: "-1.01"
+    basePrice: "-1.0050"

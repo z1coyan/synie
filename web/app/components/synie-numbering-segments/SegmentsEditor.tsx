@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Button, Chip, CloseButton, Input, Label, ListBox, NumberField, Select, TextField } from '@heroui/react'
-import { useGridMeta } from '../synie-data-grid/meta'
 
 /** 编号段(与后端 sys_numbering_rule.segments 一致;label 为展示冗余,后端忽略) */
 export interface NumberSegment {
@@ -23,9 +22,11 @@ const DATE_FORMATS = [
   { value: 'DD', label: '日(10)' },
 ]
 
-const SKIP = ['id', 'insertedAt', 'updatedAt']
-
-const snake = (s: string) => s.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase())
+export interface NumberableField {
+  path: string
+  label: string
+  type: string
+}
 
 function dateSample(format: string): string {
   const d = new Date()
@@ -66,59 +67,31 @@ export function segmentsPreview(segments: NumberSegment[]): string {
 }
 
 export interface SegmentsEditorProps {
-  /** 绑定资源的表格资源名(numberableResources.grid),未选资源时传 null */
-  grid: string | null
+  /** 后端白名单化的直接字段及一层关系字段；未选资源时传 null。 */
+  fields: NumberableField[] | null
   value: NumberSegment[]
   onChange: (segments: NumberSegment[]) => void
   isDisabled?: boolean
 }
 
 /** 编号段组装器:固定文本 / 资源字段(fk 二级字段、日期带格式)/ 序号(仅一个),点选拼装;支持拖拽排序 */
-export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEditorProps) {
-  const meta = useGridMeta(grid ?? '', grid != null)
-
+export function SegmentsEditor({ fields, value, onChange, isDisabled }: SegmentsEditorProps) {
   const [text, setText] = useState('')
   const [fieldName, setFieldName] = useState<string | null>(null)
-  const [subField, setSubField] = useState<string | null>(null)
   const [format, setFormat] = useState<string>('YYYYMM')
   const [padding, setPadding] = useState(4)
   const [dragFrom, setDragFrom] = useState<number | null>(null)
 
-  const columns = useMemo(
-    () => (meta.data?.columns ?? []).filter((c) => !SKIP.includes(c.name)),
-    [meta.data]
-  )
-  const col = columns.find((c) => c.name === fieldName) ?? null
-  // 段路径按 relation.field 拼、候选按 ref.resource 查,多态 fk 两者皆无,按普通字段处理
-  const isFk = col?.type === 'fk' && col.ref?.relation != null && col.ref.resource != null
-
-  // fk 字段的目标资源一级字段候选(gridMeta 反射;剔系统列与更深层 fk)
-  const subMeta = useGridMeta(col?.ref?.resource ?? '', isFk)
-  const subColumns = useMemo(
-    () => (subMeta.data?.columns ?? []).filter((c) => !SKIP.includes(c.name) && c.type !== 'fk'),
-    [subMeta.data]
-  )
-  const subCol = subColumns.find((c) => c.name === subField) ?? null
-
-  const dateChosen = isFk
-    ? subCol?.type === 'date' || subCol?.type === 'datetime'
-    : col?.type === 'date' || col?.type === 'datetime'
+  const field = fields?.find((item) => item.path === fieldName) ?? null
+  const dateChosen = field?.type === 'date' || field?.type === 'datetime'
   const hasSeq = value.some((s) => s.type === 'seq')
 
   const addField = () => {
-    if (!col || (isFk && !subCol)) return
-    const seg: NumberSegment =
-      isFk && col.ref?.relation && subCol
-        ? {
-            type: 'field',
-            field: `${snake(col.ref.relation)}.${snake(subCol.name)}`,
-            label: `${col.label}·${subCol.label}`,
-          }
-        : { type: 'field', field: snake(col.name), label: col.label }
+    if (!field) return
+    const seg: NumberSegment = { type: 'field', field: field.path, label: field.label }
     if (dateChosen) seg.format = format
     onChange([...value, seg])
     setFieldName(null)
-    setSubField(null)
   }
 
   const moveSegment = (from: number, to: number) => {
@@ -129,7 +102,7 @@ export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEd
     onChange(next)
   }
 
-  if (grid == null) {
+  if (fields == null) {
     return (
       <div className="flex flex-col gap-1">
         <Label>编号段</Label>
@@ -218,7 +191,6 @@ export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEd
               value={fieldName}
               onChange={(v) => {
                 setFieldName(v == null ? null : String(v))
-                setSubField(null)
               }}
             >
               <Select.Trigger>
@@ -227,39 +199,15 @@ export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEd
               </Select.Trigger>
               <Select.Popover>
                 <ListBox>
-                  {columns.map((c) => (
-                    <ListBox.Item key={c.name} id={c.name} textValue={c.label}>
-                      {c.label}
+                  {fields.map((item) => (
+                    <ListBox.Item key={item.path} id={item.path} textValue={item.label}>
+                      {item.label}
                       <ListBox.ItemIndicator />
                     </ListBox.Item>
                   ))}
                 </ListBox>
               </Select.Popover>
             </Select>
-            {isFk && (
-              <Select
-                className="flex-1"
-                aria-label="外键字段"
-                placeholder={`${col?.label ?? ''}的字段…`}
-                value={subField}
-                onChange={(v) => setSubField(v == null ? null : String(v))}
-              >
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {subColumns.map((c) => (
-                      <ListBox.Item key={c.name} id={c.name} textValue={c.label}>
-                        {c.label}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-            )}
             {dateChosen && (
               <Select
                 className="w-44"
@@ -283,7 +231,7 @@ export function SegmentsEditor({ grid, value, onChange, isDisabled }: SegmentsEd
                 </Select.Popover>
               </Select>
             )}
-            <Button size="sm" variant="secondary" isDisabled={!col || (isFk && !subCol)} onPress={addField}>
+            <Button size="sm" variant="secondary" isDisabled={!field} onPress={addField}>
               加字段
             </Button>
           </div>

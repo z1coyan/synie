@@ -2,36 +2,19 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { getSalesSetting, updateSalesSetting } from '~/lib/resources/settings'
 import { CompanyAccountDefaultsCard } from './-company-account-defaults'
 
 export const Route = createFileRoute('/_app/scm/settings/sales')({
   component: ScmSalesSettingsTab,
 })
 
-const SETTING_QUERY = `
-  query {
-    salSetting { id sampleItemMaxQty deliveryOvershipRatio }
-  }
-`
-const UPDATE_SETTING = `
-  mutation ($id: ID!, $input: UpdateSalSettingInput!) {
-    updateSalSetting(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-
-type SalSetting = {
-  id: string
-  sampleItemMaxQty: number
-  deliveryOvershipRatio: string | number
-}
-
 function ScmSalesSettingsTab() {
   const queryClient = useQueryClient()
   const query = useQuery({
-    // 与采购 tab / 订单抽屉分 key,避免 GraphQL 字段集不同互相污染缓存
+    // 与采购 tab / 订单抽屉分 key,避免不同表单草稿互相污染缓存
     queryKey: ['salSetting', 'sales'],
-    queryFn: () => gqlFetch<{ salSetting: SalSetting | null }>(SETTING_QUERY),
+    queryFn: getSalesSetting,
   })
 
   const [maxQty, setMaxQty] = useState<number>(NaN)
@@ -40,14 +23,14 @@ function ScmSalesSettingsTab() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!query.data?.salSetting) return
-    setMaxQty(query.data.salSetting.sampleItemMaxQty)
-    const ratio = Number(query.data.salSetting.deliveryOvershipRatio)
+    if (!query.data) return
+    setMaxQty(query.data.sampleItemMaxQty)
+    const ratio = Number(query.data.deliveryOvershipRatio)
     setOvershipPct(Number.isFinite(ratio) ? Math.round(ratio * 10000) / 100 : 0)
   }, [query.data])
 
   const save = async () => {
-    if (!query.data?.salSetting) return
+    if (!query.data) return
     if (!Number.isInteger(maxQty) || maxQty <= 0) {
       toast.danger('样品条目数量上限必须是正整数')
       return
@@ -58,19 +41,10 @@ function ScmSalesSettingsTab() {
     }
     setSaving(true)
     try {
-      const data = await gqlFetch<{ updateSalSetting: { errors: { message: string }[] | null } }>(
-        UPDATE_SETTING,
-        {
-          id: query.data.salSetting.id,
-          input: {
-            sampleItemMaxQty: maxQty,
-            deliveryOvershipRatio: String(overshipPct / 100),
-          },
-        },
-      )
-      if (data.updateSalSetting.errors && data.updateSalSetting.errors.length > 0) {
-        throw new Error(data.updateSalSetting.errors.map((e) => e.message).join('; '))
-      }
+      await updateSalesSetting({
+        sampleItemMaxQty: maxQty,
+        deliveryOvershipRatio: String(overshipPct / 100),
+      })
       toast.success('销售设置已保存')
       queryClient.invalidateQueries({ queryKey: ['salSetting'] })
     } catch (e) {

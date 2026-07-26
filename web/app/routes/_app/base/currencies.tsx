@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { currencyClient } from '~/lib/resources/currencies'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -12,17 +12,6 @@ import type { Row } from '~/components/synie-data-grid/types'
 export const Route = createFileRoute('/_app/base/currencies')({
   component: CurrenciesPage,
 })
-
-const CREATE_CURRENCY = `
-  mutation ($input: CreateBasCurrencyInput!) {
-    createBasCurrency(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_CURRENCY = `
-  mutation ($id: ID!, $input: UpdateBasCurrencyInput!) {
-    updateBasCurrency(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 function CurrenciesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
@@ -38,21 +27,22 @@ function CurrenciesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="basCurrencies"
+          client={currencyClient}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
           rowActions={statusToggleActions({
             field: 'active',
-            mutation: UPDATE_CURRENCY,
-            resultKey: 'updateBasCurrency',
+            update: currencyClient.update.bind(currencyClient),
             rowLabel: (row) => String(row.name ?? row.isoCode ?? ''),
-            onDone: () => queryClient.invalidateQueries({ queryKey: ['gridRows', 'basCurrencies'] }),
+            onDone: () => queryClient.invalidateQueries({ queryKey: ['gridRows', currencyClient.id, 'basCurrencies'] }),
           })}
         />
       </div>
 
       <SynieRecordDrawer
         resource="basCurrencies"
+        client={currencyClient}
         label="货币"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -68,23 +58,12 @@ function CurrenciesPage() {
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
-          if (mode === 'create') {
-            const data = await gqlFetch<{ createBasCurrency: { errors: { message: string }[] | null } }>(
-              CREATE_CURRENCY,
-              { input: values }
-            )
-            errors = data.createBasCurrency.errors
-          } else {
-            const data = await gqlFetch<{ updateBasCurrency: { errors: { message: string }[] | null } }>(
-              UPDATE_CURRENCY,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updateBasCurrency.errors
-          }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
+          const saved = mode === 'create'
+            ? await currencyClient.create(values)
+            : await currencyClient.update(drawer!.row!.id, values)
           toast.success(mode === 'create' ? '货币已创建' : '货币已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'basCurrencies'] })
+          queryClient.invalidateQueries({ queryKey: ['gridRows', currencyClient.id, 'basCurrencies'] })
+          return saved.id
         }}
       />
     </>

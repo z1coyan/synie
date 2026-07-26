@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Chip, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { fetchMe } from '~/lib/api/session'
+import { roleClient } from '~/lib/resources/iam'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
@@ -15,17 +16,6 @@ import type { Row } from '~/components/synie-data-grid/types'
 export const Route = createFileRoute('/_app/system/roles')({
   component: RolesPage,
 })
-
-const CREATE_ROLE = `
-  mutation ($input: CreateSysRoleInput!) {
-    createSysRole(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ROLE = `
-  mutation ($id: ID!, $input: UpdateSysRoleInput!) {
-    updateSysRole(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 // 内置角色(迁移种子的 admin,持全域通配 * 授权):后端强制不可改/不可删,前端对应禁用入口
 const notBuiltin = (row: Row) => row.builtin !== true
@@ -50,16 +40,20 @@ function RolesPage() {
   const queryClient = useQueryClient()
   const [permRole, setPermRole] = useState<Row | null>(null)
   const [myPerms, setMyPerms] = useState<Set<string>>(new Set())
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
 
   // 权限配置入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
   useEffect(() => {
-    gqlFetch<{ myPermissions: string[] }>('query { myPermissions }')
-      .then((d) => setMyPerms(new Set(d.myPermissions)))
+    fetchMe()
+      .then((d) => {
+        setMyPerms(new Set(d.permissions))
+        setIsSuperAdmin(d.superAdmin)
+      })
       .catch((e) => toast.danger('权限信息加载失败', { description: (e as Error).message }))
   }, [])
 
-  const canConfigure = myPerms.has('sys.role_permission:read')
-  const canWrite = myPerms.has('sys.role_permission:create') && myPerms.has('sys.role_permission:delete')
+  const canConfigure = isSuperAdmin || myPerms.has('sys.role_permission:read')
+  const canWrite = isSuperAdmin || (myPerms.has('sys.role_permission:create') && myPerms.has('sys.role_permission:delete'))
 
   // 关闭动画期间冻结 builtin:permRole 置空后 readOnly 不能当场翻回 false(同 roleName 的 lastOpenRef 模式)
   const builtinRef = useRef(false)
@@ -74,6 +68,7 @@ function RolesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="sysRoles"
+          client={roleClient}
           overrides={GRID_OVERRIDES}
           // 内置角色:禁用编辑/启停开关与删除(后端另有强制校验兜底);配置权限保留入口但矩阵只读
           actionVisible={{
@@ -90,13 +85,18 @@ function RolesPage() {
               ? [{ key: 'permissions', label: '配置权限', onAction: (row: Row) => setPermRole(row) }]
               : []),
             // 停用角色即收回其全部权限贡献,状态翻转走行动作不进表单(规范)
-            ...statusToggleActions({ field: 'enabled', mutation: UPDATE_ROLE, resultKey: 'updateSysRole' }),
+            ...statusToggleActions({
+              field: 'enabled',
+              update: roleClient.update.bind(roleClient),
+              onDone: () => queryClient.invalidateQueries({ queryKey: ['gridRows', roleClient.id, 'sysRoles'] }),
+            }),
           ]}
         />
       </div>
 
       <SynieRecordDrawer
         resource="sysRoles"
+        client={roleClient}
         {...drawerConfig('sysRoles')}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -109,23 +109,13 @@ function RolesPage() {
             : () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
         }
         onSubmit={async (values, mode) => {
-          // 更新/创建两支返回不同字段名,各自取 errors 而非 Object.values(data)[0](那样会退化为 any)
-          let errors: { message: string }[] | null
           if (mode === 'create') {
-            const data = await gqlFetch<{ createSysRole: { errors: { message: string }[] | null } }>(CREATE_ROLE, {
-              input: values,
-            })
-            errors = data.createSysRole.errors
+            await roleClient.create(values)
           } else {
-            const data = await gqlFetch<{ updateSysRole: { errors: { message: string }[] | null } }>(UPDATE_ROLE, {
-              id: drawer!.row!.id,
-              input: values,
-            })
-            errors = data.updateSysRole.errors
+            await roleClient.update(drawer!.row!.id, values)
           }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '角色已创建' : '角色已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'sysRoles'] })
+          queryClient.invalidateQueries({ queryKey: ['gridRows', roleClient.id, 'sysRoles'] })
         }}
       />
 

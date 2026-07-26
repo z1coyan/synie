@@ -3,6 +3,7 @@ import { formatAmount } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
+import { salesOrderClient } from '~/lib/resources/orders'
 import { useOrderDrawer, salesOrderAuditConfig } from './-order-drawer'
 import { useAuditDoc } from '../-audit-doc'
 
@@ -53,6 +54,7 @@ function SalesOrdersTab() {
     <>
       <SynieDataGrid
         resource="salOrders"
+        client={salesOrderClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         onView={(row) => openDrawer('view', row)}

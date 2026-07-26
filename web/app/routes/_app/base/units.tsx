@@ -2,26 +2,15 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { unitClient } from '~/lib/resources/units'
 
 export const Route = createFileRoute('/_app/base/units')({
   component: UnitsPage,
 })
-
-const CREATE_UNIT = `
-  mutation ($input: CreateBasUnitInput!) {
-    createBasUnit(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_UNIT = `
-  mutation ($id: ID!, $input: UpdateBasUnitInput!) {
-    updateBasUnit(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
 
 function UnitsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
@@ -35,6 +24,7 @@ function UnitsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="basUnits"
+          client={unitClient}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
@@ -43,6 +33,7 @@ function UnitsPage() {
 
       <SynieRecordDrawer
         resource="basUnits"
+        client={unitClient}
         label="单位"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -57,23 +48,13 @@ function UnitsPage() {
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
           if (mode === 'create') {
-            const data = await gqlFetch<{ createBasUnit: { errors: { message: string }[] | null } }>(
-              CREATE_UNIT,
-              { input: values }
-            )
-            errors = data.createBasUnit.errors
+            await unitClient.create({ ...values, ratio: String(values.ratio) })
           } else {
-            const data = await gqlFetch<{ updateBasUnit: { errors: { message: string }[] | null } }>(
-              UPDATE_UNIT,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updateBasUnit.errors
+            await unitClient.update(drawer!.row!.id, { ...values, ratio: String(values.ratio) })
           }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
           toast.success(mode === 'create' ? '单位已创建' : '单位已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'basUnits'] })
+          queryClient.invalidateQueries({ queryKey: ['gridRows', unitClient.id, 'basUnits'] })
         }}
       />
     </>

@@ -1,25 +1,13 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Label, ListBox, Select } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { materialClient, materialUnitClient } from '~/lib/resources/inventory'
 
 /**
  * 单据行的单位下拉:候选 = 选中物料的默认单位 + 其单位转换行单位,
  * 与后端 Sales.MaterialUnitAllowed 校验同源(前端做体验层)。
  * 销售订单条目与报价条目共用;未选物料时禁用并提示。
  */
-
-// 行单位候选:物料默认单位 + 其单位转换行单位
-const FETCH_MATERIAL_UNITS = `
-  query ($materialId: ID!) {
-    invMaterials(filter: {id: {eq: $materialId}}, limit: 1, offset: 0) {
-      results { id defaultUnit { id name } }
-    }
-    invMaterialUnits(filter: {materialId: {eq: $materialId}}, limit: 200, offset: 0) {
-      results { id unit { id name } }
-    }
-  }
-`
 
 interface UnitOption {
   id: string
@@ -42,11 +30,18 @@ export function MaterialUnitSelect({
     enabled: materialId != null,
     staleTime: 60_000,
     queryFn: () =>
-      gqlFetch<{
-        invMaterials: { results: { defaultUnit: UnitOption | null }[] }
-        invMaterialUnits: { results: { unit: UnitOption | null }[] }
-      }>(FETCH_MATERIAL_UNITS, { materialId }).then((d) => {
-        const units = [d.invMaterials.results[0]?.defaultUnit, ...d.invMaterialUnits.results.map((r) => r.unit)]
+      Promise.all([
+        materialClient.get(materialId!),
+        materialUnitClient.query({
+          limit: 200,
+          offset: 0,
+          filter: { materialId: { kind: 'fk', op: 'in', values: [materialId!], labels: [] } },
+        }),
+      ]).then(([material, conversions]) => {
+        const units = [
+          (material?.defaultUnit as UnitOption | null | undefined) ?? null,
+          ...conversions.results.map((row) => (row.unit as UnitOption | null | undefined) ?? null),
+        ]
         // 默认单位与转换行不会重复(后端校验),仍按 id 去重兜底
         const seen = new Set<string>()
         return units.filter((u): u is UnitOption => u != null && !seen.has(u.id) && (seen.add(u.id), true))

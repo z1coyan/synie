@@ -4,9 +4,9 @@ import { parseDate } from '@internationalized/date'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatAmount } from '~/lib/amount'
 import { gqlFetch } from '~/lib/graphql'
+import { glJournalClient } from '~/lib/resources/accounting'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
-import { gqlEnum } from '~/components/synie-data-grid/query'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -173,7 +173,7 @@ function ReconcileSection({ txn, onChanged }: { txn: Row; onChanged: () => void 
   })
 
   // 快速新增凭证的三码门控:reconcile(能进本抽屉即有)+ 凭证 create/audit 能力
-  const journalMeta = useGridMeta('accGlJournals')
+  const journalMeta = useGridMeta('accGlJournals', true, glJournalClient)
   const canQuick = ['create', 'audit'].every((c) =>
     (journalMeta.data?.capabilities ?? []).includes(c)
   )
@@ -384,10 +384,15 @@ function LinkJournalModal({
           <Modal.Body>
             <SynieDataGrid
               resource="accGlJournals"
+              client={glJournalClient}
               columns={['voucherNo', 'date', 'postingDate', 'remarks', 'debitTotal', 'creditTotal']}
               fixedFilter={{
-                companyId: { eq: txn.companyId },
-                status: { eq: gqlEnum('AUDITED') },
+                companyId: {
+                  kind: 'fk',
+                  values: [String(txn.companyId)],
+                  labels: [],
+                },
+                status: { kind: 'enum', values: ['AUDITED'] },
                 // 方向匹配预筛:凭证须含该银行科目对应方向的行(后端校验兜底)
                 lines: { accountId: { eq: ledgerAccountId }, [side]: { greaterThan: '0' } },
               }}

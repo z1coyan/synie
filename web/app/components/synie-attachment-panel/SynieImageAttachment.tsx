@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { fetchMe } from '~/lib/api/session'
+import { deleteAttachment, fileClient } from '~/lib/resources/files'
 import { blobUrl, fetchFileBlob, uploadFile } from '~/lib/files'
 import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
 import { SyniePreview } from '../synie-preview/SyniePreview'
@@ -12,7 +13,7 @@ import { SyniePreview } from '../synie-preview/SyniePreview'
  * 挂 SynieRecordDrawer 的 extraContent,create 态(无宿主 id)显示保存后可上传。
  */
 export interface SynieImageAttachmentProps {
-  /** 宿主资源标识(graphql type 名,如 hr_employee) */
+  /** 宿主资源标识(owner_type,如 hr_employee) */
   ownerType: string
   /** 宿主记录 id;create 模式下还没有,槽位显示提示 */
   ownerId?: string | null
@@ -23,17 +24,6 @@ export interface SynieImageAttachmentProps {
   /** view 模式只读:隐藏上传/删除 */
   readonly?: boolean
 }
-
-const DESTROY_ATTACHMENT = `
-  mutation ($id: ID!) {
-    destroySysAttachment(id: $id) { result { id } errors { message } }
-  }
-`
-const DESTROY_FILE = `
-  mutation ($id: ID!) {
-    destroySysFile(id: $id) { result { id } errors { message } }
-  }
-`
 
 export function SynieImageAttachment({ ownerType, ownerId, category, label, readonly }: SynieImageAttachmentProps) {
   const queryClient = useQueryClient()
@@ -46,8 +36,7 @@ export function SynieImageAttachment({ ownerType, ownerId, category, label, read
   // 与 SynieAttachmentPanel 同一套权限自查,queryKey 共享只发一次
   const perms = useQuery({
     queryKey: ['myPermissions'],
-    queryFn: () =>
-      gqlFetch<{ myPermissions: string[] }>('query { myPermissions }').then((d) => new Set(d.myPermissions)),
+    queryFn: () => fetchMe().then((d) => new Set(d.permissions)),
   })
   const canCreate = (perms.data?.has('sys.file:create') ?? false) && !readonly
   const canDelete = (perms.data?.has('sys.file:delete') ?? false) && !readonly
@@ -72,15 +61,9 @@ export function SynieImageAttachment({ ownerType, ownerId, category, label, read
   const objectUrl = blob.data ? blobUrl(blob.data) : null
 
   const destroyAttachment = async (row: AttachmentRow) => {
-    const res = await gqlFetch<{ destroySysAttachment: { errors: { message: string }[] | null } }>(
-      DESTROY_ATTACHMENT,
-      { id: row.id }
-    )
-    if (res.destroySysAttachment.errors?.length) {
-      throw new Error(res.destroySysAttachment.errors.map((e) => e.message).join('; '))
-    }
+    await deleteAttachment(row.id)
     // 文件行与物理对象一并清理;若文件仍被他处引用会被 FK 挡住,忽略即可
-    await gqlFetch(DESTROY_FILE, { id: row.file.id }).catch(() => undefined)
+    await fileClient.delete(row.file.id).catch(() => undefined)
   }
 
   const handleUpload = async (files: FileList | null) => {

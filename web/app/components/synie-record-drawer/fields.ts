@@ -28,6 +28,8 @@ export interface FieldOverride {
   placeholder?: string
   /** create 态初值(如 enabled 默认 true);不填按类型取 ''/false/null */
   defaultValue?: unknown
+  /** 编辑态从行值生成表单草稿；用于 Meta 标量展示但实际值为结构化数据的字段。 */
+  normalize?: (raw: unknown) => unknown
   /** 条件字段:返回 false 则不渲染、不校验、不提交;view 态入参为行数据 */
   visible?: (values: Record<string, unknown>) => boolean
   /**
@@ -71,6 +73,7 @@ export interface ResolvedField {
   edit: FieldEdit
   placeholder?: string
   defaultValue?: unknown
+  normalize?: FieldOverride['normalize']
   visible?: (values: Record<string, unknown>) => boolean
   hidden?: boolean
   section?: string
@@ -109,6 +112,7 @@ export function resolveFields(
         edit: o.edit ?? 'editable',
         placeholder: o.placeholder,
         defaultValue: o.defaultValue,
+        normalize: o.normalize,
         visible: o.visible,
         hidden: o.hidden,
         section: o.section,
@@ -148,6 +152,10 @@ export function initialValues(fields: ResolvedField[], row: Row | null | undefin
   const out: Record<string, unknown> = {}
   for (const f of fields) {
     const raw = row?.[f.name]
+    if (row && f.normalize) {
+      out[f.name] = f.normalize(raw)
+      continue
+    }
     switch (f.col.type) {
       case 'boolean':
         out[f.name] = row ? Boolean(raw) : (f.defaultValue ?? false)

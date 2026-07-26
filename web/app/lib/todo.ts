@@ -1,4 +1,6 @@
-import { gqlFetch, isForbidden } from './graphql'
+import { apiClient, apiData } from './api/client'
+import { isForbidden } from './errors'
+import { gqlFetch } from './graphql'
 
 export type TodoType = 'ISSUE_INVOICE' | 'RECEIVE_INVOICE'
 export type TodoStatus = 'ACTIVE' | 'CLOSED'
@@ -78,10 +80,8 @@ export async function fetchTodos(
 
 export async function fetchUnreadCount(): Promise<number> {
   try {
-    const data = await gqlFetch<{ sysTodoUnreadCount: number }>(
-      `query { sysTodoUnreadCount }`
-    )
-    return data.sysTodoUnreadCount ?? 0
+    const data = await apiData(apiClient.GET('/todos/unread-count'))
+    return data.count ?? 0
   } catch (e) {
     if (isForbidden(e)) return 0
     throw e

@@ -2,33 +2,17 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
+import { getManufacturingSetting, updateManufacturingSetting } from '~/lib/resources/settings'
 
 export const Route = createFileRoute('/_app/scm/settings/production')({
   component: ScmProductionSettingsTab,
 })
 
-const SETTING_QUERY = `
-  query {
-    mfgSetting { id outputOverreceiveRatio }
-  }
-`
-const UPDATE_SETTING = `
-  mutation ($id: ID!, $input: UpdateMfgSettingInput!) {
-    updateMfgSetting(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-
-type MfgSetting = {
-  id: string
-  outputOverreceiveRatio: string | number
-}
-
 function ScmProductionSettingsTab() {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: ['mfgSetting'],
-    queryFn: () => gqlFetch<{ mfgSetting: MfgSetting | null }>(SETTING_QUERY),
+    queryFn: getManufacturingSetting,
   })
 
   // 界面按百分比录入(0–100),落库小数 0–1;null=设置尚未载入
@@ -36,28 +20,22 @@ function ScmProductionSettingsTab() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!query.data?.mfgSetting) return
-    const ratio = Number(query.data.mfgSetting.outputOverreceiveRatio)
+    if (!query.data) return
+    const ratio = Number(query.data.outputOverreceiveRatio)
     setOverreceivePct(Number.isFinite(ratio) ? Math.round(ratio * 10000) / 100 : 0)
   }, [query.data])
 
   const save = async () => {
-    if (!query.data?.mfgSetting) return
+    if (!query.data) return
     if (overreceivePct === null || overreceivePct < 0 || overreceivePct > 100) {
       toast.danger('生产入库超入比例须在 0%–100% 之间')
       return
     }
     setSaving(true)
     try {
-      const data = await gqlFetch<{
-        updateMfgSetting: { errors: { message: string }[] | null }
-      }>(UPDATE_SETTING, {
-        id: query.data.mfgSetting.id,
-        input: { outputOverreceiveRatio: String(overreceivePct / 100) },
+      await updateManufacturingSetting({
+        outputOverreceiveRatio: String(overreceivePct / 100),
       })
-      if (data.updateMfgSetting.errors?.length) {
-        throw new Error(data.updateMfgSetting.errors.map((e) => e.message).join('; '))
-      }
       toast.success('生产设置已保存')
       queryClient.invalidateQueries({ queryKey: ['mfgSetting'] })
     } catch (e) {

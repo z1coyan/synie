@@ -10,22 +10,9 @@ import { toast } from '@heroui/react'
 import { AppShell } from '~/components/app-shell'
 import { FkPreviewProvider } from '~/components/synie-record-drawer/fk-preview-provider'
 import { clearToken, getToken } from '~/lib/auth'
-import { gqlFetch } from '~/lib/graphql'
+import { APIError } from '~/lib/api/client'
+import { fetchMe } from '~/lib/api/session'
 import { fetchSetupStatus } from '~/lib/setup'
-
-const ME_QUERY = `
-  query Me {
-    me {
-      id
-      username
-      name
-    }
-  }
-`
-
-interface MeData {
-  me: { id: string; username: string; name: string | null } | null
-}
 
 export const Route = createFileRoute('/_app')({
   beforeLoad: async () => {
@@ -46,9 +33,9 @@ export const Route = createFileRoute('/_app')({
 function AppLayout() {
   const navigate = useNavigate()
 
-  const { data } = useQuery({
+  const { data, error: meError, isError: meIsError } = useQuery({
     queryKey: ['me'],
-    queryFn: () => gqlFetch<MeData>(ME_QUERY),
+    queryFn: fetchMe,
     // 没 token 时不发请求,避免把 me:null 缓存下来误判成登录态失效
     enabled: !!getToken(),
   })
@@ -72,14 +59,14 @@ function AppLayout() {
     }
   }, [setupStatus, setupStatusError, navigate])
 
-  // token 失效(me 为空)时清除并回登录页
+  // Go API 明确返回 401 时清除 JWT 并回登录页;其它网络错误留在页面重试。
   useEffect(() => {
-    if (data && !data.me) {
+    if (meIsError && meError instanceof APIError && meError.code === 'unauthorized') {
       clearToken()
       toast.warning('登录状态已失效,请重新登录')
       navigate({ to: '/login', replace: true })
     }
-  }, [data, navigate])
+  }, [meError, meIsError, navigate])
 
   const logout = () => {
     clearToken()
@@ -88,7 +75,10 @@ function AppLayout() {
   }
 
   return (
-    <AppShell user={data?.me ?? null} onLogout={logout}>
+    <AppShell
+      user={data ? { ...data.user, name: data.user.name ?? null } : null}
+      onLogout={logout}
+    >
       <FkPreviewProvider>
         <Outlet />
       </FkPreviewProvider>

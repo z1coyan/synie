@@ -4,6 +4,7 @@ import { Chip, Link } from '@heroui/react'
 import { formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { salesQuotationItemClient } from '~/lib/resources/quotations'
 import { useAuditDoc } from '../-audit-doc'
 import { salesQuotationAuditConfig, useQuotationDrawer, type OpenQuotationDrawer } from './-quotation-drawer'
 import { isExpired } from './quotations'
@@ -91,6 +92,7 @@ function QuotationItemsTab() {
     <>
       <SynieDataGrid
         resource="salQuotationItems"
+        client={salesQuotationItemClient}
         columns={GRID_COLUMNS}
         overrides={overrides}
         // 默认报价日期倒序(新单在前);calc 列排序沿用销售订单条目已验证的能力

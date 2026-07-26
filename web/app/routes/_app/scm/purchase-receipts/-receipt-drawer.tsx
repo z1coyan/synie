@@ -10,13 +10,13 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, NumberField, TextField, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
+import { purchaseOrderItemClient } from '~/lib/resources/orders'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
-import { gqlEnum } from '~/components/synie-data-grid/query'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
@@ -275,19 +275,23 @@ function ReceiptAccountFooter({
 /**
  * 有效订单条目固定筛选(弹窗 SynieDataGrid fixedFilter):
  * 1. 已审核订单 2. 公司/对手与入库头一致 3. 未收数量 > 0
- * 枚举值用 gqlEnum 包装(不可 JSON 字符串)。
+ * 使用 REST FilterState，权限与公司/对手/剩余数量条件由服务端白名单解释。
  */
-function orderItemGridFilter(values: Record<string, unknown>): Record<string, unknown> | null {
+function orderItemGridFilter(values: Record<string, unknown>): FilterState | null {
   const { companyId, partyType, partyId } = values
   if (!companyId || !partyType || !partyId) return null
   return {
-    and: [
-      { orderStatus: { eq: gqlEnum('AUDITED') } },
-      { companyId: { eq: String(companyId) } },
-      { partyType: { eq: gqlEnum(String(partyType)) } },
-      { partyId: { eq: String(partyId) } },
-      { remainingBaseQty: { greaterThan: '0' } },
-    ],
+    orderStatus: { kind: 'enum', values: ['AUDITED'] },
+    companyId: { kind: 'fk', op: 'in', values: [String(companyId)], labels: [] },
+    partyType: { kind: 'enum', values: [String(partyType)] },
+    partyId: {
+      kind: 'polyFk',
+      op: 'in',
+      variant: String(partyType),
+      values: [String(partyId)],
+      labels: [],
+    },
+    remainingBaseQty: { kind: 'number', op: 'gt', value: '0' },
   }
 }
 
@@ -503,6 +507,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
                 <RemoteDialogSelect
                   resource="purOrderItems"
+                  client={purchaseOrderItemClient}
                   label="订单条目"
                   dialogTitle="选择可入库订单条目"
                   placeholder={oiGridFilter ? '点击选择订单条目…' : '先选齐公司与对手'}
@@ -520,7 +525,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                     'receivedQty',
                     'remainingBaseQty',
                     'orderDate',
-                    'order { id orderNo }',
+                    'orderNo',
                   ]}
                   value={value == null ? null : String(value)}
                   onChange={(id, oitem) => {
@@ -529,28 +534,13 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                       let row = oitem
                       if (id && (row?.materialId == null || row?.unitId == null)) {
                         try {
-                          const data = await gqlFetch<{
-                            purOrderItems: { results: Row[] }
-                          }>(
-                            `query ($id: ID!) {
-                              purOrderItems(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
-                                results {
-                                  id materialId unitId materialCode materialName materialSpec
-                                  customerPartNo unitName qty baseQty receivedQty remainingBaseQty
-                                  order { id orderNo }
-                                }
-                              }
-                            }`,
-                            { id },
-                          )
-                          row = data.purOrderItems.results[0] ?? row
+                          row = (await purchaseOrderItemClient.get(id)) ?? row
                         } catch {
                           /* 回填失败时仍写入 id,提交靠 transformItem/后端兜底 */
                         }
                       }
                       if (id && row) orderItemsRef.current.set(String(id), row)
                       onChange(id)
-                      const order = row?.order as Row | null | undefined
                       // 物料/单位随订单条目锁定带出;collectValues 会丢 hidden 字段,
                       // 真正落行靠 transformItem 读 orderItemsRef
                       patchItem({
@@ -561,7 +551,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                         materialSpec: row?.materialSpec ?? null,
                         customerPartNo: row?.customerPartNo ?? null,
                         unitName: row?.unitName ?? null,
-                        orderNo: order?.orderNo ?? null,
+                        orderNo: row?.orderNo ?? null,
                         orderQty: row?.qty ?? null,
                       })
                     })()

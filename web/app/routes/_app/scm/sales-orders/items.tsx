@@ -7,6 +7,7 @@ import type { Row } from '~/components/synie-data-grid/types'
 import { useOrderDrawer, salesOrderAuditConfig, type OpenOrderDrawer } from './-order-drawer'
 import { useAuditDoc } from '../-audit-doc'
 import { QtyProgressCell } from '../-qty-progress-cell'
+import { salesOrderItemClient } from '~/lib/resources/orders'
 
 export const Route = createFileRoute('/_app/scm/sales-orders/items')({
   component: SalesOrderItemsTab,
@@ -94,6 +95,7 @@ function SalesOrderItemsTab() {
     <>
       <SynieDataGrid
         resource="salOrderItems"
+        client={salesOrderItemClient}
         columns={GRID_COLUMNS}
         overrides={overrides}
         // 合并进度列的取数(qty 行单位;baseQty/shippedQty 默认单位投影列)

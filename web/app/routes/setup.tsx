@@ -17,6 +17,7 @@ import { AppearanceSwitch } from '~/components/appearance-switch'
 import { setToken } from '~/lib/auth'
 import { gqlFetch } from '~/lib/graphql'
 import { fetchSetupStatus } from '~/lib/setup'
+import { seedWarehouseDefaults } from '~/lib/resources/inventory'
 
 // —— GraphQL 文档(setup 四个操作无 codegen 生成,照 login.tsx 手写) ——
 const LOGIN_MUTATION = `
@@ -61,12 +62,6 @@ const CREATE_COMPANY = `
 const INIT_FROM_TEMPLATE = `
   mutation ($input: InitBasAccountFromTemplateInput!) {
     initBasAccountFromTemplate(input: $input)
-  }
-`
-// 默认仓库种子(所有仓库/默认仓库/在途),同 INIT_FROM_TEMPLATE 的标量返回约定;幂等,已有仓库返回 0
-const SEED_WAREHOUSE_DEFAULTS = `
-  mutation ($input: SeedInvWarehouseDefaultsInput!) {
-    seedInvWarehouseDefaults(input: $input)
   }
 `
 const COMPLETE_SETUP = `
@@ -601,10 +596,8 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
       let warehouseCount = 0
       let seedError: string | null = null
       try {
-        const seed = await gqlFetch<{ seedInvWarehouseDefaults: number }>(SEED_WAREHOUSE_DEFAULTS, {
-          input: { companyId },
-        })
-        warehouseCount = seed.seedInvWarehouseDefaults
+        const seed = await seedWarehouseDefaults(companyId)
+        warehouseCount = seed.count
       } catch (e) {
         seedError = (e as Error).message
       }

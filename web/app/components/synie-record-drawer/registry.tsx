@@ -1,5 +1,9 @@
 import { Label, ListBox, Select, TextArea, TextField } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
+import { accountClient } from '~/lib/resources/accounts'
+import { currencyClient } from '~/lib/resources/currencies'
+import { marketInstrumentClient } from '~/lib/resources/market'
+import { unitClient } from '~/lib/resources/units'
 import { SynieAttachmentPanel } from '../synie-attachment-panel/SynieAttachmentPanel'
 import { SynieImageAttachment } from '../synie-attachment-panel/SynieImageAttachment'
 import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
@@ -44,7 +48,11 @@ const registry: Record<string, ResourceDrawerConfig> = {
   basAccounts: {
     label: '科目',
     fields: {
-      currencyId: { remote: { filter: '{active: {eq: true}}' } },
+      code: { required: true, edit: 'createOnly' },
+      currencyId: {
+        remote: { client: currencyClient, filterState: { active: { kind: 'bool', eq: true } } },
+      },
+      parentId: { remote: { client: accountClient } },
     },
   },
   basMarketInstruments: {
@@ -57,9 +65,12 @@ const registry: Record<string, ResourceDrawerConfig> = {
       currencyId: {
         required: true,
         edit: 'createOnly',
-        remote: { filter: '{active: {eq: true}}' },
+        remote: {
+          client: currencyClient,
+          filterState: { active: { kind: 'bool', eq: true } },
+        },
       },
-      unitId: { required: true, edit: 'createOnly' },
+      unitId: { required: true, edit: 'createOnly', remote: { client: unitClient } },
       fetchEnabled: {},
       externalLastCode: { placeholder: '主连如 CU0' },
       externalProductGroup: { placeholder: '上期所组如 cu' },
@@ -70,7 +81,11 @@ const registry: Record<string, ResourceDrawerConfig> = {
     // 价点不可改:无编辑态表单;币种/单位由品种继承
     exclude: ['currencyId', 'unitId', 'isVoided', 'insertedAt', 'updatedAt'],
     fields: {
-      instrumentId: { required: true, edit: 'createOnly' },
+      instrumentId: {
+        required: true,
+        edit: 'createOnly',
+        remote: { client: marketInstrumentClient },
+      },
       observedAt: { required: true, edit: 'createOnly' },
       price: { required: true, edit: 'createOnly' },
       priceKind: { edit: 'createOnly' },
@@ -821,8 +836,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
     label: '员工',
     contentClassName: 'w-full lg:w-[640px]',
     fields: {
-      // 编号必填但可留空自动取号(后端 AutoNumber),前端不标必填
-      code: { order: 0, cols: 6, placeholder: '留空自动编号' },
+      // 编号建成后必有值；创建可留空由后端 AutoNumber 取号，编辑态仍可修改
+      code: { order: 0, cols: 6, required: false, placeholder: '留空自动编号' },
       name: { order: 1, cols: 6, required: true },
       attendanceNo: { order: 2, cols: 6 },
       phone: { order: 3, cols: 6 },
@@ -985,7 +1000,18 @@ const registry: Record<string, ResourceDrawerConfig> = {
         placeholder: '保存后自动编号(分类号[客户号]-序号)',
       },
       // 物料只能挂启用的叶子分类(后端另有叶子校验兜底)
-      categoryId: { order: 1, cols: 6, required: true, remote: { filter: '{isLeaf: {eq: true}, active: {eq: true}}' } },
+      categoryId: {
+        order: 1,
+        cols: 6,
+        required: true,
+        remote: {
+          filter: '{isLeaf: {eq: true}, active: {eq: true}}',
+          filterState: {
+            isLeaf: { kind: 'bool', eq: true },
+            active: { kind: 'bool', eq: true },
+          },
+        },
+      },
       name: { order: 2, cols: 6, required: true },
       spec: { order: 3, cols: 6, placeholder: '如 M8×30' },
       // 客户物料字段自成一组,开关是组的总开关置于组首;分组标题随字段显隐

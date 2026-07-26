@@ -10,12 +10,13 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextField, toast } from '@heroui/react'
 import { gqlFetch } from '~/lib/graphql'
+import { queryOutsourcedWarehouses } from '~/lib/resources/inventory'
+import { purchaseOrderItemMaterialClient } from '~/lib/resources/orders'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
-import { gqlEnum } from '~/components/synie-data-grid/query'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
@@ -166,7 +167,7 @@ async function persistItems(issueId: string, current: Row[], snapshot: Row[]): P
 }
 
 /**
- * 外协仓选择器:接 invOutsourcedWarehouses 按对手过滤(02 的过滤能力),
+ * 外协仓选择器:通过 warehouse REST 按协作方过滤,
  * 未选齐对手类型与对手时禁用。候选少(一对手几个仓),一次拉全量不做远程搜索。
  */
 function OutsourcedWarehouseSelect({
@@ -186,12 +187,10 @@ function OutsourcedWarehouseSelect({
 }) {
   const ready = Boolean(partyType && partyId)
   const warehouses = useQuery({
-    queryKey: ['invOutsourcedWarehouses', partyType, partyId],
+    queryKey: ['outsourcedWarehouses', partyType, partyId],
     enabled: ready,
     queryFn: () =>
-      gqlFetch<{ invOutsourcedWarehouses: { results: Row[] } }>(
-        `query { invOutsourcedWarehouses(partyType: ${partyType}, partyId: ${JSON.stringify(partyId)}, limit: 100, offset: 0, sort: [{field: NAME, order: ASC}]) { results { id name } } }`,
-      ).then((d) => d.invOutsourcedWarehouses.results),
+      queryOutsourcedWarehouses(partyType as 'SUPPLIER' | 'COMPANY', partyId!),
   })
 
   const strValue = value == null || value === '' ? null : String(value)
@@ -237,20 +236,24 @@ function OutsourcedWarehouseSelect({
 /**
  * 有效发料清单行固定筛选(弹窗 SynieDataGrid fixedFilter):
  * 1. 已审核委外订单 2. 公司/对手与发料头一致 3. 剩余可发 > 0
- * 枚举值用 gqlEnum 包装(不可 JSON 字符串)。
+ * 使用 REST FilterState，权限与公司/对手/剩余数量条件由服务端白名单解释。
  */
-function materialLineGridFilter(values: Record<string, unknown>): Record<string, unknown> | null {
+function materialLineGridFilter(values: Record<string, unknown>): FilterState | null {
   const { companyId, partyType, partyId } = values
   if (!companyId || !partyType || !partyId) return null
   return {
-    and: [
-      { orderStatus: { eq: gqlEnum('AUDITED') } },
-      { orderIsOutsourced: { eq: true } },
-      { companyId: { eq: String(companyId) } },
-      { partyType: { eq: gqlEnum(String(partyType)) } },
-      { partyId: { eq: String(partyId) } },
-      { remainingIssueQty: { greaterThan: '0' } },
-    ],
+    orderStatus: { kind: 'enum', values: ['AUDITED'] },
+    orderIsOutsourced: { kind: 'bool', eq: true },
+    companyId: { kind: 'fk', op: 'in', values: [String(companyId)], labels: [] },
+    partyType: { kind: 'enum', values: [String(partyType)] },
+    partyId: {
+      kind: 'polyFk',
+      op: 'in',
+      variant: String(partyType),
+      values: [String(partyId)],
+      labels: [],
+    },
+    remainingIssueQty: { kind: 'number', op: 'gt', value: '0' },
   }
 }
 
@@ -479,6 +482,7 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
               input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
                 <RemoteDialogSelect
                   resource="purOrderItemMaterials"
+                  client={purchaseOrderItemMaterialClient}
                   label="发料清单行"
                   dialogTitle="选择发料清单行"
                   placeholder={lineGridFilter ? '点击选择发料清单行…' : '先选齐公司与对手'}
@@ -491,32 +495,17 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
                       let row = line
                       if (id) {
                         try {
-                          const data = await gqlFetch<{
-                            purOrderItemMaterials: { results: Row[] }
-                          }>(
-                            `query ($id: ID!) {
-                              purOrderItemMaterials(filter: {id: {eq: $id}}, limit: 1, offset: 0) {
-                                results {
-                                  id orderNo quantity issuedQty remainingIssueQty
-                                  material { id code name spec }
-                                  unit { id name }
-                                }
-                              }
-                            }`,
-                            { id },
-                          )
-                          const full = data.purOrderItemMaterials.results[0]
+                          const full = await purchaseOrderItemMaterialClient.get(id)
                           if (full) {
-                            const material = full.material as Row | null | undefined
-                            const unit = full.unit as Row | null | undefined
                             row = {
                               ...full,
-                              materialId: material?.id,
-                              unitId: unit?.id,
-                              materialCode: material?.code,
-                              materialName: material?.name,
-                              materialSpec: material?.spec,
-                              unitName: unit?.name,
+                              material: {
+                                id: full.materialId,
+                                code: full.materialCode,
+                                name: full.materialName,
+                                spec: full.materialSpec,
+                              },
+                              unit: { id: full.unitId, name: full.unitName },
                             } as Row
                           }
                         } catch {

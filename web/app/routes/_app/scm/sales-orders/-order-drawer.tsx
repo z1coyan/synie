@@ -1,7 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextArea, TextField, toast } from '@heroui/react'
-import { gqlFetch, isForbidden } from '~/lib/graphql'
+import { isForbidden } from '~/lib/graphql'
+import { companyClient } from '~/lib/resources/companies'
+import {
+  auditSalesOrder,
+  salesOrderClient,
+  salesOrderItemClient,
+} from '~/lib/resources/orders'
+import { getSalesSetting } from '~/lib/resources/settings'
 import { formatAmount, formatPrice } from '~/lib/amount'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -10,7 +17,8 @@ import { SynieEditableTable } from '~/components/synie-editable-table/SynieEdita
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
+import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { salesQuotationItemClient } from '~/lib/resources/quotations'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { OrderFlowHistory } from '../-order-flow-history'
 
@@ -39,6 +47,18 @@ export const salesOrderAuditConfig = {
   docIdField: 'orderId',
   itemFields:
     'id idx materialCode materialName materialSpec customerPartNo unitName qty price amount remarks',
+  loadItems: (orderId: string) =>
+    salesOrderItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          orderId: { kind: 'fk', op: 'in', values: [orderId], labels: [] },
+        },
+      })
+      .then((result) => result.results),
+  audit: auditSalesOrder,
   columns: [
     {
       key: 'materialName',
@@ -60,61 +80,7 @@ export function useOrderDrawer(): OpenOrderDrawer {
   return useContext(OrderDrawerContext)
 }
 
-const CREATE_ORDER = `
-  mutation ($input: CreateSalOrderInput!) {
-    createSalOrder(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ORDER = `
-  mutation ($id: ID!, $input: UpdateSalOrderInput!) {
-    updateSalOrder(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const FETCH_DETAIL = `
-  query ($orderId: ID!) {
-    salOrders(filter: {id: {eq: $orderId}}, limit: 1, offset: 0) {
-      results { id terms }
-    }
-    salOrderItems(filter: {orderId: {eq: $orderId}}, sort: [{field: IDX, order: ASC}], limit: 200, offset: 0) {
-      results {
-        id idx materialId unitId qty price amount basePrice baseAmount taxRate remarks quotationItemId
-        materialName unitName
-        material { id name }
-        unit { id name }
-        quotationItem { id pricingMode }
-      }
-    }
-  }
-`
-// 单据公司的本币:决定汇率字段显隐、币种默认值与条目表双币列(整单本币时只显一套)
-const FETCH_COMPANY_BASE = `
-  query ($companyId: ID!) {
-    basCompanies(filter: {id: {eq: $companyId}}, limit: 1, offset: 0) {
-      results { id baseCurrencyId }
-    }
-  }
-`
 // 样品订单单行数量上限(单行配置);无 sales.setting:read 权限的录单员查不到,客户端校验跳过,后端建行/审核兜底
-const FETCH_SAL_SETTING = `
-  query {
-    salSetting { id sampleItemMaxQty }
-  }
-`
-const CREATE_ITEM = `
-  mutation ($input: CreateSalOrderItemInput!) {
-    createSalOrderItem(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_ITEM = `
-  mutation ($id: ID!, $input: UpdateSalOrderItemInput!) {
-    updateSalOrderItem(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-const DESTROY_ITEM = `
-  mutation ($id: ID!) {
-    destroySalOrderItem(id: $id) { errors { message } }
-  }
-`
 
 // mutation input 只收行自身字段:amount 后端系统算(writable? false)、companyId 冗余自订单(后端回填)、
 // 快照字段(materialName/unitName 等)由后端保存时重拍,本地草稿 id 与行上挂的 material/unit join 对象一律不进 payload。
@@ -142,36 +108,33 @@ function itemChanged(before: Row, after: Row): boolean {
 /** 行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy。全程收集错误文案(带行号定位),不中途抛出(同凭证分录行先例) */
 async function persistItems(orderId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
+  const attempt = async <T,>(idx: unknown, operation: () => Promise<T>): Promise<T | null> => {
+    try {
+      return await operation()
+    } catch (error) {
+      errors.push(`第${idx}行:${(error as Error).message}`)
+      return null
+    }
   }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    const data = await gqlFetch<{ destroySalOrderItem: { errors: { message: string }[] | null } }>(
-      DESTROY_ITEM,
-      { id: old.id }
-    )
-    collect(old.idx, data.destroySalOrderItem.errors)
+    await attempt(old.idx, () => salesOrderItemClient.delete(String(old.id)))
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      const data = await gqlFetch<{ createSalOrderItem: { errors: { message: string }[] | null } }>(
-        CREATE_ITEM,
-        { input: { orderId, ...itemInput(row) } }
+      await attempt(row.idx, () =>
+        salesOrderItemClient.create({ orderId, ...itemInput(row) }),
       )
-      collect(row.idx, data.createSalOrderItem.errors)
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && itemChanged(old, row)) {
-      const data = await gqlFetch<{ updateSalOrderItem: { errors: { message: string }[] | null } }>(
-        UPDATE_ITEM,
-        { id: row.id, input: itemInput(row) }
+      await attempt(row.idx, () =>
+        salesOrderItemClient.update(String(row.id), itemInput(row)),
       )
-      collect(row.idx, data.updateSalOrderItem.errors)
     }
   }
   return errors
@@ -213,9 +176,9 @@ function CompanyCurrencySync({
     enabled: companyId !== '',
     staleTime: 300_000,
     queryFn: () =>
-      gqlFetch<{ basCompanies: { results: { baseCurrencyId: string | null }[] } }>(FETCH_COMPANY_BASE, {
-        companyId,
-      }).then((d) => d.basCompanies.results[0]?.baseCurrencyId ?? null),
+      companyClient.get(companyId).then((company) =>
+        typeof company?.baseCurrencyId === 'string' ? company.baseCurrencyId : null,
+      ),
   })
   const base = companyId === '' ? null : (query.data ?? null)
 
@@ -309,12 +272,12 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
     staleTime: 300_000,
     retry: false,
     queryFn: () =>
-      gqlFetch<{ salSetting: { id: string; sampleItemMaxQty: number } | null }>(FETCH_SAL_SETTING).catch((e) => {
+      getSalesSetting().catch((e) => {
         if (!isForbidden(e)) console.warn('供应链设置查询失败,样品数量上限客户端校验跳过:', (e as Error).message)
-        return { salSetting: null }
+        return null
       }),
   })
-  const sampleMaxQty = salSettingQuery.data?.salSetting?.sampleItemMaxQty ?? null
+  const sampleMaxQty = salSettingQuery.data?.sampleItemMaxQty ?? null
 
   // 头四要素/币种变化清空条目草稿;空集合并保留原引用,避免无谓重渲染
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
@@ -332,15 +295,22 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
       return
     }
     setDetailLoaded(false)
-    gqlFetch<{ salOrders: { results: { terms: string | null }[] }; salOrderItems: { results: Row[] } }>(
-      FETCH_DETAIL,
-      { orderId: order!.id }
-    )
-      .then((d) => {
+    Promise.all([
+      salesOrderClient.get(order!.id),
+      salesOrderItemClient.query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          orderId: { kind: 'fk', op: 'in', values: [order!.id], labels: [] },
+        },
+      }),
+    ])
+      .then(([head, itemResult]) => {
         if (my !== reqIdRef.current) return
         // 报价条目定价模式摊平到行(价格/金额列的梯度展示判定),并回填缓存供行表单只读派生;
         // 与选择时写入的完整行合并,不覆盖已有的快照名
-        const rows = d.salOrderItems.results.map((r) => {
+        const rows = itemResult.results.map((r) => {
           const qitem = r.quotationItem as { id: string; pricingMode: string } | null | undefined
           if (qitem) {
             const prev = quotationItemsRef.current.get(String(qitem.id)) ?? ({} as Row)
@@ -348,7 +318,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           }
           return { ...r, pricingMode: qitem?.pricingMode ?? null }
         })
-        setTerms(d.salOrders.results[0]?.terms ?? '')
+        setTerms(String(head?.terms ?? ''))
         setItems(rows)
         setItemsSnapshot(rows)
         setDetailLoaded(true)
@@ -431,6 +401,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
 
       <SynieRecordDrawer
         resource="salOrders"
+        client={salesOrderClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -456,7 +427,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             row?.id == null ? (
               <p className="text-sm text-muted">订单保存后可查看收发货历史</p>
             ) : (
-              <OrderFlowHistory orderId={String(row.id)} />
+              <OrderFlowHistory orderId={String(row.id)} side="sales" />
             ),
         }}
         extraContent={(mode, row, values, patchValues) => {
@@ -480,8 +451,21 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           const quotationFilter = (() => {
             const { companyId, partyType, partyId, currencyId: cid, orderDate } = values
             if (!companyId || !partyType || !partyId || !cid || !orderDate) return null
-            const q = (v: unknown) => JSON.stringify(String(v))
-            return `{quotation: {status: {eq: AUDITED}, companyId: {eq: ${q(companyId)}}, partyType: {eq: ${String(partyType)}}, partyId: {eq: ${q(partyId)}}, currencyId: {eq: ${q(cid)}}, quotationDate: {lessThanOrEqual: ${q(orderDate)}}, validUntil: {greaterThanOrEqual: ${q(orderDate)}}}}`
+            return {
+              quotationStatus: { kind: 'enum', values: ['AUDITED'] },
+              companyId: { kind: 'fk', op: 'in', values: [String(companyId)], labels: [] },
+              partyType: { kind: 'enum', values: [String(partyType)] },
+              partyId: {
+                kind: 'polyFk',
+                op: 'in',
+                variant: String(partyType),
+                values: [String(partyId)],
+                labels: [],
+              },
+              currencyId: { kind: 'fk', op: 'in', values: [String(cid)], labels: [] },
+              quotationDate: { kind: 'date', op: 'between', lte: String(orderDate) },
+              validUntil: { kind: 'date', op: 'between', gte: String(orderDate) },
+            } satisfies FilterState
           })()
           // 梯度报价条目判定:选中条目的定价模式从缓存取(选择时写完整行;存量行由 FETCH_DETAIL 回填)
           const tieredSelected = (vals: Record<string, unknown>) =>
@@ -511,11 +495,12 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
                     <RemoteSelect
                       resource="salQuotationItems"
+                      client={salesQuotationItemClient}
                       label="报价条目"
                       placeholder={quotationFilter ? '选择有效报价条目…' : '订单头信息未选齐'}
                       labelField="materialName"
                       searchFields={['materialName', 'materialCode']}
-                      filter={quotationFilter ?? undefined}
+                      filterState={quotationFilter ?? undefined}
                       fields={[
                         'materialCode',
                         'unitName',
@@ -726,7 +711,8 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             />
             <ItemsResetGuard mode={mode} row={row} values={values} onReset={resetItems} />
             <SynieEditableTable
-            resource="salOrderItems"
+              resource="salOrderItems"
+              client={salesOrderItemClient}
             label="订单条目"
             items={items}
             onChange={setItems}
@@ -842,13 +828,11 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
           if (mode === 'create') {
-            const data = await gqlFetch<{
-              createSalOrder: { result: { id: string } | null; errors: { message: string }[] | null }
-            }>(CREATE_ORDER, { input: { ...values, terms: terms === '' ? null : terms } })
-            if (data.createSalOrder.errors && data.createSalOrder.errors.length > 0) {
-              throw new Error(data.createSalOrder.errors.map((e) => e.message).join('; '))
-            }
-            const orderId = data.createSalOrder.result!.id
+            const created = await salesOrderClient.create({
+              ...values,
+              terms: terms === '' ? null : terms,
+            })
+            const orderId = String(created.id)
             const itemErrors = await persistItems(orderId, items, [])
             if (itemErrors.length > 0) {
               toast.danger('订单已创建,但部分条目保存失败', { description: itemErrors.join('; ') })
@@ -858,12 +842,10 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             savedId = orderId
           } else {
             const orderId = drawer!.order!.id
-            const data = await gqlFetch<{
-              updateSalOrder: { errors: { message: string }[] | null }
-            }>(UPDATE_ORDER, { id: orderId, input: { ...values, terms: terms === '' ? null : terms } })
-            if (data.updateSalOrder.errors && data.updateSalOrder.errors.length > 0) {
-              throw new Error(data.updateSalOrder.errors.map((e) => e.message).join('; '))
-            }
+            await salesOrderClient.update(orderId, {
+              ...values,
+              terms: terms === '' ? null : terms,
+            })
             const itemErrors = await persistItems(orderId, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('订单已更新,但部分条目保存失败', { description: itemErrors.join('; ') })

@@ -2,32 +2,16 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { gqlFetch } from '~/lib/graphql'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { companyClient } from '~/lib/resources/companies'
+import { currencyClient } from '~/lib/resources/currencies'
 
 export const Route = createFileRoute('/_app/system/companies')({
   component: CompaniesPage,
 })
-
-const CREATE_COMPANY = `
-  mutation ($input: CreateBasCompanyInput!) {
-    createBasCompany(input: $input) { result { id } errors { message } }
-  }
-`
-const UPDATE_COMPANY = `
-  mutation ($id: ID!, $input: UpdateBasCompanyInput!) {
-    updateBasCompany(id: $id, input: $input) { result { id } errors { message } }
-  }
-`
-// 默认仓库种子(所有仓库/默认仓库/在途):泛型 action 返回标量(新建条数),幂等;失败走 top-level errors 由 gqlFetch 抛出
-const SEED_WAREHOUSE_DEFAULTS = `
-  mutation ($input: SeedInvWarehouseDefaultsInput!) {
-    seedInvWarehouseDefaults(input: $input)
-  }
-`
 
 function CompaniesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
@@ -41,6 +25,7 @@ function CompaniesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="basCompanies"
+          client={companyClient}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
@@ -49,6 +34,7 @@ function CompaniesPage() {
 
       <SynieRecordDrawer
         resource="basCompanies"
+        client={companyClient}
         label="公司"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -62,42 +48,20 @@ function CompaniesPage() {
           baseCurrencyId: {
             required: true,
             label: '本币',
-            remote: { filter: '{active: {eq: true}}' },
+            remote: { client: currencyClient, filterState: { active: { kind: 'bool', eq: true } } },
           },
+          parentId: { remote: { client: companyClient } },
           // parentId 是 fk 列,零配置自动出 RemoteSelect;要弹窗选择时:parentId: { picker: 'dialog' }
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          let errors: { message: string }[] | null
-          let createdId: string | null = null
           if (mode === 'create') {
-            const data = await gqlFetch<{
-              createBasCompany: { result: { id: string } | null; errors: { message: string }[] | null }
-            }>(CREATE_COMPANY, { input: values })
-            errors = data.createBasCompany.errors
-            createdId = data.createBasCompany.result?.id ?? null
+            await companyClient.create(values)
           } else {
-            const data = await gqlFetch<{ updateBasCompany: { errors: { message: string }[] | null } }>(
-              UPDATE_COMPANY,
-              { id: drawer!.row!.id, input: values }
-            )
-            errors = data.updateBasCompany.errors
+            await companyClient.update(drawer!.row!.id, values)
           }
-          if (errors && errors.length > 0) throw new Error(errors.map((e) => e.message).join('; '))
-          // 建新公司后种子默认仓库;失败只报错不回滚公司(种子幂等,可重建公司或手工补仓)
-          let seedNote = ''
-          if (createdId) {
-            try {
-              const seed = await gqlFetch<{ seedInvWarehouseDefaults: number }>(SEED_WAREHOUSE_DEFAULTS, {
-                input: { companyId: createdId },
-              })
-              seedNote = `,并初始化 ${seed.seedInvWarehouseDefaults} 个默认仓库`
-            } catch (e) {
-              toast.danger('初始化默认仓库失败', { description: (e as Error).message })
-            }
-          }
-          toast.success(mode === 'create' ? `公司已创建${seedNote}` : '公司已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'basCompanies'] })
+          toast.success(mode === 'create' ? '公司已创建,并初始化 3 个默认仓库' : '公司已更新')
+          queryClient.invalidateQueries({ queryKey: ['gridRows', companyClient.id, 'basCompanies'] })
         }}
       />
     </>

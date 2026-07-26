@@ -1,0 +1,171 @@
+{
+  "capabilities": [
+    "create",
+    "update",
+    "delete"
+  ],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "编码",
+      "name": "code",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "名称",
+      "name": "name",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "交易所序列",
+          "value": "EXCHANGE"
+        },
+        {
+          "label": "现货指数",
+          "value": "SPOT_INDEX"
+        },
+        {
+          "label": "其他",
+          "value": "OTHER"
+        }
+      ],
+      "filterable": true,
+      "label": "来源类型",
+      "name": "sourceType",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "结算价",
+          "value": "SETTLEMENT"
+        },
+        {
+          "label": "均价",
+          "value": "AVERAGE"
+        },
+        {
+          "label": "最新价",
+          "value": "LAST"
+        }
+      ],
+      "filterable": true,
+      "label": "默认价类",
+      "name": "defaultPriceKind",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "启用",
+      "name": "active",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "启用拉取",
+      "name": "fetchEnabled",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "外部最新价代码(如 CU0 主连)",
+      "name": "externalLastCode",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "外部品种组(如上期所日数据 cu)",
+      "name": "externalProductGroup",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "备注",
+      "name": "note",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "币种",
+      "name": "currencyId",
+      "ref": {
+        "labelField": "name",
+        "relation": "currency",
+        "resource": "basCurrencies"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "计量单位",
+      "name": "unitId",
+      "ref": {
+        "labelField": "name",
+        "relation": "unit",
+        "resource": "basUnits"
+      },
+      "sortable": false,
+      "type": "fk"
+    }
+  ],
+  "destroyMutation": "destroyBasMarketInstrument",
+  "extendedActions": []
+}

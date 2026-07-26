@@ -1,16 +1,15 @@
 import { getToken } from './auth'
+import { AppError, isForbidden } from './errors'
+
+export { isForbidden }
 
 /** GraphQL 业务错误;codes 保留后端错误码(如 forbidden)供 UI 分支处理 */
-export class GqlError extends Error {
-  codes: string[]
-
+export class GqlError extends AppError {
   constructor(message: string, codes: string[]) {
-    super(message)
-    this.codes = codes
+	  super(message, codes)
+	  this.name = 'GqlError'
   }
 }
-
-export const isForbidden = (e: unknown): boolean => e instanceof GqlError && e.codes.includes('forbidden')
 
 export async function gqlFetch<TData = unknown>(
   query: string,

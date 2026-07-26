@@ -10,6 +10,11 @@ export default defineConfig({
     port: 3000,
     allowedHosts: ['home-n5pro', '.ts.net', 'home-macmini'],
     proxy: {
+      '/api/v1': {
+        // 已迁移资源与认证走 Go API；未迁移文件端点仍由下方 /api 规则指向 Elixir 参考端。
+        target: `http://localhost:${process.env.GO_API_PORT || 8080}`,
+        changeOrigin: true
+      },
       '/graphql': {
         // BACKEND_PORT 可覆盖,供 worktree 并行起服务时指向自己的后端
         target: `http://localhost:${process.env.BACKEND_PORT || 4000}`,
