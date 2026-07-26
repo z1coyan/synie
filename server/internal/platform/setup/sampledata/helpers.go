@@ -27,7 +27,7 @@ func dateString(t time.Time) string { return t.Format("2006-01-02") }
 
 func alreadySeeded(ctx context.Context, pool *pgxpool.Pool) (bool, error) {
 	var exists bool
-	err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sal_customer WHERE code = $1)`, markerCustomerCode).Scan(&exists)
+	err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sal_customers WHERE code = $1)`, markerCustomerCode).Scan(&exists)
 	if err != nil {
 		return false, apierror.Wrap(apierror.CodeInternal, "检查示例数据标记失败", err)
 	}
