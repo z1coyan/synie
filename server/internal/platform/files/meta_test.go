@@ -17,8 +17,8 @@ func TestFilesMetaMatchesCapturedContracts(t *testing.T) {
 		resource meta.ResourceMeta
 		path     string
 	}{
-		{name: FileResourceName, resource: FileResourceMeta(), path: "../../../../contracts/meta/sysFiles.grid.json"},
-		{name: StorageResourceName, resource: StorageResourceMeta(), path: "../../../../contracts/meta/sysStorages.grid.json"},
+		{name: FileResourceName, resource: FileResourceMeta(), path: "testdata/meta/sysFiles.grid.json"},
+		{name: StorageResourceName, resource: StorageResourceMeta(), path: "testdata/meta/sysStorages.grid.json"},
 	}
 	for _, tc := range cases {
 		tc := tc

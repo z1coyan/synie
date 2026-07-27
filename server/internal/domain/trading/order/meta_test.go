@@ -43,14 +43,10 @@ func TestMetaMatchesCapturedSnapshots(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join("..", "..", "..", "..", "..", ".scratch",
-				"migration", "snapshots", "pr-2.14", tc.snapshot)
+			path := filepath.Join("testdata", "meta", tc.snapshot)
 			raw, err := os.ReadFile(path)
-			if os.IsNotExist(err) {
-				t.Skip("repository .scratch snapshots are outside the mounted server module")
-			}
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("meta 快照缺失或不可读（契约测试 fail-closed）: %v", err)
 			}
 			var want meta.GridMetaDTO
 			if err := json.Unmarshal(raw, &want); err != nil {

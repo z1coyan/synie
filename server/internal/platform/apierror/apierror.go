@@ -25,7 +25,12 @@ type Error struct {
 	Cause   error               `json:"-"`
 }
 
+// Error 输出包含 Cause 链,便于日志定位根因;对外 HTTP 响应体不使用本方法
+// (见 httpapi.writeError),不会向客户端泄露内部细节。
 func (e *Error) Error() string {
+	if e.Cause != nil {
+		return e.Message + ": " + e.Cause.Error()
+	}
 	return e.Message
 }
 

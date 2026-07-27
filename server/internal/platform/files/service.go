@@ -422,8 +422,8 @@ func (s *Service) Download(ctx context.Context, actor *authz.Actor, id uuid.UUID
 			rows.Close()
 			return Download{}, err
 		}
-		spec, known := ownerRegistry[ownerType]
-		if !known || !actor.HasPermission(spec.permissionPrefix+":read") {
+		spec, known := lookupOwner(ownerType)
+		if !known || !actor.HasPermission(spec.PermissionPrefix+":read") {
 			continue
 		}
 		if companyID == nil || actor.CanAccessCompany(*companyID) {

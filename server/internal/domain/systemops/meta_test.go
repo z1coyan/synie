@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
@@ -114,9 +115,9 @@ func errorCode(err error) apierror.Code {
 
 func assertGridSnapshot(t *testing.T, actual meta.GridMetaDTO, name string) {
 	t.Helper()
-	wantBytes, err := os.ReadFile("../../../../.scratch/migration/snapshots/pr-2.18/" + name)
+	wantBytes, err := os.ReadFile(filepath.Join("testdata", "meta", name))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("meta 快照缺失或不可读（契约测试 fail-closed）: %v", err)
 	}
 	actualBytes, err := json.Marshal(actual)
 	if err != nil {

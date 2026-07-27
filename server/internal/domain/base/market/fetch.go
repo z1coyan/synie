@@ -82,7 +82,63 @@ func (s *Service) RefreshWithClients(
 		}
 	}
 	result := RefreshResult{Items: items, Count: len(items)}
-	s.recordRefreshSummary(ctx, actor, items)
+	s.recordRefreshSummary(ctx, actor, "手动刷新", items)
+	return result, nil
+}
+
+// RefreshLasts 供定时调度拉取全部启用拉取品种的最新价(与手动刷新共用 fetchLast 路径)。
+func (s *Service) RefreshLasts(ctx context.Context, actor *authz.Actor, now time.Time) (RefreshResult, error) {
+	client := &PublicMarketClient{HTTPClient: &http.Client{Timeout: 15 * time.Second}}
+	return s.RefreshLastsWithClient(ctx, actor, nil, now, client)
+}
+
+func (s *Service) RefreshLastsWithClient(
+	ctx context.Context,
+	actor *authz.Actor,
+	instrumentID *uuid.UUID,
+	now time.Time,
+	lastClient LastPriceClient,
+) (RefreshResult, error) {
+	instruments, err := s.fetchableInstruments(ctx, instrumentID)
+	if err != nil {
+		return RefreshResult{}, err
+	}
+	items := make([]RefreshItem, 0, len(instruments))
+	for _, instrument := range instruments {
+		items = append(items, s.fetchLast(ctx, actor, instrument, now, lastClient))
+	}
+	result := RefreshResult{Items: items, Count: len(items)}
+	if len(items) > 0 {
+		s.recordRefreshSummary(ctx, actor, "定时最新价", items)
+	}
+	return result, nil
+}
+
+// RefreshSettlements 供定时调度补拉全部启用拉取品种的结算价(与手动刷新共用 fetchSettlement 路径)。
+func (s *Service) RefreshSettlements(ctx context.Context, actor *authz.Actor, now time.Time) (RefreshResult, error) {
+	client := &PublicMarketClient{HTTPClient: &http.Client{Timeout: 15 * time.Second}}
+	return s.RefreshSettlementsWithClient(ctx, actor, nil, now, client)
+}
+
+func (s *Service) RefreshSettlementsWithClient(
+	ctx context.Context,
+	actor *authz.Actor,
+	instrumentID *uuid.UUID,
+	now time.Time,
+	settlementClient SettlementPriceClient,
+) (RefreshResult, error) {
+	instruments, err := s.fetchableInstruments(ctx, instrumentID)
+	if err != nil {
+		return RefreshResult{}, err
+	}
+	items := make([]RefreshItem, 0, len(instruments))
+	for _, instrument := range instruments {
+		items = append(items, s.fetchSettlement(ctx, actor, instrument, now, settlementClient))
+	}
+	result := RefreshResult{Items: items, Count: len(items)}
+	if len(items) > 0 {
+		s.recordRefreshSummary(ctx, actor, "定时结算价", items)
+	}
 	return result, nil
 }
 
@@ -183,7 +239,7 @@ func (s *Service) hasActivePoint(ctx context.Context, instrumentID uuid.UUID, ob
 	return err == nil && exists
 }
 
-func (s *Service) recordRefreshSummary(ctx context.Context, actor *authz.Actor, items []RefreshItem) {
+func (s *Service) recordRefreshSummary(ctx context.Context, actor *authz.Actor, label string, items []RefreshItem) {
 	okCount, skippedCount, errorCount := 0, 0, 0
 	var hint string
 	for _, item := range items {
@@ -199,7 +255,7 @@ func (s *Service) recordRefreshSummary(ctx context.Context, actor *authz.Actor, 
 			}
 		}
 	}
-	summary := fmt.Sprintf("手动刷新: 成功%d 跳过%d 失败%d%s", okCount, skippedCount, errorCount, hint)
+	summary := fmt.Sprintf("%s: 成功%d 跳过%d 失败%d%s", label, okCount, skippedCount, errorCount, hint)
 	_ = settings.NewService(s.pool).RecordMarketFetch(ctx, actor, summary)
 }
 

@@ -18,6 +18,9 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
 
+// defaultItemTaxRate 是订单条目未显式填写时的默认增值税税率(13%)。
+var defaultItemTaxRate = decimal.RequireFromString("0.13")
+
 var itemAuditFields = []string{
 	"idx", "qty", "base_qty", "price", "amount", "base_price", "base_amount", "tax_rate",
 	"material_code", "material_name", "material_spec", "customer_part_no", "unit_name",
@@ -58,7 +61,7 @@ func (s *Service) CreateItem(
 	}
 	draft := Item{
 		Idx: input.Idx, Qty: input.Qty, MaterialID: input.MaterialID, UnitID: input.UnitID,
-		TaxRate: decimal.RequireFromString("0.13"), Remarks: input.Remarks,
+		TaxRate: defaultItemTaxRate, Remarks: input.Remarks,
 		QuotationItemID: input.QuotationItemID, BOMID: input.BOMID,
 		DemandLineID: input.DemandLineID, DemandDate: input.DemandDate,
 		OrderID: input.OrderID, CompanyID: parent.CompanyID,
@@ -382,10 +385,18 @@ func (s *Service) deriveAndValidateItem(
 		return apierror.Validation("订单条目参数不合法",
 			map[string][]string{"unitId": {"单位必须是物料默认单位或其单位转换单位"}})
 	}
-	item.Amount = item.Qty.Mul(item.Price).Round(2)
-	item.BasePrice = item.Price.Mul(parent.ExchangeRate).Round(4)
-	item.BaseAmount = item.Amount.Mul(parent.ExchangeRate).Round(2)
+	deriveItemAmounts(item, parent.ExchangeRate)
 	return nil
+}
+
+// deriveItemAmounts 计算订单条目金额链：金额=数量×单价（2 位）、
+// 本币单价=单价×汇率（4 位）、本币金额=金额×汇率（2 位），均按 half-up
+// （负数远离零）舍入。该链路是迁移契约金色夹具
+// testdata/fixtures/amount_chain.json 的锚点，改动必须同步更新夹具。
+func deriveItemAmounts(item *Item, exchangeRate decimal.Decimal) {
+	item.Amount = item.Qty.Mul(item.Price).Round(2)
+	item.BasePrice = item.Price.Mul(exchangeRate).Round(4)
+	item.BaseAmount = item.Amount.Mul(exchangeRate).Round(2)
 }
 
 func loadOrderMaterial(

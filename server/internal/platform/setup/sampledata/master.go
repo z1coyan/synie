@@ -259,4 +259,3 @@ func materialSpecs() []materialSpec {
 		{Key: "carton", Name: "五层纸箱", Spec: "40×30×30", Category: "P(C)"},
 	}
 }
-

@@ -13,9 +13,9 @@ import (
 
 func TestResourceMetaMatchesCapturedElixirGridContract(t *testing.T) {
 	t.Parallel()
-	raw, err := os.ReadFile("../../../../../contracts/meta/basUnits.grid.json")
+	raw, err := os.ReadFile("testdata/meta/basUnits.grid.json")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("meta 快照缺失或不可读（契约测试 fail-closed）: %v", err)
 	}
 	var captured meta.GridMetaDTO
 	if err := json.Unmarshal(raw, &captured); err != nil {

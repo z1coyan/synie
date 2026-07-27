@@ -1,14 +1,17 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/domain/trading/order"
+	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
 
 func TestOrderHandlersAuthorizeBeforeDecodeOrService(t *testing.T) {
@@ -112,6 +115,61 @@ func TestOrderBodyHandlersAuthorizeBeforeJSONValidation(t *testing.T) {
 				t.Fatalf("with permission invalid JSON status=%d body=%s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+type transitionOrderStub struct {
+	orderHTTPService
+	audited, closed, voided int
+}
+
+func (s *transitionOrderStub) AuditOrder(context.Context, *authz.Actor, order.Side, uuid.UUID) (order.Order, error) {
+	s.audited++
+	return order.Order{}, nil
+}
+
+func (s *transitionOrderStub) CloseOrder(context.Context, *authz.Actor, order.Side, uuid.UUID) (order.Order, error) {
+	s.closed++
+	return order.Order{}, nil
+}
+
+func (s *transitionOrderStub) VoidOrder(context.Context, *authz.Actor, order.Side, uuid.UUID) (order.Order, error) {
+	s.voided++
+	return order.Order{}, nil
+}
+
+func TestTransitionOrderRejectsUnknownActionWithoutTouchingService(t *testing.T) {
+	stub := &transitionOrderStub{}
+	server := &Server{orders: stub}
+	response := httptest.NewRecorder()
+	server.transitionOrder(response, inventoryRequest(http.MethodPost, "", nil),
+		order.SideSales, uuid.New(), "audi")
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("unknown action status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "audi") {
+		t.Fatalf("unknown action body=%s", response.Body.String())
+	}
+	if stub.audited != 0 || stub.closed != 0 || stub.voided != 0 {
+		t.Fatalf("unknown action reached service: audited=%d closed=%d voided=%d",
+			stub.audited, stub.closed, stub.voided)
+	}
+}
+
+func TestTransitionOrderDispatchesKnownActions(t *testing.T) {
+	stub := &transitionOrderStub{}
+	server := &Server{orders: stub}
+	id := uuid.New()
+	for _, action := range []string{"audit", "close", "void"} {
+		response := httptest.NewRecorder()
+		server.transitionOrder(response, inventoryRequest(http.MethodPost, "", nil),
+			order.SideSales, id, action)
+		if response.Code != http.StatusOK {
+			t.Fatalf("action %s status=%d body=%s", action, response.Code, response.Body.String())
+		}
+	}
+	if stub.audited != 1 || stub.closed != 1 || stub.voided != 1 {
+		t.Fatalf("dispatch counts audited=%d closed=%d voided=%d", stub.audited, stub.closed, stub.voided)
 	}
 }
 

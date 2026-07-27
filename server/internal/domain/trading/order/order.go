@@ -44,7 +44,7 @@ func (s *Service) CreateOrder(
 	}
 	defer tx.Rollback(ctx)
 	currencyID, exchangeRate, err := normalizeCurrency(
-		ctx, tx, input.CompanyID, input.CurrencyID, input.ExchangeRate, true,
+		ctx, tx, input.CompanyID, input.CurrencyID, input.ExchangeRate,
 	)
 	if err != nil {
 		return Order{}, err
@@ -208,7 +208,7 @@ func (s *Service) UpdateOrder(
 		rateInput = &rate
 	}
 	after.CurrencyID, after.ExchangeRate, err = normalizeCurrency(
-		ctx, tx, after.CompanyID, currencyInput, rateInput, rateRequired,
+		ctx, tx, after.CompanyID, currencyInput, rateInput,
 	)
 	if err != nil {
 		return Order{}, err
@@ -470,7 +470,7 @@ func lockOrder(ctx context.Context, tx pgx.Tx, spec sideSpec, actor *authz.Actor
 
 func normalizeCurrency(
 	ctx context.Context, tx pgx.Tx, companyID uuid.UUID, currencyID *uuid.UUID,
-	exchangeRate *decimal.Decimal, requireExplicit bool,
+	exchangeRate *decimal.Decimal,
 ) (uuid.UUID, decimal.Decimal, error) {
 	var baseCurrencyID uuid.UUID
 	if err := tx.QueryRow(ctx, `SELECT base_currency_id FROM bas_company WHERE id=$1`, companyID).Scan(&baseCurrencyID); err != nil {
@@ -488,10 +488,6 @@ func normalizeCurrency(
 		return chosen, decimal.NewFromInt(1), nil
 	}
 	if exchangeRate == nil {
-		return uuid.Nil, decimal.Zero, apierror.Validation("订单参数不合法",
-			map[string][]string{"exchangeRate": {"外币订单必须填写汇率"}})
-	}
-	if requireExplicit && exchangeRate == nil {
 		return uuid.Nil, decimal.Zero, apierror.Validation("订单参数不合法",
 			map[string][]string{"exchangeRate": {"外币订单必须填写汇率"}})
 	}

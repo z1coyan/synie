@@ -10,9 +10,9 @@ import (
 )
 
 func TestPrintTemplateGridMetaMatchesCapturedElixirContract(t *testing.T) {
-	raw, err := os.ReadFile("../../../../contracts/meta/sysPrintTemplates.grid.json")
+	raw, err := os.ReadFile("testdata/meta/sysPrintTemplates.grid.json")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("meta 快照缺失或不可读（契约测试 fail-closed）: %v", err)
 	}
 	var captured meta.GridMetaDTO
 	if err := json.Unmarshal(raw, &captured); err != nil {

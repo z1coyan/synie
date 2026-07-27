@@ -152,4 +152,3 @@ func createBOMComponent(
 	_, err := deps.ManufacturingMaster.CreateBOMComponent(ctx, actor, input)
 	return err
 }
-

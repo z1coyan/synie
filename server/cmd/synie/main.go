@@ -44,6 +44,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/trading/quotation"
 	"github.com/z1coyan/synie/server/internal/domain/trading/reconciliation"
 	httpapi "github.com/z1coyan/synie/server/internal/http"
+	"github.com/z1coyan/synie/server/internal/jobs/marketsched"
 	"github.com/z1coyan/synie/server/internal/platform/auth"
 	"github.com/z1coyan/synie/server/internal/platform/config"
 	fileplatform "github.com/z1coyan/synie/server/internal/platform/files"
@@ -81,6 +82,7 @@ func run() error {
 
 	registry := meta.NewRegistry()
 	metaregistry.RegisterAll(registry)
+	metaregistry.RegisterFileOwners()
 	hasher := auth.NewPasswordHasher(auth.DefaultArgon2Params())
 	authService, err := auth.NewService(
 		auth.NewPostgresStore(pool),
@@ -163,6 +165,10 @@ func run() error {
 		Settings: settings.NewService(pool),
 		Setup:    setupService, Logger: logger,
 	})
+	// 行情定时调度:随服务进程启动,rootCtx 取消即优雅退出;
+	// 开关/间隔读 sys_setting,每分钟一个节拍,设置变更下一节拍生效
+	go marketsched.New(pool, logger).Run(rootCtx)
+
 	server := &http.Server{
 		Addr: cfg.HTTPAddr, Handler: api.Router(),
 		ReadHeaderTimeout: 5 * time.Second,

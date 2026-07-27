@@ -12,11 +12,11 @@ import (
 )
 
 type Config struct {
-	HTTPAddr   string
+	HTTPAddr    string
 	DatabaseURL string
-	AuthSecret []byte
-	TokenTTL   time.Duration
-	LogLevel   slog.Level
+	AuthSecret  []byte
+	TokenTTL    time.Duration
+	LogLevel    slog.Level
 }
 
 func Load() (Config, error) {

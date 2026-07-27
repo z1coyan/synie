@@ -18,8 +18,8 @@ func TestNumberingGridMetaMatchesCapturedElixirContracts(t *testing.T) {
 		name string
 		path string
 	}{
-		{name: RuleResourceName, path: "../../../../contracts/meta/sysNumberingRules.grid.json"},
-		{name: CounterResourceName, path: "../../../../contracts/meta/sysNumberingCounters.grid.json"},
+		{name: RuleResourceName, path: "testdata/meta/sysNumberingRules.grid.json"},
+		{name: CounterResourceName, path: "testdata/meta/sysNumberingCounters.grid.json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

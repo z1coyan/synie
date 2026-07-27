@@ -17,7 +17,7 @@ import (
 //   - 月工日 = Σ正常工时 ÷ fullDayHours + Σ奖励工日
 //
 // 输入输出均为本地时刻；UTC↔本地固定偏移 attendanceImportUTCOffset
-//（默认 +8h，与 .dat 导入约定一致，不引 tzdata）。
+// （默认 +8h，与 .dat 导入约定一致，不引 tzdata）。
 const (
 	// morningAfternoonSplitHour 上下午桶切分点（本地钟点）。
 	morningAfternoonSplitHour = 12

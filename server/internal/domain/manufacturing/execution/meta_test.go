@@ -46,12 +46,11 @@ func TestResourceMetaMatchesPR217Snapshots(t *testing.T) {
 						t.Fatal(err)
 					}
 					snapshotPath := filepath.Join(
-						"..", "..", "..", "..", "..", ".scratch", "migration", "snapshots",
-						"pr-2.17", resource.Name+"."+role+".grid.json",
+						"testdata", "meta", resource.Name+"."+role+".grid.json",
 					)
 					wantRaw, err := os.ReadFile(snapshotPath)
 					if err != nil {
-						t.Fatal(err)
+						t.Fatalf("meta 快照缺失或不可读（契约测试 fail-closed）: %v", err)
 					}
 					var actual, want any
 					if err := json.Unmarshal(actualRaw, &actual); err != nil {

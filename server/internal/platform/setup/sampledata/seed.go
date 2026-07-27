@@ -142,15 +142,15 @@ type chainDoc struct {
 }
 
 type purchaseResult struct {
-	Quotations               []uuid.UUID
-	Orders                   []uuid.UUID
-	Receipts                 []uuid.UUID
-	Reconciliations          []uuid.UUID
-	ConfirmedReconciliation  uuid.UUID
-	ConfirmedBaseGrossTotal  string
-	QuotationItems           map[string]map[string]uuid.UUID // qKey -> matKey -> itemID
-	OrderItems               map[string]map[int]uuid.UUID
-	ReceiptItems             map[string]map[int]uuid.UUID
+	Quotations              []uuid.UUID
+	Orders                  []uuid.UUID
+	Receipts                []uuid.UUID
+	Reconciliations         []uuid.UUID
+	ConfirmedReconciliation uuid.UUID
+	ConfirmedBaseGrossTotal string
+	QuotationItems          map[string]map[string]uuid.UUID // qKey -> matKey -> itemID
+	OrderItems              map[string]map[int]uuid.UUID
+	ReceiptItems            map[string]map[int]uuid.UUID
 }
 
 type salesResult struct {

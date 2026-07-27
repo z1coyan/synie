@@ -151,8 +151,8 @@ func TestGlobalResourcesWithoutCompanyIDDocumented(t *testing.T) {
 	// unfiltered by company. If any of these gains a company_id field the
 	// inventory test above will force a decision.
 	global := []string{
-		"basCurrencies",  // 全局币种主数据
-		"basUnits",       // 全局计量单位
+		"basCurrencies",       // 全局币种主数据
+		"basUnits",            // 全局计量单位
 		"hrAttendancePunches", // 打卡按员工，无 company_id
 		"hrAttendanceDays",
 		"hrAttendanceCorrections",

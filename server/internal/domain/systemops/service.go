@@ -275,7 +275,8 @@ func (s *Service) changeTodoState(ctx context.Context, actor *authz.Actor, id uu
 }
 
 func (s *Service) UnreadCount(ctx context.Context, actor *authz.Actor) (int64, error) {
-	if err := requirePermission(actor, "acc.vat_invoice:create", "无权限查看待办"); err != nil {
+	// 未读计数是只读语义:不再要求「创建发票」权限,改用发票 read 码
+	if err := requirePermission(actor, "acc.vat_invoice:read", "无权限查看待办"); err != nil {
 		return 0, err
 	}
 	scope := filterbuild.ResolveCompanyScope(actor)

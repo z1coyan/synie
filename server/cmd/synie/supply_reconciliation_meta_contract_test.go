@@ -69,11 +69,10 @@ func TestSupplyReconciliationGridMetaMatchesCapturedContract(t *testing.T) {
 					t.Fatal(err)
 				}
 				raw, err := os.ReadFile(filepath.Join(
-					"..", "..", "..", ".scratch", "migration", "snapshots", "pr-2.16",
-					resourceName+"."+tc.name+".grid.json",
+					"testdata", "meta", resourceName+"."+tc.name+".grid.json",
 				))
 				if err != nil {
-					t.Fatal(err)
+					t.Fatalf("meta 快照缺失或不可读（契约测试 fail-closed）: %v", err)
 				}
 				var expected any
 				if err := json.Unmarshal(raw, &expected); err != nil {

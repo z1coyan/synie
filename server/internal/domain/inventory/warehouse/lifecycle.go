@@ -75,7 +75,8 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 		return Warehouse{}, apierror.Wrap(apierror.CodeInternal, "读取仓库失败", err)
 	}
 	if actor == nil || !actor.CanAccessCompany(row.CompanyID) {
-		return Warehouse{}, apierror.New(apierror.CodeForbidden, "无权在该公司下操作数据")
+		// 公司隔离越权统一按「不存在」响应,避免通过 403/404 差异探测他公司数据
+		return Warehouse{}, apierror.New(apierror.CodeNotFound, "仓库不存在")
 	}
 	if err := lockTree(ctx, tx, row.CompanyID); err != nil {
 		return Warehouse{}, err
@@ -198,7 +199,8 @@ func (s *Service) Delete(ctx context.Context, actor *authz.Actor, id uuid.UUID) 
 		return apierror.Wrap(apierror.CodeInternal, "读取仓库失败", err)
 	}
 	if actor == nil || !actor.CanAccessCompany(row.CompanyID) {
-		return apierror.New(apierror.CodeForbidden, "无权在该公司下操作数据")
+		// 公司隔离越权统一按「不存在」响应,避免通过 403/404 差异探测他公司数据
+		return apierror.New(apierror.CodeNotFound, "仓库不存在")
 	}
 	if err := lockTree(ctx, tx, row.CompanyID); err != nil {
 		return err

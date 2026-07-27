@@ -54,13 +54,11 @@ func TestResourceMetasMatchLegacyGridSnapshots(t *testing.T) {
 				t.Fatalf("%s/%s: %v", resource.Name, actorName, err)
 			}
 			path := filepath.Join(
-				"..", "..", "..", "..", "..",
-				".scratch", "migration", "snapshots", "pr-2.20",
-				resource.Name+"."+actorName+".grid.json",
+				"testdata", "meta", resource.Name+"."+actorName+".grid.json",
 			)
 			raw, err := os.ReadFile(path)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("meta 快照缺失或不可读（契约测试 fail-closed）: %v", err)
 			}
 			var want, got any
 			if err = json.Unmarshal(raw, &want); err != nil {

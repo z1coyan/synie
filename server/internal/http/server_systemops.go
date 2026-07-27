@@ -165,7 +165,7 @@ func todoDTO(item systemops.Todo) gen.Todo {
 		SourceChangedAt: item.SourceChangedAt, ClosedAt: item.ClosedAt,
 		InsertedAt: item.InsertedAt, UpdatedAt: item.UpdatedAt,
 		DraftInvoiceLinked: item.DraftInvoiceLinked,
-		MyReadAt: item.MyReadAt, MyDismissedAt: item.MyDismissedAt,
+		MyReadAt:           item.MyReadAt, MyDismissedAt: item.MyDismissedAt,
 		Dismissed: item.Dismissed, CompanyId: item.CompanyID,
 		CreatedById: item.CreatedByID,
 		Company: &gen.TodoCompanyReference{

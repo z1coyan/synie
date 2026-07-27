@@ -22,9 +22,9 @@ func TestSettingGridMetaMatchesCapturedElixirContracts(t *testing.T) {
 		SystemResourceName,
 	} {
 		t.Run(name, func(t *testing.T) {
-			raw, err := os.ReadFile("../../../../contracts/meta/" + name + ".grid.json")
+			raw, err := os.ReadFile("testdata/meta/" + name + ".grid.json")
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("meta 快照缺失或不可读（契约测试 fail-closed）: %v", err)
 			}
 			var captured meta.GridMetaDTO
 			if err := json.Unmarshal(raw, &captured); err != nil {

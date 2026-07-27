@@ -197,7 +197,7 @@ func (s *Server) Router() http.Handler {
 			s.authenticationMiddleware,
 		},
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			s.writeError(w, r, apierror.Validation("请求路径参数不合法", map[string][]string{"path": {err.Error()}}))
+			s.writeError(w, r, bindingError(r, err))
 		},
 	})
 }
@@ -217,6 +217,7 @@ func (s *Server) GetHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 	var body gen.LoginRequest
 	if err := decodeJSON(w, r, &body); err != nil {
+		// 防枚举:请求解析失败与凭证错误返回完全一致的 401,不暴露请求格式细节
 		s.writeError(w, r, apierror.New(apierror.CodeUnauthorized, "用户名或密码错误"))
 		return
 	}
@@ -279,7 +280,8 @@ func (s *Server) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) GetTodoUnreadCount(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "acc.vat_invoice:create")
+	// 只读端点使用只读权限码;待办目前均为发票待办,故用发票 read 码
+	actor, err := actorWithPermission(r, "acc.vat_invoice:read")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -518,6 +520,27 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 
 func invalidJSON(err error) error {
 	return apierror.Validation("请求 JSON 不合法", map[string][]string{"body": {err.Error()}})
+}
+
+// bindingError 区分路径参数与查询参数绑定失败。oapi-codegen 的参数错误类型
+// 不携带来源信息,这里借助 chi 路由模式判断参数名是否出现在路径中;
+// 判断不了时按查询参数处理(必填缺失只会发生在查询参数上)。
+func bindingError(r *http.Request, err error) error {
+	name := ""
+	var invalidFormat *gen.InvalidParamFormatError
+	var required *gen.RequiredParamError
+	switch {
+	case errors.As(err, &invalidFormat):
+		name = invalidFormat.ParamName
+	case errors.As(err, &required):
+		name = required.ParamName
+	}
+	source, label := "query", "请求查询参数不合法"
+	if route := chi.RouteContext(r.Context()); route != nil && name != "" &&
+		strings.Contains(route.RoutePattern(), "{"+name+"}") {
+		source, label = "path", "请求路径参数不合法"
+	}
+	return apierror.Validation(label, map[string][]string{source: {err.Error()}})
 }
 
 func loginBucket(r *http.Request, username string) string {

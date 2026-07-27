@@ -49,7 +49,7 @@ func seedOutsourced(
 	// 外协仓
 	partyType := "supplier"
 	wh, err := deps.Warehouses.Create(ctx, actor, warehouse.CreateInput{
-		Name: sc.Company.Code + " - 外协仓-" + deref(s04.ShortName, s04.Name),
+		Name:   sc.Company.Code + " - 外协仓-" + deref(s04.ShortName, s04.Name),
 		IsLeaf: ptr(true), IsOutsourced: ptr(true), PartyType: &partyType, PartyID: &s04.ID,
 		CompanyID: sc.Company.ID, ParentID: &sc.Warehouses.Root,
 	})

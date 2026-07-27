@@ -165,8 +165,13 @@ func (s *Server) transitionOrder(w http.ResponseWriter, r *http.Request, side or
 		item, err = s.orders.AuditOrder(r.Context(), actor, side, id)
 	case "close":
 		item, err = s.orders.CloseOrder(r.Context(), actor, side, id)
-	default:
+	case "void":
 		item, err = s.orders.VoidOrder(r.Context(), actor, side, id)
+	default:
+		// 未知 action 必须显式拒绝:静默落入作废分支会把拼写错误变成作废单据
+		s.writeError(w, r, apierror.Validation(orderLabel(side)+"操作不合法",
+			map[string][]string{"action": {"不支持的动作: " + action}}))
+		return
 	}
 	if err != nil {
 		s.writeError(w, r, err)

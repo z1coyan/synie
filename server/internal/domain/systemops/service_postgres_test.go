@@ -147,8 +147,8 @@ func TestPostgresSystemOperationsPolicyStateAndTransactions(t *testing.T) {
 		}
 	})
 
-	todoActorA := actorFor(userA, companyA, "acc.vat_invoice:create")
-	todoActorB := actorFor(userB, companyA, "acc.vat_invoice:create")
+	todoActorA := actorFor(userA, companyA, "acc.vat_invoice:create", "acc.vat_invoice:read")
+	todoActorB := actorFor(userB, companyA, "acc.vat_invoice:create", "acc.vat_invoice:read")
 	t.Run("list derived fields scope state and unread count", func(t *testing.T) {
 		_, insertErr := pool.Exec(ctx, `INSERT INTO bas_account(id,code,name,direction,company_id)
 			VALUES($1,$2,'借方','debit',$5),($3,$4,'贷方','credit',$5)`,
@@ -182,9 +182,13 @@ func TestPostgresSystemOperationsPolicyStateAndTransactions(t *testing.T) {
 			got.Type != "ISSUE_INVOICE" || got.Status != "ACTIVE" || got.PartyType != "CUSTOMER" {
 			t.Fatalf("derived todo = %#v", got)
 		}
-		wrongCompany := actorFor(userA, companyB, "acc.vat_invoice:create")
+		wrongCompany := actorFor(userA, companyB, "acc.vat_invoice:create", "acc.vat_invoice:read")
 		if hidden, hiddenErr := service.ListTodos(ctx, wrongCompany, TodoListQuery{Tab: "active"}); hiddenErr != nil || hidden.Count != 0 {
 			t.Fatalf("wrong-company list = %#v, %v", hidden, hiddenErr)
+		}
+		readOnly := actorFor(userA, companyA, "acc.vat_invoice:read")
+		if _, countErr := service.UnreadCount(ctx, readOnly); countErr != nil {
+			t.Fatalf("read-only unread count = %v", countErr)
 		}
 		if count, countErr := service.UnreadCount(ctx, todoActorA); countErr != nil || count != 1 {
 			t.Fatalf("unread = %d, %v", count, countErr)
@@ -307,9 +311,13 @@ func TestPostgresSystemOperationsPolicyStateAndTransactions(t *testing.T) {
 	})
 }
 
-func actorFor(userID, companyID uuid.UUID, permission string) *authz.Actor {
+func actorFor(userID, companyID uuid.UUID, permissions ...string) *authz.Actor {
+	grants := make(map[string]struct{}, len(permissions))
+	for _, permission := range permissions {
+		grants[permission] = struct{}{}
+	}
 	return &authz.Actor{
 		UserID: userID, CompanyIDs: []uuid.UUID{companyID},
-		Permissions: map[string]struct{}{permission: {}},
+		Permissions: grants,
 	}
 }

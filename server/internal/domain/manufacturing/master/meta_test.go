@@ -35,11 +35,11 @@ func TestResourceMetaMatchesCapturedGridContracts(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				path := filepath.Join("../../../../../.scratch/migration/snapshots/pr-2.17",
+				path := filepath.Join("testdata", "meta",
 					resource.Name+"."+actorName+".grid.json")
 				raw, err := os.ReadFile(path)
 				if err != nil {
-					t.Fatal(err)
+					t.Fatalf("meta 快照缺失或不可读（契约测试 fail-closed）: %v", err)
 				}
 				var expected any
 				if err := json.Unmarshal(raw, &expected); err != nil {
