@@ -39,6 +39,8 @@ func ResourceMeta() meta.ResourceMeta {
 			{Name: "is_group", APIName: "isGroup", DBColumn: "is_group", Type: meta.TypeBoolean, Label: "汇总科目", Filterable: true, Sortable: true},
 			{Name: "active", APIName: "active", DBColumn: "active", Type: meta.TypeBoolean, Label: "启用", Filterable: true, Sortable: true},
 			{Name: "role", APIName: "role", DBColumn: "role", Type: meta.TypeEnum, Label: "科目角色", EnumOptions: roleOptions, Filterable: true, Sortable: true},
+			// 旧打印目录的聚合字段（存在下级科目），仅打印可见
+			{Name: "has_children", APIName: "hasChildren", DBColumn: "has_children", Type: meta.TypeBoolean, Label: "含下级科目", Calculated: true, PrintOnly: true},
 			{Name: "inserted_at", APIName: "insertedAt", DBColumn: "inserted_at", Type: meta.TypeDatetime, Label: "创建时间", Readonly: true, Filterable: true, Sortable: true},
 			{Name: "updated_at", APIName: "updatedAt", DBColumn: "updated_at", Type: meta.TypeDatetime, Label: "更新时间", Readonly: true, Filterable: true, Sortable: true},
 			{Name: "parent_id", APIName: "parentId", DBColumn: "parent_id", Type: meta.TypeFK, Label: "上级科目", Filterable: true, Ref: &meta.GridColumnRef{Resource: &accountResource, Relation: &accountRelation, LabelField: &nameField}},
@@ -55,6 +57,7 @@ func ResourceMeta() meta.ResourceMeta {
 			"code":      {"required": true, "edit": "createOnly"},
 			"companyId": {"required": true, "edit": "createOnly"},
 		}},
-		Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "children", Resource: ResourceName}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }

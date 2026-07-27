@@ -56,7 +56,7 @@ func TestPostgresSalesOrderRender(t *testing.T) {
 	fx := seedSalesOrderRenderFixture(t, ctx, pool)
 
 	fileService := files.NewService(pool)
-	service := NewService(pool, fileService, NewFieldCatalog())
+	service := NewService(pool, fileService, newTestCatalog())
 	actor := &authz.Actor{
 		UserID: printingFx.userID, Username: "printing-render-test",
 		Permissions: map[string]struct{}{

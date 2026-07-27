@@ -137,7 +137,9 @@ func ExpenseReportResourceMeta() meta.ResourceMeta {
 			action("audit", "审核", "row", "auditAccExpenseReport", false),
 			action("void", "作废", "row", "voidAccExpenseReport", true),
 		},
-		Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "items", Resource: "accExpenseReportItems"}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 
@@ -190,7 +192,9 @@ func BillResourceMeta() meta.ResourceMeta {
 			action("update", "编辑", "row", "", false),
 			action("delete", "删除", "row", "", true),
 		},
-		Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "transactions", Resource: "accBillTransactions"}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 
@@ -284,6 +288,9 @@ func BillHoldingResourceMeta() meta.ResourceMeta {
 			scalarMeta("amount", "amount", meta.TypeDecimal, "持有金额"),
 			scalarMeta("due_date", "dueDate", meta.TypeDate, "到期日(冗余自票据主档)"),
 			scalarMeta("acquired_on", "acquiredOn", meta.TypeDate, "取得日期"),
+			// 旧打印目录的展示标签（Elixir 计算字段），仅打印可见
+			{Name: "label", APIName: "label", DBColumn: "label", Type: meta.TypeString,
+				Label: "展示标签", Calculated: true, PrintOnly: true},
 			scalarMeta("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间"),
 			refMeta("company_id", "companyId", "公司", "basCompanies", "company", "name"),
 			refMeta("bank_account_id", "bankAccountId", "持有银行账户",

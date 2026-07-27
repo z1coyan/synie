@@ -60,6 +60,8 @@ func IssueResourceMeta() meta.ResourceMeta {
 			{Key: "audit", Label: "审核", Scope: "row", Mutation: "auditPurOutsourcedIssue"},
 			{Key: "void", Label: "作废", Scope: "row", Mutation: "voidPurOutsourcedIssue", IsDanger: true},
 		},
+		PrintHead:       true,
+		PrintLoops:      []meta.PrintLoopMeta{{Name: "items", Resource: IssueItemResourceName}},
 		Audit:           meta.AuditMeta{Enabled: true},
 		DestroyMutation: &destroy,
 	}
@@ -92,11 +94,11 @@ func IssueItemResourceMeta() meta.ResourceMeta {
 			refField("unit_id", "unitId", "单位(以发料清单行为准)", "basUnits", "unit", "name"),
 			refField("from_warehouse_id", "fromWarehouseId", "调出仓(本公司启用叶子仓)", "invWarehouses", "fromWarehouse", "name"),
 			refField("outsourced_warehouse_id", "outsourcedWarehouseId", "外协仓(限绑定当前对手)", "invWarehouses", "outsourcedWarehouse", "name"),
-			field("issue_no", "issueNo", meta.TypeString, "发料单号"),
-			field("issue_date", "issueDate", meta.TypeDate, "发料日期"),
-			enumField("issue_status", "issueStatus", "发料单状态", documentStatusOptions),
-			enumField("party_type", "partyType", "对手类型(供应商/内部公司)", partyTypeOptions),
-			partyField(),
+			calculated(field("issue_no", "issueNo", meta.TypeString, "发料单号")),
+			calculated(field("issue_date", "issueDate", meta.TypeDate, "发料日期")),
+			calculated(enumField("issue_status", "issueStatus", "发料单状态", documentStatusOptions)),
+			calculated(enumField("party_type", "partyType", "对手类型(供应商/内部公司)", partyTypeOptions)),
+			partyRawIDField(),
 		},
 		Actions:         []meta.ActionMeta{{Key: "read", Label: "查看", Scope: "both"}},
 		Audit:           meta.AuditMeta{Enabled: true},
@@ -139,6 +141,8 @@ func ReceiptResourceMeta() meta.ResourceMeta {
 			{Key: "audit", Label: "审核", Scope: "row", Mutation: "auditPurOutsourcedReceipt"},
 			{Key: "void", Label: "作废", Scope: "row", Mutation: "voidPurOutsourcedReceipt", IsDanger: true},
 		},
+		PrintHead:       true,
+		PrintLoops:      []meta.PrintLoopMeta{{Name: "items", Resource: ReceiptItemResourceName}},
 		Audit:           meta.AuditMeta{Enabled: true},
 		DestroyMutation: &destroy,
 	}
@@ -181,14 +185,18 @@ func ReceiptItemResourceMeta() meta.ResourceMeta {
 			refField("material_id", "materialId", "物料(成品,须与订单条目一致)", "invMaterials", "material", "name"),
 			refField("unit_id", "unitId", "单位", "basUnits", "unit", "name"),
 			refField("warehouse_id", "warehouseId", "入库仓库", "invWarehouses", "warehouse", "name"),
-			field("receipt_no", "receiptNo", meta.TypeString, "入库单号"),
-			field("receipt_date", "receiptDate", meta.TypeDate, "入库日期"),
-			enumField("receipt_status", "receiptStatus", "入库单状态", documentStatusOptions),
-			enumField("party_type", "partyType", "对手类型(供应商/内部公司)", partyTypeOptions),
-			partyField(),
-			field("remaining_reconcilable_qty", "remainingReconcilableQty", meta.TypeDecimal, "剩余可对账量(默认单位)"),
+			calculated(field("receipt_no", "receiptNo", meta.TypeString, "入库单号")),
+			calculated(field("receipt_date", "receiptDate", meta.TypeDate, "入库日期")),
+			calculated(enumField("receipt_status", "receiptStatus", "入库单状态", documentStatusOptions)),
+			calculated(enumField("party_type", "partyType", "对手类型(供应商/内部公司)", partyTypeOptions)),
+			partyRawIDField(),
+			calculated(field("remaining_reconcilable_qty", "remainingReconcilableQty", meta.TypeDecimal, "剩余可对账量(默认单位)")),
 		},
-		Actions:         []meta.ActionMeta{{Key: "read", Label: "查看", Scope: "both"}},
+		Actions: []meta.ActionMeta{{Key: "read", Label: "查看", Scope: "both"}},
+		PrintLoops: []meta.PrintLoopMeta{
+			{Name: "material_rows", Resource: ReceiptMaterialResourceName},
+			{Name: "byproduct_rows", Resource: ReceiptByproductResourceName},
+		},
 		Audit:           meta.AuditMeta{Enabled: true},
 		DestroyMutation: &destroy,
 	}
@@ -301,4 +309,17 @@ func partyField() meta.FieldMeta {
 			},
 		},
 	}
+}
+
+// partyRawIDField 是子表口径的多态对手字段：打印目录只暴露原始 party_id 列。
+func partyRawIDField() meta.FieldMeta {
+	field := partyField()
+	field.Label, field.Readonly, field.PrintRawID = "对手", true, true
+	return field
+}
+
+// calculated 标记计算/投影字段：打印字段目录做一层关联展开时跳过。
+func calculated(field meta.FieldMeta) meta.FieldMeta {
+	field.Calculated = true
+	return field
 }

@@ -88,6 +88,10 @@ func HeadResourceMeta(side Side) meta.ResourceMeta {
 		)
 	}
 
+	itemResource := "purReceiptItems"
+	if sales {
+		itemResource = "salDeliveryItems"
+	}
 	return meta.ResourceMeta{
 		Name:             resource,
 		PermissionPrefix: spec.prefix,
@@ -96,6 +100,8 @@ func HeadResourceMeta(side Side) meta.ResourceMeta {
 		Fields:           fields,
 		Actions:          actions,
 		Print:            sales,
+		PrintHead:        true,
+		PrintLoops:       []meta.PrintLoopMeta{{Name: "items", Resource: itemResource}},
 		Audit:            meta.AuditMeta{Enabled: true},
 		DestroyMutation:  &destroyMutation,
 	}
@@ -168,23 +174,24 @@ func ItemResourceMeta(side Side) meta.ResourceMeta {
 		metaRefField("material_id", "materialId", "物料", "invMaterials", "material", "name"),
 		metaRefField("unit_id", "unitId", "单位", "basUnits", "unit", "name"),
 		metaRefField("warehouse_id", "warehouseId", warehouseLabel, "invWarehouses", "warehouse", "name"),
-		metaScalar(numberName, numberAPI, meta.TypeString, numberLabel),
-		metaScalar(dateName, dateAPI, meta.TypeDate, dateLabel),
-		metaEnum(statusName, statusAPI, statusLabel, fulfillmentStatusOptions),
-		metaEnum("party_type", "partyType", partyLabel, fulfillmentPartyOptions),
+		metaCalculated(metaScalar(numberName, numberAPI, meta.TypeString, numberLabel)),
+		metaCalculated(metaScalar(dateName, dateAPI, meta.TypeDate, dateLabel)),
+		metaCalculated(metaEnum(statusName, statusAPI, statusLabel, fulfillmentStatusOptions)),
+		metaCalculated(metaEnum("party_type", "partyType", partyLabel, fulfillmentPartyOptions)),
 	}
 	discriminator, discriminatorType := "partyType", "enum"
 	fields = append(fields,
 		meta.FieldMeta{
 			Name: "party_id", APIName: "partyId", DBColumn: "party_id", Type: meta.TypeFK,
 			Label: "对手", Readonly: true, Filterable: true,
+			PrintRawID: true,
 			Ref: &meta.GridColumnRef{
 				Discriminator:     &discriminator,
 				DiscriminatorType: &discriminatorType,
 				Variants:          partyVariants,
 			},
 		},
-		metaScalar("remaining_reconcilable_qty", "remainingReconcilableQty", meta.TypeDecimal, "剩余可对账量(默认单位)"),
+		metaCalculated(metaScalar("remaining_reconcilable_qty", "remainingReconcilableQty", meta.TypeDecimal, "剩余可对账量(默认单位)")),
 	)
 
 	return meta.ResourceMeta{
@@ -235,6 +242,12 @@ func metaScalar(name, apiName string, fieldType meta.FieldType, label string) me
 		Name: name, APIName: apiName, DBColumn: name, Type: fieldType,
 		Label: label, Sortable: true, Filterable: true,
 	}
+}
+
+// metaCalculated 标记计算/投影字段：打印字段目录做一层关联展开时跳过。
+func metaCalculated(field meta.FieldMeta) meta.FieldMeta {
+	field.Calculated = true
+	return field
 }
 
 func metaEnum(name, apiName, label string, options []meta.EnumOption) meta.FieldMeta {

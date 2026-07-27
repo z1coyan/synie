@@ -54,11 +54,13 @@ func RoleResourceMeta() meta.ResourceMeta {
 }
 
 func RolePermissionResourceMeta() meta.ResourceMeta {
+	roleResource, roleRelation, roleLabelField := RoleResourceName, "role", "name"
 	return meta.ResourceMeta{
 		Name: RolePermissionResourceName, PermissionPrefix: "sys.role_permission", PermissionLabel: "角色权限", Table: "sys_role_permission",
 		Fields: []meta.FieldMeta{
 			{Name: "id", APIName: "id", DBColumn: "id", Type: meta.TypeUUID, Label: "id", Readonly: true, Sortable: true},
-			{Name: "role_id", APIName: "roleId", DBColumn: "role_id", Type: meta.TypeUUID, Label: "角色", Required: true, Filterable: true, Sortable: true},
+			{Name: "role_id", APIName: "roleId", DBColumn: "role_id", Type: meta.TypeFK, Label: "角色", Required: true, Filterable: true, Sortable: true,
+				Ref: &meta.GridColumnRef{Resource: &roleResource, Relation: &roleRelation, LabelField: &roleLabelField}},
 			{Name: "permission", APIName: "permission", DBColumn: "permission", Type: meta.TypeString, Label: "权限码", Required: true, Filterable: true, Sortable: true},
 			{Name: "inserted_at", APIName: "insertedAt", DBColumn: "inserted_at", Type: meta.TypeDatetime, Label: "创建时间", Readonly: true, Sortable: true},
 		},

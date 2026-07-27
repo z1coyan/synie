@@ -18,8 +18,11 @@ func OperationResourceMeta() meta.ResourceMeta {
 }
 
 func TemplateResourceMeta() meta.ResourceMeta {
-	return headResourceMeta(TemplateResourceName, templatePermission, "工艺模板",
+	resource := headResourceMeta(TemplateResourceName, templatePermission, "工艺模板",
 		"mfg_process_template", "模板编号", "模板名称", "destroyMfgProcessTemplate")
+	resource.PrintHead = true
+	resource.PrintLoops = []meta.PrintLoopMeta{{Name: "items", Resource: TemplateItemResourceName}}
+	return resource
 }
 
 func TemplateItemResourceMeta() meta.ResourceMeta {
@@ -66,7 +69,14 @@ func BOMResourceMeta() meta.ResourceMeta {
 				"materialId": {"required": true},
 			},
 		},
-		Print: true, Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		Print:     true,
+		PrintHead: true,
+		PrintLoops: []meta.PrintLoopMeta{
+			{Name: "byproducts", Resource: ByproductResourceName},
+			{Name: "components", Resource: ComponentResourceName},
+			{Name: "routes", Resource: RouteResourceName},
+		},
+		Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 

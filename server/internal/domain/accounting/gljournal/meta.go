@@ -44,8 +44,8 @@ func ResourceMeta() meta.ResourceMeta {
 				Ref: &meta.GridColumnRef{Resource: &user, Relation: &createdRelation, LabelField: &name}},
 			{Name: "submitted_by_id", APIName: "submittedById", DBColumn: "submitted_by_id", Type: meta.TypeFK, Label: "提交人", Readonly: true, Filterable: true,
 				Ref: &meta.GridColumnRef{Resource: &user, Relation: &submittedRelation, LabelField: &name}},
-			{Name: "debit_total", APIName: "debitTotal", DBColumn: "debit_total", Type: meta.TypeDecimal, Label: "借方总金额", Readonly: true},
-			{Name: "credit_total", APIName: "creditTotal", DBColumn: "credit_total", Type: meta.TypeDecimal, Label: "贷方总金额", Readonly: true},
+			{Name: "debit_total", APIName: "debitTotal", DBColumn: "debit_total", Type: meta.TypeDecimal, Label: "借方总金额", Readonly: true, Calculated: true},
+			{Name: "credit_total", APIName: "creditTotal", DBColumn: "credit_total", Type: meta.TypeDecimal, Label: "贷方总金额", Readonly: true, Calculated: true},
 		},
 		Actions: []meta.ActionMeta{
 			{Key: "read", Label: "查看", Scope: "both"},
@@ -55,7 +55,9 @@ func ResourceMeta() meta.ResourceMeta {
 			{Key: "audit", Label: "审核", Scope: "row", Mutation: "auditAccGlJournal"},
 			{Key: "cancel", Label: "取消", Scope: "row", Mutation: "cancelAccGlJournal", IsDanger: true},
 		},
-		Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "lines", Resource: LineResourceName}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 

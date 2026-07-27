@@ -61,7 +61,10 @@ func ResourceMeta() meta.ResourceMeta {
 			{Key: "approve", Label: "审核", Scope: "row", Mutation: "approveInvStockCount"},
 			{Key: "cancel", Label: "作废", Scope: "row", Mutation: "cancelInvStockCount", IsDanger: true},
 		},
-		Print: true, Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		Print:      true,
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "items", Resource: ItemResourceName}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 

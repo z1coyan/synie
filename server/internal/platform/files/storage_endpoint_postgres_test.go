@@ -16,6 +16,8 @@ func TestPostgresStorageEndpointWriteOnlySecretAndDefaultSwitch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	pool := testutil.NewPool(t, ctx)
+	// 默认存储切换是全局单例改写,须与并行包的同类测试互斥
+	testutil.GlobalSingletonLock(t, ctx, pool)
 	service := NewStorageService(pool)
 	actor := &authz.Actor{UserID: uuid.New(), Username: "storage-test"}
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]

@@ -19,7 +19,7 @@ func ResourceMetas() []meta.ResourceMeta {
 }
 
 func SalesResourceMeta() meta.ResourceMeta {
-	return settingMeta(
+	resource := settingMeta(
 		SalesResourceName, "sales.setting", "供应链设置", "sal_setting",
 		[]meta.FieldMeta{
 			field("id", "id", meta.TypeUUID, "id", true, false),
@@ -33,6 +33,9 @@ func SalesResourceMeta() meta.ResourceMeta {
 		},
 		[]string{"id", "insertedAt", "updatedAt"},
 	)
+	// sales.setting 前缀下还有 salCompanyAccountDefaults，打印头资源须显式标记
+	resource.PrintHead = true
+	return resource
 }
 
 func ManufacturingResourceMeta() meta.ResourceMeta {

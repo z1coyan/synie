@@ -25,7 +25,7 @@ func TestPostgresTemplateCRUDDefaultAttachmentAuditAndPermissions(t *testing.T) 
 
 	fixture := createPrintingFixture(t, ctx, pool)
 	fileService := files.NewService(pool)
-	service := NewService(pool, fileService, NewFieldCatalog())
+	service := NewService(pool, fileService, newTestCatalog())
 	actor := &authz.Actor{
 		UserID: fixture.userID, Username: "printing-test",
 		Permissions: map[string]struct{}{
@@ -196,6 +196,8 @@ type printingFixture struct {
 
 func createPrintingFixture(t *testing.T, ctx context.Context, pool *pgxpool.Pool) *printingFixture {
 	t.Helper()
+	// 交换默认存储是全局单例改写,须与并行包的同类测试互斥
+	testutil.GlobalSingletonLock(t, ctx, pool)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	fixture := &printingFixture{}
 	if err := pool.QueryRow(ctx, `

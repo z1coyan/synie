@@ -161,7 +161,7 @@ func run() error {
 		SystemOps:              systemops.NewService(pool),
 		FileService:            fileService, StorageService: fileplatform.NewStorageService(pool),
 		IAM: iam.NewService(pool, hasher, registry), Numbering: numberingService,
-		Printing: printing.NewService(pool, fileService, printing.NewFieldCatalog()),
+		Printing: printing.NewService(pool, fileService, printing.NewFieldCatalog(registry)),
 		Settings: settings.NewService(pool),
 		Setup:    setupService, Logger: logger,
 	})

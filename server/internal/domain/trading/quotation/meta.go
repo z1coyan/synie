@@ -67,7 +67,9 @@ func QuotationResourceMeta(side Side) meta.ResourceMeta {
 			{Key: "audit", Label: "审核", Scope: "row", Mutation: spec.auditMutation},
 			{Key: "void", Label: "作废", Scope: "row", Mutation: spec.voidMutation, IsDanger: true},
 		},
-		Print: true, Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		Print: true, PrintHead: true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "items", Resource: spec.itemResource}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 
@@ -109,17 +111,19 @@ func ItemResourceMeta(side Side) meta.ResourceMeta {
 				Ref: &meta.GridColumnRef{Resource: &material, Relation: &materialRel, LabelField: &name}},
 			{Name: "unit_id", APIName: "unitId", DBColumn: "unit_id", Type: meta.TypeFK, Label: "单位", Required: true, Filterable: true,
 				Ref: &meta.GridColumnRef{Resource: &unit, Relation: &unitRel, LabelField: &name}},
-			{Name: "tier_count", APIName: "tierCount", DBColumn: "tier_count", Type: meta.TypeInteger, Label: "价格档数", Readonly: true},
-			{Name: "quotation_date", APIName: "quotationDate", DBColumn: "quotation_date", Type: meta.TypeDate, Label: "报价日期", Readonly: true, Filterable: true, Sortable: true},
-			{Name: "valid_until", APIName: "validUntil", DBColumn: "valid_until", Type: meta.TypeDate, Label: "报价截止(含当日)", Readonly: true, Filterable: true, Sortable: true},
-			{Name: "quotation_status", APIName: "quotationStatus", DBColumn: "quotation_status", Type: meta.TypeEnum, Label: "状态", Readonly: true, EnumOptions: statusOptions, Filterable: true, Sortable: true},
-			{Name: "party_type", APIName: "partyType", DBColumn: "party_type", Type: meta.TypeEnum, Label: spec.partyLabel, Readonly: true, EnumOptions: partyOptions, Filterable: true, Sortable: true},
+			{Name: "tier_count", APIName: "tierCount", DBColumn: "tier_count", Type: meta.TypeInteger, Label: "价格档数", Readonly: true, Calculated: true},
+			{Name: "quotation_date", APIName: "quotationDate", DBColumn: "quotation_date", Type: meta.TypeDate, Label: "报价日期", Readonly: true, Filterable: true, Sortable: true, Calculated: true},
+			{Name: "valid_until", APIName: "validUntil", DBColumn: "valid_until", Type: meta.TypeDate, Label: "报价截止(含当日)", Readonly: true, Filterable: true, Sortable: true, Calculated: true},
+			{Name: "quotation_status", APIName: "quotationStatus", DBColumn: "quotation_status", Type: meta.TypeEnum, Label: "状态", Readonly: true, EnumOptions: statusOptions, Filterable: true, Sortable: true, Calculated: true},
+			{Name: "party_type", APIName: "partyType", DBColumn: "party_type", Type: meta.TypeEnum, Label: spec.partyLabel, Readonly: true, EnumOptions: partyOptions, Filterable: true, Sortable: true, Calculated: true},
 			{Name: "party_id", APIName: "partyId", DBColumn: "party_id", Type: meta.TypeFK, Label: "对手", Readonly: true, Filterable: true,
-				Ref: &meta.GridColumnRef{Discriminator: &discriminator, DiscriminatorType: &discriminatorType, Variants: variants}},
-			{Name: "currency_code", APIName: "currencyCode", DBColumn: "currency_code", Type: meta.TypeString, Label: "币种", Readonly: true, Filterable: true, Sortable: true},
+				PrintRawID: true,
+				Ref:        &meta.GridColumnRef{Discriminator: &discriminator, DiscriminatorType: &discriminatorType, Variants: variants}},
+			{Name: "currency_code", APIName: "currencyCode", DBColumn: "currency_code", Type: meta.TypeString, Label: "币种", Readonly: true, Filterable: true, Sortable: true, Calculated: true},
 		},
-		Actions: []meta.ActionMeta{{Key: "read", Label: "查看", Scope: "both"}},
-		Audit:   meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		Actions:    []meta.ActionMeta{{Key: "read", Label: "查看", Scope: "both"}},
+		PrintLoops: []meta.PrintLoopMeta{{Name: "tiers", Resource: spec.tierResource}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 

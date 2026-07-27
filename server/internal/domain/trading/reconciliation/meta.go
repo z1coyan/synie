@@ -77,14 +77,20 @@ func HeadResourceMeta(side Side) meta.ResourceMeta {
 		metaRef("credit_account_id", "creditAccountId", creditLabel,
 			"basAccounts", "creditAccount", "name"),
 		metaRef("created_by_id", "createdById", "录入人", "sysUsers", "createdBy", "name"),
-		metaReadonly("gross_total", "grossTotal", meta.TypeDecimal,
-			"原币含税合计(行原币金额合计;单内同币种)", false, false),
-		metaReadonly("base_gross_total", "baseGrossTotal", meta.TypeDecimal,
-			"本币含税合计(行本币金额合计;发票价税合计须与之相等)", false, false),
+		metaCalculated(metaReadonly("gross_total", "grossTotal", meta.TypeDecimal,
+			"原币含税合计(行原币金额合计;单内同币种)", false, false)),
+		metaCalculated(metaReadonly("base_gross_total", "baseGrossTotal", meta.TypeDecimal,
+			"本币含税合计(行本币金额合计;发票价税合计须与之相等)", false, false)),
+	}
+	itemResource := "purReconciliationItems"
+	if sales {
+		itemResource = "salReconciliationItems"
 	}
 	return meta.ResourceMeta{
 		Name: resource, PermissionPrefix: spec.prefix, PermissionLabel: spec.label,
 		Table: spec.table, Fields: fields,
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "items", Resource: itemResource}},
 		Actions: []meta.ActionMeta{
 			{Key: "read", Label: "查看", Scope: "both"},
 			{Key: "create", Label: "新增", Scope: "both"},
@@ -203,6 +209,12 @@ func metaReadonly(
 func metaEnum(name, api, label string, values []meta.EnumOption) meta.FieldMeta {
 	field := metaScalar(name, api, meta.TypeEnum, label)
 	field.EnumOptions = values
+	return field
+}
+
+// metaCalculated 标记计算/投影字段：打印字段目录做一层关联展开时跳过。
+func metaCalculated(field meta.FieldMeta) meta.FieldMeta {
+	field.Calculated = true
 	return field
 }
 

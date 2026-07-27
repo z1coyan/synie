@@ -63,8 +63,8 @@ func OrderResourceMeta(side Side) meta.ResourceMeta {
 			Ref: &meta.GridColumnRef{Resource: &user, Relation: &createdRel, LabelField: &name}},
 		meta.FieldMeta{Name: "audited_by_id", APIName: "auditedById", DBColumn: "audited_by_id", Type: meta.TypeFK, Label: "审核人", Readonly: true, Filterable: true,
 			Ref: &meta.GridColumnRef{Resource: &user, Relation: &auditedRel, LabelField: &name}},
-		meta.Field("gross_total", "grossTotal", meta.TypeDecimal, "原币含税总额(行原币含税金额合计)", false, false, false),
-		meta.Field("base_gross_total", "baseGrossTotal", meta.TypeDecimal, "本币含税总额(行本币含税金额合计)", false, false, false),
+		calculated(meta.Field("gross_total", "grossTotal", meta.TypeDecimal, "原币含税总额(行原币含税金额合计)", false, false, false)),
+		calculated(meta.Field("base_gross_total", "baseGrossTotal", meta.TypeDecimal, "本币含税总额(行本币含税金额合计)", false, false, false)),
 	)
 	actions := []meta.ActionMeta{
 		{Key: "read", Label: "查看", Scope: "both"}, {Key: "create", Label: "新增", Scope: "both"},
@@ -84,7 +84,9 @@ func OrderResourceMeta(side Side) meta.ResourceMeta {
 	return meta.ResourceMeta{
 		Name: spec.headResource, PermissionPrefix: spec.prefix, PermissionLabel: spec.label,
 		Table: spec.headTable, Fields: fields, Actions: actions,
-		Print: side == SideSales, Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		Print: side == SideSales, PrintHead: true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "items", Resource: spec.itemResource}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 
@@ -152,18 +154,19 @@ func ItemResourceMeta(side Side) meta.ResourceMeta {
 	}
 	discriminator, discriminatorType := "partyType", "enum"
 	fields = append(fields,
-		meta.EnumField("order_date", "orderDate", meta.TypeDate, "订单日期", nil, false),
-		meta.EnumField("order_status", "orderStatus", meta.TypeEnum, "状态", orderStatusOptions, false),
+		calculated(meta.EnumField("order_date", "orderDate", meta.TypeDate, "订单日期", nil, false)),
+		calculated(meta.EnumField("order_status", "orderStatus", meta.TypeEnum, "状态", orderStatusOptions, false)),
 	)
 	if side == SidePurchase {
-		fields = append(fields, meta.EnumField("order_is_outsourced", "orderIsOutsourced", meta.TypeBoolean, "委外订单", nil, false))
+		fields = append(fields, calculated(meta.EnumField("order_is_outsourced", "orderIsOutsourced", meta.TypeBoolean, "委外订单", nil, false)))
 	}
 	fields = append(fields,
-		meta.EnumField("party_type", "partyType", meta.TypeEnum, partyLabel, orderPartyOptions, false),
+		calculated(meta.EnumField("party_type", "partyType", meta.TypeEnum, partyLabel, orderPartyOptions, false)),
 		meta.FieldMeta{Name: "party_id", APIName: "partyId", DBColumn: "party_id", Type: meta.TypeFK, Label: "对手", Readonly: true, Filterable: true,
-			Ref: &meta.GridColumnRef{Discriminator: &discriminator, DiscriminatorType: &discriminatorType, Variants: variants}},
-		meta.EnumField("currency_code", "currencyCode", meta.TypeString, "币种", nil, false),
-		meta.EnumField("remaining_base_qty", "remainingBaseQty", meta.TypeDecimal, remainingLabel, nil, false),
+			PrintRawID: true,
+			Ref:        &meta.GridColumnRef{Discriminator: &discriminator, DiscriminatorType: &discriminatorType, Variants: variants}},
+		calculated(meta.EnumField("currency_code", "currencyCode", meta.TypeString, "币种", nil, false)),
+		calculated(meta.EnumField("remaining_base_qty", "remainingBaseQty", meta.TypeDecimal, remainingLabel, nil, false)),
 	)
 	destroy := spec.itemDestroy
 	return meta.ResourceMeta{Name: spec.itemResource, PermissionPrefix: spec.prefix, PermissionLabel: spec.label,
@@ -193,12 +196,12 @@ func MaterialResourceMeta() meta.ResourceMeta {
 		meta.RefField("company_id", "companyId", "公司", meta.Ref("basCompanies", "company", "name"), false),
 		meta.RefField("material_id", "materialId", "材料", meta.Ref("invMaterials", "material", "name"), false),
 		meta.RefField("unit_id", "unitId", "单位", meta.Ref("basUnits", "unit", "name"), false),
-		meta.EnumField("order_no", "orderNo", meta.TypeString, "订单号", nil, false),
-		meta.EnumField("order_status", "orderStatus", meta.TypeEnum, "订单状态", orderStatusOptions, false),
-		meta.EnumField("order_is_outsourced", "orderIsOutsourced", meta.TypeBoolean, "委外订单", nil, false),
-		meta.EnumField("party_type", "partyType", meta.TypeEnum, "对手类型(供应商/内部公司)", orderPartyOptions, false),
+		calculated(meta.EnumField("order_no", "orderNo", meta.TypeString, "订单号", nil, false)),
+		calculated(meta.EnumField("order_status", "orderStatus", meta.TypeEnum, "订单状态", orderStatusOptions, false)),
+		calculated(meta.EnumField("order_is_outsourced", "orderIsOutsourced", meta.TypeBoolean, "委外订单", nil, false)),
+		calculated(meta.EnumField("party_type", "partyType", meta.TypeEnum, "对手类型(供应商/内部公司)", orderPartyOptions, false)),
 		{Name: "party_id", APIName: "partyId", DBColumn: "party_id", Type: meta.TypeFK, Label: "对手", Readonly: true, Filterable: true, Ref: partyRef},
-		meta.EnumField("remaining_issue_qty", "remainingIssueQty", meta.TypeDecimal, "剩余可发料量(材料默认单位)", nil, false),
+		calculated(meta.EnumField("remaining_issue_qty", "remainingIssueQty", meta.TypeDecimal, "剩余可发料量(材料默认单位)", nil, false)),
 	}
 	return meta.ResourceMeta{Name: "purOrderItemMaterials", PermissionPrefix: "purchase.order",
 		PermissionLabel: "采购订单", Table: "pur_order_item_material", Fields: fields,
@@ -223,6 +226,12 @@ func ByproductResourceMeta() meta.ResourceMeta {
 		PermissionLabel: "采购订单", Table: "pur_order_item_byproduct", Fields: fields,
 		Actions: []meta.ActionMeta{{Key: "read", Label: "查看", Scope: "both"}},
 		Audit:   meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy}
+}
+
+// calculated 标记计算/投影字段：打印字段目录做一层关联展开时跳过。
+func calculated(field meta.FieldMeta) meta.FieldMeta {
+	field.Calculated = true
+	return field
 }
 
 func apiName(name string) string {

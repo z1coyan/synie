@@ -134,6 +134,8 @@ type filesFixture struct {
 
 func createFilesFixture(t *testing.T, ctx context.Context, pool *pgxpool.Pool) *filesFixture {
 	t.Helper()
+	// 交换默认存储是全局单例改写,须与并行包的同类测试互斥
+	testutil.GlobalSingletonLock(t, ctx, pool)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	f := &filesFixture{pool: pool, storageName: "t" + suffix, root: t.TempDir()}
 	if err := pool.QueryRow(ctx, `

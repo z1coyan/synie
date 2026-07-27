@@ -42,6 +42,7 @@ func (r *Registry) MustRegister(resource ResourceMeta) {
 	resource.Fields = slices.Clone(resource.Fields)
 	resource.Actions = slices.Clone(resource.Actions)
 	resource.ReadPermissionsAny = slices.Clone(resource.ReadPermissionsAny)
+	resource.PrintLoops = slices.Clone(resource.PrintLoops)
 	r.resources[resource.Name] = resource
 	r.permissionLabels[resource.PermissionPrefix] = resource.PermissionLabel
 }
@@ -76,7 +77,7 @@ func (r *Registry) BuildDocument(name string, actor *authz.Actor) (ResourceMetaD
 
 	columns := make([]GridColumnDTO, 0, len(resource.Fields))
 	for _, field := range resource.Fields {
-		if field.Sensitive {
+		if field.Sensitive || field.PrintOnly {
 			continue
 		}
 		columnType := string(field.Type)

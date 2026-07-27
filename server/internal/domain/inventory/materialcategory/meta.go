@@ -18,6 +18,8 @@ func ResourceMeta() meta.ResourceMeta {
 			{Name: "name", APIName: "name", DBColumn: "name", Type: meta.TypeString, Label: "分类名称", Required: true, Filterable: true, Sortable: true},
 			{Name: "is_leaf", APIName: "isLeaf", DBColumn: "is_leaf", Type: meta.TypeBoolean, Label: "叶子分类", Filterable: true, Sortable: true},
 			{Name: "active", APIName: "active", DBColumn: "active", Type: meta.TypeBoolean, Label: "启用", Filterable: true, Sortable: true},
+			// 旧打印目录的聚合字段（存在下级分类），仅打印可见
+			{Name: "has_children", APIName: "hasChildren", DBColumn: "has_children", Type: meta.TypeBoolean, Label: "含下级分类", Calculated: true, PrintOnly: true},
 			{Name: "inserted_at", APIName: "insertedAt", DBColumn: "inserted_at", Type: meta.TypeDatetime, Label: "创建时间", Readonly: true, Filterable: true, Sortable: true},
 			{Name: "updated_at", APIName: "updatedAt", DBColumn: "updated_at", Type: meta.TypeDatetime, Label: "更新时间", Readonly: true, Filterable: true, Sortable: true},
 			{Name: "parent_id", APIName: "parentId", DBColumn: "parent_id", Type: meta.TypeFK, Label: "上级分类", Filterable: true,
@@ -38,6 +40,8 @@ func ResourceMeta() meta.ResourceMeta {
 				"parentId": {"label": "上级分类"},
 			},
 		},
-		Print: true, Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		Print:      true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "children", Resource: ResourceName}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }

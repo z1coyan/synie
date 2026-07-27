@@ -42,6 +42,8 @@ func ResourceMeta() meta.ResourceMeta {
 					},
 				}},
 			{Name: "allow_negative", APIName: "allowNegative", DBColumn: "allow_negative", Type: meta.TypeBoolean, Label: "允许负库存(库存分录审核/作废的负库存校验逐仓跳过)", Filterable: true, Sortable: true},
+			// 旧打印目录的聚合字段（存在下级仓库），仅打印可见
+			{Name: "has_children", APIName: "hasChildren", DBColumn: "has_children", Type: meta.TypeBoolean, Label: "含下级仓库", Calculated: true, PrintOnly: true},
 			{Name: "inserted_at", APIName: "insertedAt", DBColumn: "inserted_at", Type: meta.TypeDatetime, Label: "创建时间", Readonly: true, Filterable: true, Sortable: true},
 			{Name: "updated_at", APIName: "updatedAt", DBColumn: "updated_at", Type: meta.TypeDatetime, Label: "更新时间", Readonly: true, Filterable: true, Sortable: true},
 			{Name: "company_id", APIName: "companyId", DBColumn: "company_id", Type: meta.TypeFK, Label: "公司", Required: true, CreateOnly: true, Filterable: true,
@@ -67,6 +69,8 @@ func ResourceMeta() meta.ResourceMeta {
 				"companyId":     {"required": true, "edit": "createOnly"},
 			},
 		},
-		Print: true, Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		Print:      true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "children", Resource: ResourceName}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }

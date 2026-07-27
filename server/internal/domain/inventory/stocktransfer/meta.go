@@ -67,7 +67,10 @@ func ResourceMeta() meta.ResourceMeta {
 				"transitWarehouseId": {"required": true},
 			},
 		},
-		Print: true, Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		Print:      true,
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "items", Resource: ItemResourceName}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 

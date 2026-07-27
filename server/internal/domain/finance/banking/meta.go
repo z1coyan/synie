@@ -83,7 +83,9 @@ func BankTransactionResourceMeta() meta.ResourceMeta {
 			// 旧 GridMeta 把 reconcile 作为 capability 而不是 extended action。
 			{Key: "export", PermissionAction: "reconcile", Label: "对账", Scope: "both"},
 		},
-		Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "reconciliations", Resource: BankReconciliationResource}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 

@@ -1,7 +1,7 @@
 package printing
 
-// sales.order 打印装配：一条头查询 + 一条条目查询，键名与捕获字段目录
-// （field_catalog.json）对齐；记录级数据权限按 actor 公司范围 fail-closed
+// sales.order 打印装配：一条头查询 + 一条条目查询，键名与打印字段目录
+// （meta.Registry 派生）对齐；记录级数据权限按 actor 公司范围 fail-closed
 // （对齐 Elixir Ash.get(actor) + CompanyScope 语义：读不到即整批报错）。
 
 import (

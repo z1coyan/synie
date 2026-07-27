@@ -20,6 +20,8 @@ func TestPostgresSetupFirstUserConcurrencyCurrenciesAndComplete(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool := testutil.NewPool(t, ctx)
+	// 本测试做全表清点与默认存储种子(全局单例改写),须与并行包的同类测试互斥
+	testutil.GlobalSingletonLock(t, ctx, pool)
 
 	var originalCompleted *time.Time
 	if err := pool.QueryRow(ctx, `SELECT setup_completed_at FROM sys_setting ORDER BY id LIMIT 1`).Scan(&originalCompleted); err != nil {

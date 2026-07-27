@@ -28,8 +28,20 @@ type ResourceMeta struct {
 	Actions            []ActionMeta
 	Form               *FormMetaDTO
 	Print              bool
-	Audit              AuditMeta
-	DestroyMutation    *string
+	// PrintHead 标记该资源是其权限前缀的打印字段目录头资源。前缀下只有一个
+	// 候选资源（非 ReadPermissionsAny 投影视图）时可省略，由派生自动认定。
+	PrintHead bool
+	// PrintLoops 声明打印循环区（子表）。循环目标的嵌套循环由目标资源自身的
+	// PrintLoops 派生，不重复描述。
+	PrintLoops      []PrintLoopMeta
+	Audit           AuditMeta
+	DestroyMutation *string
+}
+
+// PrintLoopMeta 是一个打印循环区声明：占位符 {Name.field} 逐行展开目标资源。
+type PrintLoopMeta struct {
+	Name     string // 占位符循环区名（如 "items"）
+	Resource string // 循环目标 Meta 资源名（如 "salOrderItems"）
 }
 
 type AuditMeta struct {
@@ -52,6 +64,15 @@ type FieldMeta struct {
 	Filterable   bool
 	Sortable     bool
 	DecimalScale *int
+	// Calculated 标记计算/投影字段（非物理列）：打印字段目录做一层关联展开时
+	// 跳过目标的此类字段，资源自身字段面仍包含。
+	Calculated bool
+	// PrintOnly 标记仅打印字段目录可见的字段（如 has_children）：不进入
+	// Grid 文档，也不参与筛选/排序。
+	PrintOnly bool
+	// PrintRawID 标记多态外键在打印目录中只暴露原始 ID 列（如子表的
+	// party_id），不做 "party.name" 式标签展开。
+	PrintRawID bool
 }
 
 type ActionMeta struct {

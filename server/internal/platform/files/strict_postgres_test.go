@@ -168,8 +168,19 @@ func TestPostgresAttachmentCompanyScopeIsFailClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if list.Count != 1 || len(list.Results) != 1 || list.Results[0].FileID != fileA.File.ID {
-		t.Fatalf("company A attachment list = %#v", list)
+	// 不断言精确条数:并行包可能插入全局可见(company NULL)的附件(如打印模板)。
+	// fail-closed 的本质是:自己的附件可见,他公司(companyB)的附件绝不出现。
+	var sawA bool
+	for _, item := range list.Results {
+		if item.FileID == fileA.File.ID {
+			sawA = true
+		}
+		if item.FileID == fileB.File.ID || (item.CompanyID != nil && *item.CompanyID == companyB) {
+			t.Fatalf("company B attachment leaked into company A list: %#v", list)
+		}
+	}
+	if !sawA {
+		t.Fatalf("company A attachment missing from list: %#v", list)
 	}
 	if _, err := service.Download(ctx, companyAActor, fileA.File.ID); err != nil {
 		t.Fatalf("company A download: %v", err)

@@ -62,7 +62,9 @@ func DemandResourceMeta() meta.ResourceMeta {
 			{Key: "void", Label: "作废", Scope: "row",
 				Mutation: "voidMfgDemand", IsDanger: true},
 		},
-		Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "items", Resource: "mfgDemandItems"}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 
@@ -101,12 +103,13 @@ func DemandItemResourceMeta() meta.ResourceMeta {
 				"basUnits", "unit", "name"),
 			metaRef("sales_order_item_id", "salesOrderItemId", "来源销售订单条目(可空)",
 				"salOrderItems", "salesOrderItem", "materialCode"),
-			metaScalar("ordered", "ordered", meta.TypeBoolean,
-				"已下单(有已审核订单条目且未完成)"),
-			metaScalar("remaining_orderable_qty", "remainingOrderableQty", meta.TypeDecimal,
-				"剩余可下单数量(物料默认单位)"),
+			metaCalculated(metaScalar("ordered", "ordered", meta.TypeBoolean,
+				"已下单(有已审核订单条目且未完成)")),
+			metaCalculated(metaScalar("remaining_orderable_qty", "remainingOrderableQty", meta.TypeDecimal,
+				"剩余可下单数量(物料默认单位)")),
 		},
 		Actions:         []meta.ActionMeta{{Key: "read", Label: "查看", Scope: "both"}},
+		PrintLoops:      []meta.PrintLoopMeta{{Name: "work_orders", Resource: "mfgWorkOrders"}},
 		Audit:           meta.AuditMeta{Enabled: true},
 		DestroyMutation: &destroy,
 	}
@@ -144,8 +147,8 @@ func WorkOrderResourceMeta() meta.ResourceMeta {
 				"basUnits", "unit", "name"),
 			metaRef("created_by_id", "createdById", "生成人",
 				"sysUsers", "createdBy", "name"),
-			metaScalar("remaining_base_qty", "remainingBaseQty", meta.TypeDecimal,
-				"未完成数量(默认单位)"),
+			metaCalculated(metaScalar("remaining_base_qty", "remainingBaseQty", meta.TypeDecimal,
+				"未完成数量(默认单位)")),
 		},
 		Actions: []meta.ActionMeta{
 			{Key: "read", Label: "查看", Scope: "both"},
@@ -192,7 +195,9 @@ func OutputResourceMeta() meta.ResourceMeta {
 			{Key: "void", Label: "作废", Scope: "row",
 				Mutation: "voidMfgOutput", IsDanger: true},
 		},
-		Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "items", Resource: "mfgOutputItems"}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 
@@ -244,6 +249,12 @@ func metaScalar(name, api string, kind meta.FieldType, label string) meta.FieldM
 		Name: name, APIName: api, DBColumn: name, Type: kind, Label: label,
 		Filterable: true, Sortable: true,
 	}
+}
+
+// metaCalculated 标记计算/投影字段：打印字段目录做一层关联展开时跳过。
+func metaCalculated(field meta.FieldMeta) meta.FieldMeta {
+	field.Calculated = true
+	return field
 }
 
 func metaEnum(name, api, label string, options []meta.EnumOption) meta.FieldMeta {

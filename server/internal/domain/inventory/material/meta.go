@@ -51,6 +51,9 @@ func ResourceMeta() meta.ResourceMeta {
 				"isCustomerMaterial": {"defaultValue": false},
 			},
 		},
-		Print: true, Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		Print:      true,
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "units", Resource: "invMaterialUnits"}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }

@@ -26,6 +26,9 @@
 //     不得用 'quantity' 之类的字面量，否则与并行包撞唯一索引。
 //   - 不借用共享种子行/他包临时行（如 SELECT ... LIMIT 1 取 bas_currency），
 //     并行包的清理可能在你引用后把它删掉，造成外键竞争；自带数据一律自建。
+//   - 改写全库共享单例状态的测试（如交换 sys_storage 默认行、setup 全表
+//     清点）无法用 uuid 后缀隔离，必须在 fixture 顶部持
+//     GlobalSingletonLock（跨包互斥）全程运行。
 //   - 若要彻底隔离（每包独立 schema/库），需另行演进，本包暂不提供。
 package testutil
 
@@ -33,6 +36,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -61,4 +65,33 @@ func NewPool(t *testing.T, ctx context.Context) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 	return pool
+}
+
+// globalSingletonLockKey 是会话级咨询锁的键，取值随意但全库约定唯一。
+const globalSingletonLockKey int64 = 0x73796e6965 // "synie"
+
+// GlobalSingletonLock 固定一条连接并持有 PostgreSQL 会话级咨询锁直到测试
+// 清理，使「改写全库共享单例行」（如 sys_storage 默认行的交换、setup 的
+// 全表清点）的跨包测试互斥——这类测试无法靠 uuid 后缀隔离，并行跑会撞
+// 唯一索引或互相掀掉默认行。
+//
+// 仅真正触碰全局共享状态的测试使用（持锁全程串行，滥用会拖慢套件）；
+// 在 fixture 顶部调用，之后注册的 t.Cleanup 会先于解锁执行（LIFO），
+// 保证行恢复仍在持锁状态下完成。
+func GlobalSingletonLock(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire lock connection: %v", err)
+	}
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", globalSingletonLockKey); err != nil {
+		conn.Release()
+		t.Fatalf("acquire global singleton lock: %v", err)
+	}
+	t.Cleanup(func() {
+		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_, _ = conn.Exec(unlockCtx, "SELECT pg_advisory_unlock($1)", globalSingletonLockKey)
+		conn.Release()
+	})
 }

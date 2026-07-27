@@ -66,7 +66,7 @@ func AttendanceImportResourceMeta() meta.ResourceMeta {
 			meta.RefField("file_id", "fileId", "导入文件", meta.Ref("sysFiles", "file", "filename"), true),
 			meta.RefField("created_by_id", "createdById", "发起人", meta.Ref("sysUsers", "createdBy", "name"), true),
 			meta.RefField("imported_by_id", "importedById", "导入人", meta.Ref("sysUsers", "importedBy", "name"), true),
-			meta.ScalarField("punch_count", "punchCount", meta.TypeInteger, "打卡数", false, false),
+			metaCalculated(meta.ScalarField("punch_count", "punchCount", meta.TypeInteger, "打卡数", false, false)),
 		},
 		Actions: []meta.ActionMeta{{Key: "import", Label: "导入", Scope: "both"}},
 		Audit:   meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
@@ -149,9 +149,12 @@ func PayrollResourceMeta() meta.ResourceMeta {
 			meta.ScalarField("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间", true, true),
 			meta.ScalarField("updated_at", "updatedAt", meta.TypeDatetime, "更新时间", true, true),
 			meta.RefField("employee_id", "employeeId", "员工", meta.Ref("hrEmployees", "employee", "name"), true),
-			meta.ScalarField("paid_total", "paidTotal", meta.TypeDecimal, "实发合计", false, false),
+			metaCalculated(meta.ScalarField("paid_total", "paidTotal", meta.TypeDecimal, "实发合计", false, false)),
 		},
-		Actions: meta.CRUDActions(), Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
+		Actions:    meta.CRUDActions(),
+		PrintHead:  true,
+		PrintLoops: []meta.PrintLoopMeta{{Name: "payments", Resource: "hrPayrollPayments"}},
+		Audit:      meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
 }
 
@@ -207,4 +210,10 @@ func EmployeeLoanResourceMeta() meta.ResourceMeta {
 		},
 		Actions: meta.CRUDActions(), Audit: meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy,
 	}
+}
+
+// metaCalculated 标记计算/投影字段：打印字段目录做一层关联展开时跳过。
+func metaCalculated(field meta.FieldMeta) meta.FieldMeta {
+	field.Calculated = true
+	return field
 }

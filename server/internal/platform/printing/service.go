@@ -33,7 +33,7 @@ type Service struct {
 
 func NewService(pool *pgxpool.Pool, fileReader StoredFileReader, catalog *FieldCatalog) *Service {
 	if catalog == nil {
-		catalog = NewFieldCatalog()
+		panic("打印服务需要字段目录（由 meta.Registry 派生）")
 	}
 	service := &Service{pool: pool, files: fileReader, catalog: catalog}
 	if pool != nil {

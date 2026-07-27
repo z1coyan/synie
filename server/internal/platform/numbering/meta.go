@@ -12,7 +12,7 @@ func RuleResourceMeta() meta.ResourceMeta {
 	return meta.ResourceMeta{
 		Name: RuleResourceName, PermissionPrefix: "sys.numbering_rule",
 		PermissionLabel: "编号规则", Table: "sys_numbering_rule",
-		Print: true, Audit: meta.AuditMeta{Enabled: true},
+		Print: true, PrintHead: true, Audit: meta.AuditMeta{Enabled: true},
 		Fields: []meta.FieldMeta{
 			{Name: "id", APIName: "id", DBColumn: "id", Type: meta.TypeUUID, Label: "id", Readonly: true, Sortable: true},
 			{Name: "resource", APIName: "resource", DBColumn: "resource", Type: meta.TypeString, Label: "绑定资源", Required: true, CreateOnly: true, Filterable: true, Sortable: true},
