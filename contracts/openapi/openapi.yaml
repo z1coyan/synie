@@ -1637,6 +1637,53 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /sales/delivery-pack-lines/query:
+    post:
+      operationId: querySalesDeliveryPackLines
+      tags: [sales]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ListQuery" } } } }
+      responses:
+        "200": { description: 销售发货装箱行分页结果, content: { application/json: { schema: { $ref: "#/components/schemas/SalesDeliveryPackLineList" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /sales/delivery-pack-lines:
+    post:
+      operationId: createSalesDeliveryPackLine
+      tags: [sales]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SalesDeliveryPackLineCreate" } } } }
+      responses:
+        "201": { description: 已创建, content: { application/json: { schema: { $ref: "#/components/schemas/SalesDeliveryPackLine" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /sales/delivery-pack-lines/{id}:
+    parameters: [{ $ref: "#/components/parameters/ID" }]
+    get:
+      operationId: getSalesDeliveryPackLine
+      tags: [sales]
+      responses:
+        "200": { description: 销售发货装箱行, content: { application/json: { schema: { $ref: "#/components/schemas/SalesDeliveryPackLine" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateSalesDeliveryPackLine
+      tags: [sales]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/SalesDeliveryPackLineUpdate" } } } }
+      responses:
+        "200": { description: 已更新, content: { application/json: { schema: { $ref: "#/components/schemas/SalesDeliveryPackLine" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteSalesDeliveryPackLine
+      tags: [sales]
+      responses:
+        "204": { description: 已删除 }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /purchase/receipts/query:
     post:
       operationId: queryPurchaseReceipts
@@ -8114,6 +8161,58 @@ components:
       properties:
         count: { type: integer, format: int64 }
         results: { type: array, items: { $ref: "#/components/schemas/SalesDeliveryItem" } }
+    SalesDeliveryPackLine:
+      type: object
+      required:
+        [id, idx, boxNo, qty, baseQty, materialCode, materialName, materialSpec,
+         customerPartNo, unitName, remarks, insertedAt, updatedAt,
+         deliveryId, companyId, materialId, unitId]
+      properties:
+        id: { type: string, format: uuid }
+        idx: { type: integer, format: int64 }
+        boxNo: { type: string }
+        qty: { type: string, pattern: "^[0-9]+(?:\\.[0-9]+)?$" }
+        baseQty: { type: string, pattern: "^[0-9]+(?:\\.[0-9]+)?$" }
+        materialCode: { type: string }
+        materialName: { type: string }
+        materialSpec: { type: string, nullable: true }
+        customerPartNo: { type: string, nullable: true }
+        unitName: { type: string }
+        remarks: { type: string, nullable: true }
+        insertedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        deliveryId: { type: string, format: uuid }
+        companyId: { type: string, format: uuid }
+        materialId: { type: string, format: uuid }
+        unitId: { type: string, format: uuid }
+    SalesDeliveryPackLineCreate:
+      type: object
+      additionalProperties: false
+      required: [deliveryId, idx, boxNo, qty, materialId]
+      properties:
+        deliveryId: { type: string, format: uuid }
+        idx: { type: integer, format: int64 }
+        boxNo: { type: string, maxLength: 64 }
+        qty: { type: string, pattern: "^[0-9]+(?:\\.[0-9]+)?$" }
+        materialId: { type: string, format: uuid }
+        unitId: { type: string, format: uuid, nullable: true }
+        remarks: { type: string, nullable: true, maxLength: 512 }
+    SalesDeliveryPackLineUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        idx: { type: integer, format: int64 }
+        boxNo: { type: string, maxLength: 64 }
+        qty: { type: string, pattern: "^[0-9]+(?:\\.[0-9]+)?$" }
+        materialId: { type: string, format: uuid }
+        unitId: { type: string, format: uuid, nullable: true }
+        remarks: { type: string, nullable: true, maxLength: 512 }
+    SalesDeliveryPackLineList:
+      type: object
+      required: [count, results]
+      properties:
+        count: { type: integer, format: int64 }
+        results: { type: array, items: { $ref: "#/components/schemas/SalesDeliveryPackLine" } }
     PurchaseReceipt:
       type: object
       required:

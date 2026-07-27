@@ -71,6 +71,7 @@ var companyFilterRequired = map[string]struct{}{
 	"mfgOutputItems":                     {},
 	"salDeliveries":                      {},
 	"salDeliveryItems":                   {},
+	"salDeliveryPackLines":               {},
 	"purReceipts":                        {},
 	"purReceiptItems":                    {},
 	"purOutsourcedIssues":                {},

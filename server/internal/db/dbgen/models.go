@@ -1296,6 +1296,26 @@ type SalDeliveryItem struct {
 	ReconciledQty     decimal.Decimal  `db:"reconciled_qty" json:"reconciled_qty"`
 }
 
+type SalDeliveryPackLine struct {
+	ID             uuid.UUID        `db:"id" json:"id"`
+	Idx            int64            `db:"idx" json:"idx"`
+	BoxNo          string           `db:"box_no" json:"box_no"`
+	Qty            decimal.Decimal  `db:"qty" json:"qty"`
+	BaseQty        decimal.Decimal  `db:"base_qty" json:"base_qty"`
+	MaterialCode   string           `db:"material_code" json:"material_code"`
+	MaterialName   string           `db:"material_name" json:"material_name"`
+	MaterialSpec   pgtype.Text      `db:"material_spec" json:"material_spec"`
+	CustomerPartNo pgtype.Text      `db:"customer_part_no" json:"customer_part_no"`
+	UnitName       string           `db:"unit_name" json:"unit_name"`
+	Remarks        pgtype.Text      `db:"remarks" json:"remarks"`
+	InsertedAt     pgtype.Timestamp `db:"inserted_at" json:"inserted_at"`
+	UpdatedAt      pgtype.Timestamp `db:"updated_at" json:"updated_at"`
+	DeliveryID     uuid.UUID        `db:"delivery_id" json:"delivery_id"`
+	CompanyID      uuid.UUID        `db:"company_id" json:"company_id"`
+	MaterialID     uuid.UUID        `db:"material_id" json:"material_id"`
+	UnitID         uuid.UUID        `db:"unit_id" json:"unit_id"`
+}
+
 type SalOrder struct {
 	ID           uuid.UUID        `db:"id" json:"id"`
 	OrderNo      string           `db:"order_no" json:"order_no"`

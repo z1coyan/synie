@@ -93,6 +93,32 @@ func (s *Server) DeleteSalesDeliveryItem(w http.ResponseWriter, r *http.Request,
 	}
 }
 
+func (s *Server) QuerySalesDeliveryPackLines(w http.ResponseWriter, r *http.Request) {
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "read"); actor != nil {
+		s.queryPackLines(w, r, actor)
+	}
+}
+func (s *Server) GetSalesDeliveryPackLine(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "read"); actor != nil {
+		s.getPackLine(w, r, actor, id)
+	}
+}
+func (s *Server) CreateSalesDeliveryPackLine(w http.ResponseWriter, r *http.Request) {
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "create"); actor != nil {
+		s.createPackLine(w, r, actor)
+	}
+}
+func (s *Server) UpdateSalesDeliveryPackLine(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "update"); actor != nil {
+		s.updatePackLine(w, r, actor, id)
+	}
+}
+func (s *Server) DeleteSalesDeliveryPackLine(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "delete"); actor != nil {
+		s.deletePackLine(w, r, actor, id)
+	}
+}
+
 func (s *Server) QueryPurchaseReceipts(w http.ResponseWriter, r *http.Request) {
 	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "read"); actor != nil {
 		s.queryStandardHeads(w, r, actor, standard.SidePurchase)
@@ -448,6 +474,124 @@ func (s *Server) deleteStandardItem(
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) queryPackLines(
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor,
+) {
+	queryListAs(s, w, r, actor, standardListQuery,
+		func(ctx context.Context, actor *authz.Actor, query standard.ListQuery) (standard.PackLineListResult, error) {
+			return s.StandardFulfillment.ListPackLines(ctx, actor, query)
+		},
+		func(result standard.PackLineListResult) any {
+			return countResultsResponse(result.Count, mapItems(result.Results, packLineDTO))
+		})
+}
+
+func (s *Server) getPackLine(
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, id uuid.UUID,
+) {
+	line, err := s.StandardFulfillment.GetPackLine(r.Context(), actor, id)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, packLineDTO(line))
+}
+
+type packLineCreateBody struct {
+	DeliveryID uuid.UUID  `json:"deliveryId"`
+	Idx        int64      `json:"idx"`
+	BoxNo      string     `json:"boxNo"`
+	Qty        string     `json:"qty"`
+	MaterialID uuid.UUID  `json:"materialId"`
+	UnitID     *uuid.UUID `json:"unitId,omitempty"`
+	Remarks    *string    `json:"remarks,omitempty"`
+}
+
+func (s *Server) createPackLine(w http.ResponseWriter, r *http.Request, actor *authz.Actor) {
+	var body packLineCreateBody
+	if err := decodeJSON(w, r, &body); err != nil {
+		s.writeError(w, r, invalidJSON(err))
+		return
+	}
+	qty, err := decimalInput(body.Qty, "装箱行", "qty")
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	line, err := s.StandardFulfillment.CreatePackLine(r.Context(), actor, standard.CreatePackLineInput{
+		DeliveryID: body.DeliveryID, Idx: body.Idx, BoxNo: body.BoxNo, Qty: qty,
+		MaterialID: body.MaterialID, UnitID: body.UnitID, Remarks: body.Remarks,
+	})
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusCreated, packLineDTO(line))
+}
+
+type packLineUpdateBody struct {
+	Idx        *int64          `json:"idx,omitempty"`
+	BoxNo      *string         `json:"boxNo,omitempty"`
+	Qty        *string         `json:"qty,omitempty"`
+	MaterialID *uuid.UUID      `json:"materialId,omitempty"`
+	UnitID     json.RawMessage `json:"unitId,omitempty"`
+	Remarks    json.RawMessage `json:"remarks,omitempty"`
+}
+
+func (s *Server) updatePackLine(
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, id uuid.UUID,
+) {
+	var body packLineUpdateBody
+	if err := decodeJSON(w, r, &body); err != nil {
+		s.writeError(w, r, invalidJSON(err))
+		return
+	}
+	qty, err := optionalDecimalInput(body.Qty, "装箱行", "qty")
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	unitID, err := optionalUpdate[uuid.UUID](body.UnitID)
+	if err != nil {
+		s.writeError(w, r, nullableUUIDError("装箱行", "unitId"))
+		return
+	}
+	remarks, err := optionalUpdate[string](body.Remarks)
+	if err != nil {
+		s.writeError(w, r, nullableStringError("装箱行", "remarks"))
+		return
+	}
+	line, err := s.StandardFulfillment.UpdatePackLine(r.Context(), actor, id, standard.UpdatePackLineInput{
+		Idx: body.Idx, BoxNo: body.BoxNo, Qty: qty, MaterialID: body.MaterialID,
+		UnitID: unitID, Remarks: remarks,
+	})
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, packLineDTO(line))
+}
+
+func (s *Server) deletePackLine(w http.ResponseWriter, r *http.Request, actor *authz.Actor, id uuid.UUID) {
+	if err := s.StandardFulfillment.DeletePackLine(r.Context(), actor, id); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func packLineDTO(line standard.PackLine) map[string]any {
+	return map[string]any{
+		"id": line.ID, "idx": line.Idx, "boxNo": line.BoxNo, "qty": line.Qty.String(),
+		"baseQty": line.BaseQty.String(), "materialCode": line.MaterialCode,
+		"materialName": line.MaterialName, "materialSpec": line.MaterialSpec,
+		"customerPartNo": line.CustomerPartNo, "unitName": line.UnitName,
+		"remarks": line.Remarks, "insertedAt": line.InsertedAt, "updatedAt": line.UpdatedAt,
+		"deliveryId": line.DeliveryID, "companyId": line.CompanyID,
+		"materialId": line.MaterialID, "unitId": line.UnitID,
+	}
 }
 
 func standardHeadDTO(item standard.Head, side standard.Side) map[string]any {

@@ -11,6 +11,10 @@ type SalesDeliveryCreate = components['schemas']['SalesDeliveryCreate']
 type SalesDeliveryUpdate = components['schemas']['SalesDeliveryUpdate']
 type SalesDeliveryItemCreate = components['schemas']['SalesDeliveryItemCreate']
 type SalesDeliveryItemUpdate = components['schemas']['SalesDeliveryItemUpdate']
+type SalesDeliveryPackLineCreate =
+  components['schemas']['SalesDeliveryPackLineCreate']
+type SalesDeliveryPackLineUpdate =
+  components['schemas']['SalesDeliveryPackLineUpdate']
 type PurchaseReceiptCreate = components['schemas']['PurchaseReceiptCreate']
 type PurchaseReceiptUpdate = components['schemas']['PurchaseReceiptUpdate']
 type PurchaseReceiptItemCreate =
@@ -257,6 +261,46 @@ export const salesDeliveryItemClient = resourceClient('salDeliveryItems', {
   async delete(id) {
     await apiData<void>(
       apiClient.DELETE('/sales/delivery-items/{id}', {
+        params: { path: { id } },
+      }),
+    )
+  },
+})
+
+export const salesDeliveryPackLineClient = resourceClient('salDeliveryPackLines', {
+  async query(input) {
+    const result = await apiData(
+      apiClient.POST('/sales/delivery-pack-lines/query', {
+        body: queryBody(input),
+      }),
+    )
+    return { count: result.count, results: result.results as Row[] }
+  },
+  async get(id) {
+    return (await apiData(
+      apiClient.GET('/sales/delivery-pack-lines/{id}', {
+        params: { path: { id } },
+      }),
+    )) as Row
+  },
+  async create(input) {
+    return (await apiData(
+      apiClient.POST('/sales/delivery-pack-lines', {
+        body: decimalInput(input, ['qty']) as SalesDeliveryPackLineCreate,
+      }),
+    )) as Row
+  },
+  async update(id, input) {
+    return (await apiData(
+      apiClient.PATCH('/sales/delivery-pack-lines/{id}', {
+        params: { path: { id } },
+        body: decimalInput(input, ['qty']) as SalesDeliveryPackLineUpdate,
+      }),
+    )) as Row
+  },
+  async delete(id) {
+    await apiData<void>(
+      apiClient.DELETE('/sales/delivery-pack-lines/{id}', {
         params: { path: { id } },
       }),
     )

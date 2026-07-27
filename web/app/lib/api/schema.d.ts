@@ -1750,6 +1750,56 @@ export interface paths {
         patch: operations["updateSalesDeliveryItem"];
         trace?: never;
     };
+    "/sales/delivery-pack-lines/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["querySalesDeliveryPackLines"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/delivery-pack-lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createSalesDeliveryPackLine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sales/delivery-pack-lines/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getSalesDeliveryPackLine"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteSalesDeliveryPackLine"];
+        options?: never;
+        head?: never;
+        patch: operations["updateSalesDeliveryPackLine"];
+        trace?: never;
+    };
     "/purchase/receipts/query": {
         parameters: {
             query?: never;
@@ -8355,6 +8405,62 @@ export interface components {
             /** Format: int64 */
             count: number;
             results: components["schemas"]["SalesDeliveryItem"][];
+        };
+        SalesDeliveryPackLine: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            idx: number;
+            boxNo: string;
+            qty: string;
+            baseQty: string;
+            materialCode: string;
+            materialName: string;
+            materialSpec: string | null;
+            customerPartNo: string | null;
+            unitName: string;
+            remarks: string | null;
+            /** Format: date-time */
+            insertedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: uuid */
+            deliveryId: string;
+            /** Format: uuid */
+            companyId: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId: string;
+        };
+        SalesDeliveryPackLineCreate: {
+            /** Format: uuid */
+            deliveryId: string;
+            /** Format: int64 */
+            idx: number;
+            boxNo: string;
+            qty: string;
+            /** Format: uuid */
+            materialId: string;
+            /** Format: uuid */
+            unitId?: string | null;
+            remarks?: string | null;
+        };
+        SalesDeliveryPackLineUpdate: {
+            /** Format: int64 */
+            idx?: number;
+            boxNo?: string;
+            qty?: string;
+            /** Format: uuid */
+            materialId?: string;
+            /** Format: uuid */
+            unitId?: string | null;
+            remarks?: string | null;
+        };
+        SalesDeliveryPackLineList: {
+            /** Format: int64 */
+            count: number;
+            results: components["schemas"]["SalesDeliveryPackLine"][];
         };
         PurchaseReceipt: {
             /** Format: uuid */
@@ -15358,6 +15464,137 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SalesDeliveryItem"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    querySalesDeliveryPackLines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListQuery"];
+            };
+        };
+        responses: {
+            /** @description 销售发货装箱行分页结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDeliveryPackLineList"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createSalesDeliveryPackLine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesDeliveryPackLineCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDeliveryPackLine"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getSalesDeliveryPackLine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 销售发货装箱行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDeliveryPackLine"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteSalesDeliveryPackLine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateSalesDeliveryPackLine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SalesDeliveryPackLineUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalesDeliveryPackLine"];
                 };
             };
             400: components["responses"]["Error"];

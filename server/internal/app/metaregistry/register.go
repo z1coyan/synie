@@ -104,6 +104,7 @@ func RegisterAll(registry *meta.Registry) {
 		registry.MustRegister(standard.HeadResourceMeta(side))
 		registry.MustRegister(standard.ItemResourceMeta(side))
 	}
+	registry.MustRegister(standard.PackLineResourceMeta())
 	registry.MustRegister(outsourced.IssueResourceMeta())
 	registry.MustRegister(outsourced.IssueItemResourceMeta())
 	registry.MustRegister(outsourced.ReceiptResourceMeta())

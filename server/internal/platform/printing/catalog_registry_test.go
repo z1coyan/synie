@@ -57,6 +57,35 @@ func TestDerivedCatalogFromRealRegistry(t *testing.T) {
 		t.Fatalf("sales.quotation items nested loops = %#v", quotationItems.NestedLoops)
 	}
 
+	// 装箱清单作为发货单 has_many 自动派生 ${pack_lines.*} 循环区
+	delivery, ok := catalog.Get("sales.delivery")
+	if !ok {
+		t.Fatal("sales.delivery missing")
+	}
+	if _, ok := loopByName(delivery.Loops, "items"); !ok {
+		t.Fatalf("sales.delivery items loop missing: %#v", delivery.Loops)
+	}
+	packLines, ok := loopByName(delivery.Loops, "pack_lines")
+	if !ok {
+		t.Fatalf("sales.delivery pack_lines loop missing: %#v", delivery.Loops)
+	}
+	for _, name := range []string{
+		"box_no", "qty", "base_qty", "material_code", "material_name", "material_spec",
+		"customer_part_no", "unit_name", "remarks", "material.name", "unit.name",
+		"delivery.delivery_no",
+	} {
+		if !containsField(packLines.Fields, name) {
+			t.Errorf("sales.delivery pack_lines field %q missing", name)
+		}
+	}
+	if containsField(packLines.Fields, "delivery_id") || containsField(packLines.Fields, "material_id") ||
+		containsField(packLines.Fields, "company_id") || containsField(packLines.Fields, "inserted_at") {
+		t.Fatalf("technical field leaked into pack_lines loop: %#v", packLines.Fields)
+	}
+	if len(packLines.NestedLoops) != 0 {
+		t.Fatalf("pack_lines nested loops = %#v", packLines.NestedLoops)
+	}
+
 	template, ok := catalog.Get("sys.print_template")
 	if !ok || len(template.Loops) != 0 {
 		t.Fatalf("sys.print_template = %#v, %v", template, ok)

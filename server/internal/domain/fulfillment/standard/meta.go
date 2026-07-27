@@ -92,6 +92,11 @@ func HeadResourceMeta(side Side) meta.ResourceMeta {
 	if sales {
 		itemResource = "salDeliveryItems"
 	}
+	printLoops := []meta.PrintLoopMeta{{Name: "items", Resource: itemResource}}
+	if sales {
+		printLoops = append(printLoops,
+			meta.PrintLoopMeta{Name: "pack_lines", Resource: "salDeliveryPackLines"})
+	}
 	return meta.ResourceMeta{
 		Name:             resource,
 		PermissionPrefix: spec.prefix,
@@ -101,7 +106,7 @@ func HeadResourceMeta(side Side) meta.ResourceMeta {
 		Actions:          actions,
 		Print:            sales,
 		PrintHead:        true,
-		PrintLoops:       []meta.PrintLoopMeta{{Name: "items", Resource: itemResource}},
+		PrintLoops:       printLoops,
 		Audit:            meta.AuditMeta{Enabled: true},
 		DestroyMutation:  &destroyMutation,
 	}
@@ -199,6 +204,41 @@ func ItemResourceMeta(side Side) meta.ResourceMeta {
 		PermissionPrefix: spec.prefix,
 		PermissionLabel:  spec.label,
 		Table:            spec.itemTable,
+		Fields:           fields,
+		Actions:          []meta.ActionMeta{{Key: "read", Label: "查看", Scope: "both"}},
+		Audit:            meta.AuditMeta{Enabled: true},
+		DestroyMutation:  &destroyMutation,
+	}
+}
+
+// PackLineResourceMeta 描述销售发货装箱行的 GridMeta 契约。权限随父单
+// sales.delivery（不新增权限资源码），装箱行不进列表 tab/CSV 导出/收发货历史。
+func PackLineResourceMeta() meta.ResourceMeta {
+	destroyMutation := "destroySalDeliveryPackLine"
+	fields := []meta.FieldMeta{
+		metaIDField(),
+		metaScalar("idx", "idx", meta.TypeInteger, "行号"),
+		metaScalar("box_no", "boxNo", meta.TypeString, "箱号"),
+		metaScalar("qty", "qty", meta.TypeDecimal, "装箱数量"),
+		metaScalar("base_qty", "baseQty", meta.TypeDecimal, "折算数量(物料默认单位,6 位)"),
+		metaScalar("material_code", "materialCode", meta.TypeString, "物料编号"),
+		metaScalar("material_name", "materialName", meta.TypeString, "物料名称"),
+		metaScalar("material_spec", "materialSpec", meta.TypeString, "规格"),
+		metaScalar("customer_part_no", "customerPartNo", meta.TypeString, "客户料号"),
+		metaScalar("unit_name", "unitName", meta.TypeString, "单位名称"),
+		metaScalar("remarks", "remarks", meta.TypeString, "行备注"),
+		metaScalar("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间"),
+		metaScalar("updated_at", "updatedAt", meta.TypeDatetime, "更新时间"),
+		metaRefField("delivery_id", "deliveryId", "销售发货单", "salDeliveries", "delivery", "deliveryNo"),
+		metaRefField("company_id", "companyId", "公司", "basCompanies", "company", "name"),
+		metaRefField("material_id", "materialId", "物料", "invMaterials", "material", "name"),
+		metaRefField("unit_id", "unitId", "单位", "basUnits", "unit", "name"),
+	}
+	return meta.ResourceMeta{
+		Name:             "salDeliveryPackLines",
+		PermissionPrefix: "sales.delivery",
+		PermissionLabel:  "销售发货单",
+		Table:            packLineTable,
 		Fields:           fields,
 		Actions:          []meta.ActionMeta{{Key: "read", Label: "查看", Scope: "both"}},
 		Audit:            meta.AuditMeta{Enabled: true},

@@ -38,6 +38,9 @@ func TestFulfillmentHandlersAuthorizeBeforeDecodeOrService(t *testing.T) {
 	addStandard("sales delivery", "sales.delivery",
 		[]http.HandlerFunc{server.QuerySalesDeliveries, withID(server.GetSalesDelivery), server.CreateSalesDelivery, withID(server.UpdateSalesDelivery), withID(server.DeleteSalesDelivery), withID(server.AuditSalesDelivery), withID(server.VoidSalesDelivery)},
 		[]http.HandlerFunc{server.QuerySalesDeliveryItems, withID(server.GetSalesDeliveryItem), server.CreateSalesDeliveryItem, withID(server.UpdateSalesDeliveryItem), withID(server.DeleteSalesDeliveryItem)})
+	addStandard("sales delivery pack line", "sales.delivery",
+		nil,
+		[]http.HandlerFunc{server.QuerySalesDeliveryPackLines, withID(server.GetSalesDeliveryPackLine), server.CreateSalesDeliveryPackLine, withID(server.UpdateSalesDeliveryPackLine), withID(server.DeleteSalesDeliveryPackLine)})
 	addStandard("purchase receipt", "purchase.receipt",
 		[]http.HandlerFunc{server.QueryPurchaseReceipts, withID(server.GetPurchaseReceipt), server.CreatePurchaseReceipt, withID(server.UpdatePurchaseReceipt), withID(server.DeletePurchaseReceipt), withID(server.AuditPurchaseReceipt), withID(server.VoidPurchaseReceipt)},
 		[]http.HandlerFunc{server.QueryPurchaseReceiptItems, withID(server.GetPurchaseReceiptItem), server.CreatePurchaseReceiptItem, withID(server.UpdatePurchaseReceiptItem), withID(server.DeletePurchaseReceiptItem)})

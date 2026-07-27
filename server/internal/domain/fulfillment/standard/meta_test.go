@@ -15,6 +15,7 @@ func TestMetaMatchesCapturedSnapshots(t *testing.T) {
 	registry := meta.NewRegistry()
 	registry.MustRegister(HeadResourceMeta(SideSales))
 	registry.MustRegister(ItemResourceMeta(SideSales))
+	registry.MustRegister(PackLineResourceMeta())
 	registry.MustRegister(HeadResourceMeta(SidePurchase))
 	registry.MustRegister(ItemResourceMeta(SidePurchase))
 
@@ -27,6 +28,8 @@ func TestMetaMatchesCapturedSnapshots(t *testing.T) {
 		{"salDeliveries", "salDeliveries.read-only.grid.json", standardReadOnly(SideSales)},
 		{"salDeliveryItems", "salDeliveryItems.superadmin.grid.json", &authz.Actor{SuperAdmin: true}},
 		{"salDeliveryItems", "salDeliveryItems.read-only.grid.json", standardReadOnly(SideSales)},
+		{"salDeliveryPackLines", "salDeliveryPackLines.superadmin.grid.json", &authz.Actor{SuperAdmin: true}},
+		{"salDeliveryPackLines", "salDeliveryPackLines.read-only.grid.json", standardReadOnly(SideSales)},
 		{"purReceipts", "purReceipts.superadmin.grid.json", &authz.Actor{SuperAdmin: true}},
 		{"purReceipts", "purReceipts.read-only.grid.json", standardReadOnly(SidePurchase)},
 		{"purReceiptItems", "purReceiptItems.superadmin.grid.json", &authz.Actor{SuperAdmin: true}},

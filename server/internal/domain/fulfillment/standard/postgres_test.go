@@ -65,6 +65,8 @@ type standardOrderSeed struct {
 	baseAmount   decimal.Decimal
 	taxRate      decimal.Decimal
 	demandLineID *uuid.UUID
+	// materialID 为空时回落夹具物料；双物料场景（如装箱漏装）显式指定。
+	materialID uuid.UUID
 }
 
 func TestPostgresStandardHeadItemSourceUnitsCurrencyAndDrawings(t *testing.T) {
@@ -888,6 +890,10 @@ func insertStandardOrder(
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
+	materialID := seed.materialID
+	if materialID == uuid.Nil {
+		materialID = f.materialID
+	}
 	if seed.side == SideSales {
 		_, err = tx.Exec(ctx, `INSERT INTO `+orderTable+`(
 			id,order_no,party_type,party_id,status,company_id,currency_id)
@@ -911,7 +917,7 @@ func insertStandardOrder(
 			itemID, seed.qty, seed.baseQty, seed.price, seed.amount, seed.basePrice,
 			seed.baseAmount, seed.taxRate, "ORDER-M"+f.suffix, "订单物料-"+f.suffix,
 			"ORDER-SPEC-"+f.suffix, "ORDER-PART-"+f.suffix, "履约个-"+f.suffix,
-			orderID, f.companyID, f.materialID, f.unitID)
+			orderID, f.companyID, materialID, f.unitID)
 	} else {
 		_, err = tx.Exec(ctx, `INSERT INTO `+itemTable+`(
 			id,idx,qty,base_qty,received_qty,price,amount,base_price,base_amount,tax_rate,
@@ -921,7 +927,7 @@ func insertStandardOrder(
 			itemID, seed.qty, seed.baseQty, seed.price, seed.amount, seed.basePrice,
 			seed.baseAmount, seed.taxRate, "ORDER-M"+f.suffix, "订单物料-"+f.suffix,
 			"ORDER-SPEC-"+f.suffix, "ORDER-PART-"+f.suffix, "履约个-"+f.suffix,
-			orderID, f.companyID, f.materialID, f.unitID, seed.demandLineID)
+			orderID, f.companyID, materialID, f.unitID, seed.demandLineID)
 	}
 	if err != nil {
 		t.Fatal(err)

@@ -83,6 +83,28 @@ type Item struct {
 	PartyID                  uuid.UUID       `json:"partyId"`
 }
 
+// PackLine 是销售发货单下的装箱行：箱号＋物料＋单位＋数量＋折算＋行备注，
+// 挂发货单（不挂发货条目），随单级联删除、审核后随单锁死；纯实物复核层。
+type PackLine struct {
+	ID             uuid.UUID       `json:"id"`
+	Idx            int64           `json:"idx"`
+	BoxNo          string          `json:"boxNo"`
+	Qty            decimal.Decimal `json:"qty"`
+	BaseQty        decimal.Decimal `json:"baseQty"`
+	MaterialCode   string          `json:"materialCode"`
+	MaterialName   string          `json:"materialName"`
+	MaterialSpec   *string         `json:"materialSpec"`
+	CustomerPartNo *string         `json:"customerPartNo"`
+	UnitName       string          `json:"unitName"`
+	Remarks        *string         `json:"remarks"`
+	InsertedAt     time.Time       `json:"insertedAt"`
+	UpdatedAt      time.Time       `json:"updatedAt"`
+	DeliveryID     uuid.UUID       `json:"deliveryId"`
+	CompanyID      uuid.UUID       `json:"companyId"`
+	MaterialID     uuid.UUID       `json:"materialId"`
+	UnitID         uuid.UUID       `json:"unitId"`
+}
+
 type ListQuery struct {
 	Limit  int
 	Offset int
@@ -99,6 +121,11 @@ type HeadListResult struct {
 type ItemListResult struct {
 	Count   int64  `json:"count"`
 	Results []Item `json:"results"`
+}
+
+type PackLineListResult struct {
+	Count   int64      `json:"count"`
+	Results []PackLine `json:"results"`
 }
 
 type CreateHeadInput struct {
@@ -143,6 +170,25 @@ type UpdateItemInput struct {
 	UnitID      optional.Optional[uuid.UUID]
 	WarehouseID *uuid.UUID
 	Remarks     optional.Optional[string]
+}
+
+type CreatePackLineInput struct {
+	DeliveryID uuid.UUID
+	Idx        int64
+	BoxNo      string
+	Qty        decimal.Decimal
+	MaterialID uuid.UUID
+	UnitID     *uuid.UUID
+	Remarks    *string
+}
+
+type UpdatePackLineInput struct {
+	Idx        *int64
+	BoxNo      *string
+	Qty        *decimal.Decimal
+	MaterialID *uuid.UUID
+	UnitID     optional.Optional[uuid.UUID]
+	Remarks    optional.Optional[string]
 }
 
 // CompanyAccountDefaults is a read-only dependency seam used by fulfillment

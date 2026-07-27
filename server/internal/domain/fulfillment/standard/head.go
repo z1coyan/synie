@@ -289,6 +289,11 @@ func (s *Service) Audit(
 	if len(items) == 0 {
 		return Head{}, apierror.New(apierror.CodeConflict, "审核前必须至少填写一条履约条目")
 	}
+	if side == SideSales {
+		if err := validatePackEquality(ctx, tx, id, items); err != nil {
+			return Head{}, err
+		}
+	}
 	projectionLines := make([]order.FulfillmentLine, 0, len(items))
 	stockLines := make([]stock.Line, 0, len(items))
 	amount := decimal.Zero

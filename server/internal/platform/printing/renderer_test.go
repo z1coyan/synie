@@ -251,6 +251,70 @@ func TestRenderRejectsEmptyDocsAndInvalidTemplate(t *testing.T) {
 	}
 }
 
+// 装箱清单循环区：${pack_lines.*} 逐行展开；0 行时明细模板行整行删除
+// （同既有 items 循环区语义）。
+func TestRenderPagesPackLinesLoop(t *testing.T) {
+	template := workbookFixture(t, map[string]string{
+		"xl/workbook.xml":            renderTestWorkbook,
+		"xl/_rels/workbook.xml.rels": renderTestRels,
+		"[Content_Types].xml":        renderTestContentTypes,
+		"xl/worksheets/sheet1.xml": `<worksheet><sheetData>` +
+			`<row r="1"><c r="A1" t="inlineStr"><is><t>发货单 ${delivery_no}</t></is></c></row>` +
+			`<row r="2"><c r="A2" t="inlineStr"><is><t>${pack_lines._seq}</t></is></c>` +
+			`<c r="B2" t="inlineStr"><is><t>${pack_lines.box_no}</t></is></c>` +
+			`<c r="C2" t="inlineStr"><is><t>${pack_lines.material_name}</t></is></c>` +
+			`<c r="D2" t="inlineStr"><is><t>${pack_lines.qty}</t></is></c>` +
+			`<c r="E2" t="inlineStr"><is><t>${pack_lines.unit_name}</t></is></c></row>` +
+			`<row r="3"><c r="A3" t="inlineStr"><is><t>制单</t></is></c></row>` +
+			`</sheetData></worksheet>`,
+	})
+	doc := PrintDoc{
+		Fields: map[string]string{"delivery_no": "SD-0001"},
+		Loops: map[string][]map[string]string{
+			"pack_lines": {
+				{"box_no": "A-01", "material_name": "物料甲", "qty": "2", "unit_name": "个"},
+				{"box_no": "A-01", "material_name": "物料乙", "qty": "3", "unit_name": "箱"},
+				{"box_no": "B-02", "material_name": "物料甲", "qty": "1", "unit_name": "个"},
+			},
+		},
+	}
+	out, err := RenderPages(template, []PrintDoc{doc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sheet := readPart(t, out, "xl/worksheets/sheet1.xml")
+	joined := strings.Join(sheetCellTexts(sheet), "|")
+	for _, want := range []string{"发货单 SD-0001", "A-01", "物料甲", "物料乙", "B-02", "制单"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("文本 %q 未出现在 %q", want, joined)
+		}
+	}
+	// 3 装箱行展开为行 2/3/4，尾注顺移到行 5
+	if got := strings.Join(rowNumbers(sheet), ","); got != "1,2,3,4,5" {
+		t.Fatalf("行号 = %s, want 1,2,3,4,5", got)
+	}
+	if strings.Contains(sheet, "${") {
+		t.Fatalf("产物残留占位符: %s", sheet)
+	}
+
+	// 0 装箱行：明细模板行整行删除，尾注顺移（3→2），头与尾注保留
+	empty := PrintDoc{
+		Fields: map[string]string{"delivery_no": "SD-0002"},
+		Loops:  map[string][]map[string]string{"pack_lines": {}},
+	}
+	out, err = RenderPages(template, []PrintDoc{empty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sheet = readPart(t, out, "xl/worksheets/sheet1.xml")
+	if got := strings.Join(rowNumbers(sheet), ","); got != "1,2" {
+		t.Fatalf("空循环行号 = %s, want 1,2", got)
+	}
+	if strings.Contains(sheet, "${") {
+		t.Fatalf("空循环产物残留占位符: %s", sheet)
+	}
+}
+
 func TestRenderPagesTemplateWithoutLoopRow(t *testing.T) {
 	template := workbookFixture(t, map[string]string{
 		"xl/workbook.xml":            renderTestWorkbook,
