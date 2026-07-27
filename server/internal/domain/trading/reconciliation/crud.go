@@ -163,8 +163,8 @@ func (s *Service) UpdateHead(
 	if input.CreditAccountID != nil {
 		after.CreditAccountID = *input.CreditAccountID
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if partyChanged {
 		var has bool

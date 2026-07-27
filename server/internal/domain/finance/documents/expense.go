@@ -15,6 +15,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 const (
@@ -177,7 +178,7 @@ func (s *Service) UpdateExpenseReport(
 	if input.ExpenseDate != nil {
 		expenseDate = *input.ExpenseDate
 	}
-	applyOptionalString(&postingDate, input.PostingDate)
+	optional.Apply(&postingDate, input.PostingDate)
 	if input.Remarks.Set {
 		remarks = input.Remarks.Value
 	}
@@ -496,11 +497,11 @@ func (s *Service) UpdateExpenseReportItem(
 	if input.Kind != nil {
 		merged.Kind = *input.Kind
 	}
-	applyOptionalString(&merged.Summary, input.Summary)
-	applyOptionalString(&merged.Amount, input.Amount)
-	applyOptionalString(&merged.Remarks, input.Remarks)
-	applyOptionalUUID(&merged.InvoiceID, input.InvoiceID)
-	applyOptionalUUID(&merged.ExpenseAccountID, input.ExpenseAccountID)
+	optional.Apply(&merged.Summary, input.Summary)
+	optional.Apply(&merged.Amount, input.Amount)
+	optional.Apply(&merged.Remarks, input.Remarks)
+	optional.Apply(&merged.InvoiceID, input.InvoiceID)
+	optional.Apply(&merged.ExpenseAccountID, input.ExpenseAccountID)
 	normalized, amount, err := validateExpenseItem(ctx, tx, report, merged, id)
 	if err != nil {
 		return ExpenseReportItem{}, err

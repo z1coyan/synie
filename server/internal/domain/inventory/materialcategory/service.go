@@ -142,8 +142,8 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 	if input.Active != nil {
 		active = *input.Active
 	}
-	if input.ParentID != nil {
-		parentID = *input.ParentID
+	if input.ParentID.Set {
+		parentID = input.ParentID.Value
 	}
 	code, name = strings.TrimSpace(code), strings.TrimSpace(name)
 	if err := validateNames(code, name); err != nil {

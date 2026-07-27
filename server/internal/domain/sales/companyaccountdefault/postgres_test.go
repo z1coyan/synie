@@ -3,7 +3,6 @@ package companyaccountdefault
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -13,20 +12,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 func TestPostgresCompanyAccountDefaultLifecycleValidationAuditAndConcurrency(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	fixture := seedFixture(t, ctx, pool)
 	t.Cleanup(func() { fixture.cleanup(pool) })
@@ -104,14 +97,14 @@ func TestPostgresCompanyAccountDefaultLifecycleValidationAuditAndConcurrency(t *
 	go func() {
 		<-start
 		_, updateErr := service.Update(ctx, writer, item.ID, UpdateInput{
-			DeliveryCreditAccountID: OptionalUUID{Set: true, Value: &fixture.deliveryCreditID},
+			DeliveryCreditAccountID: optional.Optional[uuid.UUID]{Set: true, Value: &fixture.deliveryCreditID},
 		})
 		results <- updateErr
 	}()
 	go func() {
 		<-start
 		_, updateErr := service.Update(ctx, writer, item.ID, UpdateInput{
-			ReceiptCreditAccountID: OptionalUUID{Set: true, Value: &fixture.receiptCreditID},
+			ReceiptCreditAccountID: optional.Optional[uuid.UUID]{Set: true, Value: &fixture.receiptCreditID},
 		})
 		results <- updateErr
 	}()
@@ -166,10 +159,10 @@ func TestPostgresCompanyAccountDefaultLifecycleValidationAuditAndConcurrency(t *
 	}
 
 	cleared, err := service.Update(ctx, writer, item.ID, UpdateInput{
-		DeliveryDebitAccountID:  OptionalUUID{Set: true},
-		DeliveryCreditAccountID: OptionalUUID{Set: true},
-		ReceiptDebitAccountID:   OptionalUUID{Set: true},
-		ReceiptCreditAccountID:  OptionalUUID{Set: true},
+		DeliveryDebitAccountID:  optional.Optional[uuid.UUID]{Set: true},
+		DeliveryCreditAccountID: optional.Optional[uuid.UUID]{Set: true},
+		ReceiptDebitAccountID:   optional.Optional[uuid.UUID]{Set: true},
+		ReceiptCreditAccountID:  optional.Optional[uuid.UUID]{Set: true},
 	})
 	if err != nil || cleared.DeliveryDebitAccountID != nil || cleared.DeliveryCreditAccountID != nil ||
 		cleared.ReceiptDebitAccountID != nil || cleared.ReceiptCreditAccountID != nil {

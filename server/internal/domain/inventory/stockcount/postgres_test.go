@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +15,8 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type sequenceTxNumberer struct {
@@ -106,7 +107,7 @@ func TestPostgresStockCountAggregateLifecycle(t *testing.T) {
 		t.Fatalf("difference entry quantity=%s cancelled=%v", quantity, cancelled)
 	}
 	if _, err := service.UpdateItem(
-		ctx, actor, items[0].ID, UpdateItemInput{CountedQuantity: &items[0].CountedQuantity},
+		ctx, actor, items[0].ID, UpdateItemInput{CountedQuantity: optional.Optional[decimal.Decimal]{Set: true, Value: items[0].CountedQuantity}},
 	); stockCountErrorCode(err) != apierror.CodeConflict {
 		t.Fatalf("approved item update error = %#v", err)
 	}
@@ -208,16 +209,9 @@ func TestPostgresStockCountRejectsStaleSnapshotAndRefreshes(t *testing.T) {
 
 func newCountFixture(t *testing.T) countFixture {
 	t.Helper()
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool := testutil.NewPool(t, ctx)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	fixture := countFixture{
 		pool: pool, companyID: uuid.New(), userID: uuid.New(),

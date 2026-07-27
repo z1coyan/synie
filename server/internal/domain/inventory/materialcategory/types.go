@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Reference struct {
@@ -39,7 +40,7 @@ type UpdateInput struct {
 	Name     *string
 	IsLeaf   *bool
 	Active   *bool
-	ParentID **uuid.UUID
+	ParentID optional.Optional[uuid.UUID]
 }
 
 type ListQuery struct {

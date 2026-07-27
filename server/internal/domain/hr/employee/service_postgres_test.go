@@ -4,16 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type fixedNumberer struct {
@@ -30,17 +30,9 @@ func (numberer *fixedNumberer) Next(_ context.Context, input numbering.NextInput
 }
 
 func TestPostgresEmployeeLifecycleEmptyOptionalsFiltersAndSensitiveAudit(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:10])
 	numberer := &fixedNumberer{value: "EMP-" + suffix}
@@ -127,14 +119,14 @@ func TestPostgresEmployeeLifecycleEmptyOptionalsFiltersAndSensitiveAudit(t *test
 	attendanceValue := "ATT-" + suffix
 	idValue := "ID-BEFORE-CLEAR-" + suffix
 	if _, err := service.Update(ctx, actor, second.ID, UpdateInput{
-		AttendanceNo: OptionalString{Set: true, Value: &attendanceValue},
-		IDNumber:     OptionalString{Set: true, Value: &idValue},
+		AttendanceNo: optional.Optional[string]{Set: true, Value: &attendanceValue},
+		IDNumber:     optional.Optional[string]{Set: true, Value: &idValue},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	cleared, err := service.Update(ctx, actor, second.ID, UpdateInput{
-		AttendanceNo: OptionalString{Set: true, Value: &blank},
-		IDNumber:     OptionalString{Set: true, Value: &blank},
+		AttendanceNo: optional.Optional[string]{Set: true, Value: &blank},
+		IDNumber:     optional.Optional[string]{Set: true, Value: &blank},
 	})
 	if err != nil || cleared.AttendanceNo != nil || cleared.IDNumber != nil {
 		t.Fatalf("blank patch must clear to NULL: %#v, %v", cleared, err)
@@ -152,8 +144,8 @@ func TestPostgresEmployeeLifecycleEmptyOptionalsFiltersAndSensitiveAudit(t *test
 	secretTwo := "SECRET-TWO-" + suffix
 	newAllowance := "33.75"
 	updated, err := service.Update(ctx, actor, first.ID, UpdateInput{
-		IDNumber:         OptionalString{Set: true, Value: &secretTwo},
-		MonthlyAllowance: OptionalString{Set: true, Value: &newAllowance},
+		IDNumber:         optional.Optional[string]{Set: true, Value: &secretTwo},
+		MonthlyAllowance: optional.Optional[string]{Set: true, Value: &newAllowance},
 	})
 	if err != nil || updated.IDNumber == nil || *updated.IDNumber != secretTwo ||
 		updated.MonthlyAllowance == nil || *updated.MonthlyAllowance != newAllowance {

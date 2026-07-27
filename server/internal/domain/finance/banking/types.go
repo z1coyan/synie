@@ -13,6 +13,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	fileplatform "github.com/z1coyan/synie/server/internal/platform/files"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 const (
@@ -30,11 +31,6 @@ type ListQuery struct {
 	Search        string
 	Sort          *filterbuild.Sort
 	Filter        map[string]json.RawMessage
-}
-
-type Optional[T any] struct {
-	Set   bool
-	Value *T
 }
 
 type BankAccount struct {
@@ -68,10 +64,10 @@ type BankAccountCreateInput struct {
 
 type BankAccountUpdateInput struct {
 	Alias, BankName, HolderName, AccountNo *string
-	BranchName, Note                       Optional[string]
+	BranchName, Note                       optional.Optional[string]
 	Active                                 *bool
 	CurrencyID                             *uuid.UUID
-	AccountID                              Optional[uuid.UUID]
+	AccountID                              optional.Optional[uuid.UUID]
 }
 
 type BankTransaction struct {
@@ -111,11 +107,11 @@ type BankTransactionCreateInput struct {
 
 type BankTransactionUpdateInput struct {
 	OccurredAt          *time.Time
-	Income, Expense     Optional[decimal.Decimal]
-	Balance             Optional[decimal.Decimal]
-	CounterpartyName    Optional[string]
-	CounterpartyAccount Optional[string]
-	Summary, Note       Optional[string]
+	Income, Expense     optional.Optional[decimal.Decimal]
+	Balance             optional.Optional[decimal.Decimal]
+	CounterpartyName    optional.Optional[string]
+	CounterpartyAccount optional.Optional[string]
+	Summary, Note       optional.Optional[string]
 	BankAccountID       *uuid.UUID
 }
 
@@ -172,20 +168,20 @@ type BankImportTemplateCreateInput struct {
 type BankImportTemplateUpdateInput struct {
 	Name                   *string
 	StartRow               *int64
-	DatetimeCol            Optional[string]
-	DatetimeFormat         Optional[string]
-	DateCol                Optional[string]
-	DateFormat             Optional[string]
-	TimeCol                Optional[string]
-	TimeFormat             Optional[string]
-	IncomeCol              Optional[string]
-	ExpenseCol             Optional[string]
-	AmountCol              Optional[string]
-	BalanceCol             Optional[string]
-	CounterpartyNameCol    Optional[string]
-	CounterpartyAccountCol Optional[string]
-	SummaryCol             Optional[string]
-	NoteCol                Optional[string]
+	DatetimeCol            optional.Optional[string]
+	DatetimeFormat         optional.Optional[string]
+	DateCol                optional.Optional[string]
+	DateFormat             optional.Optional[string]
+	TimeCol                optional.Optional[string]
+	TimeFormat             optional.Optional[string]
+	IncomeCol              optional.Optional[string]
+	ExpenseCol             optional.Optional[string]
+	AmountCol              optional.Optional[string]
+	BalanceCol             optional.Optional[string]
+	CounterpartyNameCol    optional.Optional[string]
+	CounterpartyAccountCol optional.Optional[string]
+	SummaryCol             optional.Optional[string]
+	NoteCol                optional.Optional[string]
 	BankAccountID          *uuid.UUID
 }
 
@@ -241,11 +237,11 @@ type BankImportItemList struct {
 
 type BankImportItemUpdateInput struct {
 	OccurredAt          *time.Time
-	Income, Expense     Optional[decimal.Decimal]
-	Balance             Optional[decimal.Decimal]
-	CounterpartyName    Optional[string]
-	CounterpartyAccount Optional[string]
-	Summary, Note       Optional[string]
+	Income, Expense     optional.Optional[decimal.Decimal]
+	Balance             optional.Optional[decimal.Decimal]
+	CounterpartyName    optional.Optional[string]
+	CounterpartyAccount optional.Optional[string]
+	Summary, Note       optional.Optional[string]
 }
 
 type BankReconciliation struct {

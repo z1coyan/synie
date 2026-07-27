@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Reference struct {
@@ -59,7 +60,7 @@ type UpdateInput struct {
 	Direction  *string
 	IsGroup    *bool
 	Active     *bool
-	Role       **string
-	ParentID   **uuid.UUID
-	CurrencyID **uuid.UUID
+	Role       optional.Optional[string]
+	ParentID   optional.Optional[uuid.UUID]
+	CurrencyID optional.Optional[uuid.UUID]
 }

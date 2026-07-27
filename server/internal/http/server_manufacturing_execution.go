@@ -108,54 +108,6 @@ func outputItemListWire(result execution.OutputItemList) map[string]any {
 	return map[string]any{"count": result.Count, "results": items}
 }
 
-func nullableStringPointer(raw json.RawMessage, resource, field string) (**string, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	var value *string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, nullableStringError(resource, field)
-	}
-	return &value, nil
-}
-
-func nullableUUIDPointer(raw json.RawMessage, resource, field string) (**uuid.UUID, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	var value *uuid.UUID
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, apierror.Validation(resource+"参数不合法", map[string][]string{
-			field: {"必须是 UUID 或 null"},
-		})
-	}
-	return &value, nil
-}
-
-func nullableDatePointer(raw json.RawMessage, resource, field string) (**time.Time, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	if string(raw) == "null" {
-		var value *time.Time
-		return &value, nil
-	}
-	var text string
-	if err := json.Unmarshal(raw, &text); err != nil {
-		return nil, apierror.Validation(resource+"参数不合法", map[string][]string{
-			field: {"必须是 YYYY-MM-DD 或 null"},
-		})
-	}
-	value, err := time.Parse(time.DateOnly, text)
-	if err != nil {
-		return nil, apierror.Validation(resource+"参数不合法", map[string][]string{
-			field: {"必须是 YYYY-MM-DD 或 null"},
-		})
-	}
-	pointer := &value
-	return &pointer, nil
-}
-
 func (s *Server) QueryManufacturingDemands(w http.ResponseWriter, r *http.Request) {
 	actor, ok := s.manufacturingActor(w, r, "mfg.demand:read")
 	if !ok {
@@ -222,9 +174,9 @@ func (s *Server) UpdateManufacturingDemand(w http.ResponseWriter, r *http.Reques
 		value := body.DemandDate.Time
 		demandDate = &value
 	}
-	remarks, err := nullableStringPointer(body.Remarks, "履约需求单", "remarks")
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, nullableStringError("履约需求单", "remarks"))
 		return
 	}
 	item, err := s.ManufacturingExecution.UpdateDemand(r.Context(), actor, id, execution.UpdateDemandInput{
@@ -359,19 +311,19 @@ func (s *Server) UpdateManufacturingDemandItem(w http.ResponseWriter, r *http.Re
 		s.writeError(w, r, err)
 		return
 	}
-	needDate, err := nullableDatePointer(body.NeedDate, "需求行", "needDate")
+	needDate, err := optionalDateUpdate(body.NeedDate)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, apierror.Validation("需求行参数不合法", map[string][]string{"needDate": {"必须是 YYYY-MM-DD 或 null"}}))
 		return
 	}
-	salesOrderItemID, err := nullableUUIDPointer(body.SalesOrderItemID, "需求行", "salesOrderItemId")
+	salesOrderItemID, err := optionalUpdate[uuid.UUID](body.SalesOrderItemID)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, nullableUUIDError("需求行", "salesOrderItemId"))
 		return
 	}
-	remarks, err := nullableStringPointer(body.Remarks, "需求行", "remarks")
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, nullableStringError("需求行", "remarks"))
 		return
 	}
 	var method *execution.FulfillmentMethod
@@ -610,14 +562,14 @@ func (s *Server) UpdateManufacturingOutput(w http.ResponseWriter, r *http.Reques
 		value := body.OutputDate.Time
 		outputDate = &value
 	}
-	warehouseID, err := nullableUUIDPointer(body.WarehouseID, "生产入库单", "warehouseId")
+	warehouseID, err := optionalUpdate[uuid.UUID](body.WarehouseID)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, nullableUUIDError("生产入库单", "warehouseId"))
 		return
 	}
-	remarks, err := nullableStringPointer(body.Remarks, "生产入库单", "remarks")
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, nullableStringError("生产入库单", "remarks"))
 		return
 	}
 	item, err := s.ManufacturingExecution.UpdateOutput(r.Context(), actor, id, execution.UpdateOutputInput{
@@ -739,9 +691,9 @@ func (s *Server) UpdateManufacturingOutputItem(w http.ResponseWriter, r *http.Re
 		s.writeError(w, r, err)
 		return
 	}
-	remarks, err := nullableStringPointer(body.Remarks, "生产入库行", "remarks")
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, nullableStringError("生产入库行", "remarks"))
 		return
 	}
 	item, err := s.ManufacturingExecution.UpdateOutputItem(r.Context(), actor, id, execution.UpdateOutputItemInput{

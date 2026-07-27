@@ -3,7 +3,6 @@ package outsourced
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stock"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type outsourcedFixture struct {
@@ -238,16 +238,9 @@ func TestPostgresOutsourcedIssueReceiptLifecycleAndProjectionGuards(t *testing.T
 
 func newOutsourcedFixture(t *testing.T) outsourcedFixture {
 	t.Helper()
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool := testutil.NewPool(t, ctx)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	f := outsourcedFixture{
 		pool: pool, suffix: suffix,

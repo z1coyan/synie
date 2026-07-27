@@ -145,14 +145,14 @@ func (s *Service) UpdateItem(
 	if input.PricingMode != nil {
 		after.PricingMode = *input.PricingMode
 	}
-	if input.Price != nil {
-		after.Price = *input.Price
+	if input.Price.Set {
+		after.Price = input.Price.Value
 	}
 	if input.TaxRate != nil {
 		after.TaxRate = *input.TaxRate
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	mode, price, taxRate, err := normalizeItemShape(
 		after.PricingMode, after.Price, &after.TaxRate, after.MaterialID, after.UnitID, after.Remarks,

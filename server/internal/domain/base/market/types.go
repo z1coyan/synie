@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Instrument struct {
@@ -57,7 +58,7 @@ type InstrumentCreate struct {
 type InstrumentUpdate struct {
 	Name, DefaultPriceKind                       *string
 	Active, FetchEnabled                         *bool
-	ExternalLastCode, ExternalProductGroup, Note **string
+	ExternalLastCode, ExternalProductGroup, Note optional.Optional[string]
 }
 
 type PricePointCreate struct {

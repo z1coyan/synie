@@ -210,11 +210,11 @@ func (s *Service) UpdateItem(
 	if input.UnitID != nil {
 		after.UnitID = *input.UnitID
 	}
-	if input.CountedQuantity != nil {
-		after.CountedQuantity = *input.CountedQuantity
+	if input.CountedQuantity.Set {
+		after.CountedQuantity = input.CountedQuantity.Value
 	}
-	if input.Remark != nil {
-		after.Remark = *input.Remark
+	if input.Remark.Set {
+		after.Remark = input.Remark.Value
 	}
 	if err := validateItemInput(
 		after.MaterialID, after.UnitID, after.CountedQuantity, after.Remark,

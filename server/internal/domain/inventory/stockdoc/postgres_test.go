@@ -2,7 +2,6 @@ package stockdoc
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type fixedTxNumberer struct {
@@ -153,16 +153,9 @@ func TestPostgresStockDocAggregateLifecycle(t *testing.T) {
 
 func newDocFixture(t *testing.T) docFixture {
 	t.Helper()
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool := testutil.NewPool(t, ctx)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	fixture := docFixture{
 		pool: pool, companyID: uuid.New(), userID: uuid.New(),

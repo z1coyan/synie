@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Direction string
@@ -86,8 +87,8 @@ type UpdateInput struct {
 	DocNo       *string
 	Direction   *Direction
 	DocDate     *time.Time
-	Summary     **string
-	Remarks     **string
+	Summary     optional.Optional[string]
+	Remarks     optional.Optional[string]
 	WarehouseID *uuid.UUID
 }
 
@@ -105,5 +106,5 @@ type UpdateItemInput struct {
 	Qty        *decimal.Decimal
 	MaterialID *uuid.UUID
 	UnitID     *uuid.UUID
-	Remark     **string
+	Remark     optional.Optional[string]
 }

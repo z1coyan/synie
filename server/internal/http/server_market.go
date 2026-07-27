@@ -103,17 +103,17 @@ func (s *Server) UpdateBasMarketInstrument(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	externalLast, err := nullableStringUpdate(body.ExternalLastCode)
+	externalLast, err := optionalUpdate[string](body.ExternalLastCode)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	externalGroup, err := nullableStringUpdate(body.ExternalProductGroup)
+	externalGroup, err := optionalUpdate[string](body.ExternalProductGroup)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	note, err := nullableStringUpdate(body.Note)
+	note, err := optionalUpdate[string](body.Note)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return

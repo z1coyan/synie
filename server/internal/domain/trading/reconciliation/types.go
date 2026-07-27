@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Side string
@@ -113,7 +114,7 @@ type UpdateHeadInput struct {
 	PartyID         *uuid.UUID
 	DebitAccountID  *uuid.UUID
 	CreditAccountID *uuid.UUID
-	Remarks         **string
+	Remarks         optional.Optional[string]
 }
 
 type CreateItemInput struct {
@@ -129,10 +130,10 @@ type CreateItemInput struct {
 type UpdateItemInput struct {
 	Idx                     *int64
 	Qty                     *decimal.Decimal
-	DeliveryItemID          **uuid.UUID
-	ReceiptItemID           **uuid.UUID
-	OutsourcedReceiptItemID **uuid.UUID
-	Remarks                 **string
+	DeliveryItemID          optional.Optional[uuid.UUID]
+	ReceiptItemID           optional.Optional[uuid.UUID]
+	OutsourcedReceiptItemID optional.Optional[uuid.UUID]
+	Remarks                 optional.Optional[string]
 }
 
 type AuditInput struct {

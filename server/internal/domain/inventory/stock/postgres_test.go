@@ -3,7 +3,6 @@ package stock
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type pgFixture struct {
@@ -183,16 +183,9 @@ func TestPostgresConcurrentOutgoingSerializesByBalanceKey(t *testing.T) {
 
 func newPGFixture(t *testing.T) pgFixture {
 	t.Helper()
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool := testutil.NewPool(t, ctx)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	fixture := pgFixture{
 		pool: pool, companyID: uuid.New(), unitID: uuid.New(),

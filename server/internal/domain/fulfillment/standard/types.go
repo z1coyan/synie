@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Side string
@@ -116,11 +117,11 @@ type CreateHeadInput struct {
 type UpdateHeadInput struct {
 	No              *string
 	DocumentDate    *time.Time
-	PostingDate     **time.Time
+	PostingDate     optional.Optional[time.Time]
 	PartyType       *string
 	PartyID         *uuid.UUID
-	Remarks         **string
-	WarehouseID     **uuid.UUID
+	Remarks         optional.Optional[string]
+	WarehouseID     optional.Optional[uuid.UUID]
 	DebitAccountID  *uuid.UUID
 	CreditAccountID *uuid.UUID
 }
@@ -139,9 +140,9 @@ type UpdateItemInput struct {
 	Idx         *int64
 	Qty         *decimal.Decimal
 	OrderItemID *uuid.UUID
-	UnitID      **uuid.UUID
+	UnitID      optional.Optional[uuid.UUID]
 	WarehouseID *uuid.UUID
-	Remarks     **string
+	Remarks     optional.Optional[string]
 }
 
 // CompanyAccountDefaults is a read-only dependency seam used by fulfillment

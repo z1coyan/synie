@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Reference struct {
@@ -44,25 +45,15 @@ type CreateInput struct {
 	CustomerID         *uuid.UUID
 }
 
-type OptionalString struct {
-	Set   bool
-	Value *string
-}
-
-type OptionalUUID struct {
-	Set   bool
-	Value *uuid.UUID
-}
-
 type UpdateInput struct {
 	Name               *string
-	Spec               OptionalString
-	CustomerPartNo     OptionalString
+	Spec               optional.Optional[string]
+	CustomerPartNo     optional.Optional[string]
 	IsCustomerMaterial *bool
 	Active             *bool
 	CategoryID         *uuid.UUID
 	DefaultUnitID      *uuid.UUID
-	CustomerID         OptionalUUID
+	CustomerID         optional.Optional[uuid.UUID]
 }
 
 type ListQuery struct {

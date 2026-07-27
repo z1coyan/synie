@@ -2,7 +2,6 @@ package stocktransfer
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type transferFixture struct {
@@ -23,16 +23,9 @@ type transferFixture struct {
 
 func newTransferFixture(t *testing.T) transferFixture {
 	t.Helper()
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool := testutil.NewPool(t, ctx)
 	f := transferFixture{
 		pool: pool, companyID: uuid.New(), userID: uuid.New(), unitID: uuid.New(),
 		categoryID: uuid.New(), materialID: uuid.New(), fromID: uuid.New(),

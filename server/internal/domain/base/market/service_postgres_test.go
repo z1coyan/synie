@@ -3,33 +3,25 @@ package market
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 func TestPostgresMarketLifecycleAuditAndSeries(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	userID, currencyID, unitID := uuid.New(), uuid.New(), uuid.New()
+	var err error
 	if _, err = pool.Exec(ctx, `INSERT INTO sys_user(id,username,name,hashed_password) VALUES($1,$2,'行情测试','test-only')`,
 		userID, "market_"+suffix); err != nil {
 		t.Fatal(err)

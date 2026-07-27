@@ -2,17 +2,16 @@ package listexec_test
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/meta"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 // accountResource 是测试用的最小 bas_account 资源 meta。
@@ -46,20 +45,13 @@ func scanAccountRow(rows pgx.Rows) (accountRow, error) {
 // TestListAgainstRealPostgres 验证执行器的 count/分页/公司隔离语义（含空集合
 // 语义：无可见公司时结果为空）。
 func TestListAgainstRealPostgres(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ToLower(strings.ReplaceAll(uuid.NewString(), "-", "")[:10])
 	var cnyID, companyA, companyB uuid.UUID
+	var err error
 	if err = pool.QueryRow(ctx, `
 INSERT INTO bas_currency (name, iso_code, symbol)
 VALUES ($1, $2, '¥') RETURNING id

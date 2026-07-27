@@ -1,10 +1,8 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 
-	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/domain/finance/banking"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
@@ -29,31 +27,6 @@ func (s *Server) financeBankingActor(
 		}
 	}
 	return actor, true
-}
-
-func bankingOptional[T any](
-	fields map[string]json.RawMessage,
-	key string,
-	value *T,
-) banking.Optional[T] {
-	_, set := fields[key]
-	return banking.Optional[T]{Set: set, Value: value}
-}
-
-func bankingOptionalDecimal(
-	fields map[string]json.RawMessage,
-	key string,
-	value *string,
-) (banking.Optional[decimal.Decimal], error) {
-	_, set := fields[key]
-	if !set || value == nil {
-		return banking.Optional[decimal.Decimal]{Set: set}, nil
-	}
-	parsed, err := decimalInput(*value, "银行业务", key)
-	if err != nil {
-		return banking.Optional[decimal.Decimal]{}, err
-	}
-	return banking.Optional[decimal.Decimal]{Set: true, Value: &parsed}, nil
 }
 
 func bankingEnumPointer[T ~string](value *T) *string {
@@ -111,16 +84,16 @@ func (s *Server) UpdateFinanceBankAccount(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var body gen.BankAccountUpdate
-	fields, err := decodeFinanceJSON(w, r, &body)
+	fields, err := decodePatchJSON(w, r, &body)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
 	item, err := s.FinanceBanking.UpdateBankAccount(r.Context(), actor, id, banking.BankAccountUpdateInput{
 		Alias: body.Alias, BankName: body.BankName, HolderName: body.HolderName,
-		AccountNo: body.AccountNo, BranchName: bankingOptional(fields, "branchName", body.BranchName),
-		Note: bankingOptional(fields, "note", body.Note), Active: body.Active,
-		CurrencyID: body.CurrencyId, AccountID: bankingOptional(fields, "accountId", body.AccountId),
+		AccountNo: body.AccountNo, BranchName: optionalField(fields, "branchName", body.BranchName),
+		Note: optionalField(fields, "note", body.Note), Active: body.Active,
+		CurrencyID: body.CurrencyId, AccountID: optionalField(fields, "accountId", body.AccountId),
 	})
 	if err != nil {
 		s.writeError(w, r, err)
@@ -210,22 +183,22 @@ func (s *Server) UpdateFinanceBankTransaction(
 		return
 	}
 	var body gen.BankTransactionUpdate
-	fields, err := decodeFinanceJSON(w, r, &body)
+	fields, err := decodePatchJSON(w, r, &body)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	income, err := bankingOptionalDecimal(fields, "income", body.Income)
+	income, err := optionalDecimalField(fields, "income", body.Income, "银行业务")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	expense, err := bankingOptionalDecimal(fields, "expense", body.Expense)
+	expense, err := optionalDecimalField(fields, "expense", body.Expense, "银行业务")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	balance, err := bankingOptionalDecimal(fields, "balance", body.Balance)
+	balance, err := optionalDecimalField(fields, "balance", body.Balance, "银行业务")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -233,14 +206,14 @@ func (s *Server) UpdateFinanceBankTransaction(
 	item, err := s.FinanceBanking.UpdateBankTransaction(
 		r.Context(), actor, id, banking.BankTransactionUpdateInput{
 			OccurredAt: body.OccurredAt, Income: income, Expense: expense, Balance: balance,
-			CounterpartyName: bankingOptional(
+			CounterpartyName: optionalField(
 				fields, "counterpartyName", body.CounterpartyName,
 			),
-			CounterpartyAccount: bankingOptional(
+			CounterpartyAccount: optionalField(
 				fields, "counterpartyAccount", body.CounterpartyAccount,
 			),
-			Summary:       bankingOptional(fields, "summary", body.Summary),
-			Note:          bankingOptional(fields, "note", body.Note),
+			Summary:       optionalField(fields, "summary", body.Summary),
+			Note:          optionalField(fields, "note", body.Note),
 			BankAccountID: body.BankAccountId,
 		},
 	)
@@ -331,7 +304,7 @@ func (s *Server) UpdateFinanceBankImportTemplate(
 		return
 	}
 	var body gen.BankImportTemplateUpdate
-	fields, err := decodeFinanceJSON(w, r, &body)
+	fields, err := decodePatchJSON(w, r, &body)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
@@ -344,31 +317,21 @@ func (s *Server) UpdateFinanceBankImportTemplate(
 	item, err := s.FinanceBanking.UpdateBankImportTemplate(
 		r.Context(), actor, id, banking.BankImportTemplateUpdateInput{
 			Name: body.Name, StartRow: startRow,
-			DatetimeCol: bankingOptional(fields, "datetimeCol", body.DatetimeCol),
-			DatetimeFormat: bankingOptional(
-				fields, "datetimeFormat", bankingEnumPointer(body.DatetimeFormat),
-			),
-			DateCol: bankingOptional(fields, "dateCol", body.DateCol),
-			DateFormat: bankingOptional(
-				fields, "dateFormat", bankingEnumPointer(body.DateFormat),
-			),
-			TimeCol: bankingOptional(fields, "timeCol", body.TimeCol),
-			TimeFormat: bankingOptional(
-				fields, "timeFormat", bankingEnumPointer(body.TimeFormat),
-			),
-			IncomeCol:  bankingOptional(fields, "incomeCol", body.IncomeCol),
-			ExpenseCol: bankingOptional(fields, "expenseCol", body.ExpenseCol),
-			AmountCol:  bankingOptional(fields, "amountCol", body.AmountCol),
-			BalanceCol: bankingOptional(fields, "balanceCol", body.BalanceCol),
-			CounterpartyNameCol: bankingOptional(
-				fields, "counterpartyNameCol", body.CounterpartyNameCol,
-			),
-			CounterpartyAccountCol: bankingOptional(
-				fields, "counterpartyAccountCol", body.CounterpartyAccountCol,
-			),
-			SummaryCol:    bankingOptional(fields, "summaryCol", body.SummaryCol),
-			NoteCol:       bankingOptional(fields, "noteCol", body.NoteCol),
-			BankAccountID: body.BankAccountId,
+			DatetimeCol:            optionalField(fields, "datetimeCol", body.DatetimeCol),
+			DatetimeFormat:         optionalEnumField(fields, "datetimeFormat", body.DatetimeFormat),
+			DateCol:                optionalField(fields, "dateCol", body.DateCol),
+			DateFormat:             optionalEnumField(fields, "dateFormat", body.DateFormat),
+			TimeCol:                optionalField(fields, "timeCol", body.TimeCol),
+			TimeFormat:             optionalEnumField(fields, "timeFormat", body.TimeFormat),
+			IncomeCol:              optionalField(fields, "incomeCol", body.IncomeCol),
+			ExpenseCol:             optionalField(fields, "expenseCol", body.ExpenseCol),
+			AmountCol:              optionalField(fields, "amountCol", body.AmountCol),
+			BalanceCol:             optionalField(fields, "balanceCol", body.BalanceCol),
+			CounterpartyNameCol:    optionalField(fields, "counterpartyNameCol", body.CounterpartyNameCol),
+			CounterpartyAccountCol: optionalField(fields, "counterpartyAccountCol", body.CounterpartyAccountCol),
+			SummaryCol:             optionalField(fields, "summaryCol", body.SummaryCol),
+			NoteCol:                optionalField(fields, "noteCol", body.NoteCol),
+			BankAccountID:          body.BankAccountId,
 		},
 	)
 	if err != nil {
@@ -490,22 +453,22 @@ func (s *Server) UpdateFinanceBankImportItem(
 		return
 	}
 	var body gen.BankImportItemUpdate
-	fields, err := decodeFinanceJSON(w, r, &body)
+	fields, err := decodePatchJSON(w, r, &body)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	income, err := bankingOptionalDecimal(fields, "income", body.Income)
+	income, err := optionalDecimalField(fields, "income", body.Income, "银行业务")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	expense, err := bankingOptionalDecimal(fields, "expense", body.Expense)
+	expense, err := optionalDecimalField(fields, "expense", body.Expense, "银行业务")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	balance, err := bankingOptionalDecimal(fields, "balance", body.Balance)
+	balance, err := optionalDecimalField(fields, "balance", body.Balance, "银行业务")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -513,14 +476,14 @@ func (s *Server) UpdateFinanceBankImportItem(
 	item, err := s.FinanceBanking.UpdateBankImportItem(
 		r.Context(), actor, id, banking.BankImportItemUpdateInput{
 			OccurredAt: body.OccurredAt, Income: income, Expense: expense, Balance: balance,
-			CounterpartyName: bankingOptional(
+			CounterpartyName: optionalField(
 				fields, "counterpartyName", body.CounterpartyName,
 			),
-			CounterpartyAccount: bankingOptional(
+			CounterpartyAccount: optionalField(
 				fields, "counterpartyAccount", body.CounterpartyAccount,
 			),
-			Summary: bankingOptional(fields, "summary", body.Summary),
-			Note:    bankingOptional(fields, "note", body.Note),
+			Summary: optionalField(fields, "summary", body.Summary),
+			Note:    optionalField(fields, "note", body.Note),
 		},
 	)
 	if err != nil {

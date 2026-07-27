@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 func TestValidateCreate(t *testing.T) {
@@ -43,7 +44,7 @@ func TestValidateCreateRejectsBadISOAndLengths(t *testing.T) {
 
 func TestValidateUpdateAllowsExplicitSymbolClear(t *testing.T) {
 	t.Parallel()
-	input := UpdateInput{Symbol: OptionalString{Set: true, Value: nil}}
+	input := UpdateInput{Symbol: optional.Optional[string]{Set: true, Value: nil}}
 	if err := validateUpdate(&input); err != nil {
 		t.Fatalf("clear symbol: %v", err)
 	}

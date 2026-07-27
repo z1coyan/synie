@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Status string
@@ -110,8 +111,8 @@ type CreateInput struct {
 type UpdateInput struct {
 	VoucherNo   *string
 	Date        *time.Time
-	PostingDate **time.Time
-	Remarks     **string
+	PostingDate optional.Optional[time.Time]
+	Remarks     optional.Optional[string]
 }
 
 type CreateLineInput struct {
@@ -130,7 +131,7 @@ type UpdateLineInput struct {
 	AccountID *uuid.UUID
 	Debit     *decimal.Decimal
 	Credit    *decimal.Decimal
-	PartyType **string
-	PartyID   **uuid.UUID
-	Remarks   **string
+	PartyType optional.Optional[string]
+	PartyID   optional.Optional[uuid.UUID]
+	Remarks   optional.Optional[string]
 }

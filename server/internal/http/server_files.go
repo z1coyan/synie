@@ -356,18 +356,12 @@ func firstFormValue(r *http.Request, names ...string) string {
 	return ""
 }
 
+// nullablePatch 在 platform/files 仍声明 **string 输入期间做边界适配;
+// 解码本身统一走 optionalUpdate。
 func nullablePatch(raw map[string]json.RawMessage, key string) (**string, error) {
-	value, ok := raw[key]
-	if !ok {
-		return nil, nil
+	value, err := optionalUpdate[string](raw[key])
+	if err != nil {
+		return nil, err
 	}
-	var result *string
-	if string(value) != "null" {
-		var decoded string
-		if err := json.Unmarshal(value, &decoded); err != nil {
-			return nil, err
-		}
-		result = &decoded
-	}
-	return &result, nil
+	return doublePtr(value), nil
 }

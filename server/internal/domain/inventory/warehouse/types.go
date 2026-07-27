@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Reference struct {
@@ -47,26 +48,16 @@ type CreateInput struct {
 	AccountID     *uuid.UUID
 }
 
-type OptionalString struct {
-	Set   bool
-	Value *string
-}
-
-type OptionalUUID struct {
-	Set   bool
-	Value *uuid.UUID
-}
-
 type UpdateInput struct {
 	Name          *string
 	IsLeaf        *bool
 	Active        *bool
 	IsOutsourced  *bool
-	PartyType     OptionalString
-	PartyID       OptionalUUID
+	PartyType     optional.Optional[string]
+	PartyID       optional.Optional[uuid.UUID]
 	AllowNegative *bool
-	ParentID      OptionalUUID
-	AccountID     OptionalUUID
+	ParentID      optional.Optional[uuid.UUID]
+	AccountID     optional.Optional[uuid.UUID]
 }
 
 type ListQuery struct {

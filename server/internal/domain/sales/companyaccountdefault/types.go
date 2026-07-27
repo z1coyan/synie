@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type CompanyAccountDefault struct {
@@ -27,16 +28,11 @@ type CreateInput struct {
 	ReceiptCreditAccountID  *uuid.UUID
 }
 
-type OptionalUUID struct {
-	Set   bool
-	Value *uuid.UUID
-}
-
 type UpdateInput struct {
-	DeliveryDebitAccountID  OptionalUUID
-	DeliveryCreditAccountID OptionalUUID
-	ReceiptDebitAccountID   OptionalUUID
-	ReceiptCreditAccountID  OptionalUUID
+	DeliveryDebitAccountID  optional.Optional[uuid.UUID]
+	DeliveryCreditAccountID optional.Optional[uuid.UUID]
+	ReceiptDebitAccountID   optional.Optional[uuid.UUID]
+	ReceiptCreditAccountID  optional.Optional[uuid.UUID]
 }
 
 type ListQuery struct {

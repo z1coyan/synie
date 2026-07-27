@@ -11,6 +11,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/scm/orderflow"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 func companyAccountDefaultListQuery(body listBody) companyaccountdefault.ListQuery {
@@ -114,20 +115,18 @@ func companyAccountDefaultUpdateInput(
 	for _, field := range []struct {
 		name string
 		raw  json.RawMessage
-		out  *companyaccountdefault.OptionalUUID
+		out  *optional.Optional[uuid.UUID]
 	}{
 		{"deliveryDebitAccountId", body.DeliveryDebitAccountID, &input.DeliveryDebitAccountID},
 		{"deliveryCreditAccountId", body.DeliveryCreditAccountID, &input.DeliveryCreditAccountID},
 		{"receiptDebitAccountId", body.ReceiptDebitAccountID, &input.ReceiptDebitAccountID},
 		{"receiptCreditAccountId", body.ReceiptCreditAccountID, &input.ReceiptCreditAccountID},
 	} {
-		value, err := nullableUUIDUpdate(field.raw)
+		value, err := optionalUpdate[uuid.UUID](field.raw)
 		if err != nil {
 			return companyaccountdefault.UpdateInput{}, nullableUUIDError("公司默认过账科目", field.name)
 		}
-		if value != nil {
-			*field.out = companyaccountdefault.OptionalUUID{Set: true, Value: *value}
-		}
+		*field.out = value
 	}
 	return input, nil
 }

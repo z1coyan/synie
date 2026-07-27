@@ -153,14 +153,14 @@ func (s *Service) UpdateInstrument(ctx context.Context, actor *authz.Actor, id u
 	if in.FetchEnabled != nil {
 		fetchEnabled = *in.FetchEnabled
 	}
-	if in.ExternalLastCode != nil {
-		externalLast = *in.ExternalLastCode
+	if in.ExternalLastCode.Set {
+		externalLast = in.ExternalLastCode.Value
 	}
-	if in.ExternalProductGroup != nil {
-		externalGroup = *in.ExternalProductGroup
+	if in.ExternalProductGroup.Set {
+		externalGroup = in.ExternalProductGroup.Value
 	}
-	if in.Note != nil {
-		note = *in.Note
+	if in.Note.Set {
+		note = in.Note.Value
 	}
 	if name == "" || utf8.RuneCountInString(name) > 64 || !validPriceKind(kind) {
 		return Instrument{}, apierror.Validation("行情品种参数不合法", map[string][]string{"name": {"不能为空且最多 64 个字符"}, "defaultPriceKind": {"仅支持 SETTLEMENT/AVERAGE/LAST"}})

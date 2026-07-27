@@ -184,8 +184,8 @@ func (s *Service) UpdateMaterial(
 	if input.Quantity != nil {
 		after.Quantity = *input.Quantity
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if err := validateOutsourcingLine(ctx, tx, after.MaterialID, after.UnitID, after.Quantity, after.Remarks); err != nil {
 		return Material{}, err
@@ -409,8 +409,8 @@ func (s *Service) UpdateByproduct(
 	if input.Quantity != nil {
 		after.Quantity = *input.Quantity
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if err := validateOutsourcingLine(ctx, tx, after.MaterialID, after.UnitID, after.Quantity, after.Remarks); err != nil {
 		return Byproduct{}, err

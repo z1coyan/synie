@@ -76,7 +76,7 @@ func (s *Server) UpdateInvMaterialCategory(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	parentID, err := nullableUUIDUpdate(body.ParentID)
+	parentID, err := optionalUpdate[uuid.UUID](body.ParentID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("物料分类", "parentId"))
 		return
@@ -172,17 +172,17 @@ func (s *Server) UpdateInvMaterial(w http.ResponseWriter, r *http.Request, id ge
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	spec, err := nullableStringUpdate(body.Spec)
+	spec, err := optionalUpdate[string](body.Spec)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("物料", "spec"))
 		return
 	}
-	customerPartNo, err := nullableStringUpdate(body.CustomerPartNo)
+	customerPartNo, err := optionalUpdate[string](body.CustomerPartNo)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("物料", "customerPartNo"))
 		return
 	}
-	customerID, err := nullableUUIDUpdate(body.CustomerID)
+	customerID, err := optionalUpdate[uuid.UUID](body.CustomerID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("物料", "customerId"))
 		return
@@ -190,15 +190,7 @@ func (s *Server) UpdateInvMaterial(w http.ResponseWriter, r *http.Request, id ge
 	input := material.UpdateInput{
 		Name: body.Name, IsCustomerMaterial: body.IsCustomerMaterial, Active: body.Active,
 		CategoryID: body.CategoryID, DefaultUnitID: body.DefaultUnitID,
-	}
-	if spec != nil {
-		input.Spec = material.OptionalString{Set: true, Value: *spec}
-	}
-	if customerPartNo != nil {
-		input.CustomerPartNo = material.OptionalString{Set: true, Value: *customerPartNo}
-	}
-	if customerID != nil {
-		input.CustomerID = material.OptionalUUID{Set: true, Value: *customerID}
+		Spec: spec, CustomerPartNo: customerPartNo, CustomerID: customerID,
 	}
 	item, err := s.Materials.Update(r.Context(), actor, id, input)
 	if err != nil {
@@ -421,22 +413,22 @@ func (s *Server) UpdateInvWarehouse(w http.ResponseWriter, r *http.Request, id g
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	partyType, err := nullableStringUpdate(body.PartyType)
+	partyType, err := optionalUpdate[string](body.PartyType)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("仓库", "partyType"))
 		return
 	}
-	partyID, err := nullableUUIDUpdate(body.PartyID)
+	partyID, err := optionalUpdate[uuid.UUID](body.PartyID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("仓库", "partyId"))
 		return
 	}
-	parentID, err := nullableUUIDUpdate(body.ParentID)
+	parentID, err := optionalUpdate[uuid.UUID](body.ParentID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("仓库", "parentId"))
 		return
 	}
-	accountID, err := nullableUUIDUpdate(body.AccountID)
+	accountID, err := optionalUpdate[uuid.UUID](body.AccountID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("仓库", "accountId"))
 		return
@@ -444,18 +436,7 @@ func (s *Server) UpdateInvWarehouse(w http.ResponseWriter, r *http.Request, id g
 	input := warehouse.UpdateInput{
 		Name: body.Name, IsLeaf: body.IsLeaf, Active: body.Active,
 		IsOutsourced: body.IsOutsourced, AllowNegative: body.AllowNegative,
-	}
-	if partyType != nil {
-		input.PartyType = warehouse.OptionalString{Set: true, Value: *partyType}
-	}
-	if partyID != nil {
-		input.PartyID = warehouse.OptionalUUID{Set: true, Value: *partyID}
-	}
-	if parentID != nil {
-		input.ParentID = warehouse.OptionalUUID{Set: true, Value: *parentID}
-	}
-	if accountID != nil {
-		input.AccountID = warehouse.OptionalUUID{Set: true, Value: *accountID}
+		PartyType: partyType, PartyID: partyID, ParentID: parentID, AccountID: accountID,
 	}
 	item, err := s.Warehouses.Update(r.Context(), actor, id, input)
 	if err != nil {

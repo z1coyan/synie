@@ -59,8 +59,8 @@ func (s *Service) UpdateItem(
 	if input.UnitID != nil {
 		after.UnitID = *input.UnitID
 	}
-	if input.Remark != nil {
-		after.Remark = *input.Remark
+	if input.Remark.Set {
+		after.Remark = input.Remark.Value
 	}
 	if err := validateItemInput(after.Qty, after.MaterialID, after.UnitID, after.Remark); err != nil {
 		return Item{}, err

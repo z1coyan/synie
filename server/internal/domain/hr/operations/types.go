@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 const (
@@ -134,12 +135,7 @@ type AttendanceCorrectionUpdateInput struct {
 	EmployeeID *uuid.UUID
 	Date       *string
 	Times      *[]string
-	Note       OptionalString
-}
-
-type OptionalString struct {
-	Set   bool
-	Value *string
+	Note       optional.Optional[string]
 }
 
 type Payroll struct {
@@ -194,7 +190,7 @@ type PayrollUpdateInput struct {
 	Bonus          *string
 	Fine           *string
 	LoanDeduction  *string
-	Remarks        OptionalString
+	Remarks        optional.Optional[string]
 }
 
 type PayrollGenerateResult struct {
@@ -272,7 +268,7 @@ type EmployeeLoanUpdateInput struct {
 	Kind       *string
 	OccurredOn *string
 	Amount     *string
-	Remarks    OptionalString
+	Remarks    optional.Optional[string]
 }
 
 type EmployeeLoanBalance struct {

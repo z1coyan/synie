@@ -5,17 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	fileplatform "github.com/z1coyan/synie/server/internal/platform/files"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type testFileReader struct {
@@ -63,22 +62,14 @@ func (reader *barrierFileReader) ReadStoredFile(ctx context.Context, id uuid.UUI
 }
 
 func TestPostgresHROperationsTransactionsConcurrencyAndGlobalScope(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	userID, employeeID, fileID, secondFileID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	attendanceNo := "ATT-" + suffix
-	_, err = pool.Exec(ctx, `INSERT INTO sys_user(id,username,name,hashed_password)
+	_, err := pool.Exec(ctx, `INSERT INTO sys_user(id,username,name,hashed_password)
 		VALUES($1,$2,$3,'test')`, userID, "hr-ops-"+suffix, "HR测试-"+suffix)
 	if err == nil {
 		_, err = pool.Exec(ctx, `INSERT INTO hr_employees(
@@ -390,17 +381,9 @@ func errorCode(err error) apierror.Code {
 }
 
 func TestPostgresGenerateUniqueConflictRollsBackWholeBatch(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	userID, employeeA, employeeB := uuid.New(), uuid.New(), uuid.New()
@@ -410,7 +393,7 @@ func TestPostgresGenerateUniqueConflictRollsBackWholeBatch(t *testing.T) {
 	}
 	functionName := "hr_generate_conflict_" + suffix
 	triggerName := "hr_generate_conflict_trigger_" + suffix
-	_, err = pool.Exec(ctx, `INSERT INTO sys_user(id,username,hashed_password) VALUES($1,$2,'test')`,
+	_, err := pool.Exec(ctx, `INSERT INTO sys_user(id,username,hashed_password) VALUES($1,$2,'test')`,
 		userID, "hr-generate-"+suffix)
 	if err == nil {
 		_, err = pool.Exec(ctx, `INSERT INTO hr_employees(id,code,name)

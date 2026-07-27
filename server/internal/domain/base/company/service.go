@@ -142,8 +142,8 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 	if input.ShortName != nil {
 		after.ShortName = *input.ShortName
 	}
-	if input.ParentID != nil {
-		after.ParentID = *input.ParentID
+	if input.ParentID.Set {
+		after.ParentID = input.ParentID.Value
 	}
 	if input.BaseCurrencyID != nil {
 		after.BaseCurrencyID = *input.BaseCurrencyID

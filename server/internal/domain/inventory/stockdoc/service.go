@@ -186,11 +186,11 @@ func (s *Service) Update(
 	if input.DocDate != nil {
 		after.DocDate = *input.DocDate
 	}
-	if input.Summary != nil {
-		after.Summary = *input.Summary
+	if input.Summary.Set {
+		after.Summary = input.Summary.Value
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if input.WarehouseID != nil {
 		after.WarehouseID = *input.WarehouseID

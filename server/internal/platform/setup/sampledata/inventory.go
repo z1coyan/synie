@@ -10,6 +10,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stocktransfer"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 func seedOpeningStock(
@@ -158,9 +159,8 @@ func seedStockCount(ctx context.Context, deps Dependencies, actor *authz.Actor, 
 			counted = item.BookQuantity.Add(decimal.NewFromInt(5))
 		}
 		countedPtr := counted
-		countedField := &countedPtr
 		if _, err := deps.StockCounts.UpdateItem(ctx, actor, item.ID, stockcount.UpdateItemInput{
-			CountedQuantity: &countedField,
+			CountedQuantity: optional.Of(countedPtr),
 		}); err != nil {
 			return err
 		}

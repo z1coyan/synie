@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type testNumberer struct {
@@ -32,17 +32,9 @@ func (n *testNumberer) NextInTx(_ context.Context, _ pgx.Tx, input numbering.Nex
 }
 
 func TestPostgresManufacturingMasterLifecycleAndSnapshots(t *testing.T) {
-	url := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("SYNIE_TEST_DATABASE_URL is not set")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	pool := testutil.NewPool(t, ctx)
 
 	fixture := seedManufacturingMasterFixture(t, ctx, pool)
 	defer fixture.cleanup(t, pool)

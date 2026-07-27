@@ -162,11 +162,11 @@ func (s *Service) UpdateQuotation(
 	if input.CurrencyID != nil {
 		after.CurrencyID = *input.CurrencyID
 	}
-	if input.Terms != nil {
-		after.Terms = *input.Terms
+	if input.Terms.Set {
+		after.Terms = input.Terms.Value
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	headChanged := strings.ToLower(after.PartyType) != locked.PartyType ||
 		after.PartyID != locked.PartyID || after.CurrencyID != locked.CurrencyID

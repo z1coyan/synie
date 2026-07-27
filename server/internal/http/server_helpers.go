@@ -6,18 +6,21 @@ package httpapi
 // 不要再散落到各领域 handler 文件。
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type listBody struct {
@@ -119,15 +122,140 @@ func countResultsResponse[C any, D any](count C, results []D) any {
 	return map[string]any{"count": count, "results": results}
 }
 
-func nullableStringUpdate(raw json.RawMessage) (**string, error) {
+// decodePatchJSON 解码 PATCH 请求体并返回出现过的键集合,
+// 使显式 JSON null 与省略字段保持可区分。这是 HTTP 层唯一的
+// 「双次解码 + 字段集合」入口, 配合 optionalField 使用。
+func decodePatchJSON(
+	w http.ResponseWriter,
+	r *http.Request,
+	target any,
+) (map[string]json.RawMessage, error) {
+	var raw json.RawMessage
+	if err := decodeJSON(w, r, &raw); err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return nil, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, errors.New("请求体只能包含一个 JSON 对象")
+		}
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	return fields, nil
+}
+
+// optionalField 依据 PATCH 字段出现集合构造三态 Optional[T]:
+// 键缺席 = 未设置; 键存在但值为 JSON null = 置 null (value 已为 nil)。
+func optionalField[T any](
+	fields map[string]json.RawMessage,
+	key string,
+	value *T,
+) optional.Optional[T] {
+	_, set := fields[key]
+	return optional.Optional[T]{Set: set, Value: value}
+}
+
+// optionalEnumField 是 optionalField 的枚举变体: 把 *E (枚举字符串) 转为 Optional[string]。
+func optionalEnumField[E ~string](
+	fields map[string]json.RawMessage,
+	key string,
+	value *E,
+) optional.Optional[string] {
+	if value == nil {
+		return optionalField[string](fields, key, nil)
+	}
+	converted := string(*value)
+	return optionalField(fields, key, &converted)
+}
+
+// optionalDecimalField 是 optionalField 的 decimal 变体: 值以十进制字符串传输。
+func optionalDecimalField(
+	fields map[string]json.RawMessage,
+	key string,
+	value *string,
+	resource string,
+) (optional.Optional[decimal.Decimal], error) {
+	_, set := fields[key]
+	if !set || value == nil {
+		return optional.Optional[decimal.Decimal]{Set: set}, nil
+	}
+	parsed, err := decimalInput(*value, resource, key)
+	if err != nil {
+		return optional.Optional[decimal.Decimal]{}, err
+	}
+	return optional.Optional[decimal.Decimal]{Set: true, Value: &parsed}, nil
+}
+
+// optionalUpdate 解析单个 json.RawMessage 形式的可空 PATCH 字段:
+// raw 为 nil (键缺席) = 未设置; "null" = 置 null; 其余解码为新值。
+func optionalUpdate[T any](raw json.RawMessage) (optional.Optional[T], error) {
 	if raw == nil {
-		return nil, nil
+		return optional.Optional[T]{}, nil
+	}
+	var value *T
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return optional.Optional[T]{}, err
+	}
+	return optional.Optional[T]{Set: true, Value: value}, nil
+}
+
+// optionalDateUpdate 是 optionalUpdate 的日期变体: 值必须是 YYYY-MM-DD 或 null。
+func optionalDateUpdate(raw json.RawMessage) (optional.Optional[time.Time], error) {
+	if raw == nil {
+		return optional.Optional[time.Time]{}, nil
+	}
+	var value *openapi_types.Date
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return optional.Optional[time.Time]{}, err
+	}
+	if value == nil {
+		return optional.Optional[time.Time]{Set: true}, nil
+	}
+	date := value.Time
+	return optional.Optional[time.Time]{Set: true, Value: &date}, nil
+}
+
+// optionalDecimalUpdate 是 optionalUpdate 的 decimal 变体: 值必须是十进制数字字符串或 null。
+func optionalDecimalUpdate(
+	raw json.RawMessage,
+	resource string,
+	field string,
+) (optional.Optional[decimal.Decimal], error) {
+	if raw == nil {
+		return optional.Optional[decimal.Decimal]{}, nil
 	}
 	var value *string
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, err
+		return optional.Optional[decimal.Decimal]{}, apierror.Validation(resource+"参数不合法", map[string][]string{
+			field: {"必须是十进制数字字符串或 null"},
+		})
 	}
-	return &value, nil
+	if value == nil {
+		return optional.Optional[decimal.Decimal]{Set: true}, nil
+	}
+	parsed, err := decimalInput(*value, resource, field)
+	if err != nil {
+		return optional.Optional[decimal.Decimal]{}, err
+	}
+	return optional.Optional[decimal.Decimal]{Set: true, Value: &parsed}, nil
+}
+
+// doublePtr 把三态 Optional[T] 转回 **T, 仅用于仍声明 **T 输入的
+// platform 包 (settings/files/printing 等) 边界, 不得用于新代码。
+func doublePtr[T any](value optional.Optional[T]) **T {
+	if !value.Set {
+		return nil
+	}
+	return &value.Value
 }
 
 func nullableStringError(resource, field string) error {
@@ -136,38 +264,10 @@ func nullableStringError(resource, field string) error {
 	})
 }
 
-func nullableUUIDUpdate(raw json.RawMessage) (**uuid.UUID, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	var value *uuid.UUID
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, err
-	}
-	return &value, nil
-}
-
 func nullableUUIDError(resource, field string) error {
 	return apierror.Validation(resource+"参数不合法", map[string][]string{
 		field: {"必须是 UUID 或 null"},
 	})
-}
-
-func nullableDateUpdate(raw json.RawMessage) (**time.Time, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	var value *openapi_types.Date
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, err
-	}
-	if value == nil {
-		var result *time.Time
-		return &result, nil
-	}
-	date := value.Time
-	result := &date
-	return &result, nil
 }
 
 func nullableDateError(resource, field string) error {
@@ -195,32 +295,6 @@ func optionalDecimalInput(raw *string, resource, field string) (*decimal.Decimal
 		return nil, err
 	}
 	return &value, nil
-}
-
-func nullableDecimalUpdate(
-	raw json.RawMessage,
-	resource string,
-	field string,
-) (**decimal.Decimal, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	var value *string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, apierror.Validation(resource+"参数不合法", map[string][]string{
-			field: {"必须是十进制数字字符串或 null"},
-		})
-	}
-	if value == nil {
-		var result *decimal.Decimal
-		return &result, nil
-	}
-	parsed, err := decimalInput(*value, resource, field)
-	if err != nil {
-		return nil, err
-	}
-	result := &parsed
-	return &result, nil
 }
 
 func datePointer(value *openapi_types.Date) *time.Time {

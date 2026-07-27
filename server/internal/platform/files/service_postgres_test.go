@@ -15,20 +15,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 func TestPostgresUploadAttachDownloadAndDeleteGuards(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL smoke test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	f := createFilesFixture(t, ctx, pool)
 	service := NewService(pool)
@@ -97,22 +90,14 @@ func TestPostgresUploadAttachDownloadAndDeleteGuards(t *testing.T) {
 }
 
 func TestPostgresUploadUnknownOwnerRollsBackRowAndObject(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL smoke test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 	f := createFilesFixture(t, ctx, pool)
 	service := NewService(pool)
 	actor := &authz.Actor{UserID: f.userID, Permissions: map[string]struct{}{"sys.file:create": {}}}
 
-	_, err = service.Upload(ctx, actor, UploadInput{
+	_, err := service.Upload(ctx, actor, UploadInput{
 		Reader: bytes.NewReader([]byte("x")), Filename: "x.txt",
 		OwnerType: "not_a_resource", OwnerID: &f.customerID,
 	})

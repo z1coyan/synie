@@ -2,7 +2,6 @@ package orderflow
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -12,20 +11,13 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 func TestPostgresOrderFlowReadPermissionORAndCompanyScope(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 	fixture := seedOrderFlowFixture(t, ctx, pool)
 	t.Cleanup(func() { fixture.cleanup(pool) })
 	service := NewService(pool)

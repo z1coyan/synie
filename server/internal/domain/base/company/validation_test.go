@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 func TestValidateCreateNormalizesAndAcceptsCompany(t *testing.T) {
@@ -31,11 +32,11 @@ func TestValidateCreateRejectsBusinessConstraints(t *testing.T) {
 func TestValidateUpdateAllowsExplicitParentClear(t *testing.T) {
 	t.Parallel()
 	var parent *uuid.UUID
-	input := UpdateInput{ParentID: &parent}
+	input := UpdateInput{ParentID: optional.Optional[uuid.UUID]{Set: true, Value: parent}}
 	if err := validateUpdate(&input); err != nil {
 		t.Fatal(err)
 	}
-	if input.ParentID == nil || *input.ParentID != nil {
+	if !input.ParentID.Set || input.ParentID.Value != nil {
 		t.Fatalf("explicit null parent lost: %#v", input.ParentID)
 	}
 }

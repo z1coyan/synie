@@ -175,11 +175,11 @@ func (s *Service) UpdateOrder(
 	if input.ExchangeRate != nil {
 		after.ExchangeRate = *input.ExchangeRate
 	}
-	if input.Terms != nil {
-		after.Terms = *input.Terms
+	if input.Terms.Set {
+		after.Terms = input.Terms.Value
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	var hasItems bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM `+spec.itemTable+

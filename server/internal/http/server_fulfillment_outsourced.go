@@ -153,17 +153,17 @@ func (s *Server) UpdatePurchaseOutsourcedIssue(w http.ResponseWriter, r *http.Re
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("委外发料单", "remarks"))
 		return
 	}
-	fromWarehouseID, err := nullableUUIDUpdate(body.FromWarehouseID)
+	fromWarehouseID, err := optionalUpdate[uuid.UUID](body.FromWarehouseID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("委外发料单", "fromWarehouseId"))
 		return
 	}
-	outsourcedWarehouseID, err := nullableUUIDUpdate(body.OutsourcedWarehouseID)
+	outsourcedWarehouseID, err := optionalUpdate[uuid.UUID](body.OutsourcedWarehouseID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("委外发料单", "outsourcedWarehouseId"))
 		return
@@ -289,7 +289,7 @@ func (s *Server) UpdatePurchaseOutsourcedIssueItem(w http.ResponseWriter, r *htt
 		s.writeError(w, r, err)
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("委外发料条目", "remarks"))
 		return
@@ -409,22 +409,22 @@ func (s *Server) UpdatePurchaseOutsourcedReceipt(w http.ResponseWriter, r *http.
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	postingDate, err := nullableDateUpdate(body.PostingDate)
+	postingDate, err := optionalDateUpdate(body.PostingDate)
 	if err != nil {
 		s.writeError(w, r, nullableDateError("委外入库单", "postingDate"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("委外入库单", "remarks"))
 		return
 	}
-	warehouseID, err := nullableUUIDUpdate(body.WarehouseID)
+	warehouseID, err := optionalUpdate[uuid.UUID](body.WarehouseID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("委外入库单", "warehouseId"))
 		return
 	}
-	outsourcedWarehouseID, err := nullableUUIDUpdate(body.OutsourcedWarehouseID)
+	outsourcedWarehouseID, err := optionalUpdate[uuid.UUID](body.OutsourcedWarehouseID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("委外入库单", "outsourcedWarehouseId"))
 		return
@@ -561,12 +561,12 @@ func (s *Server) UpdatePurchaseOutsourcedReceiptItem(w http.ResponseWriter, r *h
 		s.writeError(w, r, err)
 		return
 	}
-	unitID, err := nullableUUIDUpdate(body.UnitID)
+	unitID, err := optionalUpdate[uuid.UUID](body.UnitID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("委外入库条目", "unitId"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("委外入库条目", "remarks"))
 		return
@@ -673,12 +673,12 @@ func (s *Server) UpdatePurchaseOutsourcedReceiptItemMaterial(w http.ResponseWrit
 		s.writeError(w, r, err)
 		return
 	}
-	warehouseID, err := nullableUUIDUpdate(body.OutsourcedWarehouseID)
+	warehouseID, err := optionalUpdate[uuid.UUID](body.OutsourcedWarehouseID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("委外入库材料扣减行", "outsourcedWarehouseId"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("委外入库材料扣减行", "remarks"))
 		return
@@ -785,12 +785,12 @@ func (s *Server) UpdatePurchaseOutsourcedReceiptItemByproduct(w http.ResponseWri
 		s.writeError(w, r, err)
 		return
 	}
-	warehouseID, err := nullableUUIDUpdate(body.WarehouseID)
+	warehouseID, err := optionalUpdate[uuid.UUID](body.WarehouseID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("委外入库副产物行", "warehouseId"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("委外入库副产物行", "remarks"))
 		return

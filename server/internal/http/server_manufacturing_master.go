@@ -41,17 +41,6 @@ func optionalCode(value *string) string {
 	return *value
 }
 
-func rawOptionalString(raw json.RawMessage, label, field string) (master.OptionalString, error) {
-	if raw == nil {
-		return master.OptionalString{}, nil
-	}
-	var value *string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return master.OptionalString{}, nullableStringError(label, field)
-	}
-	return master.OptionalString{Set: true, Value: value}, nil
-}
-
 func (s *Server) QueryManufacturingOperations(w http.ResponseWriter, r *http.Request) {
 	actor, ok := s.manufacturingActor(w, r, "mfg.operation:read")
 	if !ok {
@@ -106,9 +95,9 @@ func (s *Server) UpdateManufacturingOperation(w http.ResponseWriter, r *http.Req
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	note, err := rawOptionalString(body.Note, "工序", "note")
+	note, err := optionalUpdate[string](body.Note)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, nullableStringError("工序", "note"))
 		return
 	}
 	item, err := s.ManufacturingMaster.UpdateOperation(r.Context(), actor, id, master.HeadUpdateInput{
@@ -187,9 +176,9 @@ func (s *Server) UpdateManufacturingProcessTemplate(w http.ResponseWriter, r *ht
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	note, err := rawOptionalString(body.Note, "工艺模板", "note")
+	note, err := optionalUpdate[string](body.Note)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, nullableStringError("工艺模板", "note"))
 		return
 	}
 	item, err := s.ManufacturingMaster.UpdateTemplate(r.Context(), actor, id, master.HeadUpdateInput{
@@ -382,14 +371,14 @@ func (s *Server) UpdateManufacturingBom(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	planName, err := rawOptionalString(body.PlanName, "BOM", "planName")
+	planName, err := optionalUpdate[string](body.PlanName)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, nullableStringError("BOM", "planName"))
 		return
 	}
-	note, err := rawOptionalString(body.Note, "BOM", "note")
+	note, err := optionalUpdate[string](body.Note)
 	if err != nil {
-		s.writeError(w, r, err)
+		s.writeError(w, r, nullableStringError("BOM", "note"))
 		return
 	}
 	item, err := s.ManufacturingMaster.UpdateBOM(r.Context(), actor, id, master.BOMUpdateInput{

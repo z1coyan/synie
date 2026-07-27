@@ -1,11 +1,7 @@
 package httpapi
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
-	"io"
-	"net/http"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -25,36 +21,6 @@ func financeDocumentsList(body listBody) documents.ListQuery {
 	return documents.ListQuery{
 		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
 	}
-}
-
-// decodeFinanceJSON preserves the set of keys that appeared in a PATCH body,
-// so an explicit JSON null remains distinguishable from an omitted field.
-func decodeFinanceJSON(
-	w http.ResponseWriter,
-	r *http.Request,
-	target any,
-) (map[string]json.RawMessage, error) {
-	var raw json.RawMessage
-	if err := decodeJSON(w, r, &raw); err != nil {
-		return nil, err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return nil, err
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return nil, errors.New("请求体只能包含一个 JSON 对象")
-		}
-		return nil, err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return nil, err
-	}
-	return fields, nil
 }
 
 func financeDate(value *openapi_types.Date) *string {

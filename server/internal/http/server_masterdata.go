@@ -9,6 +9,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/sales/customer"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 func customerListQuery(body listBody) customer.ListQuery {
@@ -72,14 +73,12 @@ func (s *Server) UpdateSalesCustomer(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	input := customer.UpdateInput{Code: body.Code, Name: body.Name}
-	if body.ShortName != nil {
-		input.ShortName.Set = true
-		if err := json.Unmarshal(body.ShortName, &input.ShortName.Value); err != nil {
-			s.writeError(w, r, nullableStringError("客户", "shortName"))
-			return
-		}
+	shortName, err := optionalUpdate[string](body.ShortName)
+	if err != nil {
+		s.writeError(w, r, nullableStringError("客户", "shortName"))
+		return
 	}
+	input := customer.UpdateInput{Code: body.Code, Name: body.Name, ShortName: shortName}
 	item, err := s.Customers.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
@@ -169,14 +168,12 @@ func (s *Server) UpdatePurchaseSupplier(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	input := supplier.UpdateInput{Code: body.Code, Name: body.Name}
-	if body.ShortName != nil {
-		input.ShortName.Set = true
-		if err := json.Unmarshal(body.ShortName, &input.ShortName.Value); err != nil {
-			s.writeError(w, r, nullableStringError("供应商", "shortName"))
-			return
-		}
+	shortName, err := optionalUpdate[string](body.ShortName)
+	if err != nil {
+		s.writeError(w, r, nullableStringError("供应商", "shortName"))
+		return
 	}
+	input := supplier.UpdateInput{Code: body.Code, Name: body.Name, ShortName: shortName}
 	item, err := s.Suppliers.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
@@ -280,7 +277,7 @@ func (s *Server) UpdateHrEmployee(w http.ResponseWriter, r *http.Request, id gen
 	input := employee.UpdateInput{Code: body.Code, Name: body.Name}
 	for _, field := range []struct {
 		raw    json.RawMessage
-		target *employee.OptionalString
+		target *optional.Optional[string]
 	}{
 		{body.AttendanceNo, &input.AttendanceNo},
 		{body.IDNumber, &input.IDNumber},
@@ -290,16 +287,14 @@ func (s *Server) UpdateHrEmployee(w http.ResponseWriter, r *http.Request, id gen
 		{body.DailyWage, &input.DailyWage},
 		{body.MonthlyAllowance, &input.MonthlyAllowance},
 	} {
-		if field.raw == nil {
-			continue
-		}
-		field.target.Set = true
-		if err := json.Unmarshal(field.raw, &field.target.Value); err != nil {
+		value, err := optionalUpdate[string](field.raw)
+		if err != nil {
 			s.writeError(w, r, apierror.Validation("员工参数不合法", map[string][]string{
 				"body": {"可空字段必须是字符串或 null"},
 			}))
 			return
 		}
+		*field.target = value
 	}
 	if body.InsuranceTypes != nil {
 		var values []gen.EmployeeInsuranceType

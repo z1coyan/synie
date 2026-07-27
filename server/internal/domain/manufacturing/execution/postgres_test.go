@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type testNumberer struct{}
@@ -585,16 +585,9 @@ func (f *executionFixture) setOutputRatio(t *testing.T, value string) {
 
 func newExecutionFixture(t *testing.T) *executionFixture {
 	t.Helper()
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool := testutil.NewPool(t, ctx)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	f := &executionFixture{
 		pool: pool, companyID: uuid.New(), userID: uuid.New(),
@@ -632,7 +625,7 @@ func newExecutionFixture(t *testing.T) *executionFixture {
 		pool.Close()
 		t.Fatal(err)
 	}
-	err = pool.QueryRow(ctx, `SELECT id,output_overreceive_ratio
+	err := pool.QueryRow(ctx, `SELECT id,output_overreceive_ratio
 		FROM mfg_setting ORDER BY inserted_at,id LIMIT 1`).
 		Scan(&f.settingID, &f.settingOld)
 	if errors.Is(err, pgx.ErrNoRows) {

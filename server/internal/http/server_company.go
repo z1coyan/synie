@@ -73,14 +73,14 @@ func (s *Server) UpdateBasCompany(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	input := company.UpdateInput{Name: body.Name, ShortName: body.ShortName, BaseCurrencyID: body.BaseCurrencyID}
-	if body.ParentID != nil {
-		var parentID *uuid.UUID
-		if err := json.Unmarshal(body.ParentID, &parentID); err != nil {
-			s.writeError(w, r, apierror.Validation("公司参数不合法", map[string][]string{"parentId": {"必须是 UUID 或 null"}}))
-			return
-		}
-		input.ParentID = &parentID
+	parentID, err := optionalUpdate[uuid.UUID](body.ParentID)
+	if err != nil {
+		s.writeError(w, r, apierror.Validation("公司参数不合法", map[string][]string{"parentId": {"必须是 UUID 或 null"}}))
+		return
+	}
+	input := company.UpdateInput{
+		Name: body.Name, ShortName: body.ShortName, BaseCurrencyID: body.BaseCurrencyID,
+		ParentID: parentID,
 	}
 	item, err := s.Companies.Update(r.Context(), actor, id, input)
 	if err != nil {

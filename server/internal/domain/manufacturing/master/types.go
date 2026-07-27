@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Operation struct {
@@ -94,7 +95,7 @@ type HeadCreateInput struct {
 
 type HeadUpdateInput struct {
 	Name *string
-	Note OptionalString
+	Note optional.Optional[string]
 }
 
 type BOMCreateInput struct {
@@ -105,8 +106,8 @@ type BOMCreateInput struct {
 }
 
 type BOMUpdateInput struct {
-	PlanName OptionalString
-	Note     OptionalString
+	PlanName optional.Optional[string]
+	Note     optional.Optional[string]
 }
 
 type RouteItemInput struct {
@@ -131,11 +132,6 @@ type ByproductInput struct {
 	BOMID      uuid.UUID
 	MaterialID uuid.UUID
 	UnitID     uuid.UUID
-}
-
-type OptionalString struct {
-	Set   bool
-	Value *string
 }
 
 type ListQuery struct {

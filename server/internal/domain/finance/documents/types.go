@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 const (
@@ -51,21 +52,6 @@ type ListQuery struct {
 	Search        string
 	Sort          *filterbuild.Sort
 	Filter        map[string]json.RawMessage
-}
-
-type OptionalString struct {
-	Set   bool
-	Value *string
-}
-
-type OptionalUUID struct {
-	Set   bool
-	Value *uuid.UUID
-}
-
-type OptionalBool struct {
-	Set   bool
-	Value bool
 }
 
 type VatInvoice struct {
@@ -154,36 +140,36 @@ type VatInvoiceInput struct {
 // locks and reloads the current draft, overlays only Set fields, then validates
 // the complete resulting document.
 type VatInvoiceUpdateInput struct {
-	DocNo                    OptionalString
+	DocNo                    optional.Optional[string]
 	Direction                *string
-	InvoiceDate              OptionalString
+	InvoiceDate              optional.Optional[string]
 	PartyType                *string
 	PartyID                  *uuid.UUID
 	InvoiceKind              *string
 	InvoiceCode              *string
-	InvoiceNo                OptionalString
-	SellerName               OptionalString
-	SellerTaxNo              OptionalString
-	SellerAddressPhone       OptionalString
-	SellerBankAccount        OptionalString
-	BuyerName                OptionalString
-	BuyerTaxNo               OptionalString
-	BuyerAddressPhone        OptionalString
-	BuyerBankAccount         OptionalString
+	InvoiceNo                optional.Optional[string]
+	SellerName               optional.Optional[string]
+	SellerTaxNo              optional.Optional[string]
+	SellerAddressPhone       optional.Optional[string]
+	SellerBankAccount        optional.Optional[string]
+	BuyerName                optional.Optional[string]
+	BuyerTaxNo               optional.Optional[string]
+	BuyerAddressPhone        optional.Optional[string]
+	BuyerBankAccount         optional.Optional[string]
 	Items                    *string
-	NetTotal                 OptionalString
-	TaxTotal                 OptionalString
-	GrossTotal               OptionalString
-	Issuer                   OptionalString
-	Reviewer                 OptionalString
-	Payee                    OptionalString
-	Remarks                  OptionalString
-	PartyAccountID           OptionalUUID
-	AmountAccountID          OptionalUUID
-	TaxAccountID             OptionalUUID
-	MirrorInvoiceID          OptionalUUID
-	SalesReconciliationID    OptionalUUID
-	PurchaseReconciliationID OptionalUUID
+	NetTotal                 optional.Optional[string]
+	TaxTotal                 optional.Optional[string]
+	GrossTotal               optional.Optional[string]
+	Issuer                   optional.Optional[string]
+	Reviewer                 optional.Optional[string]
+	Payee                    optional.Optional[string]
+	Remarks                  optional.Optional[string]
+	PartyAccountID           optional.Optional[uuid.UUID]
+	AmountAccountID          optional.Optional[uuid.UUID]
+	TaxAccountID             optional.Optional[uuid.UUID]
+	MirrorInvoiceID          optional.Optional[uuid.UUID]
+	SalesReconciliationID    optional.Optional[uuid.UUID]
+	PurchaseReconciliationID optional.Optional[uuid.UUID]
 }
 
 type ReverseVatInvoiceInput struct {
@@ -230,10 +216,10 @@ type ExpenseReportInput struct {
 }
 
 type ExpenseReportUpdateInput struct {
-	DocNo            OptionalString
+	DocNo            optional.Optional[string]
 	ExpenseDate      *string
-	PostingDate      OptionalString
-	Remarks          OptionalString
+	PostingDate      optional.Optional[string]
+	Remarks          optional.Optional[string]
 	EmployeeID       *uuid.UUID
 	PaymentAccountID *uuid.UUID
 }
@@ -272,11 +258,11 @@ type ExpenseReportItemInput struct {
 type ExpenseReportItemUpdateInput struct {
 	Idx              *int64
 	Kind             *string
-	Summary          OptionalString
-	Amount           OptionalString
-	Remarks          OptionalString
-	InvoiceID        OptionalUUID
-	ExpenseAccountID OptionalUUID
+	Summary          optional.Optional[string]
+	Amount           optional.Optional[string]
+	Remarks          optional.Optional[string]
+	InvoiceID        optional.Optional[uuid.UUID]
+	ExpenseAccountID optional.Optional[uuid.UUID]
 }
 
 type Bill struct {
@@ -335,24 +321,24 @@ type BillAttrs struct {
 
 type BillUpdateInput struct {
 	BillKind         *string
-	IssueDate        OptionalString
+	IssueDate        optional.Optional[string]
 	DueDate          *string
-	FaceAmount       OptionalString
-	DrawerName       OptionalString
-	DrawerAccount    OptionalString
-	DrawerBankName   OptionalString
-	DrawerBankNo     OptionalString
-	PayeeName        OptionalString
-	PayeeAccount     OptionalString
-	PayeeBankName    OptionalString
-	PayeeBankNo      OptionalString
-	AcceptorName     OptionalString
-	AcceptorAccount  OptionalString
-	AcceptorBankName OptionalString
-	AcceptorBankNo   OptionalString
+	FaceAmount       optional.Optional[string]
+	DrawerName       optional.Optional[string]
+	DrawerAccount    optional.Optional[string]
+	DrawerBankName   optional.Optional[string]
+	DrawerBankNo     optional.Optional[string]
+	PayeeName        optional.Optional[string]
+	PayeeAccount     optional.Optional[string]
+	PayeeBankName    optional.Optional[string]
+	PayeeBankNo      optional.Optional[string]
+	AcceptorName     optional.Optional[string]
+	AcceptorAccount  optional.Optional[string]
+	AcceptorBankName optional.Optional[string]
+	AcceptorBankNo   optional.Optional[string]
 	Transferable     *bool
-	AcceptanceDate   OptionalString
-	Remarks          OptionalString
+	AcceptanceDate   optional.Optional[string]
+	Remarks          optional.Optional[string]
 }
 
 type BillTransaction struct {
@@ -417,25 +403,25 @@ type BillTransactionInput struct {
 }
 
 type BillTransactionUpdateInput struct {
-	DocNo             OptionalString
+	DocNo             optional.Optional[string]
 	OccurredOn        *string
 	SubStart          *int64
 	SubEnd            *int64
 	Amount            *string
-	PartyType         OptionalString
-	PartyID           OptionalUUID
-	DiscountOrg       OptionalString
-	DiscountRate      OptionalString
-	Interest          OptionalString
-	NetAmount         OptionalString
-	PostingDate       OptionalString
-	Remarks           OptionalString
+	PartyType         optional.Optional[string]
+	PartyID           optional.Optional[uuid.UUID]
+	DiscountOrg       optional.Optional[string]
+	DiscountRate      optional.Optional[string]
+	Interest          optional.Optional[string]
+	NetAmount         optional.Optional[string]
+	PostingDate       optional.Optional[string]
+	Remarks           optional.Optional[string]
 	BankAccountID     *uuid.UUID
-	ToBankAccountID   OptionalUUID
+	ToBankAccountID   optional.Optional[uuid.UUID]
 	BillID            *uuid.UUID
-	BillAccountID     OptionalUUID
-	SettleAccountID   OptionalUUID
-	InterestAccountID OptionalUUID
+	BillAccountID     optional.Optional[uuid.UUID]
+	SettleAccountID   optional.Optional[uuid.UUID]
+	InterestAccountID optional.Optional[uuid.UUID]
 }
 
 type AuditBillTransactionInput struct {

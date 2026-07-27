@@ -133,8 +133,8 @@ func (s *Service) UpdateDemand(
 	if input.DemandDate != nil {
 		after.DemandDate = *input.DemandDate
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if err := validateNo(after.DemandNo, "demandNo"); err != nil {
 		return Demand{}, err
@@ -404,17 +404,17 @@ func (s *Service) UpdateDemandItem(
 	if input.Qty != nil {
 		after.Qty = *input.Qty
 	}
-	if input.NeedDate != nil {
-		after.NeedDate = *input.NeedDate
+	if input.NeedDate.Set {
+		after.NeedDate = input.NeedDate.Value
 	}
 	if input.FulfillmentMethod != nil {
 		after.FulfillmentMethod = *input.FulfillmentMethod
 	}
-	if input.SalesOrderItemID != nil {
-		after.SalesOrderItemID = *input.SalesOrderItemID
+	if input.SalesOrderItemID.Set {
+		after.SalesOrderItemID = input.SalesOrderItemID.Value
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if !validFulfillmentMethod(after.FulfillmentMethod) {
 		return DemandItem{}, apierror.Validation("需求行参数不合法",

@@ -113,23 +113,23 @@ func TestQuotationBodyHandlersAuthorizeBeforeJSONValidation(t *testing.T) {
 	}
 }
 
-func TestNullableDecimalUpdate(t *testing.T) {
-	value, err := nullableDecimalUpdate([]byte(`"12.3400"`), "报价条目", "price")
-	if err != nil || value == nil || *value == nil || !(**value).Equal(decimal.RequireFromString("12.34")) {
+func TestOptionalDecimalUpdate(t *testing.T) {
+	value, err := optionalDecimalUpdate([]byte(`"12.3400"`), "报价条目", "price")
+	if err != nil || !value.Set || value.Value == nil || !value.Value.Equal(decimal.RequireFromString("12.34")) {
 		t.Fatalf("valid decimal = %#v, err=%v", value, err)
 	}
-	value, err = nullableDecimalUpdate([]byte(`null`), "报价条目", "price")
-	if err != nil || value == nil || *value != nil {
+	value, err = optionalDecimalUpdate([]byte(`null`), "报价条目", "price")
+	if err != nil || !value.Set || value.Value != nil {
 		t.Fatalf("null decimal = %#v, err=%v", value, err)
 	}
-	value, err = nullableDecimalUpdate(nil, "报价条目", "price")
-	if err != nil || value != nil {
+	value, err = optionalDecimalUpdate(nil, "报价条目", "price")
+	if err != nil || value.Set {
 		t.Fatalf("omitted decimal = %#v, err=%v", value, err)
 	}
-	if _, err := nullableDecimalUpdate([]byte(`12.34`), "报价条目", "price"); err == nil {
+	if _, err := optionalDecimalUpdate([]byte(`12.34`), "报价条目", "price"); err == nil {
 		t.Fatal("numeric JSON value must not bypass decimal-string contract")
 	}
-	if _, err := nullableDecimalUpdate([]byte(`"bad"`), "报价条目", "price"); err == nil {
+	if _, err := optionalDecimalUpdate([]byte(`"bad"`), "报价条目", "price"); err == nil {
 		t.Fatal("invalid decimal should fail")
 	}
 }

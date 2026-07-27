@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Status string
@@ -79,8 +80,8 @@ type CreateInput struct {
 type UpdateInput struct {
 	DocNo       *string
 	PostingDate *time.Time
-	Summary     **string
-	Remarks     **string
+	Summary     optional.Optional[string]
+	Remarks     optional.Optional[string]
 	WarehouseID *uuid.UUID
 }
 
@@ -95,6 +96,6 @@ type CreateItemInput struct {
 type UpdateItemInput struct {
 	MaterialID      *uuid.UUID
 	UnitID          *uuid.UUID
-	CountedQuantity **decimal.Decimal
-	Remark          **string
+	CountedQuantity optional.Optional[decimal.Decimal]
+	Remark          optional.Optional[string]
 }

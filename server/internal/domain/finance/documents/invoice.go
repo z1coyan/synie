@@ -17,6 +17,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 const invoiceColumns = `id,doc_no,direction,invoice_date,posting_date,party_type,
@@ -858,11 +859,11 @@ func vatInvoiceToInput(value VatInvoice) VatInvoiceInput {
 
 func overlayVatInvoice(before VatInvoice, update VatInvoiceUpdateInput) VatInvoiceInput {
 	result := vatInvoiceToInput(before)
-	applyOptionalString(&result.DocNo, update.DocNo)
+	optional.Apply(&result.DocNo, update.DocNo)
 	if update.Direction != nil {
 		result.Direction = *update.Direction
 	}
-	applyOptionalString(&result.InvoiceDate, update.InvoiceDate)
+	optional.Apply(&result.InvoiceDate, update.InvoiceDate)
 	if update.PartyType != nil {
 		result.PartyType = *update.PartyType
 	}
@@ -875,44 +876,32 @@ func overlayVatInvoice(before VatInvoice, update VatInvoiceUpdateInput) VatInvoi
 	if update.InvoiceCode != nil {
 		result.InvoiceCode = *update.InvoiceCode
 	}
-	applyOptionalString(&result.InvoiceNo, update.InvoiceNo)
-	applyOptionalString(&result.SellerName, update.SellerName)
-	applyOptionalString(&result.SellerTaxNo, update.SellerTaxNo)
-	applyOptionalString(&result.SellerAddressPhone, update.SellerAddressPhone)
-	applyOptionalString(&result.SellerBankAccount, update.SellerBankAccount)
-	applyOptionalString(&result.BuyerName, update.BuyerName)
-	applyOptionalString(&result.BuyerTaxNo, update.BuyerTaxNo)
-	applyOptionalString(&result.BuyerAddressPhone, update.BuyerAddressPhone)
-	applyOptionalString(&result.BuyerBankAccount, update.BuyerBankAccount)
+	optional.Apply(&result.InvoiceNo, update.InvoiceNo)
+	optional.Apply(&result.SellerName, update.SellerName)
+	optional.Apply(&result.SellerTaxNo, update.SellerTaxNo)
+	optional.Apply(&result.SellerAddressPhone, update.SellerAddressPhone)
+	optional.Apply(&result.SellerBankAccount, update.SellerBankAccount)
+	optional.Apply(&result.BuyerName, update.BuyerName)
+	optional.Apply(&result.BuyerTaxNo, update.BuyerTaxNo)
+	optional.Apply(&result.BuyerAddressPhone, update.BuyerAddressPhone)
+	optional.Apply(&result.BuyerBankAccount, update.BuyerBankAccount)
 	if update.Items != nil {
 		result.Items = *update.Items
 	}
-	applyOptionalString(&result.NetTotal, update.NetTotal)
-	applyOptionalString(&result.TaxTotal, update.TaxTotal)
-	applyOptionalString(&result.GrossTotal, update.GrossTotal)
-	applyOptionalString(&result.Issuer, update.Issuer)
-	applyOptionalString(&result.Reviewer, update.Reviewer)
-	applyOptionalString(&result.Payee, update.Payee)
-	applyOptionalString(&result.Remarks, update.Remarks)
-	applyOptionalUUID(&result.PartyAccountID, update.PartyAccountID)
-	applyOptionalUUID(&result.AmountAccountID, update.AmountAccountID)
-	applyOptionalUUID(&result.TaxAccountID, update.TaxAccountID)
-	applyOptionalUUID(&result.MirrorInvoiceID, update.MirrorInvoiceID)
-	applyOptionalUUID(&result.SalesReconciliationID, update.SalesReconciliationID)
-	applyOptionalUUID(&result.PurchaseReconciliationID, update.PurchaseReconciliationID)
+	optional.Apply(&result.NetTotal, update.NetTotal)
+	optional.Apply(&result.TaxTotal, update.TaxTotal)
+	optional.Apply(&result.GrossTotal, update.GrossTotal)
+	optional.Apply(&result.Issuer, update.Issuer)
+	optional.Apply(&result.Reviewer, update.Reviewer)
+	optional.Apply(&result.Payee, update.Payee)
+	optional.Apply(&result.Remarks, update.Remarks)
+	optional.Apply(&result.PartyAccountID, update.PartyAccountID)
+	optional.Apply(&result.AmountAccountID, update.AmountAccountID)
+	optional.Apply(&result.TaxAccountID, update.TaxAccountID)
+	optional.Apply(&result.MirrorInvoiceID, update.MirrorInvoiceID)
+	optional.Apply(&result.SalesReconciliationID, update.SalesReconciliationID)
+	optional.Apply(&result.PurchaseReconciliationID, update.PurchaseReconciliationID)
 	return result
-}
-
-func applyOptionalString(target **string, value OptionalString) {
-	if value.Set {
-		*target = value.Value
-	}
-}
-
-func applyOptionalUUID(target **uuid.UUID, value OptionalUUID) {
-	if value.Set {
-		*target = value.Value
-	}
 }
 
 func invoiceSnapshot(value VatInvoice) map[string]any {

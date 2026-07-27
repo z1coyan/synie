@@ -3,15 +3,14 @@ package warehouse
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 func errorCode(err error) apierror.Code {
@@ -24,17 +23,9 @@ func errorCode(err error) apierror.Code {
 
 // 公司隔离防探测:记录存在但属于他公司时,读取/更新/删除统一表现为「不存在」。
 func TestPostgresCrossCompanyIsolationReadsAsNotFound(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:10])
 	var currencyID, companyA, companyB uuid.UUID

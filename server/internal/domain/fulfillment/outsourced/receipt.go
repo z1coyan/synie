@@ -163,8 +163,8 @@ func (s *Service) UpdateReceiptItem(ctx context.Context, actor *authz.Actor, id 
 	if input.WarehouseID != nil {
 		after.WarehouseID = *input.WarehouseID
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if after.OrderItemID != before.OrderItemID {
 		var children bool
@@ -179,8 +179,8 @@ func (s *Service) UpdateReceiptItem(ctx context.Context, actor *authz.Actor, id 
 		}
 	}
 	var unitID *uuid.UUID
-	if input.UnitID != nil {
-		unitID = *input.UnitID
+	if input.UnitID.Set {
+		unitID = input.UnitID.Value
 	} else {
 		unitID = &after.UnitID
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +16,8 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type quotationNumberer struct {
@@ -326,16 +327,9 @@ func TestPostgresQuotationPurchaseAndSalesCustomerMaterialRulesAndScope(t *testi
 
 func newQuotationFixture(t *testing.T) quotationFixture {
 	t.Helper()
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool := testutil.NewPool(t, ctx)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	f := quotationFixture{
 		pool: pool, companyID: uuid.New(), otherCompanyID: uuid.New(),
@@ -361,12 +355,14 @@ func newQuotationFixture(t *testing.T) quotationFixture {
 		f.otherCustomerID, "D"+suffix, "其他报价测试客户-"+suffix)
 	batch.Queue(`INSERT INTO pur_supplier(id,code,name) VALUES($1,$2,$3)`,
 		f.supplierID, "S"+suffix, "报价测试供应商-"+suffix)
+	// unit_type 取每次运行唯一值:bas_unit 对 is_base=true 有全库唯一的
+	// 每类型一行约束,字面量类型会与并行包撞唯一索引(与 order/standard 同一约定)。
 	batch.Queue(`INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio) VALUES
-		($1,'quantity',true,$2,$3,1),($4,'quantity',false,$5,$6,10),
-		($7,'quantity',false,$8,$9,1)`,
+		($1,$10,true,$2,$3,1),($4,$10,false,$5,$6,10),
+		($7,$10,false,$8,$9,1)`,
 		f.unitID, "报价测试个-"+suffix, "EA"+suffix,
 		f.alternateUnitID, "报价测试箱-"+suffix, "BOX"+suffix,
-		f.badUnitID, "报价测试错误单位-"+suffix, "BAD"+suffix)
+		f.badUnitID, "报价测试错误单位-"+suffix, "BAD"+suffix, "quotation-"+suffix)
 	batch.Queue(`INSERT INTO inv_material_category(id,code,name,is_leaf,active)
 		VALUES($1,$2,$3,true,true)`,
 		f.categoryID, "MC"+suffix, "报价测试分类-"+suffix)
@@ -446,9 +442,8 @@ func stringPtr(value string) *string {
 	return &value
 }
 
-func decimalValuePtr(value decimal.Decimal) **decimal.Decimal {
-	result := &value
-	return &result
+func decimalValuePtr(value decimal.Decimal) optional.Optional[decimal.Decimal] {
+	return optional.Of(value)
 }
 
 func hasString(items []string, value string) bool {

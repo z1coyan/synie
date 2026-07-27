@@ -20,6 +20,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Numberer interface {
@@ -152,13 +153,13 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 	if input.Name != nil {
 		after.Name = *input.Name
 	}
-	applyOptional(&after.AttendanceNo, input.AttendanceNo)
-	applyOptional(&after.IDNumber, input.IDNumber)
-	applyOptional(&after.HouseholdRegistration, input.HouseholdRegistration)
-	applyOptional(&after.Phone, input.Phone)
-	applyOptional(&after.CurrentAddress, input.CurrentAddress)
-	applyOptional(&after.DailyWage, input.DailyWage)
-	applyOptional(&after.MonthlyAllowance, input.MonthlyAllowance)
+	optional.Apply(&after.AttendanceNo, input.AttendanceNo)
+	optional.Apply(&after.IDNumber, input.IDNumber)
+	optional.Apply(&after.HouseholdRegistration, input.HouseholdRegistration)
+	optional.Apply(&after.Phone, input.Phone)
+	optional.Apply(&after.CurrentAddress, input.CurrentAddress)
+	optional.Apply(&after.DailyWage, input.DailyWage)
+	optional.Apply(&after.MonthlyAllowance, input.MonthlyAllowance)
 	if input.InsuranceTypes != nil {
 		after.InsuranceTypes = *input.InsuranceTypes
 	}
@@ -360,12 +361,6 @@ func normalizedInsurance(values []string) ([]string, map[string][]string) {
 func mergeValidation(target map[string][]string, addition map[string][]string) {
 	for key, messages := range addition {
 		target[key] = messages
-	}
-}
-
-func applyOptional(target **string, input OptionalString) {
-	if input.Set {
-		*target = input.Value
 	}
 }
 

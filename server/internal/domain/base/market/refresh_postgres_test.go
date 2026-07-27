@@ -2,15 +2,14 @@ package market
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type fakeLastClient struct{ quote LastQuote }
@@ -26,17 +25,13 @@ func (client fakeSettlementClient) FetchSettlement(context.Context, string, time
 }
 
 func TestPostgresMarketRefreshWithInjectedClients(t *testing.T) {
-	databaseURL := testDatabaseURL(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	userID, currencyID, unitID := uuid.New(), uuid.New(), uuid.New()
+	var err error
 	if _, err = pool.Exec(ctx, `INSERT INTO sys_user(id,username,name,hashed_password) VALUES($1,$2,'刷新测试','test-only')`,
 		userID, "refresh_"+suffix); err != nil {
 		t.Fatal(err)
@@ -141,13 +136,4 @@ func TestPostgresMarketRefreshWithInjectedClients(t *testing.T) {
 	if systemAudit == 0 {
 		t.Fatal("refresh summary audit missing")
 	}
-}
-
-func testDatabaseURL(t *testing.T) string {
-	t.Helper()
-	value := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if value == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
-	return value
 }

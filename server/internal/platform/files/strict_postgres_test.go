@@ -3,30 +3,21 @@ package files
 import (
 	"bytes"
 	"context"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 func TestPostgresConcurrentDefaultSwitchKeepsExactlyOneDefault(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL smoke test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 	service := NewStorageService(pool)
 	actor := &authz.Actor{UserID: uuid.New(), Username: "storage-concurrency-test"}
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
@@ -90,25 +81,20 @@ func TestPostgresConcurrentDefaultSwitchKeepsExactlyOneDefault(t *testing.T) {
 }
 
 func TestPostgresAttachmentCompanyScopeIsFailClosed(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL smoke test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 	f := createFilesFixture(t, ctx, pool)
 	service := NewService(pool)
 
+	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
+	// 自带币种而非借用共享行:并行包可能选中并清理他包的临时币种,造成外键竞争。
 	var currencyID uuid.UUID
-	if err := pool.QueryRow(ctx, "SELECT id FROM bas_currency ORDER BY iso_code LIMIT 1").Scan(&currencyID); err != nil {
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO bas_currency (name, iso_code) VALUES ($1, $2) RETURNING id
+	`, "附件测试币-"+suffix, "F"+strings.ToUpper(suffix[:6])).Scan(&currencyID); err != nil {
 		t.Fatal(err)
 	}
-	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	var companyA, companyB, journalA, journalB uuid.UUID
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO bas_company (code,name,short_name,base_currency_id)
@@ -141,6 +127,7 @@ func TestPostgresAttachmentCompanyScopeIsFailClosed(t *testing.T) {
 		_, _ = pool.Exec(cleanupCtx, "DELETE FROM sys_file WHERE id=ANY($1)", f.fileIDs)
 		_, _ = pool.Exec(cleanupCtx, "DELETE FROM acc_gl_journal WHERE id=ANY($1)", []uuid.UUID{journalA, journalB})
 		_, _ = pool.Exec(cleanupCtx, "DELETE FROM bas_company WHERE id=ANY($1)", []uuid.UUID{companyA, companyB})
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM bas_currency WHERE id=$1", currencyID)
 	})
 
 	uploader := &authz.Actor{

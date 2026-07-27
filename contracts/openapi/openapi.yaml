@@ -4539,6 +4539,30 @@ paths:
               schema: { $ref: "#/components/schemas/PrintTemplateList" }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+  /printing/render:
+    post:
+      operationId: renderPrintOutput
+      tags: [printing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PrintRenderRequest" }
+      responses:
+        "200":
+          description: 打印 PDF（mode=print）或导出 xlsx（mode=export）文件流
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
   /system/printing/templates/query:
     post:
       operationId: querySysPrintTemplates
@@ -5812,6 +5836,19 @@ components:
         results:
           type: array
           items: { $ref: "#/components/schemas/PrintTemplate" }
+    PrintRenderRequest:
+      type: object
+      additionalProperties: false
+      required: [resource, ids, templateId, mode]
+      properties:
+        resource: { type: string, minLength: 1, maxLength: 64 }
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string, format: uuid }
+        templateId: { type: string, format: uuid }
+        mode: { type: string, enum: [print, export] }
     NumberingSegment:
       type: object
       additionalProperties: false

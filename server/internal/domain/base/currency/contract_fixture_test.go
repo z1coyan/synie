@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 // currencyContractFixture 固化 basCurrencies 的创建/校验契约
@@ -83,18 +83,10 @@ func TestCurrencyContractFixtureStateless(t *testing.T) {
 // TestPostgresCurrencyContractFixture 覆盖 fixture 中需要真实数据库的用例：
 // 创建默认启用且符号可空、可显式创建停用、ISO 唯一、公司本币不可停用。
 func TestPostgresCurrencyContractFixture(t *testing.T) {
-	url := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL tests")
-	}
 	fixture := loadCurrencyContractFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 	svc := NewService(pool)
 	actor := &authz.Actor{UserID: uuid.New(), Username: "currency-fixture", SuperAdmin: true}
 	// 生成纯大写字母后缀：fixture 字面量 ISO 码在共享测试库会冲突，

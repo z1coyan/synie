@@ -5161,6 +5161,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/printing/render": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["renderPrintOutput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/printing/templates/query": {
         parameters: {
             query?: never;
@@ -6418,6 +6434,14 @@ export interface components {
             /** Format: int64 */
             count: number;
             results: components["schemas"]["PrintTemplate"][];
+        };
+        PrintRenderRequest: {
+            resource: string;
+            ids: string[];
+            /** Format: uuid */
+            templateId: string;
+            /** @enum {string} */
+            mode: "print" | "export";
         };
         NumberingSegment: {
             /** @enum {string} */
@@ -22853,6 +22877,37 @@ export interface operations {
             };
             400: components["responses"]["Error"];
             403: components["responses"]["Error"];
+        };
+    };
+    renderPrintOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrintRenderRequest"];
+            };
+        };
+        responses: {
+            /** @description 打印 PDF（mode=print）或导出 xlsx（mode=export）文件流 */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
         };
     };
     querySysPrintTemplates: {

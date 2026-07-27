@@ -445,17 +445,17 @@ func (s *Service) UpdateItem(
 	if input.Qty != nil {
 		create.Qty = *input.Qty
 	}
-	if input.DeliveryItemID != nil {
-		create.DeliveryItemID = *input.DeliveryItemID
+	if input.DeliveryItemID.Set {
+		create.DeliveryItemID = input.DeliveryItemID.Value
 	}
-	if input.ReceiptItemID != nil {
-		create.ReceiptItemID = *input.ReceiptItemID
+	if input.ReceiptItemID.Set {
+		create.ReceiptItemID = input.ReceiptItemID.Value
 	}
-	if input.OutsourcedReceiptItemID != nil {
-		create.OutsourcedReceiptItemID = *input.OutsourcedReceiptItemID
+	if input.OutsourcedReceiptItemID.Set {
+		create.OutsourcedReceiptItemID = input.OutsourcedReceiptItemID.Value
 	}
-	if input.Remarks != nil {
-		create.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		create.Remarks = input.Remarks.Value
 	}
 	if err := validateItemShape(spec, create); err != nil {
 		return Item{}, err

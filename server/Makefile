@@ -4,7 +4,10 @@ SQLC_VERSION := v1.31.1
 GOOSE_VERSION := v3.27.1
 OPENAPI_SPEC := ../contracts/openapi/openapi.yaml
 
-.PHONY: generate test lint verify-codegen migration-up migration-down
+# PG 集成测试的门控 DSN,默认指向 compose 起出的本地测试库;可用环境变量覆盖。
+SYNIE_TEST_DATABASE_URL ?= postgres://synie:synie@localhost:5441/synie_test?sslmode=disable
+
+.PHONY: generate test test-integration lint verify-codegen migration-up migration-down
 
 generate:
 	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION) --config oapi-codegen.yaml $(OPENAPI_SPEC)
@@ -12,6 +15,11 @@ generate:
 
 test:
 	$(GO) test ./...
+
+# 带真实数据库跑全套测试(PG 集成测试不再 Skip)。测试库需已迁移:
+#   DATABASE_URL=$(SYNIE_TEST_DATABASE_URL) make migration-up
+test-integration:
+	SYNIE_TEST_DATABASE_URL='$(SYNIE_TEST_DATABASE_URL)' $(GO) test ./...
 
 # gofmt 检查(仅 server/ 目录) + go vet;CI 与本地同源,CI job 直接调用本目标。
 lint:

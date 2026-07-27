@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +19,8 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	fileplatform "github.com/z1coyan/synie/server/internal/platform/files"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type bankingTestFile struct {
@@ -256,7 +257,7 @@ func TestPostgresBankImportLifecycleAndParentLock(t *testing.T) {
 	blockedCtx, blockedCancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	_, blockedErr := service.UpdateBankImportItem(
 		blockedCtx, f.actor, items.Results[0].ID, BankImportItemUpdateInput{
-			Summary: Optional[string]{Set: true, Value: strptr("被阻塞")},
+			Summary: optional.Optional[string]{Set: true, Value: strptr("被阻塞")},
 		},
 	)
 	blockedCancel()
@@ -268,7 +269,7 @@ func TestPostgresBankImportLifecycleAndParentLock(t *testing.T) {
 	}
 	updated, err := service.UpdateBankImportItem(
 		ctx, f.actor, items.Results[0].ID, BankImportItemUpdateInput{
-			Summary: Optional[string]{Set: true, Value: strptr("已修订")},
+			Summary: optional.Optional[string]{Set: true, Value: strptr("已修订")},
 		},
 	)
 	if err != nil || updated.Summary == nil || *updated.Summary != "已修订" {
@@ -385,22 +386,22 @@ func TestPostgresReconciliationCapacityGuardsAndQuickAtomicity(t *testing.T) {
 	fifty := decimal.NewFromInt(50)
 	if _, err := baseService.UpdateBankTransaction(
 		ctx, f.actor, transaction.ID, BankTransactionUpdateInput{
-			Income: Optional[decimal.Decimal]{Set: true, Value: &fifty},
+			Income: optional.Optional[decimal.Decimal]{Set: true, Value: &fifty},
 		},
 	); codeOf(err) != apierror.CodeValidation {
 		t.Fatalf("shrink guard = %v", err)
 	}
 	if _, err := baseService.UpdateBankTransaction(
 		ctx, f.actor, transaction.ID, BankTransactionUpdateInput{
-			Income:  Optional[decimal.Decimal]{Set: true},
-			Expense: Optional[decimal.Decimal]{Set: true, Value: &hundred},
+			Income:  optional.Optional[decimal.Decimal]{Set: true},
+			Expense: optional.Optional[decimal.Decimal]{Set: true, Value: &hundred},
 		},
 	); codeOf(err) != apierror.CodeConflict {
 		t.Fatalf("side guard = %v", err)
 	}
 	if _, err := baseService.UpdateBankAccount(
 		ctx, f.actor, account.ID, BankAccountUpdateInput{
-			AccountID: Optional[uuid.UUID]{Set: true, Value: &f.alternate},
+			AccountID: optional.Optional[uuid.UUID]{Set: true, Value: &f.alternate},
 		},
 	); codeOf(err) != apierror.CodeConflict {
 		t.Fatalf("ledger rebind guard = %v", err)
@@ -589,16 +590,9 @@ func createAuditedBankingJournal(
 
 func newBankingFixture(t *testing.T) bankingFixture {
 	t.Helper()
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool := testutil.NewPool(t, ctx)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	f := bankingFixture{
 		pool: pool, company: uuid.New(), otherCompany: uuid.New(),

@@ -122,14 +122,14 @@ func (s *Service) UpdateIssue(ctx context.Context, actor *authz.Actor, id uuid.U
 	if input.PartyID != nil {
 		after.PartyID = *input.PartyID
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
-	if input.FromWarehouseID != nil {
-		after.FromWarehouseID = *input.FromWarehouseID
+	if input.FromWarehouseID.Set {
+		after.FromWarehouseID = input.FromWarehouseID.Value
 	}
-	if input.OutsourcedWarehouseID != nil {
-		after.OutsourcedWarehouseID = *input.OutsourcedWarehouseID
+	if input.OutsourcedWarehouseID.Set {
+		after.OutsourcedWarehouseID = input.OutsourcedWarehouseID.Value
 	}
 	if err := freezeIssueIdentity(ctx, tx, before, after); err != nil {
 		return Issue{}, err
@@ -286,8 +286,8 @@ func (s *Service) UpdateReceipt(ctx context.Context, actor *authz.Actor, id uuid
 	if input.ReceiptDate != nil {
 		after.ReceiptDate = *input.ReceiptDate
 	}
-	if input.PostingDate != nil {
-		after.PostingDate = *input.PostingDate
+	if input.PostingDate.Set {
+		after.PostingDate = input.PostingDate.Value
 	}
 	if input.PartyType != nil {
 		after.PartyType = strings.ToLower(strings.TrimSpace(*input.PartyType))
@@ -295,14 +295,14 @@ func (s *Service) UpdateReceipt(ctx context.Context, actor *authz.Actor, id uuid
 	if input.PartyID != nil {
 		after.PartyID = *input.PartyID
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
-	if input.WarehouseID != nil {
-		after.WarehouseID = *input.WarehouseID
+	if input.WarehouseID.Set {
+		after.WarehouseID = input.WarehouseID.Value
 	}
-	if input.OutsourcedWarehouseID != nil {
-		after.OutsourcedWarehouseID = *input.OutsourcedWarehouseID
+	if input.OutsourcedWarehouseID.Set {
+		after.OutsourcedWarehouseID = input.OutsourcedWarehouseID.Value
 	}
 	if input.DebitAccountID != nil {
 		after.DebitAccountID = *input.DebitAccountID

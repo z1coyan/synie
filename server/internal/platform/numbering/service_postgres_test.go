@@ -2,34 +2,28 @@ package numbering
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 func TestPostgresConfiguredRuleDrivesNumbersAndEditableCounter(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
+	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
+	// 自带币种而非借用共享行:并行包可能选中并清理他包的临时币种,造成外键竞争。
 	var currencyID uuid.UUID
-	if err := pool.QueryRow(ctx, "SELECT id FROM bas_currency ORDER BY iso_code LIMIT 1").Scan(&currencyID); err != nil {
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO bas_currency (name, iso_code) VALUES ($1, $2) RETURNING id
+	`, "编号测试币-"+suffix, "N"+strings.ToUpper(suffix[:6])).Scan(&currencyID); err != nil {
 		t.Fatal(err)
 	}
-	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	var companyID uuid.UUID
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO bas_company (code,name,short_name,base_currency_id)
@@ -47,6 +41,7 @@ func TestPostgresConfiguredRuleDrivesNumbersAndEditableCounter(t *testing.T) {
 			_, _ = pool.Exec(cleanupCtx, "DELETE FROM sys_numbering_rule WHERE id=$1", ruleID)
 		}
 		_, _ = pool.Exec(cleanupCtx, "DELETE FROM bas_company WHERE id=$1", companyID)
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM bas_currency WHERE id=$1", currencyID)
 	})
 
 	service := NewService(pool)

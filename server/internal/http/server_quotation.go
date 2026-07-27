@@ -111,12 +111,12 @@ func (s *Server) updateQuotation(w http.ResponseWriter, r *http.Request, actor *
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	terms, err := nullableStringUpdate(body.Terms)
+	terms, err := optionalUpdate[string](body.Terms)
 	if err != nil {
 		s.writeError(w, r, nullableStringError(quotationLabel(side), "terms"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError(quotationLabel(side), "remarks"))
 		return
@@ -224,7 +224,7 @@ func (s *Server) updateQuotationItem(w http.ResponseWriter, r *http.Request, act
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	price, err := nullableDecimalUpdate(body.Price, quotationItemLabel(side), "price")
+	price, err := optionalDecimalUpdate(body.Price, quotationItemLabel(side), "price")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -234,7 +234,7 @@ func (s *Server) updateQuotationItem(w http.ResponseWriter, r *http.Request, act
 		s.writeError(w, r, err)
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError(quotationItemLabel(side), "remarks"))
 		return

@@ -24,16 +24,26 @@ const permissionPrefix = "sys.print_template"
 var templateAuditFields = []string{"name", "resource", "is_default", "remarks", "file_id"}
 
 type Service struct {
-	pool    *pgxpool.Pool
-	files   StoredFileReader
-	catalog *FieldCatalog
+	pool      *pgxpool.Pool
+	files     StoredFileReader
+	catalog   *FieldCatalog
+	builders  map[string]DocBuilder
+	converter PDFConverter
 }
 
 func NewService(pool *pgxpool.Pool, fileReader StoredFileReader, catalog *FieldCatalog) *Service {
 	if catalog == nil {
 		catalog = NewFieldCatalog()
 	}
-	return &Service{pool: pool, files: fileReader, catalog: catalog}
+	service := &Service{pool: pool, files: fileReader, catalog: catalog}
+	if pool != nil {
+		service.builders = map[string]DocBuilder{
+			"sales.order": newSalesOrderDocBuilder(pool),
+		}
+	} else {
+		service.builders = map[string]DocBuilder{}
+	}
+	return service
 }
 
 func (s *Service) Catalog() *FieldCatalog { return s.catalog }

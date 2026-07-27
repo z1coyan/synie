@@ -2,7 +2,6 @@ package marketsched
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/domain/base/market"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type fakeLastClient struct{ quote market.LastQuote }
@@ -28,17 +28,13 @@ func (client fakeSettlementClient) FetchSettlement(context.Context, string, time
 // 调度器自身拉取面向全部启用拉取的品种;测试用注入 runner 限定到本测试品种,
 // 避免与并行跑同一测试库的其他包互相污染,摘要断言走 actor_id IS NULL 的调度审计行。
 func TestPostgresSchedulerTickRecordsSummary(t *testing.T) {
-	databaseURL := testDatabaseURL(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	currencyID, unitID := uuid.New(), uuid.New()
+	var err error
 	if _, err = pool.Exec(ctx, `INSERT INTO bas_currency(id,name,iso_code) VALUES($1,'调度测试币',$2)`,
 		currencyID, "S"+strings.ToUpper(suffix[:2])); err != nil {
 		t.Fatal(err)
@@ -125,14 +121,9 @@ func TestPostgresSchedulerTickRecordsSummary(t *testing.T) {
 }
 
 func TestPostgresSchedulerPanicRecordsFailureSummary(t *testing.T) {
-	databaseURL := testDatabaseURL(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -194,13 +185,4 @@ func resetMarketFetchSummary(t *testing.T, ctx context.Context, pool *pgxpool.Po
 	if _, err := pool.Exec(ctx, `UPDATE sys_setting SET market_fetch_last_summary=$1`, marker); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func testDatabaseURL(t *testing.T) string {
-	t.Helper()
-	value := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if value == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
-	return value
 }

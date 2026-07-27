@@ -80,20 +80,20 @@ func TestGLJournalBodyHandlersAuthorizeBeforeJSONValidation(t *testing.T) {
 	}
 }
 
-func TestNullableDateUpdate(t *testing.T) {
-	value, err := nullableDateUpdate([]byte(`"2026-07-26"`))
-	if err != nil || value == nil || *value == nil || (**value).Format("2006-01-02") != "2026-07-26" {
+func TestOptionalDateUpdate(t *testing.T) {
+	value, err := optionalDateUpdate([]byte(`"2026-07-26"`))
+	if err != nil || !value.Set || value.Value == nil || value.Value.Format("2006-01-02") != "2026-07-26" {
 		t.Fatalf("valid date = %#v, err=%v", value, err)
 	}
-	value, err = nullableDateUpdate([]byte(`null`))
-	if err != nil || value == nil || *value != nil {
+	value, err = optionalDateUpdate([]byte(`null`))
+	if err != nil || !value.Set || value.Value != nil {
 		t.Fatalf("null date = %#v, err=%v", value, err)
 	}
-	value, err = nullableDateUpdate(nil)
-	if err != nil || value != nil {
+	value, err = optionalDateUpdate(nil)
+	if err != nil || value.Set {
 		t.Fatalf("omitted date = %#v, err=%v", value, err)
 	}
-	if _, err := nullableDateUpdate([]byte(`"2026-99-99"`)); err == nil {
+	if _, err := optionalDateUpdate([]byte(`"2026-99-99"`)); err == nil {
 		t.Fatal("invalid date should fail")
 	}
 }

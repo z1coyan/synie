@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +17,8 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type testNumberer struct {
@@ -304,9 +305,8 @@ func TestPermissionBeforeInputAndCompanyScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	remarks := "已更新"
-	remarksValue := &remarks
 	updated, err := svc.UpdateHead(ctx, f.actor, SideSales, head.ID,
-		UpdateHeadInput{Remarks: &remarksValue})
+		UpdateHeadInput{Remarks: optional.Of(remarks)})
 	if err != nil || updated.Remarks == nil || *updated.Remarks != remarks {
 		t.Fatalf("更新头 = %#v err=%v", updated, err)
 	}
@@ -353,16 +353,8 @@ func code(err error) apierror.Code {
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	url := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL tests")
-	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 	f := fixture{
 		pool: pool, company: uuid.New(), otherCompany: uuid.New(),
 		customer: uuid.New(), supplier: uuid.New(),

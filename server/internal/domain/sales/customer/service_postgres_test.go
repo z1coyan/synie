@@ -3,29 +3,21 @@ package customer
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 func TestPostgresCustomerLifecycleAndMaterialDeleteGuard(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:10])
 	service := NewService(pool)
@@ -71,7 +63,7 @@ func TestPostgresCustomerLifecycleAndMaterialDeleteGuard(t *testing.T) {
 	}
 	updatedName := "客户已更新-" + suffix
 	updated, err := service.Update(ctx, actor, item.ID, UpdateInput{
-		Name: &updatedName, ShortName: OptionalString{Set: true},
+		Name: &updatedName, ShortName: optional.Optional[string]{Set: true},
 	})
 	if err != nil || updated.Name != updatedName || updated.ShortName != nil {
 		t.Fatalf("updated = %#v, %v", updated, err)

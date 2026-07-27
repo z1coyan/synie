@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Currency struct {
@@ -25,14 +26,9 @@ type CreateInput struct {
 	Active  *bool
 }
 
-type OptionalString struct {
-	Set   bool
-	Value *string
-}
-
 type UpdateInput struct {
 	Name   *string
-	Symbol OptionalString
+	Symbol optional.Optional[string]
 	Active *bool
 }
 

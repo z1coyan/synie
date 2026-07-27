@@ -12,6 +12,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 var columnRE = regexp.MustCompile(`^[A-Z]{1,2}$`)
@@ -357,28 +358,22 @@ func applyTemplateUpdate(item *BankImportTemplate, input BankImportTemplateUpdat
 	if input.StartRow != nil {
 		item.StartRow = *input.StartRow
 	}
-	applyOptional(&item.DatetimeCol, input.DatetimeCol)
-	applyOptional(&item.DatetimeFormat, input.DatetimeFormat)
-	applyOptional(&item.DateCol, input.DateCol)
-	applyOptional(&item.DateFormat, input.DateFormat)
-	applyOptional(&item.TimeCol, input.TimeCol)
-	applyOptional(&item.TimeFormat, input.TimeFormat)
-	applyOptional(&item.IncomeCol, input.IncomeCol)
-	applyOptional(&item.ExpenseCol, input.ExpenseCol)
-	applyOptional(&item.AmountCol, input.AmountCol)
-	applyOptional(&item.BalanceCol, input.BalanceCol)
-	applyOptional(&item.CounterpartyNameCol, input.CounterpartyNameCol)
-	applyOptional(&item.CounterpartyAccountCol, input.CounterpartyAccountCol)
-	applyOptional(&item.SummaryCol, input.SummaryCol)
-	applyOptional(&item.NoteCol, input.NoteCol)
+	optional.Apply(&item.DatetimeCol, input.DatetimeCol)
+	optional.Apply(&item.DatetimeFormat, input.DatetimeFormat)
+	optional.Apply(&item.DateCol, input.DateCol)
+	optional.Apply(&item.DateFormat, input.DateFormat)
+	optional.Apply(&item.TimeCol, input.TimeCol)
+	optional.Apply(&item.TimeFormat, input.TimeFormat)
+	optional.Apply(&item.IncomeCol, input.IncomeCol)
+	optional.Apply(&item.ExpenseCol, input.ExpenseCol)
+	optional.Apply(&item.AmountCol, input.AmountCol)
+	optional.Apply(&item.BalanceCol, input.BalanceCol)
+	optional.Apply(&item.CounterpartyNameCol, input.CounterpartyNameCol)
+	optional.Apply(&item.CounterpartyAccountCol, input.CounterpartyAccountCol)
+	optional.Apply(&item.SummaryCol, input.SummaryCol)
+	optional.Apply(&item.NoteCol, input.NoteCol)
 	if input.BankAccountID != nil {
 		item.BankAccountID = *input.BankAccountID
-	}
-}
-
-func applyOptional[T any](target **T, value Optional[T]) {
-	if value.Set {
-		*target = value.Value
 	}
 }
 

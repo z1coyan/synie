@@ -3,7 +3,6 @@ package systemops
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -11,24 +10,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 func TestPostgresSystemOperationsPolicyStateAndTransactions(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
 	currencyID, companyA, companyB := uuid.New(), uuid.New(), uuid.New()
@@ -36,7 +27,7 @@ func TestPostgresSystemOperationsPolicyStateAndTransactions(t *testing.T) {
 	debitAccountID, creditAccountID := uuid.New(), uuid.New()
 	openSourceID := uuid.New()
 	auditGlobal, auditA, auditB := uuid.New(), uuid.New(), uuid.New()
-	_, err = pool.Exec(ctx, `INSERT INTO bas_currency(id,name,iso_code,symbol,active)
+	_, err := pool.Exec(ctx, `INSERT INTO bas_currency(id,name,iso_code,symbol,active)
 		VALUES($1,$2,$3,'$',true)`, currencyID, "测试币-"+suffix, "X"+suffix[:2])
 	if err == nil {
 		_, err = pool.Exec(ctx, `INSERT INTO bas_company(id,code,name,short_name,base_currency_id)

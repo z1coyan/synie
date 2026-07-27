@@ -163,12 +163,12 @@ func (s *Service) UpdateItem(
 	if input.WarehouseID != nil {
 		after.WarehouseID = *input.WarehouseID
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	var unitID *uuid.UUID
-	if input.UnitID != nil {
-		unitID = *input.UnitID
+	if input.UnitID.Set {
+		unitID = input.UnitID.Value
 	} else {
 		unitID = &after.UnitID
 	}

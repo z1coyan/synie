@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Employee struct {
@@ -37,21 +38,16 @@ type CreateInput struct {
 	InsuranceTypes        []string
 }
 
-type OptionalString struct {
-	Set   bool
-	Value *string
-}
-
 type UpdateInput struct {
 	Code                  *string
 	Name                  *string
-	AttendanceNo          OptionalString
-	IDNumber              OptionalString
-	HouseholdRegistration OptionalString
-	Phone                 OptionalString
-	CurrentAddress        OptionalString
-	DailyWage             OptionalString
-	MonthlyAllowance      OptionalString
+	AttendanceNo          optional.Optional[string]
+	IDNumber              optional.Optional[string]
+	HouseholdRegistration optional.Optional[string]
+	Phone                 optional.Optional[string]
+	CurrentAddress        optional.Optional[string]
+	DailyWage             optional.Optional[string]
+	MonthlyAllowance      optional.Optional[string]
 	InsuranceTypes        *[]string
 }
 

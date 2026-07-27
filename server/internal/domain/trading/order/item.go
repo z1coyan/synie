@@ -175,20 +175,20 @@ func (s *Service) UpdateItem(
 	if input.TaxRate != nil {
 		after.TaxRate = *input.TaxRate
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
-	if input.QuotationItemID != nil {
-		after.QuotationItemID = *input.QuotationItemID
+	if input.QuotationItemID.Set {
+		after.QuotationItemID = input.QuotationItemID.Value
 	}
-	if input.BOMID != nil {
-		after.BOMID = *input.BOMID
+	if input.BOMID.Set {
+		after.BOMID = input.BOMID.Value
 	}
-	if input.DemandLineID != nil {
-		after.DemandLineID = *input.DemandLineID
+	if input.DemandLineID.Set {
+		after.DemandLineID = input.DemandLineID.Value
 	}
-	if input.DemandDate != nil {
-		after.DemandDate = *input.DemandDate
+	if input.DemandDate.Set {
+		after.DemandDate = input.DemandDate.Value
 	}
 	if err := s.deriveAndValidateItem(ctx, tx, spec, parent, &after, input.TaxRate != nil); err != nil {
 		return Item{}, err

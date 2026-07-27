@@ -17,6 +17,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 const (
@@ -1238,28 +1239,28 @@ func overlayBillAttrs(target *BillAttrs, input BillUpdateInput) {
 	if input.BillKind != nil {
 		target.BillKind = *input.BillKind
 	}
-	applyOptionalString(&target.IssueDate, input.IssueDate)
+	optional.Apply(&target.IssueDate, input.IssueDate)
 	if input.DueDate != nil {
 		target.DueDate = *input.DueDate
 	}
-	applyOptionalString(&target.FaceAmount, input.FaceAmount)
-	applyOptionalString(&target.DrawerName, input.DrawerName)
-	applyOptionalString(&target.DrawerAccount, input.DrawerAccount)
-	applyOptionalString(&target.DrawerBankName, input.DrawerBankName)
-	applyOptionalString(&target.DrawerBankNo, input.DrawerBankNo)
-	applyOptionalString(&target.PayeeName, input.PayeeName)
-	applyOptionalString(&target.PayeeAccount, input.PayeeAccount)
-	applyOptionalString(&target.PayeeBankName, input.PayeeBankName)
-	applyOptionalString(&target.PayeeBankNo, input.PayeeBankNo)
-	applyOptionalString(&target.AcceptorName, input.AcceptorName)
-	applyOptionalString(&target.AcceptorAccount, input.AcceptorAccount)
-	applyOptionalString(&target.AcceptorBankName, input.AcceptorBankName)
-	applyOptionalString(&target.AcceptorBankNo, input.AcceptorBankNo)
+	optional.Apply(&target.FaceAmount, input.FaceAmount)
+	optional.Apply(&target.DrawerName, input.DrawerName)
+	optional.Apply(&target.DrawerAccount, input.DrawerAccount)
+	optional.Apply(&target.DrawerBankName, input.DrawerBankName)
+	optional.Apply(&target.DrawerBankNo, input.DrawerBankNo)
+	optional.Apply(&target.PayeeName, input.PayeeName)
+	optional.Apply(&target.PayeeAccount, input.PayeeAccount)
+	optional.Apply(&target.PayeeBankName, input.PayeeBankName)
+	optional.Apply(&target.PayeeBankNo, input.PayeeBankNo)
+	optional.Apply(&target.AcceptorName, input.AcceptorName)
+	optional.Apply(&target.AcceptorAccount, input.AcceptorAccount)
+	optional.Apply(&target.AcceptorBankName, input.AcceptorBankName)
+	optional.Apply(&target.AcceptorBankNo, input.AcceptorBankNo)
 	if input.Transferable != nil {
 		target.Transferable = input.Transferable
 	}
-	applyOptionalString(&target.AcceptanceDate, input.AcceptanceDate)
-	applyOptionalString(&target.Remarks, input.Remarks)
+	optional.Apply(&target.AcceptanceDate, input.AcceptanceDate)
+	optional.Apply(&target.Remarks, input.Remarks)
 }
 
 func transactionToInput(value BillTransaction) BillTransactionInput {
@@ -1276,7 +1277,7 @@ func transactionToInput(value BillTransaction) BillTransactionInput {
 }
 
 func overlayTransaction(target *BillTransactionInput, input BillTransactionUpdateInput) {
-	applyOptionalString(&target.DocNo, input.DocNo)
+	optional.Apply(&target.DocNo, input.DocNo)
 	if input.OccurredOn != nil {
 		target.OccurredOn = *input.OccurredOn
 	}
@@ -1289,24 +1290,24 @@ func overlayTransaction(target *BillTransactionInput, input BillTransactionUpdat
 	if input.Amount != nil {
 		target.Amount = *input.Amount
 	}
-	applyOptionalString(&target.PartyType, input.PartyType)
-	applyOptionalUUID(&target.PartyID, input.PartyID)
-	applyOptionalString(&target.DiscountOrg, input.DiscountOrg)
-	applyOptionalString(&target.DiscountRate, input.DiscountRate)
-	applyOptionalString(&target.Interest, input.Interest)
-	applyOptionalString(&target.NetAmount, input.NetAmount)
-	applyOptionalString(&target.PostingDate, input.PostingDate)
-	applyOptionalString(&target.Remarks, input.Remarks)
+	optional.Apply(&target.PartyType, input.PartyType)
+	optional.Apply(&target.PartyID, input.PartyID)
+	optional.Apply(&target.DiscountOrg, input.DiscountOrg)
+	optional.Apply(&target.DiscountRate, input.DiscountRate)
+	optional.Apply(&target.Interest, input.Interest)
+	optional.Apply(&target.NetAmount, input.NetAmount)
+	optional.Apply(&target.PostingDate, input.PostingDate)
+	optional.Apply(&target.Remarks, input.Remarks)
 	if input.BankAccountID != nil {
 		target.BankAccountID = *input.BankAccountID
 	}
-	applyOptionalUUID(&target.ToBankAccountID, input.ToBankAccountID)
+	optional.Apply(&target.ToBankAccountID, input.ToBankAccountID)
 	if input.BillID != nil {
 		target.BillID = input.BillID
 	}
-	applyOptionalUUID(&target.BillAccountID, input.BillAccountID)
-	applyOptionalUUID(&target.SettleAccountID, input.SettleAccountID)
-	applyOptionalUUID(&target.InterestAccountID, input.InterestAccountID)
+	optional.Apply(&target.BillAccountID, input.BillAccountID)
+	optional.Apply(&target.SettleAccountID, input.SettleAccountID)
+	optional.Apply(&target.InterestAccountID, input.InterestAccountID)
 }
 
 func billSnapshot(value Bill) map[string]any {

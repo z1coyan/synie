@@ -37,6 +37,16 @@ make test
 go run ./cmd/synie
 ```
 
+PG 集成测试由 `SYNIE_TEST_DATABASE_URL` 门控：未设置时自动 Skip（`make test`
+无库也能全绿）；设置后真实执行。门控与建池统一走 `internal/testutil`，
+测试数据库的隔离约定（uuid 后缀唯一键、Cleanup 清数据、sys_setting 共享
+单行的保存-还原/唯一标记）见该包文档注释。带库跑全套：
+
+```bash
+DATABASE_URL=postgres://synie:synie@localhost:5441/synie_test?sslmode=disable make migration-up
+make test-integration
+```
+
 数据库：
 
 ```bash

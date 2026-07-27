@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Side string
@@ -225,8 +226,8 @@ type UpdateOrderInput struct {
 	PartyID      *uuid.UUID
 	CurrencyID   *uuid.UUID
 	ExchangeRate *decimal.Decimal
-	Terms        **string
-	Remarks      **string
+	Terms        optional.Optional[string]
+	Remarks      optional.Optional[string]
 }
 
 type CreateItemInput struct {
@@ -251,11 +252,11 @@ type UpdateItemInput struct {
 	UnitID          *uuid.UUID
 	Price           *decimal.Decimal
 	TaxRate         *decimal.Decimal
-	Remarks         **string
-	QuotationItemID **uuid.UUID
-	BOMID           **uuid.UUID
-	DemandLineID    **uuid.UUID
-	DemandDate      **time.Time
+	Remarks         optional.Optional[string]
+	QuotationItemID optional.Optional[uuid.UUID]
+	BOMID           optional.Optional[uuid.UUID]
+	DemandLineID    optional.Optional[uuid.UUID]
+	DemandDate      optional.Optional[time.Time]
 }
 
 type CreateMaterialInput struct {
@@ -270,7 +271,7 @@ type UpdateMaterialInput struct {
 	MaterialID *uuid.UUID
 	UnitID     *uuid.UUID
 	Quantity   *decimal.Decimal
-	Remarks    **string
+	Remarks    optional.Optional[string]
 }
 
 type CreateByproductInput = CreateMaterialInput

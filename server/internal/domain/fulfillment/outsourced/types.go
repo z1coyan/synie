@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Status string
@@ -210,9 +211,9 @@ type UpdateIssueInput struct {
 	IssueDate             *time.Time
 	PartyType             *string
 	PartyID               *uuid.UUID
-	Remarks               **string
-	FromWarehouseID       **uuid.UUID
-	OutsourcedWarehouseID **uuid.UUID
+	Remarks               optional.Optional[string]
+	FromWarehouseID       optional.Optional[uuid.UUID]
+	OutsourcedWarehouseID optional.Optional[uuid.UUID]
 }
 
 type CreateIssueItemInput struct {
@@ -231,7 +232,7 @@ type UpdateIssueItemInput struct {
 	OrderItemMaterialID   *uuid.UUID
 	FromWarehouseID       *uuid.UUID
 	OutsourcedWarehouseID *uuid.UUID
-	Remarks               **string
+	Remarks               optional.Optional[string]
 }
 
 type CreateReceiptInput struct {
@@ -251,12 +252,12 @@ type CreateReceiptInput struct {
 type UpdateReceiptInput struct {
 	ReceiptNo             *string
 	ReceiptDate           *time.Time
-	PostingDate           **time.Time
+	PostingDate           optional.Optional[time.Time]
 	PartyType             *string
 	PartyID               *uuid.UUID
-	Remarks               **string
-	WarehouseID           **uuid.UUID
-	OutsourcedWarehouseID **uuid.UUID
+	Remarks               optional.Optional[string]
+	WarehouseID           optional.Optional[uuid.UUID]
+	OutsourcedWarehouseID optional.Optional[uuid.UUID]
 	DebitAccountID        *uuid.UUID
 	CreditAccountID       *uuid.UUID
 }
@@ -275,9 +276,9 @@ type UpdateReceiptItemInput struct {
 	Idx         *int64
 	Qty         *decimal.Decimal
 	OrderItemID *uuid.UUID
-	UnitID      **uuid.UUID
+	UnitID      optional.Optional[uuid.UUID]
 	WarehouseID *uuid.UUID
-	Remarks     **string
+	Remarks     optional.Optional[string]
 }
 
 type CreateReceiptMaterialInput struct {
@@ -293,8 +294,8 @@ type UpdateReceiptMaterialInput struct {
 	Idx                   *int64
 	Qty                   *decimal.Decimal
 	OrderItemMaterialID   *uuid.UUID
-	OutsourcedWarehouseID **uuid.UUID
-	Remarks               **string
+	OutsourcedWarehouseID optional.Optional[uuid.UUID]
+	Remarks               optional.Optional[string]
 }
 
 type CreateReceiptByproductInput struct {
@@ -310,8 +311,8 @@ type UpdateReceiptByproductInput struct {
 	Idx                  *int64
 	Qty                  *decimal.Decimal
 	OrderItemByproductID *uuid.UUID
-	WarehouseID          **uuid.UUID
-	Remarks              **string
+	WarehouseID          optional.Optional[uuid.UUID]
+	Remarks              optional.Optional[string]
 }
 
 type AuditReceiptInput struct{ PostingDate *time.Time }

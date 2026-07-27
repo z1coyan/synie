@@ -313,7 +313,7 @@ func (s *Server) updateReconciliationHead(
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("对账单", "remarks"))
 		return
@@ -464,22 +464,22 @@ func (s *Server) updateReconciliationItem(
 		s.writeError(w, r, err)
 		return
 	}
-	deliveryID, err := nullableUUIDUpdate(body.DeliveryItemID)
+	deliveryID, err := optionalUpdate[uuid.UUID](body.DeliveryItemID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("对账条目", "deliveryItemId"))
 		return
 	}
-	receiptID, err := nullableUUIDUpdate(body.ReceiptItemID)
+	receiptID, err := optionalUpdate[uuid.UUID](body.ReceiptItemID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("对账条目", "receiptItemId"))
 		return
 	}
-	outsourcedID, err := nullableUUIDUpdate(body.OutsourcedReceiptItemID)
+	outsourcedID, err := optionalUpdate[uuid.UUID](body.OutsourcedReceiptItemID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("对账条目", "outsourcedReceiptItemId"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("对账条目", "remarks"))
 		return

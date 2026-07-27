@@ -135,8 +135,8 @@ func (s *Service) UpdateHead(
 	if input.DocumentDate != nil {
 		after.DocumentDate = *input.DocumentDate
 	}
-	if input.PostingDate != nil {
-		after.PostingDate = *input.PostingDate
+	if input.PostingDate.Set {
+		after.PostingDate = input.PostingDate.Value
 	}
 	if input.PartyType != nil {
 		after.PartyType = strings.ToLower(strings.TrimSpace(*input.PartyType))
@@ -144,11 +144,11 @@ func (s *Service) UpdateHead(
 	if input.PartyID != nil {
 		after.PartyID = *input.PartyID
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
-	if input.WarehouseID != nil {
-		after.WarehouseID = *input.WarehouseID
+	if input.WarehouseID.Set {
+		after.WarehouseID = input.WarehouseID.Value
 	}
 	if input.DebitAccountID != nil {
 		after.DebitAccountID = *input.DebitAccountID

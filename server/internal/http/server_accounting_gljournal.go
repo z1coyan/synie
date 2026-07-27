@@ -76,12 +76,12 @@ func (s *Server) UpdateAccGlJournal(w http.ResponseWriter, r *http.Request, id g
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	postingDate, err := nullableDateUpdate(body.PostingDate)
+	postingDate, err := optionalDateUpdate(body.PostingDate)
 	if err != nil {
 		s.writeError(w, r, nullableDateError("手工会计凭证", "postingDate"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("手工会计凭证", "remarks"))
 		return
@@ -228,17 +228,17 @@ func (s *Server) UpdateAccGlJournalLine(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, err)
 		return
 	}
-	partyType, err := nullableStringUpdate(body.PartyType)
+	partyType, err := optionalUpdate[string](body.PartyType)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("手工会计凭证行", "partyType"))
 		return
 	}
-	partyID, err := nullableUUIDUpdate(body.PartyID)
+	partyID, err := optionalUpdate[uuid.UUID](body.PartyID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("手工会计凭证行", "partyId"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("手工会计凭证行", "remarks"))
 		return

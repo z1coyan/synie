@@ -273,14 +273,12 @@ func (s *Server) UpdateHrAttendanceCorrection(
 		date := body.Date.Time.Format(time.DateOnly)
 		input.Date = &date
 	}
-	if body.Note != nil {
-		note, noteErr := nullableStringUpdate(body.Note)
-		if noteErr != nil {
-			s.writeError(w, r, nullableStringError("补卡单", "note"))
-			return
-		}
-		input.Note = hroperations.OptionalString{Set: true, Value: *note}
+	note, noteErr := optionalUpdate[string](body.Note)
+	if noteErr != nil {
+		s.writeError(w, r, nullableStringError("补卡单", "note"))
+		return
 	}
+	input.Note = note
 	item, err := s.HROperations.UpdateAttendanceCorrection(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
@@ -379,14 +377,12 @@ func (s *Server) UpdateHrPayroll(w http.ResponseWriter, r *http.Request, id gen.
 		DailyWage: body.DailyWage, Allowance: body.Allowance, Bonus: body.Bonus,
 		Fine: body.Fine, LoanDeduction: body.LoanDeduction,
 	}
-	if body.Remarks != nil {
-		remarks, remarksErr := nullableStringUpdate(body.Remarks)
-		if remarksErr != nil {
-			s.writeError(w, r, nullableStringError("工资单", "remarks"))
-			return
-		}
-		input.Remarks = hroperations.OptionalString{Set: true, Value: *remarks}
+	remarks, remarksErr := optionalUpdate[string](body.Remarks)
+	if remarksErr != nil {
+		s.writeError(w, r, nullableStringError("工资单", "remarks"))
+		return
 	}
+	input.Remarks = remarks
 	item, err := s.HROperations.UpdatePayroll(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
@@ -620,14 +616,12 @@ func (s *Server) UpdateHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id
 		occurredOn := body.OccurredOn.Time.Format(time.DateOnly)
 		input.OccurredOn = &occurredOn
 	}
-	if body.Remarks != nil {
-		remarks, remarksErr := nullableStringUpdate(body.Remarks)
-		if remarksErr != nil {
-			s.writeError(w, r, nullableStringError("员工借款", "remarks"))
-			return
-		}
-		input.Remarks = hroperations.OptionalString{Set: true, Value: *remarks}
+	remarks, remarksErr := optionalUpdate[string](body.Remarks)
+	if remarksErr != nil {
+		s.writeError(w, r, nullableStringError("员工借款", "remarks"))
+		return
 	}
+	input.Remarks = remarks
 	item, err := s.HROperations.UpdateEmployeeLoan(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)

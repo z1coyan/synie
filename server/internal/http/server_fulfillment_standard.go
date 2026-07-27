@@ -265,17 +265,17 @@ func (s *Server) updateStandardHead(
 	if side == standard.SidePurchase {
 		number, documentDate = body.ReceiptNo, body.ReceiptDate
 	}
-	postingDate, err := nullableDateUpdate(body.PostingDate)
+	postingDate, err := optionalDateUpdate(body.PostingDate)
 	if err != nil {
 		s.writeError(w, r, nullableDateError("履约单", "postingDate"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("履约单", "remarks"))
 		return
 	}
-	warehouseID, err := nullableUUIDUpdate(body.WarehouseID)
+	warehouseID, err := optionalUpdate[uuid.UUID](body.WarehouseID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("履约单", "warehouseId"))
 		return
@@ -419,12 +419,12 @@ func (s *Server) updateStandardItem(
 		s.writeError(w, r, err)
 		return
 	}
-	unitID, err := nullableUUIDUpdate(body.UnitID)
+	unitID, err := optionalUpdate[uuid.UUID](body.UnitID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError("履约条目", "unitId"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("履约条目", "remarks"))
 		return

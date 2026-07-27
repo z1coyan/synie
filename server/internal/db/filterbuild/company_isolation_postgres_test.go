@@ -3,37 +3,29 @@ package filterbuild_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/domain/base/account"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/warehouse"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 // TestCompanyIsolationListCannotSeeForeignCompany proves fail-closed company
 // filtering on representative List services: actor authorized only for company A
 // must not observe rows planted under company B.
 func TestCompanyIsolationListCannotSeeForeignCompany(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ToLower(strings.ReplaceAll(uuid.NewString(), "-", "")[:10])
 	var cnyID, companyA, companyB, accountA, accountB, whA, whB uuid.UUID
+	var err error
 
 	if err = pool.QueryRow(ctx, `
 		INSERT INTO bas_currency (name, iso_code, symbol)

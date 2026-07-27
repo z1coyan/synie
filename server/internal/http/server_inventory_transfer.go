@@ -75,12 +75,12 @@ func (s *Server) UpdateInvStockTransfer(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	summary, err := nullableStringUpdate(body.Summary)
+	summary, err := optionalUpdate[string](body.Summary)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("手工调拨单", "summary"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("手工调拨单", "remarks"))
 		return
@@ -224,7 +224,7 @@ func (s *Server) UpdateInvStockTransferItem(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, r, err)
 		return
 	}
-	remark, err := nullableStringUpdate(body.Remark)
+	remark, err := optionalUpdate[string](body.Remark)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("手工调拨单行", "remark"))
 		return

@@ -120,12 +120,12 @@ func (s *Server) UpdateInvStockDoc(w http.ResponseWriter, r *http.Request, id ge
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	summary, err := nullableStringUpdate(body.Summary)
+	summary, err := optionalUpdate[string](body.Summary)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("手工出入库单", "summary"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("手工出入库单", "remarks"))
 		return
@@ -137,15 +137,10 @@ func (s *Server) UpdateInvStockDoc(w http.ResponseWriter, r *http.Request, id ge
 	}
 	input := stockdoc.UpdateInput{
 		DocNo: body.DocNo, Direction: direction, WarehouseID: body.WarehouseID,
+		Summary: summary, Remarks: remarks,
 	}
 	if body.DocDate != nil {
 		input.DocDate = body.DocDate
-	}
-	if summary != nil {
-		input.Summary = summary
-	}
-	if remarks != nil {
-		input.Remarks = remarks
 	}
 	item, err := s.StockDocs.Update(r.Context(), actor, id, input)
 	if err != nil {
@@ -263,7 +258,7 @@ func (s *Server) UpdateInvStockDocItem(w http.ResponseWriter, r *http.Request, i
 		s.writeError(w, r, err)
 		return
 	}
-	remark, err := nullableStringUpdate(body.Remark)
+	remark, err := optionalUpdate[string](body.Remark)
 	if err != nil {
 		s.writeError(w, r, nullableStringError("手工出入库单行", "remark"))
 		return

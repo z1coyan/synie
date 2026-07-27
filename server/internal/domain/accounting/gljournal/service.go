@@ -212,11 +212,11 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 	if input.Date != nil {
 		current.Date = *input.Date
 	}
-	if input.PostingDate != nil {
-		current.PostingDate = *input.PostingDate
+	if input.PostingDate.Set {
+		current.PostingDate = input.PostingDate.Value
 	}
-	if input.Remarks != nil {
-		current.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		current.Remarks = input.Remarks.Value
 	}
 	if err := validateMutable(current); err != nil {
 		return Journal{}, err

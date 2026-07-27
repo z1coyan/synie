@@ -126,19 +126,12 @@ func (s *Server) UpdateAccountingSetting(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	var keyID **string
-	if body.OCRAccessKeyID != nil {
-		var value *string
-		if string(body.OCRAccessKeyID) != "null" {
-			var decoded string
-			if err := json.Unmarshal(body.OCRAccessKeyID, &decoded); err != nil {
-				s.writeError(w, r, invalidJSON(err))
-				return
-			}
-			value = &decoded
-		}
-		keyID = &value
+	keyIDValue, err := optionalUpdate[string](body.OCRAccessKeyID)
+	if err != nil {
+		s.writeError(w, r, invalidJSON(err))
+		return
 	}
+	keyID := doublePtr(keyIDValue)
 	value, err := s.Settings.UpdateAccounting(r.Context(), actor, settings.AccountingUpdate{
 		OCRAccessKeyID: keyID, OCRAccessKeySecret: body.OCRAccessKeySecret,
 	})

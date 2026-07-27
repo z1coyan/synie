@@ -161,14 +161,14 @@ func (s *Service) UpdateLine(ctx context.Context, actor *authz.Actor, id uuid.UU
 	if input.Credit != nil {
 		after.Credit = *input.Credit
 	}
-	if input.PartyType != nil {
-		after.PartyType = *input.PartyType
+	if input.PartyType.Set {
+		after.PartyType = input.PartyType.Value
 	}
-	if input.PartyID != nil {
-		after.PartyID = *input.PartyID
+	if input.PartyID.Set {
+		after.PartyID = input.PartyID.Value
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if err := validateLineShape(after.Idx, after.AccountID, after.Debit, after.Credit, after.PartyType, after.PartyID, after.Remarks); err != nil {
 		return Line{}, err

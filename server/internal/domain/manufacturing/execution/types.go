@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type DemandStatus string
@@ -157,7 +158,7 @@ type CreateDemandInput struct {
 type UpdateDemandInput struct {
 	DemandNo   *string
 	DemandDate *time.Time
-	Remarks    **string
+	Remarks    optional.Optional[string]
 }
 
 type CreateDemandItemInput struct {
@@ -177,10 +178,10 @@ type UpdateDemandItemInput struct {
 	MaterialID        *uuid.UUID
 	UnitID            *uuid.UUID
 	Qty               *decimal.Decimal
-	NeedDate          **time.Time
+	NeedDate          optional.Optional[time.Time]
 	FulfillmentMethod *FulfillmentMethod
-	SalesOrderItemID  **uuid.UUID
-	Remarks           **string
+	SalesOrderItemID  optional.Optional[uuid.UUID]
+	Remarks           optional.Optional[string]
 }
 
 type CreateWorkOrderInput struct {
@@ -203,8 +204,8 @@ type CreateOutputInput struct {
 type UpdateOutputInput struct {
 	OutputNo    *string
 	OutputDate  *time.Time
-	WarehouseID **uuid.UUID
-	Remarks     **string
+	WarehouseID optional.Optional[uuid.UUID]
+	Remarks     optional.Optional[string]
 }
 
 type CreateOutputItemInput struct {
@@ -223,7 +224,7 @@ type UpdateOutputItemInput struct {
 	UnitID      *uuid.UUID
 	Qty         *decimal.Decimal
 	WarehouseID *uuid.UUID
-	Remarks     **string
+	Remarks     optional.Optional[string]
 }
 
 type ListQuery struct {

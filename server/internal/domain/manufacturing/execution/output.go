@@ -169,11 +169,11 @@ func (s *Service) UpdateOutput(
 	if input.OutputDate != nil {
 		after.OutputDate = *input.OutputDate
 	}
-	if input.WarehouseID != nil {
-		after.WarehouseID = *input.WarehouseID
+	if input.WarehouseID.Set {
+		after.WarehouseID = input.WarehouseID.Value
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if err := validateNo(after.OutputNo, "outputNo"); err != nil {
 		return Output{}, err
@@ -351,8 +351,8 @@ func (s *Service) UpdateOutputItem(
 	if input.WarehouseID != nil {
 		after.WarehouseID = *input.WarehouseID
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if err := validateRemarks(after.Remarks); err != nil {
 		return OutputItem{}, err

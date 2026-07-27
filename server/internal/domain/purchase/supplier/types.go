@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Supplier struct {
@@ -23,15 +24,10 @@ type CreateInput struct {
 	ShortName *string
 }
 
-type OptionalString struct {
-	Set   bool
-	Value *string
-}
-
 type UpdateInput struct {
 	Code      *string
 	Name      *string
-	ShortName OptionalString
+	ShortName optional.Optional[string]
 }
 
 type ListQuery struct {

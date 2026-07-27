@@ -139,8 +139,8 @@ func (s *Service) UpdateIssueItem(ctx context.Context, actor *authz.Actor, id uu
 	if input.OutsourcedWarehouseID != nil {
 		after.OutsourcedWarehouseID = *input.OutsourcedWarehouseID
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if err := deriveIssueItem(ctx, tx, parent, &after); err != nil {
 		return IssueItem{}, err

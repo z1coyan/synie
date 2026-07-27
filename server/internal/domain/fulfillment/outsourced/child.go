@@ -129,11 +129,11 @@ func (s *Service) UpdateReceiptMaterial(ctx context.Context, actor *authz.Actor,
 	if input.OrderItemMaterialID != nil {
 		after.OrderItemMaterialID = *input.OrderItemMaterialID
 	}
-	if input.OutsourcedWarehouseID != nil {
-		after.OutsourcedWarehouseID = *input.OutsourcedWarehouseID
+	if input.OutsourcedWarehouseID.Set {
+		after.OutsourcedWarehouseID = input.OutsourcedWarehouseID.Value
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if err := deriveReceiptMaterial(ctx, tx, receipt, parent, &after); err != nil {
 		return ReceiptMaterial{}, err
@@ -268,11 +268,11 @@ func (s *Service) UpdateReceiptByproduct(ctx context.Context, actor *authz.Actor
 	if input.OrderItemByproductID != nil {
 		after.OrderItemByproductID = *input.OrderItemByproductID
 	}
-	if input.WarehouseID != nil {
-		after.WarehouseID = *input.WarehouseID
+	if input.WarehouseID.Set {
+		after.WarehouseID = input.WarehouseID.Value
 	}
-	if input.Remarks != nil {
-		after.Remarks = *input.Remarks
+	if input.Remarks.Set {
+		after.Remarks = input.Remarks.Value
 	}
 	if err := deriveReceiptByproduct(ctx, tx, receipt, parent, &after); err != nil {
 		return ReceiptByproduct{}, err

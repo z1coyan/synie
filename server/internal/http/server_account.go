@@ -87,32 +87,24 @@ func (s *Server) UpdateBasAccount(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
+	role, err := optionalUpdate[string](body.Role)
+	if err != nil {
+		s.writeError(w, r, nullableFieldError("role", "科目角色"))
+		return
+	}
+	parentID, err := optionalUpdate[uuid.UUID](body.ParentID)
+	if err != nil {
+		s.writeError(w, r, nullableFieldError("parentId", "UUID"))
+		return
+	}
+	currencyID, err := optionalUpdate[uuid.UUID](body.CurrencyID)
+	if err != nil {
+		s.writeError(w, r, nullableFieldError("currencyId", "UUID"))
+		return
+	}
 	input := account.UpdateInput{
 		Name: body.Name, Direction: body.Direction, IsGroup: body.IsGroup, Active: body.Active,
-	}
-	if body.Role != nil {
-		var value *string
-		if err := json.Unmarshal(body.Role, &value); err != nil {
-			s.writeError(w, r, nullableFieldError("role", "科目角色"))
-			return
-		}
-		input.Role = &value
-	}
-	if body.ParentID != nil {
-		var value *uuid.UUID
-		if err := json.Unmarshal(body.ParentID, &value); err != nil {
-			s.writeError(w, r, nullableFieldError("parentId", "UUID"))
-			return
-		}
-		input.ParentID = &value
-	}
-	if body.CurrencyID != nil {
-		var value *uuid.UUID
-		if err := json.Unmarshal(body.CurrencyID, &value); err != nil {
-			s.writeError(w, r, nullableFieldError("currencyId", "UUID"))
-			return
-		}
-		input.CurrencyID = &value
+		Role: role, ParentID: parentID, CurrencyID: currencyID,
 	}
 	item, err := s.Accounts.Update(r.Context(), actor, id, input)
 	if err != nil {

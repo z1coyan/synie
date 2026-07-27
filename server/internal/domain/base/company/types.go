@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
 type Reference struct {
@@ -50,6 +51,6 @@ type CreateInput struct {
 type UpdateInput struct {
 	Name           *string
 	ShortName      *string
-	ParentID       **uuid.UUID
+	ParentID       optional.Optional[uuid.UUID]
 	BaseCurrencyID *uuid.UUID
 }

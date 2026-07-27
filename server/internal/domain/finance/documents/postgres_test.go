@@ -3,7 +3,6 @@ package documents
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -11,9 +10,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type testNumberer struct{ value atomic.Int64 }
@@ -25,17 +24,9 @@ func (n *testNumberer) NextInTx(
 }
 
 func TestPostgresFinanceDocumentsAtomicLifecyclesAndBillReplay(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := uuid.NewString()
 	currencyID, companyID, employeeID, userID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
@@ -44,6 +35,7 @@ func TestPostgresFinanceDocumentsAtomicLifecyclesAndBillReplay(t *testing.T) {
 	ids := []uuid.UUID{
 		partyAccountID, amountAccountID, paymentAccountID, billAccountID, settleAccountID,
 	}
+	var err error
 	if _, err = pool.Exec(ctx, `INSERT INTO bas_currency(id,name,iso_code)
 		VALUES($1,$2,$3)`, currencyID, "测试币"+suffix, "T"+suffix[:2]); err != nil {
 		t.Fatal(err)

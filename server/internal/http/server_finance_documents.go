@@ -6,38 +6,21 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/z1coyan/synie/server/internal/domain/finance/documents"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/optional"
 )
 
-func documentOptionalString(
-	fields map[string]json.RawMessage,
-	key string,
-	value *string,
-) documents.OptionalString {
-	_, set := fields[key]
-	return documents.OptionalString{Set: set, Value: value}
-}
-
-func documentOptionalUUID(
-	fields map[string]json.RawMessage,
-	key string,
-	value *uuid.UUID,
-) documents.OptionalUUID {
-	_, set := fields[key]
-	return documents.OptionalUUID{Set: set, Value: value}
-}
-
+// documentOptionalDate 把 openapi 日期指针格式化为 YYYY-MM-DD 后走统一三态构造。
 func documentOptionalDate(
 	fields map[string]json.RawMessage,
 	key string,
 	value *openapi_types.Date,
-) documents.OptionalString {
-	return documentOptionalString(fields, key, financeDate(value))
+) optional.Optional[string] {
+	return optionalField(fields, key, financeDate(value))
 }
 
 func (s *Server) QueryFinanceVatInvoices(w http.ResponseWriter, r *http.Request) {
@@ -134,46 +117,46 @@ func (s *Server) UpdateFinanceVatInvoice(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	var body gen.VatInvoiceUpdate
-	fields, err := decodeFinanceJSON(w, r, &body)
+	fields, err := decodePatchJSON(w, r, &body)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
 	input := documents.VatInvoiceUpdateInput{
-		DocNo:       documentOptionalString(fields, "docNo", body.DocNo),
+		DocNo:       optionalField(fields, "docNo", body.DocNo),
 		InvoiceDate: documentOptionalDate(fields, "invoiceDate", body.InvoiceDate),
-		InvoiceNo:   documentOptionalString(fields, "invoiceNo", body.InvoiceNo),
-		SellerName:  documentOptionalString(fields, "sellerName", body.SellerName),
-		SellerTaxNo: documentOptionalString(fields, "sellerTaxNo", body.SellerTaxNo),
-		SellerAddressPhone: documentOptionalString(
+		InvoiceNo:   optionalField(fields, "invoiceNo", body.InvoiceNo),
+		SellerName:  optionalField(fields, "sellerName", body.SellerName),
+		SellerTaxNo: optionalField(fields, "sellerTaxNo", body.SellerTaxNo),
+		SellerAddressPhone: optionalField(
 			fields, "sellerAddressPhone", body.SellerAddressPhone,
 		),
-		SellerBankAccount: documentOptionalString(
+		SellerBankAccount: optionalField(
 			fields, "sellerBankAccount", body.SellerBankAccount,
 		),
-		BuyerName:  documentOptionalString(fields, "buyerName", body.BuyerName),
-		BuyerTaxNo: documentOptionalString(fields, "buyerTaxNo", body.BuyerTaxNo),
-		BuyerAddressPhone: documentOptionalString(
+		BuyerName:  optionalField(fields, "buyerName", body.BuyerName),
+		BuyerTaxNo: optionalField(fields, "buyerTaxNo", body.BuyerTaxNo),
+		BuyerAddressPhone: optionalField(
 			fields, "buyerAddressPhone", body.BuyerAddressPhone,
 		),
-		BuyerBankAccount: documentOptionalString(
+		BuyerBankAccount: optionalField(
 			fields, "buyerBankAccount", body.BuyerBankAccount,
 		),
-		NetTotal:        documentOptionalString(fields, "netTotal", body.NetTotal),
-		TaxTotal:        documentOptionalString(fields, "taxTotal", body.TaxTotal),
-		GrossTotal:      documentOptionalString(fields, "grossTotal", body.GrossTotal),
-		Issuer:          documentOptionalString(fields, "issuer", body.Issuer),
-		Reviewer:        documentOptionalString(fields, "reviewer", body.Reviewer),
-		Payee:           documentOptionalString(fields, "payee", body.Payee),
-		Remarks:         documentOptionalString(fields, "remarks", body.Remarks),
-		PartyAccountID:  documentOptionalUUID(fields, "partyAccountId", body.PartyAccountId),
-		AmountAccountID: documentOptionalUUID(fields, "amountAccountId", body.AmountAccountId),
-		TaxAccountID:    documentOptionalUUID(fields, "taxAccountId", body.TaxAccountId),
-		MirrorInvoiceID: documentOptionalUUID(fields, "mirrorInvoiceId", body.MirrorInvoiceId),
-		SalesReconciliationID: documentOptionalUUID(
+		NetTotal:        optionalField(fields, "netTotal", body.NetTotal),
+		TaxTotal:        optionalField(fields, "taxTotal", body.TaxTotal),
+		GrossTotal:      optionalField(fields, "grossTotal", body.GrossTotal),
+		Issuer:          optionalField(fields, "issuer", body.Issuer),
+		Reviewer:        optionalField(fields, "reviewer", body.Reviewer),
+		Payee:           optionalField(fields, "payee", body.Payee),
+		Remarks:         optionalField(fields, "remarks", body.Remarks),
+		PartyAccountID:  optionalField(fields, "partyAccountId", body.PartyAccountId),
+		AmountAccountID: optionalField(fields, "amountAccountId", body.AmountAccountId),
+		TaxAccountID:    optionalField(fields, "taxAccountId", body.TaxAccountId),
+		MirrorInvoiceID: optionalField(fields, "mirrorInvoiceId", body.MirrorInvoiceId),
+		SalesReconciliationID: optionalField(
 			fields, "salReconciliationId", body.SalReconciliationId,
 		),
-		PurchaseReconciliationID: documentOptionalUUID(
+		PurchaseReconciliationID: optionalField(
 			fields, "purReconciliationId", body.PurReconciliationId,
 		),
 	}
@@ -363,15 +346,15 @@ func (s *Server) UpdateFinanceExpenseReport(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var body gen.ExpenseReportUpdate
-	fields, err := decodeFinanceJSON(w, r, &body)
+	fields, err := decodePatchJSON(w, r, &body)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
 	input := documents.ExpenseReportUpdateInput{
-		DocNo:       documentOptionalString(fields, "docNo", body.DocNo),
+		DocNo:       optionalField(fields, "docNo", body.DocNo),
 		PostingDate: documentOptionalDate(fields, "postingDate", body.PostingDate),
-		Remarks:     documentOptionalString(fields, "remarks", body.Remarks),
+		Remarks:     optionalField(fields, "remarks", body.Remarks),
 		EmployeeID:  body.EmployeeId, PaymentAccountID: body.PaymentAccountId,
 	}
 	if body.ExpenseDate != nil {
@@ -491,18 +474,18 @@ func (s *Server) UpdateFinanceExpenseReportItem(
 		return
 	}
 	var body gen.ExpenseReportItemUpdate
-	fields, err := decodeFinanceJSON(w, r, &body)
+	fields, err := decodePatchJSON(w, r, &body)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
 	input := documents.ExpenseReportItemUpdateInput{
 		Idx:       body.Idx,
-		Summary:   documentOptionalString(fields, "summary", body.Summary),
-		Amount:    documentOptionalString(fields, "amount", body.Amount),
-		Remarks:   documentOptionalString(fields, "remarks", body.Remarks),
-		InvoiceID: documentOptionalUUID(fields, "invoiceId", body.InvoiceId),
-		ExpenseAccountID: documentOptionalUUID(
+		Summary:   optionalField(fields, "summary", body.Summary),
+		Amount:    optionalField(fields, "amount", body.Amount),
+		Remarks:   optionalField(fields, "remarks", body.Remarks),
+		InvoiceID: optionalField(fields, "invoiceId", body.InvoiceId),
+		ExpenseAccountID: optionalField(
 			fields, "expenseAccountId", body.ExpenseAccountId,
 		),
 	}
@@ -557,37 +540,37 @@ func (s *Server) UpdateFinanceBill(w http.ResponseWriter, r *http.Request, id ge
 		return
 	}
 	var body gen.BillUpdate
-	fields, err := decodeFinanceJSON(w, r, &body)
+	fields, err := decodePatchJSON(w, r, &body)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
 	input := documents.BillUpdateInput{
 		IssueDate:      documentOptionalDate(fields, "issueDate", body.IssueDate),
-		FaceAmount:     documentOptionalString(fields, "faceAmount", body.FaceAmount),
-		DrawerName:     documentOptionalString(fields, "drawerName", body.DrawerName),
-		DrawerAccount:  documentOptionalString(fields, "drawerAccount", body.DrawerAccount),
-		DrawerBankName: documentOptionalString(fields, "drawerBankName", body.DrawerBankName),
-		DrawerBankNo:   documentOptionalString(fields, "drawerBankNo", body.DrawerBankNo),
-		PayeeName:      documentOptionalString(fields, "payeeName", body.PayeeName),
-		PayeeAccount:   documentOptionalString(fields, "payeeAccount", body.PayeeAccount),
-		PayeeBankName:  documentOptionalString(fields, "payeeBankName", body.PayeeBankName),
-		PayeeBankNo:    documentOptionalString(fields, "payeeBankNo", body.PayeeBankNo),
-		AcceptorName:   documentOptionalString(fields, "acceptorName", body.AcceptorName),
-		AcceptorAccount: documentOptionalString(
+		FaceAmount:     optionalField(fields, "faceAmount", body.FaceAmount),
+		DrawerName:     optionalField(fields, "drawerName", body.DrawerName),
+		DrawerAccount:  optionalField(fields, "drawerAccount", body.DrawerAccount),
+		DrawerBankName: optionalField(fields, "drawerBankName", body.DrawerBankName),
+		DrawerBankNo:   optionalField(fields, "drawerBankNo", body.DrawerBankNo),
+		PayeeName:      optionalField(fields, "payeeName", body.PayeeName),
+		PayeeAccount:   optionalField(fields, "payeeAccount", body.PayeeAccount),
+		PayeeBankName:  optionalField(fields, "payeeBankName", body.PayeeBankName),
+		PayeeBankNo:    optionalField(fields, "payeeBankNo", body.PayeeBankNo),
+		AcceptorName:   optionalField(fields, "acceptorName", body.AcceptorName),
+		AcceptorAccount: optionalField(
 			fields, "acceptorAccount", body.AcceptorAccount,
 		),
-		AcceptorBankName: documentOptionalString(
+		AcceptorBankName: optionalField(
 			fields, "acceptorBankName", body.AcceptorBankName,
 		),
-		AcceptorBankNo: documentOptionalString(
+		AcceptorBankNo: optionalField(
 			fields, "acceptorBankNo", body.AcceptorBankNo,
 		),
 		Transferable: body.Transferable,
 		AcceptanceDate: documentOptionalDate(
 			fields, "acceptanceDate", body.AcceptanceDate,
 		),
-		Remarks: documentOptionalString(fields, "remarks", body.Remarks),
+		Remarks: optionalField(fields, "remarks", body.Remarks),
 	}
 	if body.BillKind != nil {
 		value := string(*body.BillKind)
@@ -730,32 +713,32 @@ func (s *Server) UpdateFinanceBillTransaction(
 		return
 	}
 	var body gen.BillTransactionUpdate
-	fields, err := decodeFinanceJSON(w, r, &body)
+	fields, err := decodePatchJSON(w, r, &body)
 	if err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
 	input := documents.BillTransactionUpdateInput{
-		DocNo:    documentOptionalString(fields, "docNo", body.DocNo),
+		DocNo:    optionalField(fields, "docNo", body.DocNo),
 		SubStart: body.SubStart, SubEnd: body.SubEnd, Amount: body.Amount,
-		PartyType:     documentOptionalString(fields, "partyType", enumStringPtr(body.PartyType)),
-		PartyID:       documentOptionalUUID(fields, "partyId", body.PartyId),
-		DiscountOrg:   documentOptionalString(fields, "discountOrg", body.DiscountOrg),
-		DiscountRate:  documentOptionalString(fields, "discountRate", body.DiscountRate),
-		Interest:      documentOptionalString(fields, "interest", body.Interest),
-		NetAmount:     documentOptionalString(fields, "netAmount", body.NetAmount),
+		PartyType:     optionalField(fields, "partyType", enumStringPtr(body.PartyType)),
+		PartyID:       optionalField(fields, "partyId", body.PartyId),
+		DiscountOrg:   optionalField(fields, "discountOrg", body.DiscountOrg),
+		DiscountRate:  optionalField(fields, "discountRate", body.DiscountRate),
+		Interest:      optionalField(fields, "interest", body.Interest),
+		NetAmount:     optionalField(fields, "netAmount", body.NetAmount),
 		PostingDate:   documentOptionalDate(fields, "postingDate", body.PostingDate),
-		Remarks:       documentOptionalString(fields, "remarks", body.Remarks),
+		Remarks:       optionalField(fields, "remarks", body.Remarks),
 		BankAccountID: body.BankAccountId,
-		ToBankAccountID: documentOptionalUUID(
+		ToBankAccountID: optionalField(
 			fields, "toBankAccountId", body.ToBankAccountId,
 		),
 		BillID:        body.BillId,
-		BillAccountID: documentOptionalUUID(fields, "billAccountId", body.BillAccountId),
-		SettleAccountID: documentOptionalUUID(
+		BillAccountID: optionalField(fields, "billAccountId", body.BillAccountId),
+		SettleAccountID: optionalField(
 			fields, "settleAccountId", body.SettleAccountId,
 		),
-		InterestAccountID: documentOptionalUUID(
+		InterestAccountID: optionalField(
 			fields, "interestAccountId", body.InterestAccountId,
 		),
 	}

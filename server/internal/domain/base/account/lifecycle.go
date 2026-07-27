@@ -99,14 +99,14 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 	if input.Active != nil {
 		after.Active = *input.Active
 	}
-	if input.Role != nil {
-		after.Role = *input.Role
+	if input.Role.Set {
+		after.Role = input.Role.Value
 	}
-	if input.ParentID != nil {
-		after.ParentID = *input.ParentID
+	if input.ParentID.Set {
+		after.ParentID = input.ParentID.Value
 	}
-	if input.CurrencyID != nil {
-		after.CurrencyID = *input.CurrencyID
+	if input.CurrencyID.Set {
+		after.CurrencyID = input.CurrencyID.Value
 	}
 	create := CreateInput{
 		Code: after.Code, Name: after.Name, Direction: after.Direction,

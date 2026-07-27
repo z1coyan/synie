@@ -3,30 +3,21 @@ package filterbuild_test
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/domain/base/market"
 	"github.com/z1coyan/synie/server/internal/domain/base/unit"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 func TestPostgresUppercaseWireEnumsMatchLowercaseDatabaseValues(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	suffix := strings.ToUpper(strings.ReplaceAll(uuid.NewString(), "-", "")[:10])
 	var currencyID, unitID, instrumentID uuid.UUID

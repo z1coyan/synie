@@ -114,12 +114,12 @@ func (s *Server) updateOrder(w http.ResponseWriter, r *http.Request, actor *auth
 		s.writeError(w, r, err)
 		return
 	}
-	terms, err := nullableStringUpdate(body.Terms)
+	terms, err := optionalUpdate[string](body.Terms)
 	if err != nil {
 		s.writeError(w, r, nullableStringError(orderLabel(side), "terms"))
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError(orderLabel(side), "remarks"))
 		return
@@ -254,27 +254,27 @@ func (s *Server) updateOrderItem(w http.ResponseWriter, r *http.Request, actor *
 		s.writeError(w, r, err)
 		return
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError(orderItemLabel(side), "remarks"))
 		return
 	}
-	quotationItemID, err := nullableUUIDUpdate(body.QuotationItemID)
+	quotationItemID, err := optionalUpdate[uuid.UUID](body.QuotationItemID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError(orderItemLabel(side), "quotationItemId"))
 		return
 	}
-	bomID, err := nullableUUIDUpdate(body.BOMID)
+	bomID, err := optionalUpdate[uuid.UUID](body.BOMID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError(orderItemLabel(side), "bomId"))
 		return
 	}
-	demandLineID, err := nullableUUIDUpdate(body.DemandLineID)
+	demandLineID, err := optionalUpdate[uuid.UUID](body.DemandLineID)
 	if err != nil {
 		s.writeError(w, r, nullableUUIDError(orderItemLabel(side), "demandLineId"))
 		return
 	}
-	demandDate, err := nullableDateUpdate(body.DemandDate)
+	demandDate, err := optionalDateUpdate(body.DemandDate)
 	if err != nil {
 		s.writeError(w, r, apierror.Validation(orderItemLabel(side)+"参数不合法", map[string][]string{"demandDate": {"必须是日期或 null"}}))
 		return

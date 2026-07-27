@@ -153,7 +153,7 @@ func (s *Server) decodeOrderMaterialUpdate(
 		s.writeError(w, r, err)
 		return order.UpdateMaterialInput{}, false
 	}
-	remarks, err := nullableStringUpdate(body.Remarks)
+	remarks, err := optionalUpdate[string](body.Remarks)
 	if err != nil {
 		s.writeError(w, r, nullableStringError(label, "remarks"))
 		return order.UpdateMaterialInput{}, false
