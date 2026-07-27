@@ -1,39 +1,56 @@
 #!/usr/bin/env bash
 #
-# 权限浏览器薄冒烟一键脚本(authz-e2e 工单11):建演示库 → 起后端 → 起前端 →
-# 跑 Playwright 冒烟 → 收摊。新人照跑即可,不进 PR CI。
+# Go 版一键 e2e(接替旧 Elixir 冒烟):重置演示库 → goose 迁移 → 起 Go 后端 →
+# 初始化向导示例路径(超管 + JT 公司 + 全业务链示例数据,见 e2e/provision-demo.ts)→
+# 起前端 → 跑 playwright.go.config.ts → 收摊。
 #
 # 用法:
-#   web/e2e/run-smoke.sh                # 默认后端 4010 / 前端 3010(避开主 checkout 的 4000/3000)
-#   BACKEND_PORT=4020 FRONTEND_PORT=3020 web/e2e/run-smoke.sh
+#   web/e2e/run-smoke.sh                 # 默认 Go 8090 / 前端 3011
+#   GO_API_PORT=8090 FRONTEND_PORT=3020 web/e2e/run-smoke.sh
+#   KEEP_DB=1 web/e2e/run-smoke.sh       # 不重建库(要求库已迁移、已初始化、超管口令一致)
 #
 # 前置:
-#   - Elixir/mix 在 PATH(或已 export ~/.elixir-install 的 bin)
+#   - Go、Bun、Docker 在 PATH;compose postgres 可用(脚本会自动 docker compose up -d postgres)
 #   - web/node_modules 已装(含 @heroui-pro 真实包,需根 .env 的 HeroUI token)
 #   - Playwright 浏览器已装:`cd web && bunx playwright install chromium`
-#   - Postgres 可用(synie-pg,5440)
 set -euo pipefail
 
-BACKEND_PORT="${BACKEND_PORT:-4010}"
-FRONTEND_PORT="${FRONTEND_PORT:-3010}"
+# 默认 8090 避开主 checkout 的开发后端 8080;部分 spec 直连 Go API(GO_API_URL)
+GO_API_PORT="${GO_API_PORT:-8090}"
+FRONTEND_PORT="${FRONTEND_PORT:-3011}"
+KEEP_DB="${KEEP_DB:-}"
+
+PG_CONTAINER="${PG_CONTAINER:-synie-postgres-1}"
+PG_USER="${PG_USER:-synie}"
+PG_DB="${PG_DB:-synie}"
+DATABASE_URL="${DATABASE_URL:-postgres://synie:synie@localhost:5441/${PG_DB}?sslmode=disable}"
+
+ADMIN_USERNAME="${E2E_ADMIN_USERNAME:-admin}"
+# 必须与各 *.go.e2e.ts 的 E2E_ADMIN_PASSWORD 默认值一致
+ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-synie-integration-admin-password}"
+# 仅本脚本内使用,e2e 栈专用,不得复用到其他环境
+AUTH_SECRET="${AUTH_SECRET:-e2e-local-secret-do-not-use-elsewhere-32b}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WEB_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BACKEND_DIR="$(cd "$WEB_DIR/../backend" && pwd)"
+ROOT_DIR="$(cd "$WEB_DIR/.." && pwd)"
+SERVER_DIR="$ROOT_DIR/server"
 
-BACKEND_PID=""
+SERVER_PID=""
 FRONTEND_PID=""
+BIN_DIR=""
 
 cleanup() {
   echo "[e2e] 收摊……"
   [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null || true
-  [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null || true
+  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
+  [ -n "$BIN_DIR" ] && rm -rf "$BIN_DIR"
   wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
 wait_for() {
-  local url="$1" name="$2" tries=60
+  local url="$1" name="$2" tries=90
   echo "[e2e] 等待 $name ($url) ……"
   until curl -sf -o /dev/null "$url" 2>/dev/null; do
     tries=$((tries - 1))
@@ -46,23 +63,66 @@ wait_for() {
   echo "[e2e] $name 就绪"
 }
 
-echo "[e2e] 建演示库(reset + demo,库内 admin/admin123 + 公司 JT + 全业务链数据)……"
-( cd "$BACKEND_DIR" && MIX_ENV=dev mix synie.db.reset && MIX_ENV=dev mix synie.demo )
+psql_admin() {
+  docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d postgres -v ON_ERROR_STOP=1 "$@"
+}
 
-echo "[e2e] 起后端(PORT=$BACKEND_PORT,绑 0.0.0.0)……"
-( cd "$BACKEND_DIR" && PORT="$BACKEND_PORT" MIX_ENV=dev mix phx.server ) &
-BACKEND_PID=$!
-wait_for "http://localhost:$BACKEND_PORT/graphql" "后端 GraphQL"
+echo "[e2e] 起 Postgres(compose)……"
+( cd "$ROOT_DIR" && docker compose up -d postgres )
+echo "[e2e] 等待 Postgres 就绪……"
+until docker exec "$PG_CONTAINER" pg_isready -U "$PG_USER" -d "$PG_DB" >/dev/null 2>&1; do
+  sleep 1
+done
 
-echo "[e2e] 起前端(vite --host --port $FRONTEND_PORT,代理指向后端 $BACKEND_PORT)……"
-( cd "$WEB_DIR" && BACKEND_PORT="$BACKEND_PORT" bun run dev -- --host --port "$FRONTEND_PORT" ) &
+if [ -z "$KEEP_DB" ]; then
+  echo "[e2e] 重建数据库 $PG_DB(销毁其中全部数据;KEEP_DB=1 可跳过)……"
+  psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$PG_DB' AND pid <> pg_backend_pid();" \
+             -c "DROP DATABASE IF EXISTS $PG_DB;" \
+             -c "CREATE DATABASE $PG_DB OWNER $PG_USER;"
+fi
+
+echo "[e2e] 执行 goose 迁移……"
+( cd "$SERVER_DIR" && DATABASE_URL="$DATABASE_URL" make migration-up )
+
+echo "[e2e] 构建并启动 Go 后端(:$GO_API_PORT)……"
+BIN_DIR="$(mktemp -d)"
+( cd "$SERVER_DIR" && go build -o "$BIN_DIR/synie" ./cmd/synie )
+( cd "$SERVER_DIR" && \
+  HTTP_ADDR=":$GO_API_PORT" \
+  DATABASE_URL="$DATABASE_URL" \
+  AUTH_SECRET="$AUTH_SECRET" \
+  AUTH_TOKEN_TTL=24h \
+  "$BIN_DIR/synie" ) &
+SERVER_PID=$!
+wait_for "http://localhost:$GO_API_PORT/api/v1/healthz" "Go 后端"
+
+if [ -z "$KEEP_DB" ]; then
+  echo "[e2e] 初始化向导(示例数据路径):建超管 + JT 公司 + 全业务链示例数据……"
+  API_BASE="http://localhost:$GO_API_PORT/api/v1" \
+  E2E_ADMIN_USERNAME="$ADMIN_USERNAME" \
+  E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+    bun "$SCRIPT_DIR/provision-demo.ts"
+else
+  echo "[e2e] KEEP_DB=1:跳过建库与初始化(要求 $ADMIN_USERNAME 已存在且口令一致)"
+fi
+
+# numbering.go.e2e 需要三个候选资源(inv.stock_count/mfg.operation/acc.gl_journal)中
+# 至少一个无启用规则;Go 基础种子三者全启用,这里停用 mfg.operation 对齐历史 dev 库状态
+echo "[e2e] 停用 mfg.operation 编号规则(为 numbering spec 留候选)……"
+docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 \
+  -c "UPDATE sys_numbering_rule SET enabled = false WHERE resource = 'mfg.operation';"
+
+echo "[e2e] 起前端(vite --host --port $FRONTEND_PORT,代理 /api/v1 → :$GO_API_PORT)……"
+( cd "$WEB_DIR" && GO_API_PORT="$GO_API_PORT" bun run dev -- --host --port "$FRONTEND_PORT" ) &
 FRONTEND_PID=$!
 wait_for "http://localhost:$FRONTEND_PORT/login" "前端"
 
-echo "[e2e] 跑 Playwright 冒烟……"
+echo "[e2e] 跑 Playwright(Go 配置)……"
 cd "$WEB_DIR"
 E2E_BASE_URL="http://localhost:$FRONTEND_PORT" \
-  E2E_GRAPHQL_URL="http://localhost:$BACKEND_PORT/graphql" \
-  bunx playwright test "$@"
+E2E_ADMIN_USERNAME="$ADMIN_USERNAME" \
+E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+GO_API_URL="http://127.0.0.1:$GO_API_PORT/api/v1" \
+  bunx playwright test --config=playwright.go.config.ts "$@"
 
 echo "[e2e] 冒烟通过 ✅"

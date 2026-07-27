@@ -46,9 +46,7 @@ func TestParseBankImportXLSXRules(t *testing.T) {
 }
 
 func TestParseBankImportBIFF8XLS(t *testing.T) {
-	content, err := os.ReadFile(
-		"../../../../../backend/apps/synie_core/test/support/fixtures/bank_import_sample.xls",
-	)
+	content, err := os.ReadFile("testdata/bank_import_sample.xls")
 	if err != nil {
 		t.Fatal(err)
 	}

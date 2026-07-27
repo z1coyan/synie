@@ -3,10 +3,9 @@ import { defineConfig, devices } from '@playwright/test'
 /**
  * 权限浏览器薄冒烟配置(authz-e2e 工单11)。
  *
- * **不进 PR CI**:本冒烟依赖前后端同起 + HeroUI Pro token + 演示库数据,脆性天然
- * 高于 API 矩阵;覆盖率全压在 API 层(见 spec.md)。按需本地跑:`bun run e2e`
- * (一键起栈见 `e2e/run-smoke.sh`),或对已起的栈跑 `E2E_BASE_URL=... npx playwright test`。
- * nightly 化留作后议。
+ * **遗留套件(冻结)**:依赖 Elixir `backend/` 演示库与 GraphQL 管理动线,Web Go-only
+ * 切流(2026-07-26)后不再维护,随 `backend/` 删除一并清理。现行验收走
+ * `playwright.go.config.ts`(各 `*.go.e2e.ts`),一键起栈见 `e2e/run-smoke.sh`。
  */
 export default defineConfig({
   testDir: './e2e',

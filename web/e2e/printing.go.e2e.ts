@@ -7,9 +7,7 @@ const password = process.env.E2E_ADMIN_PASSWORD ?? 'synie-integration-admin-pass
 const suffix = Date.now().toString(36)
 const templateName = `浏览器打印模板-${suffix}`
 const updatedName = `${templateName}-已更新`
-const fixture = path.resolve(
-  '../backend/apps/synie_web/test/support/fixtures/matrix_template.xlsx',
-)
+const fixture = path.resolve(import.meta.dirname, 'fixtures/matrix_template.xlsx')
 
 function postgres(sql: string): void {
   execFileSync(

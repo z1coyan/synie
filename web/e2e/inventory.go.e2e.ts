@@ -184,6 +184,15 @@ test('库存主数据、流水、余额与三类单据页面全程使用 Go REST
     await expect(
       page.getByRole('heading', { name: '库存余额', exact: true }),
     ).toBeVisible()
+    // 多公司时本页不自动选中(仅单公司自动选),与上文仓库页同款兜底:手动选首家
+    const balanceNeedsCompany = page.getByRole('heading', {
+      name: '请先选择公司',
+      exact: true,
+    })
+    if (await balanceNeedsCompany.isVisible().catch(() => false)) {
+      await page.getByText('选择公司…', { exact: true }).click()
+      await page.getByRole('option').first().click()
+    }
     await expect
       .poll(() =>
         restRequests.includes('POST /api/v1/inventory/stock-balance/query'),
