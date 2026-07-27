@@ -82,7 +82,7 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request, actor *auth
 	}
 	isOutsourced := body.IsOutsourced != nil && *body.IsOutsourced
 	item, err := s.Orders.CreateOrder(r.Context(), actor, side, order.CreateOrderInput{
-		CompanyID: body.CompanyId, OrderNo: body.OrderNo, OrderDate: openAPIDatePointer(body.OrderDate),
+		CompanyID: body.CompanyId, OrderNo: body.OrderNo, OrderDate: datePointer(body.OrderDate),
 		OrderType: order.OrderType(body.OrderType), IsOutsourced: isOutsourced,
 		PartyType: string(body.PartyType), PartyID: body.PartyId, CurrencyID: body.CurrencyId,
 		ExchangeRate: exchangeRate, Terms: body.Terms, Remarks: body.Remarks,
@@ -125,7 +125,7 @@ func (s *Server) updateOrder(w http.ResponseWriter, r *http.Request, actor *auth
 		return
 	}
 	item, err := s.Orders.UpdateOrder(r.Context(), actor, side, id, order.UpdateOrderInput{
-		OrderNo: body.OrderNo, OrderDate: openAPIDatePointer(body.OrderDate),
+		OrderNo: body.OrderNo, OrderDate: datePointer(body.OrderDate),
 		PartyType: body.PartyType, PartyID: body.PartyID, CurrencyID: body.CurrencyID,
 		ExchangeRate: exchangeRate, Terms: terms, Remarks: remarks,
 	})
@@ -212,7 +212,7 @@ func (s *Server) createOrderItem(w http.ResponseWriter, r *http.Request, actor *
 		OrderID: body.OrderId, Idx: body.Idx, Qty: qty, MaterialID: body.MaterialId,
 		UnitID: body.UnitId, Price: price, TaxRate: taxRate, Remarks: body.Remarks,
 		QuotationItemID: body.QuotationItemId, BOMID: body.BomId, DemandLineID: body.DemandLineId,
-		DemandDate: openAPIDatePointer(body.DemandDate),
+		DemandDate: datePointer(body.DemandDate),
 	})
 	if err != nil {
 		s.writeError(w, r, err)

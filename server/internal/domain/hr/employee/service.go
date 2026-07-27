@@ -122,6 +122,7 @@ func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateIn
 	if err := audit.Write(ctx, tx, actor, audit.Entry{
 		Resource: "hr_employee", RecordID: item.ID, RecordLabel: item.Name,
 		ActionType: "create", ActionName: "create", Changes: changes,
+		SensitiveFields: ResourceMeta().Audit.SensitiveFields,
 	}); err != nil {
 		return Employee{}, apierror.Wrap(apierror.CodeInternal, "创建员工失败", err)
 	}
@@ -169,9 +170,6 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 	}
 	beforeSnapshot, afterSnapshot := rawSnapshot(before), rawSnapshot(after)
 	changes := audit.Diff(beforeSnapshot, afterSnapshot, auditedFields)
-	if _, changed := changes["id_number"]; changed {
-		changes["id_number"] = audit.Change{"from": "[FILTERED]", "to": "[FILTERED]"}
-	}
 	if len(changes) == 0 {
 		if err := tx.Commit(ctx); err != nil {
 			return Employee{}, apierror.Wrap(apierror.CodeInternal, "更新员工失败", err)
@@ -198,6 +196,7 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 	if err := audit.Write(ctx, tx, actor, audit.Entry{
 		Resource: "hr_employee", RecordID: item.ID, RecordLabel: item.Name,
 		ActionType: "update", ActionName: "update", Changes: changes,
+		SensitiveFields: ResourceMeta().Audit.SensitiveFields,
 	}); err != nil {
 		return Employee{}, apierror.Wrap(apierror.CodeInternal, "更新员工失败", err)
 	}
@@ -228,6 +227,7 @@ func (s *Service) Delete(ctx context.Context, actor *authz.Actor, id uuid.UUID) 
 	if err := audit.Write(ctx, tx, actor, audit.Entry{
 		Resource: "hr_employee", RecordID: item.ID, RecordLabel: item.Name,
 		ActionType: "destroy", ActionName: "destroy", Changes: destroyedChanges(rawSnapshot(item)),
+		SensitiveFields: ResourceMeta().Audit.SensitiveFields,
 	}); err != nil {
 		return apierror.Wrap(apierror.CodeInternal, "删除员工失败", err)
 	}
@@ -381,9 +381,6 @@ func createdChanges(snapshot map[string]any) map[string]audit.Change {
 		if isNilPointer(value) {
 			continue
 		}
-		if field == "id_number" {
-			value = "[FILTERED]"
-		}
 		changes[field] = audit.Change{"to": value}
 	}
 	return changes
@@ -395,9 +392,6 @@ func destroyedChanges(snapshot map[string]any) map[string]audit.Change {
 		value := snapshot[field]
 		if isNilPointer(value) {
 			continue
-		}
-		if field == "id_number" {
-			value = "[FILTERED]"
 		}
 		changes[field] = audit.Change{"from": value}
 	}

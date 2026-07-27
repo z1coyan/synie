@@ -87,7 +87,7 @@ func (s *Service) Render(ctx context.Context, actor *authz.Actor, input RenderIn
 		return RenderOutput{}, apierror.Validation("无法读取模板文件",
 			map[string][]string{"templateId": {"无法读取模板文件"}})
 	} else {
-		return s.renderWithTemplate(ctx, actor, builder, raw, input, len(input.IDs))
+		return s.renderWithTemplate(ctx, actor, builder, raw, input)
 	}
 }
 
@@ -97,13 +97,12 @@ func (s *Service) renderWithTemplate(
 	builder DocBuilder,
 	templateRaw []byte,
 	input RenderInput,
-	count int,
 ) (RenderOutput, error) {
 	docs, err := builder.BuildDocs(ctx, actor, input.IDs)
 	if err != nil {
 		return RenderOutput{}, err
 	}
-	filename := renderFilename(builder.Label(), docs, input.Mode, count)
+	filename := renderFilename(builder.Label(), docs, input.Mode, len(input.IDs))
 	if input.Mode == RenderModeExport {
 		named := make([]NamedDoc, 0, len(docs))
 		for _, doc := range docs {

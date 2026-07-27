@@ -51,12 +51,15 @@ func (s *Service) pdfConverter() PDFConverter {
 
 func formatDecimal(value decimal.Decimal) string { return value.String() }
 
-func formatDecimalPtr(value *decimal.Decimal) string {
+// formatPtr 是「空指针归空串、非空走格式化」的统一形状。
+func formatPtr[T any](value *T, format func(T) string) string {
 	if value == nil {
 		return ""
 	}
-	return value.String()
+	return format(*value)
 }
+
+func formatDecimalPtr(value *decimal.Decimal) string { return formatPtr(value, formatDecimal) }
 
 func formatBool(value bool) string {
 	if value {
@@ -65,12 +68,7 @@ func formatBool(value bool) string {
 	return "否"
 }
 
-func formatBoolPtr(value *bool) string {
-	if value == nil {
-		return ""
-	}
-	return formatBool(*value)
-}
+func formatBoolPtr(value *bool) string { return formatPtr(value, formatBool) }
 
 // formatDate 对齐 Elixir Date.to_iso8601。
 func formatDate(value time.Time) string { return value.Format("2006-01-02") }
@@ -78,18 +76,10 @@ func formatDate(value time.Time) string { return value.Format("2006-01-02") }
 // formatDateTime 对齐 Elixir NaiveDateTime.to_iso8601（库列为 timestamp without time zone）。
 func formatDateTime(value time.Time) string { return value.Format("2006-01-02T15:04:05") }
 
-func formatDateTimePtr(value *time.Time) string {
-	if value == nil {
-		return ""
-	}
-	return formatDateTime(*value)
-}
+func formatDateTimePtr(value *time.Time) string { return formatPtr(value, formatDateTime) }
 
 func formatTextPtr(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
+	return formatPtr(value, func(text string) string { return text })
 }
 
 // 枚举中文标签（与 Elixir 枚举 values 描述一致，随类型定义同步维护）。

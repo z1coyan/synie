@@ -3,7 +3,6 @@ package printing
 import (
 	"bytes"
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/files"
+	"github.com/z1coyan/synie/server/internal/testutil"
 )
 
 type stubPDFConverter struct {
@@ -40,17 +40,9 @@ type salesOrderRenderFixture struct {
 
 // 真实 PG 端到端：造销售订单 → 上传模板 → 渲染导出/打印。
 func TestPostgresSalesOrderRender(t *testing.T) {
-	databaseURL := os.Getenv("SYNIE_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("set SYNIE_TEST_DATABASE_URL to run the real PostgreSQL test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := testutil.NewPool(t, ctx)
 
 	printingFx := createPrintingFixture(t, ctx, pool)
 	fx := seedSalesOrderRenderFixture(t, ctx, pool)
@@ -238,8 +230,8 @@ func seedSalesOrderRenderFixture(
 	batch.Queue(`INSERT INTO sal_customers(id,code,name) VALUES($1,$2,$3)`,
 		fx.customerID, "CU"+suffix, "打印客户-"+suffix)
 	batch.Queue(`INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
-		VALUES($1,'quantity',true,$2,$3,1)`,
-		fx.unitID, "打印个-"+suffix, "P"+suffix)
+		VALUES($1,$4,true,$2,$3,1)`,
+		fx.unitID, "打印个-"+suffix, "P"+suffix, "printing-"+suffix)
 	batch.Queue(`INSERT INTO inv_material_category(id,code,name,is_leaf,active)
 		VALUES($1,$2,$3,true,true)`, fx.categoryID, "PM"+suffix, "打印分类-"+suffix)
 	batch.Queue(`INSERT INTO inv_material(id,code,name,spec,category_id,default_unit_id,

@@ -122,8 +122,8 @@ func (s *Server) updateQuotation(w http.ResponseWriter, r *http.Request, actor *
 		return
 	}
 	item, err := s.Quotations.UpdateQuotation(r.Context(), actor, side, id, quotation.UpdateQuotationInput{
-		QuotationNo: body.QuotationNo, QuotationDate: openAPIDatePointer(body.QuotationDate),
-		ValidUntil: openAPIDatePointer(body.ValidUntil), PartyType: body.PartyType,
+		QuotationNo: body.QuotationNo, QuotationDate: datePointer(body.QuotationDate),
+		ValidUntil: datePointer(body.ValidUntil), PartyType: body.PartyType,
 		PartyID: body.PartyID, CurrencyID: body.CurrencyID, Terms: terms, Remarks: remarks,
 	})
 	if err != nil {

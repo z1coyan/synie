@@ -304,11 +304,3 @@ func datePointer(value *openapi_types.Date) *time.Time {
 	result := value.Time
 	return &result
 }
-
-func openAPIDatePointer(value *openapi_types.Date) *time.Time {
-	if value == nil {
-		return nil
-	}
-	result := value.Time
-	return &result
-}

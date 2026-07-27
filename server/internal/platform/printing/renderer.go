@@ -201,11 +201,11 @@ func replaceSheetsSection(wb, sheetsInner string) string {
 }
 
 func stripPrintAreas(wb string) string {
-	wb = printAreaStrippPattern.ReplaceAllString(wb, "")
+	wb = printAreaStripPattern.ReplaceAllString(wb, "")
 	return definedNamesEmptyPattern.ReplaceAllString(wb, "")
 }
 
-var printAreaStrippPattern = regexp.MustCompile(`<definedName[^>]*_xlnm\.Print_Area[^>]*>[\s\S]*?</definedName>`)
+var printAreaStripPattern = regexp.MustCompile(`<definedName[^>]*_xlnm\.Print_Area[^>]*>[\s\S]*?</definedName>`)
 
 // openPackage 解包 xlsx 并定位第一个 sheet（与 ExtractPlaceholders 同一套解析约定）。
 func openPackage(value []byte) (*xlsxPackage, error) {
