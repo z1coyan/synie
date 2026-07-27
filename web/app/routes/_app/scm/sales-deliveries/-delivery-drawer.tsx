@@ -23,6 +23,7 @@ import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
+import { materialClient, materialUnitClient } from '~/lib/resources/inventory'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
@@ -341,6 +342,66 @@ function LockedText({ label, value }: { label: string; value: string }) {
       <Label>{label}</Label>
       <Input />
     </TextField>
+  )
+}
+
+/**
+ * 装箱行折算数量:选齐物料/单位/数量后按「base = 数量 ÷ 换算系数」实时折算展示
+ * (仅展示口径,落库仍由后端保存时重拍);未选齐或选项未载入时回显行上已存值。
+ */
+function LiveBaseQtyField({
+  materialId,
+  unitId,
+  qty,
+  value,
+}: {
+  materialId: string | null
+  unitId: unknown
+  qty: unknown
+  value: unknown
+}) {
+  const query = useQuery({
+    queryKey: ['packLineUnitFactors', materialId],
+    enabled: materialId != null,
+    staleTime: 60_000,
+    queryFn: () =>
+      Promise.all([
+        materialClient.get(materialId!),
+        materialUnitClient.query({
+          limit: 200,
+          offset: 0,
+          filter: { materialId: { kind: 'fk', op: 'in', values: [materialId!], labels: [] } },
+        }),
+      ]).then(([material, conversions]) => ({
+        defaultUnitId:
+          material?.defaultUnitId != null ? String(material.defaultUnitId) : null,
+        factors: new Map(
+          conversions.results
+            .filter((r) => r.unitId != null)
+            .map((r) => [String(r.unitId), Number(r.factor)] as const),
+        ),
+      })),
+  })
+
+  const unit = unitId == null || unitId === '' ? null : String(unitId)
+  const entered = Number(qty)
+  let live: number | null = null
+  if (materialId != null && unit != null && entered > 0 && query.data != null) {
+    if (unit === query.data.defaultUnitId) {
+      live = entered
+    } else {
+      const factor = query.data.factors.get(unit)
+      if (factor != null && factor > 0) live = Math.round((entered / factor) * 1e6) / 1e6
+    }
+  }
+  const shown = live ?? (value == null || value === '' ? NaN : Number(value))
+  return (
+    <NumberField fullWidth isDisabled value={shown}>
+      <Label>折算数量(默认单位)</Label>
+      <NumberField.Group className="grid-cols-[1fr]">
+        <NumberField.Input placeholder="选齐物料/单位/数量自动折算" />
+      </NumberField.Group>
+    </NumberField>
   )
 }
 
@@ -884,17 +945,13 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
               order: 7,
               cols: 6,
               label: '折算数量',
-              input: ({ value }) => (
-                <NumberField
-                  fullWidth
-                  isDisabled
-                  value={value == null || value === '' ? NaN : Number(value)}
-                >
-                  <Label>折算数量(默认单位)</Label>
-                  <NumberField.Group className="grid-cols-[1fr]">
-                    <NumberField.Input placeholder="保存后系统折算" />
-                  </NumberField.Group>
-                </NumberField>
+              input: ({ value, values: lv }) => (
+                <LiveBaseQtyField
+                  materialId={lv.materialId == null ? null : String(lv.materialId)}
+                  unitId={lv.unitId}
+                  qty={lv.qty}
+                  value={value}
+                />
               ),
             },
             remarks: { order: 8, label: '行备注' },

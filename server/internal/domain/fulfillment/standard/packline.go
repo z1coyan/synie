@@ -395,31 +395,101 @@ func validatePackEquality(
 		sum.qty = sum.qty.Add(item.BaseQty)
 		shipped[item.MaterialID] = sum
 	}
-	mismatches := make([]string, 0)
+	found := make([]packMismatch, 0)
 	for materialID, pack := range packed {
 		ship, ok := shipped[materialID]
-		if !ok {
-			mismatches = append(mismatches, fmt.Sprintf("物料 %s 不在发货条目中（发货 0，装箱 %s）",
-				pack.label, pack.qty))
-			continue
-		}
-		if !pack.qty.Equal(ship.qty) {
-			mismatches = append(mismatches, fmt.Sprintf("物料 %s 发货 %s，装箱 %s",
-				ship.label, ship.qty, pack.qty))
+		switch {
+		case !ok:
+			found = append(found, packMismatch{
+				materialID: materialID, label: pack.label, packQty: pack.qty, foreign: true,
+			})
+		case !pack.qty.Equal(ship.qty):
+			found = append(found, packMismatch{
+				materialID: materialID, label: ship.label, shipQty: ship.qty, packQty: pack.qty,
+			})
 		}
 	}
 	for materialID, ship := range shipped {
 		if _, ok := packed[materialID]; !ok {
-			mismatches = append(mismatches, fmt.Sprintf("物料 %s 未装箱（发货 %s，装箱 0）",
-				ship.label, ship.qty))
+			found = append(found, packMismatch{
+				materialID: materialID, label: ship.label, shipQty: ship.qty, missing: true,
+			})
 		}
 	}
-	if len(mismatches) > 0 {
-		sort.Strings(mismatches)
-		return apierror.New(apierror.CodeConflict,
-			"装箱清单与发货数量不一致："+strings.Join(mismatches, "；"))
+	if len(found) == 0 {
+		return nil
 	}
-	return nil
+	// 数量为默认单位口径：报错点名物料默认单位，避免误读成录入单位
+	unitNames, err := materialDefaultUnitNames(ctx, tx, found)
+	if err != nil {
+		return err
+	}
+	mismatches := make([]string, 0, len(found))
+	for _, m := range found {
+		mismatches = append(mismatches, m.describe(unitNames[m.materialID]))
+	}
+	sort.Strings(mismatches)
+	return apierror.New(apierror.CodeConflict,
+		"装箱清单与发货数量不一致（默认单位口径）："+strings.Join(mismatches, "；"))
+}
+
+// packMismatch 是一条逐物料装箱差异：foreign=含发货外物料、missing=漏装、
+// 其余为量不等；shipQty/packQty 均为默认单位口径。
+type packMismatch struct {
+	materialID uuid.UUID
+	label      string
+	shipQty    decimal.Decimal
+	packQty    decimal.Decimal
+	foreign    bool
+	missing    bool
+}
+
+func (m packMismatch) describe(unit string) string {
+	qty := func(value decimal.Decimal) string {
+		if unit == "" {
+			return value.String()
+		}
+		return value.String() + " " + unit
+	}
+	switch {
+	case m.foreign:
+		return fmt.Sprintf("物料 %s 不在发货条目中（发货 %s，装箱 %s）",
+			m.label, qty(decimal.Zero), qty(m.packQty))
+	case m.missing:
+		return fmt.Sprintf("物料 %s 未装箱（发货 %s，装箱 %s）",
+			m.label, qty(m.shipQty), qty(decimal.Zero))
+	default:
+		return fmt.Sprintf("物料 %s 发货 %s，装箱 %s", m.label, qty(m.shipQty), qty(m.packQty))
+	}
+}
+
+// materialDefaultUnitNames 取差异物料的默认单位名（报错展示用）。
+func materialDefaultUnitNames(
+	ctx context.Context, tx pgx.Tx, mismatches []packMismatch,
+) (map[uuid.UUID]string, error) {
+	ids := make([]uuid.UUID, 0, len(mismatches))
+	for _, m := range mismatches {
+		ids = append(ids, m.materialID)
+	}
+	rows, err := tx.Query(ctx, `SELECT m.id,u.name FROM inv_material m
+		JOIN bas_unit u ON u.id=m.default_unit_id WHERE m.id=ANY($1::uuid[])`, ids)
+	if err != nil {
+		return nil, apierror.Wrap(apierror.CodeInternal, "读取物料默认单位失败", err)
+	}
+	defer rows.Close()
+	names := make(map[uuid.UUID]string, len(ids))
+	for rows.Next() {
+		var id uuid.UUID
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, apierror.Wrap(apierror.CodeInternal, "读取物料默认单位失败", err)
+		}
+		names[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apierror.Wrap(apierror.CodeInternal, "遍历物料默认单位失败", err)
+	}
+	return names, nil
 }
 
 const packLineSelect = `SELECT id,idx,box_no,qty,base_qty,material_code,material_name,

@@ -318,8 +318,9 @@ func TestPostgresPackAuditAllOrNothing(t *testing.T) {
 		t.Fatalf("装箱量不等 error = %#v", err)
 	}
 	if msg := err.Error(); !strings.Contains(msg, "M"+f.suffix) ||
-		!strings.Contains(msg, "30") || !strings.Contains(msg, "58") {
-		t.Fatalf("报错未点名物料与两侧数量: %s", msg)
+		!strings.Contains(msg, "30") || !strings.Contains(msg, "58") ||
+		!strings.Contains(msg, "履约个-"+f.suffix) {
+		t.Fatalf("报错未点名物料/两侧数量/默认单位: %s", msg)
 	}
 	head, err := svc.GetHead(ctx, actor, SideSales, mismatch.ID)
 	if err != nil || head.Status != StatusDraft {
@@ -353,7 +354,8 @@ func TestPostgresPackAuditAllOrNothing(t *testing.T) {
 		t.Fatalf("漏装 error = %#v", err)
 	}
 	if msg := err.Error(); !strings.Contains(msg, "M2-"+f.suffix) ||
-		!strings.Contains(msg, "未装箱") || !strings.Contains(msg, "装箱 0") {
+		!strings.Contains(msg, "未装箱") || !strings.Contains(msg, "装箱 0") ||
+		!strings.Contains(msg, "履约个-"+f.suffix) {
 		t.Fatalf("漏装报错: %s", msg)
 	}
 
