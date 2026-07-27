@@ -8,12 +8,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -53,8 +54,8 @@ func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateIn
 		return Material{}, apierror.Validation("物料参数不合法", map[string][]string{"code": {"自动编号不能为空且最多 64 个字符"}})
 	}
 	row, err := dbgen.New(tx).CreateMaterial(ctx, dbgen.CreateMaterialParams{
-		Code: code, Name: normalized.Name, Spec: toText(normalized.Spec),
-		CustomerPartNo: toText(normalized.CustomerPartNo), Active: normalized.Active,
+		Code: code, Name: normalized.Name, Spec: pgconv.Text(normalized.Spec),
+		CustomerPartNo: pgconv.Text(normalized.CustomerPartNo), Active: normalized.Active,
 		CategoryID: normalized.CategoryID, DefaultUnitID: normalized.DefaultUnitID,
 		IsCustomerMaterial: normalized.IsCustomerMaterial, CustomerID: normalized.CustomerID,
 	})
@@ -171,7 +172,7 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 		return before, nil
 	}
 	if _, err := queries.UpdateMaterial(ctx, dbgen.UpdateMaterialParams{
-		ID: id, Name: after.Name, Spec: toText(after.Spec), CustomerPartNo: toText(after.CustomerPartNo),
+		ID: id, Name: after.Name, Spec: pgconv.Text(after.Spec), CustomerPartNo: pgconv.Text(after.CustomerPartNo),
 		Active: after.Active, CategoryID: after.CategoryID, DefaultUnitID: after.DefaultUnitID,
 		IsCustomerMaterial: after.IsCustomerMaterial, CustomerID: after.CustomerID,
 	}); err != nil {
@@ -331,13 +332,6 @@ func sameUUID(left, right *uuid.UUID) bool {
 	return *left == *right
 }
 
-func toText(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
 func fromRow(row dbgen.InvMaterial) Material {
 	return Material{
 		ID: row.ID, Code: row.Code, Name: row.Name, Spec: textPointer(row.Spec),
@@ -364,20 +358,13 @@ func snapshot(item Material) map[string]any {
 	}
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Constraint: "inv_material_unique_code_index", Message: "物料编号已存在"},
+	{Code: "23505", Message: "物料唯一字段已存在"},
+	{Code: "23514", Message: "客户物料必须挂客户,非客户物料不能挂客户", Validation: true},
+	{Code: "23503", Message: "物料已被引用或关联记录不存在"},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			if pgErr.ConstraintName == "inv_material_unique_code_index" {
-				return apierror.Wrap(apierror.CodeConflict, "物料编号已存在", err)
-			}
-			return apierror.Wrap(apierror.CodeConflict, "物料唯一字段已存在", err)
-		case "23514":
-			return apierror.Wrap(apierror.CodeValidation, "客户物料必须挂客户,非客户物料不能挂客户", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "物料已被引用或关联记录不存在", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }

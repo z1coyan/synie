@@ -3,12 +3,12 @@ package account
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -44,71 +44,27 @@ func (s *Service) Get(ctx context.Context, actor *authz.Actor, id uuid.UUID) (Ac
 }
 
 func (s *Service) List(ctx context.Context, actor *authz.Actor, query ListQuery) (ListResult, error) {
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	fields := map[string][]string{}
-	if query.Limit < 1 || query.Limit > 200 {
-		fields["limit"] = []string{"必须在 1 到 200 之间"}
-	}
-	if query.Offset < 0 {
-		fields["offset"] = []string{"不能小于 0"}
-	}
-	if len(fields) > 0 {
-		return ListResult{}, apierror.Validation("分页参数不合法", fields)
-	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Account]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "会计科目", Actor: actor,
+		Source: accountSource,
+		Select: `SELECT id, code, name, direction, is_group, active, role,
+parent_id, company_id, currency_id, inserted_at, updated_at,
+parent_name, company_name, currency_name, has_children`,
+		DefaultOrder: ` ORDER BY code ASC, id ASC`,
+		Tiebreaker:   `, id ASC`,
+		Scan: func(rows pgx.Rows) (Account, error) {
+			return scanAccount(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ListResult{}, err
 	}
-	where, args := built.Where, append([]any(nil), built.Args...)
-	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
-	if empty {
-		return ListResult{Results: []Account{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY code ASC, id ASC`
-	} else {
-		order += `, id ASC`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询会计科目失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*)`+accountSource+where, args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计会计科目失败", err)
-	}
-	limitAt := len(args) + 1
-	args = append(args, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id, code, name, direction, is_group, active, role,
-		parent_id, company_id, currency_id, inserted_at, updated_at,
-		parent_name, company_name, currency_name, has_children`+accountSource+where+order+
-		fmt.Sprintf(` LIMIT $%d OFFSET $%d`, limitAt, limitAt+1), args...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询会计科目失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Account, 0, query.Limit)
-	for rows.Next() {
-		item, err := scanAccount(rows)
-		if err != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取会计科目结果失败", err)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历会计科目结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成会计科目查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
+}
+
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, input UpdateInput) (Account, error) {

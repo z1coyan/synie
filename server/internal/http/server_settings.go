@@ -20,7 +20,7 @@ func (s *Server) GetSalesSetting(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.settings.GetSales(r.Context())
+	value, err := s.Settings.GetSales(r.Context())
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -55,7 +55,7 @@ func (s *Server) UpdateSalesSetting(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.settings.UpdateSales(r.Context(), actor, input)
+	value, err := s.Settings.UpdateSales(r.Context(), actor, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -68,7 +68,7 @@ func (s *Server) GetManufacturingSetting(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.settings.GetManufacturing(r.Context())
+	value, err := s.Settings.GetManufacturing(r.Context())
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -92,7 +92,7 @@ func (s *Server) UpdateManufacturingSetting(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.settings.UpdateManufacturing(r.Context(), actor, settings.ManufacturingUpdate{
+	value, err := s.Settings.UpdateManufacturing(r.Context(), actor, settings.ManufacturingUpdate{
 		OutputOverreceiveRatio: ratio,
 	})
 	if err != nil {
@@ -107,7 +107,7 @@ func (s *Server) GetAccountingSetting(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.settings.GetAccounting(r.Context())
+	value, err := s.Settings.GetAccounting(r.Context())
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -139,7 +139,7 @@ func (s *Server) UpdateAccountingSetting(w http.ResponseWriter, r *http.Request)
 		}
 		keyID = &value
 	}
-	value, err := s.settings.UpdateAccounting(r.Context(), actor, settings.AccountingUpdate{
+	value, err := s.Settings.UpdateAccounting(r.Context(), actor, settings.AccountingUpdate{
 		OCRAccessKeyID: keyID, OCRAccessKeySecret: body.OCRAccessKeySecret,
 	})
 	if err != nil {
@@ -154,7 +154,7 @@ func (s *Server) GetAccountingOCRConfigured(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, r, err)
 		return
 	}
-	configured, err := s.settings.OCRConfigured(r.Context())
+	configured, err := s.Settings.OCRConfigured(r.Context())
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -167,7 +167,7 @@ func (s *Server) GetSystemSetting(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.settings.GetSystem(r.Context())
+	value, err := s.Settings.GetSystem(r.Context())
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -191,7 +191,7 @@ func (s *Server) UpdateSystemSetting(w http.ResponseWriter, r *http.Request) {
 		value := int(*body.MarketFetchLastIntervalMinutes)
 		interval = &value
 	}
-	value, err := s.settings.UpdateSystem(r.Context(), actor, settings.SystemUpdate{
+	value, err := s.Settings.UpdateSystem(r.Context(), actor, settings.SystemUpdate{
 		MarketFetchScheduleEnabled:     body.MarketFetchScheduleEnabled,
 		MarketFetchLastIntervalMinutes: interval,
 		MarketFetchSettlementEnabled:   body.MarketFetchSettlementEnabled,

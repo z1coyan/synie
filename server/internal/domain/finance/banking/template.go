@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -48,57 +49,20 @@ func (s *Service) QueryBankImportTemplates(
 	if err := require(actor, "acc.bank_import_template", "read"); err != nil {
 		return BankImportTemplateList{}, err
 	}
-	if err := validatePage(&query); err != nil {
-		return BankImportTemplateList{}, err
-	}
-	built, err := buildFilter(BankImportTemplateResource, query)
+	result, err := listexec.List(ctx, listexec.Spec[BankImportTemplate]{
+		Pool: s.pool, Resource: BankImportTemplateResourceMeta(), Label: "流水导入模板", Actor: actor,
+		Source:       ` FROM acc_bank_import_template`,
+		Select:       `SELECT ` + templateColumns,
+		DefaultOrder: ` ORDER BY "id"`,
+		Tiebreaker:   `, "id"`,
+		Scan: func(rows pgx.Rows) (BankImportTemplate, error) {
+			return scanTemplate(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return BankImportTemplateList{}, err
 	}
-	where, args, possible := scopedWhere(actor, built.Where, built.Args, "company_id")
-	if !possible {
-		return BankImportTemplateList{Results: []BankImportTemplate{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "id"`
-	} else {
-		order += `, "id"`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return BankImportTemplateList{}, apierror.Wrap(apierror.CodeInternal, "查询流水导入模板失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result BankImportTemplateList
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM acc_bank_import_template`+where, args...).
-		Scan(&result.Count); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "统计流水导入模板失败", err)
-	}
-	sql, listArgs := appendPage(`SELECT `+templateColumns+`
-		FROM acc_bank_import_template`+where+order, append([]any(nil), args...), query)
-	rows, err := tx.Query(ctx, sql, listArgs...)
-	if err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "查询流水导入模板失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]BankImportTemplate, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanTemplate(rows)
-		if scanErr != nil {
-			return result, apierror.Wrap(apierror.CodeInternal, "读取流水导入模板结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "遍历流水导入模板结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "完成流水导入模板查询失败", err)
-	}
-	return result, nil
+	return BankImportTemplateList{Count: result.Count, Results: result.Results}, nil
 }
 
 func (s *Service) CreateBankImportTemplate(

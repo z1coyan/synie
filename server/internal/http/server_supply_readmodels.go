@@ -13,33 +13,19 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 )
 
-func (s *Server) QuerySalesCompanyAccountDefaults(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "sales.setting:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func companyAccountDefaultListQuery(body listBody) companyaccountdefault.ListQuery {
 	limit, offset, _, sort, filter := listParts(body)
-	result, err := s.companyAccountDefaults.List(r.Context(), actor,
-		companyaccountdefault.ListQuery{
-			Limit: limit, Offset: offset, Sort: sort, Filter: filter,
+	return companyaccountdefault.ListQuery{Limit: limit, Offset: offset, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QuerySalesCompanyAccountDefaults(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "sales.setting:read", companyAccountDefaultListQuery,
+		s.CompanyAccountDefaults.List,
+		func(result companyaccountdefault.ListResult) any {
+			return gen.CompanyAccountDefaultsList{
+				Count: result.Count, Results: mapItems(result.Results, companyAccountDefaultDTO),
+			}
 		})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.CompanyAccountDefaults, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, companyAccountDefaultDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.CompanyAccountDefaultsList{
-		Count: result.Count, Results: items,
-	})
 }
 
 func (s *Server) GetSalesCompanyAccountDefault(
@@ -52,7 +38,7 @@ func (s *Server) GetSalesCompanyAccountDefault(
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.companyAccountDefaults.Get(r.Context(), actor, id)
+	item, err := s.CompanyAccountDefaults.Get(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -71,7 +57,7 @@ func (s *Server) CreateSalesCompanyAccountDefault(w http.ResponseWriter, r *http
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.companyAccountDefaults.Create(r.Context(), actor,
+	item, err := s.CompanyAccountDefaults.Create(r.Context(), actor,
 		companyaccountdefault.CreateInput{
 			CompanyID:               body.CompanyId,
 			DeliveryDebitAccountID:  body.DeliveryDebitAccountId,
@@ -113,7 +99,7 @@ func (s *Server) UpdateSalesCompanyAccountDefault(
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.companyAccountDefaults.Update(r.Context(), actor, id, input)
+	item, err := s.CompanyAccountDefaults.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -181,7 +167,7 @@ func (s *Server) QueryScmOrderFlowItems(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.orderFlowItems.List(r.Context(), actor, orderflow.ListQuery{
+	result, err := s.OrderFlowItems.List(r.Context(), actor, orderflow.ListQuery{
 		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
 		OrderID: orderID, OrderItemID: orderItemID,
 	})
@@ -213,7 +199,7 @@ func (s *Server) GetScmOrderFlowItem(
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.orderFlowItems.Get(r.Context(), actor, id)
+	item, err := s.OrderFlowItems.Get(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return

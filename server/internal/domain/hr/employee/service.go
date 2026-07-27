@@ -9,15 +9,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -46,73 +47,35 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Employee, error) {
 }
 
 func (s *Service) List(ctx context.Context, query ListQuery) (ListResult, error) {
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	fields := map[string][]string{}
-	if query.Limit < 1 || query.Limit > 200 {
-		fields["limit"] = []string{"必须在 1 到 200 之间"}
-	}
-	if query.Offset < 0 {
-		fields["offset"] = []string{"不能小于 0"}
-	}
-	if len(fields) > 0 {
-		return ListResult{}, apierror.Validation("分页参数不合法", fields)
-	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Employee]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "员工",
+		Source: ` FROM hr_employees`,
+		Select: `SELECT id,code,name,attendance_no,id_number,household_registration,phone,current_address,
+       daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
+		DefaultOrder: ` ORDER BY "code" ASC, "id" ASC`,
+		Tiebreaker:   `, "id" ASC`,
+		Scan: func(rows pgx.Rows) (Employee, error) {
+			var row dbgen.HrEmployee
+			if err := rows.Scan(
+				&row.ID, &row.Code, &row.Name, &row.AttendanceNo, &row.IDNumber,
+				&row.HouseholdRegistration, &row.Phone, &row.CurrentAddress,
+				&row.DailyWage, &row.MonthlyAllowance, &row.InsertedAt, &row.UpdatedAt,
+				&row.InsuranceTypes,
+			); err != nil {
+				return Employee{}, err
+			}
+			return fromRow(row), nil
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ListResult{}, err
 	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "code" ASC, "id" ASC`
-	} else {
-		order += `, "id" ASC`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询员工失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM hr_employees`+built.Where, built.Args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计员工失败", err)
-	}
-	args := append([]any(nil), built.Args...)
-	limitArg := len(args) + 1
-	args = append(args, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `
-		SELECT id,code,name,attendance_no,id_number,household_registration,phone,current_address,
-		       daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types
-		FROM hr_employees`+built.Where+order+
-		fmt.Sprintf(" LIMIT $%d OFFSET $%d", limitArg, limitArg+1), args...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询员工失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Employee, 0, query.Limit)
-	for rows.Next() {
-		var row dbgen.HrEmployee
-		if err := rows.Scan(
-			&row.ID, &row.Code, &row.Name, &row.AttendanceNo, &row.IDNumber,
-			&row.HouseholdRegistration, &row.Phone, &row.CurrentAddress,
-			&row.DailyWage, &row.MonthlyAllowance, &row.InsertedAt, &row.UpdatedAt,
-			&row.InsuranceTypes,
-		); err != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取员工结果失败", err)
-		}
-		result.Results = append(result.Results, fromRow(row))
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历员工结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成员工查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
+}
+
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateInput) (Employee, error) {
@@ -141,11 +104,11 @@ func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateIn
 	row, err := dbgen.New(tx).CreateEmployee(ctx, dbgen.CreateEmployeeParams{
 		Code:                  *normalized.Code,
 		Name:                  normalized.Name,
-		AttendanceNo:          toText(normalized.AttendanceNo),
-		IDNumber:              toText(normalized.IDNumber),
-		HouseholdRegistration: toText(normalized.HouseholdRegistration),
-		Phone:                 toText(normalized.Phone),
-		CurrentAddress:        toText(normalized.CurrentAddress),
+		AttendanceNo:          pgconv.Text(normalized.AttendanceNo),
+		IDNumber:              pgconv.Text(normalized.IDNumber),
+		HouseholdRegistration: pgconv.Text(normalized.HouseholdRegistration),
+		Phone:                 pgconv.Text(normalized.Phone),
+		CurrentAddress:        pgconv.Text(normalized.CurrentAddress),
 		DailyWage:             toNumeric(normalized.DailyWage),
 		MonthlyAllowance:      toNumeric(normalized.MonthlyAllowance),
 		InsuranceTypes:        lowerValues(normalized.InsuranceTypes),
@@ -218,11 +181,11 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 		ID:                    id,
 		Code:                  after.Code,
 		Name:                  after.Name,
-		AttendanceNo:          toText(after.AttendanceNo),
-		IDNumber:              toText(after.IDNumber),
-		HouseholdRegistration: toText(after.HouseholdRegistration),
-		Phone:                 toText(after.Phone),
-		CurrentAddress:        toText(after.CurrentAddress),
+		AttendanceNo:          pgconv.Text(after.AttendanceNo),
+		IDNumber:              pgconv.Text(after.IDNumber),
+		HouseholdRegistration: pgconv.Text(after.HouseholdRegistration),
+		Phone:                 pgconv.Text(after.Phone),
+		CurrentAddress:        pgconv.Text(after.CurrentAddress),
 		DailyWage:             toNumeric(after.DailyWage),
 		MonthlyAllowance:      toNumeric(after.MonthlyAllowance),
 		InsuranceTypes:        lowerValues(after.InsuranceTypes),
@@ -461,27 +424,12 @@ func fromRow(row dbgen.HrEmployee) Employee {
 	}
 	return Employee{
 		ID: row.ID, Code: row.Code, Name: row.Name,
-		AttendanceNo: fromText(row.AttendanceNo), IDNumber: fromText(row.IDNumber),
-		HouseholdRegistration: fromText(row.HouseholdRegistration), Phone: fromText(row.Phone),
-		CurrentAddress: fromText(row.CurrentAddress), DailyWage: fromNumeric(row.DailyWage),
+		AttendanceNo: pgconv.TextPtr(row.AttendanceNo), IDNumber: pgconv.TextPtr(row.IDNumber),
+		HouseholdRegistration: pgconv.TextPtr(row.HouseholdRegistration), Phone: pgconv.TextPtr(row.Phone),
+		CurrentAddress: pgconv.TextPtr(row.CurrentAddress), DailyWage: fromNumeric(row.DailyWage),
 		MonthlyAllowance: fromNumeric(row.MonthlyAllowance), InsuranceTypes: insurance,
 		InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 	}
-}
-
-func toText(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func fromText(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	result := value.String
-	return &result
 }
 
 func toNumeric(value *string) pgtype.Numeric {
@@ -508,23 +456,14 @@ func lowerValues(values []string) []string {
 	return result
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Constraint: "hr_employees_unique_code_index", Message: "员工编号已存在"},
+	{Code: "23505", Constraint: "hr_employees_unique_id_number_index", Message: "身份证号已存在"},
+	{Code: "23505", Constraint: "hr_employees_unique_attendance_no_index", Message: "考勤机编号已存在"},
+	{Code: "23505", Message: "员工唯一字段已存在"},
+	{Code: "23503", Message: "员工已被业务数据引用,不可删除"},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			switch pgErr.ConstraintName {
-			case "hr_employees_unique_code_index":
-				return apierror.Wrap(apierror.CodeConflict, "员工编号已存在", err)
-			case "hr_employees_unique_id_number_index":
-				return apierror.Wrap(apierror.CodeConflict, "身份证号已存在", err)
-			case "hr_employees_unique_attendance_no_index":
-				return apierror.Wrap(apierror.CodeConflict, "考勤机编号已存在", err)
-			}
-			return apierror.Wrap(apierror.CodeConflict, "员工唯一字段已存在", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "员工已被业务数据引用,不可删除", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }

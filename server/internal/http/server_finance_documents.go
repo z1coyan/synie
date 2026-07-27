@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/finance/documents"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
+	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
 
 func documentOptionalString(
@@ -39,31 +41,22 @@ func documentOptionalDate(
 }
 
 func (s *Server) QueryFinanceVatInvoices(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "acc.vat_invoice:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.financeDocuments.QueryVatInvoices(r.Context(), actor, financeDocumentsList(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]map[string]any, 0, len(result.Results))
-	for _, item := range result.Results {
-		converted, convertErr := financeInvoiceResponse(item)
-		if convertErr != nil {
-			s.writeError(w, r, apierror.Wrap(apierror.CodeInternal, "转换增值税发票响应失败", convertErr))
-			return
-		}
-		items = append(items, converted)
-	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"count": result.Count, "results": items})
+	queryList(s, w, r, "acc.vat_invoice:read", financeDocumentsList,
+		func(ctx context.Context, actor *authz.Actor, query documents.ListQuery) (map[string]any, error) {
+			result, err := s.FinanceDocuments.QueryVatInvoices(ctx, actor, query)
+			if err != nil {
+				return nil, err
+			}
+			items := make([]map[string]any, 0, len(result.Results))
+			for _, item := range result.Results {
+				converted, convertErr := financeInvoiceResponse(item)
+				if convertErr != nil {
+					return nil, apierror.Wrap(apierror.CodeInternal, "转换增值税发票响应失败", convertErr)
+				}
+				items = append(items, converted)
+			}
+			return map[string]any{"count": result.Count, "results": items}, nil
+		}, passthroughListResponse)
 }
 
 func (s *Server) GetFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -72,7 +65,7 @@ func (s *Server) GetFinanceVatInvoice(w http.ResponseWriter, r *http.Request, id
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.financeDocuments.GetVatInvoice(r.Context(), actor, id)
+	item, err := s.FinanceDocuments.GetVatInvoice(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -105,7 +98,7 @@ func (s *Server) CreateFinanceVatInvoice(w http.ResponseWriter, r *http.Request)
 	if body.InvoiceCode != nil {
 		invoiceCode = *body.InvoiceCode
 	}
-	item, err := s.financeDocuments.CreateVatInvoice(r.Context(), actor, documents.VatInvoiceInput{
+	item, err := s.FinanceDocuments.CreateVatInvoice(r.Context(), actor, documents.VatInvoiceInput{
 		CompanyID: body.CompanyId, DocNo: body.DocNo,
 		Direction: string(body.Direction), InvoiceDate: financeDate(body.InvoiceDate),
 		PartyType: string(body.PartyType), PartyID: body.PartyId,
@@ -206,7 +199,7 @@ func (s *Server) UpdateFinanceVatInvoice(w http.ResponseWriter, r *http.Request,
 		}
 		input.Items = &items
 	}
-	item, err := s.financeDocuments.UpdateVatInvoice(r.Context(), actor, id, input)
+	item, err := s.FinanceDocuments.UpdateVatInvoice(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -220,7 +213,7 @@ func (s *Server) DeleteFinanceVatInvoice(w http.ResponseWriter, r *http.Request,
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.financeDocuments.DeleteVatInvoice(r.Context(), actor, id); err != nil {
+	if err = s.FinanceDocuments.DeleteVatInvoice(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -242,7 +235,7 @@ func (s *Server) AuditFinanceVatInvoice(w http.ResponseWriter, r *http.Request, 
 	if body.PostingDate != nil {
 		postingDate = body.PostingDate.Time.Format(time.DateOnly)
 	}
-	item, err := s.financeDocuments.AuditVatInvoice(r.Context(), actor, id, postingDate)
+	item, err := s.FinanceDocuments.AuditVatInvoice(r.Context(), actor, id, postingDate)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -256,7 +249,7 @@ func (s *Server) VoidFinanceVatInvoice(w http.ResponseWriter, r *http.Request, i
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.financeDocuments.VoidVatInvoice(r.Context(), actor, id)
+	item, err := s.FinanceDocuments.VoidVatInvoice(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -275,7 +268,7 @@ func (s *Server) ReverseFinanceVatInvoice(w http.ResponseWriter, r *http.Request
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.financeDocuments.ReverseVatInvoice(r.Context(), actor, id, documents.ReverseVatInvoiceInput{
+	item, err := s.FinanceDocuments.ReverseVatInvoice(r.Context(), actor, id, documents.ReverseVatInvoiceInput{
 		PostingDate: body.PostingDate.Time.Format(time.DateOnly), RedInvoiceNo: body.RedInvoiceNo,
 	})
 	if err != nil {
@@ -296,7 +289,7 @@ func (s *Server) OcrFinanceVatInvoice(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	result, err := s.financeDocuments.OCRVatInvoice(
+	result, err := s.FinanceDocuments.OCRVatInvoice(
 		r.Context(), actor, documents.OCRInput{FileID: body.FileId},
 	)
 	if err != nil {
@@ -320,22 +313,8 @@ func (s *Server) writeFinanceInvoice(
 }
 
 func (s *Server) QueryFinanceExpenseReports(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "acc.expense_report:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.financeDocuments.QueryExpenseReports(r.Context(), actor, financeDocumentsList(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	queryList(s, w, r, "acc.expense_report:read", financeDocumentsList,
+		s.FinanceDocuments.QueryExpenseReports, passthroughListResponse)
 }
 
 func (s *Server) GetFinanceExpenseReport(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -344,7 +323,7 @@ func (s *Server) GetFinanceExpenseReport(w http.ResponseWriter, r *http.Request,
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.financeDocuments.GetExpenseReport(r.Context(), actor, id)
+	item, err := s.FinanceDocuments.GetExpenseReport(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -364,7 +343,7 @@ func (s *Server) CreateFinanceExpenseReport(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	docNo := body.DocNo
-	item, err := s.financeDocuments.CreateExpenseReport(r.Context(), actor, documents.ExpenseReportInput{
+	item, err := s.FinanceDocuments.CreateExpenseReport(r.Context(), actor, documents.ExpenseReportInput{
 		CompanyID: body.CompanyId, DocNo: &docNo,
 		ExpenseDate: body.ExpenseDate.Time.Format(time.DateOnly),
 		PostingDate: financeDate(body.PostingDate), Remarks: body.Remarks,
@@ -399,7 +378,7 @@ func (s *Server) UpdateFinanceExpenseReport(w http.ResponseWriter, r *http.Reque
 		value := body.ExpenseDate.Time.Format(time.DateOnly)
 		input.ExpenseDate = &value
 	}
-	item, err := s.financeDocuments.UpdateExpenseReport(r.Context(), actor, id, input)
+	item, err := s.FinanceDocuments.UpdateExpenseReport(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -413,7 +392,7 @@ func (s *Server) DeleteFinanceExpenseReport(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.financeDocuments.DeleteExpenseReport(r.Context(), actor, id); err != nil {
+	if err = s.FinanceDocuments.DeleteExpenseReport(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -435,7 +414,7 @@ func (s *Server) AuditFinanceExpenseReport(w http.ResponseWriter, r *http.Reques
 	if body.PostingDate != nil {
 		postingDate = body.PostingDate.Time.Format(time.DateOnly)
 	}
-	item, err := s.financeDocuments.AuditExpenseReport(r.Context(), actor, id, postingDate)
+	item, err := s.FinanceDocuments.AuditExpenseReport(r.Context(), actor, id, postingDate)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -449,7 +428,7 @@ func (s *Server) VoidFinanceExpenseReport(w http.ResponseWriter, r *http.Request
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.financeDocuments.VoidExpenseReport(r.Context(), actor, id)
+	item, err := s.FinanceDocuments.VoidExpenseReport(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -458,24 +437,8 @@ func (s *Server) VoidFinanceExpenseReport(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) QueryFinanceExpenseReportItems(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "acc.expense_report:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.financeDocuments.QueryExpenseReportItems(
-		r.Context(), actor, financeDocumentsList(body),
-	)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	queryList(s, w, r, "acc.expense_report:read", financeDocumentsList,
+		s.FinanceDocuments.QueryExpenseReportItems, passthroughListResponse)
 }
 
 func (s *Server) GetFinanceExpenseReportItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -484,7 +447,7 @@ func (s *Server) GetFinanceExpenseReportItem(w http.ResponseWriter, r *http.Requ
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.financeDocuments.GetExpenseReportItem(r.Context(), actor, id)
+	item, err := s.FinanceDocuments.GetExpenseReportItem(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -503,7 +466,7 @@ func (s *Server) CreateFinanceExpenseReportItem(w http.ResponseWriter, r *http.R
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.financeDocuments.CreateExpenseReportItem(
+	item, err := s.FinanceDocuments.CreateExpenseReportItem(
 		r.Context(), actor, documents.ExpenseReportItemInput{
 			ReportID: body.ReportId, Idx: body.Idx, Kind: string(body.Kind),
 			Summary: body.Summary, Amount: body.Amount, Remarks: body.Remarks,
@@ -547,7 +510,7 @@ func (s *Server) UpdateFinanceExpenseReportItem(
 		value := string(*body.Kind)
 		input.Kind = &value
 	}
-	item, err := s.financeDocuments.UpdateExpenseReportItem(r.Context(), actor, id, input)
+	item, err := s.FinanceDocuments.UpdateExpenseReportItem(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -561,7 +524,7 @@ func (s *Server) DeleteFinanceExpenseReportItem(w http.ResponseWriter, r *http.R
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.financeDocuments.DeleteExpenseReportItem(r.Context(), actor, id); err != nil {
+	if err = s.FinanceDocuments.DeleteExpenseReportItem(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -569,22 +532,8 @@ func (s *Server) DeleteFinanceExpenseReportItem(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) QueryFinanceBills(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "acc.bill:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.financeDocuments.QueryBills(r.Context(), actor, financeDocumentsList(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	queryList(s, w, r, "acc.bill:read", financeDocumentsList,
+		s.FinanceDocuments.QueryBills, passthroughListResponse)
 }
 
 func (s *Server) GetFinanceBill(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -593,7 +542,7 @@ func (s *Server) GetFinanceBill(w http.ResponseWriter, r *http.Request, id gen.I
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.financeDocuments.GetBill(r.Context(), actor, id)
+	item, err := s.FinanceDocuments.GetBill(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -648,7 +597,7 @@ func (s *Server) UpdateFinanceBill(w http.ResponseWriter, r *http.Request, id ge
 		value := body.DueDate.Time.Format(time.DateOnly)
 		input.DueDate = &value
 	}
-	item, err := s.financeDocuments.UpdateBill(r.Context(), actor, id, input)
+	item, err := s.FinanceDocuments.UpdateBill(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -662,7 +611,7 @@ func (s *Server) DeleteFinanceBill(w http.ResponseWriter, r *http.Request, id ge
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.financeDocuments.DeleteBill(r.Context(), actor, id); err != nil {
+	if err = s.FinanceDocuments.DeleteBill(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -670,24 +619,8 @@ func (s *Server) DeleteFinanceBill(w http.ResponseWriter, r *http.Request, id ge
 }
 
 func (s *Server) QueryFinanceBillTransactions(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "acc.bill_transaction:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.financeDocuments.QueryBillTransactions(
-		r.Context(), actor, financeDocumentsList(body),
-	)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	queryList(s, w, r, "acc.bill_transaction:read", financeDocumentsList,
+		s.FinanceDocuments.QueryBillTransactions, passthroughListResponse)
 }
 
 func (s *Server) GetFinanceBillTransaction(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -696,7 +629,7 @@ func (s *Server) GetFinanceBillTransaction(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.financeDocuments.GetBillTransaction(r.Context(), actor, id)
+	item, err := s.FinanceDocuments.GetBillTransaction(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -763,7 +696,7 @@ func (s *Server) CreateFinanceBillTransaction(w http.ResponseWriter, r *http.Req
 			AcceptanceDate: decoded.AcceptanceDate, Remarks: decoded.Remarks,
 		}
 	}
-	item, err := s.financeDocuments.CreateBillTransaction(
+	item, err := s.FinanceDocuments.CreateBillTransaction(
 		r.Context(), actor, documents.BillTransactionInput{
 			DocNo: body.DocNo, TransactionType: string(body.TransactionType),
 			OccurredOn: body.OccurredOn.Time.Format(time.DateOnly),
@@ -830,7 +763,7 @@ func (s *Server) UpdateFinanceBillTransaction(
 		value := body.OccurredOn.Time.Format(time.DateOnly)
 		input.OccurredOn = &value
 	}
-	item, err := s.financeDocuments.UpdateBillTransaction(r.Context(), actor, id, input)
+	item, err := s.FinanceDocuments.UpdateBillTransaction(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -844,7 +777,7 @@ func (s *Server) DeleteFinanceBillTransaction(w http.ResponseWriter, r *http.Req
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.financeDocuments.DeleteBillTransaction(r.Context(), actor, id); err != nil {
+	if err = s.FinanceDocuments.DeleteBillTransaction(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -862,7 +795,7 @@ func (s *Server) AuditFinanceBillTransaction(w http.ResponseWriter, r *http.Requ
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.financeDocuments.AuditBillTransaction(
+	item, err := s.FinanceDocuments.AuditBillTransaction(
 		r.Context(), actor, id,
 		documents.AuditBillTransactionInput{PostingDate: financeDate(body.PostingDate)},
 	)
@@ -879,7 +812,7 @@ func (s *Server) VoidFinanceBillTransaction(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.financeDocuments.VoidBillTransaction(r.Context(), actor, id)
+	item, err := s.FinanceDocuments.VoidBillTransaction(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -898,7 +831,7 @@ func (s *Server) OcrFinanceBillTransaction(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	result, err := s.financeDocuments.OCRBillTransaction(
+	result, err := s.FinanceDocuments.OCRBillTransaction(
 		r.Context(), actor, documents.OCRInput{FileID: body.FileId},
 	)
 	if err != nil {
@@ -909,24 +842,8 @@ func (s *Server) OcrFinanceBillTransaction(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) QueryFinanceBillHoldings(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "acc.bill_holding:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.financeDocuments.QueryBillHoldings(
-		r.Context(), actor, financeDocumentsList(body),
-	)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	queryList(s, w, r, "acc.bill_holding:read", financeDocumentsList,
+		s.FinanceDocuments.QueryBillHoldings, passthroughListResponse)
 }
 
 func (s *Server) GetFinanceBillHolding(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -935,7 +852,7 @@ func (s *Server) GetFinanceBillHolding(w http.ResponseWriter, r *http.Request, i
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.financeDocuments.GetBillHolding(r.Context(), actor, id)
+	item, err := s.FinanceDocuments.GetBillHolding(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return

@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -19,6 +18,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -108,30 +108,19 @@ func writeAudit(
 	return nil
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Constraint: "mfg_work_order_active_demand_item", Message: "该需求行已有未作废生产工单"},
+	{Code: "23505", Constraint: "mfg_demand_unique_demand_no", Message: "需求单号已存在"},
+	{Code: "23505", Constraint: "mfg_work_order_unique_work_order_no", Message: "工单号已存在"},
+	{Code: "23505", Constraint: "mfg_output_unique_output_no", Message: "生产入库单号已存在"},
+	{Code: "23505", Message: "制造执行数据已存在"},
+	{Code: "23503", Message: "制造执行数据已被业务引用,不可删除"},
+	{Code: "23502", Message: "制造执行参数不符合约束", Validation: true},
+	{Code: "23514", Message: "制造执行参数不符合约束", Validation: true},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			switch {
-			case strings.Contains(pgErr.ConstraintName, "mfg_work_order_active_demand_item"):
-				return apierror.Wrap(apierror.CodeConflict, "该需求行已有未作废生产工单", err)
-			case strings.Contains(pgErr.ConstraintName, "mfg_demand_unique_demand_no"):
-				return apierror.Wrap(apierror.CodeConflict, "需求单号已存在", err)
-			case strings.Contains(pgErr.ConstraintName, "mfg_work_order_unique_work_order_no"):
-				return apierror.Wrap(apierror.CodeConflict, "工单号已存在", err)
-			case strings.Contains(pgErr.ConstraintName, "mfg_output_unique_output_no"):
-				return apierror.Wrap(apierror.CodeConflict, "生产入库单号已存在", err)
-			default:
-				return apierror.Wrap(apierror.CodeConflict, "制造执行数据已存在", err)
-			}
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "制造执行数据已被业务引用,不可删除", err)
-		case "23502", "23514":
-			return apierror.Wrap(apierror.CodeValidation, "制造执行参数不符合约束", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }
 
 func validateNo(no, field string) error {
@@ -152,31 +141,6 @@ func validateRemarks(remarks *string) error {
 	return nil
 }
 
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func date(value time.Time) pgtype.Date {
-	return pgtype.Date{Time: value, Valid: true}
-}
-
-func nullableDate(value *time.Time) pgtype.Date {
-	if value == nil {
-		return pgtype.Date{}
-	}
-	return date(*value)
-}
-
-func textPtr(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	return &value.String
-}
-
 func uuidPtr(value pgtype.UUID) *uuid.UUID {
 	if !value.Valid {
 		return nil
@@ -186,13 +150,6 @@ func uuidPtr(value pgtype.UUID) *uuid.UUID {
 }
 
 func datePtr(value pgtype.Date) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	return &value.Time
-}
-
-func timestampPtr(value pgtype.Timestamp) *time.Time {
 	if !value.Valid {
 		return nil
 	}
@@ -297,13 +254,6 @@ func ensurePositive(value decimal.Decimal, field string) error {
 }
 
 func optionalUUID(value *uuid.UUID) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func optionalText(value *string) any {
 	if value == nil {
 		return nil
 	}

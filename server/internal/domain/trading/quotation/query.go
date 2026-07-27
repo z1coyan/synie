@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
@@ -165,10 +166,10 @@ func scanTierRow(row scanner) (tierRow, error) {
 func quotationFromRow(row quotationRow) Quotation {
 	result := Quotation{
 		ID: row.ID, QuotationNo: row.QuotationNo,
-		QuotationDate: dateValue(row.QuotationDate), ValidUntil: dateValue(row.ValidUntil),
+		QuotationDate: pgconv.DateValue(row.QuotationDate), ValidUntil: pgconv.DateValue(row.ValidUntil),
 		PartyType: strings.ToUpper(row.PartyType), PartyID: row.PartyID,
-		Terms: textPtr(row.Terms), Remarks: textPtr(row.Remarks),
-		Status: Status(strings.ToUpper(row.Status)), AuditedAt: timestampPtr(row.AuditedAt),
+		Terms: pgconv.TextPtr(row.Terms), Remarks: pgconv.TextPtr(row.Remarks),
+		Status: Status(strings.ToUpper(row.Status)), AuditedAt: pgconv.OptionalTime(row.AuditedAt),
 		InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		CompanyID: row.CompanyID, CurrencyID: row.CurrencyID,
 		CreatedByID: row.CreatedByID, AuditedByID: row.AuditedByID,
@@ -189,12 +190,12 @@ func itemFromRow(row itemRow) Item {
 		ID: row.ID, Idx: row.Idx, PricingMode: PricingMode(strings.ToUpper(row.PricingMode)),
 		Price: decimalPtr(row.Price), TaxRate: row.TaxRate,
 		MaterialCode: row.MaterialCode, MaterialName: row.MaterialName,
-		MaterialSpec: textPtr(row.MaterialSpec), CustomerPartNo: textPtr(row.CustomerPartNo),
-		UnitName: row.UnitName, Remarks: textPtr(row.Remarks),
+		MaterialSpec: pgconv.TextPtr(row.MaterialSpec), CustomerPartNo: pgconv.TextPtr(row.CustomerPartNo),
+		UnitName: row.UnitName, Remarks: pgconv.TextPtr(row.Remarks),
 		InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		QuotationID: row.QuotationID, CompanyID: row.CompanyID,
 		MaterialID: row.MaterialID, UnitID: row.UnitID, TierCount: row.TierCount,
-		QuotationDate: dateValue(row.QuotationDate), ValidUntil: dateValue(row.ValidUntil),
+		QuotationDate: pgconv.DateValue(row.QuotationDate), ValidUntil: pgconv.DateValue(row.ValidUntil),
 		QuotationStatus: Status(strings.ToUpper(row.Status)),
 		PartyType:       strings.ToUpper(row.PartyType), PartyID: row.PartyID,
 		CurrencyCode: row.CurrencyCode,

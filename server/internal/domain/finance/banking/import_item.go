@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -37,57 +38,20 @@ func (s *Service) QueryBankImportItems(
 	if err := require(actor, "acc.bank_transaction", "import"); err != nil {
 		return BankImportItemList{}, err
 	}
-	if err := validatePage(&query); err != nil {
-		return BankImportItemList{}, err
-	}
-	built, err := buildFilter(BankImportItemResource, query)
+	result, err := listexec.List(ctx, listexec.Spec[BankImportItem]{
+		Pool: s.pool, Resource: BankImportItemResourceMeta(), Label: "流水导入行", Actor: actor,
+		Source:       ` FROM acc_bank_import_item`,
+		Select:       `SELECT ` + bankImportItemColumns,
+		DefaultOrder: ` ORDER BY "row_no","id"`,
+		Tiebreaker:   `, "row_no","id"`,
+		Scan: func(rows pgx.Rows) (BankImportItem, error) {
+			return scanBankImportItem(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return BankImportItemList{}, err
 	}
-	where, args, possible := scopedWhere(actor, built.Where, built.Args, "company_id")
-	if !possible {
-		return BankImportItemList{Results: []BankImportItem{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "row_no","id"`
-	} else {
-		order += `, "row_no","id"`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return BankImportItemList{}, apierror.Wrap(apierror.CodeInternal, "查询流水导入行失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result BankImportItemList
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM acc_bank_import_item`+where, args...).
-		Scan(&result.Count); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "统计流水导入行失败", err)
-	}
-	sql, listArgs := appendPage(`SELECT `+bankImportItemColumns+`
-		FROM acc_bank_import_item`+where+order, append([]any(nil), args...), query)
-	rows, err := tx.Query(ctx, sql, listArgs...)
-	if err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "查询流水导入行失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]BankImportItem, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanBankImportItem(rows)
-		if scanErr != nil {
-			return result, apierror.Wrap(apierror.CodeInternal, "读取流水导入行结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "遍历流水导入行结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "完成流水导入行查询失败", err)
-	}
-	return result, nil
+	return BankImportItemList{Count: result.Count, Results: result.Results}, nil
 }
 
 func (s *Service) UpdateBankImportItem(

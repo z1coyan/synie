@@ -16,7 +16,7 @@ import (
 
 func TestUploadFileRejectsActorWithoutCreatePermissionBeforeParsingMultipart(t *testing.T) {
 	t.Parallel()
-	server := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	server := &Server{Dependencies: Dependencies{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/files", strings.NewReader("not multipart"))
 	request = request.WithContext(context.WithValue(request.Context(), actorContextKey{}, &authz.Actor{
 		UserID: uuid.New(), Username: "restricted",

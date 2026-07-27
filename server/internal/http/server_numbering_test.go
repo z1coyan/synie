@@ -16,7 +16,7 @@ import (
 
 func TestCreateNumberingRuleRejectsActorWithoutPermissionBeforeDecoding(t *testing.T) {
 	t.Parallel()
-	server := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	server := &Server{Dependencies: Dependencies{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}}
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/system/numbering/rules",

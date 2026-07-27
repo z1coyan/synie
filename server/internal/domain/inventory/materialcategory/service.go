@@ -3,19 +3,18 @@ package materialcategory
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 )
 
 const categorySource = ` FROM (
@@ -43,59 +42,26 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (MaterialCategory, erro
 }
 
 func (s *Service) List(ctx context.Context, query ListQuery) (ListResult, error) {
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if err := validatePage(query.Limit, query.Offset); err != nil {
-		return ListResult{}, err
-	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[MaterialCategory]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "物料分类",
+		Source: categorySource,
+		Select: `SELECT id,code,name,is_leaf,active,inserted_at,updated_at,
+parent_id,parent_name,has_children`,
+		DefaultOrder: ` ORDER BY code ASC,id ASC`,
+		Tiebreaker:   `,id ASC`,
+		Scan: func(rows pgx.Rows) (MaterialCategory, error) {
+			return scanCategory(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ListResult{}, err
 	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY code ASC,id ASC`
-	} else {
-		order += `,id ASC`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询物料分类失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*)`+categorySource+built.Where, built.Args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计物料分类失败", err)
-	}
-	args := append([]any(nil), built.Args...)
-	limitAt := len(args) + 1
-	args = append(args, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,code,name,is_leaf,active,inserted_at,updated_at,
-		parent_id,parent_name,has_children`+categorySource+built.Where+order+
-		fmt.Sprintf(` LIMIT $%d OFFSET $%d`, limitAt, limitAt+1), args...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询物料分类失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]MaterialCategory, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanCategory(rows)
-		if scanErr != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取物料分类结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历物料分类结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成物料分类查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
+}
+
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateInput) (MaterialCategory, error) {
@@ -283,20 +249,6 @@ func (s *Service) Delete(ctx context.Context, actor *authz.Actor, id uuid.UUID) 
 	return nil
 }
 
-func validatePage(limit, offset int) error {
-	fields := map[string][]string{}
-	if limit < 1 || limit > 200 {
-		fields["limit"] = []string{"必须在 1 到 200 之间"}
-	}
-	if offset < 0 {
-		fields["offset"] = []string{"不能小于 0"}
-	}
-	if len(fields) > 0 {
-		return apierror.Validation("分页参数不合法", fields)
-	}
-	return nil
-}
-
 func validateNames(code, name string) error {
 	fields := map[string][]string{}
 	if code == "" || utf8.RuneCountInString(code) > 32 {
@@ -375,18 +327,12 @@ func snapshot(item MaterialCategory) map[string]any {
 	}
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Constraint: "inv_material_category_unique_code_index", Message: "分类编号已存在"},
+	{Code: "23505", Message: "物料分类唯一字段已存在"},
+	{Code: "23503", Message: "物料分类已被引用,不能删除或关联记录不存在"},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			if pgErr.ConstraintName == "inv_material_category_unique_code_index" {
-				return apierror.Wrap(apierror.CodeConflict, "分类编号已存在", err)
-			}
-			return apierror.Wrap(apierror.CodeConflict, "物料分类唯一字段已存在", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "物料分类已被引用,不能删除或关联记录不存在", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }

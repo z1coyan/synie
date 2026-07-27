@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stock"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
@@ -79,7 +80,7 @@ func (s *Service) Refresh(
 	updated, err := q.TouchStockCountSnapshot(
 		ctx,
 		dbgen.TouchStockCountSnapshotParams{
-			ID: id, SnapshotTakenAt: timestamp(snapshotTakenAt),
+			ID: id, SnapshotTakenAt: pgconv.Timestamp(snapshotTakenAt),
 		},
 	)
 	if err != nil {
@@ -154,7 +155,7 @@ func (s *Service) Approve(
 		ctx,
 		dbgen.StockCountSnapshotIsStaleParams{
 			CompanyID: before.CompanyID, WarehouseID: before.WarehouseID,
-			SnapshotTakenAt: timestamp(before.SnapshotTakenAt),
+			SnapshotTakenAt: pgconv.Timestamp(before.SnapshotTakenAt),
 		},
 	)
 	if err != nil {
@@ -189,7 +190,7 @@ func (s *Service) Approve(
 		auditedByID = &actor.UserID
 	}
 	updated, err := q.ApproveStockCount(ctx, dbgen.ApproveStockCountParams{
-		ID: id, AuditedAt: timestamp(now), AuditedByID: auditedByID,
+		ID: id, AuditedAt: pgconv.Timestamp(now), AuditedByID: auditedByID,
 	})
 	if err != nil {
 		return Count{}, apierror.Wrap(apierror.CodeInternal, "更新库存盘点审核状态失败", err)

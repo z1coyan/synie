@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
@@ -266,8 +267,8 @@ func orderFromRow(row orderRow) Order {
 		ID: row.ID, OrderNo: row.OrderNo, OrderDate: dateValue(row.OrderDate),
 		OrderType: OrderType(strings.ToUpper(row.OrderType)), IsOutsourced: row.IsOutsourced,
 		PartyType: strings.ToUpper(row.PartyType), PartyID: row.PartyID,
-		ExchangeRate: row.ExchangeRate, Terms: textPtr(row.Terms), Remarks: textPtr(row.Remarks),
-		Status: Status(strings.ToUpper(row.Status)), AuditedAt: timestampPtr(row.AuditedAt),
+		ExchangeRate: row.ExchangeRate, Terms: pgconv.TextPtr(row.Terms), Remarks: pgconv.TextPtr(row.Remarks),
+		Status: Status(strings.ToUpper(row.Status)), AuditedAt: pgconv.OptionalTime(row.AuditedAt),
 		InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		CompanyID: row.CompanyID, CurrencyID: row.CurrencyID,
 		CreatedByID: row.CreatedByID, AuditedByID: row.AuditedByID,
@@ -289,13 +290,13 @@ func itemFromRow(side Side, row itemRow) Item {
 		ID: row.ID, Idx: row.Idx, Qty: row.Qty, BaseQty: row.BaseQty,
 		Price: row.Price, Amount: row.Amount, BasePrice: row.BasePrice, BaseAmount: row.BaseAmount,
 		TaxRate: row.TaxRate, MaterialCode: row.MaterialCode, MaterialName: row.MaterialName,
-		MaterialSpec: textPtr(row.MaterialSpec), CustomerPartNo: textPtr(row.CustomerPartNo),
-		UnitName: row.UnitName, Remarks: textPtr(row.Remarks), DemandDate: datePtr(row.DemandDate),
+		MaterialSpec: pgconv.TextPtr(row.MaterialSpec), CustomerPartNo: pgconv.TextPtr(row.CustomerPartNo),
+		UnitName: row.UnitName, Remarks: pgconv.TextPtr(row.Remarks), DemandDate: datePtr(row.DemandDate),
 		InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		OrderID: row.OrderID, CompanyID: row.CompanyID, MaterialID: row.MaterialID, UnitID: row.UnitID,
 		QuotationItemID: row.QuotationItemID, BOMID: row.BOMID, DemandLineID: row.DemandLineID,
-		PricingMode: upperTextPtr(row.PricingMode), BOMCode: textPtr(row.BOMCode),
-		BOMPlanName: textPtr(row.BOMPlanName), DemandNo: textPtr(row.DemandNo),
+		PricingMode: upperTextPtr(row.PricingMode), BOMCode: pgconv.TextPtr(row.BOMCode),
+		BOMPlanName: pgconv.TextPtr(row.BOMPlanName), DemandNo: pgconv.TextPtr(row.DemandNo),
 		OrderNo: row.OrderNo, OrderDate: dateValue(row.OrderDate), OrderStatus: Status(strings.ToUpper(row.OrderStatus)),
 		OrderIsOutsourced: row.OrderIsOutsourced, PartyType: strings.ToUpper(row.PartyType),
 		PartyID: row.PartyID, CurrencyCode: row.CurrencyCode,
@@ -316,11 +317,11 @@ func itemFromRow(side Side, row itemRow) Item {
 func materialFromRow(row materialRow) Material {
 	return Material{
 		ID: row.ID, Quantity: row.Quantity, IssuedQty: row.IssuedQty,
-		Remarks: textPtr(row.Remarks), InsertedAt: row.InsertedAt.Time.UTC(),
+		Remarks: pgconv.TextPtr(row.Remarks), InsertedAt: row.InsertedAt.Time.UTC(),
 		UpdatedAt: row.UpdatedAt.Time.UTC(), OrderItemID: row.OrderItemID,
 		CompanyID: row.CompanyID, MaterialID: row.MaterialID,
 		MaterialCode: row.MaterialCode, MaterialName: row.MaterialName,
-		MaterialSpec: textPtr(row.MaterialSpec), UnitID: row.UnitID, UnitName: row.UnitName,
+		MaterialSpec: pgconv.TextPtr(row.MaterialSpec), UnitID: row.UnitID, UnitName: row.UnitName,
 		OrderNo: row.OrderNo, OrderStatus: Status(strings.ToUpper(row.OrderStatus)),
 		OrderIsOutsourced: row.OrderIsOutsourced, PartyType: strings.ToUpper(row.PartyType),
 		PartyID: row.PartyID, RemainingIssueQty: row.Quantity.Sub(row.IssuedQty),
@@ -329,11 +330,11 @@ func materialFromRow(row materialRow) Material {
 
 func byproductFromRow(row byproductRow) Byproduct {
 	return Byproduct{
-		ID: row.ID, Quantity: row.Quantity, Remarks: textPtr(row.Remarks),
+		ID: row.ID, Quantity: row.Quantity, Remarks: pgconv.TextPtr(row.Remarks),
 		InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		OrderItemID: row.OrderItemID, CompanyID: row.CompanyID,
 		MaterialID: row.MaterialID, MaterialCode: row.MaterialCode,
-		MaterialName: row.MaterialName, MaterialSpec: textPtr(row.MaterialSpec),
+		MaterialName: row.MaterialName, MaterialSpec: pgconv.TextPtr(row.MaterialSpec),
 		UnitID: row.UnitID, UnitName: row.UnitName,
 	}
 }
@@ -526,26 +527,11 @@ func queryItemByID(ctx context.Context, db rowQuerier, spec sideSpec, id uuid.UU
 		itemSource(spec)+` WHERE id=$1`, id))
 }
 
-func textPtr(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	return &value.String
-}
-
 func upperTextPtr(value pgtype.Text) *string {
 	if !value.Valid {
 		return nil
 	}
 	result := strings.ToUpper(value.String)
-	return &result
-}
-
-func timestampPtr(value pgtype.Timestamp) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time.UTC()
 	return &result
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -79,7 +80,7 @@ func (s *Service) CreateQuotation(
 	}
 	partyType := strings.ToLower(strings.TrimSpace(input.PartyType))
 	if err := validateQuotationShape(
-		spec, quotationNo, date(quotationDate), date(input.ValidUntil), partyType,
+		spec, quotationNo, pgconv.Date(quotationDate), pgconv.Date(input.ValidUntil), partyType,
 		input.PartyID, input.CompanyID, currencyID, input.Remarks,
 	); err != nil {
 		return Quotation{}, err
@@ -96,8 +97,8 @@ func (s *Service) CreateQuotation(
 		quotation_no,quotation_date,valid_until,party_type,party_id,terms,remarks,
 		company_id,currency_id,created_by_id
 	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-		quotationNo, date(quotationDate), date(input.ValidUntil), partyType, input.PartyID,
-		text(input.Terms), text(input.Remarks), input.CompanyID, currencyID, createdByID,
+		quotationNo, pgconv.Date(quotationDate), pgconv.Date(input.ValidUntil), partyType, input.PartyID,
+		pgconv.Text(input.Terms), pgconv.Text(input.Remarks), input.CompanyID, currencyID, createdByID,
 	).Scan(&id)
 	if err != nil {
 		return Quotation{}, writeError("创建报价单失败", err)
@@ -180,7 +181,7 @@ func (s *Service) UpdateQuotation(
 		}
 	}
 	if err := validateQuotationShape(
-		spec, after.QuotationNo, date(after.QuotationDate), date(after.ValidUntil),
+		spec, after.QuotationNo, pgconv.Date(after.QuotationDate), pgconv.Date(after.ValidUntil),
 		strings.ToLower(after.PartyType), after.PartyID, after.CompanyID,
 		after.CurrencyID, after.Remarks,
 	); err != nil {
@@ -200,9 +201,9 @@ func (s *Service) UpdateQuotation(
 		quotation_no=$2,quotation_date=$3,valid_until=$4,party_type=$5,party_id=$6,
 		currency_id=$7,terms=$8,remarks=$9,updated_at=(now() AT TIME ZONE 'utc')
 		WHERE id=$1`,
-		id, after.QuotationNo, date(after.QuotationDate), date(after.ValidUntil),
+		id, after.QuotationNo, pgconv.Date(after.QuotationDate), pgconv.Date(after.ValidUntil),
 		strings.ToLower(after.PartyType), after.PartyID, after.CurrencyID,
-		text(after.Terms), text(after.Remarks),
+		pgconv.Text(after.Terms), pgconv.Text(after.Remarks),
 	)
 	if err != nil {
 		return Quotation{}, writeError("更新报价单失败", err)

@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/domain/trading/quotation"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
@@ -96,8 +96,8 @@ func (s *Service) CreateOrder(
 		terms,remarks,company_id,currency_id,created_by_id`
 	values := `$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11`
 	args := []any{
-		orderNo, date(orderDate), strings.ToLower(string(orderType)), partyType, input.PartyID,
-		exchangeRate, text(input.Terms), text(input.Remarks), input.CompanyID, currencyID, createdByID,
+		orderNo, pgconv.DateUTC(orderDate), strings.ToLower(string(orderType)), partyType, input.PartyID,
+		exchangeRate, pgconv.Text(input.Terms), pgconv.Text(input.Remarks), input.CompanyID, currencyID, createdByID,
 	}
 	if side == SidePurchase {
 		columns += ",is_outsourced"
@@ -230,8 +230,8 @@ func (s *Service) UpdateOrder(
 	_, err = tx.Exec(ctx, `UPDATE `+spec.headTable+` SET order_no=$2,order_date=$3,
 		party_type=$4,party_id=$5,currency_id=$6,exchange_rate=$7,terms=$8,remarks=$9,
 		updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
-		id, after.OrderNo, date(after.OrderDate), partyType, after.PartyID, after.CurrencyID,
-		after.ExchangeRate, text(after.Terms), text(after.Remarks))
+		id, after.OrderNo, pgconv.DateUTC(after.OrderDate), partyType, after.PartyID, after.CurrencyID,
+		after.ExchangeRate, pgconv.Text(after.Terms), pgconv.Text(after.Remarks))
 	if err != nil {
 		return Order{}, writeError("更新订单失败", err)
 	}
@@ -541,17 +541,6 @@ func quotationSide(side Side) quotation.Side {
 		return quotation.SidePurchase
 	}
 	return quotation.SideSales
-}
-
-func date(value time.Time) pgtype.Date {
-	return pgtype.Date{Time: value.UTC(), Valid: true}
-}
-
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
 }
 
 func sortedUUIDs[T any](values map[uuid.UUID]T) []uuid.UUID {

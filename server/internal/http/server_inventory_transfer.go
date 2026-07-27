@@ -10,26 +10,13 @@ import (
 	"github.com/z1coyan/synie/server/internal/http/gen"
 )
 
-func (s *Server) QueryInvStockTransfers(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "inv.stock_transfer:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func stockTransferListQuery(body listBody) stocktransfer.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.stockTransfers.List(r.Context(), actor, stocktransfer.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	return stocktransfer.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryInvStockTransfers(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "inv.stock_transfer:read", stockTransferListQuery, s.StockTransfers.List, passthroughListResponse)
 }
 
 func (s *Server) GetInvStockTransfer(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -38,7 +25,7 @@ func (s *Server) GetInvStockTransfer(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockTransfers.Get(r.Context(), actor, id)
+	item, err := s.StockTransfers.Get(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -57,7 +44,7 @@ func (s *Server) CreateInvStockTransfer(w http.ResponseWriter, r *http.Request) 
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.stockTransfers.Create(r.Context(), actor, stocktransfer.CreateInput{
+	item, err := s.StockTransfers.Create(r.Context(), actor, stocktransfer.CreateInput{
 		DocNo: body.DocNo, DocDate: body.DocDate, Summary: body.Summary, Remarks: body.Remarks,
 		CompanyID: body.CompanyId, FromWarehouseID: body.FromWarehouseId,
 		ToWarehouseID: body.ToWarehouseId, TransitWarehouseID: body.TransitWarehouseId,
@@ -98,7 +85,7 @@ func (s *Server) UpdateInvStockTransfer(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, nullableStringError("手工调拨单", "remarks"))
 		return
 	}
-	item, err := s.stockTransfers.Update(r.Context(), actor, id, stocktransfer.UpdateInput{
+	item, err := s.StockTransfers.Update(r.Context(), actor, id, stocktransfer.UpdateInput{
 		DocNo: body.DocNo, DocDate: body.DocDate, Summary: summary, Remarks: remarks,
 		FromWarehouseID: body.FromWarehouseID, ToWarehouseID: body.ToWarehouseID,
 		TransitWarehouseID: body.TransitWarehouseID,
@@ -116,7 +103,7 @@ func (s *Server) DeleteInvStockTransfer(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.stockTransfers.Delete(r.Context(), actor, id); err != nil {
+	if err := s.StockTransfers.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -129,7 +116,7 @@ func (s *Server) ShipInvStockTransfer(w http.ResponseWriter, r *http.Request, id
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockTransfers.Ship(r.Context(), actor, id)
+	item, err := s.StockTransfers.Ship(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -160,7 +147,7 @@ func (s *Server) ReceiveInvStockTransfer(w http.ResponseWriter, r *http.Request,
 			receipts = append(receipts, stocktransfer.Receipt{ItemID: raw.ItemId, Qty: qty})
 		}
 	}
-	item, err := s.stockTransfers.Receive(
+	item, err := s.StockTransfers.Receive(
 		r.Context(), actor, id, stocktransfer.ReceiveInput{Receipts: receipts},
 	)
 	if err != nil {
@@ -171,25 +158,7 @@ func (s *Server) ReceiveInvStockTransfer(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) QueryInvStockTransferItems(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "inv.stock_transfer:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.stockTransfers.QueryItems(r.Context(), actor, stocktransfer.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	queryList(s, w, r, "inv.stock_transfer:read", stockTransferListQuery, s.StockTransfers.QueryItems, passthroughListResponse)
 }
 
 func (s *Server) GetInvStockTransferItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -198,7 +167,7 @@ func (s *Server) GetInvStockTransferItem(w http.ResponseWriter, r *http.Request,
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockTransfers.GetItem(r.Context(), actor, id)
+	item, err := s.StockTransfers.GetItem(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -222,7 +191,7 @@ func (s *Server) CreateInvStockTransferItem(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockTransfers.CreateItem(r.Context(), actor, stocktransfer.CreateItemInput{
+	item, err := s.StockTransfers.CreateItem(r.Context(), actor, stocktransfer.CreateItemInput{
 		StockTransferID: body.StockTransferId, Idx: body.Idx, Qty: qty,
 		MaterialID: body.MaterialId, UnitID: body.UnitId, Remark: body.Remark,
 	})
@@ -260,7 +229,7 @@ func (s *Server) UpdateInvStockTransferItem(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, r, nullableStringError("手工调拨单行", "remark"))
 		return
 	}
-	item, err := s.stockTransfers.UpdateItem(r.Context(), actor, id, stocktransfer.UpdateItemInput{
+	item, err := s.StockTransfers.UpdateItem(r.Context(), actor, id, stocktransfer.UpdateItemInput{
 		Idx: body.Idx, Qty: qty, MaterialID: body.MaterialID,
 		UnitID: body.UnitID, Remark: remark,
 	})
@@ -277,7 +246,7 @@ func (s *Server) DeleteInvStockTransferItem(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.stockTransfers.DeleteItem(r.Context(), actor, id); err != nil {
+	if err := s.StockTransfers.DeleteItem(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}

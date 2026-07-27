@@ -3,20 +3,19 @@ package customer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 )
 
 type Service struct{ pool *pgxpool.Pool }
@@ -35,65 +34,29 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Customer, error) {
 }
 
 func (s *Service) List(ctx context.Context, query ListQuery) (ListResult, error) {
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	fields := map[string][]string{}
-	if query.Limit < 1 || query.Limit > 200 {
-		fields["limit"] = []string{"必须在 1 到 200 之间"}
-	}
-	if query.Offset < 0 {
-		fields["offset"] = []string{"不能小于 0"}
-	}
-	if len(fields) > 0 {
-		return ListResult{}, apierror.Validation("分页参数不合法", fields)
-	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Customer]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "客户",
+		Source:       ` FROM sal_customers`,
+		Select:       `SELECT id,code,name,short_name,inserted_at,updated_at`,
+		DefaultOrder: ` ORDER BY "code" ASC, "id" ASC`,
+		Tiebreaker:   `, "id" ASC`,
+		Scan: func(rows pgx.Rows) (Customer, error) {
+			var row dbgen.SalCustomer
+			if err := rows.Scan(&row.ID, &row.Code, &row.Name, &row.ShortName, &row.InsertedAt, &row.UpdatedAt); err != nil {
+				return Customer{}, err
+			}
+			return fromRow(row), nil
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ListResult{}, err
 	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "code" ASC, "id" ASC`
-	} else {
-		order += `, "id" ASC`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询客户失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM sal_customers`+built.Where, built.Args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计客户失败", err)
-	}
-	args := append([]any(nil), built.Args...)
-	limitArg := len(args) + 1
-	args = append(args, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,code,name,short_name,inserted_at,updated_at FROM sal_customers`+
-		built.Where+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", limitArg, limitArg+1), args...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询客户失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Customer, 0, query.Limit)
-	for rows.Next() {
-		var row dbgen.SalCustomer
-		if err := rows.Scan(&row.ID, &row.Code, &row.Name, &row.ShortName, &row.InsertedAt, &row.UpdatedAt); err != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取客户结果失败", err)
-		}
-		result.Results = append(result.Results, fromRow(row))
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历客户结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成客户查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
+}
+
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateInput) (Customer, error) {
@@ -107,7 +70,7 @@ func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateIn
 	}
 	defer tx.Rollback(ctx)
 	row, err := dbgen.New(tx).CreateCustomer(ctx, dbgen.CreateCustomerParams{
-		Code: code, Name: name, ShortName: toText(shortName),
+		Code: code, Name: name, ShortName: pgconv.Text(shortName),
 	})
 	if err != nil {
 		return Customer{}, writeError("创建客户失败", err)
@@ -164,7 +127,7 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 		return before, nil
 	}
 	updated, err := queries.UpdateCustomer(ctx, dbgen.UpdateCustomerParams{
-		ID: id, Code: code, Name: name, ShortName: toText(shortName),
+		ID: id, Code: code, Name: name, ShortName: pgconv.Text(shortName),
 	})
 	if err != nil {
 		return Customer{}, writeError("更新客户失败", err)
@@ -251,35 +214,16 @@ func snapshot(item Customer) map[string]any {
 
 func fromRow(row dbgen.SalCustomer) Customer {
 	return Customer{
-		ID: row.ID, Code: row.Code, Name: row.Name, ShortName: fromText(row.ShortName),
+		ID: row.ID, Code: row.Code, Name: row.Name, ShortName: pgconv.TextPtr(row.ShortName),
 		InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 	}
 }
 
-func toText(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func fromText(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	result := value.String
-	return &result
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Message: "客户编号已存在"},
+	{Code: "23503", Message: "客户已被业务数据引用,不可删除"},
 }
 
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return apierror.Wrap(apierror.CodeConflict, "客户编号已存在", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "客户已被业务数据引用,不可删除", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }

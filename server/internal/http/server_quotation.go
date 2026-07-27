@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -54,27 +53,23 @@ func quotationPermission(side quotation.Side, action string) string {
 	return "purchase.quotation:" + action
 }
 
-func (s *Server) queryQuotations(w http.ResponseWriter, r *http.Request, side quotation.Side) {
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func quotationListQuery(body listBody) quotation.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	actor, _ := requireActor(r)
-	result, err := s.quotations.ListQuotations(r.Context(), actor, side, quotation.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, quotationListDTO(result))
+	return quotation.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
 }
 
-func (s *Server) getQuotation(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	item, err := s.quotations.GetQuotation(r.Context(), actor, side, id)
+func (s *Server) queryQuotations(
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side,
+) {
+	queryListAs(s, w, r, actor, quotationListQuery,
+		func(ctx context.Context, actor *authz.Actor, query quotation.ListQuery) (quotation.QuotationListResult, error) {
+			return s.Quotations.ListQuotations(ctx, actor, side, query)
+		},
+		func(result quotation.QuotationListResult) any { return quotationListDTO(result) })
+}
+
+func (s *Server) getQuotation(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
+	item, err := s.Quotations.GetQuotation(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -82,14 +77,13 @@ func (s *Server) getQuotation(w http.ResponseWriter, r *http.Request, side quota
 	s.writeJSON(w, http.StatusOK, quotationDTO(item))
 }
 
-func (s *Server) createQuotation(w http.ResponseWriter, r *http.Request, side quotation.Side) {
+func (s *Server) createQuotation(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side) {
 	var body gen.QuotationCreate
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.quotations.CreateQuotation(r.Context(), actor, side, quotation.CreateQuotationInput{
+	item, err := s.Quotations.CreateQuotation(r.Context(), actor, side, quotation.CreateQuotationInput{
 		CompanyID: body.CompanyId, QuotationNo: body.QuotationNo,
 		QuotationDate: datePointer(body.QuotationDate), ValidUntil: body.ValidUntil.Time,
 		PartyType: string(body.PartyType), PartyID: body.PartyId,
@@ -102,7 +96,7 @@ func (s *Server) createQuotation(w http.ResponseWriter, r *http.Request, side qu
 	s.writeJSON(w, http.StatusCreated, quotationDTO(item))
 }
 
-func (s *Server) updateQuotation(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
+func (s *Server) updateQuotation(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
 	var body struct {
 		QuotationNo   *string             `json:"quotationNo,omitempty"`
 		QuotationDate *openapi_types.Date `json:"quotationDate,omitempty"`
@@ -127,8 +121,7 @@ func (s *Server) updateQuotation(w http.ResponseWriter, r *http.Request, side qu
 		s.writeError(w, r, nullableStringError(quotationLabel(side), "remarks"))
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.quotations.UpdateQuotation(r.Context(), actor, side, id, quotation.UpdateQuotationInput{
+	item, err := s.Quotations.UpdateQuotation(r.Context(), actor, side, id, quotation.UpdateQuotationInput{
 		QuotationNo: body.QuotationNo, QuotationDate: openAPIDatePointer(body.QuotationDate),
 		ValidUntil: openAPIDatePointer(body.ValidUntil), PartyType: body.PartyType,
 		PartyID: body.PartyID, CurrencyID: body.CurrencyID, Terms: terms, Remarks: remarks,
@@ -140,18 +133,16 @@ func (s *Server) updateQuotation(w http.ResponseWriter, r *http.Request, side qu
 	s.writeJSON(w, http.StatusOK, quotationDTO(item))
 }
 
-func (s *Server) deleteQuotation(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	if err := s.quotations.DeleteQuotation(r.Context(), actor, side, id); err != nil {
+func (s *Server) deleteQuotation(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
+	if err := s.Quotations.DeleteQuotation(r.Context(), actor, side, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) auditQuotation(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	item, err := s.quotations.AuditQuotation(r.Context(), actor, side, id)
+func (s *Server) auditQuotation(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
+	item, err := s.Quotations.AuditQuotation(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -159,9 +150,8 @@ func (s *Server) auditQuotation(w http.ResponseWriter, r *http.Request, side quo
 	s.writeJSON(w, http.StatusOK, quotationDTO(item))
 }
 
-func (s *Server) voidQuotation(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	item, err := s.quotations.VoidQuotation(r.Context(), actor, side, id)
+func (s *Server) voidQuotation(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
+	item, err := s.Quotations.VoidQuotation(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -169,27 +159,18 @@ func (s *Server) voidQuotation(w http.ResponseWriter, r *http.Request, side quot
 	s.writeJSON(w, http.StatusOK, quotationDTO(item))
 }
 
-func (s *Server) queryQuotationItems(w http.ResponseWriter, r *http.Request, side quotation.Side) {
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	limit, offset, search, sort, filter := listParts(body)
-	actor, _ := requireActor(r)
-	result, err := s.quotations.ListItems(r.Context(), actor, side, quotation.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, quotationItemListDTO(result))
+func (s *Server) queryQuotationItems(
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side,
+) {
+	queryListAs(s, w, r, actor, quotationListQuery,
+		func(ctx context.Context, actor *authz.Actor, query quotation.ListQuery) (quotation.ItemListResult, error) {
+			return s.Quotations.ListItems(ctx, actor, side, query)
+		},
+		func(result quotation.ItemListResult) any { return quotationItemListDTO(result) })
 }
 
-func (s *Server) getQuotationItem(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	item, err := s.quotations.GetItem(r.Context(), actor, side, id)
+func (s *Server) getQuotationItem(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
+	item, err := s.Quotations.GetItem(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -197,7 +178,7 @@ func (s *Server) getQuotationItem(w http.ResponseWriter, r *http.Request, side q
 	s.writeJSON(w, http.StatusOK, quotationItemDTO(item))
 }
 
-func (s *Server) createQuotationItem(w http.ResponseWriter, r *http.Request, side quotation.Side) {
+func (s *Server) createQuotationItem(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side) {
 	var body gen.QuotationItemCreate
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -217,8 +198,7 @@ func (s *Server) createQuotationItem(w http.ResponseWriter, r *http.Request, sid
 	if body.PricingMode != nil {
 		mode = quotation.PricingMode(*body.PricingMode)
 	}
-	actor, _ := requireActor(r)
-	item, err := s.quotations.CreateItem(r.Context(), actor, side, quotation.CreateItemInput{
+	item, err := s.Quotations.CreateItem(r.Context(), actor, side, quotation.CreateItemInput{
 		QuotationID: body.QuotationId, Idx: body.Idx,
 		MaterialID: body.MaterialId, UnitID: body.UnitId, PricingMode: mode,
 		Price: price, TaxRate: taxRate, Remarks: body.Remarks,
@@ -230,7 +210,7 @@ func (s *Server) createQuotationItem(w http.ResponseWriter, r *http.Request, sid
 	s.writeJSON(w, http.StatusCreated, quotationItemDTO(item))
 }
 
-func (s *Server) updateQuotationItem(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
+func (s *Server) updateQuotationItem(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
 	var body struct {
 		Idx         *int64          `json:"idx,omitempty"`
 		MaterialID  *uuid.UUID      `json:"materialId,omitempty"`
@@ -264,8 +244,7 @@ func (s *Server) updateQuotationItem(w http.ResponseWriter, r *http.Request, sid
 		value := quotation.PricingMode(*body.PricingMode)
 		mode = &value
 	}
-	actor, _ := requireActor(r)
-	item, err := s.quotations.UpdateItem(r.Context(), actor, side, id, quotation.UpdateItemInput{
+	item, err := s.Quotations.UpdateItem(r.Context(), actor, side, id, quotation.UpdateItemInput{
 		Idx: body.Idx, MaterialID: body.MaterialID, UnitID: body.UnitID,
 		PricingMode: mode, Price: price, TaxRate: taxRate, Remarks: remarks,
 	})
@@ -276,36 +255,26 @@ func (s *Server) updateQuotationItem(w http.ResponseWriter, r *http.Request, sid
 	s.writeJSON(w, http.StatusOK, quotationItemDTO(item))
 }
 
-func (s *Server) deleteQuotationItem(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	if err := s.quotations.DeleteItem(r.Context(), actor, side, id); err != nil {
+func (s *Server) deleteQuotationItem(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
+	if err := s.Quotations.DeleteItem(r.Context(), actor, side, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) queryQuotationTiers(w http.ResponseWriter, r *http.Request, side quotation.Side) {
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	limit, offset, search, sort, filter := listParts(body)
-	actor, _ := requireActor(r)
-	result, err := s.quotations.ListTiers(r.Context(), actor, side, quotation.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, quotationTierListDTO(result))
+func (s *Server) queryQuotationTiers(
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side,
+) {
+	queryListAs(s, w, r, actor, quotationListQuery,
+		func(ctx context.Context, actor *authz.Actor, query quotation.ListQuery) (quotation.TierListResult, error) {
+			return s.Quotations.ListTiers(ctx, actor, side, query)
+		},
+		func(result quotation.TierListResult) any { return quotationTierListDTO(result) })
 }
 
-func (s *Server) getQuotationTier(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	item, err := s.quotations.GetTier(r.Context(), actor, side, id)
+func (s *Server) getQuotationTier(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
+	item, err := s.Quotations.GetTier(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -313,7 +282,7 @@ func (s *Server) getQuotationTier(w http.ResponseWriter, r *http.Request, side q
 	s.writeJSON(w, http.StatusOK, quotationTierDTO(item))
 }
 
-func (s *Server) createQuotationTier(w http.ResponseWriter, r *http.Request, side quotation.Side) {
+func (s *Server) createQuotationTier(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side) {
 	var body gen.QuotationTierCreate
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -329,8 +298,7 @@ func (s *Server) createQuotationTier(w http.ResponseWriter, r *http.Request, sid
 		s.writeError(w, r, err)
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.quotations.CreateTier(r.Context(), actor, side, quotation.CreateTierInput{
+	item, err := s.Quotations.CreateTier(r.Context(), actor, side, quotation.CreateTierInput{
 		ItemID: body.ItemId, MinQty: minQty, Price: price,
 	})
 	if err != nil {
@@ -340,7 +308,7 @@ func (s *Server) createQuotationTier(w http.ResponseWriter, r *http.Request, sid
 	s.writeJSON(w, http.StatusCreated, quotationTierDTO(item))
 }
 
-func (s *Server) updateQuotationTier(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
+func (s *Server) updateQuotationTier(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
 	var body gen.QuotationTierUpdate
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -356,8 +324,7 @@ func (s *Server) updateQuotationTier(w http.ResponseWriter, r *http.Request, sid
 		s.writeError(w, r, err)
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.quotations.UpdateTier(r.Context(), actor, side, id, quotation.UpdateTierInput{
+	item, err := s.Quotations.UpdateTier(r.Context(), actor, side, id, quotation.UpdateTierInput{
 		MinQty: minQty, Price: price,
 	})
 	if err != nil {
@@ -367,21 +334,12 @@ func (s *Server) updateQuotationTier(w http.ResponseWriter, r *http.Request, sid
 	s.writeJSON(w, http.StatusOK, quotationTierDTO(item))
 }
 
-func (s *Server) deleteQuotationTier(w http.ResponseWriter, r *http.Request, side quotation.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	if err := s.quotations.DeleteTier(r.Context(), actor, side, id); err != nil {
+func (s *Server) deleteQuotationTier(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side quotation.Side, id uuid.UUID) {
+	if err := s.Quotations.DeleteTier(r.Context(), actor, side, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func openAPIDatePointer(value *openapi_types.Date) *time.Time {
-	if value == nil {
-		return nil
-	}
-	result := value.Time
-	return &result
 }
 
 func quotationLabel(side quotation.Side) string {

@@ -2,10 +2,11 @@ package unit
 
 import (
 	"encoding/json"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
-	"time"
 )
 
 type Unit struct {

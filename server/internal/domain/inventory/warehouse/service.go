@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
@@ -93,70 +94,35 @@ func (s *Service) list(
 	if actor == nil {
 		return ListResult{}, apierror.New(apierror.CodeForbidden, "无权访问仓库")
 	}
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if err := validatePage(query.Limit, query.Offset); err != nil {
-		return ListResult{}, err
-	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Warehouse]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "仓库", Actor: actor,
+		Source:       warehouseSource,
+		Select:       warehouseSelect,
+		DefaultOrder: ` ORDER BY name ASC,id ASC`,
+		Tiebreaker:   `,id ASC`,
+		AdjustWhere: func(where string, args []any) (string, []any) {
+			if outsourced == nil {
+				return where, args
+			}
+			where = appendWarehousePredicate(where, fmt.Sprintf(
+				`is_outsourced=true AND party_type=$%d AND party_id=$%d`,
+				len(args)+1, len(args)+2,
+			))
+			return where, append(args, outsourced.partyType, outsourced.partyID)
+		},
+		Scan: func(rows pgx.Rows) (Warehouse, error) {
+			return scanWarehouse(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ListResult{}, err
 	}
-	where := built.Where
-	args := append([]any(nil), built.Args...)
-	if outsourced != nil {
-		where = appendWarehousePredicate(where, fmt.Sprintf(
-			`is_outsourced=true AND party_type=$%d AND party_id=$%d`,
-			len(args)+1, len(args)+2,
-		))
-		args = append(args, outsourced.partyType, outsourced.partyID)
-	}
-	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
-	if empty {
-		return ListResult{Results: []Warehouse{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY name ASC,id ASC`
-	} else {
-		order += `,id ASC`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询仓库失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*)`+warehouseSource+where, args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计仓库失败", err)
-	}
-	limitAt := len(args) + 1
-	listArgs := append(append([]any(nil), args...), query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, warehouseSelect+warehouseSource+where+order+
-		fmt.Sprintf(` LIMIT $%d OFFSET $%d`, limitAt, limitAt+1), listArgs...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询仓库失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Warehouse, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanWarehouse(rows)
-		if scanErr != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取仓库结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历仓库结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成仓库查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
+}
+
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func appendWarehousePredicate(where, predicate string) string {
@@ -200,18 +166,4 @@ func scanWarehouse(row scanner) (Warehouse, error) {
 		item.Account = &Reference{ID: *item.AccountID, Name: *accountName, Code: accountCode}
 	}
 	return item, nil
-}
-
-func validatePage(limit, offset int) error {
-	fields := map[string][]string{}
-	if limit < 1 || limit > 200 {
-		fields["limit"] = []string{"必须在 1 到 200 之间"}
-	}
-	if offset < 0 {
-		fields["offset"] = []string{"不能小于 0"}
-	}
-	if len(fields) > 0 {
-		return apierror.Validation("分页参数不合法", fields)
-	}
-	return nil
 }

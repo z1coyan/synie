@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -76,8 +77,8 @@ func (s *Service) CreateItem(ctx context.Context, actor *authz.Actor, input Crea
 	row, err := q.CreateStockTransferItem(ctx, dbgen.CreateStockTransferItemParams{
 		Idx: input.Idx, Qty: input.Qty, BaseQty: projection.baseQty,
 		MaterialCode: projection.materialCode, MaterialName: projection.materialName,
-		MaterialSpec: text(projection.materialSpec), UnitName: projection.unitName,
-		Remark: text(input.Remark), StockTransferID: input.StockTransferID,
+		MaterialSpec: pgconv.Text(projection.materialSpec), UnitName: projection.unitName,
+		Remark: pgconv.Text(input.Remark), StockTransferID: input.StockTransferID,
 		CompanyID: doc.CompanyID, MaterialID: input.MaterialID, UnitID: input.UnitID,
 	})
 	if err != nil {

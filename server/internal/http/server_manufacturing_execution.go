@@ -20,15 +20,6 @@ func executionListQuery(body listBody) execution.ListQuery {
 	return execution.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
 }
 
-func decodeExecutionList(s *Server, w http.ResponseWriter, r *http.Request) (execution.ListQuery, bool) {
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return execution.ListQuery{}, false
-	}
-	return executionListQuery(body), true
-}
-
 func manufacturingMap(value any) map[string]any {
 	data, _ := json.Marshal(value)
 	result := map[string]any{}
@@ -166,28 +157,20 @@ func nullableDatePointer(raw json.RawMessage, resource, field string) (**time.Ti
 }
 
 func (s *Server) QueryManufacturingDemands(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:read")
 	if !ok {
 		return
 	}
-	query, ok := decodeExecutionList(s, w, r)
-	if !ok {
-		return
-	}
-	result, err := s.manufacturingExecution.ListDemands(r.Context(), actor, query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, demandListWire(result))
+	queryListAs(s, w, r, actor, executionListQuery, s.ManufacturingExecution.ListDemands,
+		func(result execution.DemandList) any { return demandListWire(result) })
 }
 
 func (s *Server) GetManufacturingDemand(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:read")
 	if !ok {
 		return
 	}
-	item, err := s.manufacturingExecution.GetDemand(r.Context(), actor, id)
+	item, err := s.ManufacturingExecution.GetDemand(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -196,7 +179,7 @@ func (s *Server) GetManufacturingDemand(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) CreateManufacturingDemand(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:create")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:create")
 	if !ok {
 		return
 	}
@@ -210,7 +193,7 @@ func (s *Server) CreateManufacturingDemand(w http.ResponseWriter, r *http.Reques
 		value := body.DemandDate.Time
 		demandDate = &value
 	}
-	item, err := s.manufacturingExecution.CreateDemand(r.Context(), actor, execution.CreateDemandInput{
+	item, err := s.ManufacturingExecution.CreateDemand(r.Context(), actor, execution.CreateDemandInput{
 		CompanyID: body.CompanyId, DemandNo: body.DemandNo, DemandDate: demandDate, Remarks: body.Remarks,
 	})
 	if err != nil {
@@ -221,7 +204,7 @@ func (s *Server) CreateManufacturingDemand(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) UpdateManufacturingDemand(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:update")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:update")
 	if !ok {
 		return
 	}
@@ -244,7 +227,7 @@ func (s *Server) UpdateManufacturingDemand(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.manufacturingExecution.UpdateDemand(r.Context(), actor, id, execution.UpdateDemandInput{
+	item, err := s.ManufacturingExecution.UpdateDemand(r.Context(), actor, id, execution.UpdateDemandInput{
 		DemandNo: body.DemandNo, DemandDate: demandDate, Remarks: remarks,
 	})
 	if err != nil {
@@ -255,11 +238,11 @@ func (s *Server) UpdateManufacturingDemand(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) DeleteManufacturingDemand(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:delete")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:delete")
 	if !ok {
 		return
 	}
-	if err := s.manufacturingExecution.DeleteDemand(r.Context(), actor, id); err != nil {
+	if err := s.ManufacturingExecution.DeleteDemand(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -267,15 +250,15 @@ func (s *Server) DeleteManufacturingDemand(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) ConfirmManufacturingDemand(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	s.manufacturingDemandAction(w, r, id, "mfg.demand:confirm", s.manufacturingExecution.ConfirmDemand)
+	s.manufacturingDemandAction(w, r, id, "mfg.demand:confirm", s.ManufacturingExecution.ConfirmDemand)
 }
 
 func (s *Server) CloseManufacturingDemand(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	s.manufacturingDemandAction(w, r, id, "mfg.demand:close", s.manufacturingExecution.CloseDemand)
+	s.manufacturingDemandAction(w, r, id, "mfg.demand:close", s.ManufacturingExecution.CloseDemand)
 }
 
 func (s *Server) VoidManufacturingDemand(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	s.manufacturingDemandAction(w, r, id, "mfg.demand:void", s.manufacturingExecution.VoidDemand)
+	s.manufacturingDemandAction(w, r, id, "mfg.demand:void", s.ManufacturingExecution.VoidDemand)
 }
 
 func (s *Server) manufacturingDemandAction(
@@ -285,7 +268,7 @@ func (s *Server) manufacturingDemandAction(
 	permission string,
 	action func(context.Context, *authz.Actor, uuid.UUID) (execution.Demand, error),
 ) {
-	actor, ok := manufacturingActor(s, w, r, permission)
+	actor, ok := s.manufacturingActor(w, r, permission)
 	if !ok {
 		return
 	}
@@ -298,28 +281,20 @@ func (s *Server) manufacturingDemandAction(
 }
 
 func (s *Server) QueryManufacturingDemandItems(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:read")
 	if !ok {
 		return
 	}
-	query, ok := decodeExecutionList(s, w, r)
-	if !ok {
-		return
-	}
-	result, err := s.manufacturingExecution.ListDemandItems(r.Context(), actor, query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, demandItemListWire(result))
+	queryListAs(s, w, r, actor, executionListQuery, s.ManufacturingExecution.ListDemandItems,
+		func(result execution.DemandItemList) any { return demandItemListWire(result) })
 }
 
 func (s *Server) GetManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:read")
 	if !ok {
 		return
 	}
-	item, err := s.manufacturingExecution.GetDemandItem(r.Context(), actor, id)
+	item, err := s.ManufacturingExecution.GetDemandItem(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -328,7 +303,7 @@ func (s *Server) GetManufacturingDemandItem(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) CreateManufacturingDemandItem(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:create")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:create")
 	if !ok {
 		return
 	}
@@ -347,7 +322,7 @@ func (s *Server) CreateManufacturingDemandItem(w http.ResponseWriter, r *http.Re
 		value := body.NeedDate.Time
 		needDate = &value
 	}
-	item, err := s.manufacturingExecution.CreateDemandItem(r.Context(), actor, execution.CreateDemandItemInput{
+	item, err := s.ManufacturingExecution.CreateDemandItem(r.Context(), actor, execution.CreateDemandItemInput{
 		DemandID: body.DemandId, Idx: body.Idx, MaterialID: body.MaterialId,
 		UnitID: body.UnitId, Qty: qty, NeedDate: needDate,
 		FulfillmentMethod: execution.FulfillmentMethod(strings.ToLower(string(body.FulfillmentMethod))),
@@ -361,7 +336,7 @@ func (s *Server) CreateManufacturingDemandItem(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) UpdateManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:update")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:update")
 	if !ok {
 		return
 	}
@@ -404,7 +379,7 @@ func (s *Server) UpdateManufacturingDemandItem(w http.ResponseWriter, r *http.Re
 		value := execution.FulfillmentMethod(strings.ToLower(*body.FulfillmentMethod))
 		method = &value
 	}
-	item, err := s.manufacturingExecution.UpdateDemandItem(r.Context(), actor, id, execution.UpdateDemandItemInput{
+	item, err := s.ManufacturingExecution.UpdateDemandItem(r.Context(), actor, id, execution.UpdateDemandItemInput{
 		Idx: body.Idx, MaterialID: body.MaterialID, UnitID: body.UnitID, Qty: qty,
 		NeedDate: needDate, FulfillmentMethod: method, SalesOrderItemID: salesOrderItemID, Remarks: remarks,
 	})
@@ -416,11 +391,11 @@ func (s *Server) UpdateManufacturingDemandItem(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) DeleteManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:update")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:update")
 	if !ok {
 		return
 	}
-	if err := s.manufacturingExecution.DeleteDemandItem(r.Context(), actor, id); err != nil {
+	if err := s.ManufacturingExecution.DeleteDemandItem(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -428,11 +403,11 @@ func (s *Server) DeleteManufacturingDemandItem(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) CompleteManufacturingDemandItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:update")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:update")
 	if !ok {
 		return
 	}
-	item, err := s.manufacturingExecution.CompleteDemandItem(r.Context(), actor, id)
+	item, err := s.ManufacturingExecution.CompleteDemandItem(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -441,7 +416,7 @@ func (s *Server) CompleteManufacturingDemandItem(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) ChangeManufacturingDemandItemFulfillment(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:update")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:update")
 	if !ok {
 		return
 	}
@@ -450,7 +425,7 @@ func (s *Server) ChangeManufacturingDemandItemFulfillment(w http.ResponseWriter,
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.manufacturingExecution.ChangeFulfillment(r.Context(), actor, id,
+	item, err := s.ManufacturingExecution.ChangeFulfillment(r.Context(), actor, id,
 		execution.FulfillmentMethod(strings.ToLower(string(body.FulfillmentMethod))))
 	if err != nil {
 		s.writeError(w, r, err)
@@ -460,7 +435,7 @@ func (s *Server) ChangeManufacturingDemandItemFulfillment(w http.ResponseWriter,
 }
 
 func (s *Server) GetManufacturingSalesItemOccupancies(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.demand:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.demand:read")
 	if !ok {
 		return
 	}
@@ -469,7 +444,7 @@ func (s *Server) GetManufacturingSalesItemOccupancies(w http.ResponseWriter, r *
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	items, err := s.manufacturingExecution.SalesOccupancies(r.Context(), actor, body.SalesOrderItemIds)
+	items, err := s.ManufacturingExecution.SalesOccupancies(r.Context(), actor, body.SalesOrderItemIds)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -478,28 +453,20 @@ func (s *Server) GetManufacturingSalesItemOccupancies(w http.ResponseWriter, r *
 }
 
 func (s *Server) QueryManufacturingWorkOrders(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.work_order:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.work_order:read")
 	if !ok {
 		return
 	}
-	query, ok := decodeExecutionList(s, w, r)
-	if !ok {
-		return
-	}
-	result, err := s.manufacturingExecution.ListWorkOrders(r.Context(), actor, query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, workOrderListWire(result))
+	queryListAs(s, w, r, actor, executionListQuery, s.ManufacturingExecution.ListWorkOrders,
+		func(result execution.WorkOrderList) any { return workOrderListWire(result) })
 }
 
 func (s *Server) GetManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.work_order:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.work_order:read")
 	if !ok {
 		return
 	}
-	item, err := s.manufacturingExecution.GetWorkOrder(r.Context(), actor, id)
+	item, err := s.ManufacturingExecution.GetWorkOrder(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -508,7 +475,7 @@ func (s *Server) GetManufacturingWorkOrder(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) CreateManufacturingWorkOrder(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.work_order:create")
+	actor, ok := s.manufacturingActor(w, r, "mfg.work_order:create")
 	if !ok {
 		return
 	}
@@ -517,7 +484,7 @@ func (s *Server) CreateManufacturingWorkOrder(w http.ResponseWriter, r *http.Req
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.manufacturingExecution.CreateWorkOrder(r.Context(), actor, execution.CreateWorkOrderInput{
+	item, err := s.ManufacturingExecution.CreateWorkOrder(r.Context(), actor, execution.CreateWorkOrderInput{
 		DemandItemID: body.DemandItemId, WorkOrderNo: body.WorkOrderNo,
 	})
 	if err != nil {
@@ -528,7 +495,7 @@ func (s *Server) CreateManufacturingWorkOrder(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) UpdateManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.work_order:update")
+	actor, ok := s.manufacturingActor(w, r, "mfg.work_order:update")
 	if !ok {
 		return
 	}
@@ -541,7 +508,7 @@ func (s *Server) UpdateManufacturingWorkOrder(w http.ResponseWriter, r *http.Req
 		s.writeError(w, r, apierror.Validation("生产工单参数不合法", map[string][]string{"workOrderNo": {"必填"}}))
 		return
 	}
-	item, err := s.manufacturingExecution.UpdateWorkOrder(r.Context(), actor, id,
+	item, err := s.ManufacturingExecution.UpdateWorkOrder(r.Context(), actor, id,
 		execution.UpdateWorkOrderInput{WorkOrderNo: *body.WorkOrderNo})
 	if err != nil {
 		s.writeError(w, r, err)
@@ -551,11 +518,11 @@ func (s *Server) UpdateManufacturingWorkOrder(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) DeleteManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.work_order:delete")
+	actor, ok := s.manufacturingActor(w, r, "mfg.work_order:delete")
 	if !ok {
 		return
 	}
-	if err := s.manufacturingExecution.DeleteWorkOrder(r.Context(), actor, id); err != nil {
+	if err := s.ManufacturingExecution.DeleteWorkOrder(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -563,11 +530,11 @@ func (s *Server) DeleteManufacturingWorkOrder(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) VoidManufacturingWorkOrder(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.work_order:void")
+	actor, ok := s.manufacturingActor(w, r, "mfg.work_order:void")
 	if !ok {
 		return
 	}
-	item, err := s.manufacturingExecution.VoidWorkOrder(r.Context(), actor, id)
+	item, err := s.ManufacturingExecution.VoidWorkOrder(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -576,28 +543,20 @@ func (s *Server) VoidManufacturingWorkOrder(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) QueryManufacturingOutputs(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.output:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.output:read")
 	if !ok {
 		return
 	}
-	query, ok := decodeExecutionList(s, w, r)
-	if !ok {
-		return
-	}
-	result, err := s.manufacturingExecution.ListOutputs(r.Context(), actor, query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, outputListWire(result))
+	queryListAs(s, w, r, actor, executionListQuery, s.ManufacturingExecution.ListOutputs,
+		func(result execution.OutputList) any { return outputListWire(result) })
 }
 
 func (s *Server) GetManufacturingOutput(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.output:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.output:read")
 	if !ok {
 		return
 	}
-	item, err := s.manufacturingExecution.GetOutput(r.Context(), actor, id)
+	item, err := s.ManufacturingExecution.GetOutput(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -606,7 +565,7 @@ func (s *Server) GetManufacturingOutput(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) CreateManufacturingOutput(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.output:create")
+	actor, ok := s.manufacturingActor(w, r, "mfg.output:create")
 	if !ok {
 		return
 	}
@@ -620,7 +579,7 @@ func (s *Server) CreateManufacturingOutput(w http.ResponseWriter, r *http.Reques
 		value := body.OutputDate.Time
 		outputDate = &value
 	}
-	item, err := s.manufacturingExecution.CreateOutput(r.Context(), actor, execution.CreateOutputInput{
+	item, err := s.ManufacturingExecution.CreateOutput(r.Context(), actor, execution.CreateOutputInput{
 		CompanyID: body.CompanyId, OutputNo: body.OutputNo, OutputDate: outputDate,
 		WarehouseID: body.WarehouseId, Remarks: body.Remarks,
 	})
@@ -632,7 +591,7 @@ func (s *Server) CreateManufacturingOutput(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) UpdateManufacturingOutput(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.output:update")
+	actor, ok := s.manufacturingActor(w, r, "mfg.output:update")
 	if !ok {
 		return
 	}
@@ -661,7 +620,7 @@ func (s *Server) UpdateManufacturingOutput(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.manufacturingExecution.UpdateOutput(r.Context(), actor, id, execution.UpdateOutputInput{
+	item, err := s.ManufacturingExecution.UpdateOutput(r.Context(), actor, id, execution.UpdateOutputInput{
 		OutputNo: body.OutputNo, OutputDate: outputDate, WarehouseID: warehouseID, Remarks: remarks,
 	})
 	if err != nil {
@@ -672,11 +631,11 @@ func (s *Server) UpdateManufacturingOutput(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) DeleteManufacturingOutput(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.output:delete")
+	actor, ok := s.manufacturingActor(w, r, "mfg.output:delete")
 	if !ok {
 		return
 	}
-	if err := s.manufacturingExecution.DeleteOutput(r.Context(), actor, id); err != nil {
+	if err := s.ManufacturingExecution.DeleteOutput(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -684,11 +643,11 @@ func (s *Server) DeleteManufacturingOutput(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) AuditManufacturingOutput(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	s.manufacturingOutputAction(w, r, id, "mfg.output:audit", s.manufacturingExecution.AuditOutput)
+	s.manufacturingOutputAction(w, r, id, "mfg.output:audit", s.ManufacturingExecution.AuditOutput)
 }
 
 func (s *Server) VoidManufacturingOutput(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	s.manufacturingOutputAction(w, r, id, "mfg.output:void", s.manufacturingExecution.VoidOutput)
+	s.manufacturingOutputAction(w, r, id, "mfg.output:void", s.ManufacturingExecution.VoidOutput)
 }
 
 func (s *Server) manufacturingOutputAction(
@@ -698,7 +657,7 @@ func (s *Server) manufacturingOutputAction(
 	permission string,
 	action func(context.Context, *authz.Actor, uuid.UUID) (execution.Output, error),
 ) {
-	actor, ok := manufacturingActor(s, w, r, permission)
+	actor, ok := s.manufacturingActor(w, r, permission)
 	if !ok {
 		return
 	}
@@ -711,28 +670,20 @@ func (s *Server) manufacturingOutputAction(
 }
 
 func (s *Server) QueryManufacturingOutputItems(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.output:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.output:read")
 	if !ok {
 		return
 	}
-	query, ok := decodeExecutionList(s, w, r)
-	if !ok {
-		return
-	}
-	result, err := s.manufacturingExecution.ListOutputItems(r.Context(), actor, query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, outputItemListWire(result))
+	queryListAs(s, w, r, actor, executionListQuery, s.ManufacturingExecution.ListOutputItems,
+		func(result execution.OutputItemList) any { return outputItemListWire(result) })
 }
 
 func (s *Server) GetManufacturingOutputItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.output:read")
+	actor, ok := s.manufacturingActor(w, r, "mfg.output:read")
 	if !ok {
 		return
 	}
-	item, err := s.manufacturingExecution.GetOutputItem(r.Context(), actor, id)
+	item, err := s.ManufacturingExecution.GetOutputItem(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -741,7 +692,7 @@ func (s *Server) GetManufacturingOutputItem(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) CreateManufacturingOutputItem(w http.ResponseWriter, r *http.Request) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.output:create")
+	actor, ok := s.manufacturingActor(w, r, "mfg.output:create")
 	if !ok {
 		return
 	}
@@ -755,7 +706,7 @@ func (s *Server) CreateManufacturingOutputItem(w http.ResponseWriter, r *http.Re
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.manufacturingExecution.CreateOutputItem(r.Context(), actor, execution.CreateOutputItemInput{
+	item, err := s.ManufacturingExecution.CreateOutputItem(r.Context(), actor, execution.CreateOutputItemInput{
 		OutputID: body.OutputId, Idx: body.Idx, WorkOrderID: body.WorkOrderId,
 		UnitID: body.UnitId, Qty: qty, WarehouseID: body.WarehouseId, Remarks: body.Remarks,
 	})
@@ -767,7 +718,7 @@ func (s *Server) CreateManufacturingOutputItem(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) UpdateManufacturingOutputItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.output:update")
+	actor, ok := s.manufacturingActor(w, r, "mfg.output:update")
 	if !ok {
 		return
 	}
@@ -793,7 +744,7 @@ func (s *Server) UpdateManufacturingOutputItem(w http.ResponseWriter, r *http.Re
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.manufacturingExecution.UpdateOutputItem(r.Context(), actor, id, execution.UpdateOutputItemInput{
+	item, err := s.ManufacturingExecution.UpdateOutputItem(r.Context(), actor, id, execution.UpdateOutputItemInput{
 		Idx: body.Idx, WorkOrderID: body.WorkOrderID, UnitID: body.UnitID, Qty: qty,
 		WarehouseID: body.WarehouseID, Remarks: remarks,
 	})
@@ -805,11 +756,11 @@ func (s *Server) UpdateManufacturingOutputItem(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) DeleteManufacturingOutputItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
-	actor, ok := manufacturingActor(s, w, r, "mfg.output:update")
+	actor, ok := s.manufacturingActor(w, r, "mfg.output:update")
 	if !ok {
 		return
 	}
-	if err := s.manufacturingExecution.DeleteOutputItem(r.Context(), actor, id); err != nil {
+	if err := s.ManufacturingExecution.DeleteOutputItem(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}

@@ -6,33 +6,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stockdoc"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stockentry"
 	"github.com/z1coyan/synie/server/internal/http/gen"
-	"github.com/z1coyan/synie/server/internal/platform/apierror"
 )
 
-func (s *Server) QueryInvStockEntries(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "inv.stock_entry:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func stockEntryListQuery(body listBody) stockentry.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.stockEntries.List(r.Context(), actor, stockentry.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	return stockentry.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryInvStockEntries(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "inv.stock_entry:read", stockEntryListQuery, s.StockEntries.List, passthroughListResponse)
 }
 
 func (s *Server) GetInvStockEntry(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -41,7 +26,7 @@ func (s *Server) GetInvStockEntry(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockEntries.Get(r.Context(), actor, id)
+	item, err := s.StockEntries.Get(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -60,7 +45,7 @@ func (s *Server) QueryInvStockBalance(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	rows, err := s.stockEntries.Balance(r.Context(), actor, stockentry.BalanceQuery{
+	rows, err := s.StockEntries.Balance(r.Context(), actor, stockentry.BalanceQuery{
 		CompanyID: body.CompanyId, AsOf: body.AsOf,
 		WarehouseID: body.WarehouseId, MaterialID: body.MaterialId, HideZero: body.HideZero,
 	})
@@ -71,26 +56,13 @@ func (s *Server) QueryInvStockBalance(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]any{"results": rows})
 }
 
-func (s *Server) QueryInvStockDocs(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "inv.stock_doc:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func stockDocListQuery(body listBody) stockdoc.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.stockDocs.List(r.Context(), actor, stockdoc.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	return stockdoc.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryInvStockDocs(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "inv.stock_doc:read", stockDocListQuery, s.StockDocs.List, passthroughListResponse)
 }
 
 func (s *Server) GetInvStockDoc(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -99,7 +71,7 @@ func (s *Server) GetInvStockDoc(w http.ResponseWriter, r *http.Request, id gen.I
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockDocs.Get(r.Context(), actor, id)
+	item, err := s.StockDocs.Get(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -118,7 +90,7 @@ func (s *Server) CreateInvStockDoc(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.stockDocs.Create(r.Context(), actor, stockdoc.CreateInput{
+	item, err := s.StockDocs.Create(r.Context(), actor, stockdoc.CreateInput{
 		DocNo: body.DocNo, Direction: stockdoc.Direction(body.Direction),
 		DocDate: body.DocDate, Summary: body.Summary, Remarks: body.Remarks,
 		CompanyID: body.CompanyId, WarehouseID: body.WarehouseId,
@@ -175,7 +147,7 @@ func (s *Server) UpdateInvStockDoc(w http.ResponseWriter, r *http.Request, id ge
 	if remarks != nil {
 		input.Remarks = remarks
 	}
-	item, err := s.stockDocs.Update(r.Context(), actor, id, input)
+	item, err := s.StockDocs.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -189,7 +161,7 @@ func (s *Server) DeleteInvStockDoc(w http.ResponseWriter, r *http.Request, id ge
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.stockDocs.Delete(r.Context(), actor, id); err != nil {
+	if err := s.StockDocs.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -202,7 +174,7 @@ func (s *Server) AuditInvStockDoc(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockDocs.Audit(r.Context(), actor, id)
+	item, err := s.StockDocs.Audit(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -216,7 +188,7 @@ func (s *Server) VoidInvStockDoc(w http.ResponseWriter, r *http.Request, id gen.
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockDocs.Void(r.Context(), actor, id)
+	item, err := s.StockDocs.Void(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -225,25 +197,7 @@ func (s *Server) VoidInvStockDoc(w http.ResponseWriter, r *http.Request, id gen.
 }
 
 func (s *Server) QueryInvStockDocItems(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "inv.stock_doc:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.stockDocs.QueryItems(r.Context(), actor, stockdoc.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	queryList(s, w, r, "inv.stock_doc:read", stockDocListQuery, s.StockDocs.QueryItems, passthroughListResponse)
 }
 
 func (s *Server) GetInvStockDocItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -252,7 +206,7 @@ func (s *Server) GetInvStockDocItem(w http.ResponseWriter, r *http.Request, id g
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockDocs.GetItem(r.Context(), actor, id)
+	item, err := s.StockDocs.GetItem(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -276,7 +230,7 @@ func (s *Server) CreateInvStockDocItem(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockDocs.CreateItem(r.Context(), actor, stockdoc.CreateItemInput{
+	item, err := s.StockDocs.CreateItem(r.Context(), actor, stockdoc.CreateItemInput{
 		StockDocID: body.StockDocId, Idx: body.Idx, Qty: qty,
 		MaterialID: body.MaterialId, UnitID: body.UnitId, Remark: body.Remark,
 	})
@@ -314,7 +268,7 @@ func (s *Server) UpdateInvStockDocItem(w http.ResponseWriter, r *http.Request, i
 		s.writeError(w, r, nullableStringError("手工出入库单行", "remark"))
 		return
 	}
-	item, err := s.stockDocs.UpdateItem(r.Context(), actor, id, stockdoc.UpdateItemInput{
+	item, err := s.StockDocs.UpdateItem(r.Context(), actor, id, stockdoc.UpdateItemInput{
 		Idx: body.Idx, Qty: qty, MaterialID: body.MaterialID,
 		UnitID: body.UnitID, Remark: remark,
 	})
@@ -331,30 +285,9 @@ func (s *Server) DeleteInvStockDocItem(w http.ResponseWriter, r *http.Request, i
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.stockDocs.DeleteItem(r.Context(), actor, id); err != nil {
+	if err := s.StockDocs.DeleteItem(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func decimalInput(raw, resource, field string) (decimal.Decimal, error) {
-	value, err := decimal.NewFromString(raw)
-	if err != nil {
-		return decimal.Decimal{}, apierror.Validation(resource+"参数不合法", map[string][]string{
-			field: {"必须是十进制数字字符串"},
-		})
-	}
-	return value, nil
-}
-
-func optionalDecimalInput(raw *string, resource, field string) (*decimal.Decimal, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	value, err := decimalInput(*raw, resource, field)
-	if err != nil {
-		return nil, err
-	}
-	return &value, nil
 }

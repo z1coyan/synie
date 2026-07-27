@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -42,59 +43,22 @@ func (s *Service) QueryBankTransactions(
 	if err := require(actor, "acc.bank_transaction", "read"); err != nil {
 		return BankTransactionList{}, err
 	}
-	if err := validatePage(&query); err != nil {
-		return BankTransactionList{}, err
-	}
-	built, err := buildFilter(BankTransactionResource, query)
+	result, err := listexec.List(ctx, listexec.Spec[BankTransaction]{
+		Pool: s.pool, Resource: BankTransactionResourceMeta(), Label: "银行流水", Actor: actor,
+		Source: ` FROM acc_bank_transaction`,
+		Select: `SELECT id,occurred_at,income,expense,balance,
+counterparty_name,counterparty_account,summary,note,reconciled_amount,
+unreconciled_amount,reconcile_status,inserted_at,updated_at,company_id,bank_account_id`,
+		DefaultOrder: ` ORDER BY "id"`,
+		Tiebreaker:   `, "id"`,
+		Scan: func(rows pgx.Rows) (BankTransaction, error) {
+			return scanBankTransaction(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return BankTransactionList{}, err
 	}
-	where, args, possible := scopedWhere(actor, built.Where, built.Args, "company_id")
-	if !possible {
-		return BankTransactionList{Results: []BankTransaction{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "id"`
-	} else {
-		order += `, "id"`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return BankTransactionList{}, apierror.Wrap(apierror.CodeInternal, "查询银行流水失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result BankTransactionList
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM acc_bank_transaction`+where, args...).
-		Scan(&result.Count); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "统计银行流水失败", err)
-	}
-	sql, listArgs := appendPage(`SELECT id,occurred_at,income,expense,balance,
-		counterparty_name,counterparty_account,summary,note,reconciled_amount,
-		unreconciled_amount,reconcile_status,inserted_at,updated_at,company_id,bank_account_id
-		FROM acc_bank_transaction`+where+order, append([]any(nil), args...), query)
-	rows, err := tx.Query(ctx, sql, listArgs...)
-	if err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "查询银行流水失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]BankTransaction, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanBankTransaction(rows)
-		if scanErr != nil {
-			return result, apierror.Wrap(apierror.CodeInternal, "读取银行流水结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "遍历银行流水结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "完成银行流水查询失败", err)
-	}
-	return result, nil
+	return BankTransactionList{Count: result.Count, Results: result.Results}, nil
 }
 
 func (s *Service) CreateBankTransaction(

@@ -45,7 +45,7 @@ func (s *setupStub) Complete(_ context.Context, actor *authz.Actor, language str
 }
 
 func setupTestServer(stub setupHTTPService) *Server {
-	return &Server{setup: stub, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	return &Server{Dependencies: Dependencies{Setup: stub, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}}
 }
 
 func TestCreateSetupFirstUserPublicReturnsJWT(t *testing.T) {

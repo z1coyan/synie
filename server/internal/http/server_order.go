@@ -49,28 +49,19 @@ func orderListQuery(body listBody) order.ListQuery {
 	return order.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
 }
 
-func (s *Server) queryOrders(w http.ResponseWriter, r *http.Request, side order.Side) {
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	actor, _ := requireActor(r)
-	result, err := s.orders.ListOrders(r.Context(), actor, side, orderListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]map[string]any, len(result.Results))
-	for i, item := range result.Results {
-		items[i] = orderDTO(item, side)
-	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"count": result.Count, "results": items})
+func (s *Server) queryOrders(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side) {
+	queryListAs(s, w, r, actor, orderListQuery,
+		func(ctx context.Context, actor *authz.Actor, query order.ListQuery) (order.OrderListResult, error) {
+			return s.Orders.ListOrders(ctx, actor, side, query)
+		},
+		func(result order.OrderListResult) any {
+			return countResultsResponse(result.Count, mapItems(result.Results,
+				func(item order.Order) map[string]any { return orderDTO(item, side) }))
+		})
 }
 
-func (s *Server) getOrder(w http.ResponseWriter, r *http.Request, side order.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	item, err := s.orders.GetOrder(r.Context(), actor, side, id)
+func (s *Server) getOrder(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side, id uuid.UUID) {
+	item, err := s.Orders.GetOrder(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -78,7 +69,7 @@ func (s *Server) getOrder(w http.ResponseWriter, r *http.Request, side order.Sid
 	s.writeJSON(w, http.StatusOK, orderDTO(item, side))
 }
 
-func (s *Server) createOrder(w http.ResponseWriter, r *http.Request, side order.Side) {
+func (s *Server) createOrder(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side) {
 	var body gen.OrderCreate
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -90,8 +81,7 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request, side order.
 		return
 	}
 	isOutsourced := body.IsOutsourced != nil && *body.IsOutsourced
-	actor, _ := requireActor(r)
-	item, err := s.orders.CreateOrder(r.Context(), actor, side, order.CreateOrderInput{
+	item, err := s.Orders.CreateOrder(r.Context(), actor, side, order.CreateOrderInput{
 		CompanyID: body.CompanyId, OrderNo: body.OrderNo, OrderDate: openAPIDatePointer(body.OrderDate),
 		OrderType: order.OrderType(body.OrderType), IsOutsourced: isOutsourced,
 		PartyType: string(body.PartyType), PartyID: body.PartyId, CurrencyID: body.CurrencyId,
@@ -104,7 +94,7 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request, side order.
 	s.writeJSON(w, http.StatusCreated, orderDTO(item, side))
 }
 
-func (s *Server) updateOrder(w http.ResponseWriter, r *http.Request, side order.Side, id uuid.UUID) {
+func (s *Server) updateOrder(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side, id uuid.UUID) {
 	var body struct {
 		OrderNo      *string             `json:"orderNo,omitempty"`
 		OrderDate    *openapi_types.Date `json:"orderDate,omitempty"`
@@ -134,8 +124,7 @@ func (s *Server) updateOrder(w http.ResponseWriter, r *http.Request, side order.
 		s.writeError(w, r, nullableStringError(orderLabel(side), "remarks"))
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.orders.UpdateOrder(r.Context(), actor, side, id, order.UpdateOrderInput{
+	item, err := s.Orders.UpdateOrder(r.Context(), actor, side, id, order.UpdateOrderInput{
 		OrderNo: body.OrderNo, OrderDate: openAPIDatePointer(body.OrderDate),
 		PartyType: body.PartyType, PartyID: body.PartyID, CurrencyID: body.CurrencyID,
 		ExchangeRate: exchangeRate, Terms: terms, Remarks: remarks,
@@ -147,26 +136,24 @@ func (s *Server) updateOrder(w http.ResponseWriter, r *http.Request, side order.
 	s.writeJSON(w, http.StatusOK, orderDTO(item, side))
 }
 
-func (s *Server) deleteOrder(w http.ResponseWriter, r *http.Request, side order.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	if err := s.orders.DeleteOrder(r.Context(), actor, side, id); err != nil {
+func (s *Server) deleteOrder(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side, id uuid.UUID) {
+	if err := s.Orders.DeleteOrder(r.Context(), actor, side, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) transitionOrder(w http.ResponseWriter, r *http.Request, side order.Side, id uuid.UUID, action string) {
-	actor, _ := requireActor(r)
+func (s *Server) transitionOrder(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side, id uuid.UUID, action string) {
 	var item order.Order
 	var err error
 	switch action {
 	case "audit":
-		item, err = s.orders.AuditOrder(r.Context(), actor, side, id)
+		item, err = s.Orders.AuditOrder(r.Context(), actor, side, id)
 	case "close":
-		item, err = s.orders.CloseOrder(r.Context(), actor, side, id)
+		item, err = s.Orders.CloseOrder(r.Context(), actor, side, id)
 	case "void":
-		item, err = s.orders.VoidOrder(r.Context(), actor, side, id)
+		item, err = s.Orders.VoidOrder(r.Context(), actor, side, id)
 	default:
 		// 未知 action 必须显式拒绝:静默落入作废分支会把拼写错误变成作废单据
 		s.writeError(w, r, apierror.Validation(orderLabel(side)+"操作不合法",
@@ -180,28 +167,19 @@ func (s *Server) transitionOrder(w http.ResponseWriter, r *http.Request, side or
 	s.writeJSON(w, http.StatusOK, orderDTO(item, side))
 }
 
-func (s *Server) queryOrderItems(w http.ResponseWriter, r *http.Request, side order.Side) {
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	actor, _ := requireActor(r)
-	result, err := s.orders.ListItems(r.Context(), actor, side, orderListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]map[string]any, len(result.Results))
-	for i, item := range result.Results {
-		items[i] = orderItemDTO(item, side)
-	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"count": result.Count, "results": items})
+func (s *Server) queryOrderItems(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side) {
+	queryListAs(s, w, r, actor, orderListQuery,
+		func(ctx context.Context, actor *authz.Actor, query order.ListQuery) (order.ItemListResult, error) {
+			return s.Orders.ListItems(ctx, actor, side, query)
+		},
+		func(result order.ItemListResult) any {
+			return countResultsResponse(result.Count, mapItems(result.Results,
+				func(item order.Item) map[string]any { return orderItemDTO(item, side) }))
+		})
 }
 
-func (s *Server) getOrderItem(w http.ResponseWriter, r *http.Request, side order.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	item, err := s.orders.GetItem(r.Context(), actor, side, id)
+func (s *Server) getOrderItem(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side, id uuid.UUID) {
+	item, err := s.Orders.GetItem(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -209,7 +187,7 @@ func (s *Server) getOrderItem(w http.ResponseWriter, r *http.Request, side order
 	s.writeJSON(w, http.StatusOK, orderItemDTO(item, side))
 }
 
-func (s *Server) createOrderItem(w http.ResponseWriter, r *http.Request, side order.Side) {
+func (s *Server) createOrderItem(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side) {
 	var body gen.OrderItemCreate
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -230,8 +208,7 @@ func (s *Server) createOrderItem(w http.ResponseWriter, r *http.Request, side or
 		s.writeError(w, r, err)
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.orders.CreateItem(r.Context(), actor, side, order.CreateItemInput{
+	item, err := s.Orders.CreateItem(r.Context(), actor, side, order.CreateItemInput{
 		OrderID: body.OrderId, Idx: body.Idx, Qty: qty, MaterialID: body.MaterialId,
 		UnitID: body.UnitId, Price: price, TaxRate: taxRate, Remarks: body.Remarks,
 		QuotationItemID: body.QuotationItemId, BOMID: body.BomId, DemandLineID: body.DemandLineId,
@@ -244,7 +221,7 @@ func (s *Server) createOrderItem(w http.ResponseWriter, r *http.Request, side or
 	s.writeJSON(w, http.StatusCreated, orderItemDTO(item, side))
 }
 
-func (s *Server) updateOrderItem(w http.ResponseWriter, r *http.Request, side order.Side, id uuid.UUID) {
+func (s *Server) updateOrderItem(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side, id uuid.UUID) {
 	var body struct {
 		Idx             *int64          `json:"idx,omitempty"`
 		Qty             *string         `json:"qty,omitempty"`
@@ -302,8 +279,7 @@ func (s *Server) updateOrderItem(w http.ResponseWriter, r *http.Request, side or
 		s.writeError(w, r, apierror.Validation(orderItemLabel(side)+"参数不合法", map[string][]string{"demandDate": {"必须是日期或 null"}}))
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.orders.UpdateItem(r.Context(), actor, side, id, order.UpdateItemInput{
+	item, err := s.Orders.UpdateItem(r.Context(), actor, side, id, order.UpdateItemInput{
 		Idx: body.Idx, Qty: qty, MaterialID: body.MaterialID, UnitID: body.UnitID,
 		Price: price, TaxRate: taxRate, Remarks: remarks, QuotationItemID: quotationItemID,
 		BOMID: bomID, DemandLineID: demandLineID, DemandDate: demandDate,
@@ -315,9 +291,8 @@ func (s *Server) updateOrderItem(w http.ResponseWriter, r *http.Request, side or
 	s.writeJSON(w, http.StatusOK, orderItemDTO(item, side))
 }
 
-func (s *Server) deleteOrderItem(w http.ResponseWriter, r *http.Request, side order.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	if err := s.orders.DeleteItem(r.Context(), actor, side, id); err != nil {
+func (s *Server) deleteOrderItem(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side, id uuid.UUID) {
+	if err := s.Orders.DeleteItem(r.Context(), actor, side, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}

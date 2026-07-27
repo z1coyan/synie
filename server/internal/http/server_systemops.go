@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -9,39 +10,31 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/systemops"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
+	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
 
-func (s *Server) QuerySystemAuditLogs(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "sys.audit_log:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func systemopsListQuery(body listBody) systemops.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.systemOps.QueryAuditLogs(r.Context(), actor, systemops.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.SystemAuditLog, 0, len(result.Results))
-	for _, item := range result.Results {
-		dto, dtoErr := systemAuditLogDTO(item)
-		if dtoErr != nil {
-			s.writeError(w, r, dtoErr)
-			return
-		}
-		items = append(items, dto)
-	}
-	s.writeJSON(w, http.StatusOK, gen.SystemAuditLogList{
-		Count: result.Count, Results: items,
-	})
+	return systemops.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QuerySystemAuditLogs(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "sys.audit_log:read", systemopsListQuery,
+		func(ctx context.Context, actor *authz.Actor, query systemops.ListQuery) (gen.SystemAuditLogList, error) {
+			result, err := s.SystemOps.QueryAuditLogs(ctx, actor, query)
+			if err != nil {
+				return gen.SystemAuditLogList{}, err
+			}
+			items := make([]gen.SystemAuditLog, 0, len(result.Results))
+			for _, item := range result.Results {
+				dto, dtoErr := systemAuditLogDTO(item)
+				if dtoErr != nil {
+					return gen.SystemAuditLogList{}, dtoErr
+				}
+				items = append(items, dto)
+			}
+			return gen.SystemAuditLogList{Count: result.Count, Results: items}, nil
+		}, passthroughListResponse)
 }
 
 func (s *Server) GetSystemAuditLog(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -50,7 +43,7 @@ func (s *Server) GetSystemAuditLog(w http.ResponseWriter, r *http.Request, id ge
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.systemOps.GetAuditLog(r.Context(), actor, id)
+	item, err := s.SystemOps.GetAuditLog(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -96,7 +89,7 @@ func (s *Server) QueryTodos(w http.ResponseWriter, r *http.Request) {
 			Column: body.Sort.Column, Direction: string(body.Sort.Direction),
 		}
 	}
-	result, err := s.systemOps.ListTodos(r.Context(), actor, query)
+	result, err := s.SystemOps.ListTodos(r.Context(), actor, query)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -129,9 +122,9 @@ func (s *Server) updateTodoState(
 	}
 	var item systemops.Todo
 	if dismiss {
-		item, err = s.systemOps.Dismiss(r.Context(), actor, id)
+		item, err = s.SystemOps.Dismiss(r.Context(), actor, id)
 	} else {
-		item, err = s.systemOps.MarkRead(r.Context(), actor, id)
+		item, err = s.SystemOps.MarkRead(r.Context(), actor, id)
 	}
 	if err != nil {
 		s.writeError(w, r, err)

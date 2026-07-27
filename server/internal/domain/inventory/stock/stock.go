@@ -10,9 +10,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 )
 
@@ -65,8 +65,8 @@ func Post(ctx context.Context, tx pgx.Tx, voucher Voucher, lines []Line) error {
 		_, err := q.InsertStockEntry(ctx, dbgen.InsertStockEntryParams{
 			CompanyID: voucher.CompanyID, WarehouseID: line.WarehouseID,
 			MaterialID: line.MaterialID, Quantity: line.Quantity,
-			PostingDate: date(voucher.PostingDate), VoucherType: voucher.Type,
-			VoucherID: voucher.ID, VoucherNo: voucher.No, Remarks: text(line.Remarks),
+			PostingDate: pgconv.Date(voucher.PostingDate), VoucherType: voucher.Type,
+			VoucherID: voucher.ID, VoucherNo: voucher.No, Remarks: pgconv.Text(line.Remarks),
 		})
 		if err != nil {
 			return apierror.Wrap(apierror.CodeInternal, "写入库存分录失败", err)
@@ -144,7 +144,7 @@ func Cancel(ctx context.Context, tx pgx.Tx, ref VoucherRef, cancelledAt time.Tim
 		cancelledAt = time.Now().UTC()
 	}
 	if _, err := q.CancelStockEntriesForVoucher(ctx, dbgen.CancelStockEntriesForVoucherParams{
-		VoucherType: ref.Type, VoucherID: ref.ID, CancelledAt: timestamp(cancelledAt),
+		VoucherType: ref.Type, VoucherID: ref.ID, CancelledAt: pgconv.Timestamp(cancelledAt),
 	}); err != nil {
 		return apierror.Wrap(apierror.CodeInternal, "作废库存分录失败", err)
 	}
@@ -162,7 +162,7 @@ func Balance(ctx context.Context, db dbgen.DBTX, query BalanceQuery) ([]BalanceR
 		query.AsOf = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	}
 	rows, err := dbgen.New(db).StockBalance(ctx, dbgen.StockBalanceParams{
-		CompanyID: query.CompanyID, AsOf: date(query.AsOf),
+		CompanyID: query.CompanyID, AsOf: pgconv.Date(query.AsOf),
 		WarehouseID: query.WarehouseID, MaterialID: query.MaterialID,
 		HideZero: query.HideZero,
 	})
@@ -174,7 +174,7 @@ func Balance(ctx context.Context, db dbgen.DBTX, query BalanceQuery) ([]BalanceR
 		result = append(result, BalanceRow{
 			WarehouseID: row.WarehouseID, WarehouseName: row.WarehouseName,
 			MaterialID: row.MaterialID, MaterialCode: row.MaterialCode,
-			MaterialName: row.MaterialName, MaterialSpec: optionalText(row.MaterialSpec),
+			MaterialName: row.MaterialName, MaterialSpec: pgconv.TextPtr(row.MaterialSpec),
 			UnitName: row.UnitName, Quantity: row.Quantity,
 		})
 	}
@@ -352,28 +352,6 @@ func sortKeys(keys []balanceKey) {
 
 func lockKey(key balanceKey) string {
 	return "inv_stock:" + key.warehouseID.String() + ":" + key.materialID.String()
-}
-
-func date(value time.Time) pgtype.Date {
-	return pgtype.Date{Time: value, Valid: true}
-}
-
-func timestamp(value time.Time) pgtype.Timestamp {
-	return pgtype.Timestamp{Time: value.UTC(), Valid: true}
-}
-
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func optionalText(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	return &value.String
 }
 
 func isNoRows(err error) bool {

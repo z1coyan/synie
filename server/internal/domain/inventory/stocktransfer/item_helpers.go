@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -59,7 +60,7 @@ func buildProjection(ctx context.Context, q *dbgen.Queries, materialID, unitID u
 	}
 	return itemProjection{
 		baseQty: baseQty, materialCode: row.MaterialCode, materialName: row.MaterialName,
-		materialSpec: optionalText(row.MaterialSpec), unitName: row.UnitName,
+		materialSpec: pgconv.TextPtr(row.MaterialSpec), unitName: row.UnitName,
 	}, nil
 }
 
@@ -130,8 +131,8 @@ func itemFromRow(row dbgen.InvStockTransferItem) Item {
 	return Item{
 		ID: row.ID, Idx: row.Idx, Qty: row.Qty, BaseQty: row.BaseQty, ReceivedQty: received,
 		MaterialCode: row.MaterialCode, MaterialName: row.MaterialName,
-		MaterialSpec: optionalText(row.MaterialSpec), UnitName: row.UnitName,
-		Remark: optionalText(row.Remark), InsertedAt: row.InsertedAt.Time.UTC(),
+		MaterialSpec: pgconv.TextPtr(row.MaterialSpec), UnitName: row.UnitName,
+		Remark: pgconv.TextPtr(row.Remark), InsertedAt: row.InsertedAt.Time.UTC(),
 		UpdatedAt: row.UpdatedAt.Time.UTC(), StockTransferID: row.StockTransferID,
 		CompanyID: row.CompanyID, MaterialID: row.MaterialID, UnitID: row.UnitID,
 	}

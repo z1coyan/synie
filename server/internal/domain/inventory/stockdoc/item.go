@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -101,8 +102,8 @@ func (s *Service) CreateItem(
 	row, err := q.CreateStockDocItem(ctx, dbgen.CreateStockDocItemParams{
 		Idx: input.Idx, Qty: input.Qty, BaseQty: projection.baseQty,
 		MaterialCode: projection.materialCode, MaterialName: projection.materialName,
-		MaterialSpec: text(projection.materialSpec), UnitName: projection.unitName,
-		Remark: text(input.Remark), StockDocID: input.StockDocID,
+		MaterialSpec: pgconv.Text(projection.materialSpec), UnitName: projection.unitName,
+		Remark: pgconv.Text(input.Remark), StockDocID: input.StockDocID,
 		CompanyID: doc.CompanyID, MaterialID: input.MaterialID, UnitID: input.UnitID,
 	})
 	if err != nil {
@@ -190,8 +191,8 @@ func (s *Service) UpdateItem(
 	row, err := q.UpdateStockDocItem(ctx, dbgen.UpdateStockDocItemParams{
 		ID: id, Idx: after.Idx, Qty: after.Qty, BaseQty: after.BaseQty,
 		MaterialCode: after.MaterialCode, MaterialName: after.MaterialName,
-		MaterialSpec: text(after.MaterialSpec), UnitName: after.UnitName,
-		Remark: text(after.Remark), MaterialID: after.MaterialID, UnitID: after.UnitID,
+		MaterialSpec: pgconv.Text(after.MaterialSpec), UnitName: after.UnitName,
+		Remark: pgconv.Text(after.Remark), MaterialID: after.MaterialID, UnitID: after.UnitID,
 	})
 	if err != nil {
 		return Item{}, apierror.Wrap(apierror.CodeInternal, "更新手工出入库单行失败", err)
@@ -301,7 +302,7 @@ func buildProjection(
 	}
 	return itemProjection{
 		baseQty: baseQty, materialCode: row.MaterialCode,
-		materialName: row.MaterialName, materialSpec: optionalText(row.MaterialSpec),
+		materialName: row.MaterialName, materialSpec: pgconv.TextPtr(row.MaterialSpec),
 		unitName: row.UnitName,
 	}, nil
 }
@@ -379,8 +380,8 @@ func itemFromRow(row dbgen.InvStockDocItem) Item {
 	return Item{
 		ID: row.ID, Idx: row.Idx, Qty: row.Qty, BaseQty: row.BaseQty,
 		MaterialCode: row.MaterialCode, MaterialName: row.MaterialName,
-		MaterialSpec: optionalText(row.MaterialSpec), UnitName: row.UnitName,
-		Remark: optionalText(row.Remark), InsertedAt: row.InsertedAt.Time.UTC(),
+		MaterialSpec: pgconv.TextPtr(row.MaterialSpec), UnitName: row.UnitName,
+		Remark: pgconv.TextPtr(row.Remark), InsertedAt: row.InsertedAt.Time.UTC(),
 		UpdatedAt: row.UpdatedAt.Time.UTC(), StockDocID: row.StockDocID,
 		CompanyID: row.CompanyID, MaterialID: row.MaterialID, UnitID: row.UnitID,
 	}

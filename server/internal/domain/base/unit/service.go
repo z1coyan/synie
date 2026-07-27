@@ -3,20 +3,20 @@ package unit
 import (
 	"context"
 	"errors"
-	"fmt"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/shopspring/decimal"
-	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
-	"github.com/z1coyan/synie/server/internal/platform/apierror"
-	"github.com/z1coyan/synie/server/internal/platform/audit"
-	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/platform/apierror"
+	"github.com/z1coyan/synie/server/internal/platform/audit"
+	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 )
 
 type Service struct{ pool *pgxpool.Pool }
@@ -33,57 +33,28 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Unit, error) {
 	return fromRow(r.ID, r.UnitType, r.IsBase, r.Name, r.Symbol, r.Ratio, r.InsertedAt.Time, r.UpdatedAt.Time), nil
 }
 func (s *Service) List(ctx context.Context, q ListQuery) (ListResult, error) {
-	if q.Limit == 0 {
-		q.Limit = 20
+	result, err := listexec.List(ctx, listexec.Spec[Unit]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "计量单位",
+		Source:       ` FROM bas_unit`,
+		Select:       `SELECT id,unit_type,is_base,name,symbol,ratio,inserted_at,updated_at`,
+		DefaultOrder: ` ORDER BY "unit_type","name","id"`,
+		Tiebreaker:   `, "id"`,
+		RawTail:      true,
+		Scan: func(rows pgx.Rows) (Unit, error) {
+			var x Unit
+			if err := rows.Scan(&x.ID, &x.UnitType, &x.IsBase, &x.Name, &x.Symbol, &x.Ratio, &x.InsertedAt, &x.UpdatedAt); err != nil {
+				return Unit{}, err
+			}
+			x.UnitType = strings.ToUpper(x.UnitType)
+			x.InsertedAt = x.InsertedAt.UTC()
+			x.UpdatedAt = x.UpdatedAt.UTC()
+			return x, nil
+		},
+	}, listexec.Query{Limit: q.Limit, Offset: q.Offset, Search: q.Search, Sort: q.Sort, Filter: q.Filter})
+	if err != nil {
+		return ListResult{}, err
 	}
-	if q.Limit < 1 || q.Limit > 200 || q.Offset < 0 {
-		return ListResult{}, apierror.Validation("分页参数不合法", map[string][]string{"limit": {"必须在 1 到 200 之间"}})
-	}
-	b, e := filterbuild.Build(ResourceMeta(), filterbuild.Query{Limit: q.Limit, Offset: q.Offset, Search: q.Search, Sort: q.Sort, Filter: q.Filter})
-	if e != nil {
-		return ListResult{}, e
-	}
-	order := b.OrderBy
-	if order == "" {
-		order = ` ORDER BY "unit_type","name","id"`
-	} else {
-		order += `, "id"`
-	}
-	tx, e := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if e != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询计量单位失败", e)
-	}
-	defer tx.Rollback(ctx)
-	var out ListResult
-	if e = tx.QueryRow(ctx, "SELECT count(*) FROM bas_unit"+b.Where, b.Args...).Scan(&out.Count); e != nil {
-		return out, apierror.Wrap(apierror.CodeInternal, "统计计量单位失败", e)
-	}
-	args := append([]any(nil), b.Args...)
-	n := len(args) + 1
-	args = append(args, q.Limit, q.Offset)
-	rows, e := tx.Query(ctx, "SELECT id,unit_type,is_base,name,symbol,ratio,inserted_at,updated_at FROM bas_unit"+b.Where+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", n, n+1), args...)
-	if e != nil {
-		return out, apierror.Wrap(apierror.CodeInternal, "查询计量单位失败", e)
-	}
-	defer rows.Close()
-	out.Results = make([]Unit, 0, q.Limit)
-	for rows.Next() {
-		var x Unit
-		if e = rows.Scan(&x.ID, &x.UnitType, &x.IsBase, &x.Name, &x.Symbol, &x.Ratio, &x.InsertedAt, &x.UpdatedAt); e != nil {
-			return out, apierror.Wrap(apierror.CodeInternal, "读取计量单位结果失败", e)
-		}
-		x.UnitType = strings.ToUpper(x.UnitType)
-		x.InsertedAt = x.InsertedAt.UTC()
-		x.UpdatedAt = x.UpdatedAt.UTC()
-		out.Results = append(out.Results, x)
-	}
-	if e = rows.Err(); e != nil {
-		return out, e
-	}
-	if e = tx.Commit(ctx); e != nil {
-		return out, e
-	}
-	return out, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
 }
 func normalize(t, name, symbol, ratio string, isBase bool) (string, string, string, decimal.Decimal, error) {
 	t = strings.ToLower(strings.TrimSpace(t))
@@ -223,17 +194,9 @@ func snapshot(x Unit) map[string]any {
 	return map[string]any{"unit_type": strings.ToLower(x.UnitType), "is_base": x.IsBase, "name": x.Name, "symbol": x.Symbol, "ratio": x.Ratio.String()}
 }
 func writeErr(e error) error {
-	var p *pgconn.PgError
-	if errors.As(e, &p) {
-		if p.Code == "23505" {
-			if strings.Contains(p.ConstraintName, "base_per_type") {
-				return apierror.Wrap(apierror.CodeConflict, "该类型已存在基准单位", e)
-			}
-			return apierror.Wrap(apierror.CodeConflict, "单位符号已存在", e)
-		}
-		if p.Code == "23503" {
-			return apierror.Wrap(apierror.CodeConflict, "计量单位已被业务数据引用,不可删除", e)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, "保存计量单位失败", e)
+	return dberr.MapWrite(e, "保存计量单位失败",
+		dberr.Mapping{Code: "23505", Constraint: "base_per_type", Message: "该类型已存在基准单位"},
+		dberr.Mapping{Code: "23505", Message: "单位符号已存在"},
+		dberr.Mapping{Code: "23503", Message: "计量单位已被业务数据引用,不可删除"},
+	)
 }

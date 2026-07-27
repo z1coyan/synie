@@ -2,13 +2,11 @@ package order
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
@@ -16,6 +14,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -144,22 +143,16 @@ func writeAudit(ctx context.Context, tx pgx.Tx, actor *authz.Actor, resource str
 	return nil
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Constraint: "order_unique_order_no", Message: "订单号已存在"},
+	{Code: "23505", Message: "订单数据已存在"},
+	{Code: "23503", Message: "订单数据已被业务引用,不可删除"},
+	{Code: "23514", Message: "订单参数不符合约束", Validation: true},
+	{Code: "23502", Message: "订单参数不符合约束", Validation: true},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			if strings.Contains(pgErr.ConstraintName, "order_unique_order_no") {
-				return apierror.Wrap(apierror.CodeConflict, "订单号已存在", err)
-			}
-			return apierror.Wrap(apierror.CodeConflict, "订单数据已存在", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "订单数据已被业务引用,不可删除", err)
-		case "23514", "23502":
-			return apierror.Wrap(apierror.CodeValidation, "订单参数不符合约束", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }
 
 func notFound(spec sideSpec) error {

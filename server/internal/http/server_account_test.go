@@ -16,7 +16,7 @@ import (
 
 func TestInitializeBasAccountsTemplateRejectsActorWithoutCreatePermission(t *testing.T) {
 	t.Parallel()
-	server := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	server := &Server{Dependencies: Dependencies{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/base/accounts/init-template", strings.NewReader(`{
 		"companyId":"00000000-0000-0000-0000-000000000001",
 		"template":"SMALL"

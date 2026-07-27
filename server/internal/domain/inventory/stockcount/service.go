@@ -10,14 +10,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -59,70 +59,27 @@ func (s *Service) List(ctx context.Context, actor *authz.Actor, query ListQuery)
 	if err := require(actor, "read"); err != nil {
 		return ListResult{}, err
 	}
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return ListResult{}, apierror.Validation("分页参数不合法", map[string][]string{
-			"limit": {"必须在 1 到 200 之间"}, "offset": {"不能小于 0"},
-		})
-	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Count]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "库存盘点单", Actor: actor,
+		Source: ` FROM inv_stock_count`,
+		Select: `SELECT id,doc_no,posting_date,summary,remarks,status,
+audited_at,snapshot_taken_at,inserted_at,updated_at,company_id,warehouse_id,
+created_by_id,audited_by_id`,
+		DefaultOrder: ` ORDER BY "doc_no" ASC, "id" ASC`,
+		Tiebreaker:   `, "id" ASC`,
+		Scan: func(rows pgx.Rows) (Count, error) {
+			return scanCount(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ListResult{}, err
 	}
-	where, args := built.Where, append([]any(nil), built.Args...)
-	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
-	if empty {
-		return ListResult{Results: []Count{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "doc_no" ASC, "id" ASC`
-	} else {
-		order += `, "id" ASC`
-	}
-	const source = ` FROM inv_stock_count`
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询库存盘点单失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*)`+source+where, args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计库存盘点单失败", err)
-	}
-	listArgs := append([]any(nil), args...)
-	limitAt := len(listArgs) + 1
-	listArgs = append(listArgs, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,doc_no,posting_date,summary,remarks,status,
-		audited_at,snapshot_taken_at,inserted_at,updated_at,company_id,warehouse_id,
-		created_by_id,audited_by_id`+source+where+order+
-		fmt.Sprintf(" LIMIT $%d OFFSET $%d", limitAt, limitAt+1), listArgs...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询库存盘点单失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Count, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanCount(rows)
-		if scanErr != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取库存盘点单结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历库存盘点单结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成库存盘点单查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
+}
+
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func (s *Service) Create(
@@ -176,9 +133,9 @@ func (s *Service) Create(
 		createdByID = &actor.UserID
 	}
 	row, err := q.CreateStockCount(ctx, dbgen.CreateStockCountParams{
-		DocNo: docNo, PostingDate: date(postingDate),
-		Summary: text(input.Summary), Remarks: text(input.Remarks),
-		SnapshotTakenAt: timestamp(snapshotTakenAt), CompanyID: input.CompanyID,
+		DocNo: docNo, PostingDate: pgconv.Date(postingDate),
+		Summary: pgconv.Text(input.Summary), Remarks: pgconv.Text(input.Remarks),
+		SnapshotTakenAt: pgconv.Timestamp(snapshotTakenAt), CompanyID: input.CompanyID,
 		WarehouseID: input.WarehouseID, CreatedByID: createdByID,
 	})
 	if err != nil {
@@ -274,8 +231,8 @@ func (s *Service) Update(
 		return before, nil
 	}
 	updated, err := q.UpdateStockCount(ctx, dbgen.UpdateStockCountParams{
-		ID: id, DocNo: after.DocNo, PostingDate: date(after.PostingDate),
-		Summary: text(after.Summary), Remarks: text(after.Remarks),
+		ID: id, DocNo: after.DocNo, PostingDate: pgconv.Date(after.PostingDate),
+		Summary: pgconv.Text(after.Summary), Remarks: pgconv.Text(after.Remarks),
 		WarehouseID: after.WarehouseID,
 	})
 	if err != nil {
@@ -427,14 +384,11 @@ func lockCountError(err error, message string) error {
 }
 
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505", "23503", "23514":
-			return apierror.Wrap(apierror.CodeConflict, message, err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message,
+		dberr.Mapping{Code: "23505", Message: message},
+		dberr.Mapping{Code: "23503", Message: message},
+		dberr.Mapping{Code: "23514", Message: message},
+	)
 }
 
 func writeAudit(
@@ -470,8 +424,8 @@ func countSnapshot(item Count) map[string]any {
 func countFromRow(row dbgen.InvStockCount) Count {
 	return Count{
 		ID: row.ID, DocNo: row.DocNo, PostingDate: row.PostingDate.Time,
-		Summary: optionalText(row.Summary), Remarks: optionalText(row.Remarks),
-		Status: statusFromDB(row.Status), AuditedAt: optionalTimestamp(row.AuditedAt),
+		Summary: pgconv.TextPtr(row.Summary), Remarks: pgconv.TextPtr(row.Remarks),
+		Status: statusFromDB(row.Status), AuditedAt: pgconv.OptionalTime(row.AuditedAt),
 		SnapshotTakenAt: row.SnapshotTakenAt.Time.UTC(),
 		InsertedAt:      row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		CompanyID: row.CompanyID, WarehouseID: row.WarehouseID,
@@ -510,34 +464,4 @@ func validateOptionalText(fields map[string][]string, key string, value *string,
 	if value != nil && utf8.RuneCountInString(*value) > max {
 		fields[key] = []string{fmt.Sprintf("最多 %d 个字符", max)}
 	}
-}
-
-func date(value time.Time) pgtype.Date {
-	return pgtype.Date{Time: value, Valid: true}
-}
-
-func timestamp(value time.Time) pgtype.Timestamp {
-	return pgtype.Timestamp{Time: value.UTC(), Valid: true}
-}
-
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func optionalText(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	return &value.String
-}
-
-func optionalTimestamp(value pgtype.Timestamp) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time.UTC()
-	return &result
 }

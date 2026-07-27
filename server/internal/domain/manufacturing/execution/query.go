@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
@@ -46,7 +47,7 @@ func scanDemand(row scanner) (Demand, error) {
 		&item.CompanyID, &createdBy, &item.InsertedAt, &item.UpdatedAt,
 	)
 	item.DemandDate = demandDate.Time
-	item.Remarks = textPtr(remarks)
+	item.Remarks = pgconv.TextPtr(remarks)
 	item.CreatedByID = uuidPtr(createdBy)
 	return item, err
 }
@@ -65,8 +66,8 @@ func scanDemandItem(row scanner) (DemandItem, error) {
 	)
 	item.NeedDate = datePtr(needDate)
 	item.SalesOrderItemID = uuidPtr(salesOrderItem)
-	item.MaterialSpec = textPtr(materialSpec)
-	item.Remarks = textPtr(remarks)
+	item.MaterialSpec = pgconv.TextPtr(materialSpec)
+	item.Remarks = pgconv.TextPtr(remarks)
 	item.Ordered = item.OrderedQty.GreaterThan(decimal.Zero) && item.Status != DemandItemCompleted
 	item.RemainingOrderable = item.BaseQty.Sub(item.OrderedQty)
 	return item, err
@@ -85,7 +86,7 @@ func scanWorkOrder(row scanner) (WorkOrder, error) {
 		&item.InsertedAt, &item.UpdatedAt,
 	)
 	item.NeedDate = datePtr(needDate)
-	item.MaterialSpec = textPtr(materialSpec)
+	item.MaterialSpec = pgconv.TextPtr(materialSpec)
 	item.CreatedByID = uuidPtr(createdBy)
 	item.RemainingBaseQty = item.BaseQty.Sub(item.ReceivedBaseQty)
 	return item, err
@@ -103,8 +104,8 @@ func scanOutput(row scanner) (Output, error) {
 		&item.InsertedAt, &item.UpdatedAt,
 	)
 	item.OutputDate = outputDate.Time
-	item.Remarks = textPtr(remarks)
-	item.AuditedAt = timestampPtr(auditedAt)
+	item.Remarks = pgconv.TextPtr(remarks)
+	item.AuditedAt = pgconv.OptionalTime(auditedAt)
 	item.WarehouseID = uuidPtr(warehouse)
 	item.CreatedByID = uuidPtr(createdBy)
 	item.AuditedByID = uuidPtr(auditedBy)
@@ -120,8 +121,8 @@ func scanOutputItem(row scanner) (OutputItem, error) {
 		&item.MaterialCode, &item.MaterialName, &materialSpec, &item.UnitName,
 		&remarks, &item.InsertedAt, &item.UpdatedAt,
 	)
-	item.MaterialSpec = textPtr(materialSpec)
-	item.Remarks = textPtr(remarks)
+	item.MaterialSpec = pgconv.TextPtr(materialSpec)
+	item.Remarks = pgconv.TextPtr(remarks)
 	return item, err
 }
 

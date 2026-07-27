@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/printing"
@@ -25,7 +24,7 @@ func (s *Server) ListPrintResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, http.StatusOK, gen.PrintResourceList{
-		Resources: s.printing.Catalog().Resources(),
+		Resources: s.Printing.Catalog().Resources(),
 	})
 }
 
@@ -43,7 +42,7 @@ func (s *Server) GetPrintFieldCatalog(
 		s.writeError(w, r, apierror.New(apierror.CodeForbidden, "无权查看该资源的打印字段目录"))
 		return
 	}
-	value, ok := s.printing.Catalog().Get(params.Resource)
+	value, ok := s.Printing.Catalog().Get(params.Resource)
 	if !ok {
 		s.writeError(w, r, apierror.Validation("不支持的资源类型 "+params.Resource, map[string][]string{"resource": {"不在打印字段目录中"}}))
 		return
@@ -61,7 +60,7 @@ func (s *Server) ListUsablePrintTemplates(
 		s.writeError(w, r, err)
 		return
 	}
-	values, err := s.printing.ListUsable(r.Context(), actor, params.Resource)
+	values, err := s.Printing.ListUsable(r.Context(), actor, params.Resource)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -75,45 +74,18 @@ func (s *Server) ListUsablePrintTemplates(
 	})
 }
 
+func printingListQuery(body listBody) printing.ListQuery {
+	limit, offset, search, sort, filter := listParts(body)
+	return printing.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
 func (s *Server) QuerySysPrintTemplates(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, printingPermission+":read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body struct {
-		Limit  *int                       `json:"limit,omitempty"`
-		Offset *int                       `json:"offset,omitempty"`
-		Search *string                    `json:"search,omitempty"`
-		Sort   *gen.Sort                  `json:"sort,omitempty"`
-		Filter map[string]json.RawMessage `json:"filter,omitempty"`
-	}
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	query := printing.ListQuery{Filter: body.Filter}
-	if body.Limit != nil {
-		query.Limit = *body.Limit
-	}
-	if body.Offset != nil {
-		query.Offset = *body.Offset
-	}
-	if body.Search != nil {
-		query.Search = *body.Search
-	}
-	if body.Sort != nil {
-		query.Sort = &filterbuild.Sort{Column: body.Sort.Column, Direction: string(body.Sort.Direction)}
-	}
-	result, err := s.printing.List(r.Context(), query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.PrintTemplate, 0, len(result.Results))
-	for _, value := range result.Results {
-		items = append(items, printTemplateDTO(value))
-	}
-	s.writeJSON(w, http.StatusOK, gen.PrintTemplateList{Count: result.Count, Results: items})
+	queryList(s, w, r, printingPermission+":read", printingListQuery, ignoreActor(s.Printing.List),
+		func(result printing.TemplateList) any {
+			return gen.PrintTemplateList{
+				Count: result.Count, Results: mapItems(result.Results, printTemplateDTO),
+			}
+		})
 }
 
 func (s *Server) GetSysPrintTemplate(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -121,7 +93,7 @@ func (s *Server) GetSysPrintTemplate(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.printing.Get(r.Context(), id)
+	value, err := s.Printing.Get(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -140,7 +112,7 @@ func (s *Server) CreateSysPrintTemplate(w http.ResponseWriter, r *http.Request) 
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	value, err := s.printing.Create(r.Context(), actor, printing.CreateInput{
+	value, err := s.Printing.Create(r.Context(), actor, printing.CreateInput{
 		Name: body.Name, Resource: body.Resource, FileID: body.FileId, Remarks: body.Remarks,
 	})
 	if err != nil {
@@ -174,7 +146,7 @@ func (s *Server) UpdateSysPrintTemplate(w http.ResponseWriter, r *http.Request, 
 		}
 		remarks = &value
 	}
-	value, err := s.printing.Update(r.Context(), actor, id, printing.UpdateInput{
+	value, err := s.Printing.Update(r.Context(), actor, id, printing.UpdateInput{
 		Name: body.Name, FileID: body.FileID, Remarks: remarks,
 	})
 	if err != nil {
@@ -190,7 +162,7 @@ func (s *Server) DeleteSysPrintTemplate(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.printing.Delete(r.Context(), actor, id); err != nil {
+	if err := s.Printing.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -203,7 +175,7 @@ func (s *Server) SetDefaultSysPrintTemplate(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.printing.SetDefault(r.Context(), actor, id)
+	value, err := s.Printing.SetDefault(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -217,7 +189,7 @@ func (s *Server) UnsetDefaultSysPrintTemplate(w http.ResponseWriter, r *http.Req
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.printing.UnsetDefault(r.Context(), actor, id)
+	value, err := s.Printing.UnsetDefault(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return

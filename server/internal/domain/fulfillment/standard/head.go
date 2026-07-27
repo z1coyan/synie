@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stock"
 	"github.com/z1coyan/synie/server/internal/domain/trading/order"
 	"github.com/z1coyan/synie/server/internal/engines/gl"
@@ -86,8 +87,8 @@ func (s *Service) CreateHead(
 		`+headNoColumn(spec)+`,`+headDateColumn(spec)+`,posting_date,party_type,party_id,
 		remarks,status,company_id,warehouse_id,debit_account_id,credit_account_id,created_by_id
 	) VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$10,$11) RETURNING id`,
-		item.No, date(item.DocumentDate), nullableDateValue(item.PostingDate), item.PartyType,
-		item.PartyID, text(item.Remarks), item.CompanyID, item.WarehouseID,
+		item.No, pgconv.Date(item.DocumentDate), nullableDateValue(item.PostingDate), item.PartyType,
+		item.PartyID, pgconv.Text(item.Remarks), item.CompanyID, item.WarehouseID,
 		item.DebitAccountID, item.CreditAccountID, item.CreatedByID,
 	).Scan(&id)
 	if err != nil {
@@ -186,8 +187,8 @@ func (s *Service) UpdateHead(
 		`+headNoColumn(spec)+`=$2,`+headDateColumn(spec)+`=$3,posting_date=$4,
 		party_type=$5,party_id=$6,remarks=$7,warehouse_id=$8,debit_account_id=$9,
 		credit_account_id=$10,updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
-		id, after.No, date(after.DocumentDate), nullableDateValue(after.PostingDate),
-		after.PartyType, after.PartyID, text(after.Remarks), after.WarehouseID,
+		id, after.No, pgconv.Date(after.DocumentDate), nullableDateValue(after.PostingDate),
+		after.PartyType, after.PartyID, pgconv.Text(after.Remarks), after.WarehouseID,
 		after.DebitAccountID, after.CreditAccountID,
 	)
 	if err != nil {
@@ -363,7 +364,7 @@ func (s *Service) Audit(
 	}
 	_, err = tx.Exec(ctx, `UPDATE `+spec.headTable+` SET status='audited',posting_date=$2,
 		audited_at=$3,audited_by_id=$4,updated_at=$3 WHERE id=$1`,
-		id, date(postingDate), timestamp(now), auditedByID)
+		id, pgconv.Date(postingDate), pgconv.Timestamp(now), auditedByID)
 	if err != nil {
 		return Head{}, writeError(spec, "审核"+spec.label+"失败", err)
 	}
@@ -439,7 +440,7 @@ func (s *Service) Void(
 	}
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `UPDATE `+spec.headTable+`
-		SET status='voided',updated_at=$2 WHERE id=$1`, id, timestamp(now)); err != nil {
+		SET status='voided',updated_at=$2 WHERE id=$1`, id, pgconv.Timestamp(now)); err != nil {
 		return Head{}, writeError(spec, "作废"+spec.label+"失败", err)
 	}
 	result, err := queryHeadByID(ctx, tx, spec, id, false)
@@ -566,7 +567,7 @@ func nullableDateValue(value *time.Time) pgtype.Date {
 	if value == nil {
 		return pgtype.Date{}
 	}
-	return date(*value)
+	return pgconv.Date(*value)
 }
 
 func headSnapshot(item Head) map[string]any {

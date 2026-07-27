@@ -11,16 +11,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/engines/gl"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -62,99 +62,62 @@ func (s *Service) List(ctx context.Context, actor *authz.Actor, query ListQuery)
 	if err := require(actor, "read"); err != nil {
 		return ListResult{}, err
 	}
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return ListResult{}, paginationError()
-	}
 	ordinaryFilter, lineFilter, err := splitJournalLineFilter(query.Filter)
 	if err != nil {
 		return ListResult{}, err
 	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: ordinaryFilter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Journal]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "会计凭证", Actor: actor,
+		Source: journalListSource,
+		Select: `SELECT id,voucher_no,date,posting_date,remarks,status,
+submitted_at,inserted_at,updated_at,company_id,created_by_id,submitted_by_id,
+debit_total,credit_total,company_name,created_by_name,submitted_by_name`,
+		DefaultOrder: ` ORDER BY "date" DESC, "voucher_no" ASC, "id" ASC`,
+		Tiebreaker:   `, "id" ASC`,
+		AdjustWhere: func(where string, args []any) (string, []any) {
+			if lineFilter == nil {
+				return where, args
+			}
+			accountAt := len(args) + 1
+			amountAt := accountAt + 1
+			clause := fmt.Sprintf(
+				`EXISTS (SELECT 1 FROM acc_gl_journal_line lf
+				 WHERE lf.journal_id=journals.id AND lf.account_id=$%d AND lf.%s>$%d)`,
+				accountAt, lineFilter.side, amountAt,
+			)
+			if where == "" {
+				where = " WHERE " + clause
+			} else {
+				where += " AND " + clause
+			}
+			return where, append(args, lineFilter.accountID, lineFilter.amount)
+		},
+		Scan: func(rows pgx.Rows) (Journal, error) {
+			return scanJournal(rows)
+		},
+	}, listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: ordinaryFilter})
 	if err != nil {
 		return ListResult{}, err
 	}
-	if lineFilter != nil {
-		accountAt := len(built.Args) + 1
-		amountAt := accountAt + 1
-		clause := fmt.Sprintf(
-			`EXISTS (SELECT 1 FROM acc_gl_journal_line lf
-			 WHERE lf.journal_id=journals.id AND lf.account_id=$%d AND lf.%s>$%d)`,
-			accountAt, lineFilter.side, amountAt,
-		)
-		if built.Where == "" {
-			built.Where = " WHERE " + clause
-		} else {
-			built.Where += " AND " + clause
-		}
-		built.Args = append(built.Args, lineFilter.accountID, lineFilter.amount)
-	}
-	where, args, empty := scopedWhere(actor, built.Where, built.Args)
-	if empty {
-		return ListResult{Results: []Journal{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "date" DESC, "voucher_no" ASC, "id" ASC`
-	} else {
-		order += `, "id" ASC`
-	}
-	const source = ` FROM (
-		SELECT j.id,j.voucher_no,j.date,j.posting_date,j.remarks,j.status,
-		  j.submitted_at,j.inserted_at,j.updated_at,j.company_id,j.created_by_id,
-		  j.submitted_by_id,
-		  COALESCE(sum(l.debit),0)::numeric AS debit_total,
-		  COALESCE(sum(l.credit),0)::numeric AS credit_total,
-		  c.name AS company_name,creator.name AS created_by_name,
-		  submitter.name AS submitted_by_name
-		FROM acc_gl_journal j
-		JOIN bas_company c ON c.id=j.company_id
-		LEFT JOIN sys_user creator ON creator.id=j.created_by_id
-		LEFT JOIN sys_user submitter ON submitter.id=j.submitted_by_id
-		LEFT JOIN acc_gl_journal_line l ON l.journal_id=j.id
-		GROUP BY j.id,c.name,creator.name,submitter.name
-	) AS journals`
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询会计凭证失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*)`+source+where, args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计会计凭证失败", err)
-	}
-	listArgs := append([]any(nil), args...)
-	at := len(listArgs) + 1
-	listArgs = append(listArgs, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,voucher_no,date,posting_date,remarks,status,
-		submitted_at,inserted_at,updated_at,company_id,created_by_id,submitted_by_id,
-		debit_total,credit_total,company_name,created_by_name,submitted_by_name`+
-		source+where+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", at, at+1), listArgs...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询会计凭证失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Journal, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanJournal(rows)
-		if scanErr != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取会计凭证结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历会计凭证结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成会计凭证查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
 }
+
+const journalListSource = ` FROM (
+SELECT j.id,j.voucher_no,j.date,j.posting_date,j.remarks,j.status,
+  j.submitted_at,j.inserted_at,j.updated_at,j.company_id,j.created_by_id,
+  j.submitted_by_id,
+  COALESCE(sum(l.debit),0)::numeric AS debit_total,
+  COALESCE(sum(l.credit),0)::numeric AS credit_total,
+  c.name AS company_name,creator.name AS created_by_name,
+  submitter.name AS submitted_by_name
+FROM acc_gl_journal j
+JOIN bas_company c ON c.id=j.company_id
+LEFT JOIN sys_user creator ON creator.id=j.created_by_id
+LEFT JOIN sys_user submitter ON submitter.id=j.submitted_by_id
+LEFT JOIN acc_gl_journal_line l ON l.journal_id=j.id
+GROUP BY j.id,c.name,creator.name,submitter.name
+) AS journals`
 
 func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateInput) (Journal, error) {
 	if err := require(actor, "create"); err != nil {
@@ -196,8 +159,8 @@ func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateIn
 	}
 	q := dbgen.New(tx)
 	row, err := q.CreateGLJournal(ctx, dbgen.CreateGLJournalParams{
-		VoucherNo: voucherNo, Date: date(input.Date),
-		PostingDate: nullableDate(input.PostingDate), Remarks: text(input.Remarks),
+		VoucherNo: voucherNo, Date: pgconv.DateAlways(input.Date),
+		PostingDate: pgconv.NullableDate(input.PostingDate), Remarks: pgconv.Text(input.Remarks),
 		CompanyID: input.CompanyID, CreatedByID: createdByID,
 	})
 	if err != nil {
@@ -266,8 +229,8 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 		return journalFromRow(before), nil
 	}
 	if _, err := q.UpdateGLJournal(ctx, dbgen.UpdateGLJournalParams{
-		ID: id, VoucherNo: current.VoucherNo, Date: date(current.Date),
-		PostingDate: nullableDate(current.PostingDate), Remarks: text(current.Remarks),
+		ID: id, VoucherNo: current.VoucherNo, Date: pgconv.DateAlways(current.Date),
+		PostingDate: pgconv.NullableDate(current.PostingDate), Remarks: pgconv.Text(current.Remarks),
 	}); err != nil {
 		return Journal{}, writeError("更新会计凭证失败", err)
 	}
@@ -343,7 +306,7 @@ func (s *Service) Audit(ctx context.Context, actor *authz.Actor, id uuid.UUID, p
 	if locked.Status != "draft" {
 		return Journal{}, apierror.New(apierror.CodeConflict, "仅草稿凭证可审核")
 	}
-	effectiveDate := optionalDate(locked.PostingDate)
+	effectiveDate := pgconv.OptionalDate(locked.PostingDate)
 	if postingDate != nil {
 		effectiveDate = postingDate
 	}
@@ -384,7 +347,7 @@ func (s *Service) Audit(ctx context.Context, actor *authz.Actor, id uuid.UUID, p
 		submittedByID = &actor.UserID
 	}
 	if _, err := q.AuditGLJournal(ctx, dbgen.AuditGLJournalParams{
-		ID: id, PostingDate: date(*effectiveDate), SubmittedAt: timestamp(now),
+		ID: id, PostingDate: pgconv.DateAlways(*effectiveDate), SubmittedAt: pgconv.TimestampAlways(now),
 		SubmittedByID: submittedByID,
 	}); err != nil {
 		return Journal{}, writeError("更新会计凭证审核状态失败", err)
@@ -509,11 +472,6 @@ func splitJournalLineFilter(source map[string]json.RawMessage) (map[string]json.
 	return filter, &journalLineFilter{accountID: accountID, side: side, amount: amount}, nil
 }
 
-func scopedWhere(actor *authz.Actor, where string, sourceArgs []any) (string, []any, bool) {
-	args := append([]any(nil), sourceArgs...)
-	return filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
-}
-
 func require(actor *authz.Actor, action string) error {
 	if actor == nil || !actor.HasPermission("acc.gl_journal:"+action) {
 		return apierror.New(apierror.CodeForbidden, "无权执行会计凭证操作")
@@ -566,12 +524,6 @@ func validation(field, message string) error {
 	return apierror.Validation("会计凭证参数不合法", map[string][]string{field: {message}})
 }
 
-func paginationError() error {
-	return apierror.Validation("分页参数不合法", map[string][]string{
-		"limit": {"必须在 1 到 200 之间"}, "offset": {"不能小于 0"},
-	})
-}
-
 func notFound() error {
 	return apierror.New(apierror.CodeNotFound, "会计凭证不存在")
 }
@@ -590,17 +542,16 @@ func lockError(err error, message string) error {
 	return nil
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Message: "同一公司内凭证编号必须唯一"},
+	{Code: "23503", Message: "会计凭证参数不合法", Validation: true},
+	{Code: "23514", Message: "会计凭证参数不合法", Validation: true},
+	{Code: "23502", Message: "会计凭证参数不合法", Validation: true},
+	{Code: "22001", Message: "会计凭证参数不合法", Validation: true},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return apierror.Wrap(apierror.CodeConflict, "同一公司内凭证编号必须唯一", err)
-		case "23503", "23514", "23502", "22001":
-			return apierror.Wrap(apierror.CodeValidation, "会计凭证参数不合法", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }
 
 func writeJournalAudit(ctx context.Context, tx pgx.Tx, actor *authz.Actor, item Journal, actionType, actionName string, changes map[string]audit.Change) error {
@@ -644,8 +595,8 @@ func scanJournal(row scanner) (Journal, error) {
 func journalFromRow(row dbgen.GetGLJournalRow) Journal {
 	item := Journal{
 		ID: row.ID, VoucherNo: row.VoucherNo, Date: row.Date.Time,
-		PostingDate: optionalDate(row.PostingDate), Remarks: optionalText(row.Remarks),
-		Status: Status(strings.ToUpper(row.Status)), SubmittedAt: optionalTime(row.SubmittedAt),
+		PostingDate: pgconv.OptionalDate(row.PostingDate), Remarks: pgconv.TextPtr(row.Remarks),
+		Status: Status(strings.ToUpper(row.Status)), SubmittedAt: pgconv.OptionalTime(row.SubmittedAt),
 		InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		CompanyID: row.CompanyID, CreatedByID: row.CreatedByID,
 		SubmittedByID: row.SubmittedByID, DebitTotal: row.DebitTotal,
@@ -659,52 +610,6 @@ func journalFromRow(row dbgen.GetGLJournalRow) Journal {
 		item.SubmittedBy = &NamedRef{ID: *row.SubmittedByID, Name: row.SubmittedByName.String}
 	}
 	return item
-}
-
-func date(value time.Time) pgtype.Date {
-	return pgtype.Date{Time: value, Valid: true}
-}
-
-func nullableDate(value *time.Time) pgtype.Date {
-	if value == nil {
-		return pgtype.Date{}
-	}
-	return date(*value)
-}
-
-func optionalDate(value pgtype.Date) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time
-	return &result
-}
-
-func timestamp(value time.Time) pgtype.Timestamp {
-	return pgtype.Timestamp{Time: value, Valid: true}
-}
-
-func optionalTime(value pgtype.Timestamp) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time.UTC()
-	return &result
-}
-
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func optionalText(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	result := value.String
-	return &result
 }
 
 func dbPartyPointer(value *string) *string {

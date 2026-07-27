@@ -140,10 +140,10 @@ func (s *transitionOrderStub) VoidOrder(context.Context, *authz.Actor, order.Sid
 
 func TestTransitionOrderRejectsUnknownActionWithoutTouchingService(t *testing.T) {
 	stub := &transitionOrderStub{}
-	server := &Server{orders: stub}
+	server := &Server{Dependencies: Dependencies{Orders: stub}}
 	response := httptest.NewRecorder()
 	server.transitionOrder(response, inventoryRequest(http.MethodPost, "", nil),
-		order.SideSales, uuid.New(), "audi")
+		&authz.Actor{}, order.SideSales, uuid.New(), "audi")
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("unknown action status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -158,12 +158,12 @@ func TestTransitionOrderRejectsUnknownActionWithoutTouchingService(t *testing.T)
 
 func TestTransitionOrderDispatchesKnownActions(t *testing.T) {
 	stub := &transitionOrderStub{}
-	server := &Server{orders: stub}
+	server := &Server{Dependencies: Dependencies{Orders: stub}}
 	id := uuid.New()
 	for _, action := range []string{"audit", "close", "void"} {
 		response := httptest.NewRecorder()
 		server.transitionOrder(response, inventoryRequest(http.MethodPost, "", nil),
-			order.SideSales, id, action)
+			&authz.Actor{}, order.SideSales, id, action)
 		if response.Code != http.StatusOK {
 			t.Fatalf("action %s status=%d body=%s", action, response.Code, response.Body.String())
 		}

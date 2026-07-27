@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -18,6 +17,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -248,18 +248,12 @@ func writeAudit(
 }
 
 func writeError(spec sideSpec, message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return apierror.Wrap(apierror.CodeConflict, spec.label+"单号已存在", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, spec.label+"已被业务引用,不可删除", err)
-		case "23502", "23514":
-			return apierror.Wrap(apierror.CodeValidation, spec.label+"参数不符合约束", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message,
+		dberr.Mapping{Code: "23505", Message: spec.label + "单号已存在"},
+		dberr.Mapping{Code: "23503", Message: spec.label + "已被业务引用,不可删除"},
+		dberr.Mapping{Code: "23502", Message: spec.label + "参数不符合约束", Validation: true},
+		dberr.Mapping{Code: "23514", Message: spec.label + "参数不符合约束", Validation: true},
+	)
 }
 
 func todayUTC() time.Time {
@@ -267,38 +261,7 @@ func todayUTC() time.Time {
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 }
 
-func date(value time.Time) pgtype.Date {
-	return pgtype.Date{Time: value, Valid: !value.IsZero()}
-}
-
-func timestamp(value time.Time) pgtype.Timestamp {
-	return pgtype.Timestamp{Time: value, Valid: !value.IsZero()}
-}
-
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func textPtr(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	result := value.String
-	return &result
-}
-
 func datePtr(value pgtype.Date) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time
-	return &result
-}
-
-func timestampPtr(value pgtype.Timestamp) *time.Time {
 	if !value.Valid {
 		return nil
 	}

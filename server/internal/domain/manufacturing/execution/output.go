@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stock"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -120,7 +121,7 @@ func (s *Service) CreateOutput(
 	err = tx.QueryRow(ctx, `INSERT INTO mfg_output (
 		output_no,output_date,remarks,status,company_id,warehouse_id,created_by_id
 	) VALUES ($1,$2,$3,'draft',$4,$5,$6) RETURNING id`,
-		no, date(outputDate), text(input.Remarks), input.CompanyID,
+		no, pgconv.DateAlways(outputDate), pgconv.Text(input.Remarks), input.CompanyID,
 		input.WarehouseID, actorID(actor),
 	).Scan(&id)
 	if err != nil {
@@ -187,8 +188,8 @@ func (s *Service) UpdateOutput(
 	if len(changes) > 0 {
 		_, err = tx.Exec(ctx, `UPDATE mfg_output SET output_no=$2,output_date=$3,
 			warehouse_id=$4,remarks=$5,updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
-			id, after.OutputNo, date(after.OutputDate), after.WarehouseID,
-			text(after.Remarks))
+			id, after.OutputNo, pgconv.DateAlways(after.OutputDate), after.WarehouseID,
+			pgconv.Text(after.Remarks))
 		if err != nil {
 			return Output{}, writeError("更新生产入库单失败", err)
 		}
@@ -284,7 +285,7 @@ func (s *Service) CreateOutputItem(
 		parent.ID, parent.CompanyID, input.Idx, input.WorkOrderID,
 		workOrder.MaterialID, input.UnitID, input.WarehouseID, input.Qty,
 		projection.baseQty, workOrder.MaterialCode, workOrder.MaterialName,
-		text(workOrder.MaterialSpec), projection.unitName, text(input.Remarks),
+		pgconv.Text(workOrder.MaterialSpec), projection.unitName, pgconv.Text(input.Remarks),
 	).Scan(&id)
 	if err != nil {
 		return OutputItem{}, writeError("创建生产入库行失败", err)
@@ -386,8 +387,8 @@ func (s *Service) UpdateOutputItem(
 			remarks=$13,updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
 			id, after.Idx, after.WorkOrderID, after.MaterialID, after.UnitID,
 			after.WarehouseID, after.Qty, after.BaseQty, after.MaterialCode,
-			after.MaterialName, text(after.MaterialSpec), after.UnitName,
-			text(after.Remarks))
+			after.MaterialName, pgconv.Text(after.MaterialSpec), after.UnitName,
+			pgconv.Text(after.Remarks))
 		if err != nil {
 			return OutputItem{}, writeError("更新生产入库行失败", err)
 		}

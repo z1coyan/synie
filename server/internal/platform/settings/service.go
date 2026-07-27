@@ -229,11 +229,6 @@ func (s *Service) UpdateAccounting(
 	if len(changes) == 0 {
 		return before, commitUnchanged(ctx, tx, "更新财务设置失败")
 	}
-	if _, changed := changes["ocr_access_key_secret"]; changed {
-		changes["ocr_access_key_secret"] = audit.Change{
-			"from": "[FILTERED]", "to": "[FILTERED]",
-		}
-	}
 	updated, err := q.UpdateAccountingSetting(ctx, dbgen.UpdateAccountingSettingParams{
 		ID: row.ID, OcrAccessKeyID: text(keyID), OcrAccessKeySecret: text(secret),
 	})
@@ -395,7 +390,19 @@ func writeSettingAudit(
 	return audit.Write(ctx, tx, actor, audit.Entry{
 		Resource: resource, RecordID: recordID,
 		ActionType: "update", ActionName: actionName, Changes: changes,
+		SensitiveFields: sensitiveAuditFields(resource),
 	})
+}
+
+// sensitiveAuditFields 按表名从本包资源 meta 取声明的敏感字段，
+// 新增敏感字段只需在对应 ResourceMeta 的 Audit.SensitiveFields 中声明即自动脱敏。
+func sensitiveAuditFields(resource string) []string {
+	for _, resourceMeta := range ResourceMetas() {
+		if resourceMeta.Table == resource {
+			return resourceMeta.Audit.SensitiveFields
+		}
+	}
+	return nil
 }
 
 func salesSnapshot(value SalesSetting) map[string]any {

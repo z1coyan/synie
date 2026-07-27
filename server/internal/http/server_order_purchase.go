@@ -1,36 +1,28 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/z1coyan/synie/server/internal/domain/trading/order"
 	"github.com/z1coyan/synie/server/internal/http/gen"
+	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
 
-func (s *Server) queryOrderMaterials(w http.ResponseWriter, r *http.Request) {
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	actor, _ := requireActor(r)
-	result, err := s.orders.ListMaterials(r.Context(), actor, orderListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]map[string]any, len(result.Results))
-	for i, item := range result.Results {
-		items[i] = orderMaterialDTO(item)
-	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"count": result.Count, "results": items})
+func (s *Server) queryOrderMaterials(w http.ResponseWriter, r *http.Request, actor *authz.Actor) {
+	queryListAs(s, w, r, actor, orderListQuery,
+		func(ctx context.Context, actor *authz.Actor, query order.ListQuery) (order.MaterialListResult, error) {
+			return s.Orders.ListMaterials(ctx, actor, query)
+		},
+		func(result order.MaterialListResult) any {
+			return countResultsResponse(result.Count, mapItems(result.Results, orderMaterialDTO))
+		})
 }
 
-func (s *Server) getOrderMaterial(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	item, err := s.orders.GetMaterial(r.Context(), actor, id)
+func (s *Server) getOrderMaterial(w http.ResponseWriter, r *http.Request, actor *authz.Actor, id uuid.UUID) {
+	item, err := s.Orders.GetMaterial(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -38,7 +30,7 @@ func (s *Server) getOrderMaterial(w http.ResponseWriter, r *http.Request, id uui
 	s.writeJSON(w, http.StatusOK, orderMaterialDTO(item))
 }
 
-func (s *Server) createOrderMaterial(w http.ResponseWriter, r *http.Request) {
+func (s *Server) createOrderMaterial(w http.ResponseWriter, r *http.Request, actor *authz.Actor) {
 	var body gen.OrderItemMaterialCreate
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -49,8 +41,7 @@ func (s *Server) createOrderMaterial(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.orders.CreateMaterial(r.Context(), actor, order.CreateMaterialInput{
+	item, err := s.Orders.CreateMaterial(r.Context(), actor, order.CreateMaterialInput{
 		OrderItemID: body.OrderItemId, MaterialID: body.MaterialId, UnitID: body.UnitId,
 		Quantity: quantity, Remarks: body.Remarks,
 	})
@@ -61,13 +52,12 @@ func (s *Server) createOrderMaterial(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusCreated, orderMaterialDTO(item))
 }
 
-func (s *Server) updateOrderMaterial(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+func (s *Server) updateOrderMaterial(w http.ResponseWriter, r *http.Request, actor *authz.Actor, id uuid.UUID) {
 	input, ok := s.decodeOrderMaterialUpdate(w, r, "委外发料清单")
 	if !ok {
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.orders.UpdateMaterial(r.Context(), actor, id, input)
+	item, err := s.Orders.UpdateMaterial(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -75,37 +65,26 @@ func (s *Server) updateOrderMaterial(w http.ResponseWriter, r *http.Request, id 
 	s.writeJSON(w, http.StatusOK, orderMaterialDTO(item))
 }
 
-func (s *Server) deleteOrderMaterial(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	if err := s.orders.DeleteMaterial(r.Context(), actor, id); err != nil {
+func (s *Server) deleteOrderMaterial(w http.ResponseWriter, r *http.Request, actor *authz.Actor, id uuid.UUID) {
+	if err := s.Orders.DeleteMaterial(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) queryOrderByproducts(w http.ResponseWriter, r *http.Request) {
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	actor, _ := requireActor(r)
-	result, err := s.orders.ListByproducts(r.Context(), actor, orderListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]map[string]any, len(result.Results))
-	for i, item := range result.Results {
-		items[i] = orderByproductDTO(item)
-	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"count": result.Count, "results": items})
+func (s *Server) queryOrderByproducts(w http.ResponseWriter, r *http.Request, actor *authz.Actor) {
+	queryListAs(s, w, r, actor, orderListQuery,
+		func(ctx context.Context, actor *authz.Actor, query order.ListQuery) (order.ByproductListResult, error) {
+			return s.Orders.ListByproducts(ctx, actor, query)
+		},
+		func(result order.ByproductListResult) any {
+			return countResultsResponse(result.Count, mapItems(result.Results, orderByproductDTO))
+		})
 }
 
-func (s *Server) getOrderByproduct(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	item, err := s.orders.GetByproduct(r.Context(), actor, id)
+func (s *Server) getOrderByproduct(w http.ResponseWriter, r *http.Request, actor *authz.Actor, id uuid.UUID) {
+	item, err := s.Orders.GetByproduct(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -113,7 +92,7 @@ func (s *Server) getOrderByproduct(w http.ResponseWriter, r *http.Request, id uu
 	s.writeJSON(w, http.StatusOK, orderByproductDTO(item))
 }
 
-func (s *Server) createOrderByproduct(w http.ResponseWriter, r *http.Request) {
+func (s *Server) createOrderByproduct(w http.ResponseWriter, r *http.Request, actor *authz.Actor) {
 	var body gen.OrderItemByproductCreate
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -124,8 +103,7 @@ func (s *Server) createOrderByproduct(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.orders.CreateByproduct(r.Context(), actor, order.CreateByproductInput{
+	item, err := s.Orders.CreateByproduct(r.Context(), actor, order.CreateByproductInput{
 		OrderItemID: body.OrderItemId, MaterialID: body.MaterialId, UnitID: body.UnitId,
 		Quantity: quantity, Remarks: body.Remarks,
 	})
@@ -136,13 +114,12 @@ func (s *Server) createOrderByproduct(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusCreated, orderByproductDTO(item))
 }
 
-func (s *Server) updateOrderByproduct(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+func (s *Server) updateOrderByproduct(w http.ResponseWriter, r *http.Request, actor *authz.Actor, id uuid.UUID) {
 	input, ok := s.decodeOrderMaterialUpdate(w, r, "委外副产物清单")
 	if !ok {
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.orders.UpdateByproduct(r.Context(), actor, id, input)
+	item, err := s.Orders.UpdateByproduct(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -150,9 +127,8 @@ func (s *Server) updateOrderByproduct(w http.ResponseWriter, r *http.Request, id
 	s.writeJSON(w, http.StatusOK, orderByproductDTO(item))
 }
 
-func (s *Server) deleteOrderByproduct(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	if err := s.orders.DeleteByproduct(r.Context(), actor, id); err != nil {
+func (s *Server) deleteOrderByproduct(w http.ResponseWriter, r *http.Request, actor *authz.Actor, id uuid.UUID) {
+	if err := s.Orders.DeleteByproduct(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -187,7 +163,7 @@ func (s *Server) decodeOrderMaterialUpdate(
 	}, true
 }
 
-func (s *Server) queryOrderDemandPool(w http.ResponseWriter, r *http.Request) {
+func (s *Server) queryOrderDemandPool(w http.ResponseWriter, r *http.Request, actor *authz.Actor) {
 	var body gen.OrderDemandLineQuery
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -197,8 +173,7 @@ func (s *Server) queryOrderDemandPool(w http.ResponseWriter, r *http.Request) {
 	if body.Limit != nil {
 		limit = int(*body.Limit)
 	}
-	actor, _ := requireActor(r)
-	items, err := s.orders.ListDemandPool(r.Context(), actor, order.DemandPoolQuery{
+	items, err := s.Orders.ListDemandPool(r.Context(), actor, order.DemandPoolQuery{
 		CompanyID: body.CompanyId, IsOutsourced: body.IsOutsourced, Limit: limit,
 	})
 	if err != nil {
@@ -220,7 +195,7 @@ func (s *Server) queryOrderDemandPool(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }
 
-func (s *Server) previewOrderBOM(w http.ResponseWriter, r *http.Request) {
+func (s *Server) previewOrderBOM(w http.ResponseWriter, r *http.Request, actor *authz.Actor) {
 	var body gen.OrderBomExpandRequest
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -231,8 +206,7 @@ func (s *Server) previewOrderBOM(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	actor, _ := requireActor(r)
-	preview, err := s.orders.PreviewBOM(r.Context(), actor, body.BomId, qty)
+	preview, err := s.Orders.PreviewBOM(r.Context(), actor, body.BomId, qty)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -243,9 +217,8 @@ func (s *Server) previewOrderBOM(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) getOrderHistory(w http.ResponseWriter, r *http.Request, side order.Side, id uuid.UUID) {
-	actor, _ := requireActor(r)
-	items, err := s.orders.ListOrderFlow(r.Context(), actor, side, id)
+func (s *Server) getOrderHistory(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side order.Side, id uuid.UUID) {
+	items, err := s.Orders.ListOrderFlow(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return

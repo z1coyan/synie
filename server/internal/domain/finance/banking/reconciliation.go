@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -48,57 +49,20 @@ func (s *Service) QueryBankReconciliations(
 	if err := require(actor, "acc.bank_transaction", "read"); err != nil {
 		return BankReconciliationList{}, err
 	}
-	if err := validatePage(&query); err != nil {
-		return BankReconciliationList{}, err
-	}
-	built, err := buildFilter(BankReconciliationResource, query)
+	result, err := listexec.List(ctx, listexec.Spec[BankReconciliation]{
+		Pool: s.pool, Resource: BankReconciliationResourceMeta(), Label: "银行对账记录", Actor: actor,
+		Source:       ` FROM acc_bank_reconciliation`,
+		Select:       `SELECT ` + bankReconciliationColumns,
+		DefaultOrder: ` ORDER BY "id"`,
+		Tiebreaker:   `, "id"`,
+		Scan: func(rows pgx.Rows) (BankReconciliation, error) {
+			return scanBankReconciliation(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return BankReconciliationList{}, err
 	}
-	where, args, possible := scopedWhere(actor, built.Where, built.Args, "company_id")
-	if !possible {
-		return BankReconciliationList{Results: []BankReconciliation{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "id"`
-	} else {
-		order += `, "id"`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return BankReconciliationList{}, apierror.Wrap(apierror.CodeInternal, "查询银行对账记录失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result BankReconciliationList
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM acc_bank_reconciliation`+where, args...).
-		Scan(&result.Count); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "统计银行对账记录失败", err)
-	}
-	sql, listArgs := appendPage(`SELECT `+bankReconciliationColumns+`
-		FROM acc_bank_reconciliation`+where+order, append([]any(nil), args...), query)
-	rows, err := tx.Query(ctx, sql, listArgs...)
-	if err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "查询银行对账记录失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]BankReconciliation, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanBankReconciliation(rows)
-		if scanErr != nil {
-			return result, apierror.Wrap(apierror.CodeInternal, "读取银行对账记录结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "遍历银行对账记录结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "完成银行对账记录查询失败", err)
-	}
-	return result, nil
+	return BankReconciliationList{Count: result.Count, Results: result.Results}, nil
 }
 
 func (s *Service) CreateBankReconciliation(

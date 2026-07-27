@@ -101,11 +101,15 @@ func TestPostgresSchedulerTickRecordsSummary(t *testing.T) {
 	}
 
 	// 节拍一:2026-07-17(周五)09:00 上海 → 整点槽+日盘时段,触发定时最新价
+	// 每拍前把摘要重置为唯一标记:并行跑同一测试库的其他用例可能写过相同摘要,
+	// 审计 Diff 会省略未变化字段,导致断言看不到本次写入
+	resetMarketFetchSummary(t, ctx, pool, "marker-lasts-"+suffix)
 	scheduler.now = func() time.Time { return time.Date(2026, 7, 17, 1, 0, 20, 0, time.UTC) }
 	scheduler.tick(ctx)
 	assertSchedulerSummary(t, ctx, pool, "定时最新价: 成功1 跳过0 失败0")
 
 	// 节拍二:同日 15:30 上海 → 工作日结算尝试槽,触发定时结算价
+	resetMarketFetchSummary(t, ctx, pool, "marker-settlement-"+suffix)
 	scheduler.now = func() time.Time { return time.Date(2026, 7, 17, 7, 30, 20, 0, time.UTC) }
 	scheduler.tick(ctx)
 	assertSchedulerSummary(t, ctx, pool, "定时结算价: 成功1 跳过0 失败0")
@@ -137,6 +141,9 @@ func TestPostgresSchedulerPanicRecordsFailureSummary(t *testing.T) {
 			WHERE actor_id IS NULL AND resource='sys_setting' AND action_name='record_market_fetch'`)
 	})
 
+	// 摘要重置为唯一标记,保证本次失败摘要相对现状是变化、必出现在审计 Diff 中
+	// (此前运行可能已写过相同的 "运行异常: boom",Diff 会省略未变化字段)
+	resetMarketFetchSummary(t, ctx, pool, "marker-panic-"+strings.ReplaceAll(uuid.NewString(), "-", "")[:10])
 	scheduler := New(pool, nil)
 	func() {
 		defer func() {
@@ -178,6 +185,15 @@ func assertSchedulerSummary(t *testing.T, ctx context.Context, pool *pgxpool.Poo
 		t.Fatal(err)
 	}
 	t.Fatalf("scheduler summary audits = %v, want one containing %q", all, want)
+}
+
+// resetMarketFetchSummary 把共享设置单行的行情摘要覆写为唯一标记,
+// 使随后的摘要写入对审计 Diff 一定是变化(共享单行 + 并行测试下的断言前提)。
+func resetMarketFetchSummary(t *testing.T, ctx context.Context, pool *pgxpool.Pool, marker string) {
+	t.Helper()
+	if _, err := pool.Exec(ctx, `UPDATE sys_setting SET market_fetch_last_summary=$1`, marker); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func testDatabaseURL(t *testing.T) string {

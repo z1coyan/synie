@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/domain/hr/employee"
 	"github.com/z1coyan/synie/server/internal/domain/purchase/supplier"
 	"github.com/z1coyan/synie/server/internal/domain/sales/customer"
@@ -12,56 +11,16 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 )
 
-type listBody struct {
-	Limit  *int                       `json:"limit,omitempty"`
-	Offset *int                       `json:"offset,omitempty"`
-	Search *string                    `json:"search,omitempty"`
-	Sort   *gen.Sort                  `json:"sort,omitempty"`
-	Filter map[string]json.RawMessage `json:"filter,omitempty"`
-}
-
-func listParts(body listBody) (int, int, string, *filterbuild.Sort, map[string]json.RawMessage) {
-	var limit, offset int
-	var search string
-	if body.Limit != nil {
-		limit = *body.Limit
-	}
-	if body.Offset != nil {
-		offset = *body.Offset
-	}
-	if body.Search != nil {
-		search = *body.Search
-	}
-	var sort *filterbuild.Sort
-	if body.Sort != nil {
-		sort = &filterbuild.Sort{Column: body.Sort.Column, Direction: string(body.Sort.Direction)}
-	}
-	return limit, offset, search, sort, body.Filter
+func customerListQuery(body listBody) customer.ListQuery {
+	limit, offset, search, sort, filter := listParts(body)
+	return customer.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
 }
 
 func (s *Server) QuerySalesCustomers(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, "sales.customer:read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.customers.List(r.Context(), customer.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.Customer, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, customerDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.CustomerList{Count: result.Count, Results: items})
+	queryList(s, w, r, "sales.customer:read", customerListQuery, ignoreActor(s.Customers.List),
+		func(result customer.ListResult) any {
+			return gen.CustomerList{Count: result.Count, Results: mapItems(result.Results, customerDTO)}
+		})
 }
 
 func (s *Server) GetSalesCustomer(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -69,7 +28,7 @@ func (s *Server) GetSalesCustomer(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.customers.Get(r.Context(), id)
+	item, err := s.Customers.Get(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -88,7 +47,7 @@ func (s *Server) CreateSalesCustomer(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.customers.Create(r.Context(), actor, customer.CreateInput{
+	item, err := s.Customers.Create(r.Context(), actor, customer.CreateInput{
 		Code: body.Code, Name: body.Name, ShortName: body.ShortName,
 	})
 	if err != nil {
@@ -121,7 +80,7 @@ func (s *Server) UpdateSalesCustomer(w http.ResponseWriter, r *http.Request, id 
 			return
 		}
 	}
-	item, err := s.customers.Update(r.Context(), actor, id, input)
+	item, err := s.Customers.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -135,7 +94,7 @@ func (s *Server) DeleteSalesCustomer(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.customers.Delete(r.Context(), actor, id); err != nil {
+	if err := s.Customers.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -149,29 +108,16 @@ func customerDTO(item customer.Customer) gen.Customer {
 	}
 }
 
-func (s *Server) QueryPurchaseSuppliers(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, "purchase.supplier:read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func supplierListQuery(body listBody) supplier.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.suppliers.List(r.Context(), supplier.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.Supplier, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, supplierDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.SupplierList{Count: result.Count, Results: items})
+	return supplier.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryPurchaseSuppliers(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "purchase.supplier:read", supplierListQuery, ignoreActor(s.Suppliers.List),
+		func(result supplier.ListResult) any {
+			return gen.SupplierList{Count: result.Count, Results: mapItems(result.Results, supplierDTO)}
+		})
 }
 
 func (s *Server) GetPurchaseSupplier(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -179,7 +125,7 @@ func (s *Server) GetPurchaseSupplier(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.suppliers.Get(r.Context(), id)
+	item, err := s.Suppliers.Get(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -198,7 +144,7 @@ func (s *Server) CreatePurchaseSupplier(w http.ResponseWriter, r *http.Request) 
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.suppliers.Create(r.Context(), actor, supplier.CreateInput{
+	item, err := s.Suppliers.Create(r.Context(), actor, supplier.CreateInput{
 		Code: body.Code, Name: body.Name, ShortName: body.ShortName,
 	})
 	if err != nil {
@@ -231,7 +177,7 @@ func (s *Server) UpdatePurchaseSupplier(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 	}
-	item, err := s.suppliers.Update(r.Context(), actor, id, input)
+	item, err := s.Suppliers.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -245,7 +191,7 @@ func (s *Server) DeletePurchaseSupplier(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.suppliers.Delete(r.Context(), actor, id); err != nil {
+	if err := s.Suppliers.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -259,29 +205,16 @@ func supplierDTO(item supplier.Supplier) gen.Supplier {
 	}
 }
 
-func (s *Server) QueryHrEmployees(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, "hr.employee:read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func employeeListQuery(body listBody) employee.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.employees.List(r.Context(), employee.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.Employee, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, employeeDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.EmployeeList{Count: result.Count, Results: items})
+	return employee.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryHrEmployees(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "hr.employee:read", employeeListQuery, ignoreActor(s.Employees.List),
+		func(result employee.ListResult) any {
+			return gen.EmployeeList{Count: result.Count, Results: mapItems(result.Results, employeeDTO)}
+		})
 }
 
 func (s *Server) GetHrEmployee(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -289,7 +222,7 @@ func (s *Server) GetHrEmployee(w http.ResponseWriter, r *http.Request, id gen.ID
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.employees.Get(r.Context(), id)
+	item, err := s.Employees.Get(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -309,7 +242,7 @@ func (s *Server) CreateHrEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	insurance := enumStrings(body.InsuranceTypes)
-	item, err := s.employees.Create(r.Context(), actor, employee.CreateInput{
+	item, err := s.Employees.Create(r.Context(), actor, employee.CreateInput{
 		Code: body.Code, Name: body.Name, AttendanceNo: body.AttendanceNo,
 		IDNumber: body.IdNumber, HouseholdRegistration: body.HouseholdRegistration,
 		Phone: body.Phone, CurrentAddress: body.CurrentAddress, DailyWage: body.DailyWage,
@@ -382,7 +315,7 @@ func (s *Server) UpdateHrEmployee(w http.ResponseWriter, r *http.Request, id gen
 		}
 		input.InsuranceTypes = &converted
 	}
-	item, err := s.employees.Update(r.Context(), actor, id, input)
+	item, err := s.Employees.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -396,7 +329,7 @@ func (s *Server) DeleteHrEmployee(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.employees.Delete(r.Context(), actor, id); err != nil {
+	if err := s.Employees.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -426,10 +359,4 @@ func enumStrings(values *[]gen.EmployeeInsuranceType) []string {
 		result[i] = string(value)
 	}
 	return result
-}
-
-func nullableStringError(resource, field string) error {
-	return apierror.Validation(resource+"参数不合法", map[string][]string{
-		field: {"必须是字符串或 null"},
-	})
 }

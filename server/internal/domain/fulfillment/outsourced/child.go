@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -79,7 +80,7 @@ func (s *Service) createReceiptMaterialInTx(
 		outsourced_warehouse_id)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
 		item.Idx, item.Qty, item.BaseQty, item.MaterialCode, item.MaterialName,
-		text(item.MaterialSpec), item.UnitName, item.OrderNo, text(item.Remarks),
+		pgconv.Text(item.MaterialSpec), item.UnitName, item.OrderNo, pgconv.Text(item.Remarks),
 		item.ReceiptItemID, item.CompanyID, item.OrderItemMaterialID, item.MaterialID,
 		item.UnitID, item.OutsourcedWarehouseID).Scan(&item.ID)
 	if err != nil {
@@ -150,7 +151,7 @@ func (s *Service) UpdateReceiptMaterial(ctx context.Context, actor *authz.Actor,
 		material_id=$12,unit_id=$13,outsourced_warehouse_id=$14,
 		updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
 		id, after.Idx, after.Qty, after.BaseQty, after.MaterialCode, after.MaterialName,
-		text(after.MaterialSpec), after.UnitName, after.OrderNo, text(after.Remarks),
+		pgconv.Text(after.MaterialSpec), after.UnitName, after.OrderNo, pgconv.Text(after.Remarks),
 		after.OrderItemMaterialID, after.MaterialID, after.UnitID,
 		after.OutsourcedWarehouseID)
 	if err != nil {
@@ -218,7 +219,7 @@ func (s *Service) createReceiptByproductInTx(
 		warehouse_id)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
 		item.Idx, item.Qty, item.BaseQty, item.MaterialCode, item.MaterialName,
-		text(item.MaterialSpec), item.UnitName, item.OrderNo, text(item.Remarks),
+		pgconv.Text(item.MaterialSpec), item.UnitName, item.OrderNo, pgconv.Text(item.Remarks),
 		item.ReceiptItemID, item.CompanyID, item.OrderItemByproductID, item.MaterialID,
 		item.UnitID, item.WarehouseID).Scan(&item.ID)
 	if err != nil {
@@ -289,7 +290,7 @@ func (s *Service) UpdateReceiptByproduct(ctx context.Context, actor *authz.Actor
 		material_id=$12,unit_id=$13,warehouse_id=$14,
 		updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
 		id, after.Idx, after.Qty, after.BaseQty, after.MaterialCode, after.MaterialName,
-		text(after.MaterialSpec), after.UnitName, after.OrderNo, text(after.Remarks),
+		pgconv.Text(after.MaterialSpec), after.UnitName, after.OrderNo, pgconv.Text(after.Remarks),
 		after.OrderItemByproductID, after.MaterialID, after.UnitID, after.WarehouseID)
 	if err != nil {
 		return ReceiptByproduct{}, writeError("更新委外入库副产物行", err)
@@ -472,7 +473,7 @@ func loadChildSource(ctx context.Context, tx pgx.Tx, material bool, id uuid.UUID
 	if err != nil {
 		return childSource{}, apierror.Wrap(apierror.CodeInternal, "读取委外入库子行来源失败", err)
 	}
-	result.materialSpec = textPtr(spec)
+	result.materialSpec = pgconv.TextPtr(spec)
 	return result, nil
 }
 

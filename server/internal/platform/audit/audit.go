@@ -11,6 +11,9 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
 
+// FilteredPlaceholder 是敏感字段在审计日志中的脱敏占位符，保持与历史数据一致。
+const FilteredPlaceholder = "[FILTERED]"
+
 type Change map[string]any
 
 type Entry struct {
@@ -21,6 +24,35 @@ type Entry struct {
 	ActionName  string
 	CompanyID   *uuid.UUID
 	Changes     map[string]Change
+	// SensitiveFields 由调用方从自己资源的 meta（AuditMeta.SensitiveFields）取出声明，
+	// 写入前其中字段的变更值一律替换为 FilteredPlaceholder；为空时行为与之前一致。
+	SensitiveFields []string
+}
+
+// FilterSensitive 返回脱敏后的 changes 副本：凡在 sensitiveFields 中声明的字段，
+// 其 Change 内所有值（from/to 等）都替换为 FilteredPlaceholder，键结构保持不变。
+// 未声明敏感字段或 changes 为空时原样返回，不复制。
+func FilterSensitive(changes map[string]Change, sensitiveFields []string) map[string]Change {
+	if len(changes) == 0 || len(sensitiveFields) == 0 {
+		return changes
+	}
+	sensitive := make(map[string]struct{}, len(sensitiveFields))
+	for _, field := range sensitiveFields {
+		sensitive[field] = struct{}{}
+	}
+	filtered := make(map[string]Change, len(changes))
+	for field, change := range changes {
+		if _, ok := sensitive[field]; !ok {
+			filtered[field] = change
+			continue
+		}
+		redacted := make(Change, len(change))
+		for key := range change {
+			redacted[key] = FilteredPlaceholder
+		}
+		filtered[field] = redacted
+	}
+	return filtered
 }
 
 func Diff(before, after map[string]any, allowed []string) map[string]Change {
@@ -52,7 +84,7 @@ func Destroyed(before map[string]any, allowed []string) map[string]Change {
 }
 
 func Write(ctx context.Context, tx pgx.Tx, actor *authz.Actor, entry Entry) error {
-	raw, err := json.Marshal(entry.Changes)
+	raw, err := json.Marshal(FilterSensitive(entry.Changes, entry.SensitiveFields))
 	if err != nil {
 		return fmt.Errorf("编码审计 diff: %w", err)
 	}

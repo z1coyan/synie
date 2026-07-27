@@ -13,13 +13,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/domain/fulfillment/outsourced"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -148,7 +149,7 @@ func (s *Service) CreateHead(
 		 company_id,debit_account_id,credit_account_id,created_by_id)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
 		id, no, input.Kind, strings.ToLower(strings.TrimSpace(input.PartyType)),
-		input.PartyID, text(input.Remarks), input.CompanyID, input.DebitAccountID,
+		input.PartyID, pgconv.OptionalText(input.Remarks), input.CompanyID, input.DebitAccountID,
 		input.CreditAccountID, actorID(actor))
 	if err != nil {
 		return Head{}, writeError("创建"+spec.label+"失败", err)
@@ -302,13 +303,6 @@ func actorID(actor *authz.Actor) *uuid.UUID {
 	return &actor.UserID
 }
 
-func text(value *string) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
 func date(value *time.Time) any {
 	if value == nil {
 		return nil
@@ -316,12 +310,12 @@ func date(value *time.Time) any {
 	return value.UTC().Format(time.DateOnly)
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Message: "对账单号已存在", Bare: true},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return apierror.New(apierror.CodeConflict, "对账单号已存在")
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }
 
 var headAuditFields = []string{

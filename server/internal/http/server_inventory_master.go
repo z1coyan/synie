@@ -10,29 +10,18 @@ import (
 	"github.com/z1coyan/synie/server/internal/domain/inventory/materialunit"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/warehouse"
 	"github.com/z1coyan/synie/server/internal/http/gen"
-	"github.com/z1coyan/synie/server/internal/platform/apierror"
-	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
 
-func (s *Server) QueryInvMaterialCategories(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, "inv.material_category:read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func materialCategoryListQuery(body listBody) materialcategory.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.materialCats.List(r.Context(), materialcategory.ListQuery{
+	return materialcategory.ListQuery{
 		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
 	}
-	s.writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) QueryInvMaterialCategories(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "inv.material_category:read", materialCategoryListQuery,
+		ignoreActor(s.MaterialCats.List), passthroughListResponse)
 }
 
 func (s *Server) GetInvMaterialCategory(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -40,7 +29,7 @@ func (s *Server) GetInvMaterialCategory(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.materialCats.Get(r.Context(), id)
+	item, err := s.MaterialCats.Get(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -59,7 +48,7 @@ func (s *Server) CreateInvMaterialCategory(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.materialCats.Create(r.Context(), actor, materialcategory.CreateInput{
+	item, err := s.MaterialCats.Create(r.Context(), actor, materialcategory.CreateInput{
 		Code: body.Code, Name: body.Name, IsLeaf: body.IsLeaf,
 		Active: body.Active, ParentID: body.ParentId,
 	})
@@ -92,7 +81,7 @@ func (s *Server) UpdateInvMaterialCategory(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, nullableUUIDError("物料分类", "parentId"))
 		return
 	}
-	item, err := s.materialCats.Update(r.Context(), actor, id, materialcategory.UpdateInput{
+	item, err := s.MaterialCats.Update(r.Context(), actor, id, materialcategory.UpdateInput{
 		Code: body.Code, Name: body.Name, IsLeaf: body.IsLeaf,
 		Active: body.Active, ParentID: parentID,
 	})
@@ -109,32 +98,21 @@ func (s *Server) DeleteInvMaterialCategory(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.materialCats.Delete(r.Context(), actor, id); err != nil {
+	if err := s.MaterialCats.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) QueryInvMaterials(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, "inv.material:read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func materialListQuery(body listBody) material.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.materials.List(r.Context(), material.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	return material.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryInvMaterials(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "inv.material:read", materialListQuery,
+		ignoreActor(s.Materials.List), passthroughListResponse)
 }
 
 func (s *Server) GetInvMaterial(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -142,7 +120,7 @@ func (s *Server) GetInvMaterial(w http.ResponseWriter, r *http.Request, id gen.I
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.materials.Get(r.Context(), id)
+	item, err := s.Materials.Get(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -161,7 +139,7 @@ func (s *Server) CreateInvMaterial(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.materials.Create(r.Context(), actor, material.CreateInput{
+	item, err := s.Materials.Create(r.Context(), actor, material.CreateInput{
 		Name: body.Name, Spec: body.Spec, CustomerPartNo: body.CustomerPartNo,
 		IsCustomerMaterial: body.IsCustomerMaterial, Active: body.Active,
 		CategoryID: body.CategoryId, DefaultUnitID: body.DefaultUnitId,
@@ -222,7 +200,7 @@ func (s *Server) UpdateInvMaterial(w http.ResponseWriter, r *http.Request, id ge
 	if customerID != nil {
 		input.CustomerID = material.OptionalUUID{Set: true, Value: *customerID}
 	}
-	item, err := s.materials.Update(r.Context(), actor, id, input)
+	item, err := s.Materials.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -236,32 +214,21 @@ func (s *Server) DeleteInvMaterial(w http.ResponseWriter, r *http.Request, id ge
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.materials.Delete(r.Context(), actor, id); err != nil {
+	if err := s.Materials.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) QueryInvMaterialUnits(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, "inv.material:read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func materialUnitListQuery(body listBody) materialunit.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.materialUnits.List(r.Context(), materialunit.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	return materialunit.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryInvMaterialUnits(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "inv.material:read", materialUnitListQuery,
+		ignoreActor(s.MaterialUnits.List), passthroughListResponse)
 }
 
 func (s *Server) GetInvMaterialUnit(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -269,7 +236,7 @@ func (s *Server) GetInvMaterialUnit(w http.ResponseWriter, r *http.Request, id g
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.materialUnits.Get(r.Context(), id)
+	item, err := s.MaterialUnits.Get(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -288,7 +255,7 @@ func (s *Server) CreateInvMaterialUnit(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.materialUnits.Create(r.Context(), actor, materialunit.CreateInput{
+	item, err := s.MaterialUnits.Create(r.Context(), actor, materialunit.CreateInput{
 		MaterialID: body.MaterialId, UnitID: body.UnitId, Factor: body.Factor,
 	})
 	if err != nil {
@@ -309,7 +276,7 @@ func (s *Server) UpdateInvMaterialUnit(w http.ResponseWriter, r *http.Request, i
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.materialUnits.Update(r.Context(), actor, id, materialunit.UpdateInput{
+	item, err := s.MaterialUnits.Update(r.Context(), actor, id, materialunit.UpdateInput{
 		UnitID: body.UnitId, Factor: body.Factor,
 	})
 	if err != nil {
@@ -325,33 +292,20 @@ func (s *Server) DeleteInvMaterialUnit(w http.ResponseWriter, r *http.Request, i
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.materialUnits.Delete(r.Context(), actor, id); err != nil {
+	if err := s.MaterialUnits.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) QueryInvWarehouses(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "inv.warehouse:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func warehouseListQuery(body listBody) warehouse.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.warehouses.List(r.Context(), actor, warehouse.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	return warehouse.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryInvWarehouses(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "inv.warehouse:read", warehouseListQuery, s.Warehouses.List, passthroughListResponse)
 }
 
 func (s *Server) QueryInvOutsourcedWarehouses(w http.ResponseWriter, r *http.Request) {
@@ -392,7 +346,7 @@ func (s *Server) QueryInvOutsourcedWarehouses(w http.ResponseWriter, r *http.Req
 			filter[key] = raw
 		}
 	}
-	result, err := s.warehouses.ListOutsourced(
+	result, err := s.Warehouses.ListOutsourced(
 		r.Context(), actor, string(body.PartyType), body.PartyId,
 		warehouse.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter},
 	)
@@ -409,7 +363,7 @@ func (s *Server) GetInvWarehouse(w http.ResponseWriter, r *http.Request, id gen.
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.warehouses.Get(r.Context(), actor, id)
+	item, err := s.Warehouses.Get(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -433,7 +387,7 @@ func (s *Server) CreateInvWarehouse(w http.ResponseWriter, r *http.Request) {
 		value := string(*body.PartyType)
 		partyType = &value
 	}
-	item, err := s.warehouses.Create(r.Context(), actor, warehouse.CreateInput{
+	item, err := s.Warehouses.Create(r.Context(), actor, warehouse.CreateInput{
 		Name: body.Name, IsLeaf: body.IsLeaf, Active: body.Active,
 		IsOutsourced: body.IsOutsourced, PartyType: partyType, PartyID: body.PartyId,
 		AllowNegative: body.AllowNegative, CompanyID: body.CompanyId,
@@ -503,7 +457,7 @@ func (s *Server) UpdateInvWarehouse(w http.ResponseWriter, r *http.Request, id g
 	if accountID != nil {
 		input.AccountID = warehouse.OptionalUUID{Set: true, Value: *accountID}
 	}
-	item, err := s.warehouses.Update(r.Context(), actor, id, input)
+	item, err := s.Warehouses.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -517,7 +471,7 @@ func (s *Server) DeleteInvWarehouse(w http.ResponseWriter, r *http.Request, id g
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.warehouses.Delete(r.Context(), actor, id); err != nil {
+	if err := s.Warehouses.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -535,40 +489,10 @@ func (s *Server) SeedInvWarehouseDefaults(w http.ResponseWriter, r *http.Request
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	count, err := s.warehouses.SeedDefaults(r.Context(), actor, body.CompanyId)
+	count, err := s.Warehouses.SeedDefaults(r.Context(), actor, body.CompanyId)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	s.writeJSON(w, http.StatusOK, gen.WarehouseSeedDefaultsResult{Count: count})
-}
-
-func actorWithAnyPermission(r *http.Request, permissions ...string) (*authz.Actor, error) {
-	actor, err := requireActor(r)
-	if err != nil {
-		return nil, err
-	}
-	for _, permission := range permissions {
-		if actor.HasPermission(permission) {
-			return actor, nil
-		}
-	}
-	return nil, apierror.New(apierror.CodeForbidden, "无权执行此操作")
-}
-
-func nullableUUIDUpdate(raw json.RawMessage) (**uuid.UUID, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	var value *uuid.UUID
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, err
-	}
-	return &value, nil
-}
-
-func nullableUUIDError(resource, field string) error {
-	return apierror.Validation(resource+"参数不合法", map[string][]string{
-		field: {"必须是 UUID 或 null"},
-	})
 }

@@ -8,51 +8,26 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	fileplatform "github.com/z1coyan/synie/server/internal/platform/files"
 )
 
 const maxMultipartBody = 51 << 20
 
+func fileListQuery(body listBody) fileplatform.ListQuery {
+	limit, offset, search, sort, filter := listParts(body)
+	return fileplatform.ListQuery{
+		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
+	}
+}
+
 func (s *Server) QuerySysFiles(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, "sys.file:read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body struct {
-		Limit, Offset *int
-		Search        *string
-		Sort          *gen.Sort
-		Filter        map[string]json.RawMessage
-	}
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	query := fileplatform.ListQuery{Filter: body.Filter}
-	if body.Limit != nil {
-		query.Limit = *body.Limit
-	}
-	if body.Offset != nil {
-		query.Offset = *body.Offset
-	}
-	if body.Search != nil {
-		query.Search = *body.Search
-	}
-	if body.Sort != nil {
-		query.Sort = &filterbuild.Sort{Column: body.Sort.Column, Direction: string(body.Sort.Direction)}
-	}
-	result, err := s.fileService.List(r.Context(), query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	rows := make([]gen.StoredFile, 0, len(result.Results))
-	for _, value := range result.Results {
-		rows = append(rows, storedFileDTO(value))
-	}
-	s.writeJSON(w, http.StatusOK, gen.StoredFileList{Count: result.Count, Results: rows})
+	queryList(s, w, r, "sys.file:read", fileListQuery, ignoreActor(s.FileService.List),
+		func(result fileplatform.FileList) any {
+			return gen.StoredFileList{
+				Count: result.Count, Results: mapItems(result.Results, storedFileDTO),
+			}
+		})
 }
 
 func (s *Server) GetSysFileMetadata(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -60,7 +35,7 @@ func (s *Server) GetSysFileMetadata(w http.ResponseWriter, r *http.Request, id g
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.fileService.Get(r.Context(), id)
+	value, err := s.FileService.Get(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -95,7 +70,7 @@ func (s *Server) UploadFile(w http.ResponseWriter, r *http.Request) {
 		}
 		ownerID = &parsed
 	}
-	result, err := s.fileService.Upload(r.Context(), actor, fileplatform.UploadInput{
+	result, err := s.FileService.Upload(r.Context(), actor, fileplatform.UploadInput{
 		Reader: reader, Filename: header.Filename, ContentType: header.Header.Get("Content-Type"),
 		OwnerType: firstFormValue(r, "ownerType", "owner_type"), OwnerID: ownerID,
 		Category: firstFormValue(r, "category"),
@@ -118,7 +93,7 @@ func (s *Server) DownloadFile(w http.ResponseWriter, r *http.Request, id gen.ID)
 		s.writeError(w, r, err)
 		return
 	}
-	result, err := s.fileService.Download(r.Context(), actor, id)
+	result, err := s.FileService.Download(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -140,7 +115,7 @@ func (s *Server) DeleteSysFile(w http.ResponseWriter, r *http.Request, id gen.ID
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.fileService.DeleteFile(r.Context(), actor, id); err != nil {
+	if err = s.FileService.DeleteFile(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -162,7 +137,7 @@ func (s *Server) AttachFile(w http.ResponseWriter, r *http.Request, id gen.ID) {
 	if body.Category != nil {
 		category = *body.Category
 	}
-	value, err := s.fileService.Attach(r.Context(), actor, id, fileplatform.AttachInput{
+	value, err := s.FileService.Attach(r.Context(), actor, id, fileplatform.AttachInput{
 		OwnerType: body.OwnerType, OwnerID: body.OwnerId, Category: category,
 	})
 	if err != nil {
@@ -196,7 +171,7 @@ func (s *Server) QuerySysAttachments(w http.ResponseWriter, r *http.Request) {
 	if body.Category != nil {
 		query.Category = *body.Category
 	}
-	result, err := s.fileService.ListAttachments(r.Context(), actor, query)
+	result, err := s.FileService.ListAttachments(r.Context(), actor, query)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -214,7 +189,7 @@ func (s *Server) DeleteSysAttachment(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.fileService.DeleteAttachment(r.Context(), actor, id); err != nil {
+	if err = s.FileService.DeleteAttachment(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -222,43 +197,12 @@ func (s *Server) DeleteSysAttachment(w http.ResponseWriter, r *http.Request, id 
 }
 
 func (s *Server) QuerySysStorages(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, "sys.storage:read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body struct {
-		Limit, Offset *int
-		Search        *string
-		Sort          *gen.Sort
-		Filter        map[string]json.RawMessage
-	}
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	query := fileplatform.ListQuery{Filter: body.Filter}
-	if body.Limit != nil {
-		query.Limit = *body.Limit
-	}
-	if body.Offset != nil {
-		query.Offset = *body.Offset
-	}
-	if body.Search != nil {
-		query.Search = *body.Search
-	}
-	if body.Sort != nil {
-		query.Sort = &filterbuild.Sort{Column: body.Sort.Column, Direction: string(body.Sort.Direction)}
-	}
-	result, err := s.storageService.List(r.Context(), query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	rows := make([]gen.StorageEndpoint, 0, len(result.Results))
-	for _, value := range result.Results {
-		rows = append(rows, storageDTO(value))
-	}
-	s.writeJSON(w, http.StatusOK, gen.StorageEndpointList{Count: result.Count, Results: rows})
+	queryList(s, w, r, "sys.storage:read", fileListQuery, ignoreActor(s.StorageService.List),
+		func(result fileplatform.StorageList) any {
+			return gen.StorageEndpointList{
+				Count: result.Count, Results: mapItems(result.Results, storageDTO),
+			}
+		})
 }
 
 func (s *Server) GetSysStorage(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -266,7 +210,7 @@ func (s *Server) GetSysStorage(w http.ResponseWriter, r *http.Request, id gen.ID
 		s.writeError(w, r, err)
 		return
 	}
-	value, err := s.storageService.Get(r.Context(), id)
+	value, err := s.StorageService.Get(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -285,7 +229,7 @@ func (s *Server) CreateSysStorage(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	value, err := s.storageService.Create(r.Context(), actor, fileplatform.StorageCreateInput{
+	value, err := s.StorageService.Create(r.Context(), actor, fileplatform.StorageCreateInput{
 		Name: body.Name, Label: body.Label, Kind: string(body.Kind), Root: body.Root,
 		Endpoint: body.Endpoint, Region: body.Region, Bucket: body.Bucket, Prefix: body.Prefix,
 		AccessKeyID: body.AccessKeyId, SecretAccessKey: body.SecretAccessKey,
@@ -339,7 +283,7 @@ func (s *Server) UpdateSysStorage(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	value, err := s.storageService.Update(r.Context(), actor, id, input)
+	value, err := s.StorageService.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -353,7 +297,7 @@ func (s *Server) DeleteSysStorage(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.storageService.Delete(r.Context(), actor, id); err != nil {
+	if err = s.StorageService.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -366,7 +310,7 @@ func (s *Server) SetDefaultSysStorage(w http.ResponseWriter, r *http.Request, id
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.storageService.SetDefault(r.Context(), actor, id); err != nil {
+	if err = s.StorageService.SetDefault(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}

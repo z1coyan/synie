@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -74,7 +75,7 @@ func (s *Service) CreateIssue(ctx context.Context, actor *authz.Actor, input Cre
 		issue_no,issue_date,party_type,party_id,remarks,status,company_id,
 		from_warehouse_id,outsourced_warehouse_id,created_by_id)
 		VALUES($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9) RETURNING id`,
-		item.IssueNo, date(item.IssueDate), item.PartyType, item.PartyID, text(item.Remarks),
+		item.IssueNo, pgconv.Date(item.IssueDate), item.PartyType, item.PartyID, pgconv.Text(item.Remarks),
 		item.CompanyID, item.FromWarehouseID, item.OutsourcedWarehouseID, item.CreatedByID,
 	).Scan(&item.ID)
 	if err != nil {
@@ -146,8 +147,8 @@ func (s *Service) UpdateIssue(ctx context.Context, actor *authz.Actor, id uuid.U
 	_, err = tx.Exec(ctx, `UPDATE pur_outsourced_issue SET issue_no=$2,issue_date=$3,
 		party_type=$4,party_id=$5,remarks=$6,from_warehouse_id=$7,
 		outsourced_warehouse_id=$8,updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
-		id, after.IssueNo, date(after.IssueDate), after.PartyType, after.PartyID,
-		text(after.Remarks), after.FromWarehouseID, after.OutsourcedWarehouseID)
+		id, after.IssueNo, pgconv.Date(after.IssueDate), after.PartyType, after.PartyID,
+		pgconv.Text(after.Remarks), after.FromWarehouseID, after.OutsourcedWarehouseID)
 	if err != nil {
 		return Issue{}, writeError("更新委外发料单", err)
 	}
@@ -243,8 +244,8 @@ func (s *Service) CreateReceipt(ctx context.Context, actor *authz.Actor, input C
 		company_id,warehouse_id,outsourced_warehouse_id,debit_account_id,
 		credit_account_id,created_by_id)
 		VALUES($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$10,$11,$12) RETURNING id`,
-		item.ReceiptNo, date(item.ReceiptDate), nullableDate(item.PostingDate), item.PartyType,
-		item.PartyID, text(item.Remarks), item.CompanyID, item.WarehouseID,
+		item.ReceiptNo, pgconv.Date(item.ReceiptDate), nullableDate(item.PostingDate), item.PartyType,
+		item.PartyID, pgconv.Text(item.Remarks), item.CompanyID, item.WarehouseID,
 		item.OutsourcedWarehouseID, item.DebitAccountID, item.CreditAccountID,
 		item.CreatedByID).Scan(&item.ID)
 	if err != nil {
@@ -326,8 +327,8 @@ func (s *Service) UpdateReceipt(ctx context.Context, actor *authz.Actor, id uuid
 		receipt_date=$3,posting_date=$4,party_type=$5,party_id=$6,remarks=$7,
 		warehouse_id=$8,outsourced_warehouse_id=$9,debit_account_id=$10,
 		credit_account_id=$11,updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
-		id, after.ReceiptNo, date(after.ReceiptDate), nullableDate(after.PostingDate),
-		after.PartyType, after.PartyID, text(after.Remarks), after.WarehouseID,
+		id, after.ReceiptNo, pgconv.Date(after.ReceiptDate), nullableDate(after.PostingDate),
+		after.PartyType, after.PartyID, pgconv.Text(after.Remarks), after.WarehouseID,
 		after.OutsourcedWarehouseID, after.DebitAccountID, after.CreditAccountID)
 	if err != nil {
 		return Receipt{}, writeError("更新委外入库单", err)
@@ -559,7 +560,7 @@ func nullableDate(value *time.Time) pgtype.Date {
 	if value == nil {
 		return pgtype.Date{}
 	}
-	return date(*value)
+	return pgconv.Date(*value)
 }
 
 func issueSnapshot(item Issue) map[string]any {

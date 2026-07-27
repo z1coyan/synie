@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -122,7 +123,7 @@ func (s *Service) CreateMaterial(
 	err = tx.QueryRow(ctx, `INSERT INTO pur_order_item_material(
 		quantity,remarks,order_item_id,company_id,material_id,unit_id)
 		VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
-		input.Quantity, text(input.Remarks), input.OrderItemID, companyID,
+		input.Quantity, pgconv.Text(input.Remarks), input.OrderItemID, companyID,
 		input.MaterialID, input.UnitID).Scan(&id)
 	if err != nil {
 		return Material{}, writeError("创建发料清单行失败", err)
@@ -198,7 +199,7 @@ func (s *Service) UpdateMaterial(
 	}
 	if _, err := tx.Exec(ctx, `UPDATE pur_order_item_material SET quantity=$2,remarks=$3,
 		material_id=$4,unit_id=$5,updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
-		id, after.Quantity, text(after.Remarks), after.MaterialID, after.UnitID); err != nil {
+		id, after.Quantity, pgconv.Text(after.Remarks), after.MaterialID, after.UnitID); err != nil {
 		return Material{}, writeError("更新发料清单行失败", err)
 	}
 	row, err = queryMaterialByID(ctx, tx, id)
@@ -350,7 +351,7 @@ func (s *Service) CreateByproduct(
 	err = tx.QueryRow(ctx, `INSERT INTO pur_order_item_byproduct(
 		quantity,remarks,order_item_id,company_id,material_id,unit_id)
 		VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
-		input.Quantity, text(input.Remarks), input.OrderItemID, companyID,
+		input.Quantity, pgconv.Text(input.Remarks), input.OrderItemID, companyID,
 		input.MaterialID, input.UnitID).Scan(&id)
 	if err != nil {
 		return Byproduct{}, writeError("创建副产物清单行失败", err)
@@ -423,7 +424,7 @@ func (s *Service) UpdateByproduct(
 	}
 	if _, err := tx.Exec(ctx, `UPDATE pur_order_item_byproduct SET quantity=$2,remarks=$3,
 		material_id=$4,unit_id=$5,updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
-		id, after.Quantity, text(after.Remarks), after.MaterialID, after.UnitID); err != nil {
+		id, after.Quantity, pgconv.Text(after.Remarks), after.MaterialID, after.UnitID); err != nil {
 		return Byproduct{}, writeError("更新副产物清单行失败", err)
 	}
 	row, err = queryByproductByID(ctx, tx, id)

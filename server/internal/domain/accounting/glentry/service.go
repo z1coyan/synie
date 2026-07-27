@@ -3,7 +3,6 @@ package glentry
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sort"
 	"time"
 
@@ -13,7 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
@@ -60,70 +60,27 @@ func (s *Service) List(ctx context.Context, actor *authz.Actor, query ListQuery)
 	if err := requireRead(actor); err != nil {
 		return ListResult{}, err
 	}
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return ListResult{}, apierror.Validation("分页参数不合法", map[string][]string{
-			"limit": {"必须在 1 到 200 之间"}, "offset": {"不能小于 0"},
-		})
-	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Entry]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "总账分录", Actor: actor,
+		Source: ` FROM acc_gl_entry`,
+		Select: `SELECT id,seq,posting_date,debit,credit,party_type,party_id,
+voucher_type,voucher_id,voucher_no,is_cancelled,remarks,inserted_at,company_id,
+account_id,currency_id,is_reversed,is_reversal`,
+		DefaultOrder: ` ORDER BY "seq" ASC`,
+		Tiebreaker:   `, "seq" ASC`,
+		Scan: func(rows pgx.Rows) (Entry, error) {
+			return scanEntry(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ListResult{}, err
 	}
-	where, args := built.Where, append([]any(nil), built.Args...)
-	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
-	if empty {
-		return ListResult{Results: []Entry{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "seq" ASC`
-	} else {
-		order += `, "seq" ASC`
-	}
-	const source = ` FROM acc_gl_entry`
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询总账分录失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*)`+source+where, args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计总账分录失败", err)
-	}
-	listArgs := append([]any(nil), args...)
-	limitAt := len(listArgs) + 1
-	listArgs = append(listArgs, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,seq,posting_date,debit,credit,party_type,party_id,
-		voucher_type,voucher_id,voucher_no,is_cancelled,remarks,inserted_at,company_id,
-		account_id,currency_id,is_reversed,is_reversal`+
-		source+where+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", limitAt, limitAt+1), listArgs...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询总账分录失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Entry, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanEntry(rows)
-		if scanErr != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取总账分录结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历总账分录结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成总账分录查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
+}
+
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func (s *Service) Report(
@@ -249,10 +206,10 @@ func fromRow(row dbgen.AccGlEntry) Entry {
 	return Entry{
 		ID: row.ID, Seq: row.Seq, PostingDate: row.PostingDate.Time,
 		Debit: row.Debit, Credit: row.Credit,
-		PartyType: optionalText(row.PartyType), PartyID: row.PartyID,
+		PartyType: pgconv.TextPtr(row.PartyType), PartyID: row.PartyID,
 		VoucherType: row.VoucherType, VoucherID: row.VoucherID, VoucherNo: row.VoucherNo,
 		IsCancelled: row.IsCancelled, IsReversed: row.IsReversed, IsReversal: row.IsReversal,
-		Remarks: optionalText(row.Remarks), InsertedAt: row.InsertedAt.Time.UTC(),
+		Remarks: pgconv.TextPtr(row.Remarks), InsertedAt: row.InsertedAt.Time.UTC(),
 		CompanyID: row.CompanyID, AccountID: row.AccountID, CurrencyID: row.CurrencyID,
 	}
 }
@@ -272,18 +229,10 @@ func scanEntry(row scanner) (Entry, error) {
 		&item.IsReversed, &item.IsReversal,
 	)
 	item.PostingDate = posting.Time
-	item.PartyType = optionalText(partyType)
-	item.Remarks = optionalText(remarks)
+	item.PartyType = pgconv.TextPtr(partyType)
+	item.Remarks = pgconv.TextPtr(remarks)
 	item.InsertedAt = inserted.Time.UTC()
 	return item, err
-}
-
-func optionalText(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	result := value.String
-	return &result
 }
 
 func camel(role string) string {

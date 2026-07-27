@@ -3,18 +3,17 @@ package companyaccountdefault
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 )
 
 type Service struct{ pool *pgxpool.Pool }
@@ -78,62 +77,22 @@ func (s *Service) List(
 	if err := require(actor, "read"); err != nil {
 		return ListResult{}, err
 	}
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return ListResult{}, apierror.Validation("分页参数不合法", map[string][]string{
-			"limit": {"必须在 1 到 200 之间"}, "offset": {"不能小于 0"},
-		})
-	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[CompanyAccountDefault]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "公司默认过账科目", Actor: actor,
+		Source: ` FROM sal_company_account_default`,
+		Select: `SELECT id,company_id,delivery_debit_account_id,
+delivery_credit_account_id,receipt_debit_account_id,receipt_credit_account_id,
+inserted_at,updated_at`,
+		DefaultOrder: ` ORDER BY "company_id" ASC, "id" ASC`,
+		Tiebreaker:   `, "id" ASC`,
+		Scan: func(rows pgx.Rows) (CompanyAccountDefault, error) {
+			return scanOne(rows)
+		},
+	}, listexec.Query{Limit: query.Limit, Offset: query.Offset, Sort: query.Sort, Filter: query.Filter})
 	if err != nil {
 		return ListResult{}, err
 	}
-	where, args := scopedWhere(actor, built.Where, built.Args)
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "company_id" ASC, "id" ASC`
-	} else {
-		order += `, "id" ASC`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询公司默认过账科目失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM sal_company_account_default`+where, args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计公司默认过账科目失败", err)
-	}
-	pageArgs := append([]any(nil), args...)
-	limitArg := len(pageArgs) + 1
-	pageArgs = append(pageArgs, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, selectColumns+where+order+
-		fmt.Sprintf(" LIMIT $%d OFFSET $%d", limitArg, limitArg+1), pageArgs...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询公司默认过账科目失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]CompanyAccountDefault, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanOne(rows)
-		if scanErr != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取公司默认过账科目结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历公司默认过账科目结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成公司默认过账科目查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
 }
 
 func (s *Service) Create(
@@ -348,10 +307,6 @@ func scanOne(row rowScanner) (CompanyAccountDefault, error) {
 	return item, nil
 }
 
-func scopedWhere(actor *authz.Actor, where string, args []any) (string, []any) {
-	return filterbuild.ApplyCompanyFilter(actor, where, args, "company_id")
-}
-
 func snapshot(item CompanyAccountDefault) map[string]any {
 	return map[string]any{
 		"company_id":                 item.CompanyID,
@@ -380,17 +335,13 @@ func writeAudit(
 	return nil
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Message: "该公司已有默认过账科目配置"},
+	{Code: "23503", Message: "公司默认过账科目已被业务数据引用"},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return apierror.Wrap(apierror.CodeConflict, "该公司已有默认过账科目配置", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "公司默认过账科目已被业务数据引用", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }
 
 func notFound() error {

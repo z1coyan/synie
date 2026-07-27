@@ -10,15 +10,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 )
 
 type Service struct{ pool *pgxpool.Pool }
@@ -39,64 +40,32 @@ func (s *Service) GetInstrument(ctx context.Context, id uuid.UUID) (Instrument, 
 }
 
 func (s *Service) ListInstruments(ctx context.Context, query ListQuery) (InstrumentList, error) {
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return InstrumentList{}, invalidPagination()
-	}
-	built, err := filterbuild.Build(InstrumentResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search, Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Instrument]{
+		Pool: s.pool, Resource: InstrumentResourceMeta(), Label: "行情品种",
+		Source: ` FROM bas_market_instrument`,
+		Select: `SELECT id,code,name,source_type,default_price_kind,active,fetch_enabled,
+external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,updated_at`,
+		DefaultOrder: ` ORDER BY "code","id"`,
+		Tiebreaker:   `, "id"`,
+		RawTail:      true,
+		Scan: func(rows pgx.Rows) (Instrument, error) {
+			var x Instrument
+			var sourceType, priceKind string
+			var externalLast, externalGroup, note pgtype.Text
+			if err := rows.Scan(&x.ID, &x.Code, &x.Name, &sourceType, &priceKind, &x.Active, &x.FetchEnabled,
+				&externalLast, &externalGroup, &note, &x.CurrencyID, &x.UnitID, &x.InsertedAt, &x.UpdatedAt); err != nil {
+				return Instrument{}, err
+			}
+			x.SourceType, x.DefaultPriceKind = strings.ToUpper(sourceType), strings.ToUpper(priceKind)
+			x.ExternalLastCode, x.ExternalProductGroup, x.Note = pgconv.TextPtr(externalLast), pgconv.TextPtr(externalGroup), pgconv.TextPtr(note)
+			x.InsertedAt, x.UpdatedAt = x.InsertedAt.UTC(), x.UpdatedAt.UTC()
+			return x, nil
+		},
+	}, listQuery(query))
 	if err != nil {
 		return InstrumentList{}, err
 	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "code","id"`
-	} else {
-		order += `, "id"`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return InstrumentList{}, apierror.Wrap(apierror.CodeInternal, "查询行情品种失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var out InstrumentList
-	if err = tx.QueryRow(ctx, "SELECT count(*) FROM bas_market_instrument"+built.Where, built.Args...).Scan(&out.Count); err != nil {
-		return out, apierror.Wrap(apierror.CodeInternal, "统计行情品种失败", err)
-	}
-	args := append([]any(nil), built.Args...)
-	n := len(args) + 1
-	args = append(args, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,code,name,source_type,default_price_kind,active,fetch_enabled,
-		external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,updated_at
-		FROM bas_market_instrument`+built.Where+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", n, n+1), args...)
-	if err != nil {
-		return out, apierror.Wrap(apierror.CodeInternal, "查询行情品种失败", err)
-	}
-	defer rows.Close()
-	out.Results = make([]Instrument, 0, query.Limit)
-	for rows.Next() {
-		var x Instrument
-		var sourceType, priceKind string
-		var externalLast, externalGroup, note pgtype.Text
-		if err = rows.Scan(&x.ID, &x.Code, &x.Name, &sourceType, &priceKind, &x.Active, &x.FetchEnabled,
-			&externalLast, &externalGroup, &note, &x.CurrencyID, &x.UnitID, &x.InsertedAt, &x.UpdatedAt); err != nil {
-			return out, apierror.Wrap(apierror.CodeInternal, "读取行情品种结果失败", err)
-		}
-		x.SourceType, x.DefaultPriceKind = strings.ToUpper(sourceType), strings.ToUpper(priceKind)
-		x.ExternalLastCode, x.ExternalProductGroup, x.Note = textPtr(externalLast), textPtr(externalGroup), textPtr(note)
-		x.InsertedAt, x.UpdatedAt = x.InsertedAt.UTC(), x.UpdatedAt.UTC()
-		out.Results = append(out.Results, x)
-	}
-	if err = rows.Err(); err != nil {
-		return out, err
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return out, err
-	}
-	return out, nil
+	return InstrumentList{Count: result.Count, Results: result.Results}, nil
 }
 
 func (s *Service) CreateInstrument(ctx context.Context, actor *authz.Actor, in InstrumentCreate) (Instrument, error) {
@@ -132,8 +101,8 @@ func (s *Service) CreateInstrument(ctx context.Context, actor *authz.Actor, in I
 	defer tx.Rollback(ctx)
 	r, err := dbgen.New(tx).CreateMarketInstrument(ctx, dbgen.CreateMarketInstrumentParams{
 		Code: code, Name: name, SourceType: sourceType, DefaultPriceKind: priceKind,
-		Active: active, FetchEnabled: fetchEnabled, ExternalLastCode: text(in.ExternalLastCode),
-		ExternalProductGroup: text(in.ExternalProductGroup), Note: text(in.Note),
+		Active: active, FetchEnabled: fetchEnabled, ExternalLastCode: pgconv.Text(in.ExternalLastCode),
+		ExternalProductGroup: pgconv.Text(in.ExternalProductGroup), Note: pgconv.Text(in.Note),
 		CurrencyID: in.CurrencyID, UnitID: in.UnitID,
 	})
 	if err != nil {
@@ -171,7 +140,7 @@ func (s *Service) UpdateInstrument(ctx context.Context, actor *authz.Actor, id u
 		r.Active, r.FetchEnabled, r.ExternalLastCode, r.ExternalProductGroup, r.Note,
 		r.CurrencyID, r.UnitID, r.InsertedAt, r.UpdatedAt)
 	name, kind, active, fetchEnabled := r.Name, r.DefaultPriceKind, r.Active, r.FetchEnabled
-	externalLast, externalGroup, note := textPtr(r.ExternalLastCode), textPtr(r.ExternalProductGroup), textPtr(r.Note)
+	externalLast, externalGroup, note := pgconv.TextPtr(r.ExternalLastCode), pgconv.TextPtr(r.ExternalProductGroup), pgconv.TextPtr(r.Note)
 	if in.Name != nil {
 		name = strings.TrimSpace(*in.Name)
 	}
@@ -202,7 +171,7 @@ func (s *Service) UpdateInstrument(ctx context.Context, actor *authz.Actor, id u
 	}
 	u, err := q.UpdateMarketInstrument(ctx, dbgen.UpdateMarketInstrumentParams{
 		ID: id, Name: name, DefaultPriceKind: kind, Active: active, FetchEnabled: fetchEnabled,
-		ExternalLastCode: text(externalLast), ExternalProductGroup: text(externalGroup), Note: text(note),
+		ExternalLastCode: pgconv.Text(externalLast), ExternalProductGroup: pgconv.Text(externalGroup), Note: pgconv.Text(note),
 	})
 	if err != nil {
 		return Instrument{}, marketWriteError(err)
@@ -274,63 +243,36 @@ func (s *Service) GetPricePoint(ctx context.Context, id uuid.UUID) (PricePoint, 
 }
 
 func (s *Service) ListPricePoints(ctx context.Context, query ListQuery) (PricePointList, error) {
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return PricePointList{}, invalidPagination()
-	}
-	built, err := filterbuild.Build(PricePointResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search, Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[PricePoint]{
+		Pool: s.pool, Resource: PricePointResourceMeta(), Label: "行情价点",
+		Source: ` FROM bas_market_price_point`,
+		Select: `SELECT id,observed_at,price,price_kind,source,is_voided,note,
+instrument_id,currency_id,unit_id,inserted_at,updated_at`,
+		DefaultOrder: ` ORDER BY "observed_at" DESC,"id"`,
+		Tiebreaker:   `, "id"`,
+		RawTail:      true,
+		Scan: func(rows pgx.Rows) (PricePoint, error) {
+			var x PricePoint
+			var priceKind, source string
+			var note pgtype.Text
+			if err := rows.Scan(&x.ID, &x.ObservedAt, &x.Price, &priceKind, &source, &x.IsVoided, &note,
+				&x.InstrumentID, &x.CurrencyID, &x.UnitID, &x.InsertedAt, &x.UpdatedAt); err != nil {
+				return PricePoint{}, err
+			}
+			x.PriceKind, x.Source, x.Note = strings.ToUpper(priceKind), strings.ToUpper(source), pgconv.TextPtr(note)
+			x.ObservedAt, x.InsertedAt, x.UpdatedAt = x.ObservedAt.UTC(), x.InsertedAt.UTC(), x.UpdatedAt.UTC()
+			return x, nil
+		},
+	}, listQuery(query))
 	if err != nil {
 		return PricePointList{}, err
 	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "observed_at" DESC,"id"`
-	} else {
-		order += `, "id"`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return PricePointList{}, apierror.Wrap(apierror.CodeInternal, "查询行情价点失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var out PricePointList
-	if err = tx.QueryRow(ctx, "SELECT count(*) FROM bas_market_price_point"+built.Where, built.Args...).Scan(&out.Count); err != nil {
-		return out, apierror.Wrap(apierror.CodeInternal, "统计行情价点失败", err)
-	}
-	args := append([]any(nil), built.Args...)
-	n := len(args) + 1
-	args = append(args, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,observed_at,price,price_kind,source,is_voided,note,
-		instrument_id,currency_id,unit_id,inserted_at,updated_at FROM bas_market_price_point`+
-		built.Where+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", n, n+1), args...)
-	if err != nil {
-		return out, apierror.Wrap(apierror.CodeInternal, "查询行情价点失败", err)
-	}
-	defer rows.Close()
-	out.Results = make([]PricePoint, 0, query.Limit)
-	for rows.Next() {
-		var x PricePoint
-		var priceKind, source string
-		var note pgtype.Text
-		if err = rows.Scan(&x.ID, &x.ObservedAt, &x.Price, &priceKind, &source, &x.IsVoided, &note,
-			&x.InstrumentID, &x.CurrencyID, &x.UnitID, &x.InsertedAt, &x.UpdatedAt); err != nil {
-			return out, apierror.Wrap(apierror.CodeInternal, "读取行情价点结果失败", err)
-		}
-		x.PriceKind, x.Source, x.Note = strings.ToUpper(priceKind), strings.ToUpper(source), textPtr(note)
-		x.ObservedAt, x.InsertedAt, x.UpdatedAt = x.ObservedAt.UTC(), x.InsertedAt.UTC(), x.UpdatedAt.UTC()
-		out.Results = append(out.Results, x)
-	}
-	if err = rows.Err(); err != nil {
-		return out, err
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return out, err
-	}
-	return out, nil
+	return PricePointList{Count: result.Count, Results: result.Results}, nil
+}
+
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func (s *Service) CreatePricePoint(ctx context.Context, actor *authz.Actor, in PricePointCreate) (PricePoint, error) {
@@ -379,7 +321,7 @@ func (s *Service) CreatePricePoint(ctx context.Context, actor *authz.Actor, in P
 	}
 	r, err := dbgen.New(tx).CreateMarketPricePoint(ctx, dbgen.CreateMarketPricePointParams{
 		ObservedAt: pgtype.Timestamp{Time: in.ObservedAt.UTC(), Valid: true}, Price: in.Price,
-		PriceKind: kind, Source: source, Note: text(in.Note), InstrumentID: in.InstrumentID,
+		PriceKind: kind, Source: source, Note: pgconv.Text(in.Note), InstrumentID: in.InstrumentID,
 		CurrencyID: currencyID, UnitID: unitID,
 	})
 	if err != nil {
@@ -598,7 +540,7 @@ func instrumentFromFields(id uuid.UUID, code, name, sourceType, priceKind string
 	return Instrument{
 		ID: id, Code: code, Name: name, SourceType: strings.ToUpper(sourceType),
 		DefaultPriceKind: strings.ToUpper(priceKind), Active: active, FetchEnabled: fetchEnabled,
-		ExternalLastCode: textPtr(externalLast), ExternalProductGroup: textPtr(externalGroup), Note: textPtr(note),
+		ExternalLastCode: pgconv.TextPtr(externalLast), ExternalProductGroup: pgconv.TextPtr(externalGroup), Note: pgconv.TextPtr(note),
 		CurrencyID: currencyID, UnitID: unitID, InsertedAt: insertedAt.Time.UTC(), UpdatedAt: updatedAt.Time.UTC(),
 	}
 }
@@ -609,7 +551,7 @@ func pointFromFields(id uuid.UUID, observedAt pgtype.Timestamp, price decimal.De
 ) PricePoint {
 	return PricePoint{
 		ID: id, ObservedAt: observedAt.Time.UTC(), Price: price, PriceKind: strings.ToUpper(priceKind),
-		Source: strings.ToUpper(source), IsVoided: isVoided, Note: textPtr(note),
+		Source: strings.ToUpper(source), IsVoided: isVoided, Note: pgconv.TextPtr(note),
 		InstrumentID: instrumentID, CurrencyID: currencyID, UnitID: unitID,
 		InsertedAt: insertedAt.Time.UTC(), UpdatedAt: updatedAt.Time.UTC(),
 	}
@@ -634,21 +576,6 @@ func pointSnapshot(x PricePoint) map[string]any {
 	}
 }
 
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func textPtr(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	result := value.String
-	return &result
-}
-
 func stringValue(value *string) any {
 	if value == nil {
 		return nil
@@ -656,24 +583,12 @@ func stringValue(value *string) any {
 	return *value
 }
 
-func invalidPagination() error {
-	return apierror.Validation("分页参数不合法", map[string][]string{"limit": {"必须在 1 到 200 之间"}})
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Constraint: "market_instrument_unique_code", Message: "行情品种编码已存在"},
+	{Code: "23505", Constraint: "market_price_point_unique_active_point", Message: "该品种、观测时刻与价类的有效价点已存在"},
+	{Code: "23503", Message: "关联的币种、计量单位或行情品种不存在"},
 }
 
 func marketWriteError(err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			if strings.Contains(pgErr.ConstraintName, "market_instrument_unique_code") {
-				return apierror.Wrap(apierror.CodeConflict, "行情品种编码已存在", err)
-			}
-			if strings.Contains(pgErr.ConstraintName, "market_price_point_unique_active_point") {
-				return apierror.Wrap(apierror.CodeConflict, "该品种、观测时刻与价类的有效价点已存在", err)
-			}
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "关联的币种、计量单位或行情品种不存在", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, "保存行情数据失败", err)
+	return dberr.MapWrite(err, "保存行情数据失败", writeMappings...)
 }

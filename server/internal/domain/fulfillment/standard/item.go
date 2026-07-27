@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -92,10 +93,10 @@ func (s *Service) CreateItem(
 		$20,$21,$22,$23,$24,$25
 	) RETURNING id`,
 		item.Idx, item.Qty, item.BaseQty, item.MaterialCode, item.MaterialName,
-		text(item.MaterialSpec), text(item.CustomerPartNo), item.UnitName, item.OrderNo,
+		pgconv.Text(item.MaterialSpec), pgconv.Text(item.CustomerPartNo), item.UnitName, item.OrderNo,
 		item.OrderQty, item.OrderBaseQty, item.OrderUnitName, item.OrderPrice,
 		item.OrderAmount, item.OrderBasePrice, item.OrderBaseAmount, item.OrderTaxRate,
-		item.OrderCurrencyCode, text(item.Remarks), item.HeadID, item.CompanyID,
+		item.OrderCurrencyCode, pgconv.Text(item.Remarks), item.HeadID, item.CompanyID,
 		item.OrderItemID, item.MaterialID, item.UnitID, item.WarehouseID,
 	).Scan(&id)
 	if err != nil {
@@ -189,10 +190,10 @@ func (s *Service) UpdateItem(
 		order_item_id=$21,material_id=$22,unit_id=$23,warehouse_id=$24,
 		updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
 		id, after.Idx, after.Qty, after.BaseQty, after.MaterialCode, after.MaterialName,
-		text(after.MaterialSpec), text(after.CustomerPartNo), after.UnitName, after.OrderNo,
+		pgconv.Text(after.MaterialSpec), pgconv.Text(after.CustomerPartNo), after.UnitName, after.OrderNo,
 		after.OrderQty, after.OrderBaseQty, after.OrderUnitName, after.OrderPrice,
 		after.OrderAmount, after.OrderBasePrice, after.OrderBaseAmount, after.OrderTaxRate,
-		after.OrderCurrencyCode, text(after.Remarks), after.OrderItemID, after.MaterialID,
+		after.OrderCurrencyCode, pgconv.Text(after.Remarks), after.OrderItemID, after.MaterialID,
 		after.UnitID, after.WarehouseID,
 	)
 	if err != nil {
@@ -391,7 +392,7 @@ func loadOrderItemSnapshot(
 	if err != nil {
 		return orderItemSnapshot{}, apierror.Wrap(apierror.CodeInternal, "读取来源订单条目失败", err)
 	}
-	result.materialSpec, result.customerPartNo = textPtr(materialSpec), textPtr(partNo)
+	result.materialSpec, result.customerPartNo = pgconv.TextPtr(materialSpec), pgconv.TextPtr(partNo)
 	return result, nil
 }
 

@@ -5,32 +5,16 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/iam"
 )
 
 func (s *Server) QuerySystemUsers(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, "sys.user:read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	query, err := decodeIAMList(w, r)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	result, err := s.iam.ListUsers(r.Context(), query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.SystemUser, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, systemUserDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.SystemUserList{Count: result.Count, Results: items})
+	queryList(s, w, r, "sys.user:read", iamListQuery, ignoreActor(s.IAM.ListUsers),
+		func(result iam.UserList) any {
+			return gen.SystemUserList{Count: result.Count, Results: mapItems(result.Results, systemUserDTO)}
+		})
 }
 
 func (s *Server) GetSystemUser(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -38,7 +22,7 @@ func (s *Server) GetSystemUser(w http.ResponseWriter, r *http.Request, id gen.ID
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.iam.GetUser(r.Context(), id)
+	item, err := s.IAM.GetUser(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -57,7 +41,7 @@ func (s *Server) CreateSystemUser(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	created, err := s.iam.CreateUser(r.Context(), actor, iam.UserCreate{Username: body.Username, Name: body.Name, RoleIDs: uuidSlice(body.RoleIds), CompanyIDs: uuidSlice(body.CompanyIds)})
+	created, err := s.IAM.CreateUser(r.Context(), actor, iam.UserCreate{Username: body.Username, Name: body.Name, RoleIDs: uuidSlice(body.RoleIds), CompanyIDs: uuidSlice(body.CompanyIds)})
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -94,7 +78,7 @@ func (s *Server) UpdateSystemUser(w http.ResponseWriter, r *http.Request, id gen
 		}
 		input.Name = &name
 	}
-	item, err := s.iam.UpdateUser(r.Context(), actor, id, input)
+	item, err := s.IAM.UpdateUser(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -108,7 +92,7 @@ func (s *Server) DeleteSystemUser(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.iam.DeleteUser(r.Context(), actor, id); err != nil {
+	if err := s.IAM.DeleteUser(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -120,7 +104,7 @@ func (s *Server) GetSystemUserAccess(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	access, err := s.iam.UserAccess(r.Context(), id)
+	access, err := s.IAM.UserAccess(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -142,7 +126,7 @@ func (s *Server) ResetSystemUserPassword(w http.ResponseWriter, r *http.Request,
 		s.writeError(w, r, err)
 		return
 	}
-	password, err := s.iam.ResetPassword(r.Context(), actor, id)
+	password, err := s.IAM.ResetPassword(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -152,25 +136,10 @@ func (s *Server) ResetSystemUserPassword(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) QuerySystemRoles(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, "sys.role:read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	query, err := decodeIAMList(w, r)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	result, err := s.iam.ListRoles(r.Context(), query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.SystemRole, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, systemRoleDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.SystemRoleList{Count: result.Count, Results: items})
+	queryList(s, w, r, "sys.role:read", iamListQuery, ignoreActor(s.IAM.ListRoles),
+		func(result iam.RoleList) any {
+			return gen.SystemRoleList{Count: result.Count, Results: mapItems(result.Results, systemRoleDTO)}
+		})
 }
 
 func (s *Server) GetSystemRole(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -178,7 +147,7 @@ func (s *Server) GetSystemRole(w http.ResponseWriter, r *http.Request, id gen.ID
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.iam.GetRole(r.Context(), id)
+	item, err := s.IAM.GetRole(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -197,7 +166,7 @@ func (s *Server) CreateSystemRole(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.iam.CreateRole(r.Context(), actor, iam.RoleCreate{Code: body.Code, Name: body.Name, Enabled: body.Enabled})
+	item, err := s.IAM.CreateRole(r.Context(), actor, iam.RoleCreate{Code: body.Code, Name: body.Name, Enabled: body.Enabled})
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -216,7 +185,7 @@ func (s *Server) UpdateSystemRole(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.iam.UpdateRole(r.Context(), actor, id, iam.RoleUpdate{Name: body.Name, Enabled: body.Enabled})
+	item, err := s.IAM.UpdateRole(r.Context(), actor, id, iam.RoleUpdate{Name: body.Name, Enabled: body.Enabled})
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -230,7 +199,7 @@ func (s *Server) DeleteSystemRole(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.iam.DeleteRole(r.Context(), actor, id); err != nil {
+	if err := s.IAM.DeleteRole(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -242,7 +211,7 @@ func (s *Server) GetSystemRolePermissions(w http.ResponseWriter, r *http.Request
 		s.writeError(w, r, err)
 		return
 	}
-	result, err := s.iam.RolePermissions(r.Context(), id)
+	result, err := s.IAM.RolePermissions(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -269,7 +238,7 @@ func (s *Server) SyncSystemRolePermissions(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	permissions, err := s.iam.SyncRolePermissions(r.Context(), actor, id, body.Permissions)
+	permissions, err := s.IAM.SyncRolePermissions(r.Context(), actor, id, body.Permissions)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -277,31 +246,9 @@ func (s *Server) SyncSystemRolePermissions(w http.ResponseWriter, r *http.Reques
 	s.writeJSON(w, http.StatusOK, gen.RolePermissionCodes{Permissions: permissions})
 }
 
-func decodeIAMList(w http.ResponseWriter, r *http.Request) (iam.ListQuery, error) {
-	var body struct {
-		Limit  *int                       `json:"limit,omitempty"`
-		Offset *int                       `json:"offset,omitempty"`
-		Search *string                    `json:"search,omitempty"`
-		Sort   *gen.Sort                  `json:"sort,omitempty"`
-		Filter map[string]json.RawMessage `json:"filter,omitempty"`
-	}
-	if err := decodeJSON(w, r, &body); err != nil {
-		return iam.ListQuery{}, invalidJSON(err)
-	}
-	result := iam.ListQuery{Filter: body.Filter}
-	if body.Limit != nil {
-		result.Limit = *body.Limit
-	}
-	if body.Offset != nil {
-		result.Offset = *body.Offset
-	}
-	if body.Search != nil {
-		result.Search = *body.Search
-	}
-	if body.Sort != nil {
-		result.Sort = &filterbuild.Sort{Column: body.Sort.Column, Direction: string(body.Sort.Direction)}
-	}
-	return result, nil
+func iamListQuery(body listBody) iam.ListQuery {
+	limit, offset, search, sort, filter := listParts(body)
+	return iam.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
 }
 
 func systemUserDTO(item iam.User) gen.SystemUser {

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
@@ -175,7 +176,7 @@ func (s *Service) ListDemandPool(
 			&item.OrderedQty, &item.RemainingBaseQty, &item.SuggestedQty); err != nil {
 			return nil, apierror.Wrap(apierror.CodeInternal, "读取履约需求行池失败", err)
 		}
-		item.NeedDate, item.MaterialSpec = datePtr(needDate), textPtr(materialSpec)
+		item.NeedDate, item.MaterialSpec = datePtr(needDate), pgconv.TextPtr(materialSpec)
 		result = append(result, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -212,7 +213,7 @@ func (s *Service) PreviewBOM(
 			rows.Close()
 			return BOMPreview{}, apierror.Wrap(apierror.CodeInternal, "读取 BOM 发料清单失败", err)
 		}
-		item.Remarks = textPtr(remarks)
+		item.Remarks = pgconv.TextPtr(remarks)
 		result.Materials = append(result.Materials, item)
 	}
 	rows.Close()
@@ -236,7 +237,7 @@ func (s *Service) PreviewBOM(
 			&item.UnitID, &item.UnitName, &item.Quantity, &remarks); err != nil {
 			return BOMPreview{}, apierror.Wrap(apierror.CodeInternal, "读取 BOM 副产物清单失败", err)
 		}
-		item.Remarks = textPtr(remarks)
+		item.Remarks = pgconv.TextPtr(remarks)
 		result.Byproducts = append(result.Byproducts, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -278,7 +279,7 @@ func (s *Service) ListOrderFlow(
 			return nil, apierror.Wrap(apierror.CodeInternal, "读取订单收发货历史失败", err)
 		}
 		item.DocumentDate = dateValue(docDate)
-		item.MaterialSpec, item.CustomerPartNo = textPtr(materialSpec), textPtr(customerPartNo)
+		item.MaterialSpec, item.CustomerPartNo = pgconv.TextPtr(materialSpec), pgconv.TextPtr(customerPartNo)
 		result = append(result, item)
 	}
 	if err := rows.Err(); err != nil {

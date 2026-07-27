@@ -18,26 +18,12 @@ func hrListQuery(body listBody) hroperations.ListQuery {
 }
 
 func (s *Server) QueryHrAttendancePunches(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "hr.attendance_punch:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.hrOperations.QueryAttendancePunches(r.Context(), actor, hrListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.AttendancePunch, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, attendancePunchDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.AttendancePunchList{Count: result.Count, Results: items})
+	queryList(s, w, r, "hr.attendance_punch:read", hrListQuery, s.HROperations.QueryAttendancePunches,
+		func(result hroperations.AttendancePunchList) any {
+			return gen.AttendancePunchList{
+				Count: result.Count, Results: mapItems(result.Results, attendancePunchDTO),
+			}
+		})
 }
 
 func (s *Server) GetHrAttendancePunch(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -46,7 +32,7 @@ func (s *Server) GetHrAttendancePunch(w http.ResponseWriter, r *http.Request, id
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.hrOperations.GetAttendancePunch(r.Context(), actor, id)
+	item, err := s.HROperations.GetAttendancePunch(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -55,26 +41,12 @@ func (s *Server) GetHrAttendancePunch(w http.ResponseWriter, r *http.Request, id
 }
 
 func (s *Server) QueryHrAttendanceImports(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "hr.attendance_punch:import")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.hrOperations.QueryAttendanceImports(r.Context(), actor, hrListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.AttendanceImport, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, attendanceImportDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.AttendanceImportList{Count: result.Count, Results: items})
+	queryList(s, w, r, "hr.attendance_punch:import", hrListQuery, s.HROperations.QueryAttendanceImports,
+		func(result hroperations.AttendanceImportList) any {
+			return gen.AttendanceImportList{
+				Count: result.Count, Results: mapItems(result.Results, attendanceImportDTO),
+			}
+		})
 }
 
 func (s *Server) GetHrAttendanceImport(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -83,7 +55,7 @@ func (s *Server) GetHrAttendanceImport(w http.ResponseWriter, r *http.Request, i
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.hrOperations.GetAttendanceImport(r.Context(), actor, id)
+	item, err := s.HROperations.GetAttendanceImport(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -102,7 +74,7 @@ func (s *Server) CreateHrAttendanceImport(w http.ResponseWriter, r *http.Request
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.hrOperations.CreateAttendanceImport(
+	item, err := s.HROperations.CreateAttendanceImport(
 		r.Context(), actor, hroperations.AttendanceImportCreateInput{FileID: body.FileId},
 	)
 	if err != nil {
@@ -131,7 +103,7 @@ func (s *Server) ImportHrAttendanceImport(
 	if body.AutoCreateEmployees != nil {
 		input.AutoCreateEmployees = *body.AutoCreateEmployees
 	}
-	item, err := s.hrOperations.ImportAttendance(r.Context(), actor, id, input)
+	item, err := s.HROperations.ImportAttendance(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -145,7 +117,7 @@ func (s *Server) DeleteHrAttendanceImport(w http.ResponseWriter, r *http.Request
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.hrOperations.DeleteAttendanceImport(r.Context(), actor, id); err != nil {
+	if err = s.HROperations.DeleteAttendanceImport(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -153,26 +125,12 @@ func (s *Server) DeleteHrAttendanceImport(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) QueryHrAttendanceDays(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "hr.attendance_day:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.hrOperations.QueryAttendanceDays(r.Context(), actor, hrListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.AttendanceDay, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, attendanceDayDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.AttendanceDayList{Count: result.Count, Results: items})
+	queryList(s, w, r, "hr.attendance_day:read", hrListQuery, s.HROperations.QueryAttendanceDays,
+		func(result hroperations.AttendanceDayList) any {
+			return gen.AttendanceDayList{
+				Count: result.Count, Results: mapItems(result.Results, attendanceDayDTO),
+			}
+		})
 }
 
 func (s *Server) GetHrAttendanceDay(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -181,7 +139,7 @@ func (s *Server) GetHrAttendanceDay(w http.ResponseWriter, r *http.Request, id g
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.hrOperations.GetAttendanceDay(r.Context(), actor, id)
+	item, err := s.HROperations.GetAttendanceDay(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -200,7 +158,7 @@ func (s *Server) RecalcHrAttendanceDays(w http.ResponseWriter, r *http.Request) 
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	count, err := s.hrOperations.RecalcAttendanceDays(
+	count, err := s.HROperations.RecalcAttendanceDays(
 		r.Context(), actor, body.DateFrom.Time.Format(time.DateOnly),
 		body.DateTo.Time.Format(time.DateOnly),
 	)
@@ -221,7 +179,7 @@ func (s *Server) GetHrAttendanceMonthSummary(
 		s.writeError(w, r, err)
 		return
 	}
-	result, err := s.hrOperations.AttendanceMonthSummary(r.Context(), actor, params.Month)
+	result, err := s.HROperations.AttendanceMonthSummary(r.Context(), actor, params.Month)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -240,28 +198,12 @@ func (s *Server) GetHrAttendanceMonthSummary(
 }
 
 func (s *Server) QueryHrAttendanceCorrections(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "hr.attendance_correction:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.hrOperations.QueryAttendanceCorrections(r.Context(), actor, hrListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.AttendanceCorrection, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, attendanceCorrectionDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.AttendanceCorrectionList{
-		Count: result.Count, Results: items,
-	})
+	queryList(s, w, r, "hr.attendance_correction:read", hrListQuery, s.HROperations.QueryAttendanceCorrections,
+		func(result hroperations.AttendanceCorrectionList) any {
+			return gen.AttendanceCorrectionList{
+				Count: result.Count, Results: mapItems(result.Results, attendanceCorrectionDTO),
+			}
+		})
 }
 
 func (s *Server) GetHrAttendanceCorrection(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -270,7 +212,7 @@ func (s *Server) GetHrAttendanceCorrection(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.hrOperations.GetAttendanceCorrection(r.Context(), actor, id)
+	item, err := s.HROperations.GetAttendanceCorrection(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -289,7 +231,7 @@ func (s *Server) CreateHrAttendanceCorrection(w http.ResponseWriter, r *http.Req
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.hrOperations.CreateAttendanceCorrection(
+	item, err := s.HROperations.CreateAttendanceCorrection(
 		r.Context(), actor, hroperations.AttendanceCorrectionInput{
 			EmployeeID: body.EmployeeId, Date: body.Date.Time.Format(time.DateOnly),
 			Times: body.Times, Note: body.Note,
@@ -339,7 +281,7 @@ func (s *Server) UpdateHrAttendanceCorrection(
 		}
 		input.Note = hroperations.OptionalString{Set: true, Value: *note}
 	}
-	item, err := s.hrOperations.UpdateAttendanceCorrection(r.Context(), actor, id, input)
+	item, err := s.HROperations.UpdateAttendanceCorrection(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -353,7 +295,7 @@ func (s *Server) DeleteHrAttendanceCorrection(w http.ResponseWriter, r *http.Req
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.hrOperations.DeleteAttendanceCorrection(r.Context(), actor, id); err != nil {
+	if err = s.HROperations.DeleteAttendanceCorrection(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -361,26 +303,10 @@ func (s *Server) DeleteHrAttendanceCorrection(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) QueryHrPayrolls(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "hr.payroll:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.hrOperations.QueryPayrolls(r.Context(), actor, hrListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.Payroll, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, payrollDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.PayrollList{Count: result.Count, Results: items})
+	queryList(s, w, r, "hr.payroll:read", hrListQuery, s.HROperations.QueryPayrolls,
+		func(result hroperations.PayrollList) any {
+			return gen.PayrollList{Count: result.Count, Results: mapItems(result.Results, payrollDTO)}
+		})
 }
 
 func (s *Server) GetHrPayroll(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -389,7 +315,7 @@ func (s *Server) GetHrPayroll(w http.ResponseWriter, r *http.Request, id gen.ID)
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.hrOperations.GetPayroll(r.Context(), actor, id)
+	item, err := s.HROperations.GetPayroll(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -408,7 +334,7 @@ func (s *Server) CreateHrPayroll(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.hrOperations.CreatePayroll(r.Context(), actor, hroperations.PayrollInput{
+	item, err := s.HROperations.CreatePayroll(r.Context(), actor, hroperations.PayrollInput{
 		EmployeeID: body.EmployeeId, Month: body.Month,
 		Workdays: stringOrZero(body.Workdays), AttendanceDays: intPtrToInt64(body.AttendanceDays),
 		MissingDays: intPtrToInt64(body.MissingDays), OvertimeHours: stringOrZero(body.OvertimeHours),
@@ -461,7 +387,7 @@ func (s *Server) UpdateHrPayroll(w http.ResponseWriter, r *http.Request, id gen.
 		}
 		input.Remarks = hroperations.OptionalString{Set: true, Value: *remarks}
 	}
-	item, err := s.hrOperations.UpdatePayroll(r.Context(), actor, id, input)
+	item, err := s.HROperations.UpdatePayroll(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -475,7 +401,7 @@ func (s *Server) DeleteHrPayroll(w http.ResponseWriter, r *http.Request, id gen.
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.hrOperations.DeletePayroll(r.Context(), actor, id); err != nil {
+	if err = s.HROperations.DeletePayroll(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -488,7 +414,7 @@ func (s *Server) RefreshHrPayroll(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.hrOperations.RefreshPayroll(r.Context(), actor, id)
+	item, err := s.HROperations.RefreshPayroll(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -507,7 +433,7 @@ func (s *Server) GenerateHrPayrolls(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	result, err := s.hrOperations.GeneratePayrolls(r.Context(), actor, body.Month)
+	result, err := s.HROperations.GeneratePayrolls(r.Context(), actor, body.Month)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -527,7 +453,7 @@ func (s *Server) GetHrPayrollMonthStats(
 		s.writeError(w, r, err)
 		return
 	}
-	result, err := s.hrOperations.PayrollMonthStats(r.Context(), actor, params.Month)
+	result, err := s.HROperations.PayrollMonthStats(r.Context(), actor, params.Month)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -539,26 +465,12 @@ func (s *Server) GetHrPayrollMonthStats(
 }
 
 func (s *Server) QueryHrPayrollPayments(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "hr.payroll_payment:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.hrOperations.QueryPayrollPayments(r.Context(), actor, hrListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.PayrollPayment, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, payrollPaymentDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.PayrollPaymentList{Count: result.Count, Results: items})
+	queryList(s, w, r, "hr.payroll_payment:read", hrListQuery, s.HROperations.QueryPayrollPayments,
+		func(result hroperations.PayrollPaymentList) any {
+			return gen.PayrollPaymentList{
+				Count: result.Count, Results: mapItems(result.Results, payrollPaymentDTO),
+			}
+		})
 }
 
 func (s *Server) GetHrPayrollPayment(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -567,7 +479,7 @@ func (s *Server) GetHrPayrollPayment(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.hrOperations.GetPayrollPayment(r.Context(), actor, id)
+	item, err := s.HROperations.GetPayrollPayment(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -586,7 +498,7 @@ func (s *Server) CreateHrPayrollPayment(w http.ResponseWriter, r *http.Request) 
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.hrOperations.CreatePayrollPayment(r.Context(), actor, hroperations.PayrollPaymentInput{
+	item, err := s.HROperations.CreatePayrollPayment(r.Context(), actor, hroperations.PayrollPaymentInput{
 		PayrollID: body.PayrollId, PaidOn: body.PaidOn.Time.Format(time.DateOnly),
 		Amount: body.Amount, Remarks: body.Remarks,
 	})
@@ -608,7 +520,7 @@ func (s *Server) PayRemainingHrPayrollPayment(w http.ResponseWriter, r *http.Req
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.hrOperations.PayRemainingPayroll(r.Context(), actor, hroperations.PayrollPayRemainingInput{
+	item, err := s.HROperations.PayRemainingPayroll(r.Context(), actor, hroperations.PayrollPayRemainingInput{
 		PayrollID: body.PayrollId, PaidOn: body.PaidOn.Time.Format(time.DateOnly),
 		Remarks: body.Remarks,
 	})
@@ -625,7 +537,7 @@ func (s *Server) DeleteHrPayrollPayment(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.hrOperations.DeletePayrollPayment(r.Context(), actor, id); err != nil {
+	if err = s.HROperations.DeletePayrollPayment(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -633,26 +545,12 @@ func (s *Server) DeleteHrPayrollPayment(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) QueryHrEmployeeLoans(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "hr.employee_loan:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err = decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	result, err := s.hrOperations.QueryEmployeeLoans(r.Context(), actor, hrListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.EmployeeLoan, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, employeeLoanDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.EmployeeLoanList{Count: result.Count, Results: items})
+	queryList(s, w, r, "hr.employee_loan:read", hrListQuery, s.HROperations.QueryEmployeeLoans,
+		func(result hroperations.EmployeeLoanList) any {
+			return gen.EmployeeLoanList{
+				Count: result.Count, Results: mapItems(result.Results, employeeLoanDTO),
+			}
+		})
 }
 
 func (s *Server) GetHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -661,7 +559,7 @@ func (s *Server) GetHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id ge
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.hrOperations.GetEmployeeLoan(r.Context(), actor, id)
+	item, err := s.HROperations.GetEmployeeLoan(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -680,7 +578,7 @@ func (s *Server) CreateHrEmployeeLoan(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.hrOperations.CreateEmployeeLoan(r.Context(), actor, hroperations.EmployeeLoanInput{
+	item, err := s.HROperations.CreateEmployeeLoan(r.Context(), actor, hroperations.EmployeeLoanInput{
 		EmployeeID: body.EmployeeId, Kind: string(body.Kind),
 		OccurredOn: body.OccurredOn.Time.Format(time.DateOnly),
 		Amount:     body.Amount, Remarks: body.Remarks,
@@ -730,7 +628,7 @@ func (s *Server) UpdateHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id
 		}
 		input.Remarks = hroperations.OptionalString{Set: true, Value: *remarks}
 	}
-	item, err := s.hrOperations.UpdateEmployeeLoan(r.Context(), actor, id, input)
+	item, err := s.HROperations.UpdateEmployeeLoan(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -744,7 +642,7 @@ func (s *Server) DeleteHrEmployeeLoan(w http.ResponseWriter, r *http.Request, id
 		s.writeError(w, r, err)
 		return
 	}
-	if err = s.hrOperations.DeleteEmployeeLoan(r.Context(), actor, id); err != nil {
+	if err = s.HROperations.DeleteEmployeeLoan(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -757,7 +655,7 @@ func (s *Server) GetHrEmployeeLoanBalances(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, err)
 		return
 	}
-	result, err := s.hrOperations.EmployeeLoanBalances(r.Context(), actor)
+	result, err := s.HROperations.EmployeeLoanBalances(r.Context(), actor)
 	if err != nil {
 		s.writeError(w, r, err)
 		return

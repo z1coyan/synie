@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/domain/trading/quotation"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
@@ -82,7 +83,7 @@ func (s *Service) CreateItem(
 	args := []any{
 		draft.Idx, draft.Qty, draft.BaseQty, draft.Price, draft.Amount, draft.BasePrice,
 		draft.BaseAmount, draft.TaxRate, draft.MaterialCode, draft.MaterialName,
-		text(draft.MaterialSpec), text(draft.CustomerPartNo), draft.UnitName, text(draft.Remarks),
+		pgconv.Text(draft.MaterialSpec), pgconv.Text(draft.CustomerPartNo), draft.UnitName, pgconv.Text(draft.Remarks),
 		draft.OrderID, draft.CompanyID, draft.MaterialID, draft.UnitID, draft.QuotationItemID,
 	}
 	if side == SidePurchase {
@@ -205,7 +206,7 @@ func (s *Service) UpdateItem(
 		unit_id=$17,quotation_item_id=$18,updated_at=(now() AT TIME ZONE 'utc')`
 	args := []any{id, after.Idx, after.Qty, after.BaseQty, after.Price, after.Amount,
 		after.BasePrice, after.BaseAmount, after.TaxRate, after.MaterialCode, after.MaterialName,
-		text(after.MaterialSpec), text(after.CustomerPartNo), after.UnitName, text(after.Remarks),
+		pgconv.Text(after.MaterialSpec), pgconv.Text(after.CustomerPartNo), after.UnitName, pgconv.Text(after.Remarks),
 		after.MaterialID, after.UnitID, after.QuotationItemID}
 	if side == SidePurchase {
 		sql += `,bom_id=$19,demand_line_id=$20,demand_date=$21`
@@ -423,7 +424,7 @@ func loadOrderMaterial(
 	if err != nil {
 		return materialSnapshot{}, apierror.Wrap(apierror.CodeInternal, "读取订单物料失败", err)
 	}
-	result.spec, result.customerPartNo, result.customerID = textPtr(spec), textPtr(partNo), customerID
+	result.spec, result.customerPartNo, result.customerID = pgconv.TextPtr(spec), pgconv.TextPtr(partNo), customerID
 	if factor.Valid {
 		value, valueErr := factor.Value()
 		if valueErr == nil && value != nil {
@@ -475,5 +476,5 @@ func nullableDate(value *time.Time) pgtype.Date {
 	if value == nil {
 		return pgtype.Date{}
 	}
-	return date(*value)
+	return pgconv.DateUTC(*value)
 }

@@ -1,58 +1,29 @@
 package httpapi
 
 import (
-	"encoding/json"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"net/http"
+
 	"github.com/z1coyan/synie/server/internal/domain/base/unit"
 	"github.com/z1coyan/synie/server/internal/http/gen"
-	"net/http"
 )
 
+func unitListQuery(body listBody) unit.ListQuery {
+	limit, offset, search, sort, filter := listParts(body)
+	return unit.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
 func (s *Server) QueryBasUnits(w http.ResponseWriter, r *http.Request) {
-	if e := requirePermission(r, "base.unit:read"); e != nil {
-		s.writeError(w, r, e)
-		return
-	}
-	var b struct {
-		Limit, Offset *int
-		Search        *string
-		Sort          *gen.Sort
-		Filter        map[string]json.RawMessage
-	}
-	if e := decodeJSON(w, r, &b); e != nil {
-		s.writeError(w, r, invalidJSON(e))
-		return
-	}
-	q := unit.ListQuery{Filter: b.Filter}
-	if b.Limit != nil {
-		q.Limit = *b.Limit
-	}
-	if b.Offset != nil {
-		q.Offset = *b.Offset
-	}
-	if b.Search != nil {
-		q.Search = *b.Search
-	}
-	if b.Sort != nil {
-		q.Sort = &filterbuild.Sort{Column: b.Sort.Column, Direction: string(b.Sort.Direction)}
-	}
-	x, e := s.units.List(r.Context(), q)
-	if e != nil {
-		s.writeError(w, r, e)
-		return
-	}
-	out := make([]gen.Unit, 0, len(x.Results))
-	for _, v := range x.Results {
-		out = append(out, unitDTO(v))
-	}
-	s.writeJSON(w, http.StatusOK, gen.UnitList{Count: x.Count, Results: out})
+	queryList(s, w, r, "base.unit:read", unitListQuery, ignoreActor(s.Units.List),
+		func(result unit.ListResult) any {
+			return gen.UnitList{Count: result.Count, Results: mapItems(result.Results, unitDTO)}
+		})
 }
 func (s *Server) GetBasUnit(w http.ResponseWriter, r *http.Request, id gen.ID) {
 	if e := requirePermission(r, "base.unit:read"); e != nil {
 		s.writeError(w, r, e)
 		return
 	}
-	x, e := s.units.Get(r.Context(), id)
+	x, e := s.Units.Get(r.Context(), id)
 	if e != nil {
 		s.writeError(w, r, e)
 		return
@@ -70,7 +41,7 @@ func (s *Server) CreateBasUnit(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(e))
 		return
 	}
-	x, e := s.units.Create(r.Context(), a, unit.CreateInput{UnitType: string(b.UnitType), IsBase: b.IsBase, Name: b.Name, Symbol: b.Symbol, Ratio: b.Ratio})
+	x, e := s.Units.Create(r.Context(), a, unit.CreateInput{UnitType: string(b.UnitType), IsBase: b.IsBase, Name: b.Name, Symbol: b.Symbol, Ratio: b.Ratio})
 	if e != nil {
 		s.writeError(w, r, e)
 		return
@@ -93,7 +64,7 @@ func (s *Server) UpdateBasUnit(w http.ResponseWriter, r *http.Request, id gen.ID
 		v := string(*b.UnitType)
 		t = &v
 	}
-	x, e := s.units.Update(r.Context(), a, id, unit.UpdateInput{UnitType: t, IsBase: b.IsBase, Name: b.Name, Symbol: b.Symbol, Ratio: b.Ratio})
+	x, e := s.Units.Update(r.Context(), a, id, unit.UpdateInput{UnitType: t, IsBase: b.IsBase, Name: b.Name, Symbol: b.Symbol, Ratio: b.Ratio})
 	if e != nil {
 		s.writeError(w, r, e)
 		return
@@ -106,7 +77,7 @@ func (s *Server) DeleteBasUnit(w http.ResponseWriter, r *http.Request, id gen.ID
 		s.writeError(w, r, e)
 		return
 	}
-	if e = s.units.Delete(r.Context(), a, id); e != nil {
+	if e = s.Units.Delete(r.Context(), a, id); e != nil {
 		s.writeError(w, r, e)
 		return
 	}

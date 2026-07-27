@@ -10,15 +10,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stock"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -100,8 +101,8 @@ func (s *Service) Create(
 		return Transfer{}, invalidTransfer(map[string][]string{"docNo": {"最多 32 个字符"}})
 	}
 	row, err := q.CreateStockTransfer(ctx, dbgen.CreateStockTransferParams{
-		DocNo: docNo, DocDate: date(docDate), Summary: text(input.Summary),
-		Remarks: text(input.Remarks), CompanyID: input.CompanyID,
+		DocNo: docNo, DocDate: pgconv.Date(docDate), Summary: pgconv.Text(input.Summary),
+		Remarks: pgconv.Text(input.Remarks), CompanyID: input.CompanyID,
 		FromWarehouseID: input.FromWarehouseID, ToWarehouseID: input.ToWarehouseID,
 		TransitWarehouseID: input.TransitWarehouseID, CreatedByID: actorID(actor),
 	})
@@ -182,8 +183,8 @@ func (s *Service) Update(
 		return before, nil
 	}
 	updated, err := q.UpdateStockTransfer(ctx, dbgen.UpdateStockTransferParams{
-		ID: id, DocNo: after.DocNo, DocDate: date(after.DocDate),
-		Summary: text(after.Summary), Remarks: text(after.Remarks),
+		ID: id, DocNo: after.DocNo, DocDate: pgconv.Date(after.DocDate),
+		Summary: pgconv.Text(after.Summary), Remarks: pgconv.Text(after.Remarks),
 		FromWarehouseID: after.FromWarehouseID, ToWarehouseID: after.ToWarehouseID,
 		TransitWarehouseID: after.TransitWarehouseID,
 	})
@@ -284,7 +285,7 @@ func (s *Service) Ship(
 	}
 	now := time.Now().UTC()
 	updated, err := q.ShipStockTransfer(ctx, dbgen.ShipStockTransferParams{
-		ID: id, ShippedAt: timestamp(now), ShippedByID: actorID(actor),
+		ID: id, ShippedAt: pgconv.Timestamp(now), ShippedByID: actorID(actor),
 	})
 	if err != nil {
 		return Transfer{}, apierror.Wrap(apierror.CodeInternal, "更新手工调拨单发货状态失败", err)
@@ -370,7 +371,7 @@ func (s *Service) Receive(
 	}
 	now := time.Now().UTC()
 	updated, err := q.ReceiveStockTransfer(ctx, dbgen.ReceiveStockTransferParams{
-		ID: id, ReceivedAt: timestamp(now), ReceivedByID: actorID(actor),
+		ID: id, ReceivedAt: pgconv.Timestamp(now), ReceivedByID: actorID(actor),
 	})
 	if err != nil {
 		return Transfer{}, apierror.Wrap(apierror.CodeInternal, "更新手工调拨单收货状态失败", err)
@@ -548,12 +549,12 @@ func lockError(err error, message string) error {
 	return nil
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Message: "单据编号已存在"},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return apierror.Wrap(apierror.CodeConflict, "单据编号已存在", err)
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }
 
 func invalidTransfer(fields map[string][]string) error {
@@ -614,9 +615,9 @@ func transferSnapshot(item Transfer) map[string]any {
 func transferFromRow(row dbgen.InvStockTransfer) Transfer {
 	return Transfer{
 		ID: row.ID, DocNo: row.DocNo, DocDate: row.DocDate.Time,
-		Summary: optionalText(row.Summary), Remarks: optionalText(row.Remarks),
-		Status: Status(strings.ToUpper(row.Status)), ShippedAt: optionalTimestamp(row.ShippedAt),
-		ReceivedAt: optionalTimestamp(row.ReceivedAt), InsertedAt: row.InsertedAt.Time.UTC(),
+		Summary: pgconv.TextPtr(row.Summary), Remarks: pgconv.TextPtr(row.Remarks),
+		Status: Status(strings.ToUpper(row.Status)), ShippedAt: pgconv.OptionalTime(row.ShippedAt),
+		ReceivedAt: pgconv.OptionalTime(row.ReceivedAt), InsertedAt: row.InsertedAt.Time.UTC(),
 		UpdatedAt: row.UpdatedAt.Time.UTC(), CompanyID: row.CompanyID,
 		FromWarehouseID: row.FromWarehouseID, ToWarehouseID: row.ToWarehouseID,
 		TransitWarehouseID: row.TransitWarehouseID, CreatedByID: row.CreatedByID,
@@ -627,36 +628,6 @@ func transferFromRow(row dbgen.InvStockTransfer) Transfer {
 func todayUTC() time.Time {
 	now := time.Now().UTC()
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-}
-
-func date(value time.Time) pgtype.Date {
-	return pgtype.Date{Time: value, Valid: true}
-}
-
-func timestamp(value time.Time) pgtype.Timestamp {
-	return pgtype.Timestamp{Time: value.UTC(), Valid: true}
-}
-
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func optionalText(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	return &value.String
-}
-
-func optionalTimestamp(value pgtype.Timestamp) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time.UTC()
-	return &result
 }
 
 func validateOptionalText(fields map[string][]string, name string, value *string, max int) {

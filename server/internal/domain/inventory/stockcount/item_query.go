@@ -2,12 +2,10 @@ package stockcount
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
-	"github.com/z1coyan/synie/server/internal/platform/apierror"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
 
@@ -24,71 +22,29 @@ func (s *Service) QueryItems(
 	if err := require(actor, "read"); err != nil {
 		return ItemListResult{}, err
 	}
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return ItemListResult{}, apierror.Validation("分页参数不合法", map[string][]string{
-			"limit": {"必须在 1 到 200 之间"}, "offset": {"不能小于 0"},
-		})
-	}
-	built, err := filterbuild.Build(ItemResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Item]{
+		Pool: s.pool, Resource: ItemResourceMeta(), Label: "库存盘点单行", Actor: actor,
+		Source: ` FROM inv_stock_count_item`,
+		Select: `SELECT id,counted_quantity,converted_counted,book_quantity,
+material_code,material_name,material_spec,unit_name,remark,inserted_at,updated_at,
+count_id,company_id,material_id,unit_id`,
+		DefaultOrder: ` ORDER BY "inserted_at" ASC, "id" ASC`,
+		Tiebreaker:   `, "id" ASC`,
+		Scan: func(rows pgx.Rows) (Item, error) {
+			var row dbgen.InvStockCountItem
+			if err := rows.Scan(
+				&row.ID, &row.CountedQuantity, &row.ConvertedCounted, &row.BookQuantity,
+				&row.MaterialCode, &row.MaterialName, &row.MaterialSpec, &row.UnitName,
+				&row.Remark, &row.InsertedAt, &row.UpdatedAt, &row.CountID, &row.CompanyID,
+				&row.MaterialID, &row.UnitID,
+			); err != nil {
+				return Item{}, err
+			}
+			return itemFromRow(row), nil
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ItemListResult{}, err
 	}
-	where, args := built.Where, append([]any(nil), built.Args...)
-	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
-	if empty {
-		return ItemListResult{Results: []Item{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "inserted_at" ASC, "id" ASC`
-	} else {
-		order += `, "id" ASC`
-	}
-	const source = ` FROM inv_stock_count_item`
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return ItemListResult{}, apierror.Wrap(apierror.CodeInternal, "查询库存盘点单行失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ItemListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*)`+source+where, args...).Scan(&result.Count); err != nil {
-		return ItemListResult{}, apierror.Wrap(apierror.CodeInternal, "统计库存盘点单行失败", err)
-	}
-	listArgs := append([]any(nil), args...)
-	limitAt := len(listArgs) + 1
-	listArgs = append(listArgs, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,counted_quantity,converted_counted,book_quantity,
-		material_code,material_name,material_spec,unit_name,remark,inserted_at,updated_at,
-		count_id,company_id,material_id,unit_id`+source+where+order+
-		fmt.Sprintf(" LIMIT $%d OFFSET $%d", limitAt, limitAt+1), listArgs...)
-	if err != nil {
-		return ItemListResult{}, apierror.Wrap(apierror.CodeInternal, "查询库存盘点单行失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Item, 0, query.Limit)
-	for rows.Next() {
-		var row dbgen.InvStockCountItem
-		if err := rows.Scan(
-			&row.ID, &row.CountedQuantity, &row.ConvertedCounted, &row.BookQuantity,
-			&row.MaterialCode, &row.MaterialName, &row.MaterialSpec, &row.UnitName,
-			&row.Remark, &row.InsertedAt, &row.UpdatedAt, &row.CountID, &row.CompanyID,
-			&row.MaterialID, &row.UnitID,
-		); err != nil {
-			return ItemListResult{}, apierror.Wrap(apierror.CodeInternal, "读取库存盘点单行结果失败", err)
-		}
-		result.Results = append(result.Results, itemFromRow(row))
-	}
-	if err := rows.Err(); err != nil {
-		return ItemListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历库存盘点单行结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ItemListResult{}, apierror.Wrap(apierror.CodeInternal, "完成库存盘点单行查询失败", err)
-	}
-	return result, nil
+	return ItemListResult{Count: result.Count, Results: result.Results}, nil
 }

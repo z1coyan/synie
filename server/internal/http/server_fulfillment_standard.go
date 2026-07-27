@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/z1coyan/synie/server/internal/domain/fulfillment/standard"
+	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
 
 func standardPermission(side standard.Side, action string) string {
@@ -18,135 +20,137 @@ func standardPermission(side standard.Side, action string) string {
 	return "purchase.receipt:" + action
 }
 
+// authorizeStandard 是路由门面的唯一鉴权点:鉴权通过后把 actor 显式传给内部实现函数。
 func (s *Server) authorizeStandard(
 	w http.ResponseWriter, r *http.Request, side standard.Side, action string,
-) bool {
-	if _, err := actorWithPermission(r, standardPermission(side, action)); err != nil {
+) *authz.Actor {
+	actor, err := actorWithPermission(r, standardPermission(side, action))
+	if err != nil {
 		s.writeError(w, r, err)
-		return false
+		return nil
 	}
-	return true
+	return actor
 }
 
 func (s *Server) QuerySalesDeliveries(w http.ResponseWriter, r *http.Request) {
-	if s.authorizeStandard(w, r, standard.SideSales, "read") {
-		s.queryStandardHeads(w, r, standard.SideSales)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "read"); actor != nil {
+		s.queryStandardHeads(w, r, actor, standard.SideSales)
 	}
 }
 func (s *Server) GetSalesDelivery(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SideSales, "read") {
-		s.getStandardHead(w, r, standard.SideSales, id)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "read"); actor != nil {
+		s.getStandardHead(w, r, actor, standard.SideSales, id)
 	}
 }
 func (s *Server) CreateSalesDelivery(w http.ResponseWriter, r *http.Request) {
-	if s.authorizeStandard(w, r, standard.SideSales, "create") {
-		s.createStandardHead(w, r, standard.SideSales)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "create"); actor != nil {
+		s.createStandardHead(w, r, actor, standard.SideSales)
 	}
 }
 func (s *Server) UpdateSalesDelivery(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SideSales, "update") {
-		s.updateStandardHead(w, r, standard.SideSales, id)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "update"); actor != nil {
+		s.updateStandardHead(w, r, actor, standard.SideSales, id)
 	}
 }
 func (s *Server) DeleteSalesDelivery(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SideSales, "delete") {
-		s.deleteStandardHead(w, r, standard.SideSales, id)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "delete"); actor != nil {
+		s.deleteStandardHead(w, r, actor, standard.SideSales, id)
 	}
 }
 func (s *Server) AuditSalesDelivery(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SideSales, "audit") {
-		s.auditStandardHead(w, r, standard.SideSales, id)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "audit"); actor != nil {
+		s.auditStandardHead(w, r, actor, standard.SideSales, id)
 	}
 }
 func (s *Server) VoidSalesDelivery(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SideSales, "void") {
-		s.voidStandardHead(w, r, standard.SideSales, id)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "void"); actor != nil {
+		s.voidStandardHead(w, r, actor, standard.SideSales, id)
 	}
 }
 func (s *Server) QuerySalesDeliveryItems(w http.ResponseWriter, r *http.Request) {
-	if s.authorizeStandard(w, r, standard.SideSales, "read") {
-		s.queryStandardItems(w, r, standard.SideSales)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "read"); actor != nil {
+		s.queryStandardItems(w, r, actor, standard.SideSales)
 	}
 }
 func (s *Server) GetSalesDeliveryItem(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SideSales, "read") {
-		s.getStandardItem(w, r, standard.SideSales, id)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "read"); actor != nil {
+		s.getStandardItem(w, r, actor, standard.SideSales, id)
 	}
 }
 func (s *Server) CreateSalesDeliveryItem(w http.ResponseWriter, r *http.Request) {
-	if s.authorizeStandard(w, r, standard.SideSales, "create") {
-		s.createStandardItem(w, r, standard.SideSales)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "create"); actor != nil {
+		s.createStandardItem(w, r, actor, standard.SideSales)
 	}
 }
 func (s *Server) UpdateSalesDeliveryItem(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SideSales, "update") {
-		s.updateStandardItem(w, r, standard.SideSales, id)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "update"); actor != nil {
+		s.updateStandardItem(w, r, actor, standard.SideSales, id)
 	}
 }
 func (s *Server) DeleteSalesDeliveryItem(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SideSales, "delete") {
-		s.deleteStandardItem(w, r, standard.SideSales, id)
+	if actor := s.authorizeStandard(w, r, standard.SideSales, "delete"); actor != nil {
+		s.deleteStandardItem(w, r, actor, standard.SideSales, id)
 	}
 }
 
 func (s *Server) QueryPurchaseReceipts(w http.ResponseWriter, r *http.Request) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "read") {
-		s.queryStandardHeads(w, r, standard.SidePurchase)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "read"); actor != nil {
+		s.queryStandardHeads(w, r, actor, standard.SidePurchase)
 	}
 }
 func (s *Server) GetPurchaseReceipt(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "read") {
-		s.getStandardHead(w, r, standard.SidePurchase, id)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "read"); actor != nil {
+		s.getStandardHead(w, r, actor, standard.SidePurchase, id)
 	}
 }
 func (s *Server) CreatePurchaseReceipt(w http.ResponseWriter, r *http.Request) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "create") {
-		s.createStandardHead(w, r, standard.SidePurchase)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "create"); actor != nil {
+		s.createStandardHead(w, r, actor, standard.SidePurchase)
 	}
 }
 func (s *Server) UpdatePurchaseReceipt(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "update") {
-		s.updateStandardHead(w, r, standard.SidePurchase, id)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "update"); actor != nil {
+		s.updateStandardHead(w, r, actor, standard.SidePurchase, id)
 	}
 }
 func (s *Server) DeletePurchaseReceipt(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "delete") {
-		s.deleteStandardHead(w, r, standard.SidePurchase, id)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "delete"); actor != nil {
+		s.deleteStandardHead(w, r, actor, standard.SidePurchase, id)
 	}
 }
 func (s *Server) AuditPurchaseReceipt(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "audit") {
-		s.auditStandardHead(w, r, standard.SidePurchase, id)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "audit"); actor != nil {
+		s.auditStandardHead(w, r, actor, standard.SidePurchase, id)
 	}
 }
 func (s *Server) VoidPurchaseReceipt(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "void") {
-		s.voidStandardHead(w, r, standard.SidePurchase, id)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "void"); actor != nil {
+		s.voidStandardHead(w, r, actor, standard.SidePurchase, id)
 	}
 }
 func (s *Server) QueryPurchaseReceiptItems(w http.ResponseWriter, r *http.Request) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "read") {
-		s.queryStandardItems(w, r, standard.SidePurchase)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "read"); actor != nil {
+		s.queryStandardItems(w, r, actor, standard.SidePurchase)
 	}
 }
 func (s *Server) GetPurchaseReceiptItem(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "read") {
-		s.getStandardItem(w, r, standard.SidePurchase, id)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "read"); actor != nil {
+		s.getStandardItem(w, r, actor, standard.SidePurchase, id)
 	}
 }
 func (s *Server) CreatePurchaseReceiptItem(w http.ResponseWriter, r *http.Request) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "create") {
-		s.createStandardItem(w, r, standard.SidePurchase)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "create"); actor != nil {
+		s.createStandardItem(w, r, actor, standard.SidePurchase)
 	}
 }
 func (s *Server) UpdatePurchaseReceiptItem(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "update") {
-		s.updateStandardItem(w, r, standard.SidePurchase, id)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "update"); actor != nil {
+		s.updateStandardItem(w, r, actor, standard.SidePurchase, id)
 	}
 }
 func (s *Server) DeletePurchaseReceiptItem(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
-	if s.authorizeStandard(w, r, standard.SidePurchase, "delete") {
-		s.deleteStandardItem(w, r, standard.SidePurchase, id)
+	if actor := s.authorizeStandard(w, r, standard.SidePurchase, "delete"); actor != nil {
+		s.deleteStandardItem(w, r, actor, standard.SidePurchase, id)
 	}
 }
 
@@ -158,7 +162,7 @@ func (s *Server) GetSalesCompanyAccountDefaultsByCompany(
 		s.writeError(w, r, err)
 		return
 	}
-	result, err := s.companyAccountDefaults.GetByCompany(r.Context(), actor, companyID)
+	result, err := s.CompanyAccountDefaults.GetByCompany(r.Context(), actor, companyID)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -173,30 +177,23 @@ func standardListQuery(body listBody) standard.ListQuery {
 	}
 }
 
-func (s *Server) queryStandardHeads(w http.ResponseWriter, r *http.Request, side standard.Side) {
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	actor, _ := requireActor(r)
-	result, err := s.standardFulfillment.ListHeads(r.Context(), actor, side, standardListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	rows := make([]map[string]any, len(result.Results))
-	for i, item := range result.Results {
-		rows[i] = standardHeadDTO(item, side)
-	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"count": result.Count, "results": rows})
+func (s *Server) queryStandardHeads(
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side,
+) {
+	queryListAs(s, w, r, actor, standardListQuery,
+		func(ctx context.Context, actor *authz.Actor, query standard.ListQuery) (standard.HeadListResult, error) {
+			return s.StandardFulfillment.ListHeads(ctx, actor, side, query)
+		},
+		func(result standard.HeadListResult) any {
+			return countResultsResponse(result.Count, mapItems(result.Results,
+				func(item standard.Head) map[string]any { return standardHeadDTO(item, side) }))
+		})
 }
 
 func (s *Server) getStandardHead(
-	w http.ResponseWriter, r *http.Request, side standard.Side, id uuid.UUID,
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side, id uuid.UUID,
 ) {
-	actor, _ := requireActor(r)
-	item, err := s.standardFulfillment.GetHead(r.Context(), actor, side, id)
+	item, err := s.StandardFulfillment.GetHead(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -219,7 +216,7 @@ type standardHeadCreateBody struct {
 	CreditAccountID uuid.UUID           `json:"creditAccountId"`
 }
 
-func (s *Server) createStandardHead(w http.ResponseWriter, r *http.Request, side standard.Side) {
+func (s *Server) createStandardHead(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side) {
 	var body standardHeadCreateBody
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -229,8 +226,7 @@ func (s *Server) createStandardHead(w http.ResponseWriter, r *http.Request, side
 	if side == standard.SidePurchase {
 		number, documentDate = body.ReceiptNo, body.ReceiptDate
 	}
-	actor, _ := requireActor(r)
-	item, err := s.standardFulfillment.CreateHead(r.Context(), actor, side, standard.CreateHeadInput{
+	item, err := s.StandardFulfillment.CreateHead(r.Context(), actor, side, standard.CreateHeadInput{
 		CompanyID: body.CompanyID, No: number, DocumentDate: datePointer(documentDate),
 		PostingDate: datePointer(body.PostingDate), PartyType: body.PartyType, PartyID: body.PartyID,
 		Remarks: body.Remarks, WarehouseID: body.WarehouseID, DebitAccountID: body.DebitAccountID,
@@ -258,7 +254,7 @@ type standardHeadUpdateBody struct {
 }
 
 func (s *Server) updateStandardHead(
-	w http.ResponseWriter, r *http.Request, side standard.Side, id uuid.UUID,
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side, id uuid.UUID,
 ) {
 	var body standardHeadUpdateBody
 	if err := decodeJSON(w, r, &body); err != nil {
@@ -284,8 +280,7 @@ func (s *Server) updateStandardHead(
 		s.writeError(w, r, nullableUUIDError("履约单", "warehouseId"))
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.standardFulfillment.UpdateHead(r.Context(), actor, side, id, standard.UpdateHeadInput{
+	item, err := s.StandardFulfillment.UpdateHead(r.Context(), actor, side, id, standard.UpdateHeadInput{
 		No: number, DocumentDate: datePointer(documentDate), PostingDate: postingDate,
 		PartyType: body.PartyType, PartyID: body.PartyID, Remarks: remarks,
 		WarehouseID: warehouseID, DebitAccountID: body.DebitAccountID,
@@ -299,10 +294,9 @@ func (s *Server) updateStandardHead(
 }
 
 func (s *Server) deleteStandardHead(
-	w http.ResponseWriter, r *http.Request, side standard.Side, id uuid.UUID,
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side, id uuid.UUID,
 ) {
-	actor, _ := requireActor(r)
-	if err := s.standardFulfillment.DeleteHead(r.Context(), actor, side, id); err != nil {
+	if err := s.StandardFulfillment.DeleteHead(r.Context(), actor, side, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -310,7 +304,7 @@ func (s *Server) deleteStandardHead(
 }
 
 func (s *Server) auditStandardHead(
-	w http.ResponseWriter, r *http.Request, side standard.Side, id uuid.UUID,
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side, id uuid.UUID,
 ) {
 	var body struct {
 		PostingDate *openapi_types.Date `json:"postingDate,omitempty"`
@@ -321,8 +315,7 @@ func (s *Server) auditStandardHead(
 			return
 		}
 	}
-	actor, _ := requireActor(r)
-	item, err := s.standardFulfillment.Audit(
+	item, err := s.StandardFulfillment.Audit(
 		r.Context(), actor, side, id, datePointer(body.PostingDate),
 	)
 	if err != nil {
@@ -333,10 +326,9 @@ func (s *Server) auditStandardHead(
 }
 
 func (s *Server) voidStandardHead(
-	w http.ResponseWriter, r *http.Request, side standard.Side, id uuid.UUID,
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side, id uuid.UUID,
 ) {
-	actor, _ := requireActor(r)
-	item, err := s.standardFulfillment.Void(r.Context(), actor, side, id)
+	item, err := s.StandardFulfillment.Void(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -344,30 +336,23 @@ func (s *Server) voidStandardHead(
 	s.writeJSON(w, http.StatusOK, standardHeadDTO(item, side))
 }
 
-func (s *Server) queryStandardItems(w http.ResponseWriter, r *http.Request, side standard.Side) {
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	actor, _ := requireActor(r)
-	result, err := s.standardFulfillment.ListItems(r.Context(), actor, side, standardListQuery(body))
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	rows := make([]map[string]any, len(result.Results))
-	for i, item := range result.Results {
-		rows[i] = standardItemDTO(item, side)
-	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"count": result.Count, "results": rows})
+func (s *Server) queryStandardItems(
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side,
+) {
+	queryListAs(s, w, r, actor, standardListQuery,
+		func(ctx context.Context, actor *authz.Actor, query standard.ListQuery) (standard.ItemListResult, error) {
+			return s.StandardFulfillment.ListItems(ctx, actor, side, query)
+		},
+		func(result standard.ItemListResult) any {
+			return countResultsResponse(result.Count, mapItems(result.Results,
+				func(item standard.Item) map[string]any { return standardItemDTO(item, side) }))
+		})
 }
 
 func (s *Server) getStandardItem(
-	w http.ResponseWriter, r *http.Request, side standard.Side, id uuid.UUID,
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side, id uuid.UUID,
 ) {
-	actor, _ := requireActor(r)
-	item, err := s.standardFulfillment.GetItem(r.Context(), actor, side, id)
+	item, err := s.StandardFulfillment.GetItem(r.Context(), actor, side, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -386,7 +371,7 @@ type standardItemCreateBody struct {
 	Remarks     *string    `json:"remarks,omitempty"`
 }
 
-func (s *Server) createStandardItem(w http.ResponseWriter, r *http.Request, side standard.Side) {
+func (s *Server) createStandardItem(w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side) {
 	var body standardItemCreateBody
 	if err := decodeJSON(w, r, &body); err != nil {
 		s.writeError(w, r, invalidJSON(err))
@@ -401,8 +386,7 @@ func (s *Server) createStandardItem(w http.ResponseWriter, r *http.Request, side
 	if side == standard.SidePurchase {
 		headID = body.ReceiptID
 	}
-	actor, _ := requireActor(r)
-	item, err := s.standardFulfillment.CreateItem(r.Context(), actor, side, standard.CreateItemInput{
+	item, err := s.StandardFulfillment.CreateItem(r.Context(), actor, side, standard.CreateItemInput{
 		HeadID: headID, Idx: body.Idx, Qty: qty, OrderItemID: body.OrderItemID,
 		UnitID: body.UnitID, WarehouseID: body.WarehouseID, Remarks: body.Remarks,
 	})
@@ -423,7 +407,7 @@ type standardItemUpdateBody struct {
 }
 
 func (s *Server) updateStandardItem(
-	w http.ResponseWriter, r *http.Request, side standard.Side, id uuid.UUID,
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side, id uuid.UUID,
 ) {
 	var body standardItemUpdateBody
 	if err := decodeJSON(w, r, &body); err != nil {
@@ -445,8 +429,7 @@ func (s *Server) updateStandardItem(
 		s.writeError(w, r, nullableStringError("履约条目", "remarks"))
 		return
 	}
-	actor, _ := requireActor(r)
-	item, err := s.standardFulfillment.UpdateItem(r.Context(), actor, side, id, standard.UpdateItemInput{
+	item, err := s.StandardFulfillment.UpdateItem(r.Context(), actor, side, id, standard.UpdateItemInput{
 		Idx: body.Idx, Qty: qty, OrderItemID: body.OrderItemID, UnitID: unitID,
 		WarehouseID: body.WarehouseID, Remarks: remarks,
 	})
@@ -458,10 +441,9 @@ func (s *Server) updateStandardItem(
 }
 
 func (s *Server) deleteStandardItem(
-	w http.ResponseWriter, r *http.Request, side standard.Side, id uuid.UUID,
+	w http.ResponseWriter, r *http.Request, actor *authz.Actor, side standard.Side, id uuid.UUID,
 ) {
-	actor, _ := requireActor(r)
-	if err := s.standardFulfillment.DeleteItem(r.Context(), actor, side, id); err != nil {
+	if err := s.StandardFulfillment.DeleteItem(r.Context(), actor, side, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}

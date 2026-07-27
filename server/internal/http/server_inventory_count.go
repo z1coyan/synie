@@ -12,26 +12,13 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 )
 
-func (s *Server) QueryInvStockCounts(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "inv.stock_count:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func stockCountListQuery(body listBody) stockcount.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.stockCounts.List(r.Context(), actor, stockcount.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	return stockcount.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryInvStockCounts(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "inv.stock_count:read", stockCountListQuery, s.StockCounts.List, passthroughListResponse)
 }
 
 func (s *Server) GetInvStockCount(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -40,7 +27,7 @@ func (s *Server) GetInvStockCount(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockCounts.Get(r.Context(), actor, id)
+	item, err := s.StockCounts.Get(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -79,7 +66,7 @@ func (s *Server) CreateInvStockCount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	loadAll := body.LoadAll != nil && *body.LoadAll
-	item, err := s.stockCounts.Create(r.Context(), actor, stockcount.CreateInput{
+	item, err := s.StockCounts.Create(r.Context(), actor, stockcount.CreateInput{
 		DocNo: body.DocNo, PostingDate: body.PostingDate,
 		Summary: body.Summary, Remarks: body.Remarks,
 		CompanyID: body.CompanyId, WarehouseID: body.WarehouseId,
@@ -119,7 +106,7 @@ func (s *Server) UpdateInvStockCount(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, nullableStringError("库存盘点单", "remarks"))
 		return
 	}
-	item, err := s.stockCounts.Update(r.Context(), actor, id, stockcount.UpdateInput{
+	item, err := s.StockCounts.Update(r.Context(), actor, id, stockcount.UpdateInput{
 		DocNo: body.DocNo, PostingDate: body.PostingDate,
 		Summary: summary, Remarks: remarks, WarehouseID: body.WarehouseID,
 	})
@@ -136,7 +123,7 @@ func (s *Server) DeleteInvStockCount(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.stockCounts.Delete(r.Context(), actor, id); err != nil {
+	if err := s.StockCounts.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -149,7 +136,7 @@ func (s *Server) RefreshInvStockCount(w http.ResponseWriter, r *http.Request, id
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockCounts.Refresh(r.Context(), actor, id)
+	item, err := s.StockCounts.Refresh(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -163,7 +150,7 @@ func (s *Server) ApproveInvStockCount(w http.ResponseWriter, r *http.Request, id
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockCounts.Approve(r.Context(), actor, id)
+	item, err := s.StockCounts.Approve(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -177,7 +164,7 @@ func (s *Server) CancelInvStockCount(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockCounts.Cancel(r.Context(), actor, id)
+	item, err := s.StockCounts.Cancel(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -186,25 +173,7 @@ func (s *Server) CancelInvStockCount(w http.ResponseWriter, r *http.Request, id 
 }
 
 func (s *Server) QueryInvStockCountItems(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "inv.stock_count:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.stockCounts.QueryItems(r.Context(), actor, stockcount.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	queryList(s, w, r, "inv.stock_count:read", stockCountListQuery, s.StockCounts.QueryItems, passthroughListResponse)
 }
 
 func (s *Server) GetInvStockCountItem(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -213,7 +182,7 @@ func (s *Server) GetInvStockCountItem(w http.ResponseWriter, r *http.Request, id
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockCounts.GetItem(r.Context(), actor, id)
+	item, err := s.StockCounts.GetItem(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -239,7 +208,7 @@ func (s *Server) CreateInvStockCountItem(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.stockCounts.CreateItem(r.Context(), actor, stockcount.CreateItemInput{
+	item, err := s.StockCounts.CreateItem(r.Context(), actor, stockcount.CreateItemInput{
 		CountID: body.CountId, MaterialID: body.MaterialId,
 		UnitID: body.UnitId, CountedQuantity: counted, Remark: body.Remark,
 	})
@@ -278,7 +247,7 @@ func (s *Server) UpdateInvStockCountItem(w http.ResponseWriter, r *http.Request,
 		s.writeError(w, r, nullableStringError("库存盘点单行", "remark"))
 		return
 	}
-	item, err := s.stockCounts.UpdateItem(r.Context(), actor, id, stockcount.UpdateItemInput{
+	item, err := s.StockCounts.UpdateItem(r.Context(), actor, id, stockcount.UpdateItemInput{
 		MaterialID: body.MaterialID, UnitID: body.UnitID,
 		CountedQuantity: counted, Remark: remark,
 	})
@@ -295,35 +264,9 @@ func (s *Server) DeleteInvStockCountItem(w http.ResponseWriter, r *http.Request,
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.stockCounts.DeleteItem(r.Context(), actor, id); err != nil {
+	if err := s.StockCounts.DeleteItem(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func nullableDecimalUpdate(
-	raw json.RawMessage,
-	resource string,
-	field string,
-) (**decimal.Decimal, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	var value *string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, apierror.Validation(resource+"参数不合法", map[string][]string{
-			field: {"必须是十进制数字字符串或 null"},
-		})
-	}
-	if value == nil {
-		var result *decimal.Decimal
-		return &result, nil
-	}
-	parsed, err := decimalInput(*value, resource, field)
-	if err != nil {
-		return nil, err
-	}
-	result := &parsed
-	return &result, nil
 }

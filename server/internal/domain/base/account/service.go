@@ -8,11 +8,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 )
 
 var directions = map[string]struct{}{"debit": {}, "credit": {}}
@@ -181,15 +181,11 @@ func snapshot(item Account) map[string]any {
 	}
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Message: "同一公司内科目编码不能重复"},
+	{Code: "23503", Message: "会计科目已被引用，不能删除"},
+}
+
 func mapWriteError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return apierror.Wrap(apierror.CodeConflict, "同一公司内科目编码不能重复", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "会计科目已被引用，不能删除", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }

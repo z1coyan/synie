@@ -9,29 +9,18 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/z1coyan/synie/server/internal/domain/accounting/gljournal"
 	"github.com/z1coyan/synie/server/internal/http/gen"
-	"github.com/z1coyan/synie/server/internal/platform/apierror"
 )
 
-func (s *Server) QueryAccGlJournals(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "acc.gl_journal:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func gljournalListQuery(body listBody) gljournal.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.glJournals.List(r.Context(), actor, gljournal.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, journalListDTO(result))
+	return gljournal.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryAccGlJournals(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "acc.gl_journal:read", gljournalListQuery, s.GLJournals.List,
+		func(result gljournal.ListResult) any {
+			return countResultsResponse(result.Count, mapItems(result.Results, journalDTO))
+		})
 }
 
 func (s *Server) GetAccGlJournal(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -40,7 +29,7 @@ func (s *Server) GetAccGlJournal(w http.ResponseWriter, r *http.Request, id gen.
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.glJournals.Get(r.Context(), actor, id)
+	item, err := s.GLJournals.Get(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -59,7 +48,7 @@ func (s *Server) CreateAccGlJournal(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.glJournals.Create(r.Context(), actor, gljournal.CreateInput{
+	item, err := s.GLJournals.Create(r.Context(), actor, gljournal.CreateInput{
 		VoucherNo: body.VoucherNo, Date: body.Date.Time,
 		PostingDate: datePointer(body.PostingDate), Remarks: body.Remarks,
 		CompanyID: body.CompanyId,
@@ -97,7 +86,7 @@ func (s *Server) UpdateAccGlJournal(w http.ResponseWriter, r *http.Request, id g
 		s.writeError(w, r, nullableStringError("手工会计凭证", "remarks"))
 		return
 	}
-	item, err := s.glJournals.Update(r.Context(), actor, id, gljournal.UpdateInput{
+	item, err := s.GLJournals.Update(r.Context(), actor, id, gljournal.UpdateInput{
 		VoucherNo: body.VoucherNo, Date: datePointer(body.Date),
 		PostingDate: postingDate, Remarks: remarks,
 	})
@@ -114,7 +103,7 @@ func (s *Server) DeleteAccGlJournal(w http.ResponseWriter, r *http.Request, id g
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.glJournals.Delete(r.Context(), actor, id); err != nil {
+	if err := s.GLJournals.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -132,7 +121,7 @@ func (s *Server) AuditAccGlJournal(w http.ResponseWriter, r *http.Request, id ge
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.glJournals.Audit(r.Context(), actor, id, datePointer(body.PostingDate))
+	item, err := s.GLJournals.Audit(r.Context(), actor, id, datePointer(body.PostingDate))
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -146,7 +135,7 @@ func (s *Server) CancelAccGlJournal(w http.ResponseWriter, r *http.Request, id g
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.glJournals.Cancel(r.Context(), actor, id)
+	item, err := s.GLJournals.Cancel(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -154,26 +143,13 @@ func (s *Server) CancelAccGlJournal(w http.ResponseWriter, r *http.Request, id g
 	s.writeJSON(w, http.StatusOK, journalDTO(item))
 }
 
-func (s *Server) QueryAccGlJournalLines(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "acc.gl_journal:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func gljournalLineListQuery(body listBody) gljournal.ListLineQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.glJournals.ListLines(r.Context(), actor, gljournal.ListLineQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	return gljournal.ListLineQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryAccGlJournalLines(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "acc.gl_journal:read", gljournalLineListQuery, s.GLJournals.ListLines, passthroughListResponse)
 }
 
 func (s *Server) GetAccGlJournalLine(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -182,7 +158,7 @@ func (s *Server) GetAccGlJournalLine(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.glJournals.GetLine(r.Context(), actor, id)
+	item, err := s.GLJournals.GetLine(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -211,7 +187,7 @@ func (s *Server) CreateAccGlJournalLine(w http.ResponseWriter, r *http.Request) 
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.glJournals.CreateLine(r.Context(), actor, gljournal.CreateLineInput{
+	item, err := s.GLJournals.CreateLine(r.Context(), actor, gljournal.CreateLineInput{
 		JournalID: body.JournalId, Idx: body.Idx, AccountID: body.AccountId,
 		Debit: debit, Credit: credit, PartyType: partyTypePointer(body.PartyType),
 		PartyID: body.PartyId, Remarks: body.Remarks,
@@ -267,7 +243,7 @@ func (s *Server) UpdateAccGlJournalLine(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, nullableStringError("手工会计凭证行", "remarks"))
 		return
 	}
-	item, err := s.glJournals.UpdateLine(r.Context(), actor, id, gljournal.UpdateLineInput{
+	item, err := s.GLJournals.UpdateLine(r.Context(), actor, id, gljournal.UpdateLineInput{
 		Idx: body.Idx, AccountID: body.AccountID, Debit: debit, Credit: credit,
 		PartyType: partyType, PartyID: partyID, Remarks: remarks,
 	})
@@ -284,42 +260,11 @@ func (s *Server) DeleteAccGlJournalLine(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.glJournals.DeleteLine(r.Context(), actor, id); err != nil {
+	if err := s.GLJournals.DeleteLine(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func datePointer(value *openapi_types.Date) *time.Time {
-	if value == nil {
-		return nil
-	}
-	result := value.Time
-	return &result
-}
-
-func nullableDateUpdate(raw json.RawMessage) (**time.Time, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	var value *openapi_types.Date
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, err
-	}
-	if value == nil {
-		var result *time.Time
-		return &result, nil
-	}
-	date := value.Time
-	result := &date
-	return &result, nil
-}
-
-func nullableDateError(resource, field string) error {
-	return apierror.Validation(resource+"参数不合法", map[string][]string{
-		field: {"必须是 YYYY-MM-DD 日期或 null"},
-	})
 }
 
 func partyTypePointer(value *gen.GLPartyType) *string {
@@ -328,14 +273,6 @@ func partyTypePointer(value *gen.GLPartyType) *string {
 	}
 	result := string(*value)
 	return &result
-}
-
-func journalListDTO(result gljournal.ListResult) map[string]any {
-	items := make([]map[string]any, len(result.Results))
-	for i, item := range result.Results {
-		items[i] = journalDTO(item)
-	}
-	return map[string]any{"count": result.Count, "results": items}
 }
 
 func journalDTO(item gljournal.Journal) map[string]any {

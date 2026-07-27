@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -126,8 +127,8 @@ func createItemInTx(
 		CountedQuantity:  numeric(input.CountedQuantity),
 		ConvertedCounted: numeric(projection.convertedCounted),
 		BookQuantity:     projection.bookQuantity, MaterialCode: projection.materialCode,
-		MaterialName: projection.materialName, MaterialSpec: text(projection.materialSpec),
-		UnitName: projection.unitName, Remark: text(input.Remark), CountID: count.ID,
+		MaterialName: projection.materialName, MaterialSpec: pgconv.Text(projection.materialSpec),
+		UnitName: projection.unitName, Remark: pgconv.Text(input.Remark), CountID: count.ID,
 		CompanyID: count.CompanyID, MaterialID: input.MaterialID, UnitID: input.UnitID,
 	})
 	if err != nil {
@@ -244,8 +245,8 @@ func (s *Service) UpdateItem(
 		ID: id, CountedQuantity: numeric(after.CountedQuantity),
 		ConvertedCounted: numeric(after.ConvertedCounted),
 		BookQuantity:     after.BookQuantity, MaterialCode: after.MaterialCode,
-		MaterialName: after.MaterialName, MaterialSpec: text(after.MaterialSpec),
-		UnitName: after.UnitName, Remark: text(after.Remark),
+		MaterialName: after.MaterialName, MaterialSpec: pgconv.Text(after.MaterialSpec),
+		UnitName: after.UnitName, Remark: pgconv.Text(after.Remark),
 		MaterialID: after.MaterialID, UnitID: after.UnitID,
 	})
 	if err != nil {
@@ -365,7 +366,7 @@ func buildItemProjection(
 	return itemProjection{
 		convertedCounted: converted, bookQuantity: row.BookQuantity,
 		materialCode: row.MaterialCode, materialName: row.MaterialName,
-		materialSpec: optionalText(row.MaterialSpec), unitName: row.UnitName,
+		materialSpec: pgconv.TextPtr(row.MaterialSpec), unitName: row.UnitName,
 	}, nil
 }
 
@@ -461,8 +462,8 @@ func itemFromRow(row dbgen.InvStockCountItem) Item {
 		ID: row.ID, CountedQuantity: decimalPointer(row.CountedQuantity),
 		ConvertedCounted: decimalPointer(row.ConvertedCounted),
 		BookQuantity:     row.BookQuantity, MaterialCode: row.MaterialCode,
-		MaterialName: row.MaterialName, MaterialSpec: optionalText(row.MaterialSpec),
-		UnitName: row.UnitName, Remark: optionalText(row.Remark),
+		MaterialName: row.MaterialName, MaterialSpec: pgconv.TextPtr(row.MaterialSpec),
+		UnitName: row.UnitName, Remark: pgconv.TextPtr(row.Remark),
 		InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		CountID: row.CountID, CompanyID: row.CompanyID,
 		MaterialID: row.MaterialID, UnitID: row.UnitID,

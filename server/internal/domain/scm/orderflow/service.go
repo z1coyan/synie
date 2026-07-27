@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
@@ -188,17 +189,9 @@ func scanOne(row rowScanner) (Item, error) {
 	item.FlowType = strings.ToUpper(item.FlowType)
 	item.Status = strings.ToUpper(item.Status)
 	item.VoucherDate = voucherDate.Time
-	item.MaterialSpec = textPtr(materialSpec)
-	item.CustomerPartNo = textPtr(customerPartNo)
+	item.MaterialSpec = pgconv.TextPtr(materialSpec)
+	item.CustomerPartNo = pgconv.TextPtr(customerPartNo)
 	return item, nil
-}
-
-func textPtr(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	result := value.String
-	return &result
 }
 
 func notFound() error {

@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -19,6 +17,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -197,27 +196,17 @@ func writeAudit(
 	return nil
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Constraint: "quotation_unique_quotation_no_index", Message: "报价单号已存在"},
+	{Code: "23505", Constraint: "quotation_item_unique_material_unit_index", Message: "同一物料与单位在本报价单已有报价行"},
+	{Code: "23505", Constraint: "quotation_tier_unique_item_min_qty_index", Message: "同一起订量档已存在"},
+	{Code: "23505", Message: "报价数据已存在"},
+	{Code: "23503", Message: "报价数据已被业务引用,不可删除"},
+	{Code: "23514", Message: "报价参数不符合约束", Validation: true},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			switch pgErr.ConstraintName {
-			case "sal_quotation_unique_quotation_no_index", "pur_quotation_unique_quotation_no_index":
-				return apierror.Wrap(apierror.CodeConflict, "报价单号已存在", err)
-			case "sal_quotation_item_unique_material_unit_index", "pur_quotation_item_unique_material_unit_index":
-				return apierror.Wrap(apierror.CodeConflict, "同一物料与单位在本报价单已有报价行", err)
-			case "sal_quotation_tier_unique_item_min_qty_index", "pur_quotation_tier_unique_item_min_qty_index":
-				return apierror.Wrap(apierror.CodeConflict, "同一起订量档已存在", err)
-			}
-			return apierror.Wrap(apierror.CodeConflict, "报价数据已存在", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "报价数据已被业务引用,不可删除", err)
-		case "23514":
-			return apierror.Wrap(apierror.CodeValidation, "报价参数不符合约束", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }
 
 func notFound(spec sideSpec) error {
@@ -230,40 +219,6 @@ func itemNotFound() error {
 
 func tierNotFound() error {
 	return apierror.New(apierror.CodeNotFound, "报价价格档不存在")
-}
-
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func textPtr(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	result := value.String
-	return &result
-}
-
-func dateValue(value pgtype.Date) time.Time {
-	if !value.Valid {
-		return time.Time{}
-	}
-	return value.Time
-}
-
-func date(value time.Time) pgtype.Date {
-	return pgtype.Date{Time: value, Valid: !value.IsZero()}
-}
-
-func timestampPtr(value pgtype.Timestamp) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time.UTC()
-	return &result
 }
 
 func decimalPtr(value pgtype.Numeric) *decimal.Decimal {

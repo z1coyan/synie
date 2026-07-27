@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
@@ -85,7 +86,7 @@ func (s *Service) CreateDemand(
 	err = tx.QueryRow(ctx, `INSERT INTO mfg_demand
 		(demand_no,demand_date,remarks,status,company_id,created_by_id)
 		VALUES ($1,$2,$3,'draft',$4,$5) RETURNING id`,
-		no, date(demandDate), text(input.Remarks), input.CompanyID, actorID(actor),
+		no, pgconv.DateAlways(demandDate), pgconv.Text(input.Remarks), input.CompanyID, actorID(actor),
 	).Scan(&id)
 	if err != nil {
 		return Demand{}, writeError("创建履约需求单失败", err)
@@ -150,7 +151,7 @@ func (s *Service) UpdateDemand(
 	}
 	_, err = tx.Exec(ctx, `UPDATE mfg_demand SET demand_no=$2,demand_date=$3,
 		remarks=$4,updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
-		id, after.DemandNo, date(after.DemandDate), text(after.Remarks))
+		id, after.DemandNo, pgconv.DateAlways(after.DemandDate), pgconv.Text(after.Remarks))
 	if err != nil {
 		return Demand{}, writeError("更新履约需求单失败", err)
 	}
@@ -252,7 +253,7 @@ func deriveItemProjection(
 	}
 	return itemProjection{
 		baseQty: baseQty, materialCode: code, materialName: name,
-		materialSpec: textPtr(spec), unitName: unitName,
+		materialSpec: pgconv.TextPtr(spec), unitName: unitName,
 	}, nil
 }
 
@@ -337,10 +338,10 @@ func (s *Service) CreateDemandItem(
 	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13,$14,$15,0,0)
 	RETURNING id`,
 		parent.ID, parent.CompanyID, input.Idx, input.MaterialID, input.UnitID,
-		input.Qty, projection.baseQty, nullableDate(input.NeedDate),
+		input.Qty, projection.baseQty, pgconv.NullableDate(input.NeedDate),
 		input.FulfillmentMethod, input.SalesOrderItemID, projection.materialCode,
-		projection.materialName, text(projection.materialSpec), projection.unitName,
-		text(input.Remarks),
+		projection.materialName, pgconv.Text(projection.materialSpec), projection.unitName,
+		pgconv.Text(input.Remarks),
 	).Scan(&id)
 	if err != nil {
 		return DemandItem{}, writeError("创建需求行失败", err)
@@ -441,9 +442,9 @@ func (s *Service) UpdateDemandItem(
 			material_spec=$12,unit_name=$13,remarks=$14,
 			updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
 			id, after.Idx, after.MaterialID, after.UnitID, after.Qty, after.BaseQty,
-			nullableDate(after.NeedDate), after.FulfillmentMethod, after.SalesOrderItemID,
-			after.MaterialCode, after.MaterialName, text(after.MaterialSpec),
-			after.UnitName, text(after.Remarks))
+			pgconv.NullableDate(after.NeedDate), after.FulfillmentMethod, after.SalesOrderItemID,
+			after.MaterialCode, after.MaterialName, pgconv.Text(after.MaterialSpec),
+			after.UnitName, pgconv.Text(after.Remarks))
 		if err != nil {
 			return DemandItem{}, writeError("更新需求行失败", err)
 		}

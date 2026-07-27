@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -41,58 +42,21 @@ func (s *Service) QueryBankAccounts(
 	if err := require(actor, "acc.bank_account", "read"); err != nil {
 		return BankAccountList{}, err
 	}
-	if err := validatePage(&query); err != nil {
-		return BankAccountList{}, err
-	}
-	built, err := buildFilter(BankAccountResource, query)
+	result, err := listexec.List(ctx, listexec.Spec[BankAccount]{
+		Pool: s.pool, Resource: BankAccountResourceMeta(), Label: "银行账户", Actor: actor,
+		Source: ` FROM acc_bank_account`,
+		Select: `SELECT id,alias,bank_name,branch_name,holder_name,
+account_no,active,note,inserted_at,updated_at,company_id,currency_id,account_id`,
+		DefaultOrder: ` ORDER BY "id"`,
+		Tiebreaker:   `, "id"`,
+		Scan: func(rows pgx.Rows) (BankAccount, error) {
+			return scanBankAccount(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return BankAccountList{}, err
 	}
-	where, args, possible := scopedWhere(actor, built.Where, built.Args, "company_id")
-	if !possible {
-		return BankAccountList{Results: []BankAccount{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "id"`
-	} else {
-		order += `, "id"`
-	}
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return BankAccountList{}, apierror.Wrap(apierror.CodeInternal, "查询银行账户失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result BankAccountList
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM acc_bank_account`+where, args...).
-		Scan(&result.Count); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "统计银行账户失败", err)
-	}
-	sql, listArgs := appendPage(`SELECT id,alias,bank_name,branch_name,holder_name,
-		account_no,active,note,inserted_at,updated_at,company_id,currency_id,account_id
-		FROM acc_bank_account`+where+order, append([]any(nil), args...), query)
-	rows, err := tx.Query(ctx, sql, listArgs...)
-	if err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "查询银行账户失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]BankAccount, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanBankAccount(rows)
-		if scanErr != nil {
-			return result, apierror.Wrap(apierror.CodeInternal, "读取银行账户结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "遍历银行账户结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return result, apierror.Wrap(apierror.CodeInternal, "完成银行账户查询失败", err)
-	}
-	return result, nil
+	return BankAccountList{Count: result.Count, Results: result.Results}, nil
 }
 
 func (s *Service) CreateBankAccount(

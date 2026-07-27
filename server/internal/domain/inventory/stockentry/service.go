@@ -3,7 +3,6 @@ package stockentry
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,7 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stock"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -42,78 +42,41 @@ func (s *Service) List(ctx context.Context, actor *authz.Actor, query ListQuery)
 	if err := requireRead(actor); err != nil {
 		return ListResult{}, err
 	}
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return ListResult{}, apierror.Validation("分页参数不合法", map[string][]string{
-			"limit": {"必须在 1 到 200 之间"}, "offset": {"不能小于 0"},
-		})
-	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Entry]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "库存分录", Actor: actor,
+		Source: ` FROM inv_stock_entry`,
+		Select: `SELECT id,seq,quantity,posting_date,voucher_type,voucher_id,voucher_no,
+is_cancelled,remarks,inserted_at,company_id,warehouse_id,material_id,cancelled_at`,
+		DefaultOrder: ` ORDER BY "seq" ASC`,
+		Tiebreaker:   `, "seq" ASC`,
+		Scan: func(rows pgx.Rows) (Entry, error) {
+			var item Entry
+			var posting pgtype.Date
+			var remarks pgtype.Text
+			var inserted, cancelled pgtype.Timestamp
+			if err := rows.Scan(
+				&item.ID, &item.Seq, &item.Quantity, &posting, &item.VoucherType,
+				&item.VoucherID, &item.VoucherNo, &item.IsCancelled, &remarks, &inserted,
+				&item.CompanyID, &item.WarehouseID, &item.MaterialID, &cancelled,
+			); err != nil {
+				return Entry{}, err
+			}
+			item.PostingDate = posting.Time
+			item.Remarks = pgconv.TextPtr(remarks)
+			item.InsertedAt = inserted.Time.UTC()
+			item.CancelledAt = pgconv.OptionalTime(cancelled)
+			return item, nil
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ListResult{}, err
 	}
-	where, args := built.Where, append([]any(nil), built.Args...)
-	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
-	if empty {
-		return ListResult{Results: []Entry{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "seq" ASC`
-	} else {
-		order += `, "seq" ASC`
-	}
-	const source = ` FROM inv_stock_entry`
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询库存分录失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*)`+source+where, args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计库存分录失败", err)
-	}
-	listArgs := append([]any(nil), args...)
-	limitAt := len(listArgs) + 1
-	listArgs = append(listArgs, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,seq,quantity,posting_date,voucher_type,voucher_id,voucher_no,
-		is_cancelled,remarks,inserted_at,company_id,warehouse_id,material_id,cancelled_at`+
-		source+where+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", limitAt, limitAt+1), listArgs...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询库存分录失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Entry, 0, query.Limit)
-	for rows.Next() {
-		var item Entry
-		var posting pgtype.Date
-		var remarks pgtype.Text
-		var inserted, cancelled pgtype.Timestamp
-		if err := rows.Scan(
-			&item.ID, &item.Seq, &item.Quantity, &posting, &item.VoucherType,
-			&item.VoucherID, &item.VoucherNo, &item.IsCancelled, &remarks, &inserted,
-			&item.CompanyID, &item.WarehouseID, &item.MaterialID, &cancelled,
-		); err != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取库存分录结果失败", err)
-		}
-		item.PostingDate = posting.Time
-		item.Remarks = optionalText(remarks)
-		item.InsertedAt = inserted.Time.UTC()
-		item.CancelledAt = optionalTimestamp(cancelled)
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历库存分录结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成库存分录查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
+}
+
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func (s *Service) Balance(
@@ -154,23 +117,8 @@ func fromRow(row dbgen.GetStockEntryRow) Entry {
 		ID: row.ID, Seq: row.Seq, Quantity: row.Quantity,
 		PostingDate: row.PostingDate.Time, VoucherType: row.VoucherType,
 		VoucherID: row.VoucherID, VoucherNo: row.VoucherNo,
-		IsCancelled: row.IsCancelled, CancelledAt: optionalTimestamp(row.CancelledAt),
-		Remarks: optionalText(row.Remarks), InsertedAt: row.InsertedAt.Time.UTC(),
+		IsCancelled: row.IsCancelled, CancelledAt: pgconv.OptionalTime(row.CancelledAt),
+		Remarks: pgconv.TextPtr(row.Remarks), InsertedAt: row.InsertedAt.Time.UTC(),
 		CompanyID: row.CompanyID, WarehouseID: row.WarehouseID, MaterialID: row.MaterialID,
 	}
-}
-
-func optionalText(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	return &value.String
-}
-
-func optionalTimestamp(value pgtype.Timestamp) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time.UTC()
-	return &result
 }

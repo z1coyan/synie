@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stock"
 	"github.com/z1coyan/synie/server/internal/domain/trading/order"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
@@ -79,8 +80,8 @@ func (s *Service) CreateIssueItem(ctx context.Context, actor *authz.Actor, input
 		from_warehouse_id,outsourced_warehouse_id)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		RETURNING id`, item.Idx, item.Qty, item.BaseQty, item.MaterialCode,
-		item.MaterialName, text(item.MaterialSpec), item.UnitName, item.OrderNo,
-		text(item.Remarks), item.IssueID, item.CompanyID, item.OrderItemMaterialID,
+		item.MaterialName, pgconv.Text(item.MaterialSpec), item.UnitName, item.OrderNo,
+		pgconv.Text(item.Remarks), item.IssueID, item.CompanyID, item.OrderItemMaterialID,
 		item.MaterialID, item.UnitID, item.FromWarehouseID, item.OutsourcedWarehouseID).
 		Scan(&item.ID)
 	if err != nil {
@@ -157,7 +158,7 @@ func (s *Service) UpdateIssueItem(ctx context.Context, actor *authz.Actor, id uu
 		from_warehouse_id=$14,outsourced_warehouse_id=$15,
 		updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
 		id, after.Idx, after.Qty, after.BaseQty, after.MaterialCode, after.MaterialName,
-		text(after.MaterialSpec), after.UnitName, after.OrderNo, text(after.Remarks),
+		pgconv.Text(after.MaterialSpec), after.UnitName, after.OrderNo, pgconv.Text(after.Remarks),
 		after.OrderItemMaterialID, after.MaterialID, after.UnitID, after.FromWarehouseID,
 		after.OutsourcedWarehouseID)
 	if err != nil {
@@ -282,7 +283,7 @@ func loadMaterialSnapshot(ctx context.Context, tx pgx.Tx, id uuid.UUID) (materia
 	if err != nil {
 		return materialSnapshot{}, apierror.Wrap(apierror.CodeInternal, "读取来源发料清单行失败", err)
 	}
-	result.materialSpec = textPtr(spec)
+	result.materialSpec = pgconv.TextPtr(spec)
 	return result, nil
 }
 
@@ -338,7 +339,7 @@ func (s *Service) AuditIssue(ctx context.Context, actor *authz.Actor, id uuid.UU
 	}
 	if _, err := tx.Exec(ctx, `UPDATE pur_outsourced_issue SET status='audited',
 		audited_at=$2,audited_by_id=$3,updated_at=$2 WHERE id=$1`,
-		id, timestamp(now), auditedBy); err != nil {
+		id, pgconv.Timestamp(now), auditedBy); err != nil {
 		return Issue{}, writeError("审核委外发料单", err)
 	}
 	result, err := queryIssue(ctx, tx, id, false)
@@ -395,7 +396,7 @@ func (s *Service) VoidIssue(ctx context.Context, actor *authz.Actor, id uuid.UUI
 	}
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `UPDATE pur_outsourced_issue SET status='voided',
-		updated_at=$2 WHERE id=$1`, id, timestamp(now)); err != nil {
+		updated_at=$2 WHERE id=$1`, id, pgconv.Timestamp(now)); err != nil {
 		return Issue{}, writeError("作废委外发料单", err)
 	}
 	result, err := queryIssue(ctx, tx, id, false)

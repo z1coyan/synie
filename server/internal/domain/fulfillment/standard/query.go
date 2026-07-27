@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 )
@@ -236,9 +237,9 @@ func scanHead(row scanner) (Head, error) {
 	}
 	item.DocumentDate = documentDate.Time
 	item.PostingDate = datePtr(postingDate)
-	item.Remarks = textPtr(remarks)
+	item.Remarks = pgconv.TextPtr(remarks)
 	item.Status = statusFromDB(status)
-	item.AuditedAt = timestampPtr(auditedAt)
+	item.AuditedAt = pgconv.OptionalTime(auditedAt)
 	item.InsertedAt, item.UpdatedAt = inserted.Time, updated.Time
 	return item, nil
 }
@@ -324,7 +325,7 @@ func scanItem(row scanner) (Item, error) {
 		return Item{}, err
 	}
 	item.MaterialSpec, item.CustomerPartNo, item.Remarks =
-		textPtr(materialSpec), textPtr(customerPartNo), textPtr(remarks)
+		pgconv.TextPtr(materialSpec), pgconv.TextPtr(customerPartNo), pgconv.TextPtr(remarks)
 	item.InsertedAt, item.UpdatedAt = insertedAt.Time, updatedAt.Time
 	item.HeadDate, item.HeadStatus = headDate.Time, statusFromDB(headStatus)
 	return item, nil
@@ -348,8 +349,8 @@ func headFromSalesRow(row dbgen.SalDelivery) Head {
 	return Head{
 		ID: row.ID, No: row.DeliveryNo, DocumentDate: row.DeliveryDate.Time,
 		PostingDate: datePtr(row.PostingDate), PartyType: row.PartyType, PartyID: row.PartyID,
-		Remarks: textPtr(row.Remarks), Status: statusFromDB(row.Status),
-		AuditedAt: timestampPtr(row.AuditedAt), InsertedAt: row.InsertedAt.Time,
+		Remarks: pgconv.TextPtr(row.Remarks), Status: statusFromDB(row.Status),
+		AuditedAt: pgconv.OptionalTime(row.AuditedAt), InsertedAt: row.InsertedAt.Time,
 		UpdatedAt: row.UpdatedAt.Time, CompanyID: row.CompanyID, WarehouseID: row.WarehouseID,
 		DebitAccountID: row.DebitAccountID, CreditAccountID: row.CreditAccountID,
 		CreatedByID: row.CreatedByID, AuditedByID: row.AuditedByID,
@@ -360,8 +361,8 @@ func headFromPurchaseRow(row dbgen.PurReceipt) Head {
 	return Head{
 		ID: row.ID, No: row.ReceiptNo, DocumentDate: row.ReceiptDate.Time,
 		PostingDate: datePtr(row.PostingDate), PartyType: row.PartyType, PartyID: row.PartyID,
-		Remarks: textPtr(row.Remarks), Status: statusFromDB(row.Status),
-		AuditedAt: timestampPtr(row.AuditedAt), InsertedAt: row.InsertedAt.Time,
+		Remarks: pgconv.TextPtr(row.Remarks), Status: statusFromDB(row.Status),
+		AuditedAt: pgconv.OptionalTime(row.AuditedAt), InsertedAt: row.InsertedAt.Time,
 		UpdatedAt: row.UpdatedAt.Time, CompanyID: row.CompanyID, WarehouseID: row.WarehouseID,
 		DebitAccountID: row.DebitAccountID, CreditAccountID: row.CreditAccountID,
 		CreatedByID: row.CreatedByID, AuditedByID: row.AuditedByID,

@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
@@ -23,6 +22,7 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	fileplatform "github.com/z1coyan/synie/server/internal/platform/files"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
@@ -231,13 +231,6 @@ func decimalValue(value pgtype.Numeric) string {
 func lower(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
 func upper(value string) string { return strings.ToUpper(strings.TrimSpace(value)) }
 
-func text(value *string) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
 func dateArg(value *string, field string) (any, error) {
 	if value == nil {
 		return nil, nil
@@ -250,20 +243,7 @@ func dateArg(value *string, field string) (any, error) {
 }
 
 func databaseWriteError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return apierror.Wrap(apierror.CodeConflict, "记录违反唯一约束", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "记录已被引用或引用对象不存在", err)
-		case "23514", "23502", "22P02":
-			return apierror.Wrap(apierror.CodeValidation, "记录参数不合法", err)
-		case "40001", "40P01":
-			return apierror.Wrap(apierror.CodeConflict, "并发操作冲突,请重试", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, dberr.GenericMappings()...)
 }
 
 func notFound(label string, err error) error {

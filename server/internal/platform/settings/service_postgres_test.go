@@ -154,6 +154,16 @@ func TestPostgresSingletonSettingsValidationAuditAndSecretFiltering(t *testing.T
 	if filtered != "[FILTERED]" {
 		t.Fatalf("secret audit value = %q", filtered)
 	}
+	var leaked int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM sys_audit_log
+		WHERE resource='acc_setting' AND actor_id=$1 AND changes::text LIKE '%' || $2 || '%'
+	`, userID, firstSecret).Scan(&leaked); err != nil {
+		t.Fatal(err)
+	}
+	if leaked != 0 {
+		t.Fatalf("审计日志泄漏 OCR secret 明文 %d 行", leaked)
+	}
 	var companyScoped int
 	if err := pool.QueryRow(ctx, `
 		SELECT count(*) FROM sys_audit_log

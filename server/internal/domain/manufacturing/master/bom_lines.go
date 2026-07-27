@@ -6,10 +6,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 )
 
 func (s *Service) CreateBOMComponent(ctx context.Context, actor *authz.Actor,
@@ -466,11 +466,8 @@ func (s *Service) ApplyRouteTemplate(ctx context.Context, actor *authz.Actor,
 		return nil, internal("从工艺模板带入失败", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "40001" {
-			return nil, apierror.Wrap(apierror.CodeConflict, "BOM工艺路线已被并发修改,请刷新后重试", err)
-		}
-		return nil, internal("从工艺模板带入失败", err)
+		return nil, dberr.MapWrite(err, "从工艺模板带入失败",
+			dberr.Mapping{Code: "40001", Message: "BOM工艺路线已被并发修改,请刷新后重试"})
 	}
 	return result, nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/meta"
@@ -465,7 +466,7 @@ func scanIssue(row scanner) (Issue, error) {
 	err := row.Scan(&item.ID, &item.IssueNo, &dateValue, &item.PartyType, &item.PartyID,
 		&remarks, &status, &auditedAt, &insertedAt, &updatedAt, &item.CompanyID,
 		&item.FromWarehouseID, &item.OutsourcedWarehouseID, &item.CreatedByID, &item.AuditedByID)
-	item.IssueDate, item.Remarks, item.Status = dateValue.Time, textPtr(remarks), statusFromDB(status)
+	item.IssueDate, item.Remarks, item.Status = dateValue.Time, pgconv.TextPtr(remarks), statusFromDB(status)
 	item.AuditedAt, item.InsertedAt, item.UpdatedAt = timestampPtr(auditedAt), insertedAt.Time.UTC(), updatedAt.Time.UTC()
 	return item, err
 }
@@ -481,7 +482,7 @@ func scanReceipt(row scanner) (Receipt, error) {
 		&item.CompanyID, &item.WarehouseID, &item.OutsourcedWarehouseID,
 		&item.DebitAccountID, &item.CreditAccountID, &item.CreatedByID, &item.AuditedByID)
 	item.ReceiptDate, item.PostingDate = receiptDate.Time, datePtr(postingDate)
-	item.Remarks, item.Status = textPtr(remarks), statusFromDB(status)
+	item.Remarks, item.Status = pgconv.TextPtr(remarks), statusFromDB(status)
 	item.AuditedAt, item.InsertedAt, item.UpdatedAt = timestampPtr(auditedAt), insertedAt.Time.UTC(), updatedAt.Time.UTC()
 	return item, err
 }
@@ -497,7 +498,7 @@ func scanIssueItem(row scanner) (IssueItem, error) {
 		&updatedAt, &item.IssueID, &item.CompanyID, &item.OrderItemMaterialID,
 		&item.MaterialID, &item.UnitID, &item.FromWarehouseID, &item.OutsourcedWarehouseID,
 		&item.IssueNo, &issueDate, &status, &item.PartyType, &item.PartyID)
-	item.MaterialSpec, item.Remarks, item.IssueDate = textPtr(spec), textPtr(remarks), issueDate.Time
+	item.MaterialSpec, item.Remarks, item.IssueDate = pgconv.TextPtr(spec), pgconv.TextPtr(remarks), issueDate.Time
 	item.InsertedAt, item.UpdatedAt, item.IssueStatus = insertedAt.Time.UTC(), updatedAt.Time.UTC(), statusFromDB(status)
 	return item, err
 }
@@ -516,7 +517,7 @@ func scanReceiptItem(row scanner) (ReceiptItem, error) {
 		&item.ReceiptID, &item.CompanyID, &item.OrderItemID, &item.MaterialID, &item.UnitID,
 		&item.WarehouseID, &item.ReceiptNo, &receiptDate, &status, &item.PartyType,
 		&item.PartyID, &item.RemainingReconcilableQty)
-	item.MaterialSpec, item.CustomerPartNo, item.Remarks = textPtr(spec), textPtr(partNo), textPtr(remarks)
+	item.MaterialSpec, item.CustomerPartNo, item.Remarks = pgconv.TextPtr(spec), pgconv.TextPtr(partNo), pgconv.TextPtr(remarks)
 	item.InsertedAt, item.UpdatedAt, item.ReceiptDate = insertedAt.Time.UTC(), updatedAt.Time.UTC(), receiptDate.Time
 	item.ReceiptStatus = statusFromDB(status)
 	return item, err
@@ -530,7 +531,7 @@ func scanReceiptMaterial(row scanner) (ReceiptMaterial, error) {
 		&item.MaterialName, &spec, &item.UnitName, &item.OrderNo, &remarks, &insertedAt,
 		&updatedAt, &item.ReceiptItemID, &item.CompanyID, &item.OrderItemMaterialID,
 		&item.MaterialID, &item.UnitID, &item.OutsourcedWarehouseID, &item.ReceiptNo)
-	item.MaterialSpec, item.Remarks = textPtr(spec), textPtr(remarks)
+	item.MaterialSpec, item.Remarks = pgconv.TextPtr(spec), pgconv.TextPtr(remarks)
 	item.InsertedAt, item.UpdatedAt = insertedAt.Time.UTC(), updatedAt.Time.UTC()
 	return item, err
 }
@@ -543,7 +544,7 @@ func scanReceiptByproduct(row scanner) (ReceiptByproduct, error) {
 		&item.MaterialName, &spec, &item.UnitName, &item.OrderNo, &remarks, &insertedAt,
 		&updatedAt, &item.ReceiptItemID, &item.CompanyID, &item.OrderItemByproductID,
 		&item.MaterialID, &item.UnitID, &item.WarehouseID, &item.ReceiptNo)
-	item.MaterialSpec, item.Remarks = textPtr(spec), textPtr(remarks)
+	item.MaterialSpec, item.Remarks = pgconv.TextPtr(spec), pgconv.TextPtr(remarks)
 	item.InsertedAt, item.UpdatedAt = insertedAt.Time.UTC(), updatedAt.Time.UTC()
 	return item, err
 }

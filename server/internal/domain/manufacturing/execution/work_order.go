@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
@@ -98,8 +99,8 @@ func (s *Service) CreateWorkOrder(
 		demand_item_id,material_id,unit_id,created_by_id
 	) VALUES ($1,$2,$3,0,$4,$5,$6,$7,$8,'in_progress',$9,$10,$11,$12,$13,$14)
 	RETURNING id`,
-		no, item.Qty, item.BaseQty, nullableDate(item.NeedDate), item.MaterialCode,
-		item.MaterialName, text(item.MaterialSpec), item.UnitName, item.CompanyID,
+		no, item.Qty, item.BaseQty, pgconv.NullableDate(item.NeedDate), item.MaterialCode,
+		item.MaterialName, pgconv.Text(item.MaterialSpec), item.UnitName, item.CompanyID,
 		item.DemandID, item.ID, item.MaterialID, item.UnitID, actorID(actor),
 	).Scan(&id)
 	if err != nil {

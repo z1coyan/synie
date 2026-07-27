@@ -9,11 +9,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 )
 
 const (
@@ -551,15 +551,11 @@ func validClosedReason(value string) bool {
 	return value == TodoClosedByUnconfirm || value == TodoClosedByInvoiceAudit
 }
 
+var todoWriteMappings = []dberr.Mapping{
+	{Code: "23505", Message: "源单已有活跃待办"},
+	{Code: "23503", Message: "待办引用不存在", Validation: true},
+}
+
 func todoWriteError(err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return apierror.Wrap(apierror.CodeConflict, "源单已有活跃待办", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeValidation, "待办引用不存在", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, "保存待办失败", err)
+	return dberr.MapWrite(err, "保存待办失败", todoWriteMappings...)
 }

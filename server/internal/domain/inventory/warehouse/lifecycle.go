@@ -8,12 +8,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 )
 
 func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateInput) (Warehouse, error) {
@@ -432,20 +432,13 @@ func lowerText(value *string) *string {
 	return &result
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Constraint: "inv_warehouse_unique_name_per_company_index", Message: "仓库名称已存在"},
+	{Code: "23505", Message: "仓库唯一字段已存在"},
+	{Code: "23514", Message: "协作方类型与协作方必须同时填写", Validation: true},
+	{Code: "23503", Message: "仓库已被引用或关联记录不存在"},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			if pgErr.ConstraintName == "inv_warehouse_unique_name_per_company_index" {
-				return apierror.Wrap(apierror.CodeConflict, "仓库名称已存在", err)
-			}
-			return apierror.Wrap(apierror.CodeConflict, "仓库唯一字段已存在", err)
-		case "23514":
-			return apierror.Wrap(apierror.CodeValidation, "协作方类型与协作方必须同时填写", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "仓库已被引用或关联记录不存在", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }

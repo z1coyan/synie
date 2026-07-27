@@ -3,19 +3,17 @@ package currency
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 )
 
 type Service struct {
@@ -39,73 +37,31 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (Currency, error) {
 }
 
 func (s *Service) List(ctx context.Context, query ListQuery) (ListResult, error) {
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	fields := map[string][]string{}
-	if query.Limit < 1 || query.Limit > 200 {
-		fields["limit"] = []string{"必须在 1 到 200 之间"}
-	}
-	if query.Offset < 0 {
-		fields["offset"] = []string{"不能小于 0"}
-	}
-	if len(fields) > 0 {
-		return ListResult{}, apierror.Validation("分页参数不合法", fields)
-	}
-
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Currency]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "货币",
+		Source:       ` FROM bas_currency`,
+		Select:       `SELECT id, name, iso_code, symbol, active, inserted_at, updated_at`,
+		DefaultOrder: ` ORDER BY "iso_code" ASC, "id" ASC`,
+		Tiebreaker:   `, "id" ASC`,
+		Scan: func(rows pgx.Rows) (Currency, error) {
+			var item Currency
+			if err := rows.Scan(&item.ID, &item.Name, &item.ISOCode, &item.Symbol, &item.Active, &item.InsertedAt, &item.UpdatedAt); err != nil {
+				return Currency{}, err
+			}
+			item.InsertedAt = item.InsertedAt.UTC()
+			item.UpdatedAt = item.UpdatedAt.UTC()
+			return item, nil
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ListResult{}, err
 	}
-	orderBy := built.OrderBy
-	if orderBy == "" {
-		orderBy = ` ORDER BY "iso_code" ASC, "id" ASC`
-	} else {
-		orderBy += `, "id" ASC`
-	}
+	return ListResult{Count: result.Count, Results: result.Results}, nil
+}
 
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询货币失败", err)
-	}
-	defer tx.Rollback(ctx)
-
-	var count int64
-	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM bas_currency`+built.Where, built.Args...).Scan(&count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计货币失败", err)
-	}
-	args := append([]any(nil), built.Args...)
-	limitArg := len(args) + 1
-	args = append(args, query.Limit)
-	offsetArg := len(args) + 1
-	args = append(args, query.Offset)
-	statement := `SELECT id, name, iso_code, symbol, active, inserted_at, updated_at FROM bas_currency` +
-		built.Where + orderBy + fmt.Sprintf(" LIMIT $%d OFFSET $%d", limitArg, offsetArg)
-	rows, err := tx.Query(ctx, statement, args...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询货币失败", err)
-	}
-	defer rows.Close()
-	result := ListResult{Count: count, Results: make([]Currency, 0, query.Limit)}
-	for rows.Next() {
-		var item Currency
-		if err := rows.Scan(&item.ID, &item.Name, &item.ISOCode, &item.Symbol, &item.Active, &item.InsertedAt, &item.UpdatedAt); err != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取货币结果失败", err)
-		}
-		item.InsertedAt = item.InsertedAt.UTC()
-		item.UpdatedAt = item.UpdatedAt.UTC()
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历货币结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成货币查询失败", err)
-	}
-	return result, nil
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateInput) (Currency, error) {
@@ -122,7 +78,7 @@ func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateIn
 	}
 	defer tx.Rollback(ctx)
 	row, err := dbgen.New(tx).CreateCurrency(ctx, dbgen.CreateCurrencyParams{
-		Name: input.Name, IsoCode: input.ISOCode, Symbol: toText(input.Symbol), Active: active,
+		Name: input.Name, IsoCode: input.ISOCode, Symbol: pgconv.Text(input.Symbol), Active: active,
 	})
 	if err != nil {
 		return Currency{}, mapWriteError("创建货币失败", err)
@@ -187,7 +143,7 @@ func (s *Service) Update(ctx context.Context, actor *authz.Actor, id uuid.UUID, 
 		}
 	}
 	updated, err := queries.UpdateCurrency(ctx, dbgen.UpdateCurrencyParams{
-		ID: id, Name: after.Name, Symbol: toText(after.Symbol), Active: after.Active,
+		ID: id, Name: after.Name, Symbol: pgconv.Text(after.Symbol), Active: after.Active,
 	})
 	if err != nil {
 		return Currency{}, mapWriteError("更新货币失败", err)
@@ -241,49 +197,28 @@ func snapshot(item Currency) map[string]any {
 	}
 }
 
-func toText(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func fromText(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	result := value.String
-	return &result
-}
-
 func currencyFromGet(row dbgen.GetCurrencyRow) Currency {
-	return Currency{ID: row.ID, Name: row.Name, ISOCode: row.IsoCode, Symbol: fromText(row.Symbol), Active: row.Active, InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
+	return Currency{ID: row.ID, Name: row.Name, ISOCode: row.IsoCode, Symbol: pgconv.TextPtr(row.Symbol), Active: row.Active, InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
 }
 
 func currencyFromLock(row dbgen.LockCurrencyRow) Currency {
-	return Currency{ID: row.ID, Name: row.Name, ISOCode: row.IsoCode, Symbol: fromText(row.Symbol), Active: row.Active, InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
+	return Currency{ID: row.ID, Name: row.Name, ISOCode: row.IsoCode, Symbol: pgconv.TextPtr(row.Symbol), Active: row.Active, InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
 }
 
 func currencyFromCreate(row dbgen.CreateCurrencyRow) Currency {
-	return Currency{ID: row.ID, Name: row.Name, ISOCode: row.IsoCode, Symbol: fromText(row.Symbol), Active: row.Active, InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
+	return Currency{ID: row.ID, Name: row.Name, ISOCode: row.IsoCode, Symbol: pgconv.TextPtr(row.Symbol), Active: row.Active, InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
 }
 
 func currencyFromUpdate(row dbgen.UpdateCurrencyRow) Currency {
-	return Currency{ID: row.ID, Name: row.Name, ISOCode: row.IsoCode, Symbol: fromText(row.Symbol), Active: row.Active, InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
+	return Currency{ID: row.ID, Name: row.Name, ISOCode: row.IsoCode, Symbol: pgconv.TextPtr(row.Symbol), Active: row.Active, InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC()}
+}
+
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Message: "ISO 编码已存在"},
+	{Code: "23503", Message: "货币已被业务数据引用,不可删除"},
+	{Constraint: "duplicate key", Message: "ISO 编码已存在"},
 }
 
 func mapWriteError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return apierror.Wrap(apierror.CodeConflict, "ISO 编码已存在", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "货币已被业务数据引用,不可删除", err)
-		}
-	}
-	if strings.Contains(err.Error(), "duplicate key") {
-		return apierror.Wrap(apierror.CodeConflict, "ISO 编码已存在", err)
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }

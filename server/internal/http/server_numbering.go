@@ -1,22 +1,26 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
 const numberingPermission = "sys.numbering_rule"
 
-type numberingListBody struct {
-	Limit  *int                       `json:"limit,omitempty"`
-	Offset *int                       `json:"offset,omitempty"`
-	Search *string                    `json:"search,omitempty"`
-	Sort   *gen.Sort                  `json:"sort,omitempty"`
-	Filter map[string]json.RawMessage `json:"filter,omitempty"`
+func numberingRuleListQuery(body listBody) numbering.RuleListQuery {
+	limit, offset, search, sort, filter := listParts(body)
+	return numbering.RuleListQuery{
+		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
+	}
+}
+
+func numberingCounterListQuery(body listBody) numbering.CounterListQuery {
+	limit, offset, search, sort, filter := listParts(body)
+	return numbering.CounterListQuery{
+		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
+	}
 }
 
 func (s *Server) ListNumberableResources(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +28,7 @@ func (s *Server) ListNumberableResources(w http.ResponseWriter, r *http.Request)
 		s.writeError(w, r, err)
 		return
 	}
-	resources := s.numbering.NumberableResources()
+	resources := s.Numbering.NumberableResources()
 	result := make([]gen.NumberableResource, 0, len(resources))
 	for _, resource := range resources {
 		fields := make([]gen.NumberableField, 0, len(resource.Fields))
@@ -41,27 +45,13 @@ func (s *Server) ListNumberableResources(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) QuerySysNumberingRules(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, numberingPermission+":read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	body, err := decodeNumberingList(w, r)
-	if err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	query := numbering.RuleListQuery{Filter: body.Filter}
-	applyNumberingList(body, &query.Limit, &query.Offset, &query.Search, &query.Sort)
-	result, err := s.numbering.ListRules(r.Context(), query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.NumberingRule, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, numberingRuleDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.NumberingRuleList{Count: result.Count, Results: items})
+	queryList(s, w, r, numberingPermission+":read", numberingRuleListQuery,
+		ignoreActor(s.Numbering.ListRules),
+		func(result numbering.RuleList) any {
+			return gen.NumberingRuleList{
+				Count: result.Count, Results: mapItems(result.Results, numberingRuleDTO),
+			}
+		})
 }
 
 func (s *Server) GetSysNumberingRule(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -69,7 +59,7 @@ func (s *Server) GetSysNumberingRule(w http.ResponseWriter, r *http.Request, id 
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.numbering.GetRule(r.Context(), id)
+	item, err := s.Numbering.GetRule(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -88,7 +78,7 @@ func (s *Server) CreateSysNumberingRule(w http.ResponseWriter, r *http.Request) 
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.numbering.Create(r.Context(), actor, numbering.CreateInput{
+	item, err := s.Numbering.Create(r.Context(), actor, numbering.CreateInput{
 		Resource: body.Resource, Name: body.Name, Segments: numberingSegments(body.Segments),
 		PerCompany: body.PerCompany, Enabled: body.Enabled,
 	})
@@ -115,7 +105,7 @@ func (s *Server) UpdateSysNumberingRule(w http.ResponseWriter, r *http.Request, 
 		converted := numberingSegments(*body.Segments)
 		segments = &converted
 	}
-	item, err := s.numbering.UpdateRule(r.Context(), actor, id, numbering.UpdateInput{
+	item, err := s.Numbering.UpdateRule(r.Context(), actor, id, numbering.UpdateInput{
 		Name: body.Name, Segments: segments, PerCompany: body.PerCompany, Enabled: body.Enabled,
 	})
 	if err != nil {
@@ -131,7 +121,7 @@ func (s *Server) DeleteSysNumberingRule(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.numbering.DeleteRule(r.Context(), actor, id); err != nil {
+	if err := s.Numbering.DeleteRule(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -139,27 +129,13 @@ func (s *Server) DeleteSysNumberingRule(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) QuerySysNumberingCounters(w http.ResponseWriter, r *http.Request) {
-	if err := requirePermission(r, numberingPermission+":read"); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	body, err := decodeNumberingList(w, r)
-	if err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	query := numbering.CounterListQuery{Filter: body.Filter}
-	applyNumberingList(body, &query.Limit, &query.Offset, &query.Search, &query.Sort)
-	result, err := s.numbering.ListCounters(r.Context(), query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.NumberingCounter, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, numberingCounterDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.NumberingCounterList{Count: result.Count, Results: items})
+	queryList(s, w, r, numberingPermission+":read", numberingCounterListQuery,
+		ignoreActor(s.Numbering.ListCounters),
+		func(result numbering.CounterList) any {
+			return gen.NumberingCounterList{
+				Count: result.Count, Results: mapItems(result.Results, numberingCounterDTO),
+			}
+		})
 }
 
 func (s *Server) GetSysNumberingCounter(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -167,7 +143,7 @@ func (s *Server) GetSysNumberingCounter(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.numbering.GetCounter(r.Context(), id)
+	item, err := s.Numbering.GetCounter(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -186,39 +162,12 @@ func (s *Server) UpdateSysNumberingCounter(w http.ResponseWriter, r *http.Reques
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	item, err := s.numbering.UpdateCounter(r.Context(), actor, id, body.Value)
+	item, err := s.Numbering.UpdateCounter(r.Context(), actor, id, body.Value)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	s.writeJSON(w, http.StatusOK, numberingCounterDTO(item))
-}
-
-func decodeNumberingList(w http.ResponseWriter, r *http.Request) (numberingListBody, error) {
-	var body numberingListBody
-	err := decodeJSON(w, r, &body)
-	return body, err
-}
-
-func applyNumberingList(
-	body numberingListBody,
-	limit *int,
-	offset *int,
-	search *string,
-	sort **filterbuild.Sort,
-) {
-	if body.Limit != nil {
-		*limit = *body.Limit
-	}
-	if body.Offset != nil {
-		*offset = *body.Offset
-	}
-	if body.Search != nil {
-		*search = *body.Search
-	}
-	if body.Sort != nil {
-		*sort = &filterbuild.Sort{Column: body.Sort.Column, Direction: string(body.Sort.Direction)}
-	}
 }
 
 func numberingSegments(items []gen.NumberingSegment) []numbering.Segment {

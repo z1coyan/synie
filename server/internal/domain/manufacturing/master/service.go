@@ -7,13 +7,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/meta"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
@@ -582,24 +582,14 @@ func readError(err error, notFound, message string) error {
 }
 
 func writeError(message, duplicate string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return apierror.Wrap(apierror.CodeConflict, duplicate, err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "关联数据不存在或已被引用", err)
-		}
-	}
-	return internal(message, err)
+	return dberr.MapWrite(err, message,
+		dberr.Mapping{Code: "23505", Message: duplicate},
+		dberr.Mapping{Code: "23503", Message: "关联数据不存在或已被引用"},
+	)
 }
 
 func referenceError(message, conflict string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-		return apierror.Wrap(apierror.CodeConflict, conflict, err)
-	}
-	return internal(message, err)
+	return dberr.MapWrite(err, message, dberr.Mapping{Code: "23503", Message: conflict})
 }
 
 func internal(message string, err error) error {

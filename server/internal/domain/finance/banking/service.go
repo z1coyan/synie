@@ -6,7 +6,6 @@ package banking
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,13 +13,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
 	"github.com/z1coyan/synie/server/internal/engines/gl"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -80,49 +79,6 @@ func requireCompany(actor *authz.Actor, companyID uuid.UUID, label string) error
 	return apierror.New(apierror.CodeNotFound, label+"不存在")
 }
 
-func validatePage(query *ListQuery) error {
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return apierror.Validation("分页参数不合法", map[string][]string{
-			"limit": {"必须在 1 到 200 之间"}, "offset": {"不能小于 0"},
-		})
-	}
-	return nil
-}
-
-func buildFilter(resourceName string, query ListQuery) (filterbuild.SQL, error) {
-	var resource = BankAccountResourceMeta()
-	switch resourceName {
-	case BankTransactionResource:
-		resource = BankTransactionResourceMeta()
-	case BankImportTemplateResource:
-		resource = BankImportTemplateResourceMeta()
-	case BankImportResource:
-		resource = BankImportResourceMeta()
-	case BankImportItemResource:
-		resource = BankImportItemResourceMeta()
-	case BankReconciliationResource:
-		resource = BankReconciliationResourceMeta()
-	}
-	return filterbuild.Build(resource, filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
-}
-
-func scopedWhere(actor *authz.Actor, where string, args []any, column string) (string, []any, bool) {
-	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, column)
-	return where, args, !empty
-}
-
-func appendPage(sql string, args []any, query ListQuery) (string, []any) {
-	n := len(args) + 1
-	args = append(args, query.Limit, query.Offset)
-	return sql + fmt.Sprintf(" LIMIT $%d OFFSET $%d", n, n+1), args
-}
-
 func actorID(actor *authz.Actor) *uuid.UUID {
 	if actor == nil || actor.UserID == uuid.Nil {
 		return nil
@@ -153,21 +109,13 @@ func validateOptionalText(fields map[string][]string, field string, value *strin
 	return &trimmed
 }
 
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505":
-			return apierror.Wrap(apierror.CodeConflict, "记录违反唯一约束", err)
-		case "23503":
-			return apierror.Wrap(apierror.CodeConflict, "记录已被引用或引用对象不存在", err)
-		case "23514", "23502", "22P02":
-			return apierror.Wrap(apierror.CodeValidation, "记录参数不合法", err)
-		case "40001", "40P01":
-			return apierror.Wrap(apierror.CodeConflict, "并发操作冲突,请重试", err)
-		}
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, dberr.GenericMappings()...)
 }
 
 func notFound(label string) error {

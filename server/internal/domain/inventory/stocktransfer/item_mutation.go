@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -83,8 +84,8 @@ func (s *Service) UpdateItem(
 	row, err := q.UpdateStockTransferItem(ctx, dbgen.UpdateStockTransferItemParams{
 		ID: id, Idx: after.Idx, Qty: after.Qty, BaseQty: after.BaseQty,
 		MaterialCode: after.MaterialCode, MaterialName: after.MaterialName,
-		MaterialSpec: text(after.MaterialSpec), UnitName: after.UnitName,
-		Remark: text(after.Remark), MaterialID: after.MaterialID, UnitID: after.UnitID,
+		MaterialSpec: pgconv.Text(after.MaterialSpec), UnitName: after.UnitName,
+		Remark: pgconv.Text(after.Remark), MaterialID: after.MaterialID, UnitID: after.UnitID,
 	})
 	if err != nil {
 		return Item{}, apierror.Wrap(apierror.CodeInternal, "更新手工调拨单行失败", err)

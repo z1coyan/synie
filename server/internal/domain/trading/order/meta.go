@@ -33,28 +33,28 @@ func OrderResourceMeta(side Side) meta.ResourceMeta {
 		}
 	}
 	fields := []meta.FieldMeta{
-		f("id", "id", meta.TypeUUID, "id", true, false, true),
-		f("order_no", "orderNo", meta.TypeString, "订单号", true, true, true),
-		enumF("order_date", "orderDate", meta.TypeDate, "订单日期", nil),
-		enumF("order_type", "orderType", meta.TypeEnum, "订单类型", orderTypes),
+		meta.Field("id", "id", meta.TypeUUID, "id", true, false, true),
+		meta.Field("order_no", "orderNo", meta.TypeString, "订单号", true, true, true),
+		meta.EnumField("order_date", "orderDate", meta.TypeDate, "订单日期", nil, false),
+		meta.EnumField("order_type", "orderType", meta.TypeEnum, "订单类型", orderTypes, false),
 	}
 	if side == SidePurchase {
-		fields = append(fields, enumF("is_outsourced", "isOutsourced", meta.TypeBoolean, "委外标记", nil))
+		fields = append(fields, meta.EnumField("is_outsourced", "isOutsourced", meta.TypeBoolean, "委外标记", nil, false))
 	}
 	discriminator, discriminatorType := "partyType", "enum"
 	company, currency, user, name := "basCompanies", "basCurrencies", "sysUsers", "name"
 	companyRel, currencyRel, createdRel, auditedRel := "company", "currency", "createdBy", "auditedBy"
 	fields = append(fields,
-		enumF("party_type", "partyType", meta.TypeEnum, partyLabel, orderPartyOptions),
+		meta.EnumField("party_type", "partyType", meta.TypeEnum, partyLabel, orderPartyOptions, false),
 		meta.FieldMeta{Name: "party_id", APIName: "partyId", DBColumn: "party_id", Type: meta.TypeFK, Label: "对手", Required: true, Filterable: true,
 			Ref: &meta.GridColumnRef{Discriminator: &discriminator, DiscriminatorType: &discriminatorType, Variants: variants}},
-		enumF("exchange_rate", "exchangeRate", meta.TypeDecimal, "汇率(原币→本币)", nil),
-		enumF("terms", "terms", meta.TypeString, termsLabel, nil),
-		enumF("remarks", "remarks", meta.TypeString, "订单备注(对内)", nil),
-		enumF("status", "status", meta.TypeEnum, "状态", orderStatusOptions),
-		enumF("audited_at", "auditedAt", meta.TypeDatetime, "审核时间", nil),
-		enumF("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间", nil),
-		enumF("updated_at", "updatedAt", meta.TypeDatetime, "更新时间", nil),
+		meta.EnumField("exchange_rate", "exchangeRate", meta.TypeDecimal, "汇率(原币→本币)", nil, false),
+		meta.EnumField("terms", "terms", meta.TypeString, termsLabel, nil, false),
+		meta.EnumField("remarks", "remarks", meta.TypeString, "订单备注(对内)", nil, false),
+		meta.EnumField("status", "status", meta.TypeEnum, "状态", orderStatusOptions, false),
+		meta.EnumField("audited_at", "auditedAt", meta.TypeDatetime, "审核时间", nil, false),
+		meta.EnumField("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间", nil, false),
+		meta.EnumField("updated_at", "updatedAt", meta.TypeDatetime, "更新时间", nil, false),
 		meta.FieldMeta{Name: "company_id", APIName: "companyId", DBColumn: "company_id", Type: meta.TypeFK, Label: "公司", Required: true, CreateOnly: true, Filterable: true,
 			Ref: &meta.GridColumnRef{Resource: &company, Relation: &companyRel, LabelField: &name}},
 		meta.FieldMeta{Name: "currency_id", APIName: "currencyId", DBColumn: "currency_id", Type: meta.TypeFK, Label: "币种(原币)", Required: true, Filterable: true,
@@ -63,8 +63,8 @@ func OrderResourceMeta(side Side) meta.ResourceMeta {
 			Ref: &meta.GridColumnRef{Resource: &user, Relation: &createdRel, LabelField: &name}},
 		meta.FieldMeta{Name: "audited_by_id", APIName: "auditedById", DBColumn: "audited_by_id", Type: meta.TypeFK, Label: "审核人", Readonly: true, Filterable: true,
 			Ref: &meta.GridColumnRef{Resource: &user, Relation: &auditedRel, LabelField: &name}},
-		f("gross_total", "grossTotal", meta.TypeDecimal, "原币含税总额(行原币含税金额合计)", false, false, false),
-		f("base_gross_total", "baseGrossTotal", meta.TypeDecimal, "本币含税总额(行本币含税金额合计)", false, false, false),
+		meta.Field("gross_total", "grossTotal", meta.TypeDecimal, "原币含税总额(行原币含税金额合计)", false, false, false),
+		meta.Field("base_gross_total", "baseGrossTotal", meta.TypeDecimal, "本币含税总额(行本币含税金额合计)", false, false, false),
 	)
 	actions := []meta.ActionMeta{
 		{Key: "read", Label: "查看", Scope: "both"}, {Key: "create", Label: "新增", Scope: "both"},
@@ -105,65 +105,65 @@ func ItemResourceMeta(side Side) meta.ResourceMeta {
 	}
 	orderRel, companyRel, materialRel, unitRel, quoteRel := "order", "company", "material", "unit", "quotationItem"
 	orderNo, name, materialCode := "orderNo", "name", "materialCode"
-	orderRef := ref(orderResource, orderRel, orderNo)
-	companyRef := ref("basCompanies", companyRel, name)
-	materialRef := ref("invMaterials", materialRel, name)
-	unitRef := ref("basUnits", unitRel, name)
-	quoteRef := ref(quoteResource, quoteRel, materialCode)
+	orderRef := meta.Ref(orderResource, orderRel, orderNo)
+	companyRef := meta.Ref("basCompanies", companyRel, name)
+	materialRef := meta.Ref("invMaterials", materialRel, name)
+	unitRef := meta.Ref("basUnits", unitRel, name)
+	quoteRef := meta.Ref(quoteResource, quoteRel, materialCode)
 	projectionName, projectionLabel, remainingLabel := "shipped_qty", "已发数量(物料默认单位,系统维护)", "未发数量(物料默认单位)"
 	if side == SidePurchase {
 		projectionName, projectionLabel, remainingLabel = "received_qty", "已收数量(物料默认单位,系统维护)", "未收数量(物料默认单位)"
 	}
 	fields := []meta.FieldMeta{
-		f("id", "id", meta.TypeUUID, "id", true, false, true),
-		enumF("idx", "idx", meta.TypeInteger, "行号", nil),
-		enumF("qty", "qty", meta.TypeDecimal, "数量", nil),
-		enumF("base_qty", "baseQty", meta.TypeDecimal, "订购数量(物料默认单位,系统折算)", nil),
-		enumF(projectionName, apiName(projectionName), meta.TypeDecimal, projectionLabel, nil),
-		enumF("price", "price", meta.TypeDecimal, "原币含税单价", nil),
-		enumF("amount", "amount", meta.TypeDecimal, "原币含税金额(系统算:数量×原币单价)", nil),
-		enumF("base_price", "basePrice", meta.TypeDecimal, "本币含税单价(系统算:原币单价×汇率,4位,仅展示参考)", nil),
-		enumF("base_amount", "baseAmount", meta.TypeDecimal, "本币含税金额(系统算:原币金额×汇率)", nil),
-		enumF("tax_rate", "taxRate", meta.TypeDecimal, "税率(小数,如 0.13)", nil),
-		enumF("material_code", "materialCode", meta.TypeString, "物料编号", nil),
-		enumF("material_name", "materialName", meta.TypeString, "物料名称", nil),
-		enumF("material_spec", "materialSpec", meta.TypeString, "规格", nil),
-		enumF("customer_part_no", "customerPartNo", meta.TypeString, "客户料号", nil),
-		enumF("unit_name", "unitName", meta.TypeString, "单位名称", nil),
-		enumF("remarks", "remarks", meta.TypeString, "行备注", nil),
+		meta.Field("id", "id", meta.TypeUUID, "id", true, false, true),
+		meta.EnumField("idx", "idx", meta.TypeInteger, "行号", nil, false),
+		meta.EnumField("qty", "qty", meta.TypeDecimal, "数量", nil, false),
+		meta.EnumField("base_qty", "baseQty", meta.TypeDecimal, "订购数量(物料默认单位,系统折算)", nil, false),
+		meta.EnumField(projectionName, apiName(projectionName), meta.TypeDecimal, projectionLabel, nil, false),
+		meta.EnumField("price", "price", meta.TypeDecimal, "原币含税单价", nil, false),
+		meta.EnumField("amount", "amount", meta.TypeDecimal, "原币含税金额(系统算:数量×原币单价)", nil, false),
+		meta.EnumField("base_price", "basePrice", meta.TypeDecimal, "本币含税单价(系统算:原币单价×汇率,4位,仅展示参考)", nil, false),
+		meta.EnumField("base_amount", "baseAmount", meta.TypeDecimal, "本币含税金额(系统算:原币金额×汇率)", nil, false),
+		meta.EnumField("tax_rate", "taxRate", meta.TypeDecimal, "税率(小数,如 0.13)", nil, false),
+		meta.EnumField("material_code", "materialCode", meta.TypeString, "物料编号", nil, false),
+		meta.EnumField("material_name", "materialName", meta.TypeString, "物料名称", nil, false),
+		meta.EnumField("material_spec", "materialSpec", meta.TypeString, "规格", nil, false),
+		meta.EnumField("customer_part_no", "customerPartNo", meta.TypeString, "客户料号", nil, false),
+		meta.EnumField("unit_name", "unitName", meta.TypeString, "单位名称", nil, false),
+		meta.EnumField("remarks", "remarks", meta.TypeString, "行备注", nil, false),
 	}
 	if side == SidePurchase {
-		fields = append(fields, enumF("demand_date", "demandDate", meta.TypeDate, "需求日(来自履约需求行,可空)", nil))
+		fields = append(fields, meta.EnumField("demand_date", "demandDate", meta.TypeDate, "需求日(来自履约需求行,可空)", nil, false))
 	}
 	fields = append(fields,
-		enumF("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间", nil),
-		enumF("updated_at", "updatedAt", meta.TypeDatetime, "更新时间", nil),
-		withRef("order_id", "orderId", "订单", orderRef),
-		withRef("company_id", "companyId", "公司", companyRef),
-		withRef("material_id", "materialId", "物料", materialRef),
-		withRef("unit_id", "unitId", "单位", unitRef),
-		withRef("quotation_item_id", "quotationItemId", "报价条目", quoteRef),
+		meta.EnumField("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间", nil, false),
+		meta.EnumField("updated_at", "updatedAt", meta.TypeDatetime, "更新时间", nil, false),
+		meta.RefField("order_id", "orderId", "订单", orderRef, false),
+		meta.RefField("company_id", "companyId", "公司", companyRef, false),
+		meta.RefField("material_id", "materialId", "物料", materialRef, false),
+		meta.RefField("unit_id", "unitId", "单位", unitRef, false),
+		meta.RefField("quotation_item_id", "quotationItemId", "报价条目", quoteRef, false),
 	)
 	if side == SidePurchase {
 		fields = append(fields,
-			withRef("bom_id", "bomId", "成品 BOM(留痕,限条目物料自身)", ref("mfgBoms", "bom", "code")),
-			withRef("demand_line_id", "demandLineId", "来源履约需求行", ref("mfgDemandItems", "demandLine", "materialCode")),
+			meta.RefField("bom_id", "bomId", "成品 BOM(留痕,限条目物料自身)", meta.Ref("mfgBoms", "bom", "code"), false),
+			meta.RefField("demand_line_id", "demandLineId", "来源履约需求行", meta.Ref("mfgDemandItems", "demandLine", "materialCode"), false),
 		)
 	}
 	discriminator, discriminatorType := "partyType", "enum"
 	fields = append(fields,
-		enumF("order_date", "orderDate", meta.TypeDate, "订单日期", nil),
-		enumF("order_status", "orderStatus", meta.TypeEnum, "状态", orderStatusOptions),
+		meta.EnumField("order_date", "orderDate", meta.TypeDate, "订单日期", nil, false),
+		meta.EnumField("order_status", "orderStatus", meta.TypeEnum, "状态", orderStatusOptions, false),
 	)
 	if side == SidePurchase {
-		fields = append(fields, enumF("order_is_outsourced", "orderIsOutsourced", meta.TypeBoolean, "委外订单", nil))
+		fields = append(fields, meta.EnumField("order_is_outsourced", "orderIsOutsourced", meta.TypeBoolean, "委外订单", nil, false))
 	}
 	fields = append(fields,
-		enumF("party_type", "partyType", meta.TypeEnum, partyLabel, orderPartyOptions),
+		meta.EnumField("party_type", "partyType", meta.TypeEnum, partyLabel, orderPartyOptions, false),
 		meta.FieldMeta{Name: "party_id", APIName: "partyId", DBColumn: "party_id", Type: meta.TypeFK, Label: "对手", Readonly: true, Filterable: true,
 			Ref: &meta.GridColumnRef{Discriminator: &discriminator, DiscriminatorType: &discriminatorType, Variants: variants}},
-		enumF("currency_code", "currencyCode", meta.TypeString, "币种", nil),
-		enumF("remaining_base_qty", "remainingBaseQty", meta.TypeDecimal, remainingLabel, nil),
+		meta.EnumField("currency_code", "currencyCode", meta.TypeString, "币种", nil, false),
+		meta.EnumField("remaining_base_qty", "remainingBaseQty", meta.TypeDecimal, remainingLabel, nil, false),
 	)
 	destroy := spec.itemDestroy
 	return meta.ResourceMeta{Name: spec.itemResource, PermissionPrefix: spec.prefix, PermissionLabel: spec.label,
@@ -183,22 +183,22 @@ func MaterialResourceMeta() meta.ResourceMeta {
 		},
 	}
 	fields := []meta.FieldMeta{
-		f("id", "id", meta.TypeUUID, "id", true, false, true),
-		enumF("quantity", "quantity", meta.TypeDecimal, "数量", nil),
-		enumF("issued_qty", "issuedQty", meta.TypeDecimal, "已发料量(材料默认单位,系统维护)", nil),
-		enumF("remarks", "remarks", meta.TypeString, "行备注", nil),
-		enumF("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间", nil),
-		enumF("updated_at", "updatedAt", meta.TypeDatetime, "更新时间", nil),
-		withRef("order_item_id", "orderItemId", "订单条目", ref("purOrderItems", "orderItem", "materialCode")),
-		withRef("company_id", "companyId", "公司", ref("basCompanies", "company", "name")),
-		withRef("material_id", "materialId", "材料", ref("invMaterials", "material", "name")),
-		withRef("unit_id", "unitId", "单位", ref("basUnits", "unit", "name")),
-		enumF("order_no", "orderNo", meta.TypeString, "订单号", nil),
-		enumF("order_status", "orderStatus", meta.TypeEnum, "订单状态", orderStatusOptions),
-		enumF("order_is_outsourced", "orderIsOutsourced", meta.TypeBoolean, "委外订单", nil),
-		enumF("party_type", "partyType", meta.TypeEnum, "对手类型(供应商/内部公司)", orderPartyOptions),
+		meta.Field("id", "id", meta.TypeUUID, "id", true, false, true),
+		meta.EnumField("quantity", "quantity", meta.TypeDecimal, "数量", nil, false),
+		meta.EnumField("issued_qty", "issuedQty", meta.TypeDecimal, "已发料量(材料默认单位,系统维护)", nil, false),
+		meta.EnumField("remarks", "remarks", meta.TypeString, "行备注", nil, false),
+		meta.EnumField("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间", nil, false),
+		meta.EnumField("updated_at", "updatedAt", meta.TypeDatetime, "更新时间", nil, false),
+		meta.RefField("order_item_id", "orderItemId", "订单条目", meta.Ref("purOrderItems", "orderItem", "materialCode"), false),
+		meta.RefField("company_id", "companyId", "公司", meta.Ref("basCompanies", "company", "name"), false),
+		meta.RefField("material_id", "materialId", "材料", meta.Ref("invMaterials", "material", "name"), false),
+		meta.RefField("unit_id", "unitId", "单位", meta.Ref("basUnits", "unit", "name"), false),
+		meta.EnumField("order_no", "orderNo", meta.TypeString, "订单号", nil, false),
+		meta.EnumField("order_status", "orderStatus", meta.TypeEnum, "订单状态", orderStatusOptions, false),
+		meta.EnumField("order_is_outsourced", "orderIsOutsourced", meta.TypeBoolean, "委外订单", nil, false),
+		meta.EnumField("party_type", "partyType", meta.TypeEnum, "对手类型(供应商/内部公司)", orderPartyOptions, false),
 		{Name: "party_id", APIName: "partyId", DBColumn: "party_id", Type: meta.TypeFK, Label: "对手", Readonly: true, Filterable: true, Ref: partyRef},
-		enumF("remaining_issue_qty", "remainingIssueQty", meta.TypeDecimal, "剩余可发料量(材料默认单位)", nil),
+		meta.EnumField("remaining_issue_qty", "remainingIssueQty", meta.TypeDecimal, "剩余可发料量(材料默认单位)", nil, false),
 	}
 	return meta.ResourceMeta{Name: "purOrderItemMaterials", PermissionPrefix: "purchase.order",
 		PermissionLabel: "采购订单", Table: "pur_order_item_material", Fields: fields,
@@ -209,39 +209,20 @@ func MaterialResourceMeta() meta.ResourceMeta {
 func ByproductResourceMeta() meta.ResourceMeta {
 	destroy := "destroyPurOrderItemByproduct"
 	fields := []meta.FieldMeta{
-		f("id", "id", meta.TypeUUID, "id", true, false, true),
-		enumF("quantity", "quantity", meta.TypeDecimal, "数量", nil),
-		enumF("remarks", "remarks", meta.TypeString, "行备注", nil),
-		enumF("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间", nil),
-		enumF("updated_at", "updatedAt", meta.TypeDatetime, "更新时间", nil),
-		withRef("order_item_id", "orderItemId", "订单条目", ref("purOrderItems", "orderItem", "materialCode")),
-		withRef("company_id", "companyId", "公司", ref("basCompanies", "company", "name")),
-		withRef("material_id", "materialId", "材料", ref("invMaterials", "material", "name")),
-		withRef("unit_id", "unitId", "单位", ref("basUnits", "unit", "name")),
+		meta.Field("id", "id", meta.TypeUUID, "id", true, false, true),
+		meta.EnumField("quantity", "quantity", meta.TypeDecimal, "数量", nil, false),
+		meta.EnumField("remarks", "remarks", meta.TypeString, "行备注", nil, false),
+		meta.EnumField("inserted_at", "insertedAt", meta.TypeDatetime, "创建时间", nil, false),
+		meta.EnumField("updated_at", "updatedAt", meta.TypeDatetime, "更新时间", nil, false),
+		meta.RefField("order_item_id", "orderItemId", "订单条目", meta.Ref("purOrderItems", "orderItem", "materialCode"), false),
+		meta.RefField("company_id", "companyId", "公司", meta.Ref("basCompanies", "company", "name"), false),
+		meta.RefField("material_id", "materialId", "材料", meta.Ref("invMaterials", "material", "name"), false),
+		meta.RefField("unit_id", "unitId", "单位", meta.Ref("basUnits", "unit", "name"), false),
 	}
 	return meta.ResourceMeta{Name: "purOrderItemByproducts", PermissionPrefix: "purchase.order",
 		PermissionLabel: "采购订单", Table: "pur_order_item_byproduct", Fields: fields,
 		Actions: []meta.ActionMeta{{Key: "read", Label: "查看", Scope: "both"}},
 		Audit:   meta.AuditMeta{Enabled: true}, DestroyMutation: &destroy}
-}
-
-func f(name, api string, typ meta.FieldType, label string, sortable, filterable, readonly bool) meta.FieldMeta {
-	return meta.FieldMeta{Name: name, APIName: api, DBColumn: name, Type: typ, Label: label,
-		Sortable: sortable, Filterable: filterable, Readonly: readonly}
-}
-
-func enumF(name, api string, typ meta.FieldType, label string, options []meta.EnumOption) meta.FieldMeta {
-	return meta.FieldMeta{Name: name, APIName: api, DBColumn: name, Type: typ, Label: label,
-		Sortable: true, Filterable: true, EnumOptions: options}
-}
-
-func ref(resource, relation, label string) *meta.GridColumnRef {
-	return &meta.GridColumnRef{Resource: &resource, Relation: &relation, LabelField: &label}
-}
-
-func withRef(name, api, label string, reference *meta.GridColumnRef) meta.FieldMeta {
-	return meta.FieldMeta{Name: name, APIName: api, DBColumn: name, Type: meta.TypeFK,
-		Label: label, Filterable: true, Ref: reference}
 }
 
 func apiName(name string) string {

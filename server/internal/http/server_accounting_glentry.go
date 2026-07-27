@@ -11,26 +11,13 @@ import (
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 )
 
-func (s *Server) QueryAccGlEntries(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "acc.gl_entry:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body listBody
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
+func glentryListQuery(body listBody) glentry.ListQuery {
 	limit, offset, search, sort, filter := listParts(body)
-	result, err := s.glEntries.List(r.Context(), actor, glentry.ListQuery{
-		Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter,
-	})
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, result)
+	return glentry.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
+func (s *Server) QueryAccGlEntries(w http.ResponseWriter, r *http.Request) {
+	queryList(s, w, r, "acc.gl_entry:read", glentryListQuery, s.GLEntries.List, passthroughListResponse)
 }
 
 func (s *Server) GetAccGlEntry(w http.ResponseWriter, r *http.Request, id string) {
@@ -46,7 +33,7 @@ func (s *Server) GetAccGlEntry(w http.ResponseWriter, r *http.Request, id string
 		}))
 		return
 	}
-	item, err := s.glEntries.Get(r.Context(), actor, entryID)
+	item, err := s.GLEntries.Get(r.Context(), actor, entryID)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -69,7 +56,7 @@ func (s *Server) GetAccARAPReport(
 		s.writeError(w, r, apierror.Validation("应收应付报表参数不合法", fields))
 		return
 	}
-	result, err := s.glEntries.Report(r.Context(), actor, glentry.ReportQuery{
+	result, err := s.GLEntries.Report(r.Context(), actor, glentry.ReportQuery{
 		CompanyID: companyID,
 		AsOf:      asOf,
 	})

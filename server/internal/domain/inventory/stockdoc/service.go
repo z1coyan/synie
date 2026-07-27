@@ -10,15 +10,15 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/domain/inventory/stock"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
+	"github.com/z1coyan/synie/server/internal/platform/dberr"
 	"github.com/z1coyan/synie/server/internal/platform/numbering"
 )
 
@@ -60,67 +60,26 @@ func (s *Service) List(ctx context.Context, actor *authz.Actor, query ListQuery)
 	if err := require(actor, "read"); err != nil {
 		return ListResult{}, err
 	}
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return ListResult{}, apierror.Validation("分页参数不合法", map[string][]string{
-			"limit": {"必须在 1 到 200 之间"}, "offset": {"不能小于 0"},
-		})
-	}
-	built, err := filterbuild.Build(ResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Doc]{
+		Pool: s.pool, Resource: ResourceMeta(), Label: "手工出入库单", Actor: actor,
+		Source: ` FROM inv_stock_doc`,
+		Select: `SELECT id,doc_no,direction,doc_date,summary,remarks,status,audited_at,
+inserted_at,updated_at,company_id,warehouse_id,created_by_id,audited_by_id`,
+		DefaultOrder: ` ORDER BY "doc_no" ASC, "id" ASC`,
+		Tiebreaker:   `, "id" ASC`,
+		Scan: func(rows pgx.Rows) (Doc, error) {
+			return scanDoc(rows)
+		},
+	}, listQuery(query))
 	if err != nil {
 		return ListResult{}, err
 	}
-	where, args := built.Where, append([]any(nil), built.Args...)
-	where, args, empty := filterbuild.AppendCompanyFilter(actor, where, args, "company_id")
-	if empty {
-		return ListResult{Results: []Doc{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "doc_no" ASC, "id" ASC`
-	} else {
-		order += `, "id" ASC`
-	}
-	const source = ` FROM inv_stock_doc`
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询手工出入库单失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result ListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*)`+source+where, args...).Scan(&result.Count); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "统计手工出入库单失败", err)
-	}
-	listArgs := append([]any(nil), args...)
-	limitAt := len(listArgs) + 1
-	listArgs = append(listArgs, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,doc_no,direction,doc_date,summary,remarks,status,audited_at,
-		inserted_at,updated_at,company_id,warehouse_id,created_by_id,audited_by_id`+
-		source+where+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", limitAt, limitAt+1), listArgs...)
-	if err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "查询手工出入库单失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Doc, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanDoc(rows)
-		if scanErr != nil {
-			return ListResult{}, apierror.Wrap(apierror.CodeInternal, "读取手工出入库单结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历手工出入库单结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return ListResult{}, apierror.Wrap(apierror.CodeInternal, "完成手工出入库单查询失败", err)
-	}
-	return result, nil
+	return ListResult{Count: result.Count, Results: result.Results}, nil
+}
+
+func listQuery(query ListQuery) listexec.Query {
+	return listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter}
 }
 
 func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateInput) (Doc, error) {
@@ -170,8 +129,8 @@ func (s *Service) Create(ctx context.Context, actor *authz.Actor, input CreateIn
 		createdByID = &actor.UserID
 	}
 	row, err := q.CreateStockDoc(ctx, dbgen.CreateStockDocParams{
-		DocNo: docNo, Direction: dbDirection(input.Direction), DocDate: date(docDate),
-		Summary: text(input.Summary), Remarks: text(input.Remarks),
+		DocNo: docNo, Direction: dbDirection(input.Direction), DocDate: pgconv.Date(docDate),
+		Summary: pgconv.Text(input.Summary), Remarks: pgconv.Text(input.Remarks),
 		CompanyID: input.CompanyID, WarehouseID: input.WarehouseID,
 		CreatedByID: createdByID,
 	})
@@ -250,8 +209,8 @@ func (s *Service) Update(
 		return before, nil
 	}
 	row, err := q.UpdateStockDoc(ctx, dbgen.UpdateStockDocParams{
-		ID: id, DocNo: after.DocNo, DocDate: date(after.DocDate),
-		Summary: text(after.Summary), Remarks: text(after.Remarks),
+		ID: id, DocNo: after.DocNo, DocDate: pgconv.Date(after.DocDate),
+		Summary: pgconv.Text(after.Summary), Remarks: pgconv.Text(after.Remarks),
 		WarehouseID: after.WarehouseID,
 	})
 	if err != nil {
@@ -352,7 +311,7 @@ func (s *Service) Audit(ctx context.Context, actor *authz.Actor, id uuid.UUID) (
 		auditedByID = &actor.UserID
 	}
 	updated, err := q.AuditStockDoc(ctx, dbgen.AuditStockDocParams{
-		ID: id, AuditedAt: timestamp(now), AuditedByID: auditedByID,
+		ID: id, AuditedAt: pgconv.Timestamp(now), AuditedByID: auditedByID,
 	})
 	if err != nil {
 		return Doc{}, apierror.Wrap(apierror.CodeInternal, "更新手工出入库单审核状态失败", err)
@@ -508,12 +467,12 @@ func lockDocError(err error, message string) error {
 	return nil
 }
 
+var writeMappings = []dberr.Mapping{
+	{Code: "23505", Message: "单据编号已存在"},
+}
+
 func writeError(message string, err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return apierror.Wrap(apierror.CodeConflict, "单据编号已存在", err)
-	}
-	return apierror.Wrap(apierror.CodeInternal, message, err)
+	return dberr.MapWrite(err, message, writeMappings...)
 }
 
 func writeAudit(
@@ -549,9 +508,9 @@ func docSnapshot(item Doc) map[string]any {
 func docFromRow(row dbgen.InvStockDoc) Doc {
 	return Doc{
 		ID: row.ID, DocNo: row.DocNo, Direction: Direction(strings.ToUpper(row.Direction)),
-		DocDate: row.DocDate.Time, Summary: optionalText(row.Summary),
-		Remarks: optionalText(row.Remarks), Status: Status(strings.ToUpper(row.Status)),
-		AuditedAt:  optionalTimestamp(row.AuditedAt),
+		DocDate: row.DocDate.Time, Summary: pgconv.TextPtr(row.Summary),
+		Remarks: pgconv.TextPtr(row.Remarks), Status: Status(strings.ToUpper(row.Status)),
+		AuditedAt:  pgconv.OptionalTime(row.AuditedAt),
 		InsertedAt: row.InsertedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		CompanyID: row.CompanyID, WarehouseID: row.WarehouseID,
 		CreatedByID: row.CreatedByID, AuditedByID: row.AuditedByID,
@@ -578,36 +537,6 @@ func dbDirection(value Direction) string { return strings.ToLower(string(value))
 func todayUTC() time.Time {
 	now := time.Now().UTC()
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-}
-
-func date(value time.Time) pgtype.Date {
-	return pgtype.Date{Time: value, Valid: true}
-}
-
-func timestamp(value time.Time) pgtype.Timestamp {
-	return pgtype.Timestamp{Time: value.UTC(), Valid: true}
-}
-
-func text(value *string) pgtype.Text {
-	if value == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *value, Valid: true}
-}
-
-func optionalText(value pgtype.Text) *string {
-	if !value.Valid {
-		return nil
-	}
-	return &value.String
-}
-
-func optionalTimestamp(value pgtype.Timestamp) *time.Time {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Time.UTC()
-	return &result
 }
 
 func validateOptionalText(

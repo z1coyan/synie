@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -199,7 +200,7 @@ func (s *Service) UpdateHead(
 		party_type=$3,party_id=$4,debit_account_id=$5,credit_account_id=$6,
 		remarks=$7,updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
 		id, after.No, after.PartyType, after.PartyID, after.DebitAccountID,
-		after.CreditAccountID, text(after.Remarks))
+		after.CreditAccountID, pgconv.OptionalText(after.Remarks))
 	if err != nil {
 		return Head{}, writeError("更新"+spec.label+"失败", err)
 	}

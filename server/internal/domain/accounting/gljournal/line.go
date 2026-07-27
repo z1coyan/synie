@@ -12,7 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/listexec"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -39,76 +40,36 @@ func (s *Service) ListLines(ctx context.Context, actor *authz.Actor, query ListL
 	if err := require(actor, "read"); err != nil {
 		return LineListResult{}, err
 	}
-	if query.Limit == 0 {
-		query.Limit = 20
-	}
-	if query.Limit < 1 || query.Limit > 200 || query.Offset < 0 {
-		return LineListResult{}, paginationError()
-	}
-	built, err := filterbuild.Build(LineResourceMeta(), filterbuild.Query{
-		Limit: query.Limit, Offset: query.Offset, Search: query.Search,
-		Sort: query.Sort, Filter: query.Filter,
-	})
+	result, err := listexec.List(ctx, listexec.Spec[Line]{
+		Pool: s.pool, Resource: LineResourceMeta(), Label: "会计凭证行", Actor: actor,
+		Source: lineListSource,
+		Select: `SELECT id,idx,debit,credit,party_type,party_id,remarks,
+inserted_at,updated_at,journal_id,company_id,account_id,currency_id,
+voucher_no,company_name,account_code,account_name,currency_code,currency_name`,
+		DefaultOrder: ` ORDER BY "idx" ASC, "id" ASC`,
+		Tiebreaker:   `, "id" ASC`,
+		Scan: func(rows pgx.Rows) (Line, error) {
+			return scanLine(rows)
+		},
+	}, listexec.Query{Limit: query.Limit, Offset: query.Offset, Search: query.Search,
+		Sort: query.Sort, Filter: query.Filter})
 	if err != nil {
 		return LineListResult{}, err
 	}
-	where, args, empty := scopedWhere(actor, built.Where, built.Args)
-	if empty {
-		return LineListResult{Results: []Line{}}, nil
-	}
-	order := built.OrderBy
-	if order == "" {
-		order = ` ORDER BY "idx" ASC, "id" ASC`
-	} else {
-		order += `, "id" ASC`
-	}
-	const source = ` FROM (
-		SELECT l.id,l.idx,l.debit,l.credit,l.party_type,l.party_id,l.remarks,
-		  l.inserted_at,l.updated_at,l.journal_id,l.company_id,l.account_id,
-		  l.currency_id,j.voucher_no,c.name AS company_name,a.code AS account_code,
-		  a.name AS account_name,cur.iso_code AS currency_code,cur.name AS currency_name
-		FROM acc_gl_journal_line l
-		JOIN acc_gl_journal j ON j.id=l.journal_id
-		JOIN bas_company c ON c.id=l.company_id
-		JOIN bas_account a ON a.id=l.account_id
-		LEFT JOIN bas_currency cur ON cur.id=l.currency_id
-	) AS journal_lines`
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return LineListResult{}, apierror.Wrap(apierror.CodeInternal, "查询会计凭证行失败", err)
-	}
-	defer tx.Rollback(ctx)
-	var result LineListResult
-	if err := tx.QueryRow(ctx, `SELECT count(*)`+source+where, args...).Scan(&result.Count); err != nil {
-		return LineListResult{}, apierror.Wrap(apierror.CodeInternal, "统计会计凭证行失败", err)
-	}
-	listArgs := append([]any(nil), args...)
-	at := len(listArgs) + 1
-	listArgs = append(listArgs, query.Limit, query.Offset)
-	rows, err := tx.Query(ctx, `SELECT id,idx,debit,credit,party_type,party_id,remarks,
-		inserted_at,updated_at,journal_id,company_id,account_id,currency_id,
-		voucher_no,company_name,account_code,account_name,currency_code,currency_name`+
-		source+where+order+fmt.Sprintf(" LIMIT $%d OFFSET $%d", at, at+1), listArgs...)
-	if err != nil {
-		return LineListResult{}, apierror.Wrap(apierror.CodeInternal, "查询会计凭证行失败", err)
-	}
-	defer rows.Close()
-	result.Results = make([]Line, 0, query.Limit)
-	for rows.Next() {
-		item, scanErr := scanLine(rows)
-		if scanErr != nil {
-			return LineListResult{}, apierror.Wrap(apierror.CodeInternal, "读取会计凭证行结果失败", scanErr)
-		}
-		result.Results = append(result.Results, item)
-	}
-	if err := rows.Err(); err != nil {
-		return LineListResult{}, apierror.Wrap(apierror.CodeInternal, "遍历会计凭证行结果失败", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return LineListResult{}, apierror.Wrap(apierror.CodeInternal, "完成会计凭证行查询失败", err)
-	}
-	return result, nil
+	return LineListResult{Count: result.Count, Results: result.Results}, nil
 }
+
+const lineListSource = ` FROM (
+SELECT l.id,l.idx,l.debit,l.credit,l.party_type,l.party_id,l.remarks,
+  l.inserted_at,l.updated_at,l.journal_id,l.company_id,l.account_id,
+  l.currency_id,j.voucher_no,c.name AS company_name,a.code AS account_code,
+  a.name AS account_name,cur.iso_code AS currency_code,cur.name AS currency_name
+FROM acc_gl_journal_line l
+JOIN acc_gl_journal j ON j.id=l.journal_id
+JOIN bas_company c ON c.id=l.company_id
+JOIN bas_account a ON a.id=l.account_id
+LEFT JOIN bas_currency cur ON cur.id=l.currency_id
+) AS journal_lines`
 
 func (s *Service) CreateLine(ctx context.Context, actor *authz.Actor, input CreateLineInput) (Line, error) {
 	if err := require(actor, "create"); err != nil {
@@ -134,7 +95,7 @@ func (s *Service) CreateLine(ctx context.Context, actor *authz.Actor, input Crea
 	row, err := q.CreateGLJournalLine(ctx, dbgen.CreateGLJournalLineParams{
 		Idx: input.Idx, Debit: input.Debit, Credit: input.Credit,
 		PartyType: dbPartyText(input.PartyType), PartyID: input.PartyID,
-		Remarks: text(input.Remarks), JournalID: journal.ID,
+		Remarks: pgconv.Text(input.Remarks), JournalID: journal.ID,
 		CompanyID: journal.CompanyID, AccountID: input.AccountID, CurrencyID: currencyID,
 	})
 	if err != nil {
@@ -228,7 +189,7 @@ func (s *Service) UpdateLine(ctx context.Context, actor *authz.Actor, id uuid.UU
 	if _, err := q.UpdateGLJournalLine(ctx, dbgen.UpdateGLJournalLineParams{
 		ID: id, Idx: after.Idx, Debit: after.Debit, Credit: after.Credit,
 		PartyType: dbPartyText(after.PartyType), PartyID: after.PartyID,
-		Remarks: text(after.Remarks), AccountID: after.AccountID, CurrencyID: currencyID,
+		Remarks: pgconv.Text(after.Remarks), AccountID: after.AccountID, CurrencyID: currencyID,
 	}); err != nil {
 		return Line{}, writeError("更新会计凭证行失败", err)
 	}
@@ -431,7 +392,7 @@ func lineFromRow(row dbgen.GetGLJournalLineRow) Line {
 	item := Line{
 		ID: row.ID, Idx: row.Idx, Debit: row.Debit, Credit: row.Credit,
 		PartyType: upperOptionalText(row.PartyType), PartyID: row.PartyID,
-		Remarks: optionalText(row.Remarks), InsertedAt: row.InsertedAt.Time.UTC(),
+		Remarks: pgconv.TextPtr(row.Remarks), InsertedAt: row.InsertedAt.Time.UTC(),
 		UpdatedAt: row.UpdatedAt.Time.UTC(), JournalID: row.JournalID,
 		CompanyID: row.CompanyID, AccountID: row.AccountID, CurrencyID: row.CurrencyID,
 		Journal: JournalRef{ID: row.JournalID, VoucherNo: row.VoucherNo},
@@ -462,7 +423,7 @@ func lineFromModel(row dbgen.AccGlJournalLine) Line {
 	return Line{
 		ID: row.ID, Idx: row.Idx, Debit: row.Debit, Credit: row.Credit,
 		PartyType: upperOptionalText(row.PartyType), PartyID: row.PartyID,
-		Remarks: optionalText(row.Remarks), InsertedAt: row.InsertedAt.Time.UTC(),
+		Remarks: pgconv.TextPtr(row.Remarks), InsertedAt: row.InsertedAt.Time.UTC(),
 		UpdatedAt: row.UpdatedAt.Time.UTC(), JournalID: row.JournalID,
 		CompanyID: row.CompanyID, AccountID: row.AccountID, CurrencyID: row.CurrencyID,
 	}

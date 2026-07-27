@@ -5,52 +5,21 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/z1coyan/synie/server/internal/db/filterbuild"
 	"github.com/z1coyan/synie/server/internal/domain/base/account"
 	"github.com/z1coyan/synie/server/internal/http/gen"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 )
 
+func accountListQuery(body listBody) account.ListQuery {
+	limit, offset, search, sort, filter := listParts(body)
+	return account.ListQuery{Limit: limit, Offset: offset, Search: search, Sort: sort, Filter: filter}
+}
+
 func (s *Server) QueryBasAccounts(w http.ResponseWriter, r *http.Request) {
-	actor, err := actorWithPermission(r, "base.account:read")
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	var body struct {
-		Limit  *int                       `json:"limit,omitempty"`
-		Offset *int                       `json:"offset,omitempty"`
-		Search *string                    `json:"search,omitempty"`
-		Sort   *gen.Sort                  `json:"sort,omitempty"`
-		Filter map[string]json.RawMessage `json:"filter,omitempty"`
-	}
-	if err := decodeJSON(w, r, &body); err != nil {
-		s.writeError(w, r, invalidJSON(err))
-		return
-	}
-	query := account.ListQuery{Filter: body.Filter}
-	if body.Limit != nil {
-		query.Limit = *body.Limit
-	}
-	if body.Offset != nil {
-		query.Offset = *body.Offset
-	}
-	if body.Search != nil {
-		query.Search = *body.Search
-	}
-	if body.Sort != nil {
-		query.Sort = &filterbuild.Sort{Column: body.Sort.Column, Direction: string(body.Sort.Direction)}
-	}
-	result, err := s.accounts.List(r.Context(), actor, query)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	items := make([]gen.Account, 0, len(result.Results))
-	for _, item := range result.Results {
-		items = append(items, accountDTO(item))
-	}
-	s.writeJSON(w, http.StatusOK, gen.AccountList{Count: result.Count, Results: items})
+	queryList(s, w, r, "base.account:read", accountListQuery, s.Accounts.List,
+		func(result account.ListResult) any {
+			return gen.AccountList{Count: result.Count, Results: mapItems(result.Results, accountDTO)}
+		})
 }
 
 func (s *Server) GetBasAccount(w http.ResponseWriter, r *http.Request, id gen.ID) {
@@ -59,7 +28,7 @@ func (s *Server) GetBasAccount(w http.ResponseWriter, r *http.Request, id gen.ID
 		s.writeError(w, r, err)
 		return
 	}
-	item, err := s.accounts.Get(r.Context(), actor, id)
+	item, err := s.Accounts.Get(r.Context(), actor, id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -87,7 +56,7 @@ func (s *Server) CreateBasAccount(w http.ResponseWriter, r *http.Request) {
 		value := string(*body.Role)
 		role = &value
 	}
-	item, err := s.accounts.Create(r.Context(), actor, account.CreateInput{
+	item, err := s.Accounts.Create(r.Context(), actor, account.CreateInput{
 		Code: body.Code, Name: body.Name, Direction: string(body.Direction),
 		IsGroup: isGroup, Active: body.Active, Role: role, ParentID: body.ParentId,
 		CompanyID: body.CompanyId, CurrencyID: body.CurrencyId,
@@ -145,7 +114,7 @@ func (s *Server) UpdateBasAccount(w http.ResponseWriter, r *http.Request, id gen
 		}
 		input.CurrencyID = &value
 	}
-	item, err := s.accounts.Update(r.Context(), actor, id, input)
+	item, err := s.Accounts.Update(r.Context(), actor, id, input)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -159,7 +128,7 @@ func (s *Server) DeleteBasAccount(w http.ResponseWriter, r *http.Request, id gen
 		s.writeError(w, r, err)
 		return
 	}
-	if err := s.accounts.Delete(r.Context(), actor, id); err != nil {
+	if err := s.Accounts.Delete(r.Context(), actor, id); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -177,7 +146,7 @@ func (s *Server) InitializeBasAccountsTemplate(w http.ResponseWriter, r *http.Re
 		s.writeError(w, r, invalidJSON(err))
 		return
 	}
-	result, err := s.accounts.InitializeTemplate(r.Context(), actor, body.CompanyId, string(body.Template))
+	result, err := s.Accounts.InitializeTemplate(r.Context(), actor, body.CompanyId, string(body.Template))
 	if err != nil {
 		s.writeError(w, r, err)
 		return

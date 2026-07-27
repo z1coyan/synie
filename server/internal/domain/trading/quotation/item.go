@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/dbgen"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -69,8 +70,8 @@ func (s *Service) CreateItem(
 		customer_part_no,unit_name,remarks,quotation_id,company_id,material_id,unit_id
 	) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
 		input.Idx, strings.ToLower(string(mode)), numeric(price), taxRate,
-		snapshot.code, snapshot.name, text(snapshot.spec), text(snapshot.customerPartNo),
-		snapshot.unitName, text(input.Remarks), input.QuotationID, parent.CompanyID,
+		snapshot.code, snapshot.name, pgconv.Text(snapshot.spec), pgconv.Text(snapshot.customerPartNo),
+		snapshot.unitName, pgconv.Text(input.Remarks), input.QuotationID, parent.CompanyID,
 		input.MaterialID, input.UnitID,
 	).Scan(&id)
 	if err != nil {
@@ -180,8 +181,8 @@ func (s *Service) UpdateItem(
 		material_id=$12,unit_id=$13,updated_at=(now() AT TIME ZONE 'utc')
 		WHERE id=$1`,
 		id, after.Idx, strings.ToLower(string(after.PricingMode)), numeric(after.Price),
-		after.TaxRate, after.MaterialCode, after.MaterialName, text(after.MaterialSpec),
-		text(after.CustomerPartNo), after.UnitName, text(after.Remarks),
+		after.TaxRate, after.MaterialCode, after.MaterialName, pgconv.Text(after.MaterialSpec),
+		pgconv.Text(after.CustomerPartNo), after.UnitName, pgconv.Text(after.Remarks),
 		after.MaterialID, after.UnitID,
 	)
 	if err != nil {
@@ -340,7 +341,7 @@ func loadMaterialSnapshot(
 	}
 	return materialSnapshot{
 		code: row.Code, name: row.Name, unitName: row.UnitName,
-		spec: textPtr(row.Spec), customerPartNo: textPtr(row.CustomerPartNo),
+		spec: pgconv.TextPtr(row.Spec), customerPartNo: pgconv.TextPtr(row.CustomerPartNo),
 		isCustomerMaterial: row.IsCustomerMaterial, customerID: row.CustomerID,
 	}, nil
 }

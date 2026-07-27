@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 	"github.com/z1coyan/synie/server/internal/db/filterbuild"
+	"github.com/z1coyan/synie/server/internal/db/pgconv"
 	"github.com/z1coyan/synie/server/internal/platform/apierror"
 	"github.com/z1coyan/synie/server/internal/platform/audit"
 	"github.com/z1coyan/synie/server/internal/platform/authz"
@@ -64,14 +65,14 @@ func (s *Service) CreateItem(
 			(id,idx,qty,base_qty,amount,base_amount,remarks,reconciliation_id,
 			 company_id,delivery_item_id)
 			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-			id, input.Idx, input.Qty, baseQty, amount, baseAmount, text(input.Remarks),
+			id, input.Idx, input.Qty, baseQty, amount, baseAmount, pgconv.OptionalText(input.Remarks),
 			head.ID, head.CompanyID, source.id)
 	} else {
 		_, err = tx.Exec(ctx, `INSERT INTO pur_reconciliation_item
 			(id,idx,qty,base_qty,amount,base_amount,remarks,reconciliation_id,
 			 company_id,receipt_item_id,outsourced_receipt_item_id)
 			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-			id, input.Idx, input.Qty, baseQty, amount, baseAmount, text(input.Remarks),
+			id, input.Idx, input.Qty, baseQty, amount, baseAmount, pgconv.OptionalText(input.Remarks),
 			head.ID, head.CompanyID, input.ReceiptItemID, input.OutsourcedReceiptItemID)
 	}
 	if err != nil {
@@ -472,13 +473,13 @@ func (s *Service) UpdateItem(
 			base_qty=$4,amount=$5,base_amount=$6,remarks=$7,delivery_item_id=$8,
 			updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
 			id, create.Idx, create.Qty, baseQty, amount, baseAmount,
-			text(create.Remarks), create.DeliveryItemID)
+			pgconv.OptionalText(create.Remarks), create.DeliveryItemID)
 	} else {
 		_, err = tx.Exec(ctx, `UPDATE pur_reconciliation_item SET idx=$2,qty=$3,
 			base_qty=$4,amount=$5,base_amount=$6,remarks=$7,receipt_item_id=$8,
 			outsourced_receipt_item_id=$9,updated_at=(now() AT TIME ZONE 'utc') WHERE id=$1`,
 			id, create.Idx, create.Qty, baseQty, amount, baseAmount,
-			text(create.Remarks), create.ReceiptItemID, create.OutsourcedReceiptItemID)
+			pgconv.OptionalText(create.Remarks), create.ReceiptItemID, create.OutsourcedReceiptItemID)
 	}
 	if err != nil {
 		return Item{}, writeError("更新对账条目失败", err)
