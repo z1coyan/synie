@@ -31,3 +31,4 @@ Blocked by: 01
 ## Comments
 
 - 2026-07-28 集成代理：cherry-pick 分片 e9c8d7e 栈（base 四资源 + IAM + party + 公司默认过账科目）并装配 app/index；补 market-instruments 查询面、权限矩阵规格测试、权限先于 body 校验、pr-2.10/pr-2.18 Grid 快照。`cd server && bunx tsc --noEmit` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 70 pass。`verify-party-employee-rest.ts` 对 Bun（:18081）全绿。`verify-system-ops-rest.ts` 审计 Meta/权限先校验已过，阻塞于 `/todos/*`（工单 09 待办面）。未改 server-go。
+- 2026-07-28 独立验收：读代码对照 server-go/OpenAPI（wire/权限先于校验/金额 decimal/withTx/Meta/hc 链）；`bun run typecheck` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 71 pass；`verify-party-employee-rest.ts` 对 Bun:18082 全绿；base/IAM/默认过账科目 HTTP 冒烟（三仓种子、本币保护、科目角色槽、partial upsert、权限先 403）。修复 filterbuild：`fk/enum/enumArray/polyFk` 缺 `values` 时 TypeError→500，改为 validation 400 并补单测。`verify-system-ops` 仍阻塞 `/todos/*`（工单 09）。未 push/reset。

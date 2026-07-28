@@ -112,6 +112,27 @@ describe('filterbuild', () => {
     expect(() => compile({ ...base, filter: { companyId: { kind: 'fk', values: ['not-uuid'], labels: [] } } })).toThrow(ApiError)
   })
 
+  test('fk/enum 缺 values 返回 validation 而非 TypeError', () => {
+    // 路由层 filter 为 z.record(unknown)，畸形 body 必须在 filterbuild 以 400 收口
+    try {
+      compile({
+        ...base,
+        filter: { companyId: { kind: 'fk', op: 'eq', value: '11111111-1111-4111-8111-111111111111' } as never },
+      })
+      throw new Error('应抛出 ApiError')
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as ApiError).code).toBe('validation')
+    }
+    try {
+      compile({ ...base, filter: { type: { kind: 'enum' } as never } })
+      throw new Error('应抛出 ApiError')
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as ApiError).code).toBe('validation')
+    }
+  })
+
   test('search 跨可筛选字符串列 OR', () => {
     const { sql, parameters } = compile({ ...base, search: '千克' })
     expect(sql).toContain('OR')

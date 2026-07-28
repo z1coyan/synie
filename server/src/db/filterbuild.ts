@@ -72,13 +72,13 @@ function buildColumnFilter(
     }
     case 'enum': {
       if (field.type !== 'enum') throw kindMismatch(field, filter.kind)
-      const values = enumValues(field, filter.values)
+      const values = enumValues(field, requireStringArray(field, filter.values))
       if (values.length === 0) return null
       return sql`${column(field)} = ANY(${values}::text[])`
     }
     case 'enumArray': {
       if (field.type !== 'enumArray') throw kindMismatch(field, filter.kind)
-      const values = enumValues(field, filter.values)
+      const values = enumValues(field, requireStringArray(field, filter.values))
       if (values.length === 0) return null
       const expr = sql`${column(field)} && ${values}::text[]`
       return filter.op === 'notHas' ? sql`NOT (${expr})` : expr
@@ -94,7 +94,8 @@ function buildColumnFilter(
     case 'fk': {
       if (field.type !== 'fk' && field.type !== 'uuid') throw kindMismatch(field, filter.kind)
       if (filter.op === 'isNil') return sql`${column(field)} IS NULL`
-      const values = uuidValues(field, filter.values)
+      // 缺 values / 非数组不得 500：契约为 values[]（见 @synie/shared Filter DSL）
+      const values = uuidValues(field, requireStringArray(field, filter.values))
       if (values.length === 0) return null
       return sql`${column(field)}::text = ANY(${values}::text[])`
     }
@@ -180,11 +181,27 @@ function buildPolyFk(
   if (filter.op === 'isNil') return sql`${column(field)} IS NULL`
   const variant = field.ref?.variants?.find((candidate) => candidate.value === filter.variant)
   if (!variant) throw validation(field.apiName, '未知多态外键变体')
-  const values = uuidValues(field, filter.values)
+  const values = uuidValues(field, requireStringArray(field, filter.values))
   if (values.length === 0) return null
   const discriminator = byApi.get(field.ref!.discriminator!)
   if (!discriminator) throw validation(field.apiName, 'Meta 缺少多态判别字段')
   return sql`(${column(discriminator)} = ${filter.variant.toLowerCase()} AND ${column(field)}::text = ANY(${values}::text[]))`
+}
+
+/** 筛选 DSL 的 values 必须是 string[]；缺失/非数组 → 400（禁止 TypeError 变 500） */
+function requireStringArray(field: FieldMeta, values: unknown): string[] {
+  if (values === undefined || values === null) {
+    throw validation(field.apiName, 'values 必填（string 数组）')
+  }
+  if (!Array.isArray(values)) {
+    throw validation(field.apiName, 'values 必须是字符串数组')
+  }
+  for (const item of values) {
+    if (typeof item !== 'string') {
+      throw validation(field.apiName, 'values 必须是字符串数组')
+    }
+  }
+  return values
 }
 
 function buildOrderBy(query: ListQuery, byApi: Map<string, FieldMeta>): RawBuilder<unknown> | null {
