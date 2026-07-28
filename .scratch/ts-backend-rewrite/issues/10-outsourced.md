@@ -31,3 +31,9 @@ Blocked by: 07, 11
 - 已复用：订单条目 BOM/发料清单/副产物/`expandBom`；外协仓 `warehouse-service`；对账池委外入库行。
 - 测试：`typecheck`；`outsourced.postgres.test.ts`（发料/入库生命周期 + BOM 展开口径）；投影单测/PG。
 - `verify-fulfillment-rest.ts` 对 TS 服务（`SYNIE_API_URL`）全绿：meta=20 permissionFirst=10 queries=10 heads=4（含委外发料/入库头）。
+
+### 2026-07-28 主工作区集成
+
+- cherry-pick `ea0649a`（委外发料/入库完整 CRUD/审核/作废/投影）/ `edfe9d8`（验收记录）；trading 路由与 Meta 装配已在候选提交内挂载。
+- 验证：`bunx tsc --noEmit` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 209 pass（含 outsourced.postgres + projection）；`verify-fulfillment-rest` against :18083 → `ok: meta=20 permissionFirst=10 queries=10 heads=4`。
+- 无新增业务代码冲突；与工单 09 文件面无重叠。
