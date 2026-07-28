@@ -1,6 +1,5 @@
 import type { Kysely } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
-import type { InventoryEngine } from '~/engines/inventory/types.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
@@ -24,8 +23,8 @@ export function registerManufacturingResources(registry: Registry): void {
 export function createManufacturingServices(
   db: Kysely<Database>,
   numbering: NumberingService,
-  inventory: InventoryEngine = createInventoryEngine(),
 ) {
+  const inventory = createInventoryEngine()
   const master = createMasterService(db, numbering)
   const demands = createDemandService(db, numbering)
   const workOrders = createWorkOrderService(db, numbering)

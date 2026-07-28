@@ -7,7 +7,7 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine, type GlEngine, type GlEntry } from '~/engines/gl/index.ts'
+import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -226,7 +226,7 @@ const INVOICE_SOURCE = sql` FROM acc_vat_invoice`
 export type VatInvoiceService = ReturnType<typeof createVatInvoiceService>
 
 export interface VatInvoiceServiceDeps {
-  gl?: GlEngine
+  gl: GlEngine
   reconciliations: Pick<ReconciliationService, 'closeFromInvoice' | 'reopenFromInvoice'>
   files?: Pick<FileService, 'readStoredFile'> | null
   ocr?: OcrDeps
@@ -237,7 +237,7 @@ export function createVatInvoiceService(
   numbering: NumberingService,
   deps: VatInvoiceServiceDeps,
 ) {
-  const gl = deps.gl ?? createGlEngine()
+  const gl = deps.gl
   const reconciliations = deps.reconciliations
   const files = deps.files ?? null
 

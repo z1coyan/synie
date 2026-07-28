@@ -7,6 +7,8 @@ import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { withTx } from '~/db/tx.ts'
+import { createGlEngine } from '~/engines/gl/index.ts'
+import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createNumberingService } from '~/platform/numbering/index.ts'
@@ -21,10 +23,13 @@ const run = url ? describe : describe.skip
 run('PG 集成（销售/采购对账）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db)
+  const gl = createGlEngine()
+  const inventory = createInventoryEngine()
+  const engines = { inventory, gl }
   const quotations = createQuotationService(db, numbering)
   const orders = createOrderService(db, numbering, quotations)
-  const fulfillment = createFulfillmentService(db, numbering, orders)
-  const svc = createReconciliationService(db, numbering)
+  const fulfillment = createFulfillmentService(db, numbering, orders, engines)
+  const svc = createReconciliationService(db, numbering, gl)
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `REC${suffix}`
 

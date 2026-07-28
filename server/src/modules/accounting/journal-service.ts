@@ -7,7 +7,7 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine, type GlEngine, type GlEntry } from '~/engines/gl/index.ts'
+import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -216,7 +216,7 @@ export type JournalService = ReturnType<typeof createJournalService>
 export function createJournalService(
   db: Kysely<Database>,
   numbering: NumberingService,
-  gl: GlEngine = createGlEngine(),
+  gl: GlEngine,
 ) {
   async function get(actor: Actor, id: string): Promise<Journal> {
     requireAction(actor, 'read')

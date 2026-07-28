@@ -8,7 +8,7 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine } from '~/engines/gl/index.ts'
+import type { GlEngine } from '~/engines/gl/index.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -43,8 +43,6 @@ import {
   type ReconciliationSideSpec,
   type ReconciliationStatus,
 } from './spec.ts'
-
-const gl = createGlEngine()
 
 const HEAD_AUDIT = [
   'reconciliation_no',
@@ -97,7 +95,11 @@ interface SourceItem {
   outsourced: boolean
 }
 
-export function createReconciliationService(db: Kysely<Database>, numberer: Numberer) {
+export function createReconciliationService(
+  db: Kysely<Database>,
+  numberer: Numberer,
+  gl: Pick<GlEngine, 'post' | 'cancel'>,
+) {
   async function listHeads(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
     const spec = reconciliationSpec(side)
     requirePerm(actor, spec.prefix, 'read', '无权限执行对账操作')
@@ -400,7 +402,7 @@ export function createReconciliationService(db: Kysely<Database>, numberer: Numb
       const posting = input.postingDate ? toDateOnly(input.postingDate) : todayUTC()
       const baseGross = decimal(String(before.base_gross_total ?? 0))
       if (baseGross.gt(0)) {
-        await postGiftGL(trx, spec, before, posting)
+        await postGiftGL(trx, gl, spec, before, posting)
       }
       await sql`
         UPDATE ${ident(spec.table)} SET status='closed', posting_date=${posting}::date,
@@ -943,6 +945,7 @@ async function adjustProjection(
 
 async function postGiftGL(
   db: TrxHandle,
+  gl: Pick<GlEngine, 'post'>,
   spec: ReconciliationSideSpec,
   head: Record<string, unknown>,
   posting: string,

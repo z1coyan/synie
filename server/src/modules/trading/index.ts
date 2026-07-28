@@ -3,6 +3,8 @@
  */
 import type { Kysely } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
+import { createGlEngine } from '~/engines/gl/index.ts'
+import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { createQuotationService } from './quotation/service.ts'
@@ -91,11 +93,14 @@ export function registerTradingResources(registry: Registry): void {
 }
 
 export function createTradingServices(db: Kysely<Database>, numbering: NumberingService) {
+  const gl = createGlEngine()
+  const inventory = createInventoryEngine()
+  const engines = { inventory, gl }
   const quotations = createQuotationService(db, numbering)
   const orders = createOrderService(db, numbering, quotations)
-  const fulfillment = createFulfillmentService(db, numbering, orders)
-  const outsourced = createOutsourcedService(db, numbering, orders)
-  const reconciliations = createReconciliationService(db, numbering)
+  const fulfillment = createFulfillmentService(db, numbering, orders, engines)
+  const outsourced = createOutsourcedService(db, numbering, orders, engines)
+  const reconciliations = createReconciliationService(db, numbering, gl)
   return { quotations, orders, fulfillment, outsourced, reconciliations }
 }
 

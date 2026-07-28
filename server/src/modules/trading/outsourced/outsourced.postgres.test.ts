@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
+import { createGlEngine } from '~/engines/gl/index.ts'
+import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { createOrderService } from '../order/service.ts'
 import { createOutsourcedService } from './service.ts'
@@ -41,7 +43,10 @@ run('PG 集成（委外发料/入库生命周期）', () => {
   const orders = createOrderService(db, numberer as never, {
     resolveOrderPrice: async () => null,
   } as never)
-  const outsourced = createOutsourcedService(db, numberer as never, orders)
+  const outsourced = createOutsourcedService(db, numberer as never, orders, {
+    inventory: createInventoryEngine(),
+    gl: createGlEngine(),
+  })
 
   const actor: Actor = {
     userId: '',

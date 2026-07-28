@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
+import { createGlEngine } from '~/engines/gl/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { createNumberingService } from '~/platform/numbering/index.ts'
 import { createJournalService } from '~/modules/accounting/journal-service.ts'
@@ -20,13 +21,14 @@ const run = url ? describe : describe.skip
 run('PG 集成（财务运营 12）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db)
-  const reconciliations = createReconciliationService(db, numbering)
+  const gl = createGlEngine()
+  const reconciliations = createReconciliationService(db, numbering, gl)
   const banking = createBankingService(db, numbering, {
-    journals: createJournalService(db, numbering),
+    journals: createJournalService(db, numbering, gl),
   })
-  const expenses = createExpenseService(db, numbering)
-  const bills = createBillService(db, numbering)
-  const invoices = createVatInvoiceService(db, numbering, { reconciliations })
+  const expenses = createExpenseService(db, numbering, gl)
+  const bills = createBillService(db, numbering, { gl })
+  const invoices = createVatInvoiceService(db, numbering, { gl, reconciliations })
 
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `FO${suffix}`
