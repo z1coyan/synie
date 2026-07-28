@@ -13,7 +13,7 @@ import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
-import { toDate, wireDecimal } from './helpers.ts'
+import {requirePermission, requireAnyPermission,  toDate, wireDecimal } from './helpers.ts'
 import { materialUnitResourceMeta } from './meta.ts'
 
 export interface MaterialUnit {
@@ -42,7 +42,8 @@ const SOURCE = sql`
 `
 
 export function createMaterialUnitService(db: Kysely<Database>) {
-  async function get(id: string): Promise<MaterialUnit> {
+  async function get(actor: Actor, id: string): Promise<MaterialUnit> {
+    requirePermission(actor, 'inv.material:read')
     const rows = await sql<Record<string, unknown>>`
       SELECT id, factor, inserted_at, updated_at, material_id, unit_id,
              material_name, unit_name, unit_symbol
@@ -52,7 +53,8 @@ export function createMaterialUnitService(db: Kysely<Database>) {
     return mapRow(rows.rows[0]!)
   }
 
-  async function list(query: Partial<ListQuery>) {
+  async function list(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.material:read')
     return listFromSource({
       db,
       resource: META,
@@ -69,6 +71,7 @@ export function createMaterialUnitService(db: Kysely<Database>) {
     actor: Actor,
     input: { materialId: string; unitId: string; factor: string },
   ): Promise<MaterialUnit> {
+    requireAnyPermission(actor, 'inv.material:update', 'inv.material:create')
     const factor = validateFactor(input.factor)
     if (!input.materialId || !input.unitId) {
       throw ApiError.validation('物料单位转换参数不合法', {
@@ -111,6 +114,7 @@ export function createMaterialUnitService(db: Kysely<Database>) {
     id: string,
     input: { unitId?: string; factor?: string },
   ): Promise<MaterialUnit> {
+    requireAnyPermission(actor, 'inv.material:update', 'inv.material:create')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_material_unit')
@@ -153,6 +157,7 @@ export function createMaterialUnitService(db: Kysely<Database>) {
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requireAnyPermission(actor, 'inv.material:update', 'inv.material:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_material_unit')

@@ -24,6 +24,7 @@ import {
   voidInventoryDocInTx,
 } from '~/modules/trading/posting.ts'
 import {
+  requirePermission,
   currentBookQty,
   dateWire,
   projectStockItem,
@@ -115,6 +116,7 @@ export function createStockCountService(
   inventory: InventoryEngine,
 ) {
   async function get(actor: Actor, id: string): Promise<StockCount> {
+    requirePermission(actor, 'inv.stock_count:read')
     const row = await db.selectFrom('inv_stock_count').selectAll().where('id', '=', id).executeTakeFirst()
     if (!row || !canAccessCompany(actor, row.company_id)) {
       throw new ApiError('not_found', '库存盘点单不存在')
@@ -123,6 +125,7 @@ export function createStockCountService(
   }
 
   async function list(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.stock_count:read')
     const scope = companyScopeWhere(actor, 'company_id')
     if (scope.empty) return { count: 0, results: [] as StockCount[] }
     return listFromSource({
@@ -156,6 +159,7 @@ export function createStockCountService(
       loadAll?: boolean
     },
   ): Promise<StockCount> {
+    requirePermission(actor, 'inv.stock_count:create')
     if (!canAccessCompany(actor, input.companyId)) {
       throw new ApiError('forbidden', '无权操作该公司数据')
     }
@@ -284,6 +288,7 @@ export function createStockCountService(
       warehouseId?: string
     },
   ): Promise<StockCount> {
+    requirePermission(actor, 'inv.stock_count:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_stock_count')
@@ -353,6 +358,7 @@ export function createStockCountService(
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'inv.stock_count:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_stock_count')
@@ -382,6 +388,7 @@ export function createStockCountService(
   }
 
   async function refresh(actor: Actor, id: string): Promise<StockCount> {
+    requirePermission(actor, 'inv.stock_count:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_stock_count')
@@ -452,6 +459,7 @@ export function createStockCountService(
   }
 
   async function approve(actor: Actor, id: string): Promise<StockCount> {
+    requirePermission(actor, 'inv.stock_count:approve')
     return withTx(db, async (trx) =>
       auditInventoryDocInTx(trx, actor, inventory, {
         voucherType: VOUCHER_TYPE,
@@ -549,6 +557,7 @@ export function createStockCountService(
   }
 
   async function cancel(actor: Actor, id: string): Promise<StockCount> {
+    requirePermission(actor, 'inv.stock_count:cancel')
     return withTx(db, async (trx) =>
       voidInventoryDocInTx(trx, actor, inventory, {
         voucherType: VOUCHER_TYPE,
@@ -588,6 +597,7 @@ export function createStockCountService(
   }
 
   async function getItem(actor: Actor, id: string): Promise<StockCountItem> {
+    requirePermission(actor, 'inv.stock_count:read')
     const row = await db
       .selectFrom('inv_stock_count_item')
       .selectAll()
@@ -600,6 +610,7 @@ export function createStockCountService(
   }
 
   async function queryItems(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.stock_count:read')
     const scope = companyScopeWhere(actor, 'company_id')
     if (scope.empty) return { count: 0, results: [] as StockCountItem[] }
     return listFromSource({
@@ -626,6 +637,7 @@ export function createStockCountService(
       remark?: string | null
     },
   ): Promise<StockCountItem> {
+    requirePermission(actor, 'inv.stock_count:create')
     return withTx(db, async (trx) => {
       const count = await lockDraftCount(trx, actor, input.countId)
       return createItemInTx(trx, actor, count, {
@@ -649,6 +661,7 @@ export function createStockCountService(
       remarkPresent?: boolean
     },
   ): Promise<StockCountItem> {
+    requirePermission(actor, 'inv.stock_count:update')
     return withTx(db, async (trx) => {
       const current = await trx
         .selectFrom('inv_stock_count_item')
@@ -731,6 +744,7 @@ export function createStockCountService(
   }
 
   async function removeItem(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'inv.stock_count:delete')
     await withTx(db, async (trx) => {
       const current = await trx
         .selectFrom('inv_stock_count_item')

@@ -7,7 +7,6 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { hasPermission, requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import { dateIso, datetimeIso } from './helpers.ts'
@@ -47,29 +46,6 @@ function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   }
 }
 
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
-
-function requireAnyPerm(...codes: string[]) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    const actor = c.get('actor')
-    if (!codes.some((code) => hasPermission(actor, code))) {
-      requirePermission(actor, codes[0]!)
-    }
-    await next()
-  }
-}
-
 export interface InventoryRouteDeps {
   auth: AuthService
   categories: MaterialCategoryService
@@ -101,16 +77,14 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       // —— 物料分类 ——
       .post(
         '/material-categories/query',
-        requirePerm('inv.material_category:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await categories.list(toList(c.req.valid('json')))
+          const result = await categories.list(c.get('actor')!, toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(categoryDto) })
         },
       )
       .post(
         '/material-categories',
-        requirePerm('inv.material_category:create'),
         zValidator(
           'json',
           z
@@ -131,16 +105,14 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/material-categories/:id',
-        requirePerm('inv.material_category:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await categories.get(c.req.valid('param').id)
+          const item = await categories.get(c.get('actor')!, c.req.valid('param').id)
           return c.json(categoryDto(item))
         },
       )
       .patch(
         '/material-categories/:id',
-        requirePerm('inv.material_category:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -167,7 +139,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/material-categories/:id',
-        requirePerm('inv.material_category:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await categories.remove(c.get('actor')!, c.req.valid('param').id)
@@ -177,16 +148,14 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       // —— 物料 ——
       .post(
         '/materials/query',
-        requirePerm('inv.material:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await materials.list(toList(c.req.valid('json')))
+          const result = await materials.list(c.get('actor')!, toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(materialDto) })
         },
       )
       .post(
         '/materials',
-        requirePerm('inv.material:create'),
         zValidator(
           'json',
           z
@@ -210,16 +179,14 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/materials/:id',
-        requirePerm('inv.material:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await materials.get(c.req.valid('param').id)
+          const item = await materials.get(c.get('actor')!, c.req.valid('param').id)
           return c.json(materialDto(item))
         },
       )
       .patch(
         '/materials/:id',
-        requirePerm('inv.material:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -251,7 +218,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/materials/:id',
-        requirePerm('inv.material:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await materials.remove(c.get('actor')!, c.req.valid('param').id)
@@ -261,16 +227,14 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       // —— 物料单位转换 ——
       .post(
         '/material-units/query',
-        requirePerm('inv.material:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await materialUnits.list(toList(c.req.valid('json')))
+          const result = await materialUnits.list(c.get('actor')!, toList(c.req.valid('json')))
           return c.json({ count: result.count, results: result.results.map(materialUnitDto) })
         },
       )
       .post(
         '/material-units',
-        requireAnyPerm('inv.material:update', 'inv.material:create'),
         zValidator(
           'json',
           z
@@ -289,16 +253,14 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/material-units/:id',
-        requirePerm('inv.material:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
-          const item = await materialUnits.get(c.req.valid('param').id)
+          const item = await materialUnits.get(c.get('actor')!, c.req.valid('param').id)
           return c.json(materialUnitDto(item))
         },
       )
       .patch(
         '/material-units/:id',
-        requireAnyPerm('inv.material:update', 'inv.material:create'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -321,7 +283,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/material-units/:id',
-        requireAnyPerm('inv.material:update', 'inv.material:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await materialUnits.remove(c.get('actor')!, c.req.valid('param').id)
@@ -331,7 +292,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       // —— 仓库 ——
       .post(
         '/warehouses/query',
-        requirePerm('inv.warehouse:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await warehouses.list(c.get('actor')!, toList(c.req.valid('json')))
@@ -341,7 +301,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       // 静态路径须先于 /warehouses/:id
       .post(
         '/warehouses/outsourced/query',
-        requirePerm('inv.warehouse:read'),
         zValidator(
           'json',
           z
@@ -375,7 +334,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/warehouses/seed-defaults',
-        requirePerm('inv.warehouse:create'),
         zValidator(
           'json',
           z.object({ companyId: z.string().uuid() }).strict(),
@@ -391,7 +349,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/warehouses',
-        requirePerm('inv.warehouse:create'),
         zValidator(
           'json',
           z
@@ -417,7 +374,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/warehouses/:id',
-        requirePerm('inv.warehouse:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await warehouses.get(c.get('actor')!, c.req.valid('param').id)
@@ -426,7 +382,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .patch(
         '/warehouses/:id',
-        requirePerm('inv.warehouse:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -460,7 +415,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/warehouses/:id',
-        requirePerm('inv.warehouse:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await warehouses.remove(c.get('actor')!, c.req.valid('param').id)
@@ -470,7 +424,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       // —— 库存分录 / 余额 ——
       .post(
         '/stock-entries/query',
-        requirePerm('inv.stock_entry:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await stockEntries.list(c.get('actor')!, toList(c.req.valid('json')))
@@ -479,7 +432,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/stock-entries/:id',
-        requirePerm('inv.stock_entry:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockEntries.get(c.get('actor')!, c.req.valid('param').id)
@@ -488,7 +440,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-balance/query',
-        requirePerm('inv.stock_entry:read'),
         zValidator(
           'json',
           z
@@ -510,7 +461,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       // —— 手工出入库单 ——
       .post(
         '/stock-docs/query',
-        requirePerm('inv.stock_doc:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await stockDocs.list(c.get('actor')!, toList(c.req.valid('json')))
@@ -519,7 +469,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-docs',
-        requirePerm('inv.stock_doc:create'),
         zValidator(
           'json',
           z
@@ -542,7 +491,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/stock-docs/:id',
-        requirePerm('inv.stock_doc:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockDocs.get(c.get('actor')!, c.req.valid('param').id)
@@ -551,7 +499,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .patch(
         '/stock-docs/:id',
-        requirePerm('inv.stock_doc:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -580,7 +527,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-docs/:id',
-        requirePerm('inv.stock_doc:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await stockDocs.remove(c.get('actor')!, c.req.valid('param').id)
@@ -589,7 +535,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-docs/:id/audit',
-        requirePerm('inv.stock_doc:audit'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockDocs.audit(c.get('actor')!, c.req.valid('param').id)
@@ -598,7 +543,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-docs/:id/void',
-        requirePerm('inv.stock_doc:void'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockDocs.void(c.get('actor')!, c.req.valid('param').id)
@@ -607,7 +551,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-doc-items/query',
-        requirePerm('inv.stock_doc:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await stockDocs.queryItems(c.get('actor')!, toList(c.req.valid('json')))
@@ -616,7 +559,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-doc-items',
-        requirePerm('inv.stock_doc:create'),
         zValidator(
           'json',
           z
@@ -638,7 +580,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/stock-doc-items/:id',
-        requirePerm('inv.stock_doc:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockDocs.getItem(c.get('actor')!, c.req.valid('param').id)
@@ -647,7 +588,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .patch(
         '/stock-doc-items/:id',
-        requirePerm('inv.stock_doc:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -674,7 +614,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-doc-items/:id',
-        requirePerm('inv.stock_doc:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await stockDocs.removeItem(c.get('actor')!, c.req.valid('param').id)
@@ -684,7 +623,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       // —— 调拨单 ——
       .post(
         '/stock-transfers/query',
-        requirePerm('inv.stock_transfer:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await stockTransfers.list(c.get('actor')!, toList(c.req.valid('json')))
@@ -693,7 +631,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-transfers',
-        requirePerm('inv.stock_transfer:create'),
         zValidator(
           'json',
           z
@@ -717,7 +654,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/stock-transfers/:id',
-        requirePerm('inv.stock_transfer:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockTransfers.get(c.get('actor')!, c.req.valid('param').id)
@@ -726,7 +662,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .patch(
         '/stock-transfers/:id',
-        requirePerm('inv.stock_transfer:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -756,7 +691,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-transfers/:id',
-        requirePerm('inv.stock_transfer:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await stockTransfers.remove(c.get('actor')!, c.req.valid('param').id)
@@ -765,7 +699,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-transfers/:id/ship',
-        requirePerm('inv.stock_transfer:ship'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockTransfers.ship(c.get('actor')!, c.req.valid('param').id)
@@ -774,7 +707,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-transfers/:id/receive',
-        requirePerm('inv.stock_transfer:receive'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -805,7 +737,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-transfer-items/query',
-        requirePerm('inv.stock_transfer:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await stockTransfers.queryItems(
@@ -817,7 +748,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-transfer-items',
-        requirePerm('inv.stock_transfer:create'),
         zValidator(
           'json',
           z
@@ -839,7 +769,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/stock-transfer-items/:id',
-        requirePerm('inv.stock_transfer:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockTransfers.getItem(c.get('actor')!, c.req.valid('param').id)
@@ -848,7 +777,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .patch(
         '/stock-transfer-items/:id',
-        requirePerm('inv.stock_transfer:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -875,7 +803,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-transfer-items/:id',
-        requirePerm('inv.stock_transfer:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await stockTransfers.removeItem(c.get('actor')!, c.req.valid('param').id)
@@ -885,7 +812,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       // —— 盘点单 ——
       .post(
         '/stock-counts/query',
-        requirePerm('inv.stock_count:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await stockCounts.list(c.get('actor')!, toList(c.req.valid('json')))
@@ -894,7 +820,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-counts',
-        requirePerm('inv.stock_count:create'),
         zValidator(
           'json',
           z
@@ -929,7 +854,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/stock-counts/:id',
-        requirePerm('inv.stock_count:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockCounts.get(c.get('actor')!, c.req.valid('param').id)
@@ -938,7 +862,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .patch(
         '/stock-counts/:id',
-        requirePerm('inv.stock_count:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -966,7 +889,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-counts/:id',
-        requirePerm('inv.stock_count:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await stockCounts.remove(c.get('actor')!, c.req.valid('param').id)
@@ -975,7 +897,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-counts/:id/refresh',
-        requirePerm('inv.stock_count:update'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockCounts.refresh(c.get('actor')!, c.req.valid('param').id)
@@ -984,7 +905,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-counts/:id/approve',
-        requirePerm('inv.stock_count:approve'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockCounts.approve(c.get('actor')!, c.req.valid('param').id)
@@ -993,7 +913,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-counts/:id/cancel',
-        requirePerm('inv.stock_count:cancel'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockCounts.cancel(c.get('actor')!, c.req.valid('param').id)
@@ -1002,7 +921,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-count-items/query',
-        requirePerm('inv.stock_count:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await stockCounts.queryItems(c.get('actor')!, toList(c.req.valid('json')))
@@ -1011,7 +929,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .post(
         '/stock-count-items',
-        requirePerm('inv.stock_count:create'),
         zValidator(
           'json',
           z
@@ -1032,7 +949,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .get(
         '/stock-count-items/:id',
-        requirePerm('inv.stock_count:read'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           const item = await stockCounts.getItem(c.get('actor')!, c.req.valid('param').id)
@@ -1041,7 +957,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .patch(
         '/stock-count-items/:id',
-        requirePerm('inv.stock_count:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -1068,7 +983,6 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
       )
       .delete(
         '/stock-count-items/:id',
-        requirePerm('inv.stock_count:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await stockCounts.removeItem(c.get('actor')!, c.req.valid('param').id)

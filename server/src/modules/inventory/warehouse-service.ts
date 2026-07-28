@@ -15,7 +15,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { seedCompanyDefaultWarehouses } from '../base/warehouse-seed.ts'
-import { runeLen, toDate } from './helpers.ts'
+import {requirePermission,  runeLen, toDate } from './helpers.ts'
 import { warehouseResourceMeta } from './meta.ts'
 
 export interface Warehouse {
@@ -69,6 +69,7 @@ const SOURCE = sql`
 
 export function createWarehouseService(db: Kysely<Database>) {
   async function get(actor: Actor, id: string): Promise<Warehouse> {
+    requirePermission(actor, 'inv.warehouse:read')
     const scope = companyScopeWhere(actor, 'company_id')
     if (scope.empty) throw new ApiError('not_found', '仓库不存在')
     const whereExtra = scope.where ? sql` AND ${scope.where}` : sql``
@@ -83,6 +84,7 @@ export function createWarehouseService(db: Kysely<Database>) {
   }
 
   async function list(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.warehouse:read')
     const scope = companyScopeWhere(actor, 'company_id')
     if (scope.empty) return { count: 0, results: [] as Warehouse[] }
     return listFromSource({
@@ -106,6 +108,7 @@ export function createWarehouseService(db: Kysely<Database>) {
     partyId: string,
     query: Partial<ListQuery>,
   ) {
+    requirePermission(actor, 'inv.warehouse:read')
     const normalized = partyType.trim().toLowerCase()
     if (normalized !== 'supplier' && normalized !== 'company') {
       throw ApiError.validation('外协仓查询参数不合法', {
@@ -137,6 +140,7 @@ export function createWarehouseService(db: Kysely<Database>) {
 
   /** 幂等初始化公司默认三仓（对齐 Go SeedDefaults） */
   async function seedDefaults(actor: Actor, companyId: string): Promise<number> {
+    requirePermission(actor, 'inv.warehouse:create')
     if (!canAccessCompany(actor, companyId)) {
       throw new ApiError('forbidden', '无权在该公司下操作数据')
     }
@@ -170,6 +174,7 @@ export function createWarehouseService(db: Kysely<Database>) {
       accountId?: string | null
     },
   ): Promise<Warehouse> {
+    requirePermission(actor, 'inv.warehouse:create')
     const normalized = normalizeCreate(input)
     if (!canAccessCompany(actor, normalized.companyId)) {
       throw new ApiError('forbidden', '无权在该公司下操作数据')
@@ -237,6 +242,7 @@ export function createWarehouseService(db: Kysely<Database>) {
       accountIdPresent?: boolean
     },
   ): Promise<Warehouse> {
+    requirePermission(actor, 'inv.warehouse:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_warehouse')
@@ -332,6 +338,7 @@ export function createWarehouseService(db: Kysely<Database>) {
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'inv.warehouse:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_warehouse')

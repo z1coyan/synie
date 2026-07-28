@@ -13,7 +13,7 @@ import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
-import { runeLen, toDate } from './helpers.ts'
+import {requirePermission,  runeLen, toDate } from './helpers.ts'
 import { materialCategoryResourceMeta } from './meta.ts'
 
 export interface MaterialCategory {
@@ -43,7 +43,8 @@ const SOURCE = sql`
 `
 
 export function createMaterialCategoryService(db: Kysely<Database>) {
-  async function get(id: string): Promise<MaterialCategory> {
+  async function get(actor: Actor, id: string): Promise<MaterialCategory> {
+    requirePermission(actor, 'inv.material_category:read')
     const rows = await sql<Record<string, unknown>>`
       SELECT id,code,name,is_leaf,active,inserted_at,updated_at,parent_id,parent_name,has_children
       ${SOURCE} WHERE id = ${id}::uuid
@@ -52,7 +53,8 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
     return mapRow(rows.rows[0]!)
   }
 
-  async function list(query: Partial<ListQuery>) {
+  async function list(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.material_category:read')
     return listFromSource({
       db,
       resource: META,
@@ -74,6 +76,7 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
       parentId?: string | null
     },
   ): Promise<MaterialCategory> {
+    requirePermission(actor, 'inv.material_category:create')
     const code = input.code.trim()
     const name = input.name.trim()
     validateNames(code, name)
@@ -120,6 +123,7 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
       parentIdPresent?: boolean
     },
   ): Promise<MaterialCategory> {
+    requirePermission(actor, 'inv.material_category:update')
     return withTx(db, async (trx) => {
       await lockTree(trx)
       const locked = await trx
@@ -205,6 +209,7 @@ export function createMaterialCategoryService(db: Kysely<Database>) {
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'inv.material_category:delete')
     await withTx(db, async (trx) => {
       await lockTree(trx)
       const locked = await trx

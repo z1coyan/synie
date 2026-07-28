@@ -14,7 +14,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
-import { runeLen, toDate, trimOrNull } from './helpers.ts'
+import {requirePermission,  runeLen, toDate, trimOrNull } from './helpers.ts'
 import { materialResourceMeta } from './meta.ts'
 
 export interface MaterialRef {
@@ -71,7 +71,8 @@ const SOURCE = sql`
 `
 
 export function createMaterialService(db: Kysely<Database>, numbering: NumberingService) {
-  async function get(id: string): Promise<Material> {
+  async function get(actor: Actor, id: string): Promise<Material> {
+    requirePermission(actor, 'inv.material:read')
     const rows = await sql<Record<string, unknown>>`
       SELECT id,code,name,spec,customer_part_no,is_customer_material,active,
              inserted_at,updated_at,category_id,default_unit_id,customer_id,
@@ -82,7 +83,8 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
     return mapRow(rows.rows[0]!)
   }
 
-  async function list(query: Partial<ListQuery>) {
+  async function list(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.material:read')
     return listFromSource({
       db,
       resource: META,
@@ -109,6 +111,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
       customerId?: string | null
     },
   ): Promise<Material> {
+    requirePermission(actor, 'inv.material:create')
     const normalized = normalizeCreate(input)
     return withTx(db, async (trx) => {
       await validateRelations(trx, normalized)
@@ -184,6 +187,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
       customerIdPresent?: boolean
     },
   ): Promise<Material> {
+    requirePermission(actor, 'inv.material:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_material')
@@ -282,6 +286,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'inv.material:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_material')

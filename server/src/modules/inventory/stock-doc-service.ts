@@ -24,6 +24,7 @@ import {
   voidInventoryDocInTx,
 } from '~/modules/trading/posting.ts'
 import {
+  requirePermission,
   dateWire,
   lowerStatus,
   projectStockItem,
@@ -116,6 +117,7 @@ export function createStockDocService(
   inventory: InventoryEngine,
 ) {
   async function get(actor: Actor, id: string): Promise<StockDoc> {
+    requirePermission(actor, 'inv.stock_doc:read')
     const row = await db.selectFrom('inv_stock_doc').selectAll().where('id', '=', id).executeTakeFirst()
     if (!row || !canAccessCompany(actor, row.company_id)) {
       throw new ApiError('not_found', '手工出入库单不存在')
@@ -124,6 +126,7 @@ export function createStockDocService(
   }
 
   async function list(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.stock_doc:read')
     const scope = companyScopeWhere(actor, 'company_id')
     if (scope.empty) return { count: 0, results: [] as StockDoc[] }
     return listFromSource({
@@ -151,6 +154,7 @@ export function createStockDocService(
       warehouseId: string
     },
   ): Promise<StockDoc> {
+    requirePermission(actor, 'inv.stock_doc:create')
     if (!canAccessCompany(actor, input.companyId)) {
       throw new ApiError('forbidden', '无权操作该公司数据')
     }
@@ -231,6 +235,7 @@ export function createStockDocService(
       warehouseId?: string
     },
   ): Promise<StockDoc> {
+    requirePermission(actor, 'inv.stock_doc:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_stock_doc')
@@ -301,6 +306,7 @@ export function createStockDocService(
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'inv.stock_doc:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_stock_doc')
@@ -330,6 +336,7 @@ export function createStockDocService(
   }
 
   async function audit(actor: Actor, id: string): Promise<StockDoc> {
+    requirePermission(actor, 'inv.stock_doc:audit')
     return withTx(db, async (trx) =>
       auditInventoryDocInTx(trx, actor, inventory, {
         voucherType: VOUCHER_TYPE,
@@ -387,6 +394,7 @@ export function createStockDocService(
   }
 
   async function voidDoc(actor: Actor, id: string): Promise<StockDoc> {
+    requirePermission(actor, 'inv.stock_doc:void')
     return withTx(db, async (trx) =>
       voidInventoryDocInTx(trx, actor, inventory, {
         voucherType: VOUCHER_TYPE,
@@ -425,6 +433,7 @@ export function createStockDocService(
 
   // —— 行 ——
   async function getItem(actor: Actor, id: string): Promise<StockDocItem> {
+    requirePermission(actor, 'inv.stock_doc:read')
     const row = await db
       .selectFrom('inv_stock_doc_item')
       .selectAll()
@@ -437,6 +446,7 @@ export function createStockDocService(
   }
 
   async function queryItems(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.stock_doc:read')
     const scope = companyScopeWhere(actor, 'company_id')
     if (scope.empty) return { count: 0, results: [] as StockDocItem[] }
     return listFromSource({
@@ -463,6 +473,7 @@ export function createStockDocService(
       remark?: string | null
     },
   ): Promise<StockDocItem> {
+    requirePermission(actor, 'inv.stock_doc:create')
     const qty = parseQty(input.qty)
     validateItemInput(qty, input.materialId, input.unitId, input.remark)
     return withTx(db, async (trx) => {
@@ -518,6 +529,7 @@ export function createStockDocService(
       remarkPresent?: boolean
     },
   ): Promise<StockDocItem> {
+    requirePermission(actor, 'inv.stock_doc:update')
     return withTx(db, async (trx) => {
       const current = await trx
         .selectFrom('inv_stock_doc_item')
@@ -589,6 +601,7 @@ export function createStockDocService(
   }
 
   async function removeItem(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'inv.stock_doc:delete')
     await withTx(db, async (trx) => {
       const current = await trx
         .selectFrom('inv_stock_doc_item')

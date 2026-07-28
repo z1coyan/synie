@@ -20,6 +20,7 @@ import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import {
+  requirePermission,
   dateWire,
   projectStockItem,
   runeLen,
@@ -118,6 +119,7 @@ export function createStockTransferService(
   inventory: InventoryEngine,
 ) {
   async function get(actor: Actor, id: string): Promise<StockTransfer> {
+    requirePermission(actor, 'inv.stock_transfer:read')
     const row = await db
       .selectFrom('inv_stock_transfer')
       .selectAll()
@@ -130,6 +132,7 @@ export function createStockTransferService(
   }
 
   async function list(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.stock_transfer:read')
     const scope = companyScopeWhere(actor, 'company_id')
     if (scope.empty) return { count: 0, results: [] as StockTransfer[] }
     return listFromSource({
@@ -159,6 +162,7 @@ export function createStockTransferService(
       transitWarehouseId: string
     },
   ): Promise<StockTransfer> {
+    requirePermission(actor, 'inv.stock_transfer:create')
     if (input.companyId && !canAccessCompany(actor, input.companyId)) {
       throw new ApiError('forbidden', '无权操作该公司数据')
     }
@@ -244,6 +248,7 @@ export function createStockTransferService(
       transitWarehouseId?: string
     },
   ): Promise<StockTransfer> {
+    requirePermission(actor, 'inv.stock_transfer:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_stock_transfer')
@@ -323,6 +328,7 @@ export function createStockTransferService(
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'inv.stock_transfer:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_stock_transfer')
@@ -352,6 +358,7 @@ export function createStockTransferService(
   }
 
   async function ship(actor: Actor, id: string): Promise<StockTransfer> {
+    requirePermission(actor, 'inv.stock_transfer:ship')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_stock_transfer')
@@ -444,6 +451,7 @@ export function createStockTransferService(
     id: string,
     input: { receipts?: Array<{ itemId: string; qty: string }> | null },
   ): Promise<StockTransfer> {
+    requirePermission(actor, 'inv.stock_transfer:receive')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('inv_stock_transfer')
@@ -547,6 +555,7 @@ export function createStockTransferService(
   }
 
   async function getItem(actor: Actor, id: string): Promise<StockTransferItem> {
+    requirePermission(actor, 'inv.stock_transfer:read')
     const row = await db
       .selectFrom('inv_stock_transfer_item')
       .selectAll()
@@ -559,6 +568,7 @@ export function createStockTransferService(
   }
 
   async function queryItems(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.stock_transfer:read')
     const scope = companyScopeWhere(actor, 'company_id')
     if (scope.empty) return { count: 0, results: [] as StockTransferItem[] }
     return listFromSource({
@@ -585,6 +595,7 @@ export function createStockTransferService(
       remark?: string | null
     },
   ): Promise<StockTransferItem> {
+    requirePermission(actor, 'inv.stock_transfer:create')
     const qty = parseQty(input.qty)
     validateItemInput(qty, input.materialId, input.unitId, input.remark)
     return withTx(db, async (trx) => {
@@ -640,6 +651,7 @@ export function createStockTransferService(
       remarkPresent?: boolean
     },
   ): Promise<StockTransferItem> {
+    requirePermission(actor, 'inv.stock_transfer:update')
     return withTx(db, async (trx) => {
       const current = await trx
         .selectFrom('inv_stock_transfer_item')
@@ -711,6 +723,7 @@ export function createStockTransferService(
   }
 
   async function removeItem(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'inv.stock_transfer:delete')
     await withTx(db, async (trx) => {
       const current = await trx
         .selectFrom('inv_stock_transfer_item')

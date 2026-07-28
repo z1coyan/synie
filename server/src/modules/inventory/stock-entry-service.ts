@@ -10,7 +10,7 @@ import type { Actor } from '~/platform/authz/actor.ts'
 import { canAccessCompany } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
-import { dateWire, toDate, wireDecimal } from './helpers.ts'
+import {requirePermission,  dateWire, toDate, wireDecimal } from './helpers.ts'
 import { stockEntryResourceMeta } from './meta.ts'
 
 export interface StockEntry {
@@ -34,6 +34,7 @@ const META = stockEntryResourceMeta()
 
 export function createStockEntryService(db: Kysely<Database>, inventory: InventoryEngine) {
   async function get(actor: Actor, id: string): Promise<StockEntry> {
+    requirePermission(actor, 'inv.stock_entry:read')
     const row = await db
       .selectFrom('inv_stock_entry')
       .selectAll()
@@ -46,6 +47,7 @@ export function createStockEntryService(db: Kysely<Database>, inventory: Invento
   }
 
   async function list(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'inv.stock_entry:read')
     const scope = companyScopeWhere(actor, 'company_id')
     if (scope.empty) return { count: 0, results: [] as StockEntry[] }
     return listFromSource({
@@ -71,6 +73,7 @@ export function createStockEntryService(db: Kysely<Database>, inventory: Invento
       hideZero?: boolean | null
     },
   ): Promise<BalanceRow[]> {
+    requirePermission(actor, 'inv.stock_entry:read')
     if (!canAccessCompany(actor, query.companyId)) {
       throw new ApiError('forbidden', '无权查看该公司数据')
     }
