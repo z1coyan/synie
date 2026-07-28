@@ -1,77 +1,71 @@
 # Synie
 
-Synie 是一个多公司财务 ERP。**后端正处于 Go → Bun/TS 重写过渡期**（规格与工单：`.scratch/ts-backend-rewrite/`）：
+Synie 是一个多公司财务 ERP。产品后端为 **Bun/TS**（`server/`），前端为 TanStack Start（`web/`）：
 
-- `server/`：**目标后端** —— Bun + Hono + Kysely + PostgreSQL，`hono/client` 全链路类型契约（重建中，当前为平台层骨架 + auth/meta 证明路径）。
-- `server-go/`：**现行产品后端** —— Go、chi、pgx/sqlc、goose、OpenAPI、JWT HS256。重写完成切流前，产品流量仍由它承载；只读维护，不再演进新业务。
+- `server/`：**产品后端** —— Bun + Hono + Kysely + PostgreSQL；`hono/client` 全链路类型契约（`ApiType` 为事实源）。
 - `web/`：Bun、React 19、TanStack Start、HeroUI Pro、Tailwind v4、TanStack Query、`@synie/server` hono/client。
 - `packages/shared`：前后端共享 TS 契约（Filter DSL、Meta DTO、错误模型、decimal 纪律）。
-- `backend/`：旧 Elixir/Phoenix/Ash 实现，仅保留作业务行为、测试与历史契约参考，不属于产品启动链路。
+- `backend/`：旧 Elixir/Phoenix/Ash 实现，仅保留作业务行为与历史契约参考，不属于产品启动链路。
 
 前端所有产品请求只访问 `/api/v1`。Vite 不代理 GraphQL 或旧 Elixir API，开发和产品运行均不需要启动 `backend/`。
 
-> **切流登录提示：**Go 服务签发的 JWT HS256 不兼容旧 Elixir/Phoenix `Phoenix.Token`。切流后必须重新登录；若旧会话无法正常退出，请清除浏览器 `localStorage` 中的 `synie:token` 后重新登录。系统不会转换或兼容接受旧 token。
+> **登录提示：**JWT HS256 与历史 Phoenix.Token 不兼容。若旧会话无法正常退出，请清除浏览器 `localStorage` 中的 `synie:token` 后重新登录。
 
 已交付的核心模块包括总账、发票、银行与票据、客户和供应商、销售采购库存制造、人力薪酬、基础资料及系统管理。
+
+Go → Bun/TS 重写清场记录见 [`docs/migration/2026-07-28-go-to-bun-ts-cutover.md`](docs/migration/2026-07-28-go-to-bun-ts-cutover.md)；历史 OpenAPI 归档为 `docs/migration/openapi-server-go-final.yaml`（tag `server-go-final`）。
 
 ## 目录结构
 
 ```text
 .
 ├── package.json                # Bun workspaces 根（packages/* + server + web）
-├── server/                     # 目标后端：Bun + Hono + Kysely（重建中）
+├── server/                     # 产品后端：Bun + Hono + Kysely
 │   ├── src/                    # platform 横切层 / engines / modules / db
-│   ├── db/migrations/          # SQL 迁移（与 server-go 同源）+ migrate.ts
+│   ├── db/migrations/          # SQL 迁移 + migrate.ts
 │   └── test/                   # bun test；PG 集成门控 SYNIE_TEST_DATABASE_URL
-├── server-go/                  # 现行产品后端（Go），过渡期只读维护
-│   ├── cmd/synie/              # HTTP 服务入口
-│   ├── db/migrations/          # goose 数据库迁移
-│   └── internal/               # 平台、领域、引擎与 HTTP 实现
 ├── packages/
 │   └── shared/                 # @synie/shared：前后端共享契约（filter/meta/error/decimal）
 ├── web/                        # TanStack Start 前端
-│   ├── app/lib/api/            # OpenAPI client 与生成类型
+│   ├── app/lib/api/            # hono/client 与 Resource Client
 │   ├── app/lib/resources/      # ResourceClient registry
 │   └── app/routes/             # 页面与路由
-├── contracts/openapi/          # 现行 HTTP 契约（行为参考；新栈以 ApiType 为类型源）
+├── contracts/                  # 历史 fixtures（authz 等）；HTTP 类型源为 ApiType
 ├── backend/                    # 旧 Elixir 参考实现，不参与产品运行
 ├── CONTEXT.md                  # 领域术语（ubiquitous language）
 ├── docs/
 │   ├── adr/                    # 架构决策记录
-│   ├── migration/              # 迁移设计与状态
+│   ├── migration/              # 迁移设计与归档（含历史 OpenAPI）
 │   └── 产品文档/               # 功能说明书
-└── .scratch/                   # 活跃规格与本地工单（含 ts-backend-rewrite）
+└── .scratch/                   # 活跃规格与本地工单
 ```
 
 > Monorepo：根 `package.json` 统一管理 Bun workspaces（`packages/*` + `server` + `web`），
-> 依赖安装一律在**仓库根**执行 `bun install`。Go 命令在 `server-go/` 下执行。
+> 依赖安装一律在**仓库根**执行 `bun install`。
 
 ## 环境要求
 
-- Bun `1.3.x`（目标栈唯一运行时）
-- Go（版本以 `server-go/go.mod` 为准；仅过渡期维护现行后端需要）
+- Bun `1.3.x`（唯一运行时）
 - PostgreSQL 17（推荐使用根目录 Compose）
 - Docker / Docker Compose（推荐开发路径）
 
-Compose 默认把 PostgreSQL 暴露在 `localhost:5441`，数据库、用户和密码均为 `synie`。Go server 不自动读取 `.env`；直接运行时须通过进程环境注入配置。主要变量：
+Compose 默认把 PostgreSQL 暴露在 `localhost:5441`，数据库、用户和密码均为 `synie`。主要环境变量：
 
 ```text
-HTTP_ADDR=:8080
+PORT=8080
+HOST=0.0.0.0
 DATABASE_URL=postgres://synie:synie@localhost:5441/synie?sslmode=disable
 AUTH_SECRET=<至少 32 字节的随机值>
 AUTH_TOKEN_TTL=168h
 ```
 
-DDL 由 SQL 迁移唯一管理（`server/db/migrations/` 与 `server-go/db/migrations/` 同源），不再用 Ecto/Ash 迁移产品数据库。
+DDL 由 SQL 迁移唯一管理（`server/db/migrations/` + `server/db/migrate.ts`），不再用 Ecto/Ash 迁移产品数据库。
 
 ## 安装依赖
 
 ```bash
 # 仓库根：一次安装全部 workspace（packages/shared + server + web）
 bun install
-
-# Go 现行后端（过渡期）
-cd server-go && go mod download
 ```
 
 ## 本地启动
@@ -81,10 +75,10 @@ cd server-go && go mod download
 ### 终端 A：数据库、迁移与后端
 
 ```bash
-# 现行 Go 后端（产品路径）
-docker compose up --build server-go
+# Compose：postgres + migrate + server（API 8080）
+docker compose up --build server
 
-# 或目标 Bun 后端（重写中，先迁移再启动）
+# 或本地直接跑 Bun 后端
 cd server
 export DATABASE_URL='postgres://synie:synie@localhost:5441/synie?sslmode=disable'
 export AUTH_SECRET='local-development-secret-change-me-32-bytes'
@@ -93,7 +87,7 @@ bun run db:seed   # 首次：admin/admin123
 bun run dev
 ```
 
-首次启动 Go 栈需要补种子时，在另一个终端执行：
+首次启动需要补种子时：
 
 ```bash
 docker compose --profile tools run --rm seed
@@ -104,16 +98,6 @@ docker compose --profile tools run --rm seed
 - API：`http://localhost:8080`
 - 健康检查：`http://localhost:8080/api/v1/healthz`
 
-也可直接运行 Go 服务：
-
-```bash
-cd server-go
-export DATABASE_URL='postgres://synie:synie@localhost:5441/synie?sslmode=disable'
-export AUTH_SECRET='local-development-secret-change-me-32-bytes'
-make migration-up
-go run ./cmd/synie
-```
-
 ### 终端 B：前端
 
 ```bash
@@ -121,11 +105,11 @@ cd web
 bun dev
 ```
 
-前端监听 `http://localhost:3000`。`web/vite.config.ts` 只把 `/api/v1` 代理到 `GO_API_PORT` 指定的 Go 服务端口（默认 `8080`）。
+前端监听 `http://localhost:3000`。`web/vite.config.ts` 把 `/api/v1` 代理到 `SYNIE_API_PORT`（默认 `8080`；兼容旧名 `GO_API_PORT`）。
 
 ## 常用命令
 
-### Bun 后端（server/）
+### 后端（server/）
 
 ```bash
 cd server
@@ -135,26 +119,17 @@ bun run db:migrate
 bun run db:codegen       # 重新生成 src/db/types.d.ts（须已迁移开发库）
 ```
 
-### Go 生成与测试（server-go/）
-
-```bash
-cd server-go
-make generate
-make test
-```
-
-### 前端契约、检查与构建
+### 前端检查与构建
 
 ```bash
 cd web
-bun run openapi
 bun run check
 bun run typecheck
 bun test
 bun run build
 ```
 
-Playwright 验收（Bun API）：
+Playwright 验收：
 
 ```bash
 cd web
@@ -162,7 +137,7 @@ bun run e2e          # run-smoke.sh：迁移 + Bun server + 前端 + playwright.
 bun run e2e:api      # 仅跑 *.api.e2e.ts（需已起栈）
 ```
 
-前端契约来自 `@synie/server` 的 `ApiType` + `createApiClient`（hono/client），不再使用 OpenAPI codegen。`contracts/openapi/` 仍可作为 wire 形状历史参考（工单 18 清场时归档）。
+前端契约来自 `@synie/server` 的 `ApiType` + `createApiClient`（hono/client），不再使用 OpenAPI codegen。
 
 ## 当前 API 合约
 
@@ -170,7 +145,7 @@ bun run e2e:api      # 仅跑 *.api.e2e.ts（需已起栈）
 
 - 登录：`POST /api/v1/auth/login`
 - 当前用户：`GET /api/v1/auth/me`
-- 初始化向导：`/api/v1/setup/*`（工单 16）
+- 初始化向导：`/api/v1/setup/*`
 - 资源元数据：`GET /api/v1/meta/resources/{name}`
 - 资源查询：各资源的 `/api/v1/.../query`
 - 文件：`/api/v1/files*`
@@ -202,9 +177,8 @@ HEROUI_AUTH_TOKEN=xxx node node_modules/@heroui-pro/react/dist/postinstall/index
 
 - 配置真实 `DATABASE_URL`。
 - 配置至少 32 字节、不可预测的 `AUTH_SECRET`，并按需设置 `AUTH_TOKEN_TTL`。
-- 使用 goose 执行并审查数据库迁移。
-- 通过 Go seed 或初始化向导创建首个管理员，不在日志或代码中保存口令。
-- 验证 `/api/v1/healthz`、Go 测试、前端检查/构建与 Go Playwright 测试。
-- 切流时通知用户重新登录；旧 Phoenix token 不得继续使用。
+- 使用 `bun run db:migrate` 执行并审查数据库迁移。
+- 通过 seed 或初始化向导创建首个管理员，不在日志或代码中保存口令。
+- 验证 `/api/v1/healthz`、后端测试、前端检查/构建与 Playwright e2e。
 
-`backend/` 可以用于比对旧业务行为，但不得接收产品流量、被 Vite 代理或成为部署依赖。是否归档参考实现须另立议题，本次 Go-only 切流不删除它。
+`backend/` 可以用于比对旧业务行为，但不得接收产品流量、被 Vite 代理或成为部署依赖。是否归档 Elixir 参考实现须另立议题。

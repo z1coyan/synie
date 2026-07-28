@@ -1,9 +1,7 @@
 name: synie
 
-# 过渡期双后端（规格：.scratch/ts-backend-rewrite/）：
-# - server-go：现行产品后端（Go），端口 8080，前端代理默认目标
-# - server：目标 Bun/TS 后端（重建中），端口 8081（GO_API_PORT=8081 可切前端代理）
-# 两个后端共用同一套 SQL 迁移（migrate 服务执行 Bun 迁移器，DDL 同源）。
+# 产品栈：PostgreSQL + Bun/TS server（Hono）+ 可选 seed。
+# 前端 Vite 代理默认目标 localhost:8080。
 
 services:
   postgres:
@@ -46,7 +44,7 @@ services:
       AUTH_TOKEN_TTL: 168h
       LOG_LEVEL: info
     ports:
-      - "8081:8080"
+      - "8080:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -62,22 +60,6 @@ services:
       SEED_ADMIN_USERNAME: admin
       SEED_ADMIN_PASSWORD: admin123
       SEED_ADMIN_NAME: 系统管理员
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-  # 现行产品后端（Go，过渡期只读维护）
-  server-go:
-    build:
-      context: ./server-go
-    environment:
-      HTTP_ADDR: :8080
-      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
-      AUTH_SECRET: local-development-secret-change-me-32-bytes
-      AUTH_TOKEN_TTL: 168h
-      LOG_LEVEL: info
-    ports:
-      - "8080:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully

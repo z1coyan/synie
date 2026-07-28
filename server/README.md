@@ -1,11 +1,11 @@
 # @synie/server — Synie Bun/TS 后端
 
-Synie ERP 的目标后端：**Bun + Hono + Kysely + PostgreSQL**，与 `web/`（TanStack Start）
-经 `hono/client` 共享全链路类型（契约即代码，取代 OpenAPI codegen）。
+Synie ERP 的**产品后端**：**Bun + Hono + Kysely + PostgreSQL**，与 `web/`（TanStack Start）
+经 `hono/client` 共享全链路类型（契约即代码）。
 
-- 行为参考实现：`server-go/`（Go，只读参考，勿再演进）
 - 领域语义唯一来源：`CONTEXT.md` + `docs/产品文档/` + `docs/adr/`
-- 迁移规格与工单：`.scratch/ts-backend-rewrite/`
+- 迁移完成记录：`docs/migration/2026-07-28-go-to-bun-ts-cutover.md`
+- 历史 wire 归档：`docs/migration/openapi-server-go-final.yaml`（tag `server-go-final`）
 
 ## 技术栈定案
 
@@ -13,12 +13,12 @@ Synie ERP 的目标后端：**Bun + Hono + Kysely + PostgreSQL**，与 `web/`（
 |--------|------|------|
 | 运行时 | **Bun**（唯一，不引入 Node 专属依赖） | `Bun.serve` / `Bun.password` / `Bun.file` |
 | HTTP | **Hono** + `@hono/zod-validator` | 路由链式定义，类型供 `hc<ApiType>` 推断 |
-| 客户端契约 | **hono/client（hc）** | `src/app.ts` 的 `ApiType` 是契约事实源；**URL 与 JSON 形状保持与 server-go/原 OpenAPI 一致**（551 个端点行为不变，仅类型来源变化） |
+| 客户端契约 | **hono/client（hc）** | `src/app.ts` 的 `ApiType` 是契约事实源 |
 | 数据层 | **Kysely** + postgres.js（官方 PostgresJSDialect） | 纯 JS 驱动，Bun 原生；类型由 kysely-codegen 从迁移后开发库生成（`bun run db:codegen`，生成物提交） |
-| 迁移 | `db/migrations/*.sql` + `db/migrate.ts` | SQL 与 server-go 同源；每文件一事务，advisory lock 串行 |
-| 认证 | **Bun.password（argon2id）+ hono/jwt（HS256）** | PHC 串与 Go 种子哈希互通；登录限流单进程 10 次/5 分钟 |
+| 迁移 | `db/migrations/*.sql` + `db/migrate.ts` | 每文件一事务，advisory lock 串行；兼容 goose Up 段标注 |
+| 认证 | **Bun.password（argon2id）+ hono/jwt（HS256）** | PHC 串互通；登录限流单进程 10 次/5 分钟 |
 | 金额 | `@synie/shared` decimal（decimal.js，half-up） | wire 一律字符串；金额 2 位 / 单价 4 位 / 数量 6 位 |
-| 测试 | `bun test`；PG 集成测试门控 `SYNIE_TEST_DATABASE_URL` | 同 server-go 门控惯例 |
+| 测试 | `bun test`；PG 集成测试门控 `SYNIE_TEST_DATABASE_URL` | 未设则集成用例 Skip |
 
 ## 常用命令
 
@@ -52,16 +52,16 @@ src/
 ├── db/                 # Kysely 连接、事务约定、filterbuild、生成类型
 └── jobs/               # 后台作业（行情调度等）
 db/
-├── migrations/         # SQL（与 server-go 同源）
+├── migrations/         # SQL 迁移
 ├── migrate.ts          # 迁移执行器
 ├── seed.ts / seed-admin.ts / seed-demo.ts
 ```
 
 ## 编码约定（重要，违反视为返工）
 
-1. **惯用 TS，拒绝 1:1 翻译**：server-go 是行为参考不是形态模板。模块用
-   **工厂闭包**（`createXxx(deps) => ({...})`），不用 class（异常：`ApiError extends Error`）；
-   数据形状用 interface/type；依赖显式注入，禁止全局单例（registry/db 由 index.ts 装配）。
+1. **惯用 TS，拒绝机械 1:1 翻译**：模块用 **工厂闭包**（`createXxx(deps) => ({...})`），
+   不用 class（异常：`ApiError extends Error`）；数据形状用 interface/type；
+   依赖显式注入，禁止全局单例（registry/db 由 index.ts 装配）。
 2. **金额纪律**：计算只走 `@synie/shared` 的 decimal；`number` 出现金额即评审驳回。
 3. **事务纪律**：函数接 `DbHandle`（`src/db/tx.ts`），事务边界归调用方 `withTx`；
    过账必须单事务（引擎 + 投影 + 主表），引擎/深模块内禁止自起事务。

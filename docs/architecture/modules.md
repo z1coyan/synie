@@ -1,8 +1,14 @@
-# Go 目标架构模块
+# 后端架构模块
 
-本文把 R3 迁移规划中的分层落实为可检查的 Go 模块与依赖规则。术语定义仍以根目录
-`CONTEXT.md` 为准；传输、运行时和迁移顺序以
-`docs/migration/2026-07-25-fullstack-meta-and-go-migration.md` 为准。
+> **2026-07-28 更新**：产品后端已切到 Bun/TS（`server/`）。下文原为 Go（`server-go/`）
+> 分层设计的模块依赖说明，**分层意图仍适用**（platform / engines / domain、
+> Meta Registry、filterbuild 白名单、引擎写事实表唯一入口）；目录与技术栈以
+> `server/README.md` 与 `docs/migration/2026-07-28-go-to-bun-ts-cutover.md` 为准。
+> 历史 Go 树见 git tag `server-go-final`。
+
+本文把迁移规划中的分层落实为可检查的模块与依赖规则。术语定义仍以根目录
+`CONTEXT.md` 为准；早期 Go 迁移规划见
+`docs/migration/2026-07-25-fullstack-meta-and-go-migration.md`。
 
 ## 设计原则
 

@@ -1,6 +1,6 @@
 # 18 清场切流
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 16, 17
 
 ## 范围

@@ -90,6 +90,14 @@ export function auditLogResourceMeta(): ResourceMeta {
         filterable: true,
       },
       {
+        name: 'changes',
+        apiName: 'changes',
+        dbColumn: 'changes',
+        type: 'json',
+        label: '变更',
+        readonly: true,
+      },
+      {
         name: 'inserted_at',
         apiName: 'insertedAt',
         dbColumn: 'inserted_at',
