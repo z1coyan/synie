@@ -39,6 +39,11 @@ export function createRegistry() {
     return resources.get(name)
   }
 
+  /** 全部已注册资源（打印字段目录等派生消费） */
+  function list(): ResourceMeta[] {
+    return [...resources.values()]
+  }
+
   function canRead(resource: ResourceMeta, actor: Actor | null): boolean {
     if (!actor) return false
     const anyOf = resource.readPermissionsAny
@@ -178,7 +183,7 @@ export function createRegistry() {
       .sort((a, b) => a.prefix.localeCompare(b.prefix))
   }
 
-  return { register, get, buildDocument, summaries, permissionCatalog }
+  return { register, get, list, buildDocument, summaries, permissionCatalog }
 }
 
 export type Registry = ReturnType<typeof createRegistry>
