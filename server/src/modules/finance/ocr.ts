@@ -1,8 +1,10 @@
 /**
- * 阿里云 OCR：读 acc_setting 凭证，RecognizeInvoice → 发票草稿预填。
- * 行为对齐 server-go documents/ocr.go（发票路径）。
+ * 阿里云 OCR：读 acc_setting 凭证。
+ * RecognizeInvoice → 发票草稿预填；RecognizeBankAcceptance → 承兑交易预填。
+ * 行为对齐 server-go documents/ocr.go。
  */
 import { createHmac, createHash, randomBytes } from 'node:crypto'
+import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { DbHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -12,7 +14,7 @@ const ALIYUN_OCR_HOST = 'ocr-api.cn-hangzhou.aliyuncs.com'
 const ALIYUN_OCR_VERSION = '2021-07-07'
 const MAX_OCR_SIZE = 10 * 1024 * 1024
 
-const IMAGE_TYPES = new Set([
+const INVOICE_IMAGE_TYPES = new Set([
   'image/png',
   'image/jpg',
   'image/jpeg',
@@ -23,8 +25,19 @@ const IMAGE_TYPES = new Set([
   'application/pdf',
 ])
 
+const BILL_IMAGE_TYPES = new Set([
+  'image/png',
+  'image/jpg',
+  'image/jpeg',
+  'image/bmp',
+  'image/gif',
+  'image/tiff',
+  'image/webp',
+])
+
 const nonAmountCharacters = /[^0-9.\-]/g
 const dateNumbers = /\d+/g
+const rangeNumbers = /\d+/g
 
 export type OcrPrefill = Record<string, unknown>
 
@@ -34,22 +47,10 @@ export interface OcrDeps {
   nonce?: () => string
 }
 
-export async function recognizeVatInvoice(
-  db: DbHandle,
-  file: StoredFile,
-  content: Uint8Array,
-  deps: OcrDeps = {},
-): Promise<OcrPrefill> {
-  const contentType = (file.contentType ?? '').trim().toLowerCase()
-  if (!IMAGE_TYPES.has(contentType)) {
-    throw ApiError.validation('OCR 文件不合法', { fileId: ['不支持的文件格式'] })
-  }
-  if (file.size > MAX_OCR_SIZE || content.byteLength > MAX_OCR_SIZE) {
-    throw ApiError.validation('OCR 文件不合法', {
-      fileId: ['文件超过 10MB,请压缩后重试'],
-    })
-  }
-
+async function loadOcrCredentials(db: DbHandle): Promise<{
+  accessKeyId: string
+  accessKeySecret: string
+}> {
   const creds = await sql<{
     ocr_access_key_id: string | null
     ocr_access_key_secret: string | null
@@ -65,7 +66,33 @@ export async function recognizeVatInvoice(
       fileId: ['未配置阿里云 OCR 凭证'],
     })
   }
+  return { accessKeyId, accessKeySecret }
+}
 
+function assertOcrFile(
+  file: StoredFile,
+  content: Uint8Array,
+  allowed: Set<string>,
+): void {
+  const contentType = (file.contentType ?? '').trim().toLowerCase()
+  if (!allowed.has(contentType)) {
+    throw ApiError.validation('OCR 文件不合法', { fileId: ['不支持的文件格式'] })
+  }
+  if (file.size > MAX_OCR_SIZE || content.byteLength > MAX_OCR_SIZE) {
+    throw ApiError.validation('OCR 文件不合法', {
+      fileId: ['文件超过 10MB,请压缩后重试'],
+    })
+  }
+}
+
+export async function recognizeVatInvoice(
+  db: DbHandle,
+  file: StoredFile,
+  content: Uint8Array,
+  deps: OcrDeps = {},
+): Promise<OcrPrefill> {
+  assertOcrFile(file, content, INVOICE_IMAGE_TYPES)
+  const { accessKeyId, accessKeySecret } = await loadOcrCredentials(db)
   const data = await callAliyun(
     'RecognizeInvoice',
     content,
@@ -74,6 +101,24 @@ export async function recognizeVatInvoice(
     deps,
   )
   return mapInvoiceOCR(data)
+}
+
+export async function recognizeBankAcceptance(
+  db: DbHandle,
+  file: StoredFile,
+  content: Uint8Array,
+  deps: OcrDeps = {},
+): Promise<OcrPrefill> {
+  assertOcrFile(file, content, BILL_IMAGE_TYPES)
+  const { accessKeyId, accessKeySecret } = await loadOcrCredentials(db)
+  const data = await callAliyun(
+    'RecognizeBankAcceptance',
+    content,
+    accessKeyId,
+    accessKeySecret,
+    deps,
+  )
+  return mapAcceptanceOCR(data)
 }
 
 async function callAliyun(
@@ -280,4 +325,63 @@ function putAmount(target: Record<string, unknown>, key: string, value: unknown)
 function putDate(target: Record<string, unknown>, key: string, value: unknown): void {
   const parsed = dateOCR(value)
   if (parsed) target[key] = parsed
+}
+
+function mapAcceptanceOCR(input: Record<string, unknown>): OcrPrefill {
+  const data = nestedOCRData(input)
+  const result: OcrPrefill = {}
+  putText(result, 'bill_no', data.draftNumber)
+  putDate(result, 'issue_date', data.issueDate)
+  putDate(result, 'due_date', data.validToDate)
+  putDate(result, 'acceptance_date', data.acceptanceDate)
+  const assign = textOCR(data.assignability)
+  if (assign) result.transferable = !assign.includes('不')
+  putText(result, 'drawer_name', data.issuerName)
+  putText(result, 'drawer_account', data.issuerAccountNumber)
+  putText(result, 'drawer_bank_name', data.issuerAccountBank)
+  putText(result, 'payee_name', data.payeeName)
+  putText(result, 'payee_account', data.payeeAccountNumber)
+  putText(result, 'payee_bank_name', data.payeeAccountBank)
+  putText(result, 'acceptor_name', data.acceptorName)
+  putText(result, 'acceptor_account', data.acceptorAccountNumber)
+  putText(result, 'acceptor_bank_name', data.acceptorAccountBank)
+  putText(result, 'acceptor_bank_no', data.acceptorBankNumber)
+  if (Object.keys(result).length > 0) result.bill_kind = 'BANK_ACCEPTANCE'
+  const range = parseOCRRange(textOCR(data.subDraftNumber))
+  if (range) {
+    result.sub_start = range.start
+    result.sub_end = range.end
+    result.amount = decimal(range.end - range.start + 1)
+      .div(100)
+      .toFixed(2)
+  } else {
+    const amount = amountOCR(data.totalAmount)
+    if (amount) {
+      try {
+        const value = decimal(amount)
+        const cents = value.mul(100).toDecimalPlaces(0).toNumber()
+        if (cents >= 1) {
+          result.sub_start = 1
+          result.sub_end = cents
+          result.amount = amount
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return result
+}
+
+function parseOCRRange(value: string): { start: number; end: number } | null {
+  const parts = value.match(rangeNumbers) ?? []
+  if (parts.length === 0) return null
+  const start = Number.parseInt(parts[0]!, 10)
+  if (!Number.isFinite(start) || start < 1) return null
+  let end = start
+  if (parts.length > 1) {
+    end = Number.parseInt(parts[1]!, 10)
+    if (!Number.isFinite(end) || end < start) return null
+  }
+  return { start, end }
 }

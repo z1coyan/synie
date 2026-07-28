@@ -25,6 +25,7 @@ import {
 import {
   billHoldingResourceMeta, billResourceMeta, billTransactionResourceMeta,
 } from './meta.ts'
+import { recognizeBankAcceptance, type OcrDeps, type OcrPrefill } from './ocr.ts'
 
 export interface Bill {
   id: string; billNo: string; billKind: string; issueDate: string | null
@@ -68,6 +69,37 @@ export interface BillAttrs {
   acceptorName?: string | null; acceptorAccount?: string | null
   acceptorBankName?: string | null; acceptorBankNo?: string | null
   transferable?: boolean | null; acceptanceDate?: string | null; remarks?: string | null
+}
+
+/** wire 可能是 camelCase 或 snake_case（verify/Go 客户端混用） */
+function normalizeBillAttrs(raw: Record<string, unknown> | BillAttrs): BillAttrs {
+  const r = raw as Record<string, unknown>
+  const pick = (camel: string, snake: string): unknown =>
+    r[camel] !== undefined ? r[camel] : r[snake]
+  return {
+    billNo: String(pick('billNo', 'bill_no') ?? ''),
+    billKind: String(pick('billKind', 'bill_kind') ?? ''),
+    issueDate: (pick('issueDate', 'issue_date') as string | null | undefined) ?? null,
+    dueDate: String(pick('dueDate', 'due_date') ?? ''),
+    faceAmount: (pick('faceAmount', 'face_amount') as string | null | undefined) ?? null,
+    drawerName: (pick('drawerName', 'drawer_name') as string | null | undefined) ?? null,
+    drawerAccount: (pick('drawerAccount', 'drawer_account') as string | null | undefined) ?? null,
+    drawerBankName: (pick('drawerBankName', 'drawer_bank_name') as string | null | undefined) ?? null,
+    drawerBankNo: (pick('drawerBankNo', 'drawer_bank_no') as string | null | undefined) ?? null,
+    payeeName: (pick('payeeName', 'payee_name') as string | null | undefined) ?? null,
+    payeeAccount: (pick('payeeAccount', 'payee_account') as string | null | undefined) ?? null,
+    payeeBankName: (pick('payeeBankName', 'payee_bank_name') as string | null | undefined) ?? null,
+    payeeBankNo: (pick('payeeBankNo', 'payee_bank_no') as string | null | undefined) ?? null,
+    acceptorName: (pick('acceptorName', 'acceptor_name') as string | null | undefined) ?? null,
+    acceptorAccount: (pick('acceptorAccount', 'acceptor_account') as string | null | undefined) ?? null,
+    acceptorBankName:
+      (pick('acceptorBankName', 'acceptor_bank_name') as string | null | undefined) ?? null,
+    acceptorBankNo: (pick('acceptorBankNo', 'acceptor_bank_no') as string | null | undefined) ?? null,
+    transferable: (pick('transferable', 'transferable') as boolean | null | undefined) ?? null,
+    acceptanceDate:
+      (pick('acceptanceDate', 'acceptance_date') as string | null | undefined) ?? null,
+    remarks: (pick('remarks', 'remarks') as string | null | undefined) ?? null,
+  }
 }
 
 const BILL_AUDIT = [
@@ -387,9 +419,11 @@ export function createBillService(
   deps: {
     gl?: GlEngine
     files?: Pick<FileService, 'readStoredFile'> | null
+    ocr?: OcrDeps
   } = {},
 ) {
   const gl = deps.gl ?? createGlEngine()
+  const files = deps.files ?? null
 
   async function listBills(actor: Actor, query: Partial<ListQuery>) {
     requirePerm(actor, 'acc.bill:read')
@@ -697,7 +731,10 @@ export function createBillService(
           })
         }
         if (!billId && input.billAttrs) {
-          const bill = await registerBill(trx, input.billAttrs)
+          const bill = await registerBill(
+            trx,
+            normalizeBillAttrs(input.billAttrs as Record<string, unknown>),
+          )
           billId = bill.id
         }
       } else if (!billId || input.billAttrs != null) {
@@ -1015,9 +1052,14 @@ export function createBillService(
     return item
   }
 
-  async function ocrBill(_actor: Actor, _fileId: string): Promise<Record<string, unknown>> {
-    requirePerm(_actor, 'acc.bill_transaction:create')
-    throw new ApiError('internal', 'OCR 服务未配置')
+  async function ocrBill(actor: Actor, fileId: string): Promise<OcrPrefill> {
+    requirePerm(actor, 'acc.bill_transaction:create')
+    if (!files) {
+      throw ApiError.validation('OCR 未配置', { fileId: ['文件服务未配置'] })
+    }
+    await requireAccessibleFile(db, actor, fileId)
+    const { file, content } = await files.readStoredFile(fileId)
+    return recognizeBankAcceptance(db, file, content, deps.ocr)
   }
 
   return {
@@ -1025,4 +1067,29 @@ export function createBillService(
     listTransactions, getTransaction, createTransaction, updateTransaction, deleteTransaction,
     auditTransaction, voidTransaction, listHoldings, getHolding, ocrBill,
   }
+}
+
+async function requireAccessibleFile(
+  db: DbHandle,
+  actor: Actor,
+  fileId: string,
+): Promise<void> {
+  if (actor.superAdmin || actor.allCompanies) {
+    const exists = await sql<{ e: boolean }>`
+      SELECT EXISTS(SELECT 1 FROM sys_file WHERE id=${fileId}::uuid) AS e
+    `.execute(db)
+    if (!exists.rows[0]?.e) throw new ApiError('not_found', '文件不存在')
+    return
+  }
+  const accessible = await sql<{ e: boolean }>`
+    SELECT EXISTS(
+      SELECT 1 FROM sys_file f WHERE f.id=${fileId}::uuid AND (
+        f.uploaded_by_id=${actor.userId}::uuid OR EXISTS(
+          SELECT 1 FROM sys_attachment a WHERE a.file_id=f.id
+            AND a.company_id=ANY(${[...actor.companyIds]}::uuid[])
+        )
+      )
+    ) AS e
+  `.execute(db)
+  if (!accessible.rows[0]?.e) throw new ApiError('not_found', '文件不存在')
 }

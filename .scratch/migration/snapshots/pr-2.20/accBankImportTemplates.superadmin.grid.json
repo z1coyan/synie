@@ -1,0 +1,299 @@
+{
+  "capabilities": [
+    "create",
+    "update",
+    "delete"
+  ],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "模板名称",
+      "name": "name",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "起始行",
+      "name": "startRow",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "日期时间列",
+      "name": "datetimeCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "YYYY-MM-DD HH:mm:ss",
+          "value": "YMD_DASH_HMS"
+        },
+        {
+          "label": "YYYY-MM-DD HH:mm",
+          "value": "YMD_DASH_HM"
+        },
+        {
+          "label": "YYYY/MM/DD HH:mm:ss",
+          "value": "YMD_SLASH_HMS"
+        },
+        {
+          "label": "YYYY/MM/DD HH:mm",
+          "value": "YMD_SLASH_HM"
+        },
+        {
+          "label": "YYYYMMDD HHmmss",
+          "value": "COMPACT_SPACE"
+        },
+        {
+          "label": "YYYYMMDDHHmmss",
+          "value": "COMPACT"
+        },
+        {
+          "label": "YYYY-MM-DDTHH:mm:ss",
+          "value": "ISO_T"
+        },
+        {
+          "label": "YYYY年MM月DD日 HH:mm:ss",
+          "value": "CN_HMS"
+        },
+        {
+          "label": "MM/DD/YYYY HH:mm:ss",
+          "value": "MDY_SLASH_HMS"
+        },
+        {
+          "label": "DD/MM/YYYY HH:mm:ss",
+          "value": "DMY_SLASH_HMS"
+        }
+      ],
+      "filterable": true,
+      "label": "日期时间格式",
+      "name": "datetimeFormat",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "日期列",
+      "name": "dateCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "YYYY-MM-DD",
+          "value": "YMD_DASH"
+        },
+        {
+          "label": "YYYY/MM/DD",
+          "value": "YMD_SLASH"
+        },
+        {
+          "label": "YYYYMMDD",
+          "value": "YMD_COMPACT"
+        },
+        {
+          "label": "YYYY.MM.DD",
+          "value": "YMD_DOT"
+        },
+        {
+          "label": "YYYY年MM月DD日",
+          "value": "YMD_CN"
+        },
+        {
+          "label": "MM/DD/YYYY",
+          "value": "MDY_SLASH"
+        },
+        {
+          "label": "DD/MM/YYYY",
+          "value": "DMY_SLASH"
+        },
+        {
+          "label": "DD-MM-YYYY",
+          "value": "DMY_DASH"
+        }
+      ],
+      "filterable": true,
+      "label": "日期格式",
+      "name": "dateFormat",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "时间列",
+      "name": "timeCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "HH:mm:ss",
+          "value": "HMS"
+        },
+        {
+          "label": "HH:mm",
+          "value": "HM"
+        },
+        {
+          "label": "HHmmss",
+          "value": "HMS_COMPACT"
+        },
+        {
+          "label": "HH时mm分ss秒",
+          "value": "HMS_CN"
+        }
+      ],
+      "filterable": true,
+      "label": "时间格式",
+      "name": "timeFormat",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "收入金额列",
+      "name": "incomeCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "支出金额列",
+      "name": "expenseCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "金额列(带符号)",
+      "name": "amountCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "余额列",
+      "name": "balanceCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "对方户名列",
+      "name": "counterpartyNameCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "对方账号列",
+      "name": "counterpartyAccountCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "摘要列",
+      "name": "summaryCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "备注列",
+      "name": "noteCol",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "公司",
+      "name": "companyId",
+      "ref": {
+        "labelField": "name",
+        "relation": "company",
+        "resource": "basCompanies"
+      },
+      "sortable": true,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "银行账户",
+      "name": "bankAccountId",
+      "ref": {
+        "labelField": "alias",
+        "relation": "bankAccount",
+        "resource": "accBankAccounts"
+      },
+      "sortable": true,
+      "type": "fk"
+    }
+  ],
+  "destroyMutation": "destroyAccBankImportTemplate",
+  "extendedActions": []
+}
