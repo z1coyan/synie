@@ -34,6 +34,7 @@ import type {
   StockCountService,
   StockEntryService,
 } from './modules/inventory/index.ts'
+import { tradingRouteMounts, type TradingServices } from './modules/trading/index.ts'
 import { authRoutes } from './platform/auth/routes.ts'
 import type { AuthService } from './platform/auth/service.ts'
 import type { AppEnv } from './platform/http/context.ts'
@@ -51,7 +52,7 @@ import { settingsRoutes } from './platform/settings/routes.ts'
 import type { SettingsService } from './platform/settings/service.ts'
 
 /**
- * 应用依赖。核心平台 + 工单 02 base/iam/party/公司默认过账科目 + 行情品种查询面。
+ * 应用依赖。平台 + base/iam/party + 库存 + 会计 + 交易链。
  * 路由必须链式 .route() + zValidator，保 ApiType 类型链。
  */
 export interface AppDeps {
@@ -85,6 +86,8 @@ export interface AppDeps {
   // 工单 05 会计
   journals: JournalService
   entries: EntryService
+  // 工单 06/07 交易链
+  trading: TradingServices
 }
 
 const accessLog: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -175,9 +178,37 @@ export function buildApp(deps: AppDeps) {
       }),
     )
 
-  app.onError(onError)
-  app.notFound(notFound)
-  return app
+  const t = tradingRouteMounts({ auth: deps.auth, trading: deps.trading })
+  const app2 = app
+    .route('/sales/quotations', t.salesQuotations)
+    .route('/sales/quotation-items', t.salesQuotationItems)
+    .route('/sales/quotation-tiers', t.salesQuotationTiers)
+    .route('/purchase/quotations', t.purchaseQuotations)
+    .route('/purchase/quotation-items', t.purchaseQuotationItems)
+    .route('/purchase/quotation-tiers', t.purchaseQuotationTiers)
+    .route('/sales/orders', t.salesOrders)
+    .route('/sales/order-items', t.salesOrderItems)
+    .route('/purchase/orders', t.purchaseOrders)
+    .route('/purchase/order-items', t.purchaseOrderItems)
+    .route('/purchase/order-item-materials', t.purchaseOrderItemMaterials)
+    .route('/purchase/order-item-byproducts', t.purchaseOrderItemByproducts)
+    .route('/purchase/order-demand-lines', t.purchaseOrderDemandLines)
+    .route('/purchase/order-bom', t.purchaseOrderBom)
+    .route('/sales/deliveries', t.salesDeliveries)
+    .route('/sales/delivery-items', t.salesDeliveryItems)
+    .route('/sales/delivery-pack-lines', t.salesDeliveryPackLines)
+    .route('/purchase/receipts', t.purchaseReceipts)
+    .route('/purchase/receipt-items', t.purchaseReceiptItems)
+    .route('/purchase/outsourced-issues', t.outsourcedIssues)
+    .route('/purchase/outsourced-issue-items', t.outsourcedIssueItems)
+    .route('/purchase/outsourced-receipts', t.outsourcedReceipts)
+    .route('/purchase/outsourced-receipt-items', t.outsourcedReceiptItems)
+    .route('/purchase/outsourced-receipt-item-materials', t.outsourcedReceiptItemMaterials)
+    .route('/purchase/outsourced-receipt-item-byproducts', t.outsourcedReceiptItemByproducts)
+
+  app2.onError(onError)
+  app2.notFound(notFound)
+  return app2
 }
 
 export type ApiType = ReturnType<typeof buildApp>

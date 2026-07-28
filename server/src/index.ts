@@ -20,6 +20,7 @@ import {
   createInventoryServices,
   registerInventoryResources,
 } from './modules/inventory/index.ts'
+import { createTradingServices, registerTradingResources } from './modules/trading/index.ts'
 import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
@@ -56,6 +57,7 @@ registerPartyResources(registry)
 registerSalesCompanyAccountDefault(registry)
 registerInventoryResources(registry)
 registerAccountingResources(registry)
+registerTradingResources(registry)
 
 const settings = createSettingsService(db)
 const numbering = createNumberingService(db)
@@ -70,6 +72,7 @@ const party = createPartyServices(db, numbering)
 const companyAccountDefaults = createCompanyAccountDefaultService(db)
 const inv = createInventoryServices(db, numbering)
 const accounting = createAccountingServices(db, numbering)
+const trading = createTradingServices(db, numbering)
 
 const app = buildApp({
   db,
@@ -100,6 +103,7 @@ const app = buildApp({
   invStockEntries: inv.stockEntries,
   journals: accounting.journals,
   entries: accounting.entries,
+  trading,
 })
 
 const server = Bun.serve({

@@ -196,6 +196,7 @@ const STANDARD_ACTION_SET = new Set<string>([
   'batch_print',
 ])
 
+
 function validate(resource: ResourceMeta): void {
   if (!resource.name || !resource.permissionPrefix || !resource.permissionLabel) {
     throw new Error(`Meta 资源 name/permissionPrefix/permissionLabel 必填: ${resource.name}`)
