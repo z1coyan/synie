@@ -17,6 +17,7 @@
     "db:down": "docker compose down",
     "db:migrate": "bun run --filter @synie/server db:migrate",
     "db:seed": "bun run --filter @synie/server db:seed",
+    "db:reset": "bun run --filter @synie/server db:reset",
     "test": "turbo run test --filter=@synie/shared --filter=@synie/server",
     "typecheck": "turbo run typecheck --filter=@synie/shared --filter=@synie/server --filter=synie-web",
     "build": "turbo run build --filter=synie-web"

@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "bun db/migrate.ts",
     "db:seed": "bun db/seed.ts",
-    "db:seed:demo": "bun db/seed-demo.ts",
+    "db:reset": "bun db/reset.ts",
     "db:codegen": "kysely-codegen --dialect postgres --out-file src/db/types.d.ts"
   },
   "dependencies": {

@@ -3,14 +3,14 @@
  * 一键本地开发启动：
  * 1. 确保 server/.env
  * 2. docker compose up -d postgres 并等待就绪
- * 3. 执行 SQL 迁移
- * 4. （可选 --seed）幂等管理员种子
- * 5. turbo 并行启动 @synie/server + synie-web
+ * 3. 执行 SQL 迁移（不 seed）
+ * 4. turbo 并行启动 @synie/server + synie-web
  *
  * 用法：
  *   bun run dev
- *   bun run dev -- --seed
  *   bun run dev -- --no-docker   # 已有本机 PG 时跳过 compose
+ *
+ * 管理员 / 示例数据请走初始化向导；开发复位：bun run db:reset
  */
 import { copyFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -20,7 +20,6 @@ const root = join(import.meta.dir, '..')
 process.chdir(root)
 
 const args = new Set(process.argv.slice(2))
-const wantSeed = args.has('--seed')
 const noDocker = args.has('--no-docker')
 
 const DEFAULT_DATABASE_URL =
@@ -78,18 +77,10 @@ async function main() {
     log('跳过 Docker（--no-docker），使用已有 DATABASE_URL')
   }
 
-  log('执行数据库迁移…')
+  log('执行数据库迁移（不 seed）…')
   const mig = await $`bun run --filter @synie/server db:migrate`.nothrow()
   if (mig.exitCode !== 0) {
     throw new Error('迁移失败，请检查 DATABASE_URL 与 Postgres')
-  }
-
-  if (wantSeed) {
-    log('执行管理员种子（admin/admin123）…')
-    const seed = await $`bun run --filter @synie/server db:seed`.nothrow()
-    if (seed.exitCode !== 0) {
-      throw new Error('db:seed 失败')
-    }
   }
 
   log('Turbo 并行启动 server(:8080) + web(:3000)…')

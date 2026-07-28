@@ -72,9 +72,9 @@ bun install
 
 ```bash
 bun install
-bun run dev              # 一键：docker postgres + migrate + server + web
-bun run dev -- --seed    # 同上，并幂等种子 admin/admin123
+bun run dev                 # 一键：docker postgres + migrate + server + web（不 seed）
 bun run dev -- --no-docker  # 跳过 compose，使用已有 DATABASE_URL
+bun run db:reset            # 开发库复位到未 setup（仅 localhost 等 dev DSN）
 ```
 
 | 服务 | 地址 |
@@ -88,7 +88,8 @@ bun run dev -- --no-docker  # 跳过 compose，使用已有 DATABASE_URL
 ```bash
 bun run db:up            # 仅 postgres
 bun run db:migrate
-bun run db:seed
+bun run db:reset         # 清空业务数据 → 未 setup（dev only）
+bun run db:seed          # 可选：仅幂等管理员（一般用初始化向导）
 bun run dev:apps         # 仅 turbo 并行 server+web（假设库已就绪）
 bun run dev:server
 bun run dev:web

@@ -28,8 +28,8 @@ bun run dev                 # 开发（--hot），需先备好 .env 见 .env.exa
 bun test                    # 单测；设置 SYNIE_TEST_DATABASE_URL 后含 PG 集成
 bun run typecheck           # tsc --noEmit
 bun run db:migrate          # 执行 SQL 迁移（DATABASE_URL）
-bun run db:seed             # 幂等创建管理员（admin/admin123）
-bun run db:seed:demo        # 一键演示库（未初始化时：admin/admin123 + JT 公司 + 全链示例）
+bun run db:seed             # 可选：幂等管理员（admin/admin123）；常规用初始化向导
+bun run db:reset            # 开发库复位到未 setup（仅本地/dev DSN）
 bun run db:codegen          # 从开发库重新生成 src/db/types.d.ts
 ```
 
@@ -54,9 +54,8 @@ src/
 db/
 ├── migrations/         # SQL 迁移
 ├── migrate.ts          # 迁移执行器
-├── seed.ts / seed-admin.ts / seed-demo.ts
+├── seed.ts / seed-admin.ts / reset.ts
 ```
-
 ## 编码约定（重要，违反视为返工）
 
 1. **惯用 TS，拒绝机械 1:1 翻译**：模块用 **工厂闭包**（`createXxx(deps) => ({...})`），
