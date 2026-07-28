@@ -1,15 +1,15 @@
 # 01 平台层补全：settings / numbering / audit / files
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 无
 
 ## 范围
 
 在既有骨架上补全四个平台模块（编码约定见 `server/README.md`，一律工厂闭包）：
 
-1. **settings**：`sys_setting`/`acc_setting`/`sal_setting`/`mfg_setting` 四个单行表资源——`GET/PATCH /api/v1/{sys,acc,sales,mfg}/setting`（无 list/create/delete；种子行恒存在；密钥字段 write-only 只写不回读）。
+1. **settings**：`sys_setting`/`acc_setting`/`sal_setting`/`mfg_setting` 四个单行表资源——`GET/PATCH /api/v1/settings/{supply-chain,production,finance,system}`（无 list/create/delete；种子行恒存在；密钥字段 write-only 只写不回读；对齐 OpenAPI/Go，非旧 issue 草稿路径）。
 2. **numbering**：编号规则 CRUD + 取号服务（固定文本/记录字段/序号段组合；序号按段渲染结果及公司隐含范围独立计数；padding 0 不补零、1..12 补零；字段段空则省略）+ 计数器校正（必留审计）+ 删规则级联删计数器。
-3. **audit**：字段级写操作留痕（旧值→新值，只增不改不删）；敏感字段不落值（Meta `audit.sensitiveFields` 驱动）；提供 service 钩子供各域 create/update/delete 调用。
+3. **audit**：字段级写操作留痕（旧值→新值，只增不改不删）；敏感字段不落值（Meta `audit.sensitiveFields` 驱动）；提供 service 钩子供各域 create/update/delete 调用；查询面 `POST /system/audit-logs/query` + `GET /system/audit-logs/{id}`。
 4. **files**：`sys_file`（不可变、≤50MB、SHA-256）+ `sys_storage` 存储接入点（本地/S3 兼容；全局恰一个默认，切换串行化；访问密钥只写不回读）+ `sys_attachment` 挂接（宿主白名单 fail-closed，公司归属固化；有挂接不可删；列表/下载按公司范围+宿主读权限）。
 
 ## 行为参考
@@ -25,3 +25,7 @@ Blocked by: 无
 ## 非目标
 
 不做 OCR 配置面以外的 OCR 调用实现（随发票工单 09）；不做 S3 multipart 高级特性（对齐 Go 现状即可）。
+
+## Comments
+
+- 2026-07-28 集成代理：合并分片 audit→files→settings/numbering/装配（去重 monorepo 分片提交；`app.ts`/`index.ts` 链式挂载 settings/numbering/files/storages/audit-logs；Meta 注册四模块；`helpers.ts` 提供完整平台装配；verify-settings/numbering `SYNIE_API_URL` 已泛化）。验证：`bun run typecheck` 绿；`SYNIE_TEST_DATABASE_URL=…synie_test bun test` 52 pass；活 API（PORT=8081 对 synie_test）`verify-settings-rest` meta=4 API=4 audit=4 secret=[FILTERED]；`verify-numbering-rest` resources=25 fields=695 全绿。遗留：业务域 `FileOwnerSpecs` 随各域落地注册 OwnerRegistry；S3/OSS 对象实读写仅对齐 Go 现状（local 完整 + presign）。
