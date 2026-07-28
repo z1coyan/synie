@@ -24,6 +24,10 @@ const trackedIDs = new Set<string>();
 let roleID: string | null = null;
 let userID: string | null = null;
 let ruleID: string | null = null;
+/** 本脚本自建的公司/单位/币种（空库自愈），finally 中清理 */
+let fixtureCompanyID: string | null = null;
+let fixtureCurrencyID: string | null = null;
+const fixtureUnitIDs: string[] = [];
 /** 验收前临时停用的环境既有 inv.material 启用规则，finally 中恢复 */
 const parkedRuleIDs: string[] = [];
 
@@ -188,6 +192,20 @@ async function cleanup() {
   }
   parkedRuleIDs.length = 0;
   await db`DELETE FROM sys_audit_log WHERE changes::text LIKE ${"%" + prefix + "%"}`;
+  // 空库自愈基线：仅删本脚本创建的公司/单位/币种（不碰环境已有）
+  if (fixtureCompanyID) {
+    await db`DELETE FROM inv_warehouse WHERE company_id = ${fixtureCompanyID}::uuid`;
+    await db`DELETE FROM bas_company WHERE id = ${fixtureCompanyID}::uuid`;
+    fixtureCompanyID = null;
+  }
+  if (fixtureUnitIDs.length > 0) {
+    await db`DELETE FROM bas_unit WHERE id = ANY(${`{${fixtureUnitIDs.join(",")}}`}::uuid[])`;
+    fixtureUnitIDs.length = 0;
+  }
+  if (fixtureCurrencyID) {
+    await db`DELETE FROM bas_currency WHERE id = ${fixtureCurrencyID}::uuid`;
+    fixtureCurrencyID = null;
+  }
 }
 
 const login = await request<{ token: string }>("/auth/login", {
@@ -200,17 +218,66 @@ const adminHeaders = headers(login.token);
 try {
   await cleanup();
 
-  const fixture = (await db`
-    SELECT
-      c.id::text AS "companyId",
-      (SELECT id::text FROM bas_unit ORDER BY is_base DESC, inserted_at LIMIT 1) AS "unitId",
-      (SELECT id::text FROM bas_unit ORDER BY is_base ASC, inserted_at LIMIT 1) AS "altUnitId"
-    FROM bas_company c
-    ORDER BY c.inserted_at
-    LIMIT 1
-  `) as Array<{ companyId: string; unitId: string; altUnitId: string }>;
-  assert(fixture.length === 1, "缺少 REST 验收所需公司/单位基线");
-  const { companyId, unitId, altUnitId } = fixture[0]!;
+  // 测试库刻意不依赖演示数据：公司 + 两单位缺失时自建（对齐 accounting/quotation 验收）。
+  let companyId: string;
+  let unitId: string;
+  let altUnitId: string;
+
+  const existingCompany = (await db`
+    SELECT id::text AS id FROM bas_company ORDER BY inserted_at LIMIT 1
+  `) as Array<{ id: string }>;
+  if (existingCompany[0]) {
+    companyId = existingCompany[0].id;
+  } else {
+    let currency = (await db`
+      SELECT id::text AS id FROM bas_currency WHERE active = true ORDER BY inserted_at LIMIT 1
+    `) as Array<{ id: string }>;
+    if (!currency[0]) {
+      currency = (await db`
+        INSERT INTO bas_currency(name, iso_code, symbol, active)
+        VALUES (${prefix + "币种"}, ${prefix.slice(0, 3)}, '¤', true)
+        RETURNING id::text AS id
+      `) as Array<{ id: string }>;
+      fixtureCurrencyID = currency[0]!.id;
+    }
+    const currencyId = currency[0]!.id;
+    const companies = (await db`
+      INSERT INTO bas_company(code, name, short_name, base_currency_id)
+      VALUES (${prefix + "CO"}, ${prefix + "库存验收公司"}, ${prefix + "INV"}, ${currencyId}::uuid)
+      RETURNING id::text AS id
+    `) as Array<{ id: string }>;
+    companyId = companies[0]!.id;
+    fixtureCompanyID = companyId;
+  }
+
+  const existingUnits = (await db`
+    SELECT id::text AS id FROM bas_unit ORDER BY is_base DESC, inserted_at
+  `) as Array<{ id: string }>;
+  if (existingUnits.length >= 2) {
+    unitId = existingUnits[0]!.id;
+    altUnitId = existingUnits[1]!.id;
+  } else {
+    // quantity 类型可插非基单位；避免撞 00003 行情种子 weight 基单位
+    while (existingUnits.length < 2) {
+      const n = existingUnits.length;
+      const sym = `${prefix.slice(0, 6)}U${n}`;
+      const inserted = (await db`
+        INSERT INTO bas_unit(unit_type, is_base, name, symbol, ratio)
+        VALUES (
+          'quantity',
+          false,
+          ${prefix + "单位" + n},
+          ${sym},
+          ${n === 0 ? "1" : "2"}
+        )
+        RETURNING id::text AS id
+      `) as Array<{ id: string }>;
+      existingUnits.push(inserted[0]!);
+      fixtureUnitIDs.push(inserted[0]!.id);
+    }
+    unitId = existingUnits[0]!.id;
+    altUnitId = existingUnits[1]!.id;
+  }
   assert(unitId !== altUnitId, "库存验收至少需要两个单位");
 
   for (const resource of resources) {

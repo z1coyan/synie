@@ -113,6 +113,8 @@ let bankReconciliationID: string | null = null;
 let fixtureCurrencyID: string | null = null;
 const fixtureCompanyIDs = new Set<string>();
 const fixtureAccountIDs = new Set<string>();
+/** 验收前临时停用的环境既有 acc.gl_journal 启用规则，finally 中恢复 */
+const parkedRuleIDs: string[] = [];
 
 function body(value: unknown) {
   return JSON.stringify(value);
@@ -373,6 +375,11 @@ async function cleanup() {
   await db`DELETE FROM sys_numbering_counter WHERE rule_id IN (SELECT id FROM sys_numbering_rule WHERE name LIKE ${prefix + "%"})`;
   await db`DELETE FROM sys_numbering_rule WHERE name LIKE ${prefix + "%"}`;
   await db`DELETE FROM sys_audit_log WHERE changes::text LIKE ${"%" + prefix + "%"}`;
+  // 恢复验收前临时停用的环境编号规则
+  for (const id of parkedRuleIDs) {
+    await db`UPDATE sys_numbering_rule SET enabled=true, updated_at=(now() AT TIME ZONE 'utc') WHERE id=${id}::uuid`;
+  }
+  parkedRuleIDs.length = 0;
 }
 
 async function assertCleanupZero() {
@@ -478,15 +485,16 @@ try {
     );
   }
 
+  // setup/演示库可能已有 acc.gl_journal 启用规则；临时停用后再测「无规则 409」与自建规则。
   const activeJournalRules = (await db`
     SELECT id::text AS id
     FROM sys_numbering_rule
     WHERE resource='acc.gl_journal' AND enabled=true
   `) as RecordID[];
-  assert(
-    activeJournalRules.length === 0,
-    "验收前已存在启用的 acc.gl_journal 编号规则；脚本拒绝覆盖现有配置",
-  );
+  for (const row of activeJournalRules) {
+    await db`UPDATE sys_numbering_rule SET enabled=false, updated_at=(now() AT TIME ZONE 'utc') WHERE id=${row.id}::uuid`;
+    parkedRuleIDs.push(row.id);
+  }
   await requestText(
     "/accounting/gl-journals",
     {

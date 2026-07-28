@@ -146,6 +146,8 @@ const fixtureMaterialIDs = new Set<string>();
 let fixtureCategoryID: string | null = null;
 let roleID: string | null = null;
 let userID: string | null = null;
+/** 验收前临时停用的环境报价编号规则，finally 中恢复 */
+const parkedRuleIDs: string[] = [];
 
 const active = Object.fromEntries(
   sides.map((side) => [
@@ -559,6 +561,11 @@ async function cleanup() {
   await db`DELETE FROM bas_currency WHERE iso_code LIKE ${prefix + "%"}`;
   await db`DELETE FROM sys_audit_log WHERE changes::text LIKE ${"%" + prefix + "%"}`;
   numberingRuleIDs.clear();
+  // 恢复验收前临时停用的环境编号规则
+  for (const id of parkedRuleIDs) {
+    await db`UPDATE sys_numbering_rule SET enabled=true, updated_at=(now() AT TIME ZONE 'utc') WHERE id=${id}::uuid`;
+  }
+  parkedRuleIDs.length = 0;
 }
 
 async function assertCleanupZero() {
@@ -875,17 +882,17 @@ try {
     );
   }
 
-  // 自动编号不得借用环境中的既有规则；手填编号不依赖规则。
+  // setup/演示库可能已有报价启用规则；临时停用后再测「无规则 409」与自建规则。
   const activeRules = (await db`
     SELECT id::text AS id,resource
     FROM sys_numbering_rule
     WHERE resource IN ('sales.quotation','purchase.quotation')
       AND enabled=true
   `) as Array<RecordID & { resource: string }>;
-  assert(
-    activeRules.length === 0,
-    "验收前已存在启用的销售/采购报价编号规则；脚本拒绝覆盖现有配置",
-  );
+  for (const row of activeRules) {
+    await db`UPDATE sys_numbering_rule SET enabled=false, updated_at=(now() AT TIME ZONE 'utc') WHERE id=${row.id}::uuid`;
+    parkedRuleIDs.push(row.id);
+  }
   for (const side of sides) {
     await requestText(
       side.headPath,

@@ -33,8 +33,28 @@ const headers = {
 const db = new SQL(databaseURL)
 let templateID: string | null = null
 let fileID: string | null = null
+/** 本脚本自建的默认本地存储（空库自愈）；不删，避免与后续上传竞态 */
+let seededStorage = false
 
 try {
+  // 空库无 setup 时 files 上传依赖默认接入点；幂等预置 local
+  const storages = (await db`
+    SELECT id::text AS id FROM sys_storage WHERE is_default = true LIMIT 1
+  `) as Array<{ id: string }>
+  if (!storages[0]) {
+    await db`
+      INSERT INTO sys_storage (name, label, kind, root, builtin, is_default)
+      SELECT 'local', '本地存储', 'local', 'uploads', true, true
+      WHERE NOT EXISTS (SELECT 1 FROM sys_storage WHERE name = 'local')
+    `
+    // 若 name=local 已存在但非默认，升为默认
+    await db`
+      UPDATE sys_storage SET is_default = true, updated_at = (now() AT TIME ZONE 'utc')
+      WHERE name = 'local' AND NOT EXISTS (SELECT 1 FROM sys_storage WHERE is_default)
+    `
+    seededStorage = true
+  }
+
   const [meta, resources, catalog] = await Promise.all([
     api<{ grid: { capabilities: string[]; destroyMutation?: string | null } }>(
       '/meta/resources/sysPrintTemplates',
