@@ -154,7 +154,19 @@ export function createCompanyAccountDefaultService(db: Kysely<Database>) {
       .selectAll()
       .where('company_id', '=', companyId)
       .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '公司默认过账科目不存在')
+    // 无配置时返回空壳（对齐 Go GetCompanyAccountDefaults：id 空、科目空、公司保留）
+    if (!row) {
+      return {
+        id: '',
+        companyId,
+        deliveryDebitAccountId: null,
+        deliveryCreditAccountId: null,
+        receiptDebitAccountId: null,
+        receiptCreditAccountId: null,
+        insertedAt: new Date(0),
+        updatedAt: new Date(0),
+      }
+    }
     return mapRow(row)
   }
 
