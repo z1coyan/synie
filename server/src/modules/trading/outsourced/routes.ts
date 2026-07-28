@@ -4,7 +4,6 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import { presentKey } from '../common.ts'
@@ -23,16 +22,6 @@ const listQuerySchema = z
   .strict()
 const idParam = z.object({ id: z.string().uuid() })
 const decimalString = z.union([z.string(), z.number()]).transform((v) => String(v))
-
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
 
 function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
@@ -53,7 +42,6 @@ export function outsourcedIssueRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('purchase.outsourced_issue:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const r = await outsourced.listIssues(c.get('actor'), toList(c.req.valid('json')))
@@ -62,7 +50,6 @@ export function outsourcedIssueRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm('purchase.outsourced_issue:create'),
       zValidator(
         'json',
         z
@@ -83,13 +70,11 @@ export function outsourcedIssueRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm('purchase.outsourced_issue:read'),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await outsourced.getIssue(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm('purchase.outsourced_issue:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -121,7 +106,6 @@ export function outsourcedIssueRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm('purchase.outsourced_issue:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await outsourced.deleteIssue(c.get('actor'), c.req.valid('param').id)
@@ -130,13 +114,11 @@ export function outsourcedIssueRoutes(deps: {
     )
     .post(
       '/:id/audit',
-      requirePerm('purchase.outsourced_issue:audit'),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await outsourced.auditIssue(c.get('actor'), c.req.valid('param').id)),
     )
     .post(
       '/:id/void',
-      requirePerm('purchase.outsourced_issue:void'),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await outsourced.voidIssue(c.get('actor'), c.req.valid('param').id)),
     )
@@ -151,7 +133,6 @@ export function outsourcedIssueItemRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('purchase.outsourced_issue:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const r = await outsourced.listIssueItems(c.get('actor'), toList(c.req.valid('json')))
@@ -160,7 +141,6 @@ export function outsourcedIssueItemRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm('purchase.outsourced_issue:create'),
       zValidator(
         'json',
         z
@@ -181,13 +161,11 @@ export function outsourcedIssueItemRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm('purchase.outsourced_issue:read'),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await outsourced.getIssueItem(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm('purchase.outsourced_issue:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -216,7 +194,6 @@ export function outsourcedIssueItemRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm('purchase.outsourced_issue:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await outsourced.deleteIssueItem(c.get('actor'), c.req.valid('param').id)
@@ -234,7 +211,6 @@ export function outsourcedReceiptRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('purchase.outsourced_receipt:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const r = await outsourced.listReceipts(c.get('actor'), toList(c.req.valid('json')))
@@ -243,7 +219,6 @@ export function outsourcedReceiptRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm('purchase.outsourced_receipt:create'),
       zValidator(
         'json',
         z
@@ -267,13 +242,11 @@ export function outsourcedReceiptRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:read'),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await outsourced.getReceipt(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -309,7 +282,6 @@ export function outsourcedReceiptRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await outsourced.deleteReceipt(c.get('actor'), c.req.valid('param').id)
@@ -318,7 +290,6 @@ export function outsourcedReceiptRoutes(deps: {
     )
     .post(
       '/:id/audit',
-      requirePerm('purchase.outsourced_receipt:audit'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         let postingDate: string | null | undefined
@@ -342,7 +313,6 @@ export function outsourcedReceiptRoutes(deps: {
     )
     .post(
       '/:id/void',
-      requirePerm('purchase.outsourced_receipt:void'),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await outsourced.voidReceipt(c.get('actor'), c.req.valid('param').id)),
     )
@@ -357,7 +327,6 @@ export function outsourcedReceiptItemRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('purchase.outsourced_receipt:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const r = await outsourced.listReceiptItems(c.get('actor'), toList(c.req.valid('json')))
@@ -366,7 +335,6 @@ export function outsourcedReceiptItemRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm('purchase.outsourced_receipt:create'),
       zValidator(
         'json',
         z
@@ -387,13 +355,11 @@ export function outsourcedReceiptItemRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:read'),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await outsourced.getReceiptItem(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -423,7 +389,6 @@ export function outsourcedReceiptItemRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await outsourced.deleteReceiptItem(c.get('actor'), c.req.valid('param').id)
@@ -441,7 +406,6 @@ export function outsourcedReceiptMaterialRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('purchase.outsourced_receipt:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const r = await outsourced.listReceiptMaterials(
@@ -453,7 +417,6 @@ export function outsourcedReceiptMaterialRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm('purchase.outsourced_receipt:create'),
       zValidator(
         'json',
         z
@@ -476,14 +439,12 @@ export function outsourcedReceiptMaterialRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:read'),
       zValidator('param', idParam, validationHook),
       async (c) =>
         c.json(await outsourced.getReceiptMaterial(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -512,7 +473,6 @@ export function outsourcedReceiptMaterialRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await outsourced.deleteReceiptMaterial(c.get('actor'), c.req.valid('param').id)
@@ -530,7 +490,6 @@ export function outsourcedReceiptByproductRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('purchase.outsourced_receipt:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const r = await outsourced.listReceiptByproducts(
@@ -542,7 +501,6 @@ export function outsourcedReceiptByproductRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm('purchase.outsourced_receipt:create'),
       zValidator(
         'json',
         z
@@ -565,14 +523,12 @@ export function outsourcedReceiptByproductRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:read'),
       zValidator('param', idParam, validationHook),
       async (c) =>
         c.json(await outsourced.getReceiptByproduct(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -601,7 +557,6 @@ export function outsourcedReceiptByproductRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm('purchase.outsourced_receipt:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await outsourced.deleteReceiptByproduct(c.get('actor'), c.req.valid('param').id)

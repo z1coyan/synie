@@ -4,12 +4,10 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
-import { orderSpec } from './spec.ts'
 import type { OutsourcedConfigService } from './outsourced-config.ts'
 import type { OrderService } from './service.ts'
 
@@ -27,16 +25,6 @@ const listQuerySchema = z
 
 const idParam = z.object({ id: z.string().uuid() })
 
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
-
 function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
     limit: body.limit,
@@ -53,16 +41,14 @@ export function orderHeadRoutes(deps: {
   side: TradingSide
 }) {
   const { auth, orders, side } = deps
-  const prefix = orderSpec(side).prefix
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', requirePerm(`${prefix}:read`), zValidator('json', listQuerySchema, validationHook), async (c) => {
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
       const r = await orders.listHeads(c.get('actor'), side, toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
-      requirePerm(`${prefix}:create`),
       zValidator(
         'json',
         z
@@ -84,12 +70,11 @@ export function orderHeadRoutes(deps: {
       ),
       async (c) => c.json(await orders.createHead(c.get('actor'), side, c.req.valid('json')), 201),
     )
-    .get('/:id', requirePerm(`${prefix}:read`), zValidator('param', idParam, validationHook), async (c) =>
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await orders.getHead(c.get('actor'), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm(`${prefix}:update`),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -121,20 +106,20 @@ export function orderHeadRoutes(deps: {
         )
       },
     )
-    .delete('/:id', requirePerm(`${prefix}:delete`), zValidator('param', idParam, validationHook), async (c) => {
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
       await orders.deleteHead(c.get('actor'), side, c.req.valid('param').id)
       return c.body(null, 204)
     })
-    .post('/:id/audit', requirePerm(`${prefix}:audit`), zValidator('param', idParam, validationHook), async (c) =>
+    .post('/:id/audit', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await orders.audit(c.get('actor'), side, c.req.valid('param').id)),
     )
-    .post('/:id/close', requirePerm(`${prefix}:close`), zValidator('param', idParam, validationHook), async (c) =>
+    .post('/:id/close', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await orders.close(c.get('actor'), side, c.req.valid('param').id)),
     )
-    .post('/:id/void', requirePerm(`${prefix}:void`), zValidator('param', idParam, validationHook), async (c) =>
+    .post('/:id/void', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await orders.void(c.get('actor'), side, c.req.valid('param').id)),
     )
-    .get('/:id/history', requirePerm(`${prefix}:read`), zValidator('param', idParam, validationHook), async (c) =>
+    .get('/:id/history', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await orders.history(c.get('actor'), side, c.req.valid('param').id)),
     )
 }
@@ -145,16 +130,14 @@ export function orderItemRoutes(deps: {
   side: TradingSide
 }) {
   const { auth, orders, side } = deps
-  const prefix = orderSpec(side).prefix
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', requirePerm(`${prefix}:read`), zValidator('json', listQuerySchema, validationHook), async (c) => {
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
       const r = await orders.listItems(c.get('actor'), side, toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
-      requirePerm(`${prefix}:create`),
       zValidator(
         'json',
         z
@@ -177,12 +160,11 @@ export function orderItemRoutes(deps: {
       ),
       async (c) => c.json(await orders.createItem(c.get('actor'), side, c.req.valid('json')), 201),
     )
-    .get('/:id', requirePerm(`${prefix}:read`), zValidator('param', idParam, validationHook), async (c) =>
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await orders.getItem(c.get('actor'), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm(`${prefix}:update`),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -218,7 +200,7 @@ export function orderItemRoutes(deps: {
         )
       },
     )
-    .delete('/:id', requirePerm(`${prefix}:delete`), zValidator('param', idParam, validationHook), async (c) => {
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
       await orders.deleteItem(c.get('actor'), side, c.req.valid('param').id)
       return c.body(null, 204)
     })
@@ -231,13 +213,12 @@ export function purchaseOrderExtraRoutes(deps: {
   const { auth, outsourcedConfig: cfg } = deps
   const material = new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', requirePerm('purchase.order:read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
       const r = await cfg.listMaterials(c.get('actor'), toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
-      requirePerm('purchase.order:create'),
       zValidator(
         'json',
         z
@@ -253,12 +234,11 @@ export function purchaseOrderExtraRoutes(deps: {
       ),
       async (c) => c.json(await cfg.createMaterial(c.get('actor'), c.req.valid('json')), 201),
     )
-    .get('/:id', requirePerm('purchase.order:read'), zValidator('param', idParam, validationHook), async (c) =>
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await cfg.getMaterial(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm('purchase.order:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -282,20 +262,19 @@ export function purchaseOrderExtraRoutes(deps: {
         )
       },
     )
-    .delete('/:id', requirePerm('purchase.order:delete'), zValidator('param', idParam, validationHook), async (c) => {
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
       await cfg.deleteMaterial(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
 
   const byproduct = new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', requirePerm('purchase.order:read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
       const r = await cfg.listByproducts(c.get('actor'), toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
-      requirePerm('purchase.order:create'),
       zValidator(
         'json',
         z
@@ -311,12 +290,11 @@ export function purchaseOrderExtraRoutes(deps: {
       ),
       async (c) => c.json(await cfg.createByproduct(c.get('actor'), c.req.valid('json')), 201),
     )
-    .get('/:id', requirePerm('purchase.order:read'), zValidator('param', idParam, validationHook), async (c) =>
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await cfg.getByproduct(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm('purchase.order:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -340,7 +318,7 @@ export function purchaseOrderExtraRoutes(deps: {
         )
       },
     )
-    .delete('/:id', requirePerm('purchase.order:delete'), zValidator('param', idParam, validationHook), async (c) => {
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
       await cfg.deleteByproduct(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
@@ -349,7 +327,6 @@ export function purchaseOrderExtraRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('purchase.order:read'),
       zValidator(
         'json',
         z
@@ -368,7 +345,6 @@ export function purchaseOrderExtraRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/expand',
-      requirePerm('purchase.order:read'),
       zValidator(
         'json',
         z

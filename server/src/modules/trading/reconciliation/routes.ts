@@ -4,12 +4,10 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
-import { reconciliationSpec } from './spec.ts'
 import type { ReconciliationService } from './service.ts'
 
 const listQuerySchema = z
@@ -25,16 +23,6 @@ const listQuerySchema = z
   .strict()
 
 const idParam = z.object({ id: z.string().uuid() })
-
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
 
 function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
@@ -52,12 +40,10 @@ export function reconciliationHeadRoutes(deps: {
   side: TradingSide
 }) {
   const { auth, reconciliations, side } = deps
-  const prefix = reconciliationSpec(side).prefix
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm(`${prefix}:read`),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const r = await reconciliations.listHeads(c.get('actor'), side, toList(c.req.valid('json')))
@@ -66,7 +52,6 @@ export function reconciliationHeadRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm(`${prefix}:create`),
       zValidator(
         'json',
         z
@@ -102,13 +87,11 @@ export function reconciliationHeadRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm(`${prefix}:read`),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await reconciliations.getHead(c.get('actor'), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm(`${prefix}:update`),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -144,7 +127,6 @@ export function reconciliationHeadRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm(`${prefix}:delete`),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await reconciliations.deleteHead(c.get('actor'), side, c.req.valid('param').id)
@@ -153,20 +135,17 @@ export function reconciliationHeadRoutes(deps: {
     )
     .post(
       '/:id/confirm',
-      requirePerm(`${prefix}:confirm`),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await reconciliations.confirm(c.get('actor'), side, c.req.valid('param').id)),
     )
     .post(
       '/:id/unconfirm',
-      requirePerm(`${prefix}:unconfirm`),
       zValidator('param', idParam, validationHook),
       async (c) =>
         c.json(await reconciliations.unconfirm(c.get('actor'), side, c.req.valid('param').id)),
     )
     .post(
       '/:id/audit',
-      requirePerm(`${prefix}:audit`),
       zValidator('param', idParam, validationHook),
       async (c) => {
         let postingDate: string | null | undefined
@@ -191,7 +170,6 @@ export function reconciliationHeadRoutes(deps: {
     )
     .post(
       '/:id/void',
-      requirePerm(`${prefix}:void`),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await reconciliations.void(c.get('actor'), side, c.req.valid('param').id)),
     )
@@ -203,12 +181,10 @@ export function reconciliationItemRoutes(deps: {
   side: TradingSide
 }) {
   const { auth, reconciliations, side } = deps
-  const prefix = reconciliationSpec(side).prefix
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm(`${prefix}:read`),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const r = await reconciliations.listItems(c.get('actor'), side, toList(c.req.valid('json')))
@@ -217,7 +193,6 @@ export function reconciliationItemRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm(`${prefix}:create`),
       zValidator(
         'json',
         z
@@ -237,13 +212,11 @@ export function reconciliationItemRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm(`${prefix}:read`),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await reconciliations.getItem(c.get('actor'), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm(`${prefix}:update`),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -280,7 +253,6 @@ export function reconciliationItemRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm(`${prefix}:delete`),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await reconciliations.deleteItem(c.get('actor'), side, c.req.valid('param').id)

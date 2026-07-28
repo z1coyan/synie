@@ -34,7 +34,21 @@ service 侧 ~105 处 + routes 侧 ~112 处，且**同源**（都读 `spec.prefix
 | inventory / manufacturing / party / iam / base / sales | routes 单检 | 先补 service 首行检，再去 routes |
 | platform numbering/settings/audit/files/printing | 不一 | 对齐 service 唯一检 |
 | banking-recon 快速对账 | create+audit 叠码 | ✅ 已改为只 reconcile |
+| trading / finance routes / accounting | 双检 | ✅ 已去 routes requirePerm（service 仍检） |
+| hr | routes 仍有检（service 读路径多无 actor） | 待补 service 读方法 actor+检后再去 routes |
+
+## Comments
+
+### 2026-07-28 决策落地
+
+- 方案一成文 `server/README.md` §8；commit 含 banking-recon 只 reconcile。
+- 已收敛 trading（order/fulfillment/quotation/outsourced/reconciliation）
+  + finance routes/ops-routes + accounting routes：删除同源 middleware，
+  仅留 requireAuth。typecheck + 246 tests 绿。
+- **未**收敛 inventory/manufacturing/party/iam/base/sales/platform/hr：
+  这些域 service 读路径常无 actor 或无 requirePerm，先删 routes 会裸奔。
+  下一步：先给 service 公开方法补 actor+requirePerm，再去 routes。
 
 ## 备注
 
-- 收敛完成前 routes 中间件仍可能存在（安全网）；以 README 约定为准，新代码不得新增 routes 鉴码。
+- 收敛完成前部分 routes 中间件仍存在（安全网）；以 README 约定为准，新代码不得新增 routes 鉴码。

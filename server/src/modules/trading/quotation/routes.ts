@@ -4,12 +4,10 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
-import { quotationSpec } from './spec.ts'
 import type { QuotationService } from './service.ts'
 
 const listQuerySchema = z
@@ -25,16 +23,6 @@ const listQuerySchema = z
   .strict()
 
 const idParam = z.object({ id: z.string().uuid() })
-
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
 
 function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
@@ -52,12 +40,10 @@ export function quotationHeadRoutes(deps: {
   side: TradingSide
 }) {
   const { auth, quotations, side } = deps
-  const prefix = quotationSpec(side).prefix
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm(`${prefix}:read`),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const result = await quotations.listHeads(c.get('actor'), side, toList(c.req.valid('json')))
@@ -66,7 +52,6 @@ export function quotationHeadRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm(`${prefix}:create`),
       zValidator(
         'json',
         z
@@ -91,13 +76,11 @@ export function quotationHeadRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm(`${prefix}:read`),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await quotations.getHead(c.get('actor'), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm(`${prefix}:update`),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -128,7 +111,6 @@ export function quotationHeadRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm(`${prefix}:delete`),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await quotations.deleteHead(c.get('actor'), side, c.req.valid('param').id)
@@ -137,13 +119,11 @@ export function quotationHeadRoutes(deps: {
     )
     .post(
       '/:id/audit',
-      requirePerm(`${prefix}:audit`),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await quotations.auditHead(c.get('actor'), side, c.req.valid('param').id)),
     )
     .post(
       '/:id/void',
-      requirePerm(`${prefix}:void`),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await quotations.voidHead(c.get('actor'), side, c.req.valid('param').id)),
     )
@@ -155,12 +135,10 @@ export function quotationItemRoutes(deps: {
   side: TradingSide
 }) {
   const { auth, quotations, side } = deps
-  const prefix = quotationSpec(side).prefix
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm(`${prefix}:read`),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const result = await quotations.listItems(c.get('actor'), side, toList(c.req.valid('json')))
@@ -169,7 +147,6 @@ export function quotationItemRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm(`${prefix}:create`),
       zValidator(
         'json',
         z
@@ -193,13 +170,11 @@ export function quotationItemRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm(`${prefix}:read`),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await quotations.getItem(c.get('actor'), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm(`${prefix}:update`),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -229,7 +204,6 @@ export function quotationItemRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm(`${prefix}:delete`),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await quotations.deleteItem(c.get('actor'), side, c.req.valid('param').id)
@@ -244,12 +218,10 @@ export function quotationTierRoutes(deps: {
   side: TradingSide
 }) {
   const { auth, quotations, side } = deps
-  const prefix = quotationSpec(side).prefix
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm(`${prefix}:read`),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const result = await quotations.listTiers(c.get('actor'), side, toList(c.req.valid('json')))
@@ -258,7 +230,6 @@ export function quotationTierRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm(`${prefix}:create`),
       zValidator(
         'json',
         z
@@ -277,13 +248,11 @@ export function quotationTierRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm(`${prefix}:read`),
       zValidator('param', idParam, validationHook),
       async (c) => c.json(await quotations.getTier(c.get('actor'), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm(`${prefix}:update`),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -307,7 +276,6 @@ export function quotationTierRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm(`${prefix}:delete`),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await quotations.deleteTier(c.get('actor'), side, c.req.valid('param').id)

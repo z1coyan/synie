@@ -4,12 +4,10 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
-import { fulfillmentSpec } from './spec.ts'
 import type { FulfillmentService } from './service.ts'
 
 const listQuerySchema = z
@@ -25,15 +23,6 @@ const listQuerySchema = z
   .strict()
 const idParam = z.object({ id: z.string().uuid() })
 
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
 function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
     limit: body.limit,
@@ -50,18 +39,16 @@ export function fulfillmentHeadRoutes(deps: {
   side: TradingSide
 }) {
   const { auth, fulfillment, side } = deps
-  const prefix = fulfillmentSpec(side).prefix
   const numberKey = side === 'sales' ? 'deliveryNo' : 'receiptNo'
   const dateKey = side === 'sales' ? 'deliveryDate' : 'receiptDate'
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', requirePerm(`${prefix}:read`), zValidator('json', listQuerySchema, validationHook), async (c) => {
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
       const r = await fulfillment.listHeads(c.get('actor'), side, toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
-      requirePerm(`${prefix}:create`),
       zValidator(
         'json',
         z
@@ -99,12 +86,11 @@ export function fulfillmentHeadRoutes(deps: {
         )
       },
     )
-    .get('/:id', requirePerm(`${prefix}:read`), zValidator('param', idParam, validationHook), async (c) =>
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await fulfillment.getHead(c.get('actor'), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm(`${prefix}:update`),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -144,14 +130,14 @@ export function fulfillmentHeadRoutes(deps: {
         )
       },
     )
-    .delete('/:id', requirePerm(`${prefix}:delete`), zValidator('param', idParam, validationHook), async (c) => {
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
       await fulfillment.deleteHead(c.get('actor'), side, c.req.valid('param').id)
       return c.body(null, 204)
     })
-    .post('/:id/audit', requirePerm(`${prefix}:audit`), zValidator('param', idParam, validationHook), async (c) =>
+    .post('/:id/audit', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await fulfillment.auditHead(c.get('actor'), side, c.req.valid('param').id)),
     )
-    .post('/:id/void', requirePerm(`${prefix}:void`), zValidator('param', idParam, validationHook), async (c) =>
+    .post('/:id/void', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await fulfillment.voidHead(c.get('actor'), side, c.req.valid('param').id)),
     )
 }
@@ -162,17 +148,15 @@ export function fulfillmentItemRoutes(deps: {
   side: TradingSide
 }) {
   const { auth, fulfillment, side } = deps
-  const prefix = fulfillmentSpec(side).prefix
   const parentKey = side === 'sales' ? 'deliveryId' : 'receiptId'
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', requirePerm(`${prefix}:read`), zValidator('json', listQuerySchema, validationHook), async (c) => {
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
       const r = await fulfillment.listItems(c.get('actor'), side, toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
-      requirePerm(`${prefix}:create`),
       zValidator(
         'json',
         z
@@ -204,12 +188,11 @@ export function fulfillmentItemRoutes(deps: {
         )
       },
     )
-    .get('/:id', requirePerm(`${prefix}:read`), zValidator('param', idParam, validationHook), async (c) =>
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await fulfillment.getItem(c.get('actor'), side, c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm(`${prefix}:update`),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -236,7 +219,7 @@ export function fulfillmentItemRoutes(deps: {
         )
       },
     )
-    .delete('/:id', requirePerm(`${prefix}:delete`), zValidator('param', idParam, validationHook), async (c) => {
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
       await fulfillment.deleteItem(c.get('actor'), side, c.req.valid('param').id)
       return c.body(null, 204)
     })
@@ -246,13 +229,12 @@ export function packLineRoutes(deps: { auth: AuthService; fulfillment: Fulfillme
   const { auth, fulfillment } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', requirePerm('sales.delivery:read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
       const r = await fulfillment.listPackLines(c.get('actor'), toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
       '/',
-      requirePerm('sales.delivery:create'),
       zValidator(
         'json',
         z
@@ -270,12 +252,11 @@ export function packLineRoutes(deps: { auth: AuthService; fulfillment: Fulfillme
       ),
       async (c) => c.json(await fulfillment.createPackLine(c.get('actor'), c.req.valid('json')), 201),
     )
-    .get('/:id', requirePerm('sales.delivery:read'), zValidator('param', idParam, validationHook), async (c) =>
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await fulfillment.getPackLine(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
-      requirePerm('sales.delivery:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -302,7 +283,7 @@ export function packLineRoutes(deps: { auth: AuthService; fulfillment: Fulfillme
         )
       },
     )
-    .delete('/:id', requirePerm('sales.delivery:delete'), zValidator('param', idParam, validationHook), async (c) => {
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
       await fulfillment.deletePackLine(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })

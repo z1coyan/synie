@@ -4,7 +4,6 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { validationHook } from '~/platform/http/zod.ts'
@@ -74,17 +73,6 @@ const lineUpdateSchema = z
     remarks: z.string().nullable().optional(),
   })
   .strict()
-
-/** 权限中间件：必须挂在 zValidator 之前，保证畸形 body 仍 403 */
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
 
 function present(raw: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(raw, key)
@@ -178,7 +166,6 @@ export function accountingRoutes(deps: {
     // ── 凭证 ──────────────────────────────────────────
     .post(
       '/gl-journals/query',
-      requirePerm('acc.gl_journal:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const result = await journals.list(c.get('actor'), toList(c.req.valid('json')))
@@ -187,7 +174,6 @@ export function accountingRoutes(deps: {
     )
     .post(
       '/gl-journals',
-      requirePerm('acc.gl_journal:create'),
       zValidator('json', journalCreateSchema, validationHook),
       async (c) => {
         const body = c.req.valid('json')
@@ -203,7 +189,6 @@ export function accountingRoutes(deps: {
     )
     .get(
       '/gl-journals/:id',
-      requirePerm('acc.gl_journal:read'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         const item = await journals.get(c.get('actor'), c.req.valid('param').id)
@@ -212,7 +197,6 @@ export function accountingRoutes(deps: {
     )
     .patch(
       '/gl-journals/:id',
-      requirePerm('acc.gl_journal:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', journalUpdateSchema, validationHook),
       async (c) => {
@@ -231,7 +215,6 @@ export function accountingRoutes(deps: {
     )
     .delete(
       '/gl-journals/:id',
-      requirePerm('acc.gl_journal:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await journals.remove(c.get('actor'), c.req.valid('param').id)
@@ -240,7 +223,6 @@ export function accountingRoutes(deps: {
     )
     .post(
       '/gl-journals/:id/audit',
-      requirePerm('acc.gl_journal:audit'),
       zValidator('param', idParam, validationHook),
       zValidator('json', journalAuditSchema, validationHook),
       async (c) => {
@@ -254,7 +236,6 @@ export function accountingRoutes(deps: {
     )
     .post(
       '/gl-journals/:id/cancel',
-      requirePerm('acc.gl_journal:cancel'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         const item = await journals.cancel(c.get('actor'), c.req.valid('param').id)
@@ -264,7 +245,6 @@ export function accountingRoutes(deps: {
     // ── 凭证行 ────────────────────────────────────────
     .post(
       '/gl-journal-lines/query',
-      requirePerm('acc.gl_journal:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const result = await journals.listLines(c.get('actor'), toList(c.req.valid('json')))
@@ -273,7 +253,6 @@ export function accountingRoutes(deps: {
     )
     .post(
       '/gl-journal-lines',
-      requirePerm('acc.gl_journal:create'),
       zValidator('json', lineCreateSchema, validationHook),
       async (c) => {
         const body = c.req.valid('json')
@@ -292,7 +271,6 @@ export function accountingRoutes(deps: {
     )
     .get(
       '/gl-journal-lines/:id',
-      requirePerm('acc.gl_journal:read'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         const item = await journals.getLine(c.get('actor'), c.req.valid('param').id)
@@ -301,7 +279,6 @@ export function accountingRoutes(deps: {
     )
     .patch(
       '/gl-journal-lines/:id',
-      requirePerm('acc.gl_journal:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', lineUpdateSchema, validationHook),
       async (c) => {
@@ -324,7 +301,6 @@ export function accountingRoutes(deps: {
     )
     .delete(
       '/gl-journal-lines/:id',
-      requirePerm('acc.gl_journal:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await journals.removeLine(c.get('actor'), c.req.valid('param').id)
@@ -334,7 +310,6 @@ export function accountingRoutes(deps: {
     // ── 总账分录 ──────────────────────────────────────
     .post(
       '/gl-entries/query',
-      requirePerm('acc.gl_entry:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const result = await entries.list(c.get('actor'), toList(c.req.valid('json')))
@@ -343,7 +318,6 @@ export function accountingRoutes(deps: {
     )
     .get(
       '/gl-entries/:id',
-      requirePerm('acc.gl_entry:read'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         const item = await entries.get(c.get('actor'), c.req.valid('param').id)
@@ -353,7 +327,6 @@ export function accountingRoutes(deps: {
     // ── 应收应付报表 ──────────────────────────────────
     .get(
       '/ar-ap-report',
-      requirePerm('acc.gl_entry:read'),
       async (c) => {
         const companyId = c.req.query('companyId')
         const asOf = c.req.query('asOf')

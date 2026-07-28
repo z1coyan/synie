@@ -7,7 +7,6 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { VatInvoice, VatInvoiceService, VatInvoiceUpdateInput } from './invoice-service.ts'
@@ -142,16 +141,6 @@ const ocrSchema = z
   })
   .strict()
 
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
-
 function present(raw: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(raw, key)
 }
@@ -284,7 +273,6 @@ export function vatInvoiceRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('acc.vat_invoice:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
         const result = await invoices.list(c.get('actor')!, toList(c.req.valid('json')))
@@ -296,7 +284,6 @@ export function vatInvoiceRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm('acc.vat_invoice:read'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         const item = await invoices.get(c.get('actor')!, c.req.valid('param').id)
@@ -305,7 +292,6 @@ export function vatInvoiceRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm('acc.vat_invoice:create'),
       zValidator('json', createSchema, validationHook),
       async (c) => {
         const body = c.req.valid('json')
@@ -347,7 +333,6 @@ export function vatInvoiceRoutes(deps: {
     )
     .patch(
       '/:id',
-      requirePerm('acc.vat_invoice:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', updateSchema, validationHook),
       async (c) => {
@@ -363,7 +348,6 @@ export function vatInvoiceRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm('acc.vat_invoice:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await invoices.remove(c.get('actor')!, c.req.valid('param').id)
@@ -372,7 +356,6 @@ export function vatInvoiceRoutes(deps: {
     )
     .post(
       '/:id/audit',
-      requirePerm('acc.vat_invoice:audit'),
       zValidator('param', idParam, validationHook),
       zValidator('json', auditSchema, validationHook),
       async (c) => {
@@ -387,7 +370,6 @@ export function vatInvoiceRoutes(deps: {
     )
     .post(
       '/:id/void',
-      requirePerm('acc.vat_invoice:void'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         const item = await invoices.void(c.get('actor')!, c.req.valid('param').id)
@@ -396,7 +378,6 @@ export function vatInvoiceRoutes(deps: {
     )
     .post(
       '/:id/reverse',
-      requirePerm('acc.vat_invoice:reverse'),
       zValidator('param', idParam, validationHook),
       zValidator('json', reverseSchema, validationHook),
       async (c) => {
@@ -410,7 +391,6 @@ export function vatInvoiceRoutes(deps: {
     )
     .post(
       '/ocr',
-      requirePerm('acc.vat_invoice:create'),
       zValidator('json', ocrSchema, validationHook),
       async (c) => {
         const result = await invoices.ocr(c.get('actor')!, c.req.valid('json').fileId)
