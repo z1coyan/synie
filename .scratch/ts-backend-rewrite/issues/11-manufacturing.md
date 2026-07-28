@@ -1,6 +1,6 @@
 # 11 制造：BOM / 工艺 / 履约需求 / 工单 / 生产入库
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 03
 
 ## 范围
