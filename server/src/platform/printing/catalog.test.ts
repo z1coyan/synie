@@ -244,6 +244,56 @@ describe('FieldCatalog', () => {
     }
   })
 
+  test('validatePlaceholders matches Go golden classification message', () => {
+    const catalog = newTestCatalog()
+    catalog.validatePlaceholders('sales.order', {
+      fields: ['order_no', 'party.name'],
+      nested: {
+        company: ['name'],
+        items: ['_seq', 'qty', 'material.name'],
+      },
+    })
+
+    try {
+      catalog.validatePlaceholders('sales.quotation', {
+        fields: ['id', 'old_flat_key'],
+        nested: {
+          company: ['address.city', 'unknown'],
+          items: ['tiers.qty', 'unknown'],
+        },
+      })
+      throw new Error('expected validation error')
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as ApiError).code).toBe('validation')
+      // 与 server-go catalog_test.go TestValidatePlaceholdersMatchesLegacyClassification 文案一致
+      expect((err as ApiError).message).toBe(
+        '未知头字段: company.unknown, id, old_flat_key；未知循环区字段: items.unknown；关联路径只支持一层: company.address.city；不支持嵌套循环: items.tiers',
+      )
+    }
+
+    try {
+      catalog.validatePlaceholders('not.real', { fields: [], nested: {} })
+      throw new Error('expected validation error')
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as ApiError).message).toBe('不支持的资源类型 not.real')
+    }
+  })
+
+  test('returns copies and rejects PrintRawID party.name expansion', () => {
+    const catalog = newTestCatalog()
+    const first = catalog.get('sales.order')!
+    first.fields[0]!.name = 'mutated'
+    first.loops[0]!.fields[0]!.name = 'mutated'
+    const second = catalog.get('sales.order')!
+    expect(second.fields[0]!.name).not.toBe('mutated')
+    expect(second.loops[0]!.fields[0]!.name).not.toBe('mutated')
+    const items = second.loops.find((l) => l.name === 'items')!
+    expect(items.fields.map((f) => f.name)).not.toContain('party.name')
+    expect(items.nestedLoops ?? []).toEqual([])
+  })
+
   test('real platform registry includes sales.order with 25 fields', () => {
     const catalog = createFieldCatalog(createPlatformRegistry())
     const resources = catalog.resources()
@@ -253,5 +303,15 @@ describe('FieldCatalog', () => {
     const order = catalog.get('sales.order')
     expect(order?.fields.length).toBe(25)
     expect(order?.loops.length).toBe(1)
+    for (const name of [
+      'order_no',
+      'status',
+      'gross_total',
+      'company.name',
+      'company.code',
+      'party.name',
+    ]) {
+      expect(order!.fields.map((f) => f.name)).toContain(name)
+    }
   })
 })

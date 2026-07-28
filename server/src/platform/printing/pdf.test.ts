@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { which } from 'bun'
 import {
   ConvertFailedError,
   createSofficeConverter,
   ERR_SOFFICE_NO_OUTPUT,
   ERR_SOFFICE_NOT_FOUND,
+  ERR_SOFFICE_TIMEOUT,
 } from './pdf.ts'
 
 function fakeSoffice(body: string): string {
@@ -59,5 +61,44 @@ describe('SofficeConverter', () => {
     await expect(
       converter.convertXlsxToPdf(new TextEncoder().encode('x')),
     ).rejects.toBe(ERR_SOFFICE_NO_OUTPUT)
+  })
+
+  test('timeout kills hung process', async () => {
+    if (!(await which('timeout'))) return // 无 timeout(1) 时跳过进程组杀除断言
+    const dir = mkdtempSync(join(tmpdir(), 'fake-soffice-to-'))
+    const pidFile = join(dir, 'pid')
+    const path = fakeSoffice(`echo $$ > "${pidFile}"\nsleep 60\n`)
+    const converter = createSofficeConverter({ path, timeoutMs: 1000, maxConcurrency: 1 })
+    const start = Date.now()
+    await expect(
+      converter.convertXlsxToPdf(new TextEncoder().encode('x')),
+    ).rejects.toBe(ERR_SOFFICE_TIMEOUT)
+    expect(Date.now() - start).toBeLessThan(10_000)
+    try {
+      const raw = readFileSync(pidFile, 'utf8').trim()
+      const deadline = Date.now() + 3000
+      while (Date.now() < deadline) {
+        const alive = Bun.spawnSync(['kill', '-0', raw])
+        if (alive.exitCode !== 0) return
+        await Bun.sleep(100)
+      }
+      throw new Error('超时后假进程仍存活')
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('假进程')) throw err
+      // pid 文件未写出则跳过杀除断言
+    }
+  })
+
+  test('concurrency limit serializes conversions', async () => {
+    const path = fakeSoffice(
+      'sleep 0.3\nprintf \'%s\' \'%PDF\' > "$out/doc.pdf"\n',
+    )
+    const converter = createSofficeConverter({ path, timeoutMs: 10_000, maxConcurrency: 1 })
+    const start = Date.now()
+    await Promise.all([
+      converter.convertXlsxToPdf(new TextEncoder().encode('x')),
+      converter.convertXlsxToPdf(new TextEncoder().encode('y')),
+    ])
+    expect(Date.now() - start).toBeGreaterThanOrEqual(500)
   })
 })

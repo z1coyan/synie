@@ -214,11 +214,38 @@ describeIf('printing integration', () => {
     expect(updated.name).toContain('已更新')
     expect(updated.remarks).toBeNull()
 
+    const attachments = await db
+      .selectFrom('sys_attachment')
+      .select(db.fn.countAll<string>().as('count'))
+      .where('owner_type', '=', 'sys_print_template')
+      .where('owner_id', '=', templateId)
+      .where('file_id', '=', fileId)
+      .where('category', '=', 'template')
+      .executeTakeFirstOrThrow()
+    expect(Number(attachments.count)).toBe(1)
+
     const delRes = await app.request(`/api/v1/system/printing/templates/${templateId}`, {
       method: 'DELETE',
       headers,
     })
     expect(delRes.status).toBe(204)
+
+    const audit = await db
+      .selectFrom('sys_audit_log')
+      .select(db.fn.countAll<string>().as('count'))
+      .where('resource', '=', 'sys_print_template')
+      .where('record_id', '=', templateId)
+      .executeTakeFirstOrThrow()
+    expect(Number(audit.count)).toBe(5)
+
+    const fileStill = await db
+      .selectFrom('sys_file')
+      .select(db.fn.countAll<string>().as('count'))
+      .where('id', '=', fileId)
+      .executeTakeFirstOrThrow()
+    expect(Number(fileStill.count)).toBe(1)
+
+    const deletedId = templateId
     templateId = null
 
     const fileDel = await app.request(`/api/v1/files/${fileId}`, {
@@ -226,6 +253,10 @@ describeIf('printing integration', () => {
       headers,
     })
     expect(fileDel.status).toBe(204)
+    await db
+      .deleteFrom('sys_audit_log')
+      .where('record_id', 'in', [deletedId!, fileId])
+      .execute()
     fileId = null
   })
 })

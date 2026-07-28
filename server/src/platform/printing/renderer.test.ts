@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
+// unzipSync used in renderSheets golden assertions
 import { renderPages, renderSheets, xmlUnescape } from './renderer.ts'
 import type { PrintDoc } from './types.ts'
 
@@ -146,7 +147,73 @@ describe('renderSheets', () => {
     expect(wb).toContain('rIdSynie3')
     // illegal chars replaced
     expect(wb).not.toContain('SO/0002')
+    expect(wb).toContain('SO 0002')
+    expect(wb).not.toContain('Print_Area')
+    const parts = unzipSync(out)
+    expect(parts['xl/worksheets/sheet1.xml']).toBeUndefined()
+    let sheetCount = 0
+    for (const name of Object.keys(parts)) {
+      if (name.startsWith('xl/worksheets/sheet_synie_')) sheetCount++
+    }
+    expect(sheetCount).toBe(3)
     const sheet1 = readPart(out, 'xl/worksheets/sheet_synie_1.xml')
     expect(sheetCellTexts(sheet1).join('|')).toContain('订单号：SO-0001')
+    const rels = readPart(out, 'xl/_rels/workbook.xml.rels')
+    expect(rels).toContain('styles.xml')
+  })
+})
+
+describe('renderPages golden extras', () => {
+  test('rejects empty docs and invalid template', () => {
+    expect(() => renderPages(new Uint8Array(), [])).toThrow('empty docs')
+    expect(() => renderSheets(new Uint8Array(), [])).toThrow('empty docs')
+    expect(() =>
+      renderPages(new TextEncoder().encode('nope'), [renderTestDoc()]),
+    ).toThrow('不是有效的 xlsx')
+  })
+
+  test('pack_lines loop expand and zero-row delete', () => {
+    const template = workbookFixture({
+      'xl/workbook.xml': renderTestWorkbook,
+      'xl/_rels/workbook.xml.rels': renderTestRels,
+      '[Content_Types].xml': renderTestContentTypes,
+      'xl/worksheets/sheet1.xml':
+        `<worksheet><sheetData>` +
+        `<row r="1"><c r="A1" t="inlineStr"><is><t>发货单 \${delivery_no}</t></is></c></row>` +
+        `<row r="2"><c r="A2" t="inlineStr"><is><t>\${pack_lines._seq}</t></is></c>` +
+        `<c r="B2" t="inlineStr"><is><t>\${pack_lines.box_no}</t></is></c>` +
+        `<c r="C2" t="inlineStr"><is><t>\${pack_lines.material_name}</t></is></c>` +
+        `<c r="D2" t="inlineStr"><is><t>\${pack_lines.qty}</t></is></c>` +
+        `<c r="E2" t="inlineStr"><is><t>\${pack_lines.unit_name}</t></is></c></row>` +
+        `<row r="3"><c r="A3" t="inlineStr"><is><t>制单</t></is></c></row>` +
+        `</sheetData></worksheet>`,
+    })
+    const doc: PrintDoc = {
+      fields: { delivery_no: 'SD-0001' },
+      loops: {
+        pack_lines: [
+          { box_no: 'A-01', material_name: '物料甲', qty: '2', unit_name: '个' },
+          { box_no: 'A-01', material_name: '物料乙', qty: '3', unit_name: '箱' },
+          { box_no: 'B-02', material_name: '物料甲', qty: '1', unit_name: '个' },
+        ],
+      },
+    }
+    const out = renderPages(template, [doc])
+    const sheet = readPart(out, 'xl/worksheets/sheet1.xml')
+    const joined = sheetCellTexts(sheet).join('|')
+    for (const want of ['发货单 SD-0001', 'A-01', '物料甲', '物料乙', 'B-02', '制单']) {
+      expect(joined).toContain(want)
+    }
+    expect(rowNumbers(sheet).join(',')).toBe('1,2,3,4,5')
+    expect(sheet).not.toContain('${')
+
+    const empty: PrintDoc = {
+      fields: { delivery_no: 'SD-0002' },
+      loops: { pack_lines: [] },
+    }
+    const emptyOut = renderPages(template, [empty])
+    const emptySheet = readPart(emptyOut, 'xl/worksheets/sheet1.xml')
+    expect(rowNumbers(emptySheet).join(',')).toBe('1,2')
+    expect(emptySheet).not.toContain('${')
   })
 })
