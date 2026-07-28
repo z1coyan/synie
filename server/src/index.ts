@@ -30,6 +30,7 @@ import {
   registerFinanceFileOwners,
   registerFinanceResources,
 } from './modules/finance/index.ts'
+import { isJournalLinkedToBankRecon } from './modules/finance/banking-recon.ts'
 import { createTodoService } from './platform/todo/index.ts'
 import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
@@ -100,10 +101,14 @@ const base = createBaseServices(db)
 const market = createMarketService(db, { settings })
 const iam = createIamService(db, registry)
 const party = createPartyServices(db, numbering)
-const { hr } = createHrServices(db, files, numbering)
+const { hr } = createHrServices(db, files, {
+  employees: party.employees,
+})
 const companyAccountDefaults = createCompanyAccountDefaultService(db)
 const inv = createInventoryServices(db, numbering)
-const accounting = createAccountingServices(db, numbering)
+const accounting = createAccountingServices(db, numbering, {
+  isJournalLinkedToBankRecon,
+})
 const trading = createTradingServices(db, numbering)
 const finance = createFinanceServices(db, numbering, {
   reconciliations: trading.reconciliations,

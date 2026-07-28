@@ -10,9 +10,8 @@ import { createAccountAndTxnOps } from './banking-accounts.ts'
 import { createImportOps } from './banking-import.ts'
 import { createReconOps } from './banking-recon.ts'
 
-export type {
-  BankAccount, BankTransaction,
-} from './banking-accounts.ts'
+export type { BankAccount } from './banking-accounts.ts'
+export type { BankTransaction } from './banking-shared.ts'
 export type {
   BankImport, BankImportItem, BankImportTemplate,
 } from './banking-import.ts'

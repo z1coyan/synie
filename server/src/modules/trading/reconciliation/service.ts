@@ -446,6 +446,59 @@ export function createReconciliationService(
     })
   }
 
+  /** 发票引用校验：对账单是否存在（只读接缝） */
+  async function existsForInvoice(
+    dbHandle: DbHandle,
+    side: TradingSide,
+    id: string,
+  ): Promise<boolean> {
+    const spec = reconciliationSpec(side)
+    const rows = await sql<{ e: boolean }>`
+      SELECT EXISTS(SELECT 1 FROM ${ident(spec.table)} WHERE id=${id}::uuid) AS e
+    `.execute(dbHandle)
+    return Boolean(rows.rows[0]?.e)
+  }
+
+  /**
+   * 发票审核取对账单头+行合计（FOR UPDATE，只读接缝）。
+   * 供 finance 构建结转分录，读写同 seam。
+   */
+  async function loadForInvoiceAudit(
+    dbHandle: DbHandle,
+    side: TradingSide,
+    id: string,
+  ): Promise<InvoiceReconHead | null> {
+    const spec = reconciliationSpec(side)
+    const head = await sql<{
+      reconciliation_type: string
+      status: string
+      company_id: string
+      party_type: string
+      party_id: string
+      gross: string
+      debit_account_id: string
+      credit_account_id: string
+    }>`
+      SELECT h.reconciliation_type, h.status, h.company_id::text, h.party_type, h.party_id::text,
+        (SELECT COALESCE(sum(i.base_amount),0)::text FROM ${ident(spec.itemTable)} i
+          WHERE i.reconciliation_id=h.id) AS gross,
+        h.debit_account_id::text, h.credit_account_id::text
+      FROM ${ident(spec.table)} h WHERE h.id=${id}::uuid FOR UPDATE
+    `.execute(dbHandle)
+    if (head.rows.length === 0) return null
+    const h = head.rows[0]!
+    return {
+      reconciliationType: h.reconciliation_type,
+      status: h.status,
+      companyId: h.company_id,
+      partyType: h.party_type,
+      partyId: h.party_id,
+      gross: h.gross,
+      debitAccountId: h.debit_account_id,
+      creditAccountId: h.credit_account_id,
+    }
+  }
+
   async function listItems(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
     const spec = reconciliationSpec(side)
     requirePerm(actor, spec.prefix, 'read', '无权限执行对账操作')
@@ -742,12 +795,26 @@ export function createReconciliationService(
     void: voidHead,
     closeFromInvoice,
     reopenFromInvoice,
+    existsForInvoice,
+    loadForInvoiceAudit,
     listItems,
     getItem,
     createItem,
     updateItem,
     deleteItem,
   }
+}
+
+/** 发票审核用对账单头（只读接缝出参） */
+export interface InvoiceReconHead {
+  reconciliationType: string
+  status: string
+  companyId: string
+  partyType: string
+  partyId: string
+  gross: string
+  debitAccountId: string
+  creditAccountId: string
 }
 
 export type ReconciliationService = ReturnType<typeof createReconciliationService>

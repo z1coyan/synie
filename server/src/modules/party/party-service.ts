@@ -1,7 +1,7 @@
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import {
   auditCreated,
@@ -59,6 +59,8 @@ const EMP_AUDIT = [
   'monthly_allowance',
   'insurance_types',
 ] as const
+/** 员工审计敏感字段单点：与 employeeResourceMeta().audit.sensitiveFields 对齐 */
+const EMP_SENSITIVE_FIELDS = ['id_number'] as const
 
 export function createCustomerService(db: Kysely<Database>) {
   return createPartyKind(db, {
@@ -325,7 +327,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
           actionType: 'create',
           actionName: 'create',
           changes: auditCreated(empSnap(item), EMP_AUDIT),
-          sensitiveFields: ['id_number'],
+          sensitiveFields: EMP_SENSITIVE_FIELDS,
         })
         return item
       } catch (err) {
@@ -336,6 +338,46 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
         ])
       }
     })
+  }
+
+  /**
+   * 考勤导入自动建档内部接缝（调用方持 trx）。
+   * 编号/唯一约束/审计与 CRUD create 共用本服务；无权限闸——调用方已鉴权。
+   */
+  async function autoCreateForAttendance(
+    trx: TrxHandle,
+    actor: Actor,
+    attendanceNo: string,
+  ): Promise<{ id: string; code: string; name: string; attendanceNo: string }> {
+    const code = await numbering.nextInTx(trx, { resource: 'hr.employee' })
+    const name = '[未知]'
+    try {
+      const emp = await trx
+        .insertInto('hr_employees')
+        .values({ code, name, attendance_no: attendanceNo })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+      await writeAudit(trx, actor, {
+        resource: 'hr_employee',
+        recordId: emp.id,
+        recordLabel: name,
+        actionType: 'create',
+        actionName: 'create',
+        changes: {
+          code: { to: code },
+          name: { to: name },
+          attendance_no: { to: attendanceNo },
+        },
+        sensitiveFields: EMP_SENSITIVE_FIELDS,
+      })
+      return { id: emp.id, code, name, attendanceNo }
+    } catch (err) {
+      throw mapWriteError(err, '自动创建员工失败', [
+        { code: '23505', constraint: 'attendance', message: '考勤机编号已存在' },
+        { code: '23505', constraint: 'id_number', message: '身份证号已存在' },
+        { code: '23505', message: '员工编号已存在' },
+      ])
+    }
   }
 
   async function update(
@@ -422,7 +464,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
           actionType: 'update',
           actionName: 'update',
           changes,
-          sensitiveFields: ['id_number'],
+          sensitiveFields: EMP_SENSITIVE_FIELDS,
         })
         return item
       } catch (err) {
@@ -459,12 +501,12 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
         actionType: 'destroy',
         actionName: 'destroy',
         changes: auditDestroyed(empSnap(item), EMP_AUDIT),
-        sensitiveFields: ['id_number'],
+        sensitiveFields: EMP_SENSITIVE_FIELDS,
       })
     })
   }
 
-  return { get, list, create, update, remove }
+  return { get, list, create, autoCreateForAttendance, update, remove }
 }
 
 export type EmployeeService = ReturnType<typeof createEmployeeService>

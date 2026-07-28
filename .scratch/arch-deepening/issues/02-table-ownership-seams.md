@@ -1,6 +1,6 @@
 # 02 I · 跨模块表所有权收口
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## 问题
 
@@ -32,3 +32,13 @@ Status: ready-for-agent
   只剩所有权模块自身；
 - banking 内无 `await import(`；
 - typecheck + 全套测试 226/226 绿。
+
+## Comments
+
+### 2026-07-28 落地
+
+- `EmployeeService.autoCreateForAttendance(trx,actor,no)`：hr 经 `Pick` 注入，写路径只剩 party；`EMP_SENSITIVE_FIELDS` 单点。
+- reconciliation：`existsForInvoice` / `loadForInvoiceAudit`；invoice 读写均走 seam。
+- accounting cancel：注入 `isJournalLinkedToBankRecon`（banking-recon 游离函数，组合根接线）。
+- `banking-shared.ts` 下沉 map/load/validateTxnShape/txnAmount/reconcileStatus；删 `await import(`。
+- 验收：typecheck 绿；`bun test` 226/226。

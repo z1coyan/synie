@@ -16,7 +16,7 @@ import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import {
   loadTransaction, reconcileStatus, txnAmount, type BankTransaction,
-} from './banking-accounts.ts'
+} from './banking-shared.ts'
 import {
   asIso, conflict, lower, notFound, requireCompanyAccess,
   requirePerm, validateOptionalText, validation, wireDecRequired,
@@ -115,6 +115,22 @@ async function refreshBankTransaction(db: DbHandle, transaction: BankTransaction
   if (result.numAffectedRows !== 1n && Number(result.numAffectedRows) !== 1) {
     throw conflict('银行流水已被并发删除')
   }
+}
+
+/**
+ * 会计凭证取消前只读接缝：是否已被银行对账引用。
+ * 游离函数便于组合根注入 journal service，避免 accounting→finance 运行时环。
+ */
+export async function isJournalLinkedToBankRecon(
+  db: DbHandle,
+  journalId: string,
+): Promise<boolean> {
+  const used = await sql<{ e: boolean }>`
+    SELECT EXISTS(
+      SELECT 1 FROM acc_bank_reconciliation WHERE journal_id=${journalId}::uuid
+    ) AS e
+  `.execute(db)
+  return Boolean(used.rows[0]?.e)
 }
 
 export function createReconOps(

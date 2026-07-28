@@ -18,7 +18,7 @@ import {
 import { hasPermission, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import type { NumberingService } from '~/platform/numbering/service.ts'
+import type { EmployeeService } from '~/modules/party/party-service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
 import {
@@ -272,11 +272,12 @@ const IMPORT_AUDIT = [
 export interface HrServiceDeps {
   db: Kysely<Database>
   files: FileService
-  numbering: NumberingService
+  /** 员工写路径接缝：考勤导入自动建档经 party EmployeeService */
+  employeeSeam: Pick<EmployeeService, 'autoCreateForAttendance'>
 }
 
 export function createHrService(deps: HrServiceDeps) {
-  const { db, files, numbering } = deps
+  const { db, files, employeeSeam } = deps
 
   // ── punches ────────────────────────────────────────────────────────────
 
@@ -460,25 +461,8 @@ export function createHrService(deps: HrServiceDeps) {
           )
         }
         for (const no of missing) {
-          const code = await numbering.nextInTx(trx, { resource: 'hr.employee' })
           try {
-            const emp = await trx
-              .insertInto('hr_employees')
-              .values({ code, name: '[未知]', attendance_no: no })
-              .returning('id')
-              .executeTakeFirstOrThrow()
-            await writeAudit(trx, actor, {
-              resource: 'hr_employee',
-              recordId: emp.id,
-              recordLabel: '[未知]',
-              actionType: 'create',
-              actionName: 'create',
-              changes: {
-                code: { to: code },
-                name: { to: '[未知]' },
-                attendance_no: { to: no },
-              },
-            })
+            const emp = await employeeSeam.autoCreateForAttendance(trx, actor, no)
             employees.set(no, emp.id)
             autoCreated++
           } catch (err) {

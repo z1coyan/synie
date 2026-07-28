@@ -15,10 +15,8 @@ import { ApiError } from '~/platform/http/errors.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { parseBankImport, type ParseTemplate } from './bank-parser.ts'
-import {
-  validateOwnBankAccount,
-  type BankTransaction,
-} from './banking-accounts.ts'
+import { validateOwnBankAccount } from './banking-accounts.ts'
+import { validateTxnShape, type BankTransaction } from './banking-shared.ts'
 import {
   actorUserId, asIso, asIsoOrNull, conflict, lower, notFound, requireCompanyAccess,
   requireCompanyWrite, requirePerm, truncateRunes, upper, validateOptionalText,
@@ -690,8 +688,6 @@ export function createImportOps(
       if (input.counterpartyAccountPresent) after.counterpartyAccount = input.counterpartyAccount ?? null
       if (input.summaryPresent) after.summary = input.summary ?? null
       if (input.notePresent) after.note = input.note ?? null
-      // reuse shape validation via dynamic import of validateTxnShape would circular; inline light check
-      const { validateTxnShape } = await import('./banking-accounts.ts')
       validateTxnShape(
         after.occurredAt ?? '', after.income, after.expense,
         after.counterpartyName, after.counterpartyAccount, after.summary, after.note,

@@ -8,6 +8,7 @@ import { createDb } from '~/db/index.ts'
 import { createAccountingServices } from '~/modules/accounting/index.ts'
 import { createBaseServices } from '~/modules/base/index.ts'
 import { createFinanceServices } from '~/modules/finance/index.ts'
+import { isJournalLinkedToBankRecon } from '~/modules/finance/banking-recon.ts'
 import { createHrServices } from '~/modules/hr/index.ts'
 import { createInventoryServices } from '~/modules/inventory/index.ts'
 import { createManufacturingServices } from '~/modules/manufacturing/index.ts'
@@ -279,10 +280,14 @@ run('PG 集成（setup 向导）', () => {
       const party = createPartyServices(db, numbering)
       const owners = createOwnerRegistry()
       const files = createFileService({ db, owners })
-      const { hr } = createHrServices(db, files, numbering)
+      const { hr } = createHrServices(db, files, {
+        employees: party.employees,
+      })
       const companyAccountDefaults = createCompanyAccountDefaultService(db)
       const inv = createInventoryServices(db, numbering)
-      const accounting = createAccountingServices(db, numbering)
+      const accounting = createAccountingServices(db, numbering, {
+        isJournalLinkedToBankRecon,
+      })
       const trading = createTradingServices(db, numbering)
       const finance = createFinanceServices(db, numbering, {
         reconciliations: trading.reconciliations,

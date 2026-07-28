@@ -213,11 +213,22 @@ const WRITE_MAPPINGS = [
 
 export type JournalService = ReturnType<typeof createJournalService>
 
+export interface JournalServiceDeps {
+  /**
+   * 银行对账只读接缝：凭证是否已被 acc_bank_reconciliation 引用。
+   * 由组合根注入 banking-recon 的 isJournalLinkedToBankRecon；
+   * 缺省则取消时不做该检查（仅限单测）。
+   */
+  isJournalLinkedToBankRecon?: (db: DbHandle, journalId: string) => Promise<boolean>
+}
+
 export function createJournalService(
   db: Kysely<Database>,
   numbering: NumberingService,
   gl: GlEngine,
+  deps: JournalServiceDeps = {},
 ) {
+  const isJournalLinkedToBankRecon = deps.isJournalLinkedToBankRecon
   async function get(actor: Actor, id: string): Promise<Journal> {
     requireAction(actor, 'read')
     const item = await loadJournal(db, id)
@@ -504,13 +515,11 @@ debit_total, credit_total, company_name, created_by_name, submitted_by_name`,
       if (locked.status !== 'audited') {
         throw new ApiError('conflict', '仅已审核凭证可取消')
       }
-      const used = await trx
-        .selectFrom('acc_bank_reconciliation')
-        .select('id')
-        .where('journal_id', '=', id)
-        .executeTakeFirst()
-      if (used) {
-        throw new ApiError('conflict', '凭证已用于银行对账,请先解除对账')
+      if (isJournalLinkedToBankRecon) {
+        const used = await isJournalLinkedToBankRecon(trx, id)
+        if (used) {
+          throw new ApiError('conflict', '凭证已用于银行对账,请先解除对账')
+        }
       }
       const before = await loadJournal(trx, id)
       await gl.cancel(trx, { type: VOUCHER_TYPE, id })

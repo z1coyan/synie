@@ -228,7 +228,10 @@ export type VatInvoiceService = ReturnType<typeof createVatInvoiceService>
 
 export interface VatInvoiceServiceDeps {
   gl: GlEngine
-  reconciliations: Pick<ReconciliationService, 'closeFromInvoice' | 'reopenFromInvoice'>
+  reconciliations: Pick<
+    ReconciliationService,
+    'closeFromInvoice' | 'reopenFromInvoice' | 'existsForInvoice' | 'loadForInvoiceAudit'
+  >
   files?: Pick<FileService, 'readStoredFile'> | null
   ocr?: OcrDeps
 }
@@ -273,7 +276,7 @@ export function createVatInvoiceService(
     if (!canAccessCompany(actor, input.companyId)) throw notFound()
     const normalized = normalizeInput(input)
     return withTx(db, async (trx) => {
-      await validateReferences(trx, normalized, null, false)
+      await validateReferences(trx, reconciliations, normalized, null, false)
       let docNo = (normalized.docNo ?? '').trim()
       if (!docNo) {
         docNo = await numbering.nextInTx(trx, {
@@ -344,7 +347,7 @@ export function createVatInvoiceService(
         throw new ApiError('conflict', '仅草稿发票可修改或删除')
       }
       const merged = normalizeInput(overlay(before, input))
-      await validateReferences(trx, merged, id, false)
+      await validateReferences(trx, reconciliations, merged, id, false)
       try {
         await sql`
           UPDATE acc_vat_invoice SET
@@ -438,10 +441,11 @@ export function createVatInvoiceService(
         },
         collect: async (t, before) => {
           const input = toInput(before)
-          await validateReferences(t, input, id, true)
+          await validateReferences(t, reconciliations, input, id, true)
           const entries = invoiceGLEntries(before)
           const { reconEntries, side, reconciliationId } = await reconciliationGLEntries(
             t,
+            reconciliations,
             before,
           )
           entries.push(...reconEntries)
@@ -462,7 +466,7 @@ export function createVatInvoiceService(
     })
   }
 
-  async function voidInvoice(actor: Actor, id: string): Promise<VatInvoice> {
+    async function voidInvoice(actor: Actor, id: string): Promise<VatInvoice> {
     return endInvoice(actor, id, false, {})
   }
 
@@ -872,8 +876,14 @@ function toInput(value: VatInvoice): NormalizedInput {
   })
 }
 
+type ReconSeam = Pick<
+  ReconciliationService,
+  'closeFromInvoice' | 'reopenFromInvoice' | 'existsForInvoice' | 'loadForInvoiceAudit'
+>
+
 async function validateReferences(
   db: DbHandle,
+  reconciliations: ReconSeam,
   input: NormalizedInput,
   ownId: string | null,
   auditMode: boolean,
@@ -905,20 +915,24 @@ async function validateReferences(
   }
   if (!auditMode) {
     if (input.salReconciliationId) {
-      const exists = await sql<{ e: boolean }>`
-        SELECT EXISTS(SELECT 1 FROM sal_reconciliation WHERE id=${input.salReconciliationId}::uuid) AS e
-      `.execute(db)
-      if (!exists.rows[0]?.e) {
+      const exists = await reconciliations.existsForInvoice(
+        db,
+        'sales',
+        input.salReconciliationId,
+      )
+      if (!exists) {
         throw ApiError.validation('增值税发票参数不合法', {
           salReconciliationId: ['关联销售对账单不存在'],
         })
       }
     }
     if (input.purReconciliationId) {
-      const exists = await sql<{ e: boolean }>`
-        SELECT EXISTS(SELECT 1 FROM pur_reconciliation WHERE id=${input.purReconciliationId}::uuid) AS e
-      `.execute(db)
-      if (!exists.rows[0]?.e) {
+      const exists = await reconciliations.existsForInvoice(
+        db,
+        'purchase',
+        input.purReconciliationId,
+      )
+      if (!exists) {
         throw ApiError.validation('增值税发票参数不合法', {
           purReconciliationId: ['关联采购对账单不存在'],
         })
@@ -1015,6 +1029,7 @@ function invoiceGLEntries(invoice: VatInvoice): GlEntry[] {
 
 async function reconciliationGLEntries(
   db: DbHandle,
+  reconciliations: ReconSeam,
   invoice: VatInvoice,
 ): Promise<{
   reconEntries: GlEntry[]
@@ -1023,44 +1038,24 @@ async function reconciliationGLEntries(
 }> {
   let id = invoice.salReconciliationId
   let side: TradingSide = 'sales'
-  let table = 'sal_reconciliation'
-  let itemTable = 'sal_reconciliation_item'
   if (!id) {
     id = invoice.purReconciliationId
     side = 'purchase'
-    table = 'pur_reconciliation'
-    itemTable = 'pur_reconciliation_item'
   }
   if (!id) {
     return { reconEntries: [], side: null, reconciliationId: null }
   }
-  const head = await sql<{
-    reconciliation_type: string
-    status: string
-    company_id: string
-    party_type: string
-    party_id: string
-    gross: string
-    debit_account_id: string
-    credit_account_id: string
-  }>`
-    SELECT h.reconciliation_type, h.status, h.company_id::text, h.party_type, h.party_id::text,
-      (SELECT COALESCE(sum(i.base_amount),0)::text FROM ${sql.raw(itemTable)} i
-        WHERE i.reconciliation_id=h.id) AS gross,
-      h.debit_account_id::text, h.credit_account_id::text
-    FROM ${sql.raw(table)} h WHERE h.id=${id}::uuid FOR UPDATE
-  `.execute(db)
-  if (head.rows.length === 0) {
+  const h = await reconciliations.loadForInvoiceAudit(db, side, id)
+  if (!h) {
     throw new ApiError('conflict', '关联对账单不存在')
   }
-  const h = head.rows[0]!
   const invoiceGross = decimal(invoice.grossTotal!)
   if (
-    h.reconciliation_type !== 'regular' ||
+    h.reconciliationType !== 'regular' ||
     h.status !== 'confirmed' ||
-    h.company_id !== invoice.companyId ||
-    upper(h.party_type) !== invoice.partyType ||
-    h.party_id !== invoice.partyId ||
+    h.companyId !== invoice.companyId ||
+    upper(h.partyType) !== invoice.partyType ||
+    h.partyId !== invoice.partyId ||
     !invoiceGross.eq(decimal(h.gross))
   ) {
     throw new ApiError(
@@ -1068,6 +1063,7 @@ async function reconciliationGLEntries(
       '关联对账单必须为同公司、同对手、同金额的已确认常规单',
     )
   }
+  // FK 列属于发票表本身，占用检查留在 invoice 所有权内
   const column =
     side === 'sales' ? 'sal_reconciliation_id' : 'pur_reconciliation_id'
   const occupied = await sql<{ e: boolean }>`
@@ -1086,9 +1082,9 @@ async function reconciliationGLEntries(
   if (side === 'sales') {
     return {
       reconEntries: [
-        { accountId: h.debit_account_id, debit: value, credit: '0' },
+        { accountId: h.debitAccountId, debit: value, credit: '0' },
         {
-          accountId: h.credit_account_id,
+          accountId: h.creditAccountId,
           debit: '0',
           credit: value,
           partyType: partyDB,
@@ -1102,13 +1098,13 @@ async function reconciliationGLEntries(
   return {
     reconEntries: [
       {
-        accountId: h.debit_account_id,
+        accountId: h.debitAccountId,
         debit: value,
         credit: '0',
         partyType: partyDB,
         partyId: invoice.partyId,
       },
-      { accountId: h.credit_account_id, debit: '0', credit: value },
+      { accountId: h.creditAccountId, debit: '0', credit: value },
     ],
     side,
     reconciliationId: id,

@@ -4,12 +4,13 @@ import { createGlEngine } from '~/engines/gl/index.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { createEntryService } from './entry-service.ts'
-import { createJournalService } from './journal-service.ts'
+import { createJournalService, type JournalServiceDeps } from './journal-service.ts'
 import { allAccountingResourceMetas } from './meta.ts'
 
 export {
   createJournalService,
   type JournalService,
+  type JournalServiceDeps,
   type CreateAndAuditJournalInput,
   type CreateAndAuditLineInput,
 } from './journal-service.ts'
@@ -23,10 +24,14 @@ export function registerAccountingResources(registry: Registry): void {
   }
 }
 
-export function createAccountingServices(db: Kysely<Database>, numbering: NumberingService) {
+export function createAccountingServices(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+  deps: JournalServiceDeps = {},
+) {
   const gl = createGlEngine()
   return {
-    journals: createJournalService(db, numbering, gl),
+    journals: createJournalService(db, numbering, gl, deps),
     entries: createEntryService(db),
   }
 }

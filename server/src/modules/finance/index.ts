@@ -59,7 +59,10 @@ export function createFinanceServices(
   db: Kysely<Database>,
   numbering: NumberingService,
   deps: {
-    reconciliations: Pick<ReconciliationService, 'closeFromInvoice' | 'reopenFromInvoice'>
+    reconciliations: Pick<
+      ReconciliationService,
+      'closeFromInvoice' | 'reopenFromInvoice' | 'existsForInvoice' | 'loadForInvoiceAudit'
+    >
     journals: Pick<JournalService, 'createAndAuditJournal'>
     files?: Pick<FileService, 'readStoredFile'> | null
   },
