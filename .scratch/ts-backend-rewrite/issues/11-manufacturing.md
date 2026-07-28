@@ -20,6 +20,10 @@ Blocked by: 03
 - `verify-manufacturing-rest.ts` 全绿
 - 占用/投影/容差/完成联动测试
 
+## Comments
+
+- 2026-07-28：TS 实现 + Meta pr-2.17 金标；`verify-manufacturing-rest` 对 PORT=18111 TS 后端全绿（meta=24, cleanup=0）；PG 集成 5 项绿。
+
 ## 非目标
 
 工序报工、生产成本总账（第一期不做）。
