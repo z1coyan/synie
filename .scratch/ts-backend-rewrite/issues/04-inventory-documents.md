@@ -26,3 +26,4 @@ Blocked by: 03
 
 ## Comments
 - 2026-07-28 集成：主仓 cherry-pick 工单04（含 9d03807 边界 PG）；Meta/路由并入统一 app 装配；`bun test` 全绿（含 inventory 5）；typecheck 通过。
+- 2026-07-28 独立验收：补齐 OpenAPI `POST /inventory/warehouses/outsourced/query` 与 `seed-defaults`（对齐 Go ListOutsourced/SeedDefaults）；PG 测 + verify-inventory 全绿。

@@ -338,6 +338,57 @@ export function inventoryRoutes(deps: InventoryRouteDeps) {
           return c.json({ count: result.count, results: result.results.map(warehouseDto) })
         },
       )
+      // 静态路径须先于 /warehouses/:id
+      .post(
+        '/warehouses/outsourced/query',
+        requirePerm('inv.warehouse:read'),
+        zValidator(
+          'json',
+          z
+            .object({
+              limit: z.number().int().min(0).max(200).optional(),
+              offset: z.number().int().min(0).optional(),
+              search: z.string().optional(),
+              sort: z
+                .object({
+                  column: z.string(),
+                  direction: z.enum(['ascending', 'descending']),
+                })
+                .optional(),
+              filter: z.record(z.string(), z.unknown()).optional(),
+              partyType: z.enum(['SUPPLIER', 'COMPANY']),
+              partyId: z.string().uuid(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const body = c.req.valid('json')
+          const result = await warehouses.listOutsourced(
+            c.get('actor')!,
+            body.partyType,
+            body.partyId,
+            toList(body),
+          )
+          return c.json({ count: result.count, results: result.results.map(warehouseDto) })
+        },
+      )
+      .post(
+        '/warehouses/seed-defaults',
+        requirePerm('inv.warehouse:create'),
+        zValidator(
+          'json',
+          z.object({ companyId: z.string().uuid() }).strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const count = await warehouses.seedDefaults(
+            c.get('actor')!,
+            c.req.valid('json').companyId,
+          )
+          return c.json({ count })
+        },
+      )
       .post(
         '/warehouses',
         requirePerm('inv.warehouse:create'),

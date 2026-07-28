@@ -14,6 +14,7 @@ import { canAccessCompany } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '../base/dberr.ts'
 import { companyScopeWhere, listFromSource } from '../base/list.ts'
+import { seedCompanyDefaultWarehouses } from '../base/warehouse-seed.ts'
 import { runeLen, toDate } from './helpers.ts'
 import { warehouseResourceMeta } from './meta.ts'
 
@@ -95,6 +96,62 @@ export function createWarehouseService(db: Kysely<Database>) {
       query,
       extraWhere: scope.where,
       mapRow,
+    })
+  }
+
+  /** 指定协作方的外协仓列表（对齐 Go ListOutsourced） */
+  async function listOutsourced(
+    actor: Actor,
+    partyType: string,
+    partyId: string,
+    query: Partial<ListQuery>,
+  ) {
+    const normalized = partyType.trim().toLowerCase()
+    if (normalized !== 'supplier' && normalized !== 'company') {
+      throw ApiError.validation('外协仓查询参数不合法', {
+        partyType: ['只能为 SUPPLIER 或 COMPANY'],
+      })
+    }
+    if (!partyId) {
+      throw ApiError.validation('外协仓查询参数不合法', {
+        partyId: ['不能为空'],
+      })
+    }
+    const scope = companyScopeWhere(actor, 'company_id')
+    if (scope.empty) return { count: 0, results: [] as Warehouse[] }
+    const partyWhere = sql`is_outsourced = true AND party_type = ${normalized} AND party_id = ${partyId}::uuid`
+    const extraWhere = scope.where ? sql`${scope.where} AND ${partyWhere}` : partyWhere
+    return listFromSource({
+      db,
+      resource: META,
+      source: SOURCE,
+      select: sql`SELECT id,name,is_leaf,active,is_outsourced,party_type,party_id,
+        allow_negative,inserted_at,updated_at,company_id,parent_id,account_id,
+        company_code,company_name,parent_name,account_code,account_name,has_children`,
+      defaultOrder: sql`"name" ASC, "id" ASC`,
+      query,
+      extraWhere,
+      mapRow,
+    })
+  }
+
+  /** 幂等初始化公司默认三仓（对齐 Go SeedDefaults） */
+  async function seedDefaults(actor: Actor, companyId: string): Promise<number> {
+    if (!canAccessCompany(actor, companyId)) {
+      throw new ApiError('forbidden', '无权在该公司下操作数据')
+    }
+    return withTx(db, async (trx) => {
+      const company = await trx
+        .selectFrom('bas_company')
+        .select('code')
+        .where('id', '=', companyId)
+        .executeTakeFirst()
+      if (!company) {
+        throw ApiError.validation('初始化默认仓库参数不合法', {
+          companyId: ['公司不存在'],
+        })
+      }
+      return seedCompanyDefaultWarehouses(trx, actor, companyId, company.code)
     })
   }
 
@@ -312,7 +369,7 @@ export function createWarehouseService(db: Kysely<Database>) {
     })
   }
 
-  return { get, list, create, update, remove }
+  return { get, list, listOutsourced, seedDefaults, create, update, remove }
 }
 
 export type WarehouseService = ReturnType<typeof createWarehouseService>

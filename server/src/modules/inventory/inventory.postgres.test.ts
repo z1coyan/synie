@@ -460,4 +460,70 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     const appr = await inv.stockCounts.approve(actor, ct.id)
     expect(appr.status).toBe('AUDITED')
   })
+
+  test('仓库 seedDefaults 幂等 + listOutsourced 按协作方过滤', async () => {
+    const admin = await db
+      .selectFrom('sys_user')
+      .select(['id', 'username'])
+      .orderBy('inserted_at', 'asc')
+      .executeTakeFirstOrThrow()
+    actor = {
+      ...actor,
+      userId: admin.id,
+      username: admin.username,
+    }
+    const currency = await db
+      .selectFrom('bas_currency')
+      .select('id')
+      .where('iso_code', '=', 'CNY')
+      .executeTakeFirstOrThrow()
+    const seedSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
+    const company = await companies.create(actor, {
+      code: lettersFrom(`W${seedSuffix}`, 2),
+      name: `仓种子${seedSuffix}`,
+      shortName: `仓${seedSuffix.slice(0, 2)}`,
+      baseCurrencyId: currency.id,
+    })
+    const partner = await companies.create(actor, {
+      code: lettersFrom(`P${seedSuffix}`, 2),
+      name: `协作方${seedSuffix}`,
+      shortName: `协${seedSuffix.slice(0, 2)}`,
+      baseCurrencyId: currency.id,
+    })
+    tracked.companyIds.push(company.id, partner.id)
+
+    // create 公司时已种子三仓；再调 seedDefaults 应返回 0
+    const again = await inv.warehouses.seedDefaults(actor, company.id)
+    expect(again).toBe(0)
+
+    // 协作方不能是本公司；绑定 partner
+    const outWh = await inv.warehouses.create(actor, {
+      name: `外协仓${seedSuffix}`,
+      companyId: company.id,
+      isLeaf: true,
+      isOutsourced: true,
+      partyType: 'COMPANY',
+      partyId: partner.id,
+    })
+    tracked.warehouseIds.push(outWh.id)
+    expect(outWh.isOutsourced).toBe(true)
+
+    const hit = await inv.warehouses.listOutsourced(actor, 'COMPANY', partner.id, {
+      limit: 50,
+      offset: 0,
+    })
+    expect(hit.results.some((w) => w.id === outWh.id)).toBe(true)
+
+    const miss = await inv.warehouses.listOutsourced(
+      actor,
+      'COMPANY',
+      '00000000-0000-0000-0000-000000000099',
+      { limit: 50, offset: 0 },
+    )
+    expect(miss.count).toBe(0)
+
+    await expect(
+      inv.warehouses.listOutsourced(actor, 'CUSTOMER', partner.id, { limit: 10, offset: 0 }),
+    ).rejects.toMatchObject({ code: 'validation' })
+  })
 })
