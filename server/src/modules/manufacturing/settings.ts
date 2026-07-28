@@ -87,6 +87,7 @@ export function createManufacturingSettingService(db: Kysely<Database>) {
     table: 'mfg_setting',
     resource: 'mfg_setting',
     notFoundMessage: '生产设置不存在',
+    permissionPrefix: 'mfg.setting',
     mapRow: mapMfg,
     auditFields: MFG_AUDIT,
     merge(before, input) {
@@ -104,7 +105,7 @@ export function createManufacturingSettingService(db: Kysely<Database>) {
     },
   })
   return {
-    getManufacturing: () => inner.get(),
+    getManufacturing: (actor: Parameters<typeof inner.get>[0]) => inner.get(actor),
     updateManufacturing: (
       actor: Parameters<typeof inner.update>[0],
       input: ManufacturingUpdate,

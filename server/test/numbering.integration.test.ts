@@ -24,12 +24,12 @@ run('PG 集成（numbering）', () => {
   })
 
   test('目录规模 + 规则 CRUD + 计数器校正 + 级联删除', async () => {
-    const catalog = await numbering.numberableResources()
+    const catalog = await numbering.numberableResources(actor)
     const fieldCount = catalog.reduce((n, r) => n + r.fields.length, 0)
     expect(catalog.length).toBe(25)
     expect(fieldCount).toBe(695)
 
-    const current = await numbering.listRules({ limit: 200, offset: 0 })
+    const current = await numbering.listRules(actor, { limit: 200, offset: 0 })
     const occupied = new Set(current.results.filter((r) => r.enabled).map((r) => r.resource))
     let resource = catalog.find((item) => !occupied.has(item.prefix))?.prefix
     // setup 基础种子会占满全部资源；无空位时先关掉一条启用规则腾出资源
@@ -63,7 +63,7 @@ run('PG 集成（numbering）', () => {
       .insertInto('sys_numbering_counter')
       .values({ rule_id: created.id, scope_key: `T|${suffix}`, value: 7 })
       .execute()
-    const counters = await numbering.listCounters({
+    const counters = await numbering.listCounters(actor, {
       limit: 200,
       offset: 0,
       filter: { ruleId: { kind: 'fk', values: [created.id], labels: [] } },
@@ -74,12 +74,12 @@ run('PG 集成（numbering）', () => {
     expect(counter.value).toBe(41)
 
     await numbering.deleteRule(actor, created.id)
-    await expect(numbering.getCounter(counterId)).rejects.toMatchObject({ code: 'not_found' })
+    await expect(numbering.getCounter(actor, counterId)).rejects.toMatchObject({ code: 'not_found' })
   })
 
   test('同一资源第二条启用规则 → conflict（非 500）', async () => {
-    const catalog = await numbering.numberableResources()
-    const current = await numbering.listRules({ limit: 200, offset: 0 })
+    const catalog = await numbering.numberableResources(actor)
+    const current = await numbering.listRules(actor, { limit: 200, offset: 0 })
     const occupied = new Set(current.results.filter((r) => r.enabled).map((r) => r.resource))
     let resource = catalog.find((item) => !occupied.has(item.prefix))?.prefix
     if (!resource) {

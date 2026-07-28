@@ -4,7 +4,6 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
-import { requirePermission } from '../authz/actor.ts'
 import type { AppEnv } from '../http/context.ts'
 import { ApiError } from '../http/errors.ts'
 import { validationHook } from '../http/zod.ts'
@@ -93,9 +92,8 @@ export function fileRoutes(deps: FileRoutesDeps) {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.file:read')
       const body = c.req.valid('json')
-      const result = await files.list(toListQuery(body))
+      const result = await files.list(c.get('actor'), toListQuery(body))
       return c.json({
         count: result.count,
         results: result.results.map(storedFileDto),
@@ -103,7 +101,6 @@ export function fileRoutes(deps: FileRoutesDeps) {
     })
     .post('/', async (c) => {
       const actor = c.get('actor')
-      requirePermission(actor, 'sys.file:create')
 
       let body: Record<string, string | File>
       try {
@@ -151,7 +148,6 @@ export function fileRoutes(deps: FileRoutesDeps) {
       )
     })
     .post('/attachments/query', zValidator('json', attachmentQuerySchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.file:read')
       const body = c.req.valid('json')
       const result = await files.listAttachments(c.get('actor'), body)
       return c.json({
@@ -160,13 +156,11 @@ export function fileRoutes(deps: FileRoutesDeps) {
       })
     })
     .delete('/attachments/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.file:delete')
       await files.deleteAttachment(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
     .get('/:id/metadata', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.file:read')
-      const value = await files.get(c.req.valid('param').id)
+      const value = await files.get(c.get('actor'), c.req.valid('param').id)
       return c.json(storedFileDto(value))
     })
     .post(
@@ -174,7 +168,6 @@ export function fileRoutes(deps: FileRoutesDeps) {
       zValidator('param', idParam, validationHook),
       zValidator('json', attachmentCreateSchema, validationHook),
       async (c) => {
-        requirePermission(c.get('actor'), 'sys.file:create')
         const { id } = c.req.valid('param')
         const body = c.req.valid('json')
         const value = await files.attach(c.get('actor'), id, body)
@@ -182,7 +175,6 @@ export function fileRoutes(deps: FileRoutesDeps) {
       },
     )
     .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.file:read')
       const result = await files.download(c.get('actor'), c.req.valid('param').id)
       if (result.redirectUrl) {
         return c.redirect(result.redirectUrl, 302)
@@ -200,7 +192,6 @@ export function fileRoutes(deps: FileRoutesDeps) {
       })
     })
     .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.file:delete')
       await files.deleteFile(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
@@ -218,22 +209,19 @@ export function storageRoutes(deps: StorageRoutesDeps) {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.storage:read')
-      const result = await storages.list(toListQuery(c.req.valid('json')))
+      const result = await storages.list(c.get('actor'), toListQuery(c.req.valid('json')))
       return c.json({
         count: result.count,
         results: result.results.map(storageDto),
       })
     })
     .post('/', zValidator('json', storageCreateSchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.storage:create')
       const body = c.req.valid('json')
       const value = await storages.create(c.get('actor'), body)
       return c.json(storageDto(value), 201)
     })
     .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.storage:read')
-      const value = await storages.get(c.req.valid('param').id)
+      const value = await storages.get(c.get('actor'), c.req.valid('param').id)
       return c.json(storageDto(value))
     })
     .patch(
@@ -241,7 +229,6 @@ export function storageRoutes(deps: StorageRoutesDeps) {
       zValidator('param', idParam, validationHook),
       zValidator('json', storageUpdateSchema, validationHook),
       async (c) => {
-        requirePermission(c.get('actor'), 'sys.storage:update')
         const raw = await c.req.json()
         if (raw && typeof raw === 'object' && 'label' in raw && raw.label === null) {
           throw ApiError.validation('请求参数错误', { label: ['label 不能为 null'] })
@@ -265,12 +252,10 @@ export function storageRoutes(deps: StorageRoutesDeps) {
       },
     )
     .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.storage:delete')
       await storages.delete(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
     .post('/:id/set-default', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.storage:update')
       await storages.setDefault(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })

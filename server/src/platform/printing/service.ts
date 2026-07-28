@@ -13,7 +13,7 @@ import {
   auditDiff,
   writeAudit,
 } from '../audit/write.ts'
-import { hasPermission, type Actor } from '../authz/actor.ts'
+import { hasPermission, requirePermission, type Actor } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 import type { FieldCatalog } from './catalog.ts'
 import type { DocBuilder } from './docbuilder.ts'
@@ -77,7 +77,12 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     return catalog
   }
 
-  async function get(id: string): Promise<Template> {
+  async function get(actor: Actor, id: string): Promise<Template> {
+    requirePermission(actor, `${PERMISSION_PREFIX}:read`)
+    return loadTemplate(id)
+  }
+
+  async function loadTemplate(id: string): Promise<Template> {
     const row = await db
       .selectFrom('sys_print_template')
       .selectAll()
@@ -87,7 +92,8 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     return mapTemplate(row)
   }
 
-  async function list(query: TemplateListQuery): Promise<TemplateList> {
+  async function list(actor: Actor, query: TemplateListQuery): Promise<TemplateList> {
+    requirePermission(actor, `${PERMISSION_PREFIX}:read`)
     return listFromSource({
       db,
       resource: printTemplateResourceMeta(),
@@ -132,6 +138,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
   }
 
   async function create(actor: Actor, input: CreateInput): Promise<Template> {
+    requirePermission(actor, `${PERMISSION_PREFIX}:create`)
     const name = input.name.trim()
     await validateTemplateFile(name, input.resource, input.fileId)
     try {
@@ -164,6 +171,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
   }
 
   async function update(actor: Actor, id: string, input: UpdateInput): Promise<Template> {
+    requirePermission(actor, `${PERMISSION_PREFIX}:update`)
     return withTx(db, async (tx) => {
       const before = await lockTemplate(tx, id)
       const after = { ...before }
@@ -204,6 +212,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
   }
 
   async function setDefault(actor: Actor, id: string): Promise<Template> {
+    requirePermission(actor, `${PERMISSION_PREFIX}:update`)
     return withTx(db, async (tx) => {
       await sql`SELECT pg_advisory_xact_lock(hashtext('sys_print_template_default'))`.execute(tx)
       const target = await lockTemplate(tx, id)
@@ -266,6 +275,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
   }
 
   async function unsetDefault(actor: Actor, id: string): Promise<Template> {
+    requirePermission(actor, `${PERMISSION_PREFIX}:update`)
     return withTx(db, async (tx) => {
       await sql`SELECT pg_advisory_xact_lock(hashtext('sys_print_template_default'))`.execute(tx)
       const before = await lockTemplate(tx, id)
@@ -297,6 +307,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, `${PERMISSION_PREFIX}:delete`)
     await withTx(db, async (tx) => {
       const value = await lockTemplate(tx, id)
       await tx
@@ -348,7 +359,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
     if (!builder) {
       throw new ApiError('not_implemented', `资源 ${input.resource} 的模板打印暂未接入`)
     }
-    const template = await get(input.templateId)
+    const template = await loadTemplate(input.templateId)
     if (template.resource !== input.resource) {
       throw ApiError.validation('模板与单据资源类型不匹配', {
         templateId: ['模板与单据资源类型不匹配'],

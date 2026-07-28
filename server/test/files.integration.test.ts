@@ -366,8 +366,8 @@ run('PG 集成（files / storages）', () => {
 
       await storages.setDefault(actor, local.id)
       await storages.setDefault(actor, s3.id)
-      const localAfter = await storages.get(local.id)
-      const s3After = await storages.get(s3.id)
+      const localAfter = await storages.get(actor, local.id)
+      const s3After = await storages.get(actor, s3.id)
       expect(localAfter.isDefault).toBe(false)
       expect(s3After.isDefault).toBe(true)
       await expect(storages.delete(actor, s3.id)).rejects.toMatchObject({ code: 'conflict' })

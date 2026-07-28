@@ -82,15 +82,15 @@ const SYS_RUN_AUDIT = ['market_fetch_last_run_at', 'market_fetch_last_summary'] 
 /** 业务域设置服务结构（组合根注入；platform 不 import 具体模块） */
 export interface SettingsDomainDeps {
   sales: {
-    getSales(): Promise<SalesSetting>
+    getSales(actor: Actor): Promise<SalesSetting>
     updateSales(actor: Actor, input: SalesUpdate): Promise<SalesSetting>
   }
   manufacturing: {
-    getManufacturing(): Promise<ManufacturingSetting>
+    getManufacturing(actor: Actor): Promise<ManufacturingSetting>
     updateManufacturing(actor: Actor, input: ManufacturingUpdate): Promise<ManufacturingSetting>
   }
   accounting: {
-    getAccounting(): Promise<AccountingSetting>
+    getAccounting(actor: Actor): Promise<AccountingSetting>
     updateAccounting(actor: Actor, input: AccountingUpdate): Promise<AccountingSetting>
     ocrConfigured(): Promise<boolean>
   }
@@ -101,6 +101,7 @@ export function createSystemSettingService(db: Kysely<Database>) {
     table: 'sys_setting',
     resource: 'sys_setting',
     notFoundMessage: '系统设置不存在',
+    permissionPrefix: 'sys.setting',
     mapRow: mapSys,
     auditFields: SYS_AUDIT,
     merge(before, input) {
@@ -168,7 +169,9 @@ export function createSystemSettingService(db: Kysely<Database>) {
   }
 
   return {
-    getSystem: () => inner.get(),
+    getSystem: (actor: Actor) => inner.get(actor),
+    /** 调度/行情拉取等受信任配置读，不检 sys.setting */
+    loadSystemConfig: () => inner.load(),
     updateSystem: (actor: Actor, input: SystemUpdate) => inner.update(actor, input),
     recordMarketFetch,
   }
@@ -180,16 +183,18 @@ export function createSystemSettingService(db: Kysely<Database>) {
 export function createSettingsService(db: Kysely<Database>, domain: SettingsDomainDeps) {
   const system = createSystemSettingService(db)
   return {
-    getSales: () => domain.sales.getSales(),
+    getSales: (actor: Actor) => domain.sales.getSales(actor),
     updateSales: (actor: Actor, input: SalesUpdate) => domain.sales.updateSales(actor, input),
-    getManufacturing: () => domain.manufacturing.getManufacturing(),
+    getManufacturing: (actor: Actor) => domain.manufacturing.getManufacturing(actor),
     updateManufacturing: (actor: Actor, input: ManufacturingUpdate) =>
       domain.manufacturing.updateManufacturing(actor, input),
-    getAccounting: () => domain.accounting.getAccounting(),
+    getAccounting: (actor: Actor) => domain.accounting.getAccounting(actor),
     updateAccounting: (actor: Actor, input: AccountingUpdate) =>
       domain.accounting.updateAccounting(actor, input),
     ocrConfigured: () => domain.accounting.ocrConfigured(),
-    getSystem: () => system.getSystem(),
+    getSystem: (actor: Actor) => system.getSystem(actor),
+    /** 调度/行情拉取等受信任配置读，不检 sys.setting */
+    loadSystemConfig: () => system.loadSystemConfig(),
     updateSystem: (actor: Actor, input: SystemUpdate) => system.updateSystem(actor, input),
     recordMarketFetch: (actor: Actor | null, summary: string) =>
       system.recordMarketFetch(actor, summary),

@@ -4,7 +4,6 @@ import { z } from 'zod'
 import { isDecimalString } from '@synie/shared'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
-import { requirePermission } from '../authz/actor.ts'
 import type { AppEnv } from '../http/context.ts'
 import { ApiError } from '../http/errors.ts'
 import { validationHook } from '../http/zod.ts'
@@ -49,32 +48,26 @@ export function settingsRoutes(deps: { auth: AuthService; settings: SettingsServ
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .get('/supply-chain', async (c) => {
-      requirePermission(c.get('actor'), 'sales.setting:read')
-      const value = await settings.getSales()
+      const value = await settings.getSales(c.get('actor'))
       return c.json(salesDto(value))
     })
     .patch('/supply-chain', zValidator('json', salesUpdateSchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sales.setting:update')
       const value = await settings.updateSales(c.get('actor'), c.req.valid('json'))
       return c.json(salesDto(value))
     })
     .get('/production', async (c) => {
-      requirePermission(c.get('actor'), 'mfg.setting:read')
-      const value = await settings.getManufacturing()
+      const value = await settings.getManufacturing(c.get('actor'))
       return c.json(mfgDto(value))
     })
     .patch('/production', zValidator('json', mfgUpdateSchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'mfg.setting:update')
       const value = await settings.updateManufacturing(c.get('actor'), c.req.valid('json'))
       return c.json(mfgDto(value))
     })
     .get('/finance', async (c) => {
-      requirePermission(c.get('actor'), 'acc.setting:read')
-      const value = await settings.getAccounting()
+      const value = await settings.getAccounting(c.get('actor'))
       return c.json(accDto(value))
     })
     .patch('/finance', zValidator('json', accUpdateSchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'acc.setting:update')
       const raw = (await c.req.json()) as Record<string, unknown>
       const body = c.req.valid('json')
       const value = await settings.updateAccounting(c.get('actor'), {
@@ -90,12 +83,10 @@ export function settingsRoutes(deps: { auth: AuthService; settings: SettingsServ
       return c.json({ configured: await settings.ocrConfigured() })
     })
     .get('/system', async (c) => {
-      requirePermission(c.get('actor'), 'sys.setting:read')
-      const value = await settings.getSystem()
+      const value = await settings.getSystem(c.get('actor'))
       return c.json(sysDto(value))
     })
     .patch('/system', zValidator('json', sysUpdateSchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'sys.setting:update')
       const value = await settings.updateSystem(c.get('actor'), c.req.valid('json'))
       return c.json(sysDto(value))
     })

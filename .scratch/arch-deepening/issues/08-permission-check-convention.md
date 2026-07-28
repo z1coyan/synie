@@ -49,6 +49,13 @@ service 侧 ~105 处 + routes 侧 ~112 处，且**同源**（都读 `spec.prefix
   这些域 service 读路径常无 actor 或无 requirePerm，先删 routes 会裸奔。
   下一步：先给 service 公开方法补 actor+requirePerm，再去 routes。
 
+### 2026-07-28 platform 收敛
+
+- platform audit/numbering/settings/files/storage/printing：service 唯一检；
+  routes 只留 requireAuth。
+- numbering `next`/`nextInTx`、files `readStoredFile`、settings `loadSystemConfig`
+  为跨域/调度受信任 seam，不检管理权限码。
+
 ## 备注
 
 - 收敛完成前部分 routes 中间件仍存在（安全网）；以 README 约定为准，新代码不得新增 routes 鉴码。

@@ -90,6 +90,7 @@ export function createAccountingSettingService(db: Kysely<Database>) {
     table: 'acc_setting',
     resource: 'acc_setting',
     notFoundMessage: '财务设置不存在',
+    permissionPrefix: 'acc.setting',
     mapRow: mapAcc,
     auditFields: ACC_AUDIT,
     sensitiveFields: ['ocr_access_key_secret'],
@@ -142,7 +143,7 @@ export function createAccountingSettingService(db: Kysely<Database>) {
   }
 
   return {
-    getAccounting: () => inner.get(),
+    getAccounting: (actor: Parameters<typeof inner.get>[0]) => inner.get(actor),
     updateAccounting: (actor: Parameters<typeof inner.update>[0], input: AccountingUpdate) =>
       inner.update(actor, input),
     ocrConfigured,

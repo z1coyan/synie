@@ -47,7 +47,7 @@ export function createMarketScheduler(deps: MarketSchedulerDeps) {
     if (stopped || running) return
     running = true
     try {
-      const setting = await deps.settings.getSystem()
+      const setting = await deps.settings.loadSystemConfig()
       const now = truncateSecond(nowFn())
       const decision = decide(
         {

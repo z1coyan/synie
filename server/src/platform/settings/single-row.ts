@@ -8,6 +8,7 @@ import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditDiff, writeAudit } from '../audit/write.ts'
 import type { Actor } from '../authz/actor.ts'
+import { requirePermission } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 
 const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/
@@ -18,6 +19,11 @@ export interface SingleRowSettingConfig<TView extends { id: string }, TUpdate> {
   /** 审计 resource 名（通常与 table 相同） */
   resource: string
   notFoundMessage: string
+  /**
+   * 权限前缀：get 检 `${prefix}:read`，update 检 `${prefix}:update`。
+   * load() 为跨域/调度受信任读，不检权限。
+   */
+  permissionPrefix: string
   mapRow: (row: Record<string, unknown>) => TView
   /**
    * 合并更新：返回 after 视图、写库 set 列、审计 snap 前后。
@@ -47,7 +53,8 @@ export function createSingleRowSetting<TView extends { id: string }, TUpdate>(
   }
   const tableSql = sql.raw(config.table)
 
-  async function get(): Promise<TView> {
+  /** 受信任配置读（调度/业务过账链路）；鉴权由调用方能力码覆盖 */
+  async function load(): Promise<TView> {
     const result = await sql<Record<string, unknown>>`
       SELECT * FROM ${tableSql} LIMIT 1
     `.execute(db)
@@ -56,7 +63,13 @@ export function createSingleRowSetting<TView extends { id: string }, TUpdate>(
     return config.mapRow(row)
   }
 
+  async function get(actor: Actor): Promise<TView> {
+    requirePermission(actor, `${config.permissionPrefix}:read`)
+    return load()
+  }
+
   async function update(actor: Actor, input: TUpdate): Promise<TView> {
+    requirePermission(actor, `${config.permissionPrefix}:update`)
     return withTx(db, async (trx) => {
       const locked = await sql<Record<string, unknown>>`
         SELECT * FROM ${tableSql} FOR UPDATE LIMIT 1
@@ -91,7 +104,7 @@ export function createSingleRowSetting<TView extends { id: string }, TUpdate>(
     })
   }
 
-  return { get, update }
+  return { get, load, update }
 }
 
 export type SingleRowSettingService<TView extends { id: string }, TUpdate> = ReturnType<

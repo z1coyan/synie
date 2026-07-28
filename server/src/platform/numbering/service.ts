@@ -5,9 +5,13 @@ import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database, Json } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/write.ts'
 import type { Actor } from '../authz/actor.ts'
+import { requirePermission } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 import { loadCatalog, type NumberingCatalog } from './catalog.ts'
 import { counterResourceMeta, ruleResourceMeta } from './meta.ts'
+
+/** 编号规则/计数器管理权限前缀；next/nextInTx 为跨域取号基础设施，不检此码 */
+const PERM = 'sys.numbering_rule'
 
 /** 对齐 server-go numberingWriteError：同一资源只能有一条启用规则 */
 const ENABLED_PER_RESOURCE_MSG = '该资源已有启用的编号规则,同一资源只能启用一条'
@@ -70,17 +74,23 @@ const COUNTER_AUDIT = ['value'] as const
 const DATE_FORMAT_RE = /^(?:YYYY|YY|MM|DD)+$/
 
 export function createNumberingService(db: Kysely<Database>, catalog: NumberingCatalog = loadCatalog()) {
-  async function numberableResources() {
+  async function numberableResources(actor: Actor) {
+    requirePermission(actor, `${PERM}:read`)
     return catalog.publicResources()
   }
 
-  async function getRule(id: string): Promise<Rule> {
+  async function getRule(actor: Actor, id: string): Promise<Rule> {
+    requirePermission(actor, `${PERM}:read`)
     const row = await db.selectFrom('sys_numbering_rule').selectAll().where('id', '=', id).executeTakeFirst()
     if (!row) throw new ApiError('not_found', '编号规则不存在')
     return mapRule(row)
   }
 
-  async function listRules(query: Partial<ListQuery>): Promise<{ count: number; results: Rule[] }> {
+  async function listRules(
+    actor: Actor,
+    query: Partial<ListQuery>,
+  ): Promise<{ count: number; results: Rule[] }> {
+    requirePermission(actor, `${PERM}:read`)
     const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
     const offset = query.offset ?? 0
     if (limit < 1 || limit > 200 || offset < 0) {
@@ -106,6 +116,7 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
   }
 
   async function create(actor: Actor, input: CreateRuleInput): Promise<Rule> {
+    requirePermission(actor, `${PERM}:create`)
     validateCreate(input, catalog)
     const perCompany = input.perCompany ?? true
     const enabled = input.enabled ?? true
@@ -134,6 +145,7 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
   }
 
   async function updateRule(actor: Actor, id: string, input: UpdateRuleInput): Promise<Rule> {
+    requirePermission(actor, `${PERM}:update`)
     try {
       return await withTx(db, async (trx) => {
         const row = await trx
@@ -180,6 +192,7 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
   }
 
   async function deleteRule(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, `${PERM}:delete`)
     await withTx(db, async (trx) => {
       const row = await trx
         .selectFrom('sys_numbering_rule')
@@ -201,13 +214,18 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
     })
   }
 
-  async function getCounter(id: string): Promise<Counter> {
+  async function getCounter(actor: Actor, id: string): Promise<Counter> {
+    requirePermission(actor, `${PERM}:read`)
     const row = await db.selectFrom('sys_numbering_counter').selectAll().where('id', '=', id).executeTakeFirst()
     if (!row) throw new ApiError('not_found', '编号计数器不存在')
     return mapCounter(row)
   }
 
-  async function listCounters(query: Partial<ListQuery>): Promise<{ count: number; results: Counter[] }> {
+  async function listCounters(
+    actor: Actor,
+    query: Partial<ListQuery>,
+  ): Promise<{ count: number; results: Counter[] }> {
+    requirePermission(actor, `${PERM}:read`)
     const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
     const offset = query.offset ?? 0
     if (limit < 1 || limit > 200 || offset < 0) {
@@ -233,6 +251,7 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
   }
 
   async function updateCounter(actor: Actor, id: string, value: number): Promise<Counter> {
+    requirePermission(actor, `${PERM}:update`)
     if (value < 0) {
       throw ApiError.validation('计数器参数不合法', { value: ['不能小于 0'] })
     }

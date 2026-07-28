@@ -7,7 +7,7 @@ import { buildListQuery } from '~/db/filterbuild.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, writeAudit } from '../audit/write.ts'
-import { canAccessCompany, hasPermission, type Actor } from '../authz/actor.ts'
+import { canAccessCompany, hasPermission, requirePermission, type Actor } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 import { fileResourceMeta } from './meta.ts'
 import {
@@ -52,19 +52,14 @@ export interface FileServiceDeps {
 export function createFileService(deps: FileServiceDeps) {
   const { db, owners } = deps
 
-  async function get(id: string): Promise<StoredFile> {
-    const row = await db
-      .selectFrom('sys_file')
-      .selectAll()
-      .where('id', '=', id)
-      .executeTakeFirst()
-    if (!row) throw new ApiError('not_found', '文件不存在')
-    return mapFile(row)
+  async function get(actor: Actor, id: string): Promise<StoredFile> {
+    requirePermission(actor, 'sys.file:read')
+    return loadFile(id)
   }
 
-  /** 跨模块受信任读：鉴权由调用方负责 */
+  /** 跨模块受信任读：鉴权由调用方业务能力码覆盖，不检 sys.file */
   async function readStoredFile(id: string): Promise<{ file: StoredFile; content: Uint8Array }> {
-    const file = await get(id)
+    const file = await loadFile(id)
     const store = await objectStorageByName(db, file.storage)
     try {
       const content = await store.read(file.key)
@@ -75,7 +70,18 @@ export function createFileService(deps: FileServiceDeps) {
     }
   }
 
-  async function list(query: FileListQuery): Promise<FileList> {
+  async function loadFile(id: string): Promise<StoredFile> {
+    const row = await db
+      .selectFrom('sys_file')
+      .selectAll()
+      .where('id', '=', id)
+      .executeTakeFirst()
+    if (!row) throw new ApiError('not_found', '文件不存在')
+    return mapFile(row)
+  }
+
+  async function list(actor: Actor, query: FileListQuery): Promise<FileList> {
+    requirePermission(actor, 'sys.file:read')
     const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
     const offset = query.offset ?? 0
     if (limit < 1 || limit > 200 || offset < 0) {
@@ -317,7 +323,7 @@ export function createFileService(deps: FileServiceDeps) {
     if (!hasPermission(actor, 'sys.file:read')) {
       throw new ApiError('forbidden', '无权限下载文件')
     }
-    const file = await get(id)
+    const file = await loadFile(id)
     const attachments = await db
       .selectFrom('sys_attachment')
       .select(['owner_type', 'company_id'])

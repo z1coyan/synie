@@ -815,7 +815,7 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
     const client = lastClient ?? createPublicMarketClient()
     const settleClient = settlementClient ?? createPublicMarketClient()
     const instruments = await fetchableInstruments(instrumentId ?? null)
-    const system = await settings.getSystem()
+    const system = await settings.loadSystemConfig()
     const trySettlement =
       system.marketFetchSettlementEnabled && pastSettlementWindow(now)
     const items: RefreshItem[] = []

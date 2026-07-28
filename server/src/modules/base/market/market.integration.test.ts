@@ -304,7 +304,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     expect(refreshRes.status).toBe(200)
     const refreshBody = (await refreshRes.json()) as { count: number; items: unknown[] }
     expect(refreshBody).toEqual({ count: 0, items: [] })
-    const sys = await settings.getSystem()
+    const sys = await settings.loadSystemConfig()
     expect(sys.marketFetchLastSummary).toBe('手动刷新: 成功0 跳过0 失败0')
     expect(sys.marketFetchLastRunAt).not.toBeNull()
 

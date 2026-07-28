@@ -24,7 +24,7 @@ function fakeSettings(over: Partial<SystemSetting> = {}) {
   const summaries: string[] = []
   return {
     service: {
-      getSystem: async () => base,
+      loadSystemConfig: async () => base,
       recordMarketFetch: async (_actor: unknown, summary: string) => {
         summaries.push(summary)
         base.marketFetchLastSummary = summary

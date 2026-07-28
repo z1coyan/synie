@@ -4,12 +4,9 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
-import { requirePermission } from '../authz/actor.ts'
 import type { AppEnv } from '../http/context.ts'
 import { validationHook } from '../http/zod.ts'
 import type { NumberingService, Segment } from './service.ts'
-
-const PERM = 'sys.numbering_rule'
 
 const listQuerySchema = z
   .object({
@@ -65,20 +62,17 @@ export function numberingRoutes(deps: { auth: AuthService; numbering: NumberingS
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .get('/resources', async (c) => {
-      requirePermission(c.get('actor'), `${PERM}:read`)
-      const resources = await numbering.numberableResources()
+      const resources = await numbering.numberableResources(c.get('actor'))
       return c.json({ resources })
     })
     .post('/rules/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), `${PERM}:read`)
-      const result = await numbering.listRules(toListQuery(c.req.valid('json')))
+      const result = await numbering.listRules(c.get('actor'), toListQuery(c.req.valid('json')))
       return c.json({
         count: result.count,
         results: result.results.map(ruleDto),
       })
     })
     .post('/rules', zValidator('json', createSchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), `${PERM}:create`)
       const body = c.req.valid('json')
       const rule = await numbering.create(c.get('actor'), {
         resource: body.resource,
@@ -90,8 +84,7 @@ export function numberingRoutes(deps: { auth: AuthService; numbering: NumberingS
       return c.json(ruleDto(rule), 201)
     })
     .get('/rules/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), `${PERM}:read`)
-      const rule = await numbering.getRule(c.req.valid('param').id)
+      const rule = await numbering.getRule(c.get('actor'), c.req.valid('param').id)
       return c.json(ruleDto(rule))
     })
     .patch(
@@ -99,7 +92,6 @@ export function numberingRoutes(deps: { auth: AuthService; numbering: NumberingS
       zValidator('param', idParam, validationHook),
       zValidator('json', updateSchema, validationHook),
       async (c) => {
-        requirePermission(c.get('actor'), `${PERM}:update`)
         const body = c.req.valid('json')
         const rule = await numbering.updateRule(c.get('actor'), c.req.valid('param').id, {
           name: body.name,
@@ -111,21 +103,18 @@ export function numberingRoutes(deps: { auth: AuthService; numbering: NumberingS
       },
     )
     .delete('/rules/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), `${PERM}:delete`)
       await numbering.deleteRule(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
     .post('/counters/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), `${PERM}:read`)
-      const result = await numbering.listCounters(toListQuery(c.req.valid('json')))
+      const result = await numbering.listCounters(c.get('actor'), toListQuery(c.req.valid('json')))
       return c.json({
         count: result.count,
         results: result.results.map(counterDto),
       })
     })
     .get('/counters/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), `${PERM}:read`)
-      const counter = await numbering.getCounter(c.req.valid('param').id)
+      const counter = await numbering.getCounter(c.get('actor'), c.req.valid('param').id)
       return c.json(counterDto(counter))
     })
     .patch(
@@ -133,7 +122,6 @@ export function numberingRoutes(deps: { auth: AuthService; numbering: NumberingS
       zValidator('param', idParam, validationHook),
       zValidator('json', counterUpdateSchema, validationHook),
       async (c) => {
-        requirePermission(c.get('actor'), `${PERM}:update`)
         const counter = await numbering.updateCounter(
           c.get('actor'),
           c.req.valid('param').id,

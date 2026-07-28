@@ -96,6 +96,7 @@ export function createSalesSettingService(db: Kysely<Database>) {
     table: 'sal_setting',
     resource: 'sal_setting',
     notFoundMessage: '供应链设置不存在',
+    permissionPrefix: 'sales.setting',
     mapRow: mapSales,
     auditFields: SALES_AUDIT,
     merge(before, input) {
@@ -123,7 +124,7 @@ export function createSalesSettingService(db: Kysely<Database>) {
     },
   })
   return {
-    getSales: () => inner.get(),
+    getSales: (actor: Parameters<typeof inner.get>[0]) => inner.get(actor),
     updateSales: (actor: Parameters<typeof inner.update>[0], input: SalesUpdate) =>
       inner.update(actor, input),
   }

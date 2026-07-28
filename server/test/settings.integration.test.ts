@@ -31,7 +31,7 @@ run('PG 集成（settings）', () => {
   })
 
   test('读写供应链/生产设置 + 比例校验', async () => {
-    const sales = await settings.getSales()
+    const sales = await settings.getSales(actor)
     expect(sales.sampleItemMaxQty).toBeGreaterThan(0)
     const updated = await settings.updateSales(actor, {
       sampleItemMaxQty: sales.sampleItemMaxQty === 97 ? 98 : 97,
