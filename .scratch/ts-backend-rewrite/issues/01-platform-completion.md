@@ -29,3 +29,4 @@ Blocked by: 无
 ## Comments
 
 - 2026-07-28 集成代理：合并分片 audit→files→settings/numbering/装配（去重 monorepo 分片提交；`app.ts`/`index.ts` 链式挂载 settings/numbering/files/storages/audit-logs；Meta 注册四模块；`helpers.ts` 提供完整平台装配；verify-settings/numbering `SYNIE_API_URL` 已泛化）。验证：`bun run typecheck` 绿；`SYNIE_TEST_DATABASE_URL=…synie_test bun test` 52 pass；活 API（PORT=8081 对 synie_test）`verify-settings-rest` meta=4 API=4 audit=4 secret=[FILTERED]；`verify-numbering-rest` resources=25 fields=695 全绿。遗留：业务域 `FileOwnerSpecs` 随各域落地注册 OwnerRegistry；S3/OSS 对象实读写仅对齐 Go 现状（local 完整 + presign）。
+- 2026-07-28 独立验收（阶段 A）：对照 OpenAPI 路径与权限先于 zValidator；`bun run typecheck` 绿；全量 `SYNIE_TEST_DATABASE_URL=…synie_test bun test` 99 pass（含 files/settings/numbering/audit 单测与 PG 集成）；活 API（PORT=18083）`verify-settings-rest` meta=4 API=4 audit=4 secret=[FILTERED]；`verify-numbering-rest` resources=25 fields=695 全绿。无代码缺陷需修。

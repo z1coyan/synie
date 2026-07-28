@@ -28,3 +28,4 @@ Blocked by: 02
 ## Comments
 
 - 2026-07-28 集成代理：cherry-pick 分片 2f9bb3b（GL）+ fd1f13a（inventory）→ 0a1f16f/4371591，去重并行分片（7683cec/f0fb06b/fc10ffd 等同实现未再合入）。`createGlEngine`：post/cancel/reverse/validateEntries（配平容差 0、科目本公司启用非汇总、往来对手红字豁免、作废幂等、红冲取负对冲）；`createInventoryEngine`：post/cancel/balance（仓×物料 advisory xact lock、叶子仓、6 位数量、负库存含作废致负、allow_negative 豁免）。均接 DbHandle、不自起事务、禁 import modules/*、金额走 @synie/shared decimal。无 HTTP/Meta（深模块，供 04/05 消费）。`bun run typecheck` 绿；`SYNIE_TEST_DATABASE_URL=… bun test src/engines` 28 pass；全量 `bun test` 99 pass。未改 server-go。
+- 2026-07-28 独立验收（阶段 A）：对照 server-go `engines/gl` 与 `domain/inventory/stock`（形状/科目/往来/红冲/幂等/锁 key `inv_stock:仓:料`/负库存文案）；签名稳定 `gl={post,cancel,reverse,validateEntries}` `inv={post,cancel,balance}`；禁 modules import、仅 ApiError 用 class、金额/数量 decimal。`bun run typecheck` 绿；engines 28 + 全量 99 pass。无缺陷需修。
