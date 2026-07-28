@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  applyPayment,
   computeAttendanceDay,
+  loanBalance,
+  LOAN_BORROW,
+  LOAN_REPAY,
   parseAttendanceFile,
+  PAYMENT_NORMAL,
+  PAYMENT_SUPPLEMENT,
+  PAYROLL_PAID,
+  PAYROLL_PENDING,
+  reversePayment,
   unmatchedDetail,
 } from './rules.ts'
 
@@ -97,5 +106,90 @@ describe('unmatchedDetail', () => {
       new Map([['a', 'id']]),
     )
     expect(detail).toBeNull()
+  })
+})
+
+describe('loanBalance / applyPayment / reversePayment', () => {
+  const payrollBase = {
+    id: 'pay-1',
+    employeeId: 'emp-1',
+    status: 'PENDING',
+    loanDeduction: '0',
+  }
+
+  test('余额 = Σ借款 − Σ归还', () => {
+    expect(
+      loanBalance([
+        { kind: LOAN_BORROW, amount: '100' },
+        { kind: LOAN_REPAY, amount: '30' },
+        { kind: 'BORROW', amount: '10' },
+      ]).toString(),
+    ).toBe('80')
+  })
+
+  test('待发放无抵扣：normal + mark_paid', () => {
+    const plan = applyPayment(payrollBase, [])
+    expect(plan.kind).toBe(PAYMENT_NORMAL)
+    expect(plan.effects).toEqual([{ op: 'set_payroll_status', status: PAYROLL_PAID }])
+  })
+
+  test('已发放：supplement、无联动', () => {
+    const plan = applyPayment({ ...payrollBase, status: 'PAID' }, [
+      { kind: LOAN_BORROW, amount: '50' },
+    ])
+    expect(plan.kind).toBe(PAYMENT_SUPPLEMENT)
+    expect(plan.effects).toEqual([])
+  })
+
+  test('借款抵扣联动：余额充足 → auto_repay', () => {
+    const plan = applyPayment(
+      { ...payrollBase, loanDeduction: '2' },
+      [
+        { kind: LOAN_BORROW, amount: '100' },
+        { kind: LOAN_REPAY, amount: '10' },
+      ],
+    )
+    expect(plan.kind).toBe(PAYMENT_NORMAL)
+    expect(plan.effects).toEqual([
+      { op: 'set_payroll_status', status: PAYROLL_PAID },
+      { op: 'create_auto_repay', amount: '2' },
+    ])
+  })
+
+  test('借款抵扣超过余额拒绝', () => {
+    expect(() =>
+      applyPayment(
+        { ...payrollBase, loanDeduction: '50' },
+        [{ kind: LOAN_BORROW, amount: '10' }],
+      ),
+    ).toThrow(/借款抵扣超过员工借款余额/)
+  })
+
+  test('联动回滚：删 normal → mark_pending + destroy_linked_loans', () => {
+    const effects = reversePayment(PAYMENT_NORMAL, PAYROLL_PAID, 0)
+    expect(effects).toEqual([
+      { op: 'set_payroll_status', status: PAYROLL_PENDING },
+      { op: 'destroy_linked_loans' },
+    ])
+  })
+
+  test('联动回滚：删 normal 仍有补发 → 仍回退并清联动', () => {
+    const effects = reversePayment('NORMAL', 'PAID', 2)
+    expect(effects).toEqual([
+      { op: 'set_payroll_status', status: PAYROLL_PENDING },
+      { op: 'destroy_linked_loans' },
+    ])
+  })
+
+  test('仅删补发且仍有其他发放：无联动', () => {
+    expect(reversePayment(PAYMENT_SUPPLEMENT, PAYROLL_PAID, 1)).toEqual([])
+  })
+
+  test('删最后一笔补发（无 normal）：回退并清联动', () => {
+    const effects = reversePayment(PAYMENT_SUPPLEMENT, PAYROLL_PAID, 0)
+    expect(effects).toEqual([
+      { op: 'set_payroll_status', status: PAYROLL_PENDING },
+      { op: 'destroy_linked_loans' },
+    ])
   })
 })

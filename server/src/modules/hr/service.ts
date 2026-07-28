@@ -31,6 +31,7 @@ import {
   payrollResourceMeta,
 } from './meta.ts'
 import {
+  applyPayment,
   ATTENDANCE_OFFSET_INTERVAL,
   ATTENDANCE_UTC_OFFSET_MS,
   computeAttendanceDay,
@@ -48,6 +49,7 @@ import {
   PAYMENT_SUPPLEMENT,
   PAYROLL_PAID,
   PAYROLL_PENDING,
+  reversePayment,
   type ParsedPunch,
   unmatchedDetail,
   upperWire,
@@ -1185,20 +1187,29 @@ export function createHrService(deps: HrServiceDeps) {
     amount: ReturnType<typeof decimal>,
     remarks: string | null,
   ): Promise<PayrollPayment> {
-    let kind = PAYMENT_SUPPLEMENT
-    if (payroll.status === upperWire(PAYROLL_PENDING)) {
-      kind = PAYMENT_NORMAL
-      const deduction = decimal(payroll.loanDeduction)
-      if (deduction.gt(0)) {
-        const bal = await sql<{ balance: string }>`
-          SELECT COALESCE(sum(CASE kind WHEN 'borrow' THEN amount ELSE -amount END),0)::text AS balance
-            FROM hr_employee_loan WHERE employee_id = ${payroll.employeeId}::uuid
-        `.execute(trx)
-        if (decimal(bal.rows[0]?.balance ?? '0').lessThan(deduction)) {
-          throw new ApiError('conflict', '借款抵扣超过员工借款余额')
-        }
+    // 读员工借款台账 → 纯核决策 kind / 联动 effects；落库归本 adapter
+    const loanRows = await sql<{ kind: string; amount: string }>`
+      SELECT kind, amount::text AS amount FROM hr_employee_loan
+       WHERE employee_id = ${payroll.employeeId}::uuid
+    `.execute(trx)
+    let plan: ReturnType<typeof applyPayment>
+    try {
+      plan = applyPayment(
+        {
+          id: payroll.id,
+          employeeId: payroll.employeeId,
+          status: payroll.status,
+          loanDeduction: payroll.loanDeduction,
+        },
+        loanRows.rows,
+      )
+    } catch (err) {
+      if (err instanceof Error && err.message === '借款抵扣超过员工借款余额') {
+        throw new ApiError('conflict', err.message)
       }
+      throw err
     }
+    const kind = plan.kind
     let id: string
     try {
       const inserted = await trx
@@ -1228,33 +1239,33 @@ export function createHrService(deps: HrServiceDeps) {
       actionName: 'create',
       changes: auditCreated(paymentSnap(value), PAYMENT_AUDIT),
     })
-    if (kind === PAYMENT_NORMAL) {
-      try {
-        await trx
-          .updateTable('hr_payroll')
-          .set({ status: PAYROLL_PAID, updated_at: sql`(now() AT TIME ZONE 'utc')` })
-          .where('id', '=', payroll.id)
-          .execute()
-      } catch (err) {
-        throw writeErr(err, '更新工资单状态失败')
-      }
-      await writeAudit(trx, actor, {
-        resource: 'hr_payroll',
-        recordId: payroll.id,
-        recordLabel: payroll.month,
-        actionType: 'update',
-        actionName: 'mark_paid',
-        changes: { status: { from: PAYROLL_PENDING, to: PAYROLL_PAID } },
-      })
-      const deduction = decimal(payroll.loanDeduction)
-      if (deduction.gt(0)) {
+    for (const effect of plan.effects) {
+      if (effect.op === 'set_payroll_status' && effect.status === PAYROLL_PAID) {
+        try {
+          await trx
+            .updateTable('hr_payroll')
+            .set({ status: PAYROLL_PAID, updated_at: sql`(now() AT TIME ZONE 'utc')` })
+            .where('id', '=', payroll.id)
+            .execute()
+        } catch (err) {
+          throw writeErr(err, '更新工资单状态失败')
+        }
+        await writeAudit(trx, actor, {
+          resource: 'hr_payroll',
+          recordId: payroll.id,
+          recordLabel: payroll.month,
+          actionType: 'update',
+          actionName: 'mark_paid',
+          changes: { status: { from: PAYROLL_PENDING, to: PAYROLL_PAID } },
+        })
+      } else if (effect.op === 'create_auto_repay') {
         try {
           const loanIns = await trx
             .insertInto('hr_employee_loan')
             .values({
               kind: LOAN_REPAY,
               occurred_on: asDateOnly(paidOn),
-              amount: toDecimalString(deduction),
+              amount: effect.amount,
               employee_id: payroll.employeeId,
               payroll_id: payroll.id,
             })
@@ -1296,9 +1307,9 @@ export function createHrService(deps: HrServiceDeps) {
          WHERE payroll_id = ${payroll.id}::uuid
       `.execute(trx)
       const remainingCount = Number(remaining.rows[0]?.count ?? 0)
-      const isNormal = value.kind === upperWire(PAYMENT_NORMAL)
-      if (isNormal || remainingCount === 0) {
-        if (payroll.status === upperWire(PAYROLL_PAID)) {
+      const effects = reversePayment(value.kind ?? '', payroll.status, remainingCount)
+      for (const effect of effects) {
+        if (effect.op === 'set_payroll_status' && effect.status === PAYROLL_PENDING) {
           try {
             await trx
               .updateTable('hr_payroll')
@@ -1316,27 +1327,28 @@ export function createHrService(deps: HrServiceDeps) {
             actionName: 'mark_pending',
             changes: { status: { from: PAYROLL_PAID, to: PAYROLL_PENDING } },
           })
-        }
-        const loans = await sql<Record<string, unknown>>`
-          SELECT id, kind, occurred_on, amount, remarks, inserted_at, updated_at,
-            employee_id, payroll_id, created_by_id
-            FROM hr_employee_loan WHERE payroll_id = ${payroll.id}::uuid FOR UPDATE
-        `.execute(trx)
-        for (const raw of loans.rows) {
-          const loan = mapLoanRow(raw)
-          try {
-            await trx.deleteFrom('hr_employee_loan').where('id', '=', loan.id).execute()
-          } catch (err) {
-            throw writeErr(err, '删除自动借款归还失败')
+        } else if (effect.op === 'destroy_linked_loans') {
+          const loans = await sql<Record<string, unknown>>`
+            SELECT id, kind, occurred_on, amount, remarks, inserted_at, updated_at,
+              employee_id, payroll_id, created_by_id
+              FROM hr_employee_loan WHERE payroll_id = ${payroll.id}::uuid FOR UPDATE
+          `.execute(trx)
+          for (const raw of loans.rows) {
+            const loan = mapLoanRow(raw)
+            try {
+              await trx.deleteFrom('hr_employee_loan').where('id', '=', loan.id).execute()
+            } catch (err) {
+              throw writeErr(err, '删除自动借款归还失败')
+            }
+            await writeAudit(trx, actor, {
+              resource: 'hr_employee_loan',
+              recordId: loan.id,
+              recordLabel: loan.occurredOn,
+              actionType: 'destroy',
+              actionName: 'auto_destroy',
+              changes: auditDestroyed(loanSnap(loan), LOAN_AUDIT),
+            })
           }
-          await writeAudit(trx, actor, {
-            resource: 'hr_employee_loan',
-            recordId: loan.id,
-            recordLabel: loan.occurredOn,
-            actionType: 'destroy',
-            actionName: 'auto_destroy',
-            changes: auditDestroyed(loanSnap(loan), LOAN_AUDIT),
-          })
         }
       }
       await writeAudit(trx, actor, {

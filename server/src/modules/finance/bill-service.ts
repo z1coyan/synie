@@ -26,6 +26,7 @@ import {
 import {
   billHoldingResourceMeta, billResourceMeta, billTransactionResourceMeta,
 } from './meta.ts'
+import { replaySegments, segmentAmount, type ReplayTx } from './bill-replay.ts'
 import { recognizeBankAcceptance, type OcrDeps, type OcrPrefill } from './ocr.ts'
 
 export interface Bill {
@@ -272,10 +273,7 @@ async function lockBillForActor(db: DbHandle, id: string, actor: Actor): Promise
   return item
 }
 
-function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number) {
-  return aStart <= bEnd && bStart <= aEnd
-}
-
+/** 薄 IO adapter：读已审核交易 → 纯核重放 → 整删整建 holding */
 async function replayBill(trx: DbHandle, billId: string): Promise<void> {
   const bill = await loadBill(trx, billId, true)
   const rows = await sql<{
@@ -289,76 +287,28 @@ async function replayBill(trx: DbHandle, billId: string): Promise<void> {
     ORDER BY occurred_on,audited_at,id
   `.execute(trx)
 
-  type Seg = {
-    companyId: string; bankAccountId: string; start: number; end: number
-    acquiredOn: string; sourceId: string
-  }
-  let segments: Seg[] = []
-
-  for (const row of rows.rows) {
-    const id = row.id
-    const kind = row.transaction_type
-    const start = Number(row.sub_start)
-    const end = Number(row.sub_end)
-    const companyId = row.company_id
-    const bankAccountId = row.bank_account_id
-    const occurred = asDateOnly(row.occurred_on)
-    const label = row.doc_no || id
-    if (kind === 'receive') {
-      for (const seg of segments) {
-        if (overlaps(seg.start, seg.end, start, end)) {
-          throw conflict(`承兑库存校验失败:交易 ${label} 接收段与现有持有段重叠`)
-        }
-      }
-      segments.push({
-        companyId, bankAccountId, start, end, acquiredOn: occurred, sourceId: id,
-      })
-      continue
-    }
-    const next: Seg[] = []
-    let cursor = start
-    segments = [...segments].sort((a, b) => a.start - b.start)
-    for (const segment of segments) {
-      if (
-        segment.companyId !== companyId || segment.bankAccountId !== bankAccountId ||
-        !overlaps(segment.start, segment.end, start, end)
-      ) {
-        next.push(segment)
-        continue
-      }
-      if (segment.start > cursor) {
-        throw conflict(`承兑库存校验失败:交易 ${label} 段 ${cursor}-${segment.start - 1} 未持有`)
-      }
-      if (segment.start < start) {
-        next.push({ ...segment, end: start - 1 })
-      }
-      if (segment.end >= cursor) cursor = segment.end + 1
-      if (segment.end > end) {
-        next.push({ ...segment, start: end + 1 })
-      }
-    }
-    if (cursor <= end) {
-      throw conflict(`承兑库存校验失败:交易 ${label} 段 ${cursor}-${end} 未持有`)
-    }
-    if (kind === 'reallocate') {
-      if (!row.to_bank_account_id) throw conflict('承兑库存校验失败:调拨缺少转入账户')
-      next.push({
-        companyId, bankAccountId: row.to_bank_account_id, start, end,
-        acquiredOn: occurred, sourceId: id,
-      })
-    }
-    segments = next
-  }
+  const txs: ReplayTx[] = rows.rows.map((row) => ({
+    id: row.id,
+    docNo: row.doc_no,
+    transactionType: row.transaction_type,
+    occurredOn: asDateOnly(row.occurred_on),
+    subStart: Number(row.sub_start),
+    subEnd: Number(row.sub_end),
+    companyId: row.company_id,
+    bankAccountId: row.bank_account_id,
+    toBankAccountId: row.to_bank_account_id,
+  }))
+  const segments = replaySegments(txs)
 
   await sql`DELETE FROM acc_bill_holding WHERE bill_id=${billId}::uuid`.execute(trx)
   for (const segment of segments) {
-    const amount = decimal(segment.end - segment.start + 1).div(100)
+    const amount = segmentAmount(segment.start, segment.end)
     await sql`
       INSERT INTO acc_bill_holding(
         bill_no,sub_start,sub_end,amount,due_date,acquired_on,company_id,
         bank_account_id,bill_id,source_transaction_id)
       VALUES (
-        ${bill.billNo},${segment.start},${segment.end},${amount.toFixed()},
+        ${bill.billNo},${segment.start},${segment.end},${amount},
         ${bill.dueDate}::date,${segment.acquiredOn}::date,${segment.companyId}::uuid,
         ${segment.bankAccountId}::uuid,${billId}::uuid,${segment.sourceId}::uuid)
     `.execute(trx)

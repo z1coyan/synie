@@ -186,3 +186,91 @@ export function upperWire(value: string): string {
 export function lowerWire(value: string): string {
   return value.toLowerCase()
 }
+
+// ── 工资发放 ↔ 借款抵扣纯核 ─────────────────────────────────────────────────
+// IO（写 payment / loan / payroll status / audit）归 service adapter。
+// 产品规则：docs/产品文档/人力薪酬.md「工资发放与借款抵扣」
+
+/** 参与余额汇总的借款台账行（kind 大小写不敏感） */
+export interface LoanBalanceRow {
+  kind: string
+  amount: string
+}
+
+export interface ApplyPaymentPayroll {
+  id: string
+  employeeId: string
+  /** wire 大写：PENDING / PAID */
+  status: string
+  loanDeduction: string
+}
+
+export type PaymentEffect =
+  | { op: 'set_payroll_status'; status: typeof PAYROLL_PAID | typeof PAYROLL_PENDING }
+  | { op: 'create_auto_repay'; amount: string }
+  | { op: 'destroy_linked_loans' }
+
+export interface ApplyPaymentPlan {
+  kind: typeof PAYMENT_NORMAL | typeof PAYMENT_SUPPLEMENT
+  effects: PaymentEffect[]
+}
+
+/** 余额 = Σ借款 − Σ归还（员工级） */
+export function loanBalance(loans: readonly LoanBalanceRow[]): ReturnType<typeof decimal> {
+  let bal = decimal(0)
+  for (const row of loans) {
+    const k = lowerWire(row.kind)
+    const amt = decimal(row.amount)
+    if (k === LOAN_BORROW) bal = bal.add(amt)
+    else bal = bal.sub(amt)
+  }
+  return bal
+}
+
+/**
+ * 首笔/补发决策 + 借款联动 effects。
+ * - 待发放 → normal；否则 supplement
+ * - normal 且借款抵扣 > 0：校验余额 ≥ 抵扣，产出 auto_repay
+ * - normal：产出 set_payroll_status(paid)
+ */
+export function applyPayment(
+  payroll: ApplyPaymentPayroll,
+  loans: readonly LoanBalanceRow[],
+): ApplyPaymentPlan {
+  const isPending = upperWire(payroll.status) === upperWire(PAYROLL_PENDING)
+  if (!isPending) {
+    return { kind: PAYMENT_SUPPLEMENT, effects: [] }
+  }
+  const effects: PaymentEffect[] = [
+    { op: 'set_payroll_status', status: PAYROLL_PAID },
+  ]
+  const deduction = decimal(payroll.loanDeduction)
+  if (deduction.gt(0)) {
+    const bal = loanBalance(loans)
+    if (bal.lessThan(deduction)) {
+      throw new Error('借款抵扣超过员工借款余额')
+    }
+    effects.push({ op: 'create_auto_repay', amount: toDecimalString(deduction) })
+  }
+  return { kind: PAYMENT_NORMAL, effects }
+}
+
+/**
+ * 删除发放时的回滚决策。
+ * - 删 normal，或删后无剩余发放：若已发放则 mark pending，并 destroy 联动归还
+ * - 仅删 supplement 且仍有其他发放：无联动
+ */
+export function reversePayment(
+  paymentKind: string,
+  payrollStatus: string,
+  remainingPaymentCount: number,
+): PaymentEffect[] {
+  const isNormal = upperWire(paymentKind) === upperWire(PAYMENT_NORMAL)
+  if (!isNormal && remainingPaymentCount > 0) return []
+  const effects: PaymentEffect[] = []
+  if (upperWire(payrollStatus) === upperWire(PAYROLL_PAID)) {
+    effects.push({ op: 'set_payroll_status', status: PAYROLL_PENDING })
+  }
+  effects.push({ op: 'destroy_linked_loans' })
+  return effects
+}

@@ -1,6 +1,6 @@
 # 06 J · 最重不变量提纯出 PG
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## 问题
 
