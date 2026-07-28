@@ -97,66 +97,74 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
     validateCreate(input, catalog)
     const perCompany = input.perCompany ?? true
     const enabled = input.enabled ?? true
-    return withTx(db, async (trx) => {
-      const inserted = await insertRule(trx, {
-        resource: input.resource.trim(),
-        name: input.name.trim(),
-        segments: input.segments,
-        perCompany,
-        enabled,
+    try {
+      return await withTx(db, async (trx) => {
+        const inserted = await insertRule(trx, {
+          resource: input.resource.trim(),
+          name: input.name.trim(),
+          segments: input.segments,
+          perCompany,
+          enabled,
+        })
+        await writeAudit(trx, actor, {
+          resource: 'sys_numbering_rule',
+          recordId: inserted.id,
+          recordLabel: inserted.name,
+          actionType: 'create',
+          actionName: 'create',
+          changes: auditCreated(ruleSnap(inserted), RULE_AUDIT),
+        })
+        return inserted
       })
-      await writeAudit(trx, actor, {
-        resource: 'sys_numbering_rule',
-        recordId: inserted.id,
-        recordLabel: inserted.name,
-        actionType: 'create',
-        actionName: 'create',
-        changes: auditCreated(ruleSnap(inserted), RULE_AUDIT),
-      })
-      return inserted
-    })
+    } catch (err) {
+      throw numberingWriteError('创建编号规则失败', err)
+    }
   }
 
   async function updateRule(actor: Actor, id: string, input: UpdateRuleInput): Promise<Rule> {
-    return withTx(db, async (trx) => {
-      const row = await trx
-        .selectFrom('sys_numbering_rule')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!row) throw new ApiError('not_found', '编号规则不存在')
-      const before = mapRule(row)
-      const after: Rule = {
-        ...before,
-        name: input.name !== undefined ? input.name : before.name,
-        segments: input.segments ?? before.segments,
-        perCompany: input.perCompany ?? before.perCompany,
-        enabled: input.enabled ?? before.enabled,
-      }
-      validateCreate(
-        {
-          resource: after.resource,
-          name: after.name,
-          segments: after.segments,
-          perCompany: after.perCompany,
-          enabled: after.enabled,
-        },
-        catalog,
-      )
-      const changes = auditDiff(ruleSnap(before), ruleSnap(after), RULE_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      const updated = await updateRuleRow(trx, id, after)
-      await writeAudit(trx, actor, {
-        resource: 'sys_numbering_rule',
-        recordId: id,
-        recordLabel: updated.name,
-        actionType: 'update',
-        actionName: 'update',
-        changes,
+    try {
+      return await withTx(db, async (trx) => {
+        const row = await trx
+          .selectFrom('sys_numbering_rule')
+          .selectAll()
+          .where('id', '=', id)
+          .forUpdate()
+          .executeTakeFirst()
+        if (!row) throw new ApiError('not_found', '编号规则不存在')
+        const before = mapRule(row)
+        const after: Rule = {
+          ...before,
+          name: input.name !== undefined ? input.name : before.name,
+          segments: input.segments ?? before.segments,
+          perCompany: input.perCompany ?? before.perCompany,
+          enabled: input.enabled ?? before.enabled,
+        }
+        validateCreate(
+          {
+            resource: after.resource,
+            name: after.name,
+            segments: after.segments,
+            perCompany: after.perCompany,
+            enabled: after.enabled,
+          },
+          catalog,
+        )
+        const changes = auditDiff(ruleSnap(before), ruleSnap(after), RULE_AUDIT)
+        if (Object.keys(changes).length === 0) return before
+        const updated = await updateRuleRow(trx, id, after)
+        await writeAudit(trx, actor, {
+          resource: 'sys_numbering_rule',
+          recordId: id,
+          recordLabel: updated.name,
+          actionType: 'update',
+          actionName: 'update',
+          changes,
+        })
+        return updated
       })
-      return updated
-    })
+    } catch (err) {
+      throw numberingWriteError('更新编号规则失败', err)
+    }
   }
 
   async function deleteRule(actor: Actor, id: string): Promise<void> {
@@ -346,6 +354,22 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
 }
 
 export type NumberingService = ReturnType<typeof createNumberingService>
+
+/** 对齐 Go numberingWriteError：23505 → conflict（同一资源只能启用一条） */
+function numberingWriteError(message: string, err: unknown): never {
+  if (err instanceof ApiError) throw err
+  if (typeof err === 'object' && err !== null && 'code' in err) {
+    const e = err as { code?: string }
+    if (e.code === '23505') {
+      throw new ApiError(
+        'conflict',
+        '该资源已有启用的编号规则,同一资源只能启用一条',
+        { cause: err },
+      )
+    }
+  }
+  throw new ApiError('internal', message, { cause: err })
+}
 
 function validateCreate(input: CreateRuleInput, catalog: NumberingCatalog): void {
   const resource = input.resource.trim()

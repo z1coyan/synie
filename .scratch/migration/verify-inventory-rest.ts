@@ -24,6 +24,8 @@ const trackedIDs = new Set<string>();
 let roleID: string | null = null;
 let userID: string | null = null;
 let ruleID: string | null = null;
+/** 验收前临时停用的环境既有 inv.material 启用规则，finally 中恢复 */
+const parkedRuleIDs: string[] = [];
 
 const resources = [
   "invMaterialCategories",
@@ -176,9 +178,15 @@ async function cleanup() {
     roleID = null;
   }
   if (ruleID) {
+    await db`DELETE FROM sys_numbering_counter WHERE rule_id = ${ruleID}::uuid`;
     await db`DELETE FROM sys_numbering_rule WHERE id = ${ruleID}::uuid`;
     ruleID = null;
   }
+  // 恢复验收前临时停用的环境规则
+  for (const id of parkedRuleIDs) {
+    await db`UPDATE sys_numbering_rule SET enabled=true, updated_at=(now() AT TIME ZONE 'utc') WHERE id=${id}::uuid`;
+  }
+  parkedRuleIDs.length = 0;
   await db`DELETE FROM sys_audit_log WHERE changes::text LIKE ${"%" + prefix + "%"}`;
 }
 
@@ -310,6 +318,16 @@ try {
     );
   }
 
+  // 自动编号段需要确定前缀；演示库可能已有 inv.material 启用规则，先停用再自建。
+  const activeMaterialRules = (await db`
+    SELECT id::text AS id
+    FROM sys_numbering_rule
+    WHERE resource='inv.material' AND enabled=true
+  `) as RecordID[];
+  for (const row of activeMaterialRules) {
+    await db`UPDATE sys_numbering_rule SET enabled=false, updated_at=(now() AT TIME ZONE 'utc') WHERE id=${row.id}::uuid`;
+    parkedRuleIDs.push(row.id);
+  }
   const rule = await create<RecordID>("/system/numbering/rules", adminHeaders, {
     resource: "inv.material",
     name: `${prefix}物料编号`,

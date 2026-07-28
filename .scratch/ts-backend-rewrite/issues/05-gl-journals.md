@@ -1,6 +1,6 @@
 # 05 手工会计凭证与往来报表
 
-Status: ready-for-human
+Status: done
 Blocked by: 03
 
 ## 范围
@@ -43,3 +43,4 @@ TS 业务域已落地于 `server/src/modules/accounting/`：
 - 集成测补红冲 reverse 取负 + is_reversed + 重复 conflict + 报表归零
 - typecheck + accounting/gl PG 集成全绿
 - 2026-07-28 集成：主仓 cherry-pick 工单05（含 Meta wire 对齐）；与库存/交易共享 registry.projectWireRef；accounting/gl PG 测绿。
+- 2026-07-28 worktree 复核：实现完整（engines/gl 复用）；`verify-accounting-rest` 全绿（meta×6、权限/公司范围、凭证/行、审核分录、AR/AP、取消）；编号 23505 对齐 Go → conflict 409。

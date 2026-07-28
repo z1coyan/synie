@@ -1,6 +1,6 @@
 # 07 采购链：报价 → 订单 → 入库
 
-Status: ready-for-agent
+Status: done
 Blocked by: 03
 
 ## 范围
@@ -24,3 +24,4 @@ Blocked by: 03
 
 ## Comments
 - 2026-07-28 集成：与工单06 并行实现去重——采用 06 side-aware trading（报价/订单/入库）作为采购链实现；跳过 07 并行 tree（`0b2e82e`/`5647a54`）避免双实现冲突；verify-quotation/order/fulfillment 锚点由统一 trading 覆盖。
+- 2026-07-28 worktree 复核：采购侧已由 side-aware trading 完整覆盖；`verify-quotation`/`verify-order`/`verify-fulfillment` 全绿（采购镜像段含在内）；无独立缺口需补。

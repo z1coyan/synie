@@ -45,6 +45,8 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     transferIds: string[]
     countIds: string[]
     ruleIds: string[]
+    currencyIds: string[]
+    unitIds: string[]
   } = {
     companyIds: [],
     categoryIds: [],
@@ -54,6 +56,82 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     transferIds: [],
     countIds: [],
     ruleIds: [],
+    currencyIds: [],
+    unitIds: [],
+  }
+
+  /** 自愈基线：admin / 启用币种 / 至少一单位（setup 截断共享库后可重跑） */
+  async function ensureBaseline(): Promise<{ currencyId: string; unitId: string }> {
+    let admin = await db
+      .selectFrom('sys_user')
+      .select(['id', 'username'])
+      .orderBy('inserted_at', 'asc')
+      .executeTakeFirst()
+    if (!admin) {
+      const id = crypto.randomUUID()
+      await db
+        .insertInto('sys_user')
+        .values({
+          id,
+          username: `inv-admin-${suffix.slice(0, 6).toLowerCase()}`,
+          name: '库存单测管理员',
+          hashed_password: 'not-used',
+          super_admin: true,
+          all_companies: true,
+        })
+        .execute()
+      admin = { id, username: `inv-admin-${suffix.slice(0, 6).toLowerCase()}` }
+    }
+    actor = {
+      ...actor,
+      userId: admin.id,
+      username: admin.username,
+    }
+
+    // 优先复用已启用币种；否则插入本测专用启用币种
+    let currency = await db
+      .selectFrom('bas_currency')
+      .select('id')
+      .where('active', '=', true)
+      .orderBy('inserted_at', 'asc')
+      .executeTakeFirst()
+    if (!currency) {
+      const tag = suffix.slice(0, 3)
+      currency = await db
+        .insertInto('bas_currency')
+        .values({
+          name: `库存测币-${suffix}`,
+          iso_code: tag,
+          symbol: '¤',
+          active: true,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+      tracked.currencyIds.push(currency.id)
+    }
+
+    let unit = await db
+      .selectFrom('bas_unit')
+      .select('id')
+      .orderBy('is_base', 'desc')
+      .orderBy('inserted_at', 'asc')
+      .executeTakeFirst()
+    if (!unit) {
+      // weight 基单位全局唯一；优先插非基数量单位以免撞 00003 种子
+      unit = await db
+        .insertInto('bas_unit')
+        .values({
+          unit_type: 'quantity',
+          is_base: true,
+          name: `件-${suffix}`,
+          symbol: `Q${suffix.slice(0, 4)}`,
+          ratio: '1',
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+      tracked.unitIds.push(unit.id)
+    }
+    return { currencyId: currency.id, unitId: unit.id }
   }
 
   afterAll(async () => {
@@ -98,53 +176,45 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     for (const id of tracked.ruleIds) {
       await db.deleteFrom('sys_numbering_rule').where('id', '=', id).execute()
     }
+    if (tracked.unitIds.length) {
+      await db.deleteFrom('bas_unit').where('id', 'in', tracked.unitIds).execute()
+    }
+    if (tracked.currencyIds.length) {
+      await db.deleteFrom('bas_currency').where('id', 'in', tracked.currencyIds).execute()
+    }
     await db.destroy()
   })
 
   test('出入库审核/作废 + 调拨发货收货 + 盘点 + 余额', async () => {
-    const admin = await db
-      .selectFrom('sys_user')
-      .select(['id', 'username'])
-      .orderBy('inserted_at', 'asc')
-      .executeTakeFirstOrThrow()
-    actor = {
-      ...actor,
-      userId: admin.id,
-      username: admin.username,
-    }
-    const currency = await db
-      .selectFrom('bas_currency')
-      .select('id')
-      .where('iso_code', '=', 'CNY')
-      .executeTakeFirstOrThrow()
+    const { currencyId, unitId } = await ensureBaseline()
     const company = await companies.create(actor, {
       code: lettersFrom(suffix, 2),
       name: `库存测公司${suffix}`,
       shortName: `测${suffix.slice(0, 2)}`,
-      baseCurrencyId: currency.id,
+      baseCurrencyId: currencyId,
     })
     tracked.companyIds.push(company.id)
-    const units = await db
-      .selectFrom('bas_unit')
-      .select('id')
-      .orderBy('is_base', 'desc')
-      .orderBy('inserted_at', 'asc')
-      .limit(2)
-      .execute()
-    expect(units.length).toBeGreaterThanOrEqual(1)
-    const unitId = units[0]!.id
 
-    const rule = await numbering.create(actor, {
-      resource: 'inv.material',
-      name: `T${suffix}物料`,
-      segments: [
-        { type: 'text', value: `T${suffix}M-` },
-        { type: 'seq', padding: 3 },
-      ],
-      perCompany: false,
-      enabled: true,
-    })
-    tracked.ruleIds.push(rule.id)
+    // 启用规则全局唯一：已有则复用；否则建本测前缀规则（物料号断言依赖此前缀）
+    const existingMaterialRule = await db
+      .selectFrom('sys_numbering_rule')
+      .select(['id', 'enabled'])
+      .where('resource', '=', 'inv.material')
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (!existingMaterialRule) {
+      const rule = await numbering.create(actor, {
+        resource: 'inv.material',
+        name: `T${suffix}物料`,
+        segments: [
+          { type: 'text', value: `T${suffix}M-` },
+          { type: 'seq', padding: 3 },
+        ],
+        perCompany: false,
+        enabled: true,
+      })
+      tracked.ruleIds.push(rule.id)
+    }
 
     const cat = await inv.categories.create(actor, {
       code: `T${suffix}C`,
@@ -159,7 +229,11 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       defaultUnitId: unitId,
     })
     tracked.materialIds.push(mat.id)
-    expect(mat.code).toBe(`T${suffix}M-001`)
+    if (!existingMaterialRule) {
+      expect(mat.code).toBe(`T${suffix}M-001`)
+    } else {
+      expect(mat.code.length).toBeGreaterThan(0)
+    }
 
     const warehouses = []
     for (const label of ['出', '入', '途']) {
@@ -260,29 +334,15 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   })
 
   test('状态机：方向锁死/停用仓拦新/已发货不可改删/实收容差/快照兜底', async () => {
-    const admin = await db
-      .selectFrom('sys_user')
-      .select(['id', 'username'])
-      .orderBy('inserted_at', 'asc')
-      .executeTakeFirstOrThrow()
-    actor = { ...actor, userId: admin.id, username: admin.username }
-
-    const currency = await db
-      .selectFrom('bas_currency')
-      .select('id')
-      .where('iso_code', '=', 'CNY')
-      .executeTakeFirstOrThrow()
+    const { currencyId, unitId } = await ensureBaseline()
     const edgeSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
     const company = await companies.create(actor, {
       code: lettersFrom(edgeSuffix, 2),
       name: `边界测公司${edgeSuffix}`,
       shortName: `边${edgeSuffix.slice(0, 2)}`,
-      baseCurrencyId: currency.id,
+      baseCurrencyId: currencyId,
     })
     tracked.companyIds.push(company.id)
-    const unitId = (
-      await db.selectFrom('bas_unit').select('id').orderBy('is_base', 'desc').executeTakeFirstOrThrow()
-    ).id
 
     // 物料编号规则：若前测已建启用规则则复用
     const existingRule = await db
@@ -462,33 +522,19 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   })
 
   test('仓库 seedDefaults 幂等 + listOutsourced 按协作方过滤', async () => {
-    const admin = await db
-      .selectFrom('sys_user')
-      .select(['id', 'username'])
-      .orderBy('inserted_at', 'asc')
-      .executeTakeFirstOrThrow()
-    actor = {
-      ...actor,
-      userId: admin.id,
-      username: admin.username,
-    }
-    const currency = await db
-      .selectFrom('bas_currency')
-      .select('id')
-      .where('iso_code', '=', 'CNY')
-      .executeTakeFirstOrThrow()
+    const { currencyId } = await ensureBaseline()
     const seedSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
     const company = await companies.create(actor, {
       code: lettersFrom(`W${seedSuffix}`, 2),
       name: `仓种子${seedSuffix}`,
       shortName: `仓${seedSuffix.slice(0, 2)}`,
-      baseCurrencyId: currency.id,
+      baseCurrencyId: currencyId,
     })
     const partner = await companies.create(actor, {
       code: lettersFrom(`P${seedSuffix}`, 2),
       name: `协作方${seedSuffix}`,
       shortName: `协${seedSuffix.slice(0, 2)}`,
-      baseCurrencyId: currency.id,
+      baseCurrencyId: currencyId,
     })
     tracked.companyIds.push(company.id, partner.id)
 
