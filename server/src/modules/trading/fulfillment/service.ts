@@ -483,6 +483,8 @@ export function createFulfillmentService(
     requirePerm(actor, spec.prefix, 'read', '无权限执行该履约操作')
     const scope = companyScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
+    // 列名必须与 ResourceMeta.dbColumn 一致（listFromSource / filterbuild 按 apiName→dbColumn 排序筛选）
+    const statusCol = side === 'sales' ? 'delivery_status' : 'receipt_status'
     const orderTypeSql =
       side === 'sales'
         ? `(SELECT o.order_type FROM sal_order_item oi
@@ -492,8 +494,8 @@ export function createFulfillmentService(
       db,
       resource: fulfillmentItemListMeta(side),
       source: sql` FROM (
-        SELECT i.*, h.${sql.raw(spec.numberCol)} AS head_no, h.${sql.raw(spec.dateCol)} AS head_date,
-          h.status AS head_status, h.party_type, h.party_id,
+        SELECT i.*, h.${sql.raw(spec.numberCol)}, h.${sql.raw(spec.dateCol)},
+          h.status AS ${sql.raw(statusCol)}, h.party_type, h.party_id,
           (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty,
           ${sql.raw(orderTypeSql)}
         FROM ${ident(spec.itemTable)} i
@@ -887,9 +889,10 @@ async function loadHead(db: DbHandle, spec: FulfillmentSideSpec, id: string) {
 }
 
 async function loadItem(db: DbHandle, spec: FulfillmentSideSpec, id: string) {
+  const statusCol = spec.side === 'sales' ? 'delivery_status' : 'receipt_status'
   const rows = await sql<Record<string, unknown>>`
-    SELECT i.*, h.${sql.raw(spec.numberCol)} AS head_no, h.${sql.raw(spec.dateCol)} AS head_date,
-      h.status AS head_status, h.party_type, h.party_id,
+    SELECT i.*, h.${sql.raw(spec.numberCol)}, h.${sql.raw(spec.dateCol)},
+      h.status AS ${sql.raw(statusCol)}, h.party_type, h.party_id,
       (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty
     FROM ${ident(spec.itemTable)} i
     JOIN ${ident(spec.headTable)} h ON h.id=i.${sql.raw(spec.parentCol)}
@@ -1139,9 +1142,11 @@ function mapItemDto(side: TradingSide, row: Record<string, unknown>) {
     materialId: String(row.material_id),
     unitId: String(row.unit_id),
     warehouseId: String(row.warehouse_id),
-    [parentNoKey]: String(row.head_no ?? row[side === 'sales' ? 'delivery_no' : 'receipt_no'] ?? ''),
-    [parentDateKey]: asDate(row.head_date ?? row[side === 'sales' ? 'delivery_date' : 'receipt_date']),
-    [parentStatusKey]: upperStatus(String(row.head_status ?? row.status ?? 'DRAFT')),
+    [parentNoKey]: String(row[side === 'sales' ? 'delivery_no' : 'receipt_no'] ?? ''),
+    [parentDateKey]: asDate(row[side === 'sales' ? 'delivery_date' : 'receipt_date']),
+    [parentStatusKey]: upperStatus(
+      String(row[side === 'sales' ? 'delivery_status' : 'receipt_status'] ?? 'DRAFT'),
+    ),
     partyType: upperStatus(String(row.party_type)),
     partyId: String(row.party_id),
     remainingReconcilableQty: wireRequiredDecimal(
