@@ -1,6 +1,10 @@
 import { buildApp } from './app.ts'
 import { createDb } from './db/index.ts'
 import { loadEnv } from './env.ts'
+import {
+  createAccountingServices,
+  registerAccountingResources,
+} from './modules/accounting/index.ts'
 import { createBaseServices, registerBaseResources } from './modules/base/index.ts'
 import {
   createMarketInstrumentService,
@@ -51,6 +55,7 @@ registerIamResources(registry)
 registerPartyResources(registry)
 registerSalesCompanyAccountDefault(registry)
 registerInventoryResources(registry)
+registerAccountingResources(registry)
 
 const settings = createSettingsService(db)
 const numbering = createNumberingService(db)
@@ -64,6 +69,7 @@ const iam = createIamService(db, registry)
 const party = createPartyServices(db, numbering)
 const companyAccountDefaults = createCompanyAccountDefaultService(db)
 const inv = createInventoryServices(db, numbering)
+const accounting = createAccountingServices(db, numbering)
 
 const app = buildApp({
   db,
@@ -92,6 +98,8 @@ const app = buildApp({
   invStockTransfers: inv.stockTransfers,
   invStockCounts: inv.stockCounts,
   invStockEntries: inv.stockEntries,
+  journals: accounting.journals,
+  entries: accounting.entries,
 })
 
 const server = Bun.serve({

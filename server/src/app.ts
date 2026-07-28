@@ -3,6 +3,9 @@ import { requestId } from 'hono/request-id'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import type { DB as Database } from './db/types.ts'
+import { accountingRoutes } from './modules/accounting/index.ts'
+import type { EntryService } from './modules/accounting/entry-service.ts'
+import type { JournalService } from './modules/accounting/journal-service.ts'
 import { baseRoutes } from './modules/base/index.ts'
 import type { AccountService } from './modules/base/account-service.ts'
 import type { CompanyService } from './modules/base/company-service.ts'
@@ -79,6 +82,9 @@ export interface AppDeps {
   invStockTransfers: StockTransferService
   invStockCounts: StockCountService
   invStockEntries: StockEntryService
+  // 工单 05 会计
+  journals: JournalService
+  entries: EntryService
 }
 
 const accessLog: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -158,6 +164,14 @@ export function buildApp(deps: AppDeps) {
         stockTransfers: deps.invStockTransfers,
         stockCounts: deps.invStockCounts,
         stockEntries: deps.invStockEntries,
+      }),
+    )
+    .route(
+      '/accounting',
+      accountingRoutes({
+        auth: deps.auth,
+        journals: deps.journals,
+        entries: deps.entries,
       }),
     )
 

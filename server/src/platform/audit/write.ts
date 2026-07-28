@@ -93,7 +93,7 @@ export async function writeAudit(db: DbHandle, actor: Actor | null, entry: Audit
       record_label: entry.recordLabel?.trim() ? entry.recordLabel : null,
       action_type: entry.actionType,
       action_name: entry.actionName,
-      actor_id: actor?.userId ?? null,
+      actor_id: actor?.userId?.trim() ? actor.userId : null,
       actor_name: actor?.username ?? null,
       company_id: entry.companyId ?? null,
       changes: JSON.parse(JSON.stringify(changes)) as Json,

@@ -1,6 +1,10 @@
 import type { Kysely } from 'kysely'
 import { buildApp, type AppDeps, type ApiType } from '~/app.ts'
 import type { DB as Database } from '~/db/types.ts'
+import {
+  createAccountingServices,
+  registerAccountingResources,
+} from '~/modules/accounting/index.ts'
 import { createBaseServices, registerBaseResources } from '~/modules/base/index.ts'
 import {
   createMarketInstrumentService,
@@ -72,6 +76,7 @@ export function createPlatformRegistry(): Registry {
   registerPartyResources(registry)
   registerSalesCompanyAccountDefault(registry)
   registerInventoryResources(registry)
+  registerAccountingResources(registry)
   return registry
 }
 
@@ -120,6 +125,7 @@ export async function buildTestApp(
   const party = createPartyServices(db, numbering)
   const companyAccountDefaults = createCompanyAccountDefaultService(db)
   const inv = createInventoryServices(db, numbering)
+  const accounting = createAccountingServices(db, numbering)
   return buildApp({
     db,
     auth,
@@ -147,5 +153,7 @@ export async function buildTestApp(
     invStockTransfers: merged.invStockTransfers ?? inv.stockTransfers,
     invStockCounts: merged.invStockCounts ?? inv.stockCounts,
     invStockEntries: merged.invStockEntries ?? inv.stockEntries,
+    journals: merged.journals ?? accounting.journals,
+    entries: merged.entries ?? accounting.entries,
   })
 }
