@@ -51,13 +51,15 @@ import {
   registerPrintingResources,
 } from './platform/printing/index.ts'
 import { createSettingsService, registerSettingResources } from './platform/settings/index.ts'
+import { createSetupService } from './platform/setup/index.ts'
 
 const env = loadEnv()
 const db = createDb(env.databaseUrl)
 
+const tokens = createTokenManager({ secret: env.authSecret, ttlSeconds: env.tokenTtlSeconds })
 const auth = await createAuthService({
   store: createAuthStore(db),
-  tokens: createTokenManager({ secret: env.authSecret, ttlSeconds: env.tokenTtlSeconds }),
+  tokens,
   limiter: createRateLimiter(),
 })
 
@@ -111,6 +113,32 @@ const todos = createTodoService(db)
 const scm = createScmServices(db)
 const manufacturing = createManufacturingServices(db, numbering)
 
+const setup = createSetupService({
+  db,
+  tokens,
+  sample: {
+    db,
+    accounts: base.accounts,
+    companyAccountDefaults,
+    warehouses: inv.warehouses,
+    customers: party.customers,
+    suppliers: party.suppliers,
+    materials: inv.materials,
+    materialUnits: inv.materialUnits,
+    employees: party.employees,
+    trading,
+    stockDocs: inv.stockDocs,
+    stockTransfers: inv.stockTransfers,
+    stockCounts: inv.stockCounts,
+    manufacturingMaster: manufacturing.master,
+    banking: finance.banking,
+    journals: accounting.journals,
+    expenses: finance.expenses,
+    invoices: finance.invoices,
+    hr,
+  },
+})
+
 const app = buildApp({
   db,
   auth,
@@ -150,6 +178,7 @@ const app = buildApp({
   bills: finance.bills,
   todos,
   manufacturing,
+  setup,
 })
 
 const marketScheduler = createMarketScheduler({ settings, market })

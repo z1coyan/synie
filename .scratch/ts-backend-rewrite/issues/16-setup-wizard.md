@@ -1,6 +1,6 @@
 # 16 setup 向导 + 全链示例数据
 
-Status: ready-for-agent
+Status: done
 Blocked by: 06, 07, 08, 10, 11, 12, 13
 
 ## 范围

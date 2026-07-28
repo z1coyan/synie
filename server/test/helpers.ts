@@ -66,6 +66,7 @@ import {
   registerPrintingResources,
   type PrintingService,
 } from '~/platform/printing/index.ts'
+import { createSetupService } from '~/platform/setup/index.ts'
 
 /** 集成测试用固定密钥（≥32 字节）；仅测试进程内使用 */
 export const TEST_AUTH_SECRET = 'integration-test-secret-32-bytes!!'
@@ -176,6 +177,58 @@ export async function buildTestApp(
       files: merged.files,
       catalog: buildPrintingCatalog(registry),
     })
+  const accountsSvc = merged.accounts ?? base.accounts
+  const customersSvc = merged.customers ?? party.customers
+  const suppliersSvc = merged.suppliers ?? party.suppliers
+  const employeesSvc = merged.employees ?? party.employees
+  const hrSvc = merged.hr ?? hr
+  const companyAccountDefaultsSvc = merged.companyAccountDefaults ?? companyAccountDefaults
+  const invCategories = merged.invCategories ?? inv.categories
+  const invMaterials = merged.invMaterials ?? inv.materials
+  const invMaterialUnits = merged.invMaterialUnits ?? inv.materialUnits
+  const invWarehouses = merged.invWarehouses ?? inv.warehouses
+  const invStockDocs = merged.invStockDocs ?? inv.stockDocs
+  const invStockTransfers = merged.invStockTransfers ?? inv.stockTransfers
+  const invStockCounts = merged.invStockCounts ?? inv.stockCounts
+  const invStockEntries = merged.invStockEntries ?? inv.stockEntries
+  const journals = merged.journals ?? accounting.journals
+  const entries = merged.entries ?? accounting.entries
+  const tradingSvc = (merged as { trading?: typeof trading }).trading ?? trading
+  const scmSvc = (merged as { scm?: typeof scm }).scm ?? scm
+  const invoices = (merged as { invoices?: typeof finance.invoices }).invoices ?? finance.invoices
+  const banking = (merged as { banking?: typeof finance.banking }).banking ?? finance.banking
+  const expenses = (merged as { expenses?: typeof finance.expenses }).expenses ?? finance.expenses
+  const bills = (merged as { bills?: typeof finance.bills }).bills ?? finance.bills
+  const todosSvc = (merged as { todos?: typeof todos }).todos ?? todos
+  const manufacturingSvc = merged.manufacturing ?? manufacturing
+  const setup =
+    (merged as { setup?: ReturnType<typeof createSetupService> }).setup ??
+    createSetupService({
+      db,
+      tokens: createTokenManager({ secret: TEST_AUTH_SECRET, ttlSeconds: 3600 }),
+      sample: {
+        db,
+        accounts: accountsSvc,
+        companyAccountDefaults: companyAccountDefaultsSvc,
+        warehouses: invWarehouses,
+        customers: customersSvc,
+        suppliers: suppliersSvc,
+        materials: invMaterials,
+        materialUnits: invMaterialUnits,
+        employees: employeesSvc,
+        trading: tradingSvc,
+        stockDocs: invStockDocs,
+        stockTransfers: invStockTransfers,
+        stockCounts: invStockCounts,
+        manufacturingMaster: manufacturingSvc.master,
+        banking,
+        journals,
+        expenses,
+        invoices,
+        hr: hrSvc,
+      },
+    })
+
   return buildApp({
     db,
     auth,
@@ -189,34 +242,32 @@ export async function buildTestApp(
     currencies: merged.currencies ?? base.currencies,
     companies: merged.companies ?? base.companies,
     units: merged.units ?? base.units,
-    accounts: merged.accounts ?? base.accounts,
+    accounts: accountsSvc,
     market,
     iam: merged.iam ?? iam,
-    customers: merged.customers ?? party.customers,
-    suppliers: merged.suppliers ?? party.suppliers,
-    employees: merged.employees ?? party.employees,
-    hr: merged.hr ?? hr,
-    companyAccountDefaults: merged.companyAccountDefaults ?? companyAccountDefaults,
-    invCategories: merged.invCategories ?? inv.categories,
-    invMaterials: merged.invMaterials ?? inv.materials,
-    invMaterialUnits: merged.invMaterialUnits ?? inv.materialUnits,
-    invWarehouses: merged.invWarehouses ?? inv.warehouses,
-    invStockDocs: merged.invStockDocs ?? inv.stockDocs,
-    invStockTransfers: merged.invStockTransfers ?? inv.stockTransfers,
-    invStockCounts: merged.invStockCounts ?? inv.stockCounts,
-    invStockEntries: merged.invStockEntries ?? inv.stockEntries,
-    journals: merged.journals ?? accounting.journals,
-    entries: merged.entries ?? accounting.entries,
-    trading: (merged as { trading?: typeof trading }).trading ?? trading,
-    scm: (merged as { scm?: typeof scm }).scm ?? scm,
-    invoices:
-      (merged as { invoices?: typeof finance.invoices }).invoices ?? finance.invoices,
-    banking:
-      (merged as { banking?: typeof finance.banking }).banking ?? finance.banking,
-    expenses:
-      (merged as { expenses?: typeof finance.expenses }).expenses ?? finance.expenses,
-    bills: (merged as { bills?: typeof finance.bills }).bills ?? finance.bills,
-    todos: (merged as { todos?: typeof todos }).todos ?? todos,
-    manufacturing: merged.manufacturing ?? manufacturing,
+    customers: customersSvc,
+    suppliers: suppliersSvc,
+    employees: employeesSvc,
+    hr: hrSvc,
+    companyAccountDefaults: companyAccountDefaultsSvc,
+    invCategories,
+    invMaterials,
+    invMaterialUnits,
+    invWarehouses,
+    invStockDocs,
+    invStockTransfers,
+    invStockCounts,
+    invStockEntries,
+    journals,
+    entries,
+    trading: tradingSvc,
+    scm: scmSvc,
+    invoices,
+    banking,
+    expenses,
+    bills,
+    todos: todosSvc,
+    manufacturing: manufacturingSvc,
+    setup,
   })
 }

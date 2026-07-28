@@ -86,6 +86,7 @@ import type { SettingsService } from './platform/settings/service.ts'
 import { printingRoutes, systemPrintingRoutes } from './platform/printing/routes.ts'
 import type { PrintingService } from './platform/printing/service.ts'
 import { todoRoutes, type TodoService } from './platform/todo/index.ts'
+import { setupRoutes, type SetupService } from './platform/setup/index.ts'
 
 /**
  * 应用依赖。平台 + base/iam/party + 库存 + 会计 + 交易链。
@@ -139,6 +140,8 @@ export interface AppDeps {
   todos: TodoService
   // 工单 11 制造
   manufacturing: ManufacturingServices
+  // 工单 16 初始化向导
+  setup: SetupService
 }
 
 const accessLog: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -173,6 +176,7 @@ export function buildApp(deps: AppDeps) {
         return c.json({ error: { code: 'internal', message: '数据库不可用' } }, 503)
       }
     })
+    .route('/setup', setupRoutes({ auth: deps.auth, setup: deps.setup }))
     .route('/auth', authRoutes(deps.auth))
     .route('/meta', metaRoutes(deps.registry, deps.auth))
     .route('/settings', settingsRoutes({ auth: deps.auth, settings: deps.settings }))
