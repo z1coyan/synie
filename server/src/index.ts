@@ -23,7 +23,11 @@ import {
   createCompanyAccountDefaultService,
   registerSalesCompanyAccountDefault,
 } from './modules/sales/index.ts'
-import { createTradingServices, registerTradingResources } from './modules/trading/index.ts'
+import {
+  createTradingServices,
+  registerSalesOrderDocBuilder,
+  registerTradingResources,
+} from './modules/trading/index.ts'
 import { createScmServices, registerScmResources } from './modules/scm/index.ts'
 import {
   createFinanceServices,
@@ -48,6 +52,7 @@ import { createNumberingService, registerNumberingResources } from './platform/n
 import {
   buildPrintingCatalog,
   createPrintingService,
+  createSofficeConverter,
   registerPrintingFileOwners,
   registerPrintingResources,
 } from './platform/printing/index.ts'
@@ -81,7 +86,7 @@ registerTradingResources(registry)
 registerFinanceResources(registry)
 registerScmResources(registry)
 registerManufacturingResources(registry)
-// 打印目录 stub 在业务域之后：已有真实 Meta 则跳过
+// 打印模板 Meta 在业务域之后（字段目录自 Registry fail-closed 派生）
 registerPrintingResources(registry)
 
 const settings = createSettingsService(db)
@@ -96,7 +101,14 @@ const printing = createPrintingService({
   db,
   files,
   catalog: buildPrintingCatalog(registry),
+  converter: createSofficeConverter({
+    path: env.sofficePath,
+    timeoutMs: env.sofficeTimeoutMs,
+    maxConcurrency: env.sofficeMaxConcurrency,
+  }),
 })
+// 业务域 DocBuilder 显式装配（platform 不内置业务表查询）
+registerSalesOrderDocBuilder(printing, db)
 const base = createBaseServices(db)
 const market = createMarketService(db, { settings })
 const iam = createIamService(db, registry)

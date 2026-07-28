@@ -142,23 +142,6 @@ export function createSofficeConverter(options: SofficeConverterOptions = {}): P
   return { convertXlsxToPdf }
 }
 
-export function createSofficeConverterFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
-): PDFConverter {
-  const path = env.SOFFICE_PATH
-  let timeoutMs = DEFAULT_TIMEOUT_MS
-  if (env.SOFFICE_TIMEOUT_MS) {
-    const ms = Number.parseInt(env.SOFFICE_TIMEOUT_MS, 10)
-    if (!Number.isNaN(ms) && ms > 0) timeoutMs = ms
-  }
-  let maxConcurrency = DEFAULT_MAX_CONCURRENCY
-  if (env.SOFFICE_MAX_CONCURRENCY) {
-    const n = Number.parseInt(env.SOFFICE_MAX_CONCURRENCY, 10)
-    if (!Number.isNaN(n) && n > 0) maxConcurrency = n
-  }
-  return createSofficeConverter({ path, timeoutMs, maxConcurrency })
-}
-
 function createSemaphore(max: number) {
   let available = max
   const waiters: Array<() => void> = []

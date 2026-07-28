@@ -170,3 +170,7 @@ export type { OrderService } from './order/service.ts'
 export type { OutsourcedConfigService } from './order/outsourced-config.ts'
 export type { FulfillmentService } from './fulfillment/service.ts'
 export type { ReconciliationService } from './reconciliation/service.ts'
+export {
+  createSalesOrderDocBuilder,
+  registerSalesOrderDocBuilder,
+} from './order/docbuilder.ts'

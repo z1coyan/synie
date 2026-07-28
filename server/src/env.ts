@@ -21,6 +21,12 @@ const envSchema = z.object({
   AUTH_SECRET: z.string().min(32, 'AUTH_SECRET 至少需要 32 字节'),
   AUTH_TOKEN_TTL: z.string().regex(TTL_RE, 'AUTH_TOKEN_TTL 必须是 数字+单位（s/m/h/d），如 168h').default('168h'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  /** LibreOffice soffice 可执行路径；空则走 PATH 中的 soffice */
+  SOFFICE_PATH: z.string().optional(),
+  /** PDF 转换超时（毫秒），默认 120000 */
+  SOFFICE_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  /** soffice 最大并发，默认 2 */
+  SOFFICE_MAX_CONCURRENCY: z.coerce.number().int().positive().optional(),
 })
 
 export interface Env {
@@ -30,6 +36,9 @@ export interface Env {
   authSecret: string
   tokenTtlSeconds: number
   logLevel: 'debug' | 'info' | 'warn' | 'error'
+  sofficePath?: string
+  sofficeTimeoutMs?: number
+  sofficeMaxConcurrency?: number
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
@@ -61,5 +70,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     authSecret: raw.AUTH_SECRET,
     tokenTtlSeconds: ttlSeconds,
     logLevel: raw.LOG_LEVEL,
+    sofficePath: raw.SOFFICE_PATH,
+    sofficeTimeoutMs: raw.SOFFICE_TIMEOUT_MS,
+    sofficeMaxConcurrency: raw.SOFFICE_MAX_CONCURRENCY,
   }
 }

@@ -22,7 +22,11 @@ import {
   createInventoryServices,
   registerInventoryResources,
 } from '~/modules/inventory/index.ts'
-import { createTradingServices, registerTradingResources } from '~/modules/trading/index.ts'
+import {
+  createTradingServices,
+  registerSalesOrderDocBuilder,
+  registerTradingResources,
+} from '~/modules/trading/index.ts'
 import { createScmServices, registerScmResources } from '~/modules/scm/index.ts'
 import {
   createManufacturingServices,
@@ -63,6 +67,7 @@ import {
 import {
   buildPrintingCatalog,
   createPrintingService,
+  createSofficeConverter,
   registerPrintingFileOwners,
   registerPrintingResources,
   type PrintingService,
@@ -105,7 +110,7 @@ export function createPlatformRegistry(): Registry {
   registerFinanceResources(registry)
   registerScmResources(registry)
   registerManufacturingResources(registry)
-  // 打印目录 stub 在业务域之后：已有真实 Meta 则跳过
+  // 打印模板 Meta 在业务域之后（字段目录自 Registry fail-closed 派生）
   registerPrintingResources(registry)
   return registry
 }
@@ -178,11 +183,16 @@ export async function buildTestApp(
   const manufacturing = createManufacturingServices(db, numbering)
   const printing =
     merged.printing ??
-    createPrintingService({
-      db,
-      files: merged.files,
-      catalog: buildPrintingCatalog(registry),
-    })
+    (() => {
+      const svc = createPrintingService({
+        db,
+        files: merged.files,
+        catalog: buildPrintingCatalog(registry),
+        converter: createSofficeConverter(),
+      })
+      registerSalesOrderDocBuilder(svc, db)
+      return svc
+    })()
   const accountsSvc = merged.accounts ?? base.accounts
   const customersSvc = merged.customers ?? party.customers
   const suppliersSvc = merged.suppliers ?? party.suppliers

@@ -1,13 +1,14 @@
 /**
  * sales.order 打印装配：头 + 条目，键名对齐打印字段目录。
  * 记录级数据权限按 actor 公司范围 fail-closed。
+ * 业务知识（表查询 / 枚举标签）住在 trading/order，不进 platform。
  */
 import { sql } from 'kysely'
 import { decimal } from '@synie/shared'
 import type { DbHandle } from '~/db/tx.ts'
-import { canAccessCompany, type Actor } from '../authz/actor.ts'
-import { ApiError } from '../http/errors.ts'
-import type { DocBuilder } from './docbuilder.ts'
+import { canAccessCompany } from '~/platform/authz/actor.ts'
+import { ApiError } from '~/platform/http/errors.ts'
+import type { DocBuilder } from '~/platform/printing/docbuilder.ts'
 import {
   enumLabel,
   formatBool,
@@ -16,13 +17,55 @@ import {
   formatDecimal,
   formatInt,
   formatText,
-  PARTY_TYPE_LABELS,
-  QUOTATION_PRICING_MODE_LABELS,
-  SALES_ORDER_STATUS_LABELS,
-  SALES_ORDER_TYPE_LABELS,
-  UNIT_TYPE_LABELS,
-} from './format.ts'
-import type { BuiltDoc, PrintDoc } from './types.ts'
+} from '~/platform/printing/format.ts'
+import type { BuiltDoc, PrintDoc } from '~/platform/printing/types.ts'
+
+const SALES_ORDER_STATUS_LABELS: Record<string, string> = {
+  draft: '草稿',
+  DRAFT: '草稿',
+  audited: '已审核',
+  AUDITED: '已审核',
+  closed: '已关闭',
+  CLOSED: '已关闭',
+  voided: '已作废',
+  VOIDED: '已作废',
+}
+
+const SALES_ORDER_TYPE_LABELS: Record<string, string> = {
+  regular: '常规订单',
+  REGULAR: '常规订单',
+  sample: '样品订单',
+  SAMPLE: '样品订单',
+}
+
+const PARTY_TYPE_LABELS: Record<string, string> = {
+  supplier: '供应商',
+  SUPPLIER: '供应商',
+  customer: '客户',
+  CUSTOMER: '客户',
+  company: '内部公司',
+  COMPANY: '内部公司',
+  employee: '员工',
+  EMPLOYEE: '员工',
+}
+
+const UNIT_TYPE_LABELS: Record<string, string> = {
+  length: '长度',
+  LENGTH: '长度',
+  area: '面积',
+  AREA: '面积',
+  weight: '重量',
+  WEIGHT: '重量',
+  quantity: '数量',
+  QUANTITY: '数量',
+}
+
+const QUOTATION_PRICING_MODE_LABELS: Record<string, string> = {
+  fixed: '固定价',
+  FIXED: '固定价',
+  qty_tiered: '数量梯度',
+  QTY_TIERED: '数量梯度',
+}
 
 interface HeadRow {
   order_no: string
@@ -112,6 +155,14 @@ export function createSalesOrderDocBuilder(db: DbHandle): DocBuilder {
       return result
     },
   }
+}
+
+/** 向 printing seam 注册 sales.order 装配（组合根调用） */
+export function registerSalesOrderDocBuilder(
+  printing: { registerDocBuilder: (resource: string, builder: DocBuilder) => void },
+  db: DbHandle,
+): void {
+  printing.registerDocBuilder('sales.order', createSalesOrderDocBuilder(db))
 }
 
 async function loadHead(db: DbHandle, id: string): Promise<HeadRow | undefined> {

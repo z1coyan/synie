@@ -17,10 +17,8 @@ import { hasPermission, type Actor } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 import type { FieldCatalog } from './catalog.ts'
 import type { DocBuilder } from './docbuilder.ts'
-import { createSalesOrderDocBuilder } from './docbuilder-sales-order.ts'
 import {
   ConvertFailedError,
-  createSofficeConverterFromEnv,
   ERR_SOFFICE_NO_OUTPUT,
   ERR_SOFFICE_NOT_FOUND,
   ERR_SOFFICE_TIMEOUT,
@@ -57,14 +55,15 @@ export interface PrintingServiceDeps {
   db: Kysely<Database>
   files: StoredFileReader
   catalog: FieldCatalog
+  /** PDF 转换器由组合根注入；未注入时仅支持 xlsx 导出 */
   converter?: PDFConverter
 }
 
 export function createPrintingService(deps: PrintingServiceDeps) {
   const { db, files, catalog } = deps
+  /** DocBuilder 由业务域经 registerDocBuilder 装配，platform 不内置业务表查询 */
   const builders = new Map<string, DocBuilder>()
-  builders.set('sales.order', createSalesOrderDocBuilder(db))
-  let converter: PDFConverter = deps.converter ?? createSofficeConverterFromEnv()
+  let converter: PDFConverter | undefined = deps.converter
 
   function registerDocBuilder(resource: string, builder: DocBuilder): void {
     builders.set(resource, builder)
@@ -364,6 +363,7 @@ export function createPrintingService(deps: PrintingServiceDeps) {
           templateId: ['无法读取模板文件'],
         })
       }
+      // 存储/IO 其它错误也统一成模板校验失败（不透出内部细节）
       throw ApiError.validation('无法读取模板文件', {
         templateId: ['无法读取模板文件'],
       })
@@ -387,6 +387,12 @@ export function createPrintingService(deps: PrintingServiceDeps) {
       }
       const printDocs = docs.map((d) => d.doc)
       const xlsx = renderPages(templateRaw, printDocs)
+      if (!converter) {
+        throw new ApiError(
+          'internal',
+          'PDF 转换服务不可用（未配置），请使用导出 Excel 或联系管理员',
+        )
+      }
       try {
         const pdf = await converter.convertXlsxToPdf(xlsx)
         return { binary: pdf, contentType: PDF_CONTENT_TYPE, filename }

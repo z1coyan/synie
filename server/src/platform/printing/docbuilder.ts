@@ -1,6 +1,6 @@
 /**
  * 单据装配 seam：业务记录 → PrintDoc。
- * 本期接入 sales.order；新资源 = 注册 DocBuilder，不改 Renderer/PdfConverter。
+ * 新资源 = 业务域 createXxxDocBuilder + 组合根 registerDocBuilder，不改 Renderer/PdfConverter。
  */
 import type { Actor } from '../authz/actor.ts'
 import type { BuiltDoc } from './types.ts'
