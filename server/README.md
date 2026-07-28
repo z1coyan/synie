@@ -29,6 +29,7 @@ bun test                    # 单测；设置 SYNIE_TEST_DATABASE_URL 后含 PG 
 bun run typecheck           # tsc --noEmit
 bun run db:migrate          # 执行 SQL 迁移（DATABASE_URL）
 bun run db:seed             # 幂等创建管理员（admin/admin123）
+bun run db:seed:demo        # 一键演示库（未初始化时：admin/admin123 + JT 公司 + 全链示例）
 bun run db:codegen          # 从开发库重新生成 src/db/types.d.ts
 ```
 
@@ -45,15 +46,15 @@ src/
 │   ├── auth/           # 登录/JWT/限流/Actor 装配
 │   ├── authz/          # 权限码通配匹配、公司数据范围
 │   ├── meta/           # ResourceMeta 权威模型 + Registry + meta 端点
-│   ├── audit|numbering|settings|files|printing|todo/   # 骨架，见各 README 与工单
-├── engines/            # gl / inventory 深模块（骨架，工单 03）
-├── modules/            # 业务域（workflow 填充，骨架为空）
+│   ├── audit|numbering|settings|files|printing|todo|setup/
+├── engines/            # gl / inventory
+├── modules/            # 业务域
 ├── db/                 # Kysely 连接、事务约定、filterbuild、生成类型
-└── jobs/               # 后台作业（骨架，工单 14）
+└── jobs/               # 后台作业（行情调度等）
 db/
 ├── migrations/         # SQL（与 server-go 同源）
 ├── migrate.ts          # 迁移执行器
-├── seed.ts / seed-admin.ts
+├── seed.ts / seed-admin.ts / seed-demo.ts
 ```
 
 ## 编码约定（重要，违反视为返工）

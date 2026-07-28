@@ -355,17 +355,36 @@ run('PG 集成（setup 向导）', () => {
       })
       expect(login.status).toBe(200)
       const { token } = (await login.json()) as { token: string }
-      const list = await app.request('/api/v1/sales/customers/query', {
+      const authz = {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      }
+      async function listCount(path: string): Promise<number> {
+        const res = await app.request(path, {
+          method: 'POST',
+          headers: authz,
+          body: JSON.stringify({ limit: 10 }),
+        })
+        expect(res.status).toBe(200)
+        return ((await res.json()) as { count: number }).count
+      }
+      expect(await listCount('/api/v1/sales/customers/query')).toBeGreaterThanOrEqual(1)
+      expect(await listCount('/api/v1/purchase/suppliers/query')).toBeGreaterThanOrEqual(1)
+      expect(await listCount('/api/v1/sales/orders/query')).toBeGreaterThanOrEqual(1)
+      expect(await listCount('/api/v1/purchase/orders/query')).toBeGreaterThanOrEqual(1)
+      expect(await listCount('/api/v1/sales/deliveries/query')).toBeGreaterThanOrEqual(1)
+      expect(await listCount('/api/v1/purchase/receipts/query')).toBeGreaterThanOrEqual(1)
+      expect(await listCount('/api/v1/inventory/stock-docs/query')).toBeGreaterThanOrEqual(1)
+      expect(await listCount('/api/v1/accounting/gl-journals/query')).toBeGreaterThanOrEqual(1)
+      expect(await listCount('/api/v1/finance/bank-accounts/query')).toBeGreaterThanOrEqual(1)
+
+      // 已完成初始化后 complete 应 conflict
+      const reComplete = await app.request('/api/v1/setup/complete', {
         method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ limit: 10 }),
+        headers: authz,
+        body: JSON.stringify({ preferredLanguage: 'zh-CN', seedSampleData: true }),
       })
-      expect(list.status).toBe(200)
-      const listBody = (await list.json()) as { count: number }
-      expect(listBody.count).toBeGreaterThanOrEqual(1)
+      expect(reComplete.status).toBe(409)
     },
     300_000,
   )

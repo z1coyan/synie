@@ -18,6 +18,14 @@ Blocked by: 06, 07, 08, 10, 11, 12, 13
 - 空库端到端：migrate → setup/status → first-user → complete(含示例) → 登录 → 关键列表/单据冒烟
 - 示例数据幂等（重复 complete 不产生重复 C01）
 - 并发 first-user 仅一成功
+- `bun run db:seed:demo` 可一键搭演示库（未初始化时）
+- 活服务：`SYNIE_API_URL=... bun .scratch/migration/verify-setup-rest.ts`（demo 冒烟；空库全路径加 `SYNIE_SETUP_E2E=1`）
+
+## 交付
+
+- `server/src/platform/setup/`（service/routes/sampledata + unit/PG 集成）
+- `server/db/seed-demo.ts` + `package.json` `db:seed:demo`
+- `.scratch/migration/verify-setup-rest.ts`
 
 ## 非目标
 
