@@ -1,7 +1,7 @@
 /**
  * 银行账户 + 银行流水。
  */
-import { decimal, type ListQuery } from '@synie/shared'
+import { type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
@@ -18,6 +18,11 @@ import {
   requirePerm, upper, validateOptionalText, validateRequiredText, validation,
 } from './common.ts'
 import { bankAccountResourceMeta, bankTransactionResourceMeta } from './meta.ts'
+import {
+  hasReconForBankAccount,
+  hasReconForTransaction,
+  reconciledTotalForTransaction,
+} from './banking-recon.ts'
 import {
   loadTransaction,
   mapTransaction,
@@ -228,13 +233,9 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
       if (Object.keys(fields).length) throw validation('银行账户', fields)
       await validateAccountRefs(trx, after.companyId, after.currencyId, after.accountId)
       if (accountChanged) {
-        const used = await sql<{ e: boolean }>`
-          SELECT EXISTS(
-            SELECT 1 FROM acc_bank_reconciliation r
-            JOIN acc_bank_transaction t ON t.id=r.bank_transaction_id
-            WHERE t.bank_account_id=${id}::uuid) AS e
-        `.execute(trx)
-        if (used.rows[0]?.e) throw conflict('账户名下流水存在对账记录,不允许更换绑定科目,请先解除对账')
+        if (await hasReconForBankAccount(trx, id)) {
+          throw conflict('账户名下流水存在对账记录,不允许更换绑定科目,请先解除对账')
+        }
       }
       const changes = auditDiff(accountSnap(before), accountSnap(after), ACCOUNT_AUDIT)
       if (Object.keys(changes).length === 0) return before
@@ -372,10 +373,7 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
       if (input.bankAccountId !== undefined) after.bankAccountId = input.bankAccountId
       validateTxnShape(after.occurredAt, after.income, after.expense, after.counterpartyName, after.counterpartyAccount, after.summary, after.note)
       await validateOwnBankAccount(trx, after.companyId, after.bankAccountId, false)
-      const totalRow = await sql<{ s: string }>`
-        SELECT COALESCE(sum(amount),0)::text AS s FROM acc_bank_reconciliation WHERE bank_transaction_id=${id}::uuid
-      `.execute(trx)
-      const total = decimal(totalRow.rows[0]?.s ?? '0')
+      const total = await reconciledTotalForTransaction(trx, id)
       const hasLinks = total.gt(0)
       if (hasLinks && before.bankAccountId !== after.bankAccountId) throw conflict('流水已有对账记录,不允许更换银行账户')
       if (hasLinks && (before.income != null) !== (after.income != null)) throw conflict('流水已有对账记录,不允许收支换边')
@@ -414,10 +412,9 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     return withTx(db, async (trx) => {
       const item = await loadTransaction(trx, id, true)
       requireCompanyAccess(actor, item.companyId, '银行流水')
-      const linked = await sql<{ e: boolean }>`
-        SELECT EXISTS(SELECT 1 FROM acc_bank_reconciliation WHERE bank_transaction_id=${id}::uuid) AS e
-      `.execute(trx)
-      if (linked.rows[0]?.e) throw conflict('流水已有对账记录,请先解除对账后再删除')
+      if (await hasReconForTransaction(trx, id)) {
+        throw conflict('流水已有对账记录,请先解除对账后再删除')
+      }
       try {
         await sql`DELETE FROM acc_bank_transaction WHERE id=${id}::uuid`.execute(trx)
         await writeAudit(trx, actor, {

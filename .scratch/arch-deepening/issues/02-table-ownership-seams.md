@@ -48,3 +48,9 @@ Status: resolved
 - commit：`1a385b1` refactor(server): 跨模块表所有权收口——employee/recon/banking seams
 - 与过账骨架（invoice auditGlDocInTx）合并时保留 skeleton + recon Pick 扩 `existsForInvoice`/`loadForInvoiceAudit`；journal 必注 `GlEngine` + `JournalServiceDeps`
 - 验证：typecheck + 246 测全绿
+
+### 2026-07-28 独立验收补丁
+
+- 验收发现 `banking-accounts` 仍直查 `acc_bank_reconciliation`（账户换科目 / 流水改删闸）
+- 补游离只读接缝：`hasReconForBankAccount` / `hasReconForTransaction` / `reconciledTotalForTransaction`；账户侧经 seam 调用
+- grep：生产路径对账表名仅所有权模块 + meta/FK/注释/测试；`await import(` 仍零

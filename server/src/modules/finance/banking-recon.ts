@@ -71,12 +71,20 @@ async function bankLedgerAccount(db: DbHandle, transaction: BankTransaction, sha
   return rows.rows[0].account_id
 }
 
-async function reconciledTotal(db: DbHandle, transactionId: string) {
+/** 流水已对账金额合计（只读接缝；账户/流水侧不得直查对账表）。 */
+export async function reconciledTotalForTransaction(
+  db: DbHandle,
+  transactionId: string,
+) {
   const rows = await sql<{ s: string }>`
     SELECT COALESCE(sum(amount),0)::text AS s FROM acc_bank_reconciliation
     WHERE bank_transaction_id=${transactionId}::uuid
   `.execute(db)
   return decimal(rows.rows[0]?.s ?? '0')
+}
+
+async function reconciledTotal(db: DbHandle, transactionId: string) {
+  return reconciledTotalForTransaction(db, transactionId)
 }
 
 async function journalCapacity(
@@ -128,6 +136,34 @@ export async function isJournalLinkedToBankRecon(
   const used = await sql<{ e: boolean }>`
     SELECT EXISTS(
       SELECT 1 FROM acc_bank_reconciliation WHERE journal_id=${journalId}::uuid
+    ) AS e
+  `.execute(db)
+  return Boolean(used.rows[0]?.e)
+}
+
+/** 流水是否已有对账记录（删除前闸；账户/流水侧只读接缝）。 */
+export async function hasReconForTransaction(
+  db: DbHandle,
+  transactionId: string,
+): Promise<boolean> {
+  const used = await sql<{ e: boolean }>`
+    SELECT EXISTS(
+      SELECT 1 FROM acc_bank_reconciliation WHERE bank_transaction_id=${transactionId}::uuid
+    ) AS e
+  `.execute(db)
+  return Boolean(used.rows[0]?.e)
+}
+
+/** 银行账户名下流水是否存在对账记录（更换绑定科目前闸）。 */
+export async function hasReconForBankAccount(
+  db: DbHandle,
+  bankAccountId: string,
+): Promise<boolean> {
+  const used = await sql<{ e: boolean }>`
+    SELECT EXISTS(
+      SELECT 1 FROM acc_bank_reconciliation r
+      JOIN acc_bank_transaction t ON t.id=r.bank_transaction_id
+      WHERE t.bank_account_id=${bankAccountId}::uuid
     ) AS e
   `.execute(db)
   return Boolean(used.rows[0]?.e)
