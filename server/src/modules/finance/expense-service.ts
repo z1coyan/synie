@@ -1,5 +1,5 @@
 /**
- * 费用报销单：挂票/无票行、审核过账、作废解除发票占用。
+ * 费用报销单：挂票/无票行、审核/作废走总账过账骨架。
  */
 import { decimal, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -15,6 +15,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { mapWriteError } from '~/db/dberr.ts'
+import { auditGlDocInTx, voidGlDocInTx } from '~/modules/trading/posting.ts'
 import {
   actorUserId, asDateOnly, asDateOnlyOrNull, asIso, asIsoOrNull, conflict, lower,
   notFound, parseDecimal, requireCompanyAccess, requireDate, requirePerm, upper,
@@ -316,53 +317,51 @@ export function createExpenseService(
   async function auditReport(actor: Actor, id: string, postingDate: string) {
     requirePerm(actor, 'acc.expense_report:audit')
     const posting = requireDate(postingDate, 'postingDate')
-    return withTx(db, async (trx) => {
-      const before = await loadReport(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '费用报销单')
-      if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可审核')
-      await validateEmployeeAndAccount(trx, before.companyId, before.employeeId, before.paymentAccountId)
-      const { entries, total } = await expenseEntries(trx, before)
-      if (total.isZero()) throw conflict('报销单必须至少有一行')
-      const tag = await sql`
-        UPDATE acc_expense_report SET status='audited', posting_date=${posting}::date,
-          audited_at=timezone('utc',now()), audited_by_id=${actorUserId(actor)}::uuid,
-          updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid AND status='draft'
-      `.execute(trx)
-      if (Number(tag.numAffectedRows) !== 1) throw conflict('报销单已被并发处理')
-      entries.push({ accountId: before.paymentAccountId, debit: '0', credit: total })
-      await gl.post(trx, {
-        type: VOUCHER, id, no: before.docNo, companyId: before.companyId, postingDate: posting,
-      }, entries)
-      const result = await loadReport(trx, id, false)
-      await writeAudit(trx, actor, {
-        resource: 'acc_expense_report', recordId: id, recordLabel: result.docNo,
-        companyId: result.companyId, actionType: 'update', actionName: 'audit',
-        changes: auditDiff(reportSnap(before), reportSnap(result), REPORT_AUDIT),
-      })
-      return result
-    })
+    return withTx(db, async (trx) =>
+      auditGlDocInTx(trx, actor, gl, {
+        voucherType: VOUCHER,
+        headTable: 'acc_expense_report',
+        conflictMessage: '报销单已被并发处理',
+        lockDraft: async (t) => {
+          const before = await loadReport(t, id, true)
+          requireCompanyAccess(actor, before.companyId, '费用报销单')
+          if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可审核')
+          return before
+        },
+        collect: async (t, before) => {
+          await validateEmployeeAndAccount(t, before.companyId, before.employeeId, before.paymentAccountId)
+          const { entries, total } = await expenseEntries(t, before)
+          if (total.isZero()) throw conflict('报销单必须至少有一行')
+          // 金额口径 Decimal|string（引擎 interface 瘦身后）
+          entries.push({ accountId: before.paymentAccountId, debit: '0', credit: total })
+          return { entries, postingDate: posting }
+        },
+        voucherOf: (h) => ({ id: h.id, no: h.docNo, companyId: h.companyId }),
+        reload: (t, headId) => loadReport(t, headId, false),
+        snapshot: reportSnap,
+        auditFields: REPORT_AUDIT,
+      }),
+    )
   }
 
   async function voidReport(actor: Actor, id: string) {
     requirePerm(actor, 'acc.expense_report:void')
-    return withTx(db, async (trx) => {
-      const before = await loadReport(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '费用报销单')
-      if (before.status !== 'AUDITED') throw conflict('仅已审核报销单可作废')
-      await gl.cancel(trx, { type: VOUCHER, id })
-      await sql`
-        UPDATE acc_expense_report SET status='voided', updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
-      const result = await loadReport(trx, id, false)
-      await writeAudit(trx, actor, {
-        resource: 'acc_expense_report', recordId: id, recordLabel: result.docNo,
-        companyId: result.companyId, actionType: 'update', actionName: 'void',
-        changes: auditDiff(reportSnap(before), reportSnap(result), REPORT_AUDIT),
-      })
-      return result
-    })
+    return withTx(db, async (trx) =>
+      voidGlDocInTx(trx, actor, gl, {
+        voucherType: VOUCHER,
+        headTable: 'acc_expense_report',
+        lockAudited: async (t) => {
+          const before = await loadReport(t, id, true)
+          requireCompanyAccess(actor, before.companyId, '费用报销单')
+          if (before.status !== 'AUDITED') throw conflict('仅已审核报销单可作废')
+          return before
+        },
+        voucherOf: (h) => ({ id: h.id, no: h.docNo, companyId: h.companyId }),
+        reload: (t, headId) => loadReport(t, headId, false),
+        snapshot: reportSnap,
+        auditFields: REPORT_AUDIT,
+      }),
+    )
   }
 
   async function validateExpenseItem(
