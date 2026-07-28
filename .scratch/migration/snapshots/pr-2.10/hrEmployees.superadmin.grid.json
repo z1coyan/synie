@@ -1,0 +1,161 @@
+{
+  "capabilities": [
+    "create",
+    "update",
+    "delete"
+  ],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "员工编号",
+      "name": "code",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "员工姓名",
+      "name": "name",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "考勤设备编号",
+      "name": "attendanceNo",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "身份证号",
+      "name": "idNumber",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "户籍",
+      "name": "householdRegistration",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "手机号码",
+      "name": "phone",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "现居住地",
+      "name": "currentAddress",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "日薪",
+      "name": "dailyWage",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "月补贴",
+      "name": "monthlyAllowance",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "社保工伤",
+          "value": "SOCIAL_INJURY"
+        },
+        {
+          "label": "社保失业",
+          "value": "SOCIAL_UNEMPLOYMENT"
+        },
+        {
+          "label": "社保医疗",
+          "value": "SOCIAL_MEDICAL"
+        },
+        {
+          "label": "社保养老",
+          "value": "SOCIAL_PENSION"
+        },
+        {
+          "label": "社保生育",
+          "value": "SOCIAL_MATERNITY"
+        },
+        {
+          "label": "公积金",
+          "value": "HOUSING_FUND"
+        },
+        {
+          "label": "商保工伤",
+          "value": "COMMERCIAL_INJURY"
+        },
+        {
+          "label": "商保医疗",
+          "value": "COMMERCIAL_MEDICAL"
+        }
+      ],
+      "filterable": true,
+      "label": "参保类型",
+      "name": "insuranceTypes",
+      "ref": null,
+      "sortable": false,
+      "type": "enumArray"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    }
+  ],
+  "destroyMutation": "destroyHrEmployee",
+  "extendedActions": []
+}

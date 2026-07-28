@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
+import { requirePermission } from '../authz/actor.ts'
 import type { AppEnv } from '../http/context.ts'
 import { validationHook } from '../http/zod.ts'
 import type { AuditService } from './service.ts'
@@ -25,29 +26,50 @@ const listQuerySchema = z
 
 const idParam = z.object({ id: z.string().uuid() })
 
+/** 权限中间件：必须挂在 zValidator 之前，保证畸形 body 仍 403 */
+function requirePerm(code: string) {
+  return async (
+    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
+    next: () => Promise<void>,
+  ) => {
+    requirePermission(c.get('actor'), code)
+    await next()
+  }
+}
+
 export function auditRoutes(deps: { auth: AuthService; audit: AuditService }) {
   const { auth, audit } = deps
 
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const body = c.req.valid('json')
-      const result = await audit.list(c.get('actor'), {
-        limit: body.limit,
-        offset: body.offset,
-        search: body.search,
-        sort: body.sort,
-        filter: body.filter as ListQuery['filter'],
-      })
-      return c.json({
-        count: result.count,
-        results: result.results.map(dto),
-      })
-    })
-    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
-      const value = await audit.get(c.get('actor'), c.req.valid('param').id)
-      return c.json(dto(value))
-    })
+    .post(
+      '/query',
+      requirePerm('sys.audit_log:read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
+        const body = c.req.valid('json')
+        const result = await audit.list(c.get('actor'), {
+          limit: body.limit,
+          offset: body.offset,
+          search: body.search,
+          sort: body.sort,
+          filter: body.filter as ListQuery['filter'],
+        })
+        return c.json({
+          count: result.count,
+          results: result.results.map(dto),
+        })
+      },
+    )
+    .get(
+      '/:id',
+      requirePerm('sys.audit_log:read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
+        const value = await audit.get(c.get('actor'), c.req.valid('param').id)
+        return c.json(dto(value))
+      },
+    )
 }
 
 function dto(value: {

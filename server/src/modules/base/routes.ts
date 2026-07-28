@@ -131,19 +131,36 @@ export interface BaseRouteDeps {
 }
 
 /** 挂载于 /base（对齐 OpenAPI：/base/currencies|companies|units|accounts） */
+/** 权限中间件：必须挂在 zValidator 之前 */
+function requirePerm(code: string) {
+  return async (
+    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
+    next: () => Promise<void>,
+  ) => {
+    requirePermission(c.get('actor'), code)
+    await next()
+  }
+}
+
 export function baseRoutes(deps: BaseRouteDeps) {
   const { auth, currencies, companies, units, accounts } = deps
 
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     // —— 货币 ——
-    .post('/currencies/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.currency:read')
+    .post(
+      '/currencies/query',
+      requirePerm('base.currency:read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
       const result = await currencies.list(toListQuery(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(currencyDto) })
     })
-    .post('/currencies', zValidator('json', currencyCreateSchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.currency:create')
+    .post(
+      '/currencies',
+      requirePerm('base.currency:create'),
+      zValidator('json', currencyCreateSchema, validationHook),
+      async (c) => {
       const body = c.req.valid('json')
       const item = await currencies.create(c.get('actor'), {
         name: body.name,
@@ -153,17 +170,20 @@ export function baseRoutes(deps: BaseRouteDeps) {
       })
       return c.json(currencyDto(item), 201)
     })
-    .get('/currencies/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.currency:read')
+    .get(
+      '/currencies/:id',
+      requirePerm('base.currency:read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
       const item = await currencies.get(c.req.valid('param').id)
       return c.json(currencyDto(item))
     })
     .patch(
       '/currencies/:id',
+      requirePerm('base.currency:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', currencyUpdateSchema, validationHook),
       async (c) => {
-        requirePermission(c.get('actor'), 'base.currency:update')
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
         const item = await currencies.update(c.get('actor'), c.req.valid('param').id, {
@@ -175,19 +195,28 @@ export function baseRoutes(deps: BaseRouteDeps) {
         return c.json(currencyDto(item))
       },
     )
-    .delete('/currencies/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.currency:delete')
+    .delete(
+      '/currencies/:id',
+      requirePerm('base.currency:delete'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
       await currencies.remove(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
     // —— 公司 ——
-    .post('/companies/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.company:read')
+    .post(
+      '/companies/query',
+      requirePerm('base.company:read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
       const result = await companies.list(toListQuery(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(companyDto) })
     })
-    .post('/companies', zValidator('json', companyCreateSchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.company:create')
+    .post(
+      '/companies',
+      requirePerm('base.company:create'),
+      zValidator('json', companyCreateSchema, validationHook),
+      async (c) => {
       const body = c.req.valid('json')
       const item = await companies.create(c.get('actor'), {
         code: body.code,
@@ -198,17 +227,20 @@ export function baseRoutes(deps: BaseRouteDeps) {
       })
       return c.json(companyDto(item), 201)
     })
-    .get('/companies/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.company:read')
+    .get(
+      '/companies/:id',
+      requirePerm('base.company:read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
       const item = await companies.get(c.req.valid('param').id)
       return c.json(companyDto(item))
     })
     .patch(
       '/companies/:id',
+      requirePerm('base.company:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', companyUpdateSchema, validationHook),
       async (c) => {
-        requirePermission(c.get('actor'), 'base.company:update')
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
         const item = await companies.update(c.get('actor'), c.req.valid('param').id, {
@@ -221,19 +253,28 @@ export function baseRoutes(deps: BaseRouteDeps) {
         return c.json(companyDto(item))
       },
     )
-    .delete('/companies/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.company:delete')
+    .delete(
+      '/companies/:id',
+      requirePerm('base.company:delete'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
       await companies.remove(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
     // —— 计量单位 ——
-    .post('/units/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.unit:read')
+    .post(
+      '/units/query',
+      requirePerm('base.unit:read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
       const result = await units.list(toListQuery(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(unitDto) })
     })
-    .post('/units', zValidator('json', unitCreateSchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.unit:create')
+    .post(
+      '/units',
+      requirePerm('base.unit:create'),
+      zValidator('json', unitCreateSchema, validationHook),
+      async (c) => {
       const body = c.req.valid('json')
       const item = await units.create(c.get('actor'), {
         unitType: body.unitType,
@@ -244,17 +285,20 @@ export function baseRoutes(deps: BaseRouteDeps) {
       })
       return c.json(unitDto(item), 201)
     })
-    .get('/units/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.unit:read')
+    .get(
+      '/units/:id',
+      requirePerm('base.unit:read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
       const item = await units.get(c.req.valid('param').id)
       return c.json(unitDto(item))
     })
     .patch(
       '/units/:id',
+      requirePerm('base.unit:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', unitUpdateSchema, validationHook),
       async (c) => {
-        requirePermission(c.get('actor'), 'base.unit:update')
         const body = c.req.valid('json')
         const item = await units.update(c.get('actor'), c.req.valid('param').id, {
           unitType: body.unitType,
@@ -266,22 +310,28 @@ export function baseRoutes(deps: BaseRouteDeps) {
         return c.json(unitDto(item))
       },
     )
-    .delete('/units/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.unit:delete')
+    .delete(
+      '/units/:id',
+      requirePerm('base.unit:delete'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
       await units.remove(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
     // —— 会计科目 ——
-    .post('/accounts/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.account:read')
+    .post(
+      '/accounts/query',
+      requirePerm('base.account:read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
       const result = await accounts.list(c.get('actor'), toListQuery(c.req.valid('json')))
       return c.json({ count: result.count, results: result.results.map(accountDto) })
     })
     .post(
       '/accounts/init-template',
+      requirePerm('base.account:create'),
       zValidator('json', accountTemplateSchema, validationHook),
       async (c) => {
-        requirePermission(c.get('actor'), 'base.account:create')
         const body = c.req.valid('json')
         const result = await accounts.initializeTemplate(
           c.get('actor'),
@@ -291,8 +341,11 @@ export function baseRoutes(deps: BaseRouteDeps) {
         return c.json({ createdCount: result.createdCount }, 201)
       },
     )
-    .post('/accounts', zValidator('json', accountCreateSchema, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.account:create')
+    .post(
+      '/accounts',
+      requirePerm('base.account:create'),
+      zValidator('json', accountCreateSchema, validationHook),
+      async (c) => {
       const body = c.req.valid('json')
       const item = await accounts.create(c.get('actor'), {
         code: body.code,
@@ -307,17 +360,20 @@ export function baseRoutes(deps: BaseRouteDeps) {
       })
       return c.json(accountDto(item), 201)
     })
-    .get('/accounts/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.account:read')
+    .get(
+      '/accounts/:id',
+      requirePerm('base.account:read'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
       const item = await accounts.get(c.get('actor'), c.req.valid('param').id)
       return c.json(accountDto(item))
     })
     .patch(
       '/accounts/:id',
+      requirePerm('base.account:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', accountUpdateSchema, validationHook),
       async (c) => {
-        requirePermission(c.get('actor'), 'base.account:update')
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json')
         const item = await accounts.update(c.get('actor'), c.req.valid('param').id, {
@@ -335,8 +391,11 @@ export function baseRoutes(deps: BaseRouteDeps) {
         return c.json(accountDto(item))
       },
     )
-    .delete('/accounts/:id', zValidator('param', idParam, validationHook), async (c) => {
-      requirePermission(c.get('actor'), 'base.account:delete')
+    .delete(
+      '/accounts/:id',
+      requirePerm('base.account:delete'),
+      zValidator('param', idParam, validationHook),
+      async (c) => {
       await accounts.remove(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })

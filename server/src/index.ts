@@ -2,6 +2,10 @@ import { buildApp } from './app.ts'
 import { createDb } from './db/index.ts'
 import { loadEnv } from './env.ts'
 import { createBaseServices, registerBaseResources } from './modules/base/index.ts'
+import {
+  createMarketInstrumentService,
+  registerMarketResources,
+} from './modules/base/market/index.ts'
 import { createIamService, registerIamResources } from './modules/iam/index.ts'
 import { createPartyServices, registerPartyResources } from './modules/party/index.ts'
 import {
@@ -38,6 +42,7 @@ registerNumberingResources(registry)
 registerFileResources(registry)
 registerAuditResources(registry)
 registerBaseResources(registry)
+registerMarketResources(registry)
 registerIamResources(registry)
 registerPartyResources(registry)
 registerSalesCompanyAccountDefault(registry)
@@ -49,6 +54,7 @@ const files = createFileService({ db, owners })
 const storages = createStorageService({ db })
 const audit = createAuditService(db)
 const base = createBaseServices(db)
+const marketInstruments = createMarketInstrumentService(db)
 const iam = createIamService(db, registry)
 const party = createPartyServices(db, numbering)
 const companyAccountDefaults = createCompanyAccountDefaultService(db)
@@ -66,6 +72,7 @@ const app = buildApp({
   companies: base.companies,
   units: base.units,
   accounts: base.accounts,
+  marketInstruments,
   iam,
   customers: party.customers,
   suppliers: party.suppliers,

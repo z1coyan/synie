@@ -8,6 +8,8 @@ import type { AccountService } from './modules/base/account-service.ts'
 import type { CompanyService } from './modules/base/company-service.ts'
 import type { CurrencyService } from './modules/base/currency-service.ts'
 import type { UnitService } from './modules/base/unit-service.ts'
+import { marketInstrumentRoutes } from './modules/base/market/index.ts'
+import type { MarketInstrumentService } from './modules/base/market/index.ts'
 import { iamRoleRoutes, iamUserRoutes } from './modules/iam/index.ts'
 import type { IamService } from './modules/iam/service.ts'
 import { customerRoutes, employeeRoutes, supplierRoutes } from './modules/party/index.ts'
@@ -35,7 +37,7 @@ import { settingsRoutes } from './platform/settings/routes.ts'
 import type { SettingsService } from './platform/settings/service.ts'
 
 /**
- * 应用依赖。核心平台 + 工单 02 base/iam/party/公司默认过账科目。
+ * 应用依赖。核心平台 + 工单 02 base/iam/party/公司默认过账科目 + 行情品种查询面。
  * 路由必须链式 .route() + zValidator，保 ApiType 类型链。
  */
 export interface AppDeps {
@@ -51,6 +53,7 @@ export interface AppDeps {
   companies: CompanyService
   units: UnitService
   accounts: AccountService
+  marketInstruments: MarketInstrumentService
   iam: IamService
   customers: CustomerService
   suppliers: SupplierService
@@ -102,6 +105,13 @@ export function buildApp(deps: AppDeps) {
         companies: deps.companies,
         units: deps.units,
         accounts: deps.accounts,
+      }),
+    )
+    .route(
+      '/base/market-instruments',
+      marketInstrumentRoutes({
+        auth: deps.auth,
+        instruments: deps.marketInstruments,
       }),
     )
     .route('/system/users', iamUserRoutes({ auth: deps.auth, iam: deps.iam }))

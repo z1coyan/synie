@@ -2,6 +2,10 @@ import type { Kysely } from 'kysely'
 import { buildApp, type AppDeps, type ApiType } from '~/app.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { createBaseServices, registerBaseResources } from '~/modules/base/index.ts'
+import {
+  createMarketInstrumentService,
+  registerMarketResources,
+} from '~/modules/base/market/index.ts'
 import { createIamService, registerIamResources } from '~/modules/iam/index.ts'
 import { createPartyServices, registerPartyResources } from '~/modules/party/index.ts'
 import {
@@ -59,6 +63,7 @@ export function createPlatformRegistry(): Registry {
   registerFileResources(registry)
   registerAuditResources(registry)
   registerBaseResources(registry)
+  registerMarketResources(registry)
   registerIamResources(registry)
   registerPartyResources(registry)
   registerSalesCompanyAccountDefault(registry)
@@ -105,6 +110,7 @@ export async function buildTestApp(
   const merged = { ...platform, ...options.platform, ...options.deps }
   const numbering = merged.numbering
   const base = createBaseServices(db)
+  const marketInstruments = createMarketInstrumentService(db)
   const iam = createIamService(db, registry)
   const party = createPartyServices(db, numbering)
   const companyAccountDefaults = createCompanyAccountDefaultService(db)
@@ -121,6 +127,7 @@ export async function buildTestApp(
     companies: merged.companies ?? base.companies,
     units: merged.units ?? base.units,
     accounts: merged.accounts ?? base.accounts,
+    marketInstruments: merged.marketInstruments ?? marketInstruments,
     iam: merged.iam ?? iam,
     customers: merged.customers ?? party.customers,
     suppliers: merged.suppliers ?? party.suppliers,
