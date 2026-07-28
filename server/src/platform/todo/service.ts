@@ -1,9 +1,10 @@
 /**
  * 待办查询与用户痕迹（已读/个人忽略）。
  * 生产者在对账 confirm / 发票结单接缝；本服务只负责消费侧 API。
+ * 业务权限 / 对手名 / 草稿关联由 TodoSourceRegistry 注入，platform 不硬编码业务表。
  */
 import { decimal, toDecimalString, type ListQuery } from '@synie/shared'
-import { sql } from 'kysely'
+import { sql, type RawBuilder } from 'kysely'
 import type { Kysely } from 'kysely'
 import { buildListQuery } from '~/db/filterbuild.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
@@ -15,6 +16,12 @@ import {
 } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
+import {
+  assertSourcesRegistered,
+  buildDraftLinkedCase,
+  buildPartyNameCase,
+  type TodoSourceRegistry,
+} from './source-registry.ts'
 
 export type TodoTab = 'active' | 'history' | 'recent'
 
@@ -245,43 +252,51 @@ function todoQueryMeta(): ResourceMeta {
   }
 }
 
-const DETAIL_SELECT = sql`
+function detailSelect(registry: TodoSourceRegistry): RawBuilder<unknown> {
+  const partyName = buildPartyNameCase(registry)
+  const draftLinked = buildDraftLinkedCase(registry)
+  return sql`
   todo.id, todo.type, todo.source_type, todo.source_id, todo.source_no,
   todo.party_type, todo.party_id,
-  CASE todo.party_type
-    WHEN 'customer' THEN COALESCE((SELECT c.name FROM sal_customers c WHERE c.id=todo.party_id),'')
-    WHEN 'supplier' THEN COALESCE((SELECT s.name FROM pur_supplier s WHERE s.id=todo.party_id),'')
-    ELSE ''
-  END AS party_name,
+  ${partyName} AS party_name,
   todo.amount, todo.status, todo.closed_reason, todo.source_changed_at, todo.closed_at,
   todo.inserted_at, todo.updated_at, todo.company_id,
   company.id AS company_row_id, company.name AS company_name, company.short_name AS company_short_name,
   todo.created_by_id,
   created_by.id AS created_by_row_id, created_by.username AS created_by_username,
   created_by.name AS created_by_name,
-  CASE todo.source_type
-    WHEN 'sales.reconciliation' THEN EXISTS(
-      SELECT 1 FROM acc_vat_invoice invoice
-      WHERE invoice.sal_reconciliation_id=todo.source_id AND invoice.status='draft')
-    WHEN 'purchase.reconciliation' THEN EXISTS(
-      SELECT 1 FROM acc_vat_invoice invoice
-      WHERE invoice.pur_reconciliation_id=todo.source_id AND invoice.status='draft')
-    ELSE false
-  END AS draft_invoice_linked,
+  ${draftLinked} AS draft_invoice_linked,
   state.read_at, state.dismissed_at,
   (state.dismissed_at IS NOT NULL AND state.reset_basis_at IS NOT NULL
    AND state.reset_basis_at=todo.source_changed_at) AS dismissed`
+}
 
 export type TodoService = ReturnType<typeof createTodoService>
 
-export function createTodoService(db: Kysely<Database>) {
+export function createTodoService(db: Kysely<Database>, sources: TodoSourceRegistry) {
+  const selectSql = detailSelect(sources)
+
+  function requireAction(actor: Actor): void {
+    assertSourcesRegistered(sources)
+    const codes = sources.actionPermissionCodes()
+    if (!codes.some((code) => hasPermission(actor, code))) {
+      throw new ApiError('forbidden', '无权限查看待办')
+    }
+  }
+
+  function requireUnread(actor: Actor): void {
+    assertSourcesRegistered(sources)
+    const codes = sources.unreadPermissionCodes()
+    if (!codes.some((code) => hasPermission(actor, code))) {
+      throw new ApiError('forbidden', '无权限查看待办')
+    }
+  }
+
   async function list(
     actor: Actor,
     query: TodoListQuery,
   ): Promise<{ count: number; results: Todo[] }> {
-    if (!hasPermission(actor, 'acc.vat_invoice:create')) {
-      throw new ApiError('forbidden', '无权限查看待办')
-    }
+    requireAction(actor)
     let limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
     const offset = query.offset ?? 0
     const tab = (query.tab && query.tab !== '' ? query.tab : 'active').toLowerCase()
@@ -331,10 +346,17 @@ export function createTodoService(db: Kysely<Database>) {
     const whereSql =
       parts.length > 0 ? sql` WHERE ${sql.join(parts, sql` AND `)}` : sql``
 
+    // 客户端排序：CTE 外层用 todo. 前缀消除 JOIN 列歧义（不再静默丢弃）
     let orderSql = sql` ORDER BY todo.inserted_at DESC, todo.id DESC`
-    if (built.orderBy) {
-      // filterbuild 产出无表前缀列；CTE 内加 todo. 前缀会歧义，故用默认排序为主路径
-      orderSql = sql` ORDER BY todo.inserted_at DESC, todo.id DESC`
+    if (listQuery.sort) {
+      const meta = todoQueryMeta()
+      const field = meta.fields.find((f) => f.apiName === listQuery.sort!.column)
+      if (!field || !field.sortable || !field.dbColumn) {
+        throw ApiError.validation('筛选条件错误', { 'sort.column': ['未知或不可排序的字段'] })
+      }
+      const dir = listQuery.sort.direction === 'ascending' ? 'ASC' : 'DESC'
+      // dbColumn 来自内部 Meta 白名单，可 raw
+      orderSql = sql` ORDER BY ${sql.raw(`todo.${field.dbColumn}`)} ${sql.raw(dir)}, todo.id DESC`
     }
 
     const countRow = await sql<{ count: string }>`
@@ -344,7 +366,7 @@ export function createTodoService(db: Kysely<Database>) {
 
     const rows = await sql<Record<string, unknown>>`
       WITH visible AS (SELECT * FROM sys_todo${whereSql})
-      SELECT ${DETAIL_SELECT}
+      SELECT ${selectSql}
       FROM visible todo
       JOIN bas_company company ON company.id=todo.company_id
       LEFT JOIN sys_user created_by ON created_by.id=todo.created_by_id
@@ -370,9 +392,7 @@ export function createTodoService(db: Kysely<Database>) {
     id: string,
     doDismiss: boolean,
   ): Promise<Todo> {
-    if (!hasPermission(actor, 'acc.vat_invoice:create')) {
-      throw new ApiError('forbidden', '无权限操作待办')
-    }
+    requireAction(actor)
     if (!actor.userId) {
       throw new ApiError('forbidden', '待办操作缺少用户身份')
     }
@@ -417,19 +437,12 @@ export function createTodoService(db: Kysely<Database>) {
       await sql`
         UPDATE sys_todo SET updated_at=(now() AT TIME ZONE 'utc') WHERE id=${id}::uuid
       `.execute(trx)
-      return queryById(trx, id, actor.userId)
+      return queryById(trx, id, actor.userId, selectSql)
     })
   }
 
   async function unreadCount(actor: Actor): Promise<number> {
-    // 未读徽标：持 create（待办消费圈人）或 read 任一即可。
-    // 验收 fixture 常只授 create；与 query/read/dismiss 圈人一致。
-    if (
-      !hasPermission(actor, 'acc.vat_invoice:create') &&
-      !hasPermission(actor, 'acc.vat_invoice:read')
-    ) {
-      throw new ApiError('forbidden', '无权限查看待办')
-    }
+    requireUnread(actor)
     const scope = companyFilter(actor)
     const row = await sql<{ count: string }>`
       SELECT count(*)::text AS count
@@ -448,12 +461,17 @@ export function createTodoService(db: Kysely<Database>) {
     return Number(row.rows[0]?.count ?? 0)
   }
 
-  return { list, markRead, dismiss, unreadCount }
+  return { list, markRead, dismiss, unreadCount, sources }
 }
 
-async function queryById(db: DbHandle, id: string, userId: string): Promise<Todo> {
+async function queryById(
+  db: DbHandle,
+  id: string,
+  userId: string,
+  selectSql: RawBuilder<unknown>,
+): Promise<Todo> {
   const rows = await sql<Record<string, unknown>>`
-    SELECT ${DETAIL_SELECT}
+    SELECT ${selectSql}
     FROM sys_todo todo
     JOIN bas_company company ON company.id=todo.company_id
     LEFT JOIN sys_user created_by ON created_by.id=todo.created_by_id

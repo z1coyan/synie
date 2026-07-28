@@ -15,6 +15,8 @@ import { createExpenseService } from './expense-service.ts'
 import { createBillService } from './bill-service.ts'
 import { allFinanceResourceMetas } from './meta.ts'
 import type { OwnerRegistry } from '~/platform/files/owner-registry.ts'
+import type { TodoSourceRegistry } from '~/platform/todo/source-registry.ts'
+import { registerFinanceSettingResources } from './settings.ts'
 
 export { createVatInvoiceService, type VatInvoiceService } from './invoice-service.ts'
 export { createBankingService, type BankingService } from './banking-service.ts'
@@ -35,11 +37,20 @@ export {
   billHoldingRoutes,
 } from './ops-routes.ts'
 export { allFinanceResourceMetas, vatInvoiceResourceMeta } from './meta.ts'
+export {
+  createAccountingSettingService,
+  accountingSettingResourceMeta,
+  registerFinanceSettingResources,
+  type AccountingSettingService,
+  type AccountingSetting,
+  type AccountingUpdate,
+} from './settings.ts'
 
 export function registerFinanceResources(registry: Registry): void {
   for (const meta of allFinanceResourceMetas()) {
     registry.register(meta)
   }
+  registerFinanceSettingResources(registry)
 }
 
 export function registerFinanceFileOwners(owners: OwnerRegistry): void {
@@ -52,6 +63,35 @@ export function registerFinanceFileOwners(owners: OwnerRegistry): void {
     table: 'acc_bank_transaction',
     permissionPrefix: 'acc.bank_transaction',
     companyScoped: true,
+  })
+}
+
+/**
+ * 开票/收票待办源：对账确认 → 增值税发票。
+ * 第二类待办接入只需再 registerSource，零改 platform/todo。
+ */
+export function registerFinanceTodoSources(todos: TodoSourceRegistry): void {
+  const invoiceAction = ['acc.vat_invoice:create'] as const
+  const invoiceUnread = ['acc.vat_invoice:create', 'acc.vat_invoice:read'] as const
+  todos.registerSource('sales.reconciliation', {
+    actionPermissions: invoiceAction,
+    unreadPermissions: invoiceUnread,
+    draftLink: {
+      table: 'acc_vat_invoice',
+      fkColumn: 'sal_reconciliation_id',
+      statusColumn: 'status',
+      statusValue: 'draft',
+    },
+  })
+  todos.registerSource('purchase.reconciliation', {
+    actionPermissions: invoiceAction,
+    unreadPermissions: invoiceUnread,
+    draftLink: {
+      table: 'acc_vat_invoice',
+      fkColumn: 'pur_reconciliation_id',
+      statusColumn: 'status',
+      statusValue: 'draft',
+    },
   })
 }
 

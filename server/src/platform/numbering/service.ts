@@ -315,17 +315,20 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
           companyId: ['规则按公司计数,单据缺少公司或公司无编码'],
         })
       }
-      const company = await handle
-        .selectFrom('bas_company')
-        .select('code')
-        .where('id', '=', companyId)
-        .executeTakeFirst()
-      if (!company?.code?.trim()) {
+      // 走 catalog 的 company.code lookup，不直查业务表
+      const companyCodeField = definition.byPath.get('company.code')
+      if (!companyCodeField?.lookup) {
+        throw ApiError.validation('无法自动取号', {
+          companyId: ['规则按公司计数,但编号目录缺少 company.code 字段'],
+        })
+      }
+      const companyCode = await resolveField(handle, companyCodeField, values)
+      if (companyCode === null || companyCode === undefined || !String(companyCode).trim()) {
         throw ApiError.validation('无法自动取号', {
           companyId: ['规则按公司计数,单据缺少公司或公司无编码'],
         })
       }
-      scopeKey = `${company.code}|${scopeText}`
+      scopeKey = `${String(companyCode).trim()}|${scopeText}`
     }
     const sequence = await incrementCounter(handle, rule.id, scopeKey)
     let padding = 4

@@ -1,5 +1,6 @@
 /**
  * 待办 REST：/todos/query、/todos/unread-count、/todos/{id}/read|dismiss
+ * 权限码来自 TodoSourceRegistry（业务域注册），本层不硬编码业务权限。
  */
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
@@ -7,9 +8,7 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { hasPermission, requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { ApiError } from '~/platform/http/errors.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { Todo, TodoService } from './service.ts'
 
@@ -28,16 +27,6 @@ const listQuerySchema = z
   .strict()
 
 const idParam = z.object({ id: z.string().uuid() })
-
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
 
 function todoDto(item: Todo) {
   return {
@@ -72,53 +61,31 @@ export function todoRoutes(deps: { auth: AuthService; todos: TodoService }) {
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .get('/unread-count', async (c) => {
-      const actor = c.get('actor')
-      if (
-        !hasPermission(actor, 'acc.vat_invoice:create') &&
-        !hasPermission(actor, 'acc.vat_invoice:read')
-      ) {
-        throw new ApiError('forbidden', '无权限执行该操作')
-      }
-      const count = await todos.unreadCount(actor!)
+      const count = await todos.unreadCount(c.get('actor')!)
       return c.json({ count })
     })
-    .post(
-      '/query',
-      requirePerm('acc.vat_invoice:create'),
-      zValidator('json', listQuerySchema, validationHook),
-      async (c) => {
-        const body = c.req.valid('json')
-        const result = await todos.list(c.get('actor')!, {
-          tab: body.tab,
-          includeDismissed: body.includeDismissed,
-          limit: body.limit,
-          offset: body.offset,
-          search: body.search,
-          sort: body.sort,
-          filter: body.filter as ListQuery['filter'],
-        })
-        return c.json({
-          count: result.count,
-          results: result.results.map(todoDto),
-        })
-      },
-    )
-    .post(
-      '/:id/read',
-      requirePerm('acc.vat_invoice:create'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        const item = await todos.markRead(c.get('actor')!, c.req.valid('param').id)
-        return c.json(todoDto(item))
-      },
-    )
-    .post(
-      '/:id/dismiss',
-      requirePerm('acc.vat_invoice:create'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        const item = await todos.dismiss(c.get('actor')!, c.req.valid('param').id)
-        return c.json(todoDto(item))
-      },
-    )
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const body = c.req.valid('json')
+      const result = await todos.list(c.get('actor')!, {
+        tab: body.tab,
+        includeDismissed: body.includeDismissed,
+        limit: body.limit,
+        offset: body.offset,
+        search: body.search,
+        sort: body.sort,
+        filter: body.filter as ListQuery['filter'],
+      })
+      return c.json({
+        count: result.count,
+        results: result.results.map(todoDto),
+      })
+    })
+    .post('/:id/read', zValidator('param', idParam, validationHook), async (c) => {
+      const item = await todos.markRead(c.get('actor')!, c.req.valid('param').id)
+      return c.json(todoDto(item))
+    })
+    .post('/:id/dismiss', zValidator('param', idParam, validationHook), async (c) => {
+      const item = await todos.dismiss(c.get('actor')!, c.req.valid('param').id)
+      return c.json(todoDto(item))
+    })
 }

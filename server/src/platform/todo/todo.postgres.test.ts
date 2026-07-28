@@ -7,14 +7,42 @@ import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import { createTodoSourceRegistry } from './source-registry.ts'
 import { createTodoService } from './service.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
+function testTodoSources() {
+  const sources = createTodoSourceRegistry()
+  sources.registerSource('sales.reconciliation', {
+    actionPermissions: ['acc.vat_invoice:create'],
+    unreadPermissions: ['acc.vat_invoice:create', 'acc.vat_invoice:read'],
+    draftLink: {
+      table: 'acc_vat_invoice',
+      fkColumn: 'sal_reconciliation_id',
+      statusColumn: 'status',
+      statusValue: 'draft',
+    },
+  })
+  sources.registerSource('purchase.reconciliation', {
+    actionPermissions: ['acc.vat_invoice:create'],
+    unreadPermissions: ['acc.vat_invoice:create', 'acc.vat_invoice:read'],
+    draftLink: {
+      table: 'acc_vat_invoice',
+      fkColumn: 'pur_reconciliation_id',
+      statusColumn: 'status',
+      statusValue: 'draft',
+    },
+  })
+  sources.registerParty('customer', { table: 'sal_customers', nameColumn: 'name' })
+  sources.registerParty('supplier', { table: 'pur_supplier', nameColumn: 'name' })
+  return sources
+}
+
 run('PG 集成（待办）', () => {
   const db = createDb(url!)
-  const svc = createTodoService(db)
+  const svc = createTodoService(db, testTodoSources())
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `TD${suffix}`
 

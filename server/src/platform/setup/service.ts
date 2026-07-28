@@ -11,7 +11,37 @@ import { hashPassword } from '../auth/password.ts'
 import type { TokenManager } from '../auth/token.ts'
 import type { Actor } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
-import { seedSampleData, type SampleDataDeps, type SampleSummary } from './sampledata/index.ts'
+
+/** 示例数据摘要（wire 形状；实现在 modules/setup） */
+export interface SampleSummary {
+  customers: number
+  suppliers: number
+  materials: number
+  employees: number
+  salesQuotations: number
+  purchaseQuotations: number
+  salesOrders: number
+  purchaseOrders: number
+  salesDeliveries: number
+  purchaseReceipts: number
+  salesReconciliations: number
+  purchaseReconciliations: number
+  stockDocs: number
+  stockTransfers: number
+  stockCounts: number
+  operations: number
+  processTemplates: number
+  boms: number
+  bankAccounts: number
+  bankTransactions: number
+  glJournals: number
+  expenseReports: number
+  payrolls: number
+  vatInvoices: number
+  outsourcedOrders: number
+  outsourcedIssues: number
+  outsourcedReceipts: number
+}
 
 /** 与 Go setupLockKey 0x53594e4945534554（"SYNIESET"）一致 */
 const SETUP_LOCK_KEY = BigInt('0x53594e4945534554')
@@ -59,7 +89,11 @@ export interface FirstUserResult {
 export interface SetupServiceDeps {
   db: Kysely<Database>
   tokens: TokenManager
-  sample?: SampleDataDeps | null
+  /**
+   * 可选示例数据种子（组合根注入 modules/setup.seedSampleData）。
+   * 未注入时 complete(seedSample=true) → not_implemented。
+   */
+  seedSampleData?: ((actor: Actor, companyId: string) => Promise<SampleSummary>) | null
   uploadsRoot?: string
   now?: () => Date
 }
@@ -67,7 +101,7 @@ export interface SetupServiceDeps {
 export function createSetupService(deps: SetupServiceDeps) {
   const db = deps.db
   const tokens = deps.tokens
-  const sample = deps.sample ?? null
+  const seedSampleData = deps.seedSampleData ?? null
   const uploadsRoot = deps.uploadsRoot ?? process.env.UPLOADS_ROOT ?? 'uploads'
   const now = deps.now ?? (() => new Date())
 
@@ -210,7 +244,7 @@ export function createSetupService(deps: SetupServiceDeps) {
 
     let sampleSummary: SampleSummary | undefined
     if (seedSample) {
-      if (!sample) {
+      if (!seedSampleData) {
         throw new ApiError(
           'not_implemented',
           'Setup 尚未配置示例数据依赖,初始化未完成且完成旗标未写入',
@@ -218,7 +252,7 @@ export function createSetupService(deps: SetupServiceDeps) {
       }
       const companyId = await firstCompanyId()
       if (companyId) {
-        sampleSummary = await seedSampleData(sample, actor, companyId)
+        sampleSummary = await seedSampleData(actor, companyId)
       }
     }
 

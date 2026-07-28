@@ -1,6 +1,6 @@
 # 05 F · 业务知识回吐出 platform
 
-Status: ready-for-agent
+Status: done
 
 ## 问题
 

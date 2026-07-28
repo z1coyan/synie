@@ -24,8 +24,8 @@ import { createNumberingService } from '../numbering/service.ts'
 import {
   MARKER_BANK_ACCOUNT_NO,
   MARKER_CUSTOMER_CODE,
-} from './sampledata/helpers.ts'
-import { seedSampleData } from './sampledata/index.ts'
+  seedSampleData,
+} from '~/modules/setup/index.ts'
 import { createSetupService } from './service.ts'
 
 const url = testDatabaseUrl()
@@ -317,7 +317,11 @@ run('PG 集成（setup 向导）', () => {
         invoices: finance.invoices,
         hr,
       }
-      const setup = createSetupService({ db, tokens, sample })
+      const setup = createSetupService({
+        db,
+        tokens,
+        seedSampleData: (a, companyId) => seedSampleData(sample, a, companyId),
+      })
 
       const first = await setup.createFirstUser({
         username: 'sample-admin',

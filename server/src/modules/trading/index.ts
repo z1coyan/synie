@@ -69,8 +69,19 @@ import {
   reconciliationItemRoutes,
 } from './reconciliation/routes.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import { registerTradingSettingResources } from './settings.ts'
+
+export {
+  createSalesSettingService,
+  salesResourceMeta,
+  registerTradingSettingResources,
+  type SalesSettingService,
+  type SalesSetting,
+  type SalesUpdate,
+} from './settings.ts'
 
 export function registerTradingResources(registry: Registry): void {
+  registerTradingSettingResources(registry)
   for (const side of ['sales', 'purchase'] as const) {
     registry.register(quotationHeadMeta(side))
     registry.register(quotationItemMeta(side))

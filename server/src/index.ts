@@ -16,26 +16,34 @@ import {
 } from './modules/inventory/index.ts'
 import {
   createManufacturingServices,
+  createManufacturingSettingService,
   registerManufacturingResources,
 } from './modules/manufacturing/index.ts'
-import { createPartyServices, registerPartyResources } from './modules/party/index.ts'
+import {
+  createPartyServices,
+  registerPartyResources,
+  registerPartyTodoSources,
+} from './modules/party/index.ts'
 import {
   createCompanyAccountDefaultService,
   registerSalesCompanyAccountDefault,
 } from './modules/sales/index.ts'
 import {
+  createSalesSettingService,
   createTradingServices,
   registerSalesOrderDocBuilder,
   registerTradingResources,
 } from './modules/trading/index.ts'
 import { createScmServices, registerScmResources } from './modules/scm/index.ts'
 import {
+  createAccountingSettingService,
   createFinanceServices,
   registerFinanceFileOwners,
   registerFinanceResources,
+  registerFinanceTodoSources,
 } from './modules/finance/index.ts'
 import { isJournalLinkedToBankRecon } from './modules/finance/banking-recon.ts'
-import { createTodoService } from './platform/todo/index.ts'
+import { createTodoService, createTodoSourceRegistry } from './platform/todo/index.ts'
 import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
@@ -58,6 +66,7 @@ import {
 } from './platform/printing/index.ts'
 import { createSettingsService, registerSettingResources } from './platform/settings/index.ts'
 import { createSetupService } from './platform/setup/index.ts'
+import { seedSampleData } from './modules/setup/index.ts'
 
 const env = loadEnv()
 const db = createDb(env.databaseUrl)
@@ -89,7 +98,11 @@ registerManufacturingResources(registry)
 // 打印模板 Meta 在业务域之后（字段目录自 Registry fail-closed 派生）
 registerPrintingResources(registry)
 
-const settings = createSettingsService(db)
+const settings = createSettingsService(db, {
+  sales: createSalesSettingService(db),
+  manufacturing: createManufacturingSettingService(db),
+  accounting: createAccountingSettingService(db),
+})
 const numbering = createNumberingService(db)
 const owners = createOwnerRegistry()
 registerPrintingFileOwners(owners)
@@ -127,34 +140,42 @@ const finance = createFinanceServices(db, numbering, {
   journals: accounting.journals,
   files,
 })
-const todos = createTodoService(db)
+const todoSources = createTodoSourceRegistry()
+registerFinanceTodoSources(todoSources)
+registerPartyTodoSources(todoSources)
+const todos = createTodoService(db, todoSources)
 const scm = createScmServices(db)
 const manufacturing = createManufacturingServices(db, numbering)
 
 const setup = createSetupService({
   db,
   tokens,
-  sample: {
-    db,
-    accounts: base.accounts,
-    companyAccountDefaults,
-    warehouses: inv.warehouses,
-    customers: party.customers,
-    suppliers: party.suppliers,
-    materials: inv.materials,
-    materialUnits: inv.materialUnits,
-    employees: party.employees,
-    trading,
-    stockDocs: inv.stockDocs,
-    stockTransfers: inv.stockTransfers,
-    stockCounts: inv.stockCounts,
-    manufacturingMaster: manufacturing.master,
-    banking: finance.banking,
-    journals: accounting.journals,
-    expenses: finance.expenses,
-    invoices: finance.invoices,
-    hr,
-  },
+  seedSampleData: (actor, companyId) =>
+    seedSampleData(
+      {
+        db,
+        accounts: base.accounts,
+        companyAccountDefaults,
+        warehouses: inv.warehouses,
+        customers: party.customers,
+        suppliers: party.suppliers,
+        materials: inv.materials,
+        materialUnits: inv.materialUnits,
+        employees: party.employees,
+        trading,
+        stockDocs: inv.stockDocs,
+        stockTransfers: inv.stockTransfers,
+        stockCounts: inv.stockCounts,
+        manufacturingMaster: manufacturing.master,
+        banking: finance.banking,
+        journals: accounting.journals,
+        expenses: finance.expenses,
+        invoices: finance.invoices,
+        hr,
+      },
+      actor,
+      companyId,
+    ),
 })
 
 const app = buildApp({

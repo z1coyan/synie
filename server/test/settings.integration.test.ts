@@ -1,5 +1,8 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
+import { createAccountingSettingService } from '~/modules/finance/settings.ts'
+import { createManufacturingSettingService } from '~/modules/manufacturing/settings.ts'
+import { createSalesSettingService } from '~/modules/trading/settings.ts'
 import { createSettingsService } from '~/platform/settings/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 
@@ -8,7 +11,11 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（settings）', () => {
   const db = createDb(url!)
-  const settings = createSettingsService(db)
+  const settings = createSettingsService(db, {
+    sales: createSalesSettingService(db),
+    manufacturing: createManufacturingSettingService(db),
+    accounting: createAccountingSettingService(db),
+  })
   const actor: Actor = {
     userId: crypto.randomUUID(),
     username: 'settings-test',

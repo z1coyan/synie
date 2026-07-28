@@ -13,7 +13,11 @@ import {
 } from '~/modules/base/market/index.ts'
 import { createIamService, registerIamResources } from '~/modules/iam/index.ts'
 import { createHrServices, registerHrResources } from '~/modules/hr/index.ts'
-import { createPartyServices, registerPartyResources } from '~/modules/party/index.ts'
+import {
+  createPartyServices,
+  registerPartyResources,
+  registerPartyTodoSources,
+} from '~/modules/party/index.ts'
 import {
   createCompanyAccountDefaultService,
   registerSalesCompanyAccountDefault,
@@ -23,6 +27,7 @@ import {
   registerInventoryResources,
 } from '~/modules/inventory/index.ts'
 import {
+  createSalesSettingService,
   createTradingServices,
   registerSalesOrderDocBuilder,
   registerTradingResources,
@@ -30,15 +35,18 @@ import {
 import { createScmServices, registerScmResources } from '~/modules/scm/index.ts'
 import {
   createManufacturingServices,
+  createManufacturingSettingService,
   registerManufacturingResources,
 } from '~/modules/manufacturing/index.ts'
 import {
+  createAccountingSettingService,
   createFinanceServices,
   registerFinanceFileOwners,
   registerFinanceResources,
+  registerFinanceTodoSources,
 } from '~/modules/finance/index.ts'
 import { isJournalLinkedToBankRecon } from '~/modules/finance/banking-recon.ts'
-import { createTodoService } from '~/platform/todo/index.ts'
+import { createTodoService, createTodoSourceRegistry } from '~/platform/todo/index.ts'
 import { createRateLimiter } from '~/platform/auth/limiter.ts'
 import { createAuthService, type AuthService } from '~/platform/auth/service.ts'
 import { createAuthStore } from '~/platform/auth/store.ts'
@@ -73,6 +81,7 @@ import {
   type PrintingService,
 } from '~/platform/printing/index.ts'
 import { createSetupService } from '~/platform/setup/index.ts'
+import { seedSampleData } from '~/modules/setup/index.ts'
 
 /** 集成测试用固定密钥（≥32 字节）；仅测试进程内使用 */
 export const TEST_AUTH_SECRET = 'integration-test-secret-32-bytes!!'
@@ -130,7 +139,11 @@ export function createPlatformServices(db: Kysely<Database>): PlatformServices {
   registerPrintingFileOwners(owners)
   registerFinanceFileOwners(owners)
   return {
-    settings: createSettingsService(db),
+    settings: createSettingsService(db, {
+      sales: createSalesSettingService(db),
+      manufacturing: createManufacturingSettingService(db),
+      accounting: createAccountingSettingService(db),
+    }),
     numbering: createNumberingService(db),
     files: createFileService({ db, owners }),
     storages: createStorageService({ db }),
@@ -178,7 +191,10 @@ export async function buildTestApp(
     journals: accounting.journals,
     files: merged.files,
   })
-  const todos = createTodoService(db)
+  const todoSources = createTodoSourceRegistry()
+  registerFinanceTodoSources(todoSources)
+  registerPartyTodoSources(todoSources)
+  const todos = createTodoService(db, todoSources)
   const scm = createScmServices(db)
   const manufacturing = createManufacturingServices(db, numbering)
   const printing =
@@ -222,27 +238,32 @@ export async function buildTestApp(
     createSetupService({
       db,
       tokens: createTokenManager({ secret: TEST_AUTH_SECRET, ttlSeconds: 3600 }),
-      sample: {
-        db,
-        accounts: accountsSvc,
-        companyAccountDefaults: companyAccountDefaultsSvc,
-        warehouses: invWarehouses,
-        customers: customersSvc,
-        suppliers: suppliersSvc,
-        materials: invMaterials,
-        materialUnits: invMaterialUnits,
-        employees: employeesSvc,
-        trading: tradingSvc,
-        stockDocs: invStockDocs,
-        stockTransfers: invStockTransfers,
-        stockCounts: invStockCounts,
-        manufacturingMaster: manufacturingSvc.master,
-        banking,
-        journals,
-        expenses,
-        invoices,
-        hr: hrSvc,
-      },
+      seedSampleData: (actor, companyId) =>
+        seedSampleData(
+          {
+            db,
+            accounts: accountsSvc,
+            companyAccountDefaults: companyAccountDefaultsSvc,
+            warehouses: invWarehouses,
+            customers: customersSvc,
+            suppliers: suppliersSvc,
+            materials: invMaterials,
+            materialUnits: invMaterialUnits,
+            employees: employeesSvc,
+            trading: tradingSvc,
+            stockDocs: invStockDocs,
+            stockTransfers: invStockTransfers,
+            stockCounts: invStockCounts,
+            manufacturingMaster: manufacturingSvc.master,
+            banking,
+            journals,
+            expenses,
+            invoices,
+            hr: hrSvc,
+          },
+          actor,
+          companyId,
+        ),
     })
 
   return buildApp({

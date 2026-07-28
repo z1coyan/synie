@@ -3,6 +3,9 @@ import { createDb } from '~/db/index.ts'
 import type { Kysely } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
 import { createMarketService } from './service.ts'
+import { createAccountingSettingService } from '~/modules/finance/settings.ts'
+import { createManufacturingSettingService } from '~/modules/manufacturing/settings.ts'
+import { createSalesSettingService } from '~/modules/trading/settings.ts'
 import { createSettingsService } from '~/platform/settings/service.ts'
 import { buildTestApp, testDatabaseUrl } from '../../../../test/helpers.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
@@ -178,7 +181,11 @@ describe.skipIf(!dbUrl)('market integration', () => {
   }
 
   test('品种 CRUD + 价点唯一/作废重录 + 取价 + 序列', async () => {
-    const settings = createSettingsService(db)
+    const settings = createSettingsService(db, {
+      sales: createSalesSettingService(db),
+      manufacturing: createManufacturingSettingService(db),
+      accounting: createAccountingSettingService(db),
+    })
     const market = createMarketService(db, { settings })
     const suffix = crypto.randomUUID().replaceAll('-', '').slice(0, 8).toUpperCase()
     const code = `T14${suffix}`

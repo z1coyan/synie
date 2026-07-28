@@ -9,15 +9,25 @@ import { createMasterService } from './master-service.ts'
 import { allManufacturingResourceMetas } from './meta.ts'
 import { createOutputService } from './output-service.ts'
 import { createWorkOrderService } from './work-order-service.ts'
+import { registerManufacturingSettingResources } from './settings.ts'
 
 export { manufacturingRoutes, type ManufacturingRouteDeps } from './routes.ts'
 export { allManufacturingResourceMetas } from './meta.ts'
 export { adjustDemandOrdered, adjustDemandReceived }
+export {
+  createManufacturingSettingService,
+  manufacturingSettingResourceMeta,
+  registerManufacturingSettingResources,
+  type ManufacturingSettingService,
+  type ManufacturingSetting,
+  type ManufacturingUpdate,
+} from './settings.ts'
 
 export function registerManufacturingResources(registry: Registry): void {
   for (const meta of allManufacturingResourceMetas()) {
     registry.register(meta)
   }
+  registerManufacturingSettingResources(registry)
 }
 
 export function createManufacturingServices(
