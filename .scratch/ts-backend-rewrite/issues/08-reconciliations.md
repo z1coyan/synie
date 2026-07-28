@@ -21,3 +21,7 @@ Blocked by: 06, 07
 ## 非目标
 
 发票关联结单（工单 09 实现触发面，本工单预留关联字段与状态口径）。
+
+## Comments
+
+- 2026-07-28 主工作区集成：cherry-pick 三连 `297003d`（对账+订单流投影）/ `91ad100`（orderflow permission-first）/ `c402724`（发货作废联动+发票 close/reopen 接缝测试）；app/index/Meta/helpers 装配已在候选提交内完整挂载。验证：`bun run typecheck` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 197 pass；`verify-supply-reconciliation-rest.ts` against :18081 → `ok: meta=12 permissionFirst=41 sides=2 actions=8 orderFlowOR=4`。遗留：发票审核/作废触发 closeFromInvoice/reopenFromInvoice（工单 09）；委外入库完整生命周期（工单 10，对账侧来源与投影已预留）。
