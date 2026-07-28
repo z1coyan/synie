@@ -349,16 +349,13 @@ export function createStockDocService(
       if (items.length === 0) {
         throw new ApiError('conflict', '审核前必须至少填写一行单据行')
       }
-      const lines = items.map((item) => {
-        let quantity = decimal(item.base_qty)
-        if (before.direction === 'OUT') quantity = quantity.neg()
-        return {
-          warehouseId: before.warehouseId,
-          materialId: item.material_id,
-          quantity,
-          remarks: before.summary,
-        }
-      })
+      const lines = items.map((item) => ({
+        warehouseId: before.warehouseId,
+        materialId: item.material_id,
+        quantity: decimal(item.base_qty),
+        direction: before.direction === 'OUT' ? ('out' as const) : ('in' as const),
+        remarks: before.summary,
+      }))
       await inventory.post(
         trx,
         {

@@ -389,13 +389,15 @@ export function createStockTransferService(
           {
             warehouseId: before.fromWarehouseId,
             materialId: item.material_id,
-            quantity: qty.neg(),
+            quantity: qty,
+            direction: 'out' as const,
             remarks: before.summary,
           },
           {
             warehouseId: before.transitWarehouseId,
             materialId: item.material_id,
             quantity: qty,
+            direction: 'in' as const,
             remarks: before.summary,
           },
         ]
@@ -470,13 +472,15 @@ export function createStockTransferService(
           {
             warehouseId: before.transitWarehouseId,
             materialId: r.item.material_id,
-            quantity: r.qty.neg(),
+            quantity: r.qty,
+            direction: 'out' as const,
             remarks: before.summary,
           },
           {
             warehouseId: before.toWarehouseId,
             materialId: r.item.material_id,
             quantity: r.qty,
+            direction: 'in' as const,
             remarks: before.summary,
           },
         ]

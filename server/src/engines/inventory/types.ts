@@ -16,14 +16,19 @@ export interface StockVoucherRef {
   id: string
 }
 
+/** 库存变动方向：in=入库（正）、out=出库（负）；符号由引擎按 direction 计算 */
+export type StockDirection = 'in' | 'out'
+
 /**
- * 库存分录行：数量带符号、恒物料默认单位口径（6 位精度档）。
- * 正=入、负=出、非零。
+ * 库存分录行：数量为绝对值（大于零），方向进 direction；
+ * 恒物料默认单位口径（6 位精度档）。
  */
 export interface StockLine {
   warehouseId: string
   materialId: string
-  quantity: Decimal | string | number
+  /** 数量绝对值（必须 > 0）；禁止手写负号 */
+  quantity: Decimal | string
+  direction: StockDirection
   remarks?: string | null
 }
 

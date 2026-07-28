@@ -6,7 +6,7 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine, type GlEngine, type GlEntry } from '~/engines/gl/index.ts'
+import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
 import {
   auditCreated, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
@@ -131,7 +131,7 @@ export type ExpenseService = ReturnType<typeof createExpenseService>
 export function createExpenseService(
   db: Kysely<Database>,
   numbering: NumberingService,
-  gl: GlEngine = createGlEngine(),
+  gl: GlEngine,
 ) {
   async function listReports(actor: Actor, query: Partial<ListQuery>) {
     requirePerm(actor, 'acc.expense_report:read')
@@ -299,14 +299,14 @@ export function createExpenseService(
         if (claimed.rows[0]?.e) throw conflict('挂票发票已被其他报销单占用')
         const value = decimal(row.gross_total)
         entries.push({
-          accountId: row.party_account_id, debit: value, credit: 0,
+          accountId: row.party_account_id, debit: value, credit: '0',
           partyType: 'employee', partyId: report.employeeId,
         })
         total = total.add(value)
       } else {
         if (!item.expense_account_id || item.amount == null) throw conflict('无票报销行不完整')
         const value = decimal(item.amount)
-        entries.push({ accountId: item.expense_account_id, debit: value, credit: 0 })
+        entries.push({ accountId: item.expense_account_id, debit: value, credit: '0' })
         total = total.add(value)
       }
     }
@@ -330,7 +330,7 @@ export function createExpenseService(
         WHERE id=${id}::uuid AND status='draft'
       `.execute(trx)
       if (Number(tag.numAffectedRows) !== 1) throw conflict('报销单已被并发处理')
-      entries.push({ accountId: before.paymentAccountId, debit: 0, credit: total })
+      entries.push({ accountId: before.paymentAccountId, debit: '0', credit: total })
       await gl.post(trx, {
         type: VOUCHER, id, no: before.docNo, companyId: before.companyId, postingDate: posting,
       }, entries)

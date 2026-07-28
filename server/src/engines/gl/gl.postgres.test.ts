@@ -3,7 +3,7 @@ import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { withTx } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { cancel, createGlEngine, post, reverse } from './index.ts'
+import { cancel, createGlEngine, post, reverse, validateEntries } from './index.ts'
 import type { GlEntry, GlVoucher } from './types.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
@@ -237,7 +237,7 @@ run('PG 集成（GL 引擎不变量）', () => {
   test('往来科目缺对手拒绝', async () => {
     try {
       await withTx(db, async (trx) => {
-        await gl.validateEntries(trx, companyId, balancedEntries(false))
+        await validateEntries(trx, companyId, balancedEntries(false))
       })
       expect.unreachable()
     } catch (err) {
@@ -276,7 +276,7 @@ run('PG 集成（GL 引擎不变量）', () => {
     for (const tc of cases) {
       try {
         await withTx(db, async (trx) => {
-          await gl.validateEntries(trx, companyId, tc.entries)
+          await validateEntries(trx, companyId, tc.entries)
         })
         expect.unreachable(`expected reject: ${tc.name}`)
       } catch (err) {
@@ -288,7 +288,7 @@ run('PG 集成（GL 引擎不变量）', () => {
   test('科目不存在拒绝', async () => {
     try {
       await withTx(db, async (trx) => {
-        await gl.validateEntries(trx, companyId, [
+        await validateEntries(trx, companyId, [
           { accountId: crypto.randomUUID(), debit: '10' },
           { accountId: cashId, credit: '10' },
         ])
@@ -302,7 +302,7 @@ run('PG 集成（GL 引擎不变量）', () => {
   test('红冲行豁免往来对手；普通行不豁免', async () => {
     // 红字行 isReversal=true 可不带对手（即使科目为往来角色）
     await withTx(db, async (trx) => {
-      await gl.validateEntries(
+      await validateEntries(
         trx,
         companyId,
         [

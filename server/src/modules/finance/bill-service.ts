@@ -7,7 +7,7 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine, type GlEngine, type GlEntry } from '~/engines/gl/index.ts'
+import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
 import {
   auditCreated, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
@@ -417,12 +417,12 @@ export function createBillService(
   db: Kysely<Database>,
   numbering: NumberingService,
   deps: {
-    gl?: GlEngine
+    gl: GlEngine
     files?: Pick<FileService, 'readStoredFile'> | null
     ocr?: OcrDeps
-  } = {},
+  },
 ) {
-  const gl = deps.gl ?? createGlEngine()
+  const gl = deps.gl
   const files = deps.files ?? null
 
   async function listBills(actor: Actor, query: Partial<ListQuery>) {
@@ -885,35 +885,35 @@ export function createBillService(
     switch (value.transactionType) {
       case 'RECEIVE':
         return [
-          { accountId: value.billAccountId!, debit: amount, credit: 0 },
+          { accountId: value.billAccountId!, debit: amount, credit: '0' },
           {
-            accountId: value.settleAccountId!, debit: 0, credit: amount,
+            accountId: value.settleAccountId!, debit: '0', credit: amount,
             partyType, partyId: value.partyId,
           },
         ]
       case 'ENDORSE':
         return [
           {
-            accountId: value.settleAccountId!, debit: amount, credit: 0,
+            accountId: value.settleAccountId!, debit: amount, credit: '0',
             partyType, partyId: value.partyId,
           },
-          { accountId: value.billAccountId!, debit: 0, credit: amount },
+          { accountId: value.billAccountId!, debit: '0', credit: amount },
         ]
       case 'SETTLE':
         return [
-          { accountId: value.settleAccountId!, debit: amount, credit: 0 },
-          { accountId: value.billAccountId!, debit: 0, credit: amount },
+          { accountId: value.settleAccountId!, debit: amount, credit: '0' },
+          { accountId: value.billAccountId!, debit: '0', credit: amount },
         ]
       case 'DISCOUNT': {
         const net = decimal(value.netAmount!)
         const interestAmt = decimal(value.interest!)
         const result: GlEntry[] = [
-          { accountId: value.settleAccountId!, debit: net, credit: 0 },
+          { accountId: value.settleAccountId!, debit: net, credit: '0' },
         ]
         if (interestAmt.gt(0)) {
-          result.push({ accountId: value.interestAccountId!, debit: interestAmt, credit: 0 })
+          result.push({ accountId: value.interestAccountId!, debit: interestAmt, credit: '0' })
         }
-        result.push({ accountId: value.billAccountId!, debit: 0, credit: amount })
+        result.push({ accountId: value.billAccountId!, debit: '0', credit: amount })
         return result
       }
       default:

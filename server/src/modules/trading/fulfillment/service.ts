@@ -8,8 +8,8 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine } from '~/engines/gl/index.ts'
-import { createInventoryEngine } from '~/engines/inventory/index.ts'
+import type { GlEngine } from '~/engines/gl/index.ts'
+import type { InventoryEngine } from '~/engines/inventory/index.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -49,9 +49,6 @@ import {
   packLineMeta,
   type FulfillmentSideSpec,
 } from './spec.ts'
-
-const gl = createGlEngine()
-const inventory = createInventoryEngine()
 
 const HEAD_AUDIT = [
   'number', 'document_date', 'posting_date', 'party_type', 'party_id', 'remarks',
@@ -100,7 +97,12 @@ export function createFulfillmentService(
   db: Kysely<Database>,
   numberer: Numberer,
   orders: OrderService,
+  engines: {
+    inventory: Pick<InventoryEngine, 'post' | 'cancel'>
+    gl: Pick<GlEngine, 'post' | 'cancel'>
+  },
 ) {
+  const { inventory, gl } = engines
   async function listHeads(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
     const spec = fulfillmentSpec(side)
     requirePerm(actor, spec.prefix, 'read', '无权限执行该履约操作')
@@ -348,7 +350,8 @@ export function createFulfillmentService(
           const stockLines = items.map((i) => ({
             warehouseId: i.warehouseId,
             materialId: i.materialId,
-            quantity: decimal(i.baseQty).mul(spec.stockDirection),
+            quantity: decimal(i.baseQty),
+            direction: (spec.stockDirection < 0 ? 'out' : 'in') as 'in' | 'out',
             remarks: before.remarks,
           }))
           let amount = decimal(0)

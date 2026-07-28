@@ -3,9 +3,12 @@
  */
 import { decimal, toDecimalString, type Decimal } from '@synie/shared'
 import { sql, type RawBuilder } from 'kysely'
+import { toDateOnly, utcToday } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import { canAccessCompany, hasPermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+
+export { toDateOnly }
 
 export type TradingSide = 'sales' | 'purchase'
 
@@ -24,17 +27,8 @@ export function wireRequiredDecimal(value: Decimal | string | number): string {
   return toDecimalString(decimal(value))
 }
 
-/** 业务日 → YYYY-MM-DD */
-export function toDateOnly(value: Date | string): string {
-  if (typeof value === 'string') return value.trim().slice(0, 10)
-  const y = value.getUTCFullYear()
-  const m = String(value.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(value.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
 export function todayUTC(): string {
-  return toDateOnly(new Date())
+  return utcToday()
 }
 
 export function asDate(value: unknown): string {

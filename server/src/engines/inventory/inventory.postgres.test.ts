@@ -193,12 +193,12 @@ run('PG 集成（库存引擎不变量）', () => {
     const v = voucher({ type: 'inv.stock_transfer', no: `TX-${suffix}` })
     await withTx(db, async (trx) => {
       await inv.post(trx, v, [
-        { warehouseId, materialId, quantity: '10' },
+        { warehouseId, materialId, quantity: '10', direction: 'in' },
       ])
     })
     await withTx(db, async (trx) => {
       await inv.post(trx, v, [
-        { warehouseId: otherWhId, materialId, quantity: '2' },
+        { warehouseId: otherWhId, materialId, quantity: '2', direction: 'in' },
       ])
     })
     expect(await entryCount(v.id)).toBe(2)
@@ -224,12 +224,12 @@ run('PG 集成（库存引擎不变量）', () => {
   test('负库存拒绝（出库超出余额）', async () => {
     const seedV = voucher({ no: `SEED-NEG-${suffix}` })
     await withTx(db, async (trx) => {
-      await inv.post(trx, seedV, [{ warehouseId, materialId, quantity: '1' }])
+      await inv.post(trx, seedV, [{ warehouseId, materialId, quantity: '1', direction: 'in' }])
     })
     const out = voucher({ no: `OUT-NEG-${suffix}` })
     try {
       await withTx(db, async (trx) => {
-        await inv.post(trx, out, [{ warehouseId, materialId, quantity: '-2' }])
+        await inv.post(trx, out, [{ warehouseId, materialId, quantity: '2', direction: 'out' }])
       })
       expect.unreachable()
     } catch (err) {
@@ -246,11 +246,11 @@ run('PG 集成（库存引擎不变量）', () => {
   test('作废致负拒绝（后有出库占用余额）', async () => {
     const inV = voucher({ no: `IN-CXL-${suffix}` })
     await withTx(db, async (trx) => {
-      await inv.post(trx, inV, [{ warehouseId, materialId, quantity: '5' }])
+      await inv.post(trx, inV, [{ warehouseId, materialId, quantity: '5', direction: 'in' }])
     })
     const outV = voucher({ no: `OUT-CXL-${suffix}` })
     await withTx(db, async (trx) => {
-      await inv.post(trx, outV, [{ warehouseId, materialId, quantity: '-3' }])
+      await inv.post(trx, outV, [{ warehouseId, materialId, quantity: '3', direction: 'out' }])
     })
     // 作废入库会把余额从 2 变为 -3 → 拒绝
     try {
@@ -276,7 +276,7 @@ run('PG 集成（库存引擎不变量）', () => {
   test('allow_negative 仓豁免负库存', async () => {
     const out = voucher({ no: `NEG-OK-${suffix}` })
     await withTx(db, async (trx) => {
-      await inv.post(trx, out, [{ warehouseId: allowNegWhId, materialId, quantity: '-7' }])
+      await inv.post(trx, out, [{ warehouseId: allowNegWhId, materialId, quantity: '7', direction: 'out' }])
     })
     expect(await liveQty(allowNegWhId, materialId)).toBe('-7')
     await withTx(db, async (trx) => {
@@ -289,25 +289,25 @@ run('PG 集成（库存引擎不变量）', () => {
     const cases: Array<{ name: string; lines: StockLine[]; field: string; msg: string }> = [
       {
         name: 'group wh',
-        lines: [{ warehouseId: groupWhId, materialId, quantity: '1' }],
+        lines: [{ warehouseId: groupWhId, materialId, quantity: '1', direction: 'in' }],
         field: 'warehouseId',
         msg: '只有叶子仓库才能发生库存',
       },
       {
         name: 'other company',
-        lines: [{ warehouseId: otherCoWhId, materialId, quantity: '1' }],
+        lines: [{ warehouseId: otherCoWhId, materialId, quantity: '1', direction: 'in' }],
         field: 'warehouseId',
         msg: '仓库必须属于单据公司',
       },
       {
         name: 'missing material',
-        lines: [{ warehouseId, materialId: crypto.randomUUID(), quantity: '1' }],
+        lines: [{ warehouseId, materialId: crypto.randomUUID(), quantity: '1', direction: 'in' }],
         field: 'materialId',
         msg: '物料不存在',
       },
       {
         name: 'missing warehouse',
-        lines: [{ warehouseId: crypto.randomUUID(), materialId, quantity: '1' }],
+        lines: [{ warehouseId: crypto.randomUUID(), materialId, quantity: '1', direction: 'in' }],
         field: 'warehouseId',
         msg: '仓库不存在',
       },
@@ -327,18 +327,18 @@ run('PG 集成（库存引擎不变量）', () => {
   test('并发出库按（仓×物料）锁串行：仅一笔成功', async () => {
     const seedV = voucher({ no: `SEED-CONC-${suffix}` })
     await withTx(db, async (trx) => {
-      await inv.post(trx, seedV, [{ warehouseId, materialId, quantity: '1' }])
+      await inv.post(trx, seedV, [{ warehouseId, materialId, quantity: '1', direction: 'in' }])
     })
 
     const results = await Promise.allSettled([
       withTx(db, async (trx) => {
         await inv.post(trx, voucher({ no: `OUT-A-${suffix}` }), [
-          { warehouseId, materialId, quantity: '-1' },
+          { warehouseId, materialId, quantity: '1', direction: 'out' },
         ])
       }),
       withTx(db, async (trx) => {
         await inv.post(trx, voucher({ no: `OUT-B-${suffix}` }), [
-          { warehouseId, materialId, quantity: '-1' },
+          { warehouseId, materialId, quantity: '1', direction: 'out' },
         ])
       }),
     ])
@@ -374,7 +374,7 @@ run('PG 集成（库存引擎不变量）', () => {
   test('数量十进制精度（6 位档）过账与余额', async () => {
     const v = voucher({ no: `QTY6-${suffix}` })
     await withTx(db, async (trx) => {
-      await inv.post(trx, v, [{ warehouseId, materialId, quantity: '0.000001' }])
+      await inv.post(trx, v, [{ warehouseId, materialId, quantity: '0.000001', direction: 'in' }])
     })
     expect(await liveQty(warehouseId, materialId)).toBe('0.000001')
     await withTx(db, async (trx) => {

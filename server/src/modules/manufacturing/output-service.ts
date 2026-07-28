@@ -7,7 +7,6 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { InventoryEngine, StockLine } from '~/engines/inventory/types.ts'
 import {
   auditCreated,
@@ -79,7 +78,7 @@ const ITEM_AUDIT = [
 export function createOutputService(
   db: Kysely<Database>,
   numbering: NumberingService,
-  inventory: InventoryEngine = createInventoryEngine(),
+  inventory: InventoryEngine,
 ) {
   async function createOutput(
     actor: Actor,
@@ -480,6 +479,7 @@ export function createOutputService(
         warehouseId: item.warehouseId,
         materialId: item.materialId,
         quantity: item.baseQty,
+        direction: 'in',
         remarks: item.remarks ?? before.remarks,
       }))
       await inventory.post(

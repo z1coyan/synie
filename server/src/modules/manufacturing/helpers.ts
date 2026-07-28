@@ -1,10 +1,13 @@
 import { decimal, isDecimalString, roundBaseQty, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
+import { toDateOnly, utcToday } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { canAccessCompany } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
+
+export { toDateOnly }
 import type {
   DemandItemStatus,
   FulfillmentMethod,
@@ -63,24 +66,7 @@ export function validateRemarks(remarks: string | null | undefined, max = 512): 
 }
 
 export function todayUTC(): string {
-  const now = new Date()
-  const y = now.getUTCFullYear()
-  const m = String(now.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(now.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
-/** 日期 → YYYY-MM-DD；Date 按 UTC 日 */
-export function toDateOnly(value: Date | string): string {
-  if (typeof value === 'string') {
-    const m = /^(\d{4}-\d{2}-\d{2})/.exec(value)
-    if (m?.[1]) return m[1]
-    return toDateOnly(new Date(value))
-  }
-  const y = value.getUTCFullYear()
-  const m = String(value.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(value.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+  return utcToday()
 }
 
 export function parsePositiveQty(raw: string, field = 'qty'): string {

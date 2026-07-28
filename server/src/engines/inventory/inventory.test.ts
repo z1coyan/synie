@@ -31,7 +31,7 @@ describe('inventory 形状校验（触库前）', () => {
         no: '',
         companyId: '',
         postingDate: '',
-      }, [{ warehouseId: 'a', materialId: 'b', quantity: '1' }])
+      }, [{ warehouseId: 'a', materialId: 'b', quantity: '1', direction: 'in' }])
       expect.unreachable()
     } catch (err) {
       expect(err).toBeInstanceOf(ApiError)
@@ -56,12 +56,12 @@ describe('inventory 形状校验（触库前）', () => {
           companyId: crypto.randomUUID(),
           postingDate: '2026-07-26',
         },
-        [{ warehouseId: crypto.randomUUID(), materialId: crypto.randomUUID(), quantity: '0' }],
+        [{ warehouseId: crypto.randomUUID(), materialId: crypto.randomUUID(), quantity: '0', direction: 'in' }],
       )
       expect.unreachable()
     } catch (err) {
       expect(err).toBeInstanceOf(ApiError)
-      expect((err as ApiError).fields?.['lines.0.quantity']?.[0]).toBe('数量不能为零')
+      expect((err as ApiError).fields?.['lines.0.quantity']?.[0]).toBe('数量必须大于零')
     }
   })
 })

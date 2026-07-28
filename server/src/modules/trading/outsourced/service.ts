@@ -8,8 +8,8 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine } from '~/engines/gl/index.ts'
-import { createInventoryEngine } from '~/engines/inventory/index.ts'
+import type { GlEngine } from '~/engines/gl/index.ts'
+import type { InventoryEngine, StockLine } from '~/engines/inventory/index.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -49,7 +49,6 @@ import {
   voidFulfillmentInTx,
   type PostingProjectionLine,
 } from '../posting.ts'
-import type { StockLine } from '~/engines/inventory/index.ts'
 import {
   outsourcedIssueItemMeta,
   outsourcedIssueMeta,
@@ -67,9 +66,6 @@ export {
   outsourcedReceiptItemMaterialMeta,
   outsourcedReceiptItemByproductMeta,
 } from './meta.ts'
-
-const inventory = createInventoryEngine()
-const gl = createGlEngine()
 
 const ISSUE_PREFIX = 'purchase.outsourced_issue'
 const RECEIPT_PREFIX = 'purchase.outsourced_receipt'
@@ -185,7 +181,12 @@ export function createOutsourcedService(
   db: Kysely<Database>,
   numberer: Numberer,
   orders: Pick<OrderService, 'postFulfillment' | 'reverseFulfillment' | 'postOutsourcedIssue' | 'reverseOutsourcedIssue'>,
+  engines: {
+    inventory: Pick<InventoryEngine, 'post' | 'cancel'>
+    gl: Pick<GlEngine, 'post' | 'cancel'>
+  },
 ) {
+  const { inventory, gl } = engines
   // ---------- Issue head ----------
 
   async function listIssues(actor: Actor, query: Partial<ListQuery>) {
@@ -391,12 +392,7 @@ export function createOutsourcedService(
       if (items.length === 0) {
         throw new ApiError('conflict', '委外发料单至少需要一条发料行')
       }
-      const stockLines: Array<{
-        warehouseId: string
-        materialId: string
-        quantity: string
-        remarks: string | null
-      }> = []
+      const stockLines: StockLine[] = []
       const projection: Array<{ orderItemMaterialId: string; baseQty: string }> = []
       for (const item of items) {
         await deriveIssueItem(trx, before, {
@@ -414,13 +410,15 @@ export function createOutsourcedService(
           {
             warehouseId: item.fromWarehouseId,
             materialId: item.materialId,
-            quantity: wireRequiredDecimal(decimal(item.baseQty).neg()),
+            quantity: wireRequiredDecimal(item.baseQty),
+            direction: 'out' as const,
             remarks: item.remarks,
           },
           {
             warehouseId: item.outsourcedWarehouseId,
             materialId: item.materialId,
             quantity: wireRequiredDecimal(item.baseQty),
+            direction: 'in' as const,
             remarks: item.remarks,
           },
         )
@@ -944,6 +942,7 @@ export function createOutsourcedService(
               warehouseId: item.warehouseId,
               materialId: item.materialId,
               quantity: wireRequiredDecimal(item.baseQty),
+              direction: 'in',
               remarks: item.remarks,
             })
             if (decimal(item.orderBaseQty).gt(0)) {
@@ -966,7 +965,8 @@ export function createOutsourcedService(
             stockLines.push({
               warehouseId: m.outsourcedWarehouseId,
               materialId: m.materialId,
-              quantity: wireRequiredDecimal(decimal(m.baseQty).neg()),
+              quantity: wireRequiredDecimal(m.baseQty),
+              direction: 'out',
               remarks: m.remarks,
             })
           }
@@ -979,6 +979,7 @@ export function createOutsourcedService(
               warehouseId: b.warehouseId,
               materialId: b.materialId,
               quantity: wireRequiredDecimal(b.baseQty),
+              direction: 'in',
               remarks: b.remarks,
             })
           }

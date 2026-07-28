@@ -1,5 +1,5 @@
 import type { Decimal } from '@synie/shared'
-import type { DbHandle, TrxHandle } from '~/db/tx.ts'
+import type { TrxHandle } from '~/db/tx.ts'
 
 /** 过账来源单据头（写分录时锁定的业务上下文） */
 export interface GlVoucher {
@@ -19,13 +19,13 @@ export interface GlVoucherRef {
 
 /**
  * 单行分录入参。
- * debit/credit 走 decimal 口径（Decimal 或十进制字符串）；缺省按 0。
+ * debit/credit 走 decimal 口径（Decimal 或十进制字符串，禁止 number）；缺省按 0。
  */
 export interface GlEntry {
   accountId: string
   currencyId?: string | null
-  debit?: Decimal | string | number
-  credit?: Decimal | string | number
+  debit?: Decimal | string
+  credit?: Decimal | string
   partyType?: string | null
   partyId?: string | null
   remarks?: string | null
@@ -42,14 +42,4 @@ export interface GlEngine {
   post(trx: TrxHandle, voucher: GlVoucher, entries: GlEntry[], options?: PostOptions): Promise<void>
   cancel(trx: TrxHandle, ref: GlVoucherRef): Promise<void>
   reverse(trx: TrxHandle, ref: GlVoucherRef, postingDate: Date | string): Promise<void>
-  /**
-   * 形状 + 科目 + 往来对手全量校验（与 post 同一套规则，不写库）。
-   * 供单据草稿保存等场景预检。
-   */
-  validateEntries(
-    db: DbHandle,
-    companyId: string,
-    entries: GlEntry[],
-    options?: PostOptions,
-  ): Promise<void>
 }

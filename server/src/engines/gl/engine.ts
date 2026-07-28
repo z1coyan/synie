@@ -3,6 +3,7 @@
  * 行为对齐 server-go/internal/engines/gl；事务边界归调用方（DbHandle）。
  */
 import { decimal, toDecimalString, type Decimal } from '@synie/shared'
+import { toDateOnly } from '~/db/dates.ts'
 import type { DbHandle, TrxHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { GlEngine, GlEntry, GlVoucher, GlVoucherRef, PostOptions } from './types.ts'
@@ -42,11 +43,13 @@ export function createGlEngine(): GlEngine {
     post,
     cancel,
     reverse,
-    validateEntries,
   }
 }
 
-/** 校验形状 + 科目 + 往来对手，不写库 */
+/**
+ * 校验形状 + 科目 + 往来对手，不写库。
+ * 仅测试 / 调试出口；生产过账走 post（内含同一套校验）。不挂在 GlEngine interface。
+ */
 export async function validateEntries(
   db: DbHandle,
   companyId: string,
@@ -282,8 +285,8 @@ function normalizeAndValidateShape(entries: GlEntry[], allowNegative: boolean): 
     if (!entry.accountId) {
       throw ledgerValidation('科目不存在')
     }
-    const debit = decimal(entry.debit ?? 0)
-    const credit = decimal(entry.credit ?? 0)
+    const debit = decimal(entry.debit ?? '0')
+    const credit = decimal(entry.credit ?? '0')
     const debitNonzero = !debit.isZero()
     const creditNonzero = !credit.isZero()
     if (debitNonzero === creditNonzero || (!allowNegative && (debit.isNegative() || credit.isNegative()))) {
@@ -391,17 +394,6 @@ async function loadAndValidateAccounts(
 
 function ledgerValidation(message: string): ApiError {
   return ApiError.validation('总账过账校验失败', { entries: [message] })
-}
-
-/** 业务日 → YYYY-MM-DD（UTC 组件，对齐 Go pgtype.Date / UTC fixture） */
-export function toDateOnly(value: Date | string): string {
-  if (typeof value === 'string') {
-    return value.trim().slice(0, 10)
-  }
-  const y = value.getUTCFullYear()
-  const m = String(value.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(value.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
 }
 
 /** 仅导出形状校验供单测（不经 DB） */

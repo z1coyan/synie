@@ -512,7 +512,8 @@ export function createStockCountService(
         lines.push({
           warehouseId: before.warehouseId,
           materialId: item.materialId,
-          quantity: delta,
+          quantity: delta.isNegative() ? delta.neg() : delta,
+          direction: delta.isNegative() ? 'out' : 'in',
           remarks: before.summary,
         })
       }

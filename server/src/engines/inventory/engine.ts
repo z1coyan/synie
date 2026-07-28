@@ -4,6 +4,7 @@
  */
 import { decimal, toDecimalString, type Decimal } from '@synie/shared'
 import { sql } from 'kysely'
+import { toDateOnly, utcToday } from '~/db/dates.ts'
 import type { DbHandle, TrxHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type {
@@ -271,12 +272,18 @@ function normalizeLine(line: StockLine, index: number): NormalizedLine {
   if (!line.materialId) {
     throw ApiError.validation('库存过账校验失败', { materialId: ['物料不存在'] })
   }
-  const quantity = decimal(line.quantity ?? 0)
-  if (quantity.isZero()) {
+  if (line.direction !== 'in' && line.direction !== 'out') {
     throw ApiError.validation('库存过账校验失败', {
-      [`lines.${index}.quantity`]: ['数量不能为零'],
+      [`lines.${index}.direction`]: ['必须为 in 或 out'],
     })
   }
+  const magnitude = decimal(line.quantity ?? '0')
+  if (magnitude.isZero() || magnitude.isNegative()) {
+    throw ApiError.validation('库存过账校验失败', {
+      [`lines.${index}.quantity`]: ['数量必须大于零'],
+    })
+  }
+  const quantity = line.direction === 'out' ? magnitude.neg() : magnitude
   return {
     warehouseId: line.warehouseId,
     materialId: line.materialId,
@@ -454,18 +461,4 @@ function sortKeys(keys: BalanceKey[]): void {
     const right = stockLockKey(b)
     return left < right ? -1 : left > right ? 1 : 0
   })
-}
-
-function toDateOnly(value: Date | string): string {
-  if (typeof value === 'string') {
-    return value.trim().slice(0, 10)
-  }
-  const y = value.getUTCFullYear()
-  const m = String(value.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(value.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
-function utcToday(): string {
-  return toDateOnly(new Date())
 }

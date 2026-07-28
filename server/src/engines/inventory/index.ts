@@ -4,6 +4,7 @@ export type {
   StockVoucher,
   StockVoucherRef,
   StockLine,
+  StockDirection,
   BalanceQuery,
   BalanceRow,
 } from './types.ts'
