@@ -179,11 +179,15 @@ async function emptySetupE2E(): Promise<string> {
   })
   const companyId = companies.results[0]?.id
   if (!companyId) throw new Error('公司创建后未找到')
-  await request(`/base/accounts/init-template`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ companyId, template: 'small' }),
-  })
+  await request(
+    `/base/accounts/init-template`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ companyId, template: 'small' }),
+    },
+    201,
+  )
 
   await request('/setup/complete', {
     method: 'POST',

@@ -188,6 +188,22 @@ run('PG 集成（待办）', () => {
     expect(forA.results.find((t) => t.id === todoId)).toBeTruthy()
   })
 
+  test('source_changed_at 前进后忽略复位（dismissed=false 且重新出现在 active）', async () => {
+    // 依赖上一用例 actorB 已 dismiss；推进 source_changed_at 使 reset_basis 失配
+    await sql`
+      UPDATE sys_todo
+         SET source_changed_at = source_changed_at + interval '1 minute'
+       WHERE id = ${todoId}::uuid
+    `.execute(db)
+
+    const active = await svc.list(actorB, { tab: 'active' })
+    const row = active.results.find((t) => t.id === todoId)
+    expect(row).toBeTruthy()
+    // 历史 dismissed_at 仍在，但 dismissed 标志因复位基准失效而为 false
+    expect(row!.dismissed).toBe(false)
+    expect(row!.myDismissedAt).toBeTruthy()
+  })
+
   test('只读权限可读未读数', async () => {
     const count = await svc.unreadCount(readOnly)
     expect(count).toBeGreaterThanOrEqual(0)

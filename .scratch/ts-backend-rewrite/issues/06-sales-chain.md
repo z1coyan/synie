@@ -33,3 +33,5 @@ Blocked by: 03
 - 非目标未做：对账 08、打印 15、委外完整业务 10（仅头 CRUD + Meta）。
 - 2026-07-28 集成：主仓 cherry-pick 销售链（跳过 stub Meta，复用真实库存 Meta）；side-aware 采购对偶一并落地，覆盖工单07 验收锚点；委外头 printHead 补齐。
 - 2026-07-28 worktree 复核：实现完整（engines/gl+inventory 审核单事务）；`verify-quotation` / `verify-order` / `verify-fulfillment`（标准段）全绿；amount_chain golden 仍覆盖 2/4/6 half-up。
+- 2026-07-28 二轮验收：typecheck 绿；order amounts/projection PG 全绿；`verify-quotation`/`verify-order`/`verify-fulfillment` 再跑全绿；无 remaining。
+- 2026-07-28 主工作区集成（grok-4.5 缺口）：cherry-pick 去重 `cf7b2d2`（公司默认过账科目 PG 集成）/`b0ba293`（04–07 编号 23505→conflict + inventory 自愈 + verify-inventory 停车编号）/`3f84ab7`（09–14 编号 conflict 测 + OCR 默认存储 + HR 编号腾空 + market fixture）/`bc43cef`（todo 忽略复位）/`4358af8`（printing render 冒烟）/`b8538aa`（setup 空库 e2e afterAll 超时）；合并重复 numberingWriteError；app/index/Meta/helpers 已完整装配，未改 server-go。

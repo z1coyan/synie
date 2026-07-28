@@ -1,6 +1,6 @@
 # 09 发票 + 待办
 
-Status: ready-for-human
+Status: done
 Blocked by: 08
 
 ## Comments
@@ -10,7 +10,9 @@ Blocked by: 08
 - 2026-07-28 主工作区集成：cherry-pick `e47f6c0`（发票生命周期+待办 API）/ `53e1e19`（audit/todo 权限对齐 + verify-invoices-todo-rest）；app/index/Meta/helpers 装配已在候选提交内完整挂载（`/finance/vat-invoices`、`/todos`、registerFinanceResources）。验证：`bunx tsc --noEmit` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 209 pass；`verify-invoices-todo-rest` against :18083 → `ok meta=3 permissionFirst=10 wire=46 states=21 todos=10`；`verify-system-ops-rest` → `ok … todoBehavior=7 todoState=9`。遗留：`verify-finance-operations-rest` 全量仍依赖工单 12（银行/报销/票据）；OCR live 需 acc_setting 阿里云凭证。
 - 2026-07-28 独立全量验收：`:18090` `verify-invoices-todo-rest` → `ok meta=3 permissionFirst=10 wire=46 states=21 todos=10`；`verify-system-ops-rest` → todoBehavior=7 todoState=9；`verify-finance-operations-rest` 全量已随工单 12 绿。OCR live 仍需 acc_setting 阿里云凭证（未配置返回可读 validation）。
 - 2026-07-28 补齐：`verify-invoices-todo-rest` 增加默认本地存储接入（OCR 上传依赖）；`:18091` 验收 `ok meta=3 permissionFirst=10 wire=46 states=21 todos=10`；system-ops todoBehavior=7 todoState=9。未改 server-go。
+- 2026-07-28 收口：补 todo PG「source_changed_at 前进后忽略复位」用例；复验 `:18091` invoices+todo / system-ops 全绿；status→done。OCR live 仍依赖 acc_setting（非目标）。
 
+- 2026-07-28 主工作区集成（grok-4.5 缺口）：cherry-pick 去重 `cf7b2d2`（公司默认过账科目 PG 集成）/`b0ba293`（04–07 编号 23505→conflict + inventory 自愈 + verify-inventory 停车编号）/`3f84ab7`（09–14 编号 conflict 测 + OCR 默认存储 + HR 编号腾空 + market fixture）/`bc43cef`（todo 忽略复位）/`4358af8`（printing render 冒烟）/`b8538aa`（setup 空库 e2e afterAll 超时）；合并重复 numberingWriteError；app/index/Meta/helpers 已完整装配，未改 server-go。
 ## 范围
 
 1. **发票**（开入/开出；常规发票关联对账单：审核校验一对一+过账三行+冲回组回未开票往来；作废/红冲自动解除关联退回确认态；对向发票互链与一键生成对方草稿；费用报销发票：方向开入/对手限员工/报销类型带科目/审核挂账其他应付款）

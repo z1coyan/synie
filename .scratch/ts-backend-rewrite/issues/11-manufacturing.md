@@ -25,7 +25,9 @@ Blocked by: 03
 - 2026-07-28：TS 实现 + Meta pr-2.17 金标；`verify-manufacturing-rest` 对 PORT=18111 TS 后端全绿（meta=24, cleanup=0）；PG 集成 5 项绿。
 - 2026-07-28 集成：主仓 cherry-pick 制造域（含 Meta/数量 wire 修复）；挂载 /manufacturing；PG 集成 5 项全绿。
 - 2026-07-28 独立全量验收：`:18090` `verify-manufacturing-rest` → `ok meta=24 permissionFirst=82 … stockProjectionRollback=1 cleanup=0`。无修复。
+- 2026-07-28 isolation worktree（grok-4.5 fix-08-11）：制造主数据/需求/工单/生产入库全量实现；PG 集成 5 项绿；`:18121` `verify-manufacturing-rest` → `ok meta=24 permissionFirst=82 parentPermissions=18 global=3 scoped=2 crud=12 demandActions=5 salesOccupancy=1 concurrentConfirm=1 concurrentWorkOrder=1 outputAuditVoid=2 concurrentAudit=1 stockProjectionRollback=1 graphql=0 cleanup=0`。无代码修复。
 
+- 2026-07-28 主工作区集成（grok-4.5 缺口）：cherry-pick 去重 `cf7b2d2`（公司默认过账科目 PG 集成）/`b0ba293`（04–07 编号 23505→conflict + inventory 自愈 + verify-inventory 停车编号）/`3f84ab7`（09–14 编号 conflict 测 + OCR 默认存储 + HR 编号腾空 + market fixture）/`bc43cef`（todo 忽略复位）/`4358af8`（printing render 冒烟）/`b8538aa`（setup 空库 e2e afterAll 超时）；合并重复 numberingWriteError；app/index/Meta/helpers 已完整装配，未改 server-go。
 ## 非目标
 
 工序报工、生产成本总账（第一期不做）。

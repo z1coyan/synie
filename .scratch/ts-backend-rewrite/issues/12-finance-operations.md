@@ -1,6 +1,6 @@
 # 12 财务运营：银行 / 票据 / 报销单
 
-Status: ready-for-human
+Status: done
 Blocked by: 05, 09
 
 ## Comments
@@ -9,7 +9,9 @@ Blocked by: 05, 09
 - 2026-07-28 主工作区集成：cherry-pick 去重三连 `a8ed2d9`（银行/票据/报销实现+装配）/ `9eedc22`（BIFF8+OCR+pr-2.20 快照）/ `52fa0d8`（billAttrs 类型收窄）；app/index/Meta/helpers 已在候选提交内完整挂载（`/finance/bank-*`、`/finance/expense-*`、`/finance/bills*`、registerFinanceResources/FileOwners）。验证：`bun run typecheck` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 213 pass；`verify-finance-operations-rest` against :18084 → `ok meta=24 permissionFirst=40 internal=6 wire=46 scope=40 states=84 audits=9 concurrency=2`。未改 server-go。无剩余。
 - 2026-07-28 独立全量验收：`:18090` `verify-finance-operations-rest` → `ok meta=24 permissionFirst=40 internal=6 wire=46 scope=40 states=84 audits=9 concurrency=2`；finance PG 3 项绿。无修复。
 - 2026-07-28 复验：`:18091` `verify-finance-operations-rest` → `ok meta=24 permissionFirst=40 internal=6 wire=46 scope=40 states=84 audits=9 concurrency=2`；finance PG + bank-parser 绿。无代码变更。
+- 2026-07-28 收口复验：`:18091` finance-operations 全绿；PG（对账派生/报销核销作废/票据持有重放）+ BIFF8 绿；status→done。
 
+- 2026-07-28 主工作区集成（grok-4.5 缺口）：cherry-pick 去重 `cf7b2d2`（公司默认过账科目 PG 集成）/`b0ba293`（04–07 编号 23505→conflict + inventory 自愈 + verify-inventory 停车编号）/`3f84ab7`（09–14 编号 conflict 测 + OCR 默认存储 + HR 编号腾空 + market fixture）/`bc43cef`（todo 忽略复位）/`4358af8`（printing render 冒烟）/`b8538aa`（setup 空库 e2e afterAll 超时）；合并重复 numberingWriteError；app/index/Meta/helpers 已完整装配，未改 server-go。
 ## 范围
 
 1. **银行账户/流水导入模板/流水导入批次**（列布局解析配置；解析→暂存→导入；已导入只读；流水收/支恰一项>0）

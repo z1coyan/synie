@@ -367,22 +367,6 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
 
 export type NumberingService = ReturnType<typeof createNumberingService>
 
-/** 对齐 Go numberingWriteError：23505 → conflict（同一资源只能启用一条） */
-function numberingWriteError(message: string, err: unknown): never {
-  if (err instanceof ApiError) throw err
-  if (typeof err === 'object' && err !== null && 'code' in err) {
-    const e = err as { code?: string }
-    if (e.code === '23505') {
-      throw new ApiError(
-        'conflict',
-        '该资源已有启用的编号规则,同一资源只能启用一条',
-        { cause: err },
-      )
-    }
-  }
-  throw new ApiError('internal', message, { cause: err })
-}
-
 function validateCreate(input: CreateRuleInput, catalog: NumberingCatalog): void {
   const resource = input.resource.trim()
   const name = input.name.trim()

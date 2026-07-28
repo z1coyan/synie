@@ -26,3 +26,6 @@ Blocked by: 01, 02
 
 ## Comments
 - 2026-07-28 集成：主仓 cherry-pick 打印引擎；registerPrintingResources 置于业务域之后使 stub 跳过真实 Meta；catalog 60 前缀 / sales.order 25 字段。
+- 2026-07-28 隔离 worktree 复验（grok-4.5）：`fflate` zip+XML、无 exceljs；printing 包 19 单测/集成绿（含 golden 占位符中文分类、soffice 进程卫生）；`:18091` `verify-printing-rest` 绿（resources=60 sales.order fields=25）；live `POST /printing/render` export→xlsx + print→pdf 对真实销售订单全绿。未改 server-go。
+- 2026-07-28 补 remaining：`verify-printing-rest` 含 render export+print；printing 19 pass；`:18092` 活服务验收绿。无代码缺口。
+- 2026-07-28 主工作区集成（grok-4.5 缺口）：cherry-pick 去重 `cf7b2d2`（公司默认过账科目 PG 集成）/`b0ba293`（04–07 编号 23505→conflict + inventory 自愈 + verify-inventory 停车编号）/`3f84ab7`（09–14 编号 conflict 测 + OCR 默认存储 + HR 编号腾空 + market fixture）/`bc43cef`（todo 忽略复位）/`4358af8`（printing render 冒烟）/`b8538aa`（setup 空库 e2e afterAll 超时）；合并重复 numberingWriteError；app/index/Meta/helpers 已完整装配，未改 server-go。

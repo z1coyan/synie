@@ -44,3 +44,5 @@ TS 业务域已落地于 `server/src/modules/accounting/`：
 - typecheck + accounting/gl PG 集成全绿
 - 2026-07-28 集成：主仓 cherry-pick 工单05（含 Meta wire 对齐）；与库存/交易共享 registry.projectWireRef；accounting/gl PG 测绿。
 - 2026-07-28 worktree 复核：实现完整（engines/gl 复用）；`verify-accounting-rest` 全绿（meta×6、权限/公司范围、凭证/行、审核分录、AR/AP、取消）；编号 23505 对齐 Go → conflict 409。
+- 2026-07-28 二轮验收：typecheck 绿；accounting/gl PG 全绿（状态机/红冲/报表）；`verify-accounting-rest` 再跑全绿；无 remaining。
+- 2026-07-28 主工作区集成（grok-4.5 缺口）：cherry-pick 去重 `cf7b2d2`（公司默认过账科目 PG 集成）/`b0ba293`（04–07 编号 23505→conflict + inventory 自愈 + verify-inventory 停车编号）/`3f84ab7`（09–14 编号 conflict 测 + OCR 默认存储 + HR 编号腾空 + market fixture）/`bc43cef`（todo 忽略复位）/`4358af8`（printing render 冒烟）/`b8538aa`（setup 空库 e2e afterAll 超时）；合并重复 numberingWriteError；app/index/Meta/helpers 已完整装配，未改 server-go。

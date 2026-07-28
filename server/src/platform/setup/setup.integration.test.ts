@@ -126,7 +126,8 @@ run('PG 集成（setup 向导）', () => {
     }
   }
 
-  // 收尾清空 setup 种子，避免污染共享 synie_test 上的其它 PG 集成包
+  // 收尾清空 setup 种子，避免污染共享 synie_test 上的其它 PG 集成包。
+  // TRUNCATE 大表 + advisory 锁在机器繁忙时可能超过默认 5s hook 超时。
   afterAll(async () => {
     try {
       await prepareEmptySetup()
@@ -134,7 +135,7 @@ run('PG 集成（setup 向导）', () => {
       // 收尾失败不阻断 destroy
     }
     await db.destroy()
-  })
+  }, 120_000)
 
   test('status 公开 + first-user 并发仅一成功 + 基础 complete', async () => {
     await prepareEmptySetup()

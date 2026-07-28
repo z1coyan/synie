@@ -25,3 +25,5 @@ Blocked by: 03
 ## Comments
 - 2026-07-28 集成：与工单06 并行实现去重——采用 06 side-aware trading（报价/订单/入库）作为采购链实现；跳过 07 并行 tree（`0b2e82e`/`5647a54`）避免双实现冲突；verify-quotation/order/fulfillment 锚点由统一 trading 覆盖。
 - 2026-07-28 worktree 复核：采购侧已由 side-aware trading 完整覆盖；`verify-quotation`/`verify-order`/`verify-fulfillment` 全绿（采购镜像段含在内）；无独立缺口需补。
+- 2026-07-28 二轮验收：typecheck 绿；order projection 采购入库/需求回写 PG 绿；三 verify 再跑全绿；无 remaining。
+- 2026-07-28 主工作区集成（grok-4.5 缺口）：cherry-pick 去重 `cf7b2d2`（公司默认过账科目 PG 集成）/`b0ba293`（04–07 编号 23505→conflict + inventory 自愈 + verify-inventory 停车编号）/`3f84ab7`（09–14 编号 conflict 测 + OCR 默认存储 + HR 编号腾空 + market fixture）/`bc43cef`（todo 忽略复位）/`4358af8`（printing render 冒烟）/`b8538aa`（setup 空库 e2e afterAll 超时）；合并重复 numberingWriteError；app/index/Meta/helpers 已完整装配，未改 server-go。

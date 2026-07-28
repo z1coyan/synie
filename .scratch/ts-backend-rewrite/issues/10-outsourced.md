@@ -38,3 +38,5 @@ Blocked by: 07, 11
 - 验证：`bunx tsc --noEmit` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 209 pass（含 outsourced.postgres + projection）；`verify-fulfillment-rest` against :18083 → `ok: meta=20 permissionFirst=10 queries=10 heads=4`。
 - 无新增业务代码冲突；与工单 09 文件面无重叠。
 - 2026-07-28 独立全量验收：`:18090` `verify-fulfillment-rest` → `ok meta=20 permissionFirst=10 queries=10 heads=4`；outsourced.postgres（发料/入库三库存+投影+作废回滚 + BOM 展开）随 bun test 绿。无修复。
+- 2026-07-28 isolation worktree（grok-4.5 fix-08-11）：委外发料/入库服务完整（非占位）；`outsourced.postgres` + projection 绿；`:18121` `verify-fulfillment-rest` → `ok meta=20 permissionFirst=10 queries=10 heads=4 defaults=1 cleanup=0`（含委外 6 资源 Meta 金标）。无代码修复。
+- 2026-07-28 主工作区集成（grok-4.5 缺口）：cherry-pick 去重 `cf7b2d2`（公司默认过账科目 PG 集成）/`b0ba293`（04–07 编号 23505→conflict + inventory 自愈 + verify-inventory 停车编号）/`3f84ab7`（09–14 编号 conflict 测 + OCR 默认存储 + HR 编号腾空 + market fixture）/`bc43cef`（todo 忽略复位）/`4358af8`（printing render 冒烟）/`b8538aa`（setup 空库 e2e afterAll 超时）；合并重复 numberingWriteError；app/index/Meta/helpers 已完整装配，未改 server-go。

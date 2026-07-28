@@ -168,6 +168,79 @@ try {
     throw new Error(`audit=${auditRows[0].count}, want 5`)
   }
   if (Number(fileRows[0].count) !== 1) throw new Error('template delete removed file')
+
+  // 渲染出口：模板 CRUD 后另建一份模板，对真实销售订单做 export/print 冒烟
+  const orderRows = await db`
+    SELECT id::text AS id, order_no
+    FROM sal_order
+    ORDER BY inserted_at DESC
+    LIMIT 1
+  `
+  let renderNote = 'render=skipped(no sal_order)'
+  if (orderRows[0]?.id) {
+    const renderForm = new FormData()
+    renderForm.append(
+      'file',
+      Bun.file(fixture),
+      `REST打印渲染-${crypto.randomUUID().slice(0, 8)}.xlsx`,
+    )
+    const renderUpload = await fetch(baseURL + '/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${login.token}` },
+      body: renderForm,
+    })
+    if (renderUpload.status !== 201) {
+      throw new Error(`render upload=${renderUpload.status}:${await renderUpload.text()}`)
+    }
+    const renderFile = (await renderUpload.json()) as { file: { id: string } }
+    const renderTpl = await api<{ id: string }>(
+      '/system/printing/templates',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: `REST渲染验收-${suffix}`,
+          resource: 'sales.order',
+          fileId: renderFile.file.id,
+        }),
+      },
+      201,
+    )
+    for (const mode of ['export', 'print'] as const) {
+      const res = await fetch(baseURL + '/printing/render', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          resource: 'sales.order',
+          mode,
+          templateId: renderTpl.id,
+          ids: [orderRows[0].id],
+        }),
+      })
+      const buf = await res.arrayBuffer()
+      if (!res.ok) {
+        throw new Error(`render ${mode}=${res.status}:${new TextDecoder().decode(buf)}`)
+      }
+      if (buf.byteLength < 100) {
+        throw new Error(`render ${mode} empty body (${buf.byteLength} bytes)`)
+      }
+      const ct = res.headers.get('content-type') ?? ''
+      if (mode === 'export' && !ct.includes('spreadsheetml')) {
+        throw new Error(`render export content-type=${ct}`)
+      }
+      if (mode === 'print' && !ct.includes('pdf')) {
+        throw new Error(`render print content-type=${ct}`)
+      }
+    }
+    await api<void>(
+      `/system/printing/templates/${renderTpl.id}`,
+      { method: 'DELETE', headers },
+      204,
+    )
+    await api<void>(`/files/${renderFile.file.id}`, { method: 'DELETE', headers }, 204)
+    renderNote = `render=export+print order=${orderRows[0].order_no}`
+  }
+
   templateID = null
   await api<void>(`/files/${fileID}`, { method: 'DELETE', headers }, 204)
   await db`
@@ -176,7 +249,7 @@ try {
   `
   fileID = null
   console.log(
-    `printing REST acceptance ok: resources=60 salesOrderFields=25 template=${created.id}`,
+    `printing REST acceptance ok: resources=60 salesOrderFields=25 template=${created.id} ${renderNote}`,
   )
 } finally {
   if (templateID) {
