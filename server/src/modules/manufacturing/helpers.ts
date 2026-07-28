@@ -3,9 +3,28 @@ import { sql } from 'kysely'
 import { toDateOnly, utcToday } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
-import { canAccessCompany } from '~/platform/authz/actor.ts'
+import {
+  canAccessCompany,
+  hasPermission,
+  requirePermission,
+} from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
+
+export { requirePermission }
+
+/** 子行 create：持 create 或 update 均可（对齐 routes requireChildCreate） */
+export function requireCreateOrUpdate(
+  actor: Actor | null,
+  prefix: string,
+): asserts actor is Actor {
+  if (
+    !hasPermission(actor, `${prefix}:create`) &&
+    !hasPermission(actor, `${prefix}:update`)
+  ) {
+    requirePermission(actor, `${prefix}:update`)
+  }
+}
 
 export { toDateOnly }
 import type {

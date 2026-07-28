@@ -17,6 +17,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import {
+  requirePermission,
   actorUserId,
   asDate,
   asDateOrNull,
@@ -85,6 +86,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
       remarks?: string | null
     },
   ): Promise<Demand> {
+    requirePermission(actor, 'mfg.demand:create')
     if (!input.companyId) {
       throw ApiError.validation('履约需求单参数不合法', { companyId: ['必填'] })
     }
@@ -131,12 +133,14 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function getDemand(actor: Actor, id: string): Promise<Demand> {
+    requirePermission(actor, 'mfg.demand:read')
     const item = await loadDemand(db, id, false)
     requireCompanyAccess(actor, item.companyId)
     return item
   }
 
   async function listDemands(actor: Actor, query: ListQueryInput) {
+    requirePermission(actor, 'mfg.demand:read')
     const q = normalizeList(query)
     if (q.companyId) requireCompanyAccess(actor, q.companyId)
     const scope = q.companyId
@@ -165,6 +169,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
       remarksPresent?: boolean
     },
   ): Promise<Demand> {
+    requirePermission(actor, 'mfg.demand:update')
     return withTx(db, async (trx) => {
       const before = await loadDemand(trx, id, true)
       requireCompanyAccess(actor, before.companyId)
@@ -208,6 +213,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function deleteDemand(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'mfg.demand:delete')
     await withTx(db, async (trx) => {
       const item = await loadDemand(trx, id, true)
       requireCompanyAccess(actor, item.companyId)
@@ -245,6 +251,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
       remarks?: string | null
     },
   ): Promise<DemandItem> {
+    requirePermission(actor, 'mfg.demand:create')
     let method = (input.fulfillmentMethod || 'MAKE').toLowerCase()
     if (!method) method = 'make'
     if (!validFulfillment(method)) {
@@ -307,12 +314,14 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function getDemandItem(actor: Actor, id: string): Promise<DemandItem> {
+    requirePermission(actor, 'mfg.demand:read')
     const item = await loadDemandItem(db, id, false)
     requireCompanyAccess(actor, item.companyId)
     return item
   }
 
   async function listDemandItems(actor: Actor, query: ListQueryInput & { demandId?: string }) {
+    requirePermission(actor, 'mfg.demand:read')
     const q = normalizeList(query)
     if (q.companyId) requireCompanyAccess(actor, q.companyId)
     const scope = q.companyId
@@ -358,6 +367,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
       remarksPresent?: boolean
     },
   ): Promise<DemandItem> {
+    requirePermission(actor, 'mfg.demand:update')
     return withTx(db, async (trx) => {
       const parentId = await trx
         .selectFrom('mfg_demand_item')
@@ -446,6 +456,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function deleteDemandItem(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'mfg.demand:update')
     await withTx(db, async (trx) => {
       const parentId = await trx
         .selectFrom('mfg_demand_item')
@@ -473,6 +484,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function confirmDemand(actor: Actor, id: string): Promise<Demand> {
+    requirePermission(actor, 'mfg.demand:confirm')
     return withTx(db, async (trx) => {
       const before = await loadDemand(trx, id, true)
       requireCompanyAccess(actor, before.companyId)
@@ -553,10 +565,12 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function closeDemand(actor: Actor, id: string): Promise<Demand> {
+    requirePermission(actor, 'mfg.demand:close')
     return transitionDemand(actor, id, 'close', 'confirmed', 'closed', '仅已确认履约需求单可关闭')
   }
 
   async function voidDemand(actor: Actor, id: string): Promise<Demand> {
+    requirePermission(actor, 'mfg.demand:void')
     return withTx(db, async (trx) => {
       const before = await loadDemand(trx, id, true)
       requireCompanyAccess(actor, before.companyId)
@@ -640,6 +654,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function completeDemandItem(actor: Actor, id: string): Promise<DemandItem> {
+    requirePermission(actor, 'mfg.demand:update')
     return withTx(db, async (trx) => {
       const parentId = await trx
         .selectFrom('mfg_demand_item')
@@ -686,6 +701,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
     id: string,
     methodWire: string,
   ): Promise<DemandItem> {
+    requirePermission(actor, 'mfg.demand:update')
     const method = parseFulfillmentWire(methodWire)
     return withTx(db, async (trx) => {
       const parentId = await trx
@@ -748,9 +764,10 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
   }
 
   async function salesOccupancies(
-    _actor: Actor,
+    actor: Actor,
     ids: string[],
   ): Promise<SalesOccupancy[]> {
+    requirePermission(actor, 'mfg.demand:read')
     if (ids.length === 0) return []
     const rows = await sql<{
       id: string

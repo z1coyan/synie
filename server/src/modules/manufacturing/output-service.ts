@@ -23,6 +23,7 @@ import {
   voidInventoryDocInTx,
 } from '~/modules/trading/posting.ts'
 import {
+  requirePermission,
   actorUserId,
   asDate,
   asInt,
@@ -94,6 +95,7 @@ export function createOutputService(
       remarks?: string | null
     },
   ): Promise<Output> {
+    requirePermission(actor, 'mfg.output:create')
     if (!input.companyId) {
       throw ApiError.validation('生产入库单参数不合法', { companyId: ['必填'] })
     }
@@ -142,12 +144,14 @@ export function createOutputService(
   }
 
   async function getOutput(actor: Actor, id: string): Promise<Output> {
+    requirePermission(actor, 'mfg.output:read')
     const item = await loadOutput(db, id, false)
     requireCompanyAccess(actor, item.companyId)
     return item
   }
 
   async function listOutputs(actor: Actor, query: ListQueryInput) {
+    requirePermission(actor, 'mfg.output:read')
     const q = normalizeList(query)
     if (q.companyId) requireCompanyAccess(actor, q.companyId)
     const scope = q.companyId
@@ -178,6 +182,7 @@ export function createOutputService(
       remarksPresent?: boolean
     },
   ): Promise<Output> {
+    requirePermission(actor, 'mfg.output:update')
     return withTx(db, async (trx) => {
       const before = await loadOutput(trx, id, true)
       requireCompanyAccess(actor, before.companyId)
@@ -224,6 +229,7 @@ export function createOutputService(
   }
 
   async function deleteOutput(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'mfg.output:delete')
     await withTx(db, async (trx) => {
       const item = await loadOutput(trx, id, true)
       requireCompanyAccess(actor, item.companyId)
@@ -259,6 +265,7 @@ export function createOutputService(
       remarks?: string | null
     },
   ): Promise<OutputItem> {
+    requirePermission(actor, 'mfg.output:create')
     validateRemarks(input.remarks)
     return withTx(db, async (trx) => {
       const parent = await loadOutput(trx, input.outputId, true)
@@ -319,12 +326,14 @@ export function createOutputService(
   }
 
   async function getOutputItem(actor: Actor, id: string): Promise<OutputItem> {
+    requirePermission(actor, 'mfg.output:read')
     const item = await loadOutputItem(db, id, false)
     requireCompanyAccess(actor, item.companyId)
     return item
   }
 
   async function listOutputItems(actor: Actor, query: ListQueryInput & { outputId?: string }) {
+    requirePermission(actor, 'mfg.output:read')
     const q = normalizeList(query)
     if (q.companyId) requireCompanyAccess(actor, q.companyId)
     const scope = q.companyId
@@ -360,6 +369,7 @@ export function createOutputService(
       remarksPresent?: boolean
     },
   ): Promise<OutputItem> {
+    requirePermission(actor, 'mfg.output:update')
     return withTx(db, async (trx) => {
       const parentId = await trx
         .selectFrom('mfg_output_item')
@@ -442,6 +452,7 @@ export function createOutputService(
   }
 
   async function deleteOutputItem(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'mfg.output:update')
     await withTx(db, async (trx) => {
       const parentId = await trx
         .selectFrom('mfg_output_item')
@@ -469,6 +480,7 @@ export function createOutputService(
   }
 
   async function auditOutput(actor: Actor, id: string): Promise<Output> {
+    requirePermission(actor, 'mfg.output:audit')
     return withTx(db, async (trx) => {
       // 投影用工单锁：collect 内装载，postProjection 闭包复用
       let lockedOrders: Map<string, LockedWorkOrder> | null = null
@@ -510,6 +522,7 @@ export function createOutputService(
   }
 
   async function voidOutput(actor: Actor, id: string): Promise<Output> {
+    requirePermission(actor, 'mfg.output:void')
     return withTx(db, async (trx) => {
       let lockedOrders: Map<string, LockedWorkOrder> | null = null
       return voidInventoryDocInTx(trx, actor, inventory, {

@@ -4,7 +4,6 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { hasPermission, requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { DemandService } from './demand-service.ts'
@@ -95,33 +94,6 @@ function present(raw: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(raw, key)
 }
 
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
-
-/** 子行 create：持 create 或 update 均可 */
-function requireChildCreate(prefix: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    const actor = c.get('actor')
-    if (
-      !hasPermission(actor, `${prefix}:create`) &&
-      !hasPermission(actor, `${prefix}:update`)
-    ) {
-      requirePermission(actor, `${prefix}:update`)
-    }
-    await next()
-  }
-}
-
 export interface ManufacturingRouteDeps {
   auth: AuthService
   master: MasterService
@@ -140,16 +112,14 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— 工序 ——
       .post(
         '/operations/query',
-        requirePerm('mfg.operation:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await master.listOperations(toList(c.req.valid('json')))
+          const result = await master.listOperations(c.get('actor'), toList(c.req.valid('json')))
           return c.json(listWire(result, operationWire))
         },
       )
       .post(
         '/operations',
-        requirePerm('mfg.operation:create'),
         zValidator('json', headCreate, validationHook),
         async (c) => {
           const body = c.req.valid('json')
@@ -159,13 +129,11 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/operations/:id',
-        requirePerm('mfg.operation:read'),
         zValidator('param', idParam, validationHook),
-        async (c) => c.json(operationWire(await master.getOperation(c.req.valid('param').id))),
+        async (c) => c.json(operationWire(await master.getOperation(c.get('actor'), c.req.valid('param').id))),
       )
       .patch(
         '/operations/:id',
-        requirePerm('mfg.operation:update'),
         zValidator('param', idParam, validationHook),
         zValidator('json', headUpdate, validationHook),
         async (c) => {
@@ -181,7 +149,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/operations/:id',
-        requirePerm('mfg.operation:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await master.deleteOperation(c.get('actor'), c.req.valid('param').id)
@@ -191,16 +158,14 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— 工艺模板 ——
       .post(
         '/process-templates/query',
-        requirePerm('mfg.route_template:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await master.listTemplates(toList(c.req.valid('json')))
+          const result = await master.listTemplates(c.get('actor'), toList(c.req.valid('json')))
           return c.json(listWire(result, templateWire))
         },
       )
       .post(
         '/process-templates',
-        requirePerm('mfg.route_template:create'),
         zValidator('json', headCreate, validationHook),
         async (c) => {
           const item = await master.createTemplate(c.get('actor'), c.req.valid('json'))
@@ -209,13 +174,11 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/process-templates/:id',
-        requirePerm('mfg.route_template:read'),
         zValidator('param', idParam, validationHook),
-        async (c) => c.json(templateWire(await master.getTemplate(c.req.valid('param').id))),
+        async (c) => c.json(templateWire(await master.getTemplate(c.get('actor'), c.req.valid('param').id))),
       )
       .patch(
         '/process-templates/:id',
-        requirePerm('mfg.route_template:update'),
         zValidator('param', idParam, validationHook),
         zValidator('json', headUpdate, validationHook),
         async (c) => {
@@ -231,7 +194,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/process-templates/:id',
-        requirePerm('mfg.route_template:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await master.deleteTemplate(c.get('actor'), c.req.valid('param').id)
@@ -241,7 +203,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— 工艺模板行 ——
       .post(
         '/process-template-items/query',
-        requirePerm('mfg.route_template:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const body = c.req.valid('json')
@@ -250,13 +211,12 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
             typeof filter?.templateId === 'object' && filter.templateId && 'value' in filter.templateId
               ? String(filter.templateId.value)
               : undefined
-          const result = await master.listTemplateItems({ ...toList(body), templateId })
+          const result = await master.listTemplateItems(c.get('actor'), { ...toList(body), templateId })
           return c.json(listWire(result, templateItemWire))
         },
       )
       .post(
         '/process-template-items',
-        requireChildCreate('mfg.route_template'),
         zValidator(
           'json',
           routeItemCreate.extend({ templateId: z.string().uuid() }).strict(),
@@ -276,14 +236,12 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/process-template-items/:id',
-        requirePerm('mfg.route_template:read'),
         zValidator('param', idParam, validationHook),
         async (c) =>
-          c.json(templateItemWire(await master.getTemplateItem(c.req.valid('param').id))),
+          c.json(templateItemWire(await master.getTemplateItem(c.get('actor'), c.req.valid('param').id))),
       )
       .patch(
         '/process-template-items/:id',
-        requirePerm('mfg.route_template:update'),
         zValidator('param', idParam, validationHook),
         zValidator('json', routeItemUpdate, validationHook),
         async (c) => {
@@ -301,7 +259,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/process-template-items/:id',
-        requirePerm('mfg.route_template:update'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await master.deleteTemplateItem(c.get('actor'), c.req.valid('param').id)
@@ -311,16 +268,14 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— BOM ——
       .post(
         '/boms/query',
-        requirePerm('mfg.bom:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
-          const result = await master.listBoms(toList(c.req.valid('json')))
+          const result = await master.listBoms(c.get('actor'), toList(c.req.valid('json')))
           return c.json(listWire(result, bomWire))
         },
       )
       .post(
         '/boms',
-        requirePerm('mfg.bom:create'),
         zValidator(
           'json',
           z
@@ -340,13 +295,11 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/boms/:id',
-        requirePerm('mfg.bom:read'),
         zValidator('param', idParam, validationHook),
-        async (c) => c.json(bomWire(await master.getBom(c.req.valid('param').id))),
+        async (c) => c.json(bomWire(await master.getBom(c.get('actor'), c.req.valid('param').id))),
       )
       .patch(
         '/boms/:id',
-        requirePerm('mfg.bom:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -372,7 +325,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/boms/:id',
-        requirePerm('mfg.bom:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await master.deleteBom(c.get('actor'), c.req.valid('param').id)
@@ -381,7 +333,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/boms/:id/apply-route-template',
-        requirePerm('mfg.bom:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -400,7 +351,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— BOM 配料 ——
       .post(
         '/bom-components/query',
-        requirePerm('mfg.bom:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const body = c.req.valid('json')
@@ -409,13 +359,12 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
             typeof filter?.bomId === 'object' && filter.bomId && 'value' in filter.bomId
               ? String(filter.bomId.value)
               : undefined
-          const result = await master.listComponents({ ...toList(body), bomId })
+          const result = await master.listComponents(c.get('actor'), { ...toList(body), bomId })
           return c.json(listWire(result, bomComponentWire))
         },
       )
       .post(
         '/bom-components',
-        requireChildCreate('mfg.bom'),
         zValidator(
           'json',
           z
@@ -437,14 +386,12 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/bom-components/:id',
-        requirePerm('mfg.bom:read'),
         zValidator('param', idParam, validationHook),
         async (c) =>
-          c.json(bomComponentWire(await master.getComponent(c.req.valid('param').id))),
+          c.json(bomComponentWire(await master.getComponent(c.get('actor'), c.req.valid('param').id))),
       )
       .patch(
         '/bom-components/:id',
-        requirePerm('mfg.bom:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -476,7 +423,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/bom-components/:id',
-        requirePerm('mfg.bom:update'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await master.deleteComponent(c.get('actor'), c.req.valid('param').id)
@@ -486,7 +432,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— BOM 路线 ——
       .post(
         '/bom-routes/query',
-        requirePerm('mfg.bom:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const body = c.req.valid('json')
@@ -495,13 +440,12 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
             typeof filter?.bomId === 'object' && filter.bomId && 'value' in filter.bomId
               ? String(filter.bomId.value)
               : undefined
-          const result = await master.listRoutes({ ...toList(body), bomId })
+          const result = await master.listRoutes(c.get('actor'), { ...toList(body), bomId })
           return c.json(listWire(result, bomRouteWire))
         },
       )
       .post(
         '/bom-routes',
-        requireChildCreate('mfg.bom'),
         zValidator(
           'json',
           z
@@ -522,13 +466,11 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/bom-routes/:id',
-        requirePerm('mfg.bom:read'),
         zValidator('param', idParam, validationHook),
-        async (c) => c.json(bomRouteWire(await master.getRoute(c.req.valid('param').id))),
+        async (c) => c.json(bomRouteWire(await master.getRoute(c.get('actor'), c.req.valid('param').id))),
       )
       .patch(
         '/bom-routes/:id',
-        requirePerm('mfg.bom:update'),
         zValidator('param', idParam, validationHook),
         zValidator('json', routeItemUpdate, validationHook),
         async (c) => {
@@ -546,7 +488,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/bom-routes/:id',
-        requirePerm('mfg.bom:update'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await master.deleteRoute(c.get('actor'), c.req.valid('param').id)
@@ -556,7 +497,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— BOM 副产品 ——
       .post(
         '/bom-byproducts/query',
-        requirePerm('mfg.bom:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const body = c.req.valid('json')
@@ -565,13 +505,12 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
             typeof filter?.bomId === 'object' && filter.bomId && 'value' in filter.bomId
               ? String(filter.bomId.value)
               : undefined
-          const result = await master.listByproducts({ ...toList(body), bomId })
+          const result = await master.listByproducts(c.get('actor'), { ...toList(body), bomId })
           return c.json(listWire(result, bomByproductWire))
         },
       )
       .post(
         '/bom-byproducts',
-        requireChildCreate('mfg.bom'),
         zValidator(
           'json',
           z
@@ -592,14 +531,12 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/bom-byproducts/:id',
-        requirePerm('mfg.bom:read'),
         zValidator('param', idParam, validationHook),
         async (c) =>
-          c.json(bomByproductWire(await master.getByproduct(c.req.valid('param').id))),
+          c.json(bomByproductWire(await master.getByproduct(c.get('actor'), c.req.valid('param').id))),
       )
       .patch(
         '/bom-byproducts/:id',
-        requirePerm('mfg.bom:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -628,7 +565,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/bom-byproducts/:id',
-        requirePerm('mfg.bom:update'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await master.deleteByproduct(c.get('actor'), c.req.valid('param').id)
@@ -638,7 +574,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— 履约需求 ——
       .post(
         '/demands/query',
-        requirePerm('mfg.demand:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await demands.listDemands(c.get('actor'), toList(c.req.valid('json')))
@@ -647,7 +582,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/demands',
-        requirePerm('mfg.demand:create'),
         zValidator(
           'json',
           z
@@ -667,14 +601,12 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/demands/:id',
-        requirePerm('mfg.demand:read'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(demandWire(await demands.getDemand(c.get('actor'), c.req.valid('param').id))),
       )
       .patch(
         '/demands/:id',
-        requirePerm('mfg.demand:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -701,7 +633,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/demands/:id',
-        requirePerm('mfg.demand:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await demands.deleteDemand(c.get('actor'), c.req.valid('param').id)
@@ -710,21 +641,18 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/demands/:id/confirm',
-        requirePerm('mfg.demand:confirm'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(demandWire(await demands.confirmDemand(c.get('actor'), c.req.valid('param').id))),
       )
       .post(
         '/demands/:id/close',
-        requirePerm('mfg.demand:close'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(demandWire(await demands.closeDemand(c.get('actor'), c.req.valid('param').id))),
       )
       .post(
         '/demands/:id/void',
-        requirePerm('mfg.demand:void'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(demandWire(await demands.voidDemand(c.get('actor'), c.req.valid('param').id))),
@@ -732,7 +660,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— 需求行 ——
       .post(
         '/demand-items/query',
-        requirePerm('mfg.demand:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const body = c.req.valid('json')
@@ -750,7 +677,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/demand-items',
-        requirePerm('mfg.demand:create'),
         zValidator(
           'json',
           z
@@ -775,7 +701,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/demand-items/:id',
-        requirePerm('mfg.demand:read'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(
@@ -784,7 +709,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .patch(
         '/demand-items/:id',
-        requirePerm('mfg.demand:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -823,7 +747,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/demand-items/:id',
-        requirePerm('mfg.demand:update'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await demands.deleteDemandItem(c.get('actor'), c.req.valid('param').id)
@@ -832,7 +755,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/demand-items/:id/complete',
-        requirePerm('mfg.demand:update'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(
@@ -843,7 +765,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/demand-items/:id/fulfillment',
-        requirePerm('mfg.demand:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -863,7 +784,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/sales-item-occupancies',
-        requirePerm('mfg.demand:read'),
         zValidator(
           'json',
           z.object({ salesOrderItemIds: z.array(z.string().uuid()) }).strict(),
@@ -880,7 +800,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— 工单 ——
       .post(
         '/work-orders/query',
-        requirePerm('mfg.work_order:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await workOrders.listWorkOrders(
@@ -892,7 +811,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/work-orders',
-        requirePerm('mfg.work_order:create'),
         zValidator(
           'json',
           z
@@ -910,7 +828,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/work-orders/:id',
-        requirePerm('mfg.work_order:read'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(
@@ -919,7 +836,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .patch(
         '/work-orders/:id',
-        requirePerm('mfg.work_order:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -937,7 +853,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/work-orders/:id',
-        requirePerm('mfg.work_order:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await workOrders.deleteWorkOrder(c.get('actor'), c.req.valid('param').id)
@@ -946,7 +861,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/work-orders/:id/void',
-        requirePerm('mfg.work_order:void'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(
@@ -956,7 +870,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— 生产入库 ——
       .post(
         '/outputs/query',
-        requirePerm('mfg.output:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const result = await outputs.listOutputs(c.get('actor'), toList(c.req.valid('json')))
@@ -965,7 +878,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/outputs',
-        requirePerm('mfg.output:create'),
         zValidator(
           'json',
           z
@@ -986,14 +898,12 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/outputs/:id',
-        requirePerm('mfg.output:read'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(outputWire(await outputs.getOutput(c.get('actor'), c.req.valid('param').id))),
       )
       .patch(
         '/outputs/:id',
-        requirePerm('mfg.output:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -1023,7 +933,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/outputs/:id',
-        requirePerm('mfg.output:delete'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await outputs.deleteOutput(c.get('actor'), c.req.valid('param').id)
@@ -1032,14 +941,12 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/outputs/:id/audit',
-        requirePerm('mfg.output:audit'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(outputWire(await outputs.auditOutput(c.get('actor'), c.req.valid('param').id))),
       )
       .post(
         '/outputs/:id/void',
-        requirePerm('mfg.output:void'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(outputWire(await outputs.voidOutput(c.get('actor'), c.req.valid('param').id))),
@@ -1047,7 +954,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       // —— 入库行 ——
       .post(
         '/output-items/query',
-        requirePerm('mfg.output:read'),
         zValidator('json', listQuerySchema, validationHook),
         async (c) => {
           const body = c.req.valid('json')
@@ -1065,7 +971,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .post(
         '/output-items',
-        requirePerm('mfg.output:create'),
         zValidator(
           'json',
           z
@@ -1088,7 +993,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .get(
         '/output-items/:id',
-        requirePerm('mfg.output:read'),
         zValidator('param', idParam, validationHook),
         async (c) =>
           c.json(
@@ -1097,7 +1001,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .patch(
         '/output-items/:id',
-        requirePerm('mfg.output:update'),
         zValidator('param', idParam, validationHook),
         zValidator(
           'json',
@@ -1130,7 +1033,6 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
       )
       .delete(
         '/output-items/:id',
-        requirePerm('mfg.output:update'),
         zValidator('param', idParam, validationHook),
         async (c) => {
           await outputs.deleteOutputItem(c.get('actor'), c.req.valid('param').id)

@@ -18,6 +18,7 @@ import type { NumberingService } from '~/platform/numbering/service.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { loadDemand, loadDemandItem } from './demand-service.ts'
 import {
+  requirePermission,
   actorUserId,
   asDateOrNull,
   mfgWriteError,
@@ -55,6 +56,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
     actor: Actor,
     input: { demandItemId: string; workOrderNo?: string | null },
   ): Promise<WorkOrder> {
+    requirePermission(actor, 'mfg.work_order:create')
     return withTx(db, async (trx) => {
       const demandItemRow = await trx
         .selectFrom('mfg_demand_item')
@@ -134,12 +136,14 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
   }
 
   async function getWorkOrder(actor: Actor, id: string): Promise<WorkOrder> {
+    requirePermission(actor, 'mfg.work_order:read')
     const item = await loadWorkOrder(db, id, false)
     requireCompanyAccess(actor, item.companyId)
     return item
   }
 
   async function listWorkOrders(actor: Actor, query: ListQueryInput) {
+    requirePermission(actor, 'mfg.work_order:read')
     const q = normalizeList(query)
     if (q.companyId) requireCompanyAccess(actor, q.companyId)
     const scope = q.companyId
@@ -167,6 +171,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
     id: string,
     input: { workOrderNo: string },
   ): Promise<WorkOrder> {
+    requirePermission(actor, 'mfg.work_order:update')
     const no = input.workOrderNo.trim()
     validateNo(no, 'workOrderNo')
     return withTx(db, async (trx) => {
@@ -202,6 +207,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
   }
 
   async function deleteWorkOrder(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'mfg.work_order:delete')
     await withTx(db, async (trx) => {
       const item = await loadWorkOrder(trx, id, true)
       requireCompanyAccess(actor, item.companyId)
@@ -232,6 +238,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
   }
 
   async function voidWorkOrder(actor: Actor, id: string): Promise<WorkOrder> {
+    requirePermission(actor, 'mfg.work_order:void')
     return withTx(db, async (trx) => {
       const before = await loadWorkOrder(trx, id, true)
       requireCompanyAccess(actor, before.companyId)
