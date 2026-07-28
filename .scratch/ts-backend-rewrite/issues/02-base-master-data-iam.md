@@ -27,3 +27,7 @@ Blocked by: 01
 ## 非目标
 
 不做初始化向导（工单 16）；不做员工考勤/工资（工单 13）。
+
+## Comments
+
+- 2026-07-28 集成代理：cherry-pick 分片 e9c8d7e 栈（base 四资源 + IAM + party + 公司默认过账科目）并装配 app/index；补 market-instruments 查询面、权限矩阵规格测试、权限先于 body 校验、pr-2.10/pr-2.18 Grid 快照。`cd server && bunx tsc --noEmit` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 70 pass。`verify-party-employee-rest.ts` 对 Bun（:18081）全绿。`verify-system-ops-rest.ts` 审计 Meta/权限先校验已过，阻塞于 `/todos/*`（工单 09 待办面）。未改 server-go。
