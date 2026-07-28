@@ -1,5 +1,5 @@
 /**
- * 生产入库：草稿行维护 + 审核过库存引擎 + 工单/需求完工回写
+ * 生产入库：草稿行维护 + 库存过账骨架 + 工单/需求完工回写
  * 引擎复用 engines/inventory，禁止直写分录表
  */
 import { decimal, toDecimalString } from '@synie/shared'
@@ -18,6 +18,10 @@ import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import {
+  auditInventoryDocInTx,
+  voidInventoryDocInTx,
+} from '~/modules/trading/posting.ts'
 import {
   actorUserId,
   asDate,
@@ -466,92 +470,70 @@ export function createOutputService(
 
   async function auditOutput(actor: Actor, id: string): Promise<Output> {
     return withTx(db, async (trx) => {
-      const before = await loadOutput(trx, id, true)
-      requireCompanyAccess(actor, before.companyId)
-      if (before.status !== 'draft') {
-        throw new ApiError('conflict', '仅草稿生产入库单可审核')
-      }
-      const items = await loadOutputItemsForUpdate(trx, id)
-      const orders = await lockOutputWorkOrders(trx, items)
-      await checkOutput(trx, before, items, orders)
-
-      const lines: StockLine[] = items.map((item) => ({
-        warehouseId: item.warehouseId,
-        materialId: item.materialId,
-        quantity: item.baseQty,
-        direction: 'in',
-        remarks: item.remarks ?? before.remarks,
-      }))
-      await inventory.post(
-        trx,
-        {
-          type: 'mfg.output',
-          id: before.id,
-          no: before.outputNo,
-          companyId: before.companyId,
-          postingDate: before.outputDate,
+      // 投影用工单锁：collect 内装载，postProjection 闭包复用
+      let lockedOrders: Map<string, LockedWorkOrder> | null = null
+      return auditInventoryDocInTx(trx, actor, inventory, {
+        voucherType: 'mfg.output',
+        headTable: 'mfg_output',
+        setPostingDate: false,
+        lockDraft: async (t) => {
+          const before = await loadOutput(t, id, true)
+          requireCompanyAccess(actor, before.companyId)
+          if (before.status !== 'draft') {
+            throw new ApiError('conflict', '仅草稿生产入库单可审核')
+          }
+          return before
         },
-        lines,
-      )
-      await updateWorkOrderProjection(trx, orders, 1)
-
-      const now = new Date()
-      await trx
-        .updateTable('mfg_output')
-        .set({
-          status: 'audited',
-          audited_at: now,
-          audited_by_id: actorUserId(actor),
-          updated_at: sql`(now() AT TIME ZONE 'utc')`,
-        })
-        .where('id', '=', id)
-        .execute()
-      const after: Output = {
-        ...before,
-        status: 'audited',
-        auditedAt: now,
-        auditedById: actorUserId(actor),
-      }
-      await writeAudit(trx, actor, {
-        resource: 'mfg_output',
-        recordId: id,
-        recordLabel: after.outputNo,
-        actionType: 'update',
-        actionName: 'audit',
-        companyId: after.companyId,
-        changes: auditDiff(outSnap(before), outSnap(after), OUT_AUDIT),
+        collect: async (t, before) => {
+          const items = await loadOutputItemsForUpdate(t, id)
+          lockedOrders = await lockOutputWorkOrders(t, items)
+          await checkOutput(t, before, items, lockedOrders)
+          const stockLines: StockLine[] = items.map((item) => ({
+            warehouseId: item.warehouseId,
+            materialId: item.materialId,
+            quantity: item.baseQty,
+            direction: 'in' as const,
+            remarks: item.remarks ?? before.remarks,
+          }))
+          return { stockLines, postingDate: before.outputDate }
+        },
+        postProjection: async (t) => {
+          if (!lockedOrders) throw new ApiError('internal', '生产入库投影未初始化')
+          await updateWorkOrderProjection(t, lockedOrders, 1)
+        },
+        voucherOf: (h) => ({ id: h.id, no: h.outputNo, companyId: h.companyId }),
+        reload: async (t, headId) => loadOutput(t, headId, false),
+        snapshot: outSnap,
+        auditFields: OUT_AUDIT,
       })
-      return after
     })
   }
 
   async function voidOutput(actor: Actor, id: string): Promise<Output> {
     return withTx(db, async (trx) => {
-      const before = await loadOutput(trx, id, true)
-      requireCompanyAccess(actor, before.companyId)
-      if (before.status !== 'audited') {
-        throw new ApiError('conflict', '仅已审核生产入库单可作废')
-      }
-      const items = await loadOutputItemsForUpdate(trx, id)
-      const orders = await lockOutputWorkOrders(trx, items)
-      await inventory.cancel(trx, { type: 'mfg.output', id: before.id }, new Date())
-      await updateWorkOrderProjection(trx, orders, -1)
-      await trx
-        .updateTable('mfg_output')
-        .set({ status: 'voided', updated_at: sql`(now() AT TIME ZONE 'utc')` })
-        .where('id', '=', id)
-        .execute()
-      const after = { ...before, status: 'voided' as OutputStatus }
-      await writeAudit(trx, actor, {
-        resource: 'mfg_output',
-        recordId: id,
-        recordLabel: after.outputNo,
-        actionType: 'update',
-        actionName: 'void',
-        companyId: after.companyId,
-        changes: auditDiff(outSnap(before), outSnap(after), OUT_AUDIT),
+      let lockedOrders: Map<string, LockedWorkOrder> | null = null
+      return voidInventoryDocInTx(trx, actor, inventory, {
+        voucherType: 'mfg.output',
+        headTable: 'mfg_output',
+        lockAudited: async (t) => {
+          const before = await loadOutput(t, id, true)
+          requireCompanyAccess(actor, before.companyId)
+          if (before.status !== 'audited') {
+            throw new ApiError('conflict', '仅已审核生产入库单可作废')
+          }
+          const items = await loadOutputItemsForUpdate(t, id)
+          lockedOrders = await lockOutputWorkOrders(t, items)
+          return before
+        },
+        reverseProjection: async (t) => {
+          if (!lockedOrders) throw new ApiError('internal', '生产入库投影未初始化')
+          await updateWorkOrderProjection(t, lockedOrders, -1)
+        },
+        voucherOf: (h) => ({ id: h.id, no: h.outputNo, companyId: h.companyId }),
+        reload: async (t, headId) => loadOutput(t, headId, false),
+        snapshot: outSnap,
+        auditFields: OUT_AUDIT,
       })
-      return after
     })
   }
 
