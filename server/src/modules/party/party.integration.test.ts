@@ -55,7 +55,7 @@ run('PG 集成（party 客商员工）', () => {
       name: `供应商-${suffix}`,
     })
     supplierIds.push(s.id)
-    const listed = await customers.list({ limit: 10, offset: 0, search: suffix })
+    const listed = await customers.list(actor, { limit: 10, offset: 0, search: suffix })
     expect(listed.results.some((r) => r.id === c.id)).toBe(true)
     await customers.remove(actor, c.id)
     customerIds.splice(customerIds.indexOf(c.id), 1)
@@ -85,7 +85,7 @@ run('PG 集成（party 客商员工）', () => {
       }),
     ).rejects.toMatchObject({ code: 'conflict' })
 
-    const filtered = await employees.list({
+    const filtered = await employees.list(actor, {
       limit: 20,
       offset: 0,
       filter: {

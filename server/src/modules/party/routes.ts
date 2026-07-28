@@ -4,7 +4,6 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { CustomerService, EmployeeService, SupplierService } from './party-service.ts'
@@ -83,17 +82,6 @@ function present(raw: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(raw, key)
 }
 
-/** 权限中间件：必须挂在 zValidator 之前，保证畸形 body 仍 403 */
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
-
 function partyDto(p: Awaited<ReturnType<CustomerService['get']>>) {
   return {
     id: p.id,
@@ -127,35 +115,19 @@ export function customerRoutes(deps: { auth: AuthService; customers: CustomerSer
   const { auth, customers } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post(
-      '/query',
-      requirePerm('sales.customer:read'),
-      zValidator('json', listQuerySchema, validationHook),
-      async (c) => {
-        const result = await customers.list(toList(c.req.valid('json')))
-        return c.json({ count: result.count, results: result.results.map(partyDto) })
-      },
-    )
-    .post(
-      '/',
-      requirePerm('sales.customer:create'),
-      zValidator('json', partyCreate, validationHook),
-      async (c) => {
-        const item = await customers.create(c.get('actor'), c.req.valid('json'))
-        return c.json(partyDto(item), 201)
-      },
-    )
-    .get(
-      '/:id',
-      requirePerm('sales.customer:read'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        return c.json(partyDto(await customers.get(c.req.valid('param').id)))
-      },
-    )
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const result = await customers.list(c.get('actor'), toList(c.req.valid('json')))
+      return c.json({ count: result.count, results: result.results.map(partyDto) })
+    })
+    .post('/', zValidator('json', partyCreate, validationHook), async (c) => {
+      const item = await customers.create(c.get('actor'), c.req.valid('json'))
+      return c.json(partyDto(item), 201)
+    })
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
+      return c.json(partyDto(await customers.get(c.get('actor'), c.req.valid('param').id)))
+    })
     .patch(
       '/:id',
-      requirePerm('sales.customer:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', partyUpdate, validationHook),
       async (c) => {
@@ -170,50 +142,29 @@ export function customerRoutes(deps: { auth: AuthService; customers: CustomerSer
         return c.json(partyDto(item))
       },
     )
-    .delete(
-      '/:id',
-      requirePerm('sales.customer:delete'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        await customers.remove(c.get('actor'), c.req.valid('param').id)
-        return c.body(null, 204)
-      },
-    )
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
+      await customers.remove(c.get('actor'), c.req.valid('param').id)
+      return c.body(null, 204)
+    })
 }
 
 export function supplierRoutes(deps: { auth: AuthService; suppliers: SupplierService }) {
   const { auth, suppliers } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post(
-      '/query',
-      requirePerm('purchase.supplier:read'),
-      zValidator('json', listQuerySchema, validationHook),
-      async (c) => {
-        const result = await suppliers.list(toList(c.req.valid('json')))
-        return c.json({ count: result.count, results: result.results.map(partyDto) })
-      },
-    )
-    .post(
-      '/',
-      requirePerm('purchase.supplier:create'),
-      zValidator('json', partyCreate, validationHook),
-      async (c) => {
-        const item = await suppliers.create(c.get('actor'), c.req.valid('json'))
-        return c.json(partyDto(item), 201)
-      },
-    )
-    .get(
-      '/:id',
-      requirePerm('purchase.supplier:read'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        return c.json(partyDto(await suppliers.get(c.req.valid('param').id)))
-      },
-    )
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const result = await suppliers.list(c.get('actor'), toList(c.req.valid('json')))
+      return c.json({ count: result.count, results: result.results.map(partyDto) })
+    })
+    .post('/', zValidator('json', partyCreate, validationHook), async (c) => {
+      const item = await suppliers.create(c.get('actor'), c.req.valid('json'))
+      return c.json(partyDto(item), 201)
+    })
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
+      return c.json(partyDto(await suppliers.get(c.get('actor'), c.req.valid('param').id)))
+    })
     .patch(
       '/:id',
-      requirePerm('purchase.supplier:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', partyUpdate, validationHook),
       async (c) => {
@@ -228,51 +179,30 @@ export function supplierRoutes(deps: { auth: AuthService; suppliers: SupplierSer
         return c.json(partyDto(item))
       },
     )
-    .delete(
-      '/:id',
-      requirePerm('purchase.supplier:delete'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        await suppliers.remove(c.get('actor'), c.req.valid('param').id)
-        return c.body(null, 204)
-      },
-    )
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
+      await suppliers.remove(c.get('actor'), c.req.valid('param').id)
+      return c.body(null, 204)
+    })
 }
 
 export function employeeRoutes(deps: { auth: AuthService; employees: EmployeeService }) {
   const { auth, employees } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post(
-      '/query',
-      requirePerm('hr.employee:read'),
-      zValidator('json', listQuerySchema, validationHook),
-      async (c) => {
-        const result = await employees.list(toList(c.req.valid('json')))
-        return c.json({ count: result.count, results: result.results.map(employeeDto) })
-      },
-    )
-    .post(
-      '/',
-      requirePerm('hr.employee:create'),
-      zValidator('json', employeeCreate, validationHook),
-      async (c) => {
-        const body = c.req.valid('json')
-        const item = await employees.create(c.get('actor'), body)
-        return c.json(employeeDto(item), 201)
-      },
-    )
-    .get(
-      '/:id',
-      requirePerm('hr.employee:read'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        return c.json(employeeDto(await employees.get(c.req.valid('param').id)))
-      },
-    )
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const result = await employees.list(c.get('actor'), toList(c.req.valid('json')))
+      return c.json({ count: result.count, results: result.results.map(employeeDto) })
+    })
+    .post('/', zValidator('json', employeeCreate, validationHook), async (c) => {
+      const body = c.req.valid('json')
+      const item = await employees.create(c.get('actor'), body)
+      return c.json(employeeDto(item), 201)
+    })
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
+      return c.json(employeeDto(await employees.get(c.get('actor'), c.req.valid('param').id)))
+    })
     .patch(
       '/:id',
-      requirePerm('hr.employee:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', employeeUpdate, validationHook),
       async (c) => {
@@ -301,13 +231,8 @@ export function employeeRoutes(deps: { auth: AuthService; employees: EmployeeSer
         return c.json(employeeDto(item))
       },
     )
-    .delete(
-      '/:id',
-      requirePerm('hr.employee:delete'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        await employees.remove(c.get('actor'), c.req.valid('param').id)
-        return c.body(null, 204)
-      },
-    )
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
+      await employees.remove(c.get('actor'), c.req.valid('param').id)
+      return c.body(null, 204)
+    })
 }

@@ -4,7 +4,6 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { CompanyAccountDefaultService } from './company-account-default.ts'
@@ -43,17 +42,6 @@ const updateSchema = z
   })
   .strict()
 
-/** 权限中间件：必须挂在 zValidator 之前 */
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
-
 function present(raw: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(raw, key)
 }
@@ -65,33 +53,22 @@ export function companyAccountDefaultRoutes(deps: {
   const { auth, defaults } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .post(
-      '/query',
-      requirePerm('sales.setting:read'),
-      zValidator('json', listQuerySchema, validationHook),
-      async (c) => {
-        const result = await defaults.list(c.get('actor'), {
-          limit: c.req.valid('json').limit,
-          offset: c.req.valid('json').offset,
-          search: c.req.valid('json').search,
-          sort: c.req.valid('json').sort,
-          filter: c.req.valid('json').filter as ListQuery['filter'],
-        })
-        return c.json({ count: result.count, results: result.results.map(dto) })
-      },
-    )
-    .post(
-      '/',
-      requirePerm('sales.setting:update'),
-      zValidator('json', createSchema, validationHook),
-      async (c) => {
-        const item = await defaults.create(c.get('actor'), c.req.valid('json'))
-        return c.json(dto(item), 201)
-      },
-    )
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const result = await defaults.list(c.get('actor'), {
+        limit: c.req.valid('json').limit,
+        offset: c.req.valid('json').offset,
+        search: c.req.valid('json').search,
+        sort: c.req.valid('json').sort,
+        filter: c.req.valid('json').filter as ListQuery['filter'],
+      })
+      return c.json({ count: result.count, results: result.results.map(dto) })
+    })
+    .post('/', zValidator('json', createSchema, validationHook), async (c) => {
+      const item = await defaults.create(c.get('actor'), c.req.valid('json'))
+      return c.json(dto(item), 201)
+    })
     .get(
       '/by-company/:companyId',
-      requirePerm('sales.setting:read'),
       zValidator('param', companyParam, validationHook),
       async (c) => {
         const item = await defaults.getByCompany(
@@ -101,17 +78,11 @@ export function companyAccountDefaultRoutes(deps: {
         return c.json(dto(item))
       },
     )
-    .get(
-      '/:id',
-      requirePerm('sales.setting:read'),
-      zValidator('param', idParam, validationHook),
-      async (c) => {
-        return c.json(dto(await defaults.get(c.get('actor'), c.req.valid('param').id)))
-      },
-    )
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
+      return c.json(dto(await defaults.get(c.get('actor'), c.req.valid('param').id)))
+    })
     .patch(
       '/:id',
-      requirePerm('sales.setting:update'),
       zValidator('param', idParam, validationHook),
       zValidator('json', updateSchema, validationHook),
       async (c) => {

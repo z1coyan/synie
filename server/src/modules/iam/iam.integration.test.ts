@@ -73,12 +73,12 @@ run('PG 集成（IAM）', () => {
     })
     userIds.push(created.user.id)
     expect(created.password.length).toBeGreaterThan(8)
-    const access = await iam.userAccess(created.user.id)
+    const access = await iam.userAccess(actor, created.user.id)
     expect(access.roles.map((r) => r.id)).toContain(role.id)
 
     // 内置角色
     const builtin = (
-      await iam.listRoles({
+      await iam.listRoles(actor, {
         limit: 50,
         offset: 0,
         filter: { builtin: { kind: 'bool', eq: true } },

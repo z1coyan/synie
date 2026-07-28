@@ -1,7 +1,7 @@
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
+import { withTx, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import {
   auditCreated,
@@ -9,7 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -67,6 +67,7 @@ export function createCustomerService(db: Kysely<Database>) {
     table: 'sal_customers',
     resource: 'sal_customer',
     label: '客户',
+    permPrefix: 'sales.customer',
     meta: customerResourceMeta(),
     notFound: '客户不存在',
     materialCheck: true,
@@ -78,6 +79,7 @@ export function createSupplierService(db: Kysely<Database>) {
     table: 'pur_supplier',
     resource: 'pur_supplier',
     label: '供应商',
+    permPrefix: 'purchase.supplier',
     meta: supplierResourceMeta(),
     notFound: '供应商不存在',
     materialCheck: false,
@@ -90,18 +92,21 @@ function createPartyKind(
     table: 'sal_customers' | 'pur_supplier'
     resource: string
     label: string
+    permPrefix: string
     meta: ReturnType<typeof customerResourceMeta>
     notFound: string
     materialCheck: boolean
   },
 ) {
-  async function get(id: string): Promise<Party> {
+  async function get(actor: Actor, id: string): Promise<Party> {
+    requirePermission(actor, `${opts.permPrefix}:read`)
     const row = await db.selectFrom(opts.table).selectAll().where('id', '=', id).executeTakeFirst()
     if (!row) throw new ApiError('not_found', opts.notFound)
     return mapParty(row)
   }
 
-  async function list(query: Partial<ListQuery>) {
+  async function list(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, `${opts.permPrefix}:read`)
     return listFromSource({
       db,
       resource: opts.meta,
@@ -125,6 +130,7 @@ function createPartyKind(
     actor: Actor,
     input: { code: string; name: string; shortName?: string | null },
   ): Promise<Party> {
+    requirePermission(actor, `${opts.permPrefix}:create`)
     const { code, name, shortName } = normalizeParty(input.code, input.name, input.shortName)
     return withTx(db, async (trx) => {
       try {
@@ -161,6 +167,7 @@ function createPartyKind(
       shortNamePresent?: boolean
     },
   ): Promise<Party> {
+    requirePermission(actor, `${opts.permPrefix}:update`)
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom(opts.table)
@@ -209,6 +216,7 @@ function createPartyKind(
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, `${opts.permPrefix}:delete`)
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom(opts.table)
@@ -251,13 +259,15 @@ export type CustomerService = ReturnType<typeof createCustomerService>
 export type SupplierService = ReturnType<typeof createSupplierService>
 
 export function createEmployeeService(db: Kysely<Database>, numbering: NumberingService) {
-  async function get(id: string): Promise<Employee> {
+  async function get(actor: Actor, id: string): Promise<Employee> {
+    requirePermission(actor, 'hr.employee:read')
     const row = await db.selectFrom('hr_employees').selectAll().where('id', '=', id).executeTakeFirst()
     if (!row) throw new ApiError('not_found', '员工不存在')
     return mapEmployee(row)
   }
 
-  async function list(query: Partial<ListQuery>) {
+  async function list(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'hr.employee:read')
     return listFromSource({
       db,
       resource: employeeResourceMeta(),
@@ -285,6 +295,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
       insuranceTypes?: string[]
     },
   ): Promise<Employee> {
+    requirePermission(actor, 'hr.employee:create')
     let code = input.code?.trim() || ''
     if (!code) {
       code = await numbering.next({ resource: 'hr.employee' })
@@ -341,14 +352,15 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
   }
 
   /**
-   * 考勤导入自动建档内部接缝（调用方持 trx）。
-   * 编号/唯一约束/审计与 CRUD create 共用本服务；无权限闸——调用方已鉴权。
+   * 考勤导入自动建档接缝（调用方持 trx）。
+   * 仍检 hr.employee:create（与公开 create 同源），防御跨域漏检。
    */
   async function autoCreateForAttendance(
     trx: TrxHandle,
     actor: Actor,
     attendanceNo: string,
   ): Promise<{ id: string; code: string; name: string; attendanceNo: string }> {
+    requirePermission(actor, 'hr.employee:create')
     const code = await numbering.nextInTx(trx, { resource: 'hr.employee' })
     const name = '[未知]'
     try {
@@ -404,6 +416,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
       insuranceTypesPresent?: boolean
     },
   ): Promise<Employee> {
+    requirePermission(actor, 'hr.employee:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('hr_employees')
@@ -478,6 +491,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'hr.employee:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('hr_employees')

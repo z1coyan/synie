@@ -10,7 +10,7 @@ import {
   writeAudit,
 } from '~/platform/audit/write.ts'
 import { hashPassword } from '~/platform/auth/password.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -50,13 +50,15 @@ const USER_AUDIT = ['username', 'name', 'preferred_language', 'role_ids', 'compa
 const ROLE_AUDIT = ['code', 'name', 'enabled', 'builtin'] as const
 
 export function createIamService(db: Kysely<Database>, registry: Registry) {
-  async function getUser(id: string): Promise<IamUser> {
+  async function getUser(actor: Actor, id: string): Promise<IamUser> {
+    requirePermission(actor, 'sys.user:read')
     const row = await db.selectFrom('sys_user').selectAll().where('id', '=', id).executeTakeFirst()
     if (!row) throw new ApiError('not_found', '用户不存在')
     return mapUser(row)
   }
 
-  async function listUsers(query: Partial<ListQuery>) {
+  async function listUsers(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'sys.user:read')
     return listFromSource({
       db,
       resource: userResourceMeta(),
@@ -80,6 +82,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     actor: Actor,
     input: { username: string; name?: string | null; roleIds?: string[]; companyIds?: string[] },
   ): Promise<{ user: IamUser; password: string }> {
+    requirePermission(actor, 'sys.user:create')
     const username = input.username.trim()
     let name = input.name === undefined || input.name === null ? null : input.name.trim()
     if (name === '') name = null
@@ -133,6 +136,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
       companyIdsPresent?: boolean
     },
   ): Promise<IamUser> {
+    requirePermission(actor, 'sys.user:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('sys_user')
@@ -202,12 +206,15 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     })
   }
 
-  async function userAccess(id: string): Promise<UserAccess> {
-    await getUser(id)
+  async function userAccess(actor: Actor, id: string): Promise<UserAccess> {
+    requirePermission(actor, 'sys.user:read')
+    const row = await db.selectFrom('sys_user').select('id').where('id', '=', id).executeTakeFirst()
+    if (!row) throw new ApiError('not_found', '用户不存在')
     return loadAccess(db, id)
   }
 
   async function resetPassword(actor: Actor, id: string): Promise<string> {
+    requirePermission(actor, 'sys.user:update')
     const password = randomPassword()
     const hashed = await hashPassword(password)
     return withTx(db, async (trx) => {
@@ -237,6 +244,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
   }
 
   async function deleteUser(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'sys.user:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('sys_user')
@@ -269,13 +277,15 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     })
   }
 
-  async function getRole(id: string): Promise<IamRole> {
+  async function getRole(actor: Actor, id: string): Promise<IamRole> {
+    requirePermission(actor, 'sys.role:read')
     const row = await db.selectFrom('sys_role').selectAll().where('id', '=', id).executeTakeFirst()
     if (!row) throw new ApiError('not_found', '角色不存在')
     return mapRole(row)
   }
 
-  async function listRoles(query: Partial<ListQuery>) {
+  async function listRoles(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'sys.role:read')
     return listFromSource({
       db,
       resource: roleResourceMeta(),
@@ -300,6 +310,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     actor: Actor,
     input: { code: string; name: string; enabled?: boolean },
   ): Promise<IamRole> {
+    requirePermission(actor, 'sys.role:create')
     const code = input.code.trim()
     const name = input.name.trim()
     if (!code || [...code].length > 64) {
@@ -339,6 +350,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     id: string,
     input: { name?: string; enabled?: boolean },
   ): Promise<IamRole> {
+    requirePermission(actor, 'sys.role:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('sys_role')
@@ -380,6 +392,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
   }
 
   async function deleteRole(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'sys.role:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('sys_role')
@@ -410,8 +423,17 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     })
   }
 
-  async function rolePermissions(roleId: string): Promise<{ id: string; permission: string }[]> {
-    await getRole(roleId)
+  async function rolePermissions(
+    actor: Actor,
+    roleId: string,
+  ): Promise<{ id: string; permission: string }[]> {
+    requirePermission(actor, 'sys.role:read')
+    const role = await db
+      .selectFrom('sys_role')
+      .select('id')
+      .where('id', '=', roleId)
+      .executeTakeFirst()
+    if (!role) throw new ApiError('not_found', '角色不存在')
     const rows = await db
       .selectFrom('sys_role_permission')
       .select(['id', 'permission'])
@@ -427,6 +449,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     roleId: string,
     desired: string[],
   ): Promise<string[]> {
+    requirePermission(actor, 'sys.role:update')
     const catalog = new Set<string>()
     for (const group of registry.permissionCatalog()) {
       for (const action of group.actions) {
