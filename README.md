@@ -1,19 +1,18 @@
 # Synie
 
-Synie 是一个多公司财务 ERP。产品后端为 **Bun/TS**（`server/`），前端为 TanStack Start（`web/`）：
+Synie 是一个多公司财务 ERP，**纯 TypeScript monorepo**（Bun workspaces）：
 
-- `server/`：**产品后端** —— Bun + Hono + Kysely + PostgreSQL；`hono/client` 全链路类型契约（`ApiType` 为事实源）。
-- `web/`：Bun、React 19、TanStack Start、HeroUI Pro、Tailwind v4、TanStack Query、`@synie/server` hono/client。
+- `server/`：产品后端 —— Bun + Hono + Kysely + PostgreSQL；`hono/client` 全链路类型契约（`ApiType` 为事实源）。
+- `web/`：TanStack Start 前端 —— React 19、HeroUI Pro、Tailwind v4、TanStack Query、`@synie/server` hono/client。
 - `packages/shared`：前后端共享 TS 契约（Filter DSL、Meta DTO、错误模型、decimal 纪律）。
-- `backend/`：旧 Elixir/Phoenix/Ash 实现，仅保留作业务行为与历史契约参考，不属于产品启动链路。
 
-前端所有产品请求只访问 `/api/v1`。Vite 不代理 GraphQL 或旧 Elixir API，开发和产品运行均不需要启动 `backend/`。
+前端所有产品请求只访问 `/api/v1`（Vite 代理至 `server`）。
 
 > **登录提示：**JWT HS256 与历史 Phoenix.Token 不兼容。若旧会话无法正常退出，请清除浏览器 `localStorage` 中的 `synie:token` 后重新登录。
 
 已交付的核心模块包括总账、发票、银行与票据、客户和供应商、销售采购库存制造、人力薪酬、基础资料及系统管理。
 
-Go → Bun/TS 重写清场记录见 [`docs/migration/2026-07-28-go-to-bun-ts-cutover.md`](docs/migration/2026-07-28-go-to-bun-ts-cutover.md)；历史 OpenAPI 归档为 `docs/migration/openapi-server-go-final.yaml`（tag `server-go-final`）。
+历史栈清场记录见 [`docs/migration/2026-07-28-go-to-bun-ts-cutover.md`](docs/migration/2026-07-28-go-to-bun-ts-cutover.md)（Go tag `server-go-final`、Elixir tag `backend-elixir-final`；OpenAPI 归档 `docs/migration/openapi-server-go-final.yaml`）。
 
 ## 目录结构
 
@@ -31,7 +30,6 @@ Go → Bun/TS 重写清场记录见 [`docs/migration/2026-07-28-go-to-bun-ts-cut
 │   ├── app/lib/resources/      # ResourceClient registry
 │   └── app/routes/             # 页面与路由
 ├── contracts/                  # 历史 fixtures（authz 等）；HTTP 类型源为 ApiType
-├── backend/                    # 旧 Elixir 参考实现，不参与产品运行
 ├── CONTEXT.md                  # 领域术语（ubiquitous language）
 ├── docs/
 │   ├── adr/                    # 架构决策记录
@@ -181,4 +179,4 @@ HEROUI_AUTH_TOKEN=xxx node node_modules/@heroui-pro/react/dist/postinstall/index
 - 通过 seed 或初始化向导创建首个管理员，不在日志或代码中保存口令。
 - 验证 `/api/v1/healthz`、后端测试、前端检查/构建与 Playwright e2e。
 
-`backend/` 可以用于比对旧业务行为，但不得接收产品流量、被 Vite 代理或成为部署依赖。是否归档 Elixir 参考实现须另立议题。
+历史 Elixir（`backend/`）与 Go（`server-go/`）实现已移出工作树；考古见 git tag `backend-elixir-final` / `server-go-final`。

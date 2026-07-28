@@ -21,8 +21,13 @@ Blocked by: 16, 17
 ## 验收
 
 - 新克隆环境：bun install → compose up（postgres+migrate+server）→ seed → 前端全链路可用
-- 仓库内无 server-go / Go 工具链引用残留（除 docs/migration 归档与 backend/ Elixir 参考）
+- 仓库内无 server-go / Go 工具链引用残留（除 docs/migration 归档）
+- 仓库内无 backend/ Elixir 树（tag `backend-elixir-final` 可恢复）
 
-## 非目标
+## 非目标（已修订）
 
-不删除 backend/（Elixir 参考按既定策略暂留，另行决策）。
+原约定「不删除 backend/」已于 2026-07-28 撤销：用户决议纯 TS monorepo，打 tag `backend-elixir-final` 后删除 `backend/`。
+
+## Comments
+
+- 2026-07-28：用户确认删除 Elixir `backend/`；tag `backend-elixir-final` → `git rm -rf backend`；README 与 cutover 文档收敛为纯 TS monorepo。

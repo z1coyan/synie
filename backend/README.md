@@ -1,4 +1,0 @@
-# Backend
-
-**TODO: Add description**
-

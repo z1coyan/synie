@@ -10,10 +10,10 @@
 
 ## 结论
 
-产品后端已从 **Go（`server-go/`）** 切到 **Bun + Hono + Kysely（`server/`）**。  
-产品流量与开发默认路径均为 `server/` + `web/`；仓库内不再包含 Go 工具链与 `server-go/` 源码树。
+产品栈为 **纯 TypeScript monorepo**：`server/`（Bun + Hono + Kysely）+ `web/`（TanStack Start）+ `packages/shared`。  
+工作树内不再包含 Go（`server-go/`）或 Elixir（`backend/`）运行时与源码树。
 
-## 清场动作（工单 18）
+## 清场动作（工单 18 + Elixir 归档）
 
 1. **Git tag `server-go-final`**：删除前对含 `server-go/` 的提交打注记标签，便于考古。
 2. **删除 `server-go/`**：目录与 Go 模块、Makefile、oapi-codegen/sqlc 配置一并移除。
@@ -26,11 +26,9 @@
    - `frontend` job 保持。
 5. **Compose 收敛**（`compose.yaml`）：删除 `server-go` 服务；Bun `server` 映射 `8080:8080`（与 Vite 默认代理一致）；保留 `migrate` / `seed`（tools profile）。
 6. **文档**：根 `README.md`、`AGENTS.md`、`CONTEXT.md` 过渡期表述收敛；本文件为完成记录。
+7. **Git tag `backend-elixir-final` 后删除 `backend/`**（Elixir/Phoenix/Ash 参考实现；2026-07-28 另决议，纯 TS monorepo）。
 
-## 非目标（本工单未做）
-
-- **不删除** `backend/`（Elixir 参考，另议题决策）。
-- 不要求改写 `server/` 源码内「对齐历史 Go 行为」类注释（语义考古，非工具链依赖）。
+不要求改写 `server/` 源码内「对齐历史 Go 行为」类注释（语义考古，非工具链依赖）。
 
 ## 新克隆验收路径
 
@@ -41,9 +39,14 @@ docker compose --profile tools run --rm seed   # 可选
 cd web && bun dev                         # :3000 → 代理 /api/v1 → :8080
 ```
 
-## 恢复历史 Go 树
+## 恢复历史树
 
 ```bash
+# Go
 git checkout server-go-final -- server-go
-# 或整树：git worktree add ../synie-server-go server-go-final
+# 或：git worktree add ../synie-server-go server-go-final
+
+# Elixir
+git checkout backend-elixir-final -- backend
+# 或：git worktree add ../synie-backend-elixir backend-elixir-final
 ```
