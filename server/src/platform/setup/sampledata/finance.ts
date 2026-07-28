@@ -135,7 +135,7 @@ export async function seedFinance(
   await deps.expenses.auditReport(actor, report.id, date)
 
   const month = previousMonth()
-  const p1 = await deps.hr.createPayroll(actor, {
+  const p1 = await deps.hr.payroll.createPayroll(actor, {
     employeeId: md.employees['张伟强']!.id,
     month,
     workdays: '22',
@@ -149,13 +149,13 @@ export async function seedFinance(
     loanDeduction: '0',
     remarks: '初始化示例工资单',
   })
-  await deps.hr.createPayment(actor, {
+  await deps.hr.payroll.createPayment(actor, {
     payrollId: p1.id,
     paidOn: daysAgo(10),
     amount: '6520.00',
     remarks: '银行代发',
   })
-  await deps.hr.createPayroll(actor, {
+  await deps.hr.payroll.createPayroll(actor, {
     employeeId: md.employees['李秀英']!.id,
     month,
     workdays: '21',

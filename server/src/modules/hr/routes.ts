@@ -7,7 +7,8 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
-import type { HrService } from './service.ts'
+import type { AttendanceService } from './attendance-service.ts'
+import type { PayrollService } from './payroll-service.ts'
 
 const listQuerySchema = z
   .object({
@@ -54,7 +55,7 @@ function iso(d: Date | null | undefined): string | null {
   return d.toISOString()
 }
 
-function punchDto(p: Awaited<ReturnType<HrService['getPunch']>>) {
+function punchDto(p: Awaited<ReturnType<AttendanceService['getPunch']>>) {
   return {
     id: p.id,
     attendanceNo: p.attendanceNo,
@@ -65,7 +66,7 @@ function punchDto(p: Awaited<ReturnType<HrService['getPunch']>>) {
   }
 }
 
-function importDto(i: Awaited<ReturnType<HrService['getImport']>>) {
+function importDto(i: Awaited<ReturnType<AttendanceService['getImport']>>) {
   return {
     id: i.id,
     status: i.status,
@@ -90,7 +91,7 @@ function importDto(i: Awaited<ReturnType<HrService['getImport']>>) {
   }
 }
 
-function dayDto(d: Awaited<ReturnType<HrService['getDay']>>) {
+function dayDto(d: Awaited<ReturnType<AttendanceService['getDay']>>) {
   return {
     id: d.id,
     date: d.date,
@@ -108,7 +109,7 @@ function dayDto(d: Awaited<ReturnType<HrService['getDay']>>) {
   }
 }
 
-function correctionDto(c: Awaited<ReturnType<HrService['getCorrection']>>) {
+function correctionDto(c: Awaited<ReturnType<AttendanceService['getCorrection']>>) {
   return {
     id: c.id,
     date: c.date,
@@ -121,7 +122,7 @@ function correctionDto(c: Awaited<ReturnType<HrService['getCorrection']>>) {
   }
 }
 
-function payrollDto(p: Awaited<ReturnType<HrService['getPayroll']>>) {
+function payrollDto(p: Awaited<ReturnType<PayrollService['getPayroll']>>) {
   return {
     id: p.id,
     month: p.month,
@@ -145,7 +146,7 @@ function payrollDto(p: Awaited<ReturnType<HrService['getPayroll']>>) {
   }
 }
 
-function paymentDto(p: Awaited<ReturnType<HrService['getPayment']>>) {
+function paymentDto(p: Awaited<ReturnType<PayrollService['getPayment']>>) {
   return {
     id: p.id,
     month: p.month,
@@ -161,7 +162,7 @@ function paymentDto(p: Awaited<ReturnType<HrService['getPayment']>>) {
   }
 }
 
-function loanDto(l: Awaited<ReturnType<HrService['getLoan']>>) {
+function loanDto(l: Awaited<ReturnType<PayrollService['getLoan']>>) {
   return {
     id: l.id,
     kind: l.kind,
@@ -176,8 +177,8 @@ function loanDto(l: Awaited<ReturnType<HrService['getLoan']>>) {
   }
 }
 
-export function attendancePunchRoutes(deps: { auth: AuthService; hr: HrService }) {
-  const { auth, hr } = deps
+export function attendancePunchRoutes(deps: { auth: AuthService; attendance: AttendanceService }) {
+  const { auth, attendance: hr } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
@@ -197,8 +198,8 @@ export function attendancePunchRoutes(deps: { auth: AuthService; hr: HrService }
     )
 }
 
-export function attendanceImportRoutes(deps: { auth: AuthService; hr: HrService }) {
-  const { auth, hr } = deps
+export function attendanceImportRoutes(deps: { auth: AuthService; attendance: AttendanceService }) {
+  const { auth, attendance: hr } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
@@ -258,8 +259,8 @@ export function attendanceImportRoutes(deps: { auth: AuthService; hr: HrService 
     )
 }
 
-export function attendanceDayRoutes(deps: { auth: AuthService; hr: HrService }) {
-  const { auth, hr } = deps
+export function attendanceDayRoutes(deps: { auth: AuthService; attendance: AttendanceService }) {
+  const { auth, attendance: hr } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
@@ -319,8 +320,8 @@ export function attendanceDayRoutes(deps: { auth: AuthService; hr: HrService }) 
     )
 }
 
-export function attendanceCorrectionRoutes(deps: { auth: AuthService; hr: HrService }) {
-  const { auth, hr } = deps
+export function attendanceCorrectionRoutes(deps: { auth: AuthService; attendance: AttendanceService }) {
+  const { auth, attendance: hr } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
@@ -395,8 +396,8 @@ export function attendanceCorrectionRoutes(deps: { auth: AuthService; hr: HrServ
     )
 }
 
-export function payrollRoutes(deps: { auth: AuthService; hr: HrService }) {
-  const { auth, hr } = deps
+export function payrollRoutes(deps: { auth: AuthService; payroll: PayrollService }) {
+  const { auth, payroll: hr } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
@@ -515,8 +516,8 @@ export function payrollRoutes(deps: { auth: AuthService; hr: HrService }) {
     )
 }
 
-export function payrollPaymentRoutes(deps: { auth: AuthService; hr: HrService }) {
-  const { auth, hr } = deps
+export function payrollPaymentRoutes(deps: { auth: AuthService; payroll: PayrollService }) {
+  const { auth, payroll: hr } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(
@@ -584,8 +585,8 @@ export function payrollPaymentRoutes(deps: { auth: AuthService; hr: HrService })
     )
 }
 
-export function employeeLoanRoutes(deps: { auth: AuthService; hr: HrService }) {
-  const { auth, hr } = deps
+export function employeeLoanRoutes(deps: { auth: AuthService; payroll: PayrollService }) {
+  const { auth, payroll: hr } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post(

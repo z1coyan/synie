@@ -5,7 +5,7 @@ import type { AccountService } from '~/modules/base/account-service.ts'
 import type { BankingService } from '~/modules/finance/banking-service.ts'
 import type { ExpenseService } from '~/modules/finance/expense-service.ts'
 import type { VatInvoiceService } from '~/modules/finance/invoice-service.ts'
-import type { HrService } from '~/modules/hr/index.ts'
+import type { HrServices } from '~/modules/hr/index.ts'
 import type {
   MaterialService,
   MaterialUnitService,
@@ -43,7 +43,7 @@ export interface SampleDataDeps {
   journals: JournalService
   expenses: ExpenseService
   invoices: VatInvoiceService
-  hr: HrService
+  hr: HrServices
 }
 
 export interface SampleSummary {

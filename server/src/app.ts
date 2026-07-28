@@ -24,7 +24,7 @@ import {
   employeeLoanRoutes,
   payrollPaymentRoutes,
   payrollRoutes,
-  type HrService,
+  type HrServices,
 } from './modules/hr/index.ts'
 import { iamRoleRoutes, iamUserRoutes } from './modules/iam/index.ts'
 import type { IamService } from './modules/iam/service.ts'
@@ -113,7 +113,7 @@ export interface AppDeps {
   customers: CustomerService
   suppliers: SupplierService
   employees: EmployeeService
-  hr: HrService
+  hr: HrServices
   companyAccountDefaults: CompanyAccountDefaultService
   // 工单 04 库存
   invCategories: MaterialCategoryService
@@ -220,23 +220,29 @@ export function buildApp(deps: AppDeps) {
     .route('/hr/employees', employeeRoutes({ auth: deps.auth, employees: deps.employees }))
     .route(
       '/hr/attendance-punches',
-      attendancePunchRoutes({ auth: deps.auth, hr: deps.hr }),
+      attendancePunchRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
     )
     .route(
       '/hr/attendance-imports',
-      attendanceImportRoutes({ auth: deps.auth, hr: deps.hr }),
+      attendanceImportRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
     )
-    .route('/hr/attendance-days', attendanceDayRoutes({ auth: deps.auth, hr: deps.hr }))
+    .route(
+      '/hr/attendance-days',
+      attendanceDayRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
+    )
     .route(
       '/hr/attendance-corrections',
-      attendanceCorrectionRoutes({ auth: deps.auth, hr: deps.hr }),
+      attendanceCorrectionRoutes({ auth: deps.auth, attendance: deps.hr.attendance }),
     )
-    .route('/hr/payrolls', payrollRoutes({ auth: deps.auth, hr: deps.hr }))
+    .route('/hr/payrolls', payrollRoutes({ auth: deps.auth, payroll: deps.hr.payroll }))
     .route(
       '/hr/payroll-payments',
-      payrollPaymentRoutes({ auth: deps.auth, hr: deps.hr }),
+      payrollPaymentRoutes({ auth: deps.auth, payroll: deps.hr.payroll }),
     )
-    .route('/hr/employee-loans', employeeLoanRoutes({ auth: deps.auth, hr: deps.hr }))
+    .route(
+      '/hr/employee-loans',
+      employeeLoanRoutes({ auth: deps.auth, payroll: deps.hr.payroll }),
+    )
     .route(
       '/sales/company-account-defaults',
       companyAccountDefaultRoutes({

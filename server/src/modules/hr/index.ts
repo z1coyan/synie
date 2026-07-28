@@ -4,9 +4,31 @@ import type { FileService } from '~/platform/files/service.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { EmployeeService } from '~/modules/party/party-service.ts'
 import { allHrResourceMetas } from './meta.ts'
-import { createHrService } from './service.ts'
+import { createAttendanceService } from './attendance-service.ts'
+import { createPayrollService } from './payroll-service.ts'
 
-export { createHrService, type HrService } from './service.ts'
+export {
+  createAttendanceService,
+  type AttendanceService,
+  type AttendanceServiceDeps,
+} from './attendance-service.ts'
+export {
+  createPayrollService,
+  type PayrollService,
+  type PayrollServiceDeps,
+} from './payroll-service.ts'
+export type {
+  AttendanceCorrection,
+  AttendanceDay,
+  AttendanceImport,
+  AttendanceMonthSummary,
+  AttendancePunch,
+  EmployeeLoan,
+  EmployeeLoanBalance,
+  Payroll,
+  PayrollInput,
+  PayrollPayment,
+} from './types.ts'
 export {
   attendancePunchRoutes,
   attendanceImportRoutes,
@@ -37,10 +59,15 @@ export function createHrServices(
   },
 ) {
   return {
-    hr: createHrService({
+    attendance: createAttendanceService({
       db,
       files,
       employeeSeam: deps.employees,
     }),
+    payroll: createPayrollService({ db }),
   }
 }
+
+export type HrServices = ReturnType<typeof createHrServices>
+/** @deprecated 使用 AttendanceService | PayrollService；兼容旧装配名 */
+export type HrService = HrServices['attendance'] & HrServices['payroll']

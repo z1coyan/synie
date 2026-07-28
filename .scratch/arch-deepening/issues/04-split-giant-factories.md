@@ -1,6 +1,6 @@
 # 04 E · 拆巨型工厂隐藏聚合
 
-Status: ready-for-agent
+Status: done
 
 ## 问题
 

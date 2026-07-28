@@ -101,7 +101,7 @@ const base = createBaseServices(db)
 const market = createMarketService(db, { settings })
 const iam = createIamService(db, registry)
 const party = createPartyServices(db, numbering)
-const { hr } = createHrServices(db, files, {
+const hr = createHrServices(db, files, {
   employees: party.employees,
 })
 const companyAccountDefaults = createCompanyAccountDefaultService(db)

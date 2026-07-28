@@ -159,7 +159,7 @@ export async function buildTestApp(
     createMarketService(db, { settings })
   const iam = createIamService(db, registry)
   const party = createPartyServices(db, numbering)
-  const { hr } = createHrServices(db, merged.files, {
+  const hr = createHrServices(db, merged.files, {
     employees: party.employees,
   })
   const companyAccountDefaults = createCompanyAccountDefaultService(db)
