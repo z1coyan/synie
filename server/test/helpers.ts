@@ -30,6 +30,7 @@ import {
 } from '~/modules/manufacturing/index.ts'
 import {
   createFinanceServices,
+  registerFinanceFileOwners,
   registerFinanceResources,
 } from '~/modules/finance/index.ts'
 import { createTodoService } from '~/platform/todo/index.ts'
@@ -120,6 +121,7 @@ export interface PlatformServices {
 export function createPlatformServices(db: Kysely<Database>): PlatformServices {
   const owners = createOwnerRegistry()
   registerPrintingFileOwners(owners)
+  registerFinanceFileOwners(owners)
   return {
     settings: createSettingsService(db),
     numbering: createNumberingService(db),
@@ -209,6 +211,11 @@ export async function buildTestApp(
     scm: (merged as { scm?: typeof scm }).scm ?? scm,
     invoices:
       (merged as { invoices?: typeof finance.invoices }).invoices ?? finance.invoices,
+    banking:
+      (merged as { banking?: typeof finance.banking }).banking ?? finance.banking,
+    expenses:
+      (merged as { expenses?: typeof finance.expenses }).expenses ?? finance.expenses,
+    bills: (merged as { bills?: typeof finance.bills }).bills ?? finance.bills,
     todos: (merged as { todos?: typeof todos }).todos ?? todos,
     manufacturing: merged.manufacturing ?? manufacturing,
   })

@@ -1,5 +1,5 @@
 /**
- * 财务单据模块（工单 09：增值税发票；报销/票据见工单 12）。
+ * 财务模块：增值税发票（09）+ 银行/票据/报销（12）。
  */
 import type { Kysely } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
@@ -9,16 +9,49 @@ import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { ReconciliationService } from '~/modules/trading/reconciliation/service.ts'
 import { createVatInvoiceService } from './invoice-service.ts'
+import { createBankingService } from './banking-service.ts'
+import { createExpenseService } from './expense-service.ts'
+import { createBillService } from './bill-service.ts'
 import { allFinanceResourceMetas } from './meta.ts'
+import type { OwnerRegistry } from '~/platform/files/owner-registry.ts'
 
 export { createVatInvoiceService, type VatInvoiceService } from './invoice-service.ts'
+export { createBankingService, type BankingService } from './banking-service.ts'
+export { createExpenseService, type ExpenseService } from './expense-service.ts'
+export { createBillService, type BillService } from './bill-service.ts'
 export { vatInvoiceRoutes } from './routes.ts'
+export {
+  bankAccountRoutes,
+  bankTransactionRoutes,
+  bankImportTemplateRoutes,
+  bankImportRoutes,
+  bankImportItemRoutes,
+  bankReconciliationRoutes,
+  expenseReportRoutes,
+  expenseReportItemRoutes,
+  billRoutes,
+  billTransactionRoutes,
+  billHoldingRoutes,
+} from './ops-routes.ts'
 export { allFinanceResourceMetas, vatInvoiceResourceMeta } from './meta.ts'
 
 export function registerFinanceResources(registry: Registry): void {
   for (const meta of allFinanceResourceMetas()) {
     registry.register(meta)
   }
+}
+
+export function registerFinanceFileOwners(owners: OwnerRegistry): void {
+  owners.register('acc_bank_account', {
+    table: 'acc_bank_account',
+    permissionPrefix: 'acc.bank_account',
+    companyScoped: true,
+  })
+  owners.register('acc_bank_transaction', {
+    table: 'acc_bank_transaction',
+    permissionPrefix: 'acc.bank_transaction',
+    companyScoped: true,
+  })
 }
 
 export function createFinanceServices(
@@ -36,6 +69,9 @@ export function createFinanceServices(
       reconciliations: deps.reconciliations,
       files: deps.files ?? null,
     }),
+    banking: createBankingService(db, numbering, { files: deps.files ?? null, gl }),
+    expenses: createExpenseService(db, numbering, gl),
+    bills: createBillService(db, numbering, { gl, files: deps.files ?? null }),
   }
 }
 

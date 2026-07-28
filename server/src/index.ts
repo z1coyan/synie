@@ -27,6 +27,7 @@ import { createTradingServices, registerTradingResources } from './modules/tradi
 import { createScmServices, registerScmResources } from './modules/scm/index.ts'
 import {
   createFinanceServices,
+  registerFinanceFileOwners,
   registerFinanceResources,
 } from './modules/finance/index.ts'
 import { createTodoService } from './platform/todo/index.ts'
@@ -84,6 +85,7 @@ const settings = createSettingsService(db)
 const numbering = createNumberingService(db)
 const owners = createOwnerRegistry()
 registerPrintingFileOwners(owners)
+registerFinanceFileOwners(owners)
 const files = createFileService({ db, owners })
 const storages = createStorageService({ db })
 const audit = createAuditService(db)
@@ -143,6 +145,9 @@ const app = buildApp({
   trading,
   scm,
   invoices: finance.invoices,
+  banking: finance.banking,
+  expenses: finance.expenses,
+  bills: finance.bills,
   todos,
   manufacturing,
 })

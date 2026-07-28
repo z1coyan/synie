@@ -50,7 +50,24 @@ import type {
 import { tradingRouteMounts, type TradingServices } from './modules/trading/index.ts'
 import { scmRouteMounts, type ScmServices } from './modules/scm/index.ts'
 import { manufacturingRoutes, type ManufacturingServices } from './modules/manufacturing/index.ts'
-import { vatInvoiceRoutes, type VatInvoiceService } from './modules/finance/index.ts'
+import {
+  vatInvoiceRoutes,
+  bankAccountRoutes,
+  bankTransactionRoutes,
+  bankImportTemplateRoutes,
+  bankImportRoutes,
+  bankImportItemRoutes,
+  bankReconciliationRoutes,
+  expenseReportRoutes,
+  expenseReportItemRoutes,
+  billRoutes,
+  billTransactionRoutes,
+  billHoldingRoutes,
+  type VatInvoiceService,
+  type BankingService,
+  type ExpenseService,
+  type BillService,
+} from './modules/finance/index.ts'
 import { authRoutes } from './platform/auth/routes.ts'
 import type { AuthService } from './platform/auth/service.ts'
 import type { AppEnv } from './platform/http/context.ts'
@@ -115,6 +132,10 @@ export interface AppDeps {
   scm: ScmServices
   // 工单 09 发票 + 待办
   invoices: VatInvoiceService
+  // 工单 12 银行/票据/报销
+  banking: BankingService
+  expenses: ExpenseService
+  bills: BillService
   todos: TodoService
   // 工单 11 制造
   manufacturing: ManufacturingServices
@@ -244,6 +265,47 @@ export function buildApp(deps: AppDeps) {
     .route(
       '/finance/vat-invoices',
       vatInvoiceRoutes({ auth: deps.auth, invoices: deps.invoices }),
+    )
+    .route(
+      '/finance/bank-accounts',
+      bankAccountRoutes({ auth: deps.auth, banking: deps.banking }),
+    )
+    .route(
+      '/finance/bank-transactions',
+      bankTransactionRoutes({ auth: deps.auth, banking: deps.banking }),
+    )
+    .route(
+      '/finance/bank-import-templates',
+      bankImportTemplateRoutes({ auth: deps.auth, banking: deps.banking }),
+    )
+    .route(
+      '/finance/bank-imports',
+      bankImportRoutes({ auth: deps.auth, banking: deps.banking }),
+    )
+    .route(
+      '/finance/bank-import-items',
+      bankImportItemRoutes({ auth: deps.auth, banking: deps.banking }),
+    )
+    .route(
+      '/finance/bank-reconciliations',
+      bankReconciliationRoutes({ auth: deps.auth, banking: deps.banking }),
+    )
+    .route(
+      '/finance/expense-reports',
+      expenseReportRoutes({ auth: deps.auth, expenses: deps.expenses }),
+    )
+    .route(
+      '/finance/expense-report-items',
+      expenseReportItemRoutes({ auth: deps.auth, expenses: deps.expenses }),
+    )
+    .route('/finance/bills', billRoutes({ auth: deps.auth, bills: deps.bills }))
+    .route(
+      '/finance/bill-transactions',
+      billTransactionRoutes({ auth: deps.auth, bills: deps.bills }),
+    )
+    .route(
+      '/finance/bill-holdings',
+      billHoldingRoutes({ auth: deps.auth, bills: deps.bills }),
     )
     .route('/todos', todoRoutes({ auth: deps.auth, todos: deps.todos }))
     .route(

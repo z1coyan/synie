@@ -1,6 +1,6 @@
 # 12 财务运营：银行 / 票据 / 报销单
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 05, 09
 
 ## 范围
