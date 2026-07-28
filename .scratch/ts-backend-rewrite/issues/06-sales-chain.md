@@ -1,6 +1,6 @@
 # 06 销售链：报价 → 订单 → 发货
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 03
 
 ## 范围
@@ -22,3 +22,12 @@ Blocked by: 03
 ## 非目标
 
 销售对账（工单 08）、打印装配（工单 15 之后随域接入）。
+
+## Comments
+
+### 2026-07-28 agent
+
+- 实现路径：`server/src/modules/trading/{common,quotation,order,fulfillment,outsourced}` + 库存 stub Meta；审核事务复用 `engines/{gl,inventory}`，无直写分录表。
+- 验收：`verify-quotation-rest` / `verify-order-rest` / `verify-fulfillment-rest`（标准段）全绿；`amount_chain` golden 覆盖 2/4/6 档 half-up；`projection.postgres` 覆盖销售超发聚合/硬拦与采购需求已收同步；`bun run typecheck` 通过。
+- 快照：`.scratch/migration/snapshots/pr-2.13`～`pr-2.15`。
+- 非目标未做：对账 08、打印 15、委外完整业务 10（仅头 CRUD + Meta）。
