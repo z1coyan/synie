@@ -6,9 +6,13 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
+import { withTx } from '~/db/tx.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createFulfillmentService } from '../fulfillment/service.ts'
+import { createOrderService } from '../order/service.ts'
+import { createQuotationService } from '../quotation/service.ts'
 import { createReconciliationService } from './service.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
@@ -17,6 +21,9 @@ const run = url ? describe : describe.skip
 run('PG 集成（销售/采购对账）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db)
+  const quotations = createQuotationService(db, numbering)
+  const orders = createOrderService(db, numbering, quotations)
+  const fulfillment = createFulfillmentService(db, numbering, orders)
   const svc = createReconciliationService(db, numbering)
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `REC${suffix}`
@@ -438,7 +445,65 @@ run('PG 集成（销售/采购对账）', () => {
       SELECT reconciled_qty::text AS r FROM sal_delivery_item WHERE id=${salesDeliveryItemId}::uuid
     `.execute(db)
     expect(decimal(recon.rows[0]!.r).gt(0)).toBe(true)
-    // 清理
+
+    let voidErr: unknown
+    try {
+      await fulfillment.voidHead(actor, 'sales', salesDeliveryId)
+    } catch (e) {
+      voidErr = e
+    }
+    expect(voidErr).toBeInstanceOf(ApiError)
+    expect((voidErr as ApiError).code).toBe('conflict')
+    expect((voidErr as ApiError).message).toContain('已对账')
+
+    await svc.unconfirm(actor, 'sales', head.id)
+    await svc.deleteHead(actor, 'sales', head.id)
+  })
+
+  test('发票结单/重开接缝：状态与待办关闭/复活', async () => {
+    const head = await svc.createHead(actor, 'sales', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      no: `${prefix}-SR-INV`,
+      debitAccountId: salesDebitId,
+      creditAccountId: salesCreditId,
+    })
+    await svc.createItem(actor, 'sales', {
+      reconciliationId: head.id,
+      idx: 1,
+      qty: '1',
+      deliveryItemId: salesDeliveryItemId,
+    })
+    await svc.confirm(actor, 'sales', head.id)
+
+    const closed = await withTx(db, async (trx) =>
+      svc.closeFromInvoice(trx, actor, 'sales', head.id),
+    )
+    expect(closed.status).toBe('CLOSED')
+    const closedTodos = await sql<{ c: string }>`
+      SELECT count(*)::text AS c FROM sys_todo
+      WHERE source_type='sales.reconciliation' AND source_id=${head.id}::uuid AND status='active'
+    `.execute(db)
+    expect(Number(closedTodos.rows[0]!.c)).toBe(0)
+
+    const reopened = await withTx(db, async (trx) =>
+      svc.reopenFromInvoice(trx, actor, 'sales', head.id),
+    )
+    expect(reopened.status).toBe('CONFIRMED')
+    const activeTodos = await sql<{ c: string }>`
+      SELECT count(*)::text AS c FROM sys_todo
+      WHERE source_type='sales.reconciliation' AND source_id=${head.id}::uuid AND status='active'
+    `.execute(db)
+    expect(Number(activeTodos.rows[0]!.c)).toBe(1)
+
+    // 投影未因发票接缝回滚
+    const recon = await sql<{ r: string }>`
+      SELECT reconciled_qty::text AS r FROM sal_delivery_item WHERE id=${salesDeliveryItemId}::uuid
+    `.execute(db)
+    expect(decimal(recon.rows[0]!.r).gt(0)).toBe(true)
+
     await svc.unconfirm(actor, 'sales', head.id)
     await svc.deleteHead(actor, 'sales', head.id)
   })
