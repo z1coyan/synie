@@ -3,10 +3,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseBankImport } from './bank-parser.ts'
 
-const samplePath = join(
-  import.meta.dir,
-  '../../../../backend/apps/synie_core/test/support/fixtures/bank_import_sample.xls',
-)
+// fixture 取自归档 Elixir 后端（backend-elixir-final），已收进仓内 testdata
+const samplePath = join(import.meta.dir, 'testdata/bank_import_sample.xls')
 
 describe('bank-parser BIFF8', () => {
   test('parses bank_import_sample.xls to 3 rows', () => {
