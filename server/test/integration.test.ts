@@ -1,34 +1,22 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { buildApp } from '~/app.ts'
 import { createDb } from '~/db/index.ts'
 import { ensureAdmin } from '../db/seed-admin.ts'
-import { createRateLimiter } from '~/platform/auth/limiter.ts'
-import { createAuthService } from '~/platform/auth/service.ts'
-import { createAuthStore } from '~/platform/auth/store.ts'
-import { createTokenManager } from '~/platform/auth/token.ts'
-import { createRegistry } from '~/platform/meta/registry.ts'
+import { buildTestApp, testDatabaseUrl } from './helpers.ts'
 
 /**
  * PG 集成测试：门控 SYNIE_TEST_DATABASE_URL（未设置则整组 Skip，同 server-go 惯例）。
  * 前置：测试库已执行 bun run db:migrate。
  */
-const url = process.env.SYNIE_TEST_DATABASE_URL
+const url = testDatabaseUrl()
 const run = url ? describe : describe.skip
 
 run('PG 集成（auth + meta + healthz）', () => {
   const db = createDb(url!)
-  const registry = createRegistry()
-  const authPromise = createAuthService({
-    store: createAuthStore(db),
-    tokens: createTokenManager({ secret: 'integration-test-secret-32-bytes!!', ttlSeconds: 3600 }),
-    limiter: createRateLimiter(),
-  })
-
   const adminPassword = 'integration-admin-pass'
 
   async function app() {
     await ensureAdmin(db, { username: 'it-admin', password: adminPassword, name: '集成管理员' })
-    return buildApp({ db, auth: await authPromise, registry })
+    return buildTestApp(db)
   }
 
   afterAll(async () => {

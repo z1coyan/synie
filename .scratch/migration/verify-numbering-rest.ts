@@ -1,6 +1,6 @@
 import { SQL } from 'bun'
 
-const baseURL = process.env.GO_API_URL ?? 'http://127.0.0.1:8080/api/v1'
+const baseURL = process.env.SYNIE_API_URL ?? process.env.GO_API_URL ?? 'http://127.0.0.1:8080/api/v1'
 const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
 const password = process.env.E2E_ADMIN_PASSWORD ?? 'synie-integration-admin-password'
 const databaseURL =

@@ -1,7 +1,7 @@
 import { SQL } from 'bun'
 import { join } from 'node:path'
 
-const baseURL = process.env.GO_API_URL ?? 'http://127.0.0.1:8080/api/v1'
+const baseURL = process.env.SYNIE_API_URL ?? process.env.GO_API_URL ?? 'http://127.0.0.1:8080/api/v1'
 const databaseURL =
   process.env.SYNIE_TEST_DATABASE_URL ??
   'postgres://synie:synie@127.0.0.1:5441/synie?sslmode=disable'

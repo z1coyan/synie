@@ -10,6 +10,22 @@ import { notFound, onError } from './platform/http/errors.ts'
 import { metaRoutes } from './platform/meta/routes.ts'
 import type { Registry } from './platform/meta/registry.ts'
 
+/**
+ * 应用依赖。核心三项（db/auth/registry）已落地；
+ * 平台业务模块（settings / numbering / audit / files）由工单 01 各领域实现后
+ * 在此接口上**显式追加必选字段**并在 buildApp 中 `.route()` 挂载。
+ *
+ * 约定（保 hc 类型链）：
+ * - 新增模块用工厂闭包产出 service + routes，经 deps 注入，禁止全局单例
+ * - 路由必须链式 `.route()` + zValidator，否则 ApiType 断链
+ * - 未实现的模块不要占位空壳 service / 假路由
+ *
+ * 预期挂载面（对齐 server-go / OpenAPI，路径仅作备忘）：
+ * - settings  → GET|PATCH `/{sys,acc,sales,mfg}/setting`
+ * - numbering → `/system/numbering/...`（规则 CRUD + 取号/校正）
+ * - files     → `/files`、`/system/storage`、attachments 挂接
+ * - audit     → 主要为写路径 service 钩子；REST 以 server-go 为准（可能无独立资源面）
+ */
 export interface AppDeps {
   db: Kysely<Database>
   auth: AuthService
@@ -39,6 +55,13 @@ const accessLog: MiddlewareHandler<AppEnv> = async (c, next) => {
  *
  * hc<ApiType> 依赖链式定义推断路由类型，新增模块务必用 .route() 挂载、
  * 输入走 zValidator，否则前端 hono/client 拿不到类型。
+ *
+ * --- 扩展点（工单 01+）---
+ * 在下方 `.route('/meta', ...)` 之后继续链式挂载平台/业务路由，例如：
+ *   .route('/', settingsRoutes(deps.settings, deps.auth))
+ *   .route('/system/numbering', numberingRoutes(deps.numbering, deps.auth))
+ *   .route('/files', filesRoutes(deps.files, deps.auth))
+ * 同步扩展 {@link AppDeps} 与 `index.ts` 装配。
  */
 export function buildApp(deps: AppDeps) {
   const app = new Hono<AppEnv>()
@@ -55,6 +78,8 @@ export function buildApp(deps: AppDeps) {
     })
     .route('/auth', authRoutes(deps.auth))
     .route('/meta', metaRoutes(deps.registry, deps.auth))
+  // ↑ 平台扩展挂载点：settings / numbering / files / … 在此继续链式 .route()
+  //   （audit 若无 REST 则只经 service 注入业务写路径，不必在此挂路由）
 
   app.onError(onError)
   app.notFound(notFound)

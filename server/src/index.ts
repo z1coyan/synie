@@ -19,6 +19,10 @@ const auth = await createAuthService({
 // 业务资源注册（registerAll）：随各业务模块落地逐个挂载，骨架期为空表。
 const registry = createRegistry()
 
+// --- 工单 01 平台服务装配点 ---
+// 实现落地后在此 createXxxService({ db, ... }) 并传入 buildApp：
+//   settings / numbering / audit / files（见各 platform/*/README.md）
+// 未实现前不要注入空壳；buildApp 扩展点见 app.ts 注释。
 const app = buildApp({ db, auth, registry })
 
 const server = Bun.serve({
