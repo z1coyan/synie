@@ -50,6 +50,7 @@ import type {
 import { tradingRouteMounts, type TradingServices } from './modules/trading/index.ts'
 import { scmRouteMounts, type ScmServices } from './modules/scm/index.ts'
 import { manufacturingRoutes, type ManufacturingServices } from './modules/manufacturing/index.ts'
+import { vatInvoiceRoutes, type VatInvoiceService } from './modules/finance/index.ts'
 import { authRoutes } from './platform/auth/routes.ts'
 import type { AuthService } from './platform/auth/service.ts'
 import type { AppEnv } from './platform/http/context.ts'
@@ -67,6 +68,7 @@ import { settingsRoutes } from './platform/settings/routes.ts'
 import type { SettingsService } from './platform/settings/service.ts'
 import { printingRoutes, systemPrintingRoutes } from './platform/printing/routes.ts'
 import type { PrintingService } from './platform/printing/service.ts'
+import { todoRoutes, type TodoService } from './platform/todo/index.ts'
 
 /**
  * 应用依赖。平台 + base/iam/party + 库存 + 会计 + 交易链。
@@ -111,6 +113,9 @@ export interface AppDeps {
   trading: TradingServices
   // 工单 08 订单流只读投影
   scm: ScmServices
+  // 工单 09 发票 + 待办
+  invoices: VatInvoiceService
+  todos: TodoService
   // 工单 11 制造
   manufacturing: ManufacturingServices
 }
@@ -236,6 +241,11 @@ export function buildApp(deps: AppDeps) {
         entries: deps.entries,
       }),
     )
+    .route(
+      '/finance/vat-invoices',
+      vatInvoiceRoutes({ auth: deps.auth, invoices: deps.invoices }),
+    )
+    .route('/todos', todoRoutes({ auth: deps.auth, todos: deps.todos }))
     .route(
       '/manufacturing',
       manufacturingRoutes({

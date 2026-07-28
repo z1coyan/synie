@@ -25,6 +25,11 @@ import {
 } from './modules/sales/index.ts'
 import { createTradingServices, registerTradingResources } from './modules/trading/index.ts'
 import { createScmServices, registerScmResources } from './modules/scm/index.ts'
+import {
+  createFinanceServices,
+  registerFinanceResources,
+} from './modules/finance/index.ts'
+import { createTodoService } from './platform/todo/index.ts'
 import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
@@ -69,6 +74,7 @@ registerSalesCompanyAccountDefault(registry)
 registerInventoryResources(registry)
 registerAccountingResources(registry)
 registerTradingResources(registry)
+registerFinanceResources(registry)
 registerScmResources(registry)
 registerManufacturingResources(registry)
 // 打印目录 stub 在业务域之后：已有真实 Meta 则跳过
@@ -95,6 +101,11 @@ const companyAccountDefaults = createCompanyAccountDefaultService(db)
 const inv = createInventoryServices(db, numbering)
 const accounting = createAccountingServices(db, numbering)
 const trading = createTradingServices(db, numbering)
+const finance = createFinanceServices(db, numbering, {
+  reconciliations: trading.reconciliations,
+  files,
+})
+const todos = createTodoService(db)
 const scm = createScmServices(db)
 const manufacturing = createManufacturingServices(db, numbering)
 
@@ -131,6 +142,8 @@ const app = buildApp({
   entries: accounting.entries,
   trading,
   scm,
+  invoices: finance.invoices,
+  todos,
   manufacturing,
 })
 

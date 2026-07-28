@@ -3,6 +3,10 @@
 Status: ready-for-agent
 Blocked by: 08
 
+## Comments
+
+- 2026-07-28 子代理：实现增值税发票完整生命周期（CRUD/审核过账/作废/红冲/OCR 入口）与待办消费 API（query/unread-count/read/dismiss）；对账 confirm 生产者与 closeFromInvoice/reopenFromInvoice 接缝复用已有 trading/reconciliation。`bunx tsc --noEmit` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 207 pass。遗留：报销单/银行/票据（工单 12）未做，`verify-finance-operations-rest` 全量仍阻塞于非发票段；OCR 需 acc_setting 阿里云凭证（未配置时返回可读 validation）。
+
 ## 范围
 
 1. **发票**（开入/开出；常规发票关联对账单：审核校验一对一+过账三行+冲回组回未开票往来；作废/红冲自动解除关联退回确认态；对向发票互链与一键生成对方草稿；费用报销发票：方向开入/对手限员工/报销类型带科目/审核挂账其他应付款）

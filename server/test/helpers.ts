@@ -28,6 +28,11 @@ import {
   createManufacturingServices,
   registerManufacturingResources,
 } from '~/modules/manufacturing/index.ts'
+import {
+  createFinanceServices,
+  registerFinanceResources,
+} from '~/modules/finance/index.ts'
+import { createTodoService } from '~/platform/todo/index.ts'
 import { createRateLimiter } from '~/platform/auth/limiter.ts'
 import { createAuthService, type AuthService } from '~/platform/auth/service.ts'
 import { createAuthStore } from '~/platform/auth/store.ts'
@@ -94,6 +99,7 @@ export function createPlatformRegistry(): Registry {
   registerInventoryResources(registry)
   registerAccountingResources(registry)
   registerTradingResources(registry)
+  registerFinanceResources(registry)
   registerScmResources(registry)
   registerManufacturingResources(registry)
   // 打印目录 stub 在业务域之后：已有真实 Meta 则跳过
@@ -154,6 +160,11 @@ export async function buildTestApp(
   const inv = createInventoryServices(db, numbering)
   const accounting = createAccountingServices(db, numbering)
   const trading = createTradingServices(db, numbering)
+  const finance = createFinanceServices(db, numbering, {
+    reconciliations: trading.reconciliations,
+    files: merged.files,
+  })
+  const todos = createTodoService(db)
   const scm = createScmServices(db)
   const manufacturing = createManufacturingServices(db, numbering)
   const printing =
@@ -196,6 +207,9 @@ export async function buildTestApp(
     entries: merged.entries ?? accounting.entries,
     trading: (merged as { trading?: typeof trading }).trading ?? trading,
     scm: (merged as { scm?: typeof scm }).scm ?? scm,
+    invoices:
+      (merged as { invoices?: typeof finance.invoices }).invoices ?? finance.invoices,
+    todos: (merged as { todos?: typeof todos }).todos ?? todos,
     manufacturing: merged.manufacturing ?? manufacturing,
   })
 }
