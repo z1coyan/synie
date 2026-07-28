@@ -1,6 +1,13 @@
 import { buildApp } from './app.ts'
 import { createDb } from './db/index.ts'
 import { loadEnv } from './env.ts'
+import { createBaseServices, registerBaseResources } from './modules/base/index.ts'
+import { createIamService, registerIamResources } from './modules/iam/index.ts'
+import { createPartyServices, registerPartyResources } from './modules/party/index.ts'
+import {
+  createCompanyAccountDefaultService,
+  registerSalesCompanyAccountDefault,
+} from './modules/sales/index.ts'
 import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
@@ -30,14 +37,21 @@ registerSettingResources(registry)
 registerNumberingResources(registry)
 registerFileResources(registry)
 registerAuditResources(registry)
+registerBaseResources(registry)
+registerIamResources(registry)
+registerPartyResources(registry)
+registerSalesCompanyAccountDefault(registry)
 
 const settings = createSettingsService(db)
 const numbering = createNumberingService(db)
 const owners = createOwnerRegistry()
-// 业务域宿主注册随各域落地；此处仅保留平台可挂接能力入口
 const files = createFileService({ db, owners })
 const storages = createStorageService({ db })
 const audit = createAuditService(db)
+const base = createBaseServices(db)
+const iam = createIamService(db, registry)
+const party = createPartyServices(db, numbering)
+const companyAccountDefaults = createCompanyAccountDefaultService(db)
 
 const app = buildApp({
   db,
@@ -48,6 +62,15 @@ const app = buildApp({
   files,
   storages,
   audit,
+  currencies: base.currencies,
+  companies: base.companies,
+  units: base.units,
+  accounts: base.accounts,
+  iam,
+  customers: party.customers,
+  suppliers: party.suppliers,
+  employees: party.employees,
+  companyAccountDefaults,
 })
 
 const server = Bun.serve({
