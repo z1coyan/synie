@@ -87,7 +87,7 @@ function postgres(sql: string): string {
       "-U",
       "synie",
       "-d",
-      "synie",
+      pgDb,
       "-v",
       "ON_ERROR_STOP=1",
       "-Atc",

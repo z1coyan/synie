@@ -86,12 +86,17 @@ const init = await call<{ createdCount: number }>(
 console.log(`[provision] JT 公司已创建,初始化 ${init.createdCount} 个科目`)
 
 // 6. 完成初始化并写入全业务链示例数据(挂在首个公司 JT 上)
+// 示例全链种子属工单 16；默认 false 以便 Bun e2e 用 SQL fixture 自建数据
+const seedSampleData = process.env.SEED_SAMPLE_DATA === '1' || process.env.SEED_SAMPLE_DATA === 'true'
 await call('POST', '/setup/complete', {
   preferredLanguage: 'zh-CN',
-  seedSampleData: true,
+  seedSampleData,
 }, token)
-console.log('[provision] 初始化完成,示例业务数据已写入')
-
+console.log(
+  seedSampleData
+    ? '[provision] 初始化完成,示例业务数据已写入'
+    : '[provision] 初始化完成（未写入示例业务数据；e2e 自建 fixture）',
+)
 // 7. 追加空科目公司:account.go.e2e 需要一家 0 科目的公司跑科目模板动线
 //    (历史上由既有 dev 库里其他 spec 的残留公司提供,一键重建时必须显式补)
 await call('POST', '/base/companies', {

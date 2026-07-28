@@ -83,6 +83,8 @@ async function restorePatch(
   }
 }
 
+const pgDb = process.env.SYNIE_PG_DB ?? 'synie'
+
 function postgres(sql: string): void {
   execFileSync(
     'docker',
@@ -93,7 +95,7 @@ function postgres(sql: string): void {
       '-U',
       'synie',
       '-d',
-      'synie',
+      pgDb,
       '-v',
       'ON_ERROR_STOP=1',
       '-c',

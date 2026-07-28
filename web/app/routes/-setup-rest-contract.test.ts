@@ -8,15 +8,15 @@ const page = source('./setup.tsx')
 const setupFacade = source('../lib/setup.ts')
 
 describe('Setup 页面 REST 迁移契约', () => {
-  test('Setup facade 封装四个 REST 动作（同源 /api/v1/setup/*）', () => {
-    expect(setupFacade).toContain('/api/v1/setup')
-    for (const path of [
-      '/first-user',
-      '/currencies/seed-common',
-      '/currencies/activate-base',
-      '/complete',
+  test('Setup facade 封装四个 REST 动作（hc api.setup.*）', () => {
+    for (const marker of [
+      'api.setup.status.$get',
+      "api.setup['first-user'].$post",
+      "api.setup.currencies['seed-common'].$post",
+      "api.setup.currencies['activate-base'].$post",
+      'api.setup.complete.$post',
     ]) {
-      expect(setupFacade).toContain(path)
+      expect(setupFacade).toContain(marker)
     }
     expect(setupFacade).not.toContain('gqlFetch')
     expect(setupFacade).not.toContain('openapi-fetch')

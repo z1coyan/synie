@@ -24,3 +24,7 @@ Blocked by: 06, 07, 08, 09, 10, 11, 12, 13, 14, 15
 ## 非目标
 
 不改 UI 设计与页面结构（纯传输层与类型源切换）。
+
+## Comments
+
+- 2026-07-28: 验收补完 — web `bun test` 92/0、`bun run check` ok；server 最小 setup 端点落地；`scripts/verify-web-hc-api.ts` 关键路径 API 绿（登录/主数据 CRUD/销售报价→订单/401）。Playwright UI 本环境缺 HeroUI Pro 鉴权安装（`@heroui-pro/react` 无 dist entry），浏览器 e2e 待 token 环境再跑 `run-smoke.sh`。

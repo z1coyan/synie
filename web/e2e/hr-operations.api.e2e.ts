@@ -6,6 +6,7 @@ const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
 const password =
   process.env.E2E_ADMIN_PASSWORD ?? "synie-integration-admin-password";
 const pgContainer = process.env.SYNIE_PG_CONTAINER ?? "synie-postgres-1";
+const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
 const prefix = `E2EHR${suffix}`;
 const fileSha256 = createHash("sha256").update(prefix).digest("hex");
@@ -36,7 +37,7 @@ function postgres(sql: string): string {
       "-U",
       "synie",
       "-d",
-      "synie",
+      pgDb,
       "-v",
       "ON_ERROR_STOP=1",
       "-Atc",
