@@ -258,4 +258,206 @@ run('PG 集成（库存单据状态机与引擎）', () => {
       code: 'conflict',
     })
   })
+
+  test('状态机：方向锁死/停用仓拦新/已发货不可改删/实收容差/快照兜底', async () => {
+    const admin = await db
+      .selectFrom('sys_user')
+      .select(['id', 'username'])
+      .orderBy('inserted_at', 'asc')
+      .executeTakeFirstOrThrow()
+    actor = { ...actor, userId: admin.id, username: admin.username }
+
+    const currency = await db
+      .selectFrom('bas_currency')
+      .select('id')
+      .where('iso_code', '=', 'CNY')
+      .executeTakeFirstOrThrow()
+    const edgeSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
+    const company = await companies.create(actor, {
+      code: lettersFrom(edgeSuffix, 2),
+      name: `边界测公司${edgeSuffix}`,
+      shortName: `边${edgeSuffix.slice(0, 2)}`,
+      baseCurrencyId: currency.id,
+    })
+    tracked.companyIds.push(company.id)
+    const unitId = (
+      await db.selectFrom('bas_unit').select('id').orderBy('is_base', 'desc').executeTakeFirstOrThrow()
+    ).id
+
+    // 物料编号规则：若前测已建启用规则则复用
+    const existingRule = await db
+      .selectFrom('sys_numbering_rule')
+      .select('id')
+      .where('resource', '=', 'inv.material')
+      .where('enabled', '=', true)
+      .executeTakeFirst()
+    if (!existingRule) {
+      const rule = await numbering.create(actor, {
+        resource: 'inv.material',
+        name: `B${edgeSuffix}物料`,
+        segments: [
+          { type: 'text', value: `B${edgeSuffix}-` },
+          { type: 'seq', padding: 2 },
+        ],
+        perCompany: false,
+        enabled: true,
+      })
+      tracked.ruleIds.push(rule.id)
+    }
+
+    const cat = await inv.categories.create(actor, {
+      code: `B${edgeSuffix}C`,
+      name: `边界分类${edgeSuffix}`,
+      isLeaf: true,
+    })
+    tracked.categoryIds.push(cat.id)
+    const mat = await inv.materials.create(actor, {
+      name: `边界料${edgeSuffix}`,
+      categoryId: cat.id,
+      defaultUnitId: unitId,
+    })
+    tracked.materialIds.push(mat.id)
+
+    const whA = await inv.warehouses.create(actor, {
+      name: `B${edgeSuffix}A`,
+      companyId: company.id,
+      isLeaf: true,
+    })
+    const whB = await inv.warehouses.create(actor, {
+      name: `B${edgeSuffix}B`,
+      companyId: company.id,
+      isLeaf: true,
+    })
+    const whT = await inv.warehouses.create(actor, {
+      name: `B${edgeSuffix}T`,
+      companyId: company.id,
+      isLeaf: true,
+    })
+    const whOff = await inv.warehouses.create(actor, {
+      name: `B${edgeSuffix}停`,
+      companyId: company.id,
+      isLeaf: true,
+      active: false,
+    })
+    tracked.warehouseIds.push(whA.id, whB.id, whT.id, whOff.id)
+
+    // 方向创建后不可改
+    const draft = await inv.stockDocs.create(actor, {
+      docNo: `B${edgeSuffix}-DIR`,
+      direction: 'IN',
+      companyId: company.id,
+      warehouseId: whA.id,
+    })
+    tracked.docIds.push(draft.id)
+    await expect(
+      inv.stockDocs.update(actor, draft.id, { direction: 'OUT' }),
+    ).rejects.toMatchObject({ code: 'validation' })
+
+    // 停用仓拦新
+    await expect(
+      inv.stockDocs.create(actor, {
+        docNo: `B${edgeSuffix}-OFF`,
+        direction: 'IN',
+        companyId: company.id,
+        warehouseId: whOff.id,
+      }),
+    ).rejects.toMatchObject({ code: 'validation' })
+
+    // 建库存：入库 8 到 A
+    await inv.stockDocs.createItem(actor, {
+      stockDocId: draft.id,
+      idx: 1,
+      qty: '8',
+      materialId: mat.id,
+      unitId,
+    })
+    await inv.stockDocs.audit(actor, draft.id)
+
+    // 调拨 5：部分收货 3 → 在途留 2
+    const tr = await inv.stockTransfers.create(actor, {
+      docNo: `B${edgeSuffix}-TR`,
+      companyId: company.id,
+      fromWarehouseId: whA.id,
+      toWarehouseId: whB.id,
+      transitWarehouseId: whT.id,
+    })
+    tracked.transferIds.push(tr.id)
+    const ti = await inv.stockTransfers.createItem(actor, {
+      stockTransferId: tr.id,
+      idx: 1,
+      qty: '5',
+      materialId: mat.id,
+      unitId,
+    })
+    await inv.stockTransfers.ship(actor, tr.id)
+
+    // 已发货不可改删
+    await expect(inv.stockTransfers.update(actor, tr.id, { summary: 'x' })).rejects.toMatchObject({
+      code: 'conflict',
+    })
+    await expect(inv.stockTransfers.remove(actor, tr.id)).rejects.toMatchObject({ code: 'conflict' })
+
+    // 实收 > 已发 拒绝
+    await expect(
+      inv.stockTransfers.receive(actor, tr.id, {
+        receipts: [{ itemId: ti.id, qty: '9' }],
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' })
+
+    // 部分收货
+    await inv.stockTransfers.receive(actor, tr.id, {
+      receipts: [{ itemId: ti.id, qty: '3' }],
+    })
+    const bal = await inv.stockEntries.balance(actor, {
+      companyId: company.id,
+      materialId: mat.id,
+      hideZero: false,
+    })
+    const byWh = Object.fromEntries(bal.map((r) => [r.warehouseId, r.quantity]))
+    expect(byWh[whA.id]).toBe('3') // 8-5
+    expect(byWh[whT.id]).toBe('2') // 5-3
+    expect(byWh[whB.id]).toBe('3')
+
+    // 快照兜底：开盘点后若再动库存则审核拒
+    const ct = await inv.stockCounts.create(actor, {
+      docNo: `B${edgeSuffix}-CT`,
+      companyId: company.id,
+      warehouseId: whB.id,
+      items: [{ materialId: mat.id, unitId, countedQuantity: '3' }],
+    })
+    tracked.countIds.push(ct.id)
+    // 再入一笔到 B，使快照过期
+    const late = await inv.stockDocs.create(actor, {
+      docNo: `B${edgeSuffix}-LATE`,
+      direction: 'IN',
+      companyId: company.id,
+      warehouseId: whB.id,
+    })
+    tracked.docIds.push(late.id)
+    await inv.stockDocs.createItem(actor, {
+      stockDocId: late.id,
+      idx: 1,
+      qty: '1',
+      materialId: mat.id,
+      unitId,
+    })
+    await inv.stockDocs.audit(actor, late.id)
+
+    await expect(inv.stockCounts.approve(actor, ct.id)).rejects.toMatchObject({
+      code: 'conflict',
+    })
+    // 刷新后可过
+    await inv.stockCounts.refresh(actor, ct.id)
+    // 刷新后账面 4，实盘仍是 3 → 差异 -1
+    const afterRefresh = await inv.stockCounts.queryItems(actor, {
+      limit: 10,
+      offset: 0,
+      filter: {
+        countId: { kind: 'fk', op: 'in', values: [ct.id], labels: [] },
+      },
+    })
+    expect(afterRefresh.results[0]!.bookQuantity).toBe('4')
+    const appr = await inv.stockCounts.approve(actor, ct.id)
+    expect(appr.status).toBe('AUDITED')
+  })
 })
