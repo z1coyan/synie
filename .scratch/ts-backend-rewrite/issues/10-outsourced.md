@@ -22,3 +22,12 @@ Blocked by: 07, 11
 ## 非目标
 
 工序级外协单据流（CONTEXT 明确不在本期）。
+
+## Comments
+
+### 2026-07-28 验收
+
+- 实现：`server/src/modules/trading/outsourced/*`（替换头 CRUD 占位）；`order/projection.ts` 增 `postOutsourcedIssue` / `requireOutsourced`。
+- 已复用：订单条目 BOM/发料清单/副产物/`expandBom`；外协仓 `warehouse-service`；对账池委外入库行。
+- 测试：`typecheck`；`outsourced.postgres.test.ts`（发料/入库生命周期 + BOM 展开口径）；投影单测/PG。
+- `verify-fulfillment-rest.ts` 对 TS 服务（`SYNIE_API_URL`）全绿：meta=20 permissionFirst=10 queries=10 heads=4（含委外发料/入库头）。
