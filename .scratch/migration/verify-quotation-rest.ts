@@ -648,10 +648,14 @@ async function createFixture(): Promise<Fixture> {
     fixturePartyIDs.add(item.id);
     trackedIDs.add(item.id);
   }
+  // 演示库可能已有 quantity 基准；自建非基准「个」作默认单位，避免 unique_base 冲突且保证 name 可断言
+  const hasBase = (await db`
+    SELECT 1 FROM bas_unit WHERE unit_type='quantity' AND is_base=true LIMIT 1
+  `) as Array<unknown>;
   const units = (await db`
     INSERT INTO bas_unit(unit_type,is_base,name,symbol,ratio)
     VALUES
-      ('quantity',true,${prefix + "个"},${prefix + "EA"},1),
+      ('quantity',${hasBase.length === 0},${prefix + "个"},${prefix + "EA"},1),
       ('quantity',false,${prefix + "箱"},${prefix + "BOX"},10),
       ('quantity',false,${prefix + "非法单位"},${prefix + "BAD"},1)
     RETURNING id::text AS id,symbol
