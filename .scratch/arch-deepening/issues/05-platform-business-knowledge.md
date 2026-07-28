@@ -1,6 +1,6 @@
 # 05 F · 业务知识回吐出 platform
 
-Status: done
+Status: resolved
 
 ## 问题
 
@@ -34,3 +34,13 @@ platform 层硬编码领域知识，红线「platform 不 import 业务域」虽
   中业务表名只剩 sys_* 与必要的类型引用；
 - 第二类待办接入零改动 platform；
 - typecheck + 全套测试绿。
+
+## Comments
+
+### 2026-07-28 主仓集成
+
+- `36f9d3d` 业务知识回吐（todo registry / single-row settings / sampledata→modules/setup / numbering catalog）
+- `cf09537` source-registry 注释清理
+- 与 printing 合入时保留 `registerSalesOrderDocBuilder`；todo 走 `createTodoSourceRegistry` + finance/party 注册
+- remaining（可选）：setup 向导 `completeBaseSeeds` 仍写 `inv_material_category`
+- 验证：typecheck + 246 测全绿

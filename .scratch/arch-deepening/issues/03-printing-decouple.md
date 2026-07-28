@@ -1,6 +1,6 @@
 # 03 D · printing 与业务域脱钩 + 删死代码
 
-Status: done
+Status: resolved
 
 ## 问题
 
@@ -27,3 +27,11 @@ Status: done
 - platform/printing 内零业务表查询、零业务枚举标签；
 - 第二个资源接入打印（如采购订单）零改动 platform；
 - 打印/导出集成测试（printing integration）全绿，字段目录输出正确。
+
+## Comments
+
+### 2026-07-28 主仓集成
+
+- commit：`1a9a914` refactor(server): printing 与业务域脱钩——DocBuilder 迁 trading/order
+- SalesOrderDocBuilder → `modules/trading/order/docbuilder.ts`；组合根 `registerSalesOrderDocBuilder` + SOFFICE converter；删 sales-order-meta/catalog-stubs
+- 验证：typecheck + 246 测全绿

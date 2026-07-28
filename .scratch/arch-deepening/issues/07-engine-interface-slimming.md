@@ -1,6 +1,6 @@
 # 07 G · 引擎 interface 瘦身与对称
 
-Status: done
+Status: resolved
 
 ## 问题（小项集合，适合穿插在其他工单间隙做）
 
@@ -26,3 +26,13 @@ Status: done
 
 - 引擎 interface 收窄，调用方须知减少；符号/日期口径各一事实源；
 - typecheck + 全套测试绿。
+
+## Comments
+
+### 2026-07-28 主仓集成
+
+- `e530533` interface 瘦身（日期/金额/direction/validateEntries）
+- `0bde22c` 引擎注入统一 module index 工厂
+- `cf325a7` 工单标 done（集成后升为 resolved）
+- 后续工单合入时库存/GL 调用方一律 direction + Decimal|string，不回退 number/手写 neg
+- 验证：typecheck + 246 测全绿

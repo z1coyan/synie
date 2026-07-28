@@ -1,6 +1,6 @@
 # 06 J · 最重不变量提纯出 PG
 
-Status: ready-for-human
+Status: resolved
 
 ## 问题
 
@@ -26,3 +26,11 @@ market 的 resolveQuote、gl 的 validateShapeForTest——这两处是落后分
   调拨换户、联动回滚）；
 - 行为零变化，现有 PG 集成测试保持绿；
 - module interface 不变，implementation 更深。
+
+## Comments
+
+### 2026-07-28 主仓集成
+
+- commit：`752cbb6` refactor(server): 承兑重放与工资借款联动提纯为免 PG 纯核
+- bill-replay + hr rules applyPayment/reversePayment；HR 拆厂后纯核落在 `payroll-service.ts` adapter
+- 验证：typecheck + 246 测（含 bill-replay / rules 免 PG）全绿

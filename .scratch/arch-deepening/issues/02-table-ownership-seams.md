@@ -1,6 +1,6 @@
 # 02 I · 跨模块表所有权收口
 
-Status: ready-for-human
+Status: resolved
 
 ## 问题
 
@@ -42,3 +42,9 @@ Status: ready-for-human
 - accounting cancel：注入 `isJournalLinkedToBankRecon`（banking-recon 游离函数，组合根接线）。
 - `banking-shared.ts` 下沉 map/load/validateTxnShape/txnAmount/reconcileStatus；删 `await import(`。
 - 验收：typecheck 绿；`bun test` 226/226。
+
+### 2026-07-28 主仓集成
+
+- commit：`1a385b1` refactor(server): 跨模块表所有权收口——employee/recon/banking seams
+- 与过账骨架（invoice auditGlDocInTx）合并时保留 skeleton + recon Pick 扩 `existsForInvoice`/`loadForInvoiceAudit`；journal 必注 `GlEngine` + `JournalServiceDeps`
+- 验证：typecheck + 246 测全绿

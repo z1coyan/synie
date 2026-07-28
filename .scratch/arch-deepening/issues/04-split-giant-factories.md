@@ -1,6 +1,6 @@
 # 04 E · 拆巨型工厂隐藏聚合
 
-Status: done
+Status: resolved
 
 ## 问题
 
@@ -27,3 +27,11 @@ Status: done
 - order interface 30→18，hr 37→~20/个；
 - 行为零变化（现有 PG 集成测试即安全网），226/226 绿；
 - index.ts 装配同步更新，web 侧 hc 类型不受影响（routes 不动）。
+
+## Comments
+
+### 2026-07-28 主仓集成
+
+- order：`2cfb9dd` 拆 outsourced-config + 投影透传；fulfillment/outsourced 保留 module index 引擎注入（不回退 file-level 单例）
+- hr：`4a0dfd0` attendance/payroll 两工厂；保留 02 `employeeSeam` 与 06 `applyPayment`/`reversePayment` 纯核
+- 验证：typecheck + 246 测全绿

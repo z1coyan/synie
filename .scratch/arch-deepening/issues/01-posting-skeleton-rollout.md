@@ -1,6 +1,6 @@
 # 01 B 收尾：其余过账路径迁入骨架/seam
 
-Status: done
+Status: resolved
 
 ## 背景
 
@@ -55,3 +55,18 @@ Status: done
 - **outsourced issue**（清单外）：形状接近 inventory 骨架，投影键 orderItemMaterialId，可后续再迁
 
 验证：`bun run typecheck` + `SYNIE_TEST_DATABASE_URL=…synie_test bun test` → 226/226。
+
+### 2026-07-28 主仓集成
+
+合入 main（冲突按既定形状解决：骨架 + 引擎 `direction` / 金额 `Decimal|string`）。
+
+- 骨架扩展：`381f3e2`
+- stock-doc：`3578c51`（collect 用 direction）
+- stock-count：`e042062`
+- mfg.output：`84f66fc`
+- expense：`02187d8`
+- bill：`0ad078e`
+- invoice：`f5f8866`
+- 收口记录：`e50af03`
+
+验证：typecheck 绿；全量 `bun test` 246/246。
