@@ -188,7 +188,9 @@ export function fileRoutes(deps: FileRoutesDeps) {
         return c.redirect(result.redirectUrl, 302)
       }
       const content = result.content ?? new Uint8Array()
-      return new Response(content, {
+      // web 引用 server 源时 DOM lib 会把 Uint8Array 与 BodyInit 收窄冲突；拷一份 ArrayBuffer 视图规避
+      const body = new Uint8Array(content)
+      return new Response(body, {
         status: 200,
         headers: {
           'Content-Type': result.contentType,

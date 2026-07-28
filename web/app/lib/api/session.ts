@@ -4,7 +4,8 @@ import { api, apiData } from './client'
 export interface SessionUser {
   id: string
   username: string
-  name: string
+  /** 可空：首用户/部分种子用户未填显示名 */
+  name: string | null
 }
 
 export interface MeResponse {

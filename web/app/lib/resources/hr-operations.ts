@@ -48,6 +48,7 @@ export type AttendanceImportRow = Record<string, unknown> & {
   status?: string
   error?: string | null
   totalRows?: number
+  matchedRows?: number | null
   unmatchedRows?: number
   importedCount?: number
   skippedExistingRows?: number

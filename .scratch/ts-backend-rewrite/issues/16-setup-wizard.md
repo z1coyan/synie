@@ -1,7 +1,13 @@
 # 16 setup 向导 + 全链示例数据
 
-Status: done
+Status: ready-for-human
 Blocked by: 06, 07, 08, 10, 11, 12, 13
+
+## Comments
+
+- 2026-07-28 子代理：实现 `/api/v1/setup/*`（status/first-user 公开；currencies/complete 超管）、事务级 Setup 锁与 first-user 并发互斥、基础幂等种子 + C01 全业务链示例数据（失败不落旗标）、`bun run db:seed:demo`；unit+PG 集成绿；补 `verify-setup-rest` 与 demo 冒烟。
+- 2026-07-28 主工作区集成：cherry-pick 去重 `80f6783`（setup 向导+全链示例数据+app/index/helpers 装配）/ `da798aa`（verify-setup-rest + demo 冒烟）。与工单 17 的 minimal setup 冲突时保留本工单完整实现（含 sampledata 依赖注入）。装配：`createSetupService({db,tokens,sample})` → `buildApp({setup})` → `.route('/setup', setupRoutes(...))`；helpers 注入 setup。未改 server-go。
+- 2026-07-28 独立全量验收：`:18090` `verify-setup-rest` demo 冒烟全绿（C01 + 销采/库存/凭证/银行）；setup PG（并发 first-user / complete 含示例 / C01 幂等）绿。加固：setup 集成 afterAll 清空种子避免污染共享 synie_test；numbering/market 集成在规则占满或无 admin 时自愈。
 
 ## 范围
 

@@ -4,7 +4,7 @@
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import type { InventoryEngine } from '~/engines/inventory/index.ts'
+import type { InventoryEngine, StockLine } from '~/engines/inventory/index.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import {
@@ -504,7 +504,7 @@ export function createStockCountService(
       if (stale.rows[0]?.exists) {
         throw new ApiError('conflict', '库存已在快照后变化，请先刷新账面数量')
       }
-      const lines = []
+      const lines: StockLine[] = []
       for (const raw of items) {
         const item = mapItem(raw)
         const delta = decimal(item.convertedCounted!).minus(decimal(item.bookQuantity))

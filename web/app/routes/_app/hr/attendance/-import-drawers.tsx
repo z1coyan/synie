@@ -125,17 +125,25 @@ export function AttendanceImportCreateDrawer({ isOpen, onOpenChange, onParsed }:
         const uploaded = await uploadFile(file)
 
         const result = await createAttendanceImport(uploaded.file.id)
-        if (result.status === 'FAILED') {
+        const parsed: ParseResult = {
+          id: result.id,
+          status: result.status ?? 'PARSED',
+          error: result.error ?? null,
+          totalRows: result.totalRows ?? null,
+          matchedRows: result.matchedRows ?? null,
+          unmatchedRows: result.unmatchedRows ?? null,
+        }
+        if (parsed.status === 'FAILED') {
           // 解析失败也算批次建成:不抛错(抛错不关抽屉且暗示可重试),开批次抽屉看原因
-          toast.danger('解析失败', { description: result.error ?? '请检查文件内容' })
-        } else if ((result.unmatchedRows ?? 0) > 0) {
-          toast.warning(`解析完成:共 ${result.totalRows} 行,${result.unmatchedRows} 行未匹配到员工`, {
+          toast.danger('解析失败', { description: parsed.error ?? '请检查文件内容' })
+        } else if ((parsed.unmatchedRows ?? 0) > 0) {
+          toast.warning(`解析完成:共 ${parsed.totalRows} 行,${parsed.unmatchedRows} 行未匹配到员工`, {
             description: '可先去员工档案补考勤机编号,或执行导入时勾选自动创建',
           })
         } else {
-          toast.success(`解析完成:共 ${result.totalRows} 行,可导入 ${result.matchedRows} 行`)
+          toast.success(`解析完成:共 ${parsed.totalRows} 行,可导入 ${parsed.matchedRows} 行`)
         }
-        onParsed(result)
+        onParsed(parsed)
       }}
     />
   )

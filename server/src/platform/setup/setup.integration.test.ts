@@ -34,10 +34,6 @@ run('PG 集成（setup 向导）', () => {
   const db = createDb(url!)
   const tokens = createTokenManager({ secret: TEST_AUTH_SECRET, ttlSeconds: 3600 })
 
-  afterAll(async () => {
-    await db.destroy()
-  })
-
   async function prepareEmptySetup(): Promise<void> {
     await sql`SELECT pg_advisory_lock(hashtext('synie-setup-integration'))`.execute(db)
     try {
@@ -116,15 +112,29 @@ run('PG 集成（setup 向导）', () => {
           inv_warehouse,
           bas_company,
           sys_user,
-          inv_material_category
+          inv_material_category,
+          bas_unit,
+          bas_currency,
+          sys_storage
         RESTART IDENTITY CASCADE
       `.execute(db)
       await sql`UPDATE sys_setting SET setup_completed_at = NULL`.execute(db)
+      await sql`DELETE FROM sys_numbering_counter`.execute(db)
       await sql`DELETE FROM sys_numbering_rule`.execute(db)
     } finally {
       await sql`SELECT pg_advisory_unlock(hashtext('synie-setup-integration'))`.execute(db)
     }
   }
+
+  // 收尾清空 setup 种子，避免污染共享 synie_test 上的其它 PG 集成包
+  afterAll(async () => {
+    try {
+      await prepareEmptySetup()
+    } catch {
+      // 收尾失败不阻断 destroy
+    }
+    await db.destroy()
+  })
 
   test('status 公开 + first-user 并发仅一成功 + 基础 complete', async () => {
     await prepareEmptySetup()

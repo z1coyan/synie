@@ -23,59 +23,100 @@ describe.skipIf(!dbUrl)('market integration', () => {
   beforeAll(async () => {
     db = createDb(dbUrl!)
     app = await buildTestApp(db)
-    const loginRes = await app.request('/api/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: process.env.E2E_ADMIN_USERNAME ?? 'admin',
-        password: process.env.E2E_ADMIN_PASSWORD ?? 'admin123',
-      }),
-    })
-    if (!loginRes.ok) {
-      // seed-admin 默认 admin/admin123；部分环境用 integration 密码
-      const alt = await app.request('/api/v1/auth/login', {
+
+    const tryLogin = async (username: string, password: string) => {
+      const res = await app.request('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: 'admin',
-          password: 'synie-integration-admin-password',
-        }),
+        body: JSON.stringify({ username, password }),
       })
-      expect(alt.ok).toBe(true)
-      const body = (await alt.json()) as { token: string; user: { id: string; username: string } }
-      token = body.token
-      actor = {
-        userId: body.user.id,
-        username: body.user.username,
-        name: null,
-        superAdmin: true,
-        allCompanies: true,
-        permissions: new Set(['*']),
-        companyIds: [],
-      }
-    } else {
-      const body = (await loginRes.json()) as {
-        token: string
-        user: { id: string; username: string }
-      }
-      token = body.token
-      actor = {
-        userId: body.user.id,
-        username: body.user.username,
-        name: null,
-        superAdmin: true,
-        allCompanies: true,
-        permissions: new Set(['*']),
-        companyIds: [],
-      }
+      if (!res.ok) return null
+      return (await res.json()) as { token: string; user: { id: string; username: string } }
     }
 
-    const cur = await db
+    let body =
+      (await tryLogin(
+        process.env.E2E_ADMIN_USERNAME ?? 'admin',
+        process.env.E2E_ADMIN_PASSWORD ?? 'admin123',
+      )) ?? (await tryLogin('admin', 'synie-integration-admin-password'))
+
+    // 共享测试库可能被 setup 清空；自建超管 + 币种/单位 fixture
+    if (!body) {
+      const { hashPassword } = await import('~/platform/auth/password.ts')
+      const password = 'synie-integration-admin-password'
+      const hashed = await hashPassword(password)
+      await db
+        .insertInto('sys_user')
+        .values({
+          username: 'admin',
+          name: 'market-integration-admin',
+          hashed_password: hashed,
+          super_admin: true,
+          all_companies: true,
+        })
+        .onConflict((oc) =>
+          oc.column('username').doUpdateSet({
+            hashed_password: hashed,
+            super_admin: true,
+            all_companies: true,
+          }),
+        )
+        .execute()
+      body = await tryLogin('admin', password)
+    }
+    expect(body).toBeTruthy()
+    token = body!.token
+    actor = {
+      userId: body!.user.id,
+      username: body!.user.username,
+      name: null,
+      superAdmin: true,
+      allCompanies: true,
+      permissions: new Set(['*']),
+      companyIds: [],
+    }
+
+    let cur = await db
       .selectFrom('bas_currency')
       .select(['id'])
       .where('active', '=', true)
       .executeTakeFirst()
-    const units = await db.selectFrom('bas_unit').select(['id']).limit(2).execute()
+    if (!cur) {
+      cur = await db
+        .insertInto('bas_currency')
+        .values({
+          name: '人民币',
+          iso_code: 'CNY',
+          symbol: '¥',
+          active: true,
+        })
+        .returning(['id'])
+        .executeTakeFirstOrThrow()
+    }
+    let units = await db.selectFrom('bas_unit').select(['id']).limit(2).execute()
+    if (units.length < 2) {
+      const suffix = crypto.randomUUID().slice(0, 6)
+      await db
+        .insertInto('bas_unit')
+        .values([
+          {
+            unit_type: 'quantity',
+            is_base: true,
+            name: `件-${suffix}`,
+            symbol: `pcs${suffix}`,
+            ratio: '1',
+          },
+          {
+            unit_type: 'quantity',
+            is_base: false,
+            name: `个-${suffix}`,
+            symbol: `ge${suffix}`,
+            ratio: '1',
+          },
+        ])
+        .execute()
+      units = await db.selectFrom('bas_unit').select(['id']).limit(2).execute()
+    }
     if (!cur || units.length < 2) throw new Error('需要启用币种与至少两个单位种子')
     currencyId = cur.id
     unitId = units[0]!.id

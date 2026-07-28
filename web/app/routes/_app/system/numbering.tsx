@@ -174,16 +174,19 @@ function NumberingPage() {
                 </Select.Trigger>
                 <Select.Popover>
                   <ListBox>
-                    {(numberables.data ?? []).map((resource) => (
-                      <ListBox.Item
-                        key={resource.prefix}
-                        id={resource.prefix}
-                        textValue={resourceLabel(resource.prefix)}
-                      >
-                        {resourceLabel(resource.prefix)}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
+                    {(numberables.data ?? []).map((resource) => {
+                      const prefix = resource.prefix ?? resource.resource
+                      return (
+                        <ListBox.Item
+                          key={prefix}
+                          id={prefix}
+                          textValue={resourceLabel(prefix)}
+                        >
+                          {resourceLabel(prefix)}
+                          <ListBox.ItemIndicator />
+                        </ListBox.Item>
+                      )
+                    })}
                   </ListBox>
                 </Select.Popover>
               </Select>

@@ -27,4 +27,6 @@ Blocked by: 06, 07, 08, 09, 10, 11, 12, 13, 14, 15
 
 ## Comments
 
-- 2026-07-28: 验收补完 — web `bun test` 92/0、`bun run check` ok；server 最小 setup 端点落地；`scripts/verify-web-hc-api.ts` 关键路径 API 绿（登录/主数据 CRUD/销售报价→订单/401）。Playwright UI 本环境缺 HeroUI Pro 鉴权安装（`@heroui-pro/react` 无 dist entry），浏览器 e2e 待 token 环境再跑 `run-smoke.sh`。
+- 2026-07-28 子代理：web 传输层切 `@synie/server` hono/client；Resource Clients + lib API 改走 hc；删 openapi-fetch/schema/codegen；Playwright 更名 `*.api.e2e.ts` 并指向 Bun；补 `scripts/verify-web-hc-api.ts` 与 web setup 走 hc。Playwright UI 本环境缺 HeroUI Pro 鉴权安装。
+- 2026-07-28 主工作区集成：cherry-pick 去重 `2a44d6a`（hc cutover）/ `fd1f774`（README）/ `901d42c`（web setup→hc、verify-web-hc-api、e2e 修正）；与工单 16 在 setup service/routes/app/index/helpers 冲突时弃 minimal setup、保留 16 全量实现。web setup 已挂 ApiType `/setup`。未改 server-go。
+- 2026-07-28 独立全量验收：修复 web 经 `@synie/server` 拉全量 ApiType 时的 tsc（GlEntry/StockLine 空数组标注、文件下载 body 视图、SessionUser.name 可空、考勤 ParseResult 映射、编号 prefix 回落）；`server tsc` + `web tsc` 绿；web `bun test` 92 pass；`scripts/verify-web-hc-api.ts` 关键路径绿。业务代码无 openapi-fetch/schema.d.ts 残留。Playwright UI 仍缺 HeroUI Pro 鉴权。

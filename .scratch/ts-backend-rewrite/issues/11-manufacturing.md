@@ -23,8 +23,9 @@ Blocked by: 03
 ## Comments
 
 - 2026-07-28：TS 实现 + Meta pr-2.17 金标；`verify-manufacturing-rest` 对 PORT=18111 TS 后端全绿（meta=24, cleanup=0）；PG 集成 5 项绿。
+- 2026-07-28 集成：主仓 cherry-pick 制造域（含 Meta/数量 wire 修复）；挂载 /manufacturing；PG 集成 5 项全绿。
+- 2026-07-28 独立全量验收：`:18090` `verify-manufacturing-rest` → `ok meta=24 permissionFirst=82 … stockProjectionRollback=1 cleanup=0`。无修复。
 
 ## 非目标
 
 工序报工、生产成本总账（第一期不做）。
-- 2026-07-28 集成：主仓 cherry-pick 制造域（含 Meta/数量 wire 修复）；挂载 /manufacturing；PG 集成 5 项全绿。

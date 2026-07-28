@@ -7,7 +7,7 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine, type GlEngine } from '~/engines/gl/index.ts'
+import { createGlEngine, type GlEngine, type GlEntry } from '~/engines/gl/index.ts'
 import {
   auditCreated,
   auditDestroyed,
@@ -397,7 +397,7 @@ debit_total, credit_total, company_name, created_by_name, submitted_by_name`,
         .orderBy('id', 'asc')
         .execute()
 
-      const entries = []
+      const entries: GlEntry[] = []
       for (const row of lineRows) {
         const line = {
           idx: Number(row.idx),

@@ -31,7 +31,14 @@ run('PG 集成（numbering）', () => {
 
     const current = await numbering.listRules({ limit: 200, offset: 0 })
     const occupied = new Set(current.results.filter((r) => r.enabled).map((r) => r.resource))
-    const resource = catalog.find((item) => !occupied.has(item.prefix))?.prefix
+    let resource = catalog.find((item) => !occupied.has(item.prefix))?.prefix
+    // setup 基础种子会占满全部资源；无空位时先关掉一条启用规则腾出资源
+    if (!resource) {
+      const blocker = current.results.find((r) => r.enabled)
+      expect(blocker).toBeTruthy()
+      await numbering.updateRule(actor, blocker!.id, { enabled: false })
+      resource = blocker!.resource
+    }
     expect(resource).toBeTruthy()
 
     const suffix = crypto.randomUUID().slice(0, 8)
