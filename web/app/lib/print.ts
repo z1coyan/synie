@@ -1,6 +1,6 @@
-import { APIError, apiClient, apiData } from './api/client'
+import type { ApiErrorBody } from '@synie/shared'
+import { APIError, api, apiData } from './api/client'
 import { AppError } from './errors'
-import type { components } from './api/schema'
 
 export interface PrintTemplateOption {
   id: string
@@ -28,16 +28,16 @@ export interface FieldCatalog {
 }
 
 export async function fetchPrintTemplates(resource: string): Promise<PrintTemplateOption[]> {
-  const data = await apiData(
-    apiClient.GET('/printing/templates', { params: { query: { resource } } }),
+  const data = await apiData<{ results: PrintTemplateOption[] }>(
+    api.printing.templates.$get({ query: { resource } }),
   )
-  return data.results as PrintTemplateOption[]
+  return data.results
 }
 
 export async function fetchFieldCatalog(resource: string): Promise<FieldCatalog> {
-  return (await apiData(
-    apiClient.GET('/printing/field-catalog', { params: { query: { resource } } }),
-  )) as components['schemas']['PrintFieldCatalog']
+  return apiData<FieldCatalog>(
+    api.printing['field-catalog'].$get({ query: { resource } }),
+  )
 }
 
 /** 调用后端打印/导出（契约端点 POST /printing/render）；返回 blob 与文件名。 */
@@ -47,25 +47,34 @@ export async function runTemplateOutput(opts: {
   templateId: string
   mode: 'print' | 'export'
 }): Promise<{ blob: Blob; filename: string }> {
-  const result = await apiClient.POST('/printing/render', {
-    body: {
+  const response = await api.printing.render.$post({
+    json: {
       resource: opts.resource,
       ids: opts.ids,
       templateId: opts.templateId,
       mode: opts.mode,
     },
-    parseAs: 'blob',
   })
-  if (!result.response.ok) {
-    const envelope = result.error as components['schemas']['ErrorEnvelope'] | undefined
-    if (envelope?.error) throw new APIError(envelope.error, result.response.status)
-    throw new AppError(`打印/导出失败: ${result.response.status}`, ['http_error'])
+  if (!response.ok) {
+    let envelope: ApiErrorBody | undefined
+    try {
+      envelope = (await response.json()) as ApiErrorBody
+    } catch {
+      // 非 JSON
+    }
+    if (envelope?.error) throw new APIError(envelope.error, response.status)
+    throw new AppError(`打印/导出失败: ${response.status}`, ['http_error'])
   }
 
-  const cd = result.response.headers.get('content-disposition') || ''
+  const cd = response.headers.get('content-disposition') || ''
   const m = /filename="([^"]+)"/.exec(cd)
-  const filename = m ? decodeURIComponent(m[1]) : opts.mode === 'print' ? 'print.pdf' : 'export.xlsx'
-  return { blob: result.data as unknown as Blob, filename }
+  const filename = m
+    ? decodeURIComponent(m[1]!)
+    : opts.mode === 'print'
+      ? 'print.pdf'
+      : 'export.xlsx'
+  const blob = await response.blob()
+  return { blob, filename }
 }
 
 export function downloadBlob(blob: Blob, filename: string) {

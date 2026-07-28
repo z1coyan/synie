@@ -8,16 +8,18 @@ const page = source('./setup.tsx')
 const setupFacade = source('../lib/setup.ts')
 
 describe('Setup 页面 REST 迁移契约', () => {
-  test('Setup facade 封装四个 Go REST 动作', () => {
+  test('Setup facade 封装四个 REST 动作（同源 /api/v1/setup/*）', () => {
+    expect(setupFacade).toContain('/api/v1/setup')
     for (const path of [
-      '/setup/first-user',
-      '/setup/currencies/seed-common',
-      '/setup/currencies/activate-base',
-      '/setup/complete',
+      '/first-user',
+      '/currencies/seed-common',
+      '/currencies/activate-base',
+      '/complete',
     ]) {
       expect(setupFacade).toContain(path)
     }
     expect(setupFacade).not.toContain('gqlFetch')
+    expect(setupFacade).not.toContain('openapi-fetch')
   })
 
   test('页面登录和资源操作复用 REST helper/client', () => {

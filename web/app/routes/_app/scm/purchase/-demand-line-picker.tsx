@@ -54,7 +54,7 @@ export function DemandLinePicker(props: {
       queryPurchaseOrderDemandLines({
         companyId: props.companyId!,
         isOutsourced: props.isOutsourced,
-      }).then((lines) => lines as PoolLine[]),
+      }).then((lines) => lines as unknown as PoolLine[]),
   })
 
   const pool = useMemo(() => poolQuery.data ?? [], [poolQuery.data])

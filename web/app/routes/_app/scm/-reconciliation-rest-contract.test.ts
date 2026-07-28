@@ -16,7 +16,7 @@ describe('供应链对账 REST 边界', () => {
 
     for (const source of [sales, purchase, defaults]) {
       expect(source).not.toContain('gqlFetch')
-      expect(source).not.toContain('/graphql')
+      expect(source).not.toContain('api.graphql')
     }
 
     for (const resource of [
@@ -31,10 +31,10 @@ describe('供应链对账 REST 边界', () => {
       expect(clients).toContain(`'${resource}'`)
     }
 
-    expect(clients).toContain("'/sales/reconciliations/{id}/confirm'")
-    expect(clients).toContain("'/sales/reconciliations/{id}/unconfirm'")
-    expect(clients).toContain("'/purchase/reconciliations/{id}/audit'")
-    expect(clients).toContain("'/purchase/reconciliations/{id}/void'")
+    expect(clients).toContain("api.sales.reconciliations[':id'].confirm")
+    expect(clients).toContain("api.sales.reconciliations[':id'].unconfirm")
+    expect(clients).toContain("api.purchase.reconciliations[':id'].audit")
+    expect(clients).toContain("api.purchase.reconciliations[':id'].void")
   })
 
   test('筛选与数量使用 REST 结构化 wire 形态', () => {

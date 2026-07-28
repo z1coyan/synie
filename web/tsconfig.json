@@ -6,12 +6,42 @@
     "target": "ES2022",
     "skipLibCheck": true,
     "strictNullChecks": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node", "bun"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node",
+      "bun"
+    ],
     "baseUrl": ".",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "paths": {
-      "~/*": ["./app/*"]
+      "~/*": [
+        "./app/*",
+        "../server/src/*"
+      ],
+      "@synie/shared": [
+        "../packages/shared/src/index.ts"
+      ],
+      "@synie/shared/*": [
+        "../packages/shared/src/*"
+      ],
+      "@synie/server": [
+        "../server/src/client.ts"
+      ],
+      "@synie/server/*": [
+        "../server/src/*"
+      ],
+      "@synie/server/client": [
+        "../server/src/client.ts"
+      ]
     }
   },
-  "include": ["app", "vite.config.ts"]
+  "include": [
+    "app",
+    "vite.config.ts"
+  ]
 }

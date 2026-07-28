@@ -28,8 +28,8 @@ describe('PR-2.18 系统操作面 REST 边界', () => {
   test('审计日志 Grid 与 Drawer 显式绑定只读 REST client', () => {
     expect(logs.match(/client=\{auditLogClient\}/g)).toHaveLength(2)
     expect(clients).toContain("id: 'rest:sysAuditLogs'")
-    expect(clients).toContain("apiClient.POST('/system/audit-logs/query'")
-    expect(clients).toContain("apiClient.GET('/system/audit-logs/{id}'")
+    expect(clients).toContain("api.system['audit-logs'].query.\$post")
+    expect(clients).toContain("api.system['audit-logs'][':id'].\$get")
     expect(clients).toContain('create: readOnly')
     expect(clients).toContain('update: readOnly')
   })
@@ -83,10 +83,10 @@ describe('PR-2.18 系统操作面 REST 边界', () => {
 
   test('Todo 列表、未读、已读与忽略全部经 REST', () => {
     for (const endpoint of [
-      "'/todos/query'",
-      "'/todos/unread-count'",
-      "'/todos/{id}/read'",
-      "'/todos/{id}/dismiss'",
+      "api.todos.query.\$post",
+      "api.todos['unread-count'].\$get",
+      "api.todos[':id'].read.\$post",
+      "api.todos[':id'].dismiss.\$post",
     ]) {
       expect(clients).toContain(endpoint)
     }

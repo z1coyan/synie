@@ -45,14 +45,14 @@ describe('PR-2.19 人力考勤与薪酬 REST 边界', () => {
   test('导入、重算、月汇总、工资与借款动作全部经 REST', () => {
     const clients = source('../../../lib/resources/hr-operations.ts')
     for (const endpoint of [
-      "'/hr/attendance-imports/{id}/import'",
-      "'/hr/attendance-days/recalc'",
-      "'/hr/attendance-days/month-summary'",
-      "'/hr/payrolls/{id}/refresh'",
-      "'/hr/payrolls/generate'",
-      "'/hr/payrolls/month-stats'",
-      "'/hr/payroll-payments/pay-remaining'",
-      "'/hr/employee-loans/balances'",
+      "api.hr['attendance-imports'][':id'].import",
+      "api.hr['attendance-days'].recalc",
+      "api.hr['attendance-days']['month-summary']",
+      "api.hr.payrolls[':id'].refresh",
+      "api.hr.payrolls.generate",
+      "api.hr.payrolls['month-stats']",
+      "api.hr['payroll-payments']['pay-remaining']",
+      "api.hr['employee-loans'].balances",
     ]) {
       expect(clients).toContain(endpoint)
     }

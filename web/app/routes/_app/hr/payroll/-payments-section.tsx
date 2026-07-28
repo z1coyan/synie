@@ -97,7 +97,7 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
                     <Table.Cell>{r.paidOn}</Table.Cell>
                     <Table.Cell>
                       <Chip size="sm" color={r.kind === 'NORMAL' ? 'success' : 'accent'}>
-                        {PAYMENT_KIND_LABELS[r.kind] ?? r.kind}
+                        {PAYMENT_KIND_LABELS[r.kind ?? ""] ?? r.kind}
                       </Chip>
                     </Table.Cell>
                     <Table.Cell className={`text-end ${Number(r.amount) < 0 ? 'text-danger' : ''}`}>

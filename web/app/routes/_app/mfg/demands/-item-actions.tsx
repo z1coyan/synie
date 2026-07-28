@@ -11,7 +11,7 @@ import {
 } from '@heroui/react'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import type { Row } from '~/components/synie-data-grid/types'
-import { apiClient, apiData } from '~/lib/api/client'
+import { apiData, api } from '~/lib/api/client'
 import {
   changeDemandItemFulfillment,
   completeDemandItem,
@@ -40,7 +40,7 @@ export function useMyPermissions() {
   return useQuery({
     queryKey: ['myPermissions'],
     queryFn: () =>
-      apiData(apiClient.GET('/auth/me')).then(
+      apiData<{ permissions: string[] }>(api.auth.me.$get()).then(
         (result) => new Set(result.permissions),
       ),
     staleTime: 60_000,

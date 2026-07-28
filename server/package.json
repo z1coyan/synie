@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/client.ts",
+    "./client": "./src/client.ts",
+    "./app": "./src/app.ts"
+  },
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",

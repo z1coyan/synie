@@ -1,11 +1,10 @@
-import type { components } from '../api/schema'
-import { apiClient, apiData } from '../api/client'
-import type { Row } from '~/components/synie-data-grid/types'
+import { apiData, api } from '../api/client'
+import type {Row, FilterState} from '~/components/synie-data-grid/types'
 import type { ResourceClient, ResourceQuery } from './types'
 import { gridMeta } from './meta'
 
-type EmployeeCreate = components['schemas']['EmployeeCreate']
-type EmployeeUpdate = components['schemas']['EmployeeUpdate']
+type EmployeeCreate = Record<string, unknown>
+type EmployeeUpdate = Record<string, unknown>
 
 function ensureSupportedQuery(input: ResourceQuery) {
   if (input.fixedFilter || input.extraFields?.length || input.joinFields) {
@@ -28,60 +27,53 @@ export const employeeClient: ResourceClient = {
 
   async meta() {
     return gridMeta(
-      await apiData(
-        apiClient.GET('/meta/resources/{name}', {
-          params: { path: { name: 'hrEmployees' } },
-        }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+          param: { name: 'hrEmployees' }}),
       ),
     )
   },
 
   async query(input) {
     ensureSupportedQuery(input)
-    const result = await apiData(
-      apiClient.POST('/hr/employees/query', {
-        body: {
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.hr.employees.query.$post({
+        json: {
           limit: input.limit,
           offset: input.offset,
           search: input.search || undefined,
           sort: input.sort ?? undefined,
-          filter: input.filter as components['schemas']['FilterState'],
-        },
-      }),
+          filter: input.filter as FilterState} }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
 
   async get(id) {
     return (await apiData(
-      apiClient.GET('/hr/employees/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr.employees[':id'].$get({
+        param: { id }}),
     )) as Row
   },
 
   async create(input) {
     return (await apiData(
-      apiClient.POST('/hr/employees', {
-        body: wireEmployeeInput(input) as EmployeeCreate,
-      }),
+      api.hr.employees.$post({
+        json: wireEmployeeInput(input) as never}),
     )) as Row
   },
 
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/hr/employees/{id}', {
-        params: { path: { id } },
-        body: wireEmployeeInput(input) as EmployeeUpdate,
-      }),
+      api.hr.employees[':id'].$patch({
+        param: { id },
+        json: wireEmployeeInput(input) as never}),
     )) as Row
   },
 
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/hr/employees/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr.employees[':id'].$delete({
+        param: { id }}),
     )
   },
 }

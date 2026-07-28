@@ -1,19 +1,44 @@
-import type { components } from '../api/schema'
-import { apiClient, apiData } from '../api/client'
-import type { Row } from '~/components/synie-data-grid/types'
+import { apiData, api } from '../api/client'
+import type {Row, FilterState} from '~/components/synie-data-grid/types'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
-export type MarketChartInstrument = components['schemas']['MarketChartInstrument']
-export type MarketPriceSeries = components['schemas']['MarketPriceSeries']
-export type MarketPriceSeriesItem = components['schemas']['MarketPriceSeriesItem']
-export type MarketRefreshResult = components['schemas']['MarketRefreshResult']
-export type MarketSeriesPriceKind = components['schemas']['MarketSeriesPriceKind']
+export interface MarketChartInstrument {
+  id: string
+  instrumentId: string
+  code: string
+  name: string
+  currencyId: string
+  unitId: string
+  currencyCode?: string | null
+  unitName?: string | null
+  defaultPriceKind: string
+}
+export interface MarketPriceSeriesItem {
+  id: string
+  instrumentId: string
+  code: string
+  name: string
+  currencyId?: string
+  unitId?: string
+  points: Array<{ observedAt: string; price: string }>
+}
+export interface MarketPriceSeries {
+  series: MarketPriceSeriesItem[]
+  priceKind: string
+  from?: string
+  to?: string
+}
+export interface MarketRefreshResult {
+  count: number
+  items: Array<{ code?: string; message?: string; status?: string }>
+}
+export type MarketSeriesPriceKind = string
 
-type MarketInstrumentCreate = components['schemas']['MarketInstrumentCreate']
-type MarketInstrumentUpdate = components['schemas']['MarketInstrumentUpdate']
-type MarketPricePointCreate = components['schemas']['MarketPricePointCreate']
-type MarketPriceKind = components['schemas']['MarketPriceKind']
+type MarketInstrumentCreate = Record<string, unknown>
+type MarketInstrumentUpdate = Record<string, unknown>
+type MarketPricePointCreate = Record<string, unknown>
+type MarketPriceKind = string
 
 function ensureSupportedQuery(resource: string, input: ResourceQuery) {
   if (input.fixedFilter || input.extraFields?.length || input.joinFields) {
@@ -27,12 +52,12 @@ function listBody(input: ResourceQuery) {
     offset: input.offset,
     search: input.search || undefined,
     sort: input.sort ?? undefined,
-    filter: input.filter as components['schemas']['FilterState'],
+    filter: input.filter as FilterState,
   }
 }
 
 function wirePriceKind(value: MarketSeriesPriceKind): MarketPriceKind {
-  return value.toUpperCase() as MarketPriceKind
+  return value.toUpperCase() as never
 }
 
 export const marketInstrumentClient: ResourceClient = {
@@ -40,46 +65,44 @@ export const marketInstrumentClient: ResourceClient = {
 
   async meta() {
     return gridMeta(
-      await apiData(
-        apiClient.GET('/meta/resources/{name}', {
-          params: { path: { name: 'basMarketInstruments' } },
-        }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+          param: { name: 'basMarketInstruments' }}),
       ),
     )
   },
 
   async query(input) {
     ensureSupportedQuery('行情品种', input)
-    const result = await apiData(
-      apiClient.POST('/base/market-instruments/query', { body: listBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.base['market-instruments'].query.$post({ json: listBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
 
   async get(id) {
     return (await apiData(
-      apiClient.GET('/base/market-instruments/{id}', { params: { path: { id } } }),
+      api.base['market-instruments'][':id'].$get({ param: { id } }),
     )) as Row
   },
 
   async create(input) {
     return (await apiData(
-      apiClient.POST('/base/market-instruments', { body: input as MarketInstrumentCreate }),
+      api.base['market-instruments'].$post({ json: input as never }),
     )) as Row
   },
 
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/base/market-instruments/{id}', {
-        params: { path: { id } },
-        body: input as MarketInstrumentUpdate,
-      }),
+      api.base['market-instruments'][':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
 
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/base/market-instruments/{id}', { params: { path: { id } } }),
+      api.base['market-instruments'][':id'].$delete({ param: { id } }),
     )
   },
 }
@@ -89,33 +112,32 @@ export const marketPricePointClient: ResourceClient = {
 
   async meta() {
     return gridMeta(
-      await apiData(
-        apiClient.GET('/meta/resources/{name}', {
-          params: { path: { name: 'basMarketPricePoints' } },
-        }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+          param: { name: 'basMarketPricePoints' }}),
       ),
     )
   },
 
   async query(input) {
     ensureSupportedQuery('行情价点', input)
-    const result = await apiData(
-      apiClient.POST('/base/market-price-points/query', { body: listBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.base['market-price-points'].query.$post({ json: listBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
 
   async get(id) {
     return (await apiData(
-      apiClient.GET('/base/market-price-points/{id}', { params: { path: { id } } }),
+      api.base['market-price-points'][':id'].$get({ param: { id } }),
     )) as Row
   },
 
   async create(input) {
     const { instrumentId, observedAt, price, priceKind, note } = input
-    const body = { instrumentId, observedAt, price, priceKind, note } as MarketPricePointCreate
+    const body = { instrumentId, observedAt, price, priceKind, note } as never
     return (await apiData(
-      apiClient.POST('/base/market-price-points', { body }),
+      api.base['market-price-points'].$post({ json: body }),
     )) as Row
   },
 
@@ -132,9 +154,8 @@ export const marketPricePointClient: ResourceClient = {
     await Promise.all(
       ids.map((id) =>
         apiData(
-          apiClient.POST('/base/market-price-points/{id}/void', {
-            params: { path: { id } },
-          }),
+          api.base['market-price-points'][':id'].void.$post({
+            param: { id }}),
         ),
       ),
     )
@@ -142,7 +163,9 @@ export const marketPricePointClient: ResourceClient = {
 }
 
 export function getMarketChartInstruments(): Promise<MarketChartInstrument[]> {
-  return apiData(apiClient.GET('/base/market-price-points/chart-instruments'))
+  return apiData<MarketChartInstrument[]>(
+    api.base['market-price-points']['chart-instruments'].$get(),
+  )
 }
 
 export function getMarketPriceSeries(input: {
@@ -151,15 +174,17 @@ export function getMarketPriceSeries(input: {
   from: string
   to: string
 }): Promise<MarketPriceSeries> {
-  return apiData(
-    apiClient.POST('/base/market-price-points/price-series', {
-      body: { ...input, priceKind: wirePriceKind(input.priceKind) },
+  return apiData<MarketPriceSeries>(
+    api.base['market-price-points']['price-series'].$post({
+      json: { ...input, priceKind: wirePriceKind(input.priceKind) } as never,
     }),
   )
 }
 
 export function refreshMarketPricePoints(
-  input: components['schemas']['MarketRefreshRequest'] = {},
+  input: Record<string, unknown> = {},
 ): Promise<MarketRefreshResult> {
-  return apiData(apiClient.POST('/base/market-price-points/refresh', { body: input }))
+  return apiData<MarketRefreshResult>(
+    api.base['market-price-points'].refresh.$post({ json: input as never }),
+  )
 }

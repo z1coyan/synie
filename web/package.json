@@ -7,13 +7,12 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "openapi": "openapi-typescript ../contracts/openapi/openapi.yaml -o app/lib/api/schema.d.ts",
     "check": "bun app/components/run-checks.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "e2e": "./e2e/run-smoke.sh",
-    "e2e:go": "playwright test --config=playwright.go.config.ts",
-    "e2e:test": "playwright test"
+    "e2e:test": "playwright test",
+    "e2e:api": "playwright test --config=playwright.api.config.ts"
   },
   "dependencies": {
     "@fontsource/noto-serif-sc": "^5.2.8",
@@ -38,7 +37,6 @@
     "framer-motion": "^12.42.2",
     "marked": ">=18.0.0",
     "motion": ">=12.12.0",
-    "openapi-fetch": "^0.17.0",
     "postcss": "^8.5.16",
     "react": "^19",
     "react-aria-components": ">=1.18.0",
@@ -52,7 +50,10 @@
     "streamdown": ">=2.5.0",
     "tailwind-merge": ">=3.4.0",
     "tailwind-variants": ">=3.2.0",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.3",
+    "@synie/server": "workspace:*",
+    "@synie/shared": "workspace:*",
+    "hono": "^4.10.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
@@ -62,7 +63,6 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^5.2.0",
-    "openapi-typescript": "^7.13.0",
     "typescript": "^5.5.0",
     "vite": "^7.3.0"
   },

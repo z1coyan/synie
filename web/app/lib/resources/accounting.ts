@@ -1,18 +1,38 @@
-import type { components } from '../api/schema'
-import { apiClient, apiData } from '../api/client'
+import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
-type FilterDocument = components['schemas']['FilterState']
-type GLJournalCreate = components['schemas']['GLJournalCreate']
-type GLJournalUpdate = components['schemas']['GLJournalUpdate']
-type GLJournalLineCreate = components['schemas']['GLJournalLineCreate']
-type GLJournalLineUpdate = components['schemas']['GLJournalLineUpdate']
+type FilterDocument = FilterState
+type GLJournalCreate = Record<string, unknown>
+type GLJournalUpdate = Record<string, unknown>
+type GLJournalLineCreate = Record<string, unknown>
+type GLJournalLineUpdate = Record<string, unknown>
 
-export type ARAPReport = components['schemas']['ARAPReport']
-export type ARAPReportRow = components['schemas']['ARAPReportRow']
-export type ARAPRoleAccount = components['schemas']['ARAPRoleAccount']
+export interface ARAPRoleAccount {
+  id: string
+  code: string
+  name: string
+  accountId?: string
+  accountCode?: string
+  accountName?: string
+}
+export interface ARAPBalances {
+  [key: string]: string
+}
+export interface ARAPReportRow {
+  partyType: string | null
+  partyId: string | null
+  partyLabel: string
+  balances: ARAPBalances
+  netReceivable: string
+  netPayable: string
+}
+export interface ARAPReport {
+  asOf: string
+  roleAccounts: Record<string, ARAPRoleAccount[]>
+  rows: ARAPReportRow[]
+}
 
 function queryBody(input: ResourceQuery) {
   const filter = {
@@ -30,10 +50,9 @@ function queryBody(input: ResourceQuery) {
 
 async function meta(resource: 'accGlEntries' | 'accGlJournals' | 'accGlJournalLines') {
   return gridMeta(
-    await apiData(
-      apiClient.GET('/meta/resources/{name}', {
-        params: { path: { name: resource } },
-      }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+        param: { name: resource }}),
     ),
   )
 }
@@ -60,15 +79,15 @@ export const glEntryClient: ResourceClient = {
   },
 
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/accounting/gl-entries/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.accounting['gl-entries'].query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
 
   async get(id) {
     return (await apiData(
-      apiClient.GET('/accounting/gl-entries/{id}', { params: { path: { id } } }),
+      api.accounting['gl-entries'][':id'].$get({ param: { id } }),
     )) as Row
   },
 
@@ -79,18 +98,16 @@ export const glEntryClient: ResourceClient = {
 
 export async function auditGlJournal(id: string, postingDate?: string) {
   return apiData(
-    apiClient.POST('/accounting/gl-journals/{id}/audit', {
-      params: { path: { id } },
-      body: postingDate ? { postingDate } : {},
-    }),
+    api.accounting['gl-journals'][':id'].audit.$post({
+      param: { id },
+      json: postingDate ? { postingDate } : {} }),
   )
 }
 
 export async function cancelGlJournal(id: string) {
   return apiData(
-    apiClient.POST('/accounting/gl-journals/{id}/cancel', {
-      params: { path: { id } },
-    }),
+    api.accounting['gl-journals'][':id'].cancel.$post({
+      param: { id }}),
   )
 }
 
@@ -102,36 +119,35 @@ export const glJournalClient: ResourceClient = {
   },
 
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/accounting/gl-journals/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.accounting['gl-journals'].query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
 
   async get(id) {
     return (await apiData(
-      apiClient.GET('/accounting/gl-journals/{id}', { params: { path: { id } } }),
+      api.accounting['gl-journals'][':id'].$get({ param: { id } }),
     )) as Row
   },
 
   async create(input) {
     return (await apiData(
-      apiClient.POST('/accounting/gl-journals', { body: input as GLJournalCreate }),
+      api.accounting['gl-journals'].$post({ json: input as never }),
     )) as Row
   },
 
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/accounting/gl-journals/{id}', {
-        params: { path: { id } },
-        body: input as GLJournalUpdate,
-      }),
+      api.accounting['gl-journals'][':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
 
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/accounting/gl-journals/{id}', { params: { path: { id } } }),
+      api.accounting['gl-journals'][':id'].$delete({ param: { id } }),
     )
   },
 
@@ -152,48 +168,44 @@ export const glJournalLineClient: ResourceClient = {
   },
 
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/accounting/gl-journal-lines/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.accounting['gl-journal-lines'].query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
 
   async get(id) {
     return (await apiData(
-      apiClient.GET('/accounting/gl-journal-lines/{id}', { params: { path: { id } } }),
+      api.accounting['gl-journal-lines'][':id'].$get({ param: { id } }),
     )) as Row
   },
 
   async create(input) {
     return (await apiData(
-      apiClient.POST('/accounting/gl-journal-lines', {
-        body: decimalInput(input) as GLJournalLineCreate,
-      }),
+      api.accounting['gl-journal-lines'].$post({
+        json: decimalInput(input) as never}),
     )) as Row
   },
 
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/accounting/gl-journal-lines/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input) as GLJournalLineUpdate,
-      }),
+      api.accounting['gl-journal-lines'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input) as never}),
     )) as Row
   },
 
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/accounting/gl-journal-lines/{id}', {
-        params: { path: { id } },
-      }),
+      api.accounting['gl-journal-lines'][':id'].$delete({
+        param: { id }}),
     )
   },
 }
 
 export function fetchARAPReport(companyId: string, asOf: string): Promise<ARAPReport> {
   return apiData(
-    apiClient.GET('/accounting/ar-ap-report', {
-      params: { query: { companyId, asOf } },
-    }),
+    api.accounting['ar-ap-report'].$get({
+      query: { companyId, asOf }}),
   )
 }

@@ -195,7 +195,7 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
       .then(([catalogResponse, permissionResponse]) => {
         if (cancelled) return
         const catalog = catalogResponse.groups as CatalogGroup[]
-        const rows = permissionResponse.rows as GrantedRow[]
+        const rows = permissionResponse.rows as unknown as GrantedRow[]
         setData({ roleId, catalog, rows })
         setChecked(initialChecked(catalog, rows))
         // 换角色后视图状态归零:搜索、选中域、"更多"展开行

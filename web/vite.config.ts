@@ -11,7 +11,7 @@ export default defineConfig({
     allowedHosts: ['home-n5pro', '.ts.net', 'home-macmini'],
     proxy: {
       '/api/v1': {
-        target: `http://localhost:${process.env.GO_API_PORT || 8080}`,
+        target: `http://localhost:${process.env.SYNIE_API_PORT || process.env.GO_API_PORT || 8080}`,
         changeOrigin: true
       }
     },

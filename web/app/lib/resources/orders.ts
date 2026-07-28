@@ -1,10 +1,9 @@
-import { apiClient, apiData } from '../api/client'
-import type { components } from '../api/schema'
+import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
-type FilterDocument = components['schemas']['FilterState']
+type FilterDocument = FilterState
 
 function queryBody(input: ResourceQuery) {
   const filter = {
@@ -22,10 +21,9 @@ function queryBody(input: ResourceQuery) {
 
 async function meta(resource: string) {
   return gridMeta(
-    await apiData(
-      apiClient.GET('/meta/resources/{name}', {
-        params: { path: { name: resource } },
-      }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+        param: { name: resource }}),
     ),
   )
 }
@@ -53,82 +51,74 @@ function resourceClient(
 
 export async function auditSalesOrder(id: string) {
   return apiData(
-    apiClient.POST('/sales/orders/{id}/audit', {
-      params: { path: { id } },
-    }),
+    api.sales.orders[':id'].audit.$post({
+      param: { id }}),
   )
 }
 
 export async function auditPurchaseOrder(id: string) {
   return apiData(
-    apiClient.POST('/purchase/orders/{id}/audit', {
-      params: { path: { id } },
-    }),
+    api.purchase.orders[':id'].audit.$post({
+      param: { id }}),
   )
 }
 
 async function closeSalesOrder(id: string) {
   return apiData(
-    apiClient.POST('/sales/orders/{id}/close', {
-      params: { path: { id } },
-    }),
+    api.sales.orders[':id'].close.$post({
+      param: { id }}),
   )
 }
 
 async function voidSalesOrder(id: string) {
   return apiData(
-    apiClient.POST('/sales/orders/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.sales.orders[':id'].void.$post({
+      param: { id }}),
   )
 }
 
 async function closePurchaseOrder(id: string) {
   return apiData(
-    apiClient.POST('/purchase/orders/{id}/close', {
-      params: { path: { id } },
-    }),
+    api.purchase.orders[':id'].close.$post({
+      param: { id }}),
   )
 }
 
 async function voidPurchaseOrder(id: string) {
   return apiData(
-    apiClient.POST('/purchase/orders/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.purchase.orders[':id'].void.$post({
+      param: { id }}),
   )
 }
 
 export const salesOrderClient = resourceClient('salOrders', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/sales/orders/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales.orders.query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/sales/orders/{id}', { params: { path: { id } } }),
+      api.sales.orders[':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/sales/orders', {
-        body: decimalInput(input, ['exchangeRate']) as never,
-      }),
+      api.sales.orders.$post({
+        json: decimalInput(input, ['exchangeRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/sales/orders/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['exchangeRate']) as never,
-      }),
+      api.sales.orders[':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['exchangeRate']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/sales/orders/{id}', { params: { path: { id } } }),
+      api.sales.orders[':id'].$delete({ param: { id } }),
     )
   },
   async action(key, ids) {
@@ -143,68 +133,64 @@ export const salesOrderClient = resourceClient('salOrders', {
 
 export const salesOrderItemClient = resourceClient('salOrderItems', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/sales/order-items/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales['order-items'].query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/sales/order-items/{id}', { params: { path: { id } } }),
+      api.sales['order-items'][':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/sales/order-items', {
-        body: decimalInput(input, ['qty', 'price', 'taxRate']) as never,
-      }),
+      api.sales['order-items'].$post({
+        json: decimalInput(input, ['qty', 'price', 'taxRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/sales/order-items/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['qty', 'price', 'taxRate']) as never,
-      }),
+      api.sales['order-items'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['qty', 'price', 'taxRate']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/sales/order-items/{id}', { params: { path: { id } } }),
+      api.sales['order-items'][':id'].$delete({ param: { id } }),
     )
   },
 })
 
 export const purchaseOrderClient = resourceClient('purOrders', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/purchase/orders/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.purchase.orders.query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/purchase/orders/{id}', { params: { path: { id } } }),
+      api.purchase.orders[':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/purchase/orders', {
-        body: decimalInput(input, ['exchangeRate']) as never,
-      }),
+      api.purchase.orders.$post({
+        json: decimalInput(input, ['exchangeRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/purchase/orders/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['exchangeRate']) as never,
-      }),
+      api.purchase.orders[':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['exchangeRate']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/purchase/orders/{id}', { params: { path: { id } } }),
+      api.purchase.orders[':id'].$delete({ param: { id } }),
     )
   },
   async action(key, ids) {
@@ -219,118 +205,104 @@ export const purchaseOrderClient = resourceClient('purOrders', {
 
 export const purchaseOrderItemClient = resourceClient('purOrderItems', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/purchase/order-items/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.purchase['order-items'].query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/purchase/order-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.purchase['order-items'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/purchase/order-items', {
-        body: decimalInput(input, ['qty', 'price', 'taxRate']) as never,
-      }),
+      api.purchase['order-items'].$post({
+        json: decimalInput(input, ['qty', 'price', 'taxRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/purchase/order-items/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['qty', 'price', 'taxRate']) as never,
-      }),
+      api.purchase['order-items'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['qty', 'price', 'taxRate']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/purchase/order-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.purchase['order-items'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
 
 export const purchaseOrderItemMaterialClient = resourceClient('purOrderItemMaterials', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/purchase/order-item-materials/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.purchase['order-item-materials'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/purchase/order-item-materials/{id}', {
-        params: { path: { id } },
-      }),
+      api.purchase['order-item-materials'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/purchase/order-item-materials', {
-        body: decimalInput(input, ['quantity']) as never,
-      }),
+      api.purchase['order-item-materials'].$post({
+        json: decimalInput(input, ['quantity']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/purchase/order-item-materials/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['quantity']) as never,
-      }),
+      api.purchase['order-item-materials'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['quantity']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/purchase/order-item-materials/{id}', {
-        params: { path: { id } },
-      }),
+      api.purchase['order-item-materials'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
 
 export const purchaseOrderItemByproductClient = resourceClient('purOrderItemByproducts', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/purchase/order-item-byproducts/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.purchase['order-item-byproducts'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/purchase/order-item-byproducts/{id}', {
-        params: { path: { id } },
-      }),
+      api.purchase['order-item-byproducts'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/purchase/order-item-byproducts', {
-        body: decimalInput(input, ['quantity']) as never,
-      }),
+      api.purchase['order-item-byproducts'].$post({
+        json: decimalInput(input, ['quantity']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/purchase/order-item-byproducts/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['quantity']) as never,
-      }),
+      api.purchase['order-item-byproducts'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['quantity']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/purchase/order-item-byproducts/{id}', {
-        params: { path: { id } },
-      }),
+      api.purchase['order-item-byproducts'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
@@ -340,35 +312,46 @@ export async function queryPurchaseOrderDemandLines(input: {
   isOutsourced: boolean
   search?: string
 }) {
-  const result = await apiData(
-    apiClient.POST('/purchase/order-demand-lines/query', {
-      body: { ...input, limit: 200 },
-    }),
+  const result = await apiData<{ count: number; results: Row[] }>(
+    api.purchase['order-demand-lines'].query.$post({
+      json: { ...input, limit: 200 }}),
   )
   return result.results
 }
 
 export async function expandPurchaseOrderBom(bomId: string, qty: unknown) {
-  return apiData(
-    apiClient.POST('/purchase/order-bom/expand', {
-      body: { bomId, qty: String(qty) },
-    }),
+  return apiData<{ materials: Array<Record<string, unknown>>; byproducts: Array<Record<string, unknown>> }>(
+    api.purchase['order-bom'].expand.$post({
+      json: { bomId, qty: String(qty) }}),
   )
 }
 
-export async function getSalesOrderHistory(orderId: string) {
-  const result = await apiData(
-    apiClient.GET('/sales/orders/{id}/history', {
-      params: { path: { id: orderId } },
+export interface OrderFlowHistoryRow {
+  flowType: string
+  voucherNo: string
+  voucherDate: string
+  status: string
+  materialCode?: string | null
+  materialName?: string | null
+  materialSpec?: string | null
+  customerPartNo?: string | null
+  unitName?: string | null
+  qty?: string | null
+}
+
+export async function getSalesOrderHistory(orderId: string): Promise<OrderFlowHistoryRow[]> {
+  const result = await apiData<{ results: OrderFlowHistoryRow[] }>(
+    api.sales.orders[':id'].history.$get({
+      param: { id: orderId },
     }),
   )
   return result.results
 }
 
-export async function getPurchaseOrderHistory(orderId: string) {
-  const result = await apiData(
-    apiClient.GET('/purchase/orders/{id}/history', {
-      params: { path: { id: orderId } },
+export async function getPurchaseOrderHistory(orderId: string): Promise<OrderFlowHistoryRow[]> {
+  const result = await apiData<{ results: OrderFlowHistoryRow[] }>(
+    api.purchase.orders[':id'].history.$get({
+      param: { id: orderId },
     }),
   )
   return result.results

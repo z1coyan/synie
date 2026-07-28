@@ -66,16 +66,16 @@ describe('PR-2.13 销售/采购报价 REST 迁移契约', () => {
 
   test('ResourceClient 覆盖两侧头行档 CRUD 与审核/作废', () => {
     for (const path of [
-      '/sales/quotations/query',
-      '/sales/quotations/{id}/audit',
-      '/sales/quotations/{id}/void',
-      '/sales/quotation-items/query',
-      '/sales/quotation-tiers/query',
-      '/purchase/quotations/query',
-      '/purchase/quotations/{id}/audit',
-      '/purchase/quotations/{id}/void',
-      '/purchase/quotation-items/query',
-      '/purchase/quotation-tiers/query',
+      "api.sales.quotations.query",
+      "api.sales.quotations[':id'].audit",
+      "api.sales.quotations[':id'].void",
+      "api.sales['quotation-items'].query",
+      "api.sales['quotation-tiers'].query",
+      "api.purchase.quotations.query",
+      "api.purchase.quotations[':id'].audit",
+      "api.purchase.quotations[':id'].void",
+      "api.purchase['quotation-items'].query",
+      "api.purchase['quotation-tiers'].query",
     ]) {
       expect(clients).toContain(path)
     }

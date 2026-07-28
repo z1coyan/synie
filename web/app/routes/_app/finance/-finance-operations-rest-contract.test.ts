@@ -63,22 +63,31 @@ describe('PR-2.20 财务业务操作 REST 边界', () => {
       'bill-transactions',
       'bill-holdings',
     ]) {
-      expect(client).toContain(`'/finance/${resource}/query'`)
-      expect(client).toContain(`'/finance/${resource}/{id}'`)
+      // bills is a valid JS identifier → api.finance.bills; hyphenated use brackets
+      const queryNeedle =
+        resource.includes('-')
+          ? `api.finance['${resource}'].query`
+          : `api.finance.${resource}.query`
+      const idNeedle =
+        resource.includes('-')
+          ? `api.finance['${resource}'][':id']`
+          : `api.finance.${resource}[':id']`
+      expect(client).toContain(queryNeedle)
+      expect(client).toContain(idNeedle)
     }
     for (const endpoint of [
-      "'/finance/bank-imports/{id}/import'",
-      "'/finance/bank-reconciliations/remaining'",
-      "'/finance/bank-reconciliations/quick-create'",
-      "'/finance/vat-invoices/{id}/audit'",
-      "'/finance/vat-invoices/{id}/void'",
-      "'/finance/vat-invoices/{id}/reverse'",
-      "'/finance/vat-invoices/ocr'",
-      "'/finance/expense-reports/{id}/audit'",
-      "'/finance/expense-reports/{id}/void'",
-      "'/finance/bill-transactions/{id}/audit'",
-      "'/finance/bill-transactions/{id}/void'",
-      "'/finance/bill-transactions/ocr'",
+      "api.finance['bank-imports'][':id'].import",
+      "api.finance['bank-reconciliations'].remaining",
+      "api.finance['bank-reconciliations']['quick-create']",
+      "api.finance['vat-invoices'][':id'].audit",
+      "api.finance['vat-invoices'][':id'].void",
+      "api.finance['vat-invoices'][':id'].reverse",
+      "api.finance['vat-invoices'].ocr",
+      "api.finance['expense-reports'][':id'].audit",
+      "api.finance['expense-reports'][':id'].void",
+      "api.finance['bill-transactions'][':id'].audit",
+      "api.finance['bill-transactions'][':id'].void",
+      "api.finance['bill-transactions'].ocr",
     ]) {
       expect(client).toContain(endpoint)
     }

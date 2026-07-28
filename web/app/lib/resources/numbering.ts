@@ -1,10 +1,10 @@
-import type { components } from '../api/schema'
-import { apiClient, apiData } from '../api/client'
+import type { ListQuery } from '@synie/shared'
+import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
-function queryBody(input: ResourceQuery): components['schemas']['ListQuery'] {
+function queryBody(input: ResourceQuery): ListQuery {
   return {
     limit: input.limit,
     offset: input.offset,
@@ -13,53 +13,60 @@ function queryBody(input: ResourceQuery): components['schemas']['ListQuery'] {
     filter: {
       ...(input.filter ?? {}),
       ...((input.fixedFilter ?? {}) as FilterState),
-    } as components['schemas']['FilterState'],
+    } as FilterState,
   }
 }
 
-export type NumberableResource = components['schemas']['NumberableResource']
-export type NumberableField = components['schemas']['NumberableField']
+export interface NumberableResource {
+  resource: string
+  label: string
+  prefix?: string
+  fields?: NumberableField[]
+}
+export interface NumberableField {
+  path: string
+  label: string
+  type: string
+  name?: string
+}
 
 export const numberingRuleClient: ResourceClient = {
   id: 'rest:sysNumberingRules',
   async meta() {
     return gridMeta(
-      await apiData(
-        apiClient.GET('/meta/resources/{name}', {
-          params: { path: { name: 'sysNumberingRules' } },
-        }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+          param: { name: 'sysNumberingRules' }}),
       ),
     )
   },
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/system/numbering/rules/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.system.numbering.rules.query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/system/numbering/rules/{id}', { params: { path: { id } } }),
+      api.system.numbering.rules[':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/system/numbering/rules', {
-        body: input as components['schemas']['NumberingRuleCreate'],
-      }),
+      api.system.numbering.rules.$post({
+        json: input as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/system/numbering/rules/{id}', {
-        params: { path: { id } },
-        body: input as components['schemas']['NumberingRuleUpdate'],
-      }),
+      api.system.numbering.rules[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/system/numbering/rules/{id}', { params: { path: { id } } }),
+      api.system.numbering.rules[':id'].$delete({ param: { id } }),
     )
   },
 }
@@ -68,22 +75,21 @@ export const numberingCounterClient: ResourceClient = {
   id: 'rest:sysNumberingCounters',
   async meta() {
     return gridMeta(
-      await apiData(
-        apiClient.GET('/meta/resources/{name}', {
-          params: { path: { name: 'sysNumberingCounters' } },
-        }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+          param: { name: 'sysNumberingCounters' }}),
       ),
     )
   },
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/system/numbering/counters/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.system.numbering.counters.query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/system/numbering/counters/{id}', { params: { path: { id } } }),
+      api.system.numbering.counters[':id'].$get({ param: { id } }),
     )) as Row
   },
   async create() {
@@ -91,10 +97,9 @@ export const numberingCounterClient: ResourceClient = {
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/system/numbering/counters/{id}', {
-        params: { path: { id } },
-        body: input as components['schemas']['NumberingCounterUpdate'],
-      }),
+      api.system.numbering.counters[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete() {
@@ -103,6 +108,8 @@ export const numberingCounterClient: ResourceClient = {
 }
 
 export async function listNumberableResources(): Promise<NumberableResource[]> {
-  const result = await apiData(apiClient.GET('/system/numbering/resources'))
+  const result = await apiData<{ resources: NumberableResource[] }>(
+    api.system.numbering.resources.$get(),
+  )
   return result.resources
 }

@@ -11,7 +11,7 @@
  *   E2E_ADMIN_PASSWORD     默认 synie-integration-admin-password(与各 *.go.e2e.ts 一致)
  */
 
-const apiBase = process.env.API_BASE ?? 'http://localhost:8080/api/v1'
+const apiBase = process.env.API_BASE ?? process.env.SYNIE_API_URL ?? 'http://localhost:8080/api/v1'
 const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
 const password = process.env.E2E_ADMIN_PASSWORD ?? 'synie-integration-admin-password'
 

@@ -1,33 +1,73 @@
-import { apiClient, apiData } from '../api/client'
-import type { components } from '../api/schema'
+import type { ListQuery } from '@synie/shared'
+import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
-type ListQuery = components['schemas']['ListQuery']
 type AttendanceCorrectionCreate =
-  components['schemas']['AttendanceCorrectionCreate']
+  Record<string, unknown>
 type AttendanceCorrectionUpdate =
-  components['schemas']['AttendanceCorrectionUpdate']
-type PayrollCreate = components['schemas']['PayrollCreate']
-type PayrollUpdate = components['schemas']['PayrollUpdate']
-type PayrollPaymentCreate = components['schemas']['PayrollPaymentCreate']
-type EmployeeLoanCreate = components['schemas']['EmployeeLoanCreate']
-type EmployeeLoanUpdate = components['schemas']['EmployeeLoanUpdate']
+  Record<string, unknown>
+type PayrollCreate = Record<string, unknown>
+type PayrollUpdate = Record<string, unknown>
+type PayrollPaymentCreate = Record<string, unknown>
+type EmployeeLoanCreate = Record<string, unknown>
+type EmployeeLoanUpdate = Record<string, unknown>
 
-export type AttendanceMonthSummary =
-  components['schemas']['AttendanceMonthSummary']
-export type PayrollMonthStats = components['schemas']['PayrollMonthStats']
-export type PayrollGenerationResult =
-  components['schemas']['PayrollGenerateResult']
-export type EmployeeLoanBalance =
-  components['schemas']['EmployeeLoanBalance']
-export type AttendanceImportRow = components['schemas']['AttendanceImport']
-export type PayrollPaymentRow = Omit<
-  components['schemas']['PayrollPayment'],
-  'kind'
-> & {
-  kind: components['schemas']['PayrollPaymentKind']
+export interface AttendanceMonthSummary {
+  employeeId: string
+  employeeCode: string | null
+  employeeName: string | null
+  days: number
+  missingDays: number
+  normalHours: string
+  overtimeHours: string
+  bonusWorkdays: string
+  workdays: string
+}
+export interface PayrollMonthStats {
+  count: number
+  pendingCount?: number
+  [key: string]: unknown
+}
+export interface PayrollGenerationResult {
+  created?: number
+  skipped?: number
+  [key: string]: unknown
+}
+export interface EmployeeLoanBalance {
+  employeeId: string
+  employeeCode?: string | null
+  employeeName?: string | null
+  borrowed?: string
+  repaid?: string
+  balance: string
+}
+export type AttendanceImportRow = Record<string, unknown> & {
+  id: string
+  status?: string
+  error?: string | null
+  totalRows?: number
+  unmatchedRows?: number
+  importedCount?: number
+  skippedExistingRows?: number
+  skippedUnmatchedRows?: number
+  autoCreatedCount?: number
+}
+export type PayrollPaymentKind = string
+export interface PayrollPaymentRow {
+  id: string
+  month: string | null
+  paidOn: string
+  amount: string
+  kind: PayrollPaymentKind
+  remarks: string | null
+  insertedAt: string
+  updatedAt: string
+  payrollId: string
+  employeeId: string | null
+  createdById: string | null
+  [key: string]: unknown
 }
 
 export type AttendanceImportExecution = Omit<
@@ -55,16 +95,15 @@ function queryBody(input: ResourceQuery): ListQuery {
     filter: {
       ...(input.filter ?? {}),
       ...((input.fixedFilter ?? {}) as FilterState),
-    } as components['schemas']['FilterState'],
+    } as FilterState,
   }
 }
 
 async function meta(resource: string) {
   return gridMeta(
-    await apiData(
-      apiClient.GET('/meta/resources/{name}', {
-        params: { path: { name: resource } },
-      }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+        param: { name: resource }}),
     ),
   )
 }
@@ -103,10 +142,9 @@ const punchWrite = unsupported('原始打卡')
 
 export const attendancePunchClient = resourceClient('hrAttendancePunches', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/hr/attendance-punches/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.hr['attendance-punches'].query.$post({
+        json: queryBody(input)}),
     )
     return {
       count: result.count,
@@ -115,9 +153,8 @@ export const attendancePunchClient = resourceClient('hrAttendancePunches', {
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/hr/attendance-punches/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr['attendance-punches'][':id'].$get({
+        param: { id }}),
     )) as unknown as Row
   },
   create: punchWrite,
@@ -129,10 +166,9 @@ export const attendancePunchClient = resourceClient('hrAttendancePunches', {
 
 export const attendanceImportClient = resourceClient('hrAttendanceImports', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/hr/attendance-imports/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.hr['attendance-imports'].query.$post({
+        json: queryBody(input)}),
     )
     return {
       count: result.count,
@@ -141,24 +177,21 @@ export const attendanceImportClient = resourceClient('hrAttendanceImports', {
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/hr/attendance-imports/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr['attendance-imports'][':id'].$get({
+        param: { id }}),
     )) as unknown as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/hr/attendance-imports', {
-        body: input as unknown as components['schemas']['AttendanceImportCreate'],
-      }),
+      api.hr['attendance-imports'].$post({
+        json: input as never}),
     )) as unknown as Row
   },
   update: unsupported('考勤导入批次'),
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/hr/attendance-imports/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr['attendance-imports'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
@@ -166,10 +199,9 @@ export const attendanceImportClient = resourceClient('hrAttendanceImports', {
 export async function createAttendanceImport(
   fileId: string,
 ): Promise<AttendanceImportRow> {
-  return apiData(
-    apiClient.POST('/hr/attendance-imports', {
-      body: { fileId },
-    }),
+  return apiData<AttendanceImportRow>(
+    api.hr['attendance-imports'].$post({
+      json: { fileId }}),
   )
 }
 
@@ -177,11 +209,10 @@ export async function importAttendanceImport(
   id: string,
   autoCreateEmployees: boolean,
 ): Promise<AttendanceImportExecution> {
-  const result = await apiData(
-    apiClient.POST('/hr/attendance-imports/{id}/import', {
-      params: { path: { id } },
-      body: { autoCreateEmployees },
-    }),
+  const result = await apiData<{ count?: number; results?: Row[]; resources?: unknown[] }>(
+    api.hr['attendance-imports'][':id'].import.$post({
+      param: { id },
+      json: { autoCreateEmployees }}),
   )
   return result as AttendanceImportExecution
 }
@@ -190,10 +221,9 @@ const dayWrite = unsupported('日考勤')
 
 export const attendanceDayClient = resourceClient('hrAttendanceDays', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/hr/attendance-days/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.hr['attendance-days'].query.$post({
+        json: queryBody(input)}),
     )
     return {
       count: result.count,
@@ -202,9 +232,8 @@ export const attendanceDayClient = resourceClient('hrAttendanceDays', {
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/hr/attendance-days/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr['attendance-days'][':id'].$get({
+        param: { id }}),
     )) as unknown as Row
   },
   create: dayWrite,
@@ -218,18 +247,17 @@ export async function recalcAttendanceDays(
   dateFrom: string,
   dateTo: string,
 ): Promise<number> {
-  const result = await apiData(
-    apiClient.POST('/hr/attendance-days/recalc', {
-      body: { dateFrom, dateTo },
-    }),
+  const result = await apiData<{ count?: number; results?: Row[]; resources?: unknown[] }>(
+    api.hr['attendance-days'].recalc.$post({
+      json: { dateFrom, dateTo }}),
   )
-  return result.count
+  return result.count ?? 0
 }
 
 export function fetchAttendanceMonthSummary(month: string) {
-  return apiData(
-    apiClient.GET('/hr/attendance-days/month-summary', {
-      params: { query: { month } },
+  return apiData<AttendanceMonthSummary[]>(
+    api.hr['attendance-days']['month-summary'].$get({
+      query: { month },
     }),
   )
 }
@@ -238,10 +266,9 @@ export const attendanceCorrectionClient = resourceClient(
   'hrAttendanceCorrections',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/hr/attendance-corrections/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.hr['attendance-corrections'].query.$post({
+          json: queryBody(input)}),
       )
       return {
         count: result.count,
@@ -250,31 +277,27 @@ export const attendanceCorrectionClient = resourceClient(
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/hr/attendance-corrections/{id}', {
-          params: { path: { id } },
-        }),
+        api.hr['attendance-corrections'][':id'].$get({
+          param: { id }}),
       )) as unknown as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/hr/attendance-corrections', {
-          body: input as unknown as AttendanceCorrectionCreate,
-        }),
+        api.hr['attendance-corrections'].$post({
+          json: input as never}),
       )) as unknown as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/hr/attendance-corrections/{id}', {
-          params: { path: { id } },
-          body: input as AttendanceCorrectionUpdate,
-        }),
+        api.hr['attendance-corrections'][':id'].$patch({
+          param: { id },
+          json: input as never}),
       )) as unknown as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/hr/attendance-corrections/{id}', {
-          params: { path: { id } },
-        }),
+        api.hr['attendance-corrections'][':id'].$delete({
+          param: { id }}),
       )
     },
   },
@@ -309,13 +332,13 @@ function payrollCreateInput(
   for (const field of ['attendanceDays', 'missingDays'] as const) {
     if (result[field] == null || result[field] === '') result[field] = 0
   }
-  return result as unknown as PayrollCreate
+  return result as unknown as never
 }
 
 export const payrollClient = resourceClient('hrPayrolls', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/hr/payrolls/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.hr.payrolls.query.$post({ json: queryBody(input) }),
     )
     return {
       count: result.count,
@@ -324,31 +347,27 @@ export const payrollClient = resourceClient('hrPayrolls', {
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/hr/payrolls/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr.payrolls[':id'].$get({
+        param: { id }}),
     )) as unknown as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/hr/payrolls', {
-        body: payrollCreateInput(input),
-      }),
+      api.hr.payrolls.$post({
+        json: payrollCreateInput(input) as never}),
     )) as unknown as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/hr/payrolls/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, payrollDecimals) as PayrollUpdate,
-      }),
+      api.hr.payrolls[':id'].$patch({
+        param: { id },
+        json: decimalInput(input, payrollDecimals) as never}),
     )) as unknown as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/hr/payrolls/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr.payrolls[':id'].$delete({
+        param: { id }}),
     )
   },
 })
@@ -362,18 +381,17 @@ export async function savePayroll(
 
 export function refreshPayroll(id: string) {
   return apiData(
-    apiClient.POST('/hr/payrolls/{id}/refresh', {
-      params: { path: { id } },
-    }),
+    api.hr.payrolls[':id'].refresh.$post({
+      param: { id }}),
   )
 }
 
 export function generatePayrolls(
   month: string,
 ): Promise<PayrollGenerationResult> {
-  return apiData(
-    apiClient.POST('/hr/payrolls/generate', {
-      body: { month },
+  return apiData<PayrollGenerationResult>(
+    api.hr.payrolls.generate.$post({
+      json: { month },
     }),
   )
 }
@@ -381,19 +399,18 @@ export function generatePayrolls(
 export function fetchPayrollMonthStats(
   month: string,
 ): Promise<PayrollMonthStats> {
-  return apiData(
-    apiClient.GET('/hr/payrolls/month-stats', {
-      params: { query: { month } },
+  return apiData<PayrollMonthStats>(
+    api.hr.payrolls['month-stats'].$get({
+      query: { month },
     }),
   )
 }
 
 export const payrollPaymentClient = resourceClient('hrPayrollPayments', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/hr/payroll-payments/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.hr['payroll-payments'].query.$post({
+        json: queryBody(input)}),
     )
     return {
       count: result.count,
@@ -402,24 +419,21 @@ export const payrollPaymentClient = resourceClient('hrPayrollPayments', {
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/hr/payroll-payments/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr['payroll-payments'][':id'].$get({
+        param: { id }}),
     )) as unknown as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/hr/payroll-payments', {
-        body: decimalInput(input, ['amount']) as unknown as PayrollPaymentCreate,
-      }),
+      api.hr['payroll-payments'].$post({
+        json: decimalInput(input, ['amount']) as never as unknown as never}),
     )) as unknown as Row
   },
   update: unsupported('工资发放记录'),
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/hr/payroll-payments/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr['payroll-payments'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
@@ -455,20 +469,18 @@ export function payRemainingPayroll(
   payrollId: string,
   paidOn: string,
   remarks?: string,
-) {
-  return apiData(
-    apiClient.POST('/hr/payroll-payments/pay-remaining', {
-      body: { payrollId, paidOn, remarks },
-    }),
+): Promise<PayrollGenerationResult> {
+  return apiData<PayrollGenerationResult>(
+    api.hr['payroll-payments']['pay-remaining'].$post({
+      json: { payrollId, paidOn, remarks }}),
   )
 }
 
 export const employeeLoanClient = resourceClient('hrEmployeeLoans', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/hr/employee-loans/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.hr['employee-loans'].query.$post({
+        json: queryBody(input)}),
     )
     return {
       count: result.count,
@@ -477,31 +489,27 @@ export const employeeLoanClient = resourceClient('hrEmployeeLoans', {
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/hr/employee-loans/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr['employee-loans'][':id'].$get({
+        param: { id }}),
     )) as unknown as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/hr/employee-loans', {
-        body: decimalInput(input, ['amount']) as unknown as EmployeeLoanCreate,
-      }),
+      api.hr['employee-loans'].$post({
+        json: decimalInput(input, ['amount']) as never as unknown as never}),
     )) as unknown as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/hr/employee-loans/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['amount']) as EmployeeLoanUpdate,
-      }),
+      api.hr['employee-loans'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['amount']) as never}),
     )) as unknown as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/hr/employee-loans/{id}', {
-        params: { path: { id } },
-      }),
+      api.hr['employee-loans'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
@@ -516,5 +524,5 @@ export async function saveEmployeeLoan(
 }
 
 export function fetchEmployeeLoanBalances(): Promise<EmployeeLoanBalance[]> {
-  return apiData(apiClient.GET('/hr/employee-loans/balances'))
+  return apiData(api.hr['employee-loans'].balances.$get())
 }

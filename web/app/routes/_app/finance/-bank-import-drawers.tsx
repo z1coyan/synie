@@ -214,12 +214,12 @@ export function FinanceBankImportDrawers(props: Props) {
             toast.danger('解析失败', {
               description: result.error ?? '请检查文件与模板配置',
             })
-          } else if (result.errorCount > 0) {
+          } else if ((result.errorCount ?? 0) > 0) {
             toast.warning(
-              `解析完成:共 ${result.itemCount} 行,${result.errorCount} 行有错误`,
+              `解析完成:共 ${(result.itemCount ?? 0)} 行,${(result.errorCount ?? 0)} 行有错误`,
             )
           } else {
-            toast.success(`解析完成:共 ${result.itemCount} 行,可以导入`)
+            toast.success(`解析完成:共 ${(result.itemCount ?? 0)} 行,可以导入`)
           }
         }}
       />

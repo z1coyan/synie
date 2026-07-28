@@ -1,6 +1,6 @@
 # Synie
 
-项目使用 TanStack Start + HeroUI + **Go OpenAPI REST**（openapi-fetch / ResourceClient）为产品技术栈。不引入 GraphQL client 或 codegen。
+项目使用 TanStack Start + HeroUI + **Bun/Hono REST**（`@synie/server` hono/client + ResourceClient）为产品技术栈。不引入 GraphQL / OpenAPI codegen。
 
 ## 项目守则
 
@@ -8,8 +8,8 @@
 - 所有请求均要进行错误处理，有合适的报错信息方便排查
 - 尽可能使用组件库已有的组件进行开发而不是自己使用html+tailwindcss搭建
 - 表单/筛选控件一律用 HeroUI(Pro) 现成组件（日期用 DatePicker/DateRangePicker、数值用 NumberField、下拉用 Select 等），不要包装浏览器原生 input；有已封装的业务组件时优先复用业务组件
-- 业务数据请求走 `~/lib/api`（OpenAPI）或 `~/lib/resources` registry；禁止新增 GraphQL / `gqlFetch` 路径
-- Vite 仅代理 `/api/v1` → Go；认证为 JWT（与旧 Phoenix.Token 不兼容，切流后须重新登录）
+- 业务数据请求走 `~/lib/api`（hono/client）或 `~/lib/resources` registry；禁止新增 GraphQL / `gqlFetch` / openapi-fetch 路径
+- Vite 仅代理 `/api/v1` → Bun server（`SYNIE_API_PORT`/`GO_API_PORT`，默认 8080）；认证为 JWT
 
 ## 业务数据页标准组件
 

@@ -4,7 +4,7 @@ import { Button, Checkbox, Modal, Spinner, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import { localRowId } from '~/components/synie-editable-table/editable'
 import type { Row } from '~/components/synie-data-grid/types'
-import { apiClient, apiData } from '~/lib/api/client'
+import { apiData, api } from '~/lib/api/client'
 import { salesOrderItemClient } from '~/lib/resources/orders'
 
 /**
@@ -95,9 +95,9 @@ export function SalesItemPicker(props: {
     queryKey: ['mfgSalesItemOccupancies', ids],
     enabled: open && ids.length > 0,
     queryFn: () =>
-      apiData(
-        apiClient.POST('/manufacturing/sales-item-occupancies', {
-          body: { salesOrderItemIds: ids },
+      apiData<{ results: unknown[] }>(
+        api.manufacturing['sales-item-occupancies'].$post({
+          json: { salesOrderItemIds: ids },
         }),
       ).then((result) => parseOccupancies(result.results)),
   })

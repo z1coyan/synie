@@ -1,13 +1,43 @@
-import type { components } from '../api/schema'
-import { apiClient, apiData } from '../api/client'
+import { api, apiData } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
 import { gridMeta } from './meta'
 import type { ResourceClient } from './types'
 
-export type SalesSetting = components['schemas']['SalesSetting']
-export type ManufacturingSetting = components['schemas']['ManufacturingSetting']
-export type AccountingSetting = components['schemas']['AccountingSetting']
-export type SystemSetting = components['schemas']['SystemSetting']
+export interface SalesSetting {
+  id: string
+  sampleItemMaxQty: number
+  deliveryOvershipRatio: string
+  spotItemMaxQty: number
+  receiptOverreceiveRatio: string
+  demandOverorderRatio: string
+  insertedAt: string
+  updatedAt: string
+}
+
+export interface ManufacturingSetting {
+  id: string
+  outputOverreceiveRatio: string
+  insertedAt: string
+  updatedAt: string
+}
+
+export interface AccountingSetting {
+  id: string
+  ocrAccessKeyId?: string | null
+  insertedAt: string
+  updatedAt: string
+}
+
+export interface SystemSetting {
+  id: string
+  marketFetchScheduleEnabled: boolean
+  marketFetchLastIntervalMinutes: 30 | 60 | 120
+  marketFetchSettlementEnabled: boolean
+  marketFetchLastRunAt?: string | null
+  marketFetchLastSummary?: string | null
+  insertedAt: string
+  updatedAt: string
+}
 
 type SingletonGetter = () => Promise<Row>
 type SingletonUpdater = (input: Record<string, unknown>) => Promise<Row>
@@ -21,9 +51,9 @@ function singletonClient(
     id: `rest:${resource}`,
     async meta() {
       return gridMeta(
-        await apiData(
-          apiClient.GET('/meta/resources/{name}', {
-            params: { path: { name: resource } },
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+            param: { name: resource },
           }),
         ),
       )
@@ -49,71 +79,61 @@ function singletonClient(
 }
 
 export function getSalesSetting() {
-  return apiData(apiClient.GET('/settings/supply-chain'))
+  return apiData<SalesSetting>(api.settings['supply-chain'].$get())
 }
 
-export function updateSalesSetting(input: components['schemas']['SalesSettingUpdate']) {
-  return apiData(apiClient.PATCH('/settings/supply-chain', { body: input }))
+export function updateSalesSetting(input: Record<string, unknown>) {
+  return apiData<SalesSetting>(api.settings['supply-chain'].$patch({ json: input as never }))
 }
 
 export function getManufacturingSetting() {
-  return apiData(apiClient.GET('/settings/production'))
+  return apiData<ManufacturingSetting>(api.settings.production.$get())
 }
 
-export function updateManufacturingSetting(
-  input: components['schemas']['ManufacturingSettingUpdate'],
-) {
-  return apiData(apiClient.PATCH('/settings/production', { body: input }))
+export function updateManufacturingSetting(input: Record<string, unknown>) {
+  return apiData<ManufacturingSetting>(api.settings.production.$patch({ json: input as never }))
 }
 
 export function getAccountingSetting() {
-  return apiData(apiClient.GET('/settings/finance'))
+  return apiData<AccountingSetting>(api.settings.finance.$get())
 }
 
-export function updateAccountingSetting(input: components['schemas']['AccountingSettingUpdate']) {
-  return apiData(apiClient.PATCH('/settings/finance', { body: input }))
+export function updateAccountingSetting(input: Record<string, unknown>) {
+  return apiData<AccountingSetting>(api.settings.finance.$patch({ json: input as never }))
 }
 
 export function getAccountingOCRConfigured() {
-  return apiData(apiClient.GET('/settings/finance/ocr-configured'))
+  return apiData<{ configured: boolean }>(api.settings.finance['ocr-configured'].$get())
 }
 
 export function getSystemSetting() {
-  return apiData(apiClient.GET('/settings/system'))
+  return apiData<SystemSetting>(api.settings.system.$get())
 }
 
-export function updateSystemSetting(input: components['schemas']['SystemSettingUpdate']) {
-  return apiData(apiClient.PATCH('/settings/system', { body: input }))
+export function updateSystemSetting(input: Record<string, unknown>) {
+  return apiData<SystemSetting>(api.settings.system.$patch({ json: input as never }))
 }
 
 export const salesSettingClient = singletonClient(
   'salSettings',
-  async () => (await getSalesSetting()) as Row,
-  async (input) =>
-    (await updateSalesSetting(input as components['schemas']['SalesSettingUpdate'])) as Row,
+  async () => (await getSalesSetting()) as unknown as Row,
+  async (input) => (await updateSalesSetting(input)) as unknown as Row,
 )
 
 export const manufacturingSettingClient = singletonClient(
   'mfgSettings',
-  async () => (await getManufacturingSetting()) as Row,
-  async (input) =>
-    (await updateManufacturingSetting(
-      input as components['schemas']['ManufacturingSettingUpdate'],
-    )) as Row,
+  async () => (await getManufacturingSetting()) as unknown as Row,
+  async (input) => (await updateManufacturingSetting(input)) as unknown as Row,
 )
 
 export const accountingSettingClient = singletonClient(
   'accSettings',
-  async () => (await getAccountingSetting()) as Row,
-  async (input) =>
-    (await updateAccountingSetting(
-      input as components['schemas']['AccountingSettingUpdate'],
-    )) as Row,
+  async () => (await getAccountingSetting()) as unknown as Row,
+  async (input) => (await updateAccountingSetting(input)) as unknown as Row,
 )
 
 export const systemSettingClient = singletonClient(
   'sysSettings',
-  async () => (await getSystemSetting()) as Row,
-  async (input) =>
-    (await updateSystemSetting(input as components['schemas']['SystemSettingUpdate'])) as Row,
+  async () => (await getSystemSetting()) as unknown as Row,
+  async (input) => (await updateSystemSetting(input)) as unknown as Row,
 )

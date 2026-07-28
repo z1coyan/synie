@@ -77,7 +77,7 @@ function InventoryPage() {
         materialId: materialId ?? undefined,
         hideZero: !showZero,
       }),
-    select: (data) => data.results as BalanceRow[],
+    select: (data) => data.results as unknown as BalanceRow[],
   })
 
   const rows = balance.data ?? []

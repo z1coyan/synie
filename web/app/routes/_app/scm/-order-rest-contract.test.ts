@@ -43,22 +43,22 @@ describe('PR-2.14 销售/采购订单 REST 迁移契约', () => {
 
   test('ResourceClient 覆盖六资源 CRUD、状态动作与三个专用读取端点', () => {
     for (const path of [
-      '/sales/orders/query',
-      '/sales/orders/{id}/audit',
-      '/sales/orders/{id}/close',
-      '/sales/orders/{id}/void',
-      '/sales/orders/{id}/history',
-      '/sales/order-items/query',
-      '/purchase/orders/query',
-      '/purchase/orders/{id}/audit',
-      '/purchase/orders/{id}/close',
-      '/purchase/orders/{id}/void',
-      '/purchase/orders/{id}/history',
-      '/purchase/order-items/query',
-      '/purchase/order-item-materials/query',
-      '/purchase/order-item-byproducts/query',
-      '/purchase/order-demand-lines/query',
-      '/purchase/order-bom/expand',
+      "api.sales.orders.query",
+      "api.sales.orders[':id'].audit",
+      "api.sales.orders[':id'].close",
+      "api.sales.orders[':id'].void",
+      "api.sales.orders[':id'].history",
+      "api.sales['order-items'].query",
+      "api.purchase.orders.query",
+      "api.purchase.orders[':id'].audit",
+      "api.purchase.orders[':id'].close",
+      "api.purchase.orders[':id'].void",
+      "api.purchase.orders[':id'].history",
+      "api.purchase['order-items'].query",
+      "api.purchase['order-item-materials'].query",
+      "api.purchase['order-item-byproducts'].query",
+      "api.purchase['order-demand-lines'].query",
+      "api.purchase['order-bom'].expand",
     ]) {
       expect(clients).toContain(path)
     }

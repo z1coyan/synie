@@ -222,7 +222,10 @@ function UsersPage() {
               roleIds: roleSel,
               companyIds: companySel,
             })
-            setOneTime({ username: data.user.username, password: data.password })
+            setOneTime({
+              username: String(data.user.username),
+              password: String(data.password ?? ''),
+            })
           } else {
             await userClient.update(drawer!.row!.id, {
               name: (values.name as string) || null,

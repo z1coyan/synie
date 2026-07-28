@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 #
-# Go 版一键 e2e(接替旧 Elixir 冒烟):重置演示库 → goose 迁移 → 起 Go 后端 →
+# Bun 版一键 e2e：重置演示库 → 迁移 → 起 Bun server →
 # 初始化向导示例路径(超管 + JT 公司 + 全业务链示例数据,见 e2e/provision-demo.ts)→
-# 起前端 → 跑 playwright.go.config.ts → 收摊。
+# 起前端 → 跑 playwright.api.config.ts → 收摊。
 #
 # 用法:
-#   web/e2e/run-smoke.sh                 # 默认 Go 8090 / 前端 3011
-#   GO_API_PORT=8090 FRONTEND_PORT=3020 web/e2e/run-smoke.sh
+#   web/e2e/run-smoke.sh                 # 默认 API 8090 / 前端 3011
+#   SYNIE_API_PORT=8090 FRONTEND_PORT=3020 web/e2e/run-smoke.sh
 #   KEEP_DB=1 web/e2e/run-smoke.sh       # 不重建库(要求库已迁移、已初始化、超管口令一致)
 #
 # 前置:
-#   - Go、Bun、Docker 在 PATH;compose postgres 可用(脚本会自动 docker compose up -d postgres)
+#   - Bun、Docker 在 PATH;compose postgres 可用(脚本会自动 docker compose up -d postgres)
 #   - web/node_modules 已装(含 @heroui-pro 真实包,需根 .env 的 HeroUI token)
 #   - Playwright 浏览器已装:`cd web && bunx playwright install chromium`
 set -euo pipefail
 
-# 默认 8090 避开主 checkout 的开发后端 8080;部分 spec 直连 Go API(GO_API_URL)
-GO_API_PORT="${GO_API_PORT:-8090}"
+# 默认 8090 避开主 checkout 的开发后端 8080;部分 spec 直连 API(SYNIE_API_URL)
+SYNIE_API_PORT="${SYNIE_API_PORT:-${GO_API_PORT:-8090}}"
 FRONTEND_PORT="${FRONTEND_PORT:-3011}"
 KEEP_DB="${KEEP_DB:-}"
 
@@ -26,7 +26,7 @@ PG_DB="${PG_DB:-synie}"
 DATABASE_URL="${DATABASE_URL:-postgres://synie:synie@localhost:5441/${PG_DB}?sslmode=disable}"
 
 ADMIN_USERNAME="${E2E_ADMIN_USERNAME:-admin}"
-# 必须与各 *.go.e2e.ts 的 E2E_ADMIN_PASSWORD 默认值一致
+# 必须与各 *.api.e2e.ts 的 E2E_ADMIN_PASSWORD 默认值一致
 ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-synie-integration-admin-password}"
 # 仅本脚本内使用,e2e 栈专用,不得复用到其他环境
 AUTH_SECRET="${AUTH_SECRET:-e2e-local-secret-do-not-use-elsewhere-32b}"
@@ -38,13 +38,11 @@ SERVER_DIR="$ROOT_DIR/server"
 
 SERVER_PID=""
 FRONTEND_PID=""
-BIN_DIR=""
 
 cleanup() {
   echo "[e2e] 收摊……"
   [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null || true
   [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
-  [ -n "$BIN_DIR" ] && rm -rf "$BIN_DIR"
   wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
@@ -81,24 +79,23 @@ if [ -z "$KEEP_DB" ]; then
              -c "CREATE DATABASE $PG_DB OWNER $PG_USER;"
 fi
 
-echo "[e2e] 执行 goose 迁移……"
-( cd "$SERVER_DIR" && DATABASE_URL="$DATABASE_URL" make migration-up )
+echo "[e2e] 执行 SQL 迁移……"
+( cd "$SERVER_DIR" && DATABASE_URL="$DATABASE_URL" bun db/migrate.ts )
 
-echo "[e2e] 构建并启动 Go 后端(:$GO_API_PORT)……"
-BIN_DIR="$(mktemp -d)"
-( cd "$SERVER_DIR" && go build -o "$BIN_DIR/synie" ./cmd/synie )
+echo "[e2e] 启动 Bun 后端(:$SYNIE_API_PORT)……"
 ( cd "$SERVER_DIR" && \
-  HTTP_ADDR=":$GO_API_PORT" \
+  PORT="$SYNIE_API_PORT" \
+  HOST="0.0.0.0" \
   DATABASE_URL="$DATABASE_URL" \
   AUTH_SECRET="$AUTH_SECRET" \
   AUTH_TOKEN_TTL=24h \
-  "$BIN_DIR/synie" ) &
+  bun src/index.ts ) &
 SERVER_PID=$!
-wait_for "http://localhost:$GO_API_PORT/api/v1/healthz" "Go 后端"
+wait_for "http://localhost:$SYNIE_API_PORT/api/v1/healthz" "Bun 后端"
 
 if [ -z "$KEEP_DB" ]; then
   echo "[e2e] 初始化向导(示例数据路径):建超管 + JT 公司 + 全业务链示例数据……"
-  API_BASE="http://localhost:$GO_API_PORT/api/v1" \
+  API_BASE="http://localhost:$SYNIE_API_PORT/api/v1" \
   E2E_ADMIN_USERNAME="$ADMIN_USERNAME" \
   E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
     bun "$SCRIPT_DIR/provision-demo.ts"
@@ -106,23 +103,24 @@ else
   echo "[e2e] KEEP_DB=1:跳过建库与初始化(要求 $ADMIN_USERNAME 已存在且口令一致)"
 fi
 
-# numbering.go.e2e 需要三个候选资源(inv.stock_count/mfg.operation/acc.gl_journal)中
-# 至少一个无启用规则;Go 基础种子三者全启用,这里停用 mfg.operation 对齐历史 dev 库状态
+# numbering.api.e2e 需要三个候选资源中至少一个无启用规则
 echo "[e2e] 停用 mfg.operation 编号规则(为 numbering spec 留候选)……"
 docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 \
-  -c "UPDATE sys_numbering_rule SET enabled = false WHERE resource = 'mfg.operation';"
+  -c "UPDATE sys_numbering_rule SET enabled = false WHERE resource = 'mfg.operation';" \
+  || true
 
-echo "[e2e] 起前端(vite --host --port $FRONTEND_PORT,代理 /api/v1 → :$GO_API_PORT)……"
-( cd "$WEB_DIR" && GO_API_PORT="$GO_API_PORT" bun run dev -- --host --port "$FRONTEND_PORT" ) &
+echo "[e2e] 起前端(vite --host --port $FRONTEND_PORT,代理 /api/v1 → :$SYNIE_API_PORT)……"
+( cd "$WEB_DIR" && SYNIE_API_PORT="$SYNIE_API_PORT" bun run dev -- --host --port "$FRONTEND_PORT" ) &
 FRONTEND_PID=$!
 wait_for "http://localhost:$FRONTEND_PORT/login" "前端"
 
-echo "[e2e] 跑 Playwright(Go 配置)……"
+echo "[e2e] 跑 Playwright(API 配置)……"
 cd "$WEB_DIR"
 E2E_BASE_URL="http://localhost:$FRONTEND_PORT" \
 E2E_ADMIN_USERNAME="$ADMIN_USERNAME" \
 E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-GO_API_URL="http://127.0.0.1:$GO_API_PORT/api/v1" \
-  bunx playwright test --config=playwright.go.config.ts "$@"
+SYNIE_API_URL="http://127.0.0.1:$SYNIE_API_PORT/api/v1" \
+GO_API_URL="http://127.0.0.1:$SYNIE_API_PORT/api/v1" \
+  bunx playwright test --config=playwright.api.config.ts "$@"
 
 echo "[e2e] 冒烟通过 ✅"

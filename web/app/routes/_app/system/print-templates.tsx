@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button, Label, ListBox, Select, toast } from '@heroui/react'
 import { DropZone } from '@heroui-pro/react'
-import { apiClient, apiData } from '~/lib/api/client'
+import { apiData, api } from '~/lib/api/client'
 import { uploadFile, downloadFile } from '~/lib/files'
 import { fetchFieldCatalog, type FieldCatalog } from '~/lib/print'
 import { fetchPermissionCatalog } from '~/lib/resources/iam'
@@ -91,8 +91,8 @@ function PrintTemplatesPage() {
       setCurrentFile(null)
       return
     }
-    void apiData(
-      apiClient.GET('/files/{id}/metadata', { params: { path: { id: currentFileId } } }),
+    void apiData<{ id: string; filename: string }>(
+      api.files[':id'].metadata.$get({ param: { id: currentFileId } }),
     )
       .then((file) => setCurrentFile({ id: file.id, filename: file.filename }))
       .catch((error: unknown) => {

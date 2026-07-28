@@ -98,7 +98,7 @@ function PayrollSlipsPage() {
     try {
       const result = await generatePayrolls(month)
       toast.success(`已生成 ${result.created} 张工资单`, {
-        description: result.skipped > 0 ? `${result.skipped} 张已存在,跳过不覆盖` : undefined,
+        description: (result.skipped ?? 0) > 0 ? `${(result.skipped ?? 0)} 张已存在,跳过不覆盖` : undefined,
       })
       invalidateAll()
     } catch (e) {
@@ -162,7 +162,7 @@ function PayrollSlipsPage() {
       {s && s.count > 0 && (
         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted">
           <span className="font-medium">{s.count} 张工资单</span>
-          <span className={s.pendingCount > 0 ? 'text-warning' : ''}>未发放 {s.pendingCount} 张</span>
+          <span className={(s.pendingCount ?? 0) > 0 ? 'text-warning' : ''}>未发放 {(s.pendingCount ?? 0)} 张</span>
           <span>应发合计 {formatAmount(s.payableTotal)}</span>
           <span className="font-medium">实发合计 {formatAmount(s.paidTotal)}</span>
         </div>

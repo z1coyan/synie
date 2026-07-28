@@ -1,50 +1,56 @@
-import { apiClient, apiData } from '../api/client'
-import type { components } from '../api/schema'
+import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
-type FilterDocument = components['schemas']['FilterState']
-type FulfillmentAuditRequest = components['schemas']['FulfillmentAuditRequest']
-type CompanyAccountDefaults = components['schemas']['CompanyAccountDefaults']
-type SalesDeliveryCreate = components['schemas']['SalesDeliveryCreate']
-type SalesDeliveryUpdate = components['schemas']['SalesDeliveryUpdate']
-type SalesDeliveryItemCreate = components['schemas']['SalesDeliveryItemCreate']
-type SalesDeliveryItemUpdate = components['schemas']['SalesDeliveryItemUpdate']
+type FilterDocument = FilterState
+type FulfillmentAuditRequest = Record<string, unknown>
+export interface CompanyAccountDefaults {
+  id: string
+  deliveryDebitAccountId: string | null
+  deliveryCreditAccountId: string | null
+  receiptDebitAccountId: string | null
+  receiptCreditAccountId: string | null
+  [key: string]: unknown
+}
+type SalesDeliveryCreate = Record<string, unknown>
+type SalesDeliveryUpdate = Record<string, unknown>
+type SalesDeliveryItemCreate = Record<string, unknown>
+type SalesDeliveryItemUpdate = Record<string, unknown>
 type SalesDeliveryPackLineCreate =
-  components['schemas']['SalesDeliveryPackLineCreate']
+  Record<string, unknown>
 type SalesDeliveryPackLineUpdate =
-  components['schemas']['SalesDeliveryPackLineUpdate']
-type PurchaseReceiptCreate = components['schemas']['PurchaseReceiptCreate']
-type PurchaseReceiptUpdate = components['schemas']['PurchaseReceiptUpdate']
+  Record<string, unknown>
+type PurchaseReceiptCreate = Record<string, unknown>
+type PurchaseReceiptUpdate = Record<string, unknown>
 type PurchaseReceiptItemCreate =
-  components['schemas']['PurchaseReceiptItemCreate']
+  Record<string, unknown>
 type PurchaseReceiptItemUpdate =
-  components['schemas']['PurchaseReceiptItemUpdate']
+  Record<string, unknown>
 type PurchaseOutsourcedIssueCreate =
-  components['schemas']['PurchaseOutsourcedIssueCreate']
+  Record<string, unknown>
 type PurchaseOutsourcedIssueUpdate =
-  components['schemas']['PurchaseOutsourcedIssueUpdate']
+  Record<string, unknown>
 type PurchaseOutsourcedIssueItemCreate =
-  components['schemas']['PurchaseOutsourcedIssueItemCreate']
+  Record<string, unknown>
 type PurchaseOutsourcedIssueItemUpdate =
-  components['schemas']['PurchaseOutsourcedIssueItemUpdate']
+  Record<string, unknown>
 type PurchaseOutsourcedReceiptCreate =
-  components['schemas']['PurchaseOutsourcedReceiptCreate']
+  Record<string, unknown>
 type PurchaseOutsourcedReceiptUpdate =
-  components['schemas']['PurchaseOutsourcedReceiptUpdate']
+  Record<string, unknown>
 type PurchaseOutsourcedReceiptItemCreate =
-  components['schemas']['PurchaseOutsourcedReceiptItemCreate']
+  Record<string, unknown>
 type PurchaseOutsourcedReceiptItemUpdate =
-  components['schemas']['PurchaseOutsourcedReceiptItemUpdate']
+  Record<string, unknown>
 type PurchaseOutsourcedReceiptItemMaterialCreate =
-  components['schemas']['PurchaseOutsourcedReceiptItemMaterialCreate']
+  Record<string, unknown>
 type PurchaseOutsourcedReceiptItemMaterialUpdate =
-  components['schemas']['PurchaseOutsourcedReceiptItemMaterialUpdate']
+  Record<string, unknown>
 type PurchaseOutsourcedReceiptItemByproductCreate =
-  components['schemas']['PurchaseOutsourcedReceiptItemByproductCreate']
+  Record<string, unknown>
 type PurchaseOutsourcedReceiptItemByproductUpdate =
-  components['schemas']['PurchaseOutsourcedReceiptItemByproductUpdate']
+  Record<string, unknown>
 
 function queryBody(input: ResourceQuery) {
   const filter = {
@@ -62,10 +68,9 @@ function queryBody(input: ResourceQuery) {
 
 async function meta(resource: string) {
   return gridMeta(
-    await apiData(
-      apiClient.GET('/meta/resources/{name}', {
-        params: { path: { name: resource } },
-      }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+        param: { name: resource }}),
     ),
   )
 }
@@ -98,9 +103,9 @@ export async function fetchSalesCompanyAccountDefaults(
   companyId: string,
 ): Promise<CompanyAccountDefaults | null> {
   try {
-    return await apiData(
-      apiClient.GET('/sales/company-account-defaults/by-company/{companyId}', {
-        params: { path: { companyId } },
+    return await apiData<CompanyAccountDefaults>(
+      api.sales['company-account-defaults']['by-company'][':companyId'].$get({
+        param: { companyId },
       }),
     )
   } catch {
@@ -110,112 +115,82 @@ export async function fetchSalesCompanyAccountDefaults(
 
 export async function auditSalesDelivery(
   id: string,
-  input?: FulfillmentAuditRequest,
+  _input?: FulfillmentAuditRequest,
 ) {
-  return apiData(
-    apiClient.POST('/sales/deliveries/{id}/audit', {
-      params: { path: { id } },
-      body: input,
-    }),
-  )
+  return apiData(api.sales.deliveries[':id'].audit.$post({ param: { id } }))
 }
 
 export async function voidSalesDelivery(id: string) {
-  return apiData(
-    apiClient.POST('/sales/deliveries/{id}/void', {
-      params: { path: { id } },
-    }),
-  )
+  return apiData(api.sales.deliveries[':id'].void.$post({ param: { id } }))
 }
 
 export async function auditPurchaseReceipt(
   id: string,
-  input?: FulfillmentAuditRequest,
+  _input?: FulfillmentAuditRequest,
 ) {
-  return apiData(
-    apiClient.POST('/purchase/receipts/{id}/audit', {
-      params: { path: { id } },
-      body: input,
-    }),
-  )
+  return apiData(api.purchase.receipts[':id'].audit.$post({ param: { id } }))
 }
 
 export async function voidPurchaseReceipt(id: string) {
-  return apiData(
-    apiClient.POST('/purchase/receipts/{id}/void', {
-      params: { path: { id } },
-    }),
-  )
+  return apiData(api.purchase.receipts[':id'].void.$post({ param: { id } }))
 }
 
 export async function auditPurchaseOutsourcedIssue(id: string) {
   return apiData(
-    apiClient.POST('/purchase/outsourced-issues/{id}/audit', {
-      params: { path: { id } },
-    }),
+    api.purchase['outsourced-issues'][':id'].audit.$post({ param: { id } }),
   )
 }
 
 export async function voidPurchaseOutsourcedIssue(id: string) {
   return apiData(
-    apiClient.POST('/purchase/outsourced-issues/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.purchase['outsourced-issues'][':id'].void.$post({ param: { id } }),
   )
 }
 
 export async function auditPurchaseOutsourcedReceipt(
   id: string,
-  input?: FulfillmentAuditRequest,
+  _input?: FulfillmentAuditRequest,
 ) {
   return apiData(
-    apiClient.POST('/purchase/outsourced-receipts/{id}/audit', {
-      params: { path: { id } },
-      body: input,
-    }),
+    api.purchase['outsourced-receipts'][':id'].audit.$post({ param: { id } }),
   )
 }
 
 export async function voidPurchaseOutsourcedReceipt(id: string) {
   return apiData(
-    apiClient.POST('/purchase/outsourced-receipts/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.purchase['outsourced-receipts'][':id'].void.$post({ param: { id } }),
   )
 }
 
 export const salesDeliveryClient = resourceClient('salDeliveries', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/sales/deliveries/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales.deliveries.query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/sales/deliveries/{id}', { params: { path: { id } } }),
+      api.sales.deliveries[':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/sales/deliveries', {
-        body: input as SalesDeliveryCreate,
-      }),
+      api.sales.deliveries.$post({
+        json: input as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/sales/deliveries/{id}', {
-        params: { path: { id } },
-        body: input as SalesDeliveryUpdate,
-      }),
+      api.sales.deliveries[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/sales/deliveries/{id}', {
-        params: { path: { id } },
-      }),
+      api.sales.deliveries[':id'].$delete({
+        param: { id }}),
     )
   },
   async action(key, ids) {
@@ -229,118 +204,104 @@ export const salesDeliveryClient = resourceClient('salDeliveries', {
 
 export const salesDeliveryItemClient = resourceClient('salDeliveryItems', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/sales/delivery-items/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales['delivery-items'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/sales/delivery-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.sales['delivery-items'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/sales/delivery-items', {
-        body: decimalInput(input, ['qty']) as SalesDeliveryItemCreate,
-      }),
+      api.sales['delivery-items'].$post({
+        json: decimalInput(input, ['qty']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/sales/delivery-items/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['qty']) as SalesDeliveryItemUpdate,
-      }),
+      api.sales['delivery-items'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['qty']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/sales/delivery-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.sales['delivery-items'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
 
 export const salesDeliveryPackLineClient = resourceClient('salDeliveryPackLines', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/sales/delivery-pack-lines/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales['delivery-pack-lines'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/sales/delivery-pack-lines/{id}', {
-        params: { path: { id } },
-      }),
+      api.sales['delivery-pack-lines'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/sales/delivery-pack-lines', {
-        body: decimalInput(input, ['qty']) as SalesDeliveryPackLineCreate,
-      }),
+      api.sales['delivery-pack-lines'].$post({
+        json: decimalInput(input, ['qty']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/sales/delivery-pack-lines/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['qty']) as SalesDeliveryPackLineUpdate,
-      }),
+      api.sales['delivery-pack-lines'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['qty']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/sales/delivery-pack-lines/{id}', {
-        params: { path: { id } },
-      }),
+      api.sales['delivery-pack-lines'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
 
 export const purchaseReceiptClient = resourceClient('purReceipts', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/purchase/receipts/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.purchase.receipts.query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/purchase/receipts/{id}', {
-        params: { path: { id } },
-      }),
+      api.purchase.receipts[':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/purchase/receipts', {
-        body: input as PurchaseReceiptCreate,
-      }),
+      api.purchase.receipts.$post({
+        json: input as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/purchase/receipts/{id}', {
-        params: { path: { id } },
-        body: input as PurchaseReceiptUpdate,
-      }),
+      api.purchase.receipts[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/purchase/receipts/{id}', {
-        params: { path: { id } },
-      }),
+      api.purchase.receipts[':id'].$delete({
+        param: { id }}),
     )
   },
   async action(key, ids) {
@@ -354,40 +315,35 @@ export const purchaseReceiptClient = resourceClient('purReceipts', {
 
 export const purchaseReceiptItemClient = resourceClient('purReceiptItems', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/purchase/receipt-items/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.purchase['receipt-items'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/purchase/receipt-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.purchase['receipt-items'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/purchase/receipt-items', {
-        body: decimalInput(input, ['qty']) as PurchaseReceiptItemCreate,
-      }),
+      api.purchase['receipt-items'].$post({
+        json: decimalInput(input, ['qty']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/purchase/receipt-items/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['qty']) as PurchaseReceiptItemUpdate,
-      }),
+      api.purchase['receipt-items'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['qty']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/purchase/receipt-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.purchase['receipt-items'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
@@ -396,40 +352,35 @@ export const purchaseOutsourcedIssueClient = resourceClient(
   'purOutsourcedIssues',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/purchase/outsourced-issues/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.purchase['outsourced-issues'].query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/purchase/outsourced-issues/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-issues'][':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/purchase/outsourced-issues', {
-          body: input as PurchaseOutsourcedIssueCreate,
-        }),
+        api.purchase['outsourced-issues'].$post({
+          json: input as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/purchase/outsourced-issues/{id}', {
-          params: { path: { id } },
-          body: input as PurchaseOutsourcedIssueUpdate,
-        }),
+        api.purchase['outsourced-issues'][':id'].$patch({
+          param: { id },
+          json: input as never}),
       )) as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/purchase/outsourced-issues/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-issues'][':id'].$delete({
+          param: { id }}),
       )
     },
     async action(key, ids) {
@@ -446,44 +397,39 @@ export const purchaseOutsourcedIssueItemClient = resourceClient(
   'purOutsourcedIssueItems',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/purchase/outsourced-issue-items/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.purchase['outsourced-issue-items'].query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/purchase/outsourced-issue-items/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-issue-items'][':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/purchase/outsourced-issue-items', {
-          body: decimalInput(input, [
+        api.purchase['outsourced-issue-items'].$post({
+          json: decimalInput(input, [
             'qty',
-          ]) as PurchaseOutsourcedIssueItemCreate,
-        }),
+          ]) as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/purchase/outsourced-issue-items/{id}', {
-          params: { path: { id } },
-          body: decimalInput(input, [
+        api.purchase['outsourced-issue-items'][':id'].$patch({
+          param: { id },
+          json: decimalInput(input, [
             'qty',
-          ]) as PurchaseOutsourcedIssueItemUpdate,
-        }),
+          ]) as never}),
       )) as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/purchase/outsourced-issue-items/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-issue-items'][':id'].$delete({
+          param: { id }}),
       )
     },
   },
@@ -493,40 +439,35 @@ export const purchaseOutsourcedReceiptClient = resourceClient(
   'purOutsourcedReceipts',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/purchase/outsourced-receipts/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.purchase['outsourced-receipts'].query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/purchase/outsourced-receipts/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-receipts'][':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/purchase/outsourced-receipts', {
-          body: input as PurchaseOutsourcedReceiptCreate,
-        }),
+        api.purchase['outsourced-receipts'].$post({
+          json: input as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/purchase/outsourced-receipts/{id}', {
-          params: { path: { id } },
-          body: input as PurchaseOutsourcedReceiptUpdate,
-        }),
+        api.purchase['outsourced-receipts'][':id'].$patch({
+          param: { id },
+          json: input as never}),
       )) as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/purchase/outsourced-receipts/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-receipts'][':id'].$delete({
+          param: { id }}),
       )
     },
     async action(key, ids) {
@@ -543,44 +484,39 @@ export const purchaseOutsourcedReceiptItemClient = resourceClient(
   'purOutsourcedReceiptItems',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/purchase/outsourced-receipt-items/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.purchase['outsourced-receipt-items'].query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/purchase/outsourced-receipt-items/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-receipt-items'][':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/purchase/outsourced-receipt-items', {
-          body: decimalInput(input, [
+        api.purchase['outsourced-receipt-items'].$post({
+          json: decimalInput(input, [
             'qty',
-          ]) as PurchaseOutsourcedReceiptItemCreate,
-        }),
+          ]) as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/purchase/outsourced-receipt-items/{id}', {
-          params: { path: { id } },
-          body: decimalInput(input, [
+        api.purchase['outsourced-receipt-items'][':id'].$patch({
+          param: { id },
+          json: decimalInput(input, [
             'qty',
-          ]) as PurchaseOutsourcedReceiptItemUpdate,
-        }),
+          ]) as never}),
       )) as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/purchase/outsourced-receipt-items/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-receipt-items'][':id'].$delete({
+          param: { id }}),
       )
     },
   },
@@ -590,44 +526,39 @@ export const purchaseOutsourcedReceiptItemMaterialClient = resourceClient(
   'purOutsourcedReceiptItemMaterials',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/purchase/outsourced-receipt-item-materials/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.purchase['outsourced-receipt-item-materials'].query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/purchase/outsourced-receipt-item-materials/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-receipt-item-materials'][':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/purchase/outsourced-receipt-item-materials', {
-          body: decimalInput(input, [
+        api.purchase['outsourced-receipt-item-materials'].$post({
+          json: decimalInput(input, [
             'qty',
-          ]) as PurchaseOutsourcedReceiptItemMaterialCreate,
-        }),
+          ]) as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/purchase/outsourced-receipt-item-materials/{id}', {
-          params: { path: { id } },
-          body: decimalInput(input, [
+        api.purchase['outsourced-receipt-item-materials'][':id'].$patch({
+          param: { id },
+          json: decimalInput(input, [
             'qty',
-          ]) as PurchaseOutsourcedReceiptItemMaterialUpdate,
-        }),
+          ]) as never}),
       )) as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/purchase/outsourced-receipt-item-materials/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-receipt-item-materials'][':id'].$delete({
+          param: { id }}),
       )
     },
   },
@@ -637,44 +568,39 @@ export const purchaseOutsourcedReceiptItemByproductClient = resourceClient(
   'purOutsourcedReceiptItemByproducts',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/purchase/outsourced-receipt-item-byproducts/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.purchase['outsourced-receipt-item-byproducts'].query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/purchase/outsourced-receipt-item-byproducts/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-receipt-item-byproducts'][':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/purchase/outsourced-receipt-item-byproducts', {
-          body: decimalInput(input, [
+        api.purchase['outsourced-receipt-item-byproducts'].$post({
+          json: decimalInput(input, [
             'qty',
-          ]) as PurchaseOutsourcedReceiptItemByproductCreate,
-        }),
+          ]) as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/purchase/outsourced-receipt-item-byproducts/{id}', {
-          params: { path: { id } },
-          body: decimalInput(input, [
+        api.purchase['outsourced-receipt-item-byproducts'][':id'].$patch({
+          param: { id },
+          json: decimalInput(input, [
             'qty',
-          ]) as PurchaseOutsourcedReceiptItemByproductUpdate,
-        }),
+          ]) as never}),
       )) as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/purchase/outsourced-receipt-item-byproducts/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['outsourced-receipt-item-byproducts'][':id'].$delete({
+          param: { id }}),
       )
     },
   },

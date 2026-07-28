@@ -1,11 +1,10 @@
-import type { components } from '../api/schema'
-import { apiClient, apiData } from '../api/client'
-import type { Row } from '~/components/synie-data-grid/types'
+import { apiData, api } from '../api/client'
+import type {Row, FilterState} from '~/components/synie-data-grid/types'
 import type { ResourceClient, ResourceQuery } from './types'
 import { gridMeta } from './meta'
 
-type CustomerCreate = components['schemas']['CustomerCreate']
-type CustomerUpdate = components['schemas']['CustomerUpdate']
+type CustomerCreate = Record<string, unknown>
+type CustomerUpdate = Record<string, unknown>
 
 function ensureSupportedQuery(input: ResourceQuery) {
   if (input.fixedFilter || input.extraFields?.length || input.joinFields) {
@@ -18,60 +17,53 @@ export const customerClient: ResourceClient = {
 
   async meta() {
     return gridMeta(
-      await apiData(
-        apiClient.GET('/meta/resources/{name}', {
-          params: { path: { name: 'salCustomers' } },
-        }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+          param: { name: 'salCustomers' }}),
       ),
     )
   },
 
   async query(input) {
     ensureSupportedQuery(input)
-    const result = await apiData(
-      apiClient.POST('/sales/customers/query', {
-        body: {
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales.customers.query.$post({
+        json: {
           limit: input.limit,
           offset: input.offset,
           search: input.search || undefined,
           sort: input.sort ?? undefined,
-          filter: input.filter as components['schemas']['FilterState'],
-        },
-      }),
+          filter: input.filter as FilterState} }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
 
   async get(id) {
     return (await apiData(
-      apiClient.GET('/sales/customers/{id}', {
-        params: { path: { id } },
-      }),
+      api.sales.customers[':id'].$get({
+        param: { id }}),
     )) as Row
   },
 
   async create(input) {
     return (await apiData(
-      apiClient.POST('/sales/customers', {
-        body: input as CustomerCreate,
-      }),
+      api.sales.customers.$post({
+        json: input as never}),
     )) as Row
   },
 
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/sales/customers/{id}', {
-        params: { path: { id } },
-        body: input as CustomerUpdate,
-      }),
+      api.sales.customers[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
 
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/sales/customers/{id}', {
-        params: { path: { id } },
-      }),
+      api.sales.customers[':id'].$delete({
+        param: { id }}),
     )
   },
 }

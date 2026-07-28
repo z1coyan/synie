@@ -38,15 +38,15 @@ describe('PR-2.12 财务页面 REST 迁移契约', () => {
 
   test('accounting client 覆盖只读分录、头行 CRUD、审核、取消与报表路径', () => {
     for (const path of [
-      '/accounting/gl-entries/query',
-      '/accounting/gl-entries/{id}',
-      '/accounting/gl-journals/query',
-      '/accounting/gl-journals/{id}',
-      '/accounting/gl-journals/{id}/audit',
-      '/accounting/gl-journals/{id}/cancel',
-      '/accounting/gl-journal-lines/query',
-      '/accounting/gl-journal-lines/{id}',
-      '/accounting/ar-ap-report',
+      "api.accounting['gl-entries'].query",
+      "api.accounting['gl-entries'][':id']",
+      "api.accounting['gl-journals'].query",
+      "api.accounting['gl-journals'][':id']",
+      "api.accounting['gl-journals'][':id'].audit",
+      "api.accounting['gl-journals'][':id'].cancel",
+      "api.accounting['gl-journal-lines'].query",
+      "api.accounting['gl-journal-lines'][':id']",
+      "api.accounting['ar-ap-report']",
     ]) {
       expect(accounting).toContain(path)
     }

@@ -1,6 +1,6 @@
 # 17 web 切 hono/client + Resource Client 改造
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 06, 07, 08, 09, 10, 11, 12, 13, 14, 15
 
 ## 范围

@@ -1,16 +1,15 @@
-import type { components } from '../api/schema'
-import { apiClient, apiData } from '../api/client'
+import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
-type FilterDocument = components['schemas']['FilterState']
-type QuotationCreate = components['schemas']['QuotationCreate']
-type QuotationUpdate = components['schemas']['QuotationUpdate']
-type QuotationItemCreate = components['schemas']['QuotationItemCreate']
-type QuotationItemUpdate = components['schemas']['QuotationItemUpdate']
-type QuotationTierCreate = components['schemas']['QuotationTierCreate']
-type QuotationTierUpdate = components['schemas']['QuotationTierUpdate']
+type FilterDocument = FilterState
+type QuotationCreate = Record<string, unknown>
+type QuotationUpdate = Record<string, unknown>
+type QuotationItemCreate = Record<string, unknown>
+type QuotationItemUpdate = Record<string, unknown>
+type QuotationTierCreate = Record<string, unknown>
+type QuotationTierUpdate = Record<string, unknown>
 
 function queryBody(input: ResourceQuery) {
   const filter = {
@@ -28,10 +27,9 @@ function queryBody(input: ResourceQuery) {
 
 async function meta(resource: string) {
   return gridMeta(
-    await apiData(
-      apiClient.GET('/meta/resources/{name}', {
-        params: { path: { name: resource } },
-      }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+        param: { name: resource }}),
     ),
   )
 }
@@ -71,64 +69,59 @@ function resourceClient(
 
 export async function auditSalesQuotation(id: string) {
   return apiData(
-    apiClient.POST('/sales/quotations/{id}/audit', {
-      params: { path: { id } },
-    }),
+    api.sales.quotations[':id'].audit.$post({
+      param: { id }}),
   )
 }
 
 export async function voidSalesQuotation(id: string) {
   return apiData(
-    apiClient.POST('/sales/quotations/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.sales.quotations[':id'].void.$post({
+      param: { id }}),
   )
 }
 
 export async function auditPurchaseQuotation(id: string) {
   return apiData(
-    apiClient.POST('/purchase/quotations/{id}/audit', {
-      params: { path: { id } },
-    }),
+    api.purchase.quotations[':id'].audit.$post({
+      param: { id }}),
   )
 }
 
 export async function voidPurchaseQuotation(id: string) {
   return apiData(
-    apiClient.POST('/purchase/quotations/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.purchase.quotations[':id'].void.$post({
+      param: { id }}),
   )
 }
 
 export const salesQuotationClient = resourceClient('salQuotations', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/sales/quotations/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales.quotations.query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/sales/quotations/{id}', { params: { path: { id } } }),
+      api.sales.quotations[':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/sales/quotations', { body: input as QuotationCreate }),
+      api.sales.quotations.$post({ json: input as never }),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/sales/quotations/{id}', {
-        params: { path: { id } },
-        body: input as QuotationUpdate,
-      }),
+      api.sales.quotations[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/sales/quotations/{id}', { params: { path: { id } } }),
+      api.sales.quotations[':id'].$delete({ param: { id } }),
     )
   },
   async action(key, ids) {
@@ -142,100 +135,95 @@ export const salesQuotationClient = resourceClient('salQuotations', {
 
 export const salesQuotationItemClient = resourceClient('salQuotationItems', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/sales/quotation-items/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales['quotation-items'].query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/sales/quotation-items/{id}', { params: { path: { id } } }),
+      api.sales['quotation-items'][':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/sales/quotation-items', {
-        body: decimalInput(input, ['price', 'taxRate']) as QuotationItemCreate,
-      }),
+      api.sales['quotation-items'].$post({
+        json: decimalInput(input, ['price', 'taxRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/sales/quotation-items/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['price', 'taxRate']) as QuotationItemUpdate,
-      }),
+      api.sales['quotation-items'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['price', 'taxRate']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/sales/quotation-items/{id}', { params: { path: { id } } }),
+      api.sales['quotation-items'][':id'].$delete({ param: { id } }),
     )
   },
 })
 
 export const salesQuotationTierClient = resourceClient('salQuotationTiers', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/sales/quotation-tiers/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales['quotation-tiers'].query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/sales/quotation-tiers/{id}', { params: { path: { id } } }),
+      api.sales['quotation-tiers'][':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/sales/quotation-tiers', {
-        body: decimalInput(input, ['minQty', 'price']) as QuotationTierCreate,
-      }),
+      api.sales['quotation-tiers'].$post({
+        json: decimalInput(input, ['minQty', 'price']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/sales/quotation-tiers/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['minQty', 'price']) as QuotationTierUpdate,
-      }),
+      api.sales['quotation-tiers'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['minQty', 'price']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/sales/quotation-tiers/{id}', { params: { path: { id } } }),
+      api.sales['quotation-tiers'][':id'].$delete({ param: { id } }),
     )
   },
 })
 
 export const purchaseQuotationClient = resourceClient('purQuotations', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/purchase/quotations/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.purchase.quotations.query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/purchase/quotations/{id}', { params: { path: { id } } }),
+      api.purchase.quotations[':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/purchase/quotations', { body: input as QuotationCreate }),
+      api.purchase.quotations.$post({ json: input as never }),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/purchase/quotations/{id}', {
-        params: { path: { id } },
-        body: input as QuotationUpdate,
-      }),
+      api.purchase.quotations[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/purchase/quotations/{id}', { params: { path: { id } } }),
+      api.purchase.quotations[':id'].$delete({ param: { id } }),
     )
   },
   async action(key, ids) {
@@ -249,68 +237,64 @@ export const purchaseQuotationClient = resourceClient('purQuotations', {
 
 export const purchaseQuotationItemClient = resourceClient('purQuotationItems', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/purchase/quotation-items/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.purchase['quotation-items'].query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/purchase/quotation-items/{id}', { params: { path: { id } } }),
+      api.purchase['quotation-items'][':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/purchase/quotation-items', {
-        body: decimalInput(input, ['price', 'taxRate']) as QuotationItemCreate,
-      }),
+      api.purchase['quotation-items'].$post({
+        json: decimalInput(input, ['price', 'taxRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/purchase/quotation-items/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['price', 'taxRate']) as QuotationItemUpdate,
-      }),
+      api.purchase['quotation-items'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['price', 'taxRate']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/purchase/quotation-items/{id}', { params: { path: { id } } }),
+      api.purchase['quotation-items'][':id'].$delete({ param: { id } }),
     )
   },
 })
 
 export const purchaseQuotationTierClient = resourceClient('purQuotationTiers', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/purchase/quotation-tiers/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.purchase['quotation-tiers'].query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/purchase/quotation-tiers/{id}', { params: { path: { id } } }),
+      api.purchase['quotation-tiers'][':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/purchase/quotation-tiers', {
-        body: decimalInput(input, ['minQty', 'price']) as QuotationTierCreate,
-      }),
+      api.purchase['quotation-tiers'].$post({
+        json: decimalInput(input, ['minQty', 'price']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/purchase/quotation-tiers/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['minQty', 'price']) as QuotationTierUpdate,
-      }),
+      api.purchase['quotation-tiers'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['minQty', 'price']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/purchase/quotation-tiers/{id}', { params: { path: { id } } }),
+      api.purchase['quotation-tiers'][':id'].$delete({ param: { id } }),
     )
   },
 })

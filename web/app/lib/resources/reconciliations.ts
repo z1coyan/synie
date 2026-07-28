@@ -1,10 +1,9 @@
-import { apiClient, apiData } from '../api/client'
-import type { components } from '../api/schema'
+import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
-type FilterDocument = components['schemas']['FilterState']
+type FilterDocument = FilterState
 
 function queryBody(input: ResourceQuery) {
   return {
@@ -21,10 +20,9 @@ function queryBody(input: ResourceQuery) {
 
 async function meta(resource: string) {
   return gridMeta(
-    await apiData(
-      apiClient.GET('/meta/resources/{name}', {
-        params: { path: { name: resource } },
-      }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+        param: { name: resource }}),
     ),
   )
 }
@@ -56,29 +54,25 @@ async function salesAction(
 ) {
   if (action === 'confirm') {
     return apiData(
-      apiClient.POST('/sales/reconciliations/{id}/confirm', {
-        params: { path: { id } },
-      }),
+      api.sales.reconciliations[':id'].confirm.$post({
+        param: { id }}),
     )
   }
   if (action === 'unconfirm') {
     return apiData(
-      apiClient.POST('/sales/reconciliations/{id}/unconfirm', {
-        params: { path: { id } },
-      }),
+      api.sales.reconciliations[':id'].unconfirm.$post({
+        param: { id }}),
     )
   }
   if (action === 'audit') {
     return apiData(
-      apiClient.POST('/sales/reconciliations/{id}/audit', {
-        params: { path: { id } },
-      }),
+      api.sales.reconciliations[':id'].audit.$post({
+        param: { id }}),
     )
   }
   return apiData(
-    apiClient.POST('/sales/reconciliations/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.sales.reconciliations[':id'].void.$post({
+      param: { id }}),
   )
 }
 
@@ -88,64 +82,57 @@ async function purchaseAction(
 ) {
   if (action === 'confirm') {
     return apiData(
-      apiClient.POST('/purchase/reconciliations/{id}/confirm', {
-        params: { path: { id } },
-      }),
+      api.purchase.reconciliations[':id'].confirm.$post({
+        param: { id }}),
     )
   }
   if (action === 'unconfirm') {
     return apiData(
-      apiClient.POST('/purchase/reconciliations/{id}/unconfirm', {
-        params: { path: { id } },
-      }),
+      api.purchase.reconciliations[':id'].unconfirm.$post({
+        param: { id }}),
     )
   }
   if (action === 'audit') {
     return apiData(
-      apiClient.POST('/purchase/reconciliations/{id}/audit', {
-        params: { path: { id } },
-      }),
+      api.purchase.reconciliations[':id'].audit.$post({
+        param: { id }}),
     )
   }
   return apiData(
-    apiClient.POST('/purchase/reconciliations/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.purchase.reconciliations[':id'].void.$post({
+      param: { id }}),
   )
 }
 
 export const salesReconciliationClient = resourceClient('salReconciliations', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/sales/reconciliations/query', { body: queryBody(input) }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales.reconciliations.query.$post({ json: queryBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/sales/reconciliations/{id}', {
-        params: { path: { id } },
-      }),
+      api.sales.reconciliations[':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/sales/reconciliations', { body: input as never }),
+      api.sales.reconciliations.$post({ json: input as never }),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/sales/reconciliations/{id}', {
-        params: { path: { id } },
-        body: input as never,
-      }),
+      api.sales.reconciliations[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/sales/reconciliations/{id}', {
-        params: { path: { id } },
-      }),
+      api.sales.reconciliations[':id'].$delete({
+        param: { id }}),
     )
   },
   async action(key, ids) {
@@ -165,40 +152,35 @@ export const salesReconciliationItemClient = resourceClient(
   'salReconciliationItems',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/sales/reconciliation-items/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.sales['reconciliation-items'].query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/sales/reconciliation-items/{id}', {
-          params: { path: { id } },
-        }),
+        api.sales['reconciliation-items'][':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/sales/reconciliation-items', {
-          body: decimalInput(input, ['qty']) as never,
-        }),
+        api.sales['reconciliation-items'].$post({
+          json: decimalInput(input, ['qty']) as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/sales/reconciliation-items/{id}', {
-          params: { path: { id } },
-          body: decimalInput(input, ['qty']) as never,
-        }),
+        api.sales['reconciliation-items'][':id'].$patch({
+          param: { id },
+          json: decimalInput(input, ['qty']) as never}),
       )) as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/sales/reconciliation-items/{id}', {
-          params: { path: { id } },
-        }),
+        api.sales['reconciliation-items'][':id'].$delete({
+          param: { id }}),
       )
     },
   },
@@ -208,38 +190,34 @@ export const purchaseReconciliationClient = resourceClient(
   'purReconciliations',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/purchase/reconciliations/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.purchase.reconciliations.query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/purchase/reconciliations/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase.reconciliations[':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/purchase/reconciliations', { body: input as never }),
+        api.purchase.reconciliations.$post({ json: input as never }),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/purchase/reconciliations/{id}', {
-          params: { path: { id } },
-          body: input as never,
-        }),
+        api.purchase.reconciliations[':id'].$patch({
+          param: { id },
+          json: input as never}),
       )) as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/purchase/reconciliations/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase.reconciliations[':id'].$delete({
+          param: { id }}),
       )
     },
     async action(key, ids) {
@@ -260,40 +238,35 @@ export const purchaseReconciliationItemClient = resourceClient(
   'purReconciliationItems',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/purchase/reconciliation-items/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.purchase['reconciliation-items'].query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/purchase/reconciliation-items/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['reconciliation-items'][':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/purchase/reconciliation-items', {
-          body: decimalInput(input, ['qty']) as never,
-        }),
+        api.purchase['reconciliation-items'].$post({
+          json: decimalInput(input, ['qty']) as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/purchase/reconciliation-items/{id}', {
-          params: { path: { id } },
-          body: decimalInput(input, ['qty']) as never,
-        }),
+        api.purchase['reconciliation-items'][':id'].$patch({
+          param: { id },
+          json: decimalInput(input, ['qty']) as never}),
       )) as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/purchase/reconciliation-items/{id}', {
-          params: { path: { id } },
-        }),
+        api.purchase['reconciliation-items'][':id'].$delete({
+          param: { id }}),
       )
     },
   },
@@ -303,33 +276,29 @@ export const companyAccountDefaultClient = resourceClient(
   'salCompanyAccountDefaults',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/sales/company-account-defaults/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.sales['company-account-defaults'].query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/sales/company-account-defaults/{id}', {
-          params: { path: { id } },
-        }),
+        api.sales['company-account-defaults'][':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/sales/company-account-defaults', {
-          body: input as never,
-        }),
+        api.sales['company-account-defaults'].$post({
+          json: input as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/sales/company-account-defaults/{id}', {
-          params: { path: { id } },
-          body: input as never,
-        }),
+        api.sales['company-account-defaults'][':id'].$patch({
+          param: { id },
+          json: input as never}),
       )) as Row
     },
     async delete() {
@@ -340,18 +309,16 @@ export const companyAccountDefaultClient = resourceClient(
 
 export const orderFlowItemClient = resourceClient('scmOrderFlowItems', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/scm/order-flow-items/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.scm['order-flow-items'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/scm/order-flow-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.scm['order-flow-items'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create() {

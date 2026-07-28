@@ -1,10 +1,9 @@
-import { apiClient, apiData } from '../api/client'
-import type { components } from '../api/schema'
+import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
-type FilterDocument = components['schemas']['FilterState']
+type FilterDocument = FilterState
 
 function queryBody(input: ResourceQuery) {
   const filter = {
@@ -22,10 +21,9 @@ function queryBody(input: ResourceQuery) {
 
 async function meta(resource: string) {
   return gridMeta(
-    await apiData(
-      apiClient.GET('/meta/resources/{name}', {
-        params: { path: { name: resource } },
-      }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+        param: { name: resource }}),
     ),
   )
 }
@@ -56,42 +54,37 @@ function resourceClient(
 
 export async function applyRouteTemplate(id: string, templateId: string) {
   return apiData(
-    apiClient.POST('/manufacturing/boms/{id}/apply-route-template', {
-      params: { path: { id } },
-      body: { templateId },
-    }),
+    api.manufacturing.boms[':id']['apply-route-template'].$post({
+      param: { id },
+      json: { templateId }}),
   )
 }
 
 export async function confirmDemand(id: string) {
   return apiData(
-    apiClient.POST('/manufacturing/demands/{id}/confirm', {
-      params: { path: { id } },
-    }),
+    api.manufacturing.demands[':id'].confirm.$post({
+      param: { id }}),
   )
 }
 
 export async function closeDemand(id: string) {
   return apiData(
-    apiClient.POST('/manufacturing/demands/{id}/close', {
-      params: { path: { id } },
-    }),
+    api.manufacturing.demands[':id'].close.$post({
+      param: { id }}),
   )
 }
 
 export async function voidDemand(id: string) {
   return apiData(
-    apiClient.POST('/manufacturing/demands/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.manufacturing.demands[':id'].void.$post({
+      param: { id }}),
   )
 }
 
 export async function completeDemandItem(id: string) {
   return apiData(
-    apiClient.POST('/manufacturing/demand-items/{id}/complete', {
-      params: { path: { id } },
-    }),
+    api.manufacturing['demand-items'][':id'].complete.$post({
+      param: { id }}),
   )
 }
 
@@ -100,111 +93,98 @@ export async function changeDemandItemFulfillment(
   fulfillmentMethod: string,
 ) {
   return apiData(
-    apiClient.POST('/manufacturing/demand-items/{id}/fulfillment', {
-      params: { path: { id } },
-      body: { fulfillmentMethod } as never,
-    }),
+    api.manufacturing['demand-items'][':id'].fulfillment.$post({
+      param: { id },
+      json: { fulfillmentMethod } as never}),
   )
 }
 
 export async function voidWorkOrder(id: string) {
   return apiData(
-    apiClient.POST('/manufacturing/work-orders/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.manufacturing['work-orders'][':id'].void.$post({
+      param: { id }}),
   )
 }
 
 export async function auditOutput(id: string) {
   return apiData(
-    apiClient.POST('/manufacturing/outputs/{id}/audit', {
-      params: { path: { id } },
-    }),
+    api.manufacturing.outputs[':id'].audit.$post({
+      param: { id }}),
   )
 }
 
 export async function voidOutput(id: string) {
   return apiData(
-    apiClient.POST('/manufacturing/outputs/{id}/void', {
-      params: { path: { id } },
-    }),
+    api.manufacturing.outputs[':id'].void.$post({
+      param: { id }}),
   )
 }
 
 export const operationClient = resourceClient('mfgOperations', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/operations/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing.operations.query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/operations/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing.operations[':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/operations', { body: input as never }),
+      api.manufacturing.operations.$post({ json: input as never }),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/operations/{id}', {
-        params: { path: { id } },
-        body: input as never,
-      }),
+      api.manufacturing.operations[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/operations/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing.operations[':id'].$delete({
+        param: { id }}),
     )
   },
 })
 
 export const processTemplateClient = resourceClient('mfgProcessTemplates', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/process-templates/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing['process-templates'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/process-templates/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['process-templates'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/process-templates', {
-        body: input as never,
-      }),
+      api.manufacturing['process-templates'].$post({
+        json: input as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/process-templates/{id}', {
-        params: { path: { id } },
-        body: input as never,
-      }),
+      api.manufacturing['process-templates'][':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/process-templates/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['process-templates'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
@@ -213,40 +193,35 @@ export const processTemplateItemClient = resourceClient(
   'mfgProcessTemplateItems',
   {
     async query(input) {
-      const result = await apiData(
-        apiClient.POST('/manufacturing/process-template-items/query', {
-          body: queryBody(input),
-        }),
+      const result = await apiData<{ count: number; results: Row[] }>(
+        api.manufacturing['process-template-items'].query.$post({
+          json: queryBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
     async get(id) {
       return (await apiData(
-        apiClient.GET('/manufacturing/process-template-items/{id}', {
-          params: { path: { id } },
-        }),
+        api.manufacturing['process-template-items'][':id'].$get({
+          param: { id }}),
       )) as Row
     },
     async create(input) {
       return (await apiData(
-        apiClient.POST('/manufacturing/process-template-items', {
-          body: input as never,
-        }),
+        api.manufacturing['process-template-items'].$post({
+          json: input as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
-        apiClient.PATCH('/manufacturing/process-template-items/{id}', {
-          params: { path: { id } },
-          body: input as never,
-        }),
+        api.manufacturing['process-template-items'][':id'].$patch({
+          param: { id },
+          json: input as never}),
       )) as Row
     },
     async delete(id) {
       await apiData<void>(
-        apiClient.DELETE('/manufacturing/process-template-items/{id}', {
-          params: { path: { id } },
-        }),
+        api.manufacturing['process-template-items'][':id'].$delete({
+          param: { id }}),
       )
     },
   },
@@ -254,196 +229,173 @@ export const processTemplateItemClient = resourceClient(
 
 export const bomClient = resourceClient('mfgBoms', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/boms/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing.boms.query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/boms/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing.boms[':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/boms', { body: input as never }),
+      api.manufacturing.boms.$post({ json: input as never }),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/boms/{id}', {
-        params: { path: { id } },
-        body: input as never,
-      }),
+      api.manufacturing.boms[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/boms/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing.boms[':id'].$delete({
+        param: { id }}),
     )
   },
 })
 
 export const bomComponentClient = resourceClient('mfgBomComponents', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/bom-components/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing['bom-components'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/bom-components/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['bom-components'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/bom-components', {
-        body: decimalInput(input, ['quantity', 'lossRate']) as never,
-      }),
+      api.manufacturing['bom-components'].$post({
+        json: decimalInput(input, ['quantity', 'lossRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/bom-components/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['quantity', 'lossRate']) as never,
-      }),
+      api.manufacturing['bom-components'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['quantity', 'lossRate']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/bom-components/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['bom-components'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
 
 export const bomRouteClient = resourceClient('mfgBomRoutes', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/bom-routes/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing['bom-routes'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/bom-routes/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['bom-routes'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/bom-routes', {
-        body: input as never,
-      }),
+      api.manufacturing['bom-routes'].$post({
+        json: input as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/bom-routes/{id}', {
-        params: { path: { id } },
-        body: input as never,
-      }),
+      api.manufacturing['bom-routes'][':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/bom-routes/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['bom-routes'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
 
 export const bomByproductClient = resourceClient('mfgBomByproducts', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/bom-byproducts/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing['bom-byproducts'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/bom-byproducts/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['bom-byproducts'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/bom-byproducts', {
-        body: decimalInput(input, ['quantity']) as never,
-      }),
+      api.manufacturing['bom-byproducts'].$post({
+        json: decimalInput(input, ['quantity']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/bom-byproducts/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['quantity']) as never,
-      }),
+      api.manufacturing['bom-byproducts'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['quantity']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/bom-byproducts/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['bom-byproducts'][':id'].$delete({
+        param: { id }}),
     )
   },
 })
 
 export const demandClient = resourceClient('mfgDemands', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/demands/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing.demands.query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/demands/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing.demands[':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/demands', { body: input as never }),
+      api.manufacturing.demands.$post({ json: input as never }),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/demands/{id}', {
-        params: { path: { id } },
-        body: input as never,
-      }),
+      api.manufacturing.demands[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/demands/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing.demands[':id'].$delete({
+        param: { id }}),
     )
   },
   async action(key, ids) {
@@ -458,40 +410,35 @@ export const demandClient = resourceClient('mfgDemands', {
 
 export const demandItemClient = resourceClient('mfgDemandItems', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/demand-items/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing['demand-items'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/demand-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['demand-items'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/demand-items', {
-        body: decimalInput(input, ['qty']) as never,
-      }),
+      api.manufacturing['demand-items'].$post({
+        json: decimalInput(input, ['qty']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/demand-items/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['qty']) as never,
-      }),
+      api.manufacturing['demand-items'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['qty']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/demand-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['demand-items'][':id'].$delete({
+        param: { id }}),
     )
   },
   async action(key, ids) {
@@ -504,40 +451,35 @@ export const demandItemClient = resourceClient('mfgDemandItems', {
 
 export const workOrderClient = resourceClient('mfgWorkOrders', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/work-orders/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing['work-orders'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/work-orders/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['work-orders'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/work-orders', {
-        body: input as never,
-      }),
+      api.manufacturing['work-orders'].$post({
+        json: input as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/work-orders/{id}', {
-        params: { path: { id } },
-        body: input as never,
-      }),
+      api.manufacturing['work-orders'][':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/work-orders/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['work-orders'][':id'].$delete({
+        param: { id }}),
     )
   },
   async action(key, ids) {
@@ -550,38 +492,34 @@ export const workOrderClient = resourceClient('mfgWorkOrders', {
 
 export const outputClient = resourceClient('mfgOutputs', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/outputs/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing.outputs.query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/outputs/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing.outputs[':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/outputs', { body: input as never }),
+      api.manufacturing.outputs.$post({ json: input as never }),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/outputs/{id}', {
-        params: { path: { id } },
-        body: input as never,
-      }),
+      api.manufacturing.outputs[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/outputs/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing.outputs[':id'].$delete({
+        param: { id }}),
     )
   },
   async action(key, ids) {
@@ -595,40 +533,35 @@ export const outputClient = resourceClient('mfgOutputs', {
 
 export const outputItemClient = resourceClient('mfgOutputItems', {
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/manufacturing/output-items/query', {
-        body: queryBody(input),
-      }),
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.manufacturing['output-items'].query.$post({
+        json: queryBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/manufacturing/output-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['output-items'][':id'].$get({
+        param: { id }}),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/manufacturing/output-items', {
-        body: decimalInput(input, ['qty']) as never,
-      }),
+      api.manufacturing['output-items'].$post({
+        json: decimalInput(input, ['qty']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/manufacturing/output-items/{id}', {
-        params: { path: { id } },
-        body: decimalInput(input, ['qty']) as never,
-      }),
+      api.manufacturing['output-items'][':id'].$patch({
+        param: { id },
+        json: decimalInput(input, ['qty']) as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/manufacturing/output-items/{id}', {
-        params: { path: { id } },
-      }),
+      api.manufacturing['output-items'][':id'].$delete({
+        param: { id }}),
     )
   },
 })

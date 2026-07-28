@@ -1,5 +1,4 @@
-import type { components } from '../api/schema'
-import { apiClient, apiData } from '../api/client'
+import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import type { ResourceClient } from './types'
 import { gridMeta } from './meta'
@@ -8,37 +7,34 @@ function mergedFilter(input: { filter?: FilterState; fixedFilter?: Record<string
   return {
     ...(input.filter ?? {}),
     ...((input.fixedFilter ?? {}) as FilterState),
-  } as components['schemas']['FilterState']
+  } as FilterState
 }
 
 export const fileClient: ResourceClient = {
   id: 'rest:sysFiles',
   async meta() {
     return gridMeta(
-      await apiData(
-        apiClient.GET('/meta/resources/{name}', {
-          params: { path: { name: 'sysFiles' } },
-        }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+          param: { name: 'sysFiles' }}),
       ),
     )
   },
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/files/query', {
-        body: {
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.files.query.$post({
+        json: {
           limit: input.limit,
           offset: input.offset,
           search: input.search || undefined,
           sort: input.sort ?? undefined,
-          filter: mergedFilter(input),
-        },
-      }),
+          filter: mergedFilter(input)} }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/files/{id}/metadata', { params: { path: { id } } }),
+      api.files[':id'].metadata.$get({ param: { id } }),
     )) as Row
   },
   async create() {
@@ -49,7 +45,7 @@ export const fileClient: ResourceClient = {
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/files/{id}', { params: { path: { id } } }),
+      api.files[':id'].$delete({ param: { id } }),
     )
   },
 }
@@ -58,68 +54,72 @@ export const storageClient: ResourceClient = {
   id: 'rest:sysStorages',
   async meta() {
     return gridMeta(
-      await apiData(
-        apiClient.GET('/meta/resources/{name}', {
-          params: { path: { name: 'sysStorages' } },
-        }),
+      await apiData<import("@synie/shared").ResourceMetaDocument>(
+        api.meta.resources[':name'].$get({
+          param: { name: 'sysStorages' }}),
       ),
     )
   },
   async query(input) {
-    const result = await apiData(
-      apiClient.POST('/system/storages/query', {
-        body: {
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.system.storages.query.$post({
+        json: {
           limit: input.limit,
           offset: input.offset,
           search: input.search || undefined,
           sort: input.sort ?? undefined,
-          filter: mergedFilter(input),
-        },
-      }),
+          filter: mergedFilter(input)} }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
     return (await apiData(
-      apiClient.GET('/system/storages/{id}', { params: { path: { id } } }),
+      api.system.storages[':id'].$get({ param: { id } }),
     )) as Row
   },
   async create(input) {
     return (await apiData(
-      apiClient.POST('/system/storages', {
-        body: input as components['schemas']['StorageEndpointCreate'],
-      }),
+      api.system.storages.$post({
+        json: input as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      apiClient.PATCH('/system/storages/{id}', {
-        params: { path: { id } },
-        body: input as components['schemas']['StorageEndpointUpdate'],
-      }),
+      api.system.storages[':id'].$patch({
+        param: { id },
+        json: input as never}),
     )) as Row
   },
   async delete(id) {
     await apiData<void>(
-      apiClient.DELETE('/system/storages/{id}', { params: { path: { id } } }),
+      api.system.storages[':id'].$delete({ param: { id } }),
     )
   },
 }
 
 export async function setDefaultStorage(id: string): Promise<void> {
   await apiData<void>(
-    apiClient.POST('/system/storages/{id}/set-default', {
-      params: { path: { id } },
-    }),
+    api.system.storages[':id']['set-default'].$post({
+      param: { id }}),
   )
 }
 
-export async function queryAttachments(input: components['schemas']['AttachmentQuery']) {
-  return apiData(apiClient.POST('/files/attachments/query', { body: input }))
+export async function queryAttachments(input: Record<string, unknown>) {
+  return apiData<{
+    count: number
+    results: Array<{
+      id: string
+      category: string
+      insertedAt: string
+      ownerType?: string
+      ownerId?: string
+      file?: { id: string; filename: string; contentType: string | null; size: number } | null
+    }>
+  }>(api.files.attachments.query.$post({ json: input as never }))
 }
 
 export async function deleteAttachment(id: string): Promise<void> {
   await apiData<void>(
-    apiClient.DELETE('/files/attachments/{id}', { params: { path: { id } } }),
+    api.files.attachments[':id'].$delete({ param: { id } }),
   )
 }
