@@ -33,6 +33,13 @@ export {
 export {
   createPublicMarketClient,
   pastSettlementWindow,
+  parseSinaLastBody,
+  parseShfeSettlementPayload,
+  normalizeLastSymbol,
+  ERR_NOT_AVAILABLE,
   type LastPriceClient,
   type SettlementPriceClient,
+  type LastQuote,
+  type SettlementQuote,
+  type PublicMarketClientOptions,
 } from './fetch.ts'

@@ -223,5 +223,51 @@ describe.skipIf(!dbUrl)('market integration', () => {
     const sys = await settings.getSystem()
     expect(sys.marketFetchLastSummary).toBe('手动刷新: 成功0 跳过0 失败0')
     expect(sys.marketFetchLastRunAt).not.toBeNull()
+
+    // 注入假客户端刷新：最新价 + 结算价（上海 16:00 → 过结算窗）
+    const fetchInst = await market.createInstrument(actor, {
+      code: `${code}F`,
+      name: `拉取-${suffix}`,
+      sourceType: 'EXCHANGE',
+      defaultPriceKind: 'SETTLEMENT',
+      fetchEnabled: true,
+      externalLastCode: 'CU0',
+      externalProductGroup: 'cu',
+      currencyId,
+      unitId,
+    })
+    createdInstruments.push(fetchInst.id)
+    const now = new Date(Date.UTC(2026, 6, 17, 8, 0, 45)) // 上海 16:00
+    const { decimal: d } = await import('@synie/shared')
+    const refresh = await market.refresh(
+      actor,
+      fetchInst.id,
+      now,
+      {
+        fetchLast: async () => ({
+          price: d('88888'),
+          asOfDate: '2026-07-17',
+        }),
+      },
+      {
+        fetchSettlement: async () => ({
+          price: d('77000'),
+          deliveryMonth: '2609',
+          openInterest: 100,
+        }),
+      },
+    )
+    expect(refresh.count).toBe(2)
+    expect(refresh.items.map((i) => i.status)).toEqual(['ok', 'ok'])
+    for (const item of refresh.items) {
+      if (item.pricePointId) createdPoints.push(item.pricePointId)
+    }
+    // 同分钟再刷最新价应 skip
+    const again = await market.refreshLasts(actor, fetchInst.id, now, {
+      fetchLast: async () => {
+        throw new Error('should not call')
+      },
+    })
+    expect(again.items[0]?.status).toBe('skipped')
   })
 })

@@ -27,15 +27,88 @@ export function pastSettlementWindow(now: Date): boolean {
   return shanghai.getUTCHours() * 60 + shanghai.getUTCMinutes() >= 15 * 60 + 30
 }
 
-export function createPublicMarketClient(httpTimeoutMs = 15_000): LastPriceClient &
-  SettlementPriceClient {
+/** 新浪 hq_str 响应体解析（纯函数，供单测） */
+export function parseSinaLastBody(body: string, symbol: string): LastQuote {
+  const pattern = new RegExp(`hq_str_${escapeRegExp(symbol)}="([^"]*)"`)
+  const match = pattern.exec(body)
+  if (!match?.[1]) throw new Error(`新浪行情无数据(${symbol})`)
+  const parts = match[1].split(',')
+  if (parts.length <= 8) throw new Error('新浪行情缺少最新价')
+  const raw = (parts[8] ?? '').trim()
+  let price: Decimal
+  try {
+    price = decimal(raw)
+  } catch {
+    throw new Error('新浪最新价无效')
+  }
+  if (!price.greaterThan(0)) throw new Error('新浪最新价无效')
+  const asOf =
+    parts.length > 17 && (parts[17] ?? '').trim() !== '' ? (parts[17] ?? '').trim() : null
+  return { price, asOfDate: asOf }
+}
+
+/** 上期所日数据 JSON 解析：品种组内持仓量最大合约结算价（纯函数） */
+export function parseShfeSettlementPayload(
+  payload: Record<string, unknown>,
+  group: string,
+): SettlementQuote {
+  const rows = Array.isArray(payload.o_curinstrument) ? payload.o_curinstrument : []
+  const target = group.trim().toLowerCase()
+  let best: SettlementQuote | null = null
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue
+    const row = raw as Record<string, unknown>
+    let product = stringField(row, 'PRODUCTGROUPID').toLowerCase()
+    if (!product) product = stringField(row, 'PRODUCTID').toLowerCase()
+    const month = stringField(row, 'DELIVERYMONTH')
+    const priceRaw = stringField(row, 'SETTLEMENTPRICE')
+    let price: Decimal
+    try {
+      price = decimal(priceRaw)
+    } catch {
+      continue
+    }
+    if (product !== target || !month || !price.greaterThan(0)) continue
+    const openInterest = intField(row, 'OPENINTEREST')
+    if (!best || openInterest > best.openInterest) {
+      best = { price, deliveryMonth: month, openInterest }
+    }
+  }
+  if (!best) throw new Error(`上期所日数据无品种组 ${group} 的合约`)
+  return best
+}
+
+export function normalizeLastSymbol(code: string): string {
+  let symbol = code.trim()
+  if (!symbol.startsWith('nf_')) symbol = `nf_${symbol}`
+  return symbol
+}
+
+export type FetchLike = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>
+
+export interface PublicMarketClientOptions {
+  httpTimeoutMs?: number
+  /** 可注入 fetch（测试）；默认全局 fetch */
+  fetchImpl?: FetchLike
+}
+
+export function createPublicMarketClient(
+  options: number | PublicMarketClientOptions = {},
+): LastPriceClient & SettlementPriceClient {
+  const opts: PublicMarketClientOptions =
+    typeof options === 'number' ? { httpTimeoutMs: options } : options
+  const httpTimeoutMs = opts.httpTimeoutMs ?? 15_000
+  const doFetch = opts.fetchImpl ?? fetch
+
   async function fetchLast(code: string): Promise<LastQuote> {
-    let symbol = code.trim()
-    if (!symbol.startsWith('nf_')) symbol = `nf_${symbol}`
+    const symbol = normalizeLastSymbol(code)
     const url = `https://hq.sinajs.cn/list=${encodeURIComponent(symbol)}`
     let response: Response
     try {
-      response = await fetch(url, {
+      response = await doFetch(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0',
           Referer: 'https://finance.sina.com.cn',
@@ -47,21 +120,7 @@ export function createPublicMarketClient(httpTimeoutMs = 15_000): LastPriceClien
     }
     if (!response.ok) throw new Error(`新浪行情 HTTP ${response.status}`)
     const body = await response.text()
-    const pattern = new RegExp(`hq_str_${escapeRegExp(symbol)}="([^"]*)"`)
-    const match = pattern.exec(body)
-    if (!match?.[1]) throw new Error(`新浪行情无数据(${symbol})`)
-    const parts = match[1].split(',')
-    if (parts.length <= 8) throw new Error('新浪行情缺少最新价')
-    const raw = (parts[8] ?? '').trim()
-    let price: Decimal
-    try {
-      price = decimal(raw)
-    } catch {
-      throw new Error('新浪最新价无效')
-    }
-    if (!price.greaterThan(0)) throw new Error('新浪最新价无效')
-    const asOf = parts.length > 17 && (parts[17] ?? '').trim() !== '' ? (parts[17] ?? '').trim() : null
-    return { price, asOfDate: asOf }
+    return parseSinaLastBody(body, symbol)
   }
 
   async function fetchSettlement(group: string, tradeDate: Date): Promise<SettlementQuote> {
@@ -71,7 +130,7 @@ export function createPublicMarketClient(httpTimeoutMs = 15_000): LastPriceClien
     const endpoint = `https://www.shfe.com.cn/data/tradedata/future/dailydata/kx${y}${m}${d}.dat`
     let response: Response
     try {
-      response = await fetch(endpoint, {
+      response = await doFetch(endpoint, {
         headers: {
           'User-Agent': 'Mozilla/5.0',
           Referer: 'https://www.shfe.com.cn/',
@@ -89,30 +148,7 @@ export function createPublicMarketClient(httpTimeoutMs = 15_000): LastPriceClien
     } catch {
       throw new Error('上期所日数据 JSON 解析失败')
     }
-    const rows = Array.isArray(payload.o_curinstrument) ? payload.o_curinstrument : []
-    const target = group.trim().toLowerCase()
-    let best: SettlementQuote | null = null
-    for (const raw of rows) {
-      if (!raw || typeof raw !== 'object') continue
-      const row = raw as Record<string, unknown>
-      let product = stringField(row, 'PRODUCTGROUPID').toLowerCase()
-      if (!product) product = stringField(row, 'PRODUCTID').toLowerCase()
-      const month = stringField(row, 'DELIVERYMONTH')
-      const priceRaw = stringField(row, 'SETTLEMENTPRICE')
-      let price: Decimal
-      try {
-        price = decimal(priceRaw)
-      } catch {
-        continue
-      }
-      if (product !== target || !month || !price.greaterThan(0)) continue
-      const openInterest = intField(row, 'OPENINTEREST')
-      if (!best || openInterest > best.openInterest) {
-        best = { price, deliveryMonth: month, openInterest }
-      }
-    }
-    if (!best) throw new Error(`上期所日数据无品种组 ${group} 的合约`)
-    return best
+    return parseShfeSettlementPayload(payload, group)
   }
 
   return { fetchLast, fetchSettlement }
