@@ -1,0 +1,248 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行号",
+      "name": "idx",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "数量",
+      "name": "qty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "折算默认单位数量",
+      "name": "baseQty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "已下单数量(物料默认单位,系统维护)",
+      "name": "orderedQty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "已收数量(物料默认单位,系统维护)",
+      "name": "receivedQty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "需求日",
+      "name": "needDate",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "自制",
+          "value": "MAKE"
+        },
+        {
+          "label": "外购",
+          "value": "BUY"
+        },
+        {
+          "label": "委外",
+          "value": "OUTSOURCE"
+        },
+        {
+          "label": "库存",
+          "value": "STOCK"
+        }
+      ],
+      "filterable": true,
+      "label": "履约方式",
+      "name": "fulfillmentMethod",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "待安排",
+          "value": "PENDING"
+        },
+        {
+          "label": "已安排",
+          "value": "SCHEDULED"
+        },
+        {
+          "label": "已完成",
+          "value": "COMPLETED"
+        }
+      ],
+      "filterable": true,
+      "label": "行状态",
+      "name": "status",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "物料编号快照",
+      "name": "materialCode",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "物料名称快照",
+      "name": "materialName",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "物料规格快照",
+      "name": "materialSpec",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "单位名称快照",
+      "name": "unitName",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行备注",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "履约需求单",
+      "name": "demandId",
+      "ref": {
+        "labelField": "demandNo",
+        "relation": "demand",
+        "resource": "mfgDemands"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "公司",
+      "name": "companyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "物料",
+      "name": "materialId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "单位",
+      "name": "unitId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "来源销售订单条目(可空)",
+      "name": "salesOrderItemId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "已下单(有已审核订单条目且未完成)",
+      "name": "ordered",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "剩余可下单数量(物料默认单位)",
+      "name": "remainingOrderableQty",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    }
+  ],
+  "destroyMutation": "destroyMfgDemandItem",
+  "extendedActions": []
+}

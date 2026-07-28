@@ -434,7 +434,7 @@ export function createOutputService(
           changes,
         })
       }
-      return after
+      return loadOutputItem(trx, id, false)
     })
   }
 

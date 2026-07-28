@@ -138,7 +138,8 @@ export async function deriveItemProjection(
   if (!unit) {
     throw ApiError.validation('需求行参数不合法', { unitId: ['单位不存在'] })
   }
-  let baseQty = roundBaseQty(qty)
+  // 6 位精度舍入后以 toDecimalString 出 wire（去尾零，对齐 shopspring.String）
+  let baseQty = toDecimalString(decimal(roundBaseQty(qty)))
   if (unitId !== material.default_unit_id) {
     const conv = await db
       .selectFrom('inv_material_unit')
@@ -155,7 +156,7 @@ export async function deriveItemProjection(
     if (!factor.gt(0)) {
       throw new ApiError('conflict', '物料单位转换系数必须大于零')
     }
-    baseQty = roundBaseQty(decimal(qty).div(factor))
+    baseQty = toDecimalString(decimal(roundBaseQty(decimal(qty).div(factor))))
   }
   return {
     baseQty,
