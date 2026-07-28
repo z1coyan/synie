@@ -173,12 +173,8 @@ run('PG 集成（base 主数据）', () => {
     const baseSymbol = `b${suffix}`.slice(0, 16)
     const childSymbol = `u${suffix}`.slice(0, 16)
     // 共享库可能已有 AREA 基准（setup/示例）；先清掉本测类型下的既有基准与孤儿单位
-    const existingArea = await units.list({
-      limit: 200,
-      offset: 0,
-      filter: { unitType: { kind: 'enum', values: ['AREA'], labels: [] } },
-    })
-    for (const u of existingArea.results) {
+    const existingArea = await units.list({ limit: 200, offset: 0 })
+    for (const u of existingArea.results.filter((x) => x.unitType === 'AREA')) {
       await units.remove(actor, u.id).catch(() => undefined)
     }
 
