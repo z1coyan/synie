@@ -11,8 +11,8 @@ import {
 } from '~/platform/audit/write.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { companyScopeWhere, listFromSource } from '../base/list.ts'
-import { mapWriteError } from '../base/dberr.ts'
+import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { mapWriteError } from '~/db/dberr.ts'
 import {
   asIso, conflict, lower, notFound, requireCompanyAccess, requireCompanyWrite,
   requirePerm, upper, validateOptionalText, validateRequiredText, validation,

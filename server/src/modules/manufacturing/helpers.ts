@@ -4,7 +4,7 @@ import type { DbHandle } from '~/db/tx.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { canAccessCompany } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { mapWriteError, type PgWriteMapping } from '../base/dberr.ts'
+import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
 import type {
   DemandItemStatus,
   FulfillmentMethod,

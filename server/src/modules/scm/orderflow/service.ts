@@ -8,7 +8,7 @@ import type { Kysely } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
 import { hasPermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { companyScopeWhere, listFromSource } from '../../base/list.ts'
+import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import {
   asDate,
   asOptionalString,

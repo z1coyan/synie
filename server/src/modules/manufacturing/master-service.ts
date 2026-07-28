@@ -17,7 +17,7 @@ import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
-import { listFromSource } from '../base/list.ts'
+import { listFromSource } from '~/db/list.ts'
 import {
   ensureMaterial,
   ensureUnitAllowed,

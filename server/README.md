@@ -49,7 +49,7 @@ src/
 │   ├── audit|numbering|settings|files|printing|todo|setup/
 ├── engines/            # gl / inventory
 ├── modules/            # 业务域
-├── db/                 # Kysely 连接、事务约定、filterbuild、生成类型
+├── db/                 # Kysely 连接、事务约定、filterbuild、listFromSource、mapWriteError、生成类型
 └── jobs/               # 后台作业（行情调度等）
 db/
 ├── migrations/         # SQL 迁移

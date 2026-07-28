@@ -11,8 +11,8 @@ import {
 } from '~/platform/audit/write.ts'
 import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { mapWriteError } from './dberr.ts'
-import { companyScopeWhere, listFromSource } from './list.ts'
+import { mapWriteError } from '~/db/dberr.ts'
+import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { accountResourceMeta } from './meta.ts'
 import templateData from './templates.json'
 

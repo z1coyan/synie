@@ -13,8 +13,8 @@ import { hashPassword } from '~/platform/auth/password.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
-import { mapWriteError } from '../base/dberr.ts'
-import { listFromSource } from '../base/list.ts'
+import { mapWriteError } from '~/db/dberr.ts'
+import { listFromSource } from '~/db/list.ts'
 import { roleResourceMeta, userResourceMeta } from './meta.ts'
 
 export interface IamUser {

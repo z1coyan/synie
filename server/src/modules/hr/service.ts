@@ -19,8 +19,8 @@ import { hasPermission, requirePermission, type Actor } from '~/platform/authz/a
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { mapWriteError } from '../base/dberr.ts'
-import { listFromSource } from '../base/list.ts'
+import { mapWriteError } from '~/db/dberr.ts'
+import { listFromSource } from '~/db/list.ts'
 import {
   attendanceCorrectionResourceMeta,
   attendanceDayResourceMeta,

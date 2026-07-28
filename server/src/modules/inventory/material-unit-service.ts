@@ -11,8 +11,8 @@ import {
 } from '~/platform/audit/write.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { mapWriteError } from '../base/dberr.ts'
-import { listFromSource } from '../base/list.ts'
+import { mapWriteError } from '~/db/dberr.ts'
+import { listFromSource } from '~/db/list.ts'
 import { toDate, wireDecimal } from './helpers.ts'
 import { materialUnitResourceMeta } from './meta.ts'
 

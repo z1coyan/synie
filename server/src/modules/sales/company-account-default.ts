@@ -15,8 +15,8 @@ import {
 } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
-import { mapWriteError } from '../base/dberr.ts'
-import { companyScopeWhere, listFromSource } from '../base/list.ts'
+import { mapWriteError } from '~/db/dberr.ts'
+import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 
 export interface CompanyAccountDefault {
   id: string

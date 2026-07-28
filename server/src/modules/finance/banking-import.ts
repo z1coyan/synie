@@ -12,8 +12,8 @@ import {
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { companyScopeWhere, listFromSource } from '../base/list.ts'
-import { mapWriteError } from '../base/dberr.ts'
+import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { mapWriteError } from '~/db/dberr.ts'
 import { parseBankImport, type ParseTemplate } from './bank-parser.ts'
 import {
   validateOwnBankAccount,

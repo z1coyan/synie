@@ -17,8 +17,8 @@ import {
 import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '../../base/list.ts'
-import { mapWriteError } from '../../base/dberr.ts'
+import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { mapWriteError } from '~/db/dberr.ts'
 import {
   asDate,
   asDateTime,
