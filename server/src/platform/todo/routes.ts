@@ -7,8 +7,9 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
+import { hasPermission, requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
+import { ApiError } from '~/platform/http/errors.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { Todo, TodoService } from './service.ts'
 
@@ -70,8 +71,15 @@ export function todoRoutes(deps: { auth: AuthService; todos: TodoService }) {
   const { auth, todos } = deps
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
-    .get('/unread-count', requirePerm('acc.vat_invoice:read'), async (c) => {
-      const count = await todos.unreadCount(c.get('actor')!)
+    .get('/unread-count', async (c) => {
+      const actor = c.get('actor')
+      if (
+        !hasPermission(actor, 'acc.vat_invoice:create') &&
+        !hasPermission(actor, 'acc.vat_invoice:read')
+      ) {
+        throw new ApiError('forbidden', '无权限执行该操作')
+      }
+      const count = await todos.unreadCount(actor!)
       return c.json({ count })
     })
     .post(

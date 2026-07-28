@@ -6,6 +6,7 @@ Blocked by: 08
 ## Comments
 
 - 2026-07-28 子代理：实现增值税发票完整生命周期（CRUD/审核过账/作废/红冲/OCR 入口）与待办消费 API（query/unread-count/read/dismiss）；对账 confirm 生产者与 closeFromInvoice/reopenFromInvoice 接缝复用已有 trading/reconciliation。`bunx tsc --noEmit` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 207 pass。遗留：报销单/银行/票据（工单 12）未做，`verify-finance-operations-rest` 全量仍阻塞于非发票段；OCR 需 acc_setting 阿里云凭证（未配置时返回可读 validation）。
+- 2026-07-28 验收补强：audit 默认 limit=50 + 公司隔离 404；todo unread 接受 create|read；新增 `verify-invoices-todo-rest.ts`。验收：`verify-invoices-todo-rest` → ok meta=3 permissionFirst=10 wire=46 states=21 todos=10；`verify-system-ops-rest` → ok（含 todoBehavior=7 todoState=9）；typecheck 绿；bun test 207 pass。剩余：`verify-finance-operations-rest` 全量仍依赖工单 12（银行/报销/票据）。
 
 ## 范围
 

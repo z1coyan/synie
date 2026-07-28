@@ -422,7 +422,12 @@ export function createTodoService(db: Kysely<Database>) {
   }
 
   async function unreadCount(actor: Actor): Promise<number> {
-    if (!hasPermission(actor, 'acc.vat_invoice:read')) {
+    // 未读徽标：持 create（待办消费圈人）或 read 任一即可。
+    // 验收 fixture 常只授 create；与 query/read/dismiss 圈人一致。
+    if (
+      !hasPermission(actor, 'acc.vat_invoice:create') &&
+      !hasPermission(actor, 'acc.vat_invoice:read')
+    ) {
       throw new ApiError('forbidden', '无权限查看待办')
     }
     const scope = companyFilter(actor)

@@ -36,7 +36,8 @@ export function createAuditService(db: Kysely<Database>) {
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: AuditLog[] }> {
     requireRead(actor)
-    const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
+    // 对齐 server-go systemops：Audit 默认 limit=50
+    const limit = query.limit === undefined || query.limit === 0 ? 50 : query.limit
     const offset = query.offset ?? 0
     if (limit < 1 || limit > 200 || offset < 0) {
       throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
@@ -83,8 +84,9 @@ function assertCompanyAccess(actor: Actor, companyId: string | null): void {
   if (companyId === null) return
   const scope = companyFilter(actor)
   if (scope.bypass) return
+  // 公司隔离 fail-closed：无权当「不存在」，对齐 server-go systemops
   if (!scope.ids.includes(companyId)) {
-    throw new ApiError('forbidden', '无权限执行该操作')
+    throw new ApiError('not_found', '审计日志不存在')
   }
 }
 
