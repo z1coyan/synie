@@ -1,6 +1,6 @@
 # 04 库存单据与余额
 
-Status: ready-for-agent
+Status: done
 Blocked by: 03
 
 ## 范围
