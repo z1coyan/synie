@@ -1,6 +1,6 @@
 # 14 行情 + 后台作业
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 02
 
 ## 范围

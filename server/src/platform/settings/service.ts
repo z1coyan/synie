@@ -82,6 +82,7 @@ const SYS_AUDIT = [
   'market_fetch_last_interval_minutes',
   'market_fetch_settlement_enabled',
 ] as const
+const SYS_RUN_AUDIT = ['market_fetch_last_run_at', 'market_fetch_last_summary'] as const
 
 export function createSettingsService(db: Kysely<Database>) {
   async function getSales(): Promise<SalesSetting> {
@@ -285,6 +286,42 @@ export function createSettingsService(db: Kysely<Database>) {
     })
   }
 
+  /** 写入上次行情拉取摘要（手动/定时共用） */
+  async function recordMarketFetch(
+    actor: Actor | null,
+    summary: string,
+  ): Promise<SystemSetting | null> {
+    const runes = [...summary]
+    if (runes.length > 500) summary = runes.slice(0, 500).join('')
+    return withTx(db, async (trx) => {
+      const row = await trx.selectFrom('sys_setting').selectAll().forUpdate().executeTakeFirst()
+      if (!row) return null
+      const before = mapSys(row)
+      const updated = await trx
+        .updateTable('sys_setting')
+        .set({
+          market_fetch_last_run_at: sql`date_trunc('second', now() AT TIME ZONE 'utc')`,
+          market_fetch_last_summary: summary,
+          updated_at: sql`(now() AT TIME ZONE 'utc')`,
+        })
+        .where('id', '=', before.id)
+        .returningAll()
+        .executeTakeFirstOrThrow()
+      const after = mapSys(updated)
+      const changes = auditDiff(sysRunSnap(before), sysRunSnap(after), SYS_RUN_AUDIT)
+      if (Object.keys(changes).length > 0) {
+        await writeAudit(trx, actor, {
+          resource: 'sys_setting',
+          recordId: after.id,
+          actionType: 'update',
+          actionName: 'record_market_fetch',
+          changes,
+        })
+      }
+      return after
+    })
+  }
+
   return {
     getSales,
     getManufacturing,
@@ -295,6 +332,7 @@ export function createSettingsService(db: Kysely<Database>) {
     updateManufacturing,
     updateAccounting,
     updateSystem,
+    recordMarketFetch,
   }
 }
 
@@ -431,6 +469,15 @@ function sysSnap(v: SystemSetting): Record<string, unknown> {
     market_fetch_schedule_enabled: v.marketFetchScheduleEnabled,
     market_fetch_last_interval_minutes: v.marketFetchLastIntervalMinutes,
     market_fetch_settlement_enabled: v.marketFetchSettlementEnabled,
+  }
+}
+
+function sysRunSnap(v: SystemSetting): Record<string, unknown> {
+  return {
+    market_fetch_last_run_at: v.marketFetchLastRunAt
+      ? v.marketFetchLastRunAt.toISOString()
+      : null,
+    market_fetch_last_summary: v.marketFetchLastSummary,
   }
 }
 

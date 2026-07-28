@@ -11,8 +11,11 @@ import type { AccountService } from './modules/base/account-service.ts'
 import type { CompanyService } from './modules/base/company-service.ts'
 import type { CurrencyService } from './modules/base/currency-service.ts'
 import type { UnitService } from './modules/base/unit-service.ts'
-import { marketInstrumentRoutes } from './modules/base/market/index.ts'
-import type { MarketInstrumentService } from './modules/base/market/index.ts'
+import {
+  marketInstrumentRoutes,
+  marketPricePointRoutes,
+} from './modules/base/market/index.ts'
+import type { MarketService } from './modules/base/market/index.ts'
 import {
   attendanceCorrectionRoutes,
   attendanceDayRoutes,
@@ -79,7 +82,9 @@ export interface AppDeps {
   companies: CompanyService
   units: UnitService
   accounts: AccountService
-  marketInstruments: MarketInstrumentService
+  market: MarketService
+  /** @deprecated 使用 market */
+  marketInstruments?: MarketService
   iam: IamService
   customers: CustomerService
   suppliers: SupplierService
@@ -121,6 +126,9 @@ const accessLog: MiddlewareHandler<AppEnv> = async (c, next) => {
 }
 
 export function buildApp(deps: AppDeps) {
+  const market = deps.market ?? deps.marketInstruments
+  if (!market) throw new Error('AppDeps.market 未装配')
+
   const app = new Hono<AppEnv>()
     .basePath('/api/v1')
     .use('*', requestId())
@@ -154,7 +162,14 @@ export function buildApp(deps: AppDeps) {
       '/base/market-instruments',
       marketInstrumentRoutes({
         auth: deps.auth,
-        instruments: deps.marketInstruments,
+        market,
+      }),
+    )
+    .route(
+      '/base/market-price-points',
+      marketPricePointRoutes({
+        auth: deps.auth,
+        market,
       }),
     )
     .route('/system/users', iamUserRoutes({ auth: deps.auth, iam: deps.iam }))

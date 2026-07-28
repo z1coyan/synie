@@ -1,3 +1,4 @@
+import { createMarketScheduler } from './jobs/index.ts'
 import { buildApp } from './app.ts'
 import { createDb } from './db/index.ts'
 import { loadEnv } from './env.ts'
@@ -6,25 +7,23 @@ import {
   registerAccountingResources,
 } from './modules/accounting/index.ts'
 import { createBaseServices, registerBaseResources } from './modules/base/index.ts'
-import {
-  createMarketInstrumentService,
-  registerMarketResources,
-} from './modules/base/market/index.ts'
+import { createMarketService, registerMarketResources } from './modules/base/market/index.ts'
+import { createHrServices, registerHrResources } from './modules/hr/index.ts'
 import { createIamService, registerIamResources } from './modules/iam/index.ts'
+import {
+  createInventoryServices,
+  registerInventoryResources,
+} from './modules/inventory/index.ts'
+import {
+  createManufacturingServices,
+  registerManufacturingResources,
+} from './modules/manufacturing/index.ts'
 import { createPartyServices, registerPartyResources } from './modules/party/index.ts'
 import {
   createCompanyAccountDefaultService,
   registerSalesCompanyAccountDefault,
 } from './modules/sales/index.ts'
-import {
-  createInventoryServices,
-  registerInventoryResources,
-} from './modules/inventory/index.ts'
 import { createTradingServices, registerTradingResources } from './modules/trading/index.ts'
-import {
-  createManufacturingServices,
-  registerManufacturingResources,
-} from './modules/manufacturing/index.ts'
 import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
@@ -71,9 +70,8 @@ const owners = createOwnerRegistry()
 const files = createFileService({ db, owners })
 const storages = createStorageService({ db })
 const audit = createAuditService(db)
-import { createHrServices, registerHrResources } from './modules/hr/index.ts'
 const base = createBaseServices(db)
-const marketInstruments = createMarketInstrumentService(db)
+const market = createMarketService(db, { settings })
 const iam = createIamService(db, registry)
 const party = createPartyServices(db, numbering)
 const { hr } = createHrServices(db, files, numbering)
@@ -96,7 +94,7 @@ const app = buildApp({
   companies: base.companies,
   units: base.units,
   accounts: base.accounts,
-  marketInstruments,
+  market,
   iam,
   customers: party.customers,
   suppliers: party.suppliers,
@@ -117,6 +115,9 @@ const app = buildApp({
   manufacturing,
 })
 
+const marketScheduler = createMarketScheduler({ settings, market })
+marketScheduler.start()
+
 const server = Bun.serve({
   port: env.port,
   hostname: env.host,
@@ -125,8 +126,16 @@ const server = Bun.serve({
 
 console.log(JSON.stringify({ level: 'info', msg: 'synie server listening', port: server.port }))
 
-process.on('SIGTERM', async () => {
+async function shutdown() {
+  marketScheduler.stop()
   server.stop()
   await db.destroy()
   process.exit(0)
+}
+
+process.on('SIGTERM', () => {
+  void shutdown()
+})
+process.on('SIGINT', () => {
+  void shutdown()
 })

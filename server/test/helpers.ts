@@ -7,8 +7,9 @@ import {
 } from '~/modules/accounting/index.ts'
 import { createBaseServices, registerBaseResources } from '~/modules/base/index.ts'
 import {
-  createMarketInstrumentService,
+  createMarketService,
   registerMarketResources,
+  type MarketService,
 } from '~/modules/base/market/index.ts'
 import { createIamService, registerIamResources } from '~/modules/iam/index.ts'
 import { createHrServices, registerHrResources } from '~/modules/hr/index.ts'
@@ -128,8 +129,12 @@ export async function buildTestApp(
   const platform = createPlatformServices(db)
   const merged = { ...platform, ...options.platform, ...options.deps }
   const numbering = merged.numbering
+  const settings = merged.settings
   const base = createBaseServices(db)
-  const marketInstruments = createMarketInstrumentService(db)
+  const market: MarketService =
+    (merged.market as MarketService | undefined) ??
+    (merged.marketInstruments as MarketService | undefined) ??
+    createMarketService(db, { settings })
   const iam = createIamService(db, registry)
   const party = createPartyServices(db, numbering)
   const { hr } = createHrServices(db, merged.files, numbering)
@@ -142,7 +147,7 @@ export async function buildTestApp(
     db,
     auth,
     registry,
-    settings: merged.settings,
+    settings,
     numbering,
     files: merged.files,
     storages: merged.storages,
@@ -151,7 +156,7 @@ export async function buildTestApp(
     companies: merged.companies ?? base.companies,
     units: merged.units ?? base.units,
     accounts: merged.accounts ?? base.accounts,
-    marketInstruments: merged.marketInstruments ?? marketInstruments,
+    market,
     iam: merged.iam ?? iam,
     customers: merged.customers ?? party.customers,
     suppliers: merged.suppliers ?? party.suppliers,

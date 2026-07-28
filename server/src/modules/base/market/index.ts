@@ -1,11 +1,38 @@
 export {
   instrumentResourceMeta,
+  pricePointResourceMeta,
   registerMarketResources,
   INSTRUMENT_RESOURCE_NAME,
+  PRICE_POINT_RESOURCE_NAME,
+  INSTRUMENT_PERMISSION_PREFIX,
+  PRICE_POINT_PERMISSION_PREFIX,
+  PERMISSION_PREFIX,
 } from './meta.ts'
 export {
+  createMarketService,
   createMarketInstrumentService,
+  resolveQuote,
+  type MarketService,
   type MarketInstrumentService,
   type MarketInstrument,
+  type MarketPricePoint,
+  type MarketServiceDeps,
+  type InstrumentCreate,
+  type InstrumentUpdate,
+  type PricePointCreate,
+  type ChartInstrument,
+  type PriceSeries,
+  type RefreshResult,
+  type RefreshItem,
+  type QuoteCandidate,
 } from './service.ts'
-export { marketInstrumentRoutes } from './routes.ts'
+export {
+  marketInstrumentRoutes,
+  marketPricePointRoutes,
+} from './routes.ts'
+export {
+  createPublicMarketClient,
+  pastSettlementWindow,
+  type LastPriceClient,
+  type SettlementPriceClient,
+} from './fetch.ts'
