@@ -733,7 +733,7 @@ export function createBillService(
         if (!billId && input.billAttrs) {
           const bill = await registerBill(
             trx,
-            normalizeBillAttrs(input.billAttrs as Record<string, unknown>),
+            normalizeBillAttrs(input.billAttrs as unknown as Record<string, unknown>),
           )
           billId = bill.id
         }
