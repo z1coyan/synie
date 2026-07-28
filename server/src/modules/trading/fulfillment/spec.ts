@@ -315,6 +315,28 @@ export function fulfillmentItemMeta(side: TradingSide): ResourceMeta {
   }
 }
 
+/**
+ * 列表查询用 Meta（不注册进 Registry）：销售发货条目可按来源订单类型筛选候选池，
+ * 对齐 Go itemQueryResourceMeta，不暴露到 Grid 契约。
+ */
+export function fulfillmentItemListMeta(side: TradingSide): ResourceMeta {
+  const base = fulfillmentItemMeta(side)
+  if (side !== 'sales') return base
+  return {
+    ...base,
+    fields: [
+      ...base.fields,
+      f('order_type', 'orderType', 'enum', '来源订单类型', {
+        filterable: true,
+        enumOptions: [
+          { value: 'REGULAR', label: '常规' },
+          { value: 'SAMPLE', label: '样品' },
+        ],
+      }),
+    ],
+  }
+}
+
 export function packLineMeta(): ResourceMeta {
   return {
     name: 'salDeliveryPackLines',

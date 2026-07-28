@@ -24,6 +24,7 @@ import {
   registerSalesCompanyAccountDefault,
 } from './modules/sales/index.ts'
 import { createTradingServices, registerTradingResources } from './modules/trading/index.ts'
+import { createScmServices, registerScmResources } from './modules/scm/index.ts'
 import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
@@ -68,6 +69,7 @@ registerSalesCompanyAccountDefault(registry)
 registerInventoryResources(registry)
 registerAccountingResources(registry)
 registerTradingResources(registry)
+registerScmResources(registry)
 registerManufacturingResources(registry)
 // 打印目录 stub 在业务域之后：已有真实 Meta 则跳过
 registerPrintingResources(registry)
@@ -93,6 +95,7 @@ const companyAccountDefaults = createCompanyAccountDefaultService(db)
 const inv = createInventoryServices(db, numbering)
 const accounting = createAccountingServices(db, numbering)
 const trading = createTradingServices(db, numbering)
+const scm = createScmServices(db)
 const manufacturing = createManufacturingServices(db, numbering)
 
 const app = buildApp({
@@ -127,6 +130,7 @@ const app = buildApp({
   journals: accounting.journals,
   entries: accounting.entries,
   trading,
+  scm,
   manufacturing,
 })
 

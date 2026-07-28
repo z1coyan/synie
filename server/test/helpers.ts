@@ -23,6 +23,7 @@ import {
   registerInventoryResources,
 } from '~/modules/inventory/index.ts'
 import { createTradingServices, registerTradingResources } from '~/modules/trading/index.ts'
+import { createScmServices, registerScmResources } from '~/modules/scm/index.ts'
 import {
   createManufacturingServices,
   registerManufacturingResources,
@@ -93,6 +94,7 @@ export function createPlatformRegistry(): Registry {
   registerInventoryResources(registry)
   registerAccountingResources(registry)
   registerTradingResources(registry)
+  registerScmResources(registry)
   registerManufacturingResources(registry)
   // 打印目录 stub 在业务域之后：已有真实 Meta 则跳过
   registerPrintingResources(registry)
@@ -152,6 +154,7 @@ export async function buildTestApp(
   const inv = createInventoryServices(db, numbering)
   const accounting = createAccountingServices(db, numbering)
   const trading = createTradingServices(db, numbering)
+  const scm = createScmServices(db)
   const manufacturing = createManufacturingServices(db, numbering)
   const printing =
     merged.printing ??
@@ -192,6 +195,7 @@ export async function buildTestApp(
     journals: merged.journals ?? accounting.journals,
     entries: merged.entries ?? accounting.entries,
     trading: (merged as { trading?: typeof trading }).trading ?? trading,
+    scm: (merged as { scm?: typeof scm }).scm ?? scm,
     manufacturing: merged.manufacturing ?? manufacturing,
   })
 }

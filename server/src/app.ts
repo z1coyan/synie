@@ -48,6 +48,7 @@ import type {
   StockEntryService,
 } from './modules/inventory/index.ts'
 import { tradingRouteMounts, type TradingServices } from './modules/trading/index.ts'
+import { scmRouteMounts, type ScmServices } from './modules/scm/index.ts'
 import { manufacturingRoutes, type ManufacturingServices } from './modules/manufacturing/index.ts'
 import { authRoutes } from './platform/auth/routes.ts'
 import type { AuthService } from './platform/auth/service.ts'
@@ -106,8 +107,10 @@ export interface AppDeps {
   // 工单 05 会计
   journals: JournalService
   entries: EntryService
-  // 工单 06/07 交易链
+  // 工单 06/07/08 交易链 + 对账
   trading: TradingServices
+  // 工单 08 订单流只读投影
+  scm: ScmServices
   // 工单 11 制造
   manufacturing: ManufacturingServices
 }
@@ -245,6 +248,7 @@ export function buildApp(deps: AppDeps) {
     )
 
   const t = tradingRouteMounts({ auth: deps.auth, trading: deps.trading })
+  const s = scmRouteMounts({ auth: deps.auth, scm: deps.scm })
   const app2 = app
     .route('/sales/quotations', t.salesQuotations)
     .route('/sales/quotation-items', t.salesQuotationItems)
@@ -271,6 +275,11 @@ export function buildApp(deps: AppDeps) {
     .route('/purchase/outsourced-receipt-items', t.outsourcedReceiptItems)
     .route('/purchase/outsourced-receipt-item-materials', t.outsourcedReceiptItemMaterials)
     .route('/purchase/outsourced-receipt-item-byproducts', t.outsourcedReceiptItemByproducts)
+    .route('/sales/reconciliations', t.salesReconciliations)
+    .route('/sales/reconciliation-items', t.salesReconciliationItems)
+    .route('/purchase/reconciliations', t.purchaseReconciliations)
+    .route('/purchase/reconciliation-items', t.purchaseReconciliationItems)
+    .route('/scm/order-flow-items', s.orderFlowItems)
 
   app2.onError(onError)
   app2.notFound(notFound)

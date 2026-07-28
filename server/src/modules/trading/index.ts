@@ -1,5 +1,5 @@
 /**
- * 交易链装配：报价 / 订单 / 标准履约 / 委外头（最小）。
+ * 交易链装配：报价 / 订单 / 标准履约 / 委外头 / 对账。
  */
 import type { Kysely } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
@@ -55,6 +55,15 @@ import {
   outsourcedReceiptItemRoutes,
   outsourcedReceiptRoutes,
 } from './outsourced/routes.ts'
+import { createReconciliationService } from './reconciliation/service.ts'
+import {
+  reconciliationHeadMeta,
+  reconciliationItemMeta,
+} from './reconciliation/spec.ts'
+import {
+  reconciliationHeadRoutes,
+  reconciliationItemRoutes,
+} from './reconciliation/routes.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
 
 export function registerTradingResources(registry: Registry): void {
@@ -66,6 +75,8 @@ export function registerTradingResources(registry: Registry): void {
     registry.register(orderItemMeta(side))
     registry.register(fulfillmentHeadMeta(side))
     registry.register(fulfillmentItemMeta(side))
+    registry.register(reconciliationHeadMeta(side))
+    registry.register(reconciliationItemMeta(side))
   }
   registry.register(packLineMeta())
   registry.register(orderMaterialMeta())
@@ -83,7 +94,8 @@ export function createTradingServices(db: Kysely<Database>, numbering: Numbering
   const orders = createOrderService(db, numbering, quotations)
   const fulfillment = createFulfillmentService(db, numbering, orders)
   const outsourced = createOutsourcedService(db, numbering)
-  return { quotations, orders, fulfillment, outsourced }
+  const reconciliations = createReconciliationService(db, numbering)
+  return { quotations, orders, fulfillment, outsourced, reconciliations }
 }
 
 export type TradingServices = ReturnType<typeof createTradingServices>
@@ -93,7 +105,7 @@ export function tradingRouteMounts(deps: {
   trading: TradingServices
 }) {
   const { auth, trading } = deps
-  const { quotations, orders, fulfillment, outsourced } = trading
+  const { quotations, orders, fulfillment, outsourced, reconciliations } = trading
   const purchaseExtra = purchaseOrderExtraRoutes({ auth, orders })
   return {
     salesQuotations: quotationHeadRoutes({ auth, quotations, side: 'sales' }),
@@ -121,9 +133,30 @@ export function tradingRouteMounts(deps: {
     outsourcedReceiptItems: outsourcedReceiptItemRoutes({ auth, outsourced }),
     outsourcedReceiptItemMaterials: outsourcedReceiptChildRoutes({ auth, outsourced }),
     outsourcedReceiptItemByproducts: outsourcedReceiptChildRoutes({ auth, outsourced }),
+    salesReconciliations: reconciliationHeadRoutes({
+      auth,
+      reconciliations,
+      side: 'sales',
+    }),
+    salesReconciliationItems: reconciliationItemRoutes({
+      auth,
+      reconciliations,
+      side: 'sales',
+    }),
+    purchaseReconciliations: reconciliationHeadRoutes({
+      auth,
+      reconciliations,
+      side: 'purchase',
+    }),
+    purchaseReconciliationItems: reconciliationItemRoutes({
+      auth,
+      reconciliations,
+      side: 'purchase',
+    }),
   }
 }
 
 export type { QuotationService } from './quotation/service.ts'
 export type { OrderService } from './order/service.ts'
 export type { FulfillmentService } from './fulfillment/service.ts'
+export type { ReconciliationService } from './reconciliation/service.ts'

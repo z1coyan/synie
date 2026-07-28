@@ -1,6 +1,6 @@
 # 08 销售/采购对账
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 06, 07
 
 ## 范围

@@ -42,6 +42,7 @@ import {
 import type { OrderService } from '../order/service.ts'
 import {
   fulfillmentHeadMeta,
+  fulfillmentItemListMeta,
   fulfillmentItemMeta,
   fulfillmentSpec,
   packLineMeta,
@@ -482,13 +483,19 @@ export function createFulfillmentService(
     requirePerm(actor, spec.prefix, 'read', '无权限执行该履约操作')
     const scope = companyScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
+    const orderTypeSql =
+      side === 'sales'
+        ? `(SELECT o.order_type FROM sal_order_item oi
+            JOIN sal_order o ON o.id=oi.order_id WHERE oi.id=i.order_item_id) AS order_type`
+        : `NULL::text AS order_type`
     return listFromSource({
       db,
-      resource: fulfillmentItemMeta(side),
+      resource: fulfillmentItemListMeta(side),
       source: sql` FROM (
         SELECT i.*, h.${sql.raw(spec.numberCol)} AS head_no, h.${sql.raw(spec.dateCol)} AS head_date,
           h.status AS head_status, h.party_type, h.party_id,
-          (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty
+          (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty,
+          ${sql.raw(orderTypeSql)}
         FROM ${ident(spec.itemTable)} i
         JOIN ${ident(spec.headTable)} h ON h.id=i.${sql.raw(spec.parentCol)}
       ) fulfillment_items`,
