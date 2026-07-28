@@ -1,0 +1,198 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "序号",
+      "name": "seq",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "数量(带符号,入正出负,物料默认单位口径)",
+      "name": "quantity",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "业务日期",
+      "name": "postingDate",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "来源单据类型",
+      "name": "voucherType",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "来源单据",
+      "name": "voucherId",
+      "ref": {
+        "discriminator": "voucherType",
+        "discriminatorType": "string",
+        "variants": [
+          {
+            "label": "库存盘点单",
+            "labelField": "docNo",
+            "resource": "invStockCounts",
+            "value": "inv.stock_count"
+          },
+          {
+            "label": "手工出入库单",
+            "labelField": "docNo",
+            "resource": "invStockDocs",
+            "value": "inv.stock_doc"
+          },
+          {
+            "label": "手工调拨单",
+            "labelField": "docNo",
+            "resource": "invStockTransfers",
+            "value": "inv.stock_transfer"
+          },
+          {
+            "label": "生产入库单",
+            "labelField": "outputNo",
+            "resource": "mfgOutputs",
+            "value": "mfg.output"
+          },
+          {
+            "label": "委外发料单",
+            "labelField": "issueNo",
+            "resource": "purOutsourcedIssues",
+            "value": "purchase.outsourced_issue"
+          },
+          {
+            "label": "委外入库单",
+            "labelField": "receiptNo",
+            "resource": "purOutsourcedReceipts",
+            "value": "purchase.outsourced_receipt"
+          },
+          {
+            "label": "采购入库单",
+            "labelField": "receiptNo",
+            "resource": "purReceipts",
+            "value": "purchase.receipt"
+          },
+          {
+            "label": "销售发货单",
+            "labelField": "deliveryNo",
+            "resource": "salDeliveries",
+            "value": "sales.delivery"
+          }
+        ]
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "来源单据编号",
+      "name": "voucherNo",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "已作废",
+      "name": "isCancelled",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "作废时间(盘点单审核的兜底校验据此判定「快照后该仓分录有作废」)",
+      "name": "cancelledAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "摘要",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "公司",
+      "name": "companyId",
+      "ref": {
+        "labelField": "name",
+        "relation": "company",
+        "resource": "basCompanies"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "仓库",
+      "name": "warehouseId",
+      "ref": {
+        "labelField": "name",
+        "relation": "warehouse",
+        "resource": "invWarehouses"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "物料",
+      "name": "materialId",
+      "ref": {
+        "labelField": "name",
+        "relation": "material",
+        "resource": "invMaterials"
+      },
+      "sortable": false,
+      "type": "fk"
+    }
+  ],
+  "destroyMutation": null,
+  "extendedActions": []
+}
