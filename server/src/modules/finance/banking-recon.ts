@@ -294,6 +294,8 @@ export function createReconOps(
   /**
    * 快速对账凭证：借贷两行，经 accounting 窄 seam 在同一 trx 内建立并审核。
    * 凭证生命周期（编号/审计/状态机/GL）归 journal-service 唯一实现，此处不再复制。
+   * 权限：调用方 quickCreate 已检 acc.bank_transaction:reconcile；
+   * createAndAuditJournal 为无闸 seam，不在此叠 gl_journal:create/audit。
    */
   async function createQuickJournal(
     trx: TrxHandle, actor: Actor, input: {
@@ -301,8 +303,6 @@ export function createReconOps(
       income: boolean; amount: ReturnType<typeof decimal>; summary: string | null; postingDate: string
     },
   ): Promise<string> {
-    requirePerm(actor, 'acc.gl_journal:create', '无权限执行银行业务操作')
-    requirePerm(actor, 'acc.gl_journal:audit', '无权限执行银行业务操作')
     const amount = input.amount
     const lines = input.income
       ? [
@@ -327,9 +327,8 @@ export function createReconOps(
     bankTransactionId: string; counterAccountId: string; amount: string
     summary?: string | null; postingDate: string
   }) {
+    // 业务能力码：快速对账在银行语境下隐含创建+审核凭证；不要求 gl_journal 双码
     requirePerm(actor, 'acc.bank_transaction:reconcile', '无权限执行银行业务操作')
-    requirePerm(actor, 'acc.gl_journal:create', '无权限执行银行业务操作')
-    requirePerm(actor, 'acc.gl_journal:audit', '无权限执行银行业务操作')
     const fields: Record<string, string[]> = {}
     const amount = decimal(input.amount)
     if (!amount.gt(0)) fields.amount = ['对账金额必须大于零']

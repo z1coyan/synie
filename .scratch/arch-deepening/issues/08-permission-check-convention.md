@@ -1,6 +1,6 @@
 # 08 H · 权限双检：先定成文约定，再收敛存量
 
-Status: ready-for-human
+Status: ready-for-agent
 
 ## 问题
 
@@ -13,19 +13,28 @@ service 侧 ~105 处 + routes 侧 ~112 处，且**同源**（都读 `spec.prefix
   body 解析（畸形 body 得 403），其他资源相反（得 400）；
 - 没有成文约定，新模块只能照抄最近看到的那个。
 
-## 待决策（与用户讨论）
+## 决策（2026-07-28）
 
-方案一：**service 唯一检**——内部调用（service 调 service）天然被覆盖，
-routes 只做 requireAuth；代价是失去「先于 body 解析拒绝」。
-方案二：**routes 声明式鉴码**——统一先于 zValidator，service 信任上层、
-内部复用经窄 Pick 接口（权限码挂接口声明）。
+**采用方案一：service 唯一检**（面向未来元数据反射化）。
 
-## 决策后动作
+- 运行时唯一 enforcement 点在 service；routes 只做 `requireAuth`。
+- 跨域 seam 无权限闸，调用方业务能力码覆盖。
+- 快速对账只检 `acc.bank_transaction:reconcile`，不叠
+  `acc.gl_journal:create/audit`。
+- 反射化后 enforcement 迁框架策略层，仍保持单点，禁止回到双检。
+- 成文：`server/README.md` 编码约定第 8 条。
 
-- 约定写进 `server/README.md` 编码约定；
-- 按约定收敛存量域（消除分裂与顺序不一）。
+## 收敛清单
+
+顺序：**先补 service 缺失检 → 再删 routes 同源中间件**（禁止先删 routes 造成裸奔）。
+
+| 域 | 现状 | 动作 |
+|----|------|------|
+| trading / finance(ops) / hr / accounting | 双检或 service 已有 | 去 routes `requirePerm` |
+| inventory / manufacturing / party / iam / base / sales | routes 单检 | 先补 service 首行检，再去 routes |
+| platform numbering/settings/audit/files/printing | 不一 | 对齐 service 唯一检 |
+| banking-recon 快速对账 | create+audit 叠码 | ✅ 已改为只 reconcile |
 
 ## 备注
 
-- banking-recon 的快速对账当前要求 `acc.gl_journal:create/audit` 双权限码
-  （第一轮 B-α 保留未动）——归属本议题一并定夺。
+- 收敛完成前 routes 中间件仍可能存在（安全网）；以 README 约定为准，新代码不得新增 routes 鉴码。

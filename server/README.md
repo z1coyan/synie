@@ -72,4 +72,17 @@ db/
    `ApiType` 推断断链，web 拿不到类型。
 7. **Meta 注册**：业务资源以代码注册进 Registry（启动期 fail-closed 校验），
    权限码/Grid/打印目录随之自动派生。
-8. 用户可见文案一律中文；代码标识符英文。
+8. **鉴权（方案一 · service 唯一检，面向元数据反射）**：
+   - **运行时唯一 enforcement 点**在 service 方法入口（`requirePerm` /
+     `requirePermission` / 域内等价辅助）。routes **只做** `requireAuth`
+     （身份），禁止与 service **同源双检**同一权限码。
+   - 跨域 seam（如 `createAndAuditJournal`）**不检权限**，文档写明
+     「调用方已鉴权」；调用方用**业务能力码**覆盖（例：快速对账只检
+     `acc.bank_transaction:reconcile`，不叠 `acc.gl_journal:create/audit`）。
+   - 内部 service→service：被调方若是完整公开 API 则仍检自己的码；
+     若是已鉴权 seam 则命名/注释标明，不检。
+   - 新代码优先「prefix/action 来自 registry/spec/meta」，禁止在 routes
+     散落字面量权限码清单。
+   - **反射化后**：enforcement 迁入框架策略层（仍单点，数据源换 meta），
+     禁止回到 route+service 双检。当前约定是过渡期挂点，不是永久教条。
+9. 用户可见文案一律中文；代码标识符英文。
