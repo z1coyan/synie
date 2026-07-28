@@ -66,44 +66,39 @@ DDL 由 SQL 迁移唯一管理（`server/db/migrations/` + `server/db/migrate.ts
 bun install
 ```
 
-## 本地启动
+## 本地启动（一键）
 
-推荐使用两个终端。
-
-### 终端 A：数据库、迁移与后端
+根目录用 **Turborepo** 编排。默认一条命令：起 Postgres → 迁移 → 并行跑 API + 前端。
 
 ```bash
-# Compose：postgres + migrate + server（API 8080）
-docker compose up --build server
+bun install
+bun run dev              # 一键：docker postgres + migrate + server + web
+bun run dev -- --seed    # 同上，并幂等种子 admin/admin123
+bun run dev -- --no-docker  # 跳过 compose，使用已有 DATABASE_URL
+```
 
-# 或本地直接跑 Bun 后端
-cd server
-export DATABASE_URL='postgres://synie:synie@localhost:5441/synie?sslmode=disable'
-export AUTH_SECRET='local-development-secret-change-me-32-bytes'
+| 服务 | 地址 |
+|------|------|
+| API | http://localhost:8080 |
+| healthz | http://localhost:8080/api/v1/healthz |
+| 前端 | http://localhost:3000（`/api/v1` 代理到 8080） |
+
+分项命令（可选）：
+
+```bash
+bun run db:up            # 仅 postgres
 bun run db:migrate
-bun run db:seed   # 首次：admin/admin123
-bun run dev
+bun run db:seed
+bun run dev:apps         # 仅 turbo 并行 server+web（假设库已就绪）
+bun run dev:server
+bun run dev:web
 ```
 
-首次启动需要补种子时：
+Docker 全容器后端（不跑本机 hot reload）：
 
 ```bash
-docker compose --profile tools run --rm seed
+docker compose up --build server
 ```
-
-服务地址：
-
-- API：`http://localhost:8080`
-- 健康检查：`http://localhost:8080/api/v1/healthz`
-
-### 终端 B：前端
-
-```bash
-cd web
-bun dev
-```
-
-前端监听 `http://localhost:3000`。`web/vite.config.ts` 把 `/api/v1` 代理到 `SYNIE_API_PORT`（默认 `8080`；兼容旧名 `GO_API_PORT`）。
 
 ## 常用命令
 

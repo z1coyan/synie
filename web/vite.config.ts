@@ -7,7 +7,9 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   server: {
-    port: 3000,
+    // 默认监听所有网卡（局域网 / Tailscale）。端口用 WEB_PORT，避免与 API 的 PORT=8080 冲突。
+    host: process.env.WEB_HOST || process.env.HOST || '0.0.0.0',
+    port: Number(process.env.WEB_PORT || 3000),
     allowedHosts: ['home-n5pro', '.ts.net', 'home-macmini'],
     proxy: {
       '/api/v1': {

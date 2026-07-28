@@ -9,10 +9,17 @@
     "web"
   ],
   "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "dev:apps": "turbo run dev --filter=@synie/server --filter=synie-web",
     "dev:server": "bun run --filter @synie/server dev",
     "dev:web": "bun run --filter synie-web dev",
-    "test": "bun run --filter @synie/shared test && bun run --filter @synie/server test",
-    "typecheck": "bun run --filter @synie/shared typecheck && bun run --filter @synie/server typecheck"
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "bun run --filter @synie/server db:migrate",
+    "db:seed": "bun run --filter @synie/server db:seed",
+    "test": "turbo run test --filter=@synie/shared --filter=@synie/server",
+    "typecheck": "turbo run typecheck --filter=@synie/shared --filter=@synie/server --filter=synie-web",
+    "build": "turbo run build --filter=synie-web"
   },
   "trustedDependencies": [
     "@heroui-pro/react",
@@ -21,6 +28,8 @@
   ],
   "devDependencies": {
     "@types/bun": "^1.3.14",
+    "turbo": "^2.5.4",
     "typescript": "^5.5.0"
-  }
+  },
+  "packageManager": "bun@1.3.14"
 }
