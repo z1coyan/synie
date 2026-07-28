@@ -1,0 +1,286 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "序号",
+      "name": "seq",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "过账日期",
+      "name": "postingDate",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "借方金额",
+      "name": "debit",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "贷方金额",
+      "name": "credit",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "供应商",
+          "value": "SUPPLIER"
+        },
+        {
+          "label": "客户",
+          "value": "CUSTOMER"
+        },
+        {
+          "label": "内部公司",
+          "value": "COMPANY"
+        },
+        {
+          "label": "员工",
+          "value": "EMPLOYEE"
+        }
+      ],
+      "filterable": true,
+      "label": "对手类型",
+      "name": "partyType",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "对手",
+      "name": "partyId",
+      "ref": {
+        "discriminator": "partyType",
+        "discriminatorType": "enum",
+        "variants": [
+          {
+            "label": "内部公司",
+            "labelField": "name",
+            "resource": "basCompanies",
+            "value": "COMPANY"
+          },
+          {
+            "label": "客户",
+            "labelField": "name",
+            "resource": "salCustomers",
+            "value": "CUSTOMER"
+          },
+          {
+            "label": "员工",
+            "labelField": "name",
+            "resource": "hrEmployees",
+            "value": "EMPLOYEE"
+          },
+          {
+            "label": "供应商",
+            "labelField": "name",
+            "resource": "purSuppliers",
+            "value": "SUPPLIER"
+          }
+        ]
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "来源单据类型",
+      "name": "voucherType",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "来源单据",
+      "name": "voucherId",
+      "ref": {
+        "discriminator": "voucherType",
+        "discriminatorType": "string",
+        "variants": [
+          {
+            "label": "承兑交易",
+            "labelField": "docNo",
+            "resource": "accBillTransactions",
+            "value": "acc.bill_transaction"
+          },
+          {
+            "label": "报销单",
+            "labelField": "docNo",
+            "resource": "accExpenseReports",
+            "value": "acc.expense_report"
+          },
+          {
+            "label": "凭证",
+            "labelField": "voucherNo",
+            "resource": "accGlJournals",
+            "value": "acc.gl_journal"
+          },
+          {
+            "label": "增值税发票",
+            "labelField": "docNo",
+            "resource": "accVatInvoices",
+            "value": "acc.vat_invoice"
+          },
+          {
+            "label": "委外入库单",
+            "labelField": "receiptNo",
+            "resource": "purOutsourcedReceipts",
+            "value": "purchase.outsourced_receipt"
+          },
+          {
+            "label": "采购入库单",
+            "labelField": "receiptNo",
+            "resource": "purReceipts",
+            "value": "purchase.receipt"
+          },
+          {
+            "label": "采购对账单",
+            "labelField": "reconciliationNo",
+            "resource": "purReconciliations",
+            "value": "purchase.reconciliation"
+          },
+          {
+            "label": "销售发货单",
+            "labelField": "deliveryNo",
+            "resource": "salDeliveries",
+            "value": "sales.delivery"
+          },
+          {
+            "label": "销售对账单",
+            "labelField": "reconciliationNo",
+            "resource": "salReconciliations",
+            "value": "sales.reconciliation"
+          }
+        ]
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "来源单据编号",
+      "name": "voucherNo",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "已作废",
+      "name": "isCancelled",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "已被红冲(原凭证状态)",
+      "name": "isReversed",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "红字冲销行",
+      "name": "isReversal",
+      "ref": null,
+      "sortable": true,
+      "type": "boolean"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "摘要",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "公司",
+      "name": "companyId",
+      "ref": {
+        "labelField": "name",
+        "relation": "company",
+        "resource": "basCompanies"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "科目",
+      "name": "accountId",
+      "ref": {
+        "labelField": "name",
+        "relation": "account",
+        "resource": "basAccounts"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "币种",
+      "name": "currencyId",
+      "ref": {
+        "labelField": "name",
+        "relation": "currency",
+        "resource": "basCurrencies"
+      },
+      "sortable": false,
+      "type": "fk"
+    }
+  ],
+  "destroyMutation": null,
+  "extendedActions": []
+}

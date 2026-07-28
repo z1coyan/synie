@@ -49,41 +49,32 @@ export function createRegistry() {
   }
 
   /**
-   * 投影引用：无权目标降级；多态 fk 省略 resource/relation/labelField 空键
-   * （对齐 Go json omitempty，与 pr-2.11 GridMeta 快照一致）。
+   * 投影引用：无权目标降级；Grid wire 对齐 Go omitempty（null 键不输出）。
+   * 普通 fk 带 resource/relation/labelField；多态 fk 仅 discriminator/discriminatorType/variants。
    */
   function visibleRef(ref: GridColumnRef | undefined, actor: Actor): GridColumnRef | null {
     if (!ref) return null
-    let projected: GridColumnRef
-    if (actor.superAdmin) {
-      projected = ref
-    } else if (ref.resource) {
+    if (actor.superAdmin) return projectWireRef(ref)
+    if (ref.resource) {
       const target = resources.get(ref.resource)
-      if (!target || !canRead(target, actor)) return null
-      projected = ref
-    } else {
-      if (!ref.variants || ref.variants.length === 0) return null
-      const variants = ref.variants.filter((variant) => {
-        const target = resources.get(variant.resource)
-        return target !== undefined && canRead(target, actor)
-      })
-      if (variants.length === 0) return null
-      projected = { ...ref, variants }
+      return target && canRead(target, actor) ? projectWireRef(ref) : null
     }
-    return wireRef(projected)
+    if (!ref.variants || ref.variants.length === 0) return null
+    const variants = ref.variants.filter((variant) => {
+      const target = resources.get(variant.resource)
+      return target !== undefined && canRead(target, actor)
+    })
+    return variants.length > 0 ? projectWireRef({ ...ref, variants }) : null
   }
 
-  /** 多态引用：不输出 null 的 resource/relation/labelField（wire omitempty） */
-  function wireRef(ref: GridColumnRef): GridColumnRef {
-    if (!ref.discriminator) return ref
-    const out: Record<string, unknown> = {
-      discriminator: ref.discriminator,
-      discriminatorType: ref.discriminatorType ?? null,
-      variants: ref.variants ?? null,
-    }
+  function projectWireRef(ref: GridColumnRef): GridColumnRef {
+    const out: Record<string, unknown> = {}
     if (ref.resource != null) out.resource = ref.resource
     if (ref.relation != null) out.relation = ref.relation
     if (ref.labelField != null) out.labelField = ref.labelField
+    if (ref.discriminator != null) out.discriminator = ref.discriminator
+    if (ref.discriminatorType != null) out.discriminatorType = ref.discriminatorType
+    if (ref.variants != null) out.variants = ref.variants
     return out as unknown as GridColumnRef
   }
 

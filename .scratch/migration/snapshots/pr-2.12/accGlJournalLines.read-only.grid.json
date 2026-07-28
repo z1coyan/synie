@@ -1,0 +1,145 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行号",
+      "name": "idx",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "借方金额",
+      "name": "debit",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "贷方金额",
+      "name": "credit",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "供应商",
+          "value": "SUPPLIER"
+        },
+        {
+          "label": "客户",
+          "value": "CUSTOMER"
+        },
+        {
+          "label": "内部公司",
+          "value": "COMPANY"
+        },
+        {
+          "label": "员工",
+          "value": "EMPLOYEE"
+        }
+      ],
+      "filterable": true,
+      "label": "对手类型",
+      "name": "partyType",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "对手",
+      "name": "partyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行备注",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "凭证",
+      "name": "journalId",
+      "ref": {
+        "labelField": "voucherNo",
+        "relation": "journal",
+        "resource": "accGlJournals"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "公司",
+      "name": "companyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "科目",
+      "name": "accountId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "币种",
+      "name": "currencyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    }
+  ],
+  "destroyMutation": "destroyAccGlJournalLine",
+  "extendedActions": []
+}

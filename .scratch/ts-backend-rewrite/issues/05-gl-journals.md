@@ -35,3 +35,11 @@ TS 业务域已落地于 `server/src/modules/accounting/`：
 - 专属 PG 集成：状态机/分录/报表/cascade 审计；`bun run typecheck` 绿
 
 待集成代理：对照 `verify-accounting-rest.ts` 全链路打 API（含 GridMeta 快照与公司范围）。
+
+### 2026-07-28 agent（验收）
+
+- `verify-accounting-rest.ts` 对活 TS API **全绿**（meta×6、权限/公司范围、凭证/行 CRUD、审核分录、AR/AP、取消）
+- Meta 多态 FK wire 去掉 null resource/relation/labelField，与 Go Grid 快照一致；补 `.scratch/migration/snapshots/pr-2.12/*.grid.json`
+- 集成测补红冲 reverse 取负 + is_reversed + 重复 conflict + 报表归零
+- typecheck + accounting/gl PG 集成全绿
+

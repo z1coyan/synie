@@ -329,4 +329,74 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
       code: 'validation',
     })
   })
+
+  test('红冲：引擎 reverse 取负对冲 + is_reversed；重复红冲 conflict', async () => {
+    const fx = await seedFixture()
+    const journal = await journals.create(actor, {
+      voucherNo: `${prefix}-REV`,
+      date: '2026-07-26',
+      companyId: fx.companyId,
+    })
+    cleanupIds.journals.push(journal.id)
+    await journals.createLine(actor, {
+      journalId: journal.id,
+      idx: 1,
+      accountId: fx.receivableId,
+      debit: '80',
+      credit: '0',
+      partyType: 'CUSTOMER',
+      partyId: fx.customerId,
+    })
+    await journals.createLine(actor, {
+      journalId: journal.id,
+      idx: 2,
+      accountId: fx.cashId,
+      debit: '0',
+      credit: '80',
+    })
+    await journals.audit(actor, journal.id, '2026-07-26')
+
+    await db.transaction().execute(async (trx) => {
+      await gl.reverse(trx, { type: 'acc.gl_journal', id: journal.id }, '2026-07-28')
+    })
+
+    const listed = await entries.list(actor, {
+      limit: 50,
+      offset: 0,
+      filter: {
+        voucherNo: { kind: 'text', op: 'eq', value: journal.voucherNo },
+      },
+    })
+    // 原 2 行 + 红字 2 行
+    expect(listed.count).toBe(4)
+    const originals = listed.results.filter((e) => !e.isReversal)
+    const reds = listed.results.filter((e) => e.isReversal)
+    expect(originals).toHaveLength(2)
+    expect(reds).toHaveLength(2)
+    expect(originals.every((e) => e.isReversed)).toBe(true)
+    expect(reds.every((e) => !e.isReversed && e.isReversal)).toBe(true)
+    // 红字金额取负
+    for (const red of reds) {
+      expect(Number(red.debit) <= 0).toBe(true)
+      expect(Number(red.credit) <= 0).toBe(true)
+    }
+
+    // 重复红冲 conflict
+    await expect(
+      db.transaction().execute(async (trx) => {
+        await gl.reverse(trx, { type: 'acc.gl_journal', id: journal.id }, '2026-07-29')
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' })
+
+    // 红冲后轧差归零，报表不再出现该客户净额（若仅本凭证贡献）
+    const report = await entries.report(actor, {
+      companyId: fx.companyId,
+      asOf: '2026-07-31',
+    })
+    const row = report.rows.find((r) => r.partyId === fx.customerId)
+    if (row) {
+      expect(Number(row.balances.receivable)).toBe(0)
+      expect(Number(row.netReceivable)).toBe(0)
+    }
+  })
 })
