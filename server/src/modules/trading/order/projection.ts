@@ -37,6 +37,11 @@ export async function reverseFulfillment(
   return adjustFulfillment(db, side, input, decimal(-1), false)
 }
 
+/** 可履约上限 = baseQty × (1 + 容差比例)；供单测与实现共用 */
+export function maxFulfillableQty(baseQty: Decimal | string, overshipRatio: Decimal | string): Decimal {
+  return decimal(baseQty).mul(decimal(1).add(decimal(overshipRatio)))
+}
+
 async function adjustFulfillment(
   db: DbHandle,
   side: TradingSide,
@@ -72,7 +77,8 @@ async function adjustFulfillment(
     if (r.company_id !== input.companyId) {
       throw new ApiError('conflict', '履约公司与订单不一致')
     }
-    if (r.party_type !== lowerParty(input.partyType) || r.party_id !== input.partyId) {
+    // EqualFold：对齐 Go strings.EqualFold（库内可能存 CUSTOMER / customer）
+    if (lowerParty(r.party_type) !== lowerParty(input.partyType) || r.party_id !== input.partyId) {
       throw new ApiError('conflict', '履约对手与订单不一致')
     }
     if (verify && r.status.toLowerCase() !== 'audited') {
@@ -92,9 +98,12 @@ async function adjustFulfillment(
   }
 
   const projCol = spec.projectionColumn
+  const demandDeltas = new Map<string, Decimal>()
   for (const itemId of itemIds) {
-    const row = await sql<{ base_qty: string; projected: string }>`
-      SELECT base_qty::text AS base_qty, ${sql.raw(projCol)}::text AS projected
+    const demandSelect =
+      side === 'purchase' ? 'demand_line_id::text AS demand_line_id' : 'NULL::text AS demand_line_id'
+    const row = await sql<{ base_qty: string; projected: string; demand_line_id: string | null }>`
+      SELECT base_qty::text AS base_qty, ${sql.raw(projCol)}::text AS projected, ${sql.raw(demandSelect)}
       FROM ${ident(spec.itemTable)} WHERE id = ${itemId}::uuid FOR UPDATE
     `.execute(db)
     const r = row.rows[0]
@@ -104,7 +113,7 @@ async function adjustFulfillment(
     if (next.isNegative()) {
       throw new ApiError('conflict', '订单履约投影不能为负')
     }
-    if (verify && next.gt(decimal(r.base_qty).mul(decimal(1).add(ratio)))) {
+    if (verify && next.gt(maxFulfillableQty(r.base_qty, ratio))) {
       throw new ApiError('conflict', '超出订单条目可履约数量')
     }
     await sql`
@@ -112,6 +121,40 @@ async function adjustFulfillment(
       SET ${sql.raw(projCol)} = ${wireRequiredDecimal(next)},
           updated_at = (now() AT TIME ZONE 'utc')
       WHERE id = ${itemId}::uuid
+    `.execute(db)
+    if (r.demand_line_id) {
+      demandDeltas.set(
+        r.demand_line_id,
+        (demandDeltas.get(r.demand_line_id) ?? decimal(0)).add(delta),
+      )
+    }
+  }
+  if (side === 'purchase' && demandDeltas.size > 0) {
+    await adjustDemandReceived(db, demandDeltas)
+  }
+}
+
+/** 采购入库投影同步 mfg_demand_item.received_qty（对齐 Go adjustDemandReceived） */
+async function adjustDemandReceived(db: DbHandle, deltas: Map<string, Decimal>): Promise<void> {
+  const lineIds = [...deltas.keys()].sort()
+  for (const lineId of lineIds) {
+    const row = await sql<{ base_qty: string; received_qty: string }>`
+      SELECT base_qty::text AS base_qty, received_qty::text AS received_qty
+      FROM mfg_demand_item WHERE id = ${lineId}::uuid FOR UPDATE
+    `.execute(db)
+    const r = row.rows[0]
+    if (!r) throw new ApiError('conflict', '来源履约需求行不存在')
+    const next = decimal(r.received_qty).add(deltas.get(lineId)!)
+    if (next.isNegative()) {
+      throw new ApiError('conflict', '需求已收投影不能为负')
+    }
+    const status = next.gte(decimal(r.base_qty)) ? 'completed' : 'pending'
+    await sql`
+      UPDATE mfg_demand_item
+      SET received_qty = ${wireRequiredDecimal(next)},
+          status = ${status},
+          updated_at = (now() AT TIME ZONE 'utc')
+      WHERE id = ${lineId}::uuid
     `.execute(db)
   }
 }
