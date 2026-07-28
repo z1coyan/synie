@@ -1,6 +1,6 @@
 # 15 打印引擎
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 01, 02
 
 ## 范围
