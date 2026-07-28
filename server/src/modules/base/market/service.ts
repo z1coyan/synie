@@ -9,7 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { SettingsService } from '~/platform/settings/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -22,7 +22,12 @@ import {
   type LastPriceClient,
   type SettlementPriceClient,
 } from './fetch.ts'
-import { instrumentResourceMeta, pricePointResourceMeta } from './meta.ts'
+import {
+  INSTRUMENT_PERMISSION_PREFIX,
+  PRICE_POINT_PERMISSION_PREFIX,
+  instrumentResourceMeta,
+  pricePointResourceMeta,
+} from './meta.ts'
 
 export type PriceKindWire = 'SETTLEMENT' | 'AVERAGE' | 'LAST'
 export type SourceTypeWire = 'EXCHANGE' | 'SPOT_INDEX' | 'OTHER'
@@ -188,7 +193,8 @@ export function createMarketService(db: Kysely<Database>, deps: MarketServiceDep
 
   // ── 品种 ──────────────────────────────────────────────
 
-  async function getInstrument(id: string): Promise<MarketInstrument> {
+  async function getInstrument(actor: Actor, id: string): Promise<MarketInstrument> {
+    requirePermission(actor, `${INSTRUMENT_PERMISSION_PREFIX}:read`)
     const row = await db
       .selectFrom('bas_market_instrument')
       .selectAll()
@@ -199,8 +205,10 @@ export function createMarketService(db: Kysely<Database>, deps: MarketServiceDep
   }
 
   async function listInstruments(
+    actor: Actor,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: MarketInstrument[] }> {
+    requirePermission(actor, `${INSTRUMENT_PERMISSION_PREFIX}:read`)
     return listFromSource({
       db,
       resource: instrumentResourceMeta(),
@@ -234,6 +242,7 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
     actor: Actor,
     input: InstrumentCreate,
   ): Promise<MarketInstrument> {
+    requirePermission(actor, `${INSTRUMENT_PERMISSION_PREFIX}:create`)
     const normalized = normalizeInstrument(
       input.code,
       input.name,
@@ -299,6 +308,7 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
     id: string,
     input: InstrumentUpdate,
   ): Promise<MarketInstrument> {
+    requirePermission(actor, `${INSTRUMENT_PERMISSION_PREFIX}:update`)
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('bas_market_instrument')
@@ -391,6 +401,7 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
   }
 
   async function deleteInstrument(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, `${INSTRUMENT_PERMISSION_PREFIX}:delete`)
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('bas_market_instrument')
@@ -426,7 +437,8 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
 
   // ── 价点 ──────────────────────────────────────────────
 
-  async function getPricePoint(id: string): Promise<MarketPricePoint> {
+  async function getPricePoint(actor: Actor, id: string): Promise<MarketPricePoint> {
+    requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:read`)
     const row = await db
       .selectFrom('bas_market_price_point')
       .selectAll()
@@ -437,8 +449,10 @@ external_last_code,external_product_group,note,currency_id,unit_id,inserted_at,u
   }
 
   async function listPricePoints(
+    actor: Actor,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: MarketPricePoint[] }> {
+    requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:read`)
     return listFromSource({
       db,
       resource: pricePointResourceMeta(),
@@ -469,6 +483,8 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
     actor: Actor | null,
     input: PricePointCreate,
   ): Promise<MarketPricePoint> {
+    // 调度器/拉取 seam 可传 null actor；HTTP 入口带 actor 时检 create
+    if (actor) requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:create`)
     const missing: Record<string, string[]> = {}
     if (!input.observedAt || Number.isNaN(input.observedAt.getTime())) {
       missing.observedAt = ['不能为空']
@@ -548,6 +564,7 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
   }
 
   async function voidPricePoint(actor: Actor, id: string): Promise<MarketPricePoint> {
+    requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:void`)
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('bas_market_price_point')
@@ -645,7 +662,8 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
 
   // ── 图区 ──────────────────────────────────────────────
 
-  async function chartInstruments(): Promise<ChartInstrument[]> {
+  async function chartInstruments(actor: Actor): Promise<ChartInstrument[]> {
+    requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:read`)
     const rows = await sql<{
       id: string
       code: string
@@ -678,11 +696,13 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
   }
 
   async function priceSeries(
+    actor: Actor,
     ids: string[],
     priceKind: string,
     from: Date,
     to: Date,
   ): Promise<PriceSeries> {
+    requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:read`)
     const unique: string[] = []
     const seen = new Set<string>()
     for (const id of ids) {
@@ -812,6 +832,8 @@ instrument_id,currency_id,unit_id,inserted_at,updated_at`,
     lastClient?: LastPriceClient,
     settlementClient?: SettlementPriceClient,
   ): Promise<RefreshResult> {
+    // 调度器可传 null；HTTP 手动刷新带 actor 时检 create
+    if (actor) requirePermission(actor, `${PRICE_POINT_PERMISSION_PREFIX}:create`)
     const client = lastClient ?? createPublicMarketClient()
     const settleClient = settlementClient ?? createPublicMarketClient()
     const instruments = await fetchableInstruments(instrumentId ?? null)

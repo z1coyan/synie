@@ -9,7 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
@@ -44,13 +44,18 @@ const AUDIT = ['name', 'iso_code', 'symbol', 'active'] as const
 const ISO_RE = /^[A-Z]{3}$/
 
 export function createCurrencyService(db: Kysely<Database>) {
-  async function get(id: string): Promise<Currency> {
+  async function get(actor: Actor, id: string): Promise<Currency> {
+    requirePermission(actor, 'base.currency:read')
     const row = await db.selectFrom('bas_currency').selectAll().where('id', '=', id).executeTakeFirst()
     if (!row) throw new ApiError('not_found', '货币不存在')
     return mapRow(row)
   }
 
-  async function list(query: Partial<ListQuery>): Promise<{ count: number; results: Currency[] }> {
+  async function list(
+    actor: Actor,
+    query: Partial<ListQuery>,
+  ): Promise<{ count: number; results: Currency[] }> {
+    requirePermission(actor, 'base.currency:read')
     return listFromSource({
       db,
       resource: currencyResourceMeta(),
@@ -72,6 +77,7 @@ export function createCurrencyService(db: Kysely<Database>) {
   }
 
   async function create(actor: Actor, input: CreateCurrencyInput): Promise<Currency> {
+    requirePermission(actor, 'base.currency:create')
     const normalized = validateCreate(input)
     const active = input.active ?? true
     return withTx(db, async (trx) => {
@@ -105,6 +111,7 @@ export function createCurrencyService(db: Kysely<Database>) {
   }
 
   async function update(actor: Actor, id: string, input: UpdateCurrencyInput): Promise<Currency> {
+    requirePermission(actor, 'base.currency:update')
     validateUpdate(input)
     return withTx(db, async (trx) => {
       const locked = await trx
@@ -183,6 +190,7 @@ export function createCurrencyService(db: Kysely<Database>) {
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'base.currency:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('bas_currency')

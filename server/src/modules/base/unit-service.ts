@@ -9,7 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
@@ -48,13 +48,18 @@ export interface UpdateUnitInput {
 const AUDIT = ['unit_type', 'is_base', 'name', 'symbol', 'ratio'] as const
 
 export function createUnitService(db: Kysely<Database>) {
-  async function get(id: string): Promise<Unit> {
+  async function get(actor: Actor, id: string): Promise<Unit> {
+    requirePermission(actor, 'base.unit:read')
     const row = await db.selectFrom('bas_unit').selectAll().where('id', '=', id).executeTakeFirst()
     if (!row) throw new ApiError('not_found', '计量单位不存在')
     return mapRow(row)
   }
 
-  async function list(query: Partial<ListQuery>): Promise<{ count: number; results: Unit[] }> {
+  async function list(
+    actor: Actor,
+    query: Partial<ListQuery>,
+  ): Promise<{ count: number; results: Unit[] }> {
+    requirePermission(actor, 'base.unit:read')
     return listFromSource({
       db,
       resource: unitResourceMeta(),
@@ -77,6 +82,7 @@ export function createUnitService(db: Kysely<Database>) {
   }
 
   async function create(actor: Actor, input: CreateUnitInput): Promise<Unit> {
+    requirePermission(actor, 'base.unit:create')
     const isBase = input.isBase ?? false
     const normalized = normalize(input.unitType, input.name, input.symbol, input.ratio, isBase)
     return withTx(db, async (trx) => {
@@ -112,6 +118,7 @@ export function createUnitService(db: Kysely<Database>) {
   }
 
   async function update(actor: Actor, id: string, input: UpdateUnitInput): Promise<Unit> {
+    requirePermission(actor, 'base.unit:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('bas_unit')
@@ -164,6 +171,7 @@ export function createUnitService(db: Kysely<Database>) {
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'base.unit:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('bas_unit')

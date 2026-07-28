@@ -9,7 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
@@ -63,7 +63,8 @@ JOIN bas_currency AS currency ON currency.id = c.base_currency_id
 ) AS company`
 
 export function createCompanyService(db: Kysely<Database>) {
-  async function get(id: string): Promise<Company> {
+  async function get(actor: Actor, id: string): Promise<Company> {
+    requirePermission(actor, 'base.company:read')
     const row = await sql<CompanyRow>`
       SELECT id, code, name, short_name, parent_id, base_currency_id,
              inserted_at, updated_at, parent_name, base_currency_name
@@ -75,7 +76,11 @@ export function createCompanyService(db: Kysely<Database>) {
     return mapJoined(first)
   }
 
-  async function list(query: Partial<ListQuery>): Promise<{ count: number; results: Company[] }> {
+  async function list(
+    actor: Actor,
+    query: Partial<ListQuery>,
+  ): Promise<{ count: number; results: Company[] }> {
+    requirePermission(actor, 'base.company:read')
     return listFromSource({
       db,
       resource: companyResourceMeta(),
@@ -89,6 +94,7 @@ inserted_at, updated_at, parent_name, base_currency_name`,
   }
 
   async function create(actor: Actor, input: CreateCompanyInput): Promise<Company> {
+    requirePermission(actor, 'base.company:create')
     const normalized = validateCreate(input)
     return withTx(db, async (trx) => {
       await validateCurrency(trx, normalized.baseCurrencyId)
@@ -126,6 +132,7 @@ inserted_at, updated_at, parent_name, base_currency_name`,
   }
 
   async function update(actor: Actor, id: string, input: UpdateCompanyInput): Promise<Company> {
+    requirePermission(actor, 'base.company:update')
     validateUpdate(input)
     return withTx(db, async (trx) => {
       const locked = await trx
@@ -197,6 +204,7 @@ inserted_at, updated_at, parent_name, base_currency_name`,
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'base.company:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('bas_company')

@@ -4,14 +4,9 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { validationHook } from '~/platform/http/zod.ts'
-import {
-  INSTRUMENT_PERMISSION_PREFIX,
-  PRICE_POINT_PERMISSION_PREFIX,
-} from './meta.ts'
 import type {
   MarketInstrument,
   MarketPricePoint,
@@ -19,16 +14,6 @@ import type {
   PriceSeries,
 } from './service.ts'
 
-/** 权限中间件：必须挂在 zValidator 之前 */
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
 
 const listQuerySchema = z
   .object({
@@ -199,10 +184,9 @@ export function marketInstrumentRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm(`${INSTRUMENT_PERMISSION_PREFIX}:read`),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await market.listInstruments(toListQuery(c.req.valid('json')))
+        const result = await market.listInstruments(c.get('actor')!, toListQuery(c.req.valid('json')))
         return c.json({
           count: result.count,
           results: result.results.map(instrumentDto),
@@ -211,7 +195,6 @@ export function marketInstrumentRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm(`${INSTRUMENT_PERMISSION_PREFIX}:create`),
       zValidator('json', instrumentCreateSchema, validationHook),
       async (c) => {
         const actor = c.get('actor')!
@@ -222,15 +205,13 @@ export function marketInstrumentRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm(`${INSTRUMENT_PERMISSION_PREFIX}:read`),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        return c.json(instrumentDto(await market.getInstrument(c.req.valid('param').id)))
+        return c.json(instrumentDto(await market.getInstrument(c.get('actor')!, c.req.valid('param').id)))
       },
     )
     .patch(
       '/:id',
-      requirePerm(`${INSTRUMENT_PERMISSION_PREFIX}:update`),
       zValidator('param', idParam, validationHook),
       zValidator('json', instrumentUpdateSchema, validationHook),
       async (c) => {
@@ -254,7 +235,6 @@ export function marketInstrumentRoutes(deps: {
     )
     .delete(
       '/:id',
-      requirePerm(`${INSTRUMENT_PERMISSION_PREFIX}:delete`),
       zValidator('param', idParam, validationHook),
       async (c) => {
         const actor = c.get('actor')!
@@ -274,10 +254,9 @@ export function marketPricePointRoutes(deps: {
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm(`${PRICE_POINT_PERMISSION_PREFIX}:read`),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await market.listPricePoints(toListQuery(c.req.valid('json')))
+        const result = await market.listPricePoints(c.get('actor')!, toListQuery(c.req.valid('json')))
         return c.json({
           count: result.count,
           results: result.results.map(pricePointDto),
@@ -286,18 +265,17 @@ export function marketPricePointRoutes(deps: {
     )
     .get(
       '/chart-instruments',
-      requirePerm(`${PRICE_POINT_PERMISSION_PREFIX}:read`),
       async (c) => {
-        return c.json(await market.chartInstruments())
+        return c.json(await market.chartInstruments(c.get('actor')!))
       },
     )
     .post(
       '/price-series',
-      requirePerm(`${PRICE_POINT_PERMISSION_PREFIX}:read`),
       zValidator('json', priceSeriesSchema, validationHook),
       async (c) => {
         const body = c.req.valid('json')
         const result = await market.priceSeries(
+          c.get('actor')!,
           body.instrumentIds,
           body.priceKind,
           parseDateTime(body.from, 'from'),
@@ -308,7 +286,6 @@ export function marketPricePointRoutes(deps: {
     )
     .post(
       '/refresh',
-      requirePerm(`${PRICE_POINT_PERMISSION_PREFIX}:create`),
       zValidator('json', refreshSchema, validationHook),
       async (c) => {
         const actor = c.get('actor')!
@@ -319,7 +296,6 @@ export function marketPricePointRoutes(deps: {
     )
     .post(
       '/',
-      requirePerm(`${PRICE_POINT_PERMISSION_PREFIX}:create`),
       zValidator('json', pricePointCreateSchema, validationHook),
       async (c) => {
         const actor = c.get('actor')!
@@ -337,15 +313,13 @@ export function marketPricePointRoutes(deps: {
     )
     .get(
       '/:id',
-      requirePerm(`${PRICE_POINT_PERMISSION_PREFIX}:read`),
       zValidator('param', idParam, validationHook),
       async (c) => {
-        return c.json(pricePointDto(await market.getPricePoint(c.req.valid('param').id)))
+        return c.json(pricePointDto(await market.getPricePoint(c.get('actor')!, c.req.valid('param').id)))
       },
     )
     .post(
       '/:id/void',
-      requirePerm(`${PRICE_POINT_PERMISSION_PREFIX}:void`),
       zValidator('param', idParam, validationHook),
       async (c) => {
         const actor = c.get('actor')!

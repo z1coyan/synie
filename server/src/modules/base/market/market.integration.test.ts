@@ -244,6 +244,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     createdPoints.push(later.id)
 
     const series = await market.priceSeries(
+      actor,
       [inst.id],
       'SETTLEMENT',
       new Date('2024-02-03T04:05:06Z'),
@@ -288,6 +289,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     createdInstruments.push(cross.id)
     await expect(
       market.priceSeries(
+        actor,
         [inst.id, cross.id],
         'SETTLEMENT',
         new Date('2024-02-03T04:05:06Z'),

@@ -29,7 +29,12 @@ function companyActor(companyIds: string[], username = 'base-scoped'): Actor {
     name: null,
     superAdmin: false,
     allCompanies: false,
-    permissions: new Set(),
+    permissions: new Set([
+      'base.account:read',
+      'base.account:create',
+      'base.account:update',
+      'base.account:delete',
+    ]),
     companyIds,
   }
 }
@@ -53,7 +58,7 @@ async function ensureActiveCny(
   createdCurrencyIds: string[],
 ) {
   let cny = (
-    await currencies.list({
+    await currencies.list(actor, {
       limit: 5,
       offset: 0,
       filter: { isoCode: { kind: 'text', op: 'eq', value: 'CNY' } },
@@ -117,7 +122,7 @@ run('PG 集成（base 主数据）', () => {
     expect(cur.isoCode).toBe(isoCode)
     expect(cur.active).toBe(true)
 
-    const listed = await currencies.list({ limit: 20, offset: 0, search: isoCode })
+    const listed = await currencies.list(actor, { limit: 20, offset: 0, search: isoCode })
     expect(listed.results.some((r) => r.id === cur.id)).toBe(true)
 
     // 创建公司引用为本币后不可停用
@@ -173,7 +178,7 @@ run('PG 集成（base 主数据）', () => {
     const baseSymbol = `b${suffix}`.slice(0, 16)
     const childSymbol = `u${suffix}`.slice(0, 16)
     // 共享库可能已有 AREA 基准（setup/示例）；先清掉本测类型下的既有基准与孤儿单位
-    const existingArea = await units.list({ limit: 200, offset: 0 })
+    const existingArea = await units.list(actor, { limit: 200, offset: 0 })
     for (const u of existingArea.results.filter((x) => x.unitType === 'AREA')) {
       await units.remove(actor, u.id).catch(() => undefined)
     }
@@ -207,7 +212,7 @@ run('PG 集成（base 主数据）', () => {
     expect(child.unitType).toBe('AREA')
     expect(child.ratio).toBe('0.000001')
 
-    const listed = await units.list({ limit: 10, offset: 0, search: childSymbol })
+    const listed = await units.list(actor, { limit: 10, offset: 0, search: childSymbol })
     expect(listed.count).toBe(1)
     expect(listed.results[0]?.id).toBe(child.id)
 
@@ -220,7 +225,7 @@ run('PG 集成（base 主数据）', () => {
 
     await units.remove(actor, child.id)
     createdUnitIds.splice(createdUnitIds.indexOf(child.id), 1)
-    await expect(units.get(child.id)).rejects.toMatchObject({ code: 'not_found' })
+    await expect(units.get(actor, child.id)).rejects.toMatchObject({ code: 'not_found' })
 
     await units.remove(actor, base.id)
     createdUnitIds.splice(createdUnitIds.indexOf(base.id), 1)

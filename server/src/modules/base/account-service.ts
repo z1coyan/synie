@@ -9,7 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
+import { canAccessCompany, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
@@ -122,6 +122,7 @@ const templates = templateData as Record<string, TemplateEntry[]>
 
 export function createAccountService(db: Kysely<Database>) {
   async function get(actor: Actor, id: string): Promise<Account> {
+    requirePermission(actor, 'base.account:read')
     const scope = companyScopeWhere(actor)
     if (scope.empty) throw new ApiError('not_found', '会计科目不存在')
     const whereParts = [sql`id = ${id}`]
@@ -142,6 +143,7 @@ export function createAccountService(db: Kysely<Database>) {
     actor: Actor,
     query: Partial<ListQuery>,
   ): Promise<{ count: number; results: Account[] }> {
+    requirePermission(actor, 'base.account:read')
     const scope = companyScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] }
     return listFromSource({
@@ -159,6 +161,7 @@ parent_name, company_name, currency_name, has_children`,
   }
 
   async function create(actor: Actor, input: CreateAccountInput): Promise<Account> {
+    requirePermission(actor, 'base.account:create')
     const normalized = normalizeCreate(input)
     validateInput(normalized)
     if (!canAccessCompany(actor, normalized.companyId)) {
@@ -205,6 +208,7 @@ parent_name, company_name, currency_name, has_children`,
   }
 
   async function update(actor: Actor, id: string, input: UpdateAccountInput): Promise<Account> {
+    requirePermission(actor, 'base.account:update')
     return withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('bas_account')
@@ -276,6 +280,7 @@ parent_name, company_name, currency_name, has_children`,
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
+    requirePermission(actor, 'base.account:delete')
     await withTx(db, async (trx) => {
       const locked = await trx
         .selectFrom('bas_account')
@@ -319,6 +324,7 @@ parent_name, company_name, currency_name, has_children`,
     companyId: string,
     template: string,
   ): Promise<TemplateResult> {
+    requirePermission(actor, 'base.account:create')
     const key = template.trim().toLowerCase()
     const entries = templates[key]
     if (!entries) {
