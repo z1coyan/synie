@@ -1,9 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
-/** Go REST 迁移独立验收：不依赖旧 Elixir GraphQL 全局夹具。 */
+/** Bun/Hono REST 独立验收：不依赖旧 Elixir GraphQL 全局夹具。 */
 export default defineConfig({
   testDir: '.',
-  testMatch: '*.go.e2e.ts',
+  testMatch: '*.api.e2e.ts',
   workers: 1,
   fullyParallel: false,
   retries: 0,

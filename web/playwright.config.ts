@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test'
  *
  * **遗留套件(冻结)**:依赖 Elixir `backend/` 演示库与 GraphQL 管理动线,Web Go-only
  * 切流(2026-07-26)后不再维护,随 `backend/` 删除一并清理。现行验收走
- * `playwright.go.config.ts`(各 `*.go.e2e.ts`),一键起栈见 `e2e/run-smoke.sh`。
+ * `playwright.api.config.ts`(各 `*.api.e2e.ts`),一键起栈见 `e2e/run-smoke.sh`。
  */
 export default defineConfig({
   testDir: './e2e',

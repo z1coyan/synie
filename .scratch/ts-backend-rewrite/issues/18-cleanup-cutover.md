@@ -3,6 +3,13 @@
 Status: ready-for-human
 Blocked by: 16, 17
 
+## 独立复核（2026-07-28）
+
+- 主体已交付（`7a90f70`）：`server-go/` 删除、`server-go-final` tag、OpenAPI 归档、CI/compose/README 收敛。
+- 复核补丁：修正 `web/e2e` 文档与 playwright 配置仍写 Go 栈 / `*.go.e2e.ts` 的残留叙述（与 `run-smoke.sh` + `*.api.e2e.ts` 对齐）。
+- 测试：shared 5、server 223（含 PG）、web 92 + check + shared/server typecheck 全绿。
+- 未在本复核重跑全量 Playwright 一键（会 drop 主库）；以既有 cutover 声明 e2e 21/21 + 本次单元/集成为准。
+
 ## 范围
 
 1. **删除/归档 server-go**（git tag `server-go-final` 后删除目录；contracts/openapi/openapi.yaml 移入 `docs/migration/` 作历史契约归档）

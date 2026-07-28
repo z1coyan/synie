@@ -1,14 +1,14 @@
 /**
- * Go e2e 演示库 provisioning:复刻初始化向导「示例数据」路径的 REST 调用序列
- * (对应旧 Elixir `mix synie.demo` 的语义),供 run-smoke.sh 在重建库后调用。
+ * e2e 演示库 provisioning：复刻初始化向导「示例数据」路径的 REST 调用序列
+ * (对应旧 Elixir `mix synie.demo` 的语义)，供 run-smoke.sh 在重建库后调用。
  *
- * 步骤:建超管 → 预置常用货币 → 启用 CNY 本位币 → 建 JT 公司 + SMALL 科目模板 →
- * 完成初始化并写全业务链示例数据 → 追加一个空科目公司(account.go.e2e 的前置)。
+ * 步骤：建超管 → 预置常用货币 → 启用 CNY 本位币 → 建 JT 公司 + SMALL 科目模板 →
+ * 完成初始化并写全业务链示例数据 → 追加一个空科目公司（account.api.e2e 的前置）。
  *
  * 环境变量:
  *   API_BASE               默认 http://localhost:8080/api/v1
  *   E2E_ADMIN_USERNAME     默认 admin
- *   E2E_ADMIN_PASSWORD     默认 synie-integration-admin-password(与各 *.go.e2e.ts 一致)
+ *   E2E_ADMIN_PASSWORD     默认 synie-integration-admin-password（与各 *.api.e2e.ts 一致）
  */
 
 const apiBase = process.env.API_BASE ?? process.env.SYNIE_API_URL ?? 'http://localhost:8080/api/v1'
@@ -97,8 +97,8 @@ console.log(
     ? '[provision] 初始化完成,示例业务数据已写入'
     : '[provision] 初始化完成（未写入示例业务数据；e2e 自建 fixture）',
 )
-// 7. 追加空科目公司:account.go.e2e 需要一家 0 科目的公司跑科目模板动线
-//    (历史上由既有 dev 库里其他 spec 的残留公司提供,一键重建时必须显式补)
+// 7. 追加空科目公司：account.api.e2e 需要一家 0 科目的公司跑科目模板动线
+//    (历史上由既有 dev 库里其他 spec 的残留公司提供，一键重建时必须显式补)
 await call('POST', '/base/companies', {
   code: 'EK',
   name: 'E2E 空科目公司',
@@ -107,7 +107,8 @@ await call('POST', '/base/companies', {
 }, token)
 console.log('[provision] 空科目公司已追加')
 
-// 8. files.go.e2e 的基线存储(历史 dev 库手工预置,一键重建时显式补)
+// 8. files.api.e2e 的基线存储（历史 dev 库手工预置，一键重建时显式补）
+// name/label 保留 go-e2e-local：部分 fixture/断言可能依赖该历史字面量
 await call('POST', '/system/storages', {
   name: 'go-e2e-local',
   label: 'go-e2e-local',
