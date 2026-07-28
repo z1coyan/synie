@@ -1,0 +1,266 @@
+{
+  "capabilities": [],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行号",
+      "name": "idx",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "固定价",
+          "value": "FIXED"
+        },
+        {
+          "label": "数量梯度",
+          "value": "QTY_TIERED"
+        }
+      ],
+      "filterable": true,
+      "label": "定价模式",
+      "name": "pricingMode",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "含税单价(固定价模式)",
+      "name": "price",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "税率(小数,如 0.13)",
+      "name": "taxRate",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "物料编号",
+      "name": "materialCode",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "物料名称",
+      "name": "materialName",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "规格",
+      "name": "materialSpec",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "客户料号",
+      "name": "customerPartNo",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "单位名称",
+      "name": "unitName",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "行备注",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "报价单",
+      "name": "quotationId",
+      "ref": {
+        "labelField": "quotationNo",
+        "relation": "quotation",
+        "resource": "salQuotations"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "公司",
+      "name": "companyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "物料",
+      "name": "materialId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "单位",
+      "name": "unitId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "价格档数",
+      "name": "tierCount",
+      "ref": null,
+      "sortable": false,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "报价日期",
+      "name": "quotationDate",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "报价截止(含当日)",
+      "name": "validUntil",
+      "ref": null,
+      "sortable": true,
+      "type": "date"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "草稿",
+          "value": "DRAFT"
+        },
+        {
+          "label": "已审核",
+          "value": "AUDITED"
+        },
+        {
+          "label": "已作废",
+          "value": "VOIDED"
+        }
+      ],
+      "filterable": true,
+      "label": "状态",
+      "name": "quotationStatus",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "供应商",
+          "value": "SUPPLIER"
+        },
+        {
+          "label": "客户",
+          "value": "CUSTOMER"
+        },
+        {
+          "label": "内部公司",
+          "value": "COMPANY"
+        },
+        {
+          "label": "员工",
+          "value": "EMPLOYEE"
+        }
+      ],
+      "filterable": true,
+      "label": "对手类型(客户/内部公司)",
+      "name": "partyType",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "对手",
+      "name": "partyId",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "币种",
+      "name": "currencyCode",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    }
+  ],
+  "destroyMutation": "destroySalQuotationItem",
+  "extendedActions": []
+}
