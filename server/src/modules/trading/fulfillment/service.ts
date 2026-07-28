@@ -3,7 +3,7 @@
  * 审核单事务：库存引擎 + 订单投影 + 金额>0 时 GL 引擎（零金额跳总账）。
  */
 import type { ListQuery } from '@synie/shared'
-import { decimal, roundAmount } from '@synie/shared'
+import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
@@ -19,8 +19,8 @@ import {
 import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '../../base/list.ts'
-import { mapWriteError } from '../../base/dberr.ts'
+import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { mapWriteError } from '~/db/dberr.ts'
 import {
   asDate,
   asDateTime,
@@ -40,6 +40,7 @@ import {
   wireRequiredDecimal,
 } from '../common.ts'
 import type { OrderService } from '../order/service.ts'
+import { auditFulfillmentInTx, voidFulfillmentInTx } from '../posting.ts'
 import {
   fulfillmentHeadMeta,
   fulfillmentItemListMeta,
@@ -324,116 +325,55 @@ export function createFulfillmentService(
     const spec = fulfillmentSpec(side)
     requirePerm(actor, spec.prefix, 'audit', '无权限执行该履约操作')
     return withTx(db, async (trx) => {
-      const beforeRow = await lockHead(trx, actor, spec, id)
-      const before = mapHead(beforeRow)
-      if (before.status !== 'DRAFT') throw new ApiError('conflict', `仅草稿${spec.label}可审核`)
-      validateHeadShape(spec, before)
-      await validateHeadRefs(trx, spec, before)
-      const items = await loadActionItems(trx, spec, id)
-      if (items.length === 0) throw new ApiError('conflict', '审核前必须至少填写一条履约条目')
-      if (side === 'sales') await validatePackEquality(trx, id, items)
-
-      const projectionLines = items.map((i) => ({
-        orderItemId: i.orderItemId,
-        baseQty: i.baseQty,
-      }))
-      const stockLines = items.map((i) => ({
-        warehouseId: i.warehouseId,
-        materialId: i.materialId,
-        quantity: decimal(i.baseQty).mul(spec.stockDirection),
-        remarks: before.remarks,
-      }))
-      let amount = decimal(0)
-      for (const item of items) {
-        if (!decimal(item.orderBaseQty).isZero()) {
-          amount = amount.add(
-            decimal(item.orderBaseAmount).mul(decimal(item.baseQty)).div(decimal(item.orderBaseQty)),
-          )
-        }
-      }
-      amount = decimal(roundAmount(amount))
-
-      await orders.postFulfillment(trx, side, {
-        companyId: before.companyId,
-        partyType: before.partyType,
-        partyId: before.partyId,
-        lines: projectionLines,
-      })
-      await inventory.post(trx, {
-        type: spec.voucherType,
-        id: before.id,
-        no: before.no,
-        companyId: before.companyId,
-        postingDate: before.documentDate,
-      }, stockLines)
-
-      let postingDate = before.postingDate ?? before.documentDate
-      if (postingDateOverride) postingDate = toDateOnly(postingDateOverride)
-
-      if (amount.gt(0)) {
-        const currencies = await accountCurrencies(trx, before.debitAccountId, before.creditAccountId)
-        const debit: {
-          accountId: string
-          currencyId: string | null
-          debit: typeof amount
-          credit: typeof amount
-          partyType?: string
-          partyId?: string
-        } = {
-          accountId: before.debitAccountId,
-          currencyId: currencies.debit,
-          debit: amount,
-          credit: decimal(0),
-        }
-        const credit = {
-          accountId: before.creditAccountId,
-          currencyId: currencies.credit,
-          debit: decimal(0),
-          credit: amount,
-          partyType: undefined as string | undefined,
-          partyId: undefined as string | undefined,
-        }
-        if (side === 'sales') {
-          debit.partyType = lowerParty(before.partyType)
-          debit.partyId = before.partyId
-        } else {
-          credit.partyType = lowerParty(before.partyType)
-          credit.partyId = before.partyId
-        }
-        await gl.post(
-          trx,
-          {
-            type: spec.voucherType,
-            id: before.id,
-            no: before.no,
+      await auditFulfillmentInTx(trx, actor, { inventory, gl }, {
+        voucherType: spec.voucherType,
+        headTable: spec.headTable,
+        partySide: side === 'sales' ? 'debit' : 'credit',
+        postingDateOverride,
+        lockDraft: async (t) => {
+          const before = mapHead(await lockHead(t, actor, spec, id))
+          if (before.status !== 'DRAFT') throw new ApiError('conflict', `仅草稿${spec.label}可审核`)
+          validateHeadShape(spec, before)
+          await validateHeadRefs(t, spec, before)
+          return before
+        },
+        collect: async (t, before) => {
+          const items = await loadActionItems(t, spec, id)
+          if (items.length === 0) throw new ApiError('conflict', '审核前必须至少填写一条履约条目')
+          if (side === 'sales') await validatePackEquality(t, id, items)
+          const projectionLines = items.map((i) => ({
+            orderItemId: i.orderItemId,
+            baseQty: i.baseQty,
+          }))
+          const stockLines = items.map((i) => ({
+            warehouseId: i.warehouseId,
+            materialId: i.materialId,
+            quantity: decimal(i.baseQty).mul(spec.stockDirection),
+            remarks: before.remarks,
+          }))
+          let amount = decimal(0)
+          for (const item of items) {
+            if (!decimal(item.orderBaseQty).isZero()) {
+              amount = amount.add(
+                decimal(item.orderBaseAmount).mul(decimal(item.baseQty)).div(decimal(item.orderBaseQty)),
+              )
+            }
+          }
+          return { projectionLines, stockLines, amount }
+        },
+        postProjection: (t, before, lines) =>
+          orders.postFulfillment(t, side, {
             companyId: before.companyId,
-            postingDate,
-          },
-          [debit, credit],
-        )
-      }
-
-      const auditedById = actor.userId || null
-      await sql`
-        UPDATE ${ident(spec.headTable)} SET
-          status='audited',
-          posting_date=${postingDate}::date,
-          audited_at=(now() AT TIME ZONE 'utc'),
-          audited_by_id=${auditedById}::uuid,
-          updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
-      const row = await loadHead(trx, spec, id)
-      const after = mapHead(row!)
-      await writeAudit(trx, actor, {
-        resource: spec.headTable,
-        recordId: id,
-        recordLabel: after.no,
-        companyId: after.companyId,
-        actionType: 'update',
-        actionName: 'audit',
-        changes: auditDiff(headSnap(before), headSnap(after), HEAD_AUDIT),
+            partyType: before.partyType,
+            partyId: before.partyId,
+            lines,
+          }),
+        voucherOf: (h) => h,
+        reload: async (t, headId) => mapHead((await loadHead(t, spec, headId))!),
+        snapshot: headSnap,
+        auditFields: HEAD_AUDIT,
       })
+      const row = await loadHead(trx, spec, id)
       return mapHeadDto(side, row!)
     })
   }
@@ -442,38 +382,36 @@ export function createFulfillmentService(
     const spec = fulfillmentSpec(side)
     requirePerm(actor, spec.prefix, 'void', '无权限执行该履约操作')
     return withTx(db, async (trx) => {
-      const beforeRow = await lockHead(trx, actor, spec, id)
-      const before = mapHead(beforeRow)
-      if (before.status !== 'AUDITED') throw new ApiError('conflict', `仅已审核${spec.label}可作废`)
-      const items = await loadActionItems(trx, spec, id)
-      for (const item of items) {
-        if (decimal(item.reconciledQty).gt(0)) {
-          throw new ApiError('conflict', '存在已对账履约条目,不可作废')
-        }
-      }
-      await orders.reverseFulfillment(trx, side, {
-        companyId: before.companyId,
-        partyType: before.partyType,
-        partyId: before.partyId,
-        lines: items.map((i) => ({ orderItemId: i.orderItemId, baseQty: i.baseQty })),
+      await voidFulfillmentInTx(trx, actor, { inventory, gl }, {
+        voucherType: spec.voucherType,
+        headTable: spec.headTable,
+        lockAudited: async (t) => {
+          const before = mapHead(await lockHead(t, actor, spec, id))
+          if (before.status !== 'AUDITED') throw new ApiError('conflict', `仅已审核${spec.label}可作废`)
+          return before
+        },
+        voidableLines: async (t) => {
+          const items = await loadActionItems(t, spec, id)
+          for (const item of items) {
+            if (decimal(item.reconciledQty).gt(0)) {
+              throw new ApiError('conflict', '存在已对账履约条目,不可作废')
+            }
+          }
+          return items.map((i) => ({ orderItemId: i.orderItemId, baseQty: i.baseQty }))
+        },
+        reverseProjection: (t, before, lines) =>
+          orders.reverseFulfillment(t, side, {
+            companyId: before.companyId,
+            partyType: before.partyType,
+            partyId: before.partyId,
+            lines,
+          }),
+        voucherOf: (h) => h,
+        reload: async (t, headId) => mapHead((await loadHead(t, spec, headId))!),
+        snapshot: headSnap,
+        auditFields: HEAD_AUDIT,
       })
-      await inventory.cancel(trx, { type: spec.voucherType, id: before.id })
-      await gl.cancel(trx, { type: spec.voucherType, id: before.id })
-      await sql`
-        UPDATE ${ident(spec.headTable)} SET status='voided', updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
       const row = await loadHead(trx, spec, id)
-      const after = mapHead(row!)
-      await writeAudit(trx, actor, {
-        resource: spec.headTable,
-        recordId: id,
-        recordLabel: after.no,
-        companyId: after.companyId,
-        actionType: 'update',
-        actionName: 'void',
-        changes: auditDiff(headSnap(before), headSnap(after), HEAD_AUDIT),
-      })
       return mapHeadDto(side, row!)
     })
   }
@@ -1043,14 +981,6 @@ async function validatePackEquality(db: DbHandle, headId: string, items: ActionI
   if (mismatches.length > 0) {
     throw new ApiError('conflict', `装箱清单与发货量不一致: ${mismatches.join('; ')}`)
   }
-}
-
-async function accountCurrencies(db: DbHandle, debitId: string, creditId: string) {
-  const rows = await sql<{ id: string; currency_id: string | null }>`
-    SELECT id, currency_id FROM bas_account WHERE id = ANY(${[debitId, creditId]}::uuid[])
-  `.execute(db)
-  const map = new Map(rows.rows.map((r) => [r.id, r.currency_id]))
-  return { debit: map.get(debitId) ?? null, credit: map.get(creditId) ?? null }
 }
 
 function mapHead(row: Record<string, unknown>): FulfillmentHead {

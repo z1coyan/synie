@@ -107,6 +107,7 @@ const accounting = createAccountingServices(db, numbering)
 const trading = createTradingServices(db, numbering)
 const finance = createFinanceServices(db, numbering, {
   reconciliations: trading.reconciliations,
+  journals: accounting.journals,
   files,
 })
 const todos = createTodoService(db)

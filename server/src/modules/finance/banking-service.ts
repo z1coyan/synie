@@ -3,7 +3,7 @@
  */
 import type { Kysely } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine, type GlEngine } from '~/engines/gl/index.ts'
+import type { JournalService } from '~/modules/accounting/journal-service.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { createAccountAndTxnOps } from './banking-accounts.ts'
@@ -24,19 +24,19 @@ export function createBankingService(
   db: Kysely<Database>,
   numbering: NumberingService,
   deps: {
+    /** 快速对账凭证的凭证 seam（accounting 注入，装配期必填） */
+    journals: Pick<JournalService, 'createAndAuditJournal'>
     files?: Pick<FileService, 'readStoredFile'> | null
-    gl?: GlEngine
     utcOffsetMs?: number
-  } = {},
+  },
 ) {
-  const gl = deps.gl ?? createGlEngine()
   const accounts = createAccountAndTxnOps(db)
   const imports = createImportOps(db, {
     files: deps.files ?? null,
     createTransactionInTx: accounts.createTransactionInTx,
     utcOffsetMs: deps.utcOffsetMs,
   })
-  const recon = createReconOps(db, numbering, gl)
+  const recon = createReconOps(db, { journals: deps.journals })
   return {
     ...accounts,
     ...imports,

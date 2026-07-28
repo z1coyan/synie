@@ -165,6 +165,7 @@ export async function buildTestApp(
   const trading = createTradingServices(db, numbering)
   const finance = createFinanceServices(db, numbering, {
     reconciliations: trading.reconciliations,
+    journals: accounting.journals,
     files: merged.files,
   })
   const todos = createTodoService(db)

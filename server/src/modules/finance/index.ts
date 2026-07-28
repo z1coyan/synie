@@ -8,6 +8,7 @@ import type { FileService } from '~/platform/files/service.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { ReconciliationService } from '~/modules/trading/reconciliation/service.ts'
+import type { JournalService } from '~/modules/accounting/journal-service.ts'
 import { createVatInvoiceService } from './invoice-service.ts'
 import { createBankingService } from './banking-service.ts'
 import { createExpenseService } from './expense-service.ts'
@@ -59,6 +60,7 @@ export function createFinanceServices(
   numbering: NumberingService,
   deps: {
     reconciliations: Pick<ReconciliationService, 'closeFromInvoice' | 'reopenFromInvoice'>
+    journals: Pick<JournalService, 'createAndAuditJournal'>
     files?: Pick<FileService, 'readStoredFile'> | null
   },
 ) {
@@ -69,7 +71,10 @@ export function createFinanceServices(
       reconciliations: deps.reconciliations,
       files: deps.files ?? null,
     }),
-    banking: createBankingService(db, numbering, { files: deps.files ?? null, gl }),
+    banking: createBankingService(db, numbering, {
+      journals: deps.journals,
+      files: deps.files ?? null,
+    }),
     expenses: createExpenseService(db, numbering, gl),
     bills: createBillService(db, numbering, { gl, files: deps.files ?? null }),
   }

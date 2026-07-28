@@ -6,20 +6,19 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
-import { createGlEngine, type GlEngine, type GlEntry } from '~/engines/gl/index.ts'
+import type { JournalService } from '~/modules/accounting/journal-service.ts'
 import {
   auditCreated, auditDestroyed, writeAudit,
 } from '~/platform/audit/write.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '../base/list.ts'
-import { mapWriteError } from '../base/dberr.ts'
+import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { mapWriteError } from '~/db/dberr.ts'
 import {
   loadTransaction, reconcileStatus, txnAmount, type BankTransaction,
 } from './banking-accounts.ts'
 import {
-  actorUserId, asIso, conflict, lower, notFound, requireCompanyAccess,
+  asIso, conflict, lower, notFound, requireCompanyAccess,
   requirePerm, validateOptionalText, validation, wireDecRequired,
 } from './common.ts'
 import { bankReconciliationResourceMeta } from './meta.ts'
@@ -120,9 +119,11 @@ async function refreshBankTransaction(db: DbHandle, transaction: BankTransaction
 
 export function createReconOps(
   db: Kysely<Database>,
-  numbering: NumberingService,
-  gl: GlEngine = createGlEngine(),
+  deps: {
+    journals: Pick<JournalService, 'createAndAuditJournal'>
+  },
 ) {
+  const { journals } = deps
   async function listReconciliations(actor: Actor, query: Partial<ListQuery>) {
     requirePerm(actor, 'acc.bank_transaction:read', '无权限执行银行业务操作')
     const scope = companyScopeWhere(actor)
@@ -238,6 +239,10 @@ export function createReconOps(
     return { amount: result.toFixed() }
   }
 
+  /**
+   * 快速对账凭证：借贷两行，经 accounting 窄 seam 在同一 trx 内建立并审核。
+   * 凭证生命周期（编号/审计/状态机/GL）归 journal-service 唯一实现，此处不再复制。
+   */
   async function createQuickJournal(
     trx: TrxHandle, actor: Actor, input: {
       companyId: string; bankLedgerAccountId: string; counterAccountId: string
@@ -246,81 +251,24 @@ export function createReconOps(
   ): Promise<string> {
     requirePerm(actor, 'acc.gl_journal:create', '无权限执行银行业务操作')
     requirePerm(actor, 'acc.gl_journal:audit', '无权限执行银行业务操作')
-    const no = await numbering.nextInTx(trx, {
-      resource: 'acc.gl_journal',
-      values: { company_id: input.companyId, date: input.postingDate },
-    })
-    const ins = await sql<{ id: string }>`
-      INSERT INTO acc_gl_journal(voucher_no,date,posting_date,remarks,status,company_id,created_by_id)
-      VALUES (${no},${input.postingDate}::date,${input.postingDate}::date,${input.summary},
-        'draft',${input.companyId}::uuid,${actorUserId(actor)}::uuid)
-      RETURNING id
-    `.execute(trx)
-    const journalId = ins.rows[0]!.id
-    await writeAudit(trx, actor, {
-      resource: 'acc_gl_journal', recordId: journalId, recordLabel: no,
-      companyId: input.companyId, actionType: 'create', actionName: 'create',
-      changes: auditCreated({
-        voucher_no: no, date: input.postingDate, posting_date: input.postingDate,
-        remarks: input.summary, company_id: input.companyId,
-      }, ['voucher_no', 'date', 'posting_date', 'remarks', 'company_id']),
-    })
-    const currRows = await sql<{ id: string; currency_id: string | null }>`
-      SELECT id,currency_id FROM bas_account
-      WHERE id=ANY(${[input.bankLedgerAccountId, input.counterAccountId]}::uuid[])
-    `.execute(trx)
-    const currencies = new Map(currRows.rows.map((r) => [r.id, r.currency_id]))
-    if (currencies.size !== 2) {
-      throw validation('快速对账', { counterAccountId: ['科目不存在'] })
-    }
     const amount = input.amount
-    const entries: GlEntry[] = input.income
+    const lines = input.income
       ? [
-          { accountId: input.bankLedgerAccountId, currencyId: currencies.get(input.bankLedgerAccountId), debit: amount, credit: 0, remarks: input.summary },
-          { accountId: input.counterAccountId, currencyId: currencies.get(input.counterAccountId), debit: 0, credit: amount, remarks: input.summary },
+          { accountId: input.bankLedgerAccountId, debit: amount, credit: decimal(0), remarks: input.summary },
+          { accountId: input.counterAccountId, debit: decimal(0), credit: amount, remarks: input.summary },
         ]
       : [
-          { accountId: input.counterAccountId, currencyId: currencies.get(input.counterAccountId), debit: amount, credit: 0, remarks: input.summary },
-          { accountId: input.bankLedgerAccountId, currencyId: currencies.get(input.bankLedgerAccountId), debit: 0, credit: amount, remarks: input.summary },
+          { accountId: input.counterAccountId, debit: amount, credit: decimal(0), remarks: input.summary },
+          { accountId: input.bankLedgerAccountId, debit: decimal(0), credit: amount, remarks: input.summary },
         ]
-    for (let i = 0; i < entries.length; i++) {
-      const e = entries[i]!
-      const line = await sql<{ id: string }>`
-        INSERT INTO acc_gl_journal_line(idx,debit,credit,remarks,journal_id,company_id,account_id,currency_id)
-        VALUES (${i + 1},${String(e.debit ?? 0)},${String(e.credit ?? 0)},${e.remarks ?? null},
-          ${journalId}::uuid,${input.companyId}::uuid,${e.accountId}::uuid,${e.currencyId ?? null}::uuid)
-        RETURNING id
-      `.execute(trx)
-      await writeAudit(trx, actor, {
-        resource: 'acc_gl_journal_line', recordId: line.rows[0]!.id,
-        recordLabel: `${no}#${i + 1}`, companyId: input.companyId,
-        actionType: 'create', actionName: 'create',
-        changes: auditCreated({
-          idx: i + 1, debit: String(e.debit ?? 0), credit: String(e.credit ?? 0),
-          journal_id: journalId, company_id: input.companyId, account_id: e.accountId,
-          currency_id: e.currencyId, remarks: e.remarks,
-        }, ['idx', 'debit', 'credit', 'journal_id', 'company_id', 'account_id', 'currency_id', 'remarks']),
-      })
-    }
-    await gl.post(trx, {
-      type: 'acc.gl_journal', id: journalId, no, companyId: input.companyId, postingDate: input.postingDate,
-    }, entries)
-    const updated = await sql`
-      UPDATE acc_gl_journal SET status='audited', submitted_at=timezone('utc',now()),
-        submitted_by_id=${actorUserId(actor)}::uuid, updated_at=timezone('utc',now())
-      WHERE id=${journalId}::uuid AND status='draft'
-    `.execute(trx)
-    if (Number(updated.numAffectedRows) !== 1) throw conflict('快速对账凭证已被并发处理')
-    await writeAudit(trx, actor, {
-      resource: 'acc_gl_journal', recordId: journalId, recordLabel: no,
-      companyId: input.companyId, actionType: 'update', actionName: 'audit',
-      changes: {
-        status: { from: 'draft', to: 'audited' },
-        submitted_at: { to: new Date().toISOString() },
-        submitted_by_id: { to: actorUserId(actor) },
-      },
+    const journal = await journals.createAndAuditJournal(trx, actor, {
+      companyId: input.companyId,
+      date: input.postingDate,
+      postingDate: input.postingDate,
+      remarks: input.summary,
+      lines,
     })
-    return journalId
+    return journal.id
   }
 
   async function quickCreate(actor: Actor, input: {

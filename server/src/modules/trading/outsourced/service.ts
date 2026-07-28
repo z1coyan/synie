@@ -3,7 +3,7 @@
  * 行为对齐 server-go/internal/domain/fulfillment/outsourced。
  */
 import type { ListQuery } from '@synie/shared'
-import { decimal, roundAmount } from '@synie/shared'
+import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
@@ -19,8 +19,8 @@ import {
 import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
-import { companyScopeWhere, listFromSource } from '../../base/list.ts'
-import { mapWriteError as mapWriteErrorBase } from '../../base/dberr.ts'
+import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { mapWriteError as mapWriteErrorBase } from '~/db/dberr.ts'
 
 function mapWriteError(err: unknown, label: string): never {
   throw mapWriteErrorBase(err, `${label}失败`, [
@@ -44,6 +44,12 @@ import {
   wireRequiredDecimal,
 } from '../common.ts'
 import type { OrderService } from '../order/service.ts'
+import {
+  auditFulfillmentInTx,
+  voidFulfillmentInTx,
+  type PostingProjectionLine,
+} from '../posting.ts'
+import type { StockLine } from '~/engines/inventory/index.ts'
 import {
   outsourcedIssueItemMeta,
   outsourcedIssueMeta,
@@ -906,195 +912,149 @@ export function createOutsourcedService(
   async function auditReceipt(actor: Actor, id: string, input: { postingDate?: string | null } = {}) {
     requirePerm(actor, RECEIPT_PREFIX, 'audit', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const beforeRow = await lockDraftReceipt(trx, actor, id)
-      const before = mapReceipt(beforeRow)
-      const { items, materials, byproducts } = await loadReceiptActionLines(trx, id)
-      if (items.length === 0) {
-        throw new ApiError('conflict', '委外入库单至少需要一条成品行')
-      }
-      const stockLines: Array<{
-        warehouseId: string
-        materialId: string
-        quantity: string
-        remarks: string | null
-      }> = []
-      const projection: Array<{ orderItemId: string; baseQty: string }> = []
-      let amount = decimal(0)
-      for (const item of items) {
-        await deriveReceiptItem(
-          trx,
-          before,
-          {
-            qty: decimal(item.qty),
-            orderItemId: item.orderItemId,
-            unitId: item.unitId,
-            warehouseId: item.warehouseId,
-            remarks: item.remarks,
-          },
-          item.id,
-        )
-        projection.push({ orderItemId: item.orderItemId, baseQty: item.baseQty })
-        stockLines.push({
-          warehouseId: item.warehouseId,
-          materialId: item.materialId,
-          quantity: wireRequiredDecimal(item.baseQty),
-          remarks: item.remarks,
-        })
-        if (decimal(item.orderBaseQty).gt(0)) {
-          amount = amount.add(
-            decimal(item.orderBaseAmount).mul(decimal(item.baseQty)).div(decimal(item.orderBaseQty)),
-          )
-        }
-      }
-      for (const m of materials) {
-        if (!m.outsourcedWarehouseId) {
-          throw new ApiError('conflict', '材料扣减行必须填写外协仓')
-        }
-        await validateOutsourcedWarehouse(
-          trx,
-          before.companyId,
-          before.partyType,
-          before.partyId,
-          m.outsourcedWarehouseId,
-        )
-        stockLines.push({
-          warehouseId: m.outsourcedWarehouseId,
-          materialId: m.materialId,
-          quantity: wireRequiredDecimal(decimal(m.baseQty).neg()),
-          remarks: m.remarks,
-        })
-      }
-      for (const b of byproducts) {
-        if (!b.warehouseId) {
-          throw new ApiError('conflict', '副产物行必须填写入仓')
-        }
-        await validateWarehouse(trx, before.companyId, b.warehouseId)
-        stockLines.push({
-          warehouseId: b.warehouseId,
-          materialId: b.materialId,
-          quantity: wireRequiredDecimal(b.baseQty),
-          remarks: b.remarks,
-        })
-      }
-      await orders.postFulfillment(trx, 'purchase', {
-        companyId: before.companyId,
-        partyType: before.partyType,
-        partyId: before.partyId,
-        requireOutsourced: true,
-        lines: projection,
-      })
-      await inventory.post(
-        trx,
-        {
-          type: RECEIPT_PREFIX,
-          id: before.id,
-          no: before.receiptNo,
-          companyId: before.companyId,
-          postingDate: before.receiptDate,
+      return auditFulfillmentInTx(trx, actor, { inventory, gl }, {
+        voucherType: RECEIPT_PREFIX,
+        headTable: RECEIPT_TABLE,
+        partySide: 'credit',
+        postingDateOverride: input.postingDate,
+        lockDraft: async (t) => mapReceipt(await lockDraftReceipt(t, actor, id)),
+        collect: async (t, before) => {
+          const { items, materials, byproducts } = await loadReceiptActionLines(t, id)
+          if (items.length === 0) {
+            throw new ApiError('conflict', '委外入库单至少需要一条成品行')
+          }
+          const stockLines: StockLine[] = []
+          const projectionLines: PostingProjectionLine[] = []
+          let amount = decimal(0)
+          for (const item of items) {
+            await deriveReceiptItem(
+              t,
+              before,
+              {
+                qty: decimal(item.qty),
+                orderItemId: item.orderItemId,
+                unitId: item.unitId,
+                warehouseId: item.warehouseId,
+                remarks: item.remarks,
+              },
+              item.id,
+            )
+            projectionLines.push({ orderItemId: item.orderItemId, baseQty: item.baseQty })
+            stockLines.push({
+              warehouseId: item.warehouseId,
+              materialId: item.materialId,
+              quantity: wireRequiredDecimal(item.baseQty),
+              remarks: item.remarks,
+            })
+            if (decimal(item.orderBaseQty).gt(0)) {
+              amount = amount.add(
+                decimal(item.orderBaseAmount).mul(decimal(item.baseQty)).div(decimal(item.orderBaseQty)),
+              )
+            }
+          }
+          for (const m of materials) {
+            if (!m.outsourcedWarehouseId) {
+              throw new ApiError('conflict', '材料扣减行必须填写外协仓')
+            }
+            await validateOutsourcedWarehouse(
+              t,
+              before.companyId,
+              before.partyType,
+              before.partyId,
+              m.outsourcedWarehouseId,
+            )
+            stockLines.push({
+              warehouseId: m.outsourcedWarehouseId,
+              materialId: m.materialId,
+              quantity: wireRequiredDecimal(decimal(m.baseQty).neg()),
+              remarks: m.remarks,
+            })
+          }
+          for (const b of byproducts) {
+            if (!b.warehouseId) {
+              throw new ApiError('conflict', '副产物行必须填写入仓')
+            }
+            await validateWarehouse(t, before.companyId, b.warehouseId)
+            stockLines.push({
+              warehouseId: b.warehouseId,
+              materialId: b.materialId,
+              quantity: wireRequiredDecimal(b.baseQty),
+              remarks: b.remarks,
+            })
+          }
+          return { projectionLines, stockLines, amount }
         },
-        stockLines,
-      )
-      let postingDate = before.postingDate ?? before.receiptDate
-      if (input.postingDate) postingDate = toDateOnly(input.postingDate)
-      amount = decimal(roundAmount(amount))
-      if (amount.gt(0)) {
-        if (!postingDate) {
-          throw ApiError.validation('审核委外入库单参数不合法', {
-            postingDate: ['有金额过账时必填'],
-          })
-        }
-        const currencies = await accountCurrencies(trx, before.debitAccountId, before.creditAccountId)
-        await gl.post(
-          trx,
-          {
-            type: RECEIPT_PREFIX,
-            id: before.id,
-            no: before.receiptNo,
+        postProjection: (t, before, lines) =>
+          orders.postFulfillment(t, 'purchase', {
             companyId: before.companyId,
-            postingDate,
-          },
-          [
-            {
-              accountId: before.debitAccountId,
-              currencyId: currencies.debit,
-              debit: amount,
-              credit: 0,
-            },
-            {
-              accountId: before.creditAccountId,
-              currencyId: currencies.credit,
-              debit: 0,
-              credit: amount,
-              partyType: lowerParty(before.partyType),
-              partyId: before.partyId,
-            },
-          ],
-        )
-      }
-      const auditedById = actor.userId || null
-      await sql`
-        UPDATE pur_outsourced_receipt SET
-          status='audited',
-          posting_date=${postingDate}::date,
-          audited_at=(now() AT TIME ZONE 'utc'),
-          audited_by_id=${auditedById}::uuid,
-          updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
-      const row = await loadReceipt(trx, id)
-      const after = mapReceipt(row!)
-      await writeAudit(trx, actor, {
-        resource: RECEIPT_TABLE,
-        recordId: id,
-        recordLabel: after.receiptNo,
-        companyId: after.companyId,
-        actionType: 'update',
-        actionName: 'audit',
-        changes: auditDiff(receiptSnap(before), receiptSnap(after), RECEIPT_AUDIT),
+            partyType: before.partyType,
+            partyId: before.partyId,
+            requireOutsourced: true,
+            lines,
+          }),
+        voucherOf: (h) => ({
+          id: h.id,
+          no: h.receiptNo,
+          companyId: h.companyId,
+          documentDate: h.receiptDate,
+          postingDate: h.postingDate,
+          partyType: h.partyType,
+          partyId: h.partyId,
+          debitAccountId: h.debitAccountId,
+          creditAccountId: h.creditAccountId,
+        }),
+        reload: async (t, receiptId) => mapReceipt((await loadReceipt(t, receiptId))!),
+        snapshot: receiptSnap,
+        auditFields: RECEIPT_AUDIT,
       })
-      return after
     })
   }
 
   async function voidReceipt(actor: Actor, id: string) {
     requirePerm(actor, RECEIPT_PREFIX, 'void', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const beforeRow = await lockReceipt(trx, actor, id)
-      const before = mapReceipt(beforeRow)
-      if (before.status !== 'AUDITED') {
-        throw new ApiError('conflict', '仅已审核委外入库单可作废')
-      }
-      const { items } = await loadReceiptActionLines(trx, id)
-      for (const item of items) {
-        if (decimal(item.reconciledQty).gt(0)) {
-          throw new ApiError('conflict', '存在已对账成品行,不可作废')
-        }
-      }
-      await orders.reverseFulfillment(trx, 'purchase', {
-        companyId: before.companyId,
-        partyType: before.partyType,
-        partyId: before.partyId,
-        requireOutsourced: true,
-        lines: items.map((i) => ({ orderItemId: i.orderItemId, baseQty: i.baseQty })),
+      return voidFulfillmentInTx(trx, actor, { inventory, gl }, {
+        voucherType: RECEIPT_PREFIX,
+        headTable: RECEIPT_TABLE,
+        lockAudited: async (t) => {
+          const before = mapReceipt(await lockReceipt(t, actor, id))
+          if (before.status !== 'AUDITED') {
+            throw new ApiError('conflict', '仅已审核委外入库单可作废')
+          }
+          return before
+        },
+        voidableLines: async (t) => {
+          const { items } = await loadReceiptActionLines(t, id)
+          for (const item of items) {
+            if (decimal(item.reconciledQty).gt(0)) {
+              throw new ApiError('conflict', '存在已对账成品行,不可作废')
+            }
+          }
+          return items.map((i) => ({ orderItemId: i.orderItemId, baseQty: i.baseQty }))
+        },
+        reverseProjection: (t, before, lines) =>
+          orders.reverseFulfillment(t, 'purchase', {
+            companyId: before.companyId,
+            partyType: before.partyType,
+            partyId: before.partyId,
+            requireOutsourced: true,
+            lines,
+          }),
+        voucherOf: (h) => ({
+          id: h.id,
+          no: h.receiptNo,
+          companyId: h.companyId,
+          documentDate: h.receiptDate,
+          postingDate: h.postingDate,
+          partyType: h.partyType,
+          partyId: h.partyId,
+          debitAccountId: h.debitAccountId,
+          creditAccountId: h.creditAccountId,
+        }),
+        reload: async (t, receiptId) => mapReceipt((await loadReceipt(t, receiptId))!),
+        snapshot: receiptSnap,
+        auditFields: RECEIPT_AUDIT,
       })
-      await inventory.cancel(trx, { type: RECEIPT_PREFIX, id: before.id })
-      await gl.cancel(trx, { type: RECEIPT_PREFIX, id: before.id })
-      await sql`
-        UPDATE pur_outsourced_receipt SET status='voided', updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
-      const row = await loadReceipt(trx, id)
-      const after = mapReceipt(row!)
-      await writeAudit(trx, actor, {
-        resource: RECEIPT_TABLE,
-        recordId: id,
-        recordLabel: after.receiptNo,
-        companyId: after.companyId,
-        actionType: 'update',
-        actionName: 'void',
-        changes: auditDiff(receiptSnap(before), receiptSnap(after), RECEIPT_AUDIT),
-      })
-      return after
     })
   }
 
@@ -2601,14 +2561,6 @@ async function loadReceiptActionLines(db: DbHandle, receiptId: string) {
     }
   }
   return { items, materials, byproducts }
-}
-
-async function accountCurrencies(db: DbHandle, debitId: string, creditId: string) {
-  const rows = await sql<{ id: string; currency_id: string | null }>`
-    SELECT id, currency_id FROM bas_account WHERE id = ANY(${[debitId, creditId]}::uuid[])
-  `.execute(db)
-  const map = new Map(rows.rows.map((r) => [r.id, r.currency_id]))
-  return { debit: map.get(debitId) ?? null, credit: map.get(creditId) ?? null }
 }
 
 // ---- DTO mappers ----

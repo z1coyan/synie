@@ -7,6 +7,7 @@ import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createJournalService } from '~/modules/accounting/journal-service.ts'
 import { createBankingService } from './banking-service.ts'
 import { createExpenseService } from './expense-service.ts'
 import { createBillService } from './bill-service.ts'
@@ -20,7 +21,9 @@ run('PG 集成（财务运营 12）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db)
   const reconciliations = createReconciliationService(db, numbering)
-  const banking = createBankingService(db, numbering)
+  const banking = createBankingService(db, numbering, {
+    journals: createJournalService(db, numbering),
+  })
   const expenses = createExpenseService(db, numbering)
   const bills = createBillService(db, numbering)
   const invoices = createVatInvoiceService(db, numbering, { reconciliations })

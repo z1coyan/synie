@@ -286,6 +286,7 @@ run('PG 集成（setup 向导）', () => {
       const trading = createTradingServices(db, numbering)
       const finance = createFinanceServices(db, numbering, {
         reconciliations: trading.reconciliations,
+        journals: accounting.journals,
         files,
       })
       const manufacturing = createManufacturingServices(db, numbering)
