@@ -29,3 +29,5 @@ Blocked by: 01, 02
 - 2026-07-28 隔离 worktree 复验（grok-4.5）：`fflate` zip+XML、无 exceljs；printing 包 19 单测/集成绿（含 golden 占位符中文分类、soffice 进程卫生）；`:18091` `verify-printing-rest` 绿（resources=60 sales.order fields=25）；live `POST /printing/render` export→xlsx + print→pdf 对真实销售订单全绿。未改 server-go。
 - 2026-07-28 补 remaining：`verify-printing-rest` 含 render export+print；printing 19 pass；`:18092` 活服务验收绿。无代码缺口。
 - 2026-07-28 主工作区集成（grok-4.5 缺口）：cherry-pick 去重 `cf7b2d2`（公司默认过账科目 PG 集成）/`b0ba293`（04–07 编号 23505→conflict + inventory 自愈 + verify-inventory 停车编号）/`3f84ab7`（09–14 编号 conflict 测 + OCR 默认存储 + HR 编号腾空 + market fixture）/`bc43cef`（todo 忽略复位）/`4358af8`（printing render 冒烟）/`b8538aa`（setup 空库 e2e afterAll 超时）；合并重复 numberingWriteError；app/index/Meta/helpers 已完整装配，未改 server-go。
+
+- 2026-07-28 独立全量验收（主工作区 grok-4.5）：`server typecheck` 绿；`SYNIE_TEST_DATABASE_URL=…synie_test bun test` 223 pass；`web typecheck` + `bun test` 92 pass；shared decimal 5 pass。活 API :18095 对独立库：17 个 `verify-*.ts` 全绿 + setup 空库 e2e（synie_setup_e2e）+ `verify-web-hc-api` 关键路径绿。修 verify 空库/setup 自愈（inventory 公司单位、printing 默认存储、accounting/quotation 编号规则临时停用）。未执行工单 18；未 push/reset；未改 server-go。
