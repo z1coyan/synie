@@ -1,6 +1,6 @@
 # 05 手工会计凭证与往来报表
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 03
 
 ## 范围
@@ -21,3 +21,17 @@ Blocked by: 03
 ## 非目标
 
 不做凭证模板/常用摘要（Go 现状无则不添）。
+
+## Comments
+
+### 2026-07-28 agent
+
+TS 业务域已落地于 `server/src/modules/accounting/`：
+
+- 凭证头/行 CRUD + 审核（`engines/gl.post`）+ 取消（`engines/gl.cancel`）；银行对账引用阻断取消
+- 总账分录只读 list/get；应收应付报表对手×往来角色轧差
+- 红冲能力复用工单 03 GL 引擎 `reverse`（凭证本身走取消作废，与 Go 一致）
+- Meta：`accGlJournals` / `accGlJournalLines` / `accGlEntries`
+- 专属 PG 集成：状态机/分录/报表/cascade 审计；`bun run typecheck` 绿
+
+待集成代理：对照 `verify-accounting-rest.ts` 全链路打 API（含 GridMeta 快照与公司范围）。
