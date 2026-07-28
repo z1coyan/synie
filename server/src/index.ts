@@ -37,6 +37,12 @@ import {
 } from './platform/files/index.ts'
 import { createRegistry } from './platform/meta/registry.ts'
 import { createNumberingService, registerNumberingResources } from './platform/numbering/index.ts'
+import {
+  buildPrintingCatalog,
+  createPrintingService,
+  registerPrintingFileOwners,
+  registerPrintingResources,
+} from './platform/printing/index.ts'
 import { createSettingsService, registerSettingResources } from './platform/settings/index.ts'
 
 const env = loadEnv()
@@ -53,6 +59,7 @@ registerSettingResources(registry)
 registerNumberingResources(registry)
 registerFileResources(registry)
 registerAuditResources(registry)
+registerPrintingResources(registry)
 registerBaseResources(registry)
 registerMarketResources(registry)
 registerIamResources(registry)
@@ -67,9 +74,15 @@ registerManufacturingResources(registry)
 const settings = createSettingsService(db)
 const numbering = createNumberingService(db)
 const owners = createOwnerRegistry()
+registerPrintingFileOwners(owners)
 const files = createFileService({ db, owners })
 const storages = createStorageService({ db })
 const audit = createAuditService(db)
+const printing = createPrintingService({
+  db,
+  files,
+  catalog: buildPrintingCatalog(registry),
+})
 const base = createBaseServices(db)
 const market = createMarketService(db, { settings })
 const iam = createIamService(db, registry)
@@ -90,6 +103,7 @@ const app = buildApp({
   files,
   storages,
   audit,
+  printing,
   currencies: base.currencies,
   companies: base.companies,
   units: base.units,

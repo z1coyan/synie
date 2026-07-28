@@ -52,6 +52,13 @@ import {
   registerSettingResources,
   type SettingsService,
 } from '~/platform/settings/index.ts'
+import {
+  buildPrintingCatalog,
+  createPrintingService,
+  registerPrintingFileOwners,
+  registerPrintingResources,
+  type PrintingService,
+} from '~/platform/printing/index.ts'
 
 /** 集成测试用固定密钥（≥32 字节）；仅测试进程内使用 */
 export const TEST_AUTH_SECRET = 'integration-test-secret-32-bytes!!'
@@ -77,6 +84,7 @@ export function createPlatformRegistry(): Registry {
   registerNumberingResources(registry)
   registerFileResources(registry)
   registerAuditResources(registry)
+  registerPrintingResources(registry)
   registerBaseResources(registry)
   registerMarketResources(registry)
   registerIamResources(registry)
@@ -102,6 +110,7 @@ export interface PlatformServices {
 /** 与 index.ts 同构的平台服务（owners 默认为空注册表，可被调用方继续 register） */
 export function createPlatformServices(db: Kysely<Database>): PlatformServices {
   const owners = createOwnerRegistry()
+  registerPrintingFileOwners(owners)
   return {
     settings: createSettingsService(db),
     numbering: createNumberingService(db),
@@ -143,6 +152,13 @@ export async function buildTestApp(
   const accounting = createAccountingServices(db, numbering)
   const trading = createTradingServices(db, numbering)
   const manufacturing = createManufacturingServices(db, numbering)
+  const printing =
+    merged.printing ??
+    createPrintingService({
+      db,
+      files: merged.files,
+      catalog: buildPrintingCatalog(registry),
+    })
   return buildApp({
     db,
     auth,
@@ -152,6 +168,7 @@ export async function buildTestApp(
     files: merged.files,
     storages: merged.storages,
     audit: merged.audit,
+    printing,
     currencies: merged.currencies ?? base.currencies,
     companies: merged.companies ?? base.companies,
     units: merged.units ?? base.units,

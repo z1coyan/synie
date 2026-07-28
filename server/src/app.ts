@@ -64,6 +64,8 @@ import { numberingRoutes } from './platform/numbering/routes.ts'
 import type { NumberingService } from './platform/numbering/service.ts'
 import { settingsRoutes } from './platform/settings/routes.ts'
 import type { SettingsService } from './platform/settings/service.ts'
+import { printingRoutes, systemPrintingRoutes } from './platform/printing/routes.ts'
+import type { PrintingService } from './platform/printing/service.ts'
 
 /**
  * 应用依赖。平台 + base/iam/party + 库存 + 会计 + 交易链。
@@ -78,6 +80,7 @@ export interface AppDeps {
   files: FileService
   storages: StorageService
   audit: AuditService
+  printing: PrintingService
   currencies: CurrencyService
   companies: CompanyService
   units: UnitService
@@ -148,6 +151,11 @@ export function buildApp(deps: AppDeps) {
     .route('/files', fileRoutes({ auth: deps.auth, files: deps.files }))
     .route('/system/storages', storageRoutes({ auth: deps.auth, storages: deps.storages }))
     .route('/system/audit-logs', auditRoutes({ auth: deps.auth, audit: deps.audit }))
+    .route(
+      '/system/printing',
+      systemPrintingRoutes({ auth: deps.auth, printing: deps.printing }),
+    )
+    .route('/printing', printingRoutes({ auth: deps.auth, printing: deps.printing }))
     .route(
       '/base',
       baseRoutes({
