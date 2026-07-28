@@ -6,7 +6,7 @@ import type { ListQuery } from '@synie/shared'
 import { decimal, roundAmount, roundBaseQty } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import {
@@ -658,7 +658,7 @@ export function createReconciliationService(db: Kysely<Database>, numberer: Numb
     to: ReconciliationStatus,
     kind: ReconciliationKind,
     action: string,
-    effect: (trx: DbHandle, before: Record<string, unknown>) => Promise<void>,
+    effect: (trx: TrxHandle, before: Record<string, unknown>) => Promise<void>,
   ) {
     return withTx(db, async (trx) => {
       const before = await lockHead(trx, actor, spec, id)
@@ -942,7 +942,7 @@ async function adjustProjection(
 }
 
 async function postGiftGL(
-  db: DbHandle,
+  db: TrxHandle,
   spec: ReconciliationSideSpec,
   head: Record<string, unknown>,
   posting: string,

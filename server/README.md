@@ -62,7 +62,9 @@ db/
    不用 class（异常：`ApiError extends Error`）；数据形状用 interface/type；
    依赖显式注入，禁止全局单例（registry/db 由 index.ts 装配）。
 2. **金额纪律**：计算只走 `@synie/shared` 的 decimal；`number` 出现金额即评审驳回。
-3. **事务纪律**：函数接 `DbHandle`（`src/db/tx.ts`），事务边界归调用方 `withTx`；
+3. **事务纪律**：两层规则——service 入口自起事务（`withTx` 是唯一产生 `TrxHandle`
+   的地方）；读路径函数接 `DbHandle`；事实引擎的**写方法只收 `TrxHandle`**
+   （gl.post/cancel/reverse、inventory.post/cancel），裸 db 传入即编译错误。
    过账必须单事务（引擎 + 投影 + 主表），引擎/深模块内禁止自起事务。
 4. **筛选/排序**只走 `filterbuild`（Meta 白名单 + 参数化），禁止拼用户输入进 SQL 标识符。
 5. **错误模型**：throw `ApiError`；未知错误由 onError 统一 500，不透出内部细节。

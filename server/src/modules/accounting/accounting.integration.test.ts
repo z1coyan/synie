@@ -4,6 +4,7 @@
  */
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
+import { withTx } from '~/db/tx.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { createNumberingService } from '~/platform/numbering/index.ts'
@@ -356,7 +357,7 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     })
     await journals.audit(actor, journal.id, '2026-07-26')
 
-    await db.transaction().execute(async (trx) => {
+    await withTx(db, async (trx) => {
       await gl.reverse(trx, { type: 'acc.gl_journal', id: journal.id }, '2026-07-28')
     })
 
@@ -383,7 +384,7 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
 
     // 重复红冲 conflict
     await expect(
-      db.transaction().execute(async (trx) => {
+      withTx(db, async (trx) => {
         await gl.reverse(trx, { type: 'acc.gl_journal', id: journal.id }, '2026-07-29')
       }),
     ).rejects.toMatchObject({ code: 'conflict' })

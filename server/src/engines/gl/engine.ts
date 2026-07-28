@@ -3,7 +3,7 @@
  * 行为对齐 server-go/internal/engines/gl；事务边界归调用方（DbHandle）。
  */
 import { decimal, toDecimalString, type Decimal } from '@synie/shared'
-import type { DbHandle } from '~/db/tx.ts'
+import type { DbHandle, TrxHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { GlEngine, GlEntry, GlVoucher, GlVoucherRef, PostOptions } from './types.ts'
 
@@ -61,10 +61,10 @@ export async function validateEntries(
 }
 
 /**
- * 校验并追加分录。不 begin/commit/rollback；调用方持有 trx。
+ * 校验并追加分录。不 begin/commit/rollback；只收 TrxHandle（调用方持有 trx）。
  */
 export async function post(
-  db: DbHandle,
+  db: TrxHandle,
   voucher: GlVoucher,
   entries: GlEntry[],
   options: PostOptions = {},
@@ -103,7 +103,7 @@ export async function post(
 /**
  * 将来源单据下当前未作废分录全部标记 is_cancelled。重复调用幂等。
  */
-export async function cancel(db: DbHandle, ref: GlVoucherRef): Promise<void> {
+export async function cancel(db: TrxHandle, ref: GlVoucherRef): Promise<void> {
   validateRef(ref)
   try {
     await db
@@ -124,7 +124,7 @@ export async function cancel(db: DbHandle, ref: GlVoucherRef): Promise<void> {
  * 无可红冲分录或并发重复红冲 → conflict。
  */
 export async function reverse(
-  db: DbHandle,
+  db: TrxHandle,
   ref: GlVoucherRef,
   postingDate: Date | string,
 ): Promise<void> {

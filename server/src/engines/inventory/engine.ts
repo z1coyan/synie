@@ -4,7 +4,7 @@
  */
 import { decimal, toDecimalString, type Decimal } from '@synie/shared'
 import { sql } from 'kysely'
-import type { DbHandle } from '~/db/tx.ts'
+import type { DbHandle, TrxHandle } from '~/db/tx.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type {
   BalanceQuery,
@@ -37,9 +37,10 @@ export function createInventoryEngine(): InventoryEngine {
 
 /**
  * 校验并追加库存分录。按（仓×物料）advisory lock 串行化后做负库存校验。
- * 不 begin/commit；调用方持有 trx。
+ * 不 begin/commit；只收 TrxHandle——advisory_xact_lock 离开事务即失效，
+ * 裸 db 传入会在编译期被拒（见 db/tx.ts）。
  */
-export async function post(db: DbHandle, voucher: StockVoucher, lines: StockLine[]): Promise<void> {
+export async function post(db: TrxHandle, voucher: StockVoucher, lines: StockLine[]): Promise<void> {
   validateVoucher(voucher)
   if (lines.length === 0) {
     throw ApiError.validation('库存过账校验失败', { lines: ['分录不少于一行'] })
@@ -78,7 +79,7 @@ export async function post(db: DbHandle, voucher: StockVoucher, lines: StockLine
  * 无 live 分录或重复调用均成功（幂等）。
  */
 export async function cancel(
-  db: DbHandle,
+  db: TrxHandle,
   ref: StockVoucherRef,
   cancelledAt: Date = new Date(),
 ): Promise<void> {

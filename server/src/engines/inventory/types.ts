@@ -1,5 +1,5 @@
 import type { Decimal } from '@synie/shared'
-import type { DbHandle } from '~/db/tx.ts'
+import type { DbHandle, TrxHandle } from '~/db/tx.ts'
 
 /** 过账来源单据头 */
 export interface StockVoucher {
@@ -46,9 +46,9 @@ export interface BalanceRow {
   quantity: string
 }
 
-/** 库存事实引擎接口（DbHandle 由调用方注入；引擎不自起事务） */
+/** 库存事实引擎接口（写方法只收 TrxHandle；引擎不自起事务） */
 export interface InventoryEngine {
-  post(db: DbHandle, voucher: StockVoucher, lines: StockLine[]): Promise<void>
-  cancel(db: DbHandle, ref: StockVoucherRef, cancelledAt?: Date): Promise<void>
+  post(trx: TrxHandle, voucher: StockVoucher, lines: StockLine[]): Promise<void>
+  cancel(trx: TrxHandle, ref: StockVoucherRef, cancelledAt?: Date): Promise<void>
   balance(db: DbHandle, query: BalanceQuery): Promise<BalanceRow[]>
 }

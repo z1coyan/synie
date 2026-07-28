@@ -1,5 +1,5 @@
 import type { Decimal } from '@synie/shared'
-import type { DbHandle } from '~/db/tx.ts'
+import type { DbHandle, TrxHandle } from '~/db/tx.ts'
 
 /** 过账来源单据头（写分录时锁定的业务上下文） */
 export interface GlVoucher {
@@ -37,11 +37,11 @@ export interface PostOptions {
   allowNegative?: boolean
 }
 
-/** 引擎对外接口（工厂闭包返回值形状；调用方注入 DbHandle，引擎不自起事务） */
+/** 引擎对外接口（工厂闭包返回值形状；写方法只收 TrxHandle，引擎不自起事务） */
 export interface GlEngine {
-  post(db: DbHandle, voucher: GlVoucher, entries: GlEntry[], options?: PostOptions): Promise<void>
-  cancel(db: DbHandle, ref: GlVoucherRef): Promise<void>
-  reverse(db: DbHandle, ref: GlVoucherRef, postingDate: Date | string): Promise<void>
+  post(trx: TrxHandle, voucher: GlVoucher, entries: GlEntry[], options?: PostOptions): Promise<void>
+  cancel(trx: TrxHandle, ref: GlVoucherRef): Promise<void>
+  reverse(trx: TrxHandle, ref: GlVoucherRef, postingDate: Date | string): Promise<void>
   /**
    * 形状 + 科目 + 往来对手全量校验（与 post 同一套规则，不写库）。
    * 供单据草稿保存等场景预检。

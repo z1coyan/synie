@@ -4,7 +4,7 @@
 import { decimal, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { createGlEngine, type GlEngine, type GlEntry } from '~/engines/gl/index.ts'
 import {
@@ -239,7 +239,7 @@ export function createReconOps(
   }
 
   async function createQuickJournal(
-    trx: DbHandle, actor: Actor, input: {
+    trx: TrxHandle, actor: Actor, input: {
       companyId: string; bankLedgerAccountId: string; counterAccountId: string
       income: boolean; amount: ReturnType<typeof decimal>; summary: string | null; postingDate: string
     },
