@@ -1,6 +1,6 @@
 # 07 G · 引擎 interface 瘦身与对称
 
-Status: ready-for-agent
+Status: done
 
 ## 问题（小项集合，适合穿插在其他工单间隙做）
 
