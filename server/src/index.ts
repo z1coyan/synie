@@ -12,6 +12,10 @@ import {
   createCompanyAccountDefaultService,
   registerSalesCompanyAccountDefault,
 } from './modules/sales/index.ts'
+import {
+  createInventoryServices,
+  registerInventoryResources,
+} from './modules/inventory/index.ts'
 import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
@@ -46,6 +50,7 @@ registerMarketResources(registry)
 registerIamResources(registry)
 registerPartyResources(registry)
 registerSalesCompanyAccountDefault(registry)
+registerInventoryResources(registry)
 
 const settings = createSettingsService(db)
 const numbering = createNumberingService(db)
@@ -58,6 +63,7 @@ const marketInstruments = createMarketInstrumentService(db)
 const iam = createIamService(db, registry)
 const party = createPartyServices(db, numbering)
 const companyAccountDefaults = createCompanyAccountDefaultService(db)
+const inv = createInventoryServices(db, numbering)
 
 const app = buildApp({
   db,
@@ -78,6 +84,14 @@ const app = buildApp({
   suppliers: party.suppliers,
   employees: party.employees,
   companyAccountDefaults,
+  invCategories: inv.categories,
+  invMaterials: inv.materials,
+  invMaterialUnits: inv.materialUnits,
+  invWarehouses: inv.warehouses,
+  invStockDocs: inv.stockDocs,
+  invStockTransfers: inv.stockTransfers,
+  invStockCounts: inv.stockCounts,
+  invStockEntries: inv.stockEntries,
 })
 
 const server = Bun.serve({

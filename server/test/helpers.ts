@@ -12,6 +12,10 @@ import {
   createCompanyAccountDefaultService,
   registerSalesCompanyAccountDefault,
 } from '~/modules/sales/index.ts'
+import {
+  createInventoryServices,
+  registerInventoryResources,
+} from '~/modules/inventory/index.ts'
 import { createRateLimiter } from '~/platform/auth/limiter.ts'
 import { createAuthService, type AuthService } from '~/platform/auth/service.ts'
 import { createAuthStore } from '~/platform/auth/store.ts'
@@ -67,6 +71,7 @@ export function createPlatformRegistry(): Registry {
   registerIamResources(registry)
   registerPartyResources(registry)
   registerSalesCompanyAccountDefault(registry)
+  registerInventoryResources(registry)
   return registry
 }
 
@@ -114,6 +119,7 @@ export async function buildTestApp(
   const iam = createIamService(db, registry)
   const party = createPartyServices(db, numbering)
   const companyAccountDefaults = createCompanyAccountDefaultService(db)
+  const inv = createInventoryServices(db, numbering)
   return buildApp({
     db,
     auth,
@@ -133,5 +139,13 @@ export async function buildTestApp(
     suppliers: merged.suppliers ?? party.suppliers,
     employees: merged.employees ?? party.employees,
     companyAccountDefaults: merged.companyAccountDefaults ?? companyAccountDefaults,
+    invCategories: merged.invCategories ?? inv.categories,
+    invMaterials: merged.invMaterials ?? inv.materials,
+    invMaterialUnits: merged.invMaterialUnits ?? inv.materialUnits,
+    invWarehouses: merged.invWarehouses ?? inv.warehouses,
+    invStockDocs: merged.invStockDocs ?? inv.stockDocs,
+    invStockTransfers: merged.invStockTransfers ?? inv.stockTransfers,
+    invStockCounts: merged.invStockCounts ?? inv.stockCounts,
+    invStockEntries: merged.invStockEntries ?? inv.stockEntries,
   })
 }

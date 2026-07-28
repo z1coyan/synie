@@ -48,19 +48,43 @@ export function createRegistry() {
     return anyOf.some((code) => hasPermission(actor, code))
   }
 
+  /**
+   * 投影引用：无权目标降级；多态 fk 省略 resource/relation/labelField 空键
+   * （对齐 Go json omitempty，与 pr-2.11 GridMeta 快照一致）。
+   */
   function visibleRef(ref: GridColumnRef | undefined, actor: Actor): GridColumnRef | null {
     if (!ref) return null
-    if (actor.superAdmin) return ref
-    if (ref.resource) {
+    let projected: GridColumnRef
+    if (actor.superAdmin) {
+      projected = ref
+    } else if (ref.resource) {
       const target = resources.get(ref.resource)
-      return target && canRead(target, actor) ? ref : null
+      if (!target || !canRead(target, actor)) return null
+      projected = ref
+    } else {
+      if (!ref.variants || ref.variants.length === 0) return null
+      const variants = ref.variants.filter((variant) => {
+        const target = resources.get(variant.resource)
+        return target !== undefined && canRead(target, actor)
+      })
+      if (variants.length === 0) return null
+      projected = { ...ref, variants }
     }
-    if (!ref.variants || ref.variants.length === 0) return null
-    const variants = ref.variants.filter((variant) => {
-      const target = resources.get(variant.resource)
-      return target !== undefined && canRead(target, actor)
-    })
-    return variants.length > 0 ? { ...ref, variants } : null
+    return wireRef(projected)
+  }
+
+  /** 多态引用：不输出 null 的 resource/relation/labelField（wire omitempty） */
+  function wireRef(ref: GridColumnRef): GridColumnRef {
+    if (!ref.discriminator) return ref
+    const out: Record<string, unknown> = {
+      discriminator: ref.discriminator,
+      discriminatorType: ref.discriminatorType ?? null,
+      variants: ref.variants ?? null,
+    }
+    if (ref.resource != null) out.resource = ref.resource
+    if (ref.relation != null) out.relation = ref.relation
+    if (ref.labelField != null) out.labelField = ref.labelField
+    return out as unknown as GridColumnRef
   }
 
   /** Grid 文档：按 Actor 投影列/能力/扩展动作（无权读取的引用降级为原始 ID 列） */

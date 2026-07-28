@@ -20,6 +20,17 @@ import type {
 } from './modules/party/party-service.ts'
 import { companyAccountDefaultRoutes } from './modules/sales/index.ts'
 import type { CompanyAccountDefaultService } from './modules/sales/company-account-default.ts'
+import { inventoryRoutes } from './modules/inventory/index.ts'
+import type {
+  MaterialCategoryService,
+  MaterialService,
+  MaterialUnitService,
+  WarehouseService,
+  StockDocService,
+  StockTransferService,
+  StockCountService,
+  StockEntryService,
+} from './modules/inventory/index.ts'
 import { authRoutes } from './platform/auth/routes.ts'
 import type { AuthService } from './platform/auth/service.ts'
 import type { AppEnv } from './platform/http/context.ts'
@@ -59,6 +70,15 @@ export interface AppDeps {
   suppliers: SupplierService
   employees: EmployeeService
   companyAccountDefaults: CompanyAccountDefaultService
+  // 工单 04 库存
+  invCategories: MaterialCategoryService
+  invMaterials: MaterialService
+  invMaterialUnits: MaterialUnitService
+  invWarehouses: WarehouseService
+  invStockDocs: StockDocService
+  invStockTransfers: StockTransferService
+  invStockCounts: StockCountService
+  invStockEntries: StockEntryService
 }
 
 const accessLog: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -124,6 +144,20 @@ export function buildApp(deps: AppDeps) {
       companyAccountDefaultRoutes({
         auth: deps.auth,
         defaults: deps.companyAccountDefaults,
+      }),
+    )
+    .route(
+      '/inventory',
+      inventoryRoutes({
+        auth: deps.auth,
+        categories: deps.invCategories,
+        materials: deps.invMaterials,
+        materialUnits: deps.invMaterialUnits,
+        warehouses: deps.invWarehouses,
+        stockDocs: deps.invStockDocs,
+        stockTransfers: deps.invStockTransfers,
+        stockCounts: deps.invStockCounts,
+        stockEntries: deps.invStockEntries,
       }),
     )
 
