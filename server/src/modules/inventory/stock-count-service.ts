@@ -1,5 +1,5 @@
 /**
- * 库存盘点单：刷新/审核/作废；审核走 withTx + inventory engine + 快照兜底。
+ * 库存盘点单：刷新/审核/作废；审核走 withTx + 库存过账骨架 + 快照兜底。
  */
 import { decimal, isDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -19,6 +19,10 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import {
+  auditInventoryDocInTx,
+  voidInventoryDocInTx,
+} from '~/modules/trading/posting.ts'
 import {
   currentBookQty,
   dateWire,
@@ -448,152 +452,139 @@ export function createStockCountService(
   }
 
   async function approve(actor: Actor, id: string): Promise<StockCount> {
-    return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_count')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '库存盘点单不存在')
-      const before = mapDoc(locked)
-      if (!canAccessCompany(actor, before.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
-      if (before.status !== 'DRAFT') {
-        throw new ApiError('conflict', '仅草稿库存盘点单可审核')
-      }
-      const items = await trx
-        .selectFrom('inv_stock_count_item')
-        .selectAll()
-        .where('count_id', '=', id)
-        .execute()
-      if (items.length === 0) {
-        throw new ApiError('conflict', '审核前必须至少填写一行盘点明细')
-      }
-      const lockKeys: string[] = []
-      const seen = new Set<string>()
-      for (const raw of items) {
-        const item = mapItem(raw)
-        if (item.countedQuantity == null || item.convertedCounted == null) {
-          throw new ApiError('conflict', '审核前每行都必须填写实盘数量')
-        }
-        if (!seen.has(item.materialId)) {
-          seen.add(item.materialId)
-          lockKeys.push(`inv_stock:${before.warehouseId}:${item.materialId}`)
-        }
-      }
-      lockKeys.sort()
-      for (const key of lockKeys) {
-        await sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}::text, 0))`.execute(trx)
-      }
-      // 库内列对列比较，避免 JS Date 绑参时区偏移（timestamp without time zone）
-      const stale = await sql<{ exists: boolean }>`
-        SELECT EXISTS(
-          SELECT 1
-          FROM inv_stock_entry e
-          JOIN inv_stock_count c ON c.id = ${id}::uuid
-          WHERE e.company_id = c.company_id
-            AND e.warehouse_id = c.warehouse_id
-            AND (
-              e.inserted_at > c.snapshot_taken_at
-              OR e.cancelled_at > c.snapshot_taken_at
-            )
-        ) AS exists
-      `.execute(trx)
-      if (stale.rows[0]?.exists) {
-        throw new ApiError('conflict', '库存已在快照后变化，请先刷新账面数量')
-      }
-      const lines: StockLine[] = []
-      for (const raw of items) {
-        const item = mapItem(raw)
-        const delta = decimal(item.convertedCounted!).minus(decimal(item.bookQuantity))
-        if (delta.isZero()) continue
-        lines.push({
-          warehouseId: before.warehouseId,
-          materialId: item.materialId,
-          quantity: delta.isNegative() ? delta.neg() : delta,
-          direction: delta.isNegative() ? 'out' : 'in',
-          remarks: before.summary,
-        })
-      }
-      if (lines.length > 0) {
-        await inventory.post(
-          trx,
-          {
-            type: VOUCHER_TYPE,
-            id: before.id,
-            no: before.docNo,
-            companyId: before.companyId,
-            postingDate: dateWire(before.postingDate),
-          },
-          lines,
-        )
-      }
-      const now = new Date()
-      const row = await trx
-        .updateTable('inv_stock_count')
-        .set({
-          status: 'audited',
-          audited_at: now,
-          audited_by_id: actor.userId?.trim() ? actor.userId : null,
-          updated_at: sql`(now() AT TIME ZONE 'utc')`,
-        })
-        .where('id', '=', id)
-        .returningAll()
-        .executeTakeFirstOrThrow()
-      const after = mapDoc(row)
-      await writeAudit(trx, actor, {
-        resource: 'inv_stock_count',
-        recordId: after.id,
-        recordLabel: after.docNo,
-        companyId: after.companyId,
-        actionType: 'update',
+    return withTx(db, async (trx) =>
+      auditInventoryDocInTx(trx, actor, inventory, {
+        voucherType: VOUCHER_TYPE,
+        headTable: 'inv_stock_count',
         actionName: 'approve',
-        changes: auditDiff(docSnap(before), docSnap(after), DOC_AUDIT),
-      })
-      return after
-    })
+        setPostingDate: false,
+        lockDraft: async (t) => {
+          const locked = await t
+            .selectFrom('inv_stock_count')
+            .selectAll()
+            .where('id', '=', id)
+            .forUpdate()
+            .executeTakeFirst()
+          if (!locked) throw new ApiError('not_found', '库存盘点单不存在')
+          const before = mapDoc(locked)
+          if (!canAccessCompany(actor, before.companyId)) {
+            throw new ApiError('forbidden', '无权操作该公司数据')
+          }
+          if (before.status !== 'DRAFT') {
+            throw new ApiError('conflict', '仅草稿库存盘点单可审核')
+          }
+          return before
+        },
+        collect: async (t, before) => {
+          const items = await t
+            .selectFrom('inv_stock_count_item')
+            .selectAll()
+            .where('count_id', '=', id)
+            .execute()
+          if (items.length === 0) {
+            throw new ApiError('conflict', '审核前必须至少填写一行盘点明细')
+          }
+          const lockKeys: string[] = []
+          const seen = new Set<string>()
+          for (const raw of items) {
+            const item = mapItem(raw)
+            if (item.countedQuantity == null || item.convertedCounted == null) {
+              throw new ApiError('conflict', '审核前每行都必须填写实盘数量')
+            }
+            if (!seen.has(item.materialId)) {
+              seen.add(item.materialId)
+              lockKeys.push(`inv_stock:${before.warehouseId}:${item.materialId}`)
+            }
+          }
+          lockKeys.sort()
+          for (const key of lockKeys) {
+            await sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}::text, 0))`.execute(t)
+          }
+          // 库内列对列比较，避免 JS Date 绑参时区偏移（timestamp without time zone）
+          const stale = await sql<{ exists: boolean }>`
+            SELECT EXISTS(
+              SELECT 1
+              FROM inv_stock_entry e
+              JOIN inv_stock_count c ON c.id = ${id}::uuid
+              WHERE e.company_id = c.company_id
+                AND e.warehouse_id = c.warehouse_id
+                AND (
+                  e.inserted_at > c.snapshot_taken_at
+                  OR e.cancelled_at > c.snapshot_taken_at
+                )
+            ) AS exists
+          `.execute(t)
+          if (stale.rows[0]?.exists) {
+            throw new ApiError('conflict', '库存已在快照后变化，请先刷新账面数量')
+          }
+          const stockLines: StockLine[] = []
+          for (const raw of items) {
+            const item = mapItem(raw)
+            const delta = decimal(item.convertedCounted!).minus(decimal(item.bookQuantity))
+            if (delta.isZero()) continue
+            // 方向进 direction；数量为绝对值（引擎 interface 瘦身后）
+            stockLines.push({
+              warehouseId: before.warehouseId,
+              materialId: item.materialId,
+              quantity: delta.isNegative() ? delta.neg() : delta,
+              direction: delta.isNegative() ? 'out' : 'in',
+              remarks: before.summary,
+            })
+          }
+          return { stockLines, postingDate: dateWire(before.postingDate) }
+        },
+        voucherOf: (h) => ({ id: h.id, no: h.docNo, companyId: h.companyId }),
+        reload: async (t, headId) => {
+          const row = await t
+            .selectFrom('inv_stock_count')
+            .selectAll()
+            .where('id', '=', headId)
+            .executeTakeFirstOrThrow()
+          return mapDoc(row)
+        },
+        snapshot: docSnap,
+        auditFields: DOC_AUDIT,
+      }),
+    )
   }
 
   async function cancel(actor: Actor, id: string): Promise<StockCount> {
-    return withTx(db, async (trx) => {
-      const locked = await trx
-        .selectFrom('inv_stock_count')
-        .selectAll()
-        .where('id', '=', id)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!locked) throw new ApiError('not_found', '库存盘点单不存在')
-      const before = mapDoc(locked)
-      if (!canAccessCompany(actor, before.companyId)) {
-        throw new ApiError('forbidden', '无权操作该公司数据')
-      }
-      if (before.status !== 'AUDITED') {
-        throw new ApiError('conflict', '仅已审核库存盘点单可作废')
-      }
-      await inventory.cancel(trx, { type: VOUCHER_TYPE, id }, new Date())
-      const row = await trx
-        .updateTable('inv_stock_count')
-        .set({
-          status: 'cancelled',
-          updated_at: sql`(now() AT TIME ZONE 'utc')`,
-        })
-        .where('id', '=', id)
-        .returningAll()
-        .executeTakeFirstOrThrow()
-      const after = mapDoc(row)
-      await writeAudit(trx, actor, {
-        resource: 'inv_stock_count',
-        recordId: after.id,
-        recordLabel: after.docNo,
-        companyId: after.companyId,
-        actionType: 'update',
+    return withTx(db, async (trx) =>
+      voidInventoryDocInTx(trx, actor, inventory, {
+        voucherType: VOUCHER_TYPE,
+        headTable: 'inv_stock_count',
+        voidStatus: 'cancelled',
         actionName: 'cancel',
-        changes: auditDiff(docSnap(before), docSnap(after), DOC_AUDIT),
-      })
-      return after
-    })
+        lockAudited: async (t) => {
+          const locked = await t
+            .selectFrom('inv_stock_count')
+            .selectAll()
+            .where('id', '=', id)
+            .forUpdate()
+            .executeTakeFirst()
+          if (!locked) throw new ApiError('not_found', '库存盘点单不存在')
+          const before = mapDoc(locked)
+          if (!canAccessCompany(actor, before.companyId)) {
+            throw new ApiError('forbidden', '无权操作该公司数据')
+          }
+          if (before.status !== 'AUDITED') {
+            throw new ApiError('conflict', '仅已审核库存盘点单可作废')
+          }
+          return before
+        },
+        voucherOf: (h) => ({ id: h.id, no: h.docNo, companyId: h.companyId }),
+        reload: async (t, headId) => {
+          const row = await t
+            .selectFrom('inv_stock_count')
+            .selectAll()
+            .where('id', '=', headId)
+            .executeTakeFirstOrThrow()
+          return mapDoc(row)
+        },
+        snapshot: docSnap,
+        auditFields: DOC_AUDIT,
+      }),
+    )
   }
 
   async function getItem(actor: Actor, id: string): Promise<StockCountItem> {
