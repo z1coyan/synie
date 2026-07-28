@@ -1,6 +1,6 @@
 /**
  * 增值税发票：销项/进项/费用报销票生命周期。
- * 审核过账三行 + 对账结单/重开 + 待办关闭/复活（经 reconciliations 接缝）。
+ * 审核/作废/红冲走总账过账骨架；对账结单/重开经 after* 钩子（reconciliations 接缝）。
  */
 import { decimal, isDecimalString, toDecimalString, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -24,6 +24,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { ReconciliationService } from '~/modules/trading/reconciliation/service.ts'
 import type { TradingSide } from '~/modules/trading/common.ts'
+import { auditGlDocInTx, voidGlDocInTx } from '~/modules/trading/posting.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { vatInvoiceResourceMeta } from './meta.ts'
@@ -422,54 +423,42 @@ export function createVatInvoiceService(
     requireAction(actor, 'audit')
     const posting = requireDate(postingDate, 'postingDate')
     return withTx(db, async (trx) => {
-      const before = await lockInvoice(trx, actor, id)
-      if (before.status !== 'DRAFT') {
-        throw new ApiError('conflict', '仅草稿发票可审核')
-      }
-      const input = toInput(before)
-      await validateReferences(trx, input, id, true)
-      const entries = invoiceGLEntries(before)
-      const { reconEntries, side, reconciliationId } = await reconciliationGLEntries(
-        trx,
-        before,
-      )
-      entries.push(...reconEntries)
-      const tag = await sql`
-        UPDATE acc_vat_invoice SET status='audited',
-          posting_date=${posting}::date,
-          audited_at=(now() AT TIME ZONE 'utc'),
-          audited_by_id=${actorUserId(actor)}::uuid,
-          updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid AND status='draft'
-      `.execute(trx)
-      if (Number(tag.numAffectedRows ?? 0) !== 1) {
-        throw new ApiError('conflict', '发票已被并发处理')
-      }
-      await gl.post(
-        trx,
-        {
-          type: VOUCHER_TYPE,
-          id,
-          no: invoiceLabel(before),
-          companyId: before.companyId,
-          postingDate: posting,
+      let reconSide: TradingSide | null = null
+      let reconId: string | null = null
+      return auditGlDocInTx(trx, actor, gl, {
+        voucherType: VOUCHER_TYPE,
+        headTable: 'acc_vat_invoice',
+        conflictMessage: '发票已被并发处理',
+        lockDraft: async (t) => {
+          const before = await lockInvoice(t, actor, id)
+          if (before.status !== 'DRAFT') {
+            throw new ApiError('conflict', '仅草稿发票可审核')
+          }
+          return before
         },
-        entries,
-      )
-      if (reconciliationId && side) {
-        await reconciliations.closeFromInvoice(trx, actor, side, reconciliationId)
-      }
-      const result = await loadInvoice(trx, id)
-      await writeAudit(trx, actor, {
-        resource: 'acc_vat_invoice',
-        recordId: id,
-        recordLabel: invoiceLabel(result),
-        companyId: result.companyId,
-        actionType: 'update',
-        actionName: 'audit',
-        changes: auditDiff(invoiceSnap(before), invoiceSnap(result), INVOICE_AUDIT),
+        collect: async (t, before) => {
+          const input = toInput(before)
+          await validateReferences(t, input, id, true)
+          const entries = invoiceGLEntries(before)
+          const { reconEntries, side, reconciliationId } = await reconciliationGLEntries(
+            t,
+            before,
+          )
+          entries.push(...reconEntries)
+          reconSide = side
+          reconId = reconciliationId
+          return { entries, postingDate: posting }
+        },
+        afterAudit: async (t) => {
+          if (reconId && reconSide) {
+            await reconciliations.closeFromInvoice(t, actor, reconSide, reconId)
+          }
+        },
+        voucherOf: (h) => ({ id: h.id, no: invoiceLabel(h), companyId: h.companyId }),
+        reload: (t, headId) => loadInvoice(t, headId),
+        snapshot: invoiceSnap,
+        auditFields: INVOICE_AUDIT,
       })
-      return result
     })
   }
 
@@ -497,68 +486,72 @@ export function createVatInvoiceService(
     if (reverseMode) {
       posting = requireDate(input.postingDate ?? '', 'postingDate')
     }
-    return withTx(db, async (trx) => {
-      const before = await lockInvoice(trx, actor, id)
-      if (before.status !== 'AUDITED') {
-        throw new ApiError('conflict', '仅已审核发票可作废或红冲')
-      }
-      const referenced = await sql<{ e: boolean }>`
-        SELECT EXISTS(
-          SELECT 1 FROM acc_expense_report_item i
-          JOIN acc_expense_report r ON r.id=i.report_id
-          WHERE i.invoice_id=${id}::uuid AND r.status<>'voided'
-        ) AS e
-      `.execute(trx)
-      if (referenced.rows[0]?.e) {
-        throw new ApiError(
-          'conflict',
-          '发票已被报销单引用,请先在报销单上移除该行或作废报销单',
-        )
-      }
-      const nextStatus = reverseMode ? 'reversed' : 'voided'
-      if (reverseMode) {
-        await gl.reverse(trx, { type: VOUCHER_TYPE, id }, posting)
-      } else {
-        await gl.cancel(trx, { type: VOUCHER_TYPE, id })
-      }
-      const redNo = reverseMode
-        ? (input.redInvoiceNo ?? null)
-        : before.redInvoiceNo
-      await sql`
-        UPDATE acc_vat_invoice SET status=${nextStatus},
-          red_invoice_no=${redNo},
-          sal_reconciliation_id=NULL, pur_reconciliation_id=NULL,
-          updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
-      if (before.salReconciliationId) {
-        await reconciliations.reopenFromInvoice(
-          trx,
-          actor,
-          'sales',
-          before.salReconciliationId,
-        )
-      }
-      if (before.purReconciliationId) {
-        await reconciliations.reopenFromInvoice(
-          trx,
-          actor,
-          'purchase',
-          before.purReconciliationId,
-        )
-      }
-      const result = await loadInvoice(trx, id)
-      await writeAudit(trx, actor, {
-        resource: 'acc_vat_invoice',
-        recordId: id,
-        recordLabel: invoiceLabel(result),
-        companyId: result.companyId,
-        actionType: 'update',
+    return withTx(db, async (trx) =>
+      voidGlDocInTx(trx, actor, gl, {
+        voucherType: VOUCHER_TYPE,
+        headTable: 'acc_vat_invoice',
         actionName: action,
-        changes: auditDiff(invoiceSnap(before), invoiceSnap(result), INVOICE_AUDIT),
-      })
-      return result
-    })
+        voidStatus: reverseMode ? 'reversed' : 'voided',
+        lockAudited: async (t) => {
+          const before = await lockInvoice(t, actor, id)
+          if (before.status !== 'AUDITED') {
+            throw new ApiError('conflict', '仅已审核发票可作废或红冲')
+          }
+          const referenced = await sql<{ e: boolean }>`
+            SELECT EXISTS(
+              SELECT 1 FROM acc_expense_report_item i
+              JOIN acc_expense_report r ON r.id=i.report_id
+              WHERE i.invoice_id=${id}::uuid AND r.status<>'voided'
+            ) AS e
+          `.execute(t)
+          if (referenced.rows[0]?.e) {
+            throw new ApiError(
+              'conflict',
+              '发票已被报销单引用,请先在报销单上移除该行或作废报销单',
+            )
+          }
+          return before
+        },
+        resolveGlEnd: async () =>
+          reverseMode
+            ? { mode: 'reverse' as const, reversePostingDate: posting }
+            : { mode: 'cancel' as const },
+        flipToEnded: async (t, before, nextStatus) => {
+          const redNo = reverseMode
+            ? (input.redInvoiceNo ?? null)
+            : before.redInvoiceNo
+          await sql`
+            UPDATE acc_vat_invoice SET status=${nextStatus},
+              red_invoice_no=${redNo},
+              sal_reconciliation_id=NULL, pur_reconciliation_id=NULL,
+              updated_at=(now() AT TIME ZONE 'utc')
+            WHERE id=${id}::uuid
+          `.execute(t)
+        },
+        afterVoid: async (t, before) => {
+          if (before.salReconciliationId) {
+            await reconciliations.reopenFromInvoice(
+              t,
+              actor,
+              'sales',
+              before.salReconciliationId,
+            )
+          }
+          if (before.purReconciliationId) {
+            await reconciliations.reopenFromInvoice(
+              t,
+              actor,
+              'purchase',
+              before.purReconciliationId,
+            )
+          }
+        },
+        voucherOf: (h) => ({ id: h.id, no: invoiceLabel(h), companyId: h.companyId }),
+        reload: (t, headId) => loadInvoice(t, headId),
+        snapshot: invoiceSnap,
+        auditFields: INVOICE_AUDIT,
+      }),
+    )
   }
 
   async function ocr(actor: Actor, fileId: string): Promise<OcrPrefill> {
