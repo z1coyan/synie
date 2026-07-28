@@ -62,31 +62,49 @@ describeIf('printing integration', () => {
         .execute()
     }
     app = await buildTestApp(db)
-    const login = await app.request('/api/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: process.env.E2E_ADMIN_USERNAME ?? 'admin',
-        password: process.env.E2E_ADMIN_PASSWORD ?? 'admin123',
-      }),
-    })
-    if (login.status !== 200) {
-      // seed-admin may use different password in test
-      const alt = await app.request('/api/v1/auth/login', {
+
+    const tryLogin = async (username: string, password: string) => {
+      const res = await app.request('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: 'admin',
-          password: 'synie-integration-admin-password',
-        }),
+        body: JSON.stringify({ username, password }),
       })
-      if (alt.status !== 200) {
-        throw new Error(`login failed: ${login.status} ${await login.text()}`)
-      }
-      token = ((await alt.json()) as { token: string }).token
-    } else {
-      token = ((await login.json()) as { token: string }).token
+      if (!res.ok) return null
+      return (await res.json()) as { token: string }
     }
+
+    let body =
+      (await tryLogin(
+        process.env.E2E_ADMIN_USERNAME ?? 'admin',
+        process.env.E2E_ADMIN_PASSWORD ?? 'admin123',
+      )) ?? (await tryLogin('admin', 'synie-integration-admin-password'))
+
+    // 共享库可能被 setup 截断；自建超管
+    if (!body) {
+      const { hashPassword } = await import('~/platform/auth/password.ts')
+      const password = 'synie-integration-admin-password'
+      const hashed = await hashPassword(password)
+      await db
+        .insertInto('sys_user')
+        .values({
+          username: 'admin',
+          name: 'print-integration-admin',
+          hashed_password: hashed,
+          super_admin: true,
+          all_companies: true,
+        })
+        .onConflict((oc) =>
+          oc.column('username').doUpdateSet({
+            hashed_password: hashed,
+            super_admin: true,
+            all_companies: true,
+          }),
+        )
+        .execute()
+      body = await tryLogin('admin', password)
+    }
+    if (!body) throw new Error('login failed after admin self-heal')
+    token = body.token
   })
 
   afterAll(async () => {

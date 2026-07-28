@@ -35,8 +35,11 @@ run('PG 集成（setup 向导）', () => {
   const tokens = createTokenManager({ secret: TEST_AUTH_SECRET, ttlSeconds: 3600 })
 
   async function prepareEmptySetup(): Promise<void> {
-    await sql`SELECT pg_advisory_lock(hashtext('synie-setup-integration'))`.execute(db)
-    try {
+    // 必须在同一连接/事务内持锁：连接池跨连接的 session advisory_lock 会泄漏并卡住 afterAll TRUNCATE。
+    await db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtext('synie-setup-integration'))`.execute(trx)
+      await sql`SET LOCAL lock_timeout = '15s'`.execute(trx)
+      await sql`SET LOCAL statement_timeout = '60s'`.execute(trx)
       await sql`
         TRUNCATE TABLE
           acc_vat_invoice,
@@ -117,13 +120,11 @@ run('PG 集成（setup 向导）', () => {
           bas_currency,
           sys_storage
         RESTART IDENTITY CASCADE
-      `.execute(db)
-      await sql`UPDATE sys_setting SET setup_completed_at = NULL`.execute(db)
-      await sql`DELETE FROM sys_numbering_counter`.execute(db)
-      await sql`DELETE FROM sys_numbering_rule`.execute(db)
-    } finally {
-      await sql`SELECT pg_advisory_unlock(hashtext('synie-setup-integration'))`.execute(db)
-    }
+      `.execute(trx)
+      await sql`UPDATE sys_setting SET setup_completed_at = NULL`.execute(trx)
+      await sql`DELETE FROM sys_numbering_counter`.execute(trx)
+      await sql`DELETE FROM sys_numbering_rule`.execute(trx)
+    })
   }
 
   // 收尾清空 setup 种子，避免污染共享 synie_test 上的其它 PG 集成包。

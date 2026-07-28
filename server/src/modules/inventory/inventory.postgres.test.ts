@@ -21,6 +21,25 @@ function lettersFrom(seed: string, n: number): string {
   return out
 }
 
+/** 公司编号恰好两位字母；在共享库上扫占用后取空位，避免 23505 碰撞 */
+async function allocCompanyCode(
+  db: ReturnType<typeof createDb>,
+  preferredSeed: string,
+): Promise<string> {
+  const taken = new Set(
+    (await db.selectFrom('bas_company').select('code').execute()).map((r) => r.code),
+  )
+  const preferred = lettersFrom(preferredSeed, 2)
+  if (!taken.has(preferred)) return preferred
+  for (let a = 0; a < 26; a++) {
+    for (let b = 0; b < 26; b++) {
+      const code = String.fromCharCode(65 + a) + String.fromCharCode(65 + b)
+      if (!taken.has(code)) return code
+    }
+  }
+  throw new Error('无可用公司编号')
+}
+
 run('PG 集成（库存单据状态机与引擎）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db)
@@ -525,13 +544,13 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     const { currencyId } = await ensureBaseline()
     const seedSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
     const company = await companies.create(actor, {
-      code: lettersFrom(`W${seedSuffix}`, 2),
+      code: await allocCompanyCode(db, `W${seedSuffix}`),
       name: `仓种子${seedSuffix}`,
       shortName: `仓${seedSuffix.slice(0, 2)}`,
       baseCurrencyId: currencyId,
     })
     const partner = await companies.create(actor, {
-      code: lettersFrom(`P${seedSuffix}`, 2),
+      code: await allocCompanyCode(db, `P${seedSuffix}`),
       name: `协作方${seedSuffix}`,
       shortName: `协${seedSuffix.slice(0, 2)}`,
       baseCurrencyId: currencyId,

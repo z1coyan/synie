@@ -46,6 +46,30 @@ function lettersFrom(seed: string, n: number): string {
   return out
 }
 
+/** 共享库可能被 setup 截断后残留 inactive CNY；确保有启用本币可用 */
+async function ensureActiveCny(
+  currencies: ReturnType<typeof createCurrencyService>,
+  actor: Actor,
+  createdCurrencyIds: string[],
+) {
+  let cny = (
+    await currencies.list({
+      limit: 5,
+      offset: 0,
+      filter: { isoCode: { kind: 'text', op: 'eq', value: 'CNY' } },
+    })
+  ).results[0]
+  if (!cny) {
+    cny = await currencies.create(actor, { name: '人民币', isoCode: 'CNY', symbol: '¥' })
+    createdCurrencyIds.push(cny.id)
+    return cny
+  }
+  if (!cny.active) {
+    cny = await currencies.update(actor, cny.id, { active: true })
+  }
+  return cny
+}
+
 run('PG 集成（base 主数据）', () => {
   const db = createDb(url!)
   const currencies = createCurrencyService(db)
@@ -148,6 +172,16 @@ run('PG 集成（base 主数据）', () => {
   test('计量单位：基准唯一 + lifecycle', async () => {
     const baseSymbol = `b${suffix}`.slice(0, 16)
     const childSymbol = `u${suffix}`.slice(0, 16)
+    // 共享库可能已有 AREA 基准（setup/示例）；先清掉本测类型下的既有基准与孤儿单位
+    const existingArea = await units.list({
+      limit: 200,
+      offset: 0,
+      filter: { unitType: { kind: 'enum', values: ['AREA'], labels: [] } },
+    })
+    for (const u of existingArea.results) {
+      await units.remove(actor, u.id).catch(() => undefined)
+    }
+
     const base = await units.create(actor, {
       unitType: 'AREA',
       isBase: true,
@@ -197,18 +231,7 @@ run('PG 集成（base 主数据）', () => {
   })
 
   test('会计科目：公司隔离/环路/删父冲突/模板', async () => {
-    // 复用或创建本币
-    let cny = (
-      await currencies.list({
-        limit: 5,
-        offset: 0,
-        filter: { isoCode: { kind: 'text', op: 'eq', value: 'CNY' } },
-      })
-    ).results[0]
-    if (!cny) {
-      cny = await currencies.create(actor, { name: '人民币', isoCode: 'CNY', symbol: '¥' })
-      createdCurrencyIds.push(cny.id)
-    }
+    const cny = await ensureActiveCny(currencies, actor, createdCurrencyIds)
 
     const companyACode = lettersFrom(`a${suffix}`, 2)
     let companyBCode = lettersFrom(`b${suffix}`, 2)
@@ -336,17 +359,7 @@ run('PG 集成（base 主数据）', () => {
   })
 
   test('公司上级环路拒绝', async () => {
-    let cny = (
-      await currencies.list({
-        limit: 5,
-        offset: 0,
-        filter: { isoCode: { kind: 'text', op: 'eq', value: 'CNY' } },
-      })
-    ).results[0]
-    if (!cny) {
-      cny = await currencies.create(actor, { name: '人民币', isoCode: 'CNY' })
-      createdCurrencyIds.push(cny.id)
-    }
+    const cny = await ensureActiveCny(currencies, actor, createdCurrencyIds)
     const parentCode = lettersFrom(`p${suffix}`, 2)
     let childCode = lettersFrom(`k${suffix}`, 2)
     if (childCode === parentCode) childCode = lettersFrom(`m${suffix}`, 2)

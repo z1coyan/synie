@@ -42,24 +42,50 @@ describePg('hr operations integration', () => {
     db = createDb(databaseUrl!)
     const auth = await createTestAuth(db)
     app = await buildTestApp(db, { auth })
-    // 确保测试库管理员密码
-    const login = await json<{ token: string; user: { id: string } }>(
-      '/auth/login',
-      {
+
+    const tryLogin = async (username: string, password: string) => {
+      const res = await app.request('/api/v1/auth/login', {
         method: 'POST',
-        body: JSON.stringify({
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+      if (!res.ok) return null
+      return (await res.json()) as { token: string; user: { id: string } }
+    }
+
+    // 共享库可能被 setup 截断；多密码尝试后自建超管
+    let login =
+      (await tryLogin('admin', 'synie-integration-admin-password')) ??
+      (await tryLogin(
+        process.env.E2E_ADMIN_USERNAME ?? 'admin',
+        process.env.E2E_ADMIN_PASSWORD ?? 'admin123',
+      ))
+    if (!login) {
+      const { hashPassword } = await import('~/platform/auth/password.ts')
+      const password = 'synie-integration-admin-password'
+      const hashed = await hashPassword(password)
+      await db
+        .insertInto('sys_user')
+        .values({
           username: 'admin',
-          password: 'synie-integration-admin-password',
-        }),
-      },
-    ).catch(async () =>
-      json<{ token: string; user: { id: string } }>('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ username: 'admin', password: 'admin123' }),
-      }),
-    )
-    token = login.token
-    userId = login.user.id
+          name: 'hr-integration-admin',
+          hashed_password: hashed,
+          super_admin: true,
+          all_companies: true,
+        })
+        .onConflict((oc) =>
+          oc.column('username').doUpdateSet({
+            hashed_password: hashed,
+            super_admin: true,
+            all_companies: true,
+          }),
+        )
+        .execute()
+      login = await tryLogin('admin', password)
+    }
+    expect(login).toBeTruthy()
+    token = login!.token
+    userId = login!.user.id
 
     // 本地存储
     await db
