@@ -35,6 +35,7 @@ import type {
   StockEntryService,
 } from './modules/inventory/index.ts'
 import { tradingRouteMounts, type TradingServices } from './modules/trading/index.ts'
+import { manufacturingRoutes, type ManufacturingServices } from './modules/manufacturing/index.ts'
 import { authRoutes } from './platform/auth/routes.ts'
 import type { AuthService } from './platform/auth/service.ts'
 import type { AppEnv } from './platform/http/context.ts'
@@ -88,6 +89,8 @@ export interface AppDeps {
   entries: EntryService
   // 工单 06/07 交易链
   trading: TradingServices
+  // 工单 11 制造
+  manufacturing: ManufacturingServices
 }
 
 const accessLog: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -175,6 +178,16 @@ export function buildApp(deps: AppDeps) {
         auth: deps.auth,
         journals: deps.journals,
         entries: deps.entries,
+      }),
+    )
+    .route(
+      '/manufacturing',
+      manufacturingRoutes({
+        auth: deps.auth,
+        master: deps.manufacturing.master,
+        demands: deps.manufacturing.demands,
+        workOrders: deps.manufacturing.workOrders,
+        outputs: deps.manufacturing.outputs,
       }),
     )
 

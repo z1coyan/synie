@@ -21,6 +21,10 @@ import {
   registerInventoryResources,
 } from '~/modules/inventory/index.ts'
 import { createTradingServices, registerTradingResources } from '~/modules/trading/index.ts'
+import {
+  createManufacturingServices,
+  registerManufacturingResources,
+} from '~/modules/manufacturing/index.ts'
 import { createRateLimiter } from '~/platform/auth/limiter.ts'
 import { createAuthService, type AuthService } from '~/platform/auth/service.ts'
 import { createAuthStore } from '~/platform/auth/store.ts'
@@ -79,6 +83,7 @@ export function createPlatformRegistry(): Registry {
   registerInventoryResources(registry)
   registerAccountingResources(registry)
   registerTradingResources(registry)
+  registerManufacturingResources(registry)
   return registry
 }
 
@@ -129,6 +134,7 @@ export async function buildTestApp(
   const inv = createInventoryServices(db, numbering)
   const accounting = createAccountingServices(db, numbering)
   const trading = createTradingServices(db, numbering)
+  const manufacturing = createManufacturingServices(db, numbering)
   return buildApp({
     db,
     auth,
@@ -159,5 +165,6 @@ export async function buildTestApp(
     journals: merged.journals ?? accounting.journals,
     entries: merged.entries ?? accounting.entries,
     trading: (merged as { trading?: typeof trading }).trading ?? trading,
+    manufacturing: merged.manufacturing ?? manufacturing,
   })
 }
