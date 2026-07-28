@@ -42,5 +42,10 @@ platform 层硬编码领域知识，红线「platform 不 import 业务域」虽
 - `36f9d3d` 业务知识回吐（todo registry / single-row settings / sampledata→modules/setup / numbering catalog）
 - `cf09537` source-registry 注释清理
 - 与 printing 合入时保留 `registerSalesOrderDocBuilder`；todo 走 `createTodoSourceRegistry` + finance/party 注册
-- remaining（可选）：setup 向导 `completeBaseSeeds` 仍写 `inv_material_category`
 - 验证：typecheck + 246 测全绿
+
+### 2026-07-28 独立验收补丁
+
+- 收口 remaining：`seedMaterialCategories` 迁 `modules/setup/base-seeds.ts`，经 `SetupServiceDeps.seedMaterialCategories` 组合根注入
+- 生产 `src/platform`（排除 *.test.ts）对 `sal_|pur_|acc_|hr_|inv_|mfg_` 业务表名 grep 归零
+- bas_*（公司/币种/单位）仍属 platform 向导基础种子，不在验收 grep 范围内

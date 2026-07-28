@@ -66,7 +66,7 @@ import {
 } from './platform/printing/index.ts'
 import { createSettingsService, registerSettingResources } from './platform/settings/index.ts'
 import { createSetupService } from './platform/setup/index.ts'
-import { seedSampleData } from './modules/setup/index.ts'
+import { seedMaterialCategories, seedSampleData } from './modules/setup/index.ts'
 
 const env = loadEnv()
 const db = createDb(env.databaseUrl)
@@ -150,6 +150,7 @@ const manufacturing = createManufacturingServices(db, numbering)
 const setup = createSetupService({
   db,
   tokens,
+  seedMaterialCategories,
   seedSampleData: (actor, companyId) =>
     seedSampleData(
       {

@@ -81,7 +81,7 @@ import {
   type PrintingService,
 } from '~/platform/printing/index.ts'
 import { createSetupService } from '~/platform/setup/index.ts'
-import { seedSampleData } from '~/modules/setup/index.ts'
+import { seedMaterialCategories, seedSampleData } from '~/modules/setup/index.ts'
 
 /** 集成测试用固定密钥（≥32 字节）；仅测试进程内使用 */
 export const TEST_AUTH_SECRET = 'integration-test-secret-32-bytes!!'
@@ -238,6 +238,7 @@ export async function buildTestApp(
     createSetupService({
       db,
       tokens: createTokenManager({ secret: TEST_AUTH_SECRET, ttlSeconds: 3600 }),
+      seedMaterialCategories,
       seedSampleData: (actor, companyId) =>
         seedSampleData(
           {

@@ -24,6 +24,7 @@ import { createNumberingService } from '../numbering/service.ts'
 import {
   MARKER_BANK_ACCOUNT_NO,
   MARKER_CUSTOMER_CODE,
+  seedMaterialCategories,
   seedSampleData,
 } from '~/modules/setup/index.ts'
 import { createSetupService } from './service.ts'
@@ -141,7 +142,7 @@ run('PG 集成（setup 向导）', () => {
 
   test('status 公开 + first-user 并发仅一成功 + 基础 complete', async () => {
     await prepareEmptySetup()
-    const setup = createSetupService({ db, tokens })
+    const setup = createSetupService({ db, tokens, seedMaterialCategories })
     const app = await buildTestApp(db)
 
     const statusRes = await app.request('/api/v1/setup/status')
@@ -320,6 +321,7 @@ run('PG 集成（setup 向导）', () => {
       const setup = createSetupService({
         db,
         tokens,
+        seedMaterialCategories,
         seedSampleData: (a, companyId) => seedSampleData(sample, a, companyId),
       })
 
