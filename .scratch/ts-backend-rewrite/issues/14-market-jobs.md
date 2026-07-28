@@ -23,3 +23,6 @@ Blocked by: 02
 ## 非目标
 
 行情挂钩定价结算（预留未实现，维持现状）。
+
+## Comments
+- 2026-07-28 集成：主仓 cherry-pick 行情服务 + marketsched；AppDeps.market 统一；进程内调度 start/stop 接入 index。

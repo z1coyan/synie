@@ -17,6 +17,7 @@ export function outsourcedIssueMeta(): ResourceMeta {
     permissionPrefix: 'purchase.outsourced_issue',
     permissionLabel: '委外发料单',
     table: 'pur_outsourced_issue',
+    printHead: true,
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
       f('issue_no', 'issueNo', 'string', '发料单号', {"sortable": true, "filterable": true}),
@@ -91,6 +92,7 @@ export function outsourcedReceiptMeta(): ResourceMeta {
     permissionPrefix: 'purchase.outsourced_receipt',
     permissionLabel: '委外入库单',
     table: 'pur_outsourced_receipt',
+    printHead: true,
     fields: [
       f('id', 'id', 'uuid', 'id', {"sortable": true, "readonly": true}),
       f('receipt_no', 'receiptNo', 'string', '入库单号', {"sortable": true, "filterable": true}),

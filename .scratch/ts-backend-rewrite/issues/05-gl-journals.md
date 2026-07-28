@@ -42,4 +42,4 @@ TS 业务域已落地于 `server/src/modules/accounting/`：
 - Meta 多态 FK wire 去掉 null resource/relation/labelField，与 Go Grid 快照一致；补 `.scratch/migration/snapshots/pr-2.12/*.grid.json`
 - 集成测补红冲 reverse 取负 + is_reversed + 重复 conflict + 报表归零
 - typecheck + accounting/gl PG 集成全绿
-
+- 2026-07-28 集成：主仓 cherry-pick 工单05（含 Meta wire 对齐）；与库存/交易共享 registry.projectWireRef；accounting/gl PG 测绿。

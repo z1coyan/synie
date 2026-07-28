@@ -31,3 +31,4 @@ Blocked by: 03
 - 验收：`verify-quotation-rest` / `verify-order-rest` / `verify-fulfillment-rest`（标准段）全绿；`amount_chain` golden 覆盖 2/4/6 档 half-up；`projection.postgres` 覆盖销售超发聚合/硬拦与采购需求已收同步；`bun run typecheck` 通过。
 - 快照：`.scratch/migration/snapshots/pr-2.13`～`pr-2.15`。
 - 非目标未做：对账 08、打印 15、委外完整业务 10（仅头 CRUD + Meta）。
+- 2026-07-28 集成：主仓 cherry-pick 销售链（跳过 stub Meta，复用真实库存 Meta）；side-aware 采购对偶一并落地，覆盖工单07 验收锚点；委外头 printHead 补齐。

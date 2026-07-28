@@ -21,3 +21,6 @@ Blocked by: 03
 ## 非目标
 
 委外配置/发料/入库（工单 10）；履约需求单本体（工单 11）。
+
+## Comments
+- 2026-07-28 集成：与工单06 并行实现去重——采用 06 side-aware trading（报价/订单/入库）作为采购链实现；跳过 07 并行 tree（`0b2e82e`/`5647a54`）避免双实现冲突；verify-quotation/order/fulfillment 锚点由统一 trading 覆盖。

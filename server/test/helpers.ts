@@ -84,7 +84,6 @@ export function createPlatformRegistry(): Registry {
   registerNumberingResources(registry)
   registerFileResources(registry)
   registerAuditResources(registry)
-  registerPrintingResources(registry)
   registerBaseResources(registry)
   registerMarketResources(registry)
   registerIamResources(registry)
@@ -95,6 +94,8 @@ export function createPlatformRegistry(): Registry {
   registerAccountingResources(registry)
   registerTradingResources(registry)
   registerManufacturingResources(registry)
+  // 打印目录 stub 在业务域之后：已有真实 Meta 则跳过
+  registerPrintingResources(registry)
   return registry
 }
 

@@ -23,3 +23,6 @@ Blocked by: 01, 02
 ## 非目标
 
 不新增图片类占位符（图纸/Logo 留跟进先例）。
+
+## Comments
+- 2026-07-28 集成：主仓 cherry-pick 打印引擎；registerPrintingResources 置于业务域之后使 stub 跳过真实 Meta；catalog 60 前缀 / sales.order 25 字段。

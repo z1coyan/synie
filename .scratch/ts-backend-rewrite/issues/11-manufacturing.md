@@ -27,3 +27,4 @@ Blocked by: 03
 ## 非目标
 
 工序报工、生产成本总账（第一期不做）。
+- 2026-07-28 集成：主仓 cherry-pick 制造域（含 Meta/数量 wire 修复）；挂载 /manufacturing；PG 集成 5 项全绿。

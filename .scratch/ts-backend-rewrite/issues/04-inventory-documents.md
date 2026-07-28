@@ -23,3 +23,6 @@ Blocked by: 03
 ## 非目标
 
 不做批次/序列号/库位（v1 不做）。
+
+## Comments
+- 2026-07-28 集成：主仓 cherry-pick 工单04（含 9d03807 边界 PG）；Meta/路由并入统一 app 装配；`bun test` 全绿（含 inventory 5）；typecheck 通过。
