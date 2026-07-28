@@ -1,5 +1,6 @@
 /**
  * 订单履约投影：审核发货/入库时累加 shipped_qty/received_qty，作废回滚；含超发/超收容差。
+ * 委外发料：累加 pur_order_item_material.issued_qty（超发不硬拦）。
  * 调用方持有 trx；本模块不自起事务。
  */
 import { decimal, type Decimal } from '@synie/shared'
@@ -19,6 +20,23 @@ export interface FulfillmentInput {
   partyType: string
   partyId: string
   lines: FulfillmentLine[]
+  /**
+   * 委外入库传 true：只接受 is_outsourced 订单；标准采购入库不传（普通/委外均可）。
+   * 对齐 Go FulfillmentInput.RequireOutsourced。
+   */
+  requireOutsourced?: boolean | null
+}
+
+export interface OutsourcedIssueLine {
+  orderItemMaterialId: string
+  baseQty: Decimal | string
+}
+
+export interface OutsourcedIssueInput {
+  companyId: string
+  partyType: string
+  partyId: string
+  lines: OutsourcedIssueLine[]
 }
 
 export async function postFulfillment(
@@ -35,6 +53,19 @@ export async function reverseFulfillment(
   input: FulfillmentInput,
 ): Promise<void> {
   return adjustFulfillment(db, side, input, decimal(-1), false)
+}
+
+/** 委外发料审核：累加发料清单行已发料量（材料默认单位；超发不硬拦） */
+export async function postOutsourcedIssue(db: DbHandle, input: OutsourcedIssueInput): Promise<void> {
+  return adjustOutsourcedIssue(db, input, decimal(1), true)
+}
+
+/** 委外发料作废：回滚已发料量 */
+export async function reverseOutsourcedIssue(
+  db: DbHandle,
+  input: OutsourcedIssueInput,
+): Promise<void> {
+  return adjustOutsourcedIssue(db, input, decimal(-1), false)
 }
 
 /** 可履约上限 = baseQty × (1 + 容差比例)；供单测与实现共用 */
@@ -64,9 +95,19 @@ async function adjustFulfillment(
   const itemIds = [...grouped.keys()].sort()
   const orderIds = new Set<string>()
   const itemOrder = new Map<string, string>()
+  const outsourcedCol =
+    side === 'purchase' ? 'o.is_outsourced' : 'false'
   for (const itemId of itemIds) {
-    const row = await sql<{ order_id: string; company_id: string; party_type: string; party_id: string; status: string }>`
-      SELECT oi.order_id, o.company_id, o.party_type, o.party_id, o.status
+    const row = await sql<{
+      order_id: string
+      company_id: string
+      party_type: string
+      party_id: string
+      status: string
+      is_outsourced: boolean
+    }>`
+      SELECT oi.order_id, o.company_id, o.party_type, o.party_id, o.status,
+        ${sql.raw(outsourcedCol)} AS is_outsourced
       FROM ${ident(spec.itemTable)} oi
       JOIN ${ident(spec.headTable)} o ON o.id = oi.order_id
       WHERE oi.id = ${itemId}::uuid
@@ -83,6 +124,13 @@ async function adjustFulfillment(
     }
     if (verify && r.status.toLowerCase() !== 'audited') {
       throw new ApiError('conflict', '仅已审核订单可履约')
+    }
+    if (
+      input.requireOutsourced !== undefined &&
+      input.requireOutsourced !== null &&
+      Boolean(r.is_outsourced) !== input.requireOutsourced
+    ) {
+      throw new ApiError('conflict', '来源订单委外类型与履约单不匹配')
     }
     orderIds.add(r.order_id)
     itemOrder.set(itemId, r.order_id)
@@ -131,6 +179,94 @@ async function adjustFulfillment(
   }
   if (side === 'purchase' && demandDeltas.size > 0) {
     await adjustDemandReceived(db, demandDeltas)
+  }
+}
+
+async function adjustOutsourcedIssue(
+  db: DbHandle,
+  input: OutsourcedIssueInput,
+  direction: Decimal,
+  verify: boolean,
+): Promise<void> {
+  const grouped = new Map<string, Decimal>()
+  for (const line of input.lines) {
+    const q = decimal(line.baseQty)
+    if (!q.isPositive() && verify) {
+      throw new ApiError('conflict', '履约数量必须大于零')
+    }
+    grouped.set(
+      line.orderItemMaterialId,
+      (grouped.get(line.orderItemMaterialId) ?? decimal(0)).add(q),
+    )
+  }
+  if (grouped.size === 0) return
+
+  const materialIds = [...grouped.keys()].sort()
+  const itemOrders = new Map<string, string>()
+  const orderSet = new Set<string>()
+  for (const materialId of materialIds) {
+    const row = await sql<{ order_id: string }>`
+      SELECT i.order_id
+      FROM pur_order_item_material m
+      JOIN pur_order_item i ON i.id = m.order_item_id
+      WHERE m.id = ${materialId}::uuid
+    `.execute(db)
+    const r = row.rows[0]
+    if (!r) throw new ApiError('conflict', '来源发料清单行不存在')
+    itemOrders.set(materialId, r.order_id)
+    orderSet.add(r.order_id)
+  }
+
+  const orderIds = [...orderSet].sort()
+  for (const orderId of orderIds) {
+    const row = await sql<{
+      status: string
+      is_outsourced: boolean
+      company_id: string
+      party_type: string
+      party_id: string
+    }>`
+      SELECT status, is_outsourced, company_id, party_type, party_id
+      FROM pur_order WHERE id = ${orderId}::uuid FOR UPDATE
+    `.execute(db)
+    const r = row.rows[0]
+    if (!r) throw new ApiError('conflict', '来源委外采购订单与发料单不匹配')
+    if (verify && r.status.toLowerCase() !== 'audited') {
+      throw new ApiError('conflict', '来源委外采购订单须为已审核')
+    }
+    if (
+      !r.is_outsourced ||
+      r.company_id !== input.companyId ||
+      lowerParty(r.party_type) !== lowerParty(input.partyType) ||
+      r.party_id !== input.partyId
+    ) {
+      throw new ApiError('conflict', '来源委外采购订单与发料单不匹配')
+    }
+  }
+
+  for (const materialId of materialIds) {
+    const row = await sql<{ order_id: string; issued_qty: string }>`
+      SELECT i.order_id, m.issued_qty::text AS issued_qty
+      FROM pur_order_item_material m
+      JOIN pur_order_item i ON i.id = m.order_item_id
+      WHERE m.id = ${materialId}::uuid
+      FOR UPDATE OF m
+    `.execute(db)
+    const r = row.rows[0]
+    if (!r) throw new ApiError('conflict', '来源发料清单行不存在')
+    if (itemOrders.get(materialId) !== r.order_id) {
+      throw new ApiError('conflict', '来源发料清单行已变化')
+    }
+    const next = decimal(r.issued_qty).add(grouped.get(materialId)!.mul(direction))
+    if (next.isNegative()) {
+      throw new ApiError('conflict', '订单发料投影不能为负')
+    }
+    await sql`
+      UPDATE pur_order_item_material
+      SET issued_qty = ${wireRequiredDecimal(next)},
+          updated_at = (now() AT TIME ZONE 'utc')
+      WHERE id = ${materialId}::uuid
+    `.execute(db)
   }
 }
 

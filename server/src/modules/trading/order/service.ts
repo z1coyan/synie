@@ -42,7 +42,14 @@ import {
 } from '../common.ts'
 import type { QuotationService } from '../quotation/service.ts'
 import { deriveItemAmounts } from './amounts.ts'
-import { postFulfillment, reverseFulfillment, type FulfillmentInput } from './projection.ts'
+import {
+  postFulfillment,
+  postOutsourcedIssue,
+  reverseFulfillment,
+  reverseOutsourcedIssue,
+  type FulfillmentInput,
+  type OutsourcedIssueInput,
+} from './projection.ts'
 import {
   orderByproductMeta,
   orderHeadMeta,
@@ -1310,6 +1317,10 @@ export function createOrderService(
       postFulfillment(trx, side, input),
     reverseFulfillment: (trx: DbHandle, side: TradingSide, input: FulfillmentInput) =>
       reverseFulfillment(trx, side, input),
+    postOutsourcedIssue: (trx: DbHandle, input: OutsourcedIssueInput) =>
+      postOutsourcedIssue(trx, input),
+    reverseOutsourcedIssue: (trx: DbHandle, input: OutsourcedIssueInput) =>
+      reverseOutsourcedIssue(trx, input),
   }
 }
 

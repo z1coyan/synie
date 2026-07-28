@@ -1,6 +1,6 @@
 # 10 委外：订单配置 / 发料 / 入库
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 07, 11
 
 ## 范围

@@ -51,8 +51,9 @@ import {
 import {
   outsourcedIssueItemRoutes,
   outsourcedIssueRoutes,
-  outsourcedReceiptChildRoutes,
+  outsourcedReceiptByproductRoutes,
   outsourcedReceiptItemRoutes,
+  outsourcedReceiptMaterialRoutes,
   outsourcedReceiptRoutes,
 } from './outsourced/routes.ts'
 import { createReconciliationService } from './reconciliation/service.ts'
@@ -93,7 +94,7 @@ export function createTradingServices(db: Kysely<Database>, numbering: Numbering
   const quotations = createQuotationService(db, numbering)
   const orders = createOrderService(db, numbering, quotations)
   const fulfillment = createFulfillmentService(db, numbering, orders)
-  const outsourced = createOutsourcedService(db, numbering)
+  const outsourced = createOutsourcedService(db, numbering, orders)
   const reconciliations = createReconciliationService(db, numbering)
   return { quotations, orders, fulfillment, outsourced, reconciliations }
 }
@@ -131,8 +132,8 @@ export function tradingRouteMounts(deps: {
     outsourcedIssueItems: outsourcedIssueItemRoutes({ auth, outsourced }),
     outsourcedReceipts: outsourcedReceiptRoutes({ auth, outsourced }),
     outsourcedReceiptItems: outsourcedReceiptItemRoutes({ auth, outsourced }),
-    outsourcedReceiptItemMaterials: outsourcedReceiptChildRoutes({ auth, outsourced }),
-    outsourcedReceiptItemByproducts: outsourcedReceiptChildRoutes({ auth, outsourced }),
+    outsourcedReceiptItemMaterials: outsourcedReceiptMaterialRoutes({ auth, outsourced }),
+    outsourcedReceiptItemByproducts: outsourcedReceiptByproductRoutes({ auth, outsourced }),
     salesReconciliations: reconciliationHeadRoutes({
       auth,
       reconciliations,
