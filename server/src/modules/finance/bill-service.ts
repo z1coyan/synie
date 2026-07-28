@@ -1,6 +1,6 @@
 /**
  * 承兑票据 / 交易 / 持有段重放。
- * 行为对齐 server-go documents/bill.go
+ * 审核/作废走总账过账骨架；replayBill 经 after* 钩子，REALLOCATE 跳过 GL。
  */
 import { decimal, type ListQuery } from '@synie/shared'
 import { sql } from 'kysely'
@@ -17,6 +17,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { mapWriteError } from '~/db/dberr.ts'
+import { auditGlDocInTx, voidGlDocInTx } from '~/modules/trading/posting.ts'
 import {
   actorUserId, asDateOnly, asDateOnlyOrNull, asIso, asIsoOrNull, conflict, lower,
   notFound, parseDecimal, requireCompanyAccess, requireDate, requirePerm, upper,
@@ -943,87 +944,90 @@ export function createBillService(
   async function auditTransaction(actor: Actor, id: string, postingDate?: string | null) {
     requirePerm(actor, 'acc.bill_transaction:audit')
     return withTx(db, async (trx) => {
-      const before = await loadTx(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '承兑交易')
-      if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可审核')
-      let posting: string | null = null
-      if (before.transactionType !== 'REALLOCATE') {
-        if (!postingDate?.trim()) {
-          throw ApiError.validation('承兑交易审核条件不完整', { postingDate: ['必填'] })
-        }
-        posting = requireDate(postingDate, 'postingDate')
-      }
-      const bill = await loadBill(trx, before.billId, true)
-      await validateTransaction(trx, {
-        transactionType: before.transactionType, companyId: before.companyId,
-        bankAccountId: before.bankAccountId, billId: before.billId,
-        subStart: before.subStart, subEnd: before.subEnd, amount: before.amount,
-        occurredOn: before.occurredOn, postingDate: before.postingDate,
-        partyType: before.partyType, partyId: before.partyId,
-        discountOrg: before.discountOrg, discountRate: before.discountRate,
-        interest: before.interest, netAmount: before.netAmount,
-        toBankAccountId: before.toBankAccountId,
-      }, bill, false)
-      if (before.transactionType !== 'REALLOCATE') {
-        if (
-          !before.billAccountId || !before.settleAccountId ||
-          (before.transactionType === 'DISCOUNT' && before.interest != null &&
-            decimal(before.interest).gt(0) && !before.interestAccountId)
-        ) {
-          throw ApiError.validation('承兑交易审核条件不完整', {
-            posting: ['过账日期及所需科目必填'],
-          })
-        }
-      }
-      validateBillAuditDate(before, bill)
-      const tag = await sql`
-        UPDATE acc_bill_transaction SET status='audited', posting_date=${posting}::date,
-          audited_at=timezone('utc',now()), audited_by_id=${actorUserId(actor)}::uuid,
-          updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid AND status='draft'
-      `.execute(trx)
-      if (Number(tag.numAffectedRows) !== 1) throw conflict('承兑交易已被并发处理')
-      if (before.transactionType !== 'REALLOCATE') {
-        const entries = billTxEntries(before)
-        await gl.post(trx, {
-          type: VOUCHER, id, no: txLabel(before),
-          companyId: before.companyId, postingDate: posting!,
-        }, entries)
-      }
-      await replayBill(trx, bill.id)
-      const result = await loadTx(trx, id, false)
-      await writeAudit(trx, actor, {
-        resource: 'acc_bill_transaction', recordId: id, recordLabel: txLabel(result),
-        companyId: result.companyId, actionType: 'update', actionName: 'audit',
-        changes: auditDiff(txSnap(before), txSnap(result), TX_AUDIT),
+      let billId = ''
+      return auditGlDocInTx(trx, actor, gl, {
+        voucherType: VOUCHER,
+        headTable: 'acc_bill_transaction',
+        conflictMessage: '承兑交易已被并发处理',
+        lockDraft: async (t) => {
+          const before = await loadTx(t, id, true)
+          requireCompanyAccess(actor, before.companyId, '承兑交易')
+          if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可审核')
+          return before
+        },
+        collect: async (t, before) => {
+          let posting: string | null = null
+          if (before.transactionType !== 'REALLOCATE') {
+            if (!postingDate?.trim()) {
+              throw ApiError.validation('承兑交易审核条件不完整', { postingDate: ['必填'] })
+            }
+            posting = requireDate(postingDate, 'postingDate')
+          }
+          const bill = await loadBill(t, before.billId, true)
+          billId = bill.id
+          await validateTransaction(t, {
+            transactionType: before.transactionType, companyId: before.companyId,
+            bankAccountId: before.bankAccountId, billId: before.billId,
+            subStart: before.subStart, subEnd: before.subEnd, amount: before.amount,
+            occurredOn: before.occurredOn, postingDate: before.postingDate,
+            partyType: before.partyType, partyId: before.partyId,
+            discountOrg: before.discountOrg, discountRate: before.discountRate,
+            interest: before.interest, netAmount: before.netAmount,
+            toBankAccountId: before.toBankAccountId,
+          }, bill, false)
+          if (before.transactionType !== 'REALLOCATE') {
+            if (
+              !before.billAccountId || !before.settleAccountId ||
+              (before.transactionType === 'DISCOUNT' && before.interest != null &&
+                decimal(before.interest).gt(0) && !before.interestAccountId)
+            ) {
+              throw ApiError.validation('承兑交易审核条件不完整', {
+                posting: ['过账日期及所需科目必填'],
+              })
+            }
+          }
+          validateBillAuditDate(before, bill)
+          if (before.transactionType === 'REALLOCATE') {
+            return { entries: [], postingDate: posting, skipGl: true }
+          }
+          return { entries: billTxEntries(before), postingDate: posting }
+        },
+        afterAudit: async (t) => {
+          await replayBill(t, billId)
+        },
+        voucherOf: (h) => ({ id: h.id, no: txLabel(h), companyId: h.companyId }),
+        reload: (t, headId) => loadTx(t, headId, false),
+        snapshot: txSnap,
+        auditFields: TX_AUDIT,
       })
-      return result
     })
   }
 
   async function voidTransaction(actor: Actor, id: string) {
     requirePerm(actor, 'acc.bill_transaction:void')
-    return withTx(db, async (trx) => {
-      const before = await loadTx(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '承兑交易')
-      if (before.status !== 'AUDITED') throw conflict('仅已审核承兑交易可作废')
-      await loadBill(trx, before.billId, true)
-      if (before.transactionType !== 'REALLOCATE') {
-        await gl.cancel(trx, { type: VOUCHER, id })
-      }
-      await sql`
-        UPDATE acc_bill_transaction SET status='voided', updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
-      await replayBill(trx, before.billId)
-      const result = await loadTx(trx, id, false)
-      await writeAudit(trx, actor, {
-        resource: 'acc_bill_transaction', recordId: id, recordLabel: txLabel(result),
-        companyId: result.companyId, actionType: 'update', actionName: 'void',
-        changes: auditDiff(txSnap(before), txSnap(result), TX_AUDIT),
-      })
-      return result
-    })
+    return withTx(db, async (trx) =>
+      voidGlDocInTx(trx, actor, gl, {
+        voucherType: VOUCHER,
+        headTable: 'acc_bill_transaction',
+        lockAudited: async (t) => {
+          const before = await loadTx(t, id, true)
+          requireCompanyAccess(actor, before.companyId, '承兑交易')
+          if (before.status !== 'AUDITED') throw conflict('仅已审核承兑交易可作废')
+          await loadBill(t, before.billId, true)
+          return before
+        },
+        resolveGlEnd: async (_t, before) => ({
+          mode: before.transactionType === 'REALLOCATE' ? 'skip' : 'cancel',
+        }),
+        afterVoid: async (t, before) => {
+          await replayBill(t, before.billId)
+        },
+        voucherOf: (h) => ({ id: h.id, no: txLabel(h), companyId: h.companyId }),
+        reload: (t, headId) => loadTx(t, headId, false),
+        snapshot: txSnap,
+        auditFields: TX_AUDIT,
+      }),
+    )
   }
 
   async function listHoldings(actor: Actor, query: Partial<ListQuery>) {
