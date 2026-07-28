@@ -1,5 +1,10 @@
 name: synie
 
+# 过渡期双后端（规格：.scratch/ts-backend-rewrite/）：
+# - server-go：现行产品后端（Go），端口 8080，前端代理默认目标
+# - server：目标 Bun/TS 后端（重建中），端口 8081（GO_API_PORT=8081 可切前端代理）
+# 两个后端共用同一套 SQL 迁移（migrate 服务执行 Bun 迁移器，DDL 同源）。
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -19,14 +24,11 @@ services:
 
   migrate:
     build:
-      context: ./server
-    command:
-      - /usr/local/bin/goose
-      - -dir
-      - /app/db/migrations
-      - postgres
-      - postgres://synie:synie@postgres:5432/synie?sslmode=disable
-      - up
+      context: .
+      dockerfile: server/Dockerfile
+    command: ["bun", "db/migrate.ts"]
+    environment:
+      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -34,7 +36,40 @@ services:
 
   server:
     build:
-      context: ./server
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      PORT: "8080"
+      HOST: 0.0.0.0
+      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
+      AUTH_SECRET: local-development-secret-change-me-32-bytes
+      AUTH_TOKEN_TTL: 168h
+      LOG_LEVEL: info
+    ports:
+      - "8081:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  seed:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ["bun", "db/seed.ts"]
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
+      SEED_ADMIN_USERNAME: admin
+      SEED_ADMIN_PASSWORD: admin123
+      SEED_ADMIN_NAME: 系统管理员
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # 现行产品后端（Go，过渡期只读维护）
+  server-go:
+    build:
+      context: ./server-go
     environment:
       HTTP_ADDR: :8080
       DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
@@ -43,21 +78,6 @@ services:
       LOG_LEVEL: info
     ports:
       - "8080:8080"
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-  seed:
-    build:
-      context: ./server
-    command: ["/usr/local/bin/synie-seed"]
-    profiles: ["tools"]
-    environment:
-      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
-      AUTH_SECRET: local-development-secret-change-me-32-bytes
-      SEED_ADMIN_USERNAME: admin
-      SEED_ADMIN_PASSWORD: local-admin-password-change-me
-      SEED_ADMIN_NAME: 系统管理员
     depends_on:
       migrate:
         condition: service_completed_successfully

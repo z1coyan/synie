@@ -1,0 +1,26 @@
+{
+  "name": "synie",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev:server": "bun run --filter @synie/server dev",
+    "dev:web": "bun run --filter synie-web dev",
+    "test": "bun run --filter @synie/shared test && bun run --filter @synie/server test",
+    "typecheck": "bun run --filter @synie/shared typecheck && bun run --filter @synie/server typecheck"
+  },
+  "trustedDependencies": [
+    "@heroui-pro/react",
+    "heroui-pro",
+    "heroui-native-pro"
+  ],
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^5.5.0"
+  }
+}

@@ -82,20 +82,20 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    # working-directory 为 server:Makefile 目标与 gofmt 检查都只覆盖 server/;
+    # working-directory 为 server-go:Makefile 目标与 gofmt 检查都只覆盖 server-go/;
     # 生成步骤依赖 ../contracts/openapi/openapi.yaml,检出的是完整仓库,相对路径成立。
     defaults:
       run:
-        working-directory: server
+        working-directory: server-go
     steps:
       - uses: actions/checkout@v4
 
-      # Go 版本取自 server/go.mod 的 go 指令;按 server/go.sum 缓存模块与构建缓存。
+      # Go 版本取自 server-go/go.mod 的 go 指令;按 server-go/go.sum 缓存模块与构建缓存。
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: server/go.mod
-          cache-dependency-path: server/go.sum
+          go-version-file: server-go/go.mod
+          cache-dependency-path: server-go/go.sum
 
       # gofmt -l 为空 + go vet,与本地 make lint 同源。
       - name: Lint (gofmt + go vet)
@@ -116,6 +116,64 @@ jobs:
       # 生成物目录有 diff 即失败 —— 防止改了 OpenAPI/查询 SQL 却忘记重新生成。
       - name: Verify generated code is fresh
         run: make verify-codegen
+
+  server-ts:
+    name: Bun server (typecheck + test + codegen freshness)
+    runs-on: ubuntu-latest
+    # PG 集成测试门控变量;与 server-go 相同的真库集成策略。
+    env:
+      SYNIE_TEST_DATABASE_URL: postgres://synie:synie@localhost:5432/synie_test?sslmode=disable
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: synie
+          POSTGRES_PASSWORD: synie
+          POSTGRES_DB: synie_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U synie -d synie_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      # monorepo:在仓库根安装全部 workspace(server 不需要 HeroUI 凭证)
+      - name: Install dependencies
+        run: bun install
+
+      # 迁移测试库(Bun 迁移器,SQL 与 server-go 同源)
+      - name: Migrate test database
+        run: bun run db:migrate
+        working-directory: server
+        env:
+          DATABASE_URL: ${{ env.SYNIE_TEST_DATABASE_URL }}
+
+      # 全部测试:单测 + PG 集成(门控变量已设置)
+      - name: Test
+        run: bun test
+        working-directory: server
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+        working-directory: server
+
+      # Kysely 类型新鲜度:改了 schema/迁移却未重新生成即失败
+      - name: Verify DB types are fresh
+        run: |
+          bun run db:codegen
+          git diff --exit-code -- src/db/types.d.ts || {
+            echo "DB 类型不是最新的:请运行 bun run db:codegen 并提交生成物"
+            exit 1
+          }
+        working-directory: server
+        env:
+          DATABASE_URL: ${{ env.SYNIE_TEST_DATABASE_URL }}
 
   frontend:
     name: Frontend (checks + typecheck + build)

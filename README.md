@@ -1,12 +1,14 @@
 # Synie
 
-Synie 是一个多公司财务 ERP。当前产品运行栈由 Go API 与 TanStack Start 前端组成：
+Synie 是一个多公司财务 ERP。**后端正处于 Go → Bun/TS 重写过渡期**（规格与工单：`.scratch/ts-backend-rewrite/`）：
 
-- `server/`：Go、chi、pgx/sqlc、goose、OpenAPI、JWT HS256。
+- `server/`：**目标后端** —— Bun + Hono + Kysely + PostgreSQL，`hono/client` 全链路类型契约（重建中，当前为平台层骨架 + auth/meta 证明路径）。
+- `server-go/`：**现行产品后端** —— Go、chi、pgx/sqlc、goose、OpenAPI、JWT HS256。重写完成切流前，产品流量仍由它承载；只读维护，不再演进新业务。
 - `web/`：Bun、React 19、TanStack Start、HeroUI Pro、Tailwind v4、TanStack Query、`openapi-fetch`。
+- `packages/shared`：前后端共享 TS 契约（Filter DSL、Meta DTO、错误模型、decimal 纪律）。
 - `backend/`：旧 Elixir/Phoenix/Ash 实现，仅保留作业务行为、测试与历史契约参考，不属于产品启动链路。
 
-前端所有产品请求只访问 Go `/api/v1`。Vite 不代理 GraphQL 或旧 Elixir API，开发和产品运行均不需要启动 `backend/`。
+前端所有产品请求只访问 `/api/v1`。Vite 不代理 GraphQL 或旧 Elixir API，开发和产品运行均不需要启动 `backend/`。
 
 > **切流登录提示：**Go 服务签发的 JWT HS256 不兼容旧 Elixir/Phoenix `Phoenix.Token`。切流后必须重新登录；若旧会话无法正常退出，请清除浏览器 `localStorage` 中的 `synie:token` 后重新登录。系统不会转换或兼容接受旧 token。
 
@@ -16,30 +18,38 @@ Synie 是一个多公司财务 ERP。当前产品运行栈由 Go API 与 TanStac
 
 ```text
 .
-├── server/                     # Go API，唯一产品后端
+├── package.json                # Bun workspaces 根（packages/* + server + web）
+├── server/                     # 目标后端：Bun + Hono + Kysely（重建中）
+│   ├── src/                    # platform 横切层 / engines / modules / db
+│   ├── db/migrations/          # SQL 迁移（与 server-go 同源）+ migrate.ts
+│   └── test/                   # bun test；PG 集成门控 SYNIE_TEST_DATABASE_URL
+├── server-go/                  # 现行产品后端（Go），过渡期只读维护
 │   ├── cmd/synie/              # HTTP 服务入口
 │   ├── db/migrations/          # goose 数据库迁移
 │   └── internal/               # 平台、领域、引擎与 HTTP 实现
+├── packages/
+│   └── shared/                 # @synie/shared：前后端共享契约（filter/meta/error/decimal）
 ├── web/                        # TanStack Start 前端
 │   ├── app/lib/api/            # OpenAPI client 与生成类型
 │   ├── app/lib/resources/      # ResourceClient registry
 │   └── app/routes/             # 页面与路由
-├── contracts/openapi/          # Go HTTP 契约
+├── contracts/openapi/          # 现行 HTTP 契约（行为参考；新栈以 ApiType 为类型源）
 ├── backend/                    # 旧 Elixir 参考实现，不参与产品运行
 ├── CONTEXT.md                  # 领域术语（ubiquitous language）
 ├── docs/
 │   ├── adr/                    # 架构决策记录
 │   ├── migration/              # 迁移设计与状态
 │   └── 产品文档/               # 功能说明书
-└── .scratch/                   # 活跃规格与本地工单
+└── .scratch/                   # 活跃规格与本地工单（含 ts-backend-rewrite）
 ```
 
-> 根目录没有 `package.json` 或 `go.mod`。Go 命令在 `server/` 下执行，前端命令在 `web/` 下执行。
+> Monorepo：根 `package.json` 统一管理 Bun workspaces（`packages/*` + `server` + `web`），
+> 依赖安装一律在**仓库根**执行 `bun install`。Go 命令在 `server-go/` 下执行。
 
 ## 环境要求
 
-- Go（版本以 `server/go.mod` 为准）
-- Bun `1.3.x`
+- Bun `1.3.x`（目标栈唯一运行时）
+- Go（版本以 `server-go/go.mod` 为准；仅过渡期维护现行后端需要）
 - PostgreSQL 17（推荐使用根目录 Compose）
 - Docker / Docker Compose（推荐开发路径）
 
@@ -52,35 +62,38 @@ AUTH_SECRET=<至少 32 字节的随机值>
 AUTH_TOKEN_TTL=168h
 ```
 
-DDL 由 `server/db/migrations/` 中的 goose 迁移唯一管理，不再用 Ecto/Ash 迁移产品数据库。
+DDL 由 SQL 迁移唯一管理（`server/db/migrations/` 与 `server-go/db/migrations/` 同源），不再用 Ecto/Ash 迁移产品数据库。
 
 ## 安装依赖
 
-### Go API
-
 ```bash
-cd server
-go mod download
-```
-
-### 前端
-
-```bash
-cd web
+# 仓库根：一次安装全部 workspace（packages/shared + server + web）
 bun install
+
+# Go 现行后端（过渡期）
+cd server-go && go mod download
 ```
 
 ## 本地启动
 
 推荐使用两个终端。
 
-### 终端 A：数据库、迁移与 Go API
+### 终端 A：数据库、迁移与后端
 
 ```bash
-docker compose up --build server
+# 现行 Go 后端（产品路径）
+docker compose up --build server-go
+
+# 或目标 Bun 后端（重写中，先迁移再启动）
+cd server
+export DATABASE_URL='postgres://synie:synie@localhost:5441/synie?sslmode=disable'
+export AUTH_SECRET='local-development-secret-change-me-32-bytes'
+bun run db:migrate
+bun run db:seed   # 首次：admin/admin123
+bun run dev
 ```
 
-首次启动或需要补种子时，在另一个终端执行：
+首次启动 Go 栈需要补种子时，在另一个终端执行：
 
 ```bash
 docker compose --profile tools run --rm seed
@@ -88,13 +101,13 @@ docker compose --profile tools run --rm seed
 
 服务地址：
 
-- Go API：`http://localhost:8080`
+- API：`http://localhost:8080`
 - 健康检查：`http://localhost:8080/api/v1/healthz`
 
-也可直接运行 Go 服务；server 不自动加载 `.env`：
+也可直接运行 Go 服务：
 
 ```bash
-cd server
+cd server-go
 export DATABASE_URL='postgres://synie:synie@localhost:5441/synie?sslmode=disable'
 export AUTH_SECRET='local-development-secret-change-me-32-bytes'
 make migration-up
@@ -112,10 +125,20 @@ bun dev
 
 ## 常用命令
 
-### Go 生成与测试
+### Bun 后端（server/）
 
 ```bash
 cd server
+bun test                 # 单测；SYNIE_TEST_DATABASE_URL 设置后含 PG 集成
+bun run typecheck
+bun run db:migrate
+bun run db:codegen       # 重新生成 src/db/types.d.ts（须已迁移开发库）
+```
+
+### Go 生成与测试（server-go/）
+
+```bash
+cd server-go
 make generate
 make test
 ```

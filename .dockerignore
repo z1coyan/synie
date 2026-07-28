@@ -1,0 +1,11 @@
+**/node_modules
+**/.git
+**/dist
+backend
+server-go
+docs
+.scratch
+uploads
+**/*.log
+**/.env
+web/test-results

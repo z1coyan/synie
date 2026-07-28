@@ -1,0 +1,21 @@
+# 18 清场切流
+
+Status: ready-for-agent
+Blocked by: 16, 17
+
+## 范围
+
+1. **删除/归档 server-go**（git tag `server-go-final` 后删除目录；contracts/openapi/openapi.yaml 移入 `docs/migration/` 作历史契约归档）
+2. **CI 收敛**：删除 backend（Elixir）与 server（Go）两个 job；server-ts 改名主 server job；frontend job 保持
+3. **compose 收敛**：删 server-go 服务；Bun server 端口回 8080（vite 代理默认目标）；migrate/seed 保持
+4. **文档定稿**：根 README（单一后端叙述）、AGENTS.md、`docs/migration/` 增「Go→Bun/TS 重写完成」记录；CONTEXT.md 术语若有过渡期表述一并收敛
+5. **全量验收**：CI 全绿 + Playwright e2e 全绿 + `.scratch/migration/verify-*.ts` 全套对 Bun server 全绿
+
+## 验收
+
+- 新克隆环境：bun install → compose up（postgres+migrate+server）→ seed → 前端全链路可用
+- 仓库内无 server-go / Go 工具链引用残留（除 docs/migration 归档与 backend/ Elixir 参考）
+
+## 非目标
+
+不删除 backend/（Elixir 参考按既定策略暂留，另行决策）。
