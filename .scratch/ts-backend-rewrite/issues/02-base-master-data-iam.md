@@ -1,6 +1,6 @@
 # 02 base 主数据 + IAM + 客商员工
 
-Status: ready-for-agent
+Status: ready-for-human
 Blocked by: 01
 
 ## 范围
@@ -33,3 +33,5 @@ Blocked by: 01
 - 2026-07-28 集成代理：cherry-pick 分片 e9c8d7e 栈（base 四资源 + IAM + party + 公司默认过账科目）并装配 app/index；补 market-instruments 查询面、权限矩阵规格测试、权限先于 body 校验、pr-2.10/pr-2.18 Grid 快照。`cd server && bunx tsc --noEmit` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 70 pass。`verify-party-employee-rest.ts` 对 Bun（:18081）全绿。`verify-system-ops-rest.ts` 审计 Meta/权限先校验已过，阻塞于 `/todos/*`（工单 09 待办面）。未改 server-go。
 - 2026-07-28 独立验收：读代码对照 server-go/OpenAPI（wire/权限先于校验/金额 decimal/withTx/Meta/hc 链）；`bun run typecheck` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 71 pass；`verify-party-employee-rest.ts` 对 Bun:18082 全绿；base/IAM/默认过账科目 HTTP 冒烟（三仓种子、本币保护、科目角色槽、partial upsert、权限先 403）。修复 filterbuild：`fk/enum/enumArray/polyFk` 缺 `values` 时 TypeError→500，改为 validation 400 并补单测。`verify-system-ops` 仍阻塞 `/todos/*`（工单 09）。未 push/reset。
 - 2026-07-28 独立验收（阶段 A 复验）：Meta 21 资源已注册；base/iam/party 路由权限中间件先于 zValidator；`bun run typecheck` 绿；全量 99 pass；`verify-party-employee-rest`（:18083）meta=6 customer/supplier/employees/enumArray/autoNumber/permissionFirst=9 audits=9 全绿。`verify-system-ops` 仍在 `POST /todos/query` 404（工单 09）。无新增缺陷。
+- 2026-07-28 隔离 worktree 复验（grok-4.5）：Meta 已含 basCompanies/Currencies/Units/Accounts、sysUsers/Roles、salCustomers/purSuppliers/hrEmployees、salCompanyAccountDefaults 等；IAM 权限中间件先于 zValidator；权限矩阵规格 8 项 + base/iam/party 集成绿。活 API PORT=18092：`verify-party-employee-rest` meta=6 customer=1 supplier=1 employees=6 enumArray=2 autoNumber=3 permissionFirst=9 audits=9 全绿（测试库需 00003 行情目录种子以覆盖 WEIGHT/EXCHANGE enum 回归）。`verify-system-ops` 仍阻塞 todos（工单 09，非本工单范围）。无代码变更；未改 server-go；未 push。
+- 2026-07-28 补 remaining：todos 已挂载且可用；活 API :18093 `verify-system-ops-rest` 全绿（meta=2 unavailableMeta=6 permissionFirst=7 readOnly=12 auditScope=6 todoBehavior=7 todoState=9 internalInvariants=3）；`verify-party-employee-rest` 全绿。新增 `company-account-default.integration.test.ts`（空壳 getByCompany/角色槽校验/他司科目拒绝/partial upsert/权限 fail-closed/Meta）。相关 suite 120 pass。验收项闭环。
