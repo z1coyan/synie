@@ -4,7 +4,7 @@ Synie 是一个多公司财务 ERP。**后端正处于 Go → Bun/TS 重写过�
 
 - `server/`：**目标后端** —— Bun + Hono + Kysely + PostgreSQL，`hono/client` 全链路类型契约（重建中，当前为平台层骨架 + auth/meta 证明路径）。
 - `server-go/`：**现行产品后端** —— Go、chi、pgx/sqlc、goose、OpenAPI、JWT HS256。重写完成切流前，产品流量仍由它承载；只读维护，不再演进新业务。
-- `web/`：Bun、React 19、TanStack Start、HeroUI Pro、Tailwind v4、TanStack Query、`openapi-fetch`。
+- `web/`：Bun、React 19、TanStack Start、HeroUI Pro、Tailwind v4、TanStack Query、`@synie/server` hono/client。
 - `packages/shared`：前后端共享 TS 契约（Filter DSL、Meta DTO、错误模型、decimal 纪律）。
 - `backend/`：旧 Elixir/Phoenix/Ash 实现，仅保留作业务行为、测试与历史契约参考，不属于产品启动链路。
 
@@ -154,28 +154,29 @@ bun test
 bun run build
 ```
 
-Go Playwright 验收：
+Playwright 验收（Bun API）：
 
 ```bash
 cd web
-bun run e2e:go
+bun run e2e          # run-smoke.sh：迁移 + Bun server + 前端 + playwright.api.config.ts
+bun run e2e:api      # 仅跑 *.api.e2e.ts（需已起栈）
 ```
 
-`bun run openapi` 从 `contracts/openapi/openapi.yaml` 生成 `web/app/lib/api/schema.d.ts`。前端不再包含 GraphQL client、operations、codegen 或生成物。
+前端契约来自 `@synie/server` 的 `ApiType` + `createApiClient`（hono/client），不再使用 OpenAPI codegen。`contracts/openapi/` 仍可作为 wire 形状历史参考（工单 18 清场时归档）。
 
-## 当前 Go API 合约
+## 当前 API 合约
 
-OpenAPI 唯一契约位于 `contracts/openapi/openapi.yaml`。主要入口包括：
+类型事实源：`server/src/app.ts` 的 `ApiType`（经 `hono/client` 传导到 web）。主要入口包括：
 
 - 登录：`POST /api/v1/auth/login`
 - 当前用户：`GET /api/v1/auth/me`
-- 初始化向导：`/api/v1/setup/*`
+- 初始化向导：`/api/v1/setup/*`（工单 16）
 - 资源元数据：`GET /api/v1/meta/resources/{name}`
 - 资源查询：各资源的 `/api/v1/.../query`
 - 文件：`/api/v1/files*`
 - 打印及业务命令：对应的 `/api/v1/...` REST endpoint
 
-登录后前端把 JWT 存入 `web/app/lib/auth.ts`，后续请求带 `Authorization: Bearer <token>`。资源权限、角色与公司范围由 Go 服务在每次请求时从 PostgreSQL 构建，不固化在 JWT 中。
+登录后前端把 JWT 存入 `web/app/lib/auth.ts`，后续请求带 `Authorization: Bearer <token>`。资源权限、角色与公司范围由服务端在每次请求时从 PostgreSQL 构建，不固化在 JWT 中。
 
 ## HeroUI Pro
 
