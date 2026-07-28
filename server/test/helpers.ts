@@ -11,6 +11,7 @@ import {
   registerMarketResources,
 } from '~/modules/base/market/index.ts'
 import { createIamService, registerIamResources } from '~/modules/iam/index.ts'
+import { createHrServices, registerHrResources } from '~/modules/hr/index.ts'
 import { createPartyServices, registerPartyResources } from '~/modules/party/index.ts'
 import {
   createCompanyAccountDefaultService,
@@ -79,6 +80,7 @@ export function createPlatformRegistry(): Registry {
   registerMarketResources(registry)
   registerIamResources(registry)
   registerPartyResources(registry)
+  registerHrResources(registry)
   registerSalesCompanyAccountDefault(registry)
   registerInventoryResources(registry)
   registerAccountingResources(registry)
@@ -130,6 +132,7 @@ export async function buildTestApp(
   const marketInstruments = createMarketInstrumentService(db)
   const iam = createIamService(db, registry)
   const party = createPartyServices(db, numbering)
+  const { hr } = createHrServices(db, merged.files, numbering)
   const companyAccountDefaults = createCompanyAccountDefaultService(db)
   const inv = createInventoryServices(db, numbering)
   const accounting = createAccountingServices(db, numbering)
@@ -153,6 +156,7 @@ export async function buildTestApp(
     customers: merged.customers ?? party.customers,
     suppliers: merged.suppliers ?? party.suppliers,
     employees: merged.employees ?? party.employees,
+    hr: merged.hr ?? hr,
     companyAccountDefaults: merged.companyAccountDefaults ?? companyAccountDefaults,
     invCategories: merged.invCategories ?? inv.categories,
     invMaterials: merged.invMaterials ?? inv.materials,

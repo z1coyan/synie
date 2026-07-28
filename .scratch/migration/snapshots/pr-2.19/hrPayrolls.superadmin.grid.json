@@ -1,0 +1,195 @@
+{
+  "capabilities": [
+    "create",
+    "update",
+    "delete"
+  ],
+  "columns": [
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "id",
+      "name": "id",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "月份",
+      "name": "month",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "月工日",
+      "name": "workdays",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "出勤天数",
+      "name": "attendanceDays",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "缺卡天数",
+      "name": "missingDays",
+      "ref": null,
+      "sortable": true,
+      "type": "integer"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "加班工时",
+      "name": "overtimeHours",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "日薪",
+      "name": "dailyWage",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "基本工资",
+      "name": "baseAmount",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "补贴",
+      "name": "allowance",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "奖金",
+      "name": "bonus",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "罚款",
+      "name": "fine",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "借款抵扣",
+      "name": "loanDeduction",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "应发工资",
+      "name": "payable",
+      "ref": null,
+      "sortable": true,
+      "type": "decimal"
+    },
+    {
+      "enumOptions": [
+        {
+          "label": "待发放",
+          "value": "PENDING"
+        },
+        {
+          "label": "已发放",
+          "value": "PAID"
+        }
+      ],
+      "filterable": true,
+      "label": "状态",
+      "name": "status",
+      "ref": null,
+      "sortable": true,
+      "type": "enum"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "备注",
+      "name": "remarks",
+      "ref": null,
+      "sortable": true,
+      "type": "string"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "创建时间",
+      "name": "insertedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "更新时间",
+      "name": "updatedAt",
+      "ref": null,
+      "sortable": true,
+      "type": "datetime"
+    },
+    {
+      "enumOptions": null,
+      "filterable": true,
+      "label": "员工",
+      "name": "employeeId",
+      "ref": {
+        "labelField": "name",
+        "relation": "employee",
+        "resource": "hrEmployees"
+      },
+      "sortable": false,
+      "type": "fk"
+    },
+    {
+      "enumOptions": null,
+      "filterable": false,
+      "label": "实发合计",
+      "name": "paidTotal",
+      "ref": null,
+      "sortable": false,
+      "type": "decimal"
+    }
+  ],
+  "destroyMutation": "destroyHrPayroll",
+  "extendedActions": []
+}

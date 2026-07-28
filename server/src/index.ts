@@ -58,6 +58,7 @@ registerBaseResources(registry)
 registerMarketResources(registry)
 registerIamResources(registry)
 registerPartyResources(registry)
+registerHrResources(registry)
 registerSalesCompanyAccountDefault(registry)
 registerInventoryResources(registry)
 registerAccountingResources(registry)
@@ -70,10 +71,12 @@ const owners = createOwnerRegistry()
 const files = createFileService({ db, owners })
 const storages = createStorageService({ db })
 const audit = createAuditService(db)
+import { createHrServices, registerHrResources } from './modules/hr/index.ts'
 const base = createBaseServices(db)
 const marketInstruments = createMarketInstrumentService(db)
 const iam = createIamService(db, registry)
 const party = createPartyServices(db, numbering)
+const { hr } = createHrServices(db, files, numbering)
 const companyAccountDefaults = createCompanyAccountDefaultService(db)
 const inv = createInventoryServices(db, numbering)
 const accounting = createAccountingServices(db, numbering)
@@ -98,6 +101,7 @@ const app = buildApp({
   customers: party.customers,
   suppliers: party.suppliers,
   employees: party.employees,
+  hr,
   companyAccountDefaults,
   invCategories: inv.categories,
   invMaterials: inv.materials,
