@@ -4,7 +4,6 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
-import { requirePermission } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { AttendanceService } from './attendance-service.ts'
@@ -39,16 +38,6 @@ function present(raw: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(raw, key)
 }
 
-/** 权限中间件：必须挂在 zValidator 之前，保证畸形 body 仍 403 */
-function requirePerm(code: string) {
-  return async (
-    c: { get: (k: 'actor') => AppEnv['Variables']['actor'] },
-    next: () => Promise<void>,
-  ) => {
-    requirePermission(c.get('actor'), code)
-    await next()
-  }
-}
 
 function iso(d: Date | null | undefined): string | null {
   if (d == null) return null
@@ -183,18 +172,16 @@ export function attendancePunchRoutes(deps: { auth: AuthService; attendance: Att
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('hr.attendance_punch:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listPunches(toList(c.req.valid('json')))
+        const result = await hr.listPunches(c.get('actor'), toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(punchDto) })
       },
     )
     .get(
       '/:id',
-      requirePerm('hr.attendance_punch:read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(punchDto(await hr.getPunch(c.req.valid('param').id))),
+      async (c) => c.json(punchDto(await hr.getPunch(c.get('actor'), c.req.valid('param').id))),
     )
 }
 
@@ -204,16 +191,14 @@ export function attendanceImportRoutes(deps: { auth: AuthService; attendance: At
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('hr.attendance_punch:import'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listImports(toList(c.req.valid('json')))
+        const result = await hr.listImports(c.get('actor'), toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(importDto) })
       },
     )
     .post(
       '/',
-      requirePerm('hr.attendance_punch:import'),
       zValidator(
         'json',
         z.object({ fileId: z.string().uuid() }).strict(),
@@ -226,13 +211,11 @@ export function attendanceImportRoutes(deps: { auth: AuthService; attendance: At
     )
     .get(
       '/:id',
-      requirePerm('hr.attendance_punch:import'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(importDto(await hr.getImport(c.req.valid('param').id))),
+      async (c) => c.json(importDto(await hr.getImport(c.get('actor'), c.req.valid('param').id))),
     )
     .post(
       '/:id/import',
-      requirePerm('hr.attendance_punch:import'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -250,7 +233,6 @@ export function attendanceImportRoutes(deps: { auth: AuthService; attendance: At
     )
     .delete(
       '/:id',
-      requirePerm('hr.attendance_punch:import'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await hr.deleteImport(c.get('actor'), c.req.valid('param').id)
@@ -265,16 +247,14 @@ export function attendanceDayRoutes(deps: { auth: AuthService; attendance: Atten
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('hr.attendance_day:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listDays(toList(c.req.valid('json')))
+        const result = await hr.listDays(c.get('actor'), toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(dayDto) })
       },
     )
     .post(
       '/recalc',
-      requirePerm('hr.attendance_day:recalc'),
       zValidator(
         'json',
         z
@@ -293,10 +273,9 @@ export function attendanceDayRoutes(deps: { auth: AuthService; attendance: Atten
     )
     .get(
       '/month-summary',
-      requirePerm('hr.attendance_day:read'),
       zValidator('query', monthQuery, validationHook),
       async (c) => {
-        const items = await hr.monthSummary(c.req.valid('query').month)
+        const items = await hr.monthSummary(c.get('actor'), c.req.valid('query').month)
         return c.json(
           items.map((item) => ({
             employeeId: item.employeeId,
@@ -314,9 +293,8 @@ export function attendanceDayRoutes(deps: { auth: AuthService; attendance: Atten
     )
     .get(
       '/:id',
-      requirePerm('hr.attendance_day:read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(dayDto(await hr.getDay(c.req.valid('param').id))),
+      async (c) => c.json(dayDto(await hr.getDay(c.get('actor'), c.req.valid('param').id))),
     )
 }
 
@@ -326,16 +304,14 @@ export function attendanceCorrectionRoutes(deps: { auth: AuthService; attendance
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('hr.attendance_correction:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listCorrections(toList(c.req.valid('json')))
+        const result = await hr.listCorrections(c.get('actor'), toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(correctionDto) })
       },
     )
     .post(
       '/',
-      requirePerm('hr.attendance_correction:create'),
       zValidator(
         'json',
         z
@@ -355,13 +331,11 @@ export function attendanceCorrectionRoutes(deps: { auth: AuthService; attendance
     )
     .get(
       '/:id',
-      requirePerm('hr.attendance_correction:read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(correctionDto(await hr.getCorrection(c.req.valid('param').id))),
+      async (c) => c.json(correctionDto(await hr.getCorrection(c.get('actor'), c.req.valid('param').id))),
     )
     .patch(
       '/:id',
-      requirePerm('hr.attendance_correction:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -387,7 +361,6 @@ export function attendanceCorrectionRoutes(deps: { auth: AuthService; attendance
     )
     .delete(
       '/:id',
-      requirePerm('hr.attendance_correction:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await hr.deleteCorrection(c.get('actor'), c.req.valid('param').id)
@@ -402,16 +375,14 @@ export function payrollRoutes(deps: { auth: AuthService; payroll: PayrollService
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('hr.payroll:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listPayrolls(toList(c.req.valid('json')))
+        const result = await hr.listPayrolls(c.get('actor'), toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(payrollDto) })
       },
     )
     .post(
       '/',
-      requirePerm('hr.payroll:create'),
       zValidator(
         'json',
         z
@@ -439,7 +410,6 @@ export function payrollRoutes(deps: { auth: AuthService; payroll: PayrollService
     )
     .post(
       '/generate',
-      requirePerm('hr.payroll:create'),
       zValidator(
         'json',
         z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) }).strict(),
@@ -452,21 +422,18 @@ export function payrollRoutes(deps: { auth: AuthService; payroll: PayrollService
     )
     .get(
       '/month-stats',
-      requirePerm('hr.payroll:read'),
       zValidator('query', monthQuery, validationHook),
       async (c) => {
-        return c.json(await hr.payrollMonthStats(c.req.valid('query').month))
+        return c.json(await hr.payrollMonthStats(c.get('actor'), c.req.valid('query').month))
       },
     )
     .get(
       '/:id',
-      requirePerm('hr.payroll:read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(payrollDto(await hr.getPayroll(c.req.valid('param').id))),
+      async (c) => c.json(payrollDto(await hr.getPayroll(c.get('actor'), c.req.valid('param').id))),
     )
     .patch(
       '/:id',
-      requirePerm('hr.payroll:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -498,7 +465,6 @@ export function payrollRoutes(deps: { auth: AuthService; payroll: PayrollService
     )
     .post(
       '/:id/refresh',
-      requirePerm('hr.payroll:update'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         const item = await hr.refreshPayroll(c.get('actor'), c.req.valid('param').id)
@@ -507,7 +473,6 @@ export function payrollRoutes(deps: { auth: AuthService; payroll: PayrollService
     )
     .delete(
       '/:id',
-      requirePerm('hr.payroll:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await hr.deletePayroll(c.get('actor'), c.req.valid('param').id)
@@ -522,16 +487,14 @@ export function payrollPaymentRoutes(deps: { auth: AuthService; payroll: Payroll
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('hr.payroll_payment:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listPayments(toList(c.req.valid('json')))
+        const result = await hr.listPayments(c.get('actor'), toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(paymentDto) })
       },
     )
     .post(
       '/',
-      requirePerm('hr.payroll_payment:create'),
       zValidator(
         'json',
         z
@@ -551,7 +514,6 @@ export function payrollPaymentRoutes(deps: { auth: AuthService; payroll: Payroll
     )
     .post(
       '/pay-remaining',
-      requirePerm('hr.payroll_payment:create'),
       zValidator(
         'json',
         z
@@ -570,13 +532,11 @@ export function payrollPaymentRoutes(deps: { auth: AuthService; payroll: Payroll
     )
     .get(
       '/:id',
-      requirePerm('hr.payroll_payment:read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(paymentDto(await hr.getPayment(c.req.valid('param').id))),
+      async (c) => c.json(paymentDto(await hr.getPayment(c.get('actor'), c.req.valid('param').id))),
     )
     .delete(
       '/:id',
-      requirePerm('hr.payroll_payment:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await hr.deletePayment(c.get('actor'), c.req.valid('param').id)
@@ -591,16 +551,14 @@ export function employeeLoanRoutes(deps: { auth: AuthService; payroll: PayrollSe
     .use('*', requireAuth(auth))
     .post(
       '/query',
-      requirePerm('hr.employee_loan:read'),
       zValidator('json', listQuerySchema, validationHook),
       async (c) => {
-        const result = await hr.listLoans(toList(c.req.valid('json')))
+        const result = await hr.listLoans(c.get('actor'), toList(c.req.valid('json')))
         return c.json({ count: result.count, results: result.results.map(loanDto) })
       },
     )
     .post(
       '/',
-      requirePerm('hr.employee_loan:create'),
       zValidator(
         'json',
         z
@@ -621,9 +579,8 @@ export function employeeLoanRoutes(deps: { auth: AuthService; payroll: PayrollSe
     )
     .get(
       '/balances',
-      requirePerm('hr.employee_loan:read'),
       async (c) => {
-        const items = await hr.loanBalances()
+        const items = await hr.loanBalances(c.get('actor'))
         return c.json(
           items.map((item) => ({
             employeeId: item.employeeId,
@@ -638,13 +595,11 @@ export function employeeLoanRoutes(deps: { auth: AuthService; payroll: PayrollSe
     )
     .get(
       '/:id',
-      requirePerm('hr.employee_loan:read'),
       zValidator('param', idParam, validationHook),
-      async (c) => c.json(loanDto(await hr.getLoan(c.req.valid('param').id))),
+      async (c) => c.json(loanDto(await hr.getLoan(c.get('actor'), c.req.valid('param').id))),
     )
     .patch(
       '/:id',
-      requirePerm('hr.employee_loan:update'),
       zValidator('param', idParam, validationHook),
       zValidator(
         'json',
@@ -671,7 +626,6 @@ export function employeeLoanRoutes(deps: { auth: AuthService; payroll: PayrollSe
     )
     .delete(
       '/:id',
-      requirePerm('hr.employee_loan:delete'),
       zValidator('param', idParam, validationHook),
       async (c) => {
         await hr.deleteLoan(c.get('actor'), c.req.valid('param').id)

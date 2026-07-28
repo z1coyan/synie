@@ -102,7 +102,8 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
 
   // ── punches ────────────────────────────────────────────────────────────
 
-  async function listPunches(query: Partial<ListQuery>) {
+  async function listPunches(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'hr.attendance_punch:read')
     return listFromSource({
       db,
       resource: attendancePunchResourceMeta(),
@@ -117,7 +118,8 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     })
   }
 
-  async function getPunch(id: string): Promise<AttendancePunch> {
+  async function getPunch(actor: Actor, id: string): Promise<AttendancePunch> {
+    requirePermission(actor, 'hr.attendance_punch:read')
     const row = await sql<Record<string, unknown>>`
       SELECT id, attendance_no,
         to_char(punched_at, 'YYYY-MM-DD"T"HH24:MI:SS".000Z"') AS punched_at,
@@ -132,7 +134,8 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
 
   // ── imports ────────────────────────────────────────────────────────────
 
-  async function listImports(query: Partial<ListQuery>) {
+  async function listImports(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'hr.attendance_punch:import')
     return listFromSource({
       db,
       resource: attendanceImportResourceMeta(),
@@ -149,7 +152,8 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     })
   }
 
-  async function getImport(handle: DbHandle, id: string): Promise<AttendanceImport> {
+  /** 内部读：不鉴权（调用方已检） */
+  async function loadImport(handle: DbHandle, id: string): Promise<AttendanceImport> {
     const row = await sql<Record<string, unknown>>`
       SELECT i.id, i.status, i.error, i.total_rows, i.bad_rows, i.dup_rows,
         i.matched_rows, i.unmatched_rows, i.unmatched_detail, i.imported_count,
@@ -162,6 +166,11 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     const r = row.rows[0]
     if (!r) throw new ApiError('not_found', '考勤导入批次不存在')
     return mapImportRow(r)
+  }
+
+  async function getImport(actor: Actor, id: string): Promise<AttendanceImport> {
+    requirePermission(actor, 'hr.attendance_punch:import')
+    return loadImport(db, id)
   }
 
   async function createImport(actor: Actor, fileId: string): Promise<AttendanceImport> {
@@ -231,7 +240,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
           })
           .returning('id')
           .executeTakeFirstOrThrow()
-        const item = await getImport(trx, inserted.id)
+        const item = await loadImport(trx, inserted.id)
         await writeAudit(trx, actor, {
           resource: 'hr_attendance_import',
           recordId: item.id,
@@ -362,14 +371,14 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
           imported_by_id: { to: actor.userId },
         },
       })
-      return getImport(trx, id)
+      return loadImport(trx, id)
     })
   }
 
   async function deleteImport(actor: Actor, id: string): Promise<void> {
     requirePermission(actor, 'hr.attendance_punch:import')
     await withTx(db, async (trx) => {
-      const before = await getImport(trx, id)
+      const before = await loadImport(trx, id)
       const punches = await sql<{ employee_id: string; punched_at: Date | string }>`
         SELECT employee_id, punched_at FROM hr_attendance_punch WHERE import_id = ${id}::uuid
       `.execute(trx)
@@ -397,7 +406,8 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
 
   // ── days ───────────────────────────────────────────────────────────────
 
-  async function listDays(query: Partial<ListQuery>) {
+  async function listDays(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'hr.attendance_day:read')
     return listFromSource({
       db,
       resource: attendanceDayResourceMeta(),
@@ -414,7 +424,8 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     })
   }
 
-  async function getDay(id: string): Promise<AttendanceDay> {
+  async function getDay(actor: Actor, id: string): Promise<AttendanceDay> {
+    requirePermission(actor, 'hr.attendance_day:read')
     const row = await sql<Record<string, unknown>>`
       SELECT id, date, to_char(morning_in,'HH24:MI:SS') AS morning_in,
         to_char(morning_out,'HH24:MI:SS') AS morning_out,
@@ -465,7 +476,8 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     return pairsResult.rows.length
   }
 
-  async function monthSummary(month: string): Promise<AttendanceMonthSummary[]> {
+  async function monthSummary(actor: Actor, month: string): Promise<AttendanceMonthSummary[]> {
+    requirePermission(actor, 'hr.attendance_day:read')
     const first = parseMonth(month)
     const next = addMonth(first)
     const rows = await sql<Record<string, unknown>>`
@@ -497,7 +509,8 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
 
   // ── corrections ────────────────────────────────────────────────────────
 
-  async function listCorrections(query: Partial<ListQuery>) {
+  async function listCorrections(actor: Actor, query: Partial<ListQuery>) {
+    requirePermission(actor, 'hr.attendance_correction:read')
     return listFromSource({
       db,
       resource: attendanceCorrectionResourceMeta(),
@@ -511,7 +524,8 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     })
   }
 
-  async function getCorrection(handle: DbHandle, id: string): Promise<AttendanceCorrection> {
+  /** 内部读：不鉴权（调用方已检） */
+  async function loadCorrection(handle: DbHandle, id: string): Promise<AttendanceCorrection> {
     const row = await sql<Record<string, unknown>>`
       SELECT id, date,
         ARRAY(SELECT to_char(value,'HH24:MI:SS') FROM unnest(times) value ORDER BY value) AS times,
@@ -521,6 +535,11 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     const r = row.rows[0]
     if (!r) throw new ApiError('not_found', '补卡单不存在')
     return mapCorrectionRow(r)
+  }
+
+  async function getCorrection(actor: Actor, id: string): Promise<AttendanceCorrection> {
+    requirePermission(actor, 'hr.attendance_correction:read')
+    return loadCorrection(db, id)
   }
 
   async function createCorrection(
@@ -544,7 +563,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
         `.execute(trx)
         const id = inserted.rows[0]!.id
         await recomputePair(trx, { employeeId: input.employeeId, date })
-        const item = await getCorrection(trx, id)
+        const item = await loadCorrection(trx, id)
         await writeAudit(trx, actor, {
           resource: 'hr_attendance_correction',
           recordId: id,
@@ -573,7 +592,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
   ): Promise<AttendanceCorrection> {
     requirePermission(actor, 'hr.attendance_correction:update')
     return withTx(db, async (trx) => {
-      const before = await getCorrection(trx, id)
+      const before = await loadCorrection(trx, id)
       const after = {
         employeeId: input.employeeId ?? before.employeeId,
         date: input.date ?? before.date,
@@ -602,7 +621,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
       })
       pairs.set(`${after.employeeId}\0${date}`, { employeeId: after.employeeId, date })
       await recomputePairs(trx, [...pairs.values()])
-      const item = await getCorrection(trx, id)
+      const item = await loadCorrection(trx, id)
       const changes = auditDiff(correctionSnap(before), correctionSnap(item), CORRECTION_AUDIT)
       if (Object.keys(changes).length > 0) {
         await writeAudit(trx, actor, {
@@ -621,7 +640,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
   async function deleteCorrection(actor: Actor, id: string): Promise<void> {
     requirePermission(actor, 'hr.attendance_correction:delete')
     await withTx(db, async (trx) => {
-      const before = await getCorrection(trx, id)
+      const before = await loadCorrection(trx, id)
       try {
         await trx.deleteFrom('hr_attendance_correction').where('id', '=', id).execute()
       } catch (err) {
@@ -644,7 +663,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     listPunches,
     getPunch,
     listImports,
-    getImport: (id: string) => getImport(db, id),
+    getImport,
     createImport,
     executeImport,
     deleteImport,
@@ -653,7 +672,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
     recalcDays,
     monthSummary,
     listCorrections,
-    getCorrection: (id: string) => getCorrection(db, id),
+    getCorrection,
     createCorrection,
     updateCorrection,
     deleteCorrection,
