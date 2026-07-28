@@ -5,7 +5,16 @@ import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
 import { createTokenManager } from './platform/auth/token.ts'
+import { createAuditService, registerAuditResources } from './platform/audit/index.ts'
+import {
+  createFileService,
+  createOwnerRegistry,
+  createStorageService,
+  registerFileResources,
+} from './platform/files/index.ts'
 import { createRegistry } from './platform/meta/registry.ts'
+import { createNumberingService, registerNumberingResources } from './platform/numbering/index.ts'
+import { createSettingsService, registerSettingResources } from './platform/settings/index.ts'
 
 const env = loadEnv()
 const db = createDb(env.databaseUrl)
@@ -16,14 +25,30 @@ const auth = await createAuthService({
   limiter: createRateLimiter(),
 })
 
-// 业务资源注册（registerAll）：随各业务模块落地逐个挂载，骨架期为空表。
 const registry = createRegistry()
+registerSettingResources(registry)
+registerNumberingResources(registry)
+registerFileResources(registry)
+registerAuditResources(registry)
 
-// --- 工单 01 平台服务装配点 ---
-// 实现落地后在此 createXxxService({ db, ... }) 并传入 buildApp：
-//   settings / numbering / audit / files（见各 platform/*/README.md）
-// 未实现前不要注入空壳；buildApp 扩展点见 app.ts 注释。
-const app = buildApp({ db, auth, registry })
+const settings = createSettingsService(db)
+const numbering = createNumberingService(db)
+const owners = createOwnerRegistry()
+// 业务域宿主注册随各域落地；此处仅保留平台可挂接能力入口
+const files = createFileService({ db, owners })
+const storages = createStorageService({ db })
+const audit = createAuditService(db)
+
+const app = buildApp({
+  db,
+  auth,
+  registry,
+  settings,
+  numbering,
+  files,
+  storages,
+  audit,
+})
 
 const server = Bun.serve({
   port: env.port,

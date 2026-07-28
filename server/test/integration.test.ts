@@ -73,7 +73,7 @@ run('PG 集成（auth + meta + healthz）', () => {
     expect(body.error.fields).toHaveProperty('password')
   })
 
-  test('meta 端点（骨架期空注册表）', async () => {
+  test('meta 端点（平台资源已注册）', async () => {
     const server = await app()
     const login = await server.request('/api/v1/auth/login', {
       method: 'POST',
@@ -85,10 +85,15 @@ run('PG 集成（auth + meta + healthz）', () => {
 
     const resources = await server.request('/api/v1/meta/resources', { headers })
     expect(resources.status).toBe(200)
-    expect(await resources.json()).toEqual({ resources: [] })
+    const body = (await resources.json()) as { resources: { name: string }[] }
+    const names = body.resources.map((r) => r.name).sort()
+    expect(names).toContain('sysFiles')
+    expect(names).toContain('sysNumberingRules')
+    expect(names).toContain('salSettings')
 
     const catalog = await server.request('/api/v1/meta/permission-catalog', { headers })
-    expect(await catalog.json()).toEqual({ groups: [] })
+    const groups = (await catalog.json()) as { groups: { prefix: string }[] }
+    expect(groups.groups.length).toBeGreaterThan(0)
 
     const missing = await server.request('/api/v1/meta/resources/unknown', { headers })
     expect(missing.status).toBe(404)

@@ -7,5 +7,6 @@
 
 ## 已交付
 
-- `write.ts`：`writeAudit` / `auditDiff` / `auditCreated` / `auditDestroyed` / `filterSensitive`
-  （供 files 等域 create/update/delete 调用；列表/查询面待补）
+- `write.ts`：`writeAudit` / Diff / Created / Destroyed / FilterSensitive
+- `service.ts` + `routes.ts`：`GET/POST /system/audit-logs` 查询面（公司范围）
+- Meta：`sysAuditLogs`

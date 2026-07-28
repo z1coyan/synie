@@ -1,7 +1,6 @@
-# numbering（骨架）
+# numbering
 
-编号规则 + 计数器：绑定单据类型的自动取号（固定文本/记录字段/序号段组合），
-每单据至多一条启用；管理员可校正计数器且必须留审计。
+编号规则 CRUD + 取号服务 + 计数器校正（必留审计）；删规则级联删计数器。
+- 字段目录：`numberables.json`（与 Go 同源）
+- 端点：`/api/v1/system/numbering/{resources,rules,counters}`
 - 行为参考：`server-go/internal/platform/numbering/`
-- 表：`sys_numbering_rule` / `sys_numbering_counter`
-- 实现工单：`.scratch/ts-backend-rewrite/issues/01-platform-completion.md`
