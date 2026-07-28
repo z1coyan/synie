@@ -1,6 +1,6 @@
 # 08 H · 权限双检：先定成文约定，再收敛存量
 
-Status: ready-for-agent
+Status: resolved
 
 ## 问题
 
@@ -24,38 +24,46 @@ service 侧 ~105 处 + routes 侧 ~112 处，且**同源**（都读 `spec.prefix
 - 反射化后 enforcement 迁框架策略层，仍保持单点，禁止回到双检。
 - 成文：`server/README.md` 编码约定第 8 条。
 
-## 收敛清单
+## 收敛清单（完成）
 
-顺序：**先补 service 缺失检 → 再删 routes 同源中间件**（禁止先删 routes 造成裸奔）。
+顺序曾遵守：**先补 service 缺失检 → 再删 routes 同源中间件**。
 
-| 域 | 现状 | 动作 |
-|----|------|------|
-| trading / finance(ops) / hr / accounting | 双检或 service 已有 | 去 routes `requirePerm` |
-| inventory / manufacturing / party / iam / base / sales | routes 单检 | 先补 service 首行检，再去 routes |
-| platform numbering/settings/audit/files/printing | 不一 | 对齐 service 唯一检 |
-| banking-recon 快速对账 | create+audit 叠码 | ✅ 已改为只 reconcile |
-| trading / finance routes / accounting | 双检 | ✅ 已去 routes requirePerm（service 仍检） |
-| hr | routes 仍有检（service 读路径多无 actor） | 待补 service 读方法 actor+检后再去 routes |
+| 域 | 动作 | Commit |
+|----|------|--------|
+| banking-recon 快速对账 | 只检 reconcile | `15a2356` |
+| trading / finance / accounting | 去 routes 双检 | `bf949f5` |
+| party / iam / sales | 补 service + 去 routes | `4cc4527` |
+| platform（audit/numbering/settings/files/storage/printing） | 补 service + 去 routes | `22a13f1` |
+| inventory | 补 service + 去 routes | `f546972` |
+| manufacturing | 补 service + 去 routes | `f85dc21` |
+| base / market | 补 service + 去 routes | `d57265c` |
+| hr | 补读路径 actor + 去 routes | `1d6bb30` |
 
 ## Comments
 
 ### 2026-07-28 决策落地
 
-- 方案一成文 `server/README.md` §8；commit 含 banking-recon 只 reconcile。
-- 已收敛 trading（order/fulfillment/quotation/outsourced/reconciliation）
-  + finance routes/ops-routes + accounting routes：删除同源 middleware，
-  仅留 requireAuth。typecheck + 246 tests 绿。
-- **未**收敛 inventory/manufacturing/party/iam/base/sales/platform/hr：
-  这些域 service 读路径常无 actor 或无 requirePerm，先删 routes 会裸奔。
-  下一步：先给 service 公开方法补 actor+requirePerm，再去 routes。
+- 方案一成文 `server/README.md` §8；banking-recon 只 reconcile（`15a2356`）。
+- 第一刀 trading/finance/accounting 去 routes（`bf949f5`）。
 
-### 2026-07-28 platform 收敛
+### 2026-07-28 全量收敛完成
 
-- platform audit/numbering/settings/files/storage/printing：service 唯一检；
-  routes 只留 requireAuth。
-- numbering `next`/`nextInTx`、files `readStoredFile`、settings `loadSystemConfig`
-  为跨域/调度受信任 seam，不检管理权限码。
+- party/iam/sales → `4cc4527`
+- platform → `22a13f1`
+- inventory → `f546972`；manufacturing → `f85dc21`
+- base/market → `d57265c`；hr → `1d6bb30`
+- 验收：`bun run typecheck` 绿；全量 `bun test` **246/246**。
+- `*routes*.ts` 中 `requirePerm` / `requirePermission` 为零（仅 `requireAuth`）。
+
+### 无闸 seam（刻意保留）
+
+- `numbering.next` / `nextInTx` — 业务取号基础设施
+- `files.readStoredFile` — 跨模块读文件字节
+- `settings.loadSystemConfig` — 调度/行情配置
+- market `takeQuote` / 调度 null-actor 刷新
+- 会计 `createAndAuditJournal` 等跨域 seam（调用方业务码覆盖）
 
 ## 备注
 
-- 收敛完成前部分 routes 中间件仍存在（安全网）；以 README 约定为准，新代码不得新增 routes 鉴码。
+- 新代码禁止在 routes 加鉴码；公开 service 方法首行 `requirePermission`。
+- 反射化后 enforcement 迁框架策略层，仍单点。
