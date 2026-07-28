@@ -8,7 +8,7 @@ const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/
  * platform/todo 只消费 registry，不硬编码业务表名与权限码。
  */
 export interface TodoDraftLinkSpec {
-  /** 关联表（如 acc_vat_invoice） */
+  /** 关联表（业务域注册；标识符经 register 校验） */
   table: string
   /** 指向 todo.source_id 的外键列 */
   fkColumn: string
