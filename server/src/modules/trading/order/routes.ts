@@ -10,6 +10,7 @@ import { validationHook } from '~/platform/http/zod.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
 import { orderSpec } from './spec.ts'
+import type { OutsourcedConfigService } from './outsourced-config.ts'
 import type { OrderService } from './service.ts'
 
 const listQuerySchema = z
@@ -223,12 +224,15 @@ export function orderItemRoutes(deps: {
     })
 }
 
-export function purchaseOrderExtraRoutes(deps: { auth: AuthService; orders: OrderService }) {
-  const { auth, orders } = deps
+export function purchaseOrderExtraRoutes(deps: {
+  auth: AuthService
+  outsourcedConfig: OutsourcedConfigService
+}) {
+  const { auth, outsourcedConfig: cfg } = deps
   const material = new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', requirePerm('purchase.order:read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await orders.listMaterials(c.get('actor'), toList(c.req.valid('json')))
+      const r = await cfg.listMaterials(c.get('actor'), toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
@@ -247,10 +251,10 @@ export function purchaseOrderExtraRoutes(deps: { auth: AuthService; orders: Orde
           .strict(),
         validationHook,
       ),
-      async (c) => c.json(await orders.createMaterial(c.get('actor'), c.req.valid('json')), 201),
+      async (c) => c.json(await cfg.createMaterial(c.get('actor'), c.req.valid('json')), 201),
     )
     .get('/:id', requirePerm('purchase.order:read'), zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await orders.getMaterial(c.get('actor'), c.req.valid('param').id)),
+      c.json(await cfg.getMaterial(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
@@ -271,7 +275,7 @@ export function purchaseOrderExtraRoutes(deps: { auth: AuthService; orders: Orde
       async (c) => {
         const raw = (await c.req.json()) as Record<string, unknown>
         return c.json(
-          await orders.updateMaterial(c.get('actor'), c.req.valid('param').id, {
+          await cfg.updateMaterial(c.get('actor'), c.req.valid('param').id, {
             ...c.req.valid('json'),
             remarksPresent: presentKey(raw, 'remarks'),
           }),
@@ -279,14 +283,14 @@ export function purchaseOrderExtraRoutes(deps: { auth: AuthService; orders: Orde
       },
     )
     .delete('/:id', requirePerm('purchase.order:delete'), zValidator('param', idParam, validationHook), async (c) => {
-      await orders.deleteMaterial(c.get('actor'), c.req.valid('param').id)
+      await cfg.deleteMaterial(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
 
   const byproduct = new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', requirePerm('purchase.order:read'), zValidator('json', listQuerySchema, validationHook), async (c) => {
-      const r = await orders.listByproducts(c.get('actor'), toList(c.req.valid('json')))
+      const r = await cfg.listByproducts(c.get('actor'), toList(c.req.valid('json')))
       return c.json({ count: r.count, results: r.results })
     })
     .post(
@@ -305,10 +309,10 @@ export function purchaseOrderExtraRoutes(deps: { auth: AuthService; orders: Orde
           .strict(),
         validationHook,
       ),
-      async (c) => c.json(await orders.createByproduct(c.get('actor'), c.req.valid('json')), 201),
+      async (c) => c.json(await cfg.createByproduct(c.get('actor'), c.req.valid('json')), 201),
     )
     .get('/:id', requirePerm('purchase.order:read'), zValidator('param', idParam, validationHook), async (c) =>
-      c.json(await orders.getByproduct(c.get('actor'), c.req.valid('param').id)),
+      c.json(await cfg.getByproduct(c.get('actor'), c.req.valid('param').id)),
     )
     .patch(
       '/:id',
@@ -329,7 +333,7 @@ export function purchaseOrderExtraRoutes(deps: { auth: AuthService; orders: Orde
       async (c) => {
         const raw = (await c.req.json()) as Record<string, unknown>
         return c.json(
-          await orders.updateByproduct(c.get('actor'), c.req.valid('param').id, {
+          await cfg.updateByproduct(c.get('actor'), c.req.valid('param').id, {
             ...c.req.valid('json'),
             remarksPresent: presentKey(raw, 'remarks'),
           }),
@@ -337,7 +341,7 @@ export function purchaseOrderExtraRoutes(deps: { auth: AuthService; orders: Orde
       },
     )
     .delete('/:id', requirePerm('purchase.order:delete'), zValidator('param', idParam, validationHook), async (c) => {
-      await orders.deleteByproduct(c.get('actor'), c.req.valid('param').id)
+      await cfg.deleteByproduct(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
 
@@ -357,7 +361,7 @@ export function purchaseOrderExtraRoutes(deps: { auth: AuthService; orders: Orde
           .strict(),
         validationHook,
       ),
-      async (c) => c.json(await orders.queryDemandPool(c.get('actor'), c.req.valid('json'))),
+      async (c) => c.json(await cfg.queryDemandPool(c.get('actor'), c.req.valid('json'))),
     )
 
   const bom = new Hono<AppEnv>()
@@ -383,7 +387,7 @@ export function purchaseOrderExtraRoutes(deps: { auth: AuthService; orders: Orde
           const { ApiError } = await import('~/platform/http/errors.ts')
           throw ApiError.validation('BOM 展开参数不合法', { quantity: ['必填'] })
         }
-        return c.json(await orders.expandBom(c.get('actor'), { bomId: body.bomId, quantity }))
+        return c.json(await cfg.expandBom(c.get('actor'), { bomId: body.bomId, quantity }))
       },
     )
 

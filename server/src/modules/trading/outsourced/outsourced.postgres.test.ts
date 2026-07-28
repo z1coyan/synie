@@ -8,7 +8,7 @@ import { createDb } from '~/db/index.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
-import { createOrderService } from '../order/service.ts'
+import { createOutsourcedConfigService } from '../order/outsourced-config.ts'
 import { createOutsourcedService } from './service.ts'
 
 function expectQty(got: string | undefined, want: string) {
@@ -40,10 +40,8 @@ run('PG 集成（委外发料/入库生命周期）', () => {
   const numberer = {
     nextInTx: async () => `AUTO-${suffix}-${crypto.randomUUID().slice(0, 4)}`,
   }
-  const orders = createOrderService(db, numberer as never, {
-    resolveOrderPrice: async () => null,
-  } as never)
-  const outsourced = createOutsourcedService(db, numberer as never, orders, {
+  const outsourcedConfig = createOutsourcedConfigService(db)
+  const outsourced = createOutsourcedService(db, numberer as never, {
     inventory: createInventoryEngine(),
     gl: createGlEngine(),
   })
@@ -320,7 +318,7 @@ run('PG 集成（委外发料/入库生命周期）', () => {
       VALUES (${bomId}::uuid, ${byproductMatId}::uuid, ${unitId}::uuid, 0.5)
     `.execute(db)
 
-    const expanded = await orders.expandBom(actor, { bomId, quantity: '10' })
+    const expanded = await outsourcedConfig.expandBom(actor, { bomId, quantity: '10' })
     // 2 * 1.1 * 10 = 22
     expectQty(expanded.materials[0]?.quantity, '22')
     // 0.5 * 10 = 5

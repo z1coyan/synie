@@ -155,7 +155,7 @@ async function createOutsourcedOrder(
   const matLineIDs: string[] = []
   for (const line of materials) {
     const m = md.materials[line.key]!
-    const created = await deps.trading.orders.createMaterial(actor, {
+    const created = await deps.trading.outsourcedConfig.createMaterial(actor, {
       orderItemId: item.id,
       materialId: m.id,
       unitId: m.defaultUnitId,
@@ -165,7 +165,7 @@ async function createOutsourcedOrder(
   }
   for (const line of byproducts) {
     const m = md.materials[line.key]!
-    await deps.trading.orders.createByproduct(actor, {
+    await deps.trading.outsourcedConfig.createByproduct(actor, {
       orderItemId: item.id,
       materialId: m.id,
       unitId: m.defaultUnitId,

@@ -43,7 +43,12 @@ import {
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
-import type { OrderService } from '../order/service.ts'
+import {
+  postFulfillment,
+  postOutsourcedIssue,
+  reverseFulfillment,
+  reverseOutsourcedIssue,
+} from '../order/projection.ts'
 import {
   auditFulfillmentInTx,
   voidFulfillmentInTx,
@@ -180,7 +185,6 @@ type Numberer = Pick<NumberingService, 'nextInTx'>
 export function createOutsourcedService(
   db: Kysely<Database>,
   numberer: Numberer,
-  orders: Pick<OrderService, 'postFulfillment' | 'reverseFulfillment' | 'postOutsourcedIssue' | 'reverseOutsourcedIssue'>,
   engines: {
     inventory: Pick<InventoryEngine, 'post' | 'cancel'>
     gl: Pick<GlEngine, 'post' | 'cancel'>
@@ -423,7 +427,7 @@ export function createOutsourcedService(
           },
         )
       }
-      await orders.postOutsourcedIssue(trx, {
+      await postOutsourcedIssue(trx, {
         companyId: before.companyId,
         partyType: before.partyType,
         partyId: before.partyId,
@@ -473,7 +477,7 @@ export function createOutsourcedService(
         throw new ApiError('conflict', '仅已审核委外发料单可作废')
       }
       const items = await loadIssueActionItems(trx, id)
-      await orders.reverseOutsourcedIssue(trx, {
+      await reverseOutsourcedIssue(trx, {
         companyId: before.companyId,
         partyType: before.partyType,
         partyId: before.partyId,
@@ -986,7 +990,7 @@ export function createOutsourcedService(
           return { projectionLines, stockLines, amount }
         },
         postProjection: (t, before, lines) =>
-          orders.postFulfillment(t, 'purchase', {
+          postFulfillment(t, 'purchase', {
             companyId: before.companyId,
             partyType: before.partyType,
             partyId: before.partyId,
@@ -1034,7 +1038,7 @@ export function createOutsourcedService(
           return items.map((i) => ({ orderItemId: i.orderItemId, baseQty: i.baseQty }))
         },
         reverseProjection: (t, before, lines) =>
-          orders.reverseFulfillment(t, 'purchase', {
+          reverseFulfillment(t, 'purchase', {
             companyId: before.companyId,
             partyType: before.partyType,
             partyId: before.partyId,

@@ -39,7 +39,10 @@ import {
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
-import type { OrderService } from '../order/service.ts'
+import {
+  postFulfillment,
+  reverseFulfillment,
+} from '../order/projection.ts'
 import { auditFulfillmentInTx, voidFulfillmentInTx } from '../posting.ts'
 import {
   fulfillmentHeadMeta,
@@ -96,7 +99,6 @@ type Numberer = Pick<NumberingService, 'nextInTx'>
 export function createFulfillmentService(
   db: Kysely<Database>,
   numberer: Numberer,
-  orders: OrderService,
   engines: {
     inventory: Pick<InventoryEngine, 'post' | 'cancel'>
     gl: Pick<GlEngine, 'post' | 'cancel'>
@@ -365,7 +367,7 @@ export function createFulfillmentService(
           return { projectionLines, stockLines, amount }
         },
         postProjection: (t, before, lines) =>
-          orders.postFulfillment(t, side, {
+          postFulfillment(t, side, {
             companyId: before.companyId,
             partyType: before.partyType,
             partyId: before.partyId,
@@ -403,7 +405,7 @@ export function createFulfillmentService(
           return items.map((i) => ({ orderItemId: i.orderItemId, baseQty: i.baseQty }))
         },
         reverseProjection: (t, before, lines) =>
-          orders.reverseFulfillment(t, side, {
+          reverseFulfillment(t, side, {
             companyId: before.companyId,
             partyType: before.partyType,
             partyId: before.partyId,

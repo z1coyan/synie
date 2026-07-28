@@ -19,6 +19,7 @@ import {
   quotationTierRoutes,
 } from './quotation/routes.ts'
 import { createOrderService } from './order/service.ts'
+import { createOutsourcedConfigService } from './order/outsourced-config.ts'
 import {
   orderByproductMeta,
   orderHeadMeta,
@@ -98,10 +99,11 @@ export function createTradingServices(db: Kysely<Database>, numbering: Numbering
   const engines = { inventory, gl }
   const quotations = createQuotationService(db, numbering)
   const orders = createOrderService(db, numbering, quotations)
-  const fulfillment = createFulfillmentService(db, numbering, orders, engines)
-  const outsourced = createOutsourcedService(db, numbering, orders, engines)
+  const outsourcedConfig = createOutsourcedConfigService(db)
+  const fulfillment = createFulfillmentService(db, numbering, engines)
+  const outsourced = createOutsourcedService(db, numbering, engines)
   const reconciliations = createReconciliationService(db, numbering, gl)
-  return { quotations, orders, fulfillment, outsourced, reconciliations }
+  return { quotations, orders, outsourcedConfig, fulfillment, outsourced, reconciliations }
 }
 
 export type TradingServices = ReturnType<typeof createTradingServices>
@@ -111,8 +113,9 @@ export function tradingRouteMounts(deps: {
   trading: TradingServices
 }) {
   const { auth, trading } = deps
-  const { quotations, orders, fulfillment, outsourced, reconciliations } = trading
-  const purchaseExtra = purchaseOrderExtraRoutes({ auth, orders })
+  const { quotations, orders, outsourcedConfig, fulfillment, outsourced, reconciliations } =
+    trading
+  const purchaseExtra = purchaseOrderExtraRoutes({ auth, outsourcedConfig })
   return {
     salesQuotations: quotationHeadRoutes({ auth, quotations, side: 'sales' }),
     salesQuotationItems: quotationItemRoutes({ auth, quotations, side: 'sales' }),
@@ -164,5 +167,6 @@ export function tradingRouteMounts(deps: {
 
 export type { QuotationService } from './quotation/service.ts'
 export type { OrderService } from './order/service.ts'
+export type { OutsourcedConfigService } from './order/outsourced-config.ts'
 export type { FulfillmentService } from './fulfillment/service.ts'
 export type { ReconciliationService } from './reconciliation/service.ts'
