@@ -76,4 +76,47 @@ run('PG 集成（numbering）', () => {
     await numbering.deleteRule(actor, created.id)
     await expect(numbering.getCounter(counterId)).rejects.toMatchObject({ code: 'not_found' })
   })
+
+  test('同一资源第二条启用规则 → conflict（非 500）', async () => {
+    const catalog = await numbering.numberableResources()
+    const current = await numbering.listRules({ limit: 200, offset: 0 })
+    const occupied = new Set(current.results.filter((r) => r.enabled).map((r) => r.resource))
+    let resource = catalog.find((item) => !occupied.has(item.prefix))?.prefix
+    if (!resource) {
+      const blocker = current.results.find((r) => r.enabled)
+      expect(blocker).toBeTruthy()
+      await numbering.updateRule(actor, blocker!.id, { enabled: false })
+      resource = blocker!.resource
+    }
+    const suffix = crypto.randomUUID().slice(0, 8)
+    const first = await numbering.create(actor, {
+      resource: resource!,
+      name: `冲突甲-${suffix}`,
+      segments: [
+        { type: 'text', value: 'A-' },
+        { type: 'seq', padding: 2 },
+      ],
+      perCompany: false,
+      enabled: true,
+    })
+    try {
+      await expect(
+        numbering.create(actor, {
+          resource: resource!,
+          name: `冲突乙-${suffix}`,
+          segments: [
+            { type: 'text', value: 'B-' },
+            { type: 'seq', padding: 2 },
+          ],
+          perCompany: false,
+          enabled: true,
+        }),
+      ).rejects.toMatchObject({
+        code: 'conflict',
+        message: '该资源已有启用的编号规则,同一资源只能启用一条',
+      })
+    } finally {
+      await numbering.deleteRule(actor, first.id)
+    }
+  })
 })

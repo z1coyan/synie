@@ -26,3 +26,4 @@ Blocked by: 02
 
 ## Comments
 - 2026-07-28 集成：主仓 cherry-pick 行情服务 + marketsched；AppDeps.market 统一；进程内调度 start/stop 接入 index。
+- 2026-07-28 补齐：market.integration 自愈 inactive CNY / 已有 quantity 基准单位；`:18091` `verify-market-rest` → `ok meta=2 instruments=5 points=4 chart=3 series=2 refresh=3 audits=17`；fetch/quote/unique/sched 单测绿。

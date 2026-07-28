@@ -8,6 +8,7 @@ Blocked by: 05, 09
 - 2026-07-28 子代理：实现银行账户/流水/导入模板批次/对账、承兑票据五类交易+持有段重放、报销挂票/无票审核作废；REST+Meta+app/index/helpers 装配完成。补全 BIFF8 `.xls` 导入、票据 OCR、billAttrs snake_case 兼容；刷新 pr-2.20 Meta 快照。`bun run typecheck` 绿；finance PG 9 pass；`verify-finance-operations-rest` 全绿。
 - 2026-07-28 主工作区集成：cherry-pick 去重三连 `a8ed2d9`（银行/票据/报销实现+装配）/ `9eedc22`（BIFF8+OCR+pr-2.20 快照）/ `52fa0d8`（billAttrs 类型收窄）；app/index/Meta/helpers 已在候选提交内完整挂载（`/finance/bank-*`、`/finance/expense-*`、`/finance/bills*`、registerFinanceResources/FileOwners）。验证：`bun run typecheck` 绿；`SYNIE_TEST_DATABASE_URL=… bun test` 213 pass；`verify-finance-operations-rest` against :18084 → `ok meta=24 permissionFirst=40 internal=6 wire=46 scope=40 states=84 audits=9 concurrency=2`。未改 server-go。无剩余。
 - 2026-07-28 独立全量验收：`:18090` `verify-finance-operations-rest` → `ok meta=24 permissionFirst=40 internal=6 wire=46 scope=40 states=84 audits=9 concurrency=2`；finance PG 3 项绿。无修复。
+- 2026-07-28 复验：`:18091` `verify-finance-operations-rest` → `ok meta=24 permissionFirst=40 internal=6 wire=46 scope=40 states=84 audits=9 concurrency=2`；finance PG + bank-parser 绿。无代码变更。
 
 ## 范围
 

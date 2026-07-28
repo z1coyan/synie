@@ -647,6 +647,30 @@ try {
     "6",
   );
 
+  // 同一资源只能启用一条编号规则：先关掉占用 hr.employee 的既有启用规则
+  const existingRules = await request<List<Row>>(
+    "/system/numbering/rules/query",
+    {
+      method: "POST",
+      headers: admin,
+      body: body({
+        limit: 200,
+        offset: 0,
+        filter: {
+          resource: { kind: "text", op: "eq", value: "hr.employee" },
+          enabled: { kind: "bool", eq: true },
+        },
+      }),
+    },
+  );
+  for (const blocker of existingRules.results) {
+    await request(`/system/numbering/rules/${blocker.id}`, {
+      method: "PATCH",
+      headers: admin,
+      body: body({ enabled: false }),
+    });
+  }
+
   const rule = await request<Row>(
     "/system/numbering/rules",
     {

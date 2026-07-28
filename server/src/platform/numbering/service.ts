@@ -9,6 +9,18 @@ import { ApiError } from '../http/errors.ts'
 import { loadCatalog, type NumberingCatalog } from './catalog.ts'
 import { counterResourceMeta, ruleResourceMeta } from './meta.ts'
 
+/** 对齐 server-go numberingWriteError：同一资源只能有一条启用规则 */
+const ENABLED_PER_RESOURCE_MSG = '该资源已有启用的编号规则,同一资源只能启用一条'
+
+function numberingWriteError(fallback: string, err: unknown): ApiError {
+  if (err instanceof ApiError) return err
+  const e = err as { code?: string } | null
+  if (e && typeof e === 'object' && e.code === '23505') {
+    return new ApiError('conflict', ENABLED_PER_RESOURCE_MSG, { cause: err })
+  }
+  return new ApiError('internal', fallback, { cause: err })
+}
+
 export interface Segment {
   type: string
   value?: string | null

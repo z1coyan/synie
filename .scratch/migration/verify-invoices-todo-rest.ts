@@ -49,6 +49,8 @@ let wireChecks = 0;
 let metaChecks = 0;
 let permissionChecks = 0;
 let todoChecks = 0;
+let storageID: string | null = null;
+let previousStorageID: string | null = null;
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -218,6 +220,23 @@ async function createFixture(): Promise<Fixture> {
   return fixture;
 }
 
+/** OCR 上传文件需要默认存储接入；与 finance/HR 验收同构 */
+async function setupStorage(): Promise<void> {
+  const previous = (await db`
+    SELECT id::text AS id FROM sys_storage WHERE is_default=true LIMIT 1
+  `) as Array<{ id: string }>;
+  previousStorageID = previous[0]?.id ?? null;
+  const inserted = (await db.begin(async (tx) => {
+    await tx`UPDATE sys_storage SET is_default=false WHERE is_default=true`;
+    return tx`INSERT INTO sys_storage(name,label,kind,root,is_default)
+      VALUES(
+        ${prefix.toLowerCase()},${prefix + "验收存储"},'local',
+        ${`/tmp/${prefix.toLowerCase()}-files`},true
+      ) RETURNING id::text AS id`;
+  })) as Array<{ id: string }>;
+  storageID = inserted[0]!.id;
+}
+
 async function cleanup(fixture?: Fixture): Promise<void> {
   await db.begin(async (tx) => {
     await tx`DELETE FROM sys_numbering_rule WHERE name LIKE ${prefix + "%"}`;
@@ -234,6 +253,14 @@ async function cleanup(fixture?: Fixture): Promise<void> {
     )`;
     await tx`DELETE FROM sys_user WHERE username LIKE ${prefix.toLowerCase() + "%"}`;
     await tx`DELETE FROM sys_role WHERE code LIKE ${prefix + "%"}`;
+    if (storageID) {
+      await tx`UPDATE sys_storage SET is_default=false WHERE id=${storageID}::uuid`;
+      await tx`DELETE FROM sys_storage WHERE id=${storageID}::uuid`;
+      if (previousStorageID) {
+        await tx`UPDATE sys_storage SET is_default=true
+          WHERE id=${previousStorageID}::uuid`;
+      }
+    }
     if (fixture) {
       await tx`DELETE FROM sys_audit_log
         WHERE company_id IN (${fixture.companyA}::uuid,${fixture.companyB}::uuid)
@@ -260,6 +287,7 @@ async function cleanup(fixture?: Fixture): Promise<void> {
       await tx`DELETE FROM bas_currency WHERE id=${fixture.currencyID}::uuid`;
     }
   });
+  storageID = null;
 }
 
 async function assertMeta(admin: Headers, reader: Headers): Promise<void> {
@@ -810,6 +838,7 @@ const admin = await login(username, password);
 let fixture: Fixture | null = null;
 try {
   await cleanup();
+  await setupStorage();
   fixture = await createFixture();
   await ensureNumberingRule(admin, "acc.vat_invoice", "INV");
   const reader = await createReader(admin, fixture);

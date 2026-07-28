@@ -76,45 +76,81 @@ describe.skipIf(!dbUrl)('market integration', () => {
       companyIds: [],
     }
 
+    // 共享库可能被 setup 清空后残留 inactive 币种；优先启用已有 CNY/任意币种
     let cur = await db
       .selectFrom('bas_currency')
       .select(['id'])
       .where('active', '=', true)
       .executeTakeFirst()
     if (!cur) {
-      cur = await db
-        .insertInto('bas_currency')
-        .values({
-          name: '人民币',
-          iso_code: 'CNY',
-          symbol: '¥',
-          active: true,
-        })
-        .returning(['id'])
-        .executeTakeFirstOrThrow()
+      const existing = await db
+        .selectFrom('bas_currency')
+        .select(['id'])
+        .where('iso_code', '=', 'CNY')
+        .executeTakeFirst()
+      if (existing) {
+        cur = await db
+          .updateTable('bas_currency')
+          .set({ active: true })
+          .where('id', '=', existing.id)
+          .returning(['id'])
+          .executeTakeFirstOrThrow()
+      } else {
+        cur = await db
+          .insertInto('bas_currency')
+          .values({
+            name: '人民币',
+            iso_code: 'CNY',
+            symbol: '¥',
+            active: true,
+          })
+          .returning(['id'])
+          .executeTakeFirstOrThrow()
+      }
     }
     let units = await db.selectFrom('bas_unit').select(['id']).limit(2).execute()
     if (units.length < 2) {
       const suffix = crypto.randomUUID().slice(0, 6)
-      await db
-        .insertInto('bas_unit')
-        .values([
-          {
-            unit_type: 'quantity',
-            is_base: true,
-            name: `件-${suffix}`,
-            symbol: `pcs${suffix}`,
-            ratio: '1',
-          },
-          {
-            unit_type: 'quantity',
-            is_base: false,
-            name: `个-${suffix}`,
-            symbol: `ge${suffix}`,
-            ratio: '1',
-          },
-        ])
-        .execute()
+      // 共享库可能已有 quantity 基准单位（唯一索引 bas_unit_unique_base_per_type_index）
+      const hasBase = await db
+        .selectFrom('bas_unit')
+        .select(['id'])
+        .where('unit_type', '=', 'quantity')
+        .where('is_base', '=', true)
+        .executeTakeFirst()
+      const toInsert: Array<{
+        unit_type: string
+        is_base: boolean
+        name: string
+        symbol: string
+        ratio: string
+      }> = []
+      if (!hasBase) {
+        toInsert.push({
+          unit_type: 'quantity',
+          is_base: true,
+          name: `件-${suffix}`,
+          symbol: `pcs${suffix}`,
+          ratio: '1',
+        })
+      }
+      // 再补非基准单位直到总数 ≥ 2
+      let projected = units.length + toInsert.length
+      let i = 0
+      while (projected < 2) {
+        toInsert.push({
+          unit_type: 'quantity',
+          is_base: false,
+          name: `个-${suffix}-${i}`,
+          symbol: `ge${suffix}${i}`,
+          ratio: '1',
+        })
+        projected++
+        i++
+      }
+      if (toInsert.length > 0) {
+        await db.insertInto('bas_unit').values(toInsert).execute()
+      }
       units = await db.selectFrom('bas_unit').select(['id']).limit(2).execute()
     }
     if (!cur || units.length < 2) throw new Error('需要启用币种与至少两个单位种子')
