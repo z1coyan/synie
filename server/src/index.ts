@@ -67,6 +67,7 @@ import {
 import { createSettingsService, registerSettingResources } from './platform/settings/index.ts'
 import { createSetupService } from './platform/setup/index.ts'
 import { seedMaterialCategories, seedSampleData } from './modules/setup/index.ts'
+import { logJson, serializeError } from './platform/http/log.ts'
 
 const env = loadEnv()
 const db = createDb(env.databaseUrl)
@@ -228,9 +229,17 @@ const server = Bun.serve({
   port: env.port,
   hostname: env.host,
   fetch: app.fetch,
+  error(err) {
+    // Bun.serve 层未进入 Hono onError 的异常（如 fetch 本身抛错）
+    logJson('error', 'bun_serve_error', { error: serializeError(err) })
+    return new Response(
+      JSON.stringify({ error: { code: 'internal', message: '服务内部错误，请稍后重试' } }),
+      { status: 500, headers: { 'content-type': 'application/json' } },
+    )
+  },
 })
 
-console.log(JSON.stringify({ level: 'info', msg: 'synie server listening', port: server.port }))
+logJson('info', 'synie server listening', { port: server.port, host: env.host })
 
 async function shutdown() {
   marketScheduler.stop()
@@ -244,4 +253,12 @@ process.on('SIGTERM', () => {
 })
 process.on('SIGINT', () => {
   void shutdown()
+})
+
+/** 进程级兜底：绝不静默丢错误 */
+process.on('unhandledRejection', (reason) => {
+  logJson('error', 'unhandled_rejection', { error: serializeError(reason) })
+})
+process.on('uncaughtException', (err) => {
+  logJson('error', 'uncaught_exception', { error: serializeError(err) })
 })

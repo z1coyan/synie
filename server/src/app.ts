@@ -72,6 +72,7 @@ import { authRoutes } from './platform/auth/routes.ts'
 import type { AuthService } from './platform/auth/service.ts'
 import type { AppEnv } from './platform/http/context.ts'
 import { notFound, onError } from './platform/http/errors.ts'
+import { logJson, serializeError } from './platform/http/log.ts'
 import { metaRoutes } from './platform/meta/routes.ts'
 import type { Registry } from './platform/meta/registry.ts'
 import { auditRoutes } from './platform/audit/routes.ts'
@@ -144,20 +145,30 @@ export interface AppDeps {
   setup: SetupService
 }
 
+/**
+ * 访问日志：请求结束后落盘。
+ * - 5xx 用 error 级别（即使 handler 直接 return 500 未 throw，也能在日志里定位）
+ * - finally 保证 next() 异常路径也会尽量写出一行（若 onError 已写 response）
+ */
 const accessLog: MiddlewareHandler<AppEnv> = async (c, next) => {
   const start = performance.now()
-  await next()
-  console.log(
-    JSON.stringify({
-      level: 'info',
-      msg: 'http_request',
+  try {
+    await next()
+  } finally {
+    const status = c.res?.status ?? 0
+    const entry = {
       requestId: c.get('requestId'),
       method: c.req.method,
       path: c.req.path,
-      status: c.res.status,
+      status,
       ms: Math.round(performance.now() - start),
-    }),
-  )
+    }
+    if (status >= 500) {
+      logJson('error', 'http_request', entry)
+    } else {
+      logJson('info', 'http_request', entry)
+    }
+  }
 }
 
 export function buildApp(deps: AppDeps) {
@@ -172,7 +183,11 @@ export function buildApp(deps: AppDeps) {
       try {
         await sql`select 1`.execute(deps.db)
         return c.json({ status: 'ok' })
-      } catch {
+      } catch (err) {
+        logJson('error', 'healthz_db_failed', {
+          requestId: c.get('requestId'),
+          error: serializeError(err),
+        })
         return c.json({ error: { code: 'internal', message: '数据库不可用' } }, 503)
       }
     })

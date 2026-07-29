@@ -2,6 +2,7 @@ import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { ApiErrorBody, ApiErrorCode } from '@synie/shared'
 import { API_ERROR_STATUS } from '@synie/shared'
+import { logJson, serializeError } from './log.ts'
 
 /**
  * 统一错误模型（移植自 server-go platform/apierror）。
@@ -44,14 +45,21 @@ export function toErrorBody(err: unknown): { body: ApiErrorBody; status: number 
   }
 }
 
-/** Hono onError：统一错误出口；内部错误带 requestId 落日志 */
+/**
+ * Hono onError：统一错误出口。
+ * - 响应体：5xx 不透出内部细节
+ * - 日志：凡 status≥500 必须 error 落盘（含 stack / cause / requestId），便于排障
+ */
 export function onError(err: unknown, c: Context): Response {
   const { body, status } = toErrorBody(err)
   if (status >= 500) {
-    console.error('unhandled error', {
+    logJson('error', 'http_error', {
       requestId: c.get('requestId'),
+      method: c.req.method,
       path: c.req.path,
-      err,
+      status,
+      errorCode: body.error.code,
+      error: serializeError(err),
     })
   }
   return c.json(body, status as ContentfulStatusCode)
