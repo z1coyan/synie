@@ -101,9 +101,17 @@ const GRID_COLUMNS = [
 ]
 
 // 状态胶囊配色:草稿灰、已审核绿、已作废红、已红冲橙
+// 卡片:内部单号标题、对手副标题、纸面发票号/金额/状态摘要
 const GRID_OVERRIDES = {
-  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger', REVERSED: 'warning' } },
-  grossTotal: { render: (v: unknown) => formatAmount(v) },
+  companyId: { mobileRole: 'hide' },
+  docNo: { mobileRole: 'title' },
+  partyId: { mobileRole: 'subtitle' },
+  invoiceNo: { mobileRole: 'summary' },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger', REVERSED: 'warning' },
+  },
+  grossTotal: { mobileRole: 'summary', render: (v: unknown) => formatAmount(v) },
   // 列名缺省取后端 description(是给 API 看的整段说明),覆盖成短列名
   salReconciliationId: { label: '关联销售对账单' },
   purReconciliationId: { label: '关联采购对账单' },

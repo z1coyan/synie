@@ -46,9 +46,17 @@ const GRID_COLUMNS = [
   'status',
 ]
 
+// 卡片:员工标题、应发副标题、状态/已发/缺勤摘要
 const GRID_OVERRIDES = {
-  status: { enumColors: { PENDING: 'warning', PAID: 'success' } },
+  employeeId: { mobileRole: 'title' },
+  payable: { mobileRole: 'subtitle' },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { PENDING: 'warning', PAID: 'success' },
+  },
+  paidTotal: { mobileRole: 'summary' },
   missingDays: {
+    mobileRole: 'summary',
     render: (v) => (Number(v) > 0 ? <span className="text-danger">{String(v)}</span> : String(v ?? 0)),
   },
 } satisfies Record<string, ColumnOverride>

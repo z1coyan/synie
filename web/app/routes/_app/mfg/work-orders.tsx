@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { workOrderClient } from '~/lib/resources/manufacturing'
@@ -26,6 +26,25 @@ const GRID_COLUMNS = [
   'companyId',
 ]
 
+// 卡片:物料标题、工单号副标题、状态/未完成量/需求日摘要(车间跟单)
+const GRID_OVERRIDES = {
+  materialCode: { mobileRole: 'hide' },
+  companyId: { mobileRole: 'hide' },
+  materialName: {
+    mobileRole: 'title',
+    render: (_v: unknown, row: Row) => {
+      const code = row.materialCode != null ? String(row.materialCode) : ''
+      const name = row.materialName != null ? String(row.materialName) : ''
+      const text = [code, name].filter(Boolean).join(' ')
+      return text || undefined
+    },
+  },
+  workOrderNo: { mobileRole: 'subtitle' },
+  status: { mobileRole: 'summary' },
+  remainingBaseQty: { mobileRole: 'summary' },
+  needDate: { mobileRole: 'summary' },
+} satisfies Record<string, ColumnOverride>
+
 function WorkOrdersPage() {
   const [drawer, setDrawer] = useState<{
     mode: DrawerMode
@@ -46,6 +65,7 @@ function WorkOrdersPage() {
           resource="mfgWorkOrders"
           client={workOrderClient}
           columns={GRID_COLUMNS}
+          overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}

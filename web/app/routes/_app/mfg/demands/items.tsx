@@ -46,14 +46,31 @@ const GRID_COLUMNS = [
 ]
 
 // 行状态胶囊:待安排灰、已安排蓝、已完成绿;已下单布尔徽标
+// 卡片:物料标题、履约方式副标题、状态/需求日/数量摘要(跟单手机速览)
 const GRID_OVERRIDES = {
+  companyId: { mobileRole: 'hide' },
+  materialCode: { mobileRole: 'hide' },
+  materialSpec: { mobileRole: 'hide' },
+  materialName: {
+    mobileRole: 'title',
+    render: (_v, row) => {
+      const code = row.materialCode != null ? String(row.materialCode) : ''
+      const name = row.materialName != null ? String(row.materialName) : ''
+      const text = [code, name].filter(Boolean).join(' ')
+      return text || undefined
+    },
+  },
+  fulfillmentMethod: { mobileRole: 'subtitle' },
   status: {
+    mobileRole: 'summary',
     enumColors: {
       PENDING: 'default',
       SCHEDULED: 'accent',
       COMPLETED: 'success',
     },
   },
+  needDate: { mobileRole: 'summary' },
+  qty: { mobileRole: 'summary' },
   salesOrderItemId: { label: '来源销售条目' },
   orderedQty: { label: '已下单数量' },
   receivedQty: { label: '已收数量' },

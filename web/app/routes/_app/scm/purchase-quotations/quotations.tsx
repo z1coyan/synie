@@ -24,10 +24,16 @@ export function isExpired(status: unknown, validUntil: unknown): boolean {
 
 // 状态胶囊配色:草稿灰、已审核绿、已作废红;过期(派生态)黄,盖过已审核展示
 const GRID_OVERRIDES = {
-  partyType: { label: '对手类型' },
+  // 卡片:单号标题、供应商副标题、日期/状态/截止摘要
+  companyId: { mobileRole: 'hide' },
+  quotationNo: { mobileRole: 'title' },
+  partyId: { mobileRole: 'subtitle' },
+  partyType: { label: '对手类型', mobileRole: 'hide' },
+  quotationDate: { mobileRole: 'summary' },
   currencyId: { label: '币种' },
-  validUntil: { label: '报价截止' },
+  validUntil: { label: '报价截止', mobileRole: 'summary' },
   status: {
+    mobileRole: 'summary',
     enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
     render: (v: unknown, row: Row) =>
       isExpired(v, row.validUntil) ? (

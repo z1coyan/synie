@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { glEntryClient } from '~/lib/resources/accounting'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
@@ -58,6 +58,17 @@ const GRID_COLUMNS = [
   'remarks',
 ]
 
+// 卡片:科目标题、业务日副标题、借/贷/对手摘要(流水手机核对)
+const GRID_OVERRIDES = {
+  companyId: { mobileRole: 'hide' },
+  accountId: { mobileRole: 'title' },
+  postingDate: { mobileRole: 'subtitle' },
+  debit: { mobileRole: 'summary' },
+  credit: { mobileRole: 'summary' },
+  partyId: { mobileRole: 'summary' },
+  partyType: { mobileRole: 'hide' },
+} satisfies Record<string, ColumnOverride>
+
 // 下钻参数 → 初始列筛选(与报表同口径:截至日、未作废);进的是普通筛选状态,用户可改可清
 function drillFilters(s: EntriesSearch): FilterState {
   const filters: FilterState = {}
@@ -97,6 +108,7 @@ function EntriesPage() {
           resource="accGlEntries"
           client={glEntryClient}
           columns={GRID_COLUMNS}
+          overrides={GRID_OVERRIDES}
           defaultFilters={drillFilters(search)}
           onView={(row) => setViewRow(row)}
         />

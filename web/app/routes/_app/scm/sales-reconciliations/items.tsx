@@ -13,8 +13,12 @@ export const Route = createFileRoute('/_app/scm/sales-reconciliations/items')({
 })
 
 const GRID_OVERRIDES = {
+  // 卡片:物料标题、对账单号副标题、状态/数量/金额摘要
+  companyId: { mobileRole: 'hide' },
+  reconciliationNo: { mobileRole: 'subtitle' },
   reconciliationStatus: {
     label: '对账单状态',
+    mobileRole: 'summary',
     enumColors: {
       DRAFT: 'default',
       CONFIRMED: 'accent',
@@ -26,14 +30,14 @@ const GRID_OVERRIDES = {
   orderCurrencyCode: { label: '币种' },
   // 物料用快照列多行展示,不 join inv.material(避免无物料读权限时整表失败);
   // 编号/规格/客户料号不在行 calculation 上,此处只有名称单行
-  materialName: { label: '物料' },
+  materialName: { label: '物料', mobileRole: 'title' },
   unitName: { label: '单位' },
-  qty: { label: '数量', render: (v: unknown) => formatQty(v) || undefined },
+  qty: { label: '数量', mobileRole: 'summary', render: (v: unknown) => formatQty(v) || undefined },
   baseQty: {
     label: '折算数量',
     render: (v: unknown) => formatQty(v) || undefined,
   },
-  amount: { label: '金额(原币)', render: (v: unknown) => formatAmount(v) },
+  amount: { label: '金额(原币)', mobileRole: 'summary', render: (v: unknown) => formatAmount(v) },
   baseAmount: { label: '本币金额', render: (v: unknown) => formatAmount(v) },
 } satisfies Record<string, ColumnOverride>
 

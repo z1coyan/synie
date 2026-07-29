@@ -86,8 +86,17 @@ const safeParseDate = (v: string | null) => {
 }
 
 // 状态胶囊配色:草稿灰、已审核绿、已取消红
+// 卡片:凭证号标题、摘要副标题、日期/状态/借方合计摘要
 const GRID_OVERRIDES = {
-  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', CANCELLED: 'danger' } },
+  companyId: { mobileRole: 'hide' },
+  voucherNo: { mobileRole: 'title' },
+  remarks: { mobileRole: 'subtitle' },
+  date: { mobileRole: 'summary' },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', CANCELLED: 'danger' },
+  },
+  debitTotal: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
 // 公司放首列;提交/创建/更新时间不进表格(有序白名单,兼当 exclude)

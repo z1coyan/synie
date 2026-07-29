@@ -23,8 +23,15 @@ type BalanceRow = EmployeeLoanBalance
 
 const GRID_COLUMNS = ['employeeId', 'kind', 'occurredOn', 'amount', 'payrollId', 'remarks', 'createdById']
 
+// 卡片:员工标题、类型副标题、金额/日期摘要
 const GRID_OVERRIDES = {
-  kind: { enumColors: { BORROW: 'warning', REPAY: 'success' } },
+  employeeId: { mobileRole: 'title' },
+  kind: {
+    mobileRole: 'subtitle',
+    enumColors: { BORROW: 'warning', REPAY: 'success' },
+  },
+  amount: { mobileRole: 'summary' },
+  occurredOn: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
 function EmployeeLoansPage() {

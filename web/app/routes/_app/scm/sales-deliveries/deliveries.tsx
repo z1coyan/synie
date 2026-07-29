@@ -11,8 +11,16 @@ export const Route = createFileRoute('/_app/scm/sales-deliveries/deliveries')({
 })
 
 const GRID_OVERRIDES = {
-  partyType: { label: '对手类型' },
-  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' } },
+  // 卡片:单号标题、客户副标题、日期/状态摘要
+  companyId: { mobileRole: 'hide' },
+  deliveryNo: { mobileRole: 'title' },
+  partyId: { mobileRole: 'subtitle' },
+  partyType: { label: '对手类型', mobileRole: 'hide' },
+  deliveryDate: { mobileRole: 'summary' },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+  },
 } satisfies Record<string, ColumnOverride>
 
 const GRID_COLUMNS = [

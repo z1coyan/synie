@@ -244,11 +244,15 @@ function MaterialCell({ row }: { row: Row }) {
 }
 
 // 模块级稳定引用:内联对象会让 SynieDataGrid 的列 memo 每次渲染失效
+// 卡片:物料标题、BOM 编号副标题、方案名称摘要
 const GRID_OVERRIDES: Record<string, ColumnOverride> = {
   materialId: {
     label: '物料',
+    mobileRole: 'title',
     render: (_value, row) => <MaterialCell row={row} />,
   },
+  code: { mobileRole: 'subtitle' },
+  planName: { mobileRole: 'summary' },
 }
 
 function BomsPage() {

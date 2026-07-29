@@ -11,15 +11,21 @@ export const Route = createFileRoute('/_app/scm/sales-deliveries/items')({
 })
 
 const GRID_OVERRIDES = {
-  partyType: { label: '对手类型' },
+  // 卡片:物料标题、客户副标题、状态/数量/发货单号摘要;公司与对手类型桌面保留
+  companyId: { mobileRole: 'hide' },
+  partyType: { label: '对手类型', mobileRole: 'hide' },
   deliveryStatus: {
     label: '发货状态',
+    mobileRole: 'summary',
     enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
   },
+  deliveryNo: { mobileRole: 'summary' },
   orderNo: { label: '订单号' },
+  partyId: { mobileRole: 'subtitle' },
   // 物料用快照列多行展示,不 join inv.material(避免无物料读权限时整表失败)
   materialName: {
     label: '物料',
+    mobileRole: 'title',
     render: (_v: unknown, r: Row) => {
       const code = r.materialCode != null ? String(r.materialCode) : ''
       const name = r.materialName != null ? String(r.materialName) : ''
@@ -46,7 +52,7 @@ const GRID_OVERRIDES = {
     },
   },
   unitName: { label: '单位' },
-  qty: { label: '数量', render: (v: unknown) => formatQty(v) || undefined },
+  qty: { label: '数量', mobileRole: 'summary', render: (v: unknown) => formatQty(v) || undefined },
   baseQty: { label: '折算数量', render: (v: unknown) => formatQty(v) || undefined },
   reconciledQty: { label: '已对账数量', render: (v: unknown) => formatQty(v) || undefined },
   remainingReconcilableQty: { label: '剩余可对账', render: (v: unknown) => formatQty(v) || undefined },

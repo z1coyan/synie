@@ -27,8 +27,16 @@ const GRID_COLUMNS = [
   'insuranceTypes',
 ]
 
+// 卡片:姓名标题、工号副标题、电话/日薪/考勤机号摘要
 const GRID_OVERRIDES = {
-  dailyWage: { render: (v) => (v == null || v === '' ? null : formatAmount(v)) },
+  name: { mobileRole: 'title' },
+  code: { mobileRole: 'subtitle' },
+  phone: { mobileRole: 'summary' },
+  dailyWage: {
+    mobileRole: 'summary',
+    render: (v) => (v == null || v === '' ? null : formatAmount(v)),
+  },
+  attendanceNo: { mobileRole: 'summary' },
   monthlyAllowance: { render: (v) => (v == null || v === '' ? null : formatAmount(v)) },
 } satisfies Record<string, ColumnOverride>
 

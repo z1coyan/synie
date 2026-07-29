@@ -35,8 +35,12 @@ const timesPreview = (v: unknown) => parseTimes(v).map((t) => t.slice(0, 5)).joi
 
 const GRID_COLUMNS = ['employeeId', 'date', 'times', 'note', 'createdById', 'insertedAt']
 
+// 卡片:员工标题、日期副标题、补卡时刻/备注摘要
 const GRID_OVERRIDES = {
-  times: { render: (v) => timesPreview(v) || null },
+  employeeId: { mobileRole: 'title' },
+  date: { mobileRole: 'subtitle' },
+  times: { mobileRole: 'summary', render: (v) => timesPreview(v) || null },
+  note: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
 // 补卡时刻编辑器:一行一个 TimeField,增删行;值形态是 HH:MM:SS 数组

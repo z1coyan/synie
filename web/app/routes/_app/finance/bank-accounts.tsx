@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
-import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
@@ -27,6 +27,16 @@ const GRID_COLUMNS = [
   'active',
 ]
 
+// 卡片:别名标题、开户行副标题、账号/启停/币种摘要
+const GRID_OVERRIDES: Record<string, ColumnOverride> = {
+  companyId: { mobileRole: 'hide' },
+  alias: { mobileRole: 'title' },
+  bankName: { mobileRole: 'subtitle' },
+  accountNo: { mobileRole: 'summary' },
+  currencyId: { mobileRole: 'summary' },
+  active: { mobileRole: 'summary' },
+}
+
 function BankAccountsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
@@ -41,6 +51,7 @@ function BankAccountsPage() {
           resource="accBankAccounts"
           client={bankAccountClient}
           columns={GRID_COLUMNS}
+          overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}

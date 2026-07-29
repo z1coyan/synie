@@ -33,12 +33,20 @@ const GRID_COLUMNS = [
 ]
 
 // 状态胶囊:正常绿、缺卡红(缺卡是待补卡的异常清单入口)
+// 卡片:员工标题、日期副标题、状态/正常工时/加班摘要
 const GRID_OVERRIDES = {
+  employeeId: { mobileRole: 'title' },
+  date: { mobileRole: 'subtitle' },
   morningIn: { render: timeHM },
   morningOut: { render: timeHM },
   afternoonIn: { render: timeHM },
   afternoonOut: { render: timeHM },
-  status: { enumColors: { OK: 'success', MISSING: 'danger' } },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { OK: 'success', MISSING: 'danger' },
+  },
+  normalHours: { mobileRole: 'summary' },
+  overtimeHours: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
 const localISO = (d: Date) =>

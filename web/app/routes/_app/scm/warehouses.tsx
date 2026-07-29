@@ -40,13 +40,18 @@ function AccountCell({ row }: { row: Row }) {
 }
 
 // 模块级稳定引用:内联对象会让 SynieDataGrid 的列 memo 每次渲染失效
+// 卡片:仓名标题、上级副标题、叶子/外协/启停摘要
 const GRID_OVERRIDES: Record<string, ColumnOverride> = {
+  name: { mobileRole: 'title' },
+  parentId: { mobileRole: 'subtitle' },
   accountId: { render: (_value, row) => <AccountCell row={row} /> },
   // 两个标记列头用短名;协作方是多态 fk 列(partyType 判别),由 meta refs 自动解析
-  isOutsourced: { label: '外协仓' },
+  isLeaf: { mobileRole: 'summary' },
+  isOutsourced: { label: '外协仓', mobileRole: 'summary' },
   partyType: { label: '协作方类型' },
   partyId: { label: '协作方' },
   allowNegative: { label: '负库存' },
+  active: { mobileRole: 'summary' },
 }
 
 function WarehousesPage() {

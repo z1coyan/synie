@@ -13,9 +13,12 @@ export const Route = createFileRoute('/_app/hr/attendance/punches')({
 // (导入是唯一写入口,无新增/编辑/删除;导错走导入记录 tab 整批撤销)
 const GRID_COLUMNS = ['employeeId', 'attendanceNo', 'punchedAt', 'importId']
 
+// 卡片:员工标题、打卡时刻副标题、考勤机号摘要
 const GRID_OVERRIDES = {
+  employeeId: { mobileRole: 'title' },
   // 打卡是到秒的原始事实,时刻完整展示
   punchedAt: {
+    mobileRole: 'subtitle',
     render: (v: unknown) =>
       v == null || v === ''
         ? null
@@ -29,6 +32,7 @@ const GRID_OVERRIDES = {
             second: '2-digit',
           }),
   },
+  attendanceNo: { mobileRole: 'summary' },
   importId: { label: '导入批次' },
 } satisfies Record<string, ColumnOverride>
 

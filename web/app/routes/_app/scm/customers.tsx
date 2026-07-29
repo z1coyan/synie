@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
-import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -12,6 +12,13 @@ import { customerClient } from '~/lib/resources/customers'
 export const Route = createFileRoute('/_app/scm/customers')({
   component: CustomersPage,
 })
+
+// 卡片:名称标题、编号副标题、简称摘要(查客户首看叫什么)
+const GRID_OVERRIDES = {
+  name: { mobileRole: 'title' },
+  code: { mobileRole: 'subtitle' },
+  shortName: { mobileRole: 'summary' },
+} satisfies Record<string, ColumnOverride>
 
 function CustomersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
@@ -26,6 +33,7 @@ function CustomersPage() {
         <SynieDataGrid
           resource="salCustomers"
           client={customerClient}
+          overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}

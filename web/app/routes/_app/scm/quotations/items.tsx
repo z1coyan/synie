@@ -46,6 +46,20 @@ const ACTION_VISIBLE = {
 // fk label 读取资源返回的 quotation 关系标签，拿不到时退回截断 id。
 function buildOverrides(openDrawer: OpenQuotationDrawer) {
   return {
+    // 卡片:物料作标题、客户作副标题、状态/单价/截止日期作摘要
+    companyId: { mobileRole: 'hide' },
+    materialCode: { mobileRole: 'hide' },
+    materialSpec: { mobileRole: 'hide' },
+    materialName: {
+      mobileRole: 'title',
+      render: (_v: unknown, row: Row) => {
+        const code = row.materialCode != null ? String(row.materialCode) : ''
+        const name = row.materialName != null ? String(row.materialName) : ''
+        const text = [code, name].filter(Boolean).join(' ')
+        return text || undefined
+      },
+    },
+    partyId: { mobileRole: 'subtitle' },
     quotationId: {
       render: (_v: unknown, row: Row) => {
         const quotation = row.quotation as Row | null | undefined
@@ -60,10 +74,11 @@ function buildOverrides(openDrawer: OpenQuotationDrawer) {
         )
       },
     },
-    validUntil: { label: '报价截止' },
+    validUntil: { label: '报价截止', mobileRole: 'summary' },
     // 与报价单 tab 同一套状态胶囊配色:草稿灰、已审核绿、已作废红;过期黄(派生态)
     quotationStatus: {
       label: '状态',
+      mobileRole: 'summary',
       enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
       render: (v: unknown, row: Row) =>
         isExpired(v, row.validUntil) ? (
@@ -73,7 +88,11 @@ function buildOverrides(openDrawer: OpenQuotationDrawer) {
         ) : undefined,
     },
     pricingMode: { label: '定价模式' },
-    price: { label: '含税单价', render: (v: unknown) => (v == null ? undefined : formatPrice(v)) },
+    price: {
+      label: '含税单价',
+      mobileRole: 'summary',
+      render: (v: unknown) => (v == null ? undefined : formatPrice(v)),
+    },
     // 档数只对梯度行有意义,固定价行留白
     tierCount: {
       label: '档数',

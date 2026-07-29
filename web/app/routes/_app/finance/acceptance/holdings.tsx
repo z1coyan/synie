@@ -40,9 +40,14 @@ const GRID_COLUMNS = [
 ]
 
 const GRID_OVERRIDES = {
-  amount: { render: (v: unknown) => formatAmount(v) },
+  // 卡片:票号标题、银行账户副标题、金额/到期日/取得日摘要
+  companyId: { mobileRole: 'hide' },
+  billId: { mobileRole: 'title' },
+  bankAccountId: { mobileRole: 'subtitle' },
+  amount: { mobileRole: 'summary', render: (v: unknown) => formatAmount(v) },
   // meta description 即列头,括号说明进表格太啰嗦,收敛为短名
-  dueDate: { label: '到期日' },
+  dueDate: { label: '到期日', mobileRole: 'summary' },
+  acquiredOn: { mobileRole: 'summary' },
   sourceTransactionId: { label: '来源交易' },
 } satisfies Record<string, ColumnOverride>
 

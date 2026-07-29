@@ -10,8 +10,16 @@ export const Route = createFileRoute('/_app/scm/purchase-receipts/receipts')({
 })
 
 const GRID_OVERRIDES = {
-  partyType: { label: '对手类型' },
-  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' } },
+  // 卡片:单号标题、供应商副标题、日期/状态摘要
+  companyId: { mobileRole: 'hide' },
+  receiptNo: { mobileRole: 'title' },
+  partyId: { mobileRole: 'subtitle' },
+  partyType: { label: '对手类型', mobileRole: 'hide' },
+  receiptDate: { mobileRole: 'summary' },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+  },
 } satisfies Record<string, ColumnOverride>
 
 const GRID_COLUMNS = [

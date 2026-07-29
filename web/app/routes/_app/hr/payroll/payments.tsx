@@ -13,8 +13,16 @@ export const Route = createFileRoute('/_app/hr/payroll/payments')({
 
 const GRID_COLUMNS = ['employeeId', 'month', 'paidOn', 'kind', 'amount', 'payrollId', 'remarks', 'createdById']
 
+// 卡片:员工标题、月份副标题、金额/发放日/类型摘要
 const GRID_OVERRIDES = {
-  kind: { enumColors: { NORMAL: 'success', SUPPLEMENT: 'accent' } },
+  employeeId: { mobileRole: 'title' },
+  month: { mobileRole: 'subtitle' },
+  amount: { mobileRole: 'summary' },
+  paidOn: { mobileRole: 'summary' },
+  kind: {
+    mobileRole: 'summary',
+    enumColors: { NORMAL: 'success', SUPPLEMENT: 'accent' },
+  },
 } satisfies Record<string, ColumnOverride>
 
 function PayrollPaymentsPage() {

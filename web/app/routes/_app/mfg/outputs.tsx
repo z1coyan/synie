@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { useDocItems } from '~/components/synie-editable-table/use-doc-items'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -55,6 +55,15 @@ const GRID_COLUMNS = [
   'status',
   'remarks',
 ]
+
+// 卡片:单号标题、日期副标题、状态/仓库摘要
+const GRID_OVERRIDES = {
+  companyId: { mobileRole: 'hide' },
+  outputNo: { mobileRole: 'title' },
+  outputDate: { mobileRole: 'subtitle' },
+  status: { mobileRole: 'summary' },
+  warehouseId: { mobileRole: 'summary' },
+} satisfies Record<string, ColumnOverride>
 
 // 「审核整单」确认弹窗配置(同 scm 单据先例:只取行快照字段,不 join 工单/单位等 fk)
 const OUTPUT_AUDIT_CONFIG = {
@@ -115,6 +124,7 @@ function OutputsPage() {
           resource="mfgOutputs"
           client={outputClient}
           columns={GRID_COLUMNS}
+          overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer('edit', row)}

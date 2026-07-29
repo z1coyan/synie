@@ -34,7 +34,15 @@ export const Route = createFileRoute('/_app/scm/other-stock/counts')({
 const GRID_COLUMNS = ['companyId', 'docNo', 'postingDate', 'warehouseId', 'status', 'summary', 'auditedAt']
 
 const GRID_OVERRIDES = {
-  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', CANCELLED: 'danger' } },
+  // 卡片:单号标题、仓库副标题、日期/状态摘要
+  companyId: { mobileRole: 'hide' },
+  docNo: { mobileRole: 'title' },
+  warehouseId: { mobileRole: 'subtitle' },
+  postingDate: { mobileRole: 'summary' },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', CANCELLED: 'danger' },
+  },
   summary: { width: 240 },
 } satisfies Record<string, ColumnOverride>
 

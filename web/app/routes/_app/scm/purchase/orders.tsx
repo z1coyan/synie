@@ -13,15 +13,27 @@ export const Route = createFileRoute('/_app/scm/purchase/orders')({
 // 状态胶囊配色:草稿灰、已审核绿、已关闭黄、已作废红
 // 双币总额混合列表全列展示(本币单两套同值);汇率不进表格,抽屉里看
 const GRID_OVERRIDES = {
-  partyType: { label: '对手类型' },
+  // 卡片:单号标题、供应商副标题、日期/状态/本币总额摘要
+  companyId: { mobileRole: 'hide' },
+  orderNo: { mobileRole: 'title' },
+  partyId: { mobileRole: 'subtitle' },
+  partyType: { label: '对手类型', mobileRole: 'hide' },
+  orderDate: { mobileRole: 'summary' },
   // 订单分型:常规灰、零星蓝;枚举筛选由 meta(filterable)自动带出
   orderType: { label: '类型', enumColors: { REGULAR: 'default', SPOT: 'accent' } },
   // 委外标记:布尔列,勾选即委外订单(条目=成品、单价=加工费)
   isOutsourced: { label: '委外' },
   currencyId: { label: '币种' },
   grossTotal: { label: '原币含税总额', render: (v: unknown) => formatAmount(v) },
-  baseGrossTotal: { label: '本币含税总额', render: (v: unknown) => formatAmount(v) },
-  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', CLOSED: 'warning', VOIDED: 'danger' } },
+  baseGrossTotal: {
+    label: '本币含税总额',
+    mobileRole: 'summary',
+    render: (v: unknown) => formatAmount(v),
+  },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', CLOSED: 'warning', VOIDED: 'danger' },
+  },
 } satisfies Record<string, ColumnOverride>
 
 // 常用列白名单:时间戳/审核人/录入人不进表格(兼当 exclude)

@@ -10,8 +10,16 @@ export const Route = createFileRoute('/_app/scm/outsourced-receipts/receipts')({
 })
 
 const GRID_OVERRIDES = {
-  partyType: { label: '对手类型' },
-  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' } },
+  // 卡片:单号标题、协作方副标题、日期/状态摘要
+  companyId: { mobileRole: 'hide' },
+  receiptNo: { mobileRole: 'title' },
+  partyId: { mobileRole: 'subtitle' },
+  partyType: { label: '对手类型', mobileRole: 'hide' },
+  receiptDate: { mobileRole: 'summary' },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+  },
   warehouseId: { label: '默认入仓' },
   outsourcedWarehouseId: { label: '默认外协仓' },
 } satisfies Record<string, ColumnOverride>

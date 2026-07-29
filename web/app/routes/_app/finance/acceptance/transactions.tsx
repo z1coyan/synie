@@ -41,9 +41,17 @@ const GRID_COLUMNS = [
 ]
 
 // 状态胶囊配色:草稿灰、已审核绿、已作废红
+// 卡片:单号标题、票号副标题、类型/金额/状态摘要
 const GRID_OVERRIDES = {
-  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' } },
-  amount: { render: (v: unknown) => formatAmount(v) },
+  companyId: { mobileRole: 'hide' },
+  docNo: { mobileRole: 'title' },
+  billId: { mobileRole: 'subtitle' },
+  transactionType: { mobileRole: 'summary' },
+  amount: { mobileRole: 'summary', render: (v: unknown) => formatAmount(v) },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+  },
 } satisfies Record<string, ColumnOverride>
 
 function BillTransactionsPage() {

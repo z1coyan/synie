@@ -200,8 +200,16 @@ function ItemsResetGuard({
 const GRID_COLUMNS = ['companyId', 'employeeId', 'docNo', 'expenseDate', 'postingDate', 'status', 'auditedAt']
 
 // 状态胶囊配色:草稿灰、已审核绿、已作废红
+// 卡片:单号标题、报销人副标题、费用日/状态摘要
 const GRID_OVERRIDES = {
-  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' } },
+  companyId: { mobileRole: 'hide' },
+  docNo: { mobileRole: 'title' },
+  employeeId: { mobileRole: 'subtitle' },
+  expenseDate: { mobileRole: 'summary' },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+  },
 } satisfies Record<string, ColumnOverride>
 
 // 行操作按状态出:草稿(编辑/删除/审核)、已审核(作废;无红冲,纠错=作废+重开)

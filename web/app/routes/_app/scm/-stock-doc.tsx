@@ -53,7 +53,16 @@ const GRID_COLUMNS = [
 ]
 
 const GRID_OVERRIDES = {
-  status: { enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' } },
+  // 卡片:单号标题、仓库副标题、方向/日期/状态摘要
+  companyId: { mobileRole: 'hide' },
+  docNo: { mobileRole: 'title' },
+  warehouseId: { mobileRole: 'subtitle' },
+  direction: { mobileRole: 'summary' },
+  docDate: { mobileRole: 'summary' },
+  status: {
+    mobileRole: 'summary',
+    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+  },
   summary: { width: 240 },
 } satisfies Record<string, ColumnOverride>
 

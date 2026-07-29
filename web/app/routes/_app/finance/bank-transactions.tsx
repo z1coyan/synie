@@ -37,9 +37,13 @@ const GRID_COLUMNS = [
 
 // 金额列降噪:列头去「金额」后缀、千分位;方向由列头表达故不加正负号,收入以绿色示向;
 // 未对账为 0(已对完)弱化、有余额保持前景色。render 返回 null 回落 defaultCell,空值仍出「—」
+// 卡片:摘要标题、对方户名副标题、时间/收支/对账状态摘要(流水手机速查)
 const GRID_OVERRIDES = {
+  companyId: { mobileRole: 'hide' },
+  summary: { mobileRole: 'title' },
   // 交易时间到分即可(秒进详情看),长户名截断到 120px(点击弹全文),给金额与对账列留视口
   occurredAt: {
+    mobileRole: 'summary',
     render: (v) =>
       v == null || v === ''
         ? null
@@ -52,7 +56,7 @@ const GRID_OVERRIDES = {
             minute: '2-digit',
           }),
   },
-  counterpartyName: { width: 80 },
+  counterpartyName: { width: 80, mobileRole: 'subtitle' },
   income: {
     label: '收入',
     render: (v) => (v == null || v === '' ? null : <span className="text-success">{formatAmount(v)}</span>),
@@ -63,10 +67,12 @@ const GRID_OVERRIDES = {
   },
   reconcileStatus: {
     // 对账状态三态胶囊:未对账红、部分对账橙、已对账绿
+    mobileRole: 'summary',
     enumColors: { UNRECONCILED: 'danger', PARTIAL: 'warning', RECONCILED: 'success' },
   },
   unreconciledAmount: {
     label: '未对账',
+    mobileRole: 'summary',
     render: (v) =>
       v == null || v === '' ? null : Number(v) > 0 ? (
         formatAmount(v)

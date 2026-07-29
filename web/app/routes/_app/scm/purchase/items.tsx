@@ -52,6 +52,20 @@ const ACTION_VISIBLE = {
 // 委外标记是订单头属性,由 orderIsOutsourced 计算列经 extraFields 随查询取回
 function buildOverrides(openDrawer: OpenOrderDrawer) {
   return {
+    // 卡片:物料作标题、供应商作副标题、状态/进度/金额作摘要;公司首列桌面保留筛选,卡片藏
+    companyId: { mobileRole: 'hide' },
+    materialCode: { mobileRole: 'hide' },
+    materialSpec: { mobileRole: 'hide' },
+    materialName: {
+      mobileRole: 'title',
+      render: (_v: unknown, row: Row) => {
+        const code = row.materialCode != null ? String(row.materialCode) : ''
+        const name = row.materialName != null ? String(row.materialName) : ''
+        const text = [code, name].filter(Boolean).join(' ')
+        return text || undefined
+      },
+    },
+    partyId: { mobileRole: 'subtitle' },
     orderId: {
       render: (_v: unknown, row: Row) => {
         const order = row.order as Row | null | undefined
@@ -76,11 +90,13 @@ function buildOverrides(openDrawer: OpenOrderDrawer) {
     // 与订单 tab 同一套状态胶囊配色:草稿灰、已审核绿、已关闭黄、已作废红
     orderStatus: {
       label: '状态',
+      mobileRole: 'summary',
       enumColors: { DRAFT: 'default', AUDITED: 'success', CLOSED: 'warning', VOIDED: 'danger' },
     },
     // 合并列:进度条展示 已收/数量·未收(折回行单位,见 QtyProgressCell);列筛选/排序=未收数量
     remainingBaseQty: {
       label: '收货进度',
+      mobileRole: 'summary',
       align: 'start',
       render: (_v: unknown, row: Row) => (
         <QtyProgressCell row={row} doneField="receivedQty" labels={{ done: '已收', remaining: '未收' }} />
@@ -89,7 +105,7 @@ function buildOverrides(openDrawer: OpenOrderDrawer) {
     // 双币金额列(定案顺序:本币单价、原币单价、本币金额、原币金额);本币单价 4 位精度
     basePrice: { label: '本币单价', render: (v: unknown) => formatPrice(v) },
     price: { label: '原币单价', render: (v: unknown) => formatPrice(v) },
-    baseAmount: { label: '本币金额', render: (v: unknown) => formatAmount(v) },
+    baseAmount: { label: '本币金额', mobileRole: 'summary', render: (v: unknown) => formatAmount(v) },
     amount: { label: '原币金额', render: (v: unknown) => formatAmount(v) },
   } satisfies Record<string, ColumnOverride>
 }

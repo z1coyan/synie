@@ -30,8 +30,13 @@ const GRID_COLUMNS = [
 ]
 
 // 数量带符号:入库正数、出库负数(红字);空值回落默认渲染
+// 卡片:物料标题、业务日副标题、数量/仓/来源单号摘要
 const GRID_OVERRIDES: Record<string, ColumnOverride> = {
+  companyId: { mobileRole: 'hide' },
+  materialId: { mobileRole: 'title' },
+  postingDate: { mobileRole: 'subtitle' },
   quantity: {
+    mobileRole: 'summary',
     render: (v) => {
       if (v == null || v === '') return undefined
       const n = Number(v)
@@ -39,7 +44,8 @@ const GRID_OVERRIDES: Record<string, ColumnOverride> = {
       return <span className={n < 0 ? 'text-danger' : undefined}>{n}</span>
     },
   },
-  voucherNo: { label: '来源单号' },
+  warehouseId: { mobileRole: 'summary' },
+  voucherNo: { label: '来源单号', mobileRole: 'summary' },
   remarks: { label: '摘要', width: 240 },
 }
 

@@ -20,9 +20,14 @@ export const Route = createFileRoute(
 })
 
 const GRID_OVERRIDES = {
-  reconciliationType: { label: '对账类型' },
-  partyType: { label: '对手类型' },
+  // 卡片:单号标题、客户副标题、状态/本币合计/类型摘要
+  companyId: { mobileRole: 'hide' },
+  reconciliationNo: { mobileRole: 'title' },
+  partyId: { mobileRole: 'subtitle' },
+  reconciliationType: { label: '对账类型', mobileRole: 'summary' },
+  partyType: { label: '对手类型', mobileRole: 'hide' },
   status: {
+    mobileRole: 'summary',
     enumColors: {
       DRAFT: 'default',
       CONFIRMED: 'accent',
@@ -36,6 +41,7 @@ const GRID_OVERRIDES = {
   },
   baseGrossTotal: {
     label: '本币含税合计',
+    mobileRole: 'summary',
     render: (v: unknown) => formatAmount(v),
   },
 } satisfies Record<string, ColumnOverride>

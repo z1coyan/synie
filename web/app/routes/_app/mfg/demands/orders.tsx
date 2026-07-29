@@ -73,8 +73,12 @@ const ACTION_VISIBLE = {
 } satisfies Record<string, (row: Row) => boolean>
 
 // 状态胶囊配色:草稿灰、已确认绿、已关闭黄、已作废红
+// 卡片:需求单号标题、日期副标题、状态/公司摘要
 const GRID_OVERRIDES = {
+  demandNo: { mobileRole: 'title' },
+  demandDate: { mobileRole: 'subtitle' },
   status: {
+    mobileRole: 'summary',
     enumColors: {
       DRAFT: 'default',
       CONFIRMED: 'success',
@@ -82,6 +86,7 @@ const GRID_OVERRIDES = {
       VOIDED: 'danger',
     },
   },
+  companyId: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
 function DemandOrdersTab() {

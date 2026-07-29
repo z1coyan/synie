@@ -165,7 +165,17 @@ function MaterialsPage() {
           client={materialClient}
           columns={GRID_COLUMNS}
           joinFields={{ category: ['code'] }}
-          overrides={{ categoryId: { render: (_value, row) => <CategoryCell row={row} /> } }}
+          overrides={{
+            // 卡片:名称标题、编号副标题、分类/客户料号/启停摘要(查料首看叫什么)
+            name: { mobileRole: 'title' },
+            code: { mobileRole: 'subtitle' },
+            categoryId: {
+              mobileRole: 'summary',
+              render: (_value, row) => <CategoryCell row={row} />,
+            },
+            customerPartNo: { mobileRole: 'summary' },
+            active: { mobileRole: 'summary' },
+          }}
           attachmentImages={{ ownerType: 'inv_material', category: 'drawing', label: '图纸' }}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
