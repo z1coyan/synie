@@ -1,11 +1,16 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
-import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, Popover, SearchField, Separator, Spinner, toast } from '@heroui/react'
+import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, Spinner, toast } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
 import { isForbidden } from '~/lib/errors'
+import { useMediaQuery } from '~/lib/use-media-query'
 import { resourceClientFor } from '~/lib/resources/registry'
 import type { ResourceClient } from '~/lib/resources/types'
+import { cardFields } from './card-fields'
+import { CardList } from './card-list'
+import { cellContent, type ColumnOverride, type GridImageOverride } from './cells'
+import { RowActionsMenu } from './row-menu'
 import { downloadCsv, fetchAllRows, toCsv } from './csv'
 import { ColumnFilterButton, filterSummary } from './filter-popover'
 import { cellText } from './format'
@@ -21,28 +26,10 @@ import { SyniePreview, type SyniePreviewItem } from '../synie-preview/SyniePrevi
 import { useDraft } from './use-debounced'
 import { useGridActions } from './use-grid-actions'
 
-export interface GridImageOverride {
-  /** 解析该行的 sys_file id;返回空值回退默认单元格渲染(非图片行)。缺省:列值即 file id */
-  fileId?: (row: Row) => string | null | undefined
-  /** 预览/下载用文件名;缺省取行上 filename 字段(字符串时) */
-  filename?: (row: Row) => string | null | undefined
-  /** 缩略图旁保留默认文本渲染(文件名列等);纯 file id 列默认只显示缩略图 */
-  keepText?: boolean
-}
-
-export interface ColumnOverride {
-  render?: (value: unknown, row: Row) => ReactNode
-  label?: string
-  /** Pro DataGrid 是 auto 布局,th 定宽不生效;此值实际作为文本列 ClampCell 的内容上限(px),
-   *  内容收窄列宽即跟着收窄。数值/enum/fk 列暂不受它约束 */
-  width?: number
-  /** 不传时数值列(integer/decimal)默认右对齐 */
-  align?: 'start' | 'center' | 'end'
-  /** enum 列胶囊配色,按枚举值(大写 token)映射;未配的值用 default 灰 */
-  enumColors?: Record<string, EnumChipColor>
-  /** 图片列:单元格渲染缩略图,点击全屏预览(SyniePreview),同列图片循环切换;true 即列值为 sys_file id */
-  image?: true | GridImageOverride
-}
+// 单元格渲染与列 override 类型已迁入 cells.tsx(表格/卡片/编辑表三处共用);
+// 此处 re-export 保持既有 import 路径(页面与 SynieEditableTable)不破
+export { defaultCell } from './cells'
+export type { ColumnOverride, GridImageOverride } from './cells'
 
 /** 图片列取 file id/文件名:image 为 true 走缺省约定,对象形态可逐行定制 */
 function imageFileId(img: true | GridImageOverride, colName: string, row: Row): string | null {
@@ -141,6 +128,8 @@ export interface SynieDataGridProps {
 
 const PAGE_SIZES = [10, 20, 50, 100]
 const TREE_LEVEL_LIMIT = 200 // ponytail: 每层上限200,超了再做层内加载更多
+// 移动断点与仓库统一约定一致(lg):<lg 时 grid 切卡片模式
+const CARD_MODE_QUERY = '(max-width: 1023px)'
 
 // 树形懒加载占位子行:DataGrid 只在 getChildren 返回非空数组时渲染 chevron(内部 hasChildItems =
 // children.length > 0,返回 undefined/[] 都不出箭头),所以「有子但未加载」的节点先塞一个占位行,
@@ -174,95 +163,15 @@ export function selectedRows(selection: Selection, rows: Row[]): Row[] {
   return rows.filter((r) => selection.has(r.id))
 }
 
-/** 超宽文本单元格:截断收起,溢出时点击弹 Popover 看全文;未溢出就是普通文本。
- * maxWidth 覆盖默认 320px 上限(Pro DataGrid auto 布局下列宽随内容,收内容即收列宽) */
-function ClampCell({ text, maxWidth }: { text: string; maxWidth?: number }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  const [overflow, setOverflow] = useState(false)
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (el) setOverflow(el.scrollWidth > el.clientWidth)
-  }, [text])
-  const clamp = `block truncate text-start${maxWidth == null ? ' max-w-80' : ''}`
-  const style = maxWidth == null ? undefined : { maxWidth }
-  if (!overflow) {
-    return (
-      <span ref={ref} className={clamp} style={style}>
-        {text}
-      </span>
-    )
-  }
-  return (
-    <Popover>
-      <Popover.Trigger aria-label="查看完整内容" className={`${clamp} cursor-pointer`} style={style}>
-        <span ref={ref} className={clamp} style={style}>
-          {text}
-        </span>
-      </Popover.Trigger>
-      <Popover.Content className="max-w-96">
-        <Popover.Dialog>
-          <p className="whitespace-pre-wrap break-words text-[13px]">{text}</p>
-        </Popover.Dialog>
-      </Popover.Content>
-    </Popover>
-  )
-}
-
-/** 默认单元格渲染(SynieEditableTable 复用,保持两处表格视觉一致);clampWidth 收窄文本列内容上限 */
-export function defaultCell(
-  col: GridColumnMeta,
-  value: unknown,
-  row: Row,
-  enumColors?: Record<string, EnumChipColor>,
-  clampWidth?: number
-): ReactNode {
-  // fk 列:link 点开速览抽屉(无 join 时组件内按 id 反查标签);CSV/打印仍走 cellText 纯文本
-  if (col.type === 'fk' && col.ref) {
-    return <FkLink col={col} row={row} />
-  }
-  if (value == null || value === '') return <span className="text-muted">—</span>
-  switch (col.type) {
-    case 'boolean':
-      return <Chip size="sm" color={value ? 'success' : 'default'}>{value ? '是' : '否'}</Chip>
-    case 'datetime':
-      // 日期短且已全表 nowrap,不进 ClampCell,永不截断
-      return new Date(String(value)).toLocaleString('zh-CN', { hour12: false })
-    case 'integer':
-    case 'decimal':
-      // 数值短,不进 ClampCell:其 block+text-start 会盖掉 td 因 align:'end' 继承的右对齐
-      return String(value)
-    case 'enum':
-      // enum 默认胶囊展示;配色经 override.enumColors 按值定制,未配的值灰胶囊
-      return (
-        <Chip size="sm" className="whitespace-nowrap" color={enumColors?.[String(value)] ?? 'default'}>
-          {col.enumOptions?.find((o) => o.value === value)?.label ?? String(value)}
-        </Chip>
-      )
-    case 'enumArray': {
-      // 枚举数组(如参保类型):胶囊组平铺换行;空数组与空值同显 —
-      const tokens = Array.isArray(value) ? (value as string[]) : []
-      if (tokens.length === 0) return <span className="text-muted">—</span>
-      return (
-        <div className="flex flex-wrap gap-1">
-          {tokens.map((v) => (
-            <Chip key={v} size="sm" className="whitespace-nowrap" color={enumColors?.[v] ?? 'default'}>
-              {col.enumOptions?.find((o) => o.value === v)?.label ?? v}
-            </Chip>
-          ))}
-        </div>
-      )
-    }
-    default:
-      return <ClampCell text={String(value)} maxWidth={clampWidth} />
-  }
-}
-
 export function SynieDataGrid(props: SynieDataGridProps) {
   const { resource, exclude = EMPTY_EXCLUDE, overrides = EMPTY_OVERRIDES } = props
   const client = props.client ?? resourceClientFor(resource)
 
   const meta = useGridMeta(resource, true, client)
   const pickMode = props.pick != null
+  // 卡片模式:<lg 视口;pick(选择器)与 tree(树形)暂退回桌面表格,由后续工单带入卡片模式
+  const isMobile = useMediaQuery(CARD_MODE_QUERY)
+  const cardMode = isMobile && !pickMode && props.tree == null
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [sort, setSort] = useState<SortState | null>(props.defaultSort ?? null)
@@ -282,6 +191,13 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     const byName = new Map(base.map((c) => [c.name, c]))
     return props.columns.flatMap((n) => byName.get(n) ?? [])
   }, [meta.data, exclude, props.columns])
+
+  // 卡片字段角色映射:override.mobileRole 汇成 roles 表交纯函数推导(卡片模式才消费)
+  const cardRoles = useMemo(
+    () => Object.fromEntries(Object.keys(overrides).map((k) => [k, overrides[k]?.mobileRole])),
+    [overrides]
+  )
+  const cardLayout = useMemo(() => cardFields(columns, cardRoles), [columns, cardRoles])
 
   // 树形:用户一旦搜索/筛选就退回平铺分页(树与筛选语义冲突,避免命中子节点却父节点被滤掉的孤儿),清空恢复
   const treeMode = props.tree != null
@@ -438,9 +354,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         cell: (row: Row) => {
           // 懒加载占位行只有 id:首列显示「加载中…」,其余列空
           if (isLoadingRow(row)) return i === 0 ? <span className="text-muted">加载中…</span> : null
-          const text =
-            overrides[col.name]?.render?.(row[col.name], row) ??
-            defaultCell(col, row[col.name], row, overrides[col.name]?.enumColors, overrides[col.name]?.width)
+          const text = cellContent(col, row, overrides[col.name])
           const img = overrides[col.name]?.image
           if (!img) return text
           const fileId = imageFileId(img, col.name, row)
@@ -564,22 +478,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             if (isLoadingRow(row)) return null
             const items = actions.rowMenuFor(row)
             if (items.length === 0) return null
-            return (
-              <Dropdown>
-                <Button isIconOnly size="sm" variant="ghost" aria-label="行操作">
-                  <EllipsisIcon />
-                </Button>
-                <Dropdown.Popover placement="bottom end">
-                  <Dropdown.Menu onAction={(key) => items.find((a) => a.key === key)?.run([row])}>
-                    {items.map((a) => (
-                      <Dropdown.Item key={a.key} id={a.key} textValue={a.label} variant={a.isDanger ? 'danger' : undefined}>
-                        <Label>{a.label}</Label>
-                      </Dropdown.Item>
-                    ))}
-                  </Dropdown.Menu>
-                </Dropdown.Popover>
-              </Dropdown>
-            )
+            return <RowActionsMenu items={items} row={row} />
           },
         },
       ]
@@ -627,8 +526,9 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* 工具栏:搜索 + Task 6 动作按钮;hideSearch 且无动作按钮时整行不渲染 */}
-      {(!props.hideSearch || actions.toolbarActions.length > 0) && (
+      {/* 工具栏:搜索 + Task 6 动作按钮;hideSearch 且无动作按钮时整行不渲染。
+          卡片模式默认不渲染动作按钮(移动端读为主+轻操作,重操作回桌面) */}
+      {(!props.hideSearch || (!cardMode && actions.toolbarActions.length > 0)) && (
       <div className="flex flex-wrap items-center gap-3">
         {!props.hideSearch && (
           <GridSearch
@@ -639,6 +539,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             }}
           />
         )}
+        {!cardMode && (
         <div className="ml-auto flex items-center gap-2">
           {actions.toolbarActions.map((a) =>
             a.key === 'import' && props.importMenu ? (
@@ -680,6 +581,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             )
           )}
         </div>
+        )}
       </div>
       )}
 
@@ -719,6 +621,16 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         </div>
       )}
 
+      {cardMode ? (
+        <CardList
+          rows={rows}
+          columns={columns}
+          fields={cardLayout}
+          overrides={overrides}
+          onView={props.onView}
+          rowMenuFor={actions.rowMenuFor}
+        />
+      ) : (
       <DataGrid
         aria-label={`${resource} 数据表格`}
         data={rows}
@@ -756,6 +668,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         )}
         contentClassName="min-w-[720px]"
       />
+      )}
 
       {props.pageSummary && <div className="px-4 py-2 text-sm text-muted">{props.pageSummary(rows)}</div>}
 
@@ -794,7 +707,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         </div>
       )}
 
-      <ActionBar isOpen={picked.length > 0 && hasBulkActions} aria-label="批量操作">
+      {/* 批量条为桌面形态专属;卡片模式无勾选,恒不渲染 */}
+      <ActionBar isOpen={!cardMode && picked.length > 0 && hasBulkActions} aria-label="批量操作">
         <ActionBar.Prefix>
           <Chip size="sm">{picked.length}</Chip>
         </ActionBar.Prefix>
@@ -930,14 +844,6 @@ function Pager({ page, totalPages, onChange }: { page: number; totalPages: numbe
         </Pagination.Item>
       </Pagination.Content>
     </Pagination>
-  )
-}
-
-function EllipsisIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor" aria-hidden>
-      <circle cx="8" cy="3" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="8" cy="13" r="1.5" />
-    </svg>
   )
 }
 
