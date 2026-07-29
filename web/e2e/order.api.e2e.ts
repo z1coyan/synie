@@ -582,6 +582,43 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
       "销售订单",
       `/api/v1/sales/orders/${sales.id}/audit`,
     );
+    // 回归:发货抽屉「可发货订单条目池」过滤口径(计算字段 remainingBaseQty 参与过滤/排序)
+    // 曾因 SQL 子查询未暴露 remaining_base_qty 列而 500
+    const pool = await apiJSON<{
+      count: number;
+      results: Array<{ id: string; remainingBaseQty: string; currencyCode: string }>;
+    }>(request, "post", "/api/v1/sales/order-items/query", token, {
+      limit: 10,
+      offset: 0,
+      sort: { column: "orderDate", direction: "ascending" },
+      filter: {
+        orderStatus: { kind: "enum", values: ["AUDITED"] },
+        companyId: {
+          kind: "fk",
+          op: "in",
+          values: [fixture.companyId],
+          labels: [],
+        },
+        partyType: { kind: "enum", values: ["CUSTOMER"] },
+        partyId: {
+          kind: "polyFk",
+          op: "in",
+          variant: "CUSTOMER",
+          values: [fixture.customerId],
+          labels: [],
+        },
+        remainingBaseQty: { kind: "number", op: "gt", value: "0" },
+      },
+    });
+    expect(
+      pool.results.some(
+        (row) =>
+          created.orderItemIds.includes(row.id) &&
+          Number(row.remainingBaseQty) > 0 &&
+          row.currencyCode.length > 0,
+      ),
+      "可发货订单条目池应包含已审核未发完的条目(remainingBaseQty 过滤/排序可用)",
+    ).toBe(true);
     await statusAction(
       page,
       salesNo,

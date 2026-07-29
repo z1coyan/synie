@@ -525,7 +525,8 @@ export function createOrderService(
       db,
       resource: orderItemMeta(side),
       source: sql` FROM (
-        SELECT i.id,i.idx,i.qty,i.base_qty,i.${sql.raw(proj)} AS projection_qty,i.price,i.amount,
+        SELECT i.id,i.idx,i.qty,i.base_qty,i.${sql.raw(proj)} AS projection_qty,
+          (i.base_qty - i.${sql.raw(proj)}) AS remaining_base_qty,i.price,i.amount,
           i.base_price,i.base_amount,i.tax_rate,i.material_code,i.material_name,i.material_spec,
           i.customer_part_no,i.unit_name,i.remarks,i.inserted_at,i.updated_at,i.order_id,i.company_id,
           i.material_id,i.unit_id,i.quotation_item_id,
