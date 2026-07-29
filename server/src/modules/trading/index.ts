@@ -35,11 +35,13 @@ import { createFulfillmentService } from './fulfillment/service.ts'
 import {
   fulfillmentHeadMeta,
   fulfillmentItemMeta,
+  packBoxMeta,
   packLineMeta,
 } from './fulfillment/spec.ts'
 import {
   fulfillmentHeadRoutes,
   fulfillmentItemRoutes,
+  packBoxRoutes,
   packLineRoutes,
 } from './fulfillment/routes.ts'
 import {
@@ -93,6 +95,7 @@ export function registerTradingResources(registry: Registry): void {
     registry.register(reconciliationHeadMeta(side))
     registry.register(reconciliationItemMeta(side))
   }
+  registry.register(packBoxMeta())
   registry.register(packLineMeta())
   registry.register(orderMaterialMeta())
   registry.register(orderByproductMeta())
@@ -144,6 +147,7 @@ export function tradingRouteMounts(deps: {
     purchaseOrderBom: purchaseExtra.bom,
     salesDeliveries: fulfillmentHeadRoutes({ auth, fulfillment, side: 'sales' }),
     salesDeliveryItems: fulfillmentItemRoutes({ auth, fulfillment, side: 'sales' }),
+    salesDeliveryPackBoxes: packBoxRoutes({ auth, fulfillment }),
     salesDeliveryPackLines: packLineRoutes({ auth, fulfillment }),
     purchaseReceipts: fulfillmentHeadRoutes({ auth, fulfillment, side: 'purchase' }),
     purchaseReceiptItems: fulfillmentItemRoutes({ auth, fulfillment, side: 'purchase' }),

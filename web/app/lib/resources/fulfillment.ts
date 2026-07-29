@@ -237,6 +237,38 @@ export const salesDeliveryItemClient = resourceClient('salDeliveryItems', {
   },
 })
 
+export const salesDeliveryPackBoxClient = resourceClient('salDeliveryPackBoxes', {
+  async query(input) {
+    const result = await apiData<{ count: number; results: Row[] }>(
+      api.sales['delivery-pack-boxes'].query.$post({
+        json: queryBody(input)}),
+    )
+    return { count: result.count, results: result.results as Row[] }
+  },
+  async get(id) {
+    return (await apiData(
+      api.sales['delivery-pack-boxes'][':id'].$get({
+        param: { id }}),
+    )) as Row
+  },
+  async create(input) {
+    return (await apiData(
+      api.sales['delivery-pack-boxes'].$post({
+        json: input as never}),
+    )) as Row
+  },
+  // 箱创建后无可改字段(箱号系统生成不可手改),update 无 REST 端点
+  async update() {
+    throw new Error('装箱箱不支持编辑')
+  },
+  async delete(id) {
+    await apiData<void>(
+      api.sales['delivery-pack-boxes'][':id'].$delete({
+        param: { id }}),
+    )
+  },
+})
+
 export const salesDeliveryPackLineClient = resourceClient('salDeliveryPackLines', {
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(

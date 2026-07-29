@@ -1321,9 +1321,17 @@ export interface SalDeliveryItem {
   warehouse_id: string;
 }
 
+export interface SalDeliveryPackBox {
+  box_no: Int8;
+  company_id: string;
+  delivery_id: string;
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface SalDeliveryPackLine {
   base_qty: Generated<Numeric>;
-  box_no: string;
   company_id: string;
   customer_part_no: string | null;
   delivery_id: string;
@@ -1334,6 +1342,7 @@ export interface SalDeliveryPackLine {
   material_id: string;
   material_name: string;
   material_spec: string | null;
+  pack_box_id: string;
   qty: Numeric;
   remarks: string | null;
   unit_id: string;
@@ -1748,6 +1757,7 @@ export interface DB {
   sal_customers: SalCustomers;
   sal_delivery: SalDelivery;
   sal_delivery_item: SalDeliveryItem;
+  sal_delivery_pack_box: SalDeliveryPackBox;
   sal_delivery_pack_line: SalDeliveryPackLine;
   sal_order: SalOrder;
   sal_order_item: SalOrderItem;

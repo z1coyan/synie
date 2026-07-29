@@ -34,6 +34,7 @@ import {
   purchaseReceiptItemClient,
   salesDeliveryClient,
   salesDeliveryItemClient,
+  salesDeliveryPackBoxClient,
   salesDeliveryPackLineClient,
 } from './fulfillment'
 import { roleClient, userClient } from './iam'
@@ -189,6 +190,7 @@ const clients: Record<string, ResourceClient> = {
   salOrderItems: salesOrderItemClient,
   salDeliveries: salesDeliveryClient,
   salDeliveryItems: salesDeliveryItemClient,
+  salDeliveryPackBoxes: salesDeliveryPackBoxClient,
   salDeliveryPackLines: salesDeliveryPackLineClient,
   salReconciliations: salesReconciliationClient,
   salReconciliationItems: salesReconciliationItemClient,

@@ -14,6 +14,7 @@ import { companyClient } from '~/lib/resources/companies'
 import {
   salesDeliveryClient,
   salesDeliveryItemClient,
+  salesDeliveryPackBoxClient,
   salesDeliveryPackLineClient,
 } from '~/lib/resources/fulfillment'
 import { salesOrderItemClient } from '~/lib/resources/orders'
@@ -29,7 +30,6 @@ import {
   type FifoCandidate,
   type GenerateReport,
 } from '~/lib/delivery-pack-generate'
-import { nextBoxNo } from '~/lib/box-no'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
@@ -152,11 +152,11 @@ async function persistItems(
   return errors
 }
 
-/** 提交 mutation:快照字段由后端保存时重拍,本地只提交业务键 */
-function packLineInput(row: Row) {
+/** 提交 mutation:快照字段由后端保存时重拍,本地只提交业务键;箱号由服务端生成,行只挂 packBoxId */
+function packLineInput(row: Row, resolveBoxId: (id: unknown) => unknown) {
   return {
     idx: row.idx,
-    boxNo: row.boxNo,
+    packBoxId: resolveBoxId(row.packBoxId),
     materialId: row.materialId,
     unitId: row.unitId,
     qty: row.qty,
@@ -164,47 +164,88 @@ function packLineInput(row: Row) {
   }
 }
 
-const PACK_COMPARE_KEYS = ['idx', 'boxNo', 'materialId', 'unitId', 'qty', 'remarks'] as const
+const PACK_COMPARE_KEYS = ['idx', 'packBoxId', 'materialId', 'unitId', 'qty', 'remarks'] as const
 
 function packLineChanged(before: Row, after: Row): boolean {
   return PACK_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
+}
+
+/**
+ * 箱先行后行:本地箱(local: id)先落库换取服务端箱号与真实 id,
+ * 返回 local→server 映射供装箱行解析 packBoxId;删箱服务端级联删行
+ */
+async function persistBoxes(
+  deliveryId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<{ errors: string[]; idMap: Map<string, string> }> {
+  const errors: string[] = []
+  const idMap = new Map<string, string>()
+  const label = (row: Row) => (row.boxNo != null ? `箱${row.boxNo}` : '新箱')
+  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
+
+  for (const old of snapshot) {
+    if (currentIds.has(old.id)) continue
+    try {
+      await salesDeliveryPackBoxClient.delete(String(old.id))
+    } catch (error) {
+      errors.push(`${label(old)}:${(error as Error).message}`)
+    }
+  }
+
+  for (const row of current) {
+    if (!isLocalRow(row)) continue
+    try {
+      const saved = await salesDeliveryPackBoxClient.create({ deliveryId })
+      idMap.set(String(row.id), String(saved.id))
+    } catch (error) {
+      errors.push(`${label(row)}:${(error as Error).message}`)
+    }
+  }
+  return { errors, idMap }
 }
 
 async function persistPackLines(
   deliveryId: string,
   current: Row[],
   snapshot: Row[],
+  idMap: Map<string, string>,
 ): Promise<string[]> {
   const errors: string[] = []
-  const collect = (boxNo: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `箱${boxNo ?? '?'}:${e.message}`))
+  const resolveBoxId = (id: unknown) => idMap.get(String(id)) ?? id
+  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
+    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx ?? '?'}行:${e.message}`))
   }
   const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
+    // 箱被删时服务端已级联删行,此处 404 不视为错误
     try {
       await salesDeliveryPackLineClient.delete(String(old.id))
     } catch (error) {
-      collect(old.boxNo, [{ message: (error as Error).message }])
+      collect(old.idx, [{ message: (error as Error).message }])
     }
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
       try {
-        await salesDeliveryPackLineClient.create({ deliveryId, ...packLineInput(row) })
+        await salesDeliveryPackLineClient.create({
+          deliveryId,
+          ...packLineInput(row, resolveBoxId),
+        })
       } catch (error) {
-        collect(row.boxNo, [{ message: (error as Error).message }])
+        collect(row.idx, [{ message: (error as Error).message }])
       }
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && packLineChanged(old, row)) {
       try {
-        await salesDeliveryPackLineClient.update(String(row.id), packLineInput(row))
+        await salesDeliveryPackLineClient.update(String(row.id), packLineInput(row, resolveBoxId))
       } catch (error) {
-        collect(row.boxNo, [{ message: (error as Error).message }])
+        collect(row.idx, [{ message: (error as Error).message }])
       }
     }
   }
@@ -775,17 +816,24 @@ function PackLinesPanel({
   row,
   values,
   detailLoaded,
+  packBoxes,
   packLines,
-  onChange,
+  onBoxesChange,
+  onLinesChange,
 }: {
   mode: DrawerMode
   row: Row | null | undefined
   values: Record<string, unknown>
   detailLoaded: boolean
+  packBoxes: Row[]
   packLines: Row[]
-  onChange: (rows: Row[]) => void
+  onBoxesChange: (rows: Row[]) => void
+  onLinesChange: (rows: Row[]) => void
 }) {
   const headerReady = Boolean(values.companyId && values.partyType && values.partyId)
+  const readOnly =
+    mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)
+  const [pendingDeleteBox, setPendingDeleteBox] = useState<Row | null>(null)
   const poolQuery = deliveryPackPoolQuery(values)
   const pool = useQuery({
     queryKey: poolQuery.queryKey,
@@ -803,22 +851,21 @@ function PackLinesPanel({
     }
     return Array.from(map.values())
   }, [pool.data])
-  const lastBoxNo =
-    packLines.length > 0 ? String(packLines[packLines.length - 1].boxNo ?? '') : ''
 
-  // 装箱行录入:箱号(默认按上一行尾数递增,定案 B 一物料拆多箱为常态)+物料(可发货订单条目池)
-  // +单位(默认/转换)+数量;快照与 base 折算由后端保存时重拍
+  // 箱:本地行(local: id),保存时先落库由服务端按单内自增取号
+  const addBox = () => onBoxesChange([...packBoxes, { id: localRowId() } as Row])
+  const removeBox = (box: Row) => {
+    onBoxesChange(packBoxes.filter((b) => b.id !== box.id))
+    onLinesChange(packLines.filter((l) => !lineInBox(l, box.id)))
+  }
+  const lineInBox = (l: Row, boxId: unknown) => String(l.packBoxId) === String(boxId)
+  const linesOf = (box: Row) => packLines.filter((l) => lineInBox(l, box.id))
+
+  // 装箱行录入:物料(可发货订单条目池)+单位(默认/转换)+数量;所属箱由所在分组决定,
+  // 快照与 base 折算由后端保存时重拍
   const packFields: Record<string, FieldOverride> = {
     idx: { visible: () => false },
-    boxNo: {
-      order: 0,
-      cols: 6,
-      required: true,
-      label: '箱号',
-      placeholder: '如 A-01',
-      // 一物料拆多箱为常态(定案 B):新增行默认 = 上一行箱号尾数 +1;要同箱手改即可
-      defaultValue: lastBoxNo === '' ? null : nextBoxNo(lastBoxNo),
-    },
+    packBoxId: { visible: () => false },
     qty: { order: 1, cols: 6, required: true, label: '装箱数量' },
     materialId: {
       order: 2,
@@ -946,30 +993,37 @@ function PackLinesPanel({
     unitName: { visible: () => false },
   }
 
-  return (
-    <SynieEditableTable
-      resource="salDeliveryPackLines"
-      client={salesDeliveryPackLineClient}
-      label="装箱行"
-      title="装箱清单"
-      items={packLines}
-      onChange={onChange}
-      readOnly={
-        mode === 'view' ||
-        (row != null && row.status !== 'DRAFT') ||
-        (mode !== 'create' && !detailLoaded)
-      }
-      canCreate={headerReady}
-      toolbar={
-        mode !== 'view' && !headerReady ? (
-          <span className="text-xs text-muted">先选齐公司、对手类型与对手</span>
-        ) : undefined
-      }
-      drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
-      exclude={['deliveryId', 'companyId']}
-      columns={['idx', 'boxNo', 'materialName', 'unitName', 'qty', 'baseQty', 'remarks']}
-      overrides={{
-        boxNo: { label: '箱号' },
+  const renderBoxTable = (box: Row) => {
+    const lines = linesOf(box)
+    const boxLabel = box.boxNo != null ? `箱 ${box.boxNo}` : '新箱(保存后系统编号)'
+    return (
+      <SynieEditableTable
+        key={box.id}
+        resource="salDeliveryPackLines"
+        client={salesDeliveryPackLineClient}
+        label="装箱行"
+        title={boxLabel}
+        items={lines}
+        onChange={(rows) =>
+          onLinesChange([...packLines.filter((l) => !lineInBox(l, box.id)), ...rows])
+        }
+        readOnly={readOnly}
+        canCreate={headerReady}
+        toolbar={
+          !readOnly ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onPress={() => (lines.length > 0 ? setPendingDeleteBox(box) : removeBox(box))}
+            >
+              删除箱
+            </Button>
+          ) : undefined
+        }
+        drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+        exclude={['deliveryId', 'companyId']}
+        columns={['idx', 'materialName', 'unitName', 'qty', 'baseQty', 'remarks']}
+        overrides={{
         materialName: {
           label: '物料',
           className: 'min-w-[12rem] max-w-[18rem]',
@@ -1003,46 +1057,103 @@ function PackLinesPanel({
         unitName: { label: '单位' },
         baseQty: { label: '折算数量' },
         remarks: { label: '行备注' },
-      }}
-      fields={packFields}
-      validateItem={(vals) => {
-        if (vals.boxNo == null || String(vals.boxNo).trim() === '') return '请填写箱号'
-        if (!vals.materialId) return '请选择物料'
-        if (!vals.unitId) return '请选择单位'
-        if (!(Number(vals.qty) > 0)) return '数量必须大于零'
-      }}
-      transformItem={(vals, editing) => {
-        const picked =
-          vals.materialId != null
-            ? materialOptions.find((m) => String(m.materialId) === String(vals.materialId))
-            : undefined
-        const unitKept =
-          editing != null && String(vals.unitId ?? '') === String(editing.unitId ?? '')
-        const qtyKept =
-          editing != null && String(vals.qty ?? '') === String(editing.qty ?? '')
-        return {
-          ...vals,
-          idx: editing
-            ? editing.idx
-            : packLines.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
-          boxNo: String(vals.boxNo ?? '').trim(),
-          materialCode:
-            picked?.materialCode ?? editing?.materialCode ?? vals.materialCode ?? null,
-          materialName:
-            picked?.materialName ?? editing?.materialName ?? vals.materialName ?? null,
-          materialSpec:
-            picked?.materialSpec ?? editing?.materialSpec ?? vals.materialSpec ?? null,
-          customerPartNo:
-            picked?.customerPartNo ??
-            editing?.customerPartNo ??
-            vals.customerPartNo ??
-            null,
-          // 单位/数量变更后快照名与折算量待后端保存时重拍
-          ...(unitKept ? {} : { unitName: null }),
-          ...(unitKept && qtyKept ? {} : { baseQty: null }),
-        }
-      }}
-    />
+        }}
+        fields={packFields}
+        validateItem={(vals) => {
+          if (!vals.materialId) return '请选择物料'
+          if (!vals.unitId) return '请选择单位'
+          if (!(Number(vals.qty) > 0)) return '数量必须大于零'
+        }}
+        transformItem={(vals, editing) => {
+          const picked =
+            vals.materialId != null
+              ? materialOptions.find((m) => String(m.materialId) === String(vals.materialId))
+              : undefined
+          const unitKept =
+            editing != null && String(vals.unitId ?? '') === String(editing.unitId ?? '')
+          const qtyKept =
+            editing != null && String(vals.qty ?? '') === String(editing.qty ?? '')
+          return {
+            ...vals,
+            // 所属箱由所在分组决定(行表单不再出现箱字段)
+            packBoxId: box.id,
+            idx: editing
+              ? editing.idx
+              : packLines.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
+            materialCode:
+              picked?.materialCode ?? editing?.materialCode ?? vals.materialCode ?? null,
+            materialName:
+              picked?.materialName ?? editing?.materialName ?? vals.materialName ?? null,
+            materialSpec:
+              picked?.materialSpec ?? editing?.materialSpec ?? vals.materialSpec ?? null,
+            customerPartNo:
+              picked?.customerPartNo ??
+              editing?.customerPartNo ??
+              vals.customerPartNo ??
+              null,
+            // 单位/数量变更后快照名与折算量待后端保存时重拍
+            ...(unitKept ? {} : { unitName: null }),
+            ...(unitKept && qtyKept ? {} : { baseQty: null }),
+          }
+        }}
+      />
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-2 border-b border-separator pb-2">
+        <span className="text-sm font-medium">装箱清单</span>
+        <div className="flex items-center gap-2">
+          {!readOnly && !headerReady ? (
+            <span className="text-xs text-muted">先选齐公司、对手类型与对手</span>
+          ) : null}
+          {!readOnly ? (
+            <Button size="sm" variant="secondary" onPress={addBox} isDisabled={!headerReady}>
+              添加箱子
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {packBoxes.length === 0 ? (
+        <p className="py-4 text-center text-sm text-muted">
+          {readOnly ? '本单无装箱记录' : '尚未装箱,点击右上角「添加箱子」开始录入'}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-5">{packBoxes.map(renderBoxTable)}</div>
+      )}
+      {pendingDeleteBox != null ? (
+        <Modal.Backdrop isOpen onOpenChange={(open) => !open && setPendingDeleteBox(null)}>
+          <Modal.Container>
+            <Modal.Dialog className="max-w-md">
+              <Modal.Header>
+                <Modal.Heading>删除箱</Modal.Heading>
+              </Modal.Header>
+              <Modal.Body>
+                <p className="text-sm">
+                  {pendingDeleteBox.boxNo != null ? `箱 ${pendingDeleteBox.boxNo}` : '该新箱'}
+                  内有 {linesOf(pendingDeleteBox).length} 行装箱记录,删除箱将一并删除这些行。确定删除?
+                </p>
+              </Modal.Body>
+              <Modal.Footer>
+                <Button variant="ghost" onPress={() => setPendingDeleteBox(null)}>
+                  取消
+                </Button>
+                <Button
+                  variant="danger"
+                  onPress={() => {
+                    removeBox(pendingDeleteBox)
+                    setPendingDeleteBox(null)
+                  }}
+                >
+                  删除
+                </Button>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      ) : null}
+    </div>
   )
 }
 
@@ -1050,6 +1161,8 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: DeliveryRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
+  const [packBoxes, setPackBoxes] = useState<Row[]>([])
+  const [packBoxesSnapshot, setPackBoxesSnapshot] = useState<Row[]>([])
   const [packLines, setPackLines] = useState<Row[]>([])
   const [packLinesSnapshot, setPackLinesSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
@@ -1075,7 +1188,8 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
 
   const resetItems = useCallback(() => {
     setItems((cur) => (cur.length === 0 ? cur : []))
-    // 装箱行物料来自发货条目:条目清空时一并清空
+    // 装箱行物料来自发货条目:条目清空时一并清空箱与行
+    setPackBoxes((cur) => (cur.length === 0 ? cur : []))
     setPackLines((cur) => (cur.length === 0 ? cur : []))
   }, [])
 
@@ -1086,6 +1200,8 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
     if (mode === 'create') {
       setItems([])
       setItemsSnapshot([])
+      setPackBoxes([])
+      setPackBoxesSnapshot([])
       setPackLines([])
       setPackLinesSnapshot([])
       setDetailLoaded(true)
@@ -1097,6 +1213,8 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
       toast.danger('无法打开发货单', { description: '缺少发货单 id' })
       setItems([])
       setItemsSnapshot([])
+      setPackBoxes([])
+      setPackBoxesSnapshot([])
       setPackLines([])
       setPackLinesSnapshot([])
       setDetailLoaded(true)
@@ -1113,6 +1231,12 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
         sort: { column: 'idx', direction: 'ascending' },
         filter: deliveryFilter,
       }),
+      salesDeliveryPackBoxClient.query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'boxNo', direction: 'ascending' },
+        filter: deliveryFilter,
+      }),
       salesDeliveryPackLineClient.query({
         limit: 500,
         offset: 0,
@@ -1120,7 +1244,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
         filter: deliveryFilter,
       }),
     ])
-      .then(([itemsResult, packResult]) => {
+      .then(([itemsResult, boxResult, packResult]) => {
         if (my !== reqIdRef.current) return
         const rows = itemsResult.results
         // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
@@ -1142,6 +1266,8 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
         }
         setItems(rows)
         setItemsSnapshot(rows)
+        setPackBoxes(boxResult.results)
+        setPackBoxesSnapshot(boxResult.results)
         setPackLines(packResult.results)
         setPackLinesSnapshot(packResult.results)
         setDetailLoaded(true)
@@ -1151,6 +1277,8 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
         toast.danger('发货明细加载失败', { description: (e as Error).message })
         setItems([])
         setItemsSnapshot([])
+        setPackBoxes([])
+        setPackBoxesSnapshot([])
         setPackLines([])
         setPackLinesSnapshot([])
       })
@@ -1612,48 +1740,55 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
               row={row}
               values={values}
               detailLoaded={detailLoaded}
+              packBoxes={packBoxes}
               packLines={packLines}
-              onChange={setPackLines}
+              onBoxesChange={setPackBoxes}
+              onLinesChange={setPackLines}
             />
           ),
         }}
         onSubmit={async (values, mode) => {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
+          const persistDetails = async (deliveryId: string) => {
+            const itemErrors = await persistItems(deliveryId, items, mode === 'create' ? [] : itemsSnapshot)
+            // 箱先行后行:本地箱先落库换真实 id 供装箱行挂接
+            const boxResult = await persistBoxes(
+              deliveryId,
+              packBoxes,
+              mode === 'create' ? [] : packBoxesSnapshot,
+            )
+            // 被删箱的存量行服务端已级联删除,不再逐行 delete(避免 404 误报)
+            const deletedBoxIds = new Set(
+              (mode === 'create' ? [] : packBoxesSnapshot)
+                .filter((b) => !packBoxes.some((c) => c.id === b.id))
+                .map((b) => String(b.id)),
+            )
+            const lineSnapshot = (mode === 'create' ? [] : packLinesSnapshot).filter(
+              (l) => !deletedBoxIds.has(String(l.packBoxId)),
+            )
+            const lineErrors = await persistPackLines(deliveryId, packLines, lineSnapshot, boxResult.idMap)
+            const errors = [...itemErrors, ...boxResult.errors, ...lineErrors]
+            if (errors.length > 0) {
+              toast.danger(`发货单已${mode === 'create' ? '创建' : '更新'},但部分明细保存失败`, {
+                description: errors.join('; '),
+              })
+            } else {
+              toast.success(`销售发货单已${mode === 'create' ? '创建' : '更新'}`)
+            }
+          }
           if (mode === 'create') {
             const saved = await salesDeliveryClient.create(values)
-            const deliveryId = String(saved.id)
-            const itemErrors = await persistItems(deliveryId, items, [])
-            const packErrors = await persistPackLines(deliveryId, packLines, [])
-            const errors = [...itemErrors, ...packErrors]
-            if (errors.length > 0) {
-              toast.danger('发货单已创建,但部分明细保存失败', {
-                description: errors.join('; '),
-              })
-            } else {
-              toast.success('销售发货单已创建')
-            }
-            savedId = deliveryId
+            savedId = String(saved.id)
+            await persistDetails(savedId)
           } else {
             await salesDeliveryClient.update(drawer!.row!.id, values)
-            const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
-            const packErrors = await persistPackLines(
-              drawer!.row!.id,
-              packLines,
-              packLinesSnapshot,
-            )
-            const errors = [...itemErrors, ...packErrors]
-            if (errors.length > 0) {
-              toast.danger('发货单已更新,但部分明细保存失败', {
-                description: errors.join('; '),
-              })
-            } else {
-              toast.success('销售发货单已更新')
-            }
             savedId = drawer!.row!.id
+            await persistDetails(savedId)
           }
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'salDeliveries'] })
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'salDeliveryItems'] })
+          queryClient.invalidateQueries({ queryKey: ['gridRows', 'salDeliveryPackBoxes'] })
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'salDeliveryPackLines'] })
           queryClient.invalidateQueries({ queryKey: ['rowById', 'salDeliveries'] })
           queryClient.invalidateQueries({ queryKey: ['gridRows', 'salOrderItems'] })

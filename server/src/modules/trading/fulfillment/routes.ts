@@ -225,6 +225,36 @@ export function fulfillmentItemRoutes(deps: {
     })
 }
 
+export function packBoxRoutes(deps: { auth: AuthService; fulfillment: FulfillmentService }) {
+  const { auth, fulfillment } = deps
+  return new Hono<AppEnv>()
+    .use('*', requireAuth(auth))
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const r = await fulfillment.listPackBoxes(c.get('actor'), toList(c.req.valid('json')))
+      return c.json({ count: r.count, results: r.results })
+    })
+    .post(
+      '/',
+      zValidator(
+        'json',
+        z
+          .object({
+            deliveryId: z.string().uuid(),
+          })
+          .strict(),
+        validationHook,
+      ),
+      async (c) => c.json(await fulfillment.createPackBox(c.get('actor'), c.req.valid('json')), 201),
+    )
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await fulfillment.getPackBox(c.get('actor'), c.req.valid('param').id)),
+    )
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
+      await fulfillment.deletePackBox(c.get('actor'), c.req.valid('param').id)
+      return c.body(null, 204)
+    })
+}
+
 export function packLineRoutes(deps: { auth: AuthService; fulfillment: FulfillmentService }) {
   const { auth, fulfillment } = deps
   return new Hono<AppEnv>()
@@ -241,7 +271,7 @@ export function packLineRoutes(deps: { auth: AuthService; fulfillment: Fulfillme
           .object({
             deliveryId: z.string().uuid(),
             idx: z.number().int(),
-            boxNo: z.string().min(1),
+            packBoxId: z.string().uuid(),
             qty: z.string().min(1),
             materialId: z.string().uuid(),
             unitId: z.string().uuid().nullable().optional(),
@@ -263,7 +293,7 @@ export function packLineRoutes(deps: { auth: AuthService; fulfillment: Fulfillme
         z
           .object({
             idx: z.number().int().optional(),
-            boxNo: z.string().optional(),
+            packBoxId: z.string().uuid().optional(),
             qty: z.string().optional(),
             materialId: z.string().uuid().optional(),
             unitId: z.string().uuid().nullable().optional(),

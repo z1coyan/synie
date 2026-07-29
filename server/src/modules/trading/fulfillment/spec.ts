@@ -337,6 +337,32 @@ export function fulfillmentItemListMeta(side: TradingSide): ResourceMeta {
   }
 }
 
+export function packBoxMeta(): ResourceMeta {
+  return {
+    name: 'salDeliveryPackBoxes',
+    permissionPrefix: 'sales.delivery',
+    permissionLabel: '销售发货单',
+    table: 'sal_delivery_pack_box',
+    fields: [
+      f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
+      f('box_no', 'boxNo', 'integer', '箱号(系统生成)', { readonly: true, filterable: true, sortable: true }),
+      f('inserted_at', 'insertedAt', 'datetime', '创建时间', { readonly: true, filterable: true, sortable: true }),
+      f('updated_at', 'updatedAt', 'datetime', '更新时间', { readonly: true, filterable: true, sortable: true }),
+      f('delivery_id', 'deliveryId', 'fk', '发货单', {
+        required: true, createOnly: true, filterable: true,
+        ref: { resource: 'salDeliveries', relation: 'delivery', labelField: 'deliveryNo' },
+      }),
+      f('company_id', 'companyId', 'fk', '公司', {
+        readonly: true, filterable: true,
+        ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
+      }),
+    ],
+    actions: [{ key: 'read', label: '查看', scope: 'both' }],
+    audit: { enabled: true },
+    destroyMutation: 'destroySalDeliveryPackBox',
+  }
+}
+
 export function packLineMeta(): ResourceMeta {
   return {
     name: 'salDeliveryPackLines',
@@ -346,7 +372,10 @@ export function packLineMeta(): ResourceMeta {
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
-      f('box_no', 'boxNo', 'string', '箱号', { required: true, filterable: true, sortable: true }),
+      f('pack_box_id', 'packBoxId', 'fk', '装箱箱', {
+        required: true, filterable: true,
+        ref: { resource: 'salDeliveryPackBoxes', relation: 'box', labelField: 'boxNo' },
+      }),
       f('qty', 'qty', 'decimal', '数量', { required: true, filterable: true, sortable: true }),
       f('base_qty', 'baseQty', 'decimal', '折算数量(默认单位)', { readonly: true, filterable: true, sortable: true }),
       f('material_code', 'materialCode', 'string', '物料编号', { readonly: true, filterable: true, sortable: true }),

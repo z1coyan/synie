@@ -49,6 +49,7 @@ import {
   fulfillmentItemListMeta,
   fulfillmentItemMeta,
   fulfillmentSpec,
+  packBoxMeta,
   packLineMeta,
   type FulfillmentSideSpec,
 } from './spec.ts'
@@ -66,12 +67,6 @@ const ITEM_AUDIT = [
   'order_base_amount', 'order_tax_rate', 'order_currency_code', 'reconciled_qty',
   'remarks', 'head_id', 'company_id', 'order_item_id', 'material_id', 'unit_id',
   'warehouse_id',
-] as const
-
-const PACK_AUDIT = [
-  'idx', 'box_no', 'qty', 'base_qty', 'material_code', 'material_name',
-  'material_spec', 'customer_part_no', 'unit_name', 'remarks',
-  'delivery_id', 'company_id', 'material_id', 'unit_id',
 ] as const
 
 export interface FulfillmentHead {
@@ -597,6 +592,72 @@ export function createFulfillmentService(
     })
   }
 
+  // ---- pack boxes (sales only) ----
+  async function listPackBoxes(actor: Actor, query: Partial<ListQuery>) {
+    requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
+    const scope = companyScopeWhere(actor)
+    if (scope.empty) return { count: 0, results: [] as Record<string, unknown>[] }
+    return listFromSource({
+      db,
+      resource: packBoxMeta(),
+      source: sql` FROM sal_delivery_pack_box`,
+      select: sql`SELECT *`,
+      defaultOrder: sql`"box_no" ASC, "id" ASC`,
+      query,
+      extraWhere: scope.where,
+      mapRow: (r) => mapPackBoxDto(r),
+    })
+  }
+
+  async function readPackBox(handle: DbHandle, actor: Actor, id: string) {
+    const rows = await sql<Record<string, unknown>>`
+      SELECT * FROM sal_delivery_pack_box WHERE id=${id}::uuid
+    `.execute(handle)
+    if (!rows.rows[0] || !canAccessCompany(actor, String(rows.rows[0].company_id))) {
+      throw new ApiError('not_found', '装箱箱不存在')
+    }
+    return mapPackBoxDto(rows.rows[0])
+  }
+
+  async function getPackBox(actor: Actor, id: string) {
+    requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
+    return readPackBox(db, actor, id)
+  }
+
+  async function createPackBox(
+    actor: Actor,
+    input: { deliveryId: string },
+  ) {
+    requirePerm(actor, 'sales.delivery', 'create', '无权限执行该履约操作')
+    return withTx(db, async (trx) => {
+      const parent = mapHead(await lockDraftHead(trx, actor, fulfillmentSpec('sales'), input.deliveryId))
+      // 头行已 FOR UPDATE，单内取号串行化；UNIQUE(delivery_id, box_no) 兜底
+      const next = await sql<{ n: string }>`
+        SELECT (COALESCE(MAX(box_no), 0) + 1)::text AS n
+        FROM sal_delivery_pack_box WHERE delivery_id=${input.deliveryId}::uuid
+      `.execute(trx)
+      const ins = await sql<{ id: string }>`
+        INSERT INTO sal_delivery_pack_box (box_no, delivery_id, company_id)
+        VALUES (${next.rows[0]!.n}::bigint, ${input.deliveryId}::uuid, ${parent.companyId}::uuid)
+        RETURNING id
+      `.execute(trx)
+      return readPackBox(trx, actor, ins.rows[0]!.id)
+    })
+  }
+
+  async function deletePackBox(actor: Actor, id: string) {
+    requirePerm(actor, 'sales.delivery', 'delete', '无权限执行该履约操作')
+    await withTx(db, async (trx) => {
+      const cur = await sql<{ delivery_id: string }>`
+        SELECT delivery_id FROM sal_delivery_pack_box WHERE id=${id}::uuid
+      `.execute(trx)
+      if (!cur.rows[0]) throw new ApiError('not_found', '装箱箱不存在')
+      await lockDraftHead(trx, actor, fulfillmentSpec('sales'), cur.rows[0].delivery_id)
+      // 装箱行经 pack_box_id ON DELETE CASCADE 随箱删除
+      await sql`DELETE FROM sal_delivery_pack_box WHERE id=${id}::uuid`.execute(trx)
+    })
+  }
+
   // ---- pack lines (sales only) ----
   async function listPackLines(actor: Actor, query: Partial<ListQuery>) {
     requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
@@ -614,15 +675,19 @@ export function createFulfillmentService(
     })
   }
 
-  async function getPackLine(actor: Actor, id: string) {
-    requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
+  async function readPackLine(handle: DbHandle, actor: Actor, id: string) {
     const rows = await sql<Record<string, unknown>>`
       SELECT * FROM sal_delivery_pack_line WHERE id=${id}::uuid
-    `.execute(db)
+    `.execute(handle)
     if (!rows.rows[0] || !canAccessCompany(actor, String(rows.rows[0].company_id))) {
       throw new ApiError('not_found', '装箱行不存在')
     }
     return mapPackDto(rows.rows[0])
+  }
+
+  async function getPackLine(actor: Actor, id: string) {
+    requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
+    return readPackLine(db, actor, id)
   }
 
   async function createPackLine(
@@ -630,7 +695,7 @@ export function createFulfillmentService(
     input: {
       deliveryId: string
       idx: number
-      boxNo: string
+      packBoxId: string
       qty: string
       materialId: string
       unitId?: string | null
@@ -640,15 +705,9 @@ export function createFulfillmentService(
     requirePerm(actor, 'sales.delivery', 'create', '无权限执行该履约操作')
     return withTx(db, async (trx) => {
       const parent = mapHead(await lockDraftHead(trx, actor, fulfillmentSpec('sales'), input.deliveryId))
-      // material must appear on delivery items
-      const onDoc = await sql<{ e: boolean }>`
-        SELECT EXISTS(
-          SELECT 1 FROM sal_delivery_item WHERE delivery_id=${input.deliveryId}::uuid AND material_id=${input.materialId}::uuid
-        ) AS e
-      `.execute(trx)
-      if (!onDoc.rows[0]?.e) {
-        throw ApiError.validation('装箱行参数不合法', { materialId: ['须为本单发货条目中的物料'] })
-      }
+      await requireOwnBox(trx, input.deliveryId, input.packBoxId)
+      // 装箱行不依赖本单发货条目（可先装箱后补条目,见销售发货产品文档）;
+      // 装箱与发货的物料一致性由审核「全有或全无」校验兜底,草稿不卡
       const unitId = input.unitId ?? null
       let resolvedUnit = unitId
       if (!resolvedUnit) {
@@ -659,20 +718,19 @@ export function createFulfillmentService(
       const snap = await loadMaterialSnap(trx, input.materialId, resolvedUnit)
       const qty = decimal(input.qty)
       if (!qty.isPositive()) throw ApiError.validation('装箱行参数不合法', { qty: ['必须大于 0'] })
-      if (!input.boxNo.trim()) throw ApiError.validation('装箱行参数不合法', { boxNo: ['必填'] })
       const baseQty = convertToBaseQty(qty, resolvedUnit, snap)
       const ins = await sql<{ id: string }>`
         INSERT INTO sal_delivery_pack_line (
-          idx,box_no,qty,base_qty,material_code,material_name,material_spec,customer_part_no,unit_name,
+          idx,pack_box_id,qty,base_qty,material_code,material_name,material_spec,customer_part_no,unit_name,
           remarks,delivery_id,company_id,material_id,unit_id
         ) VALUES (
-          ${input.idx},${input.boxNo.trim()},${wireRequiredDecimal(qty)},${wireRequiredDecimal(baseQty)},
+          ${input.idx},${input.packBoxId}::uuid,${wireRequiredDecimal(qty)},${wireRequiredDecimal(baseQty)},
           ${snap.code},${snap.name},${snap.spec},${snap.customerPartNo},${snap.unitName},
           ${input.remarks ?? null},${input.deliveryId}::uuid,${parent.companyId}::uuid,
           ${input.materialId}::uuid,${resolvedUnit}::uuid
         ) RETURNING id
       `.execute(trx)
-      return getPackLine(actor, ins.rows[0]!.id)
+      return readPackLine(trx, actor, ins.rows[0]!.id)
     })
   }
 
@@ -681,7 +739,7 @@ export function createFulfillmentService(
     id: string,
     input: {
       idx?: number
-      boxNo?: string
+      packBoxId?: string
       qty?: string
       materialId?: string
       unitId?: string | null
@@ -696,8 +754,10 @@ export function createFulfillmentService(
         SELECT delivery_id FROM sal_delivery_pack_line WHERE id=${id}::uuid
       `.execute(trx)
       if (!cur.rows[0]) throw new ApiError('not_found', '装箱行不存在')
-      await lockDraftHead(trx, actor, fulfillmentSpec('sales'), cur.rows[0].delivery_id)
-      const before = await getPackLine(actor, id)
+      const deliveryId = cur.rows[0].delivery_id
+      await lockDraftHead(trx, actor, fulfillmentSpec('sales'), deliveryId)
+      const before = await readPackLine(trx, actor, id)
+      if (input.packBoxId !== undefined) await requireOwnBox(trx, deliveryId, input.packBoxId)
       const materialId = input.materialId ?? before.materialId
       let unitId = input.unitIdPresent ? (input.unitId ?? null) : before.unitId
       if (!unitId) {
@@ -710,7 +770,7 @@ export function createFulfillmentService(
       await sql`
         UPDATE sal_delivery_pack_line SET
           idx=${input.idx ?? before.idx},
-          box_no=${input.boxNo !== undefined ? input.boxNo.trim() : before.boxNo},
+          pack_box_id=${input.packBoxId ?? before.packBoxId}::uuid,
           qty=${wireRequiredDecimal(qty)}, base_qty=${wireRequiredDecimal(baseQty)},
           material_code=${snap.code}, material_name=${snap.name}, material_spec=${snap.spec},
           customer_part_no=${snap.customerPartNo}, unit_name=${snap.unitName},
@@ -719,7 +779,7 @@ export function createFulfillmentService(
           updated_at=(now() AT TIME ZONE 'utc')
         WHERE id=${id}::uuid
       `.execute(trx)
-      return getPackLine(actor, id)
+      return readPackLine(trx, actor, id)
     })
   }
 
@@ -738,6 +798,7 @@ export function createFulfillmentService(
   return {
     listHeads, getHead, createHead, updateHead, deleteHead, auditHead, voidHead,
     listItems, getItem, createItem, updateItem, deleteItem,
+    listPackBoxes, getPackBox, createPackBox, deletePackBox,
     listPackLines, getPackLine, createPackLine, updatePackLine, deletePackLine,
   }
 }
@@ -955,6 +1016,18 @@ async function deriveItem(
   }
 }
 
+/** 校验箱属于本发货单（装箱行挂箱前提）。 */
+async function requireOwnBox(db: DbHandle, deliveryId: string, packBoxId: string) {
+  const rows = await sql<{ e: boolean }>`
+    SELECT EXISTS(
+      SELECT 1 FROM sal_delivery_pack_box WHERE id=${packBoxId}::uuid AND delivery_id=${deliveryId}::uuid
+    ) AS e
+  `.execute(db)
+  if (!rows.rows[0]?.e) {
+    throw ApiError.validation('装箱行参数不合法', { packBoxId: ['须为本单的箱'] })
+  }
+}
+
 async function validatePackEquality(db: DbHandle, headId: string, items: ActionItem[]) {
   const rows = await sql<{ material_id: string; code: string; name: string; qty: string }>`
     SELECT material_id, min(material_code) AS code, min(material_name) AS name, sum(base_qty)::text AS qty
@@ -1090,11 +1163,22 @@ function mapItemDto(side: TradingSide, row: Record<string, unknown>) {
   }
 }
 
+function mapPackBoxDto(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    boxNo: String(row.box_no),
+    insertedAt: asDateTime(row.inserted_at)!,
+    updatedAt: asDateTime(row.updated_at)!,
+    deliveryId: String(row.delivery_id),
+    companyId: String(row.company_id),
+  }
+}
+
 function mapPackDto(row: Record<string, unknown>) {
   return {
     id: String(row.id),
     idx: Number(row.idx),
-    boxNo: String(row.box_no),
+    packBoxId: String(row.pack_box_id),
     qty: wireRequiredDecimal(String(row.qty)),
     baseQty: wireRequiredDecimal(String(row.base_qty)),
     materialCode: String(row.material_code),

@@ -363,6 +363,7 @@ export function buildApp(deps: AppDeps) {
     .route('/purchase/order-bom', t.purchaseOrderBom)
     .route('/sales/deliveries', t.salesDeliveries)
     .route('/sales/delivery-items', t.salesDeliveryItems)
+    .route('/sales/delivery-pack-boxes', t.salesDeliveryPackBoxes)
     .route('/sales/delivery-pack-lines', t.salesDeliveryPackLines)
     .route('/purchase/receipts', t.purchaseReceipts)
     .route('/purchase/receipt-items', t.purchaseReceiptItems)
