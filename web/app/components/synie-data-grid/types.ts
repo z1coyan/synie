@@ -41,6 +41,8 @@ interface ActionBase {
   isDanger?: boolean
   /** 填了则按 capabilities 门控;不填总是显示 */
   capability?: string
+  /** 卡片模式(<lg)显隐逃生口:toolbar/批量动作 true 才上手机(默认隐藏),行内动作 false 拿下手机(默认保留) */
+  mobile?: boolean
 }
 
 export interface RowAction extends ActionBase {

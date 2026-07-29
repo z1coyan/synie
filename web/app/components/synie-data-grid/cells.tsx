@@ -112,6 +112,17 @@ export function defaultCell(
   }
 }
 
+/** 图片列取 file id/文件名:image 为 true 走缺省约定,对象形态可逐行定制 */
+export function imageFileId(img: true | GridImageOverride, colName: string, row: Row): string | null {
+  const raw = img !== true && img.fileId ? img.fileId(row) : row[colName]
+  return raw == null || raw === '' ? null : String(raw)
+}
+
+export function imageFilename(img: true | GridImageOverride, row: Row): string | undefined {
+  const name = img !== true && img.filename ? img.filename(row) : typeof row.filename === 'string' ? row.filename : null
+  return name ?? undefined
+}
+
 /** 列内容渲染:override.render 优先,否则 defaultCell;表格/卡片/编辑表三处同口径 */
 export function cellContent(
   col: GridColumnMeta,

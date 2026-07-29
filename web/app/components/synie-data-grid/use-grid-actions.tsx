@@ -7,6 +7,8 @@ export interface ResolvedAction {
   key: string
   label: string
   isDanger: boolean
+  /** 卡片模式显隐(见 visibleOnCard);内建动作与 meta 扩展动作不携带,页面自定义动作可声明 */
+  mobile?: boolean
   run: (rows: Row[]) => void
 }
 
@@ -77,6 +79,10 @@ export function useGridActions(opts: {
   actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
   /** 按行显隐动作:key 为扩展动作 key、自定义 rowActions key 或内建 'edit'/'delete',返回 false 该行菜单不含此动作(如仅草稿可删) */
   actionVisible?: Record<string, (row: Row) => boolean>
+  /** 内建/扩展动作的卡片模式显隐逃生口(语义同动作级 mobile 标记):key 为内建动作 key
+   *  (view/edit/print/delete/import/create/export/batch_print/batch_delete)或扩展动作 key;
+   *  行内面 false 拿下、toolbar/批量面 true 放上(见 visibleOnCard) */
+  actionMobile?: Record<string, boolean>
   bulkActions?: BulkAction[]
   rowActions?: RowAction[]
 }) {
@@ -119,6 +125,7 @@ export function useGridActions(opts: {
     key: a.key,
     label: a.label,
     isDanger: a.isDanger,
+    mobile: opts.actionMobile?.[a.key],
     run: opts.actionHandlers?.[a.key]
       ? (rows) => opts.actionHandlers![a.key](rows, ctx)
       : confirmThenMutate(a.label, a.isDanger, a.key),
@@ -130,15 +137,16 @@ export function useGridActions(opts: {
       .map(extendedAction)
 
   // 工具栏:导入/新增/导出(print 由行内与批量承载);导入在新增左侧(流水导入产品要求)
+  const mob = (key: string) => opts.actionMobile?.[key]
   const toolbarActions: ResolvedAction[] = [
     ...(can('import') && opts.onImport
-      ? [{ key: 'import', label: '导入', isDanger: false, run: () => opts.onImport!(ctx) }]
+      ? [{ key: 'import', label: '导入', isDanger: false, mobile: mob('import'), run: () => opts.onImport!(ctx) }]
       : []),
     ...(can('create') && opts.onCreate
-      ? [{ key: 'create', label: opts.createLabel ?? '新增', isDanger: false, run: () => opts.onCreate!() }]
+      ? [{ key: 'create', label: opts.createLabel ?? '新增', isDanger: false, mobile: mob('create'), run: () => opts.onCreate!() }]
       : []),
     ...(can('export') && opts.onExport
-      ? [{ key: 'export', label: '导出', isDanger: false, run: () => opts.onExport!() }]
+      ? [{ key: 'export', label: '导出', isDanger: false, mobile: mob('export'), run: () => opts.onExport!() }]
       : []),
   ]
 
@@ -146,13 +154,13 @@ export function useGridActions(opts: {
   const vis = (key: string, row: Row) => opts.actionVisible?.[key]?.(row) ?? true
   const rowMenuFor = (row: Row): ResolvedAction[] => [
     ...(opts.onView
-      ? [{ key: 'view', label: '查看', isDanger: false, run: () => opts.onView!(row) }]
+      ? [{ key: 'view', label: '查看', isDanger: false, mobile: mob('view'), run: () => opts.onView!(row) }]
       : []),
     ...(can('update') && opts.onEdit && vis('edit', row)
-      ? [{ key: 'edit', label: '编辑', isDanger: false, run: () => opts.onEdit!(row) }]
+      ? [{ key: 'edit', label: '编辑', isDanger: false, mobile: mob('edit'), run: () => opts.onEdit!(row) }]
       : []),
     ...(can('print') && opts.onPrintRows
-      ? [{ key: 'print', label: '打印', isDanger: false, run: () => opts.onPrintRows!([row]) }]
+      ? [{ key: 'print', label: '打印', isDanger: false, mobile: mob('print'), run: () => opts.onPrintRows!([row]) }]
       : []),
     ...extended('row').filter((a) => vis(a.key, row)),
     ...(opts.rowActions ?? [])
@@ -161,17 +169,18 @@ export function useGridActions(opts: {
         key: a.key,
         label: a.label,
         isDanger: a.isDanger ?? false,
+        mobile: a.mobile,
         run: () => a.onAction(row, ctx),
       })),
     ...(can('delete') && meta?.destroyMutation && vis('delete', row)
-      ? [{ key: 'delete', label: '删除', isDanger: true, run: confirmThenMutate('删除', true, 'delete') }]
+      ? [{ key: 'delete', label: '删除', isDanger: true, mobile: mob('delete'), run: confirmThenMutate('删除', true, 'delete') }]
       : []),
   ]
 
   // 批量条
   const bulkBarActions: ResolvedAction[] = [
     ...(can('batch_print') && opts.onPrintRows
-      ? [{ key: 'batch_print', label: '批量打印', isDanger: false, run: (rows: Row[]) => opts.onPrintRows!(rows) }]
+      ? [{ key: 'batch_print', label: '批量打印', isDanger: false, mobile: mob('batch_print'), run: (rows: Row[]) => opts.onPrintRows!(rows) }]
       : []),
     ...extended('bulk'),
     ...(opts.bulkActions ?? [])
@@ -180,11 +189,12 @@ export function useGridActions(opts: {
         key: a.key,
         label: a.label,
         isDanger: a.isDanger ?? false,
+        mobile: a.mobile,
         run: (rows: Row[]) => a.onAction(rows, ctx),
       })),
     // 批量码叠加在基础码之上:服务端逐条按 delete 校验,只授 batch_delete 不授 delete 会全拒
     ...(can('batch_delete') && can('delete') && meta?.destroyMutation
-      ? [{ key: 'batch_delete', label: '批量删除', isDanger: true, run: confirmThenMutate('批量删除', true, 'delete') }]
+      ? [{ key: 'batch_delete', label: '批量删除', isDanger: true, mobile: mob('batch_delete'), run: confirmThenMutate('批量删除', true, 'delete') }]
       : []),
   ]
 

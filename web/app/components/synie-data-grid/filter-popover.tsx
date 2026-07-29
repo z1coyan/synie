@@ -135,7 +135,8 @@ export function ColumnFilterButton({
   )
 }
 
-function FilterControl({
+/** 按列类型分派的筛选输入控件;列头弹层与卡片模式筛选 Sheet 共用 */
+export function FilterControl({
   column,
   filter,
   onChange,

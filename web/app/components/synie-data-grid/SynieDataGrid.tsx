@@ -7,9 +7,13 @@ import { isForbidden } from '~/lib/errors'
 import { useMediaQuery } from '~/lib/use-media-query'
 import { resourceClientFor } from '~/lib/resources/registry'
 import type { ResourceClient } from '~/lib/resources/types'
+import { AttachmentImagesCell } from './attachment-images-cell'
 import { cardFields } from './card-fields'
-import { CardList } from './card-list'
-import { cellContent, type ColumnOverride, type GridImageOverride } from './cells'
+import { CardList, type CardSelection } from './card-list'
+import { cellContent, imageFileId, imageFilename, type ColumnOverride, type GridImageOverride } from './cells'
+import { CardFilterSheet, CardSortSheet } from './filter-sheet'
+import { hasMoreRows, mergeLoadedRows } from './load-more'
+import { visibleOnCard } from './mobile-actions'
 import { RowActionsMenu } from './row-menu'
 import { downloadCsv, fetchAllRows, toCsv } from './csv'
 import { ColumnFilterButton, filterSummary } from './filter-popover'
@@ -18,9 +22,9 @@ import { mergePick } from './pick'
 import { useGridMeta } from './meta'
 import { printRows } from './print'
 import { nextSort } from './query'
-import type { ActionContext, BulkAction, EnumChipColor, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
+import type { ActionContext, BulkAction, ColumnFilter, EnumChipColor, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
+import type { ResolvedAction } from './use-grid-actions'
 import { FkLink } from '../synie-record-drawer/fk-preview'
-import { attachmentListKey, fetchAttachmentList } from '../synie-attachment-panel/attachments'
 import { FileThumb } from '../synie-preview/FileThumb'
 import { SyniePreview, type SyniePreviewItem } from '../synie-preview/SyniePreview'
 import { useDraft } from './use-debounced'
@@ -30,17 +34,6 @@ import { useGridActions } from './use-grid-actions'
 // 此处 re-export 保持既有 import 路径(页面与 SynieEditableTable)不破
 export { defaultCell } from './cells'
 export type { ColumnOverride, GridImageOverride } from './cells'
-
-/** 图片列取 file id/文件名:image 为 true 走缺省约定,对象形态可逐行定制 */
-function imageFileId(img: true | GridImageOverride, colName: string, row: Row): string | null {
-  const raw = img !== true && img.fileId ? img.fileId(row) : row[colName]
-  return raw == null || raw === '' ? null : String(raw)
-}
-
-function imageFilename(img: true | GridImageOverride, row: Row): string | undefined {
-  const name = img !== true && img.filename ? img.filename(row) : typeof row.filename === 'string' ? row.filename : null
-  return name ?? undefined
-}
 
 export interface AttachmentImagesOptions {
   /** sys_attachment.owner_type 资源类型名，如 acc_vat_invoice。 */
@@ -94,6 +87,8 @@ export interface SynieDataGridProps {
   actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
   /** 按行显隐行内动作:key 为扩展动作 key、自定义 rowActions key 或内建 'edit'/'delete'(如仅草稿订单可删),返回 false 该行不显示 */
   actionVisible?: Record<string, (row: Row) => boolean>
+  /** 内建/扩展动作的卡片模式显隐(如 { print: false } 行内打印不下手机、{ batch_print: true } 批量打印上手机) */
+  actionMobile?: Record<string, boolean>
   bulkActions?: BulkAction[]
   rowActions?: RowAction[]
   /** 选择器模式:表格作为弹窗选择器主体,隐藏动作/批量条,选中受控且跨页累积 */
@@ -169,15 +164,18 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   const meta = useGridMeta(resource, true, client)
   const pickMode = props.pick != null
-  // 卡片模式:<lg 视口;pick(选择器)与 tree(树形)暂退回桌面表格,由后续工单带入卡片模式
+  // 卡片模式:<lg 视口全资源生效;树形资源在卡片模式常驻平铺(treeActive 恒 false,见下)
   const isMobile = useMediaQuery(CARD_MODE_QUERY)
-  const cardMode = isMobile && !pickMode && props.tree == null
+  const cardMode = isMobile
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [sort, setSort] = useState<SortState | null>(props.defaultSort ?? null)
   const [filters, setFilters] = useState<FilterState>(props.defaultFilters ?? {})
   const [search, setSearch] = useState('')
   const [selection, setSelection] = useState<Selection>(new Set())
+  // 卡片模式筛选/排序底部弹层
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
+  const [sortSheetOpen, setSortSheetOpen] = useState(false)
 
   // 筛变通知页面(建单默认公司等);不把回调放进 deps 以免父组件未 memo 时循环
   useEffect(() => {
@@ -199,10 +197,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   )
   const cardLayout = useMemo(() => cardFields(columns, cardRoles), [columns, cardRoles])
 
-  // 树形:用户一旦搜索/筛选就退回平铺分页(树与筛选语义冲突,避免命中子节点却父节点被滤掉的孤儿),清空恢复
+  // 树形:用户一旦搜索/筛选就退回平铺分页(树与筛选语义冲突,避免命中子节点却父节点被滤掉的孤儿),清空恢复;
+  // 卡片模式下树形常驻平铺(手机不做逐层展开,找节点靠搜索),桌面树形行为不变
   const treeMode = props.tree != null
   const userQuerying = search.trim() !== '' || Object.keys(filters).length > 0
-  const treeActive = treeMode && !userQuerying
+  const treeActive = treeMode && !userQuerying && !cardMode
   const parentField = props.tree?.parentField ?? 'parentId'
   const hasChildrenField = props.tree?.hasChildrenField ?? 'childrenCount'
   const treeExtraFields = treeMode ? [parentField, hasChildrenField] : undefined
@@ -220,11 +219,13 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const [attachmentPreview, setAttachmentPreview] = useState<{ items: SyniePreviewItem[]; open: boolean } | null>(null)
 
   // 切公司(fixedFilter 变)时已加载的子层缓存与展开态失效,重置;
-  // 筛选进出(treeActive 翻转)不重置——清空筛选回树形时保留原展开状态
+  // 筛选进出(treeActive 翻转)不重置——清空筛选回树形时保留原展开状态;
+  // 卡片模式下 fixedFilter 变更同属查询条件变更,页码重置回 1(累积整体替换)
   useEffect(() => {
     setExpanded(new Set())
     setChildrenByParent(new Map())
     setLoadingParents(new Set())
+    setPage(1)
   }, [fixedFilterKey])
 
   const rowsQuery = useQuery({
@@ -264,6 +265,25 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const rows = rowsQuery.data?.results ?? []
   const count = rowsQuery.data?.count ?? 0
   const totalPages = Math.max(1, Math.ceil(count / pageSize))
+
+  // 卡片模式「加载更多」:page 语义=已加载页数,数据按页累积;
+  // 查询条件(搜索/筛选/排序/fixedFilter)变更时各处理器已 setPage(1),第 1 页抵达即整体替换
+  const [loadedRows, setLoadedRows] = useState<Row[]>([])
+  useEffect(() => {
+    if (!cardMode || !rowsQuery.data) return
+    setLoadedRows((prev) => mergeLoadedRows(prev, rowsQuery.data.results, page))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardMode, rowsQuery.data])
+  // 桌面→卡片切换时页码可能停在 N>1,重置回第 1 页从头累积(搜索/筛选/排序状态保留)
+  useEffect(() => {
+    if (cardMode) setPage(1)
+  }, [cardMode])
+  // 追加页失败:保留已加载卡片、toast 报错,加载更多按钮可重试(非幂等读操作给反馈)
+  useEffect(() => {
+    if (cardMode && rowsQuery.isError && loadedRows.length > 0) {
+      toast.danger('加载更多失败', { description: (rowsQuery.error as Error | null)?.message })
+    }
+  }, [cardMode, rowsQuery.isError, rowsQuery.error, loadedRows.length])
 
   // 展开某节点时按 parentField eq 拉它的直接子层,结果进缓存;getChildren 从缓存读,折叠不清缓存
   const fetchChildren = (parentId: string) => {
@@ -332,15 +352,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
               <ColumnFilterButton
                 column={col}
                 filter={filters[col.name]}
-                onChange={(f) => {
-                  setFilters((prev) => {
-                    const next = { ...prev }
-                    if (f === null) delete next[col.name]
-                    else next[col.name] = f
-                    return next
-                  })
-                  setPage(1)
-                }}
+                onChange={(f) => applyFilter(col.name, f)}
               />
             )}
           </>
@@ -402,7 +414,35 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     | DataGridSortDescriptor
     | undefined
 
+  // 筛选变更处理器:列筛选弹层/Chips/筛选 Sheet 共用(变更即回第 1 页)
+  const applyFilter = (name: string, f: ColumnFilter | null) => {
+    setFilters((prev) => {
+      const next = { ...prev }
+      if (f === null) delete next[name]
+      else next[name] = f
+      return next
+    })
+    setPage(1)
+  }
+  const clearAllFilters = () => {
+    setFilters({})
+    setPage(1)
+  }
+
   const [exporting, setExporting] = useState(false)
+
+  // 工具栏动作按钮:桌面与卡片模式同一渲染(create 主色、export pending)
+  const toolbarButton = (a: ResolvedAction) => (
+    <Button
+      key={a.key}
+      size="sm"
+      variant={a.key === 'create' ? 'primary' : 'secondary'}
+      isPending={a.key === 'export' ? exporting : undefined}
+      onPress={() => a.run([])}
+    >
+      {a.label}
+    </Button>
+  )
 
   const handleExport = async () => {
     setExporting(true)
@@ -458,6 +498,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     onPrintRows: pickMode ? undefined : handlePrintRows,
     actionHandlers: props.actionHandlers,
     actionVisible: props.actionVisible,
+    actionMobile: props.actionMobile,
     bulkActions: props.bulkActions,
     rowActions: props.rowActions,
   })
@@ -486,7 +527,59 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   // 有 bulk 动作才开选择模式(否则勾选框无意义)
   const hasBulkActions = !pickMode && actions.bulkBarActions.length > 0
-  const picked = selectedRows(selection, rows)
+
+  // 卡片模式动作面:toolbar/批量默认隐藏(mobile:true 放上),行内默认保留(mobile:false 拿下)
+  const cardToolbarActions = visibleOnCard(actions.toolbarActions, 'toolbar')
+  const cardBulkActions = visibleOnCard(actions.bulkBarActions, 'bulk')
+  const cardRowMenuFor = (row: Row) => visibleOnCard(actions.rowMenuFor(row), 'row')
+  // 卡片模式批量勾选:有 mobile:true 的批量动作才开选择(语义同桌面 hasBulkActions)
+  const cardSelectionEnabled = !pickMode && cardBulkActions.length > 0
+  // 卡片模式下 picked 从已累积行解析(数据跨页追加)
+  const picked = cardMode ? selectedRows(selection, loadedRows) : selectedRows(selection, rows)
+  // 图片列预览等按「当前呈现的行」取数:卡片模式=累积行,桌面=当前页
+  const displayRows = cardMode ? loadedRows : rows
+
+  // pick 选择器的卡片点选:单选点击即换选/再点取消,多选勾选切换;跨追加批次累积走 mergePick
+  const pickToggle = (row: Row) => {
+    const current = props.pickedRows ?? []
+    if (props.pick === 'single') {
+      const isPicked = current.some((r) => r.id === row.id)
+      props.onPickChange?.(mergePick(current, [row], new Set(isPicked ? [] : [row.id]), 'single'))
+      return
+    }
+    const sel = new Set(current.map((r) => r.id))
+    if (sel.has(row.id)) sel.delete(row.id)
+    else sel.add(row.id)
+    props.onPickChange?.(mergePick(current, loadedRows, sel, 'multiple'))
+  }
+
+  // 卡片模式批量勾选切换(非 pick):直接读写本地 selection
+  const bulkToggle = (row: Row) =>
+    setSelection((prev) => {
+      const next = new Set(prev === 'all' ? loadedRows.map((r) => r.id) : prev)
+      if (next.has(row.id)) next.delete(row.id)
+      else next.add(row.id)
+      return next
+    })
+
+  const cardSelection: CardSelection | undefined = pickMode
+    ? {
+        mode: props.pick!,
+        isSelected: (row) => (props.pickedRows ?? []).some((r) => r.id === row.id),
+        onToggle: pickToggle,
+      }
+    : cardSelectionEnabled
+      ? {
+          mode: 'multiple',
+          isSelected: (row) => selection !== 'all' && selection.has(row.id),
+          onToggle: bulkToggle,
+        }
+      : undefined
+
+  // 卡片模式工具栏:筛选/排序入口的可用列与生效计数
+  const hasFilterable = columns.some((c) => c.filterable)
+  const hasSortable = columns.some((c) => c.sortable)
+  const activeFilterCount = Object.keys(filters).length
 
   if (meta.isPending || (rowsQuery.isPending && !rowsQuery.data)) {
     return (
@@ -496,7 +589,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     )
   }
 
-  if (meta.isError || rowsQuery.isError) {
+  // 卡片模式追加页失败不整屏报错:已加载卡片保留,错误走 toast,重试点「加载更多」
+  if (meta.isError || (rowsQuery.isError && !(cardMode && loadedRows.length > 0))) {
     const err = (meta.error ?? rowsQuery.error) as Error
     // 无权限单独成态:醒目提示且不给重试(重试对权限问题无意义)
     if (isForbidden(err)) {
@@ -526,9 +620,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* 工具栏:搜索 + Task 6 动作按钮;hideSearch 且无动作按钮时整行不渲染。
-          卡片模式默认不渲染动作按钮(移动端读为主+轻操作,重操作回桌面) */}
-      {(!props.hideSearch || (!cardMode && actions.toolbarActions.length > 0)) && (
+      {/* 工具栏:搜索 + 动作按钮;hideSearch 且无动作按钮时整行不渲染。
+          卡片模式:动作按钮换为「筛选(带生效计数)/排序」入口,重操作回桌面 */}
+      {(!props.hideSearch ||
+        (!cardMode && actions.toolbarActions.length > 0) ||
+        (cardMode && (hasFilterable || hasSortable))) && (
       <div className="flex flex-wrap items-center gap-3">
         {!props.hideSearch && (
           <GridSearch
@@ -569,18 +665,25 @@ export function SynieDataGrid(props: SynieDataGridProps) {
                 </Dropdown.Popover>
               </Dropdown>
             ) : (
-              <Button
-                key={a.key}
-                size="sm"
-                variant={a.key === 'create' ? 'primary' : 'secondary'}
-                isPending={a.key === 'export' ? exporting : undefined}
-                onPress={() => a.run([])}
-              >
-                {a.label}
-              </Button>
+              toolbarButton(a)
             )
           )}
         </div>
+        )}
+        {cardMode && (cardToolbarActions.length > 0 || hasFilterable || (hasSortable && !treeMode)) && (
+          <div className="ml-auto flex items-center gap-2">
+            {cardToolbarActions.map(toolbarButton)}
+            {hasFilterable && (
+              <Button size="sm" variant="secondary" onPress={() => setFilterSheetOpen(true)}>
+                筛选{activeFilterCount > 0 ? `（${activeFilterCount}）` : ''}
+              </Button>
+            )}
+            {hasSortable && !treeMode && (
+              <Button size="sm" variant="secondary" onPress={() => setSortSheetOpen(true)}>
+                排序
+              </Button>
+            )}
+          </div>
         )}
       </div>
       )}
@@ -596,14 +699,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
                 <CloseButton
                   aria-label={`清除 ${col?.label ?? name} 筛选`}
                   className="h-4 w-4 [&_svg]:size-3"
-                  onPress={() => {
-                    setFilters((prev) => {
-                      const next = { ...prev }
-                      delete next[name]
-                      return next
-                    })
-                    setPage(1)
-                  }}
+                  onPress={() => applyFilter(name, null)}
                 />
               </Chip>
             )
@@ -611,10 +707,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           <Button
             size="sm"
             variant="ghost"
-            onPress={() => {
-              setFilters({})
-              setPage(1)
-            }}
+            onPress={clearAllFilters}
           >
             清除全部
           </Button>
@@ -623,12 +716,32 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
       {cardMode ? (
         <CardList
-          rows={rows}
+          rows={loadedRows}
           columns={columns}
           fields={cardLayout}
           overrides={overrides}
-          onView={props.onView}
-          rowMenuFor={actions.rowMenuFor}
+          onView={pickMode ? undefined : props.onView}
+          rowMenuFor={pickMode ? undefined : cardRowMenuFor}
+          selection={cardSelection}
+          onImagePress={(col, row) => {
+            const img = overrides[col]?.image
+            if (!img) return
+            const fileId = imageFileId(img, col, row)
+            if (fileId) setImagePreview({ col, fileId, open: true })
+          }}
+          renderLeading={
+            attachmentImages
+              ? (row) => (
+                  <AttachmentImagesCell
+                    ownerType={attachmentImages.ownerType}
+                    ownerId={row.id}
+                    category={attachmentImages.category}
+                    placeholder={null}
+                    onPreview={(items) => setAttachmentPreview({ items, open: true })}
+                  />
+                )
+              : undefined
+          }
         />
       ) : (
       <DataGrid
@@ -672,8 +785,26 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
       {props.pageSummary && <div className="px-4 py-2 text-sm text-muted">{props.pageSummary(rows)}</div>}
 
-      {/* 树形懒加载下总数/分页无意义,隐藏整条分页栏 */}
-      {!treeActive && (
+      {/* 卡片模式:加载更多取代数字分页(追加式浏览);加载完毕给终点提示 */}
+      {cardMode && !treeActive && count > 0 && (
+        <div className="flex justify-center">
+          {hasMoreRows(loadedRows.length, count) ? (
+            <Button
+              variant="secondary"
+              isPending={rowsQuery.isFetching && page > 1}
+              // 追加失败重试当前页(refetch),而非页码+1 跳过失败页
+              onPress={() => (rowsQuery.isError ? rowsQuery.refetch() : setPage((p) => p + 1))}
+            >
+              {rowsQuery.isError ? '加载失败，点击重试' : `加载更多（${loadedRows.length}/${count} 条）`}
+            </Button>
+          ) : (
+            <span className="text-sm text-muted">已加载全部 {count} 条</span>
+          )}
+        </div>
+      )}
+
+      {/* 树形懒加载下总数/分页无意义,隐藏整条分页栏;卡片模式走上方加载更多 */}
+      {!treeActive && !cardMode && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="text-sm text-muted">共 {count} 条</span>
           <div className="flex items-center gap-3">
@@ -707,14 +838,17 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         </div>
       )}
 
-      {/* 批量条为桌面形态专属;卡片模式无勾选,恒不渲染 */}
-      <ActionBar isOpen={!cardMode && picked.length > 0 && hasBulkActions} aria-label="批量操作">
+      {/* 批量条:桌面=全部批量动作;卡片模式仅 mobile:true 动作(勾选位随之启用) */}
+      <ActionBar
+        isOpen={picked.length > 0 && (cardMode ? cardBulkActions.length > 0 : hasBulkActions)}
+        aria-label="批量操作"
+      >
         <ActionBar.Prefix>
           <Chip size="sm">{picked.length}</Chip>
         </ActionBar.Prefix>
         <Separator />
         <ActionBar.Content>
-          {actions.bulkBarActions.map((a) => (
+          {(cardMode ? cardBulkActions : actions.bulkBarActions).map((a) => (
             <Button
               key={a.key}
               size="sm"
@@ -735,12 +869,36 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
       {actions.confirmDialog}
 
+      {/* 卡片模式筛选/排序底部弹层:与桌面列头筛选、表头排序落同一 filters/sort 状态 */}
+      {cardMode && (
+        <>
+          <CardFilterSheet
+            isOpen={filterSheetOpen}
+            onOpenChange={setFilterSheetOpen}
+            columns={columns}
+            filters={filters}
+            onFilterChange={applyFilter}
+            onClearAll={clearAllFilters}
+          />
+          <CardSortSheet
+            isOpen={sortSheetOpen}
+            onOpenChange={setSortSheetOpen}
+            columns={columns}
+            sort={sort}
+            onSortChange={(next) => {
+              setSort(next)
+              setPage(1)
+            }}
+          />
+        </>
+      )}
+
       {/* 图片列全屏预览:items 携当前页该列全部图片可循环切换 */}
       {imagePreview &&
         (() => {
           const img = overrides[imagePreview.col]?.image
           if (!img) return null
-          const items = rows.flatMap((row) => {
+          const items = displayRows.flatMap((row) => {
             const fileId = imageFileId(img, imagePreview.col, row)
             return fileId ? [{ fileId, filename: imageFilename(img, row) }] : []
           })
@@ -770,38 +928,6 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         />
       )}
     </div>
-  )
-}
-
-/** 附件图片列单元格:行自查图片附件(与附件面板同 queryKey,30s 内重挂不重取),
- *  首图缩略图 + 超出计数,点击预览该行全部图片 */
-function AttachmentImagesCell({
-  ownerType,
-  ownerId,
-  category,
-  onPreview,
-}: {
-  ownerType: string
-  ownerId: string
-  category?: string
-  onPreview: (items: SyniePreviewItem[]) => void
-}) {
-  const list = useQuery({
-    queryKey: attachmentListKey(ownerType, ownerId, category),
-    staleTime: 30_000,
-    queryFn: () => fetchAttachmentList(ownerType, ownerId, category),
-  })
-  const images = (list.data ?? []).filter((r) => r.file.contentType?.startsWith('image/'))
-  if (images.length === 0) return <span className="text-muted">—</span>
-  return (
-    <span className="flex items-center gap-1.5">
-      <FileThumb
-        fileId={images[0].file.id}
-        alt={images[0].file.filename}
-        onPress={() => onPreview(images.map((r) => ({ fileId: r.file.id, filename: r.file.filename })))}
-      />
-      {images.length > 1 && <span className="text-xs text-muted">+{images.length - 1}</span>}
-    </span>
   )
 }
 

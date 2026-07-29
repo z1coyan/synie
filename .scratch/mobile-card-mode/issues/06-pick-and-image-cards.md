@@ -6,9 +6,14 @@
 
 **Status:** ready-for-agent
 
-- [ ] pick=single 时点卡片即选中并回调 onPickChange；pick=multiple 时卡片勾选位可多选，追加加载后已选不丢（mergePick 语义）
-- [ ] 选择器模式的卡片工具栏与动作面与现状一致（无批量条、无多余动作）
-- [ ] image override 列在卡片摘要区呈现缩略图，点击全屏预览、同列图片循环切换
-- [ ] 附件图片列有图时卡片左侧显示首图缩略图（+N 计数），点击预览该行全部图片
-- [ ] 无图记录的图片位呈现与表格一致的占位（—），不留空白错位
-- [ ] 桌面表格的图片列与选择器行为零回归
+- [x] pick=single 时点卡片即选中并回调 onPickChange；pick=multiple 时卡片勾选位可多选，追加加载后已选不丢（mergePick 语义）
+- [x] 选择器模式的卡片工具栏与动作面与现状一致（无批量条、无多余动作）
+- [x] image override 列在卡片摘要区呈现缩略图，点击全屏预览、同列图片循环切换
+- [x] 附件图片列有图时卡片左侧显示首图缩略图（+N 计数），点击预览该行全部图片
+- [x] 无图记录的图片位呈现与表格一致的占位（—），不留空白错位
+- [x] 桌面表格的图片列与选择器行为零回归
+
+## Comments
+
+- 实现:cardMode 纳入 pick;CardList 增 selection 机制(single 点选/multiple 勾选位)与图片列缩略图(summaryValue),附件图片列经 renderLeading 进卡片首图位;AttachmentImagesCell 抽独立文件(表格/卡片共用),imageFileId/imageFilename 入 cells.tsx;图片预览 items 改从 displayRows(卡片=累积行)取。
+- 注:pick 弹窗链路未做端到端冒烟(需驱动业务弹窗),逻辑与桌面 mergePick 同路径。

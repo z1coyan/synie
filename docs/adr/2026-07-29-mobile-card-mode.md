@@ -4,8 +4,8 @@ SynieDataGrid 此前对移动端的支持仅是横向滚动（`contentClassName=
 
 关键子决策：
 
-- **卡片字段约定优先**：第 1 列=标题、第 2 列=副标题、第 3–5 列=摘要行（enum 自动胶囊、datetime 短格式）；`ColumnOverride.mobileRole`（`'title'|'summary'|'hide'`）作逃生口，零配置时 80% 列表可用。
-- **筛选/排序入口**：工具栏变「搜索 + 筛选按钮 + 排序按钮」；筛选开底部 Sheet 按列配置（控件复用现有 filter-popover 输入组件），排序为列+方向 Select；已生效筛选 Chips 行两形态共用。
+- **卡片字段约定优先**：第 1 列=标题、第 2 列=副标题、第 3–5 列=摘要行（enum 自动胶囊、datetime 短格式）；`ColumnOverride.mobileRole`（`'title'|'subtitle'|'summary'|'hide'`）作逃生口，零配置时 80% 列表可用。
+- **筛选/排序入口**：工具栏变「搜索 + 筛选按钮 + 排序按钮」；筛选开底部 Sheet 按列配置（控件复用现有 filter-popover 输入组件），排序为底部 Sheet 内 ListBox（点按循环 升序→降序→取消，与表头三态同语义）；已生效筛选 Chips 行两形态共用。
 - **翻页**：「加载更多」按钮按 offset append（显示 N/共 M 条），不做自动无限滚动；筛选/搜索/排序变更重置回第 1 页。
 - **动作面**：卡片模式默认隐藏全部 toolbar 动作（新增/导入/导出/打印）、关闭勾选与批量条；行内 ⋯ 菜单完整保留（审批/确认/查看触屏友好）；动作级 `mobile: true/false` 标记微调。
 - **树形 grid**：移动端常驻「退回平铺 + 搜索」，复用现有「筛选即平铺」回退逻辑，不建多层导航栈。

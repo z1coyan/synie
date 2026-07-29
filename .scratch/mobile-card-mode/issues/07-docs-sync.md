@@ -6,7 +6,11 @@
 
 **Status:** ready-for-agent
 
-- [ ] `docs/产品文档/` 对应篇目包含卡片模式完整行为说明与移动端功能边界
-- [ ] ADR 2026-07-29 与实现一致（或偏离处已回改/另立 ADR）
-- [ ] CONTEXT.md「卡片模式」词条与实现语义一致
-- [ ] 文档术语与 CONTEXT.md 唯一定义对齐，无自相矛盾
+- [x] `docs/产品文档/` 对应篇目包含卡片模式完整行为说明与移动端功能边界
+- [x] ADR 2026-07-29 与实现一致（或偏离处已回改/另立 ADR）
+- [x] CONTEXT.md「卡片模式」词条与实现语义一致
+- [x] 文档术语与 CONTEXT.md 唯一定义对齐，无自相矛盾
+
+## Comments
+
+- 新增 `docs/产品文档/移动端.md`(五节模板)并登记 README 篇目表;ADR 2026-07-29 校对:mobileRole 补 subtitle、排序实现校正为 Sheet 内 ListBox;CONTEXT.md「卡片模式」词条与实现一致。
