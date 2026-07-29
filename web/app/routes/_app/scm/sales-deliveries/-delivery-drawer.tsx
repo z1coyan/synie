@@ -29,6 +29,7 @@ import {
   type FifoCandidate,
   type GenerateReport,
 } from '~/lib/delivery-pack-generate'
+import { nextBoxNo } from '~/lib/box-no'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
@@ -805,8 +806,8 @@ function PackLinesPanel({
   const lastBoxNo =
     packLines.length > 0 ? String(packLines[packLines.length - 1].boxNo ?? '') : ''
 
-  // 装箱行录入:箱号(默认沿用上一行)+物料(可发货订单条目池)+单位(默认/转换)+数量;
-  // 快照与 base 折算由后端保存时重拍
+  // 装箱行录入:箱号(默认按上一行尾数递增,定案 B 一物料拆多箱为常态)+物料(可发货订单条目池)
+  // +单位(默认/转换)+数量;快照与 base 折算由后端保存时重拍
   const packFields: Record<string, FieldOverride> = {
     idx: { visible: () => false },
     boxNo: {
@@ -815,7 +816,8 @@ function PackLinesPanel({
       required: true,
       label: '箱号',
       placeholder: '如 A-01',
-      defaultValue: lastBoxNo === '' ? null : lastBoxNo,
+      // 一物料拆多箱为常态(定案 B):新增行默认 = 上一行箱号尾数 +1;要同箱手改即可
+      defaultValue: lastBoxNo === '' ? null : nextBoxNo(lastBoxNo),
     },
     qty: { order: 1, cols: 6, required: true, label: '装箱数量' },
     materialId: {
