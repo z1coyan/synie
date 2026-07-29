@@ -27,7 +27,7 @@ import {
   seedMaterialCategories,
   seedSampleData,
 } from '~/modules/setup/index.ts'
-import { createSetupService } from './service.ts'
+import { createSetupService, SALES_ROLE_PERMISSIONS } from './service.ts'
 
 const url = testDatabaseUrl()
 const run = url ? describe : describe.skip
@@ -117,6 +117,8 @@ run('PG 集成（setup 向导）', () => {
           inv_warehouse,
           bas_company,
           sys_user,
+          sys_role_permission,
+          sys_role,
           inv_material_category,
           bas_unit,
           bas_currency,
@@ -231,6 +233,31 @@ run('PG 集成（setup 向导）', () => {
     expect(Number(counts.rows[0]?.rules)).toBeGreaterThanOrEqual(22)
     expect(Number(counts.rows[0]?.categories)).toBeGreaterThanOrEqual(1)
     expect(Number(counts.rows[0]?.units)).toBeGreaterThanOrEqual(1)
+
+    // 内置角色种子：admin 持全域通配 `*`；sales 逐码授权（与权限目录对齐）
+    const roles = await sql<{ code: string; builtin: boolean; enabled: boolean }>`
+      SELECT code, builtin, enabled FROM sys_role WHERE code IN ('admin', 'sales') ORDER BY code
+    `.execute(db)
+    expect(roles.rows.map((r) => r.code)).toEqual(['admin', 'sales'])
+    expect(roles.rows.every((r) => r.builtin && r.enabled)).toBe(true)
+
+    const adminPerms = await sql<{ permission: string }>`
+      SELECT rp.permission
+      FROM sys_role_permission rp JOIN sys_role r ON r.id = rp.role_id
+      WHERE r.code = 'admin'
+    `.execute(db)
+    expect(adminPerms.rows.map((r) => r.permission)).toEqual(['*'])
+
+    const salesPerms = await sql<{ permission: string }>`
+      SELECT rp.permission
+      FROM sys_role_permission rp JOIN sys_role r ON r.id = rp.role_id
+      WHERE r.code = 'sales'
+    `.execute(db)
+    const salesSet = new Set(salesPerms.rows.map((r) => r.permission))
+    expect(salesSet.size).toBe(SALES_ROLE_PERMISSIONS.length)
+    for (const code of SALES_ROLE_PERMISSIONS) {
+      expect(salesSet.has(code)).toBe(true)
+    }
   })
 
   test('HTTP：受保护 setup 端点需超管；公开 first-user 返回 JWT', async () => {

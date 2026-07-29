@@ -285,6 +285,7 @@ export function createSetupService(deps: SetupServiceDeps) {
         await seedMaterialCategories(trx)
       }
       await seedUnits(trx)
+      await seedBuiltinRoles(trx)
     })
   }
 
@@ -618,6 +619,120 @@ async function seedUnits(trx: DbHandle): Promise<void> {
     } catch (err) {
       throw new ApiError('internal', '预置计量单位失败', { cause: err })
     }
+  }
+}
+
+/**
+ * 内置销售业务员角色（sales）的逐码授权清单。
+ * 与权限目录（Registry 派生）对齐；新增权限点不自动授予（fail-closed）。
+ */
+export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
+  // 销售订单：完整权限
+  'sales.order:create',
+  'sales.order:read',
+  'sales.order:update',
+  'sales.order:delete',
+  'sales.order:audit',
+  'sales.order:close',
+  'sales.order:void',
+  'sales.order:print',
+  'sales.order:export',
+  'sales.order:batch_print',
+  // 销售发货单：完整权限
+  'sales.delivery:create',
+  'sales.delivery:read',
+  'sales.delivery:update',
+  'sales.delivery:delete',
+  'sales.delivery:audit',
+  'sales.delivery:void',
+  'sales.delivery:print',
+  'sales.delivery:export',
+  'sales.delivery:batch_print',
+  // 销售对账单：完整权限
+  'sales.reconciliation:create',
+  'sales.reconciliation:read',
+  'sales.reconciliation:update',
+  'sales.reconciliation:delete',
+  'sales.reconciliation:confirm',
+  'sales.reconciliation:unconfirm',
+  'sales.reconciliation:audit',
+  'sales.reconciliation:void',
+  // 销售报价单：完整权限
+  'sales.quotation:create',
+  'sales.quotation:read',
+  'sales.quotation:update',
+  'sales.quotation:delete',
+  'sales.quotation:audit',
+  'sales.quotation:void',
+  // 客户：完整权限
+  'sales.customer:create',
+  'sales.customer:read',
+  'sales.customer:update',
+  'sales.customer:delete',
+  // 履约需求单：完整权限
+  'mfg.demand:create',
+  'mfg.demand:read',
+  'mfg.demand:update',
+  'mfg.demand:delete',
+  'mfg.demand:confirm',
+  'mfg.demand:close',
+  'mfg.demand:void',
+  // 物料：只读
+  'inv.material:read',
+  // 库存分录：只读（库存余额视图复用同一码）
+  'inv.stock_entry:read',
+  // 仓库：只读
+  'inv.warehouse:read',
+  // 会计科目：只读
+  'base.account:read',
+  // 币种：只读
+  'base.currency:read',
+  // 计量单位：只读
+  'base.unit:read',
+]
+
+/**
+ * 预置内置角色（幂等；ADR 2026-07-29 由迁移种子改归 setup 完成动作）：
+ * - admin：全域通配 `*` 授权，新权限点自动覆盖；
+ * - sales：销售业务员，逐码授权（SALES_ROLE_PERMISSIONS）。
+ * 授权仅补 builtin 角色行，界面创建的同名普通角色不被接管。
+ */
+async function seedBuiltinRoles(trx: DbHandle): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO sys_role (code, name, enabled, builtin)
+      SELECT 'admin', '管理员', true, true
+      WHERE NOT EXISTS (SELECT 1 FROM sys_role WHERE code = 'admin')
+    `.execute(trx)
+    await sql`
+      INSERT INTO sys_role_permission (role_id, permission)
+      SELECT r.id, '*'
+      FROM sys_role r
+      WHERE r.code = 'admin' AND r.builtin
+        AND NOT EXISTS (
+          SELECT 1 FROM sys_role_permission rp WHERE rp.role_id = r.id AND rp.permission = '*'
+        )
+    `.execute(trx)
+
+    await sql`
+      INSERT INTO sys_role (code, name, enabled, builtin)
+      SELECT 'sales', '销售业务员', true, true
+      WHERE NOT EXISTS (SELECT 1 FROM sys_role WHERE code = 'sales')
+    `.execute(trx)
+    for (const permission of SALES_ROLE_PERMISSIONS) {
+      await sql`
+        INSERT INTO sys_role_permission (role_id, permission)
+        SELECT r.id, ${permission}
+        FROM sys_role r
+        WHERE r.code = 'sales' AND r.builtin
+          AND NOT EXISTS (
+            SELECT 1 FROM sys_role_permission rp
+            WHERE rp.role_id = r.id AND rp.permission = ${permission}
+          )
+      `.execute(trx)
+    }
+  } catch (err) {
+    throw new ApiError('internal', '预置内置角色失败', { cause: err })
   }
 }
 
