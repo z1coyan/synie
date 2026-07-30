@@ -39,11 +39,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
       baseCurrencyId: { remote: { filterState: { active: { kind: 'bool', eq: true } } } },
     },
   },
-  basCurrencies: {
-    label: '货币',
-    // 启用是状态不是表单字段:新建默认启用,启停走列表行动作
-    exclude: ['active'],
-  },
+  // 字段/exclude/placeholder 由 Resource Catalog Basic Form 投影（页面经 basicFormDrawerProps）
+  basCurrencies: { label: '货币' },
   basUnits: { label: '单位' },
   basAccounts: {
     label: '科目',
