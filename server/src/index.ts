@@ -64,6 +64,12 @@ const auth = await createAuthService({
 
 const registry = createRegistry()
 registerAllResources(registry)
+const sealReport = registry.seal()
+logJson('info', 'meta.catalog.sealed', {
+  total: sealReport.total,
+  legacy: sealReport.legacy,
+  typed: sealReport.typed,
+})
 
 const settings = createSettingsService(db, {
   sales: createSalesSettingService(db),

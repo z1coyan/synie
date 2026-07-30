@@ -34,6 +34,8 @@ export function currencyResourceMeta(): ResourceMeta {
     name: CURRENCY_RESOURCE_NAME,
     permissionPrefix: 'base.currency',
     permissionLabel: '币种',
+    /** 界面显示「货币」，与历史 drawer 标签一致；权限组仍为「币种」 */
+    label: '货币',
     table: 'bas_currency',
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),

@@ -23,7 +23,10 @@ import { registerPrintingResources } from '~/platform/printing/index.ts'
 import { registerSettingResources } from '~/platform/settings/index.ts'
 import { createRegistry, type Registry } from './registry.ts'
 
-/** 将全部产品资源注册进给定 Registry（幂等要求：registry 必须为空） */
+/**
+ * 将全部产品资源注册进给定 Registry（幂等要求：registry 必须为空且未 seal）。
+ * 不自动 seal，便于测试在注册后继续注入夹具；生产路径请用 createSealedResourceRegistry。
+ */
 export function registerAllResources(registry: Registry): void {
   registerSettingResources(registry)
   registerNumberingResources(registry)
@@ -45,9 +48,10 @@ export function registerAllResources(registry: Registry): void {
   registerPrintingResources(registry)
 }
 
-/** 创建已注册全部资源的 Registry（测试与报告脚本首选入口） */
+/** 创建已注册并 seal 的完整 Registry（生产与集成测试首选入口） */
 export function createSealedResourceRegistry(): Registry {
   const registry = createRegistry()
   registerAllResources(registry)
+  registry.seal()
   return registry
 }

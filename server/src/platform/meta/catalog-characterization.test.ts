@@ -179,4 +179,11 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       },
     })
   })
+
+  test('expand 期 Meta 响应附带 catalog v2，显示标签为货币', () => {
+    const doc = registry.buildDocument(CURRENCY_RESOURCE_NAME, superAdmin)
+    expect(doc.catalog?.schemaVersion).toBe(2)
+    expect(doc.catalog?.label).toBe('货币')
+    expect(doc.catalog?.form.kind).toBe('basic')
+  })
 })

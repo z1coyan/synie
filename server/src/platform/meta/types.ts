@@ -67,6 +67,11 @@ export interface ResourceMeta {
   name: string
   permissionPrefix: string
   permissionLabel: string
+  /**
+   * 独立显示标签（列表/表单/选择器）。缺省取 permissionLabel。
+   * 例：币种权限组为「币种」，界面显示「货币」。
+   */
+  label?: string
   /** 无独立权限点的只读投影视图：持任一完整权限码即可读，且不进权限目录 */
   readPermissionsAny?: string[]
   table: string
@@ -78,6 +83,11 @@ export interface ResourceMeta {
   printLoops?: PrintLoopMeta[]
   audit?: { enabled: boolean; sensitiveFields?: string[] }
   destroyMutation?: string
+  /**
+   * 写入路径标记。缺省 / 'legacy'：经 legacy normalizer 进入 Catalog。
+   * 新 typed ResourceDefinition 注册后使用 'typed'；legacy 入口在 seal 后禁止新资源误用。
+   */
+  catalogSource?: 'legacy' | 'typed'
 }
 
 /** 标准十件套（permission catalog 与 capabilities 的基准） */
