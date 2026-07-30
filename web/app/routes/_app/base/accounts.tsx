@@ -11,7 +11,11 @@ import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { accountClient, initializeAccountTemplate } from '~/lib/resources/accounts'
 import { companyClient } from '~/lib/resources/companies'
-import { currencyClient } from '~/lib/resources/currencies'
+import { resourceBindingFor } from '~/lib/resources/registry'
+import {
+  createAccountPresentation,
+  submitAccountForm,
+} from '~/lib/resources/presentation'
 
 export const Route = createFileRoute('/_app/base/accounts')({
   component: AccountsPage,
@@ -181,56 +185,54 @@ function AccountsPage() {
         )}
       </div>
 
-      <SynieRecordDrawer
-        resource="basAccounts"
-        client={accountClient}
-        label="科目"
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        row={drawer?.row}
-        exclude={['active']}
-        fields={{
-          code: { required: true, edit: 'createOnly', cols: 6, placeholder: '如 1001' },
-          name: { required: true, cols: 6, placeholder: '如 库存现金' },
-          direction: { required: true, cols: 6 },
-          isGroup: {
-            cols: 6,
-            defaultValue: false,
-            effects: (value) => (value === true ? { role: null } : undefined),
-          },
-          currencyId: {
-            cols: 6,
-            label: '币种',
-            remote: {
-              client: currencyClient,
-              filterState: { active: { kind: 'bool', eq: true } },
-            },
-          },
-          role: { cols: 6, visible: (values) => values.isGroup !== true },
-          parentId: {
-            cols: 6,
-            label: '上级科目',
-            remote: {
-              client: accountClient,
-              filterState: companyId == null ? undefined : companyFilter(companyId),
-            },
-          },
-          companyId: { visible: () => false },
-          childrenCount: { visible: () => false },
-        }}
+      <AccountDrawer
+        companyId={companyId}
+        drawer={drawer}
+        onClose={() => setDrawer(null)}
         onEdit={() => setDrawer((current) => (current ? { ...current, mode: 'edit' } : current))}
-        onSubmit={async (values, mode) => {
-          const input = values.isGroup === true ? { ...values, role: null } : values
-          if (mode === 'create') {
-            await accountClient.create({ ...input, companyId })
-          } else {
-            await accountClient.update(drawer!.row!.id, input)
-          }
-          toast.success(mode === 'create' ? '科目已创建' : '科目已更新')
-          refresh()
-        }}
+        onSaved={refresh}
       />
     </>
+  )
+}
+
+function AccountDrawer(props: {
+  companyId: string | null
+  drawer: { mode: DrawerMode; row: Row | null } | null
+  onClose: () => void
+  onEdit: () => void
+  onSaved: () => void
+}) {
+  const binding = resourceBindingFor('basAccounts')
+  const presentation = createAccountPresentation(binding, {
+    companyId: props.companyId,
+    companyFilter:
+      props.companyId == null ? undefined : companyFilter(props.companyId),
+  })
+
+  return (
+    <SynieRecordDrawer
+      resource="basAccounts"
+      client={accountClient}
+      label={presentation.label}
+      mode={props.drawer?.mode ?? 'view'}
+      isOpen={props.drawer !== null}
+      onOpenChange={(open) => !open && props.onClose()}
+      row={props.drawer?.row}
+      exclude={presentation.exclude}
+      fields={presentation.fields}
+      onEdit={props.onEdit}
+      onSubmit={async (values, mode) => {
+        await submitAccountForm(
+          presentation,
+          values,
+          mode,
+          props.drawer?.row?.id as string | undefined,
+          props.companyId,
+        )
+        toast.success(mode === 'create' ? '科目已创建' : '科目已更新')
+        props.onSaved()
+      }}
+    />
   )
 }

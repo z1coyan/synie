@@ -5,15 +5,20 @@ import { toast } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { employeeClient } from '~/lib/resources/employees'
+import { resourceBindingFor, resourceClientFor } from '~/lib/resources/registry'
+import {
+  createEmployeePresentation,
+  submitEmployeeForm,
+} from '~/lib/resources/presentation'
 
 export const Route = createFileRoute('/_app/hr/employees')({
   component: EmployeesPage,
 })
+
+const RESOURCE = 'hrEmployees'
 
 // 常用列白名单:户籍/现居住地长文本进详情看,给薪酬列留视口
 const GRID_COLUMNS = [
@@ -43,6 +48,9 @@ const GRID_OVERRIDES = {
 function EmployeesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
+  const binding = resourceBindingFor(RESOURCE)
+  const client = resourceClientFor(RESOURCE)
+  const presentation = createEmployeePresentation(binding)
 
   return (
     <>
@@ -51,8 +59,8 @@ function EmployeesPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="hrEmployees"
-          client={employeeClient}
+          resource={RESOURCE}
+          client={client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
@@ -62,9 +70,13 @@ function EmployeesPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="hrEmployees"
-        client={employeeClient}
-        {...drawerConfig('hrEmployees')}
+        resource={RESOURCE}
+        client={client}
+        label={presentation.label}
+        exclude={presentation.exclude}
+        fields={presentation.fields}
+        extraContent={presentation.extraContent}
+        contentClassName="w-full lg:w-[640px]"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
@@ -72,19 +84,20 @@ function EmployeesPage() {
         rowId={drawer?.row?.id}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          const saved =
-            mode === 'create'
-              ? await employeeClient.create(values)
-              : await employeeClient.update(drawer!.row!.id, values)
+          const id = await submitEmployeeForm(
+            presentation,
+            values,
+            mode,
+            drawer?.row?.id as string | undefined,
+          )
           toast.success(mode === 'create' ? '员工已创建,进入详情可上传身份证照片' : '员工已更新')
           queryClient.invalidateQueries({
-            queryKey: ['gridRows', employeeClient.id, 'hrEmployees'],
+            queryKey: ['gridRows', client.id, RESOURCE],
           })
-          // 抽屉走 rowId 自查,编辑后一并失效行缓存,重开详情不吃 30s staleTime 的旧行
           queryClient.invalidateQueries({
-            queryKey: ['rowById', employeeClient.id, 'hrEmployees'],
+            queryKey: ['rowById', client.id, RESOURCE],
           })
-          return saved.id
+          return id
         }}
       />
     </>

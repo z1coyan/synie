@@ -33,11 +33,15 @@ const STANDARD_ACTION_KEYS = new Set([
   'batch_print',
 ])
 
-/** 标记：本定义来自 legacy ResourceMeta normalizer */
+/** 标记：本定义来自 legacy ResourceMeta normalizer（工单 10 后 register 不再写入） */
 export const LEGACY_NORMALIZER_MARK = 'legacy-resource-meta' as const
+/** 标记：typed ResourceDefinition 规范化结果 */
+export const TYPED_SOURCE_MARK = 'typed-resource-meta' as const
+
+export type NormalizedSource = typeof LEGACY_NORMALIZER_MARK | typeof TYPED_SOURCE_MARK
 
 export interface NormalizedResource {
-  readonly source: typeof LEGACY_NORMALIZER_MARK
+  readonly source: NormalizedSource
   readonly meta: ResourceMeta
   /** 独立显示标签（可与 permissionLabel 不同） */
   readonly label: string
@@ -47,6 +51,17 @@ export interface NormalizedResource {
   readonly form: FormDocument
   /** 领域语义命令（不含标准 CRUD） */
   readonly commands: CommandDocument[]
+}
+
+/** 测试用：统计 legacy normalizer 在进程内被调用次数（工单 10 验收归零） */
+let legacyNormalizerCallCount = 0
+
+export function getLegacyNormalizerCallCount(): number {
+  return legacyNormalizerCallCount
+}
+
+export function resetLegacyNormalizerCallCountForTests(): void {
+  legacyNormalizerCallCount = 0
 }
 
 function inputPolicy(field: FieldMeta): FieldInputPolicy {
@@ -164,6 +179,30 @@ function defaultLookup(fields: FieldDocument[]): ResourceLookupMeta {
     labelField,
     searchFields: searchFields.length > 0 ? searchFields : [labelField],
   }
+}
+
+function mergeLookup(
+  inferred: ResourceLookupMeta,
+  override: ResourceMeta['lookup'] | undefined,
+): ResourceLookupMeta {
+  if (!override) return inferred
+  const labelField = override.labelField ?? inferred.labelField
+  const searchFields =
+    override.searchFields && override.searchFields.length > 0
+      ? override.searchFields
+      : inferred.searchFields
+  const lookup: ResourceLookupMeta = { labelField, searchFields }
+  if (override.subtitleFields && override.subtitleFields.length > 0) {
+    lookup.subtitleFields = override.subtitleFields
+  } else if (inferred.subtitleFields && inferred.subtitleFields.length > 0) {
+    lookup.subtitleFields = inferred.subtitleFields
+  }
+  if (override.defaultSort) {
+    lookup.defaultSort = override.defaultSort
+  } else if (inferred.defaultSort) {
+    lookup.defaultSort = inferred.defaultSort
+  }
+  return lookup
 }
 
 function commandTarget(action: ActionMeta): CommandTarget {
@@ -291,10 +330,10 @@ function toForm(meta: ResourceMeta, fields: FieldDocument[]): FormDocument {
 }
 
 /**
- * 将 ResourceMeta 经 legacy normalizer 转为 NormalizedResource。
- * 调用方须在 Registry.register 路径上显式使用，新 typed 定义不得调用。
+ * 将 ResourceMeta 规范为 Catalog 中间事实（typed 与 legacy 共用转换逻辑）。
+ * register 路径只应传入 catalogSource='typed'；本函数不计入 legacy 调用。
  */
-export function normalizeLegacyResourceMeta(meta: ResourceMeta): NormalizedResource {
+export function buildNormalizedResource(meta: ResourceMeta): NormalizedResource {
   const fields: FieldDocument[] = []
   for (const field of meta.fields) {
     const doc = toFieldDocument(field)
@@ -304,15 +343,29 @@ export function normalizeLegacyResourceMeta(meta: ResourceMeta): NormalizedResou
   const list: ListLayoutMeta = {
     columns: withHints.filter((f) => f.visibility === 'readable').map((f) => f.name),
   }
+  const source: NormalizedSource =
+    meta.catalogSource === 'legacy' ? LEGACY_NORMALIZER_MARK : TYPED_SOURCE_MARK
   return {
-    source: LEGACY_NORMALIZER_MARK,
+    source,
     meta,
     label: meta.label ?? meta.permissionLabel,
     fields: withHints,
-    lookup: defaultLookup(withHints),
+    lookup: mergeLookup(defaultLookup(withHints), meta.lookup),
     list,
     form: toForm(meta, withHints),
     commands: toCommands(meta),
+  }
+}
+
+/**
+ * legacy normalizer 入口（工单 10 后 register 不再调用；工单 11 删除本函数）。
+ * 仅测试或诊断可显式调用；每次调用递增计数。
+ */
+export function normalizeLegacyResourceMeta(meta: ResourceMeta): NormalizedResource {
+  legacyNormalizerCallCount += 1
+  return {
+    ...buildNormalizedResource({ ...meta, catalogSource: 'legacy' }),
+    source: LEGACY_NORMALIZER_MARK,
   }
 }
 

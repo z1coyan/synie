@@ -75,6 +75,7 @@
     "destroyMutation": "destroyBasCurrency"
   },
   "form": {
+    "kind": "basic",
     "exclude": [
       "id",
       "active",
@@ -208,8 +209,10 @@
       "labelField": "name",
       "searchFields": [
         "name",
-        "isoCode",
-        "symbol"
+        "isoCode"
+      ],
+      "subtitleFields": [
+        "isoCode"
       ]
     },
     "list": {

@@ -4,6 +4,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, toast } from '@heroui/react'
 import { materialClient, materialUnitClient } from '~/lib/resources/inventory'
 import { unitClient } from '~/lib/resources/units'
+import { resourceBindingFor } from '~/lib/resources/registry'
+import {
+  createMaterialPresentation,
+  submitMaterialForm,
+} from '~/lib/resources/presentation'
 import { attachFile, type UploadedFile } from '~/lib/files'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
@@ -11,7 +16,6 @@ import { statusToggleActions } from '~/components/synie-data-grid/status-actions
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -105,6 +109,7 @@ function MaterialsPage() {
   const queryClient = useQueryClient()
   // 请求守卫:防止慢响应把上一条物料的转换行回填到当前物料(同凭证页先例)
   const reqIdRef = useRef(0)
+  const materialPresentation = createMaterialPresentation(resourceBindingFor('invMaterials'))
 
   // 单位名称表:单位转换 tab 的「基准单位」提示按默认单位 id 反查名称
   const { data: unitNames } = useQuery({
@@ -192,7 +197,11 @@ function MaterialsPage() {
       <SynieRecordDrawer
         resource="invMaterials"
         client={materialClient}
-        {...drawerConfig('invMaterials')}
+        label={materialPresentation.label}
+        exclude={materialPresentation.exclude}
+        fields={materialPresentation.fields}
+        contentClassName={materialPresentation.contentClassName}
+        tabs={materialPresentation.tabs}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
@@ -280,8 +289,7 @@ function MaterialsPage() {
         }}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            const created = await materialClient.create(values)
-            const materialId = created.id
+            const materialId = await submitMaterialForm(materialPresentation, values, mode, undefined)
             const unitErrors = await persistUnits(materialId, units, [])
             // 暂存附件按槽位统一挂接;个别失败不阻断建料,提示手工补传即可
             const failed: string[] = []
@@ -303,19 +311,21 @@ function MaterialsPage() {
             } else if (failed.length === 0) {
               toast.success('物料已创建')
             }
+            queryClient.invalidateQueries({ queryKey: ['gridRows', materialClient.id, 'invMaterials'] })
+            queryClient.invalidateQueries({ queryKey: ['rowById', materialClient.id, 'invMaterials'] })
+            return materialId
+          }
+          const materialId = String(drawer!.row!.id)
+          await submitMaterialForm(materialPresentation, values, mode, materialId)
+          const unitErrors = await persistUnits(materialId, units, unitsSnapshot)
+          if (unitErrors.length > 0) {
+            toast.danger('物料已更新,但部分单位转换保存失败', { description: unitErrors.join('; ') })
           } else {
-            const materialId = drawer!.row!.id
-            await materialClient.update(materialId, values)
-            const unitErrors = await persistUnits(materialId, units, unitsSnapshot)
-            if (unitErrors.length > 0) {
-              toast.danger('物料已更新,但部分单位转换保存失败', { description: unitErrors.join('; ') })
-            } else {
-              toast.success('物料已更新')
-            }
+            toast.success('物料已更新')
           }
           queryClient.invalidateQueries({ queryKey: ['gridRows', materialClient.id, 'invMaterials'] })
-          // 抽屉走 rowId 自查,一并失效行缓存,重开详情不吃 30s staleTime 的旧行
           queryClient.invalidateQueries({ queryKey: ['rowById', materialClient.id, 'invMaterials'] })
+          return materialId
         }}
       />
     </>

@@ -14,10 +14,15 @@ import {
 import type { AggregateDraftAdapter, ResourceBinding } from '../catalog/types'
 import type { ResourceClient } from '../types'
 import {
+  createAccountPresentation,
   createCustomerPresentation,
+  createEmployeePresentation,
   createInvoicePresentation,
+  createMaterialPresentation,
   CUSTOMER_RESOURCE,
+  EMPLOYEE_RESOURCE,
   invoiceOcrRecognize,
+  MATERIAL_RESOURCE,
   submitCustomerForm,
   VAT_INVOICE_RESOURCE,
 } from './index'
@@ -114,6 +119,32 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
     const wire = JSON.stringify(doc)
     expect(wire).not.toMatch(/function|=>|React|ocrVatInvoice|componentPath|script/)
     expect(JSON.parse(wire).form).toEqual({ kind: 'extension' })
+  })
+
+  test('员工 PE：身份证影像 extraContent；物料 PE：tabs+effects 静态面', () => {
+    clearBindingsForTests()
+    registerBinding(
+      bindingFromResourceClient(EMPLOYEE_RESOURCE, mockClient(EMPLOYEE_RESOURCE)),
+    )
+    registerBinding(
+      bindingFromResourceClient(MATERIAL_RESOURCE, mockClient(MATERIAL_RESOURCE)),
+    )
+    registerBinding(bindingFromResourceClient('basAccounts', mockClient('basAccounts')))
+
+    const emp = createEmployeePresentation(resourceBindingFor(EMPLOYEE_RESOURCE))
+    expect(emp.kind).toBe('extension')
+    expect(typeof emp.extraContent).toBe('function')
+    expect(emp.fields.name?.required).toBe(true)
+
+    const mat = createMaterialPresentation(resourceBindingFor(MATERIAL_RESOURCE))
+    expect(mat.kind).toBe('extension')
+    expect(mat.tabs.map((t) => t.key)).toEqual(['basic', 'units'])
+    expect(typeof mat.fields.isCustomerMaterial?.effects).toBe('function')
+
+    const acc = createAccountPresentation(resourceBindingFor('basAccounts'))
+    expect(acc.kind).toBe('extension')
+    expect(typeof acc.fields.isGroup?.effects).toBe('function')
+    expect(typeof acc.fields.role?.visible).toBe('function')
   })
 
   test('客户 Catalog 投影 form.kind=extension 且无脚本字段', () => {

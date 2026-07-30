@@ -61,12 +61,18 @@ export function currencyResourceMeta(): ResourceMeta {
     ],
     actions: crudActions,
     form: {
+      kind: 'basic',
       exclude: ['id', 'active', 'insertedAt', 'updatedAt'],
       fields: {
         name: { required: true, placeholder: '如 人民币' },
         isoCode: { required: true, edit: 'createOnly', placeholder: '三位大写字母,如 CNY' },
         symbol: { placeholder: '如 ¥' },
       },
+    },
+    lookup: {
+      labelField: 'name',
+      searchFields: ['name', 'isoCode'],
+      subtitleFields: ['isoCode'],
     },
     audit: { enabled: true },
     destroyMutation: 'destroyBasCurrency',
@@ -190,6 +196,11 @@ export function unitResourceMeta(): ResourceMeta {
         ratio: { required: true, defaultValue: 1, placeholder: '换算到基准单位的比例' },
       },
     },
+    lookup: {
+      labelField: 'name',
+      searchFields: ['name', 'symbol'],
+      subtitleFields: ['symbol'],
+    },
     print: true,
     audit: { enabled: true },
     destroyMutation: 'destroyBasUnit',
@@ -282,10 +293,20 @@ export function accountResourceMeta(): ResourceMeta {
     ],
     actions: crudActions,
     form: {
-      exclude: ['id', 'insertedAt', 'updatedAt'],
+      kind: 'extension',
+      exclude: ['id', 'insertedAt', 'updatedAt', 'hasChildren', 'active'],
       fields: {
-        code: { required: true, edit: 'createOnly' },
+        code: { required: true, edit: 'createOnly', cols: 6, placeholder: '如 1001' },
         companyId: { required: true, edit: 'createOnly' },
+        currencyId: {
+          cols: 6,
+          filterState: { active: { kind: 'bool', eq: true } },
+        },
+        parentId: { cols: 6 },
+        name: { required: true, cols: 6, placeholder: '如 库存现金' },
+        direction: { required: true, cols: 6 },
+        isGroup: { cols: 6, defaultValue: false },
+        role: { cols: 6 },
       },
     },
     printLoops: [{ name: 'children', resource: ACCOUNT_RESOURCE_NAME }],

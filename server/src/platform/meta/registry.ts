@@ -10,11 +10,11 @@ import type {
 import { hasPermission, type Actor } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 import {
-  LEGACY_NORMALIZER_MARK,
-  normalizeLegacyResourceMeta,
+  buildNormalizedResource,
   projectResourceDocument,
   type NormalizedResource,
 } from './legacy-normalize.ts'
+import { applyResourceClassification } from './resource-classification.ts'
 import type { ResourceMeta } from './types.ts'
 
 const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/
@@ -41,30 +41,24 @@ export function createRegistry() {
     if (sealed) {
       throw new Error(`Registry 已 seal，禁止注册: ${resource.name}`)
     }
-    validate(resource)
-    if (resources.has(resource.name)) {
-      throw new Error(`重复 Meta 资源: ${resource.name}`)
+    // 工单 10：呈现分类 + form.kind/lookup 补齐；全部走 typed 规范化（legacy 调用数归零）
+    const classified = applyResourceClassification(resource)
+    const typed: ResourceMeta = { ...classified, catalogSource: 'typed' }
+    validate(typed)
+    if (resources.has(typed.name)) {
+      throw new Error(`重复 Meta 资源: ${typed.name}`)
     }
-    const previous = permissionLabels.get(resource.permissionPrefix)
-    if (previous !== undefined && previous !== resource.permissionLabel) {
+    const previous = permissionLabels.get(typed.permissionPrefix)
+    if (previous !== undefined && previous !== typed.permissionLabel) {
       throw new Error(
-        `共享权限前缀 ${resource.permissionPrefix} 的标签不一致: ${previous} / ${resource.permissionLabel}`,
+        `共享权限前缀 ${typed.permissionPrefix} 的标签不一致: ${previous} / ${typed.permissionLabel}`,
       )
     }
 
-    // expand 期存量定义一律经 legacy normalizer；typed 路径预留给后续工单
-    const source = resource.catalogSource ?? 'legacy'
-    if (source === 'legacy') {
-      const norm = normalizeLegacyResourceMeta(resource)
-      normalized.set(resource.name, norm)
-    } else {
-      // typed：仍存 ResourceMeta 兼容 get/list/filterbuild；v2 规范化后续工单补全
-      const norm = normalizeLegacyResourceMeta(resource)
-      normalized.set(resource.name, { ...norm, source: LEGACY_NORMALIZER_MARK })
-    }
-
-    resources.set(resource.name, resource)
-    permissionLabels.set(resource.permissionPrefix, resource.permissionLabel)
+    const norm = buildNormalizedResource(typed)
+    normalized.set(typed.name, norm)
+    resources.set(typed.name, typed)
+    permissionLabels.set(typed.permissionPrefix, typed.permissionLabel)
   }
 
   function get(name: string): ResourceMeta | undefined {
@@ -89,13 +83,7 @@ export function createRegistry() {
     }
     validateSealClosure()
     sealed = true
-    let legacy = 0
-    let typed = 0
-    for (const resource of resources.values()) {
-      if ((resource.catalogSource ?? 'legacy') === 'typed') typed++
-      else legacy++
-    }
-    return { total: resources.size, legacy, typed }
+    return catalogStats()
   }
 
   function validateSealClosure(): void {
@@ -314,7 +302,10 @@ export function createRegistry() {
       }
     }
 
-    const norm = normalized.get(name) ?? normalizeLegacyResourceMeta(resource)
+    const norm = normalized.get(name)
+    if (!norm) {
+      throw new Error(`Meta 资源 ${name} 缺少 Catalog 规范化结果（须经 register/seal）`)
+    }
     const catalog = projectResourceDocument(norm, capabilities, (field) =>
       applyRefAvailability(field, actor),
     )
@@ -368,7 +359,7 @@ export function createRegistry() {
     let legacy = 0
     let typed = 0
     for (const resource of resources.values()) {
-      if ((resource.catalogSource ?? 'legacy') === 'typed') typed++
+      if ((resource.catalogSource ?? 'typed') === 'typed') typed++
       else legacy++
     }
     return { total: resources.size, legacy, typed }

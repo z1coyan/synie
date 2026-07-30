@@ -10,3 +10,19 @@ export {
   invoiceOcrRecognize,
   submitInvoiceForm,
 } from './invoice'
+export {
+  EMPLOYEE_RESOURCE,
+  createEmployeePresentation,
+  submitEmployeeForm,
+} from './employee'
+export {
+  MATERIAL_RESOURCE,
+  createMaterialPresentation,
+  submitMaterialForm,
+  type MaterialPresentation,
+} from './material'
+export {
+  ACCOUNT_RESOURCE,
+  createAccountPresentation,
+  submitAccountForm,
+} from './account'

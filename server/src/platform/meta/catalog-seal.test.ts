@@ -4,6 +4,14 @@ import { createSealedResourceRegistry, registerAllResources } from './register-a
 import { currencyResourceMeta, companyResourceMeta } from '~/modules/base/meta.ts'
 import type { Actor } from '../authz/actor.ts'
 import { decodeResourceDocument } from '@synie/shared'
+import {
+  getLegacyNormalizerCallCount,
+  resetLegacyNormalizerCallCountForTests,
+} from './legacy-normalize.ts'
+import {
+  assertClassificationCoverage,
+  RESOURCE_CLASSIFICATION,
+} from './resource-classification.ts'
 
 const superAdmin: Actor = {
   userId: 'u',
@@ -16,15 +24,15 @@ const superAdmin: Actor = {
 }
 
 describe('Resource Catalog seal 与双投影', () => {
-  test('全部基线资源可 seal，报告 legacy 计数', () => {
+  test('全部基线资源可 seal，报告 typed 全覆盖（legacy 调用归零）', () => {
     const registry = createRegistry()
     registerAllResources(registry)
     expect(registry.isSealed()).toBe(false)
     const report = registry.seal()
     expect(registry.isSealed()).toBe(true)
     expect(report.total).toBe(97)
-    expect(report.legacy).toBe(97)
-    expect(report.typed).toBe(0)
+    expect(report.legacy).toBe(0)
+    expect(report.typed).toBe(97)
   })
 
   test('seal 后禁止继续注册', () => {
@@ -238,5 +246,47 @@ describe('Resource Catalog seal 与双投影', () => {
     const doc = registry.buildDocument('salDeliveries', superAdmin)
     const catalog = decodeResourceDocument(doc.catalog)
     expect(catalog.form.kind).toBe('extension')
+  })
+
+  test('分类表覆盖全部资源；legacy normalizer 调用数为 0', () => {
+    resetLegacyNormalizerCallCountForTests()
+    const registry = createRegistry()
+    registerAllResources(registry)
+    registry.seal()
+    assertClassificationCoverage(registry.list().map((r) => r.name))
+    expect(Object.keys(RESOURCE_CLASSIFICATION).length).toBe(97)
+    expect(getLegacyNormalizerCallCount()).toBe(0)
+
+    // lookup：员工/物料/分类/单位
+    for (const [name, expected] of [
+      ['hrEmployees', ['name', 'code', 'attendanceNo']],
+      ['invMaterials', ['name', 'code', 'spec']],
+      ['invMaterialCategories', ['name', 'code']],
+      ['basUnits', ['name', 'symbol']],
+    ] as const) {
+      const catalog = decodeResourceDocument(
+        registry.buildDocument(name, superAdmin).catalog,
+      )
+      expect(catalog.lookup.searchFields).toEqual([...expected])
+      expect(catalog.lookup.subtitleFields?.length).toBeGreaterThan(0)
+    }
+
+    // 呈现分类 → form.kind
+    expect(
+      decodeResourceDocument(registry.buildDocument('basAccounts', superAdmin).catalog).form.kind,
+    ).toBe('extension')
+    expect(
+      decodeResourceDocument(registry.buildDocument('hrEmployees', superAdmin).catalog).form.kind,
+    ).toBe('extension')
+    expect(
+      decodeResourceDocument(registry.buildDocument('invMaterials', superAdmin).catalog).form.kind,
+    ).toBe('extension')
+    expect(
+      decodeResourceDocument(registry.buildDocument('invMaterialCategories', superAdmin).catalog).form
+        .kind,
+    ).toBe('basic')
+    expect(
+      decodeResourceDocument(registry.buildDocument('invStockEntries', superAdmin).catalog).form.kind,
+    ).toBe('none')
   })
 })

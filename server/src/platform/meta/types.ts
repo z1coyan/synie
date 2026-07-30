@@ -68,6 +68,18 @@ export interface PrintLoopMeta {
   resource: string
 }
 
+/**
+ * 目标资源规范 lookup（label/search/subtitle/default sort）。
+ * 引用字段不得重复声明这些事实；缺省时由字段推导。
+ */
+export interface ResourceLookupDef {
+  labelField?: string
+  searchFields?: string[]
+  subtitleFields?: string[]
+  /** 与 Filter SortState 一致：ascending / descending */
+  defaultSort?: { column: string; direction: 'ascending' | 'descending' }
+}
+
 export interface ResourceMeta {
   /** 资源名，对齐旧 GridMeta 键（如 basCurrencies） */
   name: string
@@ -84,14 +96,19 @@ export interface ResourceMeta {
   fields: FieldMeta[]
   actions: ActionMeta[]
   form?: FormMeta
+  /**
+   * 选择器 lookup。缺省由字段名推导 name/code 等；
+   * 员工/物料/分类/单位等需多字段搜索时显式声明。
+   */
+  lookup?: ResourceLookupDef
   print?: boolean
   printHead?: boolean
   printLoops?: PrintLoopMeta[]
   audit?: { enabled: boolean; sensitiveFields?: string[] }
   destroyMutation?: string
   /**
-   * 写入路径标记。缺省 / 'legacy'：经 legacy normalizer 进入 Catalog。
-   * 新 typed ResourceDefinition 注册后使用 'typed'；legacy 入口在 seal 后禁止新资源误用。
+   * 写入路径标记。
+   * 工单 10 起全部资源为 'typed'（register 强制）；'legacy' 仅保留兼容类型，调用路径已归零。
    */
   catalogSource?: 'legacy' | 'typed'
 }

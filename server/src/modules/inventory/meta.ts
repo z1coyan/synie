@@ -87,13 +87,23 @@ export function materialCategoryResourceMeta(): ResourceMeta {
     ],
     actions: crud,
     form: {
-      exclude: ['id', 'active', 'insertedAt', 'updatedAt'],
+      kind: 'basic',
+      exclude: ['id', 'active', 'insertedAt', 'updatedAt', 'hasChildren'],
       fields: {
-        code: { required: true, placeholder: '如 01、0101' },
-        name: { required: true, placeholder: '如 原材料' },
-        isLeaf: { defaultValue: true },
-        parentId: { label: '上级分类' },
+        code: { required: true, placeholder: '如 01、0101', cols: 6 },
+        name: { required: true, placeholder: '如 原材料', cols: 6 },
+        isLeaf: { defaultValue: true, cols: 6 },
+        // 候选限定非叶子（叶子不能挂子分类；后端另有校验）
+        parentId: {
+          label: '上级分类',
+          filterState: { isLeaf: { kind: 'bool', eq: false } },
+        },
       },
+    },
+    lookup: {
+      labelField: 'name',
+      searchFields: ['name', 'code'],
+      subtitleFields: ['code'],
     },
     print: true,
     printLoops: [{ name: 'children', resource: 'invMaterialCategories' }],
@@ -148,15 +158,28 @@ export function materialResourceMeta(): ResourceMeta {
       }),
     ],
     actions: crud,
+    // 单位转换 tab + 客户料 effects + 图纸附件 → Presentation Extension
     form: {
+      kind: 'extension',
       exclude: ['active'],
       fields: {
         code: { edit: 'readOnly', placeholder: '保存后自动编号(分类号[客户号]-序号)' },
         name: { required: true },
-        categoryId: { required: true },
+        categoryId: {
+          required: true,
+          filterState: {
+            isLeaf: { kind: 'bool', eq: true },
+            active: { kind: 'bool', eq: true },
+          },
+        },
         defaultUnitId: { required: true },
         isCustomerMaterial: { defaultValue: false },
       },
+    },
+    lookup: {
+      labelField: 'name',
+      searchFields: ['name', 'code', 'spec'],
+      subtitleFields: ['code', 'spec'],
     },
     print: true,
     printHead: true,

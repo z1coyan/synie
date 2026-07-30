@@ -1,18 +1,25 @@
 {
-  "generatedAt": "2026-07-30T03:41:08.321Z",
+  "generatedAt": "2026-07-30T04:21:09.796Z",
   "commitHint": "run at implement time; re-run after each resource-catalog ticket",
   "summary": {
     "serverResourceCount": 97,
     "fieldTotal": 1383,
     "actionTotal": 305,
-    "formDeclared": 36,
+    "formDeclared": 62,
     "clientCount": 96,
     "drawerKeyCount": 84,
-    "remoteDefaultCount": 4,
+    "remoteDefaultCount": 0,
     "missingClientCount": 1,
     "extraClientCount": 0,
-    "missingDrawerCount": 14,
-    "extraDrawerCount": 1
+    "missingDrawerCount": 13,
+    "extraDrawerCount": 0,
+    "typedResources": 97,
+    "legacyResources": 0,
+    "legacyNormalizerCalls": 0,
+    "unclassifiedCount": 0,
+    "unexplainedMissingClientCount": 0,
+    "unexplainedMissingDrawerCount": 0,
+    "knownSpellingDriftCount": 0
   },
   "gaps": {
     "missingClients": [
@@ -24,7 +31,6 @@
       "hrAttendanceCorrections",
       "hrAttendanceDays",
       "invMaterialCategories",
-      "mfgSettings",
       "purOrderItemByproducts",
       "purOrderItemMaterials",
       "salCompanyAccountDefaults",
@@ -35,32 +41,837 @@
       "sysRolePermissions",
       "sysSettings"
     ],
-    "extraDrawers": [
-      "mfgSetting"
+    "extraDrawers": [],
+    "knownSpellingDrift": [],
+    "remoteDefaults": [],
+    "unclassified": [],
+    "explainedMissingClients": [
+      "sysRolePermissions"
     ],
-    "knownSpellingDrift": [
-      {
-        "kind": "drawer-typo",
-        "server": "mfgSettings",
-        "frontend": "mfgSetting",
-        "note": "drawer registry 使用历史拼写 mfgSetting；服务端与 ResourceClient 为 mfgSettings"
-      }
-    ],
-    "remoteDefaults": [
-      "basUnits",
-      "hrEmployees",
+    "unexplainedMissingClients": [],
+    "explainedMissingDrawers": [
+      "accSettings",
+      "hrAttendanceCorrections",
+      "hrAttendanceDays",
       "invMaterialCategories",
-      "invMaterials"
+      "purOrderItemByproducts",
+      "purOrderItemMaterials",
+      "salCompanyAccountDefaults",
+      "salDeliveryPackBoxes",
+      "salDeliveryPackLines",
+      "salSettings",
+      "scmOrderFlowItems",
+      "sysRolePermissions",
+      "sysSettings"
+    ],
+    "unexplainedMissingDrawers": [],
+    "frontendDeadTypos": [
+      {
+        "key": "mfgSetting",
+        "server": "mfgSettings",
+        "note": "drawer registry 历史拼写；工单 10 删除"
+      }
     ]
   },
   "extensible": {
-    "declaredCommands": 0,
-    "adapterCommands": 0,
-    "basicWritableFields": 0,
+    "declaredCommands": 51,
+    "adapterCommands": 51,
+    "basicWritableFields": 98,
     "legacyUsages": 0,
     "writeStubs": 0,
-    "notes": "declaredCommands/adapterCommands/basicWritableFields/legacyUsages/writeStubs 在工单 05+ 填入真实计数"
+    "typedResources": 97,
+    "legacyResources": 0,
+    "formKindCounts": {
+      "basic": 18,
+      "none": 48,
+      "extension": 31
+    },
+    "presentationCounts": {
+      "basic": 22,
+      "extension": 31,
+      "none": 44,
+      "reference-only": 0
+    },
+    "notes": "工单 10：全量 typed；legacy normalizer 调用归零；remote defaults 迁入 lookup；write stubs 由 binding 写能力省略"
   },
+  "classifications": [
+    {
+      "name": "accBankAccounts",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accBankImportItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accBankImports",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accBankImportTemplates",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accBankReconciliations",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accBankTransactions",
+      "presentation": "extension",
+      "interactive": true,
+      "note": "对账 reconcile 命令 + 导入",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accBillHoldings",
+      "presentation": "none",
+      "interactive": false,
+      "note": "只读持有投影",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accBills",
+      "presentation": "extension",
+      "interactive": true,
+      "note": "票面影像附件",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accBillTransactions",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accExpenseReportItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accExpenseReports",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accGlEntries",
+      "presentation": "none",
+      "interactive": false,
+      "note": "只读总账分录",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accGlJournalLines",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accGlJournals",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "accSettings",
+      "presentation": "basic",
+      "interactive": true,
+      "note": "update-only",
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "accVatInvoices",
+      "presentation": "extension",
+      "interactive": true,
+      "note": "OCR Presentation Extension",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "basAccounts",
+      "presentation": "extension",
+      "interactive": true,
+      "note": "汇总科目 effects + role 动态可见 + 公司上下文 parent 筛选",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "basCompanies",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "basCurrencies",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "basMarketInstruments",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "basMarketPricePoints",
+      "presentation": "basic",
+      "interactive": true,
+      "note": "create-only + void 命令；无 update",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "basUnits",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "hrAttendanceCorrections",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "hrAttendanceDays",
+      "presentation": "none",
+      "interactive": false,
+      "note": "列表 + collection recalc，无表单",
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "hrAttendanceImports",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "hrAttendancePunches",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "hrEmployeeLoans",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "hrEmployees",
+      "presentation": "extension",
+      "interactive": true,
+      "note": "身份证影像 extraContent",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "hrPayrollPayments",
+      "presentation": "basic",
+      "interactive": true,
+      "note": "create+delete，无 update",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "hrPayrolls",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "invMaterialCategories",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "invMaterials",
+      "presentation": "extension",
+      "interactive": true,
+      "note": "单位转换 tab + 客户料 effects + 图纸附件",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "invMaterialUnits",
+      "presentation": "none",
+      "interactive": false,
+      "note": "嵌于物料 PE 子表，无独立抽屉",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "invStockCountItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "invStockCounts",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "invStockDocItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "invStockDocs",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "invStockEntries",
+      "presentation": "none",
+      "interactive": false,
+      "note": "只读库存分录",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "invStockTransferItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "invStockTransfers",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "invWarehouses",
+      "presentation": "extension",
+      "interactive": true,
+      "note": "协作方多态外键，Basic Form fail-closed",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgBomByproducts",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgBomComponents",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgBomRoutes",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgBoms",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgDemandItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgDemands",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgOperations",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgOutputItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgOutputs",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgProcessTemplateItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgProcessTemplates",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgSettings",
+      "presentation": "basic",
+      "interactive": true,
+      "note": "update-only 设置；前端历史拼写 mfgSetting 已删除",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "mfgWorkOrders",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purOrderItemByproducts",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "purOrderItemMaterials",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "purOrderItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purOrders",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purOutsourcedIssueItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purOutsourcedIssues",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purOutsourcedReceiptItemByproducts",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purOutsourcedReceiptItemMaterials",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purOutsourcedReceiptItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purOutsourcedReceipts",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purQuotationItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purQuotations",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purQuotationTiers",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purReceiptItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purReceipts",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purReconciliationItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purReconciliations",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "purSuppliers",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salCompanyAccountDefaults",
+      "presentation": "none",
+      "interactive": false,
+      "note": "公司科目默认只读投影 / 嵌入设置",
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "salCustomers",
+      "presentation": "extension",
+      "interactive": true,
+      "note": "附件面板 Presentation Extension",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salDeliveries",
+      "presentation": "extension",
+      "interactive": true,
+      "note": "AggregateDraftAdapter + 装箱",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salDeliveryItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salDeliveryPackBoxes",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "salDeliveryPackLines",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "salOrderItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salOrders",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salQuotationItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salQuotations",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salQuotationTiers",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salReconciliationItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salReconciliations",
+      "presentation": "extension",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "salSettings",
+      "presentation": "basic",
+      "interactive": true,
+      "note": "update-only",
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "scmOrderFlowItems",
+      "presentation": "none",
+      "interactive": false,
+      "note": "订单流只读投影",
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "sysAuditLogs",
+      "presentation": "none",
+      "interactive": false,
+      "note": "只读审计",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "sysFiles",
+      "presentation": "basic",
+      "interactive": true,
+      "note": "create+delete，无 update",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "sysNumberingCounters",
+      "presentation": "none",
+      "interactive": false,
+      "note": "计数器只读投影",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "sysNumberingRules",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "sysPrintTemplates",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "sysRolePermissions",
+      "presentation": "none",
+      "interactive": false,
+      "note": "catalog-only：嵌于角色 PE，无独立 Client/抽屉",
+      "hasClient": false,
+      "hasDrawer": false
+    },
+    {
+      "name": "sysRoles",
+      "presentation": "extension",
+      "interactive": true,
+      "note": "builtin 动态隐藏 + 权限矩阵",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "sysSettings",
+      "presentation": "basic",
+      "interactive": true,
+      "note": "update-only",
+      "hasClient": true,
+      "hasDrawer": false
+    },
+    {
+      "name": "sysStorages",
+      "presentation": "basic",
+      "interactive": true,
+      "note": "setDefault 命令",
+      "hasClient": true,
+      "hasDrawer": true
+    },
+    {
+      "name": "sysUsers",
+      "presentation": "basic",
+      "interactive": true,
+      "note": null,
+      "hasClient": true,
+      "hasDrawer": true
+    }
+  ],
   "resources": [
     {
       "name": "accBankAccounts",
@@ -74,7 +885,7 @@
         "update",
         "delete"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -125,7 +936,7 @@
         "update",
         "delete"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -162,7 +973,7 @@
         "import",
         "export"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -201,7 +1012,7 @@
         "update",
         "delete"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -222,7 +1033,7 @@
         "audit",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -262,7 +1073,7 @@
         "audit",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -318,7 +1129,7 @@
         "audit",
         "cancel"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -360,7 +1171,7 @@
         "void",
         "reverse"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -384,7 +1195,7 @@
         "delete"
       ],
       "hasForm": true,
-      "formFieldHints": 5,
+      "formFieldHints": 13,
       "formHasSections": false,
       "formHasTabs": false,
       "extendedActionKeys": [],
@@ -403,7 +1214,7 @@
         "delete"
       ],
       "hasForm": true,
-      "formFieldHints": 5,
+      "formFieldHints": 6,
       "formHasSections": false,
       "formHasTabs": false,
       "extendedActionKeys": [],
@@ -480,7 +1291,7 @@
         "delete"
       ],
       "hasForm": true,
-      "formFieldHints": 3,
+      "formFieldHints": 8,
       "formHasSections": false,
       "formHasTabs": false,
       "extendedActionKeys": [],
@@ -498,7 +1309,7 @@
         "update",
         "delete"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -572,7 +1383,7 @@
         "update",
         "delete"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -609,7 +1420,7 @@
         "create",
         "delete"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -628,7 +1439,7 @@
         "update",
         "delete"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -648,7 +1459,7 @@
         "delete"
       ],
       "hasForm": true,
-      "formFieldHints": 8,
+      "formFieldHints": 9,
       "formHasSections": false,
       "formHasTabs": false,
       "extendedActionKeys": [],
@@ -719,7 +1530,7 @@
         "approve",
         "cancel"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -942,7 +1753,7 @@
         "close",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1002,7 +1813,7 @@
         "audit",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1077,7 +1888,7 @@
         "delete",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1149,7 +1960,7 @@
         "close",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1190,7 +2001,7 @@
         "audit",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1262,7 +2073,7 @@
         "audit",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1302,7 +2113,7 @@
         "audit",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1358,7 +2169,7 @@
         "audit",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1400,7 +2211,7 @@
         "audit",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1481,7 +2292,7 @@
         "export",
         "batch_print"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1573,7 +2384,7 @@
         "export",
         "batch_print"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1614,7 +2425,7 @@
         "audit",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,
@@ -1672,7 +2483,7 @@
         "audit",
         "void"
       ],
-      "hasForm": false,
+      "hasForm": true,
       "formFieldHints": 0,
       "formHasSections": false,
       "formHasTabs": false,

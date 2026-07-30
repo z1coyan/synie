@@ -226,14 +226,74 @@ const clients: Record<string, ResourceClient> = {
   scmOrderFlowItems: orderFlowItemClient,
 }
 
-/** 只读资源：不挂 create/update/delete（expand 期从 binding 生成 client 时省略 stub） */
-const READ_ONLY_RESOURCES = new Set([
-  'sysAuditLogs',
-  'accGlEntries',
-  'invStockEntries',
-  'scmOrderFlowItems',
-  'accBillHoldings',
-])
+/**
+ * 写能力边界：与服务端 actions 对齐。
+ * 不在集合中的资源默认 full CRUD；下列显式省略不支持的写方法（无 stub）。
+ */
+type WriteCaps = { create: boolean; update: boolean; delete: boolean }
+
+const WRITE_CAPS: Record<string, WriteCaps> = {
+  // 只读投影
+  sysAuditLogs: { create: false, update: false, delete: false },
+  accGlEntries: { create: false, update: false, delete: false },
+  invStockEntries: { create: false, update: false, delete: false },
+  scmOrderFlowItems: { create: false, update: false, delete: false },
+  accBillHoldings: { create: false, update: false, delete: false },
+  accBankImportItems: { create: false, update: false, delete: false },
+  accBankImports: { create: false, update: false, delete: false },
+  accBankReconciliations: { create: false, update: false, delete: false },
+  accExpenseReportItems: { create: false, update: false, delete: false },
+  accGlJournalLines: { create: false, update: false, delete: false },
+  hrAttendanceDays: { create: false, update: false, delete: false },
+  hrAttendanceImports: { create: false, update: false, delete: false },
+  hrAttendancePunches: { create: false, update: false, delete: false },
+  invMaterialUnits: { create: false, update: false, delete: false },
+  invStockCountItems: { create: false, update: false, delete: false },
+  invStockDocItems: { create: false, update: false, delete: false },
+  invStockTransferItems: { create: false, update: false, delete: false },
+  mfgBomByproducts: { create: false, update: false, delete: false },
+  mfgBomComponents: { create: false, update: false, delete: false },
+  mfgBomRoutes: { create: false, update: false, delete: false },
+  mfgDemandItems: { create: false, update: false, delete: false },
+  mfgOutputItems: { create: false, update: false, delete: false },
+  mfgProcessTemplateItems: { create: false, update: false, delete: false },
+  purOrderItemByproducts: { create: false, update: false, delete: false },
+  purOrderItemMaterials: { create: false, update: false, delete: false },
+  purOrderItems: { create: false, update: false, delete: false },
+  purOutsourcedIssueItems: { create: false, update: false, delete: false },
+  purOutsourcedReceiptItemByproducts: { create: false, update: false, delete: false },
+  purOutsourcedReceiptItemMaterials: { create: false, update: false, delete: false },
+  purOutsourcedReceiptItems: { create: false, update: false, delete: false },
+  purQuotationItems: { create: false, update: false, delete: false },
+  purQuotationTiers: { create: false, update: false, delete: false },
+  purReceiptItems: { create: false, update: false, delete: false },
+  purReconciliationItems: { create: false, update: false, delete: false },
+  salCompanyAccountDefaults: { create: false, update: false, delete: false },
+  salDeliveryItems: { create: false, update: false, delete: false },
+  salDeliveryPackBoxes: { create: false, update: false, delete: false },
+  salDeliveryPackLines: { create: false, update: false, delete: false },
+  salOrderItems: { create: false, update: false, delete: false },
+  salQuotationItems: { create: false, update: false, delete: false },
+  salQuotationTiers: { create: false, update: false, delete: false },
+  salReconciliationItems: { create: false, update: false, delete: false },
+  sysNumberingCounters: { create: false, update: false, delete: false },
+  // update-only 设置
+  accSettings: { create: false, update: true, delete: false },
+  mfgSettings: { create: false, update: true, delete: false },
+  salSettings: { create: false, update: true, delete: false },
+  sysSettings: { create: false, update: true, delete: false },
+  // 部分写
+  accBills: { create: false, update: true, delete: true },
+  basMarketPricePoints: { create: true, update: false, delete: false },
+  hrPayrollPayments: { create: true, update: false, delete: true },
+  sysFiles: { create: true, update: false, delete: true },
+  // 销售发货：表单写经 AggregateDraftAdapter，不暴露 create/update
+  salDeliveries: { create: false, update: false, delete: true },
+}
+
+function writeCapsFor(resource: string): WriteCaps {
+  return WRITE_CAPS[resource] ?? { create: true, update: true, delete: true }
+}
 
 /** 已迁移语义 CommandAdapter：覆盖自动生成的 proxy commands */
 const SEMANTIC_COMMAND_ADAPTERS: Record<string, CommandAdapter> = {
@@ -244,11 +304,11 @@ const SEMANTIC_COMMAND_ADAPTERS: Record<string, CommandAdapter> = {
 
 // 从现有 ResourceClient 一次性生成 ResourceBinding（第二事实源不再可编辑；以 clients 为运输实现）
 for (const [resource, client] of Object.entries(clients)) {
-  const readOnly = READ_ONLY_RESOURCES.has(resource)
+  const caps = writeCapsFor(resource)
   const binding = bindingFromResourceClient(resource, client, {
-    canCreate: !readOnly,
-    canUpdate: !readOnly,
-    canDelete: !readOnly,
+    canCreate: caps.create,
+    canUpdate: caps.update,
+    canDelete: caps.delete,
   })
   const commands = SEMANTIC_COMMAND_ADAPTERS[resource]
   if (commands) {
@@ -263,10 +323,11 @@ for (const [resource, client] of Object.entries(clients)) {
  * delete 仍经 writer；Grid 列表读经 reader；权威草稿读/写经 draft。
  */
 {
+  const caps = writeCapsFor('salDeliveries')
   const base = bindingFromResourceClient('salDeliveries', salesDeliveryClient, {
-    canCreate: false,
-    canUpdate: false,
-    canDelete: true,
+    canCreate: caps.create,
+    canUpdate: caps.update,
+    canDelete: caps.delete,
   })
   replaceBinding({
     ...base,
@@ -294,16 +355,21 @@ export function resourceClientFor(resource: string): ResourceClient {
 export function resourceBindingFor(resource: string): ResourceBinding {
   if (!hasBinding(resource) && clients[resource]) {
     // 理论上 module 加载时已注册；防御性补齐
-    const readOnly = READ_ONLY_RESOURCES.has(resource)
+    const caps = writeCapsFor(resource)
     registerBinding(
       bindingFromResourceClient(resource, clients[resource]!, {
-        canCreate: !readOnly,
-        canUpdate: !readOnly,
-        canDelete: !readOnly,
+        canCreate: caps.create,
+        canUpdate: caps.update,
+        canDelete: caps.delete,
       }),
     )
   }
   return bindingFor(resource)
+}
+
+/** 已注册 REST client 的资源键（基线/契约用） */
+export function listResourceClientKeys(): string[] {
+  return Object.keys(clients).sort()
 }
 
 /** 将 binding 适配为 ResourceClient（迁移中的页面可选用） */

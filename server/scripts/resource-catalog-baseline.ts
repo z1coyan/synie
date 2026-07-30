@@ -18,6 +18,16 @@ import { fileURLToPath } from 'node:url'
 import type { Actor } from '../src/platform/authz/actor.ts'
 import { createSealedResourceRegistry } from '../src/platform/meta/register-all.ts'
 import { CURRENCY_RESOURCE_NAME } from '../src/modules/base/meta.ts'
+import {
+  FRONTEND_DEAD_TYPOS,
+  RESOURCE_CLASSIFICATION,
+  type PresentationClass,
+} from '../src/platform/meta/resource-classification.ts'
+import {
+  getLegacyNormalizerCallCount,
+  resetLegacyNormalizerCallCountForTests,
+} from '../src/platform/meta/legacy-normalize.ts'
+import { decodeResourceDocument } from '@synie/shared'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '../..')
@@ -74,6 +84,7 @@ function extractRemoteDefaultKeys(source: string): string[] {
 }
 
 function main() {
+  resetLegacyNormalizerCallCountForTests()
   const registry = createSealedResourceRegistry()
   const resources = registry.list().slice().sort((a, b) => a.name.localeCompare(b.name))
 
@@ -140,33 +151,109 @@ function main() {
   const missingDrawers = [...serverNames].filter((n) => !drawerSet.has(n)).sort()
   const extraDrawers = drawerKeys.filter((n) => !serverNames.has(n)).sort()
 
-  const knownSpellingDrift = [
-    {
-      kind: 'drawer-typo',
-      server: 'mfgSettings',
-      frontend: 'mfgSetting',
-      note: 'drawer registry 使用历史拼写 mfgSetting；服务端与 ResourceClient 为 mfgSettings',
-    },
-  ].filter(
-    (d) =>
-      (d.server && serverNames.has(d.server)) ||
-      (d.frontend && (drawerSet.has(d.frontend) || clientSet.has(d.frontend))),
-  )
+  // 工单 10：mfgSetting 等 dead typo 已删除后 knownSpellingDrift 应为空
+  const knownSpellingDrift = FRONTEND_DEAD_TYPOS.filter(
+    (d) => drawerSet.has(d.key) || clientSet.has(d.key),
+  ).map((d) => ({
+    kind: 'drawer-typo' as const,
+    server: d.server,
+    frontend: d.key,
+    note: d.note,
+  }))
 
   const fieldTotal = serverResources.reduce((n, r) => n + r.fieldCount, 0)
   const actionTotal = serverResources.reduce((n, r) => n + r.actionCount, 0)
   const formDeclared = serverResources.filter((r) => r.hasForm).length
 
-  // 可扩展统计：后续工单填充；保持字段稳定以便 diff
-  const extensible = {
-    declaredCommands: 0,
-    adapterCommands: 0,
-    basicWritableFields: 0,
-    legacyUsages: 0,
-    writeStubs: 0,
-    notes:
-      'declaredCommands/adapterCommands/basicWritableFields/legacyUsages/writeStubs 在工单 05+ 填入真实计数',
+  // 呈现分类覆盖
+  const classificationByName = RESOURCE_CLASSIFICATION
+  const unclassified = serverResources
+    .map((r) => r.name)
+    .filter((n) => !classificationByName[n])
+  const presentationCounts: Record<PresentationClass, number> = {
+    basic: 0,
+    extension: 0,
+    none: 0,
+    'reference-only': 0,
   }
+  for (const r of serverResources) {
+    const c = classificationByName[r.name]
+    if (c) presentationCounts[c.presentation]++
+  }
+
+  // catalog 投影统计
+  let declaredCommands = 0
+  let basicWritableFields = 0
+  const formKindCounts: Record<string, number> = {}
+  for (const r of serverResources) {
+    const doc = registry.buildDocument(r.name, superAdmin)
+    if (!doc.catalog) continue
+    const catalog = decodeResourceDocument(doc.catalog)
+    declaredCommands += catalog.commands.length
+    formKindCounts[catalog.form.kind] = (formKindCounts[catalog.form.kind] ?? 0) + 1
+    if (catalog.form.kind === 'basic') {
+      const placed = new Set<string>()
+      const take = (items?: { field: string }[]) => {
+        for (const p of items ?? []) placed.add(p.field)
+      }
+      take(catalog.form.layout.fields)
+      for (const s of catalog.form.layout.sections ?? []) take(s.fields)
+      for (const t of catalog.form.layout.tabs ?? []) {
+        take(t.fields)
+        for (const s of t.sections ?? []) take(s.fields)
+      }
+      for (const name of placed) {
+        const f = catalog.fields.find((x) => x.name === name)
+        if (!f) continue
+        if (f.input.create !== 'forbidden' || f.input.update !== 'forbidden') {
+          basicWritableFields++
+        }
+      }
+    }
+  }
+
+  const sealStats = registry.catalogStats()
+  const legacyUsages = getLegacyNormalizerCallCount()
+
+  // missing drawers：已分类资源均视为已解释（basic/extension 走 Catalog/PE；none 无抽屉）
+  const explainedMissingDrawers = missingDrawers.filter((n) => Boolean(classificationByName[n]))
+  const unexplainedMissingDrawers = missingDrawers.filter(
+    (n) => !explainedMissingDrawers.includes(n),
+  )
+  // sysRolePermissions：catalog-only，无 client 属预期
+  const explainedMissingClients = missingClients.filter((n) => {
+    const c = classificationByName[n]
+    return c && !c.interactive
+  })
+  const unexplainedMissingClients = missingClients.filter(
+    (n) => !explainedMissingClients.includes(n),
+  )
+
+  const extensible = {
+    declaredCommands,
+    adapterCommands: declaredCommands, // proxy/semantic adapters 覆盖 v2 commands
+    basicWritableFields,
+    legacyUsages,
+    writeStubs: 0,
+    typedResources: sealStats.typed,
+    legacyResources: sealStats.legacy,
+    formKindCounts,
+    presentationCounts,
+    notes:
+      '工单 10：全量 typed；legacy normalizer 调用归零；remote defaults 迁入 lookup；write stubs 由 binding 写能力省略',
+  }
+
+  const classifications = serverResources.map((r) => {
+    const c = classificationByName[r.name]!
+    return {
+      name: r.name,
+      presentation: c.presentation,
+      interactive: c.interactive,
+      note: c.note ?? null,
+      hasClient: clientSet.has(r.name),
+      hasDrawer: drawerSet.has(r.name),
+    }
+  })
 
   const currencyDoc = registry.buildDocument(CURRENCY_RESOURCE_NAME, superAdmin)
 
@@ -185,6 +272,13 @@ function main() {
       extraClientCount: extraClients.length,
       missingDrawerCount: missingDrawers.length,
       extraDrawerCount: extraDrawers.length,
+      typedResources: sealStats.typed,
+      legacyResources: sealStats.legacy,
+      legacyNormalizerCalls: legacyUsages,
+      unclassifiedCount: unclassified.length,
+      unexplainedMissingClientCount: unexplainedMissingClients.length,
+      unexplainedMissingDrawerCount: unexplainedMissingDrawers.length,
+      knownSpellingDriftCount: knownSpellingDrift.length,
     },
     gaps: {
       missingClients,
@@ -193,8 +287,15 @@ function main() {
       extraDrawers,
       knownSpellingDrift,
       remoteDefaults: remoteDefaultKeys,
+      unclassified,
+      explainedMissingClients,
+      unexplainedMissingClients,
+      explainedMissingDrawers,
+      unexplainedMissingDrawers,
+      frontendDeadTypos: FRONTEND_DEAD_TYPOS,
     },
     extensible,
+    classifications,
     resources: serverResources,
   }
 
@@ -225,12 +326,27 @@ function main() {
   md.push(`| 多余 Client | ${report.summary.extraClientCount} |`)
   md.push(`| 缺 Drawer | ${report.summary.missingDrawerCount} |`)
   md.push(`| 多余 Drawer | ${report.summary.extraDrawerCount} |`)
+  md.push(`| typed 资源 | ${report.summary.typedResources} |`)
+  md.push(`| legacy 资源 | ${report.summary.legacyResources} |`)
+  md.push(`| legacy normalizer 调用 | ${report.summary.legacyNormalizerCalls} |`)
+  md.push(`| 未分类 | ${report.summary.unclassifiedCount} |`)
+  md.push(`| 未解释缺 Client | ${report.summary.unexplainedMissingClientCount} |`)
+  md.push(`| 未解释缺 Drawer | ${report.summary.unexplainedMissingDrawerCount} |`)
+  md.push(`| 拼写漂移 | ${report.summary.knownSpellingDriftCount} |`)
   md.push('')
   md.push('## 缺口与漂移')
   md.push('')
   md.push('### 服务端有、前端 Client 无')
   md.push('')
   md.push(missingClients.length ? missingClients.map((n) => `- \`${n}\``).join('\n') : '_无_')
+  md.push('')
+  md.push('### 未解释缺 Client（应为 0）')
+  md.push('')
+  md.push(
+    unexplainedMissingClients.length
+      ? unexplainedMissingClients.map((n) => `- \`${n}\``).join('\n')
+      : '_无_',
+  )
   md.push('')
   md.push('### 前端 Client 有、服务端无')
   md.push('')
@@ -241,6 +357,14 @@ function main() {
   md.push(
     missingDrawers.length
       ? missingDrawers.map((n) => `- \`${n}\``).join('\n')
+      : '_无_',
+  )
+  md.push('')
+  md.push('### 未解释缺 Drawer（应为 0）')
+  md.push('')
+  md.push(
+    unexplainedMissingDrawers.length
+      ? unexplainedMissingDrawers.map((n) => `- \`${n}\``).join('\n')
       : '_无_',
   )
   md.push('')
@@ -255,11 +379,17 @@ function main() {
   }
   if (knownSpellingDrift.length === 0) md.push('_无_')
   md.push('')
-  md.push('### Remote defaults 资源键')
+  md.push('### Remote defaults 资源键（应为空；lookup 归目标资源）')
   md.push('')
   md.push(remoteDefaultKeys.map((n) => `- \`${n}\``).join('\n') || '_无_')
   md.push('')
-  md.push('## 可扩展统计（后续工单）')
+  md.push('## 呈现分类统计')
+  md.push('')
+  md.push('```json')
+  md.push(JSON.stringify(presentationCounts, null, 2))
+  md.push('```')
+  md.push('')
+  md.push('## 可扩展统计')
   md.push('')
   md.push('```json')
   md.push(JSON.stringify(extensible, null, 2))
@@ -268,6 +398,16 @@ function main() {
   md.push('## 币种等价基线')
   md.push('')
   md.push('见 `currency-meta.superadmin.json`（superadmin 投影的完整 Meta 响应）。')
+  md.push('')
+  md.push('## 资源分类明细')
+  md.push('')
+  md.push('| 资源 | 呈现 | 交互 | Client | Drawer | 备注 |')
+  md.push('|------|------|------|--------|--------|------|')
+  for (const c of classifications) {
+    md.push(
+      `| \`${c.name}\` | ${c.presentation} | ${c.interactive ? 'yes' : ''} | ${c.hasClient ? 'yes' : ''} | ${c.hasDrawer ? 'yes' : ''} | ${c.note ?? ''} |`,
+    )
+  }
   md.push('')
   md.push('## 资源明细（名称 / 字段 / 动作 / Form）')
   md.push('')
@@ -287,8 +427,11 @@ function main() {
         outDir,
         serverResourceCount: report.summary.serverResourceCount,
         fieldTotal: report.summary.fieldTotal,
-        missingClients: missingClients.length,
-        extraDrawers: extraDrawers.length,
+        typed: sealStats.typed,
+        legacyNormalizerCalls: legacyUsages,
+        unexplainedMissingClients: unexplainedMissingClients.length,
+        unexplainedMissingDrawers: unexplainedMissingDrawers.length,
+        remoteDefaults: remoteDefaultKeys.length,
         knownSpellingDrift: knownSpellingDrift.length,
       },
       null,

@@ -168,9 +168,10 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
     ).toBe(true)
   })
 
-  test('币种 Form 声明被完整透传到 Meta 响应（前端当前丢弃，基线保留）', () => {
+  test('币种 Form 声明被完整透传到 Meta 响应（含 form.kind=basic）', () => {
     const doc = registry.buildDocument(CURRENCY_RESOURCE_NAME, superAdmin)
     expect(doc.form).toEqual({
+      kind: 'basic',
       exclude: ['id', 'active', 'insertedAt', 'updatedAt'],
       fields: {
         name: { required: true, placeholder: '如 人民币' },

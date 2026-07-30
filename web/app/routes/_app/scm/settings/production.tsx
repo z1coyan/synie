@@ -11,7 +11,7 @@ export const Route = createFileRoute('/_app/scm/settings/production')({
 function ScmProductionSettingsTab() {
   const queryClient = useQueryClient()
   const query = useQuery({
-    queryKey: ['mfgSetting'],
+    queryKey: ['mfgSettings'],
     queryFn: getManufacturingSetting,
   })
 
@@ -37,7 +37,7 @@ function ScmProductionSettingsTab() {
         outputOverreceiveRatio: String(overreceivePct / 100),
       })
       toast.success('生产设置已保存')
-      queryClient.invalidateQueries({ queryKey: ['mfgSetting'] })
+      queryClient.invalidateQueries({ queryKey: ['mfgSettings'] })
     } catch (e) {
       toast.danger('保存失败', { description: (e as Error).message })
     } finally {

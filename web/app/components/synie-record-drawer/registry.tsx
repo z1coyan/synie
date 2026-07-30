@@ -1,11 +1,9 @@
 import { Label, ListBox, Select, TextArea, TextField } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
-import { accountClient } from '~/lib/resources/accounts'
 import { currencyClient } from '~/lib/resources/currencies'
 import { marketInstrumentClient } from '~/lib/resources/market'
 import { unitClient } from '~/lib/resources/units'
 import { SynieAttachmentPanel } from '../synie-attachment-panel/SynieAttachmentPanel'
-import { SynieImageAttachment } from '../synie-attachment-panel/SynieImageAttachment'
 import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
 import type { SynieRecordDrawerProps } from './SynieRecordDrawer'
 
@@ -37,16 +35,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
   basCurrencies: { label: '货币' },
   basUnits: { label: '单位' },
   purSuppliers: { label: '供应商' },
-  basAccounts: {
-    label: '科目',
-    fields: {
-      code: { required: true, edit: 'createOnly' },
-      currencyId: {
-        remote: { client: currencyClient, filterState: { active: { kind: 'bool', eq: true } } },
-      },
-      parentId: { remote: { client: accountClient } },
-    },
-  },
+  // 字段/effects 由 basAccounts Presentation Extension 拥有（页面经 createAccountPresentation）
+  basAccounts: { label: '科目' },
   basMarketInstruments: {
     label: '行情品种',
     fields: {
@@ -823,42 +813,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
   purReconciliationItems: { label: '对账条目' },
   hrAttendancePunches: { label: '打卡记录' },
   hrAttendanceImports: { label: '考勤导入' },
-  hrEmployees: {
-    label: '员工',
-    contentClassName: 'w-full lg:w-[640px]',
-    fields: {
-      // 编号建成后必有值；创建可留空由后端 AutoNumber 取号，编辑态仍可修改
-      code: { order: 0, cols: 6, required: false, placeholder: '留空自动编号' },
-      name: { order: 1, cols: 6, required: true },
-      attendanceNo: { order: 2, cols: 6 },
-      phone: { order: 3, cols: 6 },
-      idNumber: { order: 4 },
-      householdRegistration: { order: 5 },
-      currentAddress: { order: 6 },
-      dailyWage: { order: 7, cols: 6, render: (v) => formatAmount(v) },
-      monthlyAllowance: { order: 8, cols: 6, render: (v) => formatAmount(v) },
-      insuranceTypes: { order: 9 },
-    },
-    // 身份证正/背面照片:附件槽位(owner+category),create 态无宿主 id,槽位自身显示提示
-    extraContent: (mode, row) => (
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <SynieImageAttachment
-          ownerType="hr_employee"
-          ownerId={row?.id as string | undefined}
-          category="id_front"
-          label="身份证正面"
-          readonly={mode === 'view'}
-        />
-        <SynieImageAttachment
-          ownerType="hr_employee"
-          ownerId={row?.id as string | undefined}
-          category="id_back"
-          label="身份证背面"
-          readonly={mode === 'view'}
-        />
-      </div>
-    ),
-  },
+  // 字段/身份证影像由 hrEmployees Presentation Extension 拥有
+  hrEmployees: { label: '员工' },
   mfgOperations: {
     label: '工序',
     fields: {
@@ -961,77 +917,10 @@ const registry: Record<string, ResourceDrawerConfig> = {
     },
   },
   mfgOutputItems: { label: '入库行' },
-  mfgSetting: {
-    label: '生产设置',
-    fields: {
-      outputOverreceiveRatio: {
-        order: 0,
-        label: '生产入库超入比例',
-        placeholder: '0=禁超入,0.05=5%',
-      },
-    },
-  },
-  invMaterials: {
-    label: '物料',
-    contentClassName: 'w-full lg:w-[640px]',
-    // 启用是状态不是表单字段(规范):新建默认启用,启停走列表行动作
-    exclude: ['active'],
-    // 两 tab:基本信息(字段+图纸/附件,附件走页面 extraContent)、单位转换(页面 tabExtraContent)
-    tabs: [
-      { key: 'basic', label: '基本信息' },
-      { key: 'units', label: '单位转换' },
-    ],
-    fields: {
-      // 编号仅自动取号(后端不接受手填、创建后不可改),两态禁用,占位说明规则
-      code: {
-        order: 0,
-        cols: 6,
-        section: '基本信息',
-        edit: 'readOnly',
-        placeholder: '保存后自动编号(分类号[客户号]-序号)',
-      },
-      // 物料只能挂启用的叶子分类(后端另有叶子校验兜底)
-      categoryId: {
-        order: 1,
-        cols: 6,
-        required: true,
-        remote: {
-          filterState: {
-            isLeaf: { kind: 'bool', eq: true },
-            active: { kind: 'bool', eq: true },
-          },
-        },
-      },
-      name: { order: 2, cols: 6, required: true },
-      spec: { order: 3, cols: 6, placeholder: '如 M8×30' },
-      // 客户物料字段自成一组,开关是组的总开关置于组首;分组标题随字段显隐
-      isCustomerMaterial: {
-        order: 4,
-        cols: 6,
-        section: '客户物料',
-        defaultValue: false,
-        // 关掉客户料时清空客户与对方料号(与后端 ClearCustomerWhenGeneral 一致)
-        effects: (v) => (v ? {} : { customerId: null, customerPartNo: null }),
-      },
-      customerId: {
-        order: 5,
-        cols: 6,
-        required: true,
-        visible: (values) => Boolean(values.isCustomerMaterial),
-      },
-      customerPartNo: {
-        order: 6,
-        cols: 6,
-        visible: (values) => Boolean(values.isCustomerMaterial),
-        placeholder: '客户侧料号',
-      },
-      defaultUnitId: { order: 7, cols: 6, required: true, section: '计量' },
-      // view 态时间戳收编出业务分组并垫底(order 默认是 meta 列序,会插进业务字段中间):
-      // hairline 分隔,不挂在「计量」组尾
-      insertedAt: { order: 98, section: '' },
-      updatedAt: { order: 99 },
-    },
-  },
+  // mfgSetting 历史拼写已删除；服务端/client 为 mfgSettings，设置页专用表单不经 drawer
+  mfgSettings: { label: '生产设置' },
+  // 字段/tabs/effects 由 invMaterials Presentation Extension 拥有
+  invMaterials: { label: '物料' },
   invMaterialUnits: { label: '单位转换' },
   invWarehouses: { label: '仓库' },
   invStockDocs: {

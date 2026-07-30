@@ -160,12 +160,19 @@ export function employeeResourceMeta(): ResourceMeta {
       }),
     ],
     actions: crud,
+    // 身份证影像：Presentation Extension
     form: {
+      kind: 'extension',
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
         code: { required: false, placeholder: '留空自动编号' },
         name: { required: true },
       },
+    },
+    lookup: {
+      labelField: 'name',
+      searchFields: ['name', 'code', 'attendanceNo'],
+      subtitleFields: ['code', 'attendanceNo'],
     },
     print: true,
     audit: { enabled: true, sensitiveFields: ['id_number'] },
