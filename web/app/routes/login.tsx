@@ -13,6 +13,7 @@ import {
 import { AppearanceSwitch } from '~/components/appearance-switch'
 import { login as loginSession } from '~/lib/api/session'
 import { getToken, setToken } from '~/lib/auth'
+import { clearCatalogCache, setCatalogActor } from '~/lib/resources/catalog'
 import { fetchSetupStatus } from '~/lib/setup'
 
 export const Route = createFileRoute('/login')({
@@ -52,7 +53,10 @@ function LoginPage() {
   const login = useMutation({
     mutationFn: () => loginSession(username, password),
     onSuccess: (data) => {
+      // 先清旧 Actor 的 Catalog 缓存，再绑定新用户，防止同标签页串号
+      clearCatalogCache()
       setToken(data.token)
+      setCatalogActor(data.user.id)
       // 清掉登录前可能缓存的 me:null,否则回到布局会被误判为登录态失效
       queryClient.removeQueries({ queryKey: ['me'] })
       toast.success(`欢迎回来,${data.user.name ?? data.user.username}`)

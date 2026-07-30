@@ -111,6 +111,14 @@ import {
 import { auditLogClient } from './system-ops'
 import { unitClient } from './units'
 import type { ResourceClient } from './types'
+import {
+  bindingFromResourceClient,
+  hasBinding,
+  registerBinding,
+  resourceBindingFor as bindingFor,
+  resourceClientFromBinding,
+  type ResourceBinding,
+} from './catalog'
 
 const clients: Record<string, ResourceClient> = {
   accGlEntries: glEntryClient,
@@ -213,9 +221,31 @@ const clients: Record<string, ResourceClient> = {
   scmOrderFlowItems: orderFlowItemClient,
 }
 
+/** 只读资源：不挂 create/update/delete（expand 期从 binding 生成 client 时省略 stub） */
+const READ_ONLY_RESOURCES = new Set([
+  'sysAuditLogs',
+  'accGlEntries',
+  'invStockEntries',
+  'scmOrderFlowItems',
+  'accBillHoldings',
+])
+
+// 从现有 ResourceClient 一次性生成 ResourceBinding（第二事实源不再可编辑；以 clients 为运输实现）
+for (const [resource, client] of Object.entries(clients)) {
+  const readOnly = READ_ONLY_RESOURCES.has(resource)
+  registerBinding(
+    bindingFromResourceClient(resource, client, {
+      canCreate: !readOnly,
+      canUpdate: !readOnly,
+      canDelete: !readOnly,
+    }),
+  )
+}
+
 /**
  * 共享资源组件的唯一默认解析入口。
- * 调用方未显式传 client 时必须命中 registry；禁止静默回退到其他传输层。
+ * expand 期仍返回 legacy ResourceClient 实现，保证 Grid/Drawer 行为不变；
+ * 写能力边界由 binding 约束（resourceBindingFor）。
  */
 export function resourceClientFor(resource: string): ResourceClient {
   const client = clients[resource]
@@ -223,4 +253,28 @@ export function resourceClientFor(resource: string): ResourceClient {
     throw new Error(`资源「${resource}」未注册 REST ResourceClient`)
   }
   return client
+}
+
+/**
+ * 类型安全 ResourceBinding 入口。未知资源显式失败。
+ * Grid / Drawer / 外键预览迁移后均应经本函数取能力。
+ */
+export function resourceBindingFor(resource: string): ResourceBinding {
+  if (!hasBinding(resource) && clients[resource]) {
+    // 理论上 module 加载时已注册；防御性补齐
+    const readOnly = READ_ONLY_RESOURCES.has(resource)
+    registerBinding(
+      bindingFromResourceClient(resource, clients[resource]!, {
+        canCreate: !readOnly,
+        canUpdate: !readOnly,
+        canDelete: !readOnly,
+      }),
+    )
+  }
+  return bindingFor(resource)
+}
+
+/** 将 binding 适配为 ResourceClient（迁移中的页面可选用） */
+export function resourceClientFromResourceBinding(resource: string): ResourceClient {
+  return resourceClientFromBinding(resourceBindingFor(resource))
 }

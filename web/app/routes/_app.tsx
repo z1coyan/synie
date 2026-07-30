@@ -12,6 +12,7 @@ import { FkPreviewProvider } from '~/components/synie-record-drawer/fk-preview-p
 import { clearToken, getToken } from '~/lib/auth'
 import { APIError } from '~/lib/api/client'
 import { fetchMe } from '~/lib/api/session'
+import { clearCatalogCache, setCatalogActor } from '~/lib/resources/catalog'
 import { fetchSetupStatus } from '~/lib/setup'
 
 export const Route = createFileRoute('/_app')({
@@ -59,10 +60,16 @@ function AppLayout() {
     }
   }, [setupStatus, setupStatusError, navigate])
 
+  // Actor 隔离 Catalog 缓存：me 到达后绑定 userId；切换账号不会复用能力投影
+  useEffect(() => {
+    if (data?.user?.id) setCatalogActor(data.user.id)
+  }, [data?.user?.id])
+
   // Go API 明确返回 401 时清除 JWT 并回登录页;其它网络错误留在页面重试。
   useEffect(() => {
     if (meIsError && meError instanceof APIError && meError.code === 'unauthorized') {
       clearToken()
+      clearCatalogCache()
       toast.warning('登录状态已失效,请重新登录')
       navigate({ to: '/login', replace: true })
     }
@@ -70,6 +77,7 @@ function AppLayout() {
 
   const logout = () => {
     clearToken()
+    clearCatalogCache()
     toast('已退出登录')
     navigate({ to: '/login' })
   }
