@@ -2,7 +2,7 @@
 
 > **2026-07-28 更新**：产品后端已切到 Bun/TS（`server/`）。下文原为 Go（`server-go/`）
 > 分层设计的模块依赖说明，**分层意图仍适用**（platform / engines / domain、
-> Meta Registry、filterbuild 白名单、引擎写事实表唯一入口）；目录与技术栈以
+> Resource Catalog、filterbuild 白名单、引擎写事实表唯一入口）；目录与技术栈以
 > `server/README.md` 与 `docs/migration/2026-07-28-go-to-bun-ts-cutover.md` 为准。
 > 历史 Go 树见 git tag `server-go-final`。
 
@@ -17,7 +17,10 @@
 - 跨域读取只有确有生产、测试两个 Adapter 时才在 `internal/ports` 建 Seam。
 - `engines/gl` 与 `engines/inventory` 是写事实表的唯一入口；单据在同一个
   `pgx.Tx` 中调用引擎并更新受控投影。
-- Go Meta Registry 是资源元数据权威源。未知资源、未知字段、未知动作均 fail-closed。
+- 现有 Bun/TS Meta Registry 的目标形态是 Resource Catalog。未知资源、未知字段、未知
+  动作均 fail-closed；Grid 与基础 Form 从同一份按 Actor 投影的 ResourceDocument
+  派生。目录不执行领域写入，已接受取舍见
+  [`2026-07-30-resource-catalog.md`](../adr/2026-07-30-resource-catalog.md)。
 - 固定 SQL 交给 sqlc；动态列表只由 Meta 白名单驱动的参数化 predicate builder 生成。
 
 ## 目录与依赖
@@ -88,11 +91,20 @@ argon2id 校验路径；10 次/300 秒后限流。JWT 使用 HS256，`iss=synie`
 `permissions`、`company_ids`。`HasPermission` 按具体码、资源通配、域通配、全域通配
 依次匹配；nil Actor 与未知权限 fail-closed。
 
-### Meta
+### Resource Catalog
 
-`Registry.MustRegister` 只在显式 `RegisterAll` 中调用。`BuildGridDTO` 从权威
-`ResourceMeta` 投影稳定 wire DTO，并按 Actor 裁剪 capabilities。Meta 只描述能力，
-不承载复杂业务状态机。
+> **2026-07-30 已接受目标设计，尚未实施**：本节描述 ADR 的目标形状；当前代码仍位于
+> `server/src/platform/meta/`，迁移由 `.scratch/resource-catalog/` 跟踪。
+
+所有业务模块的资源定义只在组合根显式注册一次；注册完成后 Catalog 必须 seal，
+并跨资源校验字段、枚举、外键、布局字段引用与动作能力。Catalog 从权威
+`ResourceDefinition` 投影带版本的 `ResourceDocument`，按 Actor 裁剪字段引用与
+capabilities，并为动态列表派生不可变的 `ResourceReadSpec`。
+
+前端单独获取并缓存完整 ResourceDocument，不再由 `ResourceClient.meta()` 返回
+Grid 子集。普通 CRUD 绑定 `ResourceReader` 与可选 `RecordWriter`；聚合草稿和领域命令
+分别绑定 `AggregateDraftAdapter` 与 `CommandAdapter`。动态 React 行为只放在与业务
+模块共置的 Presentation Extension，不能进入 wire 元数据。
 
 ### base/currency
 
