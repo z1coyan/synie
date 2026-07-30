@@ -32,6 +32,7 @@ import type { RemoteSourceConfig } from '../synie-remote-select/remote-query'
 import { FkLink } from './fk-preview'
 import {
   collectValues,
+  fieldChangePatch,
   initialValues,
   isFieldDisabled,
   missingRequiredFields,
@@ -348,7 +349,12 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                     value={values[f.name]}
                     values={values}
                     isDisabled={isFieldDisabled(f, renderMode) || saving}
-                    onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v, ...(f.effects?.(v) ?? {}) }))}
+                    onChange={(v, selectedRow) =>
+                      setValues((prev) => ({
+                        ...prev,
+                        ...fieldChangePatch(f, v, selectedRow),
+                      }))
+                    }
                     patchValues={patchValues}
                   />
                 )}
@@ -530,7 +536,7 @@ function FieldInput({
   value: unknown
   values: Record<string, unknown>
   isDisabled: boolean
-  onChange: (v: unknown) => void
+  onChange: (v: unknown, selectedRow?: Row | null) => void
   patchValues: (patch: Record<string, unknown>) => void
 }) {
   if (field.input) return <>{field.input({ value, onChange, isDisabled, values, patchValues })}</>
@@ -546,13 +552,16 @@ function FieldInput({
         ...(cfg as RemoteSourceConfig & { resource: string }),
         label: field.label,
         value: value == null || value === '' ? null : String(value),
-        onChange: (id: string | null) => onChange(id),
+        onChange: (id: string | null, selectedRow: Row | null) =>
+          onChange(id, selectedRow),
         isDisabled,
         isRequired: field.required,
         placeholder: field.placeholder,
         initialRows: rel ? [rel] : undefined,
       }
-      return field.picker === 'dialog' ? <RemoteDialogSelect {...common} /> : <RemoteSelect {...common} />
+      return field.picker === 'dialog'
+        ? <RemoteDialogSelect {...common} {...field.dialog} />
+        : <RemoteSelect {...common} />
     }
   }
 

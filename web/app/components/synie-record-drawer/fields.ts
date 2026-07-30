@@ -1,9 +1,20 @@
 import type { ReactNode } from 'react'
 import type { GridColumnMeta, Row } from '../synie-data-grid/types'
+import type { RemoteDialogSelectProps } from '../synie-remote-select/RemoteDialogSelect'
 import type { RemoteSourceConfig } from '../synie-remote-select/remote-query'
 
 export type DrawerMode = 'view' | 'create' | 'edit'
 export type FieldEdit = 'editable' | 'createOnly' | 'readOnly'
+export type DialogPickerConfig = Pick<
+  RemoteDialogSelectProps,
+  | 'dialogTitle'
+  | 'gridFilter'
+  | 'gridColumns'
+  | 'gridOverrides'
+  | 'gridDefaultSort'
+  | 'gridExtraFields'
+  | 'dialogClassName'
+>
 
 export interface FieldInputProps {
   value: unknown
@@ -55,10 +66,12 @@ export interface FieldOverride {
   render?: (value: unknown, row: Row) => ReactNode
   /** 表单控件替换(外键本轮用 TextField 顶,下轮换 RemoteSelect) */
   input?: (p: FieldInputProps) => ReactNode
-  /** 值变更联动:返回的补丁并入表单草稿(如 partyType 变更时清空 partyId) */
-  effects?: (value: unknown) => Record<string, unknown> | void
+  /** 值变更联动:返回的补丁并入表单草稿；外键选择器同时提供选中整行，供来源单据带入派生字段。 */
+  effects?: (value: unknown, selectedRow?: Row | null) => Record<string, unknown> | void
   /** fk 控件形态:默认 'select'(下拉);'dialog' 弹窗表格选择 */
   picker?: 'select' | 'dialog'
+  /** dialog 选择器的表格列、默认排序及弹窗展示配置。 */
+  dialog?: DialogPickerConfig
   /** fk 数据源定制(searchFields/renderItem/renderValue/filter…);resource 缺省取列 ref */
   remote?: Partial<RemoteSourceConfig>
 }
@@ -81,8 +94,9 @@ export interface ResolvedField {
   before?: FieldOverride['before']
   render?: (value: unknown, row: Row) => ReactNode
   input?: (p: FieldInputProps) => ReactNode
-  effects?: (value: unknown) => Record<string, unknown> | void
+  effects?: FieldOverride['effects']
   picker?: 'select' | 'dialog'
+  dialog?: DialogPickerConfig
   remote?: Partial<RemoteSourceConfig>
 }
 
@@ -122,11 +136,24 @@ export function resolveFields(
         input: o.input,
         effects: o.effects,
         picker: o.picker,
+        dialog: o.dialog,
         remote: o.remote,
       }
     })
   // sort 稳定:order 同值时保持 meta 列序
   return resolved.sort((a, b) => a.order - b.order)
+}
+
+/** 字段变更补丁：字段本值 + effects 派生值；dialog/select 外键可把选中整行交给联动。 */
+export function fieldChangePatch(
+  field: ResolvedField,
+  value: unknown,
+  selectedRow?: Row | null,
+): Record<string, unknown> {
+  return {
+    [field.name]: value,
+    ...(field.effects?.(value, selectedRow) ?? {}),
+  }
 }
 
 /** 当前 mode 下该字段是否禁用(view 态不走表单,不经此函数) */

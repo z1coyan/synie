@@ -150,4 +150,71 @@ describe('PR-2.17 制造域 REST 边界', () => {
     expect(client).toContain('audit: confirmDemand')
     expect(recordDrawer).toContain('auditAction.requiredCapability')
   })
+
+  test('新增生产工单的来源需求行使用精简排序的 dialog 选择器', () => {
+    const drawerConfig = source(
+      '../../../components/synie-record-drawer/extension-drawer-props.tsx',
+    )
+    const workOrderConfig = drawerConfig.match(
+      /mfgWorkOrders:\s*\{[\s\S]*?\n  \},\n  mfgOutputs:/,
+    )?.[0]
+
+    expect(workOrderConfig).toBeDefined()
+    expect(workOrderConfig).toContain("picker: 'dialog'")
+    const gridColumns = workOrderConfig
+      ?.match(/gridColumns:\s*\[([\s\S]*?)\]/)?.[1]
+      .matchAll(/'([^']+)'/g)
+    expect(gridColumns).toBeDefined()
+    expect([...(gridColumns ?? [])].map((match) => match[1])).toEqual([
+      'companyId',
+      'demandId',
+      'idx',
+      'materialCode',
+      'materialName',
+      'materialSpec',
+      'qty',
+      'unitName',
+      'needDate',
+      'fulfillmentMethod',
+      'status',
+    ])
+    expect(workOrderConfig).toContain(
+      "gridDefaultSort: { column: 'needDate', direction: 'ascending' }",
+    )
+    expect(workOrderConfig).toContain(
+      "gridExtraFields: ['materialId', 'unitId']",
+    )
+    for (const field of [
+      'companyId',
+      'demandId',
+      'materialId',
+      'unitId',
+      'needDate',
+      'materialCode',
+      'materialName',
+      'materialSpec',
+      'unitName',
+    ]) {
+      expect(workOrderConfig).toMatch(
+        new RegExp(`${field}:\\s*\\{[\\s\\S]*?edit:\\s*'readOnly'`),
+      )
+    }
+    for (const field of [
+      'companyId',
+      'demandId',
+      'materialId',
+      'unitId',
+      'qty',
+      'baseQty',
+      'needDate',
+      'materialCode',
+      'materialName',
+      'materialSpec',
+      'unitName',
+    ]) {
+      expect(workOrderConfig).toMatch(
+        new RegExp(`${field}:\\s*selectedRow\\?\\.${field}`),
+      )
+    }
+  })
 })

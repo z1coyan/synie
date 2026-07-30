@@ -1,6 +1,7 @@
 // bun app/components/synie-record-drawer/record-drawer-checks.ts 可直接运行的纯函数自检
 import {
   collectValues,
+  fieldChangePatch,
   initialValues,
   isFieldDisabled,
   missingRequired,
@@ -221,12 +222,61 @@ eq(
   '条件字段显形后必填生效'
 )
 
-// —— fk 字段:初值归一 + picker/remote 透传 ——
+// —— fk 字段:初值归一 + picker/dialog/remote 透传 ——
 const fkFields = resolveFields([parentCol], 'create', [], {
-  parentId: { picker: 'dialog', remote: { searchFields: ['name', 'code'] } },
+  parentId: {
+    picker: 'dialog',
+    dialog: {
+      gridColumns: ['code', 'name'],
+      gridDefaultSort: { column: 'code', direction: 'ascending' },
+    },
+    remote: { searchFields: ['name', 'code'] },
+  },
 })
 eq(fkFields[0].picker, 'dialog', 'picker 透传')
+eq(fkFields[0].dialog?.gridColumns, ['code', 'name'], 'dialog 列透传')
+eq(
+  fkFields[0].dialog?.gridDefaultSort,
+  { column: 'code', direction: 'ascending' },
+  'dialog 默认排序透传',
+)
 eq(fkFields[0].remote?.searchFields, ['name', 'code'], 'remote 透传')
+
+// —— dialog 选中整行须进入字段 effects，供来源单据带入派生字段 ——
+const selectedDemandItem = {
+  id: 'demand-item-1',
+  companyId: 'company-1',
+  demandId: 'demand-1',
+  materialId: 'material-1',
+  unitId: 'unit-1',
+  materialCode: 'MAT-001',
+  materialName: '测试物料',
+} satisfies Row
+const demandItemField = resolveFields([parentCol], 'create', [], {
+  parentId: {
+    effects: (_value, selectedRow) => ({
+      companyId: selectedRow?.companyId ?? null,
+      demandId: selectedRow?.demandId ?? null,
+      materialId: selectedRow?.materialId ?? null,
+      unitId: selectedRow?.unitId ?? null,
+      materialCode: selectedRow?.materialCode ?? '',
+      materialName: selectedRow?.materialName ?? '',
+    }),
+  },
+})[0]
+eq(
+  fieldChangePatch(demandItemField, selectedDemandItem.id, selectedDemandItem),
+  {
+    parentId: 'demand-item-1',
+    companyId: 'company-1',
+    demandId: 'demand-1',
+    materialId: 'material-1',
+    unitId: 'unit-1',
+    materialCode: 'MAT-001',
+    materialName: '测试物料',
+  },
+  'dialog 选中整行带入派生字段',
+)
 
 // —— before 字段前插槽:override 透传到 ResolvedField ——
 eq(
