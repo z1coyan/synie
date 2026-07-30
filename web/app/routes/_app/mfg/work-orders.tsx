@@ -110,6 +110,16 @@ function WorkOrdersPageInner() {
 
   const baseDrawer = drawerConfig('mfgWorkOrders')
 
+  const invalidateWorkOrderLists = () => {
+    // gridRows key = [gridRows, client.id, resource, ...]；须带 client.id 才能命中
+    queryClient.invalidateQueries({
+      queryKey: ['gridRows', workOrderClient.id, 'mfgWorkOrders'],
+    })
+    // 建单占安排，需求行剩余可安排也要刷新
+    queryClient.invalidateQueries({ queryKey: ['gridRows'] })
+    queryClient.invalidateQueries({ queryKey: ['rowById'] })
+  }
+
   /** 打开完整 BOM 创建 drawer；成功后回填 bomId / 已有工单则 apply */
   const openCreateBom = (
     materialId: string | null,
@@ -150,9 +160,7 @@ function WorkOrdersPageInner() {
               d ? { ...d, row: { ...d.row, ...updated } } : d,
             )
             toast.success(`BOM ${String(bom.code ?? '')} 已创建并选入工单`)
-            queryClient.invalidateQueries({
-              queryKey: ['gridRows', 'mfgWorkOrders'],
-            })
+            invalidateWorkOrderLists()
             queryClient.invalidateQueries({
               queryKey: ['workOrderBomSnapshot', rowId],
             })
@@ -215,9 +223,7 @@ function WorkOrdersPageInner() {
                           d ? { ...d, row: { ...d.row, ...updated } } : d,
                         )
                         toast.success(id ? '已选入 BOM 并快照' : '已清空 BOM')
-                        queryClient.invalidateQueries({
-                          queryKey: ['gridRows', 'mfgWorkOrders'],
-                        })
+                        invalidateWorkOrderLists()
                         queryClient.invalidateQueries({
                           queryKey: ['workOrderBomSnapshot', rowId],
                         })
@@ -294,8 +300,7 @@ function WorkOrdersPageInner() {
   )
 
   const refreshWo = () => {
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'mfgWorkOrders'] })
-    queryClient.invalidateQueries({ queryKey: ['rowById'] })
+    invalidateWorkOrderLists()
     if (rowId) {
       queryClient.invalidateQueries({
         queryKey: ['workOrderBomSnapshot', rowId],
@@ -437,9 +442,7 @@ function WorkOrdersPageInner() {
             })
             toast.success('生产工单已更新')
           }
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'mfgWorkOrders'],
-          })
+          invalidateWorkOrderLists()
         }}
       />
     </>
