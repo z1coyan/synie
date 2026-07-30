@@ -111,6 +111,18 @@ export function defineCommand<TInput, TOutput = void>(
   return { target, execute }
 }
 
+/**
+ * 从单记录界面触发命令。调用方已经持有唯一记录 id；本辅助只负责把它送入
+ * CommandAdapter，让 adapter 继续作为 target 解码与 transport 映射的权威边界。
+ */
+export function executeSingleRowCommand(
+  adapter: CommandAdapter,
+  key: string,
+  id: string,
+): Promise<unknown> {
+  return adapter.execute(key, { id } as never)
+}
+
 type RowCommandHandler = (id: string) => Promise<unknown>
 type RowCommandHandlers = Record<string, RowCommandHandler>
 

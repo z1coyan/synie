@@ -20,6 +20,7 @@ import {
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { resourceBindingFor, resourceTransportFromResourceBinding } from '~/lib/resources/registry'
+import { executeSingleRowCommand } from '~/lib/resources/catalog/commands'
 import type { ResourceTransport } from '~/lib/resources/types'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
@@ -283,7 +284,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
             if (!cmds) {
               throw new Error(`资源「${resource}」未绑定命令「${auditAction.key}」`)
             }
-            await cmds.execute(auditAction.key, { ids: [auditId] } as never)
+            await executeSingleRowCommand(cmds, auditAction.key, String(auditId))
           } catch (error) {
             errors = [{ message: error instanceof Error ? error.message : String(error) }]
           }

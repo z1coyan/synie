@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
   createCommandAdapter,
+  createRowCommandAdapter,
   decodeBulkTarget,
   decodeCollectionTarget,
   decodeRowOrBulkTarget,
   decodeRowTarget,
   defineCommand,
+  executeSingleRowCommand,
 } from './commands'
 import { storageCommandAdapter } from '../files'
 import { attendanceDayCommandAdapter } from '../hr-operations'
@@ -45,6 +47,19 @@ describe('Command target 解码 fail-closed', () => {
 })
 
 describe('已迁移语义 CommandAdapter 契约', () => {
+  test('单记录界面命令把保存后的唯一 id 作为 row target 传给审核', async () => {
+    const received: string[] = []
+    const adapter = createRowCommandAdapter({
+      audit: async (id) => {
+        received.push(id)
+      },
+    })
+
+    await executeSingleRowCommand(adapter, 'audit', 'saved-order-id')
+
+    expect(received).toEqual(['saved-order-id'])
+  })
+
   test('setDefault：row target，语义 key 与 capability 分离', async () => {
     expect(storageCommandAdapter.commands.setDefault.target).toBe('row')
     expect(Object.keys(storageCommandAdapter.commands)).toEqual(['setDefault'])
