@@ -57,10 +57,13 @@ describe('PR-2.17 制造域 REST 边界', () => {
     expect(template).toContain('client={processTemplateItemClient}')
 
     const bom = source('./boms.tsx')
-    expect(bom.match(/client=\{bomClient\}/g)?.length).toBe(2)
-    expect(bom).toContain('client={bomComponentClient}')
-    expect(bom).toContain('client={bomRouteClient}')
-    expect(bom).toContain('client={bomByproductClient}')
+    expect(bom).toContain('client={bomClient}')
+    expect(bom).toContain('BomDrawerProvider')
+    const bomDrawer = source('./boms/-bom-drawer.tsx')
+    expect(bomDrawer).toContain('client={bomComponentClient}')
+    expect(bomDrawer).toContain('client={bomRouteClient}')
+    expect(bomDrawer).toContain('client={bomByproductClient}')
+    expect(bomDrawer).toContain('client={bomClient}')
 
     const demandOrders = source('./demands/orders.tsx')
     const demandDrawer = source('./demands/-demand-drawer.tsx')
@@ -75,7 +78,8 @@ describe('PR-2.17 制造域 REST 边界', () => {
 
     const workOrder = source('./work-orders.tsx')
     expect(workOrder.match(/client=\{workOrderClient\}/g)?.length).toBe(2)
-    expect(workOrder).toContain('createWorkOrderInlineBom')
+    expect(workOrder).toContain('BomDrawerProvider')
+    expect(workOrder).toContain('useBomDrawer')
     expect(workOrder).toContain('RemoteDialogSelect')
     expect(workOrder).toContain('bomId: values.bomId')
     expect(workOrder).toContain("ownerType=\"mfg_work_order\"")

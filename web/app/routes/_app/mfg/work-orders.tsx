@@ -1,26 +1,22 @@
 import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Input, Label, Modal, TextField, toast } from '@heroui/react'
+import { Button, toast } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { FieldInputProps, FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
-import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
-import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import {
   applyWorkOrderBom,
-  bomClient,
-  bomComponentClient,
-  createWorkOrderInlineBom,
   getWorkOrderBomSnapshot,
   workOrderClient,
 } from '~/lib/resources/manufacturing'
 import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
 
 export const Route = createFileRoute('/_app/mfg/work-orders')({
   component: WorkOrdersPage,
@@ -58,14 +54,6 @@ const GRID_OVERRIDES = {
   needDate: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
-type InlineComp = {
-  key: string
-  materialId: string | null
-  unitId: string | null
-  quantity: string
-  lossRate: string
-}
-
 function bomGridFilter(materialId: string) {
   return {
     materialId: {
@@ -83,23 +71,20 @@ function bomGridFilter(materialId: string) {
 }
 
 function WorkOrdersPage() {
+  return (
+    <BomDrawerProvider>
+      <WorkOrdersPageInner />
+    </BomDrawerProvider>
+  )
+}
+
+function WorkOrdersPageInner() {
   const [drawer, setDrawer] = useState<{
     mode: DrawerMode
     row: Row | null
   } | null>(null)
-  const [inlineOpen, setInlineOpen] = useState(false)
-  /** create 态新建 BOM 写回 form；edit 态走 createInlineBom */
-  const [inlinePatch, setInlinePatch] = useState<
-    ((patch: Record<string, unknown>) => void) | null
-  >(null)
-  const [inlineMaterialId, setInlineMaterialId] = useState<string | null>(null)
-  const [inlinePlanName, setInlinePlanName] = useState('')
-  const [inlineCode, setInlineCode] = useState('')
-  const [inlineComps, setInlineComps] = useState<InlineComp[]>([
-    { key: '1', materialId: null, unitId: null, quantity: '', lossRate: '' },
-  ])
-  const [inlineSaving, setInlineSaving] = useState(false)
   const queryClient = useQueryClient()
+  const openBomDrawer = useBomDrawer()
 
   const perms = useQuery({
     queryKey: ['myPermissions'],
@@ -125,9 +110,10 @@ function WorkOrdersPage() {
 
   const baseDrawer = drawerConfig('mfgWorkOrders')
 
-  const openInlineCreate = (
+  /** 打开完整 BOM 创建 drawer；成功后回填 bomId / 已有工单则 apply */
+  const openCreateBom = (
     materialId: string | null,
-    patchValues: ((patch: Record<string, unknown>) => void) | null,
+    patchValues: (patch: Record<string, unknown>) => void,
   ) => {
     if (!materialId) {
       toast.danger('请先选择来源需求行')
@@ -139,14 +125,46 @@ function WorkOrdersPage() {
       })
       return
     }
-    setInlineMaterialId(materialId)
-    setInlinePatch(patchValues)
-    setInlinePlanName('')
-    setInlineCode('')
-    setInlineComps([
-      { key: '1', materialId: null, unitId: null, quantity: '', lossRate: '' },
-    ])
-    setInlineOpen(true)
+    openBomDrawer('create', null, {
+      materialId,
+      lockMaterial: true,
+      createStatus: 'ACTIVE',
+      onCreated: (bom) => {
+        const id = String(bom.id)
+        if (drawer?.mode === 'create' || !rowId) {
+          patchValues({ bomId: id })
+          toast.success(
+            `BOM ${String(bom.code ?? '')} 已选入表单，保存工单时快照`,
+          )
+          return
+        }
+        if (!canEditBomOnExisting) {
+          patchValues({ bomId: id })
+          return
+        }
+        void (async () => {
+          try {
+            const updated = (await applyWorkOrderBom(rowId, id)) as Row
+            patchValues({ bomId: id })
+            setDrawer((d) =>
+              d ? { ...d, row: { ...d.row, ...updated } } : d,
+            )
+            toast.success(`BOM ${String(bom.code ?? '')} 已创建并选入工单`)
+            queryClient.invalidateQueries({
+              queryKey: ['gridRows', 'mfgWorkOrders'],
+            })
+            queryClient.invalidateQueries({
+              queryKey: ['workOrderBomSnapshot', rowId],
+            })
+          } catch (e) {
+            toast.danger('BOM 已创建但选入工单失败', {
+              description: (e as Error).message,
+            })
+            patchValues({ bomId: id })
+          }
+        })()
+      },
+    })
   }
 
   const bomFieldOverride = useMemo((): FieldOverride => {
@@ -159,7 +177,6 @@ function WorkOrdersPage() {
             : String(p.values.materialId)
         const value =
           p.value == null || p.value === '' ? null : String(p.value)
-        // create：写草稿；edit 进行中：即时 apply
         const isCreate = drawer?.mode === 'create'
         const disabled =
           p.isDisabled ||
@@ -179,7 +196,6 @@ function WorkOrdersPage() {
                       p.onChange(id)
                       return
                     }
-                    // edit：即时应用快照
                     if (!rowId || !canEditBomOnExisting) {
                       p.onChange(id)
                       return
@@ -237,9 +253,7 @@ function WorkOrdersPage() {
                   size="sm"
                   variant="secondary"
                   isDisabled={!materialId || !canCreateBom || disabled}
-                  onPress={() =>
-                    openInlineCreate(materialId, p.patchValues)
-                  }
+                  onPress={() => openCreateBom(materialId, p.patchValues)}
                 >
                   新建 BOM
                 </Button>
@@ -247,7 +261,8 @@ function WorkOrdersPage() {
             </div>
             {!materialId && drawer?.mode === 'create' && (
               <p className="text-xs text-ink-500">
-                选定来源需求行后，可引用本物料启用中 BOM 或现场新建。
+                选定来源需求行后，可引用本物料启用中 BOM，或打开完整 BOM
+                表单新建。
               </p>
             )}
             {materialId && !canCreateBom && (
@@ -286,69 +301,12 @@ function WorkOrdersPage() {
     }
   }
 
-  const onCreateInline = async () => {
-    if (!inlineMaterialId) return
-    if (!canCreateBom) {
-      toast.danger('无权限创建 BOM', {
-        description: '需要 mfg.bom 写权限',
-      })
-      return
-    }
-    const components = inlineComps
-      .filter((c) => c.materialId && c.unitId && c.quantity.trim())
-      .map((c) => ({
-        materialId: c.materialId!,
-        unitId: c.unitId!,
-        quantity: c.quantity.trim(),
-        lossRate: c.lossRate.trim() ? c.lossRate.trim() : null,
-      }))
-    setInlineSaving(true)
-    try {
-      // create 态：先建启用 BOM 写回 form；edit 态：工单内嵌一键快照
-      if (drawer?.mode === 'create' || !rowId) {
-        const bom = (await bomClient.create({
-          code: inlineCode.trim() || null,
-          materialId: inlineMaterialId,
-          planName: inlinePlanName.trim() || null,
-          status: 'ACTIVE',
-        })) as Row
-        for (const c of components) {
-          await bomComponentClient.create({
-            bomId: bom.id,
-            ...c,
-          })
-        }
-        inlinePatch?.({ bomId: bom.id })
-        toast.success(
-          `BOM ${String(bom.code)} 已创建并选入（保存工单时快照）`,
-        )
-      } else {
-        const result = (await createWorkOrderInlineBom(rowId, {
-          code: inlineCode.trim() || null,
-          planName: inlinePlanName.trim() || null,
-          components,
-        })) as { workOrder: Row; bom: Row }
-        inlinePatch?.({ bomId: result.bom.id })
-        setDrawer((d) =>
-          d ? { ...d, row: { ...d.row, ...result.workOrder } } : d,
-        )
-        toast.success(`BOM ${String(result.bom.code)} 已创建并选入`)
-        refreshWo()
-      }
-      setInlineOpen(false)
-    } catch (e) {
-      toast.danger('创建 BOM 失败', { description: (e as Error).message })
-    } finally {
-      setInlineSaving(false)
-    }
-  }
-
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">生产工单</h1>
       <p className="mt-2 text-sm text-ink-500">
-        从已确认未关闭需求行生成；同一需求行可开多张工单，数量默认剩余可安排。新增时可选用启用中
-        BOM 或现场新建；创建时复制物料图纸挂接（无图不拦）。
+        从已确认未关闭需求行生成；同一需求行可开多张工单，数量默认剩余可安排。新增时可
+        dialog 选用启用中 BOM，或打开完整 BOM 表单新建；创建时复制物料图纸挂接。
       </p>
 
       <div className="mt-6">
@@ -482,141 +440,6 @@ function WorkOrdersPage() {
           })
         }}
       />
-
-      <Modal.Backdrop
-        isOpen={inlineOpen}
-        onOpenChange={(open) => !open && setInlineOpen(false)}
-      >
-        <Modal.Container>
-          <Modal.Dialog className="max-w-lg" aria-label="新建 BOM">
-            <Modal.Header>
-              <Modal.Heading>
-                {drawer?.mode === 'create'
-                  ? '新建 BOM 并选入工单'
-                  : '新建 BOM 并快照到本工单'}
-              </Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="space-y-3">
-              <p className="text-sm text-ink-500">
-                母物料锁定为当前工单物料；保存后进入 BOM 主数据（启用）
-                {drawer?.mode === 'create'
-                  ? '，并写入本表单；生成工单时一并快照。'
-                  : '，并立即快照到本工单。'}
-              </p>
-              <TextField value={inlineCode} onChange={setInlineCode}>
-                <Label>编号（可空自动取号）</Label>
-                <Input placeholder="留空自动编号" />
-              </TextField>
-              <TextField value={inlinePlanName} onChange={setInlinePlanName}>
-                <Label>方案名称</Label>
-                <Input placeholder="如 自用" />
-              </TextField>
-              <div className="space-y-2">
-                <p className="text-sm font-medium">配料行</p>
-                {inlineComps.map((c, idx) => (
-                  <div
-                    key={c.key}
-                    className="grid grid-cols-1 gap-2 rounded-md border border-border p-2 sm:grid-cols-2"
-                  >
-                    <RemoteSelect
-                      resource="invMaterials"
-                      value={c.materialId}
-                      onChange={(v) =>
-                        setInlineComps((rows) =>
-                          rows.map((r, i) =>
-                            i === idx
-                              ? { ...r, materialId: v, unitId: null }
-                              : r,
-                          ),
-                        )
-                      }
-                      labelField="name"
-                      label="子物料"
-                    />
-                    <MaterialUnitSelect
-                      materialId={c.materialId}
-                      value={c.unitId}
-                      onChange={(v) =>
-                        setInlineComps((rows) =>
-                          rows.map((r, i) =>
-                            i === idx
-                              ? {
-                                  ...r,
-                                  unitId:
-                                    v == null || v === '' ? null : String(v),
-                                }
-                              : r,
-                          ),
-                        )
-                      }
-                      isDisabled={c.materialId == null}
-                    />
-                    <TextField
-                      value={c.quantity}
-                      onChange={(v) =>
-                        setInlineComps((rows) =>
-                          rows.map((r, i) =>
-                            i === idx ? { ...r, quantity: v } : r,
-                          ),
-                        )
-                      }
-                    >
-                      <Label>净用量</Label>
-                      <Input placeholder="如 1" />
-                    </TextField>
-                    <TextField
-                      value={c.lossRate}
-                      onChange={(v) =>
-                        setInlineComps((rows) =>
-                          rows.map((r, i) =>
-                            i === idx ? { ...r, lossRate: v } : r,
-                          ),
-                        )
-                      }
-                    >
-                      <Label>损耗率（可空）</Label>
-                      <Input placeholder="如 0.05" />
-                    </TextField>
-                  </div>
-                ))}
-                <Button
-                  size="sm"
-                  variant="tertiary"
-                  onPress={() =>
-                    setInlineComps((rows) => [
-                      ...rows,
-                      {
-                        key: String(Date.now()),
-                        materialId: null,
-                        unitId: null,
-                        quantity: '',
-                        lossRate: '',
-                      },
-                    ])
-                  }
-                >
-                  加一行配料
-                </Button>
-              </div>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button
-                variant="secondary"
-                isDisabled={inlineSaving}
-                onPress={() => setInlineOpen(false)}
-              >
-                取消
-              </Button>
-              <Button
-                isPending={inlineSaving}
-                onPress={() => void onCreateInline()}
-              >
-                保存并选入
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
     </>
   )
 }
