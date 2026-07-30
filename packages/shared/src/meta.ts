@@ -1,8 +1,12 @@
 /**
  * Meta wire DTO（GridMetaDTO / FormMetaDTO / 权限目录），对齐
- * web/app/components/synie-data-grid/types.ts 与 server-go platform/meta 的 JSON 形状。
- * 服务端 Registry 投影产出、前端 Resource Client 消费；本文件是两侧共用契约。
+ * web/app/components/synie-data-grid/types.ts 与既有 Meta JSON 形状。
+ * 服务端 Registry 投影产出、前端 Resource Client 消费。
+ *
+ * ResourceDocument v2 定义见 `resource-document.ts`。迁移期
+ * ResourceMetaDocument 同时承载 v1 grid/form 与可选 `catalog`。
  */
+import type { ResourceDocument } from './resource-document.ts'
 
 export type GridColumnType =
   | 'string'
@@ -74,11 +78,17 @@ export interface FormMeta {
   tabs?: Record<string, unknown>[]
 }
 
-/** GET /api/v1/meta/resources/{name} 的响应 */
+/**
+ * GET /api/v1/meta/resources/{name} 的兼容响应。
+ * expand 期：`catalog` 可选；contract 后仅保留 v2 envelope。
+ */
 export interface ResourceMetaDocument {
   name: string
   grid: GridMeta
+  /** @deprecated v1 兼容 Form；由 catalog.form 取代 */
   form?: FormMeta
+  /** ResourceDocument v2（expand 期由服务端并行投影） */
+  catalog?: ResourceDocument
 }
 
 /** GET /api/v1/meta/resources 的列表项 */
