@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Tabs } from '@heroui/react'
-import { fetchMe } from '~/lib/api/session'
+import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
 
 export const Route = createFileRoute('/_app/scm/other-stock')({
   component: OtherStockLayout,
@@ -27,14 +27,14 @@ function OtherStockLayout() {
 
   const perms = useQuery({
     queryKey: ['myPermissions'],
-    queryFn: () => fetchMe().then((d) => new Set(d.permissions)),
+    queryFn: fetchMyPermissions,
     staleTime: 60_000,
   })
 
   // 权限未到前 fail-open 展示全部 tab,避免首屏空白闪;落地后按 read 隐藏
   const tabs = useMemo(() => {
     if (!perms.data) return [...ALL_TABS]
-    return ALL_TABS.filter((t) => perms.data.has(t.read))
+    return ALL_TABS.filter((t) => hasPermission(perms.data, t.read))
   }, [perms.data])
 
   const selected: TabId =

@@ -138,8 +138,12 @@ describe('PR-2.17 制造域 REST 边界', () => {
     expect(layout).toContain('<DemandDrawerProvider>')
     expect(items).toContain('createLabel="新建需求单"')
     expect(items).toContain("openDrawer('create', null)")
+    expect(items).toContain(
+      "hasPermission(perms.data, 'mfg.demand:create')",
+    )
     expect(drawer).toContain('extraContent=')
     expect(drawer).not.toContain('tabExtraContent=')
+    expect(drawer).toContain('defaultValue: todayLocal()')
     expect(
       drawerConfig.match(/mfgDemands:\s*\{[\s\S]*?\n  \},\n  mfgWorkOrders:/)?.[0],
     ).not.toContain('tabs:')

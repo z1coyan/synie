@@ -13,6 +13,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { hasPermission } from '~/lib/permissions'
 import {
   confirmDemand,
   demandClient,
@@ -36,6 +37,13 @@ const FULFILLMENT_LABELS: Record<string, string> = {
   BUY: '外购',
   OUTSOURCE: '委外',
   STOCK: '库存',
+}
+
+// 本地日期 YYYY-MM-DD（不用 toISOString：UTC 串在 UTC+8 凌晨会差一天）。
+function todayLocal(): string {
+  const date = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 /**
@@ -138,9 +146,11 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
     if (drawer?.demand) load(drawer.demand.id)
   })
 
-  const canUpdateDemand = perms.data?.has('mfg.demand:update') ?? false
-  const canCreateWorkOrder =
-    perms.data?.has('mfg.work_order:create') ?? false
+  const canUpdateDemand = hasPermission(perms.data, 'mfg.demand:update')
+  const canCreateWorkOrder = hasPermission(
+    perms.data,
+    'mfg.work_order:create',
+  )
 
   const openDrawer: OpenDemandDrawer = (mode, demand) => {
     setDrawer({ mode, demand })
@@ -151,6 +161,17 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
     !drawer?.demand || drawer.demand.status === 'DRAFT'
   const nextIdx =
     items.reduce((max, row) => Math.max(max, Number(row.idx) || 0), 0) + 1
+  const baseDrawerConfig = drawerConfig('mfgDemands')
+  const demandDrawerConfig = {
+    ...baseDrawerConfig,
+    fields: {
+      ...baseDrawerConfig.fields,
+      demandDate: {
+        ...baseDrawerConfig.fields?.demandDate,
+        defaultValue: todayLocal(),
+      },
+    },
+  }
 
   return (
     <DemandDrawerContext.Provider value={openDrawer}>
@@ -159,7 +180,7 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
       <SynieRecordDrawer
         resource="mfgDemands"
         client={demandClient}
-        {...drawerConfig('mfgDemands')}
+        {...demandDrawerConfig}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}

@@ -6,6 +6,7 @@ import {
 } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { demandItemClient } from '~/lib/resources/manufacturing'
+import { hasPermission } from '~/lib/permissions'
 import {
   canChangeFulfillmentItem,
   canCompleteItem,
@@ -89,9 +90,12 @@ function DemandItemsTab() {
   const refetchRef = useRef<() => void>(() => {})
   const itemActions = useDemandItemActions(() => refetchRef.current())
 
-  const canCreateDemand = perms.data?.has('mfg.demand:create') ?? false
-  const canUpdateDemand = perms.data?.has('mfg.demand:update') ?? false
-  const canCreateWorkOrder = perms.data?.has('mfg.work_order:create') ?? false
+  const canCreateDemand = hasPermission(perms.data, 'mfg.demand:create')
+  const canUpdateDemand = hasPermission(perms.data, 'mfg.demand:update')
+  const canCreateWorkOrder = hasPermission(
+    perms.data,
+    'mfg.work_order:create',
+  )
 
   return (
     <>

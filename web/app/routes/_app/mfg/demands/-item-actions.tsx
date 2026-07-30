@@ -11,7 +11,7 @@ import {
 } from '@heroui/react'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import type { Row } from '~/components/synie-data-grid/types'
-import { apiData, api } from '~/lib/api/client'
+import { fetchMyPermissions } from '~/lib/permissions'
 import {
   changeDemandItemFulfillment,
   completeDemandItem,
@@ -39,10 +39,7 @@ export const canGenerateWorkOrder = (row: Row) =>
 export function useMyPermissions() {
   return useQuery({
     queryKey: ['myPermissions'],
-    queryFn: () =>
-      apiData<{ permissions: string[] }>(api.auth.me.$get()).then(
-        (result) => new Set(result.permissions),
-      ),
+    queryFn: fetchMyPermissions,
     staleTime: 60_000,
   })
 }

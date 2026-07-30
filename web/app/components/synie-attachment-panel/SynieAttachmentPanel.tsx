@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
-import { fetchMe } from '~/lib/api/session'
+import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
 import { deleteAttachment, fileClient } from '~/lib/resources/files'
 import { downloadFile, uploadFile, type UploadedFile } from '~/lib/files'
 import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
@@ -67,10 +67,12 @@ export function SynieAttachmentPanel({
   // 无共享权限 hook,面板自查;queryKey 共享,多实例只发一次。fail-closed:拉不到=无权限
   const perms = useQuery({
     queryKey: ['myPermissions'],
-    queryFn: () => fetchMe().then((d) => new Set(d.permissions)),
+    queryFn: fetchMyPermissions,
   })
-  const canCreate = (perms.data?.has('sys.file:create') ?? false) && !readonly
-  const canDelete = (perms.data?.has('sys.file:delete') ?? false) && !readonly
+  const canCreate =
+    hasPermission(perms.data, 'sys.file:create') && !readonly
+  const canDelete =
+    hasPermission(perms.data, 'sys.file:delete') && !readonly
 
   const listKey = attachmentListKey(ownerType, ownerId, category)
 
