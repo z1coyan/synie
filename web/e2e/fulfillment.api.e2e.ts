@@ -156,6 +156,34 @@ async function openDeliveryEdit(
   return drawer;
 }
 
+async function chooseDrawerOption(
+  page: Page,
+  drawer: Locator,
+  label: string,
+  optionText: string,
+): Promise<void> {
+  const remotePlaceholder: Record<string, string> = {
+    公司: "请选择…",
+    对手: "选择客户…",
+    "借方科目(未开票应收)": "选择未开票应收科目…",
+    贷方科目: "选择贷方科目(收入/待转等)…",
+  };
+  const trigger =
+    label in remotePlaceholder
+      ? drawer
+          .getByRole("group")
+          .filter({ hasText: remotePlaceholder[label] })
+          .first()
+      : drawer.getByRole("button", {
+          name: new RegExp(`^请选择.*${label}`),
+        });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const option = page.getByRole("option").filter({ hasText: optionText }).first();
+  await expect(option).toBeVisible();
+  await option.click();
+}
+
 function deliveryDraftResponse(
   fixture: Fixture,
   id: string,
@@ -320,6 +348,95 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
     const replaceRoute = `**${deliveryPath}`;
     const auditPath = `${deliveryPath}/audit`;
     const auditRoute = `**${auditPath}`;
+
+    await test.step("新建抽屉只发送一次整单创建", async () => {
+      await page.goto("/scm/sales-deliveries/deliveries");
+      await expect(
+        page.getByRole("grid", { name: "salDeliveries 数据表格" }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "新增", exact: true }).click();
+      const drawer = page.getByRole("dialog", { name: "新增销售发货单" });
+      await expect(drawer).toBeVisible();
+
+      await chooseDrawerOption(
+        page,
+        drawer,
+        "公司",
+        `${prefix}验收公司`,
+      );
+      await chooseDrawerOption(page, drawer, "对手类型", "客户");
+      await chooseDrawerOption(
+        page,
+        drawer,
+        "对手",
+        `${prefix}验收客户`,
+      );
+      await chooseDrawerOption(
+        page,
+        drawer,
+        "借方科目(未开票应收)",
+        `${prefix}未开票应收`,
+      );
+      await chooseDrawerOption(
+        page,
+        drawer,
+        "贷方科目",
+        `${prefix}未开票应付`,
+      );
+
+      const createdId = crypto.randomUUID();
+      const createBodies: Record<string, unknown>[] = [];
+      await page.route("**/api/v1/sales/deliveries", async (route) => {
+        const request = route.request();
+        if (
+          request.method() !== "POST" ||
+          new URL(request.url()).pathname !== "/api/v1/sales/deliveries"
+        ) {
+          await route.fallback();
+          return;
+        }
+        createBodies.push(request.postDataJSON() as Record<string, unknown>);
+        await route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify(
+            deliveryDraftResponse(
+              fixture!,
+              createdId,
+              `${prefix}-UI-CREATE`,
+              "",
+            ),
+          ),
+        });
+      });
+
+      const workflowStart = deliveryWorkflow.length;
+      const childStart = childWrites.length;
+      const createResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === "/api/v1/sales/deliveries",
+      );
+      await drawer.getByRole("button", { name: "保存", exact: true }).click();
+      await createResponse;
+      await expect(drawer).toBeHidden();
+
+      expect(deliveryWorkflow.slice(workflowStart)).toEqual([
+        "POST /api/v1/sales/deliveries",
+      ]);
+      expect(childWrites.slice(childStart)).toEqual([]);
+      expect(createBodies).toHaveLength(1);
+      expect(createBodies[0]).toMatchObject({
+        companyId: fixture.companyId,
+        partyType: "CUSTOMER",
+        partyId: fixture.customerId,
+        debitAccountId: fixture.debitAccountId,
+        creditAccountId: fixture.creditAccountId,
+        items: [],
+        packBoxes: [],
+      });
+      await page.unroute("**/api/v1/sales/deliveries");
+    });
 
     await test.step("保存只发送一次整单替换且不写子资源", async () => {
       const drawer = await openDeliveryEdit(page, deliveryNo);

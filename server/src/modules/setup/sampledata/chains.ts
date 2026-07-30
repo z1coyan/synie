@@ -160,7 +160,7 @@ export async function createSideFulfillment(
     await deps.trading.fulfillment.auditHead(actor, side, draft.id)
     return { byIdx, id: draft.id }
   }
-  const head = await deps.trading.fulfillment.createHead(actor, side, {
+  const head = await deps.trading.fulfillment.createPurchaseHead(actor, {
     companyId: sc.company.id,
     documentDate: date,
     postingDate: date,

@@ -7,7 +7,6 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { validationHook } from '~/platform/http/zod.ts'
-import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
 import type { FulfillmentService } from './service.ts'
 
@@ -168,14 +167,14 @@ export function salesFulfillmentHeadRoutes(deps: {
     )
 }
 
-export function fulfillmentHeadRoutes(deps: {
+export function purchaseFulfillmentHeadRoutes(deps: {
   auth: AuthService
   fulfillment: FulfillmentService
-  side: TradingSide
 }) {
-  const { auth, fulfillment, side } = deps
-  const numberKey = side === 'sales' ? 'deliveryNo' : 'receiptNo'
-  const dateKey = side === 'sales' ? 'deliveryDate' : 'receiptDate'
+  const { auth, fulfillment } = deps
+  const side = 'purchase'
+  const numberKey = 'receiptNo'
+  const dateKey = 'receiptDate'
   return new Hono<AppEnv>()
     .use('*', requireAuth(auth))
     .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
@@ -205,7 +204,7 @@ export function fulfillmentHeadRoutes(deps: {
       async (c) => {
         const body = c.req.valid('json') as Record<string, unknown>
         return c.json(
-          await fulfillment.createHead(c.get('actor'), side, {
+          await fulfillment.createPurchaseHead(c.get('actor'), {
             companyId: body.companyId as string,
             no: body[numberKey] as string | null | undefined,
             documentDate: body[dateKey] as string | null | undefined,
@@ -248,7 +247,7 @@ export function fulfillmentHeadRoutes(deps: {
         const raw = (await c.req.json()) as Record<string, unknown>
         const body = c.req.valid('json') as Record<string, unknown>
         return c.json(
-          await fulfillment.updateHead(c.get('actor'), side, c.req.valid('param').id, {
+          await fulfillment.updatePurchaseHead(c.get('actor'), c.req.valid('param').id, {
             no: body[numberKey] as string | undefined,
             documentDate: body[dateKey] as string | undefined,
             postingDate: body.postingDate as string | null | undefined,

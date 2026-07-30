@@ -294,6 +294,25 @@ run('PG 集成（销售发货装箱箱）', () => {
     expect(created.packBoxes[0]?.boxNo).toBe('1')
     expect(created.packBoxes[0]?.lines[0]?.id).toBeTruthy()
 
+    const partyResponse = await http.request(`/api/v1/sales/deliveries/${created.id}`, {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...httpDraftInput(`${prefix}-HTTP-SAVE`),
+        partyType: 'COMPANY',
+        partyId: companyId,
+      }),
+    })
+    expect(partyResponse.status).toBe(400)
+    const partyBody = await partyResponse.json() as {
+      error: { fields?: Record<string, string[]> }
+    }
+    expect(partyBody.error.fields?.['header.partyType']).toBeDefined()
+    expect(partyBody.error.fields?.['header.partyId']).toBeDefined()
+
     const replaceResponse = await http.request(`/api/v1/sales/deliveries/${created.id}`, {
       method: 'PUT',
       headers: {

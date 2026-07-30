@@ -352,7 +352,15 @@ export function createFulfillmentService(
       const has = await sql<{ e: boolean }>`
         SELECT EXISTS(SELECT 1 FROM ${ident(spec.itemTable)} WHERE ${sql.raw(spec.parentCol)}=${id}::uuid) AS e
       `.execute(trx)
-      if (has.rows[0]?.e) throw new ApiError('conflict', '已有条目时不可修改履约对手')
+      if (has.rows[0]?.e) {
+        if (side === 'sales') {
+          const fields: Record<string, string[]> = {}
+          if (before.partyType !== after.partyType) fields.partyType = ['已有条目时不可修改']
+          if (before.partyId !== after.partyId) fields.partyId = ['已有条目时不可修改']
+          throw ApiError.validation('已有条目时不可修改履约对手', fields)
+        }
+        throw new ApiError('conflict', '已有条目时不可修改履约对手')
+      }
     }
     validateHeadShape(spec, after)
     await validateHeadRefs(trx, spec, after)
@@ -1109,9 +1117,21 @@ export function createFulfillmentService(
     return deleteItem(actor, 'purchase', id)
   }
 
+  async function createPurchaseHead(actor: Actor, input: FulfillmentHeadDraftInput) {
+    return createHead(actor, 'purchase', input)
+  }
+
+  async function updatePurchaseHead(
+    actor: Actor,
+    id: string,
+    input: FulfillmentHeadUpdateInput,
+  ) {
+    return updateHead(actor, 'purchase', id, input)
+  }
+
   return {
     createSalesDraft, replaceSalesDraft,
-    listHeads, getHead, createHead, updateHead, deleteHead, auditHead, voidHead,
+    listHeads, getHead, createPurchaseHead, updatePurchaseHead, deleteHead, auditHead, voidHead,
     listItems, getItem, createPurchaseItem, updatePurchaseItem, deletePurchaseItem,
     listPackBoxes, getPackBox,
     listPackLines, getPackLine,

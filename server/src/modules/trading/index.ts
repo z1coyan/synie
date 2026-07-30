@@ -39,9 +39,9 @@ import {
   packLineMeta,
 } from './fulfillment/spec.ts'
 import {
-  fulfillmentHeadRoutes,
   packBoxRoutes,
   packLineRoutes,
+  purchaseFulfillmentHeadRoutes,
   purchaseFulfillmentItemRoutes,
   salesFulfillmentHeadRoutes,
   salesFulfillmentItemRoutes,
@@ -151,7 +151,7 @@ export function tradingRouteMounts(deps: {
     salesDeliveryItems: salesFulfillmentItemRoutes({ auth, fulfillment }),
     salesDeliveryPackBoxes: packBoxRoutes({ auth, fulfillment }),
     salesDeliveryPackLines: packLineRoutes({ auth, fulfillment }),
-    purchaseReceipts: fulfillmentHeadRoutes({ auth, fulfillment, side: 'purchase' }),
+    purchaseReceipts: purchaseFulfillmentHeadRoutes({ auth, fulfillment }),
     purchaseReceiptItems: purchaseFulfillmentItemRoutes({ auth, fulfillment }),
     outsourcedIssues: outsourcedIssueRoutes({ auth, outsourced }),
     outsourcedIssueItems: outsourcedIssueItemRoutes({ auth, outsourced }),

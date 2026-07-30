@@ -88,7 +88,6 @@ export const deliveryAuditConfig = {
   ],
   loadItems: (deliveryId: string) =>
     queryAllDraftRows(salesDeliveryItemClient, {
-      sort: { column: 'idx', direction: 'ascending' },
       filter: {
         deliveryId: { kind: 'fk', op: 'in', values: [deliveryId], labels: [] },
       },
@@ -1227,15 +1226,12 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
     }
     Promise.all([
       queryAllDraftRows(salesDeliveryItemClient, {
-        sort: { column: 'idx', direction: 'ascending' },
         filter: deliveryFilter,
       }),
       queryAllDraftRows(salesDeliveryPackBoxClient, {
-        sort: { column: 'boxNo', direction: 'ascending' },
         filter: deliveryFilter,
       }),
       queryAllDraftRows(salesDeliveryPackLineClient, {
-        sort: { column: 'idx', direction: 'ascending' },
         filter: deliveryFilter,
       }),
     ])
