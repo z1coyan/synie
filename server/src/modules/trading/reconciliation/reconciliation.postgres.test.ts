@@ -214,6 +214,62 @@ run('PG 集成（销售/采购对账）', () => {
     await db.destroy()
   })
 
+  test('对账条目按来源日期排序和筛选', async () => {
+    const salesHead = await svc.createHead(actor, 'sales', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'CUSTOMER',
+      partyId: customerId,
+      no: `${prefix}-SR-LIST`,
+    })
+    const purchaseHead = await svc.createHead(actor, 'purchase', {
+      companyId,
+      kind: 'REGULAR',
+      partyType: 'SUPPLIER',
+      partyId: supplierId,
+      no: `${prefix}-PR-LIST`,
+    })
+    const salesItem = await svc.createItem(actor, 'sales', {
+      reconciliationId: salesHead.id,
+      idx: 1,
+      qty: '1',
+      deliveryItemId: salesDeliveryItemId,
+    })
+    const purchaseItem = await svc.createItem(actor, 'purchase', {
+      reconciliationId: purchaseHead.id,
+      idx: 1,
+      qty: '1',
+      receiptItemId: purchaseReceiptItemId,
+    })
+
+    try {
+      const sales = await svc.listItems(actor, 'sales', {
+        limit: 20,
+        offset: 0,
+        sort: { column: 'deliveryDate', direction: 'descending' },
+        filter: {
+          deliveryDate: { kind: 'date', op: 'eq', value: '2026-07-25' },
+        },
+      })
+      expect(sales.results.some((item) => item.id === salesItem.id)).toBe(true)
+
+      const purchase = await svc.listItems(actor, 'purchase', {
+        limit: 20,
+        offset: 0,
+        sort: { column: 'receiptDate', direction: 'descending' },
+        filter: {
+          receiptDate: { kind: 'date', op: 'eq', value: '2026-07-25' },
+        },
+      })
+      expect(purchase.results.some((item) => item.id === purchaseItem.id)).toBe(true)
+    } finally {
+      await svc.deleteItem(actor, 'sales', salesItem.id)
+      await svc.deleteItem(actor, 'purchase', purchaseItem.id)
+      await svc.deleteHead(actor, 'sales', salesHead.id)
+      await svc.deleteHead(actor, 'purchase', purchaseHead.id)
+    }
+  })
+
   test('默认科目代入 + 金额链 + 确认占量/撤回', async () => {
     const head = await svc.createHead(actor, 'sales', {
       companyId,

@@ -836,10 +836,11 @@ function headListSource(spec: ReconciliationSideSpec) {
 
 function itemSelect(spec: ReconciliationSideSpec) {
   const sourceNo = spec.side === 'sales' ? 'delivery_no' : 'receipt_no'
+  const sourceDate = spec.side === 'sales' ? 'delivery_date' : 'receipt_date'
   return sql`SELECT id,idx,qty,base_qty,amount,base_amount,remarks,inserted_at,
     updated_at,reconciliation_id,company_id,delivery_item_id,receipt_item_id,
     outsourced_receipt_item_id,reconciliation_no,reconciliation_status,
-    ${sql.raw(sourceNo)},source_date,material_name,unit_name,order_currency_code`
+    ${sql.raw(sourceNo)},${sql.raw(sourceDate)},material_name,unit_name,order_currency_code`
 }
 
 function itemListSource(spec: ReconciliationSideSpec) {
@@ -849,7 +850,7 @@ function itemListSource(spec: ReconciliationSideSpec) {
         ri.inserted_at,ri.updated_at,ri.reconciliation_id,ri.company_id,
         ri.delivery_item_id,NULL::uuid AS receipt_item_id,
         NULL::uuid AS outsourced_receipt_item_id,r.reconciliation_no,
-        r.status AS reconciliation_status,h.delivery_no,h.delivery_date AS source_date,
+        r.status AS reconciliation_status,h.delivery_no,h.delivery_date,
         i.material_name,i.unit_name,i.order_currency_code
       FROM sal_reconciliation_item ri
       JOIN sal_reconciliation r ON r.id=ri.reconciliation_id
@@ -863,7 +864,7 @@ function itemListSource(spec: ReconciliationSideSpec) {
       NULL::uuid AS delivery_item_id,ri.receipt_item_id,ri.outsourced_receipt_item_id,
       r.reconciliation_no,r.status AS reconciliation_status,
       COALESCE(sh.receipt_no,oh.receipt_no) AS receipt_no,
-      COALESCE(sh.receipt_date,oh.receipt_date) AS source_date,
+      COALESCE(sh.receipt_date,oh.receipt_date) AS receipt_date,
       COALESCE(si.material_name,oi.material_name) AS material_name,
       COALESCE(si.unit_name,oi.unit_name) AS unit_name,
       COALESCE(si.order_currency_code,oi.order_currency_code) AS order_currency_code
@@ -1440,6 +1441,7 @@ function mapHeadDto(row: Record<string, unknown>) {
 function mapItemDto(side: TradingSide, row: Record<string, unknown>) {
   const numberKey = side === 'sales' ? 'deliveryNo' : 'receiptNo'
   const dateKey = side === 'sales' ? 'deliveryDate' : 'receiptDate'
+  const sourceDate = side === 'sales' ? row.delivery_date : row.receipt_date
   const sourceNo =
     side === 'sales' ? String(row.delivery_no ?? '') : String(row.receipt_no ?? '')
   return {
@@ -1461,7 +1463,7 @@ function mapItemDto(side: TradingSide, row: Record<string, unknown>) {
     reconciliationNo: String(row.reconciliation_no),
     reconciliationStatus: upperStatus(String(row.reconciliation_status)),
     [numberKey]: sourceNo,
-    [dateKey]: asDate(row.source_date),
+    [dateKey]: asDate(sourceDate),
     materialName: String(row.material_name),
     unitName: String(row.unit_name),
     orderCurrencyCode: String(row.order_currency_code),
