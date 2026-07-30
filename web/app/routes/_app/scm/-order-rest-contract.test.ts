@@ -41,6 +41,12 @@ describe('PR-2.14 销售/采购订单 REST 迁移契约', () => {
     expect(purchaseDrawer).toContain('client={purchaseOrderItemByproductClient}')
   })
 
+  test('销售订单条目录入不展示系统折算与发货进度字段', () => {
+    expect(salesDrawer).toContain(
+      "'baseQty',\n              'shippedQty',\n              'remainingBaseQty',",
+    )
+  })
+
   test('ResourceClient 覆盖六资源 CRUD、状态动作与三个专用读取端点', () => {
     for (const path of [
       "api.sales.orders.query",

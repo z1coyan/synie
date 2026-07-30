@@ -715,6 +715,10 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             exclude={[
               'orderId',
               'companyId',
+              // 默认单位订购量与发货进度均为系统折算/履约投影,不属于条目录入项
+              'baseQty',
+              'shippedQty',
+              'remainingBaseQty',
               // 快照列由后端保存时重拍,不进录入表单;不影响表格显示(columns 白名单本就不含它们)
               'materialCode',
               'materialName',
