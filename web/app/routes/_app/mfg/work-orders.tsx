@@ -18,27 +18,27 @@ import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
 import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
+import { WorkOrderProgressCell } from './-work-order-progress-cell'
 
 export const Route = createFileRoute('/_app/mfg/work-orders')({
   component: WorkOrdersPage,
 })
 
+// 列白名单:companyId 作单据归属公司首列(桌面保留筛选,卡片藏);物料编码并入物料名称一格(render 拼接);
+// qty/receivedBaseQty/remainingBaseQty 三个数量列合并为「入库进度」一列——列本体是 remainingBaseQty
+// 计算列(筛选/排序即未完成数量口径),单元格进度条 + Popover 明细渲染,数量明细随 wire 全量返回无需 extraFields
 const GRID_COLUMNS = [
+  'companyId',
   'workOrderNo',
-  'materialCode',
   'materialName',
-  'qty',
-  'receivedBaseQty',
   'remainingBaseQty',
   'needDate',
   'status',
   'bomId',
   'demandId',
-  'companyId',
 ]
 
 const GRID_OVERRIDES = {
-  materialCode: { mobileRole: 'hide' },
   companyId: { mobileRole: 'hide' },
   materialName: {
     mobileRole: 'title',
@@ -50,8 +50,19 @@ const GRID_OVERRIDES = {
     },
   },
   workOrderNo: { mobileRole: 'subtitle' },
-  status: { mobileRole: 'summary' },
-  remainingBaseQty: { mobileRole: 'summary' },
+  // 状态胶囊配色:进行中蓝、已完工绿、已作废红(与需求单页同套约定)
+  status: {
+    mobileRole: 'summary',
+    enumColors: { IN_PROGRESS: 'accent', COMPLETED: 'success', VOIDED: 'danger' },
+  },
+  // 合并列:进度条 + Popover 展示 已入/数量·未完成(折回行单位,见 WorkOrderProgressCell);
+  // 列筛选/排序 = 未完成数量
+  remainingBaseQty: {
+    label: '入库进度',
+    mobileRole: 'summary',
+    align: 'start',
+    render: (_v: unknown, row: Row) => <WorkOrderProgressCell row={row} />,
+  },
   needDate: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
