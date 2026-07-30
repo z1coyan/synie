@@ -7,6 +7,7 @@ import type { DB as Database } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/write.ts'
 import type { Actor } from '../authz/actor.ts'
 import { requirePermission } from '../authz/actor.ts'
+import { SYS_STORAGE } from './permissions.ts'
 import { ApiError } from '../http/errors.ts'
 import { storageResourceMeta } from './meta.ts'
 import type {
@@ -41,14 +42,14 @@ export function createStorageService(deps: StorageServiceDeps) {
   const { db } = deps
 
   async function get(actor: Actor, id: string): Promise<StorageEndpoint> {
-    requirePermission(actor, 'sys.storage:read')
+    requirePermission(actor, SYS_STORAGE.read)
     const row = await db.selectFrom('sys_storage').selectAll().where('id', '=', id).executeTakeFirst()
     if (!row) throw new ApiError('not_found', '存储接入不存在')
     return mapStorage(row)
   }
 
   async function list(actor: Actor, query: FileListQuery): Promise<StorageList> {
-    requirePermission(actor, 'sys.storage:read')
+    requirePermission(actor, SYS_STORAGE.read)
     const limit = query.limit === undefined || query.limit === 0 ? 20 : query.limit
     const offset = query.offset ?? 0
     if (limit < 1 || limit > 200 || offset < 0) {
@@ -80,7 +81,7 @@ export function createStorageService(deps: StorageServiceDeps) {
   }
 
   async function create(actor: Actor, input: StorageCreateInput): Promise<StorageEndpoint> {
-    requirePermission(actor, 'sys.storage:create')
+    requirePermission(actor, SYS_STORAGE.create)
     const normalized = validateStorageInput(input, '')
     return withTx(db, async (trx) => {
       let id: string
@@ -120,7 +121,7 @@ export function createStorageService(deps: StorageServiceDeps) {
   }
 
   async function update(actor: Actor, id: string, input: StorageUpdateInput): Promise<StorageEndpoint> {
-    requirePermission(actor, 'sys.storage:update')
+    requirePermission(actor, SYS_STORAGE.update)
     return withTx(db, async (trx) => {
       const before = await lockStorage(trx, id)
       const merged: StorageCreateInput = {
@@ -187,7 +188,7 @@ export function createStorageService(deps: StorageServiceDeps) {
   }
 
   async function setDefault(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'sys.storage:update')
+    requirePermission(actor, SYS_STORAGE.update)
     await withTx(db, async (trx) => {
       await sql`SELECT pg_advisory_xact_lock(hashtext('sys_storage_default'))`.execute(trx)
       const target = await getStorageTx(trx, id)
@@ -242,7 +243,7 @@ export function createStorageService(deps: StorageServiceDeps) {
   }
 
   async function remove(actor: Actor, id: string): Promise<void> {
-    requirePermission(actor, 'sys.storage:delete')
+    requirePermission(actor, SYS_STORAGE.delete)
     await withTx(db, async (trx) => {
       const value = await getStorageTx(trx, id)
       if (value.builtin) throw new ApiError('conflict', '内置存储接入不可删除')

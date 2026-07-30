@@ -1,4 +1,5 @@
 import type { ResourceMeta } from '../meta/types.ts'
+import { SYS_STORAGE } from './permissions.ts'
 
 export const FILE_RESOURCE_NAME = 'sysFiles'
 export const STORAGE_RESOURCE_NAME = 'sysStorages'
@@ -112,7 +113,7 @@ export function storageResourceMeta(): ResourceMeta {
   ]
   return {
     name: STORAGE_RESOURCE_NAME,
-    permissionPrefix: 'sys.storage',
+    permissionPrefix: SYS_STORAGE.prefix,
     permissionLabel: '存储接入',
     table: 'sys_storage',
     print: true,
@@ -261,10 +262,13 @@ export function storageResourceMeta(): ResourceMeta {
       { key: 'update', label: '编辑', scope: 'row' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
       {
+        // 语义 key=setDefault；requiredCapability=update（与 SYS_STORAGE.update 对齐）
         key: 'setDefault',
         label: '设为默认',
         scope: 'row',
+        commandTarget: 'row',
         permissionAction: 'update',
+        // v1 transport 兼容字段；工单 11 随旧 Grid action 删除
         http: { method: 'POST', path: '/api/v1/system/storages/{id}/set-default' },
       },
     ],

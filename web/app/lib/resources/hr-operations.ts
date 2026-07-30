@@ -1,6 +1,11 @@
 import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import {
+  createCommandAdapter,
+  decodeCollectionTarget,
+  defineCommand,
+} from './catalog/commands'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
@@ -254,6 +259,24 @@ export async function recalcAttendanceDays(
   )
   return result.count ?? 0
 }
+
+export type AttendanceRecalcInput = { dateFrom: string; dateTo: string }
+
+/** hrAttendanceDays 语义命令：recalc 为 collection，不伪造记录 ID */
+export const attendanceDayCommandAdapter = createCommandAdapter({
+  recalc: defineCommand('collection', async (input: unknown) => {
+    const payload = decodeCollectionTarget<AttendanceRecalcInput>(input)
+    const dateFrom = payload.dateFrom
+    const dateTo = payload.dateTo
+    if (typeof dateFrom !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
+      throw new Error('recalc 需要合法 dateFrom（YYYY-MM-DD）')
+    }
+    if (typeof dateTo !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
+      throw new Error('recalc 需要合法 dateTo（YYYY-MM-DD）')
+    }
+    return recalcAttendanceDays(dateFrom, dateTo)
+  }),
+})
 
 export function fetchAttendanceMonthSummary(month: string) {
   return apiData<AttendanceMonthSummary[]>(

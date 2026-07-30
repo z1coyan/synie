@@ -2,6 +2,7 @@
  * 财务 Meta：增值税发票（09）+ 银行/票据/报销（12）。
  */
 import type { ResourceMeta } from '~/platform/meta/types.ts'
+import { ACC_BANK_TRANSACTION } from './permissions.ts'
 
 function field(
   dbName: string,
@@ -384,7 +385,7 @@ export function bankAccountResourceMeta(): ResourceMeta {
 export function bankTransactionResourceMeta(): ResourceMeta {
   return {
     name: 'accBankTransactions',
-    permissionPrefix: 'acc.bank_transaction',
+    permissionPrefix: ACC_BANK_TRANSACTION.prefix,
     permissionLabel: '银行流水',
     table: 'acc_bank_transaction',
     fields: [
@@ -416,7 +417,14 @@ export function bankTransactionResourceMeta(): ResourceMeta {
     actions: [
       ...crudActions,
       { key: 'import', label: '导入', scope: 'both' },
-      { key: 'export', permissionAction: 'reconcile', label: '对账', scope: 'both' },
+      // v1：key=export 伪装（工单 11 删除）；v2：语义 key=reconcile、row target
+      {
+        key: 'export',
+        permissionAction: 'reconcile',
+        label: '对账',
+        scope: 'both',
+        commandTarget: 'row',
+      },
     ],
     printHead: true,
     printLoops: [{ name: 'reconciliations', resource: 'accBankReconciliations' }],

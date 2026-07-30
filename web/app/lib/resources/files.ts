@@ -1,5 +1,10 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import {
+  createCommandAdapter,
+  decodeRowTarget,
+  defineCommand,
+} from './catalog/commands'
 import type { ResourceClient } from './types'
 import { gridMeta } from './meta'
 
@@ -103,6 +108,14 @@ export async function setDefaultStorage(id: string): Promise<void> {
       param: { id }}),
   )
 }
+
+/** sysStorages 语义命令：setDefault 为 row target；transport 仅在此 Adapter */
+export const storageCommandAdapter = createCommandAdapter({
+  setDefault: defineCommand('row', async (input: unknown) => {
+    const id = decodeRowTarget(input)
+    await setDefaultStorage(id)
+  }),
+})
 
 export async function queryAttachments(input: Record<string, unknown>) {
   return apiData<{

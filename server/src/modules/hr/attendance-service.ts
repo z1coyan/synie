@@ -16,6 +16,7 @@ import { hasPermission, requirePermission, type Actor } from '~/platform/authz/a
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { EmployeeService } from '~/modules/party/party-service.ts'
+import { HR_ATTENDANCE_DAY } from './permissions.ts'
 import { listFromSource } from '~/db/list.ts'
 import {
   attendanceCorrectionResourceMeta,
@@ -407,7 +408,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
   // ── days ───────────────────────────────────────────────────────────────
 
   async function listDays(actor: Actor, query: Partial<ListQuery>) {
-    requirePermission(actor, 'hr.attendance_day:read')
+    requirePermission(actor, HR_ATTENDANCE_DAY.read)
     return listFromSource({
       db,
       resource: attendanceDayResourceMeta(),
@@ -425,7 +426,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
   }
 
   async function getDay(actor: Actor, id: string): Promise<AttendanceDay> {
-    requirePermission(actor, 'hr.attendance_day:read')
+    requirePermission(actor, HR_ATTENDANCE_DAY.read)
     const row = await sql<Record<string, unknown>>`
       SELECT id, date, to_char(morning_in,'HH24:MI:SS') AS morning_in,
         to_char(morning_out,'HH24:MI:SS') AS morning_out,
@@ -441,7 +442,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
   }
 
   async function recalcDays(actor: Actor, dateFrom: string, dateTo: string): Promise<number> {
-    requirePermission(actor, 'hr.attendance_day:recalc')
+    requirePermission(actor, HR_ATTENDANCE_DAY.recalc)
     const from = parseDate(dateFrom, 'dateFrom')
     const to = parseDate(dateTo, 'dateTo')
     if (to.getTime() < from.getTime()) {
@@ -477,7 +478,7 @@ export function createAttendanceService(deps: AttendanceServiceDeps) {
   }
 
   async function monthSummary(actor: Actor, month: string): Promise<AttendanceMonthSummary[]> {
-    requirePermission(actor, 'hr.attendance_day:read')
+    requirePermission(actor, HR_ATTENDANCE_DAY.read)
     const first = parseMonth(month)
     const next = addMonth(first)
     const rows = await sql<Record<string, unknown>>`

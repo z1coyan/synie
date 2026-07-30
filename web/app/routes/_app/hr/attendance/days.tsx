@@ -3,10 +3,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
-import {
-  attendanceDayClient,
-  recalcAttendanceDays,
-} from '~/lib/resources/hr-operations'
+import { attendanceDayClient } from '~/lib/resources/hr-operations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
@@ -100,6 +98,7 @@ function AttendanceDaysPage() {
   const [dateTo, setDateTo] = useState(localISO(today))
   const [running, setRunning] = useState(false)
   const queryClient = useQueryClient()
+  const binding = resourceBindingFor('hrAttendanceDays')
   const meta = useGridMeta('hrAttendanceDays', true, attendanceDayClient)
   const canRecalc = (meta.data?.capabilities ?? []).includes('recalc')
 
@@ -107,7 +106,12 @@ function AttendanceDaysPage() {
     if (!dateFrom || !dateTo) return
     setRunning(true)
     try {
-      const count = await recalcAttendanceDays(dateFrom, dateTo)
+      if (!binding.commands) throw new Error('日考勤未绑定 recalc 命令')
+      // collection command：日期区间 payload，不传伪造记录 ID
+      const count = (await binding.commands.execute('recalc', {
+        dateFrom,
+        dateTo,
+      })) as number
       toast.success(`已重算 ${count} 个员工日`)
       queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrAttendanceDays'] })
       queryClient.invalidateQueries({ queryKey: ['rowById', 'hrAttendanceDays'] })

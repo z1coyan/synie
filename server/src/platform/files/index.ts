@@ -2,6 +2,7 @@ import type { Registry } from '../meta/registry.ts'
 import { fileResourceMeta, storageResourceMeta } from './meta.ts'
 
 export { fileResourceMeta, storageResourceMeta, FILE_RESOURCE_NAME, STORAGE_RESOURCE_NAME } from './meta.ts'
+export { SYS_STORAGE, type SysStoragePermission } from './permissions.ts'
 export { createOwnerRegistry, type OwnerRegistry } from './owner-registry.ts'
 export { createFileService, type FileService, type FileServiceDeps } from './service.ts'
 export { createStorageService, type StorageService, type StorageServiceDeps } from './storage-service.ts'

@@ -156,4 +156,25 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(getCatalogActor()).toBeNull()
     expect(catalogCacheSize()).toBe(0)
   })
+
+  test('binding 可挂载 CommandAdapter 且标准 CRUD 不经 commands', async () => {
+    const client = mockClient()
+    const { createCommandAdapter, defineCommand } = await import('./commands')
+    const commands = createCommandAdapter({
+      setDefault: defineCommand('row', async (input: { id: string }) => {
+        expect(input.id).toBe('sid')
+      }),
+    })
+    registerBinding({
+      ...bindingFromResourceClient('sysStorages', client),
+      commands,
+    })
+    const got = resourceBindingFor('sysStorages')
+    expect(got.commands).toBeDefined()
+    await got.commands!.execute('setDefault', { id: 'sid' })
+    // Writer 仍管 CRUD，不进 commands
+    expect(got.writer && 'create' in got.writer).toBe(true)
+    expect(Object.keys(got.commands!.commands)).not.toContain('create')
+  })
 })
+

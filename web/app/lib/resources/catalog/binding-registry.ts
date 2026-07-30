@@ -93,6 +93,11 @@ export function registerBinding(binding: ResourceBinding): void {
   bindings.set(binding.resource, binding)
 }
 
+/** 迁移期覆盖已注册 binding（如挂上语义 CommandAdapter） */
+export function replaceBinding(binding: ResourceBinding): void {
+  bindings.set(binding.resource, binding)
+}
+
 export function registerBindings(items: ResourceBinding[]): void {
   for (const item of items) registerBinding(item)
 }

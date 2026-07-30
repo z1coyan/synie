@@ -97,17 +97,38 @@ describe('Resource Catalog seal 与双投影', () => {
     }
   })
 
-  test('v2 commands 使用语义 key（reconcile/recalc），不含 transport', () => {
+  test('v2 commands 使用语义 key（reconcile/recalc/setDefault），target 正确且不含 transport', () => {
     const registry = createSealedResourceRegistry()
     const recon = registry.buildDocument('accBankTransactions', superAdmin)
-    expect(recon.catalog!.commands.some((c) => c.key === 'reconcile')).toBe(true)
+    const reconCmd = recon.catalog!.commands.find((c) => c.key === 'reconcile')
+    expect(reconCmd).toMatchObject({
+      key: 'reconcile',
+      target: 'row',
+      requiredCapability: 'reconcile',
+    })
     expect(recon.catalog!.commands.every((c) => !('http' in c))).toBe(true)
+    // v1 仍保留 export 伪装 key（工单 11 删除）
+    expect(
+      registry.get('accBankTransactions')!.actions.some(
+        (a) => a.key === 'export' && a.permissionAction === 'reconcile',
+      ),
+    ).toBe(true)
 
     const days = registry.buildDocument('hrAttendanceDays', superAdmin)
-    expect(days.catalog!.commands.some((c) => c.key === 'recalc')).toBe(true)
+    const recalcCmd = days.catalog!.commands.find((c) => c.key === 'recalc')
+    expect(recalcCmd).toMatchObject({
+      key: 'recalc',
+      target: 'collection',
+      requiredCapability: 'recalc',
+    })
 
     const storage = registry.buildDocument('sysStorages', superAdmin)
-    expect(storage.catalog!.commands.some((c) => c.key === 'setDefault')).toBe(true)
+    const setDefaultCmd = storage.catalog!.commands.find((c) => c.key === 'setDefault')
+    expect(setDefaultCmd).toMatchObject({
+      key: 'setDefault',
+      target: 'row',
+      requiredCapability: 'update',
+    })
   })
 
   test('标准 CRUD 不进入 commands，只贡献 capabilities', () => {

@@ -38,6 +38,10 @@ export {
 } from './ops-routes.ts'
 export { allFinanceResourceMetas, vatInvoiceResourceMeta } from './meta.ts'
 export {
+  ACC_BANK_TRANSACTION,
+  type AccBankTransactionPermission,
+} from './permissions.ts'
+export {
   createAccountingSettingService,
   accountingSettingResourceMeta,
   registerFinanceSettingResources,

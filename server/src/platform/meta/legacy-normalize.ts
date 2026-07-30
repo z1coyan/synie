@@ -166,15 +166,17 @@ function defaultLookup(fields: FieldDocument[]): ResourceLookupMeta {
   }
 }
 
-function commandTarget(scope: ActionMeta['scope']): CommandTarget {
-  if (scope === 'row') return 'row'
-  if (scope === 'bulk') return 'bulk'
+function commandTarget(action: ActionMeta): CommandTarget {
+  if (action.commandTarget) return action.commandTarget
+  if (action.scope === 'row') return 'row'
+  if (action.scope === 'bulk') return 'bulk'
   return 'rowOrBulk'
 }
 
 /**
  * v2 命令语义 key：优先 permissionAction 当其与 key 不同且 key 为伪装标准动作时。
  * 例：export+reconcile → reconcile；import+recalc → recalc；setDefault+update → setDefault。
+ * 旧 import/export 别名只保留在 v1 兼容投影，由工单 11（contract）删除。
  */
 function semanticCommandKey(action: ActionMeta): string {
   const pa = action.permissionAction
@@ -198,7 +200,7 @@ function toCommands(meta: ResourceMeta): CommandDocument[] {
     commands.push({
       key,
       label: action.label,
-      target: commandTarget(action.scope),
+      target: commandTarget(action),
       requiredCapability: action.permissionAction ?? action.key,
       ...(action.isDanger ? { isDanger: true } : {}),
       ...(action.confirmKind ? { confirmKind: action.confirmKind } : {}),

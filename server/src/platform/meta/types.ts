@@ -48,6 +48,12 @@ export interface ActionMeta {
   key: string
   label: string
   scope: 'row' | 'bulk' | 'both'
+  /**
+   * v2 command target 覆盖；缺省从 scope 推导（row/bulk/both→rowOrBulk）。
+   * collection：集合命令，不需要记录 ID（如按区间重算）。
+   * 旧 import/export 伪装 key 仅保留在 v1 投影；v2 用 semanticCommandKey + 本字段。
+   */
+  commandTarget?: 'collection' | 'row' | 'bulk' | 'rowOrBulk'
   /** 缺省取 key */
   permissionAction?: string
   mutation?: string

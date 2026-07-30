@@ -7,7 +7,8 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { setDefaultStorage, storageClient } from '~/lib/resources/files'
+import { storageClient } from '~/lib/resources/files'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/system/storages')({
   component: StoragesPage,
@@ -26,6 +27,7 @@ function StoragesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [secret, setSecret] = useState('')
   const queryClient = useQueryClient()
+  const binding = resourceBindingFor('sysStorages')
   const invalidateGrid = () =>
     queryClient.invalidateQueries({ queryKey: ['gridRows', storageClient.id, 'sysStorages'] })
 
@@ -48,6 +50,7 @@ function StoragesPage() {
             {
               key: 'setDefault',
               label: '设为默认',
+              // requiredCapability=update（与 command 文档一致，非 action key）
               capability: 'update',
               onAction: async (row, context) => {
                 if (row.isDefault) {
@@ -55,7 +58,8 @@ function StoragesPage() {
                   return
                 }
                 try {
-                  await setDefaultStorage(row.id)
+                  if (!binding.commands) throw new Error('存储接入未绑定 setDefault 命令')
+                  await binding.commands.execute('setDefault', { id: String(row.id) })
                   toast.success(`已将「${String(row.label)}」设为默认存储`)
                   await context.refetch()
                 } catch (error) {

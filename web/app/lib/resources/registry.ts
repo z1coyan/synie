@@ -8,7 +8,7 @@ import { companyClient } from './companies'
 import { customerClient } from './customers'
 import { currencyClient } from './currencies'
 import { employeeClient } from './employees'
-import { fileClient, storageClient } from './files'
+import { fileClient, storageClient, storageCommandAdapter } from './files'
 import {
   bankAccountClient,
   bankImportClient,
@@ -16,6 +16,7 @@ import {
   bankImportTemplateClient,
   bankReconciliationClient,
   bankTransactionClient,
+  bankTransactionCommandAdapter,
   billClient,
   billHoldingClient,
   billTransactionClient,
@@ -41,6 +42,7 @@ import { roleClient, userClient } from './iam'
 import {
   attendanceCorrectionClient,
   attendanceDayClient,
+  attendanceDayCommandAdapter,
   attendanceImportClient,
   attendancePunchClient,
   employeeLoanClient,
@@ -117,6 +119,7 @@ import {
   registerBinding,
   resourceBindingFor as bindingFor,
   resourceClientFromBinding,
+  type CommandAdapter,
   type ResourceBinding,
 } from './catalog'
 
@@ -230,16 +233,27 @@ const READ_ONLY_RESOURCES = new Set([
   'accBillHoldings',
 ])
 
+/** 已迁移语义 CommandAdapter：覆盖自动生成的 proxy commands */
+const SEMANTIC_COMMAND_ADAPTERS: Record<string, CommandAdapter> = {
+  sysStorages: storageCommandAdapter,
+  hrAttendanceDays: attendanceDayCommandAdapter,
+  accBankTransactions: bankTransactionCommandAdapter,
+}
+
 // 从现有 ResourceClient 一次性生成 ResourceBinding（第二事实源不再可编辑；以 clients 为运输实现）
 for (const [resource, client] of Object.entries(clients)) {
   const readOnly = READ_ONLY_RESOURCES.has(resource)
-  registerBinding(
-    bindingFromResourceClient(resource, client, {
-      canCreate: !readOnly,
-      canUpdate: !readOnly,
-      canDelete: !readOnly,
-    }),
-  )
+  const binding = bindingFromResourceClient(resource, client, {
+    canCreate: !readOnly,
+    canUpdate: !readOnly,
+    canDelete: !readOnly,
+  })
+  const commands = SEMANTIC_COMMAND_ADAPTERS[resource]
+  if (commands) {
+    registerBinding({ ...binding, commands })
+  } else {
+    registerBinding(binding)
+  }
 }
 
 /**

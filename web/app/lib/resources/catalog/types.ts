@@ -53,13 +53,18 @@ export interface AggregateDraftAdapter<TDraft = unknown, TSaved = TDraft> {
 
 export type CommandTarget = 'collection' | 'row' | 'bulk' | 'rowOrBulk'
 
-export interface CommandSpec<TInput = unknown, TOutput = void> {
+export interface CommandSpec<TInput = unknown, TOutput = unknown> {
   target: CommandTarget
   execute(input: TInput): Promise<TOutput>
 }
 
-/** 命令映射：key 为语义 command key */
-export type CommandMap = Record<string, CommandSpec<never, unknown>>
+/**
+ * 命令映射：key 为语义 command key。
+ * 默认用 unknown 输入/输出；具体 Adapter 用 defineCommand 收窄。
+ * 使用 any 以允许异构 CommandSpec 装入同一 map（异构 input 在 execute 边界解码）。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type CommandMap = Record<string, CommandSpec<any, any>>
 
 export interface CommandAdapter<TCommands extends CommandMap = CommandMap> {
   readonly commands: TCommands

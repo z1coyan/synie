@@ -27,9 +27,21 @@ export {
   listBoundResources,
   registerBinding,
   registerBindings,
+  replaceBinding,
   resourceBindingFor,
   resourceClientFromBinding,
 } from './binding-registry'
+export {
+  createCommandAdapter,
+  decodeBulkTarget,
+  decodeCollectionTarget,
+  decodeRowOrBulkTarget,
+  decodeRowTarget,
+  defineCommand,
+  type BulkCommandInput,
+  type RowCommandInput,
+  type RowOrBulkCommandInput,
+} from './commands'
 export { gridMetaFromDocument } from './grid-from-document'
 export {
   basicFormDrawerProps,

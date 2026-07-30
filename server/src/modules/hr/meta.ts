@@ -1,4 +1,5 @@
 import type { ResourceMeta } from '~/platform/meta/types.ts'
+import { HR_ATTENDANCE_DAY } from './permissions.ts'
 import {
   DAY_MISSING,
   DAY_OK,
@@ -195,7 +196,7 @@ export function attendanceImportResourceMeta(): ResourceMeta {
 export function attendanceDayResourceMeta(): ResourceMeta {
   return {
     name: 'hrAttendanceDays',
-    permissionPrefix: 'hr.attendance_day',
+    permissionPrefix: HR_ATTENDANCE_DAY.prefix,
     permissionLabel: '日考勤',
     table: 'hr_attendance_day',
     fields: [
@@ -250,8 +251,14 @@ export function attendanceDayResourceMeta(): ResourceMeta {
     ],
     actions: [
       { key: 'read', label: '查看', scope: 'both' },
-      // GridMeta 旧表面把 recalc 作为 capability 而非 extendedAction
-      { key: 'import', permissionAction: 'recalc', label: '重算', scope: 'both' },
+      // v1：key=import 伪装（工单 11 删除）；v2：语义 key=recalc、collection target
+      {
+        key: 'import',
+        permissionAction: 'recalc',
+        label: '重算',
+        scope: 'both',
+        commandTarget: 'collection',
+      },
     ],
   }
 }

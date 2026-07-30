@@ -38,6 +38,7 @@ export {
   payrollPaymentRoutes,
   employeeLoanRoutes,
 } from './routes.ts'
+export { HR_ATTENDANCE_DAY, type HrAttendanceDayPermission } from './permissions.ts'
 export { allHrResourceMetas } from './meta.ts'
 export {
   parseAttendanceFile,

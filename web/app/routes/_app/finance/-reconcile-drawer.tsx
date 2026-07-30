@@ -19,6 +19,7 @@ import {
   fetchBankReconciliationRemaining,
   quickCreateBankReconciliation,
 } from '~/lib/resources/finance-operations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { glJournalClient } from '~/lib/resources/accounting'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
@@ -291,11 +292,15 @@ function LinkJournalModal({
                 if (!journal || amount == null) return
                 setSubmitting(true)
                 try {
-                  await bankReconciliationClient.create({
-                    bankTransactionId: txn.id,
-                    journalId: journal.id,
-                    amount: String(amount),
-                  })
+                  // 语义 command reconcile：row target + transport 仅在 CommandAdapter
+                  await resourceBindingFor('accBankTransactions').commands!.execute(
+                    'reconcile',
+                    {
+                      id: String(txn.id),
+                      journalId: String(journal.id),
+                      amount: String(amount),
+                    },
+                  )
                   close()
                   onChanged()
                   toast.success('已关联凭证')

@@ -10,9 +10,8 @@ import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
-import {
-  bankTransactionClient,
-} from '~/lib/resources/finance-operations'
+import { bankTransactionClient } from '~/lib/resources/finance-operations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { FinanceBankImportDrawers } from './-bank-import-drawers'
 import { FinanceReconcileDrawer } from './-reconcile-drawer'
 
@@ -86,6 +85,8 @@ function BankTransactionsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [reconcileTxn, setReconcileTxn] = useState<Row | null>(null)
   const queryClient = useQueryClient()
+  // 语义 command key=reconcile（非 export）；row target 在打开抽屉前校验
+  const binding = resourceBindingFor('accBankTransactions')
 
   // 导入三件套:新增导入 / 导入记录(解析结果与执行)/ 导入历史;historyKey 让历史列表跟着变更刷新
   const [importCreateOpen, setImportCreateOpen] = useState(false)
@@ -114,7 +115,18 @@ function BankTransactionsPage() {
           ]}
           overrides={GRID_OVERRIDES}
           rowActions={[
-            { key: 'reconcile', label: '对账', capability: 'reconcile', onAction: (row) => setReconcileTxn(row) },
+            {
+              key: 'reconcile',
+              label: '对账',
+              capability: 'reconcile',
+              onAction: (row) => {
+                // row command：在打开抽屉前校验 target 恰好一个 id
+                if (!binding.commands) throw new Error('银行流水未绑定 reconcile 命令')
+                const id = String(row.id ?? '')
+                if (!id) throw new Error('对账需要恰好一个流水 id')
+                setReconcileTxn(row)
+              },
+            },
           ]}
         />
       </div>

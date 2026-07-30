@@ -1,6 +1,11 @@
 import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import {
+  createCommandAdapter,
+  decodeRowTarget,
+  defineCommand,
+} from './catalog/commands'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
@@ -355,6 +360,39 @@ export function quickCreateBankReconciliation(
     }),
   )
 }
+
+export type BankReconcileCommandInput = {
+  id: string
+  journalId: string
+  amount: string | number
+}
+
+/**
+ * accBankTransactions 语义命令：reconcile（非 export）。
+ * row target：将流水与已审凭证对账；transport / payload 规范化仅在本 Adapter。
+ * 快速新建凭证并对账仍走 quickCreateBankReconciliation（复合 UI 流程）。
+ */
+export const bankTransactionCommandAdapter = createCommandAdapter({
+  reconcile: defineCommand('row', async (input: unknown) => {
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+      throw new Error('reconcile 输入须为对象')
+    }
+    const raw = input as Record<string, unknown>
+    const id = decodeRowTarget({ id: raw.id })
+    const journalId = raw.journalId
+    if (typeof journalId !== 'string' || journalId.trim() === '') {
+      throw new Error('reconcile 需要 journalId')
+    }
+    if (raw.amount === undefined || raw.amount === null || raw.amount === '') {
+      throw new Error('reconcile 需要 amount')
+    }
+    return bankReconciliationClient.create({
+      bankTransactionId: id,
+      journalId,
+      amount: String(raw.amount),
+    })
+  }),
+})
 
 const invoiceAmounts = ['netTotal', 'taxTotal', 'grossTotal'] as const
 
