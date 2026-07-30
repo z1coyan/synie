@@ -367,12 +367,12 @@ export function quotationItemMeta(side: TradingSide): ResourceMeta {
         sortable: true,
         calculated: true,
       }),
-      // 列表源含 q.currency_id，供有效报价候选筛选（对齐 Go itemSource）
+      // 列表源含 q.currency_id，供有效报价候选筛选（对齐 Go itemSource）。
+      // 不能标 printOnly：该标记的平台语义会把字段从 ReadSpec 排除，导致订单选择器筛选被拒绝。
       f('currency_id', 'currencyId', 'fk', '币种ID', {
         readonly: true,
         filterable: true,
         calculated: true,
-        printOnly: true,
         ref: { resource: 'basCurrencies', relation: 'currency', labelField: 'name' },
       }),
     ],

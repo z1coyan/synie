@@ -11,6 +11,7 @@ import { buildListQuery } from '~/db/filterbuild.ts'
 import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
+import { quotationItemMeta } from '~/modules/trading/quotation/spec.ts'
 
 /** 用 DummyDriver 编译查询：断言生成的 SQL 文本与参数（等价 server-go 的字符串断言） */
 const dummyDb = new Kysely<never>({
@@ -150,6 +151,23 @@ describe('filterbuild', () => {
   test('未知字段与 kind 不匹配拒绝', () => {
     expect(() => compile({ ...base, filter: { hacker: { kind: 'text', op: 'eq', value: 'x' } } })).toThrow(ApiError)
     expect(() => compile({ ...base, filter: { name: { kind: 'bool', eq: true } } })).toThrow(ApiError)
+  })
+
+  test('销售/采购报价条目允许按币种 ID 筛选订单候选', () => {
+    const currencyId = '11111111-1111-4111-8111-111111111111'
+    for (const side of ['sales', 'purchase'] as const) {
+      const built = buildListQuery(toReadSpec(quotationItemMeta(side)), {
+        ...base,
+        filter: {
+          currencyId: { kind: 'fk', op: 'in', values: [currencyId], labels: [] },
+        },
+      })
+      let query = dummyDb.selectFrom('quotation_items' as never).selectAll()
+      if (built.where) query = query.where(built.where as never)
+      const { sql, parameters } = query.compile()
+      expect(sql).toContain('"currency_id"::text = ANY($1::text[])')
+      expect(parameters).toEqual([[currencyId]])
+    }
   })
 
   test('无筛选无排序时 where/orderBy 均为 null', () => {
