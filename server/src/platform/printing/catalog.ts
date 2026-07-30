@@ -5,7 +5,7 @@
 import { ApiError } from '../http/errors.ts'
 import type { Registry } from '../meta/registry.ts'
 import type { FieldMeta, ResourceMeta } from '../meta/types.ts'
-import type { PlaceholderSet, PrintField, PrintLoop, ResourceCatalog } from './types.ts'
+import type { PlaceholderSet, PrintField, PrintLoop, PrintResourceCatalog } from './types.ts'
 import { uniqueSorted } from './xlsx.ts'
 
 const TECHNICAL_FIELDS = new Set(['id', 'inserted_at', 'updated_at'])
@@ -13,11 +13,11 @@ const TECHNICAL_FIELDS = new Set(['id', 'inserted_at', 'updated_at'])
 export function createFieldCatalog(registry: Registry) {
   if (!registry) throw new Error('打印字段目录需要 meta.Registry')
 
-  const byResource = new Map<string, ResourceCatalog>()
+  const byResource = new Map<string, PrintResourceCatalog>()
   const resourceNames: string[] = []
 
   for (const head of printHeads(registry)) {
-    const definition: ResourceCatalog = {
+    const definition: PrintResourceCatalog = {
       resource: head.permissionPrefix,
       fields: deriveFields(registry, head),
       loops: [],
@@ -47,9 +47,9 @@ export function createFieldCatalog(registry: Registry) {
     return [...resourceNames]
   }
 
-  function get(resource: string): ResourceCatalog | undefined {
+  function get(resource: string): PrintResourceCatalog | undefined {
     const definition = byResource.get(resource)
-    return definition ? cloneResourceCatalog(definition) : undefined
+    return definition ? clonePrintResourceCatalog(definition) : undefined
   }
 
   function validatePlaceholders(resource: string, placeholders: PlaceholderSet): void {
@@ -231,7 +231,7 @@ function sortedFields(names: Set<string>): PrintField[] {
     .map((name) => ({ name, label: name }))
 }
 
-function cloneResourceCatalog(value: ResourceCatalog): ResourceCatalog {
+function clonePrintResourceCatalog(value: PrintResourceCatalog): PrintResourceCatalog {
   return {
     resource: value.resource,
     fields: value.fields.map((f) => ({ ...f })),

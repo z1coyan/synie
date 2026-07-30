@@ -7,6 +7,7 @@ import { decimal, toDecimalString, type ListQuery } from '@synie/shared'
 import { sql, type RawBuilder } from 'kysely'
 import type { Kysely } from 'kysely'
 import { buildListQuery } from '~/db/filterbuild.ts'
+import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import {
@@ -314,7 +315,7 @@ export function createTodoService(db: Kysely<Database>, sources: TodoSourceRegis
       sort: query.sort,
       filter: query.filter,
     }
-    const built = buildListQuery(todoQueryMeta(), listQuery)
+    const built = buildListQuery(toReadSpec(todoQueryMeta()), listQuery)
     const parts: ReturnType<typeof sql>[] = []
     if (built.where) parts.push(built.where)
 

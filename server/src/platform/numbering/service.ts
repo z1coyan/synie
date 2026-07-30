@@ -1,6 +1,7 @@
 import type { ListQuery } from '@synie/shared'
 import { sql, type Expression, type Kysely, type SqlBool } from 'kysely'
 import { buildListQuery } from '~/db/filterbuild.ts'
+import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database, Json } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/write.ts'
@@ -96,7 +97,7 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
     if (limit < 1 || limit > 200 || offset < 0) {
       throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
     }
-    const built = buildListQuery(ruleResourceMeta(), {
+    const built = buildListQuery(toReadSpec(ruleResourceMeta()), {
       limit,
       offset,
       search: query.search,
@@ -231,7 +232,7 @@ export function createNumberingService(db: Kysely<Database>, catalog: NumberingC
     if (limit < 1 || limit > 200 || offset < 0) {
       throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
     }
-    const built = buildListQuery(counterResourceMeta(), {
+    const built = buildListQuery(toReadSpec(counterResourceMeta()), {
       limit,
       offset,
       search: query.search,

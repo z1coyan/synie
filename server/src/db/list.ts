@@ -4,6 +4,8 @@ import { buildListQuery } from '~/db/filterbuild.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import { companyFilter, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { ResourceReadSpec } from '~/platform/meta/read-spec.ts'
+import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
 
 export function normalizeListQuery(query: Partial<ListQuery>): ListQuery {
@@ -37,7 +39,11 @@ export function companyScopeWhere(
 
 export interface ListFromSourceOptions<T> {
   db: DbHandle
-  resource: ResourceMeta
+  /**
+   * 列表白名单：优先传 ResourceReadSpec；仍接受 ResourceMeta 时内部 toReadSpec。
+   * SQL source/select/defaultOrder 由调用方显式拥有。
+   */
+  resource: ResourceMeta | ResourceReadSpec
   /** 不含 WHERE/ORDER/LIMIT 的 FROM 子句，如 `FROM bas_currency` 或 `FROM (SELECT ...) AS x` */
   source: RawBuilder<unknown>
   select: RawBuilder<unknown>
@@ -50,13 +56,17 @@ export interface ListFromSourceOptions<T> {
 
 /**
  * 通用列表：filterbuild 白名单 + 参数化 source 子查询。
- * source 暴露的列名须与 ResourceMeta.dbColumn 一致（无表前缀）。
+ * source 暴露的列名须与 ResourceReadSpec.dbColumn 一致（无表前缀）。
  */
 export async function listFromSource<T>(
   options: ListFromSourceOptions<T>,
 ): Promise<{ count: number; results: T[] }> {
   const q = normalizeListQuery(options.query)
-  const built = buildListQuery(options.resource, q)
+  const readSpec =
+    'table' in options.resource
+      ? toReadSpec(options.resource as ResourceMeta)
+      : (options.resource as ResourceReadSpec)
+  const built = buildListQuery(readSpec, q)
   const parts: RawBuilder<unknown>[] = []
   if (built.where) parts.push(built.where)
   if (options.extraWhere) parts.push(options.extraWhere)

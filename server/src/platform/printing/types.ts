@@ -46,7 +46,7 @@ export interface PrintLoop {
   nestedLoops?: string[]
 }
 
-export interface ResourceCatalog {
+export interface PrintResourceCatalog {
   resource: string
   fields: PrintField[]
   loops: PrintLoop[]

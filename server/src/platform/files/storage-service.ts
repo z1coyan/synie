@@ -1,6 +1,7 @@
 import type { ListQuery } from '@synie/shared'
 import { sql, type Expression, type Kysely, type SqlBool } from 'kysely'
 import { buildListQuery } from '~/db/filterbuild.ts'
+import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/write.ts'
@@ -60,7 +61,7 @@ export function createStorageService(deps: StorageServiceDeps) {
       sort: query.sort,
       filter: query.filter,
     }
-    const built = buildListQuery(storageResourceMeta(), listQuery)
+    const built = buildListQuery(toReadSpec(storageResourceMeta()), listQuery)
 
     let countQ = db.selectFrom('sys_storage').select(db.fn.countAll<string>().as('count'))
     if (built.where) countQ = countQ.where(built.where as Expression<SqlBool>)

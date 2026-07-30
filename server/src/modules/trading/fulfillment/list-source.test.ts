@@ -12,6 +12,7 @@ import {
 } from 'kysely'
 import type { ListQuery } from '@synie/shared'
 import { buildListQuery } from '~/db/filterbuild.ts'
+import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { fulfillmentItemMeta } from './spec.ts'
 
 const dummyDb = new Kysely<never>({
@@ -24,7 +25,7 @@ const dummyDb = new Kysely<never>({
 })
 
 function compileOrder(resource: ReturnType<typeof fulfillmentItemMeta>, query: ListQuery) {
-  const built = buildListQuery(resource, query)
+  const built = buildListQuery(toReadSpec(resource), query)
   let q = dummyDb.selectFrom('x' as never).selectAll()
   if (built.orderBy) q = q.orderBy(built.orderBy as never)
   if (built.where) q = q.where(built.where as never)

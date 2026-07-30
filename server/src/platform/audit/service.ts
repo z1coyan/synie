@@ -1,6 +1,7 @@
 import type { ListQuery } from '@synie/shared'
 import { sql, type Expression, type Kysely, type SqlBool } from 'kysely'
 import { buildListQuery } from '~/db/filterbuild.ts'
+import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { Actor } from '../authz/actor.ts'
 import { companyFilter, hasPermission } from '../authz/actor.ts'
@@ -42,7 +43,7 @@ export function createAuditService(db: Kysely<Database>) {
     if (limit < 1 || limit > 200 || offset < 0) {
       throw ApiError.validation('分页参数不合法', { limit: ['必须在 1 到 200 之间'] })
     }
-    const built = buildListQuery(auditLogResourceMeta(), {
+    const built = buildListQuery(toReadSpec(auditLogResourceMeta()), {
       limit,
       offset,
       search: query.search,

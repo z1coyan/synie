@@ -8,6 +8,7 @@ import {
 } from 'kysely'
 import type { ListQuery } from '@synie/shared'
 import { buildListQuery } from '~/db/filterbuild.ts'
+import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
 
@@ -49,7 +50,7 @@ const resource: ResourceMeta = {
 }
 
 function compile(query: ListQuery) {
-  const built = buildListQuery(resource, query)
+  const built = buildListQuery(toReadSpec(resource), query)
   let q = dummyDb.selectFrom('bas_unit' as never).selectAll()
   if (built.where) q = q.where(built.where as never)
   if (built.orderBy) q = q.orderBy(built.orderBy as never)
@@ -152,7 +153,7 @@ describe('filterbuild', () => {
   })
 
   test('无筛选无排序时 where/orderBy 均为 null', () => {
-    const built = buildListQuery(resource, base)
+    const built = buildListQuery(toReadSpec(resource), base)
     expect(built.where).toBeNull()
     expect(built.orderBy).toBeNull()
   })
