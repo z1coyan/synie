@@ -6,6 +6,7 @@ import {
   useNavigate,
 } from '@tanstack/react-router'
 import { Tabs } from '@heroui/react'
+import { DemandDrawerProvider } from './demands/-demand-drawer'
 
 export const Route = createFileRoute('/_app/mfg/demands')({
   component: DemandsLayout,
@@ -25,7 +26,7 @@ function DemandsLayout() {
     TABS.find((t) => pathname.includes(`/mfg/demands/${t.id}`))?.id ?? 'items'
 
   return (
-    <>
+    <DemandDrawerProvider>
       <h1 className="font-brand text-3xl tracking-wide">需求单</h1>
       <p className="mt-2 text-sm text-ink-500">
         履约需求单：计划从销售勾选或手工建独立需求；确认后锁口径，自制派生工单，外购/委外/库存可点完成。
@@ -60,6 +61,6 @@ function DemandsLayout() {
           <Outlet />
         </Tabs.Panel>
       </Tabs>
-    </>
+    </DemandDrawerProvider>
   )
 }

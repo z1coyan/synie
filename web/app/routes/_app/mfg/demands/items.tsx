@@ -13,6 +13,7 @@ import {
   useDemandItemActions,
   useMyPermissions,
 } from './-item-actions'
+import { useDemandDrawer } from './-demand-drawer'
 
 export const Route = createFileRoute('/_app/mfg/demands/items')({
   component: DemandItemsTab,
@@ -82,11 +83,14 @@ const GRID_OVERRIDES = {
 } satisfies Record<string, ColumnOverride>
 
 function DemandItemsTab() {
+  const openDrawer = useDemandDrawer()
   const perms = useMyPermissions()
   // 行操作成功后刷新当下网格:refetch 由 rowActions 的 ctx 提供,经 ref 传给 hooks 的 after
   const refetchRef = useRef<() => void>(() => {})
   const itemActions = useDemandItemActions(() => refetchRef.current())
 
+  const canCreateDemand = perms.data?.has('mfg.demand:create') ?? false
+  const canUpdateDemand = perms.data?.has('mfg.demand:update') ?? false
   const canCreateWorkOrder = perms.data?.has('mfg.work_order:create') ?? false
 
   return (
@@ -97,9 +101,14 @@ function DemandItemsTab() {
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         // mfgDemandItems 复用 mfg.demand 权限码,meta capabilities 为空:显式声明本视图
-        // 可用动作(complete/change_fulfillment 复用 update 码);不声明 create/delete,
-        // 行的增删在需求单抽屉内进行
-        capabilities={['update']}
+        // 可用动作（新增整单 + complete/change_fulfillment 复用 update 码）；
+        // 行本身的增删仍在需求单抽屉内进行。
+        capabilities={[
+          ...(canCreateDemand ? ['create'] : []),
+          ...(canUpdateDemand ? ['update'] : []),
+        ]}
+        createLabel="新建需求单"
+        onCreate={() => openDrawer('create', null)}
         rowActions={[
           {
             key: 'complete',

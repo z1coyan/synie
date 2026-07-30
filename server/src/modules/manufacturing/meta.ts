@@ -393,7 +393,13 @@ export function demandResourceMeta(): ResourceMeta {
     ],
     actions: [
       ...headCrud,
-      { key: 'confirm', label: '确认', scope: 'row' },
+      {
+        key: 'audit',
+        label: '审核',
+        scope: 'row',
+        permissionAction: 'confirm',
+        confirmKind: 'audit_doc',
+      },
       { key: 'close', label: '关闭', scope: 'row' },
       { key: 'void', label: '作废', scope: 'row', isDanger: true },
     ],
@@ -419,10 +425,12 @@ export function demandItemResourceMeta(): ResourceMeta {
         sortable: true,
       }),
       field('ordered_qty', 'orderedQty', 'decimal', '已下单数量(物料默认单位,系统维护)', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       field('received_qty', 'receivedQty', 'decimal', '已收数量(物料默认单位,系统维护)', {
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
@@ -475,11 +483,13 @@ export function demandItemResourceMeta(): ResourceMeta {
       ),
       field('ordered', 'ordered', 'boolean', '已下单(有已审核订单条目且未完成)', {
         calculated: true,
+        readonly: true,
         filterable: true,
         sortable: true,
       }),
       field('remaining_orderable_qty', 'remainingOrderableQty', 'decimal', '剩余可下单数量(物料默认单位)', {
         calculated: true,
+        readonly: true,
         filterable: true,
         sortable: true,
       }),

@@ -12,7 +12,7 @@ const EXPECTED_COMMANDS = {
   invStockCounts: { approve: 'row', cancel: 'row' },
   invStockDocs: { audit: 'row', void: 'row' },
   invStockTransfers: { ship: 'row', receive: 'row' },
-  mfgDemands: { confirm: 'row', close: 'row', void: 'row' },
+  mfgDemands: { audit: 'row', close: 'row', void: 'row' },
   mfgOutputs: { audit: 'row', void: 'row' },
   mfgWorkOrders: { void: 'row' },
   purOrders: { audit: 'row', close: 'row', void: 'row' },

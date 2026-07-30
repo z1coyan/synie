@@ -8,6 +8,7 @@ const pages = [
   './operations.tsx',
   './process-templates.tsx',
   './boms.tsx',
+  './demands/-demand-drawer.tsx',
   './demands/orders.tsx',
   './demands/items.tsx',
   './demands/-item-actions.tsx',
@@ -61,9 +62,11 @@ describe('PR-2.17 制造域 REST 边界', () => {
     expect(bom).toContain('client={bomRouteClient}')
     expect(bom).toContain('client={bomByproductClient}')
 
-    const demand = source('./demands/orders.tsx')
-    expect(demand.match(/client=\{demandClient\}/g)?.length).toBe(2)
-    expect(demand).toContain('client={demandItemClient}')
+    const demandOrders = source('./demands/orders.tsx')
+    const demandDrawer = source('./demands/-demand-drawer.tsx')
+    expect(demandOrders).toContain('client={demandClient}')
+    expect(demandDrawer).toContain('client={demandClient}')
+    expect(demandDrawer).toContain('client={demandItemClient}')
     expect(source('./demands/items.tsx')).toContain('client={demandItemClient}')
     expect(source('./demands/-item-actions.tsx')).toContain(
       "useGridMeta('mfgDemandItems', true)",
@@ -102,5 +105,45 @@ describe('PR-2.17 制造域 REST 边界', () => {
     ]) {
       expect(client).toMatch(new RegExp(`resourceClient\\(\\s*'${resource}'`))
     }
+  })
+
+  test('新增和编辑履约需求行不暴露系统维护投影', () => {
+    const demand = source('./demands/-demand-drawer.tsx')
+    const itemExclude = demand.match(
+      /<SynieEditableTable[\s\S]*?exclude=\{\[([\s\S]*?)\]\}\s*columns=/,
+    )?.[1]
+    expect(itemExclude).toBeDefined()
+    for (const field of [
+      'orderedQty',
+      'receivedQty',
+      'ordered',
+      'remainingOrderableQty',
+    ]) {
+      expect(itemExclude).toContain(`'${field}'`)
+    }
+  })
+
+  test('需求行视图可新建整单，整单头行同屏并接入保存并审核', () => {
+    const layout = source('./demands.tsx')
+    const items = source('./demands/items.tsx')
+    const drawer = source('./demands/-demand-drawer.tsx')
+    const drawerConfig = source(
+      '../../../components/synie-record-drawer/extension-drawer-props.tsx',
+    )
+    const recordDrawer = source(
+      '../../../components/synie-record-drawer/SynieRecordDrawer.tsx',
+    )
+    const client = source('../../../lib/resources/manufacturing.ts')
+
+    expect(layout).toContain('<DemandDrawerProvider>')
+    expect(items).toContain('createLabel="新建需求单"')
+    expect(items).toContain("openDrawer('create', null)")
+    expect(drawer).toContain('extraContent=')
+    expect(drawer).not.toContain('tabExtraContent=')
+    expect(
+      drawerConfig.match(/mfgDemands:\s*\{[\s\S]*?\n  \},\n  mfgWorkOrders:/)?.[0],
+    ).not.toContain('tabs:')
+    expect(client).toContain('audit: confirmDemand')
+    expect(recordDrawer).toContain('auditAction.requiredCapability')
   })
 })

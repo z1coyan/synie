@@ -205,7 +205,9 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const canSaveAndAudit =
     !!props.onSubmit &&
     !!auditAction &&
-    (remoteMeta.data?.capabilities ?? []).includes('audit') &&
+    (remoteMeta.data?.capabilities ?? []).includes(
+      auditAction.requiredCapability,
+    ) &&
     (renderRow?.status == null || renderRow?.status === 'DRAFT')
   // 当前 tab:null 表示未手动切换过(回落首 tab),每次打开抽屉重置
   const [activeTab, setActiveTab] = useState<string | null>(null)

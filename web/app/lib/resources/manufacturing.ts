@@ -111,7 +111,7 @@ export async function voidOutput(id: string) {
 }
 
 export const demandCommandAdapter = createRowCommandAdapter({
-  confirm: confirmDemand,
+  audit: confirmDemand,
   close: closeDemand,
   void: voidDemand,
 })

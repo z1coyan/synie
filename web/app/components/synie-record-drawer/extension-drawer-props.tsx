@@ -796,10 +796,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
     label: '履约需求单',
     contentClassName: 'w-full lg:w-[960px]',
     exclude: ['status', 'createdById', 'insertedAt', 'updatedAt'],
-    tabs: [
-      { key: 'basic', label: '基本信息' },
-      { key: 'items', label: '需求行' },
-    ],
     fields: {
       companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
       demandNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
