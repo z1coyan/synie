@@ -510,7 +510,13 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   // 行内动作列:仅当至少一行有可用动作时才拼接(避免空 Dropdown 占位列)。
   // 注意不能直接 push 进 memo 出来的 gridColumns——它在依赖不变时跨渲染复用同一数组引用,
   // 重复 push 会在每次重渲染后越叠越多;这里用 concat 生成新数组规避。
-  const hasRowMenu = !pickMode && rows.some((r) => actions.rowMenuFor(r).length > 0)
+  // pick 选择器默认隐藏行菜单;若显式 onView / rowActions 则保留(如 BOM 选用弹窗可看详情)。
+  const allowPickRowMenu =
+    pickMode &&
+    (!!props.onView || (props.rowActions != null && props.rowActions.length > 0))
+  const hasRowMenu =
+    (!pickMode || allowPickRowMenu) &&
+    rows.some((r) => actions.rowMenuFor(r).length > 0)
   const columnsWithActions: DataGridColumn<Row>[] = hasRowMenu
     ? [
         ...gridColumns,
@@ -724,8 +730,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           columns={columns}
           fields={cardLayout}
           overrides={overrides}
-          onView={pickMode ? undefined : props.onView}
-          rowMenuFor={pickMode ? undefined : cardRowMenuFor}
+          onView={pickMode && !allowPickRowMenu ? undefined : props.onView}
+          rowMenuFor={pickMode && !allowPickRowMenu ? undefined : cardRowMenuFor}
           selection={cardSelection}
           onImagePress={(col, row) => {
             const img = overrides[col]?.image

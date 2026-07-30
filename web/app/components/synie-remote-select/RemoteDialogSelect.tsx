@@ -20,6 +20,12 @@ export interface RemoteDialogSelectProps extends RemoteSelectProps {
   gridExtraFields?: string[]
   /** 弹窗宽度 class,默认 max-w-4xl */
   dialogClassName?: string
+  /**
+   * 选择弹窗内「查看」行动作(如 BOM 详情)。
+   * 不关闭选择弹窗;调用方打开只读详情层。
+   * 为避免选用弹窗带出编辑/删除,grid 使用空 capabilities。
+   */
+  onView?: (row: Row) => void
 }
 
 export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
@@ -87,6 +93,9 @@ export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
                 pick="single"
                 pickedRows={draft}
                 onPickChange={setDraft}
+                // 空 capabilities:行菜单仅保留 onView,不露出编辑/删除/启停
+                capabilities={props.onView ? [] : undefined}
+                onView={props.onView}
               />
             </Modal.Body>
             <Modal.Footer>

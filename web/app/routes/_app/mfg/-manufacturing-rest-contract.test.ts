@@ -81,6 +81,7 @@ describe('PR-2.17 制造域 REST 边界', () => {
     expect(workOrder).toContain('BomDrawerProvider')
     expect(workOrder).toContain('useBomDrawer')
     expect(workOrder).toContain('RemoteDialogSelect')
+    expect(workOrder).toContain("openBomDrawer('view'")
     expect(workOrder).toContain('bomId: values.bomId')
     expect(workOrder).toContain("ownerType=\"mfg_work_order\"")
 

@@ -246,6 +246,8 @@ function WorkOrdersPageInner() {
                     column: 'code',
                     direction: 'ascending',
                   }}
+                  // 行菜单「查看」→ 完整 BOM 只读抽屉(配料/路线/副产品)
+                  onView={(row) => openBomDrawer('view', row)}
                 />
               </div>
               {(isCreate || canEditBomOnExisting) && (
