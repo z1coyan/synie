@@ -77,6 +77,30 @@ describe('PR-2.15 标准与委外履约 REST 迁移契约', () => {
     expect(outsourcedReceiptDrawer).toContain('purchaseOutsourcedReceiptItemByproductClient')
   })
 
+  test('销售发货只通过整单草稿写入口保存,子资源仅保留读取', () => {
+    expect(salesDrawer).toContain('buildDeliveryDraft')
+    expect(salesDrawer).toContain('queryAllDraftRows')
+    expect(salesDrawer).toContain('发货明细尚未完整加载，不能提交整单替换')
+    expect(salesDrawer).not.toContain('limit: 500')
+    expect(salesDrawer).not.toContain('persistItems(')
+    expect(salesDrawer).not.toContain('persistBoxes(')
+    expect(salesDrawer).not.toContain('persistPackLines(')
+
+    expect(fulfillmentClients).toContain("api.sales.deliveries[':id'].$put")
+    expect(fulfillmentClients).not.toContain("api.sales['delivery-items'].$post")
+    expect(fulfillmentClients).not.toContain("api.sales['delivery-items'][':id'].$patch")
+    expect(fulfillmentClients).not.toContain("api.sales['delivery-items'][':id'].$delete")
+    expect(fulfillmentClients).not.toContain("api.sales['delivery-pack-boxes'].$post")
+    expect(fulfillmentClients).not.toContain("api.sales['delivery-pack-boxes'][':id'].$delete")
+    expect(fulfillmentClients).not.toContain("api.sales['delivery-pack-lines'].$post")
+    expect(fulfillmentClients).not.toContain("api.sales['delivery-pack-lines'][':id'].$patch")
+    expect(fulfillmentClients).not.toContain("api.sales['delivery-pack-lines'][':id'].$delete")
+
+    expect(fulfillmentClients).toContain("api.sales['delivery-items'].query.$post")
+    expect(fulfillmentClients).toContain("api.sales['delivery-pack-boxes'].query.$post")
+    expect(fulfillmentClients).toContain("api.sales['delivery-pack-lines'].query.$post")
+  })
+
   test('科目与履约来源候选使用结构化 FilterState', () => {
     expect(salesDrawer).toContain('filterState={accountFilter')
     expect(purchaseDrawer).toContain('filterState={accountFilter')

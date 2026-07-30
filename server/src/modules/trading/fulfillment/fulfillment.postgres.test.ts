@@ -3,13 +3,24 @@
  * 装箱行挂箱校验、全有或全无审核校验回归。门控 SYNIE_TEST_DATABASE_URL。
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { Hono } from 'hono'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
+import type { AuthService } from '~/platform/auth/service.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import type { AppEnv } from '~/platform/http/context.ts'
+import { onError } from '~/platform/http/errors.ts'
 import { createNumberingService } from '~/platform/numbering/index.ts'
+import {
+  packBoxRoutes,
+  packLineRoutes,
+  salesFulfillmentHeadRoutes,
+  salesFulfillmentItemRoutes,
+} from './routes.ts'
 import { createFulfillmentService } from './service.ts'
+import { fulfillmentItemMeta, packBoxMeta, packLineMeta } from './spec.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -47,13 +58,26 @@ run('PG 集成（销售发货装箱箱）', () => {
     permissions: new Set(),
     companyIds: [],
   }
+  const readOnlyActor: Actor = {
+    ...actor,
+    username: 'packbox-read-only',
+    superAdmin: false,
+    permissions: new Set(['sales.delivery:read']),
+  }
+  const auth = {
+    authenticate: async (token: string) => token === 'read-only' ? readOnlyActor : actor,
+  } as unknown as AuthService
+  const http = new Hono<AppEnv>()
+    .route('/api/v1/sales/deliveries', salesFulfillmentHeadRoutes({ auth, fulfillment }))
+    .route('/api/v1/sales/delivery-items', salesFulfillmentItemRoutes({ auth, fulfillment }))
+    .route('/api/v1/sales/delivery-pack-boxes', packBoxRoutes({ auth, fulfillment }))
+    .route('/api/v1/sales/delivery-pack-lines', packLineRoutes({ auth, fulfillment }))
+  http.onError(onError)
 
-  let seq = 0
-  async function newDelivery() {
-    seq += 1
-    return fulfillment.createHead(actor, 'sales', {
+  function draftInput(no: string, itemQty = '10', packQty = '10') {
+    return {
       companyId,
-      no: `${prefix}-SD${seq}`,
+      no,
       documentDate: '2026-07-25',
       postingDate: '2026-07-25',
       partyType: 'customer',
@@ -61,18 +85,25 @@ run('PG 集成（销售发货装箱箱）', () => {
       warehouseId,
       debitAccountId,
       creditAccountId,
-    })
+      items: [{
+        idx: 1,
+        qty: itemQty,
+        orderItemId,
+        warehouseId,
+      }],
+      packBoxes: [{
+        lines: [{
+          idx: 1,
+          qty: packQty,
+          materialId,
+        }],
+      }],
+    }
   }
-  async function newDeliveryWithItem(qty = '10') {
-    const head = await newDelivery()
-    const item = await fulfillment.createItem(actor, 'sales', {
-      headId: head.id,
-      idx: 1,
-      qty,
-      orderItemId,
-      warehouseId,
-    })
-    return { head, item }
+  function httpDraftInput(no: string, itemQty = '10', packQty = '10') {
+    const input = draftInput(no, itemQty, packQty)
+    const { no: deliveryNo, documentDate: deliveryDate, ...rest } = input
+    return { ...rest, deliveryNo, deliveryDate }
   }
 
   beforeAll(async () => {
@@ -150,153 +181,435 @@ run('PG 集成（销售发货装箱箱）', () => {
     await db.destroy()
   })
 
-  test('添加箱子：箱号单内自增、系统生成', async () => {
-    const { head } = await newDeliveryWithItem()
-    const b1 = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    const b2 = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    const b3 = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    expect(b1.boxNo).toBe('1')
-    expect(b2.boxNo).toBe('2')
-    expect(b3.boxNo).toBe('3')
-    // 另一张单从 1 重新计
-    const other = await newDelivery()
-    const ob = await fulfillment.createPackBox(actor, { deliveryId: other.id })
-    expect(ob.boxNo).toBe('1')
+  test('整单创建在一个事务中返回完整权威草稿', async () => {
+    const no = `${prefix}-ATOMIC-CREATE`
+    const draft = await fulfillment.createSalesDraft(actor, draftInput(no))
+
+    expect(draft.deliveryNo).toBe(no)
+    expect(draft.status).toBe('DRAFT')
+    expect(draft.items).toHaveLength(1)
+    expect(draft.items[0]?.deliveryId).toBe(draft.id)
+    expect(draft.items[0]?.materialId).toBe(materialId)
+    expect(draft.packBoxes).toHaveLength(1)
+    expect(draft.packBoxes[0]?.boxNo).toBe('1')
+    expect(draft.packBoxes[0]?.lines).toHaveLength(1)
+    expect(draft.packBoxes[0]?.lines[0]?.deliveryId).toBe(draft.id)
+    expect(draft.packBoxes[0]?.lines[0]?.packBoxId).toBe(draft.packBoxes[0]?.id)
   })
 
-  test('装箱行必挂本单的箱', async () => {
-    const { head } = await newDeliveryWithItem()
-    const other = await newDelivery()
-    const box = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    const foreignBox = await fulfillment.createPackBox(actor, { deliveryId: other.id })
-    const line = await fulfillment.createPackLine(actor, {
-      deliveryId: head.id,
-      idx: 1,
-      packBoxId: box.id,
-      qty: '5',
-      materialId,
-    })
-    expect(line.packBoxId).toBe(box.id)
-    const err = await fulfillment
-      .createPackLine(actor, {
-        deliveryId: head.id,
-        idx: 2,
-        packBoxId: foreignBox.id,
-        qty: '5',
-        materialId,
-      })
-      .then(
-        () => null,
-        (e) => e as { code?: string; fields?: Record<string, string[]> },
-      )
-    expect(err?.code).toBe('validation')
-    expect(err?.fields?.packBoxId).toEqual(['须为本单的箱'])
+  test('整单创建的嵌套行失败时不残留表头、子记录或操作日志', async () => {
+    const no = `${prefix}-ATOMIC-ROLLBACK`
+    await expect(
+      fulfillment.createSalesDraft(actor, draftInput(no, '10', '0')),
+    ).rejects.toThrow(/装箱行参数不合法/)
+
+    const heads = await sql<{ n: string }>`
+      SELECT count(*)::text AS n FROM sal_delivery WHERE delivery_no=${no}
+    `.execute(db)
+    const items = await sql<{ n: string }>`
+      SELECT count(*)::text AS n
+      FROM sal_delivery_item i
+      JOIN sal_delivery h ON h.id=i.delivery_id
+      WHERE h.delivery_no=${no}
+    `.execute(db)
+    const logs = await sql<{ n: string }>`
+      SELECT count(*)::text AS n
+      FROM sys_audit_log
+      WHERE company_id=${companyId}::uuid AND record_label=${no}
+    `.execute(db)
+    expect(heads.rows[0]?.n).toBe('0')
+    expect(items.rows[0]?.n).toBe('0')
+    expect(logs.rows[0]?.n).toBe('0')
   })
 
-  test('删箱级联删除其装箱行', async () => {
-    const { head } = await newDeliveryWithItem()
-    const box = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    const line = await fulfillment.createPackLine(actor, {
-      deliveryId: head.id, idx: 1, packBoxId: box.id, qty: '5', materialId,
+  test('整单 HTTP 的结构错误与领域错误使用同一 bracket 索引路径', async () => {
+    const structureInput = {
+      ...httpDraftInput(`${prefix}-HTTP-STRUCT`),
+      packBoxes: [{ lines: [{ idx: 1, qty: 0, materialId }] }],
+    }
+    const structureResponse = await http.request('/api/v1/sales/deliveries', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(structureInput),
     })
-    await fulfillment.deletePackBox(actor, box.id)
-    await expect(fulfillment.getPackBox(actor, box.id)).rejects.toThrow(/不存在/)
-    await expect(fulfillment.getPackLine(actor, line.id)).rejects.toThrow(/不存在/)
+    expect(structureResponse.status).toBe(400)
+    const structureBody = await structureResponse.json() as {
+      error: { fields?: Record<string, string[]> }
+    }
+    expect(structureBody.error.fields?.['packBoxes[0].lines[0].qty']).toBeDefined()
+
+    const domainInput = {
+      ...structureInput,
+      deliveryNo: `${prefix}-HTTP-DOMAIN`,
+      packBoxes: [{ lines: [{ idx: 1, qty: '0', materialId }] }],
+    }
+    const domainResponse = await http.request('/api/v1/sales/deliveries', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(domainInput),
+    })
+    expect(domainResponse.status).toBe(400)
+    const domainBody = await domainResponse.json() as {
+      error: { fields?: Record<string, string[]> }
+    }
+    expect(domainBody.error.fields?.['packBoxes[0].lines[0].qty']).toEqual(['必须大于 0'])
+
+    const headerResponse = await http.request('/api/v1/sales/deliveries', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(httpDraftInput('X'.repeat(33))),
+    })
+    expect(headerResponse.status).toBe(400)
+    const headerBody = await headerResponse.json() as {
+      error: { fields?: Record<string, string[]> }
+    }
+    expect(headerBody.error.fields?.['header.deliveryNo']).toBeDefined()
+  })
+
+  test('整单 HTTP 创建与替换返回完整权威草稿', async () => {
+    const createResponse = await http.request('/api/v1/sales/deliveries', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(httpDraftInput(`${prefix}-HTTP-SAVE`)),
+    })
+    expect(createResponse.status).toBe(201)
+    const created = await createResponse.json() as {
+      id: string
+      items: Array<{ id: string }>
+      packBoxes: Array<{ id: string; boxNo: string; lines: Array<{ id: string }> }>
+    }
+    expect(created.items[0]?.id).toBeTruthy()
+    expect(created.packBoxes[0]?.boxNo).toBe('1')
+    expect(created.packBoxes[0]?.lines[0]?.id).toBeTruthy()
+
+    const replaceResponse = await http.request(`/api/v1/sales/deliveries/${created.id}`, {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer test',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...httpDraftInput(`${prefix}-HTTP-SAVE`),
+        remarks: 'HTTP 替换',
+        items: [],
+        packBoxes: [],
+      }),
+    })
+    expect(replaceResponse.status).toBe(200)
+    const replaced = await replaceResponse.json() as {
+      remarks: string
+      items: unknown[]
+      packBoxes: unknown[]
+    }
+    expect(replaced.remarks).toBe('HTTP 替换')
+    expect(replaced.items).toEqual([])
+    expect(replaced.packBoxes).toEqual([])
+  })
+
+  test('整单创建与替换分别执行父单 create/update 权限', async () => {
+    const deniedCreate = await http.request('/api/v1/sales/deliveries', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer read-only',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(httpDraftInput(`${prefix}-DENIED-CREATE`)),
+    })
+    expect(deniedCreate.status).toBe(403)
+
+    const created = await fulfillment.createSalesDraft(
+      actor,
+      draftInput(`${prefix}-DENIED-UPDATE`),
+    )
+    const deniedReplace = await http.request(`/api/v1/sales/deliveries/${created.id}`, {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer read-only',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(httpDraftInput(created.deliveryNo)),
+    })
+    expect(deniedReplace.status).toBe(403)
+  })
+
+  test('销售发货子资源只保留 query/get，Meta 不再声明细粒度写能力', async () => {
+    const created = await fulfillment.createSalesDraft(
+      actor,
+      draftInput(`${prefix}-READ-ONLY`),
+    )
+    const tokenHeaders = { authorization: 'Bearer test' }
+    const jsonHeaders = { ...tokenHeaders, 'content-type': 'application/json' }
+
+    expect(
+      (await http.request(`/api/v1/sales/delivery-items/${created.items[0]!.id}`, {
+        headers: tokenHeaders,
+      })).status,
+    ).toBe(200)
+    expect(
+      (await http.request(`/api/v1/sales/delivery-pack-boxes/${created.packBoxes[0]!.id}`, {
+        headers: tokenHeaders,
+      })).status,
+    ).toBe(200)
+    expect(
+      (await http.request(
+        `/api/v1/sales/delivery-pack-lines/${created.packBoxes[0]!.lines[0]!.id}`,
+        { headers: tokenHeaders },
+      )).status,
+    ).toBe(200)
+
+    for (const path of [
+      '/api/v1/sales/delivery-items',
+      '/api/v1/sales/delivery-pack-boxes',
+      '/api/v1/sales/delivery-pack-lines',
+    ]) {
+      expect((await http.request(path, {
+        method: 'POST',
+        headers: jsonHeaders,
+        body: '{}',
+      })).status).toBe(404)
+    }
+    for (const path of [
+      `/api/v1/sales/delivery-items/${created.items[0]!.id}`,
+      `/api/v1/sales/delivery-pack-boxes/${created.packBoxes[0]!.id}`,
+      `/api/v1/sales/delivery-pack-lines/${created.packBoxes[0]!.lines[0]!.id}`,
+    ]) {
+      expect((await http.request(path, { method: 'DELETE', headers: tokenHeaders })).status).toBe(404)
+    }
+
+    expect(fulfillmentItemMeta('sales').destroyMutation).toBeUndefined()
+    expect(packBoxMeta().destroyMutation).toBeUndefined()
+    expect(packLineMeta().destroyMutation).toBeUndefined()
+    expect(fulfillmentItemMeta('purchase').destroyMutation).toBe('destroyPurReceiptItem')
+  })
+
+  test('整单替换以完整快照同时新增、修改和删除子记录', async () => {
+    const no = `${prefix}-ATOMIC-REPLACE`
+    const created = await fulfillment.createSalesDraft(actor, {
+      ...draftInput(no),
+      items: [
+        { idx: 1, qty: '10', orderItemId, warehouseId },
+        { idx: 2, qty: '5', orderItemId: orderItem2Id, warehouseId },
+      ],
+      packBoxes: [
+        { lines: [{ idx: 1, qty: '10', materialId }] },
+        { lines: [{ idx: 2, qty: '5', materialId: material2Id }] },
+      ],
+    })
+    const keptItem = created.items[0]!
+    const removedItem = created.items[1]!
+    const keptBox = created.packBoxes[0]!
+    const removedBox = created.packBoxes[1]!
+    const keptLine = keptBox.lines[0]!
+    const removedLine = removedBox.lines[0]!
+
+    const replaced = await fulfillment.replaceSalesDraft(actor, created.id, {
+      ...draftInput(no),
+      remarks: '完整快照已替换',
+      items: [
+        { id: keptItem.id, idx: 1, qty: '12', orderItemId, warehouseId },
+        { idx: 3, qty: '7', orderItemId: orderItem2Id, warehouseId },
+      ],
+      packBoxes: [
+        {
+          id: keptBox.id,
+          lines: [
+            { id: keptLine.id, idx: 1, qty: '12', materialId },
+            { idx: 2, qty: '3', materialId: material2Id },
+          ],
+        },
+        { lines: [{ idx: 3, qty: '4', materialId: material2Id }] },
+      ],
+    })
+
+    expect(replaced.remarks).toBe('完整快照已替换')
+    expect(replaced.items.map((item) => item.id)).toContain(keptItem.id)
+    expect(replaced.items.find((item) => item.id === keptItem.id)?.qty).toBe('12')
+    expect(replaced.items.map((item) => item.id)).not.toContain(removedItem.id)
+    expect(replaced.items).toHaveLength(2)
+    expect(replaced.packBoxes.map((box) => box.id)).toContain(keptBox.id)
+    expect(replaced.packBoxes.map((box) => box.id)).not.toContain(removedBox.id)
+    expect(replaced.packBoxes).toHaveLength(2)
+    expect(replaced.packBoxes[0]?.lines.map((line) => line.id)).toContain(keptLine.id)
+    await expect(fulfillment.getItem(actor, 'sales', removedItem.id)).rejects.toThrow(/不存在/)
+    await expect(fulfillment.getPackLine(actor, removedLine.id)).rejects.toThrow(/不存在/)
+
+    const cleared = await fulfillment.replaceSalesDraft(actor, created.id, {
+      ...draftInput(no),
+      items: [],
+      packBoxes: [],
+    })
+    expect(cleared.items).toEqual([])
+    expect(cleared.packBoxes).toEqual([])
+  })
+
+  test('整单替换的嵌套行失败时保持保存前的完整草稿', async () => {
+    const no = `${prefix}-ARR`
+    const created = await fulfillment.createSalesDraft(actor, draftInput(no))
+    const item = created.items[0]!
+    const box = created.packBoxes[0]!
+    const line = box.lines[0]!
+
+    await expect(
+      fulfillment.replaceSalesDraft(actor, created.id, {
+        ...draftInput(no),
+        remarks: '不应落库',
+        items: [{ id: item.id, idx: 1, qty: '99', orderItemId, warehouseId }],
+        packBoxes: [{
+          id: box.id,
+          lines: [{ id: line.id, idx: 1, qty: '0', materialId }],
+        }],
+      }),
+    ).rejects.toThrow(/装箱行参数不合法/)
+
+    expect((await fulfillment.getHead(actor, 'sales', created.id)).remarks).toBeNull()
+    expect((await fulfillment.getItem(actor, 'sales', item.id)).qty).toBe('10')
+    expect((await fulfillment.getPackLine(actor, line.id)).qty).toBe('10')
+  })
+
+  test('整单替换拒绝未知、跨单和重复的子记录身份并返回索引路径', async () => {
+    const first = await fulfillment.createSalesDraft(
+      actor,
+      draftInput(`${prefix}-ATOMIC-ID-A`),
+    )
+    const second = await fulfillment.createSalesDraft(
+      actor,
+      draftInput(`${prefix}-ATOMIC-ID-B`),
+    )
+    const firstItem = first.items[0]!
+    const firstBox = first.packBoxes[0]!
+    const firstLine = firstBox.lines[0]!
+
+    const invalidDrafts = [
+      {
+        input: {
+          ...draftInput(first.deliveryNo),
+          items: [{ id: crypto.randomUUID(), idx: 1, qty: '10', orderItemId, warehouseId }],
+          packBoxes: [],
+        },
+        field: 'items[0].id',
+      },
+      {
+        input: {
+          ...draftInput(first.deliveryNo),
+          items: [{
+            id: second.items[0]!.id,
+            idx: 1,
+            qty: '10',
+            orderItemId,
+            warehouseId,
+          }],
+          packBoxes: [],
+        },
+        field: 'items[0].id',
+      },
+      {
+        input: {
+          ...draftInput(first.deliveryNo),
+          items: [
+            { id: firstItem.id, idx: 1, qty: '10', orderItemId, warehouseId },
+            { id: firstItem.id, idx: 2, qty: '10', orderItemId, warehouseId },
+          ],
+          packBoxes: [],
+        },
+        field: 'items[1].id',
+      },
+      {
+        input: {
+          ...draftInput(first.deliveryNo),
+          items: [{ id: firstItem.id, idx: 1, qty: '10', orderItemId, warehouseId }],
+          packBoxes: [
+            { id: firstBox.id, lines: [] },
+            { id: firstBox.id, lines: [] },
+          ],
+        },
+        field: 'packBoxes[1].id',
+      },
+      {
+        input: {
+          ...draftInput(first.deliveryNo),
+          items: [{ id: firstItem.id, idx: 1, qty: '10', orderItemId, warehouseId }],
+          packBoxes: [{
+            id: firstBox.id,
+            lines: [
+              { id: firstLine.id, idx: 1, qty: '10', materialId },
+              { id: firstLine.id, idx: 2, qty: '10', materialId },
+            ],
+          }],
+        },
+        field: 'packBoxes[0].lines[1].id',
+      },
+    ]
+
+    for (const invalid of invalidDrafts) {
+      const error = await fulfillment
+        .replaceSalesDraft(actor, first.id, invalid.input)
+        .then(
+          () => null,
+          (caught) => caught as { fields?: Record<string, string[]> },
+        )
+      expect(error?.fields?.[invalid.field]).toBeDefined()
+    }
   })
 
   test('发货单删除级联删除箱与装箱行', async () => {
-    const { head } = await newDeliveryWithItem()
-    const box = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    const line = await fulfillment.createPackLine(actor, {
-      deliveryId: head.id, idx: 1, packBoxId: box.id, qty: '5', materialId,
-    })
-    await fulfillment.deleteHead(actor, 'sales', head.id)
+    const draft = await fulfillment.createSalesDraft(
+      actor,
+      draftInput(`${prefix}-CASCADE`),
+    )
+    const box = draft.packBoxes[0]!
+    const line = box.lines[0]!
+    await fulfillment.deleteHead(actor, 'sales', draft.id)
     await expect(fulfillment.getPackBox(actor, box.id)).rejects.toThrow(/不存在/)
     await expect(fulfillment.getPackLine(actor, line.id)).rejects.toThrow(/不存在/)
   })
 
-  test('审核后箱与装箱行锁死', async () => {
-    const { head } = await newDeliveryWithItem('10')
-    const box = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    await fulfillment.createPackLine(actor, {
-      deliveryId: head.id, idx: 1, packBoxId: box.id, qty: '10', materialId,
-    })
-    const audited = await fulfillment.auditHead(actor, 'sales', head.id)
+  test('审核后整单替换锁死', async () => {
+    const input = draftInput(`${prefix}-LOCKED`)
+    const draft = await fulfillment.createSalesDraft(actor, input)
+    const audited = await fulfillment.auditHead(actor, 'sales', draft.id)
     expect(audited.status).toBe('AUDITED')
-    await expect(fulfillment.createPackBox(actor, { deliveryId: head.id })).rejects.toThrow()
-    await expect(
-      fulfillment.createPackLine(actor, {
-        deliveryId: head.id, idx: 2, packBoxId: box.id, qty: '1', materialId,
-      }),
-    ).rejects.toThrow()
-    await expect(fulfillment.deletePackBox(actor, box.id)).rejects.toThrow()
+    await expect(fulfillment.replaceSalesDraft(actor, draft.id, input)).rejects.toThrow(
+      /仅草稿销售发货单可编辑/,
+    )
   })
 
   test('全有或全无回归：装箱与发货不一致拒审、一致放行', async () => {
-    const bad = await newDeliveryWithItem('10')
-    const badBox = await fulfillment.createPackBox(actor, { deliveryId: bad.head.id })
-    await fulfillment.createPackLine(actor, {
-      deliveryId: bad.head.id, idx: 1, packBoxId: badBox.id, qty: '8', materialId,
-    })
-    await expect(fulfillment.auditHead(actor, 'sales', bad.head.id)).rejects.toThrow(
+    const bad = await fulfillment.createSalesDraft(
+      actor,
+      draftInput(`${prefix}-BAD-PACK`, '10', '8'),
+    )
+    await expect(fulfillment.auditHead(actor, 'sales', bad.id)).rejects.toThrow(
       /装箱清单与发货量不一致/,
     )
 
-    const good = await newDeliveryWithItem('10')
-    const goodBox = await fulfillment.createPackBox(actor, { deliveryId: good.head.id })
-    await fulfillment.createPackLine(actor, {
-      deliveryId: good.head.id, idx: 1, packBoxId: goodBox.id, qty: '10', materialId,
-    })
-    const audited = await fulfillment.auditHead(actor, 'sales', good.head.id)
+    const good = await fulfillment.createSalesDraft(
+      actor,
+      draftInput(`${prefix}-GOOD-PACK`),
+    )
+    const audited = await fulfillment.auditHead(actor, 'sales', good.id)
     expect(audited.status).toBe('AUDITED')
   })
 
   test('可先装箱后补条目：装箱行物料不强制属于本单发货条目', async () => {
-    const { head } = await newDeliveryWithItem('10')
-    const box = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    // material2 不在本单发货条目上,草稿照常保存(一致性由审核全有或全无兜底)
-    const line = await fulfillment.createPackLine(actor, {
-      deliveryId: head.id, idx: 1, packBoxId: box.id, qty: '3', materialId: material2Id,
+    const draft = await fulfillment.createSalesDraft(actor, {
+      ...draftInput(`${prefix}-PACK-FIRST`),
+      items: [],
+      packBoxes: [{
+        lines: [{ idx: 1, qty: '3', materialId: material2Id }],
+      }],
     })
-    expect(line.materialId).toBe(material2Id)
-  })
-
-  test('全有或全无回归：漏装物料拒审', async () => {
-    const { head } = await newDeliveryWithItem('10')
-    await fulfillment.createItem(actor, 'sales', {
-      headId: head.id, idx: 2, qty: '5', orderItemId: orderItem2Id, warehouseId,
-    })
-    const box = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    await fulfillment.createPackLine(actor, {
-      deliveryId: head.id, idx: 1, packBoxId: box.id, qty: '10', materialId,
-    })
-    await expect(fulfillment.auditHead(actor, 'sales', head.id)).rejects.toThrow(
-      /发货有而装箱无/,
-    )
-  })
-
-  test('全有或全无回归：含发货外物料拒审', async () => {
-    const { head } = await newDeliveryWithItem('10')
-    const box = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    await fulfillment.createPackLine(actor, {
-      deliveryId: head.id, idx: 1, packBoxId: box.id, qty: '10', materialId,
-    })
-    await fulfillment.createPackLine(actor, {
-      deliveryId: head.id, idx: 2, packBoxId: box.id, qty: '3', materialId: material2Id,
-    })
-    await expect(fulfillment.auditHead(actor, 'sales', head.id)).rejects.toThrow(
-      /装箱有而发货无/,
-    )
-  })
-
-  test('装箱行可改挂同单另一箱', async () => {
-    const { head } = await newDeliveryWithItem()
-    const b1 = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    const b2 = await fulfillment.createPackBox(actor, { deliveryId: head.id })
-    const line = await fulfillment.createPackLine(actor, {
-      deliveryId: head.id, idx: 1, packBoxId: b1.id, qty: '5', materialId,
-    })
-    const moved = await fulfillment.updatePackLine(actor, line.id, { packBoxId: b2.id })
-    expect(moved.packBoxId).toBe(b2.id)
+    expect(draft.packBoxes[0]?.lines[0]?.materialId).toBe(material2Id)
   })
 })

@@ -11,6 +11,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Input, Label, ListBox, Modal, NumberField, Select, TextField, toast } from '@heroui/react'
 import { companyClient } from '~/lib/resources/companies'
+import { APIError } from '~/lib/api/client'
 import {
   salesDeliveryClient,
   salesDeliveryItemClient,
@@ -34,6 +35,7 @@ import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { materialClient, materialUnitClient } from '~/lib/resources/inventory'
+import type { ResourceClient, ResourceQuery } from '~/lib/resources/types'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
@@ -51,6 +53,24 @@ export interface DeliveryRef {
 
 export type OpenDeliveryDrawer = (mode: DrawerMode, delivery: DeliveryRef | null) => void
 
+const DRAFT_PAGE_SIZE = 200
+
+async function queryAllDraftRows(
+  client: Pick<ResourceClient, 'query'>,
+  input: Omit<ResourceQuery, 'limit' | 'offset'>,
+): Promise<Row[]> {
+  const results: Row[] = []
+  while (true) {
+    const page = await client.query({
+      ...input,
+      limit: DRAFT_PAGE_SIZE,
+      offset: results.length,
+    })
+    results.push(...page.results)
+    if (results.length >= page.count || page.results.length === 0) return results
+  }
+}
+
 // 「审核整单」确认弹窗配置:条目页行操作与发货单页「审核」动作共用(见 scm/-audit-doc)
 export const deliveryAuditConfig = {
   docLabel: '销售发货单',
@@ -67,16 +87,12 @@ export const deliveryAuditConfig = {
     { key: 'remarks', label: '行备注' },
   ],
   loadItems: (deliveryId: string) =>
-    salesDeliveryItemClient
-      .query({
-        limit: 500,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        filter: {
-          deliveryId: { kind: 'fk', op: 'in', values: [deliveryId], labels: [] },
-        },
-      })
-      .then((result) => result.results),
+    queryAllDraftRows(salesDeliveryItemClient, {
+      sort: { column: 'idx', direction: 'ascending' },
+      filter: {
+        deliveryId: { kind: 'fk', op: 'in', values: [deliveryId], labels: [] },
+      },
+    }),
   audit: (deliveryId: string) => salesDeliveryClient.action!('audit', [deliveryId]),
 } satisfies AuditDocConfig
 
@@ -95,9 +111,9 @@ function todayLocal(): string {
 /** 提交 mutation:物料/单位由订单条目锁定带出,后端再快照与折算 */
 function itemInput(row: Row) {
   return {
+    ...(!isLocalRow(row) ? { id: String(row.id) } : {}),
     idx: row.idx,
     orderItemId: row.orderItemId,
-    materialId: row.materialId,
     unitId: row.unitId,
     qty: row.qty,
     warehouseId: row.warehouseId,
@@ -105,58 +121,11 @@ function itemInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = ['idx', 'orderItemId', 'materialId', 'unitId', 'qty', 'warehouseId', 'remarks'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-async function persistItems(
-  deliveryId: string,
-  current: Row[],
-  snapshot: Row[],
-): Promise<string[]> {
-  const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await salesDeliveryItemClient.delete(String(old.id))
-    } catch (error) {
-      collect(old.idx, [{ message: (error as Error).message }])
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await salesDeliveryItemClient.create({ deliveryId, ...itemInput(row) })
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      try {
-        await salesDeliveryItemClient.update(String(row.id), itemInput(row))
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-    }
-  }
-  return errors
-}
-
-/** 提交 mutation:快照字段由后端保存时重拍,本地只提交业务键;箱号由服务端生成,行只挂 packBoxId */
-function packLineInput(row: Row, resolveBoxId: (id: unknown) => unknown) {
+/** 提交 mutation:快照字段由后端保存时重拍；所属箱由嵌套层级表达。 */
+function packLineInput(row: Row) {
   return {
+    ...(!isLocalRow(row) ? { id: String(row.id) } : {}),
     idx: row.idx,
-    packBoxId: resolveBoxId(row.packBoxId),
     materialId: row.materialId,
     unitId: row.unitId,
     qty: row.qty,
@@ -164,92 +133,89 @@ function packLineInput(row: Row, resolveBoxId: (id: unknown) => unknown) {
   }
 }
 
-const PACK_COMPARE_KEYS = ['idx', 'packBoxId', 'materialId', 'unitId', 'qty', 'remarks'] as const
-
-function packLineChanged(before: Row, after: Row): boolean {
-  return PACK_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
+interface DeliveryDraftIndex {
+  itemRowIds: string[]
+  boxRowIds: string[]
+  lineRowIds: string[][]
 }
 
-/**
- * 箱先行后行:本地箱(local: id)先落库换取服务端箱号与真实 id,
- * 返回 local→server 映射供装箱行解析 packBoxId;删箱服务端级联删行
- */
-async function persistBoxes(
-  deliveryId: string,
-  current: Row[],
-  snapshot: Row[],
-): Promise<{ errors: string[]; idMap: Map<string, string> }> {
-  const errors: string[] = []
-  const idMap = new Map<string, string>()
-  const label = (row: Row) => (row.boxNo != null ? `箱${row.boxNo}` : '新箱')
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
+const DELIVERY_HEAD_FIELDS = [
+  'companyId',
+  'deliveryNo',
+  'deliveryDate',
+  'postingDate',
+  'partyType',
+  'partyId',
+  'remarks',
+  'warehouseId',
+  'debitAccountId',
+  'creditAccountId',
+] as const
 
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await salesDeliveryPackBoxClient.delete(String(old.id))
-    } catch (error) {
-      errors.push(`${label(old)}:${(error as Error).message}`)
-    }
+function buildDeliveryDraft(
+  values: Record<string, unknown>,
+  items: Row[],
+  packBoxes: Row[],
+  packLines: Row[],
+) {
+  const header = Object.fromEntries(
+    DELIVERY_HEAD_FIELDS.filter((field) => Object.hasOwn(values, field)).map((field) => [
+      field,
+      values[field],
+    ]),
+  )
+  const linesByBox = packBoxes.map((box) =>
+    packLines.filter((line) => String(line.packBoxId) === String(box.id)),
+  )
+  return {
+    draft: {
+      ...header,
+      items: items.map(itemInput),
+      packBoxes: packBoxes.map((box, boxIndex) => ({
+        ...(!isLocalRow(box) ? { id: String(box.id) } : {}),
+        lines: linesByBox[boxIndex].map(packLineInput),
+      })),
+    },
+    index: {
+      itemRowIds: items.map((row) => String(row.id)),
+      boxRowIds: packBoxes.map((row) => String(row.id)),
+      lineRowIds: linesByBox.map((lines) => lines.map((row) => String(row.id))),
+    } satisfies DeliveryDraftIndex,
   }
-
-  for (const row of current) {
-    if (!isLocalRow(row)) continue
-    try {
-      const saved = await salesDeliveryPackBoxClient.create({ deliveryId })
-      idMap.set(String(row.id), String(saved.id))
-    } catch (error) {
-      errors.push(`${label(row)}:${(error as Error).message}`)
-    }
-  }
-  return { errors, idMap }
 }
 
-async function persistPackLines(
-  deliveryId: string,
-  current: Row[],
-  snapshot: Row[],
-  idMap: Map<string, string>,
-): Promise<string[]> {
-  const errors: string[] = []
-  const resolveBoxId = (id: unknown) => idMap.get(String(id)) ?? id
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx ?? '?'}行:${e.message}`))
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
+function normalizedErrorPath(path: string): string {
+  return path.replace(/\.(\d+)(?=\.|$)/g, '[$1]')
+}
 
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    // 箱被删时服务端已级联删行,此处 404 不视为错误
-    try {
-      await salesDeliveryPackLineClient.delete(String(old.id))
-    } catch (error) {
-      collect(old.idx, [{ message: (error as Error).message }])
-    }
+function headerFieldErrors(fields: Record<string, string[]>): Record<string, string[]> {
+  const result: Record<string, string[]> = {}
+  for (const [rawPath, messages] of Object.entries(fields)) {
+    const path = normalizedErrorPath(rawPath)
+    if (path.startsWith('items') || path.startsWith('packBoxes')) continue
+    const field = path.startsWith('header.') ? path.slice('header.'.length) : path
+    result[field] = [...(result[field] ?? []), ...messages]
   }
+  return result
+}
 
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await salesDeliveryPackLineClient.create({
-          deliveryId,
-          ...packLineInput(row, resolveBoxId),
-        })
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && packLineChanged(old, row)) {
-      try {
-        await salesDeliveryPackLineClient.update(String(row.id), packLineInput(row, resolveBoxId))
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-    }
+function rowErrors(
+  fields: Record<string, string[]>,
+  pattern: RegExp,
+  resolve: (...indexes: number[]) => Row | undefined,
+): Record<string, string[]> {
+  const result: Record<string, string[]> = {}
+  for (const [rawPath, messages] of Object.entries(fields)) {
+    const matched = pattern.exec(normalizedErrorPath(rawPath))
+    if (!matched) continue
+    const indexes = matched.slice(1, -1).map(Number)
+    const row = resolve(...indexes)
+    if (!row) continue
+    const field = matched.at(-1)
+    const rendered = messages.map((message) => (field ? `${field}: ${message}` : message))
+    result[String(row.id)] = [...(result[String(row.id)] ?? []), ...rendered]
   }
-  return errors
+  return result
 }
 
 /**
@@ -310,11 +276,13 @@ function DeliveryAccountFooter({
   values,
   patchValues,
   isDisabled,
+  fieldErrors,
 }: {
   mode: DrawerMode
   values: Record<string, unknown>
   patchValues: (patch: Record<string, unknown>) => void
   isDisabled: boolean
+  fieldErrors?: Record<string, string[]>
 }) {
   const companyId = (values.companyId as string | null) ?? null
   const debit = values.debitAccountId == null || values.debitAccountId === '' ? null : String(values.debitAccountId)
@@ -323,32 +291,46 @@ function DeliveryAccountFooter({
 
   return (
     <div className="mt-6 grid grid-cols-1 gap-4 border-t border-separator pt-4 lg:grid-cols-2">
-      <RemoteSelect
-        resource="basAccounts"
-        label="借方科目(未开票应收)"
-        placeholder={companyId ? '选择未开票应收科目…' : '先选择公司'}
-        value={debit}
-        onChange={(id) => patchValues({ debitAccountId: id })}
-        isDisabled={isDisabled || !companyId || mode === 'view'}
-        isRequired={mode !== 'view'}
-        filterState={accountFilter(companyId, 'UNBILLED_RECEIVABLE')}
-        labelField="name"
-        searchFields={['name', 'code']}
-        itemSubtitleFields={['code']}
-      />
-      <RemoteSelect
-        resource="basAccounts"
-        label="贷方科目"
-        placeholder={companyId ? '选择贷方科目(收入/待转等)…' : '先选择公司'}
-        value={credit}
-        onChange={(id) => patchValues({ creditAccountId: id })}
-        isDisabled={isDisabled || !companyId || mode === 'view'}
-        isRequired={mode !== 'view'}
-        filterState={accountFilter(companyId)}
-        labelField="name"
-        searchFields={['name', 'code']}
-        itemSubtitleFields={['code']}
-      />
+      <div>
+        <RemoteSelect
+          resource="basAccounts"
+          label="借方科目(未开票应收)"
+          placeholder={companyId ? '选择未开票应收科目…' : '先选择公司'}
+          value={debit}
+          onChange={(id) => patchValues({ debitAccountId: id })}
+          isDisabled={isDisabled || !companyId || mode === 'view'}
+          isRequired={mode !== 'view'}
+          filterState={accountFilter(companyId, 'UNBILLED_RECEIVABLE')}
+          labelField="name"
+          searchFields={['name', 'code']}
+          itemSubtitleFields={['code']}
+        />
+        {fieldErrors?.debitAccountId?.length ? (
+          <p className="mt-1 text-xs text-danger" role="alert">
+            {fieldErrors.debitAccountId.join('；')}
+          </p>
+        ) : null}
+      </div>
+      <div>
+        <RemoteSelect
+          resource="basAccounts"
+          label="贷方科目"
+          placeholder={companyId ? '选择贷方科目(收入/待转等)…' : '先选择公司'}
+          value={credit}
+          onChange={(id) => patchValues({ creditAccountId: id })}
+          isDisabled={isDisabled || !companyId || mode === 'view'}
+          isRequired={mode !== 'view'}
+          filterState={accountFilter(companyId)}
+          labelField="name"
+          searchFields={['name', 'code']}
+          itemSubtitleFields={['code']}
+        />
+        {fieldErrors?.creditAccountId?.length ? (
+          <p className="mt-1 text-xs text-danger" role="alert">
+            {fieldErrors.creditAccountId.join('；')}
+          </p>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -816,8 +798,11 @@ function PackLinesPanel({
   row,
   values,
   detailLoaded,
+  submitting,
   packBoxes,
   packLines,
+  boxErrors,
+  lineErrors,
   onBoxesChange,
   onLinesChange,
 }: {
@@ -825,14 +810,20 @@ function PackLinesPanel({
   row: Row | null | undefined
   values: Record<string, unknown>
   detailLoaded: boolean
+  submitting: boolean
   packBoxes: Row[]
   packLines: Row[]
+  boxErrors?: Record<string, string[]>
+  lineErrors?: Record<string, string[]>
   onBoxesChange: (rows: Row[]) => void
   onLinesChange: (rows: Row[]) => void
 }) {
   const headerReady = Boolean(values.companyId && values.partyType && values.partyId)
   const readOnly =
-    mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)
+    submitting ||
+    mode === 'view' ||
+    (row != null && row.status !== 'DRAFT') ||
+    (mode !== 'create' && !detailLoaded)
   const [pendingDeleteBox, setPendingDeleteBox] = useState<Row | null>(null)
   const poolQuery = deliveryPackPoolQuery(values)
   const pool = useQuery({
@@ -1002,8 +993,18 @@ function PackLinesPanel({
         resource="salDeliveryPackLines"
         client={salesDeliveryPackLineClient}
         label="装箱行"
-        title={boxLabel}
+        title={
+          <span className="flex flex-col gap-0.5">
+            <span>{boxLabel}</span>
+            {boxErrors?.[String(box.id)]?.length ? (
+              <span className="text-xs font-normal text-danger" role="alert">
+                {boxErrors[String(box.id)].join('；')}
+              </span>
+            ) : null}
+          </span>
+        }
         items={lines}
+        rowErrors={lineErrors}
         onChange={(rows) =>
           onLinesChange([...packLines.filter((l) => !lineInBox(l, box.id)), ...rows])
         }
@@ -1160,15 +1161,17 @@ function PackLinesPanel({
 export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: DeliveryRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [packBoxes, setPackBoxes] = useState<Row[]>([])
-  const [packBoxesSnapshot, setPackBoxesSnapshot] = useState<Row[]>([])
   const [packLines, setPackLines] = useState<Row[]>([])
-  const [packLinesSnapshot, setPackLinesSnapshot] = useState<Row[]>([])
+  const [draftErrors, setDraftErrors] = useState<Record<string, string[]>>({})
+  const [draftErrorIndex, setDraftErrorIndex] = useState<DeliveryDraftIndex | null>(null)
+  const [authoritativeDraft, setAuthoritativeDraft] = useState<Row | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [detailLoaded, setDetailLoaded] = useState(false)
   const [filters] = useState<FilterState>({})
   // 订单条目缓存:选择时写入完整行,transformItem 带出快照名
   const orderItemsRef = useRef(new Map<string, Row>())
+  const draftHeadRef = useRef<Record<string, unknown>>({})
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
 
@@ -1187,6 +1190,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 
   const resetItems = useCallback(() => {
+    setDraftErrors({})
     setItems((cur) => (cur.length === 0 ? cur : []))
     // 装箱行物料来自发货条目:条目清空时一并清空箱与行
     setPackBoxes((cur) => (cur.length === 0 ? cur : []))
@@ -1196,14 +1200,14 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
   const openDrawer = useCallback<OpenDeliveryDrawer>((mode, delivery) => {
     const my = ++reqIdRef.current
     setDrawer({ mode, row: delivery })
+    setDraftErrors({})
+    setAuthoritativeDraft(null)
     orderItemsRef.current = new Map()
+    draftHeadRef.current = {}
     if (mode === 'create') {
       setItems([])
-      setItemsSnapshot([])
       setPackBoxes([])
-      setPackBoxesSnapshot([])
       setPackLines([])
-      setPackLinesSnapshot([])
       setDetailLoaded(true)
       return
     }
@@ -1212,11 +1216,8 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
     if (deliveryId == null || deliveryId === '' || deliveryId === 'undefined') {
       toast.danger('无法打开发货单', { description: '缺少发货单 id' })
       setItems([])
-      setItemsSnapshot([])
       setPackBoxes([])
-      setPackBoxesSnapshot([])
       setPackLines([])
-      setPackLinesSnapshot([])
       setDetailLoaded(true)
       return
     }
@@ -1225,30 +1226,23 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
       deliveryId: { kind: 'fk' as const, op: 'in' as const, values: [deliveryId], labels: [] },
     }
     Promise.all([
-      salesDeliveryItemClient.query({
-        limit: 200,
-        offset: 0,
+      queryAllDraftRows(salesDeliveryItemClient, {
         sort: { column: 'idx', direction: 'ascending' },
         filter: deliveryFilter,
       }),
-      salesDeliveryPackBoxClient.query({
-        limit: 200,
-        offset: 0,
+      queryAllDraftRows(salesDeliveryPackBoxClient, {
         sort: { column: 'boxNo', direction: 'ascending' },
         filter: deliveryFilter,
       }),
-      salesDeliveryPackLineClient.query({
-        limit: 500,
-        offset: 0,
+      queryAllDraftRows(salesDeliveryPackLineClient, {
         sort: { column: 'idx', direction: 'ascending' },
         filter: deliveryFilter,
       }),
     ])
-      .then(([itemsResult, boxResult, packResult]) => {
+      .then(([itemRows, boxRows, lineRows]) => {
         if (my !== reqIdRef.current) return
-        const rows = itemsResult.results
         // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
-        for (const r of rows) {
+        for (const r of itemRows) {
           if (r.orderItemId != null) {
             orderItemsRef.current.set(String(r.orderItemId), {
               id: String(r.orderItemId),
@@ -1264,25 +1258,88 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
             } as Row)
           }
         }
-        setItems(rows)
-        setItemsSnapshot(rows)
-        setPackBoxes(boxResult.results)
-        setPackBoxesSnapshot(boxResult.results)
-        setPackLines(packResult.results)
-        setPackLinesSnapshot(packResult.results)
+        setItems(itemRows)
+        setPackBoxes(boxRows)
+        setPackLines(lineRows)
         setDetailLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
         toast.danger('发货明细加载失败', { description: (e as Error).message })
         setItems([])
-        setItemsSnapshot([])
         setPackBoxes([])
-        setPackBoxesSnapshot([])
         setPackLines([])
-        setPackLinesSnapshot([])
       })
   }, [])
+
+  const acceptSavedDraft = (saved: Row) => {
+    const savedItems = Array.isArray(saved.items) ? (saved.items as Row[]) : []
+    const savedBoxes = Array.isArray(saved.packBoxes) ? (saved.packBoxes as Row[]) : []
+    const savedLines = savedBoxes.flatMap((box) =>
+      Array.isArray(box.lines)
+        ? (box.lines as Row[]).map((line) => ({ ...line, packBoxId: box.id }))
+        : [],
+    )
+    setItems(savedItems)
+    setPackBoxes(savedBoxes)
+    setPackLines(savedLines)
+    setDraftErrors({})
+    setDraftErrorIndex(null)
+    setAuthoritativeDraft(saved)
+    draftHeadRef.current = saved
+    orderItemsRef.current = new Map()
+    for (const item of savedItems) {
+      if (item.orderItemId == null) continue
+      orderItemsRef.current.set(String(item.orderItemId), {
+        id: String(item.orderItemId),
+        materialId: item.materialId,
+        unitId: item.unitId,
+        materialCode: item.materialCode,
+        materialName: item.materialName,
+        materialSpec: item.materialSpec,
+        customerPartNo: item.customerPartNo,
+        unitName: item.unitName,
+        qty: item.orderQty,
+        order: item.orderNo != null ? { id: '', orderNo: item.orderNo } : undefined,
+      } as Row)
+    }
+    setDetailLoaded(true)
+    setDrawer({ mode: 'edit', row: saved })
+  }
+
+  const fieldErrors = headerFieldErrors(draftErrors)
+  const itemErrors = rowErrors(
+    draftErrors,
+    /^items\[(\d+)\](?:\.(.+))?$/,
+    (itemIndex) => {
+      const id = draftErrorIndex?.itemRowIds[itemIndex]
+      return id == null ? undefined : items.find((row) => String(row.id) === id)
+    },
+  )
+  const boxErrors = rowErrors(
+    draftErrors,
+    /^packBoxes\[(\d+)\](?!\.lines\[)(?:\.(.+))?$/,
+    (boxIndex) => {
+      const id = draftErrorIndex?.boxRowIds[boxIndex]
+      return id == null ? undefined : packBoxes.find((row) => String(row.id) === id)
+    },
+  )
+  const lineErrors = rowErrors(
+    draftErrors,
+    /^packBoxes\[(\d+)\]\.lines\[(\d+)\](?:\.(.+))?$/,
+    (boxIndex, lineIndex) => {
+      const id = draftErrorIndex?.lineRowIds[boxIndex]?.[lineIndex]
+      return id == null ? undefined : packLines.find((row) => String(row.id) === id)
+    },
+  )
+  const submissionErrorTab =
+    Object.keys(draftErrors).length === 0
+      ? null
+      : Object.keys(draftErrors).some((path) =>
+          normalizedErrorPath(path).startsWith('packBoxes'),
+        )
+        ? 'pack'
+        : 'info'
 
   const baseCfg = drawerConfig('salDeliveries')
   const drawerCfg = {
@@ -1346,18 +1403,25 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
           reqIdRef.current++
           setDrawer(null)
           setItems([])
-          setItemsSnapshot([])
+          setDraftErrors({})
+          setAuthoritativeDraft(null)
           setPackLines([])
-          setPackLinesSnapshot([])
+          setPackBoxes([])
           orderItemsRef.current = new Map()
+          draftHeadRef.current = {}
         }}
         rowId={drawer?.row?.id}
+        row={authoritativeDraft}
+        fieldErrors={fieldErrors}
+        submissionErrorTab={submissionErrorTab}
+        keepOpenOnAuditFailure
         onEdit={
           drawer?.row?.status === 'DRAFT'
             ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
             : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
+          draftHeadRef.current = values
           const companyId = (values.companyId as string | null) ?? null
           const headWarehouse = values.warehouseId
           const headerReady = Boolean(values.companyId && values.partyType && values.partyId)
@@ -1575,8 +1639,13 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
                 client={salesDeliveryItemClient}
                 label="发货条目"
                 items={items}
-                onChange={setItems}
+                rowErrors={itemErrors}
+                onChange={(rows) => {
+                  setDraftErrors({})
+                  setItems(rows)
+                }}
                 readOnly={
+                  submitting ||
                   mode === 'view' ||
                   (row != null && row.status !== 'DRAFT') ||
                   (mode !== 'create' && !detailLoaded)
@@ -1591,7 +1660,10 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
                       packLines={packLines}
                       items={items}
                       orderItemsRef={orderItemsRef}
-                      onGenerated={(rows) => setItems((cur) => [...cur, ...rows])}
+                      onGenerated={(rows) => {
+                        setDraftErrors({})
+                        setItems((cur) => [...cur, ...rows])
+                      }}
                     />
                   )
                 }
@@ -1729,70 +1801,88 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
                 isDisabled={
                   mode === 'view' || (row != null && row.status !== 'DRAFT')
                 }
+                fieldErrors={fieldErrors}
               />
             </>
           )
         }}
         tabExtraContent={{
-          pack: (mode, row, values) => (
-            <PackLinesPanel
-              mode={mode}
-              row={row}
-              values={values}
-              detailLoaded={detailLoaded}
-              packBoxes={packBoxes}
-              packLines={packLines}
-              onBoxesChange={setPackBoxes}
-              onLinesChange={setPackLines}
-            />
-          ),
+          pack: (mode, row, values) => {
+            draftHeadRef.current = values
+            return (
+              <PackLinesPanel
+                mode={mode}
+                row={row}
+                values={values}
+                detailLoaded={detailLoaded}
+                submitting={submitting}
+                packBoxes={packBoxes}
+                packLines={packLines}
+                boxErrors={boxErrors}
+                lineErrors={lineErrors}
+                onBoxesChange={(rows) => {
+                  setDraftErrors({})
+                  setPackBoxes(rows)
+                }}
+                onLinesChange={(rows) => {
+                  setDraftErrors({})
+                  setPackLines(rows)
+                }}
+              />
+            )
+          },
         }}
         onSubmit={async (values, mode) => {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          let savedId: string
-          const persistDetails = async (deliveryId: string) => {
-            const itemErrors = await persistItems(deliveryId, items, mode === 'create' ? [] : itemsSnapshot)
-            // 箱先行后行:本地箱先落库换真实 id 供装箱行挂接
-            const boxResult = await persistBoxes(
-              deliveryId,
-              packBoxes,
-              mode === 'create' ? [] : packBoxesSnapshot,
+          if (mode !== 'create' && !detailLoaded) {
+            throw new Error('发货明细尚未完整加载，不能提交整单替换')
+          }
+          const request = buildDeliveryDraft(
+            { ...draftHeadRef.current, ...values },
+            items,
+            packBoxes,
+            packLines,
+          )
+          setDraftErrors({})
+          setDraftErrorIndex(request.index)
+          setSubmitting(true)
+          try {
+            const saved =
+              mode === 'create'
+                ? await salesDeliveryClient.create(request.draft)
+                : await salesDeliveryClient.update(drawer!.row!.id, request.draft)
+            acceptSavedDraft(saved)
+            queryClient.setQueryData(
+              ['rowById', salesDeliveryClient.id, 'salDeliveries', String(saved.id)],
+              saved,
             )
-            // 被删箱的存量行服务端已级联删除,不再逐行 delete(避免 404 误报)
-            const deletedBoxIds = new Set(
-              (mode === 'create' ? [] : packBoxesSnapshot)
-                .filter((b) => !packBoxes.some((c) => c.id === b.id))
-                .map((b) => String(b.id)),
-            )
-            const lineSnapshot = (mode === 'create' ? [] : packLinesSnapshot).filter(
-              (l) => !deletedBoxIds.has(String(l.packBoxId)),
-            )
-            const lineErrors = await persistPackLines(deliveryId, packLines, lineSnapshot, boxResult.idMap)
-            const errors = [...itemErrors, ...boxResult.errors, ...lineErrors]
-            if (errors.length > 0) {
-              toast.danger(`发货单已${mode === 'create' ? '创建' : '更新'},但部分明细保存失败`, {
-                description: errors.join('; '),
-              })
-            } else {
-              toast.success(`销售发货单已${mode === 'create' ? '创建' : '更新'}`)
+            void queryClient.invalidateQueries({
+              queryKey: ['gridRows', salesDeliveryClient.id, 'salDeliveries'],
+            })
+            void queryClient.invalidateQueries({
+              queryKey: ['gridRows', salesDeliveryItemClient.id, 'salDeliveryItems'],
+            })
+            void queryClient.invalidateQueries({
+              queryKey: ['gridRows', salesDeliveryPackBoxClient.id, 'salDeliveryPackBoxes'],
+            })
+            void queryClient.invalidateQueries({
+              queryKey: ['gridRows', salesDeliveryPackLineClient.id, 'salDeliveryPackLines'],
+            })
+            void queryClient.invalidateQueries({ queryKey: ['deliveryPackPool'] })
+            void queryClient.invalidateQueries({
+              queryKey: ['gridRows', salesOrderItemClient.id, 'salOrderItems'],
+            })
+            toast.success(`销售发货单已${mode === 'create' ? '创建' : '更新'}`)
+            return String(saved.id)
+          } catch (error) {
+            if (error instanceof APIError && error.fields) {
+              setDraftErrors(error.fields)
+              setDraftErrorIndex(request.index)
             }
+            throw error
+          } finally {
+            setSubmitting(false)
           }
-          if (mode === 'create') {
-            const saved = await salesDeliveryClient.create(values)
-            savedId = String(saved.id)
-            await persistDetails(savedId)
-          } else {
-            await salesDeliveryClient.update(drawer!.row!.id, values)
-            savedId = drawer!.row!.id
-            await persistDetails(savedId)
-          }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'salDeliveries'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'salDeliveryItems'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'salDeliveryPackBoxes'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'salDeliveryPackLines'] })
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'salDeliveries'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'salOrderItems'] })
-          return savedId
         }}
       />
     </DeliveryDrawerContext.Provider>

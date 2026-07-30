@@ -15,12 +15,6 @@ export interface CompanyAccountDefaults {
 }
 type SalesDeliveryCreate = Record<string, unknown>
 type SalesDeliveryUpdate = Record<string, unknown>
-type SalesDeliveryItemCreate = Record<string, unknown>
-type SalesDeliveryItemUpdate = Record<string, unknown>
-type SalesDeliveryPackLineCreate =
-  Record<string, unknown>
-type SalesDeliveryPackLineUpdate =
-  Record<string, unknown>
 type PurchaseReceiptCreate = Record<string, unknown>
 type PurchaseReceiptUpdate = Record<string, unknown>
 type PurchaseReceiptItemCreate =
@@ -88,15 +82,44 @@ function decimalInput(
   return result
 }
 
+type ResourceOperations = Pick<ResourceClient, 'query' | 'get'> &
+  Partial<Pick<ResourceClient, 'create' | 'update' | 'delete' | 'action'>>
+
 function resourceClient(
   resource: string,
-  operations: Omit<ResourceClient, 'id' | 'meta'>,
+  operations: ResourceOperations,
 ): ResourceClient {
+  const unsupported = async () => {
+    throw new Error(`${resource} 是只读资源，不支持独立写入`)
+  }
   return {
     id: `rest:${resource}`,
     meta: () => meta(resource),
+    create: unsupported,
+    update: unsupported,
+    delete: unsupported,
     ...operations,
   }
+}
+
+function salesDeliveryDraftInput(input: Record<string, unknown>) {
+  const items = Array.isArray(input.items)
+    ? input.items.map((item) => decimalInput(item as Record<string, unknown>, ['qty']))
+    : []
+  const packBoxes = Array.isArray(input.packBoxes)
+    ? input.packBoxes.map((box) => {
+        const record = box as Record<string, unknown>
+        return {
+          ...record,
+          lines: Array.isArray(record.lines)
+            ? record.lines.map((line) =>
+                decimalInput(line as Record<string, unknown>, ['qty']),
+              )
+            : [],
+        }
+      })
+    : []
+  return { ...input, items, packBoxes }
 }
 
 export async function fetchSalesCompanyAccountDefaults(
@@ -177,14 +200,14 @@ export const salesDeliveryClient = resourceClient('salDeliveries', {
   async create(input) {
     return (await apiData(
       api.sales.deliveries.$post({
-        json: input as never}),
+        json: salesDeliveryDraftInput(input) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
-      api.sales.deliveries[':id'].$patch({
+      api.sales.deliveries[':id'].$put({
         param: { id },
-        json: input as never}),
+        json: salesDeliveryDraftInput(input) as never}),
     )) as Row
   },
   async delete(id) {
@@ -216,25 +239,6 @@ export const salesDeliveryItemClient = resourceClient('salDeliveryItems', {
         param: { id }}),
     )) as Row
   },
-  async create(input) {
-    return (await apiData(
-      api.sales['delivery-items'].$post({
-        json: decimalInput(input, ['qty']) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.sales['delivery-items'][':id'].$patch({
-        param: { id },
-        json: decimalInput(input, ['qty']) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData<void>(
-      api.sales['delivery-items'][':id'].$delete({
-        param: { id }}),
-    )
-  },
 })
 
 export const salesDeliveryPackBoxClient = resourceClient('salDeliveryPackBoxes', {
@@ -251,22 +255,6 @@ export const salesDeliveryPackBoxClient = resourceClient('salDeliveryPackBoxes',
         param: { id }}),
     )) as Row
   },
-  async create(input) {
-    return (await apiData(
-      api.sales['delivery-pack-boxes'].$post({
-        json: input as never}),
-    )) as Row
-  },
-  // 箱创建后无可改字段(箱号系统生成不可手改),update 无 REST 端点
-  async update() {
-    throw new Error('装箱箱不支持编辑')
-  },
-  async delete(id) {
-    await apiData<void>(
-      api.sales['delivery-pack-boxes'][':id'].$delete({
-        param: { id }}),
-    )
-  },
 })
 
 export const salesDeliveryPackLineClient = resourceClient('salDeliveryPackLines', {
@@ -282,25 +270,6 @@ export const salesDeliveryPackLineClient = resourceClient('salDeliveryPackLines'
       api.sales['delivery-pack-lines'][':id'].$get({
         param: { id }}),
     )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.sales['delivery-pack-lines'].$post({
-        json: decimalInput(input, ['qty']) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.sales['delivery-pack-lines'][':id'].$patch({
-        param: { id },
-        json: decimalInput(input, ['qty']) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData<void>(
-      api.sales['delivery-pack-lines'][':id'].$delete({
-        param: { id }}),
-    )
   },
 })
 

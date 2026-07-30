@@ -40,9 +40,11 @@ import {
 } from './fulfillment/spec.ts'
 import {
   fulfillmentHeadRoutes,
-  fulfillmentItemRoutes,
   packBoxRoutes,
   packLineRoutes,
+  purchaseFulfillmentItemRoutes,
+  salesFulfillmentHeadRoutes,
+  salesFulfillmentItemRoutes,
 } from './fulfillment/routes.ts'
 import {
   createOutsourcedService,
@@ -145,12 +147,12 @@ export function tradingRouteMounts(deps: {
     purchaseOrderItemByproducts: purchaseExtra.byproduct,
     purchaseOrderDemandLines: purchaseExtra.demand,
     purchaseOrderBom: purchaseExtra.bom,
-    salesDeliveries: fulfillmentHeadRoutes({ auth, fulfillment, side: 'sales' }),
-    salesDeliveryItems: fulfillmentItemRoutes({ auth, fulfillment, side: 'sales' }),
+    salesDeliveries: salesFulfillmentHeadRoutes({ auth, fulfillment }),
+    salesDeliveryItems: salesFulfillmentItemRoutes({ auth, fulfillment }),
     salesDeliveryPackBoxes: packBoxRoutes({ auth, fulfillment }),
     salesDeliveryPackLines: packLineRoutes({ auth, fulfillment }),
     purchaseReceipts: fulfillmentHeadRoutes({ auth, fulfillment, side: 'purchase' }),
-    purchaseReceiptItems: fulfillmentItemRoutes({ auth, fulfillment, side: 'purchase' }),
+    purchaseReceiptItems: purchaseFulfillmentItemRoutes({ auth, fulfillment }),
     outsourcedIssues: outsourcedIssueRoutes({ auth, outsourced }),
     outsourcedIssueItems: outsourcedIssueItemRoutes({ auth, outsourced }),
     outsourcedReceipts: outsourcedReceiptRoutes({ auth, outsourced }),

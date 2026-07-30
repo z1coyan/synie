@@ -6,7 +6,7 @@ import type { ListQuery } from '@synie/shared'
 import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { GlEngine } from '~/engines/gl/index.ts'
 import type { InventoryEngine } from '~/engines/inventory/index.ts'
@@ -89,6 +89,109 @@ export interface FulfillmentHead {
   auditedById: string | null
 }
 
+export interface FulfillmentHeadDraftInput {
+  companyId: string
+  no?: string | null
+  documentDate?: string | null
+  postingDate?: string | null
+  partyType: string
+  partyId: string
+  remarks?: string | null
+  warehouseId?: string | null
+  debitAccountId: string
+  creditAccountId: string
+}
+
+export interface FulfillmentHeadUpdateInput {
+  no?: string
+  documentDate?: string
+  postingDate?: string | null
+  postingDatePresent?: boolean
+  partyType?: string
+  partyId?: string
+  remarks?: string | null
+  remarksPresent?: boolean
+  warehouseId?: string | null
+  warehouseIdPresent?: boolean
+  debitAccountId?: string
+  creditAccountId?: string
+}
+
+export interface SalesDraftItemInput {
+  id?: string
+  idx: number
+  qty: string
+  orderItemId: string
+  unitId?: string | null
+  warehouseId: string
+  remarks?: string | null
+}
+
+export interface FulfillmentItemUpdateInput {
+  idx?: number
+  qty?: string
+  orderItemId?: string
+  unitId?: string | null
+  unitIdPresent?: boolean
+  warehouseId?: string
+  remarks?: string | null
+  remarksPresent?: boolean
+}
+
+export interface SalesDraftPackLineInput {
+  id?: string
+  idx: number
+  qty: string
+  materialId: string
+  unitId?: string | null
+  remarks?: string | null
+}
+
+export interface SalesDraftPackLineUpdateInput {
+  idx?: number
+  packBoxId?: string
+  qty?: string
+  materialId?: string
+  unitId?: string | null
+  unitIdPresent?: boolean
+  remarks?: string | null
+  remarksPresent?: boolean
+}
+
+export interface SalesDraftPackBoxInput {
+  id?: string
+  lines: SalesDraftPackLineInput[]
+}
+
+export interface SalesDraftInput extends FulfillmentHeadDraftInput {
+  items: SalesDraftItemInput[]
+  packBoxes: SalesDraftPackBoxInput[]
+}
+
+export interface SalesDraftDto {
+  id: string
+  deliveryNo: string
+  deliveryDate: string
+  postingDate: string | null
+  partyType: string
+  partyId: string
+  remarks: string | null
+  status: string
+  auditedAt: string | null
+  insertedAt: string
+  updatedAt: string
+  companyId: string
+  warehouseId: string | null
+  debitAccountId: string
+  creditAccountId: string
+  createdById: string | null
+  auditedById: string | null
+  items: ReturnType<typeof mapItemDto>[]
+  packBoxes: Array<ReturnType<typeof mapPackBoxDto> & {
+    lines: ReturnType<typeof mapPackDto>[]
+  }>
+}
+
 type Numberer = Pick<NumberingService, 'nextInTx'>
 
 export function createFulfillmentService(
@@ -130,169 +233,162 @@ export function createFulfillmentService(
   async function createHead(
     actor: Actor,
     side: TradingSide,
-    input: {
-      companyId: string
-      no?: string | null
-      documentDate?: string | null
-      postingDate?: string | null
-      partyType: string
-      partyId: string
-      remarks?: string | null
-      warehouseId?: string | null
-      debitAccountId: string
-      creditAccountId: string
-    },
+    input: FulfillmentHeadDraftInput,
   ) {
     const spec = fulfillmentSpec(side)
     requirePerm(actor, spec.prefix, 'create', '无权限执行该履约操作')
     if (!canAccessCompany(actor, input.companyId)) {
       throw new ApiError('forbidden', '无权在该公司创建履约单')
     }
-    return withTx(db, async (trx) => {
-      const documentDate = input.documentDate ? toDateOnly(input.documentDate) : todayUTC()
-      let no = (input.no ?? '').trim()
-      if (!no) {
-        no = await numberer.nextInTx(trx, {
-          resource: spec.numberResource,
-          values: { company_id: input.companyId, document_date: documentDate },
-        })
-      }
-      const partyType = lowerParty(input.partyType)
-      const head: FulfillmentHead = {
-        id: '',
-        no,
-        documentDate,
-        postingDate: input.postingDate ? toDateOnly(input.postingDate) : null,
-        partyType,
-        partyId: input.partyId,
-        remarks: input.remarks ?? null,
-        status: 'DRAFT',
-        auditedAt: null,
-        insertedAt: '',
-        updatedAt: '',
+    return withTx(db, (trx) => createHeadInTx(trx, actor, side, input))
+  }
+
+  async function createHeadInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    input: FulfillmentHeadDraftInput,
+  ) {
+    const spec = fulfillmentSpec(side)
+    const documentDate = input.documentDate ? toDateOnly(input.documentDate) : todayUTC()
+    let no = (input.no ?? '').trim()
+    if (!no) {
+      no = await numberer.nextInTx(trx, {
+        resource: spec.numberResource,
+        values: { company_id: input.companyId, document_date: documentDate },
+      })
+    }
+    const partyType = lowerParty(input.partyType)
+    const head: FulfillmentHead = {
+      id: '',
+      no,
+      documentDate,
+      postingDate: input.postingDate ? toDateOnly(input.postingDate) : null,
+      partyType,
+      partyId: input.partyId,
+      remarks: input.remarks ?? null,
+      status: 'DRAFT',
+      auditedAt: null,
+      insertedAt: '',
+      updatedAt: '',
+      companyId: input.companyId,
+      warehouseId: input.warehouseId ?? null,
+      debitAccountId: input.debitAccountId,
+      creditAccountId: input.creditAccountId,
+      createdById: actor.userId || null,
+      auditedById: null,
+    }
+    validateHeadShape(spec, head)
+    await validateHeadRefs(trx, spec, head)
+    try {
+      const ins = await sql<{ id: string }>`
+        INSERT INTO ${ident(spec.headTable)} (
+          ${sql.raw(spec.numberCol)}, ${sql.raw(spec.dateCol)}, posting_date, party_type, party_id,
+          remarks, status, company_id, warehouse_id, debit_account_id, credit_account_id, created_by_id
+        ) VALUES (
+          ${no}, ${documentDate}::date, ${head.postingDate}::date, ${partyType}, ${input.partyId}::uuid,
+          ${head.remarks}, 'draft', ${input.companyId}::uuid, ${head.warehouseId}::uuid,
+          ${input.debitAccountId}::uuid, ${input.creditAccountId}::uuid, ${head.createdById}::uuid
+        ) RETURNING id
+      `.execute(trx)
+      const id = ins.rows[0]!.id
+      const row = await loadHead(trx, spec, id)
+      const dto = mapHeadDto(side, row!)
+      await writeAudit(trx, actor, {
+        resource: spec.headTable,
+        recordId: id,
+        recordLabel: no,
         companyId: input.companyId,
-        warehouseId: input.warehouseId ?? null,
-        debitAccountId: input.debitAccountId,
-        creditAccountId: input.creditAccountId,
-        createdById: actor.userId || null,
-        auditedById: null,
-      }
-      validateHeadShape(spec, head)
-      await validateHeadRefs(trx, spec, head)
-      try {
-        const ins = await sql<{ id: string }>`
-          INSERT INTO ${ident(spec.headTable)} (
-            ${sql.raw(spec.numberCol)}, ${sql.raw(spec.dateCol)}, posting_date, party_type, party_id,
-            remarks, status, company_id, warehouse_id, debit_account_id, credit_account_id, created_by_id
-          ) VALUES (
-            ${no}, ${documentDate}::date, ${head.postingDate}::date, ${partyType}, ${input.partyId}::uuid,
-            ${head.remarks}, 'draft', ${input.companyId}::uuid, ${head.warehouseId}::uuid,
-            ${input.debitAccountId}::uuid, ${input.creditAccountId}::uuid, ${head.createdById}::uuid
-          ) RETURNING id
-        `.execute(trx)
-        const id = ins.rows[0]!.id
-        const row = await loadHead(trx, spec, id)
-        const dto = mapHeadDto(side, row!)
-        await writeAudit(trx, actor, {
-          resource: spec.headTable,
-          recordId: id,
-          recordLabel: no,
-          companyId: input.companyId,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(headSnap(mapHead(row!)), HEAD_AUDIT),
-        })
-        return dto
-      } catch (err) {
-        throw mapWriteError(err, `创建${spec.label}失败`, [
-          { code: '23505', message: `${spec.label}单号已存在` },
-        ])
-      }
-    })
+        actionType: 'create',
+        actionName: 'create',
+        changes: auditCreated(headSnap(mapHead(row!)), HEAD_AUDIT),
+      })
+      return dto
+    } catch (err) {
+      throw mapWriteError(err, `创建${spec.label}失败`, [
+        { code: '23505', message: `${spec.label}单号已存在` },
+      ])
+    }
   }
 
   async function updateHead(
     actor: Actor,
     side: TradingSide,
     id: string,
-    input: {
-      no?: string
-      documentDate?: string
-      postingDate?: string | null
-      postingDatePresent?: boolean
-      partyType?: string
-      partyId?: string
-      remarks?: string | null
-      remarksPresent?: boolean
-      warehouseId?: string | null
-      warehouseIdPresent?: boolean
-      debitAccountId?: string
-      creditAccountId?: string
-    },
+    input: FulfillmentHeadUpdateInput,
   ) {
     const spec = fulfillmentSpec(side)
     requirePerm(actor, spec.prefix, 'update', '无权限执行该履约操作')
-    return withTx(db, async (trx) => {
-      const beforeRow = await lockDraftHead(trx, actor, spec, id)
-      const before = mapHead(beforeRow)
-      const after: FulfillmentHead = {
-        ...before,
-        no: input.no !== undefined ? input.no.trim() : before.no,
-        documentDate: input.documentDate ? toDateOnly(input.documentDate) : before.documentDate,
-        postingDate: input.postingDatePresent
-          ? (input.postingDate ? toDateOnly(input.postingDate) : null)
-          : before.postingDate,
-        partyType: input.partyType ? lowerParty(input.partyType) : before.partyType,
-        partyId: input.partyId ?? before.partyId,
-        remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
-        warehouseId: input.warehouseIdPresent
-          ? (input.warehouseId ?? null)
-          : before.warehouseId,
-        debitAccountId: input.debitAccountId ?? before.debitAccountId,
-        creditAccountId: input.creditAccountId ?? before.creditAccountId,
-      }
-      if (before.partyType !== after.partyType || before.partyId !== after.partyId) {
-        const has = await sql<{ e: boolean }>`
-          SELECT EXISTS(SELECT 1 FROM ${ident(spec.itemTable)} WHERE ${sql.raw(spec.parentCol)}=${id}::uuid) AS e
-        `.execute(trx)
-        if (has.rows[0]?.e) throw new ApiError('conflict', '已有条目时不可修改履约对手')
-      }
-      validateHeadShape(spec, after)
-      await validateHeadRefs(trx, spec, after)
-      const changes = auditDiff(headSnap(before), headSnap(after), HEAD_AUDIT)
-      if (Object.keys(changes).length === 0) return mapHeadDto(side, beforeRow)
-      try {
-        await sql`
-          UPDATE ${ident(spec.headTable)} SET
-            ${sql.raw(spec.numberCol)}=${after.no},
-            ${sql.raw(spec.dateCol)}=${after.documentDate}::date,
-            posting_date=${after.postingDate}::date,
-            party_type=${lowerParty(after.partyType)},
-            party_id=${after.partyId}::uuid,
-            remarks=${after.remarks},
-            warehouse_id=${after.warehouseId}::uuid,
-            debit_account_id=${after.debitAccountId}::uuid,
-            credit_account_id=${after.creditAccountId}::uuid,
-            updated_at=(now() AT TIME ZONE 'utc')
-          WHERE id=${id}::uuid
-        `.execute(trx)
-        const row = await loadHead(trx, spec, id)
-        await writeAudit(trx, actor, {
-          resource: spec.headTable,
-          recordId: id,
-          recordLabel: after.no,
-          companyId: after.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return mapHeadDto(side, row!)
-      } catch (err) {
-        throw mapWriteError(err, `更新${spec.label}失败`, [
-          { code: '23505', message: `${spec.label}单号已存在` },
-        ])
-      }
-    })
+    return withTx(db, (trx) => updateHeadInTx(trx, actor, side, id, input))
+  }
+
+  async function updateHeadInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+    input: FulfillmentHeadUpdateInput,
+  ) {
+    const spec = fulfillmentSpec(side)
+    const beforeRow = await lockDraftHead(trx, actor, spec, id)
+    const before = mapHead(beforeRow)
+    const after: FulfillmentHead = {
+      ...before,
+      no: input.no !== undefined ? input.no.trim() : before.no,
+      documentDate: input.documentDate ? toDateOnly(input.documentDate) : before.documentDate,
+      postingDate: input.postingDatePresent
+        ? (input.postingDate ? toDateOnly(input.postingDate) : null)
+        : before.postingDate,
+      partyType: input.partyType ? lowerParty(input.partyType) : before.partyType,
+      partyId: input.partyId ?? before.partyId,
+      remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
+      warehouseId: input.warehouseIdPresent
+        ? (input.warehouseId ?? null)
+        : before.warehouseId,
+      debitAccountId: input.debitAccountId ?? before.debitAccountId,
+      creditAccountId: input.creditAccountId ?? before.creditAccountId,
+    }
+    if (before.partyType !== after.partyType || before.partyId !== after.partyId) {
+      const has = await sql<{ e: boolean }>`
+        SELECT EXISTS(SELECT 1 FROM ${ident(spec.itemTable)} WHERE ${sql.raw(spec.parentCol)}=${id}::uuid) AS e
+      `.execute(trx)
+      if (has.rows[0]?.e) throw new ApiError('conflict', '已有条目时不可修改履约对手')
+    }
+    validateHeadShape(spec, after)
+    await validateHeadRefs(trx, spec, after)
+    const changes = auditDiff(headSnap(before), headSnap(after), HEAD_AUDIT)
+    if (Object.keys(changes).length === 0) return mapHeadDto(side, beforeRow)
+    try {
+      await sql`
+        UPDATE ${ident(spec.headTable)} SET
+          ${sql.raw(spec.numberCol)}=${after.no},
+          ${sql.raw(spec.dateCol)}=${after.documentDate}::date,
+          posting_date=${after.postingDate}::date,
+          party_type=${lowerParty(after.partyType)},
+          party_id=${after.partyId}::uuid,
+          remarks=${after.remarks},
+          warehouse_id=${after.warehouseId}::uuid,
+          debit_account_id=${after.debitAccountId}::uuid,
+          credit_account_id=${after.creditAccountId}::uuid,
+          updated_at=(now() AT TIME ZONE 'utc')
+        WHERE id=${id}::uuid
+      `.execute(trx)
+      const row = await loadHead(trx, spec, id)
+      await writeAudit(trx, actor, {
+        resource: spec.headTable,
+        recordId: id,
+        recordLabel: after.no,
+        companyId: after.companyId,
+        actionType: 'update',
+        actionName: 'update',
+        changes,
+      })
+      return mapHeadDto(side, row!)
+    } catch (err) {
+      throw mapWriteError(err, `更新${spec.label}失败`, [
+        { code: '23505', message: `${spec.label}单号已存在` },
+      ])
+    }
   }
 
   async function deleteHead(actor: Actor, side: TradingSide, id: string) {
@@ -460,119 +556,122 @@ export function createFulfillmentService(
   async function createItem(
     actor: Actor,
     side: TradingSide,
-    input: {
-      headId: string
-      idx: number
-      qty: string
-      orderItemId: string
-      unitId?: string | null
-      warehouseId: string
-      remarks?: string | null
-    },
+    input: SalesDraftItemInput & { headId: string },
   ) {
     const spec = fulfillmentSpec(side)
     requirePerm(actor, spec.prefix, 'create', '无权限执行该履约操作')
-    return withTx(db, async (trx) => {
-      const parent = mapHead(await lockDraftHead(trx, actor, spec, input.headId))
-      const derived = await deriveItem(trx, spec, parent, {
-        idx: input.idx,
-        qty: decimal(input.qty),
-        orderItemId: input.orderItemId,
-        unitId: input.unitId ?? null,
-        warehouseId: input.warehouseId,
-        remarks: input.remarks ?? null,
-      })
-      const ins = await sql<{ id: string }>`
-        INSERT INTO ${ident(spec.itemTable)} (
-          idx,qty,base_qty,material_code,material_name,material_spec,customer_part_no,unit_name,
-          order_no,order_qty,order_base_qty,order_unit_name,order_price,order_amount,
-          order_base_price,order_base_amount,order_tax_rate,order_currency_code,reconciled_qty,
-          remarks,${sql.raw(spec.parentCol)},company_id,order_item_id,material_id,unit_id,warehouse_id
-        ) VALUES (
-          ${derived.idx},${wireRequiredDecimal(derived.qty)},${wireRequiredDecimal(derived.baseQty)},
-          ${derived.materialCode},${derived.materialName},${derived.materialSpec},${derived.customerPartNo},
-          ${derived.unitName},${derived.orderNo},${wireRequiredDecimal(derived.orderQty)},
-          ${wireRequiredDecimal(derived.orderBaseQty)},${derived.orderUnitName},
-          ${wireRequiredDecimal(derived.orderPrice)},${wireRequiredDecimal(derived.orderAmount)},
-          ${wireRequiredDecimal(derived.orderBasePrice)},${wireRequiredDecimal(derived.orderBaseAmount)},
-          ${wireRequiredDecimal(derived.orderTaxRate)},${derived.orderCurrencyCode},0,
-          ${derived.remarks},${input.headId}::uuid,${parent.companyId}::uuid,
-          ${input.orderItemId}::uuid,${derived.materialId}::uuid,${derived.unitId}::uuid,${input.warehouseId}::uuid
-        ) RETURNING id
-      `.execute(trx)
-      const id = ins.rows[0]!.id
-      await syncDrawingAttachments(trx, spec.itemOwnerType, id, derived.materialId, parent.companyId)
-      const row = await loadItem(trx, spec, id)
-      const dto = mapItemDto(side, row!)
-      await writeAudit(trx, actor, {
-        resource: spec.itemTable,
-        recordId: id,
-        recordLabel: String(derived.idx),
-        companyId: parent.companyId,
-        actionType: 'create',
-        actionName: 'create',
-        changes: auditCreated(itemSnap(derived, input.headId, parent.companyId, input.orderItemId, input.warehouseId), ITEM_AUDIT),
-      })
-      return dto
+    return withTx(db, (trx) => createItemInTx(trx, actor, side, input))
+  }
+
+  async function createItemInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    input: SalesDraftItemInput & { headId: string },
+  ) {
+    const spec = fulfillmentSpec(side)
+    const parent = mapHead(await lockDraftHead(trx, actor, spec, input.headId))
+    const derived = await deriveItem(trx, spec, parent, {
+      idx: input.idx,
+      qty: decimal(input.qty),
+      orderItemId: input.orderItemId,
+      unitId: input.unitId ?? null,
+      warehouseId: input.warehouseId,
+      remarks: input.remarks ?? null,
     })
+    const ins = await sql<{ id: string }>`
+      INSERT INTO ${ident(spec.itemTable)} (
+        idx,qty,base_qty,material_code,material_name,material_spec,customer_part_no,unit_name,
+        order_no,order_qty,order_base_qty,order_unit_name,order_price,order_amount,
+        order_base_price,order_base_amount,order_tax_rate,order_currency_code,reconciled_qty,
+        remarks,${sql.raw(spec.parentCol)},company_id,order_item_id,material_id,unit_id,warehouse_id
+      ) VALUES (
+        ${derived.idx},${wireRequiredDecimal(derived.qty)},${wireRequiredDecimal(derived.baseQty)},
+        ${derived.materialCode},${derived.materialName},${derived.materialSpec},${derived.customerPartNo},
+        ${derived.unitName},${derived.orderNo},${wireRequiredDecimal(derived.orderQty)},
+        ${wireRequiredDecimal(derived.orderBaseQty)},${derived.orderUnitName},
+        ${wireRequiredDecimal(derived.orderPrice)},${wireRequiredDecimal(derived.orderAmount)},
+        ${wireRequiredDecimal(derived.orderBasePrice)},${wireRequiredDecimal(derived.orderBaseAmount)},
+        ${wireRequiredDecimal(derived.orderTaxRate)},${derived.orderCurrencyCode},0,
+        ${derived.remarks},${input.headId}::uuid,${parent.companyId}::uuid,
+        ${input.orderItemId}::uuid,${derived.materialId}::uuid,${derived.unitId}::uuid,${input.warehouseId}::uuid
+      ) RETURNING id
+    `.execute(trx)
+    const id = ins.rows[0]!.id
+    await syncDrawingAttachments(trx, spec.itemOwnerType, id, derived.materialId, parent.companyId)
+    const row = await loadItem(trx, spec, id)
+    const dto = mapItemDto(side, row!)
+    await writeAudit(trx, actor, {
+      resource: spec.itemTable,
+      recordId: id,
+      recordLabel: String(derived.idx),
+      companyId: parent.companyId,
+      actionType: 'create',
+      actionName: 'create',
+      changes: auditCreated(
+        itemSnap(derived, input.headId, parent.companyId, input.orderItemId, input.warehouseId),
+        ITEM_AUDIT,
+      ),
+    })
+    return dto
   }
 
   async function updateItem(
     actor: Actor,
     side: TradingSide,
     id: string,
-    input: {
-      idx?: number
-      qty?: string
-      orderItemId?: string
-      unitId?: string | null
-      unitIdPresent?: boolean
-      warehouseId?: string
-      remarks?: string | null
-      remarksPresent?: boolean
-    },
+    input: FulfillmentItemUpdateInput,
   ) {
     const spec = fulfillmentSpec(side)
     requirePerm(actor, spec.prefix, 'update', '无权限执行该履约操作')
-    return withTx(db, async (trx) => {
-      const cur = await sql<Record<string, unknown>>`
-        SELECT ${sql.raw(spec.parentCol)} AS head_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', `${spec.itemLabel}不存在`)
-      const parent = mapHead(await lockDraftHead(trx, actor, spec, String(cur.rows[0].head_id)))
-      const beforeRow = await loadItem(trx, spec, id)
-      if (!beforeRow) throw new ApiError('not_found', `${spec.itemLabel}不存在`)
-      const beforeDto = mapItemDto(side, beforeRow)
-      const derived = await deriveItem(trx, spec, parent, {
-        idx: input.idx ?? Number(beforeDto.idx),
-        qty: decimal(input.qty ?? String(beforeDto.qty)),
-        orderItemId: input.orderItemId ?? String(beforeDto.orderItemId),
-        unitId: input.unitIdPresent ? (input.unitId ?? null) : String(beforeDto.unitId),
-        warehouseId: input.warehouseId ?? String(beforeDto.warehouseId),
-        remarks: input.remarksPresent ? (input.remarks ?? null) : (beforeDto.remarks as string | null),
-      })
-      await sql`
-        UPDATE ${ident(spec.itemTable)} SET
-          idx=${derived.idx}, qty=${wireRequiredDecimal(derived.qty)}, base_qty=${wireRequiredDecimal(derived.baseQty)},
-          material_code=${derived.materialCode}, material_name=${derived.materialName},
-          material_spec=${derived.materialSpec}, customer_part_no=${derived.customerPartNo},
-          unit_name=${derived.unitName}, order_no=${derived.orderNo},
-          order_qty=${wireRequiredDecimal(derived.orderQty)}, order_base_qty=${wireRequiredDecimal(derived.orderBaseQty)},
-          order_unit_name=${derived.orderUnitName}, order_price=${wireRequiredDecimal(derived.orderPrice)},
-          order_amount=${wireRequiredDecimal(derived.orderAmount)},
-          order_base_price=${wireRequiredDecimal(derived.orderBasePrice)},
-          order_base_amount=${wireRequiredDecimal(derived.orderBaseAmount)},
-          order_tax_rate=${wireRequiredDecimal(derived.orderTaxRate)},
-          order_currency_code=${derived.orderCurrencyCode}, remarks=${derived.remarks},
-          order_item_id=${derived.orderItemId}::uuid, material_id=${derived.materialId}::uuid,
-          unit_id=${derived.unitId}::uuid, warehouse_id=${derived.warehouseId}::uuid,
-          updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
-      await syncDrawingAttachments(trx, spec.itemOwnerType, id, derived.materialId, parent.companyId)
-      const row = await loadItem(trx, spec, id)
-      return mapItemDto(side, row!)
+    return withTx(db, (trx) => updateItemInTx(trx, actor, side, id, input))
+  }
+
+  async function updateItemInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+    input: FulfillmentItemUpdateInput,
+  ) {
+    const spec = fulfillmentSpec(side)
+    const cur = await sql<Record<string, unknown>>`
+      SELECT ${sql.raw(spec.parentCol)} AS head_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
+    `.execute(trx)
+    if (!cur.rows[0]) throw new ApiError('not_found', `${spec.itemLabel}不存在`)
+    const parent = mapHead(await lockDraftHead(trx, actor, spec, String(cur.rows[0].head_id)))
+    const beforeRow = await loadItem(trx, spec, id)
+    if (!beforeRow) throw new ApiError('not_found', `${spec.itemLabel}不存在`)
+    const beforeDto = mapItemDto(side, beforeRow)
+    const derived = await deriveItem(trx, spec, parent, {
+      idx: input.idx ?? Number(beforeDto.idx),
+      qty: decimal(input.qty ?? String(beforeDto.qty)),
+      orderItemId: input.orderItemId ?? String(beforeDto.orderItemId),
+      unitId: input.unitIdPresent ? (input.unitId ?? null) : String(beforeDto.unitId),
+      warehouseId: input.warehouseId ?? String(beforeDto.warehouseId),
+      remarks: input.remarksPresent ? (input.remarks ?? null) : (beforeDto.remarks as string | null),
     })
+    await sql`
+      UPDATE ${ident(spec.itemTable)} SET
+        idx=${derived.idx}, qty=${wireRequiredDecimal(derived.qty)}, base_qty=${wireRequiredDecimal(derived.baseQty)},
+        material_code=${derived.materialCode}, material_name=${derived.materialName},
+        material_spec=${derived.materialSpec}, customer_part_no=${derived.customerPartNo},
+        unit_name=${derived.unitName}, order_no=${derived.orderNo},
+        order_qty=${wireRequiredDecimal(derived.orderQty)}, order_base_qty=${wireRequiredDecimal(derived.orderBaseQty)},
+        order_unit_name=${derived.orderUnitName}, order_price=${wireRequiredDecimal(derived.orderPrice)},
+        order_amount=${wireRequiredDecimal(derived.orderAmount)},
+        order_base_price=${wireRequiredDecimal(derived.orderBasePrice)},
+        order_base_amount=${wireRequiredDecimal(derived.orderBaseAmount)},
+        order_tax_rate=${wireRequiredDecimal(derived.orderTaxRate)},
+        order_currency_code=${derived.orderCurrencyCode}, remarks=${derived.remarks},
+        order_item_id=${derived.orderItemId}::uuid, material_id=${derived.materialId}::uuid,
+        unit_id=${derived.unitId}::uuid, warehouse_id=${derived.warehouseId}::uuid,
+        updated_at=(now() AT TIME ZONE 'utc')
+      WHERE id=${id}::uuid
+    `.execute(trx)
+    await syncDrawingAttachments(trx, spec.itemOwnerType, id, derived.materialId, parent.companyId)
+    const row = await loadItem(trx, spec, id)
+    return mapItemDto(side, row!)
   }
 
   async function deleteItem(actor: Actor, side: TradingSide, id: string) {
@@ -624,38 +723,23 @@ export function createFulfillmentService(
     return readPackBox(db, actor, id)
   }
 
-  async function createPackBox(
+  async function createPackBoxInTx(
+    trx: TrxHandle,
     actor: Actor,
-    input: { deliveryId: string },
+    deliveryId: string,
   ) {
-    requirePerm(actor, 'sales.delivery', 'create', '无权限执行该履约操作')
-    return withTx(db, async (trx) => {
-      const parent = mapHead(await lockDraftHead(trx, actor, fulfillmentSpec('sales'), input.deliveryId))
-      // 头行已 FOR UPDATE，单内取号串行化；UNIQUE(delivery_id, box_no) 兜底
-      const next = await sql<{ n: string }>`
-        SELECT (COALESCE(MAX(box_no), 0) + 1)::text AS n
-        FROM sal_delivery_pack_box WHERE delivery_id=${input.deliveryId}::uuid
-      `.execute(trx)
-      const ins = await sql<{ id: string }>`
-        INSERT INTO sal_delivery_pack_box (box_no, delivery_id, company_id)
-        VALUES (${next.rows[0]!.n}::bigint, ${input.deliveryId}::uuid, ${parent.companyId}::uuid)
-        RETURNING id
-      `.execute(trx)
-      return readPackBox(trx, actor, ins.rows[0]!.id)
-    })
-  }
-
-  async function deletePackBox(actor: Actor, id: string) {
-    requirePerm(actor, 'sales.delivery', 'delete', '无权限执行该履约操作')
-    await withTx(db, async (trx) => {
-      const cur = await sql<{ delivery_id: string }>`
-        SELECT delivery_id FROM sal_delivery_pack_box WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', '装箱箱不存在')
-      await lockDraftHead(trx, actor, fulfillmentSpec('sales'), cur.rows[0].delivery_id)
-      // 装箱行经 pack_box_id ON DELETE CASCADE 随箱删除
-      await sql`DELETE FROM sal_delivery_pack_box WHERE id=${id}::uuid`.execute(trx)
-    })
+    const parent = mapHead(await lockDraftHead(trx, actor, fulfillmentSpec('sales'), deliveryId))
+    // 头行已 FOR UPDATE，单内取号串行化；UNIQUE(delivery_id, box_no) 兜底
+    const next = await sql<{ n: string }>`
+      SELECT (COALESCE(MAX(box_no), 0) + 1)::text AS n
+      FROM sal_delivery_pack_box WHERE delivery_id=${deliveryId}::uuid
+    `.execute(trx)
+    const ins = await sql<{ id: string }>`
+      INSERT INTO sal_delivery_pack_box (box_no, delivery_id, company_id)
+      VALUES (${next.rows[0]!.n}::bigint, ${deliveryId}::uuid, ${parent.companyId}::uuid)
+      RETURNING id
+    `.execute(trx)
+    return readPackBox(trx, actor, ins.rows[0]!.id)
   }
 
   // ---- pack lines (sales only) ----
@@ -690,122 +774,411 @@ export function createFulfillmentService(
     return readPackLine(db, actor, id)
   }
 
-  async function createPackLine(
+  async function createPackLineInTx(
+    trx: TrxHandle,
     actor: Actor,
-    input: {
-      deliveryId: string
-      idx: number
-      packBoxId: string
-      qty: string
-      materialId: string
-      unitId?: string | null
-      remarks?: string | null
-    },
+    input: SalesDraftPackLineInput & { deliveryId: string; packBoxId: string },
   ) {
-    requirePerm(actor, 'sales.delivery', 'create', '无权限执行该履约操作')
-    return withTx(db, async (trx) => {
-      const parent = mapHead(await lockDraftHead(trx, actor, fulfillmentSpec('sales'), input.deliveryId))
-      await requireOwnBox(trx, input.deliveryId, input.packBoxId)
-      // 装箱行不依赖本单发货条目（可先装箱后补条目,见销售发货产品文档）;
-      // 装箱与发货的物料一致性由审核「全有或全无」校验兜底,草稿不卡
-      const unitId = input.unitId ?? null
-      let resolvedUnit = unitId
-      if (!resolvedUnit) {
-        const m = await trx.selectFrom('inv_material').select('default_unit_id').where('id', '=', input.materialId).executeTakeFirst()
-        if (!m) throw ApiError.validation('装箱行参数不合法', { materialId: ['物料不存在'] })
-        resolvedUnit = m.default_unit_id
-      }
-      const snap = await loadMaterialSnap(trx, input.materialId, resolvedUnit)
-      const qty = decimal(input.qty)
-      if (!qty.isPositive()) throw ApiError.validation('装箱行参数不合法', { qty: ['必须大于 0'] })
-      const baseQty = convertToBaseQty(qty, resolvedUnit, snap)
-      const ins = await sql<{ id: string }>`
-        INSERT INTO sal_delivery_pack_line (
-          idx,pack_box_id,qty,base_qty,material_code,material_name,material_spec,customer_part_no,unit_name,
-          remarks,delivery_id,company_id,material_id,unit_id
-        ) VALUES (
-          ${input.idx},${input.packBoxId}::uuid,${wireRequiredDecimal(qty)},${wireRequiredDecimal(baseQty)},
-          ${snap.code},${snap.name},${snap.spec},${snap.customerPartNo},${snap.unitName},
-          ${input.remarks ?? null},${input.deliveryId}::uuid,${parent.companyId}::uuid,
-          ${input.materialId}::uuid,${resolvedUnit}::uuid
-        ) RETURNING id
-      `.execute(trx)
-      return readPackLine(trx, actor, ins.rows[0]!.id)
-    })
+    const parent = mapHead(await lockDraftHead(trx, actor, fulfillmentSpec('sales'), input.deliveryId))
+    await requireOwnBox(trx, input.deliveryId, input.packBoxId)
+    // 装箱行不依赖本单发货条目（可先装箱后补条目,见销售发货产品文档）;
+    // 装箱与发货的物料一致性由审核「全有或全无」校验兜底,草稿不卡
+    const unitId = input.unitId ?? null
+    let resolvedUnit = unitId
+    if (!resolvedUnit) {
+      const m = await trx
+        .selectFrom('inv_material')
+        .select('default_unit_id')
+        .where('id', '=', input.materialId)
+        .executeTakeFirst()
+      if (!m) throw ApiError.validation('装箱行参数不合法', { materialId: ['物料不存在'] })
+      resolvedUnit = m.default_unit_id
+    }
+    const snap = await loadMaterialSnap(trx, input.materialId, resolvedUnit)
+    const qty = decimal(input.qty)
+    if (!qty.gt(0)) throw ApiError.validation('装箱行参数不合法', { qty: ['必须大于 0'] })
+    const baseQty = convertToBaseQty(qty, resolvedUnit, snap)
+    const ins = await sql<{ id: string }>`
+      INSERT INTO sal_delivery_pack_line (
+        idx,pack_box_id,qty,base_qty,material_code,material_name,material_spec,customer_part_no,unit_name,
+        remarks,delivery_id,company_id,material_id,unit_id
+      ) VALUES (
+        ${input.idx},${input.packBoxId}::uuid,${wireRequiredDecimal(qty)},${wireRequiredDecimal(baseQty)},
+        ${snap.code},${snap.name},${snap.spec},${snap.customerPartNo},${snap.unitName},
+        ${input.remarks ?? null},${input.deliveryId}::uuid,${parent.companyId}::uuid,
+        ${input.materialId}::uuid,${resolvedUnit}::uuid
+      ) RETURNING id
+    `.execute(trx)
+    return readPackLine(trx, actor, ins.rows[0]!.id)
   }
 
-  async function updatePackLine(
+  async function updatePackLineInTx(
+    trx: TrxHandle,
     actor: Actor,
     id: string,
-    input: {
-      idx?: number
-      packBoxId?: string
-      qty?: string
-      materialId?: string
-      unitId?: string | null
-      unitIdPresent?: boolean
-      remarks?: string | null
-      remarksPresent?: boolean
-    },
+    input: SalesDraftPackLineUpdateInput,
   ) {
-    requirePerm(actor, 'sales.delivery', 'update', '无权限执行该履约操作')
+    const cur = await sql<{ delivery_id: string }>`
+      SELECT delivery_id FROM sal_delivery_pack_line WHERE id=${id}::uuid
+    `.execute(trx)
+    if (!cur.rows[0]) throw new ApiError('not_found', '装箱行不存在')
+    const deliveryId = cur.rows[0].delivery_id
+    await lockDraftHead(trx, actor, fulfillmentSpec('sales'), deliveryId)
+    const before = await readPackLine(trx, actor, id)
+    if (input.packBoxId !== undefined) await requireOwnBox(trx, deliveryId, input.packBoxId)
+    const materialId = input.materialId ?? before.materialId
+    let unitId = input.unitIdPresent ? (input.unitId ?? null) : before.unitId
+    if (!unitId) {
+      const m = await trx
+        .selectFrom('inv_material')
+        .select('default_unit_id')
+        .where('id', '=', materialId)
+        .executeTakeFirst()
+      if (!m) throw ApiError.validation('装箱行参数不合法', { materialId: ['物料不存在'] })
+      unitId = m.default_unit_id
+    }
+    const snap = await loadMaterialSnap(trx, materialId, unitId)
+    const qty = decimal(input.qty ?? before.qty)
+    if (!qty.gt(0)) throw ApiError.validation('装箱行参数不合法', { qty: ['必须大于 0'] })
+    const baseQty = convertToBaseQty(qty, unitId, snap)
+    await sql`
+      UPDATE sal_delivery_pack_line SET
+        idx=${input.idx ?? before.idx},
+        pack_box_id=${input.packBoxId ?? before.packBoxId}::uuid,
+        qty=${wireRequiredDecimal(qty)}, base_qty=${wireRequiredDecimal(baseQty)},
+        material_code=${snap.code}, material_name=${snap.name}, material_spec=${snap.spec},
+        customer_part_no=${snap.customerPartNo}, unit_name=${snap.unitName},
+        remarks=${input.remarksPresent ? (input.remarks ?? null) : before.remarks},
+        material_id=${materialId}::uuid, unit_id=${unitId}::uuid,
+        updated_at=(now() AT TIME ZONE 'utc')
+      WHERE id=${id}::uuid
+    `.execute(trx)
+    return readPackLine(trx, actor, id)
+  }
+
+  async function loadSalesDraft(
+    handle: DbHandle,
+    actor: Actor,
+    id: string,
+  ): Promise<SalesDraftDto> {
+    const headRow = await loadHead(handle, fulfillmentSpec('sales'), id)
+    if (!headRow || !canAccessCompany(actor, String(headRow.company_id))) {
+      throw new ApiError('not_found', '销售发货单不存在')
+    }
+    const itemRows = await sql<Record<string, unknown>>`
+      SELECT i.*, h.delivery_no, h.delivery_date, h.status AS delivery_status,
+        h.party_type, h.party_id,
+        (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty
+      FROM sal_delivery_item i
+      JOIN sal_delivery h ON h.id=i.delivery_id
+      WHERE i.delivery_id=${id}::uuid
+      ORDER BY i.idx, i.id
+    `.execute(handle)
+    const boxRows = await sql<Record<string, unknown>>`
+      SELECT * FROM sal_delivery_pack_box
+      WHERE delivery_id=${id}::uuid
+      ORDER BY box_no, id
+    `.execute(handle)
+    const lineRows = await sql<Record<string, unknown>>`
+      SELECT * FROM sal_delivery_pack_line
+      WHERE delivery_id=${id}::uuid
+      ORDER BY idx, id
+    `.execute(handle)
+    const linesByBox = new Map<string, ReturnType<typeof mapPackDto>[]>()
+    for (const row of lineRows.rows) {
+      const line = mapPackDto(row)
+      const lines = linesByBox.get(line.packBoxId) ?? []
+      lines.push(line)
+      linesByBox.set(line.packBoxId, lines)
+    }
+    return {
+      ...mapHeadDto('sales', headRow),
+      id: String(headRow.id),
+      deliveryNo: String(headRow.delivery_no),
+      deliveryDate: asDate(headRow.delivery_date),
+      items: itemRows.rows.map((row) => mapItemDto('sales', row)),
+      packBoxes: boxRows.rows.map((row) => {
+        const box = mapPackBoxDto(row)
+        return { ...box, lines: linesByBox.get(box.id) ?? [] }
+      }),
+    }
+  }
+
+  async function createSalesDraft(actor: Actor, input: SalesDraftInput) {
+    requirePerm(actor, 'sales.delivery', 'create', '无权限执行该履约操作')
+    if (!canAccessCompany(actor, input.companyId)) {
+      throw new ApiError('forbidden', '无权在该公司创建履约单')
+    }
+    const identityFields: Record<string, string[]> = {}
+    input.items.forEach((item, itemIndex) => {
+      if (item.id !== undefined) identityFields[`items[${itemIndex}].id`] = ['新记录不能包含 id']
+    })
+    input.packBoxes.forEach((box, boxIndex) => {
+      if (box.id !== undefined) identityFields[`packBoxes[${boxIndex}].id`] = ['新记录不能包含 id']
+      box.lines.forEach((line, lineIndex) => {
+        if (line.id !== undefined) {
+          identityFields[`packBoxes[${boxIndex}].lines[${lineIndex}].id`] = ['新记录不能包含 id']
+        }
+      })
+    })
+    if (Object.keys(identityFields).length > 0) {
+      throw ApiError.validation('销售发货草稿参数不合法', identityFields)
+    }
+
     return withTx(db, async (trx) => {
-      const cur = await sql<{ delivery_id: string }>`
-        SELECT delivery_id FROM sal_delivery_pack_line WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', '装箱行不存在')
-      const deliveryId = cur.rows[0].delivery_id
-      await lockDraftHead(trx, actor, fulfillmentSpec('sales'), deliveryId)
-      const before = await readPackLine(trx, actor, id)
-      if (input.packBoxId !== undefined) await requireOwnBox(trx, deliveryId, input.packBoxId)
-      const materialId = input.materialId ?? before.materialId
-      let unitId = input.unitIdPresent ? (input.unitId ?? null) : before.unitId
-      if (!unitId) {
-        const m = await trx.selectFrom('inv_material').select('default_unit_id').where('id', '=', materialId).executeTakeFirst()
-        unitId = m!.default_unit_id
+      const head = await withIndexedFields(
+        'header',
+        () => createHeadInTx(trx, actor, 'sales', input),
+        { number: 'deliveryNo', documentDate: 'deliveryDate' },
+      )
+      const deliveryId = String(head.id)
+      for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
+        const item = input.items[itemIndex]!
+        await withIndexedFields(`items[${itemIndex}]`, () =>
+          createItemInTx(trx, actor, 'sales', { ...item, headId: deliveryId }),
+        )
       }
-      const snap = await loadMaterialSnap(trx, materialId, unitId)
-      const qty = decimal(input.qty ?? before.qty)
-      const baseQty = convertToBaseQty(qty, unitId, snap)
-      await sql`
-        UPDATE sal_delivery_pack_line SET
-          idx=${input.idx ?? before.idx},
-          pack_box_id=${input.packBoxId ?? before.packBoxId}::uuid,
-          qty=${wireRequiredDecimal(qty)}, base_qty=${wireRequiredDecimal(baseQty)},
-          material_code=${snap.code}, material_name=${snap.name}, material_spec=${snap.spec},
-          customer_part_no=${snap.customerPartNo}, unit_name=${snap.unitName},
-          remarks=${input.remarksPresent ? (input.remarks ?? null) : before.remarks},
-          material_id=${materialId}::uuid, unit_id=${unitId}::uuid,
-          updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
-      return readPackLine(trx, actor, id)
+      for (let boxIndex = 0; boxIndex < input.packBoxes.length; boxIndex++) {
+        const inputBox = input.packBoxes[boxIndex]!
+        const box = await createPackBoxInTx(trx, actor, deliveryId)
+        for (let lineIndex = 0; lineIndex < inputBox.lines.length; lineIndex++) {
+          const line = inputBox.lines[lineIndex]!
+          await withIndexedFields(`packBoxes[${boxIndex}].lines[${lineIndex}]`, () =>
+            createPackLineInTx(trx, actor, {
+              ...line,
+              deliveryId,
+              packBoxId: String(box.id),
+            }),
+          )
+        }
+      }
+      return loadSalesDraft(trx, actor, deliveryId)
     })
   }
 
-  async function deletePackLine(actor: Actor, id: string) {
-    requirePerm(actor, 'sales.delivery', 'delete', '无权限执行该履约操作')
-    await withTx(db, async (trx) => {
-      const cur = await sql<{ delivery_id: string }>`
-        SELECT delivery_id FROM sal_delivery_pack_line WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!cur.rows[0]) throw new ApiError('not_found', '装箱行不存在')
-      await lockDraftHead(trx, actor, fulfillmentSpec('sales'), cur.rows[0].delivery_id)
-      await sql`DELETE FROM sal_delivery_pack_line WHERE id=${id}::uuid`.execute(trx)
+  async function replaceSalesDraft(actor: Actor, id: string, input: SalesDraftInput) {
+    requirePerm(actor, 'sales.delivery', 'update', '无权限执行该履约操作')
+    return withTx(db, async (trx) => {
+      const before = mapHead(await lockDraftHead(trx, actor, fulfillmentSpec('sales'), id))
+      if (input.companyId !== before.companyId) {
+        throw ApiError.validation('销售发货草稿参数不合法', {
+          'header.companyId': ['创建后不可修改公司'],
+        })
+      }
+
+      const existingItems = await trx
+        .selectFrom('sal_delivery_item')
+        .select('id')
+        .where('delivery_id', '=', id)
+        .execute()
+      const existingBoxes = await trx
+        .selectFrom('sal_delivery_pack_box')
+        .select('id')
+        .where('delivery_id', '=', id)
+        .execute()
+      const existingLines = await trx
+        .selectFrom('sal_delivery_pack_line')
+        .select('id')
+        .where('delivery_id', '=', id)
+        .execute()
+      const existingItemIds = new Set(existingItems.map((item) => item.id))
+      const existingBoxIds = new Set(existingBoxes.map((box) => box.id))
+      const existingLineIds = new Set(existingLines.map((line) => line.id))
+      validateSalesDraftIdentities(input, {
+        items: existingItemIds,
+        boxes: existingBoxIds,
+        lines: existingLineIds,
+      })
+
+      await withIndexedFields(
+        'header',
+        () =>
+          updateHeadInTx(trx, actor, 'sales', id, {
+            no: input.no ?? before.no,
+            documentDate: input.documentDate ?? before.documentDate,
+            postingDate: input.postingDate ?? null,
+            postingDatePresent: true,
+            partyType: input.partyType,
+            partyId: input.partyId,
+            remarks: input.remarks ?? null,
+            remarksPresent: true,
+            warehouseId: input.warehouseId ?? null,
+            warehouseIdPresent: true,
+            debitAccountId: input.debitAccountId,
+            creditAccountId: input.creditAccountId,
+          }),
+        { number: 'deliveryNo', documentDate: 'deliveryDate' },
+      )
+
+      const requestedItemIds = new Set(
+        input.items.flatMap((item) => (item.id === undefined ? [] : [item.id])),
+      )
+      for (const oldId of existingItemIds) {
+        if (requestedItemIds.has(oldId)) continue
+        await sql`
+          DELETE FROM sys_attachment
+          WHERE owner_type='sal_delivery_item' AND owner_id=${oldId}::uuid
+        `.execute(trx)
+        await trx.deleteFrom('sal_delivery_item').where('id', '=', oldId).execute()
+      }
+      for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
+        const item = input.items[itemIndex]!
+        if (item.id === undefined) {
+          await withIndexedFields(`items[${itemIndex}]`, () =>
+            createItemInTx(trx, actor, 'sales', { ...item, headId: id }),
+          )
+        } else {
+          await withIndexedFields(`items[${itemIndex}]`, () =>
+            updateItemInTx(trx, actor, 'sales', item.id!, {
+              idx: item.idx,
+              qty: item.qty,
+              orderItemId: item.orderItemId,
+              unitId: item.unitId ?? null,
+              unitIdPresent: true,
+              warehouseId: item.warehouseId,
+              remarks: item.remarks ?? null,
+              remarksPresent: true,
+            }),
+          )
+        }
+      }
+
+      const requestedBoxIds = new Set<string>()
+      const requestedLineIds = new Set<string>()
+      for (let boxIndex = 0; boxIndex < input.packBoxes.length; boxIndex++) {
+        const inputBox = input.packBoxes[boxIndex]!
+        const box = inputBox.id === undefined
+          ? await createPackBoxInTx(trx, actor, id)
+          : await readPackBox(trx, actor, inputBox.id)
+        const boxId = String(box.id)
+        if (inputBox.id !== undefined) requestedBoxIds.add(inputBox.id)
+        for (let lineIndex = 0; lineIndex < inputBox.lines.length; lineIndex++) {
+          const line = inputBox.lines[lineIndex]!
+          const prefix = `packBoxes[${boxIndex}].lines[${lineIndex}]`
+          if (line.id === undefined) {
+            await withIndexedFields(prefix, () =>
+              createPackLineInTx(trx, actor, { ...line, deliveryId: id, packBoxId: boxId }),
+            )
+          } else {
+            requestedLineIds.add(line.id)
+            await withIndexedFields(prefix, () =>
+              updatePackLineInTx(trx, actor, line.id!, {
+                idx: line.idx,
+                packBoxId: boxId,
+                qty: line.qty,
+                materialId: line.materialId,
+                unitId: line.unitId ?? null,
+                unitIdPresent: true,
+                remarks: line.remarks ?? null,
+                remarksPresent: true,
+              }),
+            )
+          }
+        }
+      }
+      for (const oldId of existingLineIds) {
+        if (!requestedLineIds.has(oldId)) {
+          await trx.deleteFrom('sal_delivery_pack_line').where('id', '=', oldId).execute()
+        }
+      }
+      for (const oldId of existingBoxIds) {
+        if (!requestedBoxIds.has(oldId)) {
+          await trx.deleteFrom('sal_delivery_pack_box').where('id', '=', oldId).execute()
+        }
+      }
+      return loadSalesDraft(trx, actor, id)
     })
+  }
+
+  async function createPurchaseItem(
+    actor: Actor,
+    input: SalesDraftItemInput & { receiptId: string },
+  ) {
+    return createItem(actor, 'purchase', { ...input, headId: input.receiptId })
+  }
+
+  async function updatePurchaseItem(
+    actor: Actor,
+    id: string,
+    input: FulfillmentItemUpdateInput,
+  ) {
+    return updateItem(actor, 'purchase', id, input)
+  }
+
+  async function deletePurchaseItem(actor: Actor, id: string) {
+    return deleteItem(actor, 'purchase', id)
   }
 
   return {
+    createSalesDraft, replaceSalesDraft,
     listHeads, getHead, createHead, updateHead, deleteHead, auditHead, voidHead,
-    listItems, getItem, createItem, updateItem, deleteItem,
-    listPackBoxes, getPackBox, createPackBox, deletePackBox,
-    listPackLines, getPackLine, createPackLine, updatePackLine, deletePackLine,
+    listItems, getItem, createPurchaseItem, updatePurchaseItem, deletePurchaseItem,
+    listPackBoxes, getPackBox,
+    listPackLines, getPackLine,
   }
 }
 
 export type FulfillmentService = ReturnType<typeof createFulfillmentService>
 
 // ---- helpers ----
+
+async function withIndexedFields<T>(
+  prefix: string,
+  run: () => Promise<T>,
+  aliases: Record<string, string> = {},
+): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.code !== 'validation' || !error.fields) throw error
+    const fields = Object.fromEntries(
+      Object.entries(error.fields).map(([field, messages]) => [
+        `${prefix}.${aliases[field] ?? field}`,
+        messages,
+      ]),
+    )
+    throw ApiError.validation(error.message, fields)
+  }
+}
+
+function validateSalesDraftIdentities(
+  input: SalesDraftInput,
+  existing: {
+    items: ReadonlySet<string>
+    boxes: ReadonlySet<string>
+    lines: ReadonlySet<string>
+  },
+): void {
+  const fields: Record<string, string[]> = {}
+  const seenItems = new Set<string>()
+  const seenBoxes = new Set<string>()
+  const seenLines = new Set<string>()
+  input.items.forEach((item, itemIndex) => {
+    if (item.id === undefined) return
+    const field = `items[${itemIndex}].id`
+    if (seenItems.has(item.id)) fields[field] = ['同一草稿中不能重复']
+    else if (!existing.items.has(item.id)) fields[field] = ['不属于该销售发货单']
+    seenItems.add(item.id)
+  })
+  input.packBoxes.forEach((box, boxIndex) => {
+    if (box.id !== undefined) {
+      const field = `packBoxes[${boxIndex}].id`
+      if (seenBoxes.has(box.id)) fields[field] = ['同一草稿中不能重复']
+      else if (!existing.boxes.has(box.id)) fields[field] = ['不属于该销售发货单']
+      seenBoxes.add(box.id)
+    }
+    box.lines.forEach((line, lineIndex) => {
+      if (line.id === undefined) return
+      const field = `packBoxes[${boxIndex}].lines[${lineIndex}].id`
+      if (seenLines.has(line.id)) fields[field] = ['同一草稿中不能重复']
+      else if (!existing.lines.has(line.id)) fields[field] = ['不属于该销售发货单']
+      seenLines.add(line.id)
+    })
+  })
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation('销售发货草稿子记录身份不合法', fields)
+  }
+}
 
 function validateHeadShape(spec: FulfillmentSideSpec, item: FulfillmentHead) {
   const fields: Record<string, string[]> = {}
@@ -954,7 +1327,7 @@ async function deriveItem(
     remarks: string | null
   },
 ) {
-  if (!draft.qty.isPositive()) {
+  if (!draft.qty.gt(0)) {
     throw ApiError.validation(`${spec.itemLabel}参数不合法`, { qty: ['必须大于 0'] })
   }
   if (draft.remarks && runeLen(draft.remarks) > 512) {

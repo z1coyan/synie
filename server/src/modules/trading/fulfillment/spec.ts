@@ -311,7 +311,7 @@ export function fulfillmentItemMeta(side: TradingSide): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: spec.destroyItem,
+    ...(sales ? {} : { destroyMutation: spec.destroyItem }),
   }
 }
 
@@ -359,7 +359,6 @@ export function packBoxMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroySalDeliveryPackBox',
   }
 }
 
@@ -405,6 +404,5 @@ export function packLineMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroySalDeliveryPackLine',
   }
 }

@@ -134,6 +134,32 @@ export async function createSideFulfillment(
   const wh = sc.warehouses.default
   const partyType = side === 'purchase' ? 'supplier' : 'customer'
   const remarks = side === 'purchase' ? '初始化示例采购入库' : '初始化示例销售发货'
+  if (side === 'sales') {
+    const draft = await deps.trading.fulfillment.createSalesDraft(actor, {
+      companyId: sc.company.id,
+      documentDate: date,
+      postingDate: date,
+      partyType,
+      partyId,
+      warehouseId: wh,
+      debitAccountId: debit,
+      creditAccountId: credit,
+      remarks,
+      items: items.map((line, index) => ({
+        idx: index + 1,
+        qty: String(line.qty),
+        orderItemId: line.orderItemId,
+        warehouseId: wh,
+      })),
+      packBoxes: [],
+    })
+    const byIdx: Record<number, string> = {}
+    draft.items.forEach((item, index) => {
+      byIdx[index] = item.id
+    })
+    await deps.trading.fulfillment.auditHead(actor, side, draft.id)
+    return { byIdx, id: draft.id }
+  }
   const head = await deps.trading.fulfillment.createHead(actor, side, {
     companyId: sc.company.id,
     documentDate: date,
@@ -148,8 +174,8 @@ export async function createSideFulfillment(
   const byIdx: Record<number, string> = {}
   for (let i = 0; i < items.length; i++) {
     const line = items[i]!
-    const item = await deps.trading.fulfillment.createItem(actor, side, {
-      headId: head.id,
+    const item = await deps.trading.fulfillment.createPurchaseItem(actor, {
+      receiptId: head.id,
       idx: i + 1,
       qty: String(line.qty),
       orderItemId: line.orderItemId,

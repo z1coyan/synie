@@ -3,8 +3,11 @@ import {
   expect,
   test,
   type APIRequestContext,
+  type Locator,
   type Page,
 } from "@playwright/test";
+
+test.setTimeout(90_000);
 
 const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
 const password =
@@ -135,6 +138,50 @@ async function post<T>(
   return JSON.parse(text) as T;
 }
 
+async function openDeliveryEdit(
+  page: Page,
+  deliveryNo: string,
+): Promise<Locator> {
+  await page.goto("/scm/sales-deliveries/deliveries");
+  const grid = page.getByRole("grid", { name: "salDeliveries 数据表格" });
+  await expect(grid).toBeVisible();
+  await page.getByRole("searchbox", { name: "搜索" }).fill(deliveryNo);
+  const row = grid.getByRole("row").filter({ hasText: deliveryNo });
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "行操作" }).click();
+  await page.getByRole("menuitem", { name: "编辑", exact: true }).click();
+  const drawer = page.getByRole("dialog", { name: "编辑销售发货单" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByLabel("备注", { exact: true })).toBeVisible();
+  return drawer;
+}
+
+function deliveryDraftResponse(
+  fixture: Fixture,
+  id: string,
+  deliveryNo: string,
+  remarks: string,
+): Record<string, unknown> {
+  return {
+    id,
+    deliveryNo,
+    deliveryDate: "2026-07-26",
+    postingDate: null,
+    companyId: fixture.companyId,
+    partyType: "CUSTOMER",
+    partyId: fixture.customerId,
+    remarks,
+    warehouseId: null,
+    debitAccountId: fixture.debitAccountId,
+    creditAccountId: fixture.creditAccountId,
+    status: "DRAFT",
+    auditedAt: null,
+    auditedById: null,
+    items: [],
+    packBoxes: [],
+  };
+}
+
 function cleanup(ids: string[]): void {
   const records =
     ids.length === 0
@@ -162,14 +209,36 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
   const created: string[] = [];
   const graphql: string[] = [];
   const rest: string[] = [];
+  const deliveryWorkflow: string[] = [];
+  const childWrites: string[] = [];
   page.on("request", (req) => {
-    if (new URL(req.url()).pathname.endsWith("/graphql")) graphql.push(req.url());
+    const pathname = new URL(req.url()).pathname;
+    const method = req.method();
+    if (pathname.endsWith("/graphql")) graphql.push(req.url());
     if (
       req.url().includes("/api/v1/sales/deliver") ||
       req.url().includes("/api/v1/purchase/receipt") ||
       req.url().includes("/api/v1/purchase/outsourced")
     ) {
       rest.push(`${req.method()} ${req.url()}`);
+    }
+    if (
+      (method === "POST" && pathname === "/api/v1/sales/deliveries") ||
+      (method === "PUT" &&
+        /^\/api\/v1\/sales\/deliveries\/[^/]+$/.test(pathname)) ||
+      (method === "POST" &&
+        /^\/api\/v1\/sales\/deliveries\/[^/]+\/audit$/.test(pathname))
+    ) {
+      deliveryWorkflow.push(`${method} ${pathname}`);
+    }
+    if (
+      ["POST", "PUT", "PATCH", "DELETE"].includes(method) &&
+      /^\/api\/v1\/sales\/(?:delivery-items|delivery-pack-boxes|delivery-pack-lines)(?:\/[^/]+)?$/.test(
+        pathname,
+      ) &&
+      !pathname.endsWith("/query")
+    ) {
+      childWrites.push(`${method} ${pathname}`);
     }
   });
 
@@ -197,6 +266,8 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
           partyId: fixture.customerId,
           debitAccountId: fixture.debitAccountId,
           creditAccountId: fixture.creditAccountId,
+          items: [],
+          packBoxes: [],
         },
       ),
       await post<{ id: string }>(
@@ -242,6 +313,205 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
       ).toBeVisible();
       await expect(page.getByText(number, { exact: true })).toBeVisible();
     }
+
+    const salesDelivery = documents[0]!;
+    const deliveryNo = `${prefix}-SD`;
+    const deliveryPath = `/api/v1/sales/deliveries/${salesDelivery.id}`;
+    const replaceRoute = `**${deliveryPath}`;
+    const auditPath = `${deliveryPath}/audit`;
+    const auditRoute = `**${auditPath}`;
+
+    await test.step("保存只发送一次整单替换且不写子资源", async () => {
+      const drawer = await openDeliveryEdit(page, deliveryNo);
+      const remarks = "整单保存浏览器验收";
+      const bodies: Record<string, unknown>[] = [];
+      await page.route(replaceRoute, async (route) => {
+        if (route.request().method() !== "PUT") {
+          await route.fallback();
+          return;
+        }
+        bodies.push(route.request().postDataJSON() as Record<string, unknown>);
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(
+            deliveryDraftResponse(
+              fixture!,
+              salesDelivery.id,
+              deliveryNo,
+              remarks,
+            ),
+          ),
+        });
+      });
+
+      const workflowStart = deliveryWorkflow.length;
+      const childStart = childWrites.length;
+      await drawer.getByLabel("备注", { exact: true }).fill(remarks);
+      const replaceResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          new URL(response.url()).pathname === deliveryPath,
+      );
+      await drawer
+        .getByRole("button", { name: "保存", exact: true })
+        .click();
+      await replaceResponse;
+      await expect(drawer).toBeHidden();
+
+      expect(deliveryWorkflow.slice(workflowStart)).toEqual([
+        `PUT ${deliveryPath}`,
+      ]);
+      expect(childWrites.slice(childStart)).toEqual([]);
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toMatchObject({
+        remarks,
+        items: [],
+        packBoxes: [],
+      });
+      await page.unroute(replaceRoute);
+    });
+
+    await test.step("整单保存失败时不发送审核请求", async () => {
+      const drawer = await openDeliveryEdit(page, deliveryNo);
+      const remarks = "保存失败仍保留";
+      let interceptedAudit = 0;
+      await page.route(replaceRoute, async (route) => {
+        if (route.request().method() !== "PUT") {
+          await route.fallback();
+          return;
+        }
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: {
+              code: "validation",
+              message: "整单保存验收失败",
+              fields: { "header.remarks": ["整单校验失败"] },
+            },
+          }),
+        });
+      });
+      await page.route(auditRoute, async (route) => {
+        interceptedAudit += 1;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: { code: "internal", message: "不应发送审核请求" },
+          }),
+        });
+      });
+
+      const workflowStart = deliveryWorkflow.length;
+      const childStart = childWrites.length;
+      await drawer.getByLabel("备注", { exact: true }).fill(remarks);
+      const replaceResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          new URL(response.url()).pathname === deliveryPath,
+      );
+      await drawer
+        .getByRole("button", { name: "保存并审核", exact: true })
+        .click();
+      await replaceResponse;
+      await expect(
+        drawer.getByRole("button", { name: "保存并审核", exact: true }),
+      ).toBeEnabled();
+
+      await expect(drawer).toBeVisible();
+      await expect(drawer.getByLabel("备注", { exact: true })).toHaveValue(
+        remarks,
+      );
+      await expect(drawer.getByRole("alert")).toContainText("整单校验失败");
+      expect(interceptedAudit).toBe(0);
+      expect(deliveryWorkflow.slice(workflowStart)).toEqual([
+        `PUT ${deliveryPath}`,
+      ]);
+      expect(childWrites.slice(childStart)).toEqual([]);
+
+      await drawer
+        .getByRole("button", { name: "取消", exact: true })
+        .click();
+      await expect(drawer).toBeHidden();
+      await page.unroute(replaceRoute);
+      await page.unroute(auditRoute);
+    });
+
+    await test.step("审核失败时保留已保存草稿抽屉", async () => {
+      const drawer = await openDeliveryEdit(page, deliveryNo);
+      const remarks = "审核失败仍保留";
+      await page.route(replaceRoute, async (route) => {
+        if (route.request().method() !== "PUT") {
+          await route.fallback();
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(
+            deliveryDraftResponse(
+              fixture!,
+              salesDelivery.id,
+              deliveryNo,
+              remarks,
+            ),
+          ),
+        });
+      });
+      await page.route(auditRoute, async (route) => {
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: { code: "validation", message: "审核验收失败" },
+          }),
+        });
+      });
+
+      const workflowStart = deliveryWorkflow.length;
+      const childStart = childWrites.length;
+      await drawer.getByLabel("备注", { exact: true }).fill(remarks);
+      const replaceResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          new URL(response.url()).pathname === deliveryPath,
+      );
+      const auditResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === auditPath,
+      );
+      await drawer
+        .getByRole("button", { name: "保存并审核", exact: true })
+        .click();
+      await replaceResponse;
+      await auditResponse;
+      await expect(
+        drawer.getByRole("button", { name: "保存并审核", exact: true }),
+      ).toBeEnabled();
+
+      await expect(drawer).toBeVisible();
+      await expect(drawer.getByLabel("备注", { exact: true })).toHaveValue(
+        remarks,
+      );
+      await expect(
+        page.getByText("单据已保存,但审核失败", { exact: true }),
+      ).toBeVisible();
+      expect(deliveryWorkflow.slice(workflowStart)).toEqual([
+        `PUT ${deliveryPath}`,
+        `POST ${auditPath}`,
+      ]);
+      expect(childWrites.slice(childStart)).toEqual([]);
+
+      await drawer
+        .getByRole("button", { name: "取消", exact: true })
+        .click();
+      await expect(drawer).toBeHidden();
+      await page.unroute(replaceRoute);
+      await page.unroute(auditRoute);
+    });
 
     expect(graphql, "履约消费面不得发业务 GraphQL").toEqual([]);
     expect(rest.length).toBeGreaterThanOrEqual(4);

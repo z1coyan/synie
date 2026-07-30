@@ -84,6 +84,12 @@ export interface SynieRecordDrawerProps {
   onEdit?: () => void
   /** create/edit 态提交按钮文案,默认「保存」(如导入表单的「解析」) */
   submitLabel?: string
+  /** 服务端提交失败后的字段错误；key 与表单字段名一致，抽屉在字段下方就近展示。 */
+  fieldErrors?: Record<string, string[]>
+  /** 提交错误位于非当前 tab 时，由页面指定应切换到的 tab。 */
+  submissionErrorTab?: string | null
+  /** 保存成功但后续审核失败时保留抽屉，让用户就地修正后重试。 */
+  keepOpenOnAuditFailure?: boolean
   /** view 态 footer 附加动作(渲染在「关闭」之后),如导入记录的「导入」主按钮 */
   footerActions?: (mode: DrawerMode, row: Row | null | undefined) => ReactNode
   /** Sheet.Content 宽度样式 */
@@ -218,6 +224,12 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     if (isOpen) setActiveTab(null)
   }, [isOpen])
 
+  useEffect(() => {
+    if (isOpen && props.submissionErrorTab) {
+      setActiveTab(props.submissionErrorTab)
+    }
+  }, [isOpen, props.submissionErrorTab])
+
   // 主栅格只渲染非 hidden 字段;hidden 字段仍在 fields 里参与必填/提交(由 extraContent 写值)
   const shown = renderableFields(
     fields,
@@ -257,11 +269,13 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     setSaving(true)
     try {
       const savedId = await props.onSubmit(collectValues(fields, values, mode), mode)
+      let closeAfterSave = true
       if (andAudit && auditAction) {
         // create 态靠 onSubmit 返回的新 id;edit 态回落行 id
         const auditId = savedId ?? row?.id
         if (auditId == null || auditId === '') {
           toast.warning('单据已保存,但未取得单据 id,请在列表中执行审核')
+          closeAfterSave = !props.keepOpenOnAuditFailure
         } else {
           let errors: { message: string }[] | null | undefined
           try {
@@ -277,6 +291,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
             toast.danger('单据已保存,但审核失败', {
               description: errors.map((e) => e.message).join('; '),
             })
+            closeAfterSave = !props.keepOpenOnAuditFailure
           } else {
             toast.success('已保存并审核')
           }
@@ -284,7 +299,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
           queryClient.invalidateQueries({ queryKey: ['rowById'] })
         }
       }
-      props.onOpenChange(false)
+      if (closeAfterSave) props.onOpenChange(false)
     } catch (e) {
       toast.danger('保存失败', { description: (e as Error).message })
     } finally {
@@ -333,6 +348,11 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                     patchValues={patchValues}
                   />
                 )}
+                {renderMode !== 'view' && props.fieldErrors?.[f.name]?.length ? (
+                  <p className="mt-1 text-xs text-danger" role="alert">
+                    {props.fieldErrors[f.name].join('；')}
+                  </p>
+                ) : null}
               </div>
             </Fragment>
           )

@@ -46,6 +46,8 @@ export interface SynieEditableTableProps<T extends Row = Row> {
   fields?: Record<string, FieldOverride>
   /** 本地列/字段定义,提供时跳过 GridMeta 查询,透传二级 SynieRecordDrawer */
   meta?: LocalGridMeta
+  /** 父级整单提交返回的行错误，按当前草稿行 id 就近展示。 */
+  rowErrors?: Record<string, string[]>
   /** 父表单 view 态传 true:隐藏新增按钮与编辑/删除;rowActions 声明时操作列仍保留 */
   readOnly?: boolean
   /**
@@ -155,35 +157,43 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
                   </div>
                 )}
               >
-                {items.map((row) => (
-                  <Table.Row key={row.id}>
-                    {cols.map((c) => (
-                      <Table.Cell key={c.name} className={cellClass(c, overrides[c.name])}>
-                        <EditableCell col={c} row={row} override={overrides[c.name]} />
-                      </Table.Cell>
-                    ))}
-                    {(!readOnly || props.rowActions) && (
-                      <Table.Cell className="text-end">
-                        <div className="flex justify-end gap-1 whitespace-nowrap">
-                          {props.rowActions?.(row)}
-                          {!readOnly && (
-                            <>
-                              <Button size="sm" variant="ghost" onPress={() => setDrawer({ mode: 'edit', row })}>
-                                编辑
-                              </Button>
-                              {/* ponytail: 草稿行直接删,父表单保存前都可重录;需要挽回再加确认框 */}
-                              {canDelete && (
-                                <Button size="sm" variant="ghost" className="text-danger" onPress={() => props.onChange(removeItem(items, row.id))}>
-                                  删除
+                {items.map((row) => {
+                  const errors = props.rowErrors?.[String(row.id)] ?? []
+                  return (
+                    <Table.Row key={row.id}>
+                      {cols.map((c, index) => (
+                        <Table.Cell key={c.name} className={cellClass(c, overrides[c.name])}>
+                          <EditableCell col={c} row={row} override={overrides[c.name]} />
+                          {index === 0 && errors.length > 0 ? (
+                            <p className="mt-1 text-xs text-danger" role="alert">
+                              {errors.join('；')}
+                            </p>
+                          ) : null}
+                        </Table.Cell>
+                      ))}
+                      {(!readOnly || props.rowActions) && (
+                        <Table.Cell className="text-end">
+                          <div className="flex justify-end gap-1 whitespace-nowrap">
+                            {props.rowActions?.(row)}
+                            {!readOnly && (
+                              <>
+                                <Button size="sm" variant="ghost" onPress={() => setDrawer({ mode: 'edit', row })}>
+                                  编辑
                                 </Button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </Table.Cell>
-                    )}
-                  </Table.Row>
-                ))}
+                                {/* ponytail: 草稿行直接删,父表单保存前都可重录;需要挽回再加确认框 */}
+                                {canDelete && (
+                                  <Button size="sm" variant="ghost" className="text-danger" onPress={() => props.onChange(removeItem(items, row.id))}>
+                                    删除
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </Table.Cell>
+                      )}
+                    </Table.Row>
+                  )
+                })}
               </Table.Body>
             </Table.Content>
           </Table.ScrollContainer>
