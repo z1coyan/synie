@@ -43,9 +43,18 @@ Synie 是一个多公司财务 ERP，**纯 TypeScript monorepo**（Bun workspace
 
 ## 环境要求
 
-- Bun `1.3.x`（唯一运行时）
+- Bun `1.3.14`（唯一运行时与包管理器）
+- TypeScript `7.0.2`（固定版本的原生编译器）
 - PostgreSQL 17（推荐使用根目录 Compose）
 - Docker / Docker Compose（推荐开发路径）
+
+VS Code 请安装仓库推荐的 “TypeScript 7” extension（extension id
+`TypeScriptTeam.native-preview`）；工作区配置会启用原生语言服务并使用根目录安装的
+TypeScript。依赖仍一律只在仓库根执行 `bun install`。
+
+TypeScript 7.0 尚无稳定 Compiler API。未来引入 lint、codegen 或 editor plugin 时，
+若工具会直接导入 `typescript`，必须先评估 TS 7 兼容性，不应默认增加 TypeScript 6
+alias。
 
 Compose 默认把 PostgreSQL 暴露在 `localhost:5441`，数据库、用户和密码均为 `synie`。主要环境变量：
 
