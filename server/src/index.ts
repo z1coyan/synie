@@ -2,44 +2,28 @@ import { createMarketScheduler } from './jobs/index.ts'
 import { buildApp } from './app.ts'
 import { createDb } from './db/index.ts'
 import { loadEnv } from './env.ts'
-import {
-  createAccountingServices,
-  registerAccountingResources,
-} from './modules/accounting/index.ts'
-import { createBaseServices, registerBaseResources } from './modules/base/index.ts'
-import { createMarketService, registerMarketResources } from './modules/base/market/index.ts'
-import { createHrServices, registerHrResources } from './modules/hr/index.ts'
-import { createIamService, registerIamResources } from './modules/iam/index.ts'
-import {
-  createInventoryServices,
-  registerInventoryResources,
-} from './modules/inventory/index.ts'
+import { createAccountingServices } from './modules/accounting/index.ts'
+import { createBaseServices } from './modules/base/index.ts'
+import { createMarketService } from './modules/base/market/index.ts'
+import { createHrServices } from './modules/hr/index.ts'
+import { createIamService } from './modules/iam/index.ts'
+import { createInventoryServices } from './modules/inventory/index.ts'
 import {
   createManufacturingServices,
   createManufacturingSettingService,
-  registerManufacturingResources,
 } from './modules/manufacturing/index.ts'
-import {
-  createPartyServices,
-  registerPartyResources,
-  registerPartyTodoSources,
-} from './modules/party/index.ts'
-import {
-  createCompanyAccountDefaultService,
-  registerSalesCompanyAccountDefault,
-} from './modules/sales/index.ts'
+import { createPartyServices, registerPartyTodoSources } from './modules/party/index.ts'
+import { createCompanyAccountDefaultService } from './modules/sales/index.ts'
 import {
   createSalesSettingService,
   createTradingServices,
   registerSalesOrderDocBuilder,
-  registerTradingResources,
 } from './modules/trading/index.ts'
-import { createScmServices, registerScmResources } from './modules/scm/index.ts'
+import { createScmServices } from './modules/scm/index.ts'
 import {
   createAccountingSettingService,
   createFinanceServices,
   registerFinanceFileOwners,
-  registerFinanceResources,
   registerFinanceTodoSources,
 } from './modules/finance/index.ts'
 import { isJournalLinkedToBankRecon } from './modules/finance/banking-recon.ts'
@@ -48,23 +32,22 @@ import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
 import { createTokenManager } from './platform/auth/token.ts'
-import { createAuditService, registerAuditResources } from './platform/audit/index.ts'
+import { createAuditService } from './platform/audit/index.ts'
 import {
   createFileService,
   createOwnerRegistry,
   createStorageService,
-  registerFileResources,
 } from './platform/files/index.ts'
 import { createRegistry } from './platform/meta/registry.ts'
-import { createNumberingService, registerNumberingResources } from './platform/numbering/index.ts'
+import { registerAllResources } from './platform/meta/register-all.ts'
+import { createNumberingService } from './platform/numbering/index.ts'
 import {
   buildPrintingCatalog,
   createPrintingService,
   createSofficeConverter,
   registerPrintingFileOwners,
-  registerPrintingResources,
 } from './platform/printing/index.ts'
-import { createSettingsService, registerSettingResources } from './platform/settings/index.ts'
+import { createSettingsService } from './platform/settings/index.ts'
 import { createSetupService } from './platform/setup/index.ts'
 import { seedMaterialCategories, seedSampleData } from './modules/setup/index.ts'
 import { logJson, serializeError } from './platform/http/log.ts'
@@ -80,24 +63,7 @@ const auth = await createAuthService({
 })
 
 const registry = createRegistry()
-registerSettingResources(registry)
-registerNumberingResources(registry)
-registerFileResources(registry)
-registerAuditResources(registry)
-registerBaseResources(registry)
-registerMarketResources(registry)
-registerIamResources(registry)
-registerPartyResources(registry)
-registerHrResources(registry)
-registerSalesCompanyAccountDefault(registry)
-registerInventoryResources(registry)
-registerAccountingResources(registry)
-registerTradingResources(registry)
-registerFinanceResources(registry)
-registerScmResources(registry)
-registerManufacturingResources(registry)
-// 打印模板 Meta 在业务域之后（字段目录自 Registry fail-closed 派生）
-registerPrintingResources(registry)
+registerAllResources(registry)
 
 const settings = createSettingsService(db, {
   sales: createSalesSettingService(db),

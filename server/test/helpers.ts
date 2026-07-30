@@ -1,48 +1,28 @@
 import type { Kysely } from 'kysely'
 import { buildApp, type AppDeps, type ApiType } from '~/app.ts'
 import type { DB as Database } from '~/db/types.ts'
-import {
-  createAccountingServices,
-  registerAccountingResources,
-} from '~/modules/accounting/index.ts'
-import { createBaseServices, registerBaseResources } from '~/modules/base/index.ts'
-import {
-  createMarketService,
-  registerMarketResources,
-  type MarketService,
-} from '~/modules/base/market/index.ts'
-import { createIamService, registerIamResources } from '~/modules/iam/index.ts'
-import { createHrServices, registerHrResources } from '~/modules/hr/index.ts'
-import {
-  createPartyServices,
-  registerPartyResources,
-  registerPartyTodoSources,
-} from '~/modules/party/index.ts'
-import {
-  createCompanyAccountDefaultService,
-  registerSalesCompanyAccountDefault,
-} from '~/modules/sales/index.ts'
-import {
-  createInventoryServices,
-  registerInventoryResources,
-} from '~/modules/inventory/index.ts'
+import { createAccountingServices } from '~/modules/accounting/index.ts'
+import { createBaseServices } from '~/modules/base/index.ts'
+import { createMarketService, type MarketService } from '~/modules/base/market/index.ts'
+import { createIamService } from '~/modules/iam/index.ts'
+import { createHrServices } from '~/modules/hr/index.ts'
+import { createPartyServices, registerPartyTodoSources } from '~/modules/party/index.ts'
+import { createCompanyAccountDefaultService } from '~/modules/sales/index.ts'
+import { createInventoryServices } from '~/modules/inventory/index.ts'
 import {
   createSalesSettingService,
   createTradingServices,
   registerSalesOrderDocBuilder,
-  registerTradingResources,
 } from '~/modules/trading/index.ts'
-import { createScmServices, registerScmResources } from '~/modules/scm/index.ts'
+import { createScmServices } from '~/modules/scm/index.ts'
 import {
   createManufacturingServices,
   createManufacturingSettingService,
-  registerManufacturingResources,
 } from '~/modules/manufacturing/index.ts'
 import {
   createAccountingSettingService,
   createFinanceServices,
   registerFinanceFileOwners,
-  registerFinanceResources,
   registerFinanceTodoSources,
 } from '~/modules/finance/index.ts'
 import { isJournalLinkedToBankRecon } from '~/modules/finance/banking-recon.ts'
@@ -51,33 +31,27 @@ import { createRateLimiter } from '~/platform/auth/limiter.ts'
 import { createAuthService, type AuthService } from '~/platform/auth/service.ts'
 import { createAuthStore } from '~/platform/auth/store.ts'
 import { createTokenManager } from '~/platform/auth/token.ts'
-import { createAuditService, registerAuditResources, type AuditService } from '~/platform/audit/index.ts'
+import { createAuditService, type AuditService } from '~/platform/audit/index.ts'
 import {
   createFileService,
   createOwnerRegistry,
   createStorageService,
-  registerFileResources,
   type FileService,
   type OwnerRegistry,
   type StorageService,
 } from '~/platform/files/index.ts'
-import { createRegistry, type Registry } from '~/platform/meta/registry.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
 import {
   createNumberingService,
-  registerNumberingResources,
   type NumberingService,
 } from '~/platform/numbering/index.ts'
-import {
-  createSettingsService,
-  registerSettingResources,
-  type SettingsService,
-} from '~/platform/settings/index.ts'
+import { createSettingsService, type SettingsService } from '~/platform/settings/index.ts'
 import {
   buildPrintingCatalog,
   createPrintingService,
   createSofficeConverter,
   registerPrintingFileOwners,
-  registerPrintingResources,
   type PrintingService,
 } from '~/platform/printing/index.ts'
 import { createSetupService } from '~/platform/setup/index.ts'
@@ -100,28 +74,9 @@ export async function createTestAuth(db: Kysely<Database>): Promise<AuthService>
   })
 }
 
-/** 创建并注册平台 + 工单 02 业务 Meta 的 Registry */
+/** 与生产同构的完整资源 Registry（统一走 registerAllResources） */
 export function createPlatformRegistry(): Registry {
-  const registry = createRegistry()
-  registerSettingResources(registry)
-  registerNumberingResources(registry)
-  registerFileResources(registry)
-  registerAuditResources(registry)
-  registerBaseResources(registry)
-  registerMarketResources(registry)
-  registerIamResources(registry)
-  registerPartyResources(registry)
-  registerHrResources(registry)
-  registerSalesCompanyAccountDefault(registry)
-  registerInventoryResources(registry)
-  registerAccountingResources(registry)
-  registerTradingResources(registry)
-  registerFinanceResources(registry)
-  registerScmResources(registry)
-  registerManufacturingResources(registry)
-  // 打印模板 Meta 在业务域之后（字段目录自 Registry fail-closed 派生）
-  registerPrintingResources(registry)
-  return registry
+  return createSealedResourceRegistry()
 }
 
 export interface PlatformServices {

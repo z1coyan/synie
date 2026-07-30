@@ -1,0 +1,99 @@
+{
+  "name": "basCurrencies",
+  "grid": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "string",
+        "label": "id",
+        "sortable": true,
+        "filterable": false,
+        "enumOptions": null,
+        "ref": null
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "label": "货币名称",
+        "sortable": true,
+        "filterable": true,
+        "enumOptions": null,
+        "ref": null
+      },
+      {
+        "name": "isoCode",
+        "type": "string",
+        "label": "ISO 编码",
+        "sortable": true,
+        "filterable": true,
+        "enumOptions": null,
+        "ref": null
+      },
+      {
+        "name": "symbol",
+        "type": "string",
+        "label": "符号",
+        "sortable": true,
+        "filterable": true,
+        "enumOptions": null,
+        "ref": null
+      },
+      {
+        "name": "active",
+        "type": "boolean",
+        "label": "启用",
+        "sortable": true,
+        "filterable": true,
+        "enumOptions": null,
+        "ref": null
+      },
+      {
+        "name": "insertedAt",
+        "type": "datetime",
+        "label": "创建时间",
+        "sortable": true,
+        "filterable": true,
+        "enumOptions": null,
+        "ref": null
+      },
+      {
+        "name": "updatedAt",
+        "type": "datetime",
+        "label": "更新时间",
+        "sortable": true,
+        "filterable": true,
+        "enumOptions": null,
+        "ref": null
+      }
+    ],
+    "capabilities": [
+      "create",
+      "update",
+      "delete"
+    ],
+    "extendedActions": [],
+    "destroyMutation": "destroyBasCurrency"
+  },
+  "form": {
+    "exclude": [
+      "id",
+      "active",
+      "insertedAt",
+      "updatedAt"
+    ],
+    "fields": {
+      "name": {
+        "required": true,
+        "placeholder": "如 人民币"
+      },
+      "isoCode": {
+        "required": true,
+        "edit": "createOnly",
+        "placeholder": "三位大写字母,如 CNY"
+      },
+      "symbol": {
+        "placeholder": "如 ¥"
+      }
+    }
+  }
+}

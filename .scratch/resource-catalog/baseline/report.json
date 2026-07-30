@@ -1,0 +1,1909 @@
+{
+  "generatedAt": "2026-07-30T03:35:28.116Z",
+  "commitHint": "run at implement time; re-run after each resource-catalog ticket",
+  "summary": {
+    "serverResourceCount": 97,
+    "fieldTotal": 1383,
+    "actionTotal": 305,
+    "formDeclared": 36,
+    "clientCount": 96,
+    "drawerKeyCount": 84,
+    "remoteDefaultCount": 4,
+    "missingClientCount": 1,
+    "extraClientCount": 0,
+    "missingDrawerCount": 14,
+    "extraDrawerCount": 1
+  },
+  "gaps": {
+    "missingClients": [
+      "sysRolePermissions"
+    ],
+    "extraClients": [],
+    "missingDrawers": [
+      "accSettings",
+      "hrAttendanceCorrections",
+      "hrAttendanceDays",
+      "invMaterialCategories",
+      "mfgSettings",
+      "purOrderItemByproducts",
+      "purOrderItemMaterials",
+      "salCompanyAccountDefaults",
+      "salDeliveryPackBoxes",
+      "salDeliveryPackLines",
+      "salSettings",
+      "scmOrderFlowItems",
+      "sysRolePermissions",
+      "sysSettings"
+    ],
+    "extraDrawers": [
+      "mfgSetting"
+    ],
+    "knownSpellingDrift": [
+      {
+        "kind": "drawer-typo",
+        "server": "mfgSettings",
+        "frontend": "mfgSetting",
+        "note": "drawer registry 使用历史拼写 mfgSetting；服务端与 ResourceClient 为 mfgSettings"
+      }
+    ],
+    "remoteDefaults": [
+      "basUnits",
+      "hrEmployees",
+      "invMaterialCategories",
+      "invMaterials"
+    ]
+  },
+  "extensible": {
+    "declaredCommands": 0,
+    "adapterCommands": 0,
+    "basicWritableFields": 0,
+    "legacyUsages": 0,
+    "writeStubs": 0,
+    "notes": "declaredCommands/adapterCommands/basicWritableFields/legacyUsages/writeStubs 在工单 05+ 填入真实计数"
+  },
+  "resources": [
+    {
+      "name": "accBankAccounts",
+      "permissionPrefix": "acc.bank_account",
+      "permissionLabel": "银行账户",
+      "fieldCount": 13,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accBankImportItems",
+      "permissionPrefix": "acc.bank_transaction",
+      "permissionLabel": "银行流水",
+      "fieldCount": 16,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accBankImports",
+      "permissionPrefix": "acc.bank_transaction",
+      "permissionLabel": "银行流水",
+      "fieldCount": 14,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accBankImportTemplates",
+      "permissionPrefix": "acc.bank_import_template",
+      "permissionLabel": "流水导入模板",
+      "fieldCount": 21,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accBankReconciliations",
+      "permissionPrefix": "acc.bank_transaction",
+      "permissionLabel": "银行流水",
+      "fieldCount": 7,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accBankTransactions",
+      "permissionPrefix": "acc.bank_transaction",
+      "permissionLabel": "银行流水",
+      "fieldCount": 16,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "import",
+        "export"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": [
+        {
+          "key": "export",
+          "permissionAction": "reconcile"
+        }
+      ]
+    },
+    {
+      "name": "accBillHoldings",
+      "permissionPrefix": "acc.bill_holding",
+      "permissionLabel": "持有承兑",
+      "fieldCount": 13,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accBills",
+      "permissionPrefix": "acc.bill",
+      "permissionLabel": "承兑票据",
+      "fieldCount": 23,
+      "actionCount": 3,
+      "actionKeys": [
+        "read",
+        "update",
+        "delete"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accBillTransactions",
+      "permissionPrefix": "acc.bill_transaction",
+      "permissionLabel": "承兑交易",
+      "fieldCount": 28,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accExpenseReportItems",
+      "permissionPrefix": "acc.expense_report",
+      "permissionLabel": "费用报销单",
+      "fieldCount": 12,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accExpenseReports",
+      "permissionPrefix": "acc.expense_report",
+      "permissionLabel": "费用报销单",
+      "fieldCount": 14,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accGlEntries",
+      "permissionPrefix": "acc.gl_entry",
+      "permissionLabel": "总账分录",
+      "fieldCount": 18,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accGlJournalLines",
+      "permissionPrefix": "acc.gl_journal",
+      "permissionLabel": "会计凭证",
+      "fieldCount": 13,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accGlJournals",
+      "permissionPrefix": "acc.gl_journal",
+      "permissionLabel": "会计凭证",
+      "fieldCount": 14,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "cancel"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "cancel"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accSettings",
+      "permissionPrefix": "acc.setting",
+      "permissionLabel": "财务设置",
+      "fieldCount": 4,
+      "actionCount": 2,
+      "actionKeys": [
+        "read",
+        "update"
+      ],
+      "hasForm": true,
+      "formFieldHints": 3,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "accVatInvoices",
+      "permissionPrefix": "acc.vat_invoice",
+      "permissionLabel": "增值税发票",
+      "fieldCount": 40,
+      "actionCount": 7,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void",
+        "reverse"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void",
+        "reverse"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "basAccounts",
+      "permissionPrefix": "base.account",
+      "permissionLabel": "会计科目",
+      "fieldCount": 13,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 5,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "basCompanies",
+      "permissionPrefix": "base.company",
+      "permissionLabel": "公司",
+      "fieldCount": 6,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 5,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "basCurrencies",
+      "permissionPrefix": "base.currency",
+      "permissionLabel": "币种",
+      "fieldCount": 7,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 7,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "basMarketInstruments",
+      "permissionPrefix": "base.market_instrument",
+      "permissionLabel": "行情品种",
+      "fieldCount": 14,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 3,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "basMarketPricePoints",
+      "permissionPrefix": "base.market_price",
+      "permissionLabel": "行情价点",
+      "fieldCount": 12,
+      "actionCount": 3,
+      "actionKeys": [
+        "read",
+        "create",
+        "void"
+      ],
+      "hasForm": true,
+      "formFieldHints": 6,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "basUnits",
+      "permissionPrefix": "base.unit",
+      "permissionLabel": "计量单位",
+      "fieldCount": 8,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 3,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "hrAttendanceCorrections",
+      "permissionPrefix": "hr.attendance_correction",
+      "permissionLabel": "补卡单",
+      "fieldCount": 8,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "hrAttendanceDays",
+      "permissionPrefix": "hr.attendance_day",
+      "permissionLabel": "日考勤",
+      "fieldCount": 13,
+      "actionCount": 2,
+      "actionKeys": [
+        "read",
+        "import"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": [
+        {
+          "key": "import",
+          "permissionAction": "recalc"
+        }
+      ]
+    },
+    {
+      "name": "hrAttendanceImports",
+      "permissionPrefix": "hr.attendance_punch",
+      "permissionLabel": "打卡记录",
+      "fieldCount": 20,
+      "actionCount": 1,
+      "actionKeys": [
+        "import"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "hrAttendancePunches",
+      "permissionPrefix": "hr.attendance_punch",
+      "permissionLabel": "打卡记录",
+      "fieldCount": 6,
+      "actionCount": 2,
+      "actionKeys": [
+        "read",
+        "import"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "hrEmployeeLoans",
+      "permissionPrefix": "hr.employee_loan",
+      "permissionLabel": "员工借款",
+      "fieldCount": 10,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "hrEmployees",
+      "permissionPrefix": "hr.employee",
+      "permissionLabel": "员工",
+      "fieldCount": 13,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 5,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "hrPayrollPayments",
+      "permissionPrefix": "hr.payroll_payment",
+      "permissionLabel": "工资发放",
+      "fieldCount": 11,
+      "actionCount": 3,
+      "actionKeys": [
+        "read",
+        "create",
+        "delete"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "hrPayrolls",
+      "permissionPrefix": "hr.payroll",
+      "permissionLabel": "工资单",
+      "fieldCount": 19,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invMaterialCategories",
+      "permissionPrefix": "inv.material_category",
+      "permissionLabel": "物料分类",
+      "fieldCount": 9,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 8,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invMaterials",
+      "permissionPrefix": "inv.material",
+      "permissionLabel": "物料",
+      "fieldCount": 12,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 6,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invMaterialUnits",
+      "permissionPrefix": "inv.material",
+      "permissionLabel": "物料",
+      "fieldCount": 6,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": true,
+      "formFieldHints": 6,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invStockCountItems",
+      "permissionPrefix": "inv.stock_count",
+      "permissionLabel": "库存盘点单",
+      "fieldCount": 15,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invStockCounts",
+      "permissionPrefix": "inv.stock_count",
+      "permissionLabel": "库存盘点单",
+      "fieldCount": 14,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "approve",
+        "cancel"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "approve",
+        "cancel"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invStockDocItems",
+      "permissionPrefix": "inv.stock_doc",
+      "permissionLabel": "手工出入库单",
+      "fieldCount": 15,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": true,
+      "formFieldHints": 9,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invStockDocs",
+      "permissionPrefix": "inv.stock_doc",
+      "permissionLabel": "手工出入库单",
+      "fieldCount": 14,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void"
+      ],
+      "hasForm": true,
+      "formFieldHints": 12,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invStockEntries",
+      "permissionPrefix": "inv.stock_entry",
+      "permissionLabel": "库存分录",
+      "fieldCount": 14,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invStockTransferItems",
+      "permissionPrefix": "inv.stock_transfer",
+      "permissionLabel": "手工调拨单",
+      "fieldCount": 16,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": true,
+      "formFieldHints": 10,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invStockTransfers",
+      "permissionPrefix": "inv.stock_transfer",
+      "permissionLabel": "手工调拨单",
+      "fieldCount": 17,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "ship",
+        "receive"
+      ],
+      "hasForm": true,
+      "formFieldHints": 15,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "ship",
+        "receive"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "invWarehouses",
+      "permissionPrefix": "inv.warehouse",
+      "permissionLabel": "仓库",
+      "fieldCount": 14,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 9,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgBomByproducts",
+      "permissionPrefix": "mfg.bom",
+      "permissionLabel": "BOM",
+      "fieldCount": 8,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": true,
+      "formFieldHints": 7,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgBomComponents",
+      "permissionPrefix": "mfg.bom",
+      "permissionLabel": "BOM",
+      "fieldCount": 9,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": true,
+      "formFieldHints": 7,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgBomRoutes",
+      "permissionPrefix": "mfg.bom",
+      "permissionLabel": "BOM",
+      "fieldCount": 8,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": true,
+      "formFieldHints": 6,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgBoms",
+      "permissionPrefix": "mfg.bom",
+      "permissionLabel": "BOM",
+      "fieldCount": 7,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 5,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgDemandItems",
+      "permissionPrefix": "mfg.demand",
+      "permissionLabel": "履约需求单",
+      "fieldCount": 23,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgDemands",
+      "permissionPrefix": "mfg.demand",
+      "permissionLabel": "履约需求单",
+      "fieldCount": 9,
+      "actionCount": 7,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "confirm",
+        "close",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "confirm",
+        "close",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgOperations",
+      "permissionPrefix": "mfg.operation",
+      "permissionLabel": "工序",
+      "fieldCount": 6,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 5,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgOutputItems",
+      "permissionPrefix": "mfg.output",
+      "permissionLabel": "生产入库单",
+      "fieldCount": 17,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgOutputs",
+      "permissionPrefix": "mfg.output",
+      "permissionLabel": "生产入库单",
+      "fieldCount": 12,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgProcessTemplateItems",
+      "permissionPrefix": "mfg.route_template",
+      "permissionLabel": "工艺模板",
+      "fieldCount": 8,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": true,
+      "formFieldHints": 6,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgProcessTemplates",
+      "permissionPrefix": "mfg.route_template",
+      "permissionLabel": "工艺模板",
+      "fieldCount": 6,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 5,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgSettings",
+      "permissionPrefix": "mfg.setting",
+      "permissionLabel": "生产设置",
+      "fieldCount": 4,
+      "actionCount": 2,
+      "actionKeys": [
+        "read",
+        "update"
+      ],
+      "hasForm": true,
+      "formFieldHints": 3,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "mfgWorkOrders",
+      "permissionPrefix": "mfg.work_order",
+      "permissionLabel": "生产工单",
+      "fieldCount": 20,
+      "actionCount": 5,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purOrderItemByproducts",
+      "permissionPrefix": "purchase.order",
+      "permissionLabel": "采购订单",
+      "fieldCount": 9,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purOrderItemMaterials",
+      "permissionPrefix": "purchase.order",
+      "permissionLabel": "采购订单",
+      "fieldCount": 16,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purOrderItems",
+      "permissionPrefix": "purchase.order",
+      "permissionLabel": "采购订单",
+      "fieldCount": 33,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purOrders",
+      "permissionPrefix": "purchase.order",
+      "permissionLabel": "采购订单",
+      "fieldCount": 20,
+      "actionCount": 7,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "close",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "close",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purOutsourcedIssueItems",
+      "permissionPrefix": "purchase.outsourced_issue",
+      "permissionLabel": "委外发料单",
+      "fieldCount": 24,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purOutsourcedIssues",
+      "permissionPrefix": "purchase.outsourced_issue",
+      "permissionLabel": "委外发料单",
+      "fieldCount": 15,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purOutsourcedReceiptItemByproducts",
+      "permissionPrefix": "purchase.outsourced_receipt",
+      "permissionLabel": "委外入库单",
+      "fieldCount": 19,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purOutsourcedReceiptItemMaterials",
+      "permissionPrefix": "purchase.outsourced_receipt",
+      "permissionLabel": "委外入库单",
+      "fieldCount": 19,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purOutsourcedReceiptItems",
+      "permissionPrefix": "purchase.outsourced_receipt",
+      "permissionLabel": "委外入库单",
+      "fieldCount": 35,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purOutsourcedReceipts",
+      "permissionPrefix": "purchase.outsourced_receipt",
+      "permissionLabel": "委外入库单",
+      "fieldCount": 18,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purQuotationItems",
+      "permissionPrefix": "purchase.quotation",
+      "permissionLabel": "采购报价单",
+      "fieldCount": 25,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purQuotations",
+      "permissionPrefix": "purchase.quotation",
+      "permissionLabel": "采购报价单",
+      "fieldCount": 16,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purQuotationTiers",
+      "permissionPrefix": "purchase.quotation",
+      "permissionLabel": "采购报价单",
+      "fieldCount": 7,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purReceiptItems",
+      "permissionPrefix": "purchase.receipt",
+      "permissionLabel": "采购入库单",
+      "fieldCount": 35,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purReceipts",
+      "permissionPrefix": "purchase.receipt",
+      "permissionLabel": "采购入库单",
+      "fieldCount": 17,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purReconciliationItems",
+      "permissionPrefix": "purchase.reconciliation",
+      "permissionLabel": "采购对账单",
+      "fieldCount": 20,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purReconciliations",
+      "permissionPrefix": "purchase.reconciliation",
+      "permissionLabel": "采购对账单",
+      "fieldCount": 16,
+      "actionCount": 8,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "confirm",
+        "unconfirm",
+        "audit",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "confirm",
+        "unconfirm",
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "purSuppliers",
+      "permissionPrefix": "purchase.supplier",
+      "permissionLabel": "供应商",
+      "fieldCount": 6,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 6,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salCompanyAccountDefaults",
+      "permissionPrefix": "sales.setting",
+      "permissionLabel": "供应链设置",
+      "fieldCount": 8,
+      "actionCount": 0,
+      "actionKeys": [],
+      "hasForm": true,
+      "formFieldHints": 4,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salCustomers",
+      "permissionPrefix": "sales.customer",
+      "permissionLabel": "客户",
+      "fieldCount": 6,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 6,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salDeliveries",
+      "permissionPrefix": "sales.delivery",
+      "permissionLabel": "销售发货单",
+      "fieldCount": 17,
+      "actionCount": 9,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void",
+        "print",
+        "export",
+        "batch_print"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salDeliveryItems",
+      "permissionPrefix": "sales.delivery",
+      "permissionLabel": "销售发货单",
+      "fieldCount": 35,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salDeliveryPackBoxes",
+      "permissionPrefix": "sales.delivery",
+      "permissionLabel": "销售发货单",
+      "fieldCount": 6,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salDeliveryPackLines",
+      "permissionPrefix": "sales.delivery",
+      "permissionLabel": "销售发货单",
+      "fieldCount": 17,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salOrderItems",
+      "permissionPrefix": "sales.order",
+      "permissionLabel": "销售订单",
+      "fieldCount": 29,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salOrders",
+      "permissionPrefix": "sales.order",
+      "permissionLabel": "销售订单",
+      "fieldCount": 19,
+      "actionCount": 10,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "close",
+        "void",
+        "print",
+        "export",
+        "batch_print"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "close",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salQuotationItems",
+      "permissionPrefix": "sales.quotation",
+      "permissionLabel": "销售报价单",
+      "fieldCount": 25,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salQuotations",
+      "permissionPrefix": "sales.quotation",
+      "permissionLabel": "销售报价单",
+      "fieldCount": 16,
+      "actionCount": 6,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "audit",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salQuotationTiers",
+      "permissionPrefix": "sales.quotation",
+      "permissionLabel": "销售报价单",
+      "fieldCount": 7,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salReconciliationItems",
+      "permissionPrefix": "sales.reconciliation",
+      "permissionLabel": "销售对账单",
+      "fieldCount": 19,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salReconciliations",
+      "permissionPrefix": "sales.reconciliation",
+      "permissionLabel": "销售对账单",
+      "fieldCount": 16,
+      "actionCount": 8,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "confirm",
+        "unconfirm",
+        "audit",
+        "void"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "confirm",
+        "unconfirm",
+        "audit",
+        "void"
+      ],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "salSettings",
+      "permissionPrefix": "sales.setting",
+      "permissionLabel": "供应链设置",
+      "fieldCount": 8,
+      "actionCount": 2,
+      "actionKeys": [
+        "read",
+        "update"
+      ],
+      "hasForm": true,
+      "formFieldHints": 3,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "scmOrderFlowItems",
+      "permissionPrefix": "scm.order_flow",
+      "permissionLabel": "订单收发货历史",
+      "fieldCount": 14,
+      "actionCount": 0,
+      "actionKeys": [],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "sysAuditLogs",
+      "permissionPrefix": "sys.audit_log",
+      "permissionLabel": "审计日志",
+      "fieldCount": 11,
+      "actionCount": 1,
+      "actionKeys": [
+        "read"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "sysFiles",
+      "permissionPrefix": "sys.file",
+      "permissionLabel": "附件",
+      "fieldCount": 9,
+      "actionCount": 3,
+      "actionKeys": [
+        "read",
+        "create",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 4,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "sysNumberingCounters",
+      "permissionPrefix": "sys.numbering_rule",
+      "permissionLabel": "编号规则",
+      "fieldCount": 6,
+      "actionCount": 0,
+      "actionKeys": [],
+      "hasForm": true,
+      "formFieldHints": 5,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "sysNumberingRules",
+      "permissionPrefix": "sys.numbering_rule",
+      "permissionLabel": "编号规则",
+      "fieldCount": 8,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 5,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "sysPrintTemplates",
+      "permissionPrefix": "sys.print_template",
+      "permissionLabel": "打印模板",
+      "fieldCount": 8,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 5,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "sysRolePermissions",
+      "permissionPrefix": "sys.role_permission",
+      "permissionLabel": "角色权限",
+      "fieldCount": 4,
+      "actionCount": 3,
+      "actionKeys": [
+        "read",
+        "create",
+        "delete"
+      ],
+      "hasForm": false,
+      "formFieldHints": 0,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "sysRoles",
+      "permissionPrefix": "sys.role",
+      "permissionLabel": "角色",
+      "fieldCount": 7,
+      "actionCount": 8,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "batch_delete",
+        "export",
+        "print",
+        "batch_print"
+      ],
+      "hasForm": true,
+      "formFieldHints": 7,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "sysSettings",
+      "permissionPrefix": "sys.setting",
+      "permissionLabel": "系统设置",
+      "fieldCount": 8,
+      "actionCount": 2,
+      "actionKeys": [
+        "read",
+        "update"
+      ],
+      "hasForm": true,
+      "formFieldHints": 5,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    },
+    {
+      "name": "sysStorages",
+      "permissionPrefix": "sys.storage",
+      "permissionLabel": "存储接入",
+      "fieldCount": 15,
+      "actionCount": 5,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "setDefault"
+      ],
+      "hasForm": true,
+      "formFieldHints": 7,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [
+        "setDefault"
+      ],
+      "permissionActionMismatches": [
+        {
+          "key": "setDefault",
+          "permissionAction": "update"
+        }
+      ]
+    },
+    {
+      "name": "sysUsers",
+      "permissionPrefix": "sys.user",
+      "permissionLabel": "用户",
+      "fieldCount": 6,
+      "actionCount": 4,
+      "actionKeys": [
+        "read",
+        "create",
+        "update",
+        "delete"
+      ],
+      "hasForm": true,
+      "formFieldHints": 6,
+      "formHasSections": false,
+      "formHasTabs": false,
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
+    }
+  ]
+}
