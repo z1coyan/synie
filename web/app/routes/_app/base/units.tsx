@@ -2,19 +2,36 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
+import {
+  basicFormDrawerProps,
+  decodeUnitCreate,
+  decodeUnitUpdate,
+  useResourceDocument,
+} from '~/lib/resources/catalog'
+import { resourceBindingFor, resourceClientFor } from '~/lib/resources/registry'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { unitClient } from '~/lib/resources/units'
 
 export const Route = createFileRoute('/_app/base/units')({
   component: UnitsPage,
 })
 
+const RESOURCE = 'basUnits'
+
 function UnitsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
+  const binding = resourceBindingFor(RESOURCE)
+  const client = resourceClientFor(RESOURCE)
+  const documentQuery = useResourceDocument(RESOURCE)
+  const formProps = documentQuery.data
+    ? basicFormDrawerProps(documentQuery.data)
+    : { label: '单位', exclude: [] as string[], fields: {} }
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, RESOURCE] })
 
   return (
     <>
@@ -23,8 +40,8 @@ function UnitsPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="basUnits"
-          client={unitClient}
+          resource={RESOURCE}
+          client={client}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
@@ -32,29 +49,36 @@ function UnitsPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="basUnits"
-        client={unitClient}
-        label="单位"
+        resource={RESOURCE}
+        client={client}
+        label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
-        fields={{
-          unitType: { required: true },
-          name: { required: true, placeholder: '如 千克', cols: 6 },
-          symbol: { required: true, placeholder: '如 kg', cols: 6 },
-          // 基准单位比例恒为 1(后端校验);普通单位填换算到基准单位的比例,如 kg 为基准时克填 0.001
-          ratio: { required: true, defaultValue: 1, placeholder: '换算到基准单位的比例' },
-        }}
+        exclude={formProps.exclude}
+        fields={formProps.fields}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
+          if (!binding.writer) throw new Error('单位不支持写入')
           if (mode === 'create') {
-            await unitClient.create({ ...values, ratio: String(values.ratio) })
-          } else {
-            await unitClient.update(drawer!.row!.id, { ...values, ratio: String(values.ratio) })
+            if (!('create' in binding.writer) || !binding.writer.create) {
+              throw new Error('单位不支持 create')
+            }
+            const input = decodeUnitCreate(values)
+            const saved = await binding.writer.create({ ...input })
+            toast.success('单位已创建')
+            invalidate()
+            return saved.id as string
           }
-          toast.success(mode === 'create' ? '单位已创建' : '单位已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', unitClient.id, 'basUnits'] })
+          if (!('update' in binding.writer) || !binding.writer.update) {
+            throw new Error('单位不支持 update')
+          }
+          const input = decodeUnitUpdate(values)
+          const saved = await binding.writer.update(String(drawer!.row!.id), { ...input })
+          toast.success('单位已更新')
+          invalidate()
+          return saved.id as string
         }}
       />
     </>

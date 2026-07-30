@@ -32,16 +32,11 @@ const registry: Record<string, ResourceDrawerConfig> = {
       builtin: { visible: () => false },
     },
   },
-  basCompanies: {
-    label: '公司',
-    fields: {
-      // 本币仅可选启用币种(拦新不拦旧)
-      baseCurrencyId: { remote: { filterState: { active: { kind: 'bool', eq: true } } } },
-    },
-  },
-  // 字段/exclude/placeholder 由 Resource Catalog Basic Form 投影（页面经 basicFormDrawerProps）
+  // 字段/exclude/placeholder/filterState 由 Resource Catalog Basic Form 投影（页面经 basicFormDrawerProps）
+  basCompanies: { label: '公司' },
   basCurrencies: { label: '货币' },
   basUnits: { label: '单位' },
+  purSuppliers: { label: '供应商' },
   basAccounts: {
     label: '科目',
     fields: {
@@ -291,7 +286,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
   },
   salQuotationItems: { label: '报价条目' },
   salQuotationTiers: { label: '价格档' },
-  purSuppliers: { label: '供应商' },
   purQuotations: {
     label: '采购报价单',
     // 条目表含梯度概要列,默认 480px 太挤,报价抽屉加宽(移动端仍全宽)

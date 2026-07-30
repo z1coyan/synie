@@ -10,6 +10,7 @@ import type {
   CommandTarget,
   FieldDocument,
   FieldInputPolicy,
+  FilterState,
   FormDocument,
   ListLayoutMeta,
   ResourceDocument,
@@ -206,8 +207,57 @@ function toCommands(meta: ResourceMeta): CommandDocument[] {
   return commands
 }
 
+/**
+ * 将 form.fields 中的静态初值、外键 FilterState 并入 FieldDocument。
+ * expand 期允许通过 form 提示补齐 catalog 字段事实，避免页面重复配置。
+ */
+function applyFormFieldHints(fields: FieldDocument[], meta: ResourceMeta): FieldDocument[] {
+  const hints = meta.form?.fields ?? {}
+  if (Object.keys(hints).length === 0) return fields
+
+  return fields.map((field) => {
+    const hint = hints[field.name] as Record<string, unknown> | undefined
+    if (!hint) return field
+
+    let next = field
+    const initial =
+      hint.defaultValue !== undefined
+        ? hint.defaultValue
+        : hint.initial !== undefined
+          ? hint.initial
+          : undefined
+    if (initial !== undefined) {
+      next = {
+        ...next,
+        input: { ...next.input, initial },
+      }
+    }
+
+    if (next.kind === 'reference') {
+      let filterState: unknown = hint.filterState
+      if (filterState === undefined && isObject(hint.remote)) {
+        filterState = hint.remote.filterState
+      }
+      if (filterState !== undefined && isObject(filterState)) {
+        next = { ...next, filterState: filterState as FilterState }
+      }
+      if (hint.picker === 'dialog' || hint.picker === 'default') {
+        next = { ...next, picker: hint.picker }
+      }
+    }
+
+    return next
+  })
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
 function toForm(meta: ResourceMeta, fields: FieldDocument[]): FormDocument {
   if (!meta.form) return { kind: 'none' }
+  if (meta.form.kind === 'extension') return { kind: 'extension' }
+  if (meta.form.kind === 'none') return { kind: 'none' }
 
   const excluded = new Set(meta.form.exclude ?? [])
   const formFieldHints = meta.form.fields ?? {}
@@ -222,6 +272,15 @@ function toForm(meta: ResourceMeta, fields: FieldDocument[]): FormDocument {
     const hint = formFieldHints[field.name] as Record<string, unknown> | undefined
     const placement: BasicFormFieldPlacement = { field: field.name }
     if (typeof hint?.placeholder === 'string') placement.placeholder = hint.placeholder
+    const span =
+      typeof hint?.span === 'number'
+        ? hint.span
+        : typeof hint?.cols === 'number'
+          ? hint.cols
+          : undefined
+    if (typeof span === 'number' && Number.isFinite(span)) {
+      placement.span = Math.min(12, Math.max(1, Math.round(span)))
+    }
     placements.push(placement)
   }
 
@@ -239,17 +298,18 @@ export function normalizeLegacyResourceMeta(meta: ResourceMeta): NormalizedResou
     const doc = toFieldDocument(field)
     if (doc) fields.push(doc)
   }
+  const withHints = applyFormFieldHints(fields, meta)
   const list: ListLayoutMeta = {
-    columns: fields.filter((f) => f.visibility === 'readable').map((f) => f.name),
+    columns: withHints.filter((f) => f.visibility === 'readable').map((f) => f.name),
   }
   return {
     source: LEGACY_NORMALIZER_MARK,
     meta,
     label: meta.label ?? meta.permissionLabel,
-    fields,
-    lookup: defaultLookup(fields),
+    fields: withHints,
+    lookup: defaultLookup(withHints),
     list,
-    form: toForm(meta, fields),
+    form: toForm(meta, withHints),
     commands: toCommands(meta),
   }
 }

@@ -81,6 +81,18 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(created).toMatchObject({ id: '1', name: 'CNY' })
   })
 
+  test('单位/供应商/公司 binding 闭环 create', async () => {
+    for (const resource of ['basUnits', 'purSuppliers', 'basCompanies'] as const) {
+      const client = mockClient(`rest:${resource}`)
+      registerBinding(bindingFromResourceClient(resource, client))
+      const binding = resourceBindingFor(resource)
+      expect(binding.resource).toBe(resource)
+      expect(binding.writer && 'create' in binding.writer).toBe(true)
+      const saved = await binding.writer!.create!({ name: 'x' } as never)
+      expect(saved).toMatchObject({ id: '1' })
+    }
+  })
+
   test('只读 binding 省略写方法', () => {
     const client = mockClient()
     const binding = bindingFromResourceClient('sysAuditLogs', client, {

@@ -22,6 +22,7 @@ export function customerResourceMeta(): ResourceMeta {
     name: 'salCustomers',
     permissionPrefix: 'sales.customer',
     permissionLabel: '客户',
+    label: '客户',
     table: 'sal_customers',
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
@@ -40,7 +41,9 @@ export function customerResourceMeta(): ResourceMeta {
       }),
     ],
     actions: crud,
+    // 附件面板：明确为 Presentation Extension，不走 Basic Form 通用渲染
     form: {
+      kind: 'extension',
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
         code: { required: true, placeholder: '如 C0001' },
@@ -59,6 +62,7 @@ export function supplierResourceMeta(): ResourceMeta {
     name: 'purSuppliers',
     permissionPrefix: 'purchase.supplier',
     permissionLabel: '供应商',
+    label: '供应商',
     table: 'pur_supplier',
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
@@ -86,6 +90,7 @@ export function supplierResourceMeta(): ResourceMeta {
     ],
     actions: crud,
     form: {
+      kind: 'basic',
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
         code: { required: true, placeholder: '如 S0001' },

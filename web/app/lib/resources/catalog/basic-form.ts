@@ -45,21 +45,30 @@ function fieldConfig(
     config.edit = 'createOnly'
   }
   if (placement?.placeholder) config.placeholder = placement.placeholder
+  if (typeof placement?.span === 'number') {
+    config.cols = Math.min(12, Math.max(1, Math.round(placement.span)))
+  }
+  if (field.input.initial !== undefined) {
+    config.defaultValue = field.input.initial
+  }
   if (field.kind === 'enum' || field.kind === 'enumArray') {
     // enum 由 grid meta / 字段类型驱动；此处不重复 options
   }
-  if (field.kind === 'reference' && field.filterState) {
-    config.remote = { filterState: field.filterState as never }
+  if (field.kind === 'reference') {
+    if (field.targetUnavailable) {
+      throw new Error(
+        `Basic Form 外键 ${field.name} 目标不可读，不得渲染可编辑 ID`,
+      )
+    }
+    const remote: NonNullable<FieldOverride['remote']> = {}
+    if (field.filterState) remote.filterState = field.filterState as never
+    if (field.picker === 'dialog') config.picker = 'dialog'
+    if (Object.keys(remote).length > 0) config.remote = remote
   }
   if (field.kind === 'json' || field.kind === 'polymorphicReference') {
     // Basic Form 不支持：调用方应 fail-closed，不退化为文本
     throw new Error(
       `Basic Form 不支持字段 kind=${field.kind}（${field.name}）；请使用 Presentation Extension`,
-    )
-  }
-  if (field.kind === 'reference' && field.targetUnavailable) {
-    throw new Error(
-      `Basic Form 外键 ${field.name} 目标不可读，不得渲染可编辑 ID`,
     )
   }
   return config
@@ -159,5 +168,158 @@ export function decodeCurrencyUpdate(values: Record<string, unknown>): CurrencyU
   }
   if (values.active !== undefined) out.active = Boolean(values.active)
   // isoCode 创建后不可改：即使表单误传也剔除
+  return out
+}
+
+// —— 单位 RecordFormCodec（enum + decimal 字符串）——
+
+const UNIT_TYPES = new Set(['LENGTH', 'AREA', 'WEIGHT', 'QUANTITY'])
+
+export interface UnitCreateInput {
+  unitType: string
+  isBase?: boolean
+  name: string
+  symbol: string
+  ratio: string
+}
+
+export interface UnitUpdateInput {
+  unitType?: string
+  isBase?: boolean
+  name?: string
+  symbol?: string
+  ratio?: string
+}
+
+function decodeUnitType(raw: unknown): string {
+  const t = String(raw ?? '').trim().toUpperCase()
+  if (!UNIT_TYPES.has(t)) throw new Error('单位类型无效')
+  return t
+}
+
+function decodeRatio(raw: unknown): string {
+  if (raw == null || raw === '') throw new Error('换算比例必填')
+  const s = String(raw).trim()
+  if (!s) throw new Error('换算比例必填')
+  const n = Number(s)
+  if (!Number.isFinite(n)) throw new Error('换算比例须为数字')
+  return s
+}
+
+export function decodeUnitCreate(values: Record<string, unknown>): UnitCreateInput {
+  const name = String(values.name ?? '').trim()
+  const symbol = String(values.symbol ?? '').trim()
+  if (!name) throw new Error('单位名称必填')
+  if (!symbol) throw new Error('单位符号必填')
+  return {
+    unitType: decodeUnitType(values.unitType),
+    isBase: values.isBase === undefined ? undefined : Boolean(values.isBase),
+    name,
+    symbol,
+    ratio: decodeRatio(values.ratio),
+  }
+}
+
+export function decodeUnitUpdate(values: Record<string, unknown>): UnitUpdateInput {
+  const out: UnitUpdateInput = {}
+  if (values.unitType !== undefined) out.unitType = decodeUnitType(values.unitType)
+  if (values.isBase !== undefined) out.isBase = Boolean(values.isBase)
+  if (values.name !== undefined) out.name = String(values.name).trim()
+  if (values.symbol !== undefined) out.symbol = String(values.symbol).trim()
+  if (values.ratio !== undefined) out.ratio = decodeRatio(values.ratio)
+  return out
+}
+
+// —— 供应商 RecordFormCodec（纯标量 Party）——
+
+export interface SupplierCreateInput {
+  code: string
+  name: string
+  shortName?: string | null
+}
+
+export interface SupplierUpdateInput {
+  code?: string
+  name?: string
+  shortName?: string | null
+}
+
+function optionalTrimmed(raw: unknown): string | null {
+  if (raw == null || raw === '') return null
+  const s = String(raw).trim()
+  return s === '' ? null : s
+}
+
+export function decodeSupplierCreate(values: Record<string, unknown>): SupplierCreateInput {
+  const code = String(values.code ?? '').trim()
+  const name = String(values.name ?? '').trim()
+  if (!code) throw new Error('供应商编号必填')
+  if (!name) throw new Error('供应商名称必填')
+  return {
+    code,
+    name,
+    shortName: optionalTrimmed(values.shortName),
+  }
+}
+
+export function decodeSupplierUpdate(values: Record<string, unknown>): SupplierUpdateInput {
+  const out: SupplierUpdateInput = {}
+  if (values.code !== undefined) out.code = String(values.code).trim()
+  if (values.name !== undefined) out.name = String(values.name).trim()
+  if (values.shortName !== undefined) out.shortName = optionalTrimmed(values.shortName)
+  return out
+}
+
+// —— 公司 RecordFormCodec（币种外键 + 自引用外键）——
+
+export interface CompanyCreateInput {
+  code: string
+  name: string
+  shortName: string
+  parentId?: string | null
+  baseCurrencyId: string
+}
+
+export interface CompanyUpdateInput {
+  name?: string
+  shortName?: string
+  parentId?: string | null
+  baseCurrencyId?: string
+}
+
+function optionalUuid(raw: unknown): string | null {
+  if (raw == null || raw === '') return null
+  return String(raw)
+}
+
+export function decodeCompanyCreate(values: Record<string, unknown>): CompanyCreateInput {
+  const code = String(values.code ?? '').trim()
+  const name = String(values.name ?? '').trim()
+  const shortName = String(values.shortName ?? '').trim()
+  const baseCurrencyId = String(values.baseCurrencyId ?? '').trim()
+  if (!code) throw new Error('公司编号必填')
+  if (!name) throw new Error('公司名称必填')
+  if (!shortName) throw new Error('公司简称必填')
+  if (!baseCurrencyId) throw new Error('本币必填')
+  return {
+    code,
+    name,
+    shortName,
+    parentId: optionalUuid(values.parentId),
+    baseCurrencyId,
+  }
+}
+
+export function decodeCompanyUpdate(values: Record<string, unknown>): CompanyUpdateInput {
+  const out: CompanyUpdateInput = {}
+  if (values.name !== undefined) out.name = String(values.name).trim()
+  if (values.shortName !== undefined) out.shortName = String(values.shortName).trim()
+  if (values.parentId !== undefined) out.parentId = optionalUuid(values.parentId)
+  if (values.baseCurrencyId !== undefined) {
+    const id = String(values.baseCurrencyId).trim()
+    if (!id) throw new Error('本币必填')
+    out.baseCurrencyId = id
+  }
+  // code 创建后不可改
   return out
 }

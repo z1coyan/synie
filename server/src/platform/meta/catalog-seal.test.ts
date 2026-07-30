@@ -135,4 +135,70 @@ describe('Resource Catalog seal 与双投影', () => {
     registry.register(broken)
     expect(() => registry.seal()).toThrow(/未知资源: notExist/)
   })
+
+  test('单位 catalog：label=单位，enum/decimal/initial/span', () => {
+    const registry = createSealedResourceRegistry()
+    const doc = registry.buildDocument('basUnits', superAdmin)
+    const catalog = decodeResourceDocument(doc.catalog)
+    expect(catalog.label).toBe('单位')
+    expect(catalog.form.kind).toBe('basic')
+    const unitType = catalog.fields.find((f) => f.name === 'unitType')
+    expect(unitType?.kind).toBe('enum')
+    const ratio = catalog.fields.find((f) => f.name === 'ratio')
+    expect(ratio?.kind).toBe('scalar')
+    if (ratio?.kind === 'scalar') expect(ratio.scalarType).toBe('decimal')
+    expect(ratio?.input.initial).toBe(1)
+    if (catalog.form.kind === 'basic') {
+      const name = catalog.form.layout.fields?.find((p) => p.field === 'name')
+      expect(name?.placeholder).toBe('如 千克')
+      expect(name?.span).toBe(6)
+      const symbol = catalog.form.layout.fields?.find((p) => p.field === 'symbol')
+      expect(symbol?.span).toBe(6)
+    }
+  })
+
+  test('供应商 catalog：basic 纯标量布局', () => {
+    const registry = createSealedResourceRegistry()
+    const doc = registry.buildDocument('purSuppliers', superAdmin)
+    const catalog = decodeResourceDocument(doc.catalog)
+    expect(catalog.label).toBe('供应商')
+    expect(catalog.form.kind).toBe('basic')
+    if (catalog.form.kind === 'basic') {
+      const placed = catalog.form.layout.fields?.map((p) => p.field) ?? []
+      expect(placed).toEqual(expect.arrayContaining(['code', 'name', 'shortName']))
+      expect(placed).not.toContain('id')
+    }
+  })
+
+  test('公司 catalog：本币 filterState 与自引用外键', () => {
+    const registry = createSealedResourceRegistry()
+    const doc = registry.buildDocument('basCompanies', superAdmin)
+    const catalog = decodeResourceDocument(doc.catalog)
+    expect(catalog.label).toBe('公司')
+    expect(catalog.form.kind).toBe('basic')
+    const baseCurrency = catalog.fields.find((f) => f.name === 'baseCurrencyId')
+    expect(baseCurrency?.kind).toBe('reference')
+    if (baseCurrency?.kind === 'reference') {
+      expect(baseCurrency.targetResource).toBe('basCurrencies')
+      expect(baseCurrency.filterState).toEqual({ active: { kind: 'bool', eq: true } })
+      expect(baseCurrency.targetUnavailable).toBeFalsy()
+    }
+    const parent = catalog.fields.find((f) => f.name === 'parentId')
+    expect(parent?.kind).toBe('reference')
+    if (parent?.kind === 'reference') {
+      expect(parent.targetResource).toBe('basCompanies')
+    }
+    if (catalog.form.kind === 'basic') {
+      const code = catalog.form.layout.fields?.find((p) => p.field === 'code')
+      expect(code?.placeholder).toBe('两位英文字母,如 SH')
+    }
+  })
+
+  test('客户 catalog：form.kind=extension（附件 Presentation Extension）', () => {
+    const registry = createSealedResourceRegistry()
+    const doc = registry.buildDocument('salCustomers', superAdmin)
+    const catalog = decodeResourceDocument(doc.catalog)
+    expect(catalog.label).toBe('客户')
+    expect(catalog.form.kind).toBe('extension')
+  })
 })

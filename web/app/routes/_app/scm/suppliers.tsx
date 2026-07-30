@@ -2,11 +2,17 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
+import {
+  basicFormDrawerProps,
+  decodeSupplierCreate,
+  decodeSupplierUpdate,
+  useResourceDocument,
+} from '~/lib/resources/catalog'
+import { resourceBindingFor, resourceClientFor } from '~/lib/resources/registry'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { supplierClient } from '~/lib/resources/suppliers'
 
 export const Route = createFileRoute('/_app/scm/suppliers')({
   component: SuppliersPage,
@@ -19,9 +25,20 @@ const GRID_OVERRIDES = {
   shortName: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
+const RESOURCE = 'purSuppliers'
+
 function SuppliersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
+  const binding = resourceBindingFor(RESOURCE)
+  const client = resourceClientFor(RESOURCE)
+  const documentQuery = useResourceDocument(RESOURCE)
+  const formProps = documentQuery.data
+    ? basicFormDrawerProps(documentQuery.data)
+    : { label: '供应商', exclude: [] as string[], fields: {} }
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, RESOURCE] })
 
   return (
     <>
@@ -30,8 +47,8 @@ function SuppliersPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="purSuppliers"
-          client={supplierClient}
+          resource={RESOURCE}
+          client={client}
           overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -40,29 +57,36 @@ function SuppliersPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="purSuppliers"
-        client={supplierClient}
-        label="供应商"
+        resource={RESOURCE}
+        client={client}
+        label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
-        fields={{
-          code: { required: true, placeholder: '如 S0001' },
-          name: { required: true, placeholder: '供应商全称' },
-          shortName: { placeholder: '如 富士康' },
-        }}
+        exclude={formProps.exclude}
+        fields={formProps.fields}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          const saved =
-            mode === 'create'
-              ? await supplierClient.create(values)
-              : await supplierClient.update(drawer!.row!.id, values)
-          toast.success(mode === 'create' ? '供应商已创建' : '供应商已更新')
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', supplierClient.id, 'purSuppliers'],
-          })
-          return saved.id
+          if (!binding.writer) throw new Error('供应商不支持写入')
+          if (mode === 'create') {
+            if (!('create' in binding.writer) || !binding.writer.create) {
+              throw new Error('供应商不支持 create')
+            }
+            const input = decodeSupplierCreate(values)
+            const saved = await binding.writer.create({ ...input })
+            toast.success('供应商已创建')
+            invalidate()
+            return saved.id as string
+          }
+          if (!('update' in binding.writer) || !binding.writer.update) {
+            throw new Error('供应商不支持 update')
+          }
+          const input = decodeSupplierUpdate(values)
+          const saved = await binding.writer.update(String(drawer!.row!.id), { ...input })
+          toast.success('供应商已更新')
+          invalidate()
+          return saved.id as string
         }}
       />
     </>

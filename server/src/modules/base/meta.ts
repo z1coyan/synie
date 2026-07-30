@@ -83,6 +83,7 @@ export function companyResourceMeta(): ResourceMeta {
     name: COMPANY_RESOURCE_NAME,
     permissionPrefix: 'base.company',
     permissionLabel: '公司',
+    label: '公司',
     table: 'bas_company',
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
@@ -110,12 +111,19 @@ export function companyResourceMeta(): ResourceMeta {
     ],
     actions: crudActions,
     form: {
+      kind: 'basic',
       exclude: ['id'],
       fields: {
         code: { required: true, edit: 'createOnly', placeholder: '两位英文字母,如 SH' },
         name: { required: true, placeholder: '如 上海总部' },
         shortName: { required: true, placeholder: '如 上海' },
-        baseCurrencyId: { required: true, label: '本币' },
+        // 本币：记账主体的记账货币；仅启用币种可选（拦新不拦旧）
+        baseCurrencyId: {
+          required: true,
+          label: '本币',
+          filterState: { active: { kind: 'bool', eq: true } },
+        },
+        parentId: {},
       },
     },
     audit: { enabled: true },
@@ -135,6 +143,8 @@ export function unitResourceMeta(): ResourceMeta {
     name: UNIT_RESOURCE_NAME,
     permissionPrefix: 'base.unit',
     permissionLabel: '计量单位',
+    /** 界面显示「单位」，与历史 drawer 标签一致；权限组仍为「计量单位」 */
+    label: '单位',
     table: 'bas_unit',
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
@@ -168,7 +178,18 @@ export function unitResourceMeta(): ResourceMeta {
       }),
     ],
     actions: crudActions,
-    form: { exclude: ['id', 'insertedAt', 'updatedAt'] },
+    form: {
+      kind: 'basic',
+      exclude: ['id', 'insertedAt', 'updatedAt'],
+      fields: {
+        unitType: { required: true },
+        isBase: {},
+        name: { required: true, placeholder: '如 千克', cols: 6 },
+        symbol: { required: true, placeholder: '如 kg', cols: 6 },
+        // 基准单位比例恒为 1(后端校验)；普通单位填换算到基准单位的比例
+        ratio: { required: true, defaultValue: 1, placeholder: '换算到基准单位的比例' },
+      },
+    },
     print: true,
     audit: { enabled: true },
     destroyMutation: 'destroyBasUnit',

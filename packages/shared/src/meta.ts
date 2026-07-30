@@ -72,6 +72,13 @@ export interface GridMeta {
 }
 
 export interface FormMeta {
+  /**
+   * Catalog form kind（expand 期可选）。
+   * 缺省时 legacy normalizer 从 fields/exclude 推导 basic；
+   * extension：附件/OCR 等 Presentation Extension，不走 Basic Form；
+   * none：无表单。
+   */
+  kind?: 'basic' | 'extension' | 'none'
   exclude?: string[]
   fields?: Record<string, Record<string, unknown>>
   sections?: Record<string, unknown>[]
