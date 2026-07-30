@@ -1,7 +1,6 @@
 import { apiData, api } from '../api/client'
 import type {Row, FilterState} from '~/components/synie-data-grid/types'
 import type { ResourceClient, ResourceQuery } from './types'
-import { gridMeta } from './meta'
 
 type CurrencyCreate = Record<string, unknown>
 type CurrencyUpdate = Record<string, unknown>
@@ -14,12 +13,6 @@ function ensureSupportedQuery(input: ResourceQuery) {
 export const currencyClient: ResourceClient = {
   id: 'rest:basCurrencies',
 
-  async meta() {
-    const document = await apiData<import('@synie/shared').ResourceMetaDocument>(
-      api.meta.resources[':name'].$get({ param: { name: 'basCurrencies' } }),
-    )
-    return gridMeta(document)
-  },
 
   async query(input) {
     ensureSupportedQuery(input)

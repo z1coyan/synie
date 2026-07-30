@@ -67,7 +67,6 @@ registerAllResources(registry)
 const sealReport = registry.seal()
 logJson('info', 'meta.catalog.sealed', {
   total: sealReport.total,
-  legacy: sealReport.legacy,
   typed: sealReport.typed,
 })
 

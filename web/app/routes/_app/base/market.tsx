@@ -298,8 +298,8 @@ function MarketPage() {
     row: Row | null
   } | null>(null)
 
-  const priceMeta = useGridMeta('basMarketPricePoints', true, marketPricePointClient)
-  const instrumentMeta = useGridMeta('basMarketInstruments', true, marketInstrumentClient)
+  const priceMeta = useGridMeta('basMarketPricePoints', true)
+  const instrumentMeta = useGridMeta('basMarketInstruments', true)
   const canPriceRead = priceMeta.data != null
   const canInstrumentRead = instrumentMeta.data != null
   const canPriceCreate = (priceMeta.data?.capabilities ?? []).includes('create')

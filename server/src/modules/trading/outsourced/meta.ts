@@ -40,11 +40,11 @@ export function outsourcedIssueMeta(): ResourceMeta {
       { key: 'create', label: '新增', scope: 'both' },
       { key: 'update', label: '编辑', scope: 'row' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
-      { key: 'audit', label: '审核', scope: 'row', mutation: 'auditPurOutsourcedIssue' },
-      { key: 'void', label: '作废', scope: 'row', mutation: 'voidPurOutsourcedIssue', isDanger: true },
+      { key: 'audit', label: '审核', scope: 'row' },
+      { key: 'void', label: '作废', scope: 'row', isDanger: true },
     ],
     audit: { enabled: true },
-    destroyMutation: 'destroyPurOutsourcedIssue',
+
   }
 }
 
@@ -82,7 +82,7 @@ export function outsourcedIssueItemMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyPurOutsourcedIssueItem',
+
   }
 }
 
@@ -118,11 +118,11 @@ export function outsourcedReceiptMeta(): ResourceMeta {
       { key: 'create', label: '新增', scope: 'both' },
       { key: 'update', label: '编辑', scope: 'row' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
-      { key: 'audit', label: '审核', scope: 'row', mutation: 'auditPurOutsourcedReceipt' },
-      { key: 'void', label: '作废', scope: 'row', mutation: 'voidPurOutsourcedReceipt', isDanger: true },
+      { key: 'audit', label: '审核', scope: 'row' },
+      { key: 'void', label: '作废', scope: 'row', isDanger: true },
     ],
     audit: { enabled: true },
-    destroyMutation: 'destroyPurOutsourcedReceipt',
+
   }
 }
 
@@ -171,7 +171,7 @@ export function outsourcedReceiptItemMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyPurOutsourcedReceiptItem',
+
   }
 }
 
@@ -204,7 +204,7 @@ export function outsourcedReceiptItemMaterialMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyPurOutsourcedReceiptItemMaterial',
+
   }
 }
 
@@ -237,6 +237,6 @@ export function outsourcedReceiptItemByproductMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyPurOutsourcedReceiptItemByproduct',
+
   }
 }

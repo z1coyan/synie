@@ -59,7 +59,7 @@ export function userResourceMeta(): ResourceMeta {
       },
     },
     audit: { enabled: true, sensitiveFields: ['hashed_password'] },
-    destroyMutation: 'destroySysUser',
+
   }
 }
 
@@ -118,7 +118,7 @@ export function roleResourceMeta(): ResourceMeta {
     },
     print: true,
     audit: { enabled: true },
-    destroyMutation: 'destroySysRole',
+
   }
 }
 

@@ -75,7 +75,7 @@ export function currencyResourceMeta(): ResourceMeta {
       subtitleFields: ['isoCode'],
     },
     audit: { enabled: true },
-    destroyMutation: 'destroyBasCurrency',
+
   }
 }
 
@@ -133,7 +133,7 @@ export function companyResourceMeta(): ResourceMeta {
       },
     },
     audit: { enabled: true },
-    destroyMutation: 'destroyBasCompany',
+
   }
 }
 
@@ -203,7 +203,7 @@ export function unitResourceMeta(): ResourceMeta {
     },
     print: true,
     audit: { enabled: true },
-    destroyMutation: 'destroyBasUnit',
+
   }
 }
 
@@ -311,7 +311,7 @@ export function accountResourceMeta(): ResourceMeta {
     },
     printLoops: [{ name: 'children', resource: ACCOUNT_RESOURCE_NAME }],
     audit: { enabled: true },
-    destroyMutation: 'destroyBasAccount',
+
   }
 }
 

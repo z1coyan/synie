@@ -18,7 +18,7 @@ const outsourcedReceipts = read('outsourced-receipts/-receipt-drawer.tsx')
 const setup = read('../../setup.tsx')
 const materialUnitSelect = read('../../../components/synie-material-unit-select/MaterialUnitSelect.tsx')
 const stockDoc = read('-stock-doc.tsx')
-const drawerRegistry = read('../../../components/synie-record-drawer/registry.tsx')
+const drawerRegistry = read('../../../components/synie-record-drawer/extension-drawer-props.tsx')
 const resourceRegistry = read('../../../lib/resources/registry.ts')
 const inventoryClients = read('../../../lib/resources/inventory.ts')
 

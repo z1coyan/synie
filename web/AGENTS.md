@@ -19,7 +19,7 @@
 - 启用/停用等状态类开关不进创建/编辑表单（表单 `exclude` 掉，新建由后端默认值兜底）：状态翻转用独立入口（表格行动作、详情页按钮）显式触发；仅记录固有属性的布尔（如叶子分类、基准单位）仍属表单字段。
 - 父表单内的子条目（单据行、明细行等）一律用 `SynieEditableTable`（`~/components/synie-editable-table/`）：表格纯展示，增改一律走二级 `SynieRecordDrawer`，不做行内编辑；`items`/`onChange` 受控、组件不发写请求，父表单提交时一并持久化，新增行 id 带 `local:` 前缀（`isLocalRow` 判别）。
 - 组件能力不够时先扩组件再用，不要在页面里绕过它手搭。
-- 外键单元格/字段默认渲染为可点 link，点击开全局速览抽屉（`FkPreviewProvider` 已挂 `_app` 布局，页面零接线）；资源级抽屉通用定制（label/fields 等）写在 `synie-record-drawer/registry.ts`，页面用 `{...drawerConfig('资源名')}` 引用同一份再按需覆盖。
+- 外键单元格/字段默认渲染为可点 link，点击开全局速览抽屉（`FkPreviewProvider` 已挂 `_app` 布局，页面零接线）；资源解析经 `resourceBindingFor`，Meta 经 ResourceDocument。Basic Form 用 `basicFormDrawerProps`；Presentation Extension 静态 props 在 `synie-record-drawer/extension-drawer-props.tsx`（未知资源 fail-closed），复杂交互与业务模块共置。
 - 一切文件上传/下载必须走 `~/lib/files.ts`（REST `/api/v1/files*`），不要在页面自写 fetch/FormData；记录附件 UI 一律用 `SynieAttachmentPanel`（`~/components/synie-attachment-panel/`）挂 SynieRecordDrawer 的 `extraContent`，传 ownerType（资源/宿主类型名）/ownerId；固定单图槽位（证件照等）用同目录 `SynieImageAttachment`，一个 category 一张图。
 - 图片全屏预览一律用 `SyniePreview`（`~/components/synie-preview/`）：受控 `isOpen/onOpenChange`，`items` 传 `fileId`（经鉴权懒加载）或 `src`，内建下载/旋转/缩放/循环切换，抽屉/对话框内打开层级自然正确；不要自造 lightbox。缩略图用同目录 `FileThumb`；表格图片列用 DataGrid 列 override `image`（`true`=列值即 file id，或 `{ fileId(row), keepText }`），缩略图点击即全屏预览、同列循环；行记录的图片附件列用 DataGrid `attachmentImages={{ ownerType, category?, label? }}`（虚拟列，点开该行全部图片，与抽屉附件面板同 queryKey 联动刷新）。
 

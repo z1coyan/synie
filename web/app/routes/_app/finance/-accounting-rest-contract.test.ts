@@ -87,9 +87,9 @@ describe('PR-2.12 财务页面 REST 迁移契约', () => {
     expect(resolveSource({ resource: 'accGlJournalLines' })?.client?.id).toBe(
       'rest:accGlJournalLines',
     )
-    expect(recordDrawer).toContain('if (!client?.action)')
-    expect(recordDrawer).toContain('await client.action(auditAction.key, [auditId])')
-    expect(bankReconcile).toContain("useGridMeta('accGlJournals', true, glJournalClient)")
+    expect(recordDrawer).toContain('resourceBindingFor(resource).commands')
+    expect(recordDrawer).toContain('cmds.execute(auditAction.key')
+    expect(bankReconcile).toContain("useGridMeta('accGlJournals', true)")
     expect(bankReconcile).toMatch(
       /resource="accGlJournals"\s+client=\{glJournalClient\}/,
     )

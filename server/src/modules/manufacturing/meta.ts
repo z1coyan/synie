@@ -72,7 +72,6 @@ function headMeta(
   table: string,
   codeLabel: string,
   nameLabel: string,
-  destroyMutation: string,
 ): ResourceMeta {
   return {
     name,
@@ -110,7 +109,6 @@ function headMeta(
     },
     print: true,
     audit: { enabled: true },
-    destroyMutation,
   }
 }
 
@@ -145,7 +143,6 @@ export function operationResourceMeta(): ResourceMeta {
     'mfg_operation',
     '工序编号',
     '工序名称',
-    'destroyMfgOperation',
   )
 }
 
@@ -157,7 +154,6 @@ export function processTemplateResourceMeta(): ResourceMeta {
     'mfg_process_template',
     '模板编号',
     '模板名称',
-    'destroyMfgProcessTemplate',
   )
   meta.printHead = true
   meta.printLoops = [{ name: 'items', resource: 'mfgProcessTemplateItems' }]
@@ -190,7 +186,7 @@ export function processTemplateItemResourceMeta(): ResourceMeta {
       },
     },
     audit: { enabled: true },
-    destroyMutation: 'destroyMfgProcessTemplateItem',
+
   }
 }
 
@@ -241,7 +237,7 @@ export function bomResourceMeta(): ResourceMeta {
       { name: 'routes', resource: 'mfgBomRoutes' },
     ],
     audit: { enabled: true },
-    destroyMutation: 'destroyMfgBom',
+
   }
 }
 
@@ -290,7 +286,7 @@ export function bomComponentResourceMeta(): ResourceMeta {
       },
     },
     audit: { enabled: true },
-    destroyMutation: 'destroyMfgBomComponent',
+
   }
 }
 
@@ -317,7 +313,7 @@ export function bomRouteResourceMeta(): ResourceMeta {
       },
     },
     audit: { enabled: true },
-    destroyMutation: 'destroyMfgBomRoute',
+
   }
 }
 
@@ -362,7 +358,7 @@ export function bomByproductResourceMeta(): ResourceMeta {
       },
     },
     audit: { enabled: true },
-    destroyMutation: 'destroyMfgBomByproduct',
+
   }
 }
 
@@ -397,14 +393,14 @@ export function demandResourceMeta(): ResourceMeta {
     ],
     actions: [
       ...headCrud,
-      { key: 'confirm', label: '确认', scope: 'row', mutation: 'confirmMfgDemand' },
-      { key: 'close', label: '关闭', scope: 'row', mutation: 'closeMfgDemand' },
-      { key: 'void', label: '作废', scope: 'row', mutation: 'voidMfgDemand', isDanger: true },
+      { key: 'confirm', label: '确认', scope: 'row' },
+      { key: 'close', label: '关闭', scope: 'row' },
+      { key: 'void', label: '作废', scope: 'row', isDanger: true },
     ],
     printHead: true,
     printLoops: [{ name: 'items', resource: 'mfgDemandItems' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyMfgDemand',
+
   }
 }
 
@@ -491,7 +487,7 @@ export function demandItemResourceMeta(): ResourceMeta {
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     printLoops: [{ name: 'work_orders', resource: 'mfgWorkOrders' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyMfgDemandItem',
+
   }
 }
 
@@ -562,10 +558,10 @@ export function workOrderResourceMeta(): ResourceMeta {
     ],
     actions: [
       ...headCrud,
-      { key: 'void', label: '作废', scope: 'row', mutation: 'voidMfgWorkOrder', isDanger: true },
+      { key: 'void', label: '作废', scope: 'row', isDanger: true },
     ],
     audit: { enabled: true },
-    destroyMutation: 'destroyMfgWorkOrder',
+
   }
 }
 
@@ -610,13 +606,13 @@ export function outputResourceMeta(): ResourceMeta {
     ],
     actions: [
       ...headCrud,
-      { key: 'audit', label: '审核', scope: 'row', mutation: 'auditMfgOutput' },
-      { key: 'void', label: '作废', scope: 'row', mutation: 'voidMfgOutput', isDanger: true },
+      { key: 'audit', label: '审核', scope: 'row' },
+      { key: 'void', label: '作废', scope: 'row', isDanger: true },
     ],
     printHead: true,
     printLoops: [{ name: 'items', resource: 'mfgOutputItems' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyMfgOutput',
+
   }
 }
 
@@ -667,7 +663,7 @@ export function outputItemResourceMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyMfgOutputItem',
+
   }
 }
 

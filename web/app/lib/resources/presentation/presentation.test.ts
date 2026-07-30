@@ -31,12 +31,6 @@ import { salesDeliveryDraftAdapter } from '../fulfillment'
 function mockClient(resource: string): ResourceClient {
   return {
     id: `rest:${resource}`,
-    meta: async () => ({
-      columns: [],
-      capabilities: ['create', 'update', 'delete'],
-      extendedActions: [],
-      destroyMutation: null,
-    }),
     query: async () => ({ count: 0, results: [] }),
     get: async (id) => ({ id }),
     create: async (input) => ({ id: 'new-id', ...input }),

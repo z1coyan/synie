@@ -262,10 +262,10 @@ eq(
 )
 
 // —— drawerConfig:注册表取用与覆盖合并 ——
-import { drawerConfig } from './registry'
+import { drawerConfig } from './extension-drawer-props'
 
 eq(drawerConfig('sysRoles').label, '角色', '注册表命中取 label')
-eq(drawerConfig('nope').label, 'nope', '未注册资源 label 退回资源名')
+let threw = false; try { drawerConfig('nope') } catch { threw = true }; eq(threw, true, '未知资源 fail-closed')
 const merged = drawerConfig('sysRoles', { label: '角色X', fields: { name: { placeholder: 'P' } } })
 eq(merged.label, '角色X', '覆盖 label')
 eq(merged.fields?.name?.placeholder, 'P', '覆盖 fields.name')

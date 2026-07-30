@@ -218,14 +218,13 @@ export function quotationHeadMeta(side: TradingSide): ResourceMeta {
       { key: 'create', label: '新增', scope: 'both' },
       { key: 'update', label: '编辑', scope: 'row' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
-      { key: 'audit', label: '审核', scope: 'row', mutation: spec.auditMutation },
-      { key: 'void', label: '作废', scope: 'row', mutation: spec.voidMutation, isDanger: true },
+      { key: 'audit', label: '审核', scope: 'row'},
+      { key: 'void', label: '作废', scope: 'row', isDanger: true },
     ],
     print: true,
     printHead: true,
     printLoops: [{ name: 'items', resource: spec.itemResource }],
     audit: { enabled: true },
-    destroyMutation: spec.headDestroy,
   }
 }
 
@@ -380,7 +379,6 @@ export function quotationItemMeta(side: TradingSide): ResourceMeta {
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     printLoops: [{ name: 'tiers', resource: spec.tierResource }],
     audit: { enabled: true },
-    destroyMutation: spec.itemDestroy,
   }
 }
 
@@ -431,6 +429,5 @@ export function quotationTierMeta(side: TradingSide): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: spec.tierDestroy,
   }
 }

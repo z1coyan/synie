@@ -142,8 +142,8 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
     { key: 'create', label: '新增', scope: 'both' },
     { key: 'update', label: '编辑', scope: 'row' },
     { key: 'delete', label: '删除', scope: 'row', isDanger: true },
-    { key: 'audit', label: '审核', scope: 'row', mutation: spec.auditMutation },
-    { key: 'void', label: '作废', scope: 'row', mutation: spec.voidMutation, isDanger: true },
+    { key: 'audit', label: '审核', scope: 'row'},
+    { key: 'void', label: '作废', scope: 'row', isDanger: true },
   ]
   if (sales) {
     actions.push(
@@ -216,7 +216,6 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
     printHead: true,
     printLoops,
     audit: { enabled: true },
-    destroyMutation: spec.destroyHead,
   }
 }
 
@@ -313,7 +312,6 @@ export function fulfillmentItemMeta(side: TradingSide): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    ...(sales ? {} : { destroyMutation: spec.destroyItem }),
   }
 }
 

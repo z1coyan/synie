@@ -6,7 +6,6 @@ import {
   decodeCollectionTarget,
   defineCommand,
 } from './catalog/commands'
-import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
 type AttendanceCorrectionCreate =
@@ -105,15 +104,6 @@ function queryBody(input: ResourceQuery): ListQuery {
   }
 }
 
-async function meta(resource: string) {
-  return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-        param: { name: resource }}),
-    ),
-  )
-}
-
 function decimalInput(
   input: Record<string, unknown>,
   fields: readonly string[],
@@ -135,12 +125,11 @@ const unsupported =
 
 function resourceClient(
   resource: string,
-  operations: Omit<ResourceClient, 'id' | 'meta'>,
+  operations: Omit<ResourceClient, 'id'>,
 ): ResourceClient {
   return {
     id: `rest:${resource}`,
-    meta: () => meta(resource),
-    ...operations,
+        ...operations,
   }
 }
 

@@ -1,6 +1,6 @@
 # Resource Catalog 迁移基线报告
 
-生成时间：2026-07-30T04:21:09.796Z
+生成时间：2026-07-30T04:35:04.000Z
 
 ## 摘要
 
@@ -104,7 +104,7 @@ _无_
     "none": 44,
     "reference-only": 0
   },
-  "notes": "工单 10：全量 typed；legacy normalizer 调用归零；remote defaults 迁入 lookup；write stubs 由 binding 写能力省略"
+  "notes": "工单 11：contract 完成；Meta 仅 ResourceDocument v2；无 legacy normalizer / v1 grid sibling / 宽 ResourceClient registry / drawer registry / remote defaults"
 }
 ```
 

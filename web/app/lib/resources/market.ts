@@ -1,6 +1,5 @@
 import { apiData, api } from '../api/client'
 import type {Row, FilterState} from '~/components/synie-data-grid/types'
-import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
 export interface MarketChartInstrument {
@@ -63,14 +62,6 @@ function wirePriceKind(value: MarketSeriesPriceKind): MarketPriceKind {
 export const marketInstrumentClient: ResourceClient = {
   id: 'rest:basMarketInstruments',
 
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'basMarketInstruments' }}),
-      ),
-    )
-  },
 
   async query(input) {
     ensureSupportedQuery('行情品种', input)
@@ -110,14 +101,6 @@ export const marketInstrumentClient: ResourceClient = {
 export const marketPricePointClient: ResourceClient = {
   id: 'rest:basMarketPricePoints',
 
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'basMarketPricePoints' }}),
-      ),
-    )
-  },
 
   async query(input) {
     ensureSupportedQuery('行情价点', input)

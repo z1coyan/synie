@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { AlertDialog, Button, toast } from '@heroui/react'
-import type { ResourceClient } from '~/lib/resources/types'
+import type { ResourceBinding } from '~/lib/resources/catalog'
 import type { ActionContext, BulkAction, GridActionMeta, GridMeta, Row, RowAction } from './types'
 
 export interface ResolvedAction {
@@ -19,11 +19,10 @@ interface PendingConfirm {
   execute: (rows: Row[]) => Promise<void>
 }
 
-/** 逐条执行仅吃 id 的 mutation(destroy/扩展工作流动作)。 */
-// ponytail: 前端逐条循环,量大或需事务性时后端加 Ash bulk action 再切
+/** 逐条执行删除或领域命令（经 ResourceBinding）。 */
 async function runIdMutation(
   ids: string[],
-  client: ResourceClient,
+  binding: ResourceBinding,
   actionKey: string,
 ): Promise<{ ok: number; fail: number; messages: string[] }> {
   let ok = 0
@@ -31,12 +30,17 @@ async function runIdMutation(
   const messages: string[] = []
   for (const id of ids) {
     try {
-      if (actionKey === 'delete') await client.delete(id)
-      else if (client.action) await client.action(actionKey, [id])
-      else throw new Error(`Resource Client 未实现动作 ${actionKey}`)
+      if (actionKey === 'delete') {
+        const del = binding.writer && 'delete' in binding.writer ? binding.writer.delete : undefined
+        if (!del) throw new Error(`资源「${binding.resource}」不支持 delete`)
+        await del(id)
+      } else if (binding.commands) {
+        await binding.commands.execute(actionKey, { ids: [id] } as never)
+      } else {
+        throw new Error(`资源「${binding.resource}」未绑定命令「${actionKey}」`)
+      }
       ok += 1
     } catch (e) {
-      // REST 业务错误或网络异常
       fail += 1
       const msg = e instanceof Error ? e.message : String(e)
       if (msg) messages.push(msg)
@@ -45,7 +49,6 @@ async function runIdMutation(
   return { ok, fail, messages }
 }
 
-/** toast 描述:有具体原因则优先列出(去重,条数多时截断) */
 function failureDescription(fail: number, ok: number, messages: string[]): string {
   const unique = [...new Set(messages.map((m) => m.trim()).filter(Boolean))]
   const reasons =
@@ -54,7 +57,6 @@ function failureDescription(fail: number, ok: number, messages: string[]): strin
       : unique.length <= 3
         ? unique.join('；')
         : `${unique.slice(0, 3).join('；')}…(共 ${unique.length} 条原因)`
-  // 单条失败:只报原因,不说「共 1 条均未执行成功」
   if (ok === 0 && fail === 1) return reasons || '操作未成功'
   if (ok === 0) return reasons ? `共 ${fail} 条失败: ${reasons}` : `共 ${fail} 条均未执行成功`
   const summary = `成功 ${ok} 条,失败 ${fail} 条`
@@ -63,36 +65,35 @@ function failureDescription(fail: number, ok: number, messages: string[]): strin
 
 export function useGridActions(opts: {
   meta: GridMeta | undefined
-  client: ResourceClient
-  /** 覆盖 meta.capabilities(资源复用他人权限码、meta 为空时页面显式声明);不传用 meta 下发值 */
+  binding: ResourceBinding
   capabilities?: string[]
   refetch: () => void
   clearSelection: () => void
   onView?: (row: Row) => void
   onCreate?: () => void
-  /** 「新增」按钮文案覆盖(如固定动线的「新增承兑接收」) */
   createLabel?: string
   onEdit?: (row: Row) => void
   onImport?: (ctx: ActionContext) => void
   onExport?: () => void
   onPrintRows?: (rows: Row[]) => void
   actionHandlers?: Record<string, (rows: Row[], ctx: ActionContext) => void>
-  /** 按行显隐动作:key 为扩展动作 key、自定义 rowActions key 或内建 'edit'/'delete',返回 false 该行菜单不含此动作(如仅草稿可删) */
   actionVisible?: Record<string, (row: Row) => boolean>
-  /** 内建/扩展动作的卡片模式显隐逃生口(语义同动作级 mobile 标记):key 为内建动作 key
-   *  (view/edit/print/delete/import/create/export/batch_print/batch_delete)或扩展动作 key;
-   *  行内面 false 拿下、toolbar/批量面 true 放上(见 visibleOnCard) */
   actionMobile?: Record<string, boolean>
   bulkActions?: BulkAction[]
   rowActions?: RowAction[]
 }) {
-  const { meta, refetch, clearSelection } = opts
+  const { meta, refetch, clearSelection, binding } = opts
   const [pending, setPending] = useState<PendingConfirm | null>(null)
   const [running, setRunning] = useState(false)
 
   const can = (capability?: string) =>
     !capability || (opts.capabilities ?? meta?.capabilities ?? []).includes(capability)
   const ctx: ActionContext = { refetch }
+
+  const canDelete =
+    can('delete') &&
+    Boolean(meta?.canDelete) &&
+    Boolean(binding.writer && 'delete' in binding.writer && binding.writer.delete)
 
   const confirmThenMutate = (label: string, isDanger: boolean, actionKey: string) => (rows: Row[]) =>
     setPending({
@@ -102,10 +103,9 @@ export function useGridActions(opts: {
       execute: async (rs) => {
         const { ok, fail, messages } = await runIdMutation(
           rs.map((r) => r.id),
-          opts.client,
+          binding,
           actionKey,
         )
-        // 三分支:全部成功 / 整批失败(下方 ok>0 门控自然不 refetch)/ 部分失败
         if (fail === 0) toast.success(`${label}成功(${ok} 条)`)
         else if (ok === 0)
           toast.danger(`${label}失败`, { description: failureDescription(fail, ok, messages) })
@@ -120,7 +120,6 @@ export function useGridActions(opts: {
       },
     })
 
-  // 扩展动作:默认内建确认+mutation,actionHandlers[key] 覆盖
   const extendedAction = (a: GridActionMeta): ResolvedAction => ({
     key: a.key,
     label: a.label,
@@ -136,7 +135,6 @@ export function useGridActions(opts: {
       .filter((a) => can(a.key) && (a.scope === scope || a.scope === 'both'))
       .map(extendedAction)
 
-  // 工具栏:导入/新增/导出(print 由行内与批量承载);导入在新增左侧(流水导入产品要求)
   const mob = (key: string) => opts.actionMobile?.[key]
   const toolbarActions: ResolvedAction[] = [
     ...(can('import') && opts.onImport
@@ -150,7 +148,6 @@ export function useGridActions(opts: {
       : []),
   ]
 
-  // 行内菜单(actionVisible 按行过滤:状态机类页面仅特定状态放行审核/删除等)
   const vis = (key: string, row: Row) => opts.actionVisible?.[key]?.(row) ?? true
   const rowMenuFor = (row: Row): ResolvedAction[] => [
     ...(opts.onView
@@ -172,12 +169,11 @@ export function useGridActions(opts: {
         mobile: a.mobile,
         run: () => a.onAction(row, ctx),
       })),
-    ...(can('delete') && meta?.destroyMutation && vis('delete', row)
+    ...(canDelete && vis('delete', row)
       ? [{ key: 'delete', label: '删除', isDanger: true, mobile: mob('delete'), run: confirmThenMutate('删除', true, 'delete') }]
       : []),
   ]
 
-  // 批量条
   const bulkBarActions: ResolvedAction[] = [
     ...(can('batch_print') && opts.onPrintRows
       ? [{ key: 'batch_print', label: '批量打印', isDanger: false, mobile: mob('batch_print'), run: (rows: Row[]) => opts.onPrintRows!(rows) }]
@@ -192,18 +188,14 @@ export function useGridActions(opts: {
         mobile: a.mobile,
         run: (rows: Row[]) => a.onAction(rows, ctx),
       })),
-    // 批量码叠加在基础码之上:服务端逐条按 delete 校验,只授 batch_delete 不授 delete 会全拒
-    ...(can('batch_delete') && can('delete') && meta?.destroyMutation
+    ...(can('batch_delete') && canDelete
       ? [{ key: 'batch_delete', label: '批量删除', isDanger: true, mobile: mob('batch_delete'), run: confirmThenMutate('批量删除', true, 'delete') }]
       : []),
   ]
 
-  // 渲染为已成型元素而非组件函数:若写成 `const ConfirmDialog = () => (...)` 再 `<actions.ConfirmDialog />`,
-  // 每次渲染都产生新的组件类型,导致弹窗子树整体卸载重建(交互中焦点丢失、退出动画失效)。
   const confirmDialog: ReactNode = (
     <AlertDialog.Backdrop isOpen={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
       <AlertDialog.Container>
-        {/* 退场动画期间 pending 已清空、Heading 不在,显式 aria-label 防 RAC 无标题警告 */}
         <AlertDialog.Dialog className="sm:max-w-[400px]" aria-label={pending ? `确认${pending.label}` : '操作确认'}>
           {pending && (
             <>

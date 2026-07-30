@@ -6,7 +6,6 @@ import {
   defineCommand,
 } from './catalog/commands'
 import type { ResourceClient } from './types'
-import { gridMeta } from './meta'
 
 function mergedFilter(input: { filter?: FilterState; fixedFilter?: Record<string, unknown> }) {
   return {
@@ -17,14 +16,6 @@ function mergedFilter(input: { filter?: FilterState; fixedFilter?: Record<string
 
 export const fileClient: ResourceClient = {
   id: 'rest:sysFiles',
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'sysFiles' }}),
-      ),
-    )
-  },
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.files.query.$post({
@@ -57,14 +48,6 @@ export const fileClient: ResourceClient = {
 
 export const storageClient: ResourceClient = {
   id: 'rest:sysStorages',
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'sysStorages' }}),
-      ),
-    )
-  },
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.system.storages.query.$post({

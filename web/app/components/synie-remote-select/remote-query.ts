@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { FilterState, GridColumnRef, Row } from '../synie-data-grid/types'
 import type { ResourceClient } from '~/lib/resources/types'
-import { resourceClientFor } from '~/lib/resources/registry'
+import { resourceClientFromResourceBinding } from '~/lib/resources/registry'
 import { resolveResourceLookup } from '~/lib/resources/catalog/lookups'
 import { createReferencePresentation } from '~/lib/resources/catalog/reference-presentation'
 
@@ -41,12 +41,7 @@ export interface ResolvedSource {
   itemSubtitleFields: string[]
 }
 
-/**
- * 工单 10：资源级 remote defaults 已迁出本表。
- * label/search/subtitle/default sort 归目标资源 Catalog lookup；
- * React 项渲染归 ReferencePresentation。本对象保留为空以便基线报告检测归零。
- */
-const RESOURCE_DEFAULTS: Record<string, Partial<RemoteSourceConfig>> = {}
+// contract：无 resource-key remote defaults；lookup 归 Catalog，渲染归 ReferencePresentation。
 
 /** gridMeta ref 提供默认，页面 config 覆盖；lookup 归目标资源 Catalog。 */
 export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumnRef | null): ResolvedSource | null {
@@ -70,7 +65,7 @@ export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumn
   ])
   return {
     resource,
-    client: cfg.client ?? resourceClientFor(resource),
+    client: cfg.client ?? resourceClientFromResourceBinding(resource),
     labelField,
     sortField,
     searchFields: searchFields.length > 0 ? searchFields : [labelField],
@@ -92,7 +87,7 @@ export function defaultReferenceRenderers(resource: string, labelField?: string)
 
 /** 基线报告：remote defaults 键（应为空） */
 export function listRemoteDefaultKeys(): string[] {
-  return Object.keys(RESOURCE_DEFAULTS).sort()
+  return []
 }
 
 /** fk 目标解析：多态 fk 按行判别值选变体，普通 fk 取自身资源配置。 */

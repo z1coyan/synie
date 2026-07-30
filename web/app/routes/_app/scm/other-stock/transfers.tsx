@@ -13,7 +13,7 @@ import {
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
+import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'

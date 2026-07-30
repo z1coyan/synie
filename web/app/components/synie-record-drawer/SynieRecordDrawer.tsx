@@ -19,7 +19,7 @@ import {
 } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { resourceClientFor } from '~/lib/resources/registry'
+import { resourceBindingFor, resourceClientFromResourceBinding } from '~/lib/resources/registry'
 import type { ResourceClient } from '~/lib/resources/types'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
@@ -156,13 +156,13 @@ const EMPTY_COLUMNS: GridColumnMeta[] = []
 
 export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const { resource, mode, isOpen, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
-  const client = props.client ?? (!props.meta ? resourceClientFor(resource) : undefined)
-  const remoteMeta = useGridMeta(resource, !props.meta, client) // 本地模式不发请求
+  const client = props.client ?? (!props.meta ? resourceClientFromResourceBinding(resource) : undefined)
+  const remoteMeta = useGridMeta(resource, !props.meta) // 本地模式不发请求
   const columns = props.meta?.columns ?? remoteMeta.data?.columns ?? EMPTY_COLUMNS
   const metaPending = !props.meta && remoteMeta.isPending
   const metaError = !props.meta && remoteMeta.isError
 
-  // rowId 自取数:row 未给时按 id 查一行(列集取自 meta,fk join 一并带回)。
+  // rowId 自取数:row 未给时按 id 查一行(列集取自 meta)。
   // id 非法(白名单反查约定,防拼进查询)按查无处理,不发请求。
   // 本地 meta 模式下该自查路径不适用(无远程 meta 可拼列/查询),wantsFetch 直接置 false:
   // disabled query 永远 isPending,若只挡 enabled 不挡 wantsFetch,rowPending 会恒 true 卡死 spinner。
@@ -279,10 +279,11 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
         } else {
           let errors: { message: string }[] | null | undefined
           try {
-            if (!client?.action) {
-              throw new Error(`Resource Client ${client?.id ?? resource} 未实现动作 ${auditAction.key}`)
+            const cmds = resourceBindingFor(resource).commands
+            if (!cmds) {
+              throw new Error(`资源「${resource}」未绑定命令「${auditAction.key}」`)
             }
-            await client.action(auditAction.key, [auditId])
+            await cmds.execute(auditAction.key, { ids: [auditId] } as never)
           } catch (error) {
             errors = [{ message: error instanceof Error ? error.message : String(error) }]
           }

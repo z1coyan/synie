@@ -104,13 +104,13 @@ export function journalResourceMeta(): ResourceMeta {
       { key: 'create', label: '新增', scope: 'both' },
       { key: 'update', label: '编辑', scope: 'row' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
-      { key: 'audit', label: '审核', scope: 'row', mutation: 'auditAccGlJournal' },
-      { key: 'cancel', label: '取消', scope: 'row', mutation: 'cancelAccGlJournal', isDanger: true },
+      { key: 'audit', label: '审核', scope: 'row' },
+      { key: 'cancel', label: '取消', scope: 'row', isDanger: true },
     ],
     printHead: true,
     printLoops: [{ name: 'lines', resource: JOURNAL_LINE_RESOURCE_NAME }],
     audit: { enabled: true },
-    destroyMutation: 'destroyAccGlJournal',
+
   }
 }
 
@@ -188,7 +188,7 @@ export function journalLineResourceMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyAccGlJournalLine',
+
   }
 }
 

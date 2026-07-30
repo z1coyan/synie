@@ -45,12 +45,6 @@ function sampleDocument(name = 'basCurrencies'): ResourceDocument {
 function mockClient(id = 'rest:basCurrencies'): ResourceClient {
   return {
     id,
-    meta: async () => ({
-      columns: [],
-      capabilities: ['create'],
-      extendedActions: [],
-      destroyMutation: null,
-    }),
     query: async () => ({ count: 0, results: [] }),
     get: async () => null,
     create: async (input) => ({ id: '1', ...input }),
@@ -141,23 +135,18 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(resolveResourceLookup('basUnits').subtitleFields).toEqual(['symbol'])
   })
 
-  test('ResourceClient 兼容外观不暴露不支持的写', async () => {
+  test('兼容 transport 对不支持的写 reject；binding.writer 省略写方法', async () => {
     const client = mockClient()
     const binding = bindingFromResourceClient('ro', client, {
       canCreate: false,
       canUpdate: false,
       canDelete: false,
     })
+    expect(binding.writer).toBeUndefined()
     const legacy = resourceClientFromBinding(binding)
-    expect(() => {
-      void legacy.create({})
-    }).toThrow(/不支持 create/)
-    expect(() => {
-      void legacy.update('1', {})
-    }).toThrow(/不支持 update/)
-    expect(() => {
-      void legacy.delete('1')
-    }).toThrow(/不支持 delete/)
+    await expect(legacy.create({})).rejects.toThrow(/不支持 create/)
+    await expect(legacy.update('1', {})).rejects.toThrow(/不支持 update/)
+    await expect(legacy.delete('1')).rejects.toThrow(/不支持 delete/)
   })
 
   test('Catalog 缓存按 actor 隔离；切换 actor 清空', () => {

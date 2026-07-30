@@ -24,7 +24,7 @@ import {
   salesReconciliationItemClient,
 } from '~/lib/resources/reconciliations'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
+import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import {
   isLocalRow,

@@ -1,7 +1,6 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import type { ResourceClient, ResourceQuery } from './types'
-import { gridMeta } from './meta'
 
 type MaterialCategoryCreate = Record<string, unknown>
 type MaterialCategoryUpdate = Record<string, unknown>
@@ -51,18 +50,8 @@ function apiDateTime(value: unknown): unknown {
   return value
 }
 
-async function meta(resource: string) {
-  return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-        param: { name: resource }}),
-    ),
-  )
-}
-
 export const materialCategoryClient: ResourceClient = {
   id: 'rest:invMaterialCategories',
-  meta: () => meta('invMaterialCategories'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory['material-categories'].query.$post({
@@ -101,7 +90,6 @@ export const materialCategoryClient: ResourceClient = {
 
 export const materialClient: ResourceClient = {
   id: 'rest:invMaterials',
-  meta: () => meta('invMaterials'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory.materials.query.$post({
@@ -140,7 +128,6 @@ export const materialClient: ResourceClient = {
 
 export const materialUnitClient: ResourceClient = {
   id: 'rest:invMaterialUnits',
-  meta: () => meta('invMaterialUnits'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory['material-units'].query.$post({
@@ -179,7 +166,6 @@ export const materialUnitClient: ResourceClient = {
 
 export const warehouseClient: ResourceClient = {
   id: 'rest:invWarehouses',
-  meta: () => meta('invWarehouses'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory.warehouses.query.$post({
@@ -222,7 +208,6 @@ function readonlyMutation(resource: string): never {
 
 export const stockEntryClient: ResourceClient = {
   id: 'rest:invStockEntries',
-  meta: () => meta('invStockEntries'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory['stock-entries'].query.$post({ json: listBody(input) }),
@@ -247,7 +232,6 @@ export const stockEntryClient: ResourceClient = {
 
 export const stockDocClient: ResourceClient = {
   id: 'rest:invStockDocs',
-  meta: () => meta('invStockDocs'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory['stock-docs'].query.$post({ json: listBody(input) }),
@@ -292,7 +276,6 @@ export const stockDocClient: ResourceClient = {
 
 export const stockDocItemClient: ResourceClient = {
   id: 'rest:invStockDocItems',
-  meta: () => meta('invStockDocItems'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory['stock-doc-items'].query.$post({ json: listBody(input) }),
@@ -325,7 +308,6 @@ export const stockDocItemClient: ResourceClient = {
 
 export const stockTransferClient: ResourceClient = {
   id: 'rest:invStockTransfers',
-  meta: () => meta('invStockTransfers'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory['stock-transfers'].query.$post({ json: listBody(input) }),
@@ -370,7 +352,6 @@ export const stockTransferClient: ResourceClient = {
 
 export const stockTransferItemClient: ResourceClient = {
   id: 'rest:invStockTransferItems',
-  meta: () => meta('invStockTransferItems'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory['stock-transfer-items'].query.$post({ json: listBody(input) }),
@@ -403,7 +384,6 @@ export const stockTransferItemClient: ResourceClient = {
 
 export const stockCountClient: ResourceClient = {
   id: 'rest:invStockCounts',
-  meta: () => meta('invStockCounts'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory['stock-counts'].query.$post({ json: listBody(input) }),
@@ -448,7 +428,6 @@ export const stockCountClient: ResourceClient = {
 
 export const stockCountItemClient: ResourceClient = {
   id: 'rest:invStockCountItems',
-  meta: () => meta('invStockCountItems'),
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.inventory['stock-count-items'].query.$post({ json: listBody(input) }),

@@ -1,7 +1,6 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import type { ResourceClient } from './types'
-import { gridMeta } from './meta'
 
 type AccountCreate = Record<string, unknown>
 type AccountUpdate = Record<string, unknown>
@@ -10,14 +9,6 @@ type AccountTemplate = "CAS" | "SMALL" | "INTL"
 export const accountClient: ResourceClient = {
   id: 'rest:basAccounts',
 
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'basAccounts' }}),
-      ),
-    )
-  },
 
   async query(input) {
     const filter = {

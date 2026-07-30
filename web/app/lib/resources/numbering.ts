@@ -1,7 +1,6 @@
 import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
 function queryBody(input: ResourceQuery): ListQuery {
@@ -32,14 +31,6 @@ export interface NumberableField {
 
 export const numberingRuleClient: ResourceClient = {
   id: 'rest:sysNumberingRules',
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'sysNumberingRules' }}),
-      ),
-    )
-  },
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.system.numbering.rules.query.$post({ json: queryBody(input) }),
@@ -73,14 +64,6 @@ export const numberingRuleClient: ResourceClient = {
 
 export const numberingCounterClient: ResourceClient = {
   id: 'rest:sysNumberingCounters',
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'sysNumberingCounters' }}),
-      ),
-    )
-  },
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.system.numbering.counters.query.$post({ json: queryBody(input) }),

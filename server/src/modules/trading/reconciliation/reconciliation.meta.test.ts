@@ -1,5 +1,5 @@
 /**
- * 对账 Meta 字段/动作表面（对齐 Go meta_test 契约）。
+ * 对账 Meta 字段/动作表面（ResourceDocument v2）。
  */
 import { describe, expect, test } from 'bun:test'
 import { createRegistry } from '~/platform/meta/registry.ts'
@@ -11,7 +11,6 @@ describe('对账 Meta 表面', () => {
     const registry = createRegistry()
     registry.register(reconciliationHeadMeta('sales'))
     registry.register(reconciliationItemMeta('sales'))
-    // 引用目标资源占位，避免投影引用失败（测试仅校验列名）
     const head = registry.buildDocument('salReconciliations', {
       userId: '',
       username: 'sa',
@@ -30,7 +29,7 @@ describe('对账 Meta 表面', () => {
       permissions: new Set(),
       companyIds: [],
     })
-    expect(head.grid.columns.map((c) => c.name)).toEqual([
+    expect(head.fields.map((c) => c.name)).toEqual([
       'id',
       'reconciliationNo',
       'reconciliationType',
@@ -48,7 +47,7 @@ describe('对账 Meta 表面', () => {
       'grossTotal',
       'baseGrossTotal',
     ])
-    expect(head.grid.capabilities).toEqual([
+    expect(head.capabilities).toEqual([
       'create',
       'update',
       'delete',
@@ -57,8 +56,8 @@ describe('对账 Meta 表面', () => {
       'audit',
       'void',
     ])
-    expect(head.grid.extendedActions?.[0]?.label).toBe('客户确认')
-    expect(item.grid.columns.map((c) => c.name)).toEqual([
+    expect(head.commands[0]?.label).toBe('客户确认')
+    expect(item.fields.map((c) => c.name)).toEqual([
       'id',
       'idx',
       'qty',
@@ -79,7 +78,7 @@ describe('对账 Meta 表面', () => {
       'unitName',
       'orderCurrencyCode',
     ])
-    expect(item.grid.capabilities).toEqual([])
+    expect(item.capabilities).toEqual([])
   })
 
   test('采购头/行字段与动作', () => {
@@ -95,7 +94,7 @@ describe('对账 Meta 表面', () => {
       permissions: new Set(),
       companyIds: [],
     })
-    expect(head.grid.extendedActions?.[0]?.label).toBe('供应商确认')
+    expect(head.commands[0]?.label).toBe('供应商确认')
     const item = registry.buildDocument('purReconciliationItems', {
       userId: '',
       username: 'sa',
@@ -105,8 +104,8 @@ describe('对账 Meta 表面', () => {
       permissions: new Set(),
       companyIds: [],
     })
-    expect(item.grid.columns.map((c) => c.name)).toContain('receiptItemId')
-    expect(item.grid.columns.map((c) => c.name)).toContain('outsourcedReceiptItemId')
+    expect(item.fields.map((c) => c.name)).toContain('receiptItemId')
+    expect(item.fields.map((c) => c.name)).toContain('outsourcedReceiptItemId')
   })
 
   test('订单流 Meta 为 OR 读权限投影', () => {
@@ -121,7 +120,7 @@ describe('对账 Meta 表面', () => {
       permissions: new Set(),
       companyIds: [],
     })
-    expect(doc.grid.columns.map((c) => c.name)).toContain('flowType')
-    expect(doc.grid.capabilities).toEqual([])
+    expect(doc.fields.map((c) => c.name)).toContain('flowType')
+    expect(doc.capabilities).toEqual([])
   })
 })

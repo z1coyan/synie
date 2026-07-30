@@ -1,6 +1,6 @@
 /**
- * 从 ResourceDocument v2 派生 GridMeta（expand 期 Grid 消费 catalog 的桥）。
- * 与 v1 document.grid 语义对齐，供 binding.meta() 使用。
+ * 从 ResourceDocument v2 派生 GridMeta。
+ * contract 后这是 Grid 唯一 Meta 来源。
  */
 import type { ResourceDocument } from '@synie/shared'
 import type { GridColumnMeta, GridMeta } from '~/components/synie-data-grid/types'
@@ -15,21 +15,14 @@ export function gridMetaFromDocument(document: ResourceDocument): GridMeta {
     return fieldToColumn(field)
   })
 
-  // list 未列出但 fields 中存在的列（兼容 v1 全列 Grid）
-  if (columns.length === 0) {
-    for (const field of document.fields) {
-      if (field.visibility === 'readable') columns.push(fieldToColumn(field))
-    }
-  } else {
-    // 补全未在 list 中但 v1 会展示的字段（expand：与 v1 grid 对齐用全 fields）
-    // 实际 expand 期 resourceClient.meta 仍可读服务端 grid；本函数用于 catalog 优先路径
-  }
+  // list 为空时回退到全部 readable 字段
+  const resolvedColumns =
+    columns.length > 0
+      ? columns
+      : document.fields.filter((f) => f.visibility === 'readable').map(fieldToColumn)
 
   return {
-    columns:
-      columns.length > 0
-        ? columns
-        : document.fields.filter((f) => f.visibility === 'readable').map(fieldToColumn),
+    columns: resolvedColumns,
     capabilities: [...document.capabilities],
     extendedActions: document.commands.map((c) => ({
       key: c.key,
@@ -42,11 +35,10 @@ export function gridMetaFromDocument(document: ResourceDocument): GridMeta {
             : c.target === 'bulk'
               ? ('bulk' as const)
               : ('both' as const),
-      mutation: '',
       isDanger: c.isDanger ?? false,
       confirmKind: c.confirmKind,
     })),
-    destroyMutation: null,
+    canDelete: document.capabilities.includes('delete'),
   }
 }
 
@@ -86,8 +78,13 @@ function fieldToColumn(field: ResourceDocument['fields'][number]): GridColumnMet
             relation: null,
             labelField: null,
             discriminator: field.discriminator,
-            discriminatorType: field.discriminatorType,
-            variants: field.variants,
+            discriminatorType: field.discriminatorType ?? 'enum',
+            variants: field.variants.map((v) => ({
+              value: v.value,
+              resource: v.resource,
+              labelField: v.labelField,
+              label: v.label,
+            })),
           },
     }
   }
@@ -124,6 +121,7 @@ function fieldToColumn(field: ResourceDocument['fields'][number]): GridColumnMet
       ref: null,
     }
   }
+  // scalar
   return {
     name: field.name,
     type: field.scalarType,

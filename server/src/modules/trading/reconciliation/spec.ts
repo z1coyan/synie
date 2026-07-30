@@ -207,19 +207,17 @@ export function reconciliationHeadMeta(side: TradingSide): ResourceMeta {
       { key: 'create', label: '新增', scope: 'both' },
       { key: 'update', label: '编辑', scope: 'row' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
-      { key: 'confirm', label: confirmLabel, scope: 'row', mutation: spec.confirmMutation },
+      { key: 'confirm', label: confirmLabel, scope: 'row'},
       {
         key: 'unconfirm',
         label: '撤回确认',
         scope: 'row',
-        mutation: spec.unconfirmMutation,
         isDanger: true,
       },
-      { key: 'audit', label: '结单', scope: 'row', mutation: spec.auditMutation },
-      { key: 'void', label: '作废', scope: 'row', mutation: spec.voidMutation, isDanger: true },
+      { key: 'audit', label: '结单', scope: 'row'},
+      { key: 'void', label: '作废', scope: 'row', isDanger: true },
     ],
     audit: { enabled: true },
-    destroyMutation: spec.destroyHead,
   }
 }
 
@@ -369,6 +367,5 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: spec.destroyItem,
   }
 }

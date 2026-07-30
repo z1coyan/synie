@@ -107,6 +107,5 @@ export function printTemplateResourceMeta(): ResourceMeta {
       exclude: ['id', 'isDefault', 'insertedAt', 'updatedAt'],
       fields: { resource: { edit: 'createOnly' } },
     },
-    destroyMutation: destroy,
   }
 }

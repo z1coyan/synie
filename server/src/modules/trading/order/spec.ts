@@ -214,9 +214,9 @@ export function orderHeadMeta(side: TradingSide): ResourceMeta {
     { key: 'create', label: '新增', scope: 'both' },
     { key: 'update', label: '编辑', scope: 'row' },
     { key: 'delete', label: '删除', scope: 'row', isDanger: true },
-    { key: 'audit', label: '审核', scope: 'row', mutation: spec.auditMutation },
-    { key: 'close', label: '关闭', scope: 'row', mutation: spec.closeMutation },
-    { key: 'void', label: '作废', scope: 'row', mutation: spec.voidMutation, isDanger: true },
+    { key: 'audit', label: '审核', scope: 'row'},
+    { key: 'close', label: '关闭', scope: 'row'},
+    { key: 'void', label: '作废', scope: 'row', isDanger: true },
   ]
   if (side === 'sales') {
     actions.push(
@@ -236,7 +236,6 @@ export function orderHeadMeta(side: TradingSide): ResourceMeta {
     printHead: true,
     printLoops: [{ name: 'items', resource: spec.itemResource }],
     audit: { enabled: true },
-    destroyMutation: spec.headDestroy,
   }
 }
 
@@ -434,7 +433,6 @@ export function orderItemMeta(side: TradingSide): ResourceMeta {
     fields,
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: spec.itemDestroy,
   }
 }
 
@@ -518,7 +516,7 @@ export function orderMaterialMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyPurOrderItemMaterial',
+
   }
 }
 
@@ -558,6 +556,6 @@ export function orderByproductMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyPurOrderItemByproduct',
+
   }
 }

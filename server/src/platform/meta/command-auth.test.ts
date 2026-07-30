@@ -32,7 +32,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
         ...actor([SYS_STORAGE.read, SYS_STORAGE.update]),
         superAdmin: true,
       })
-      .catalog!.commands.find((c) => c.key === 'setDefault')!
+      .commands.find((c) => c.key === 'setDefault')!
     expect(cmd.key).toBe('setDefault')
     expect(cmd.requiredCapability).toBe('update')
     expect(`${registry.get('sysStorages')!.permissionPrefix}:${cmd.requiredCapability}`).toBe(
@@ -55,7 +55,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
         ...actor([HR_ATTENDANCE_DAY.read, HR_ATTENDANCE_DAY.recalc]),
         superAdmin: true,
       })
-      .catalog!.commands.find((c) => c.key === 'recalc')!
+      .commands.find((c) => c.key === 'recalc')!
     expect(cmd).toMatchObject({ key: 'recalc', target: 'collection', requiredCapability: 'recalc' })
     expect(
       `${registry.get('hrAttendanceDays')!.permissionPrefix}:${cmd.requiredCapability}`,
@@ -77,7 +77,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
         ...actor([ACC_BANK_TRANSACTION.read, ACC_BANK_TRANSACTION.reconcile]),
         superAdmin: true,
       })
-      .catalog!.commands.find((c) => c.key === 'reconcile')!
+      .commands.find((c) => c.key === 'reconcile')!
     expect(cmd).toMatchObject({ key: 'reconcile', target: 'row', requiredCapability: 'reconcile' })
     expect(cmd.key).not.toBe('export')
     expect(
@@ -99,7 +99,7 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
       ...actor([]),
       superAdmin: true,
     })
-    expect(storage.catalog!.commands.every((c) => !['create', 'update', 'delete', 'read'].includes(c.key))).toBe(
+    expect(storage.commands.every((c) => !['create', 'update', 'delete', 'read'].includes(c.key))).toBe(
       true,
     )
   })

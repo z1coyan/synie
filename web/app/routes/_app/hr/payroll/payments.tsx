@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
+import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { Row } from '~/components/synie-data-grid/types'
 import { payrollPaymentClient } from '~/lib/resources/hr-operations'
 

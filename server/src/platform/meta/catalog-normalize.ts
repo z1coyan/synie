@@ -1,7 +1,6 @@
 /**
- * 将存量 ResourceMeta 规范化为 v2 投影所需的中间事实。
- * 仅用于 expand 期接入 sealed Catalog；新资源不得走本路径（工单 11 删除）。
- *
+ * Resource Catalog 规范化：ResourceMeta → NormalizedResource → ResourceDocument。
+ * contract 后唯一路径（无 legacy normalizer）。
  * 本模块不执行保存、不生成 SQL。
  */
 import type {
@@ -33,12 +32,10 @@ const STANDARD_ACTION_KEYS = new Set([
   'batch_print',
 ])
 
-/** 标记：本定义来自 legacy ResourceMeta normalizer（工单 10 后 register 不再写入） */
-export const LEGACY_NORMALIZER_MARK = 'legacy-resource-meta' as const
 /** 标记：typed ResourceDefinition 规范化结果 */
 export const TYPED_SOURCE_MARK = 'typed-resource-meta' as const
 
-export type NormalizedSource = typeof LEGACY_NORMALIZER_MARK | typeof TYPED_SOURCE_MARK
+export type NormalizedSource = typeof TYPED_SOURCE_MARK
 
 export interface NormalizedResource {
   readonly source: NormalizedSource
@@ -51,17 +48,6 @@ export interface NormalizedResource {
   readonly form: FormDocument
   /** 领域语义命令（不含标准 CRUD） */
   readonly commands: CommandDocument[]
-}
-
-/** 测试用：统计 legacy normalizer 在进程内被调用次数（工单 10 验收归零） */
-let legacyNormalizerCallCount = 0
-
-export function getLegacyNormalizerCallCount(): number {
-  return legacyNormalizerCallCount
-}
-
-export function resetLegacyNormalizerCallCountForTests(): void {
-  legacyNormalizerCallCount = 0
 }
 
 function inputPolicy(field: FieldMeta): FieldInputPolicy {
@@ -83,7 +69,7 @@ function inputPolicy(field: FieldMeta): FieldInputPolicy {
 
 function toFieldDocument(field: FieldMeta): FieldDocument | null {
   if (field.printOnly) return null
-  // sensitive：不进 Grid/catalog 可读投影（与 v1 一致）
+  // sensitive：不进 catalog 可读投影
   if (field.sensitive) return null
 
   const base = {
@@ -215,7 +201,7 @@ function commandTarget(action: ActionMeta): CommandTarget {
 /**
  * v2 命令语义 key：优先 permissionAction 当其与 key 不同且 key 为伪装标准动作时。
  * 例：export+reconcile → reconcile；import+recalc → recalc；setDefault+update → setDefault。
- * 旧 import/export 别名只保留在 v1 兼容投影，由工单 11（contract）删除。
+ * contract 后仅投影语义 command key。
  */
 function semanticCommandKey(action: ActionMeta): string {
   const pa = action.permissionAction
@@ -330,8 +316,7 @@ function toForm(meta: ResourceMeta, fields: FieldDocument[]): FormDocument {
 }
 
 /**
- * 将 ResourceMeta 规范为 Catalog 中间事实（typed 与 legacy 共用转换逻辑）。
- * register 路径只应传入 catalogSource='typed'；本函数不计入 legacy 调用。
+ * 将 ResourceMeta 规范为 Catalog 中间事实。
  */
 export function buildNormalizedResource(meta: ResourceMeta): NormalizedResource {
   const fields: FieldDocument[] = []
@@ -343,10 +328,8 @@ export function buildNormalizedResource(meta: ResourceMeta): NormalizedResource 
   const list: ListLayoutMeta = {
     columns: withHints.filter((f) => f.visibility === 'readable').map((f) => f.name),
   }
-  const source: NormalizedSource =
-    meta.catalogSource === 'legacy' ? LEGACY_NORMALIZER_MARK : TYPED_SOURCE_MARK
   return {
-    source,
+    source: TYPED_SOURCE_MARK,
     meta,
     label: meta.label ?? meta.permissionLabel,
     fields: withHints,
@@ -354,18 +337,6 @@ export function buildNormalizedResource(meta: ResourceMeta): NormalizedResource 
     list,
     form: toForm(meta, withHints),
     commands: toCommands(meta),
-  }
-}
-
-/**
- * legacy normalizer 入口（工单 10 后 register 不再调用；工单 11 删除本函数）。
- * 仅测试或诊断可显式调用；每次调用递增计数。
- */
-export function normalizeLegacyResourceMeta(meta: ResourceMeta): NormalizedResource {
-  legacyNormalizerCallCount += 1
-  return {
-    ...buildNormalizedResource({ ...meta, catalogSource: 'legacy' }),
-    source: LEGACY_NORMALIZER_MARK,
   }
 }
 

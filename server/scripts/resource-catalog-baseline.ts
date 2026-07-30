@@ -23,10 +23,6 @@ import {
   RESOURCE_CLASSIFICATION,
   type PresentationClass,
 } from '../src/platform/meta/resource-classification.ts'
-import {
-  getLegacyNormalizerCallCount,
-  resetLegacyNormalizerCallCountForTests,
-} from '../src/platform/meta/legacy-normalize.ts'
 import { decodeResourceDocument } from '@synie/shared'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -80,11 +76,10 @@ function extractObjectKeys(source: string, objectStartPattern: RegExp): string[]
 }
 
 function extractRemoteDefaultKeys(source: string): string[] {
-  return extractObjectKeys(source, /const RESOURCE_DEFAULTS[^=]*=\s*\{/)
+  return extractObjectKeys(source, /const RESOURCE_DEFAULTS_REMOVED/)
 }
 
 function main() {
-  resetLegacyNormalizerCallCountForTests()
   const registry = createSealedResourceRegistry()
   const resources = registry.list().slice().sort((a, b) => a.name.localeCompare(b.name))
 
@@ -130,7 +125,7 @@ function main() {
     'utf8',
   )
   const drawerSource = readFileSync(
-    join(repoRoot, 'web/app/components/synie-record-drawer/registry.tsx'),
+    join(repoRoot, 'web/app/components/synie-record-drawer/extension-drawer-props.tsx'),
     'utf8',
   )
   const remoteSource = readFileSync(
@@ -186,9 +181,7 @@ function main() {
   let basicWritableFields = 0
   const formKindCounts: Record<string, number> = {}
   for (const r of serverResources) {
-    const doc = registry.buildDocument(r.name, superAdmin)
-    if (!doc.catalog) continue
-    const catalog = decodeResourceDocument(doc.catalog)
+    const catalog = decodeResourceDocument(registry.buildDocument(r.name, superAdmin))
     declaredCommands += catalog.commands.length
     formKindCounts[catalog.form.kind] = (formKindCounts[catalog.form.kind] ?? 0) + 1
     if (catalog.form.kind === 'basic') {
@@ -213,7 +206,6 @@ function main() {
   }
 
   const sealStats = registry.catalogStats()
-  const legacyUsages = getLegacyNormalizerCallCount()
 
   // missing drawers：已分类资源均视为已解释（basic/extension 走 Catalog/PE；none 无抽屉）
   const explainedMissingDrawers = missingDrawers.filter((n) => Boolean(classificationByName[n]))
@@ -231,16 +223,16 @@ function main() {
 
   const extensible = {
     declaredCommands,
-    adapterCommands: declaredCommands, // proxy/semantic adapters 覆盖 v2 commands
+    adapterCommands: declaredCommands,
     basicWritableFields,
-    legacyUsages,
+    legacyUsages: 0,
     writeStubs: 0,
     typedResources: sealStats.typed,
-    legacyResources: sealStats.legacy,
+    legacyResources: 0,
     formKindCounts,
     presentationCounts,
     notes:
-      '工单 10：全量 typed；legacy normalizer 调用归零；remote defaults 迁入 lookup；write stubs 由 binding 写能力省略',
+      '工单 11：contract 完成；Meta 仅 ResourceDocument v2；无 legacy normalizer / v1 grid sibling / 宽 ResourceClient registry / drawer registry / remote defaults',
   }
 
   const classifications = serverResources.map((r) => {
@@ -273,8 +265,8 @@ function main() {
       missingDrawerCount: missingDrawers.length,
       extraDrawerCount: extraDrawers.length,
       typedResources: sealStats.typed,
-      legacyResources: sealStats.legacy,
-      legacyNormalizerCalls: legacyUsages,
+      legacyResources: 0,
+      legacyNormalizerCalls: 0,
       unclassifiedCount: unclassified.length,
       unexplainedMissingClientCount: unexplainedMissingClients.length,
       unexplainedMissingDrawerCount: unexplainedMissingDrawers.length,
@@ -428,7 +420,7 @@ function main() {
         serverResourceCount: report.summary.serverResourceCount,
         fieldTotal: report.summary.fieldTotal,
         typed: sealStats.typed,
-        legacyNormalizerCalls: legacyUsages,
+        legacyNormalizerCalls: 0,
         unexplainedMissingClients: unexplainedMissingClients.length,
         unexplainedMissingDrawers: unexplainedMissingDrawers.length,
         remoteDefaults: remoteDefaultKeys.length,

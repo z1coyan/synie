@@ -1,7 +1,6 @@
 import { apiData, api } from '../api/client'
 import type {Row, FilterState} from '~/components/synie-data-grid/types'
 import type { ResourceClient, ResourceQuery } from './types'
-import { gridMeta } from './meta'
 
 type CustomerCreate = Record<string, unknown>
 type CustomerUpdate = Record<string, unknown>
@@ -15,14 +14,6 @@ function ensureSupportedQuery(input: ResourceQuery) {
 export const customerClient: ResourceClient = {
   id: 'rest:salCustomers',
 
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'salCustomers' }}),
-      ),
-    )
-  },
 
   async query(input) {
     ensureSupportedQuery(input)

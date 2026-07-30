@@ -88,7 +88,7 @@ function FinanceReconcileSection({
       return (account?.accountId as string | null) ?? null
     },
   })
-  const journalMeta = useGridMeta('accGlJournals', true, glJournalClient)
+  const journalMeta = useGridMeta('accGlJournals', true)
   const canQuick = ['create', 'audit'].every((capability) =>
     (journalMeta.data?.capabilities ?? []).includes(capability),
   )

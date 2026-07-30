@@ -24,7 +24,7 @@ import {
 } from '~/lib/resources/orders'
 import type { ResourceClient } from '~/lib/resources/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
+import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'

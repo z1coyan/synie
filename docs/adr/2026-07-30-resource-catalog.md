@@ -1,7 +1,7 @@
 # ADR：以类型安全 Resource Catalog 收口资源声明与前端能力绑定
 
-2026-07-30，状态：已接受。本 ADR 固化本轮设计边界；实施与迁移由
-`.scratch/resource-catalog/` 跟踪。
+2026-07-30，状态：已实施。本 ADR 固化 Resource Catalog 边界；expand–migrate–contract
+已完成（见 `.scratch/resource-catalog/` 工单 01–11）。
 
 ## 背景
 
@@ -90,17 +90,13 @@ Catalog 和 FormMeta 不得执行或表达：
 先例；完整读取仍须由销售发货领域 API 或经证明完整的 loader 提供。这不是建设通用文档
 保存框架的理由。
 
-### 6. 兼容层只派生，不双写
+### 6. 兼容层已收缩（contract）
 
-迁移期间现有 Meta endpoint 在旧 `name/grid/form` 旁增加
-`catalog: ResourceDocument`。旧前端继续读 `grid`，新 Catalog client 只读 `catalog`；
-两者都从同一服务端 ResourceDefinition 投影，禁止手工维护 v1/v2 两份字段、枚举或表单
-声明。
-
-旧 Grid action 的 mutation/http 和 destroyMutation 属于临时 transport 兼容事实，无法
-也不应从 v2 command 语义反推；它们在对应 CommandAdapter/RecordWriter 落地后删除。
-每迁移一个资源就删除其前端静态表单副本，并用契约测试锁定 ResourceDocument 到实际
-binding/renderer 的闭环。
+`GET /meta/resources/{name}` 仅返回 ResourceDocument v2 envelope；v1 `name/grid/form`
+sibling、legacy normalizer、宽 ResourceClient.meta/action transport 与全局 drawer
+registry 的静默 fallback 已删除。Grid Meta 由前端 `gridMetaFromDocument` 派生；
+命令经 CommandAdapter；基础表单经 `basicFormDrawerProps`；复杂表单经业务共置
+Presentation Extension。ResourceBinding 是唯一资源→Adapter 关联。
 
 ## 否决方案
 
@@ -119,16 +115,11 @@ binding/renderer 的闭环。
 
 ## 后果
 
-- shared、server、web 会在兼容期同时存在 v2 文档和 v1 Grid 投影，但两者来自同一
-  ResourceDefinition；旧 action transport 以明确的临时兼容字段隔离并带删除工单。
-- Registry 启动会变严格；既有断裂外键、非法布局字段和动作权限错配会从运行时问题变成
-  启动失败，需要先做特征测试与清理。
-- 前端类型参数和 binding 声明增加少量显式代码，换取只读/CRUD/聚合/命令能力的编译期
-  区分以及抽屉配置收口。
-- 简单主数据将显著减少页面字段配置；复杂单据仍保留专用页面和领域 Adapter，不以“Meta
-  覆盖率”作为目标。
-- 打印模块已有同名 `ResourceCatalog` 类型，实施前需改成更窄的
-  `PrintResourceCatalog`/`PrintFieldCatalog`，避免共享语言冲突。
+- Meta 响应与前端 Catalog 缓存只承载 ResourceDocument v2；Grid 本地类型由文档派生。
+- Registry 启动 seal 校验跨资源引用、lookup 与布局；非法定义在服务流量前失败。
+- ResourceBinding 区分只读/CRUD/聚合/命令能力；不支持的写方法在 binding 上缺席。
+- 简单主数据走 Basic Form；复杂单据保留 Presentation Extension 与领域 Adapter。
+- 打印字段目录从 sealed Catalog 派生，命名与 Resource Catalog 分离。
 
 ## 被取代的旧决策
 

@@ -1,9 +1,8 @@
 /**
- * ResourceDocument v2 — 类型安全 Resource Catalog 的前端声明契约。
+ * ResourceDocument v2 — 类型安全 Resource Catalog 的唯一 wire 契约。
  *
  * 服务端按 Actor 投影完整文档；Grid 与基础 Form 都从本契约派生。
- * 迁移期 v1 `name/grid/form` 与 v2 `catalog` 并存于同一 Meta 响应
- * （见 ResourceMetaDocument）。本文件是 wire 形状的唯一事实源。
+ * contract 后 GET /meta/resources/{name} 直接返回本文档（无 v1 grid/form sibling）。
  */
 import type { FilterState, SortState } from './filter.ts'
 import type { GridEnumOption } from './meta.ts'

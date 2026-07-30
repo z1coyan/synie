@@ -5,7 +5,7 @@ import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, Search
 import type { Selection } from 'react-aria-components'
 import { isForbidden } from '~/lib/errors'
 import { useMediaQuery } from '~/lib/use-media-query'
-import { resourceClientFor } from '~/lib/resources/registry'
+import { resourceBindingFor, resourceClientFromResourceBinding } from '~/lib/resources/registry'
 import type { ResourceClient } from '~/lib/resources/types'
 import { AttachmentImagesCell } from './attachment-images-cell'
 import { cardFields } from './card-fields'
@@ -62,7 +62,10 @@ export interface TreeOptions {
 export interface SynieDataGridProps {
   /** 与后端 GridMeta 白名单同名,如 "sysRoles" */
   resource: string
-  /** 可显式传入 REST client；未传时由资源 registry 解析，未知资源立即报错。 */
+  /**
+   * 可选传输覆盖；缺省经 ResourceBinding 解析。
+   * Meta 始终从 Catalog 拉取，不经 client.meta。
+   */
   client?: ResourceClient
   /** 显示列及其顺序(有序白名单);缺省 = meta 全列。与 exclude 二选一即可 */
   columns?: string[]
@@ -160,11 +163,12 @@ export function selectedRows(selection: Selection, rows: Row[]): Row[] {
 
 export function SynieDataGrid(props: SynieDataGridProps) {
   const { resource, exclude = EMPTY_EXCLUDE, overrides = EMPTY_OVERRIDES } = props
-  const client = props.client ?? resourceClientFor(resource)
+  const binding = resourceBindingFor(resource)
+  const client = props.client ?? resourceClientFromResourceBinding(resource)
 
-  const meta = useGridMeta(resource, true, client)
+  const meta = useGridMeta(resource, true)
   const pickMode = props.pick != null
-  // 卡片模式:<lg 视口全资源生效;树形资源在卡片模式常驻平铺(treeActive 恒 false,见下)
+  // 卡片模式:<lg 视口全资源生效;树形资源在卡片模式常驻平铺(treeActive 恒 false)
   const isMobile = useMediaQuery(CARD_MODE_QUERY)
   const cardMode = isMobile
   const [page, setPage] = useState(1)
@@ -481,7 +485,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
 
   const actions = useGridActions({
     meta: meta.data,
-    client,
+    binding,
     capabilities: props.capabilities,
     refetch: () => {
       rowsQuery.refetch()

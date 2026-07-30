@@ -5,10 +5,6 @@ import { currencyResourceMeta, companyResourceMeta } from '~/modules/base/meta.t
 import type { Actor } from '../authz/actor.ts'
 import { decodeResourceDocument } from '@synie/shared'
 import {
-  getLegacyNormalizerCallCount,
-  resetLegacyNormalizerCallCountForTests,
-} from './legacy-normalize.ts'
-import {
   assertClassificationCoverage,
   RESOURCE_CLASSIFICATION,
 } from './resource-classification.ts'
@@ -23,15 +19,14 @@ const superAdmin: Actor = {
   companyIds: [],
 }
 
-describe('Resource Catalog seal 与双投影', () => {
-  test('全部基线资源可 seal，报告 typed 全覆盖（legacy 调用归零）', () => {
+describe('Resource Catalog seal 与 v2 投影', () => {
+  test('全部基线资源可 seal，typed 全覆盖', () => {
     const registry = createRegistry()
     registerAllResources(registry)
     expect(registry.isSealed()).toBe(false)
     const report = registry.seal()
     expect(registry.isSealed()).toBe(true)
     expect(report.total).toBe(97)
-    expect(report.legacy).toBe(0)
     expect(report.typed).toBe(97)
   })
 
@@ -40,35 +35,24 @@ describe('Resource Catalog seal 与双投影', () => {
     expect(() => registry.register(currencyResourceMeta())).toThrow(/已 seal/)
   })
 
-  test('Meta 响应同时承载 v1 grid/form 与 v2 catalog', () => {
+  test('Meta 响应仅为 ResourceDocument v2 envelope', () => {
     const registry = createSealedResourceRegistry()
     const doc = registry.buildDocument('basCurrencies', superAdmin)
+    expect(doc.schemaVersion).toBe(2)
     expect(doc.name).toBe('basCurrencies')
-    expect(doc.grid.columns.some((c) => c.name === 'isoCode')).toBe(true)
-    expect(doc.form?.fields?.isoCode).toMatchObject({ edit: 'createOnly' })
-    expect(doc.catalog).toBeDefined()
-    const catalog = decodeResourceDocument(doc.catalog)
+    const catalog = decodeResourceDocument(doc)
     expect(catalog.label).toBe('货币')
     expect(catalog.permissionPrefix).toBe('base.currency')
     expect(catalog.form.kind).toBe('basic')
     expect(catalog.capabilities).toEqual(
       expect.arrayContaining(['create', 'update', 'delete']),
     )
+    // 无 v1 grid/form sibling
+    expect(!('grid' in doc)).toBe(true)
+    expect(!('catalog' in doc)).toBe(true)
   })
 
-  test('Grid 与 catalog 字段事实同源（非手工双写）', () => {
-    const registry = createSealedResourceRegistry()
-    const doc = registry.buildDocument('basCurrencies', superAdmin)
-    const gridNames = doc.grid.columns.map((c) => c.name).sort()
-    const catalogNames = doc.catalog!.fields.map((f) => f.name).sort()
-    expect(catalogNames).toEqual(gridNames)
-    for (const col of doc.grid.columns) {
-      const field = doc.catalog!.fields.find((f) => f.name === col.name)!
-      expect(field.label).toBe(col.label)
-    }
-  })
-
-  test('无目标读取权：Grid 降级 ID，catalog form 不含可编辑外键', () => {
+  test('无目标读取权：reference targetUnavailable，basic 布局剔除可编辑外键', () => {
     const registry = createSealedResourceRegistry()
     const actor: Actor = {
       userId: 'u',
@@ -80,42 +64,37 @@ describe('Resource Catalog seal 与双投影', () => {
       companyIds: [],
     }
     const doc = registry.buildDocument('basCompanies', actor)
-    const baseCurrency = doc.grid.columns.find((c) => c.name === 'baseCurrencyId')
-    expect(baseCurrency?.type).toBe('string')
-    expect(baseCurrency?.ref).toBeNull()
-
-    const catField = doc.catalog!.fields.find((f) => f.name === 'baseCurrencyId')
+    const catField = doc.fields.find((f) => f.name === 'baseCurrencyId')
     expect(catField?.kind).toBe('reference')
     if (catField?.kind === 'reference') {
       expect(catField.targetUnavailable).toBe(true)
     }
-    if (doc.catalog!.form.kind === 'basic') {
-      const placed = doc.catalog!.form.layout.fields?.map((p) => p.field) ?? []
+    if (doc.form.kind === 'basic') {
+      const placed = doc.form.layout.fields?.map((p) => p.field) ?? []
       expect(placed).not.toContain('baseCurrencyId')
     }
   })
 
-  test('write-only / sensitive 不进入 list 列（sensitive 整字段剔除）', () => {
-    // 现有资源无 writeOnly；验证 catalog list 仅含 readable
+  test('list 列仅含 readable 字段', () => {
     const registry = createSealedResourceRegistry()
     const doc = registry.buildDocument('basCurrencies', superAdmin)
-    for (const name of doc.catalog!.list.columns) {
-      const field = doc.catalog!.fields.find((f) => f.name === name)!
+    for (const name of doc.list.columns) {
+      const field = doc.fields.find((f) => f.name === name)!
       expect(field.visibility).toBe('readable')
     }
   })
 
-  test('v2 commands 使用语义 key（reconcile/recalc/setDefault），target 正确且不含 transport', () => {
+  test('commands 使用语义 key，target 正确且不含 v1 transport', () => {
     const registry = createSealedResourceRegistry()
     const recon = registry.buildDocument('accBankTransactions', superAdmin)
-    const reconCmd = recon.catalog!.commands.find((c) => c.key === 'reconcile')
+    const reconCmd = recon.commands.find((c) => c.key === 'reconcile')
     expect(reconCmd).toMatchObject({
       key: 'reconcile',
       target: 'row',
       requiredCapability: 'reconcile',
     })
-    expect(recon.catalog!.commands.every((c) => !('http' in c))).toBe(true)
-    // v1 仍保留 export 伪装 key（工单 11 删除）
+    expect(recon.commands.every((c) => !('http' in c) && !('mutation' in c))).toBe(true)
+    // 服务端定义仍可用 disguise key + permissionAction 声明语义
     expect(
       registry.get('accBankTransactions')!.actions.some(
         (a) => a.key === 'export' && a.permissionAction === 'reconcile',
@@ -123,7 +102,7 @@ describe('Resource Catalog seal 与双投影', () => {
     ).toBe(true)
 
     const days = registry.buildDocument('hrAttendanceDays', superAdmin)
-    const recalcCmd = days.catalog!.commands.find((c) => c.key === 'recalc')
+    const recalcCmd = days.commands.find((c) => c.key === 'recalc')
     expect(recalcCmd).toMatchObject({
       key: 'recalc',
       target: 'collection',
@@ -131,7 +110,7 @@ describe('Resource Catalog seal 与双投影', () => {
     })
 
     const storage = registry.buildDocument('sysStorages', superAdmin)
-    const setDefaultCmd = storage.catalog!.commands.find((c) => c.key === 'setDefault')
+    const setDefaultCmd = storage.commands.find((c) => c.key === 'setDefault')
     expect(setDefaultCmd).toMatchObject({
       key: 'setDefault',
       target: 'row',
@@ -142,16 +121,13 @@ describe('Resource Catalog seal 与双投影', () => {
   test('标准 CRUD 不进入 commands，只贡献 capabilities', () => {
     const registry = createSealedResourceRegistry()
     const doc = registry.buildDocument('basCurrencies', superAdmin)
-    expect(doc.catalog!.commands).toEqual([])
-    expect(doc.catalog!.capabilities).toEqual(
-      expect.arrayContaining(['create', 'update', 'delete']),
-    )
+    expect(doc.commands).toEqual([])
+    expect(doc.capabilities).toEqual(expect.arrayContaining(['create', 'update', 'delete']))
   })
 
   test('断裂外键引用在 seal 时失败', () => {
     const registry = createRegistry()
     registry.register(currencyResourceMeta())
-    // company 引用 basCurrencies 已注册，但 parent 自引用 ok；再注册一个坏引用
     const broken = companyResourceMeta()
     broken.fields = broken.fields.map((f) =>
       f.apiName === 'baseCurrencyId'
@@ -167,8 +143,7 @@ describe('Resource Catalog seal 与双投影', () => {
 
   test('单位 catalog：label=单位，enum/decimal/initial/span', () => {
     const registry = createSealedResourceRegistry()
-    const doc = registry.buildDocument('basUnits', superAdmin)
-    const catalog = decodeResourceDocument(doc.catalog)
+    const catalog = decodeResourceDocument(registry.buildDocument('basUnits', superAdmin))
     expect(catalog.label).toBe('单位')
     expect(catalog.form.kind).toBe('basic')
     const unitType = catalog.fields.find((f) => f.name === 'unitType')
@@ -188,8 +163,7 @@ describe('Resource Catalog seal 与双投影', () => {
 
   test('供应商 catalog：basic 纯标量布局', () => {
     const registry = createSealedResourceRegistry()
-    const doc = registry.buildDocument('purSuppliers', superAdmin)
-    const catalog = decodeResourceDocument(doc.catalog)
+    const catalog = decodeResourceDocument(registry.buildDocument('purSuppliers', superAdmin))
     expect(catalog.label).toBe('供应商')
     expect(catalog.form.kind).toBe('basic')
     if (catalog.form.kind === 'basic') {
@@ -201,8 +175,7 @@ describe('Resource Catalog seal 与双投影', () => {
 
   test('公司 catalog：本币 filterState 与自引用外键', () => {
     const registry = createSealedResourceRegistry()
-    const doc = registry.buildDocument('basCompanies', superAdmin)
-    const catalog = decodeResourceDocument(doc.catalog)
+    const catalog = decodeResourceDocument(registry.buildDocument('basCompanies', superAdmin))
     expect(catalog.label).toBe('公司')
     expect(catalog.form.kind).toBe('basic')
     const baseCurrency = catalog.fields.find((f) => f.name === 'baseCurrencyId')
@@ -225,68 +198,57 @@ describe('Resource Catalog seal 与双投影', () => {
 
   test('客户 catalog：form.kind=extension（附件 Presentation Extension）', () => {
     const registry = createSealedResourceRegistry()
-    const doc = registry.buildDocument('salCustomers', superAdmin)
-    const catalog = decodeResourceDocument(doc.catalog)
+    const catalog = decodeResourceDocument(registry.buildDocument('salCustomers', superAdmin))
     expect(catalog.label).toBe('客户')
     expect(catalog.form.kind).toBe('extension')
   })
 
   test('发票 catalog：form.kind=extension（OCR Presentation Extension）', () => {
     const registry = createSealedResourceRegistry()
-    const doc = registry.buildDocument('accVatInvoices', superAdmin)
-    const catalog = decodeResourceDocument(doc.catalog)
+    const catalog = decodeResourceDocument(registry.buildDocument('accVatInvoices', superAdmin))
     expect(catalog.form.kind).toBe('extension')
-    // ResourceDocument 无可执行脚本/组件路径
     const wire = JSON.stringify(catalog)
     expect(wire).not.toMatch(/function\s*\(|=>|componentPath|script/)
   })
 
   test('销售发货 catalog：form.kind=extension（聚合草稿 Presentation Extension）', () => {
     const registry = createSealedResourceRegistry()
-    const doc = registry.buildDocument('salDeliveries', superAdmin)
-    const catalog = decodeResourceDocument(doc.catalog)
+    const catalog = decodeResourceDocument(registry.buildDocument('salDeliveries', superAdmin))
     expect(catalog.form.kind).toBe('extension')
   })
 
-  test('分类表覆盖全部资源；legacy normalizer 调用数为 0', () => {
-    resetLegacyNormalizerCallCountForTests()
+  test('分类表覆盖全部资源；无 legacy normalizer 模块', () => {
     const registry = createRegistry()
     registerAllResources(registry)
     registry.seal()
     assertClassificationCoverage(registry.list().map((r) => r.name))
     expect(Object.keys(RESOURCE_CLASSIFICATION).length).toBe(97)
-    expect(getLegacyNormalizerCallCount()).toBe(0)
 
-    // lookup：员工/物料/分类/单位
     for (const [name, expected] of [
       ['hrEmployees', ['name', 'code', 'attendanceNo']],
       ['invMaterials', ['name', 'code', 'spec']],
       ['invMaterialCategories', ['name', 'code']],
       ['basUnits', ['name', 'symbol']],
     ] as const) {
-      const catalog = decodeResourceDocument(
-        registry.buildDocument(name, superAdmin).catalog,
-      )
+      const catalog = decodeResourceDocument(registry.buildDocument(name, superAdmin))
       expect(catalog.lookup.searchFields).toEqual([...expected])
       expect(catalog.lookup.subtitleFields?.length).toBeGreaterThan(0)
     }
 
-    // 呈现分类 → form.kind
+    expect(decodeResourceDocument(registry.buildDocument('basAccounts', superAdmin)).form.kind).toBe(
+      'extension',
+    )
+    expect(decodeResourceDocument(registry.buildDocument('hrEmployees', superAdmin)).form.kind).toBe(
+      'extension',
+    )
+    expect(decodeResourceDocument(registry.buildDocument('invMaterials', superAdmin)).form.kind).toBe(
+      'extension',
+    )
     expect(
-      decodeResourceDocument(registry.buildDocument('basAccounts', superAdmin).catalog).form.kind,
-    ).toBe('extension')
-    expect(
-      decodeResourceDocument(registry.buildDocument('hrEmployees', superAdmin).catalog).form.kind,
-    ).toBe('extension')
-    expect(
-      decodeResourceDocument(registry.buildDocument('invMaterials', superAdmin).catalog).form.kind,
-    ).toBe('extension')
-    expect(
-      decodeResourceDocument(registry.buildDocument('invMaterialCategories', superAdmin).catalog).form
-        .kind,
+      decodeResourceDocument(registry.buildDocument('invMaterialCategories', superAdmin)).form.kind,
     ).toBe('basic')
     expect(
-      decodeResourceDocument(registry.buildDocument('invStockEntries', superAdmin).catalog).form.kind,
+      decodeResourceDocument(registry.buildDocument('invStockEntries', superAdmin)).form.kind,
     ).toBe('none')
   })
 })

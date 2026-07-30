@@ -1,6 +1,6 @@
 # 类型安全 Resource Catalog 深化规格
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 

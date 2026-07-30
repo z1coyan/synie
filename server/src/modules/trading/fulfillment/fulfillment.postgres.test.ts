@@ -461,10 +461,11 @@ run('PG 集成（销售发货装箱箱）', () => {
       expect((await http.request(path, { method: 'DELETE', headers: tokenHeaders })).status).toBe(404)
     }
 
-    expect(fulfillmentItemMeta('sales').destroyMutation).toBeUndefined()
-    expect(packBoxMeta().destroyMutation).toBeUndefined()
-    expect(packLineMeta().destroyMutation).toBeUndefined()
-    expect(fulfillmentItemMeta('purchase').destroyMutation).toBe('destroyPurReceiptItem')
+    // contract：销售发货条目/装箱无独立 delete 动作；采购入库条目可删
+    expect(fulfillmentItemMeta('sales').actions.some((a) => a.key === 'delete')).toBe(false)
+    expect(packBoxMeta().actions.some((a) => a.key === 'delete')).toBe(false)
+    expect(packLineMeta().actions.some((a) => a.key === 'delete')).toBe(false)
+    expect(fulfillmentItemMeta('purchase').actions.some((a) => a.key === 'delete')).toBe(true)
   })
 
   test('整单替换以完整快照同时新增、修改和删除子记录', async () => {

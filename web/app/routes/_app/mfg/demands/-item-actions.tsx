@@ -57,7 +57,7 @@ export function useDemandItemActions(after: () => void) {
   const [pending, setPending] = useState<Pending | null>(null)
   const [method, setMethod] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
-  const meta = useGridMeta('mfgDemandItems', true, demandItemClient)
+  const meta = useGridMeta('mfgDemandItems', true)
   const methodOptions =
     meta.data?.columns.find((c) => c.name === 'fulfillmentMethod')
       ?.enumOptions ?? []

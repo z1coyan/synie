@@ -64,7 +64,7 @@ describe('PR-2.17 制造域 REST 边界', () => {
     expect(demand).toContain('client={demandItemClient}')
     expect(source('./demands/items.tsx')).toContain('client={demandItemClient}')
     expect(source('./demands/-item-actions.tsx')).toContain(
-      "useGridMeta('mfgDemandItems', true, demandItemClient)",
+      "useGridMeta('mfgDemandItems', true)",
     )
 
     const workOrder = source('./work-orders.tsx')

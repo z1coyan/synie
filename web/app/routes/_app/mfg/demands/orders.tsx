@@ -10,7 +10,7 @@ import { SynieEditableTable } from '~/components/synie-editable-table/SynieEdita
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { useDocItems } from '~/components/synie-editable-table/use-doc-items'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
+import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { demandClient, demandItemClient } from '~/lib/resources/manufacturing'

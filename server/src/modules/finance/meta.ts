@@ -243,30 +243,24 @@ export function vatInvoiceResourceMeta(): ResourceMeta {
         key: 'audit',
         label: '审核',
         scope: 'row',
-        mutation: 'auditAccVatInvoice',
-        http: { method: 'POST', path: '/finance/vat-invoices/{id}/audit' },
       },
       {
         key: 'void',
         label: '作废',
         scope: 'row',
-        mutation: 'voidAccVatInvoice',
         isDanger: true,
-        http: { method: 'POST', path: '/finance/vat-invoices/{id}/void' },
       },
       {
         key: 'reverse',
         label: '红冲',
         scope: 'row',
-        mutation: 'reverseAccVatInvoice',
         isDanger: true,
-        http: { method: 'POST', path: '/finance/vat-invoices/{id}/reverse' },
       },
     ],
     // OCR / 动态联动 / 附件：Presentation Extension，不走 Basic Form
     form: { kind: 'extension' },
     audit: { enabled: true },
-    destroyMutation: 'destroyAccVatInvoice',
+
   }
 }
 
@@ -380,7 +374,7 @@ export function bankAccountResourceMeta(): ResourceMeta {
     ],
     actions: crudActions,
     audit: { enabled: true },
-    destroyMutation: 'destroyAccBankAccount',
+
   }
 }
 
@@ -431,7 +425,7 @@ export function bankTransactionResourceMeta(): ResourceMeta {
     printHead: true,
     printLoops: [{ name: 'reconciliations', resource: 'accBankReconciliations' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyAccBankTransaction',
+
   }
 }
 
@@ -478,7 +472,7 @@ export function bankImportTemplateResourceMeta(): ResourceMeta {
     ],
     actions: crudActions,
     audit: { enabled: true },
-    destroyMutation: 'destroyAccBankImportTemplate',
+
   }
 }
 
@@ -526,7 +520,7 @@ export function bankImportResourceMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyAccBankImport',
+
   }
 }
 
@@ -565,7 +559,7 @@ export function bankImportItemResourceMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyAccBankImportItem',
+
   }
 }
 
@@ -595,7 +589,7 @@ export function bankReconciliationResourceMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyAccBankReconciliation',
+
   }
 }
 
@@ -641,18 +635,16 @@ export function expenseReportResourceMeta(): ResourceMeta {
     actions: [
       ...crudActions,
       {
-        key: 'audit', label: '审核', scope: 'row', mutation: 'auditAccExpenseReport',
-        http: { method: 'POST', path: '/finance/expense-reports/{id}/audit' },
+        key: 'audit', label: '审核', scope: 'row',
       },
       {
-        key: 'void', label: '作废', scope: 'row', mutation: 'voidAccExpenseReport', isDanger: true,
-        http: { method: 'POST', path: '/finance/expense-reports/{id}/void' },
+        key: 'void', label: '作废', scope: 'row', isDanger: true,
       },
     ],
     printHead: true,
     printLoops: [{ name: 'items', resource: 'accExpenseReportItems' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyAccExpenseReport',
+
   }
 }
 
@@ -694,7 +686,7 @@ export function expenseReportItemResourceMeta(): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyAccExpenseReportItem',
+
   }
 }
 
@@ -739,7 +731,7 @@ export function billResourceMeta(): ResourceMeta {
     printHead: true,
     printLoops: [{ name: 'transactions', resource: 'accBillTransactions' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyAccBill',
+
   }
 }
 
@@ -821,16 +813,14 @@ export function billTransactionResourceMeta(): ResourceMeta {
     actions: [
       ...crudActions,
       {
-        key: 'audit', label: '审核', scope: 'row', mutation: 'auditAccBillTransaction',
-        http: { method: 'POST', path: '/finance/bill-transactions/{id}/audit' },
+        key: 'audit', label: '审核', scope: 'row',
       },
       {
-        key: 'void', label: '作废', scope: 'row', mutation: 'voidAccBillTransaction', isDanger: true,
-        http: { method: 'POST', path: '/finance/bill-transactions/{id}/void' },
+        key: 'void', label: '作废', scope: 'row', isDanger: true,
       },
     ],
     audit: { enabled: true },
-    destroyMutation: 'destroyAccBillTransaction',
+
   }
 }
 

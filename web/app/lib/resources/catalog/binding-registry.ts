@@ -1,6 +1,6 @@
 /**
  * ResourceBinding 注册表：known key 恢复类型；unknown 显式失败。
- * expand 期可用 fromResourceClient 从现有 ResourceClient 生成兼容 binding。
+ * contract 后 binding 是唯一资源→Adapter 关联；无独立 ResourceClient registry 入口。
  */
 import type { ResourceDocument } from '@synie/shared'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -16,12 +16,19 @@ import type {
 
 const bindings = new Map<string, ResourceBinding>()
 
-/** 从 legacy ResourceClient 生成 expand 期兼容 binding（不复制第二份业务逻辑） */
+/** 传输对象上可选的历史 action 桥（仅用于构造 CommandAdapter，不进 ResourceTransport 类型） */
+type TransportWithLegacyAction = ResourceClient & {
+  action?: (key: string, ids: string[]) => Promise<void>
+}
+
+/**
+ * 从传输实现生成 ResourceBinding。
+ * 写能力按 options 省略；action 若存在则桥接为 CommandAdapter。
+ */
 export function bindingFromResourceClient(
   resource: string,
-  client: ResourceClient,
+  client: TransportWithLegacyAction,
   options?: {
-    /** 省略不支持的写方法 */
     canCreate?: boolean
     canUpdate?: boolean
     canDelete?: boolean
@@ -36,23 +43,27 @@ export function bindingFromResourceClient(
     get: (id) => client.get(id),
   }
 
-  const writer: RecordWriter = {
-    ...(canCreate
-      ? {
-          create: (input: Record<string, unknown>) => client.create(input),
-        }
-      : {}),
-    ...(canUpdate
-      ? {
-          update: (id: string, input: Record<string, unknown>) => client.update(id, input),
-        }
-      : {}),
-    ...(canDelete
-      ? {
-          delete: (id: string) => client.delete(id),
-        }
-      : {}),
-  } as RecordWriter
+  const hasWriter = canCreate || canUpdate || canDelete
+  const writer: RecordWriter | undefined = hasWriter
+    ? ({
+        ...(canCreate && client.create
+          ? {
+              create: (input: Record<string, unknown>) => client.create!(input),
+            }
+          : {}),
+        ...(canUpdate && client.update
+          ? {
+              update: (id: string, input: Record<string, unknown>) =>
+                client.update!(id, input),
+            }
+          : {}),
+        ...(canDelete && client.delete
+          ? {
+              delete: (id: string) => client.delete!(id),
+            }
+          : {}),
+      } as RecordWriter)
+    : undefined
 
   let commands: CommandAdapter | undefined
   if (client.action) {
@@ -93,7 +104,7 @@ export function registerBinding(binding: ResourceBinding): void {
   bindings.set(binding.resource, binding)
 }
 
-/** 迁移期覆盖已注册 binding（如挂上语义 CommandAdapter） */
+/** 覆盖已注册 binding（挂语义 CommandAdapter / draft） */
 export function replaceBinding(binding: ResourceBinding): void {
   bindings.set(binding.resource, binding)
 }
@@ -126,7 +137,10 @@ export function clearBindingsForTests(): void {
   bindings.clear()
 }
 
-/** 将 binding 的 Reader/Writer 适配为 legacy ResourceClient（Grid expand 兼容） */
+/**
+ * 将 binding 适配为传输对象（仅 query/get + 可选写）。
+ * 不含 meta/action；Grid/命令应直接使用 binding。
+ */
 export function resourceClientFromBinding(binding: ResourceBinding): ResourceClient {
   const writer = binding.writer as
     | (Partial<{
@@ -136,40 +150,28 @@ export function resourceClientFromBinding(binding: ResourceBinding): ResourceCli
       }>)
     | undefined
 
+  const unsupported = (op: string) => async () => {
+    throw new Error(`资源「${binding.resource}」不支持 ${op}`)
+  }
   return {
-    id: `binding:${binding.resource}`,
-    async meta() {
-      // expand：仍走旧 gridMeta 路径所需的 Grid 子集，由调用方 useGridMeta 使用 client.meta
-      // binding 场景下 meta 从 document.grid 派生见 gridMetaFromDocument
-      const { gridMetaFromDocument } = await import('./grid-from-document')
-      const doc = await binding.loadDocument()
-      return gridMetaFromDocument(doc)
-    },
+    id: `rest:${binding.resource}`,
     query: (input) => binding.reader.query(input),
     get: (id) => binding.reader.get(id),
-    create: (input) => {
-      if (!writer || !('create' in writer) || !writer.create) {
-        throw new Error(`资源「${binding.resource}」不支持 create`)
-      }
-      return writer.create(input)
-    },
-    update: (id, input) => {
-      if (!writer || !('update' in writer) || !writer.update) {
-        throw new Error(`资源「${binding.resource}」不支持 update`)
-      }
-      return writer.update(id, input)
-    },
-    delete: (id) => {
-      if (!writer || !('delete' in writer) || !writer.delete) {
-        throw new Error(`资源「${binding.resource}」不支持 delete`)
-      }
-      return writer.delete(id)
-    },
-    action: binding.commands
-      ? async (key, ids) => {
-          await binding.commands!.execute(key, { ids } as never)
-        }
-      : undefined,
+    create:
+      writer && 'create' in writer && writer.create
+        ? (input: Record<string, unknown>) => writer.create!(input)
+        : (unsupported('create') as (input: Record<string, unknown>) => Promise<Row>),
+    update:
+      writer && 'update' in writer && writer.update
+        ? (id: string, input: Record<string, unknown>) => writer.update!(id, input)
+        : ((unsupported('update') as unknown) as (
+            id: string,
+            input: Record<string, unknown>,
+          ) => Promise<Row>),
+    delete:
+      writer && 'delete' in writer && writer.delete
+        ? (id: string) => writer.delete!(id)
+        : (unsupported('delete') as (id: string) => Promise<void>),
   }
 }
 

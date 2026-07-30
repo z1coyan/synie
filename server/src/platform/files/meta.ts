@@ -101,7 +101,7 @@ export function fileResourceMeta(): ResourceMeta {
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
     ],
     form: { exclude: ['id', 'storage', 'key', 'insertedAt'] },
-    destroyMutation: 'destroySysFile',
+
   }
 }
 
@@ -269,7 +269,7 @@ export function storageResourceMeta(): ResourceMeta {
         commandTarget: 'row',
         permissionAction: 'update',
         // v1 transport 兼容字段；工单 11 随旧 Grid action 删除
-        http: { method: 'POST', path: '/api/v1/system/storages/{id}/set-default' },
+
       },
     ],
     form: {
@@ -281,6 +281,6 @@ export function storageResourceMeta(): ResourceMeta {
         isDefault: { edit: 'readOnly' },
       },
     },
-    destroyMutation: 'destroySysStorage',
+
   }
 }

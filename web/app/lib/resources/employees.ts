@@ -1,7 +1,6 @@
 import { apiData, api } from '../api/client'
 import type {Row, FilterState} from '~/components/synie-data-grid/types'
 import type { ResourceClient, ResourceQuery } from './types'
-import { gridMeta } from './meta'
 
 type EmployeeCreate = Record<string, unknown>
 type EmployeeUpdate = Record<string, unknown>
@@ -25,14 +24,6 @@ function wireEmployeeInput(input: Record<string, unknown>): Record<string, unkno
 export const employeeClient: ResourceClient = {
   id: 'rest:hrEmployees',
 
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'hrEmployees' }}),
-      ),
-    )
-  },
 
   async query(input) {
     ensureSupportedQuery(input)

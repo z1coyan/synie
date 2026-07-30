@@ -108,7 +108,7 @@ export function materialCategoryResourceMeta(): ResourceMeta {
     print: true,
     printLoops: [{ name: 'children', resource: 'invMaterialCategories' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyInvMaterialCategory',
+
   }
 }
 
@@ -185,7 +185,7 @@ export function materialResourceMeta(): ResourceMeta {
     printHead: true,
     printLoops: [{ name: 'units', resource: 'invMaterialUnits' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyInvMaterial',
+
   }
 }
 
@@ -234,7 +234,7 @@ export function materialUnitResourceMeta(): ResourceMeta {
     },
     print: true,
     audit: { enabled: true },
-    destroyMutation: 'destroyInvMaterialUnit',
+
   }
 }
 
@@ -327,7 +327,7 @@ export function warehouseResourceMeta(): ResourceMeta {
     print: true,
     printLoops: [{ name: 'children', resource: 'invWarehouses' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyInvWarehouse',
+
   }
 }
 
@@ -510,8 +510,8 @@ export function stockDocResourceMeta(): ResourceMeta {
     ],
     actions: [
       ...crud,
-      { key: 'audit', label: '审核', scope: 'row', mutation: 'auditInvStockDoc' },
-      { key: 'void', label: '作废', scope: 'row', mutation: 'voidInvStockDoc', isDanger: true },
+      { key: 'audit', label: '审核', scope: 'row' },
+      { key: 'void', label: '作废', scope: 'row', isDanger: true },
     ],
     form: {
       exclude: ['id', 'status', 'auditedAt', 'insertedAt', 'updatedAt', 'createdById', 'auditedById'],
@@ -527,7 +527,7 @@ export function stockDocResourceMeta(): ResourceMeta {
     printHead: true,
     printLoops: [{ name: 'items', resource: 'invStockDocItems' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyInvStockDoc',
+
   }
 }
 
@@ -617,7 +617,7 @@ export function stockDocItemResourceMeta(): ResourceMeta {
     },
     print: true,
     audit: { enabled: true },
-    destroyMutation: 'destroyInvStockDocItem',
+
   }
 }
 
@@ -698,8 +698,8 @@ export function stockTransferResourceMeta(): ResourceMeta {
     ],
     actions: [
       ...crud,
-      { key: 'ship', label: '发货', scope: 'row', mutation: 'shipInvStockTransfer' },
-      { key: 'receive', label: '收货', scope: 'row', mutation: 'receiveInvStockTransfer' },
+      { key: 'ship', label: '发货', scope: 'row' },
+      { key: 'receive', label: '收货', scope: 'row' },
     ],
     form: {
       exclude: [
@@ -726,7 +726,7 @@ export function stockTransferResourceMeta(): ResourceMeta {
     printHead: true,
     printLoops: [{ name: 'items', resource: 'invStockTransferItems' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyInvStockTransfer',
+
   }
 }
 
@@ -822,7 +822,7 @@ export function stockTransferItemResourceMeta(): ResourceMeta {
     },
     print: true,
     audit: { enabled: true },
-    destroyMutation: 'destroyInvStockTransferItem',
+
   }
 }
 
@@ -892,14 +892,14 @@ export function stockCountResourceMeta(): ResourceMeta {
     ],
     actions: [
       ...crud,
-      { key: 'approve', label: '审核', scope: 'row', mutation: 'approveInvStockCount' },
-      { key: 'cancel', label: '作废', scope: 'row', mutation: 'cancelInvStockCount', isDanger: true },
+      { key: 'approve', label: '审核', scope: 'row' },
+      { key: 'cancel', label: '作废', scope: 'row', isDanger: true },
     ],
     print: true,
     printHead: true,
     printLoops: [{ name: 'items', resource: 'invStockCountItems' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyInvStockCount',
+
   }
 }
 
@@ -985,7 +985,7 @@ export function stockCountItemResourceMeta(): ResourceMeta {
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     print: true,
     audit: { enabled: true },
-    destroyMutation: 'destroyInvStockCountItem',
+
   }
 }
 

@@ -1,250 +1,150 @@
 {
+  "schemaVersion": 2,
   "name": "basCurrencies",
-  "grid": {
-    "columns": [
-      {
-        "name": "id",
-        "type": "string",
-        "label": "id",
-        "sortable": true,
-        "filterable": false,
-        "enumOptions": null,
-        "ref": null
+  "label": "货币",
+  "permissionPrefix": "base.currency",
+  "capabilities": [
+    "create",
+    "update",
+    "delete"
+  ],
+  "fields": [
+    {
+      "name": "id",
+      "label": "id",
+      "visibility": "readable",
+      "input": {
+        "create": "forbidden",
+        "update": "forbidden"
       },
-      {
-        "name": "name",
-        "type": "string",
-        "label": "货币名称",
-        "sortable": true,
-        "filterable": true,
-        "enumOptions": null,
-        "ref": null
+      "filterable": false,
+      "sortable": true,
+      "kind": "uuid"
+    },
+    {
+      "name": "name",
+      "label": "货币名称",
+      "visibility": "readable",
+      "input": {
+        "create": "required",
+        "update": "allowed",
+        "clearable": false
       },
-      {
-        "name": "isoCode",
-        "type": "string",
-        "label": "ISO 编码",
-        "sortable": true,
-        "filterable": true,
-        "enumOptions": null,
-        "ref": null
+      "filterable": true,
+      "sortable": true,
+      "searchable": true,
+      "kind": "scalar",
+      "scalarType": "string"
+    },
+    {
+      "name": "isoCode",
+      "label": "ISO 编码",
+      "visibility": "readable",
+      "input": {
+        "create": "required",
+        "update": "forbidden"
       },
-      {
-        "name": "symbol",
-        "type": "string",
-        "label": "符号",
-        "sortable": true,
-        "filterable": true,
-        "enumOptions": null,
-        "ref": null
+      "filterable": true,
+      "sortable": true,
+      "searchable": true,
+      "kind": "scalar",
+      "scalarType": "string"
+    },
+    {
+      "name": "symbol",
+      "label": "符号",
+      "visibility": "readable",
+      "input": {
+        "create": "optional",
+        "update": "allowed",
+        "clearable": true
       },
-      {
-        "name": "active",
-        "type": "boolean",
-        "label": "启用",
-        "sortable": true,
-        "filterable": true,
-        "enumOptions": null,
-        "ref": null
+      "filterable": true,
+      "sortable": true,
+      "searchable": true,
+      "kind": "scalar",
+      "scalarType": "string"
+    },
+    {
+      "name": "active",
+      "label": "启用",
+      "visibility": "readable",
+      "input": {
+        "create": "optional",
+        "update": "allowed",
+        "clearable": true
       },
-      {
-        "name": "insertedAt",
-        "type": "datetime",
-        "label": "创建时间",
-        "sortable": true,
-        "filterable": true,
-        "enumOptions": null,
-        "ref": null
+      "filterable": true,
+      "sortable": true,
+      "kind": "scalar",
+      "scalarType": "boolean"
+    },
+    {
+      "name": "insertedAt",
+      "label": "创建时间",
+      "visibility": "readable",
+      "input": {
+        "create": "forbidden",
+        "update": "forbidden"
       },
-      {
-        "name": "updatedAt",
-        "type": "datetime",
-        "label": "更新时间",
-        "sortable": true,
-        "filterable": true,
-        "enumOptions": null,
-        "ref": null
-      }
+      "filterable": true,
+      "sortable": true,
+      "kind": "scalar",
+      "scalarType": "datetime"
+    },
+    {
+      "name": "updatedAt",
+      "label": "更新时间",
+      "visibility": "readable",
+      "input": {
+        "create": "forbidden",
+        "update": "forbidden"
+      },
+      "filterable": true,
+      "sortable": true,
+      "kind": "scalar",
+      "scalarType": "datetime"
+    }
+  ],
+  "lookup": {
+    "labelField": "name",
+    "searchFields": [
+      "name",
+      "isoCode"
     ],
-    "capabilities": [
-      "create",
-      "update",
-      "delete"
-    ],
-    "extendedActions": [],
-    "destroyMutation": "destroyBasCurrency"
+    "subtitleFields": [
+      "isoCode"
+    ]
   },
-  "form": {
-    "kind": "basic",
-    "exclude": [
+  "list": {
+    "columns": [
       "id",
+      "name",
+      "isoCode",
+      "symbol",
       "active",
       "insertedAt",
       "updatedAt"
-    ],
-    "fields": {
-      "name": {
-        "required": true,
-        "placeholder": "如 人民币"
-      },
-      "isoCode": {
-        "required": true,
-        "edit": "createOnly",
-        "placeholder": "三位大写字母,如 CNY"
-      },
-      "symbol": {
-        "placeholder": "如 ¥"
-      }
+    ]
+  },
+  "form": {
+    "kind": "basic",
+    "layout": {
+      "fields": [
+        {
+          "field": "name",
+          "placeholder": "如 人民币"
+        },
+        {
+          "field": "isoCode",
+          "placeholder": "三位大写字母,如 CNY"
+        },
+        {
+          "field": "symbol",
+          "placeholder": "如 ¥"
+        }
+      ]
     }
   },
-  "catalog": {
-    "schemaVersion": 2,
-    "name": "basCurrencies",
-    "label": "货币",
-    "permissionPrefix": "base.currency",
-    "capabilities": [
-      "create",
-      "update",
-      "delete"
-    ],
-    "fields": [
-      {
-        "name": "id",
-        "label": "id",
-        "visibility": "readable",
-        "input": {
-          "create": "forbidden",
-          "update": "forbidden"
-        },
-        "filterable": false,
-        "sortable": true,
-        "kind": "uuid"
-      },
-      {
-        "name": "name",
-        "label": "货币名称",
-        "visibility": "readable",
-        "input": {
-          "create": "required",
-          "update": "allowed",
-          "clearable": false
-        },
-        "filterable": true,
-        "sortable": true,
-        "searchable": true,
-        "kind": "scalar",
-        "scalarType": "string"
-      },
-      {
-        "name": "isoCode",
-        "label": "ISO 编码",
-        "visibility": "readable",
-        "input": {
-          "create": "required",
-          "update": "forbidden"
-        },
-        "filterable": true,
-        "sortable": true,
-        "searchable": true,
-        "kind": "scalar",
-        "scalarType": "string"
-      },
-      {
-        "name": "symbol",
-        "label": "符号",
-        "visibility": "readable",
-        "input": {
-          "create": "optional",
-          "update": "allowed",
-          "clearable": true
-        },
-        "filterable": true,
-        "sortable": true,
-        "searchable": true,
-        "kind": "scalar",
-        "scalarType": "string"
-      },
-      {
-        "name": "active",
-        "label": "启用",
-        "visibility": "readable",
-        "input": {
-          "create": "optional",
-          "update": "allowed",
-          "clearable": true
-        },
-        "filterable": true,
-        "sortable": true,
-        "kind": "scalar",
-        "scalarType": "boolean"
-      },
-      {
-        "name": "insertedAt",
-        "label": "创建时间",
-        "visibility": "readable",
-        "input": {
-          "create": "forbidden",
-          "update": "forbidden"
-        },
-        "filterable": true,
-        "sortable": true,
-        "kind": "scalar",
-        "scalarType": "datetime"
-      },
-      {
-        "name": "updatedAt",
-        "label": "更新时间",
-        "visibility": "readable",
-        "input": {
-          "create": "forbidden",
-          "update": "forbidden"
-        },
-        "filterable": true,
-        "sortable": true,
-        "kind": "scalar",
-        "scalarType": "datetime"
-      }
-    ],
-    "lookup": {
-      "labelField": "name",
-      "searchFields": [
-        "name",
-        "isoCode"
-      ],
-      "subtitleFields": [
-        "isoCode"
-      ]
-    },
-    "list": {
-      "columns": [
-        "id",
-        "name",
-        "isoCode",
-        "symbol",
-        "active",
-        "insertedAt",
-        "updatedAt"
-      ]
-    },
-    "form": {
-      "kind": "basic",
-      "layout": {
-        "fields": [
-          {
-            "field": "name",
-            "placeholder": "如 人民币"
-          },
-          {
-            "field": "isoCode",
-            "placeholder": "三位大写字母,如 CNY"
-          },
-          {
-            "field": "symbol",
-            "placeholder": "如 ¥"
-          }
-        ]
-      }
-    },
-    "commands": []
-  }
+  "commands": []
 }

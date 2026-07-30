@@ -1,6 +1,5 @@
 import { api, apiData } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
-import { gridMeta } from './meta'
 import type { ResourceClient } from './types'
 
 export interface SalesSetting {
@@ -49,15 +48,6 @@ function singletonClient(
 ): ResourceClient {
   return {
     id: `rest:${resource}`,
-    async meta() {
-      return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-            param: { name: resource },
-          }),
-        ),
-      )
-    },
     async query() {
       const value = await get()
       return { count: 1, results: [value] }

@@ -1,6 +1,5 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
 type FilterDocument = FilterState
@@ -48,15 +47,6 @@ function queryBody(input: ResourceQuery) {
   }
 }
 
-async function meta(resource: 'accGlEntries' | 'accGlJournals' | 'accGlJournalLines') {
-  return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-        param: { name: resource }}),
-    ),
-  )
-}
-
 function decimalInput(input: Record<string, unknown>): Record<string, unknown> {
   const body = { ...input }
   for (const field of ['debit', 'credit'] as const) {
@@ -74,9 +64,6 @@ const readOnly = (label: string) => async () => {
 export const glEntryClient: ResourceClient = {
   id: 'rest:accGlEntries',
 
-  async meta() {
-    return meta('accGlEntries')
-  },
 
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
@@ -114,9 +101,6 @@ export async function cancelGlJournal(id: string) {
 export const glJournalClient: ResourceClient = {
   id: 'rest:accGlJournals',
 
-  async meta() {
-    return meta('accGlJournals')
-  },
 
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
@@ -163,9 +147,6 @@ export const glJournalClient: ResourceClient = {
 export const glJournalLineClient: ResourceClient = {
   id: 'rest:accGlJournalLines',
 
-  async meta() {
-    return meta('accGlJournalLines')
-  },
 
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(

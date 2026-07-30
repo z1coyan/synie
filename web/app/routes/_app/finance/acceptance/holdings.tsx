@@ -6,7 +6,7 @@ import { formatAmount } from '~/lib/amount'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
+import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { Row, RowAction } from '~/components/synie-data-grid/types'
 import {
   billClient,
@@ -63,8 +63,8 @@ function BillHoldingsPage() {
 
   // 行操作跨资源写数据,门控按目标资源的能力反射:发起交易看 accBillTransactions:create,
   // 票面修正看 accBills:update(挂在持有 meta 的 capability 字段上会查错资源,fail-closed 隐藏)
-  const txMeta = useGridMeta('accBillTransactions', true, billTransactionClient)
-  const billMeta = useGridMeta('accBills', true, billClient)
+  const txMeta = useGridMeta('accBillTransactions', true)
+  const billMeta = useGridMeta('accBills', true)
   const canCreateTx = (txMeta.data?.capabilities ?? []).includes('create')
   const canEditBill = (billMeta.data?.capabilities ?? []).includes('update')
 

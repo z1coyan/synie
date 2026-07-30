@@ -1,10 +1,7 @@
 /**
- * Meta wire DTO（GridMetaDTO / FormMetaDTO / 权限目录），对齐
- * web/app/components/synie-data-grid/types.ts 与既有 Meta JSON 形状。
- * 服务端 Registry 投影产出、前端 Resource Client 消费。
- *
- * ResourceDocument v2 定义见 `resource-document.ts`。迁移期
- * ResourceMetaDocument 同时承载 v1 grid/form 与可选 `catalog`。
+ * Meta wire DTO（Grid 本地类型 / 权限目录）。
+ * ResourceDocument v2 是 Meta 资源响应的唯一 envelope（见 resource-document.ts）。
+ * Grid 列/动作本地类型仍由此文件导出，供前端从 ResourceDocument 派生。
  */
 import type { ResourceDocument } from './resource-document.ts'
 
@@ -54,13 +51,15 @@ export interface GridColumnMeta {
   ref: GridColumnRef | null
 }
 
+/**
+ * Grid 扩展动作本地视图（由 ResourceDocument.commands 派生）。
+ * 不再携带 mutation/http 等 v1 transport。
+ */
 export interface GridActionMeta {
   key: string
   label: string
   scope: 'row' | 'bulk' | 'both'
-  mutation: string
   isDanger: boolean
-  http?: { method: string; path: string }
   confirmKind?: 'none' | 'generic' | 'audit_doc'
 }
 
@@ -68,16 +67,15 @@ export interface GridMeta {
   columns: GridColumnMeta[]
   capabilities: string[]
   extendedActions: GridActionMeta[]
-  destroyMutation: string | null
+  /** 是否可删除（由 capabilities 与 binding writer 共同决定；兼容字段） */
+  canDelete: boolean
 }
 
+/**
+ * @deprecated 服务端 form 声明仅用于定义期；wire 使用 ResourceDocument.form。
+ * 保留类型供服务端 ResourceMeta.form 使用。
+ */
 export interface FormMeta {
-  /**
-   * Catalog form kind（expand 期可选）。
-   * 缺省时 legacy normalizer 从 fields/exclude 推导 basic；
-   * extension：附件/OCR 等 Presentation Extension，不走 Basic Form；
-   * none：无表单。
-   */
   kind?: 'basic' | 'extension' | 'none'
   exclude?: string[]
   fields?: Record<string, Record<string, unknown>>
@@ -86,17 +84,10 @@ export interface FormMeta {
 }
 
 /**
- * GET /api/v1/meta/resources/{name} 的兼容响应。
- * expand 期：`catalog` 可选；contract 后仅保留 v2 envelope。
+ * GET /api/v1/meta/resources/{name} 的 wire 响应：完整 ResourceDocument v2。
+ * 别名保留便于渐进替换 import。
  */
-export interface ResourceMetaDocument {
-  name: string
-  grid: GridMeta
-  /** @deprecated v1 兼容 Form；由 catalog.form 取代 */
-  form?: FormMeta
-  /** ResourceDocument v2（expand 期由服务端并行投影） */
-  catalog?: ResourceDocument
-}
+export type ResourceMetaDocument = ResourceDocument
 
 /** GET /api/v1/meta/resources 的列表项 */
 export interface ResourceSummary {

@@ -53,7 +53,7 @@ export function customerResourceMeta(): ResourceMeta {
     },
     print: true,
     audit: { enabled: true },
-    destroyMutation: 'destroySalCustomer',
+
   }
 }
 
@@ -100,7 +100,7 @@ export function supplierResourceMeta(): ResourceMeta {
     },
     print: true,
     audit: { enabled: true },
-    destroyMutation: 'destroyPurSupplier',
+
   }
 }
 
@@ -176,7 +176,7 @@ export function employeeResourceMeta(): ResourceMeta {
     },
     print: true,
     audit: { enabled: true, sensitiveFields: ['id_number'] },
-    destroyMutation: 'destroyHrEmployee',
+
   }
 }
 

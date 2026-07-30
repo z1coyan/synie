@@ -189,7 +189,7 @@ export function attendanceImportResourceMeta(): ResourceMeta {
     ],
     actions: [{ key: 'import', label: '导入', scope: 'both' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyHrAttendanceImport',
+
   }
 }
 
@@ -297,7 +297,7 @@ export function attendanceCorrectionResourceMeta(): ResourceMeta {
     ],
     actions: crud,
     audit: { enabled: true },
-    destroyMutation: 'destroyHrAttendanceCorrection',
+
   }
 }
 
@@ -403,7 +403,7 @@ export function payrollResourceMeta(): ResourceMeta {
     printHead: true,
     printLoops: [{ name: 'payments', resource: 'hrPayrollPayments' }],
     audit: { enabled: true },
-    destroyMutation: 'destroyHrPayroll',
+
   }
 }
 
@@ -472,7 +472,7 @@ export function payrollPaymentResourceMeta(): ResourceMeta {
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
     ],
     audit: { enabled: true },
-    destroyMutation: 'destroyHrPayrollPayment',
+
   }
 }
 
@@ -536,7 +536,7 @@ export function employeeLoanResourceMeta(): ResourceMeta {
     ],
     actions: crud,
     audit: { enabled: true },
-    destroyMutation: 'destroyHrEmployeeLoan',
+
   }
 }
 

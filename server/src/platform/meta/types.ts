@@ -49,16 +49,13 @@ export interface ActionMeta {
   label: string
   scope: 'row' | 'bulk' | 'both'
   /**
-   * v2 command target 覆盖；缺省从 scope 推导（row/bulk/both→rowOrBulk）。
+   * command target 覆盖；缺省从 scope 推导（row/bulk/both→rowOrBulk）。
    * collection：集合命令，不需要记录 ID（如按区间重算）。
-   * 旧 import/export 伪装 key 仅保留在 v1 投影；v2 用 semanticCommandKey + 本字段。
    */
   commandTarget?: 'collection' | 'row' | 'bulk' | 'rowOrBulk'
   /** 缺省取 key */
   permissionAction?: string
-  mutation?: string
   isDanger?: boolean
-  http?: { method: string; path: string }
   confirmKind?: 'none' | 'generic' | 'audit_doc'
 }
 
@@ -105,12 +102,10 @@ export interface ResourceMeta {
   printHead?: boolean
   printLoops?: PrintLoopMeta[]
   audit?: { enabled: boolean; sensitiveFields?: string[] }
-  destroyMutation?: string
   /**
-   * 写入路径标记。
-   * 工单 10 起全部资源为 'typed'（register 强制）；'legacy' 仅保留兼容类型，调用路径已归零。
+   * 写入路径标记。contract 后仅允许 'typed'。
    */
-  catalogSource?: 'legacy' | 'typed'
+  catalogSource?: 'typed'
 }
 
 /** 标准十件套（permission catalog 与 capabilities 的基准） */

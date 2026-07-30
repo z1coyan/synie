@@ -11,7 +11,7 @@ import {
 } from '~/lib/resources/quotations'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
+import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'

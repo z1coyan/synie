@@ -1,10 +1,7 @@
 import type {
   FieldDocument,
-  GridActionMeta,
-  GridColumnMeta,
-  GridColumnRef,
   PermissionGroup,
-  ResourceMetaDocument,
+  ResourceDocument,
   ResourceSummary,
 } from '@synie/shared'
 import { hasPermission, type Actor } from '../authz/actor.ts'
@@ -13,7 +10,7 @@ import {
   buildNormalizedResource,
   projectResourceDocument,
   type NormalizedResource,
-} from './legacy-normalize.ts'
+} from './catalog-normalize.ts'
 import { applyResourceClassification } from './resource-classification.ts'
 import type { ResourceMeta } from './types.ts'
 
@@ -21,14 +18,13 @@ const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/
 
 export interface SealReport {
   total: number
-  legacy: number
   typed: number
 }
 
 /**
  * Meta Registry / Resource Catalog：
  * 生命周期 register → seal → project/read。
- * seal 后禁止继续注册；投影同时产出 v1 Grid/Form 与 v2 catalog。
+ * 投影仅产出 ResourceDocument v2（contract 后无 v1 grid/form sibling）。
  * Catalog 不提供通用 create/update/delete 或 SQL 保存入口。
  */
 export function createRegistry() {
@@ -41,7 +37,6 @@ export function createRegistry() {
     if (sealed) {
       throw new Error(`Registry 已 seal，禁止注册: ${resource.name}`)
     }
-    // 工单 10：呈现分类 + form.kind/lookup 补齐；全部走 typed 规范化（legacy 调用数归零）
     const classified = applyResourceClassification(resource)
     const typed: ResourceMeta = { ...classified, catalogSource: 'typed' }
     validate(typed)
@@ -121,7 +116,6 @@ export function createRegistry() {
             }
           }
           if (field.ref.discriminator && !fieldNames.has(field.ref.discriminator)) {
-            // discriminator 可能是 db/api 名；允许 apiName 或 name
             const byName = resource.fields.some(
               (f) => f.apiName === field.ref!.discriminator || f.name === field.ref!.discriminator,
             )
@@ -173,36 +167,6 @@ export function createRegistry() {
     return anyOf.some((code) => hasPermission(actor, code))
   }
 
-  /**
-   * 投影引用：无权目标降级；Grid wire 对齐 Go omitempty（null 键不输出）。
-   * 普通 fk 带 resource/relation/labelField；多态 fk 仅 discriminator/discriminatorType/variants。
-   */
-  function visibleRef(ref: GridColumnRef | undefined, actor: Actor): GridColumnRef | null {
-    if (!ref) return null
-    if (actor.superAdmin) return projectWireRef(ref)
-    if (ref.resource) {
-      const target = resources.get(ref.resource)
-      return target && canRead(target, actor) ? projectWireRef(ref) : null
-    }
-    if (!ref.variants || ref.variants.length === 0) return null
-    const variants = ref.variants.filter((variant) => {
-      const target = resources.get(variant.resource)
-      return target !== undefined && canRead(target, actor)
-    })
-    return variants.length > 0 ? projectWireRef({ ...ref, variants }) : null
-  }
-
-  function projectWireRef(ref: GridColumnRef): GridColumnRef {
-    const out: Record<string, unknown> = {}
-    if (ref.resource != null) out.resource = ref.resource
-    if (ref.relation != null) out.relation = ref.relation
-    if (ref.labelField != null) out.labelField = ref.labelField
-    if (ref.discriminator != null) out.discriminator = ref.discriminator
-    if (ref.discriminatorType != null) out.discriminatorType = ref.discriminatorType
-    if (ref.variants != null) out.variants = ref.variants
-    return out as unknown as GridColumnRef
-  }
-
   function collectCapabilities(resource: ResourceMeta, actor: Actor): string[] {
     const capabilities: string[] = []
     const seen = new Set<string>()
@@ -251,76 +215,21 @@ export function createRegistry() {
   }
 
   /**
-   * 双投影：旧 name/grid/form + catalog v2。
-   * Grid 与 v2 均从同一 ResourceMeta / NormalizedResource 派生，禁止双写字段事实。
+   * 按 Actor 投影完整 ResourceDocument v2（唯一 wire envelope）。
    */
-  function buildDocument(name: string, actor: Actor): ResourceMetaDocument {
+  function buildDocument(name: string, actor: Actor): ResourceDocument {
     const resource = resources.get(name)
     if (!resource) throw new ApiError('not_found', '未知的 Meta 资源')
     if (!canRead(resource, actor)) throw new ApiError('forbidden', '无权限访问该资源')
 
-    const columns: GridColumnMeta[] = []
-    for (const field of resource.fields) {
-      if (field.sensitive || field.printOnly) continue
-      const ref = visibleRef(field.ref, actor)
-      let type = field.type === 'uuid' ? 'string' : field.type
-      let sortable = field.sortable ?? false
-      let filterable = field.filterable ?? false
-      if (ref) {
-        type = 'fk'
-      } else if (field.ref) {
-        // 与旧 GridMeta 契约一致：无权读取引用目标时只暴露原始 ID，
-        // 不允许沿不可见关系筛选，但允许按物理 ID 排序。
-        type = 'string'
-        sortable = true
-        filterable = false
-      }
-      columns.push({
-        name: field.apiName,
-        type: type as GridColumnMeta['type'],
-        label: field.label,
-        sortable,
-        filterable,
-        enumOptions: field.enumOptions ?? null,
-        ref,
-      })
-    }
-
     const capabilities = collectCapabilities(resource, actor)
-    const extendedActions: GridActionMeta[] = []
-    for (const action of resource.actions) {
-      if (!STANDARD_ACTION_SET.has(action.key)) {
-        extendedActions.push({
-          key: action.key,
-          label: action.label,
-          scope: action.scope,
-          mutation: action.mutation ?? '',
-          isDanger: action.isDanger ?? false,
-          ...(action.http ? { http: action.http } : {}),
-          ...(action.confirmKind ? { confirmKind: action.confirmKind } : {}),
-        })
-      }
-    }
-
     const norm = normalized.get(name)
     if (!norm) {
       throw new Error(`Meta 资源 ${name} 缺少 Catalog 规范化结果（须经 register/seal）`)
     }
-    const catalog = projectResourceDocument(norm, capabilities, (field) =>
+    return projectResourceDocument(norm, capabilities, (field) =>
       applyRefAvailability(field, actor),
     )
-
-    return {
-      name: resource.name,
-      grid: {
-        columns,
-        capabilities,
-        extendedActions,
-        destroyMutation: resource.destroyMutation ?? null,
-      },
-      ...(resource.form ? { form: resource.form } : {}),
-      catalog,
-    }
   }
 
   function summaries(actor: Actor): ResourceSummary[] {
@@ -354,15 +263,8 @@ export function createRegistry() {
       .sort((a, b) => a.prefix.localeCompare(b.prefix))
   }
 
-  /** seal 报告（未 seal 时返回当前计数） */
   function catalogStats(): SealReport {
-    let legacy = 0
-    let typed = 0
-    for (const resource of resources.values()) {
-      if ((resource.catalogSource ?? 'typed') === 'typed') typed++
-      else legacy++
-    }
-    return { total: resources.size, legacy, typed }
+    return { total: resources.size, typed: resources.size }
   }
 
   return {
@@ -379,19 +281,6 @@ export function createRegistry() {
 }
 
 export type Registry = ReturnType<typeof createRegistry>
-
-const STANDARD_ACTION_SET = new Set<string>([
-  'read',
-  'create',
-  'update',
-  'delete',
-  'print',
-  'import',
-  'export',
-  'batch_delete',
-  'batch_update',
-  'batch_print',
-])
 
 function collectBasicFieldNames(form: {
   kind: 'basic'

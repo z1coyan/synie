@@ -97,7 +97,7 @@ export function ruleResourceMeta(): ResourceMeta {
         enabled: { defaultValue: true },
       },
     },
-    destroyMutation: 'destroySysNumberingRule',
+
   }
 }
 

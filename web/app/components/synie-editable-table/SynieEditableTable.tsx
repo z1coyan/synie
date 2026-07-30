@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Button, Spinner, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import { defaultCell } from '../synie-data-grid/SynieDataGrid'
-import { resourceClientFor } from '~/lib/resources/registry'
+import { resourceClientFromResourceBinding } from '~/lib/resources/registry'
 import type { ResourceClient } from '~/lib/resources/types'
 import { useGridMeta } from '../synie-data-grid/meta'
 import type { EnumChipColor, GridColumnMeta, LocalGridMeta, Row } from '../synie-data-grid/types'
@@ -91,8 +91,8 @@ function cellClass(col: GridColumnMeta, o?: EditableColumnOverride): string {
 
 export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTableProps<T>) {
   const { resource, items, label = '条目', overrides = {}, readOnly = false, canCreate = true, canDelete = true } = props
-  const client = props.client ?? (!props.meta ? resourceClientFor(resource) : undefined)
-  const remote = useGridMeta(resource, !props.meta, client) // 本地模式不发请求
+  const client = props.client ?? (!props.meta ? resourceClientFromResourceBinding(resource) : undefined)
+  const remote = useGridMeta(resource, !props.meta) // 本地模式不发请求
   const [drawer, setDrawer] = useState<{ mode: 'create' | 'edit'; row: T | null } | null>(null)
 
   const metaColumns = props.meta?.columns ?? remote.data?.columns ?? []

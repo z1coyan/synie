@@ -2,7 +2,6 @@ import type { ListQuery } from '@synie/shared'
 import { api, apiData } from '../api/client'
 import { isForbidden } from '../errors'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
 export type TodoTab = 'active' | 'history' | 'recent'
@@ -59,16 +58,6 @@ const readOnly = async (): Promise<Row> => {
 
 export const auditLogClient: ResourceClient = {
   id: 'rest:sysAuditLogs',
-
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'sysAuditLogs' },
-        }),
-      ),
-    )
-  },
 
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(

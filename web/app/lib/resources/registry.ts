@@ -335,44 +335,54 @@ for (const [resource, client] of Object.entries(clients)) {
   })
 }
 
-/**
- * 共享资源组件的唯一默认解析入口。
- * expand 期仍返回 legacy ResourceClient 实现，保证 Grid/Drawer 行为不变；
- * 写能力边界由 binding 约束（resourceBindingFor）。
- */
-export function resourceClientFor(resource: string): ResourceClient {
+function seedBinding(resource: string): void {
   const client = clients[resource]
   if (!client) {
-    throw new Error(`资源「${resource}」未注册 REST ResourceClient`)
+    throw new Error(`资源「${resource}」未注册 ResourceBinding`)
   }
-  return client
+  const caps = writeCapsFor(resource)
+  let binding = bindingFromResourceClient(resource, client, {
+    canCreate: caps.create,
+    canUpdate: caps.update,
+    canDelete: caps.delete,
+  })
+  const commands = SEMANTIC_COMMAND_ADAPTERS[resource]
+  if (commands) binding = { ...binding, commands }
+  if (resource === 'salDeliveries') {
+    binding = { ...binding, draft: salesDeliveryDraftAdapter }
+  }
+  if (hasBinding(resource)) replaceBinding(binding)
+  else registerBinding(binding)
 }
 
 /**
- * 类型安全 ResourceBinding 入口。未知资源显式失败。
- * Grid / Drawer / 外键预览迁移后均应经本函数取能力。
+ * 类型安全 ResourceBinding 入口（唯一资源解析）。未知资源显式失败。
+ * 若测试 clear 了 binding 表，按传输表防御性补种（仍不接受未知资源名）。
  */
 export function resourceBindingFor(resource: string): ResourceBinding {
-  if (!hasBinding(resource) && clients[resource]) {
-    // 理论上 module 加载时已注册；防御性补齐
-    const caps = writeCapsFor(resource)
-    registerBinding(
-      bindingFromResourceClient(resource, clients[resource]!, {
-        canCreate: caps.create,
-        canUpdate: caps.update,
-        canDelete: caps.delete,
-      }),
-    )
-  }
+  if (!hasBinding(resource)) seedBinding(resource)
   return bindingFor(resource)
 }
 
-/** 已注册 REST client 的资源键（基线/契约用） */
+/**
+ * 从 binding 派生传输对象（query/get/可选写）。
+ * 不含 meta；供仍接受 client prop 的组件过渡使用。
+ */
+export function resourceClientFromResourceBinding(resource: string): ResourceClient {
+  return resourceClientFromBinding(resourceBindingFor(resource))
+}
+
+/** @deprecated 使用 resourceBindingFor / resourceClientFromResourceBinding */
+export function resourceClientFor(resource: string): ResourceClient {
+  return resourceClientFromResourceBinding(resource)
+}
+
+/** 已绑定资源键（基线/契约用） */
 export function listResourceClientKeys(): string[] {
   return Object.keys(clients).sort()
 }
 
-/** 将 binding 适配为 ResourceClient（迁移中的页面可选用） */
-export function resourceClientFromResourceBinding(resource: string): ResourceClient {
-  return resourceClientFromBinding(resourceBindingFor(resource))
+/** 绑定资源键列表 */
+export function listResourceBindingKeys(): string[] {
+  return Object.keys(clients).sort()
 }

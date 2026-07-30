@@ -190,7 +190,7 @@ export function instrumentResourceMeta(): ResourceMeta {
     form: { exclude: ['id', 'insertedAt', 'updatedAt'] },
     print: true,
     audit: { enabled: true },
-    destroyMutation: 'destroyBasMarketInstrument',
+
   }
 }
 
@@ -343,7 +343,6 @@ export function pricePointResourceMeta(): ResourceMeta {
         key: 'void',
         label: '作废',
         scope: 'row',
-        mutation: 'voidBasMarketPricePoint',
         isDanger: true,
       },
     ],

@@ -8,7 +8,7 @@ const suppliers = readFileSync(join(import.meta.dirname, 'suppliers.tsx'), 'utf8
 const employees = readFileSync(join(import.meta.dirname, '../hr/employees.tsx'), 'utf8')
 const attendanceImports = readFileSync(join(import.meta.dirname, '../hr/attendance/-import-drawers.tsx'), 'utf8')
 const drawerRegistry = readFileSync(
-  join(import.meta.dirname, '../../../components/synie-record-drawer/registry.tsx'),
+  join(import.meta.dirname, '../../../components/synie-record-drawer/extension-drawer-props.tsx'),
   'utf8',
 )
 
@@ -38,7 +38,7 @@ describe('客户/供应商/员工页 REST 迁移契约', () => {
   })
 
   test('考勤导入的员工权限 Meta 也显式走 REST client', () => {
-    expect(attendanceImports).toContain("useGridMeta('hrEmployees', true, employeeClient)")
+    expect(attendanceImports).toContain("useGridMeta('hrEmployees', true)")
   })
 
   test('员工编号创建可空自动取号且编辑态仍可修改', () => {

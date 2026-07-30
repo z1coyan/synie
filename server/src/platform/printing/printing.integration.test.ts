@@ -132,10 +132,13 @@ describeIf('printing integration', () => {
     const metaRes = await app.request('/api/v1/meta/resources/sysPrintTemplates', { headers })
     expect(metaRes.status).toBe(200)
     const meta = (await metaRes.json()) as {
-      grid: { capabilities: string[]; destroyMutation?: string | null }
+      schemaVersion: number
+      name: string
+      capabilities: string[]
     }
-    expect([...meta.grid.capabilities].sort().join(',')).toBe('create,delete,update')
-    expect(meta.grid.destroyMutation).toBe('destroySysPrintTemplate')
+    expect(meta.schemaVersion).toBe(2)
+    expect(meta.name).toBe('sysPrintTemplates')
+    expect([...meta.capabilities].sort().join(',')).toBe('create,delete,update')
 
     const resourcesRes = await app.request('/api/v1/printing/resources', { headers })
     expect(resourcesRes.status).toBe(200)

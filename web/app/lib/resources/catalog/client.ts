@@ -1,11 +1,10 @@
 /**
  * Catalog client：解码并缓存完整 ResourceDocument v2。
- * 不再只保留 Grid 子集。
+ * Meta 响应即 ResourceDocument（无 v1 grid/form envelope）。
  */
 import {
   decodeResourceDocument,
   type ResourceDocument,
-  type ResourceMetaDocument,
 } from '@synie/shared'
 import { api, apiData } from '~/lib/api/client'
 import {
@@ -17,17 +16,11 @@ export async function fetchResourceDocument(resource: string): Promise<ResourceD
   const cached = getCachedDocument(resource)
   if (cached) return cached
 
-  const envelope = await apiData<ResourceMetaDocument>(
+  const raw = await apiData<unknown>(
     api.meta.resources[':name'].$get({ param: { name: resource } }),
   )
 
-  if (!envelope.catalog) {
-    throw new Error(
-      `资源「${resource}」的 Meta 响应缺少 catalog v2（服务端 expand 未完成或版本不匹配）`,
-    )
-  }
-
-  const document = decodeResourceDocument(envelope.catalog)
+  const document = decodeResourceDocument(raw)
   setCachedDocument(resource, document)
   return document
 }

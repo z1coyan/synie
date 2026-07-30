@@ -1,13 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
-import { resourceClientFor } from '~/lib/resources/registry'
-import type { ResourceClient } from '~/lib/resources/types'
+import { fetchResourceDocument, gridMetaFromDocument } from '~/lib/resources/catalog'
 
-export function useGridMeta(resource: string, enabled = true, client?: ResourceClient) {
-  const resolvedClient = client ?? (enabled ? resourceClientFor(resource) : undefined)
+/**
+ * Grid Meta：从 ResourceDocument v2 派生。
+ * 不再经传输层 meta()。
+ */
+export function useGridMeta(resource: string, enabled = true) {
   return useQuery({
-    queryKey: ['gridMeta', resolvedClient?.id, resource],
-    queryFn: () => resolvedClient!.meta(),
+    queryKey: ['gridMeta', resource],
+    queryFn: async () => gridMetaFromDocument(await fetchResourceDocument(resource)),
     staleTime: 5 * 60_000,
-    enabled,
+    enabled: enabled && Boolean(resource),
   })
 }

@@ -15,7 +15,7 @@ import {
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
+import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { MonthSelect, monthOptions, today } from './-shared'
@@ -80,10 +80,7 @@ function PayrollSlipsPage() {
 
   // 发放按 hr_payroll_payment 自身权限码门控(发放≠改单)
   const paymentsMeta = useGridMeta(
-    'hrPayrollPayments',
-    true,
-    payrollPaymentClient,
-  )
+    'hrPayrollPayments', true)
   const canPay = (paymentsMeta.data?.capabilities ?? []).includes('create')
 
   const stats = useQuery({

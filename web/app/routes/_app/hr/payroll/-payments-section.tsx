@@ -28,10 +28,7 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
 
   // 门控按 hrPayrollPayments 自身权限码(发放≠改单)
   const meta = useGridMeta(
-    'hrPayrollPayments',
-    true,
-    payrollPaymentClient,
-  )
+    'hrPayrollPayments', true)
   const can = (action: string) => (meta.data?.capabilities ?? []).includes(action)
 
   const payments = useQuery({

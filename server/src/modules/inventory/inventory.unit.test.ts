@@ -43,9 +43,9 @@ describe('inventory meta 注册', () => {
       companyIds: [],
     }
     const doc = registry.buildDocument('invStockDocs', actor)
-    expect(doc.grid.capabilities).toContain('audit')
-    expect(doc.grid.capabilities).toContain('void')
-    expect(doc.grid.extendedActions.some((a) => a.key === 'audit')).toBe(true)
+    expect(doc.capabilities).toContain('audit')
+    expect(doc.capabilities).toContain('void')
+    expect(doc.commands.some((a) => a.key === 'audit')).toBe(true)
   })
 })
 

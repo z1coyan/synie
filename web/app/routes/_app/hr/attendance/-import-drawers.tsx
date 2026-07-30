@@ -169,7 +169,7 @@ export function AttendanceImportRecordDrawer({ importId, onOpenChange, onImporte
   const [running, setRunning] = useState(false)
 
   // 自动建员工是真实的员工创建,按员工资源 create 能力门控(后端同样 fail-closed 兜底)
-  const employeeMeta = useGridMeta('hrEmployees', true, employeeClient)
+  const employeeMeta = useGridMeta('hrEmployees', true)
   const canCreateEmployee = (employeeMeta.data?.capabilities ?? []).includes('create')
 
   // 每次换批次重置勾选

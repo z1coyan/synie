@@ -21,7 +21,7 @@ import {
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { salesOrderItemClient } from '~/lib/resources/orders'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/registry'
+import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow, localRowId } from '~/components/synie-editable-table/editable'
 import {

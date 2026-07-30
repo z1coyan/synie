@@ -2,7 +2,6 @@ import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
 import type {Row, FilterState} from '~/components/synie-data-grid/types'
 import type { ResourceClient, ResourceQuery } from './types'
-import { gridMeta } from './meta'
 
 type UserCreate = Record<string, unknown>
 type UserUpdate = Record<string, unknown>
@@ -24,11 +23,6 @@ function listBody(input: ResourceQuery): ListQuery {
 
 export const userClient: ResourceClient = {
   id: 'rest:sysUsers',
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({ param: { name: 'sysUsers' } })))
-  },
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(api.system.users.query.$post({ json: listBody(input) }))
     return { count: result.count, results: result.results as Row[] }
@@ -51,11 +45,6 @@ export const userClient: ResourceClient = {
 
 export const roleClient: ResourceClient = {
   id: 'rest:sysRoles',
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({ param: { name: 'sysRoles' } })))
-  },
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(api.system.roles.query.$post({ json: listBody(input) }))
     return { count: result.count, results: result.results as Row[] }

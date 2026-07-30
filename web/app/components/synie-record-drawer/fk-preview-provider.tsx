@@ -1,8 +1,12 @@
 import { useCallback, useState, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { FkPreviewContext } from './fk-preview'
 import { SynieRecordDrawer } from './SynieRecordDrawer'
-import { drawerConfig } from './registry'
-import { resourceClientFor } from '~/lib/resources/registry'
+import { basicFormDrawerProps, fetchResourceDocument } from '~/lib/resources/catalog'
+import {
+  resourceBindingFor,
+  resourceClientFromResourceBinding,
+} from '~/lib/resources/registry'
 
 interface Entry {
   key: number
@@ -13,15 +17,55 @@ interface Entry {
 
 let seq = 0
 
+function FkPreviewDrawer({
+  entry,
+  onClose,
+}: {
+  entry: Entry
+  onClose: () => void
+}) {
+  const docQuery = useQuery({
+    queryKey: ['fkPreviewMeta', entry.resource],
+    queryFn: () => fetchResourceDocument(entry.resource),
+    staleTime: 5 * 60_000,
+  })
+  const formProps =
+    docQuery.data?.form.kind === 'basic'
+      ? basicFormDrawerProps(docQuery.data)
+      : {
+          label: docQuery.data?.label ?? entry.resource,
+          exclude: [] as string[],
+          fields: {},
+        }
+
+  const client = resourceClientFromResourceBinding(entry.resource)
+
+  return (
+    <SynieRecordDrawer
+      resource={entry.resource}
+      client={client}
+      mode="view"
+      rowId={entry.id}
+      isOpen={entry.open}
+      onOpenChange={(o) => {
+        if (!o) onClose()
+      }}
+      label={formProps.label}
+      exclude={formProps.exclude}
+      fields={formProps.fields}
+    />
+  )
+}
+
 /**
- * 全局 fk 速览栈:每层一个 view 态 SynieRecordDrawer(按 rowId 自取数),
- * 速览里再点 fk 继续叠层。关闭只翻 open 标志让 Sheet 退场动画播完,
- * 已关的层留在栈里不可见,下次 push 时顺手清掉。
+ * 全局 fk 速览栈:每层一个 view 态 SynieRecordDrawer(按 rowId 自取数)。
+ * 配置来自 ResourceDocument / Basic Form；无全局 drawer registry fallback。
  */
 export function FkPreviewProvider({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<Entry[]>([])
 
   const open = useCallback((resource: string, id: string) => {
+    resourceBindingFor(resource)
     setStack((s) => [...s.filter((e) => e.open), { key: ++seq, resource, id, open: true }])
   }, [])
 
@@ -29,17 +73,12 @@ export function FkPreviewProvider({ children }: { children: ReactNode }) {
     <FkPreviewContext.Provider value={open}>
       {children}
       {stack.map((e) => (
-        <SynieRecordDrawer
+        <FkPreviewDrawer
           key={e.key}
-          resource={e.resource}
-          client={resourceClientFor(e.resource)}
-          mode="view"
-          rowId={e.id}
-          isOpen={e.open}
-          onOpenChange={(o) => {
-            if (!o) setStack((s) => s.map((x) => (x.key === e.key ? { ...x, open: false } : x)))
-          }}
-          {...drawerConfig(e.resource)}
+          entry={e}
+          onClose={() =>
+            setStack((s) => s.map((x) => (x.key === e.key ? { ...x, open: false } : x)))
+          }
         />
       ))}
     </FkPreviewContext.Provider>

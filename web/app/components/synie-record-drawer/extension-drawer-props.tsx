@@ -8,9 +8,9 @@ import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
 import type { SynieRecordDrawerProps } from './SynieRecordDrawer'
 
 /**
- * 资源级抽屉配置:每个资源一份可全局引用的 SynieRecordDrawer 定制。
- * fk 速览(FkPreviewProvider)按 resource 取用;页面用 {...drawerConfig('资源名')}
- * 引用同一份,页面级差异(onSubmit、动态 fields)在 JSX 上继续覆盖。
+ * Presentation Extension 抽屉静态 props（React fields/extraContent）。
+ * Basic Form 不得经本表声明字段事实（用 basicFormDrawerProps）。
+ * 未知资源显式失败；FK 速览走 Catalog，不经本表。
  */
 export type ResourceDrawerConfig = Pick<
   SynieRecordDrawerProps,
@@ -1257,9 +1257,22 @@ const registry: Record<string, ResourceDrawerConfig> = {
   sysPrintTemplates: { label: '打印模板' },
 }
 
-/** 取资源抽屉配置;extra 覆盖时 fields 按字段名深合一层,其余浅覆盖 */
+/**
+ * 取 Presentation Extension 抽屉配置。
+ * 未知资源 fail-closed（禁止 label=resourceName 静默 fallback）。
+ */
 export function drawerConfig(resource: string, extra?: Partial<ResourceDrawerConfig>): ResourceDrawerConfig {
-  const base = registry[resource] ?? { label: resource }
+  const base = registry[resource]
+  if (!base) {
+    throw new Error(
+      `资源「${resource}」无 Presentation Extension 抽屉配置；basic 请用 basicFormDrawerProps，none/只读请仅传 Catalog label`,
+    )
+  }
   if (!extra) return base
   return { ...base, ...extra, fields: { ...base.fields, ...extra.fields } }
+}
+
+/** 基线报告：已声明 PE 抽屉的资源键 */
+export function listDrawerConfigKeys(): string[] {
+  return Object.keys(registry).sort()
 }

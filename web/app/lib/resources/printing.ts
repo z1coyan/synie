@@ -1,7 +1,6 @@
 import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
 function queryBody(input: ResourceQuery): ListQuery {
@@ -19,14 +18,6 @@ function queryBody(input: ResourceQuery): ListQuery {
 
 export const printTemplateClient: ResourceClient = {
   id: 'rest:sysPrintTemplates',
-  async meta() {
-    return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-          param: { name: 'sysPrintTemplates' }}),
-      ),
-    )
-  },
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
       api.system.printing.templates.query.$post({ json: queryBody(input) }),

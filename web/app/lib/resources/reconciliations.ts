@@ -1,6 +1,5 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
 type FilterDocument = FilterState
@@ -18,15 +17,6 @@ function queryBody(input: ResourceQuery) {
   }
 }
 
-async function meta(resource: string) {
-  return gridMeta(
-      await apiData<import("@synie/shared").ResourceMetaDocument>(
-        api.meta.resources[':name'].$get({
-        param: { name: resource }}),
-    ),
-  )
-}
-
 function decimalInput(input: Record<string, unknown>, fields: readonly string[]) {
   const result = { ...input }
   for (const field of fields) {
@@ -39,12 +29,11 @@ function decimalInput(input: Record<string, unknown>, fields: readonly string[])
 
 function resourceClient(
   resource: string,
-  operations: Omit<ResourceClient, 'id' | 'meta'>,
+  operations: Omit<ResourceClient, 'id'>,
 ): ResourceClient {
   return {
     id: `rest:${resource}`,
-    meta: () => meta(resource),
-    ...operations,
+        ...operations,
   }
 }
 

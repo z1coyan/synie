@@ -1,6 +1,6 @@
 /**
- * Resource Catalog 工单 01 特征测试：锁定 Actor 投影与现有 Meta 行为，
- * 作为后续 expand/migrate 的等价基线（不改变产品语义）。
+ * Resource Catalog 特征测试：锁定 Actor 投影与 Catalog 行为。
+ * contract 后 Meta 响应仅为 ResourceDocument v2。
  */
 import { describe, expect, test } from 'bun:test'
 import type { Actor } from '../authz/actor.ts'
@@ -43,24 +43,21 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
     expect(names).toContain('mfgSettings')
   })
 
-  test('superadmin 币种 Meta 透传 form 且含完整 capabilities', () => {
+  test('superadmin 币种 Meta 为 ResourceDocument v2 且含完整 capabilities', () => {
     const doc = registry.buildDocument(CURRENCY_RESOURCE_NAME, superAdmin)
+    expect(doc.schemaVersion).toBe(2)
     expect(doc.name).toBe(CURRENCY_RESOURCE_NAME)
-    expect(doc.form).toBeDefined()
-    expect(doc.form?.exclude).toEqual(
-      expect.arrayContaining(['id', 'active', 'insertedAt', 'updatedAt']),
-    )
-    expect(doc.form?.fields?.isoCode).toMatchObject({
-      required: true,
-      edit: 'createOnly',
-    })
-    expect(doc.grid.capabilities).toEqual(
-      expect.arrayContaining(['create', 'update', 'delete']),
-    )
-    expect(doc.grid.capabilities).not.toContain('read')
-    const iso = doc.grid.columns.find((c) => c.name === 'isoCode')
+    expect(doc.label).toBe('货币')
+    expect(doc.form.kind).toBe('basic')
+    expect(doc.capabilities).toEqual(expect.arrayContaining(['create', 'update', 'delete']))
+    expect(doc.capabilities).not.toContain('read')
+    const iso = doc.fields.find((f) => f.name === 'isoCode')
     expect(iso?.label).toBe('ISO 编码')
     expect(iso?.sortable).toBe(true)
+    if (iso && iso.kind === 'scalar') {
+      expect(iso.input.create).toBe('required')
+      expect(iso.input.update).toBe('forbidden')
+    }
   })
 
   test('Actor capability 按 permissionAction 投影，不含无权动作', () => {
@@ -68,40 +65,39 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       permissions: new Set(['base.currency:read']),
     })
     const doc = registry.buildDocument(CURRENCY_RESOURCE_NAME, readOnly)
-    expect(doc.grid.capabilities).toEqual([])
-    expect(doc.grid.extendedActions).toEqual([])
+    expect(doc.capabilities).toEqual([])
+    expect(doc.commands).toEqual([])
 
     const editor = actor({
       permissions: new Set(['base.currency:read', 'base.currency:update']),
     })
     const editDoc = registry.buildDocument(CURRENCY_RESOURCE_NAME, editor)
-    expect(editDoc.grid.capabilities).toEqual(['update'])
+    expect(editDoc.capabilities).toEqual(['update'])
   })
 
-  test('普通外键：有目标读取权时保留 ref', () => {
+  test('普通外键：有目标读取权时保留 reference', () => {
     const withCurrency = actor({
       permissions: new Set(['base.company:read', 'base.currency:read']),
     })
     const doc = registry.buildDocument('basCompanies', withCurrency)
-    const baseCurrency = doc.grid.columns.find((c) => c.name === 'baseCurrencyId')
-    expect(baseCurrency?.type).toBe('fk')
-    expect(baseCurrency?.ref).toMatchObject({
-      resource: 'basCurrencies',
-      relation: 'baseCurrency',
-      labelField: 'name',
-    })
+    const baseCurrency = doc.fields.find((f) => f.name === 'baseCurrencyId')
+    expect(baseCurrency?.kind).toBe('reference')
+    if (baseCurrency?.kind === 'reference') {
+      expect(baseCurrency.targetResource).toBe('basCurrencies')
+      expect(baseCurrency.targetUnavailable).toBeFalsy()
+    }
   })
 
-  test('普通外键：无目标读取权时降级为原始 ID 列', () => {
+  test('普通外键：无目标读取权时标记 targetUnavailable', () => {
     const noCurrency = actor({
       permissions: new Set(['base.company:read']),
     })
     const doc = registry.buildDocument('basCompanies', noCurrency)
-    const baseCurrency = doc.grid.columns.find((c) => c.name === 'baseCurrencyId')
-    expect(baseCurrency?.type).toBe('string')
-    expect(baseCurrency?.ref).toBeNull()
-    expect(baseCurrency?.sortable).toBe(true)
-    expect(baseCurrency?.filterable).toBe(false)
+    const baseCurrency = doc.fields.find((f) => f.name === 'baseCurrencyId')
+    expect(baseCurrency?.kind).toBe('reference')
+    if (baseCurrency?.kind === 'reference') {
+      expect(baseCurrency.targetUnavailable).toBe(true)
+    }
   })
 
   test('多态外键：仅保留 Actor 可读的 variants', () => {
@@ -109,82 +105,74 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       permissions: new Set(['acc.gl_entry:read', 'base.company:read']),
     })
     const doc = registry.buildDocument('accGlEntries', onlyCompany)
-    const party = doc.grid.columns.find((c) => c.name === 'partyId')
-    expect(party?.type).toBe('fk')
-    expect(party?.ref?.discriminator).toBe('partyType')
-    expect(party?.ref?.variants?.map((v) => v.resource).sort()).toEqual(['basCompanies'])
+    const party = doc.fields.find((f) => f.name === 'partyId')
+    expect(party?.kind).toBe('polymorphicReference')
+    if (party?.kind === 'polymorphicReference') {
+      expect(party.variants.map((v) => v.resource).sort()).toEqual(['basCompanies'])
+      expect(party.targetUnavailable).toBeFalsy()
+    }
 
     const noTarget = actor({
       permissions: new Set(['acc.gl_entry:read']),
     })
     const degraded = registry.buildDocument('accGlEntries', noTarget)
-    const partyDegraded = degraded.grid.columns.find((c) => c.name === 'partyId')
-    expect(partyDegraded?.type).toBe('string')
-    expect(partyDegraded?.ref).toBeNull()
+    const partyDegraded = degraded.fields.find((f) => f.name === 'partyId')
+    expect(partyDegraded?.kind).toBe('polymorphicReference')
+    if (partyDegraded?.kind === 'polymorphicReference') {
+      expect(partyDegraded.targetUnavailable).toBe(true)
+      expect(partyDegraded.variants).toEqual([])
+    }
   })
 
-  test('自定义 permissionAction：setDefault 贡献 update capability', () => {
+  test('自定义 permissionAction：setDefault 贡献 update capability 与 command', () => {
     const updater = actor({
       permissions: new Set(['sys.storage:read', 'sys.storage:update']),
     })
     const doc = registry.buildDocument('sysStorages', updater)
-    expect(doc.grid.capabilities).toContain('update')
-    const setDefault = doc.grid.extendedActions.find((a) => a.key === 'setDefault')
+    expect(doc.capabilities).toContain('update')
+    const setDefault = doc.commands.find((a) => a.key === 'setDefault')
     expect(setDefault).toMatchObject({
       key: 'setDefault',
       label: '设为默认',
-      scope: 'row',
+      target: 'row',
+      requiredCapability: 'update',
     })
-    expect(setDefault?.http).toMatchObject({
-      method: 'POST',
-      path: '/api/v1/system/storages/{id}/set-default',
-    })
+    // v1 http transport 不得出现在 ResourceDocument
+    expect(setDefault && !('http' in setDefault)).toBe(true)
   })
 
-  test('自定义 permissionAction：banking reconcile 与 attendance recalc', () => {
-    // v1：对账挂在流水上，action.key=export、permissionAction=reconcile；
-    // export 属标准动作不进 extendedActions，但 capability 用 permissionAction。
+  test('语义 command：banking reconcile 与 attendance recalc', () => {
     const recon = actor({
       permissions: new Set(['acc.bank_transaction:read', 'acc.bank_transaction:reconcile']),
     })
     const reconDoc = registry.buildDocument('accBankTransactions', recon)
-    expect(reconDoc.grid.capabilities).toContain('reconcile')
-    expect(reconDoc.grid.capabilities).not.toContain('export')
+    expect(reconDoc.capabilities).toContain('reconcile')
+    expect(reconDoc.capabilities).not.toContain('export')
+    expect(reconDoc.commands.some((c) => c.key === 'reconcile')).toBe(true)
     const reconMeta = registry.get('accBankTransactions')!
     expect(
       reconMeta.actions.some((a) => a.key === 'export' && a.permissionAction === 'reconcile'),
     ).toBe(true)
 
-    // v1：重算挂在考勤日，action.key=import、permissionAction=recalc
     const recalc = actor({
       permissions: new Set(['hr.attendance_day:read', 'hr.attendance_day:recalc']),
     })
     const recalcDoc = registry.buildDocument('hrAttendanceDays', recalc)
-    expect(recalcDoc.grid.capabilities).toContain('recalc')
-    expect(recalcDoc.grid.capabilities).not.toContain('import')
+    expect(recalcDoc.capabilities).toContain('recalc')
+    expect(recalcDoc.capabilities).not.toContain('import')
+    expect(recalcDoc.commands.some((c) => c.key === 'recalc')).toBe(true)
     const dayMeta = registry.get('hrAttendanceDays')!
     expect(
       dayMeta.actions.some((a) => a.key === 'import' && a.permissionAction === 'recalc'),
     ).toBe(true)
   })
 
-  test('币种 Form 声明被完整透传到 Meta 响应（含 form.kind=basic）', () => {
+  test('币种 form.kind=basic 且布局含字段', () => {
     const doc = registry.buildDocument(CURRENCY_RESOURCE_NAME, superAdmin)
-    expect(doc.form).toEqual({
-      kind: 'basic',
-      exclude: ['id', 'active', 'insertedAt', 'updatedAt'],
-      fields: {
-        name: { required: true, placeholder: '如 人民币' },
-        isoCode: { required: true, edit: 'createOnly', placeholder: '三位大写字母,如 CNY' },
-        symbol: { placeholder: '如 ¥' },
-      },
-    })
-  })
-
-  test('expand 期 Meta 响应附带 catalog v2，显示标签为货币', () => {
-    const doc = registry.buildDocument(CURRENCY_RESOURCE_NAME, superAdmin)
-    expect(doc.catalog?.schemaVersion).toBe(2)
-    expect(doc.catalog?.label).toBe('货币')
-    expect(doc.catalog?.form.kind).toBe('basic')
+    expect(doc.form.kind).toBe('basic')
+    if (doc.form.kind === 'basic') {
+      const placed = doc.form.layout.fields?.map((p) => p.field) ?? []
+      expect(placed).toEqual(expect.arrayContaining(['name', 'isoCode', 'symbol']))
+    }
   })
 })
