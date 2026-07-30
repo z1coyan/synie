@@ -683,7 +683,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
       exchangeRate: {
         ...baseCfg.fields?.exchangeRate,
         required: true,
-        visible: (values) =>
+        visible: (values: Record<string, unknown>) =>
           baseCurrencyId != null &&
           values.currencyId != null &&
           values.currencyId !== '' &&

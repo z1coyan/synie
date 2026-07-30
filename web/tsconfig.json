@@ -5,7 +5,9 @@
     "module": "ESNext",
     "target": "ES2022",
     "skipLibCheck": true,
-    "strictNullChecks": true,
+    "strict": true,
+    "noUncheckedSideEffectImports": true,
+    "rootDir": "..",
     "lib": [
       "ES2022",
       "DOM",
@@ -13,9 +15,9 @@
     ],
     "types": [
       "node",
-      "bun"
+      "bun",
+      "vite/client"
     ],
-    "baseUrl": ".",
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "paths": {

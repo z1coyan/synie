@@ -983,7 +983,7 @@ function MarketPage() {
                   <LineChart.XAxis dataKey="label" tickMargin={8} minTickGap={32} />
                   <LineChart.YAxis
                     width={56}
-                    domain={([dataMin, dataMax]: [number, number]) => {
+                    domain={([dataMin, dataMax]) => {
                       // 区间上下留 8% 余量,并按数量级取整使刻度整齐;
                       // 绝对价不贴 0 轴(价格不会到 0),涨跌幅可正可负不截断
                       const raw = dataMax - dataMin
