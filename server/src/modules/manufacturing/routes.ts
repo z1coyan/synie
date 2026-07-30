@@ -900,6 +900,7 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
               demandItemId: z.string().uuid(),
               workOrderNo: z.string().max(32).nullable().optional(),
               qty: z.string().min(1).nullable().optional(),
+              bomId: z.string().uuid().nullable().optional(),
             })
             .strict(),
           validationHook,

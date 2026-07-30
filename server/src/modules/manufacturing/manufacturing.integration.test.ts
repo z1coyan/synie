@@ -619,6 +619,46 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     expect(none).toHaveLength(0)
   })
 
+  test('创建工单可直接挂启用中 BOM 并快照', async () => {
+    const bom = await mfg.master.createBom(actor, {
+      code: `BCR${suffix}`,
+      materialId,
+      planName: '创建时挂',
+      status: 'active',
+    })
+    cleanupIds.boms.push(bom.id)
+    await mfg.master.createComponent(actor, {
+      bomId: bom.id,
+      materialId: componentId,
+      unitId,
+      quantity: '1.5',
+    })
+    const demand = await mfg.demands.createDemand(actor, {
+      companyId,
+      demandNo: `DCR${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    const line = await mfg.demands.createDemandItem(actor, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '6',
+    })
+    await mfg.demands.confirmDemand(actor, demand.id)
+    const wo = await mfg.workOrders.createWorkOrder(actor, {
+      demandItemId: line.id,
+      workOrderNo: `WOCR${suffix}`,
+      qty: '6',
+      bomId: bom.id,
+    })
+    cleanupIds.workOrders.push(wo.id)
+    expect(wo.bomId).toBe(bom.id)
+    const snap = await mfg.workOrders.getBomSnapshot(actor, wo.id)
+    expect(snap.components).toHaveLength(1)
+    expect(snap.components[0]!.quantity).toBe('1.5')
+  })
+
   test('工单内嵌创建 BOM：启用态 + 立即选入快照', async () => {
     const demand = await mfg.demands.createDemand(actor, {
       companyId,

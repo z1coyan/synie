@@ -874,6 +874,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
           materialName: selectedRow?.materialName ?? '',
           materialSpec: selectedRow?.materialSpec ?? '',
           unitName: selectedRow?.unitName ?? '',
+          // 换来源行时清空 BOM（母物料变了）
+          bomId: null,
         }),
       },
       companyId: {
@@ -913,12 +915,13 @@ const registry: Record<string, ResourceDrawerConfig> = {
       materialName: { order: 9, cols: 6, edit: 'readOnly' },
       materialSpec: { order: 10, cols: 6, edit: 'readOnly' },
       unitName: { order: 11, cols: 6, edit: 'readOnly' },
+      // bomId 控件由工单页自定义：dialog 选用 + 新建（create 态即选，edit 态即时应用）
       bomId: {
         order: 12,
-        cols: 6,
+        cols: 12,
         label: 'BOM',
-        edit: 'readOnly',
-        placeholder: '可在工单详情中选入或内嵌创建',
+        section: '配方',
+        placeholder: '可选；限本物料启用中 BOM',
       },
     },
   },

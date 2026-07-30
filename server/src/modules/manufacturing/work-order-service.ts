@@ -69,6 +69,8 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
       workOrderNo?: string | null
       /** 行单位数量；默认=剩余可安排折回行单位 */
       qty?: string | null
+      /** 可选：本物料启用中 BOM，创建时快照 */
+      bomId?: string | null
     },
   ): Promise<WorkOrder> {
     requirePermission(actor, 'mfg.work_order:create')
@@ -150,7 +152,10 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
           item.materialId,
           item.companyId,
         )
-        const result = mapWorkOrder(row)
+        if (input.bomId) {
+          await copyBomSnapshotToWorkOrder(trx, row.id, input.bomId, item.materialId)
+        }
+        const result = await loadWorkOrder(trx, row.id, false)
         await writeAudit(trx, actor, {
           resource: 'mfg_work_order',
           recordId: result.id,
@@ -314,16 +319,8 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
       if (await hasAuditedOutput(trx, workOrderId)) {
         throw new ApiError('conflict', '存在已审核生产入库,不可改 BOM 快照')
       }
-      await trx
-        .deleteFrom('mfg_work_order_component')
-        .where('work_order_id', '=', workOrderId)
-        .execute()
-      await trx.deleteFrom('mfg_work_order_route').where('work_order_id', '=', workOrderId).execute()
-      await trx
-        .deleteFrom('mfg_work_order_byproduct')
-        .where('work_order_id', '=', workOrderId)
-        .execute()
       if (!bomId) {
+        await clearWorkOrderBomSnapshot(trx, workOrderId)
         await trx
           .updateTable('mfg_work_order')
           .set({ bom_id: null, updated_at: sql`(now() AT TIME ZONE 'utc')` })
@@ -331,81 +328,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
           .execute()
         return loadWorkOrder(trx, workOrderId, false)
       }
-      const bom = await trx
-        .selectFrom('mfg_bom')
-        .selectAll()
-        .where('id', '=', bomId)
-        .forUpdate()
-        .executeTakeFirst()
-      if (!bom) throw new ApiError('not_found', 'BOM不存在')
-      if (bom.status !== 'active') {
-        throw new ApiError('conflict', '仅启用中的 BOM 可选入工单')
-      }
-      if (bom.material_id !== before.materialId) {
-        throw new ApiError('conflict', 'BOM 物料须与工单物料一致')
-      }
-      const components = await trx
-        .selectFrom('mfg_bom_component')
-        .selectAll()
-        .where('bom_id', '=', bomId)
-        .execute()
-      const routes = await trx
-        .selectFrom('mfg_bom_route')
-        .selectAll()
-        .where('bom_id', '=', bomId)
-        .orderBy('seq', 'asc')
-        .execute()
-      const byproducts = await trx
-        .selectFrom('mfg_bom_byproduct')
-        .selectAll()
-        .where('bom_id', '=', bomId)
-        .execute()
-      let idx = 0
-      for (const c of components) {
-        await trx
-          .insertInto('mfg_work_order_component')
-          .values({
-            work_order_id: workOrderId,
-            material_id: c.material_id,
-            unit_id: c.unit_id,
-            quantity: String(c.quantity),
-            loss_rate: c.loss_rate == null ? null : String(c.loss_rate),
-            note: c.note,
-            idx: String(idx++),
-          })
-          .execute()
-      }
-      for (const r of routes) {
-        await trx
-          .insertInto('mfg_work_order_route')
-          .values({
-            work_order_id: workOrderId,
-            operation_id: r.operation_id,
-            seq: String(r.seq),
-            requirement: r.requirement,
-            is_outsourced: r.is_outsourced,
-          })
-          .execute()
-      }
-      idx = 0
-      for (const b of byproducts) {
-        await trx
-          .insertInto('mfg_work_order_byproduct')
-          .values({
-            work_order_id: workOrderId,
-            material_id: b.material_id,
-            unit_id: b.unit_id,
-            quantity: String(b.quantity),
-            note: b.note,
-            idx: String(idx++),
-          })
-          .execute()
-      }
-      await trx
-        .updateTable('mfg_work_order')
-        .set({ bom_id: bomId, updated_at: sql`(now() AT TIME ZONE 'utc')` })
-        .where('id', '=', workOrderId)
-        .execute()
+      await copyBomSnapshotToWorkOrder(trx, workOrderId, bomId, before.materialId)
       const after = await loadWorkOrder(trx, workOrderId, false)
       await writeAudit(trx, actor, {
         resource: 'mfg_work_order',
@@ -767,6 +690,103 @@ export async function hasAuditedOutput(db: DbHandle, workOrderId: string): Promi
     ) AS ok
   `.execute(db)
   return Boolean(row.rows[0]?.ok)
+}
+
+async function clearWorkOrderBomSnapshot(db: DbHandle, workOrderId: string): Promise<void> {
+  await db
+    .deleteFrom('mfg_work_order_component')
+    .where('work_order_id', '=', workOrderId)
+    .execute()
+  await db.deleteFrom('mfg_work_order_route').where('work_order_id', '=', workOrderId).execute()
+  await db
+    .deleteFrom('mfg_work_order_byproduct')
+    .where('work_order_id', '=', workOrderId)
+    .execute()
+}
+
+/** 校验启用+本物料后复制 BOM 子表到工单快照，并写 bom_id */
+async function copyBomSnapshotToWorkOrder(
+  db: DbHandle,
+  workOrderId: string,
+  bomId: string,
+  workOrderMaterialId: string,
+): Promise<void> {
+  const bom = await db
+    .selectFrom('mfg_bom')
+    .selectAll()
+    .where('id', '=', bomId)
+    .forUpdate()
+    .executeTakeFirst()
+  if (!bom) throw new ApiError('not_found', 'BOM不存在')
+  if (bom.status !== 'active') {
+    throw new ApiError('conflict', '仅启用中的 BOM 可选入工单')
+  }
+  if (bom.material_id !== workOrderMaterialId) {
+    throw new ApiError('conflict', 'BOM 物料须与工单物料一致')
+  }
+  await clearWorkOrderBomSnapshot(db, workOrderId)
+  const components = await db
+    .selectFrom('mfg_bom_component')
+    .selectAll()
+    .where('bom_id', '=', bomId)
+    .execute()
+  const routes = await db
+    .selectFrom('mfg_bom_route')
+    .selectAll()
+    .where('bom_id', '=', bomId)
+    .orderBy('seq', 'asc')
+    .execute()
+  const byproducts = await db
+    .selectFrom('mfg_bom_byproduct')
+    .selectAll()
+    .where('bom_id', '=', bomId)
+    .execute()
+  let idx = 0
+  for (const c of components) {
+    await db
+      .insertInto('mfg_work_order_component')
+      .values({
+        work_order_id: workOrderId,
+        material_id: c.material_id,
+        unit_id: c.unit_id,
+        quantity: String(c.quantity),
+        loss_rate: c.loss_rate == null ? null : String(c.loss_rate),
+        note: c.note,
+        idx: String(idx++),
+      })
+      .execute()
+  }
+  for (const r of routes) {
+    await db
+      .insertInto('mfg_work_order_route')
+      .values({
+        work_order_id: workOrderId,
+        operation_id: r.operation_id,
+        seq: String(r.seq),
+        requirement: r.requirement,
+        is_outsourced: r.is_outsourced,
+      })
+      .execute()
+  }
+  idx = 0
+  for (const b of byproducts) {
+    await db
+      .insertInto('mfg_work_order_byproduct')
+      .values({
+        work_order_id: workOrderId,
+        material_id: b.material_id,
+        unit_id: b.unit_id,
+        quantity: String(b.quantity),
+        note: b.note,
+        idx: String(idx++),
+      })
+      .execute()
+  }
+  await db
+    .updateTable('mfg_work_order')
+    .set({ bom_id: bomId, updated_at: sql`(now() AT TIME ZONE 'utc')` })
+    .where('id', '=', workOrderId)
+    .execute()
 }
 
 export function mapWorkOrder(row: {

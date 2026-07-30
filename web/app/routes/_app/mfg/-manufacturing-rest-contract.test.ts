@@ -76,6 +76,8 @@ describe('PR-2.17 制造域 REST 边界', () => {
     const workOrder = source('./work-orders.tsx')
     expect(workOrder.match(/client=\{workOrderClient\}/g)?.length).toBe(2)
     expect(workOrder).toContain('createWorkOrderInlineBom')
+    expect(workOrder).toContain('RemoteDialogSelect')
+    expect(workOrder).toContain('bomId: values.bomId')
     expect(workOrder).toContain("ownerType=\"mfg_work_order\"")
 
     const output = source('./outputs.tsx')
@@ -203,6 +205,9 @@ describe('PR-2.17 制造域 REST 边界', () => {
       )
     }
     expect(workOrderConfig).toMatch(/qty:\s*\{[\s\S]*?edit:\s*'createOnly'/)
+    // BOM 在新增表单可选；换需求行时清空 bomId
+    expect(workOrderConfig).toContain('bomId: null')
+    expect(workOrderConfig).toMatch(/bomId:\s*\{[\s\S]*?section:\s*'配方'/)
     for (const field of [
       'companyId',
       'demandId',

@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Input, Label, Modal, TextField, toast } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
+import type { FieldInputProps, FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
+import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import {
   applyWorkOrderBom,
+  bomClient,
+  bomComponentClient,
   createWorkOrderInlineBom,
   getWorkOrderBomSnapshot,
   workOrderClient,
@@ -36,7 +40,6 @@ const GRID_COLUMNS = [
   'companyId',
 ]
 
-// 卡片:物料标题、工单号副标题、状态/未完成量/需求日摘要(车间跟单)
 const GRID_OVERRIDES = {
   materialCode: { mobileRole: 'hide' },
   companyId: { mobileRole: 'hide' },
@@ -63,14 +66,33 @@ type InlineComp = {
   lossRate: string
 }
 
+function bomGridFilter(materialId: string) {
+  return {
+    materialId: {
+      kind: 'fk' as const,
+      op: 'in' as const,
+      values: [materialId],
+      labels: [],
+    },
+    status: {
+      kind: 'enum' as const,
+      op: 'in' as const,
+      values: ['ACTIVE'],
+    },
+  }
+}
+
 function WorkOrdersPage() {
   const [drawer, setDrawer] = useState<{
     mode: DrawerMode
     row: Row | null
   } | null>(null)
-  const [bomId, setBomId] = useState<string | null>(null)
-  const [applyingBom, setApplyingBom] = useState(false)
   const [inlineOpen, setInlineOpen] = useState(false)
+  /** create 态新建 BOM 写回 form；edit 态走 createInlineBom */
+  const [inlinePatch, setInlinePatch] = useState<
+    ((patch: Record<string, unknown>) => void) | null
+  >(null)
+  const [inlineMaterialId, setInlineMaterialId] = useState<string | null>(null)
   const [inlinePlanName, setInlinePlanName] = useState('')
   const [inlineCode, setInlineCode] = useState('')
   const [inlineComps, setInlineComps] = useState<InlineComp[]>([
@@ -88,11 +110,8 @@ function WorkOrdersPage() {
   const canUpdateWo = hasPermission(perms.data, 'mfg.work_order:update')
 
   const rowId = drawer?.row?.id ? String(drawer.row.id) : null
-  const materialId = drawer?.row?.materialId
-    ? String(drawer.row.materialId)
-    : null
   const woStatus = drawer?.row?.status != null ? String(drawer.row.status) : ''
-  const canEditBom =
+  const canEditBomOnExisting =
     canUpdateWo &&
     drawer?.mode !== 'create' &&
     rowId != null &&
@@ -104,34 +123,158 @@ function WorkOrdersPage() {
     enabled: rowId != null && drawer?.mode !== 'create',
   })
 
-  useEffect(() => {
-    if (!drawer?.row) {
-      setBomId(null)
+  const baseDrawer = drawerConfig('mfgWorkOrders')
+
+  const openInlineCreate = (
+    materialId: string | null,
+    patchValues: ((patch: Record<string, unknown>) => void) | null,
+  ) => {
+    if (!materialId) {
+      toast.danger('请先选择来源需求行')
       return
     }
-    setBomId(
-      drawer.row.bomId == null || drawer.row.bomId === ''
-        ? null
-        : String(drawer.row.bomId),
-    )
-  }, [drawer?.row?.id, drawer?.row?.bomId])
+    if (!canCreateBom) {
+      toast.danger('无权限创建 BOM', {
+        description: '需要 mfg.bom 写权限；可选用已有启用中 BOM',
+      })
+      return
+    }
+    setInlineMaterialId(materialId)
+    setInlinePatch(patchValues)
+    setInlinePlanName('')
+    setInlineCode('')
+    setInlineComps([
+      { key: '1', materialId: null, unitId: null, quantity: '', lossRate: '' },
+    ])
+    setInlineOpen(true)
+  }
 
-  const bomFilter = useMemo(() => {
-    if (!materialId) return undefined
+  const bomFieldOverride = useMemo((): FieldOverride => {
     return {
-      materialId: {
-        kind: 'fk' as const,
-        op: 'in' as const,
-        values: [materialId],
-        labels: [],
-      },
-      status: {
-        kind: 'enum' as const,
-        op: 'in' as const,
-        values: ['ACTIVE'],
+      ...(baseDrawer.fields?.bomId ?? {}),
+      input: (p: FieldInputProps) => {
+        const materialId =
+          p.values.materialId == null || p.values.materialId === ''
+            ? null
+            : String(p.values.materialId)
+        const value =
+          p.value == null || p.value === '' ? null : String(p.value)
+        // create：写草稿；edit 进行中：即时 apply
+        const isCreate = drawer?.mode === 'create'
+        const disabled =
+          p.isDisabled ||
+          !materialId ||
+          (drawer?.mode === 'edit' && !canEditBomOnExisting) ||
+          drawer?.mode === 'view'
+
+        return (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="min-w-[220px] flex-1">
+                <RemoteDialogSelect
+                  resource="mfgBoms"
+                  value={value}
+                  onChange={(id) => {
+                    if (isCreate || drawer?.mode === 'view') {
+                      p.onChange(id)
+                      return
+                    }
+                    // edit：即时应用快照
+                    if (!rowId || !canEditBomOnExisting) {
+                      p.onChange(id)
+                      return
+                    }
+                    void (async () => {
+                      try {
+                        const updated = (await applyWorkOrderBom(
+                          rowId,
+                          id,
+                        )) as Row
+                        p.onChange(
+                          updated.bomId == null || updated.bomId === ''
+                            ? null
+                            : String(updated.bomId),
+                        )
+                        setDrawer((d) =>
+                          d ? { ...d, row: { ...d.row, ...updated } } : d,
+                        )
+                        toast.success(id ? '已选入 BOM 并快照' : '已清空 BOM')
+                        queryClient.invalidateQueries({
+                          queryKey: ['gridRows', 'mfgWorkOrders'],
+                        })
+                        queryClient.invalidateQueries({
+                          queryKey: ['workOrderBomSnapshot', rowId],
+                        })
+                      } catch (e) {
+                        toast.danger('更新 BOM 失败', {
+                          description: (e as Error).message,
+                        })
+                      }
+                    })()
+                  }}
+                  labelField="code"
+                  label="BOM"
+                  placeholder={
+                    materialId
+                      ? '点击选择启用中 BOM…'
+                      : '先选来源需求行'
+                  }
+                  dialogTitle="选择 BOM"
+                  dialogClassName="max-w-4xl"
+                  isDisabled={disabled}
+                  gridFilter={
+                    materialId ? bomGridFilter(materialId) : undefined
+                  }
+                  gridColumns={['code', 'planName', 'status', 'note']}
+                  gridDefaultSort={{
+                    column: 'code',
+                    direction: 'ascending',
+                  }}
+                />
+              </div>
+              {(isCreate || canEditBomOnExisting) && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  isDisabled={!materialId || !canCreateBom || disabled}
+                  onPress={() =>
+                    openInlineCreate(materialId, p.patchValues)
+                  }
+                >
+                  新建 BOM
+                </Button>
+              )}
+            </div>
+            {!materialId && drawer?.mode === 'create' && (
+              <p className="text-xs text-ink-500">
+                选定来源需求行后，可引用本物料启用中 BOM 或现场新建。
+              </p>
+            )}
+            {materialId && !canCreateBom && (
+              <p className="text-xs text-ink-500">
+                无 BOM 创建权限时仅能选用已有启用中配方。
+              </p>
+            )}
+          </div>
+        )
       },
     }
-  }, [materialId])
+  }, [
+    baseDrawer.fields?.bomId,
+    canCreateBom,
+    canEditBomOnExisting,
+    drawer?.mode,
+    queryClient,
+    rowId,
+  ])
+
+  const drawerFields = useMemo(
+    () => ({
+      ...baseDrawer.fields,
+      bomId: bomFieldOverride,
+    }),
+    [baseDrawer.fields, bomFieldOverride],
+  )
 
   const refreshWo = () => {
     queryClient.invalidateQueries({ queryKey: ['gridRows', 'mfgWorkOrders'] })
@@ -143,31 +286,11 @@ function WorkOrdersPage() {
     }
   }
 
-  const onApplyBom = async (next: string | null) => {
-    if (!rowId) return
-    setApplyingBom(true)
-    try {
-      const updated = (await applyWorkOrderBom(rowId, next)) as Row
-      setBomId(
-        updated.bomId == null || updated.bomId === ''
-          ? null
-          : String(updated.bomId),
-      )
-      setDrawer((d) => (d ? { ...d, row: { ...d.row, ...updated } } : d))
-      toast.success(next ? '已选入 BOM 并快照' : '已清空 BOM 快照')
-      refreshWo()
-    } catch (e) {
-      toast.danger('更新 BOM 失败', { description: (e as Error).message })
-    } finally {
-      setApplyingBom(false)
-    }
-  }
-
   const onCreateInline = async () => {
-    if (!rowId) return
+    if (!inlineMaterialId) return
     if (!canCreateBom) {
       toast.danger('无权限创建 BOM', {
-        description: '需要 mfg.bom 写权限，请联系管理员或改用已有启用中 BOM',
+        description: '需要 mfg.bom 写权限',
       })
       return
     }
@@ -181,30 +304,40 @@ function WorkOrdersPage() {
       }))
     setInlineSaving(true)
     try {
-      const result = (await createWorkOrderInlineBom(rowId, {
-        code: inlineCode.trim() || null,
-        planName: inlinePlanName.trim() || null,
-        components,
-      })) as { workOrder: Row; bom: Row }
-      setBomId(String(result.bom.id))
-      setDrawer((d) =>
-        d
-          ? {
-              ...d,
-              row: { ...d.row, ...result.workOrder },
-            }
-          : d,
-      )
-      toast.success(`BOM ${String(result.bom.code)} 已创建并选入`)
+      // create 态：先建启用 BOM 写回 form；edit 态：工单内嵌一键快照
+      if (drawer?.mode === 'create' || !rowId) {
+        const bom = (await bomClient.create({
+          code: inlineCode.trim() || null,
+          materialId: inlineMaterialId,
+          planName: inlinePlanName.trim() || null,
+          status: 'ACTIVE',
+        })) as Row
+        for (const c of components) {
+          await bomComponentClient.create({
+            bomId: bom.id,
+            ...c,
+          })
+        }
+        inlinePatch?.({ bomId: bom.id })
+        toast.success(
+          `BOM ${String(bom.code)} 已创建并选入（保存工单时快照）`,
+        )
+      } else {
+        const result = (await createWorkOrderInlineBom(rowId, {
+          code: inlineCode.trim() || null,
+          planName: inlinePlanName.trim() || null,
+          components,
+        })) as { workOrder: Row; bom: Row }
+        inlinePatch?.({ bomId: result.bom.id })
+        setDrawer((d) =>
+          d ? { ...d, row: { ...d.row, ...result.workOrder } } : d,
+        )
+        toast.success(`BOM ${String(result.bom.code)} 已创建并选入`)
+        refreshWo()
+      }
       setInlineOpen(false)
-      setInlinePlanName('')
-      setInlineCode('')
-      setInlineComps([
-        { key: '1', materialId: null, unitId: null, quantity: '', lossRate: '' },
-      ])
-      refreshWo()
     } catch (e) {
-      toast.danger('内嵌创建 BOM 失败', { description: (e as Error).message })
+      toast.danger('创建 BOM 失败', { description: (e as Error).message })
     } finally {
       setInlineSaving(false)
     }
@@ -214,8 +347,8 @@ function WorkOrdersPage() {
     <>
       <h1 className="font-brand text-3xl tracking-wide">生产工单</h1>
       <p className="mt-2 text-sm text-ink-500">
-        从已确认未关闭需求行生成；同一需求行可开多张工单，数量默认剩余可安排。可选启用中
-        BOM（快照配料/路线/副产品）；创建时复制物料图纸挂接（无图不拦）。
+        从已确认未关闭需求行生成；同一需求行可开多张工单，数量默认剩余可安排。新增时可选用启用中
+        BOM 或现场新建；创建时复制物料图纸挂接（无图不拦）。
       </p>
 
       <div className="mt-6">
@@ -238,7 +371,8 @@ function WorkOrdersPage() {
       <SynieRecordDrawer
         resource="mfgWorkOrders"
         client={workOrderClient}
-        {...drawerConfig('mfgWorkOrders')}
+        {...baseDrawer}
+        fields={drawerFields}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
@@ -273,70 +407,37 @@ function WorkOrdersPage() {
 
               <div>
                 <p className="mb-2 text-sm font-medium">BOM 快照</p>
-                {canEditBom ? (
-                  <div className="mb-2 flex flex-wrap items-end gap-2">
-                    <div className="min-w-[220px] flex-1">
-                      <RemoteSelect
-                        resource="mfgBoms"
-                        value={bomId}
-                        onChange={(v) => setBomId(v)}
-                        labelField="code"
-                        filterState={bomFilter}
-                        isDisabled={applyingBom}
-                        label="选用启用中 BOM"
-                      />
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      isPending={applyingBom}
-                      isDisabled={applyingBom}
-                      onPress={() => void onApplyBom(bomId)}
-                    >
-                      应用
-                    </Button>
+                {canEditBomOnExisting && (
+                  <div className="mb-2">
                     <Button
                       size="sm"
                       variant="tertiary"
-                      isDisabled={applyingBom || !row.bomId}
-                      onPress={() => void onApplyBom(null)}
-                    >
-                      清空
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      isDisabled={!canCreateBom}
+                      isDisabled={!row.bomId}
                       onPress={() => {
-                        if (!canCreateBom) {
-                          toast.danger('无权限创建 BOM', {
-                            description:
-                              '需要 mfg.bom 写权限；可选用已有启用中 BOM',
-                          })
-                          return
-                        }
-                        setInlineOpen(true)
+                        void (async () => {
+                          try {
+                            const updated = (await applyWorkOrderBom(
+                              id,
+                              null,
+                            )) as Row
+                            setDrawer((d) =>
+                              d
+                                ? { ...d, row: { ...d.row, ...updated } }
+                                : d,
+                            )
+                            toast.success('已清空 BOM 快照')
+                            refreshWo()
+                          } catch (e) {
+                            toast.danger('清空失败', {
+                              description: (e as Error).message,
+                            })
+                          }
+                        })()
                       }}
                     >
-                      新建 BOM
+                      清空 BOM
                     </Button>
                   </div>
-                ) : (
-                  <p className="mb-2 text-sm text-ink-500">
-                    {row.bomId
-                      ? `已挂 BOM（${String((row.bom as Row | undefined)?.code ?? row.bomId)}）`
-                      : '未选用 BOM'}
-                    {woStatus !== 'IN_PROGRESS'
-                      ? '；非进行中不可改'
-                      : !canUpdateWo
-                        ? '；无工单编辑权限'
-                        : ''}
-                  </p>
-                )}
-                {!canCreateBom && canEditBom && (
-                  <p className="mb-2 text-xs text-ink-500">
-                    无 BOM 创建权限时仅能选用已有启用中配方。
-                  </p>
                 )}
                 {snapshot.isLoading ? (
                   <p className="text-sm text-ink-500">加载快照…</p>
@@ -367,6 +468,7 @@ function WorkOrdersPage() {
               demandItemId: values.demandItemId,
               workOrderNo: values.workOrderNo || null,
               qty: values.qty || null,
+              bomId: values.bomId || null,
             })
             toast.success('生产工单已生成')
           } else {
@@ -386,25 +488,26 @@ function WorkOrdersPage() {
         onOpenChange={(open) => !open && setInlineOpen(false)}
       >
         <Modal.Container>
-          <Modal.Dialog className="max-w-lg" aria-label="工单内嵌创建 BOM">
+          <Modal.Dialog className="max-w-lg" aria-label="新建 BOM">
             <Modal.Header>
-              <Modal.Heading>新建 BOM 并选入本工单</Modal.Heading>
+              <Modal.Heading>
+                {drawer?.mode === 'create'
+                  ? '新建 BOM 并选入工单'
+                  : '新建 BOM 并快照到本工单'}
+              </Modal.Heading>
             </Modal.Header>
             <Modal.Body className="space-y-3">
               <p className="text-sm text-ink-500">
-                母物料锁定为当前工单物料；保存后进入 BOM 主数据（启用）并立即快照到本工单。
+                母物料锁定为当前工单物料；保存后进入 BOM 主数据（启用）
+                {drawer?.mode === 'create'
+                  ? '，并写入本表单；生成工单时一并快照。'
+                  : '，并立即快照到本工单。'}
               </p>
-              <TextField
-                value={inlineCode}
-                onChange={setInlineCode}
-              >
+              <TextField value={inlineCode} onChange={setInlineCode}>
                 <Label>编号（可空自动取号）</Label>
                 <Input placeholder="留空自动编号" />
               </TextField>
-              <TextField
-                value={inlinePlanName}
-                onChange={setInlinePlanName}
-              >
+              <TextField value={inlinePlanName} onChange={setInlinePlanName}>
                 <Label>方案名称</Label>
                 <Input placeholder="如 自用" />
               </TextField>
@@ -439,7 +542,8 @@ function WorkOrdersPage() {
                             i === idx
                               ? {
                                   ...r,
-                                  unitId: v == null || v === '' ? null : String(v),
+                                  unitId:
+                                    v == null || v === '' ? null : String(v),
                                 }
                               : r,
                           ),
