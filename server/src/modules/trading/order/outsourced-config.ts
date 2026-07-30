@@ -324,16 +324,17 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     const rows = await sql<Record<string, unknown>>`
     SELECT dl.id, dl.demand_id, d.demand_no, dl.idx, dl.need_date, d.company_id,
       dl.material_id, dl.unit_id, m.code AS material_code, m.name AS material_name, m.spec AS material_spec,
-      u.name AS unit_name, dl.base_qty, dl.ordered_qty,
-      (dl.base_qty - dl.ordered_qty) AS remaining_base_qty,
-      (dl.base_qty - dl.ordered_qty) AS suggested_qty
+      u.name AS unit_name, dl.base_qty, dl.ordered_qty, dl.arranged_qty,
+      greatest(dl.base_qty - dl.arranged_qty, 0) AS remaining_base_qty,
+      greatest(dl.base_qty - dl.arranged_qty, 0) AS suggested_qty
     FROM mfg_demand_item dl
     JOIN mfg_demand d ON d.id=dl.demand_id
     JOIN inv_material m ON m.id=dl.material_id
     JOIN bas_unit u ON u.id=dl.unit_id
     WHERE d.company_id=${input.companyId}::uuid
-      AND d.status IN ('audited','confirmed')
-      AND (dl.base_qty - dl.ordered_qty) > 0
+      AND d.status = 'confirmed'
+      AND dl.status <> 'completed'
+      AND greatest(dl.base_qty - dl.arranged_qty, 0) > 0
     ORDER BY dl.need_date NULLS LAST, dl.idx, dl.id
     LIMIT ${limit}
     `.execute(db)
@@ -353,6 +354,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
       unitName: String(r.unit_name),
       baseQty: wireRequiredDecimal(String(r.base_qty)),
       orderedQty: wireRequiredDecimal(String(r.ordered_qty)),
+      arrangedQty: wireRequiredDecimal(String(r.arranged_qty ?? 0)),
       remainingBaseQty: wireRequiredDecimal(String(r.remaining_base_qty)),
       suggestedQty: wireRequiredDecimal(String(r.suggested_qty)),
     })),
@@ -368,9 +370,11 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     if (!qty.isPositive()) {
     throw ApiError.validation('BOM 展开参数不合法', { quantity: ['必须大于 0'] })
   }
-    const bom = await sql<{ id: string }>`SELECT id FROM mfg_bom WHERE id=${input.bomId}::uuid`.execute(db)
+    const bom = await sql<{ id: string }>`
+      SELECT id FROM mfg_bom WHERE id=${input.bomId}::uuid AND status='active'
+    `.execute(db)
     if (!bom.rows[0]) {
-    throw ApiError.validation('BOM 展开参数不合法', { bomId: ['BOM 不存在'] })
+    throw ApiError.validation('BOM 展开参数不合法', { bomId: ['BOM 不存在或未启用'] })
   }
     const materials = await sql<Record<string, unknown>>`
     SELECT c.material_id, m.code AS material_code, m.name AS material_name, c.unit_id, u.name AS unit_name,

@@ -32,7 +32,7 @@ import {
   normalizeList,
   numStr,
   requireCompanyAccess,
-  setDemandItemStatus,
+
   todayUTC,
   toDateOnly,
   validateNo,
@@ -48,7 +48,6 @@ import type {
   OutputStatus,
   WorkOrder,
   WorkOrderStatus,
-  DemandItemStatus,
 } from './types.ts'
 
 const OUT_AUDIT = [
@@ -695,10 +694,8 @@ async function updateWorkOrderProjection(
       throw new ApiError('conflict', '生产工单已入数量不能为负')
     }
     let orderStatus: WorkOrderStatus = 'in_progress'
-    let itemStatus: DemandItemStatus = 'scheduled'
     if (!next.lt(decimal(order.baseQty))) {
       orderStatus = 'completed'
-      itemStatus = 'completed'
     }
     try {
       await db
@@ -713,7 +710,8 @@ async function updateWorkOrderProjection(
     } catch (err) {
       throw mfgWriteError('更新生产工单已入投影失败', err)
     }
-    await setDemandItemStatus(db, order.demandItemId, itemStatus)
+    const { recomputeDemandItemProjections } = await import('./arrangement.ts')
+    await recomputeDemandItemProjections(db, order.demandItemId)
   }
 }
 

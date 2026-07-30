@@ -44,13 +44,14 @@ import type {
   BomByproduct,
   BomComponent,
   BomRoute,
+  BomStatus,
   Operation,
   ProcessTemplate,
   TemplateItem,
 } from './types.ts'
 
 const OP_AUDIT = ['code', 'name', 'note'] as const
-const BOM_AUDIT = ['code', 'plan_name', 'note', 'material_id'] as const
+const BOM_AUDIT = ['code', 'plan_name', 'note', 'material_id', 'status'] as const
 const COMP_AUDIT = ['quantity', 'loss_rate', 'note', 'bom_id', 'material_id', 'unit_id'] as const
 const ROUTE_AUDIT = ['seq', 'requirement', 'is_outsourced', 'bom_id', 'operation_id'] as const
 const TPL_ITEM_AUDIT = [
@@ -472,10 +473,13 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       materialId: string
       planName?: string | null
       note?: string | null
+      /** 默认 draft；工单内嵌创建可传 active 以便立即选入 */
+      status?: BomStatus | null
     },
   ): Promise<Bom> {
     requirePermission(actor, 'mfg.bom:create')
     const n = normalizeBom(input.code ?? '', input.planName, input.note, input.materialId)
+    const status = parseBomStatus(input.status ?? 'draft', { allowDraft: true })
     return withTx(db, async (trx) => {
       await ensureMaterial(trx, input.materialId)
       let code = n.code
@@ -493,6 +497,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
             plan_name: n.planName,
             note: n.note,
             material_id: input.materialId,
+            status,
           })
           .returningAll()
           .executeTakeFirstOrThrow()
@@ -570,6 +575,9 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     requirePermission(actor, 'mfg.bom:delete')
     await withTx(db, async (trx) => {
       const item = await lockBom(trx, id)
+      if (item.status !== 'draft') {
+        throw new ApiError('conflict', '仅草稿 BOM 可删除；启用过的请停用')
+      }
       try {
         await trx.deleteFrom('mfg_bom').where('id', '=', id).execute()
       } catch (err) {
@@ -585,6 +593,57 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         actionName: 'destroy',
         changes: auditDestroyed(bomSnap(item), BOM_AUDIT),
       })
+    })
+  }
+
+  /** 草稿/停用 → 启用 */
+  async function activateBom(actor: Actor, id: string): Promise<Bom> {
+    requirePermission(actor, 'mfg.bom:update')
+    return setBomStatus(actor, id, 'active', 'activate')
+  }
+
+  /** 启用 → 停用 */
+  async function deactivateBom(actor: Actor, id: string): Promise<Bom> {
+    requirePermission(actor, 'mfg.bom:update')
+    return setBomStatus(actor, id, 'inactive', 'deactivate')
+  }
+
+  async function setBomStatus(
+    actor: Actor,
+    id: string,
+    next: BomStatus,
+    actionName: string,
+  ): Promise<Bom> {
+    return withTx(db, async (trx) => {
+      const before = await lockBom(trx, id)
+      if (before.status === next) return before
+      if (next === 'active') {
+        if (before.status !== 'draft' && before.status !== 'inactive') {
+          throw new ApiError('conflict', '当前状态不可启用')
+        }
+      } else if (next === 'inactive') {
+        if (before.status !== 'active') {
+          throw new ApiError('conflict', '仅启用中 BOM 可停用')
+        }
+      } else {
+        throw new ApiError('conflict', '不支持将该状态设为草稿')
+      }
+      const row = await trx
+        .updateTable('mfg_bom')
+        .set({ status: next, updated_at: sql`(now() AT TIME ZONE 'utc')` })
+        .where('id', '=', id)
+        .returningAll()
+        .executeTakeFirstOrThrow()
+      const after = mapBom(row)
+      await writeAudit(trx, actor, {
+        resource: 'mfg_bom',
+        recordId: id,
+        recordLabel: after.code,
+        actionType: 'update',
+        actionName,
+        changes: auditDiff(bomSnap(before), bomSnap(after), BOM_AUDIT),
+      })
+      return after
     })
   }
 
@@ -1155,6 +1214,8 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
     listBoms,
     updateBom,
     deleteBom,
+    activateBom,
+    deactivateBom,
     createComponent,
     getComponent,
     listComponents,
@@ -1445,6 +1506,7 @@ function mapBom(row: {
   plan_name: string | null
   note: string | null
   material_id: string
+  status: string
   inserted_at: Date
   updated_at: Date
 }): Bom {
@@ -1454,6 +1516,7 @@ function mapBom(row: {
     planName: row.plan_name,
     note: row.note,
     materialId: row.material_id,
+    status: row.status as BomStatus,
     insertedAt: new Date(row.inserted_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -1466,9 +1529,21 @@ function mapBomRow(r: Record<string, unknown>): Bom {
     plan_name: r.plan_name == null ? null : String(r.plan_name),
     note: r.note == null ? null : String(r.note),
     material_id: String(r.material_id),
+    status: String(r.status ?? 'active'),
     inserted_at: r.inserted_at as Date,
     updated_at: r.updated_at as Date,
   })
+}
+
+function parseBomStatus(
+  raw: string,
+  opts: { allowDraft: boolean },
+): BomStatus {
+  const s = raw.trim().toLowerCase()
+  if (s === 'draft' && opts.allowDraft) return 'draft'
+  if (s === 'active') return 'active'
+  if (s === 'inactive') return 'inactive'
+  throw ApiError.validation('BOM参数不合法', { status: ['状态不合法'] })
 }
 
 function mapComponent(row: {
@@ -1589,6 +1664,7 @@ function bomSnap(item: Bom) {
     plan_name: item.planName,
     note: item.note,
     material_id: item.materialId,
+    status: item.status,
   }
 }
 

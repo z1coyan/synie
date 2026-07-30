@@ -26,15 +26,19 @@ import {
   mfgWriteError,
   normalizeList,
   numStr,
-  parseFulfillmentWire,
   requireCompanyAccess,
   todayUTC,
   toDateOnly,
   validateNo,
   validateRemarks,
   validateSalesSource,
-  validFulfillment,
 } from './helpers.ts'
+import {
+  attachArrangementFields,
+  createManualArrangement,
+  deleteManualArrangement,
+  hardRemainingArrangeable,
+} from './arrangement.ts'
 import { demandItemResourceMeta, demandResourceMeta } from './meta.ts'
 import type {
   Demand,
@@ -61,6 +65,8 @@ const ITEM_AUDIT = [
   'base_qty',
   'ordered_qty',
   'received_qty',
+  'arranged_qty',
+  'completed_qty',
   'need_date',
   'fulfillment_method',
   'status',
@@ -246,17 +252,13 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
       unitId: string
       qty: string
       needDate?: string | null
-      fulfillmentMethod: string
+      /** @deprecated 行级履约方式已取消，忽略写入 */
+      fulfillmentMethod?: string | null
       salesOrderItemId?: string | null
       remarks?: string | null
     },
   ): Promise<DemandItem> {
     requirePermission(actor, 'mfg.demand:create')
-    let method = (input.fulfillmentMethod || 'MAKE').toLowerCase()
-    if (!method) method = 'make'
-    if (!validFulfillment(method)) {
-      throw ApiError.validation('需求行参数不合法', { fulfillmentMethod: ['履约方式不合法'] })
-    }
     validateRemarks(input.remarks)
     return withTx(db, async (trx) => {
       const parent = await loadDemand(trx, input.demandId, true)
@@ -283,7 +285,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
             qty: toDecimalString(decimal(input.qty)),
             base_qty: projection.baseQty,
             need_date: input.needDate ? toDateOnly(input.needDate) : null,
-            fulfillment_method: method,
+            fulfillment_method: null,
             status: 'pending',
             sales_order_item_id: input.salesOrderItemId ?? null,
             material_code: projection.materialCode,
@@ -293,6 +295,8 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
             remarks: input.remarks ?? null,
             ordered_qty: '0',
             received_qty: '0',
+            arranged_qty: '0',
+            completed_qty: '0',
           })
           .returningAll()
           .executeTakeFirstOrThrow()
@@ -338,8 +342,9 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
       resource: demandItemResourceMeta(),
       source: sql` FROM (
         SELECT i.*,
-          (i.ordered_qty > 0 AND i.status <> 'completed') AS ordered,
-          (i.base_qty - i.ordered_qty) AS remaining_orderable_qty
+          (i.arranged_qty > 0 AND i.status <> 'completed') AS ordered,
+          greatest(i.base_qty - i.arranged_qty, 0) AS remaining_orderable_qty,
+          greatest(i.base_qty - i.arranged_qty, 0) AS remaining_arrangeable_qty
         FROM mfg_demand_item i
       ) AS mfg_demand_item`,
       select: sql`SELECT *`,
@@ -389,18 +394,11 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
       if (input.needDatePresent) {
         after.needDate = input.needDate ? toDateOnly(input.needDate) : null
       }
-      if (input.fulfillmentMethod !== undefined) {
-        after.fulfillmentMethod = parseFulfillmentWire(input.fulfillmentMethod)
-      }
+      // 行级履约方式已取消：忽略 fulfillmentMethod 写入
       if (input.salesOrderItemIdPresent) {
         after.salesOrderItemId = input.salesOrderItemId ?? null
       }
       if (input.remarksPresent) after.remarks = input.remarks ?? null
-      if (!validFulfillment(after.fulfillmentMethod)) {
-        throw ApiError.validation('需求行参数不合法', {
-          fulfillmentMethod: ['履约方式不合法'],
-        })
-      }
       validateRemarks(after.remarks)
       const projection = await deriveItemProjection(
         trx,
@@ -427,7 +425,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
               qty: after.qty,
               base_qty: after.baseQty,
               need_date: after.needDate,
-              fulfillment_method: after.fulfillmentMethod,
+              fulfillment_method: after.fulfillmentMethod ?? null,
               sales_order_item_id: after.salesOrderItemId,
               material_code: after.materialCode,
               material_name: after.materialName,
@@ -653,6 +651,10 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
+  /**
+   * 兼容旧「点完成」：对剩余可安排量创建一条库存安排（不扣库存）。
+   * 新 UI 应直接用 createArrangement(stock|close)。
+   */
   async function completeDemandItem(actor: Actor, id: string): Promise<DemandItem> {
     requirePermission(actor, 'mfg.demand:update')
     return withTx(db, async (trx) => {
@@ -666,29 +668,84 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
       const before = await loadDemandItem(trx, id, true)
       requireCompanyAccess(actor, before.companyId)
       if (parent.status !== 'confirmed') {
-        throw new ApiError('conflict', '仅已确认需求单上的行可点完成')
+        throw new ApiError('conflict', '仅已确认未关闭需求单上的行可登记库存安排')
       }
-      if (before.status !== 'pending') {
-        throw new ApiError('conflict', '仅待安排的行可点完成')
+      const rem = hardRemainingArrangeable(before.baseQty, before.arrangedQty)
+      if (!decimal(rem).gt(0)) {
+        throw new ApiError('conflict', '无可安排剩余数量')
       }
-      if (before.fulfillmentMethod === 'make') {
-        throw new ApiError('conflict', '自制行不能直接点完成,须经生产入库完工')
+      // rem 为 base；行 qty 与 base 同比例
+      const factor = decimal(before.baseQty).eq(0)
+        ? decimal(1)
+        : decimal(before.qty).div(decimal(before.baseQty))
+      const qtyInLineUnit = toDecimalString(decimal(rem).mul(factor))
+      await createManualArrangement(trx, {
+        demandItemId: id,
+        companyId: before.companyId,
+        type: 'stock',
+        qty: qtyInLineUnit,
+        unitBaseQtyPerUnit: decimal(before.qty).eq(0)
+          ? '1'
+          : toDecimalString(decimal(before.baseQty).div(decimal(before.qty))),
+        remarks: '兼容点完成→库存安排',
+      })
+      return loadDemandItem(trx, id, false)
+    })
+  }
+
+  async function changeFulfillment(
+    _actor: Actor,
+    _id: string,
+    _methodWire: string,
+  ): Promise<DemandItem> {
+    throw new ApiError(
+      'conflict',
+      '已取消行级履约方式，请使用安排（生产/采购/委外/库存/关闭）',
+    )
+  }
+
+  async function createArrangement(
+    actor: Actor,
+    input: {
+      demandItemId: string
+      arrangementType: 'stock' | 'close'
+      qty: string
+      remarks?: string | null
+    },
+  ): Promise<DemandItem> {
+    requirePermission(actor, 'mfg.demand:update')
+    return withTx(db, async (trx) => {
+      const parentId = await trx
+        .selectFrom('mfg_demand_item')
+        .select('demand_id')
+        .where('id', '=', input.demandItemId)
+        .executeTakeFirst()
+      if (!parentId) throw new ApiError('not_found', '需求行不存在')
+      const parent = await loadDemand(trx, parentId.demand_id, true)
+      const before = await loadDemandItem(trx, input.demandItemId, true)
+      requireCompanyAccess(actor, before.companyId)
+      if (parent.status !== 'confirmed') {
+        throw new ApiError('conflict', '仅已确认未关闭需求单上的行可手工安排')
       }
-      if (decimal(before.orderedQty).gt(0)) {
-        throw new ApiError('conflict', '已下单的行不可手工点完成,须等入库回写')
-      }
-      await trx
-        .updateTable('mfg_demand_item')
-        .set({ status: 'completed', updated_at: sql`(now() AT TIME ZONE 'utc')` })
-        .where('id', '=', id)
-        .execute()
-      const after = { ...before, status: 'completed' as DemandItemStatus }
+      const unitBase =
+        decimal(before.qty).eq(0)
+          ? '1'
+          : toDecimalString(decimal(before.baseQty).div(decimal(before.qty)))
+      await createManualArrangement(trx, {
+        demandItemId: input.demandItemId,
+        companyId: before.companyId,
+        type: input.arrangementType,
+        qty: input.qty,
+        unitBaseQtyPerUnit: unitBase,
+        remarks: input.remarks,
+      })
+      const after = await loadDemandItem(trx, input.demandItemId, false)
       await writeAudit(trx, actor, {
         resource: 'mfg_demand_item',
-        recordId: id,
+        recordId: after.id,
         recordLabel: String(after.idx),
         actionType: 'update',
-        actionName: 'complete',
+        actionName: `arrange_${input.arrangementType}`,
         companyId: after.companyId,
         changes: auditDiff(itemSnap(before), itemSnap(after), ITEM_AUDIT),
       })
@@ -696,71 +753,39 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
     })
   }
 
-  async function changeFulfillment(
-    actor: Actor,
-    id: string,
-    methodWire: string,
-  ): Promise<DemandItem> {
+  async function removeArrangement(actor: Actor, arrangementId: string): Promise<DemandItem> {
     requirePermission(actor, 'mfg.demand:update')
-    const method = parseFulfillmentWire(methodWire)
     return withTx(db, async (trx) => {
-      const parentId = await trx
-        .selectFrom('mfg_demand_item')
-        .select('demand_id')
-        .where('id', '=', id)
-        .executeTakeFirst()
-      if (!parentId) throw new ApiError('not_found', '需求行不存在')
-      const parent = await loadDemand(trx, parentId.demand_id, true)
-      const before = await loadDemandItem(trx, id, true)
-      requireCompanyAccess(actor, before.companyId)
-      if (parent.status !== 'confirmed') {
-        throw new ApiError('conflict', '仅已确认需求单上的行可改履约方式')
-      }
-      if (before.status === 'completed') {
-        throw new ApiError('conflict', '已完成行不可改履约方式')
-      }
-      const activeWork = await sql<{ ok: boolean }>`
-        SELECT EXISTS(
-          SELECT 1 FROM mfg_work_order
-          WHERE demand_item_id = ${id} AND status <> 'voided'
-        ) AS ok
-      `.execute(trx)
-      if (activeWork.rows[0]?.ok) {
-        throw new ApiError('conflict', '存在未作废生产工单,不可改履约方式')
-      }
-      const activePurchase = await sql<{ ok: boolean }>`
-        SELECT EXISTS(
-          SELECT 1 FROM pur_order_item oi
-          JOIN pur_order o ON o.id = oi.order_id
-          WHERE oi.demand_line_id = ${id} AND o.status IN ('audited', 'closed')
-        ) AS ok
-      `.execute(trx)
-      if (activePurchase.rows[0]?.ok) {
-        throw new ApiError('conflict', '存在已审核未作废采购/委外订单条目,不可改履约方式')
-      }
-      let status: DemandItemStatus = before.status
-      if (status === 'scheduled') status = 'pending'
-      await trx
-        .updateTable('mfg_demand_item')
-        .set({
-          fulfillment_method: method,
-          status,
-          updated_at: sql`(now() AT TIME ZONE 'utc')`,
-        })
-        .where('id', '=', id)
-        .execute()
-      const after = { ...before, fulfillmentMethod: method, status }
-      await writeAudit(trx, actor, {
-        resource: 'mfg_demand_item',
-        recordId: id,
-        recordLabel: String(after.idx),
-        actionType: 'update',
-        actionName: 'change_fulfillment',
-        companyId: after.companyId,
-        changes: auditDiff(itemSnap(before), itemSnap(after), ITEM_AUDIT),
-      })
-      return after
+      const { demandItemId } = await deleteManualArrangement(trx, arrangementId)
+      const item = await loadDemandItem(trx, demandItemId, false)
+      requireCompanyAccess(actor, item.companyId)
+      return item
     })
+  }
+
+  async function listArrangements(actor: Actor, demandItemId: string) {
+    requirePermission(actor, 'mfg.demand:read')
+    const item = await loadDemandItem(db, demandItemId, false)
+    requireCompanyAccess(actor, item.companyId)
+    const rows = await db
+      .selectFrom('mfg_demand_arrangement')
+      .selectAll()
+      .where('demand_item_id', '=', demandItemId)
+      .orderBy('inserted_at', 'asc')
+      .execute()
+    return rows.map((r) => ({
+      id: r.id,
+      demandItemId: r.demand_item_id,
+      companyId: r.company_id,
+      arrangementType: r.arrangement_type,
+      qty: numStr(r.qty),
+      baseQty: numStr(r.base_qty),
+      workOrderId: r.work_order_id,
+      purchaseOrderItemId: r.purchase_order_item_id,
+      remarks: r.remarks,
+      insertedAt: new Date(r.inserted_at),
+      updatedAt: new Date(r.updated_at),
+    }))
   }
 
   async function salesOccupancies(
@@ -812,6 +837,9 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
     voidDemand,
     completeDemandItem,
     changeFulfillment,
+    createArrangement,
+    removeArrangement,
+    listArrangements,
     salesOccupancies,
     /** 供工单/入库事务内使用 */
     loadDemand,
@@ -894,8 +922,10 @@ function mapDemandItem(row: {
   base_qty: unknown
   ordered_qty: unknown
   received_qty: unknown
+  arranged_qty?: unknown
+  completed_qty?: unknown
   need_date: Date | string | null
-  fulfillment_method: string
+  fulfillment_method: string | null
   status: string
   sales_order_item_id: string | null
   material_code: string
@@ -908,8 +938,10 @@ function mapDemandItem(row: {
 }): DemandItem {
   const orderedQty = numStr(row.ordered_qty)
   const baseQty = numStr(row.base_qty)
+  const arrangedQty = numStr(row.arranged_qty ?? '0')
+  const completedQty = numStr(row.completed_qty ?? '0')
   const status = row.status as DemandItemStatus
-  return {
+  const item: DemandItem = {
     id: row.id,
     demandId: row.demand_id,
     companyId: row.company_id,
@@ -920,8 +952,13 @@ function mapDemandItem(row: {
     baseQty,
     orderedQty,
     receivedQty: numStr(row.received_qty),
+    arrangedQty,
+    completedQty,
+    remainingArrangeableQty: hardRemainingArrangeable(baseQty, arrangedQty),
     needDate: asDateOrNull(row.need_date),
-    fulfillmentMethod: row.fulfillment_method as FulfillmentMethod,
+    fulfillmentMethod: row.fulfillment_method
+      ? (row.fulfillment_method as FulfillmentMethod)
+      : null,
     status,
     salesOrderItemId: row.sales_order_item_id,
     materialCode: row.material_code,
@@ -929,11 +966,12 @@ function mapDemandItem(row: {
     materialSpec: row.material_spec,
     unitName: row.unit_name,
     remarks: row.remarks,
-    ordered: decimal(orderedQty).gt(0) && status !== 'completed',
-    remainingOrderableQty: toDecimalString(decimal(baseQty).sub(orderedQty)),
+    ordered: decimal(arrangedQty).gt(0) && status !== 'completed',
+    remainingOrderableQty: hardRemainingArrangeable(baseQty, arrangedQty),
     insertedAt: new Date(row.inserted_at),
     updatedAt: new Date(row.updated_at),
   }
+  return attachArrangementFields(item)
 }
 
 function mapDemandItemRow(r: Record<string, unknown>): DemandItem {
@@ -948,8 +986,10 @@ function mapDemandItemRow(r: Record<string, unknown>): DemandItem {
     base_qty: r.base_qty,
     ordered_qty: r.ordered_qty,
     received_qty: r.received_qty,
+    arranged_qty: r.arranged_qty,
+    completed_qty: r.completed_qty,
     need_date: r.need_date as Date | null,
-    fulfillment_method: String(r.fulfillment_method),
+    fulfillment_method: r.fulfillment_method == null ? null : String(r.fulfillment_method),
     status: String(r.status),
     sales_order_item_id: r.sales_order_item_id == null ? null : String(r.sales_order_item_id),
     material_code: String(r.material_code),
@@ -963,6 +1003,9 @@ function mapDemandItemRow(r: Record<string, unknown>): DemandItem {
   if (r.ordered !== undefined) item.ordered = Boolean(r.ordered)
   if (r.remaining_orderable_qty !== undefined) {
     item.remainingOrderableQty = numStr(r.remaining_orderable_qty)
+  }
+  if (r.remaining_arrangeable_qty !== undefined) {
+    item.remainingArrangeableQty = numStr(r.remaining_arrangeable_qty)
   }
   return item
 }
@@ -985,6 +1028,8 @@ function itemSnap(item: DemandItem) {
     base_qty: item.baseQty,
     ordered_qty: item.orderedQty,
     received_qty: item.receivedQty,
+    arranged_qty: item.arrangedQty,
+    completed_qty: item.completedQty,
     need_date: item.needDate,
     fulfillment_method: item.fulfillmentMethod,
     status: item.status,

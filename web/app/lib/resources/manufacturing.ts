@@ -50,6 +50,22 @@ export async function applyRouteTemplate(id: string, templateId: string) {
   )
 }
 
+export async function activateBom(id: string) {
+  return apiData(
+    api.manufacturing.boms[':id'].activate.$post({
+      param: { id },
+    }),
+  )
+}
+
+export async function deactivateBom(id: string) {
+  return apiData(
+    api.manufacturing.boms[':id'].deactivate.$post({
+      param: { id },
+    }),
+  )
+}
+
 export async function confirmDemand(id: string) {
   return apiData(
     api.manufacturing.demands[':id'].confirm.$post({
@@ -96,6 +112,59 @@ export async function voidWorkOrder(id: string) {
   )
 }
 
+export async function applyWorkOrderBom(id: string, bomId: string | null) {
+  return apiData(
+    api.manufacturing['work-orders'][':id']['apply-bom'].$post({
+      param: { id },
+      json: { bomId },
+    }),
+  )
+}
+
+export async function getWorkOrderBomSnapshot(id: string) {
+  return apiData(
+    api.manufacturing['work-orders'][':id']['bom-snapshot'].$get({
+      param: { id },
+    }),
+  )
+}
+
+/** 工单内嵌创建 BOM（启用并立即选入快照）；需 mfg.bom:create */
+export async function createWorkOrderInlineBom(
+  id: string,
+  input: {
+    code?: string | null
+    planName?: string | null
+    note?: string | null
+    components?: Array<{
+      materialId: string
+      unitId: string
+      quantity: string
+      lossRate?: string | null
+      note?: string | null
+    }>
+    routes?: Array<{
+      operationId: string
+      seq: number
+      requirement?: string | null
+      isOutsourced?: boolean
+    }>
+    byproducts?: Array<{
+      materialId: string
+      unitId: string
+      quantity: string
+      note?: string | null
+    }>
+  },
+) {
+  return apiData(
+    api.manufacturing['work-orders'][':id']['create-bom'].$post({
+      param: { id },
+      json: input as never,
+    }),
+  )
+}
+
 export async function auditOutput(id: string) {
   return apiData(
     api.manufacturing.outputs[':id'].audit.$post({
@@ -123,6 +192,11 @@ export const workOrderCommandAdapter = createRowCommandAdapter({
 export const outputCommandAdapter = createRowCommandAdapter({
   audit: auditOutput,
   void: voidOutput,
+})
+
+export const bomCommandAdapter = createRowCommandAdapter({
+  activate: activateBom,
+  deactivate: deactivateBom,
 })
 
 export const operationClient = resourceClient('mfgOperations', {

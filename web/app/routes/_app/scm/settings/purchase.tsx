@@ -43,7 +43,7 @@ function ScmPurchaseSettingsTab() {
       return
     }
     if (!Number.isFinite(overorderPct) || overorderPct < 0 || overorderPct > 100) {
-      toast.danger('需求超下单比例须在 0%–100% 之间')
+      toast.danger('需求超安排比例须在 0%–100% 之间')
       return
     }
     setSaving(true)
@@ -122,8 +122,8 @@ function ScmPurchaseSettingsTab() {
         <Card.Header>
           <Card.Title>履约需求下单</Card.Title>
           <Card.Description>
-            超下单比例:采购/委外订单审核时允许累计已下单 ≤ 需求数量 × (1 +
-            比例)。0% 表示禁止超下单(供应商起订量场景可受控放开)。草稿订单不占量。
+            超安排比例:工单创建、采购/委外审核、库存/关闭安排时允许累计已安排 ≤ 需求数量 × (1 +
+            比例)。0% 表示禁止超安排。草稿采购不占量；关闭安排不吃本容差。
           </Card.Description>
         </Card.Header>
         <Card.Content>
@@ -134,12 +134,13 @@ function ScmPurchaseSettingsTab() {
           ) : query.isError ? null : (
             <NumberField
               fullWidth
+              // 产品名：需求超安排比例（存储列仍为 demand_overorder_ratio）
               value={overorderPct}
               onChange={setOverorderPct}
               minValue={0}
               maxValue={100}
             >
-              <Label>需求超下单比例(%)</Label>
+              <Label>需求超安排比例(%)</Label>
               <NumberField.Group className="grid-cols-[1fr]">
                 <NumberField.Input placeholder="如 0 或 5" />
               </NumberField.Group>

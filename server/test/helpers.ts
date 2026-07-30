@@ -18,6 +18,7 @@ import { createScmServices } from '~/modules/scm/index.ts'
 import {
   createManufacturingServices,
   createManufacturingSettingService,
+  registerManufacturingFileOwners,
 } from '~/modules/manufacturing/index.ts'
 import {
   createAccountingSettingService,
@@ -93,6 +94,7 @@ export function createPlatformServices(db: Kysely<Database>): PlatformServices {
   const owners = createOwnerRegistry()
   registerPrintingFileOwners(owners)
   registerFinanceFileOwners(owners)
+  registerManufacturingFileOwners(owners)
   return {
     settings: createSettingsService(db, {
       sales: createSalesSettingService(db),

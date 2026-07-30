@@ -284,12 +284,22 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
               materialId: z.string().uuid(),
               planName: z.string().max(64).nullable().optional(),
               note: z.string().max(255).nullable().optional(),
+              status: z.enum(['DRAFT', 'ACTIVE', 'draft', 'active']).optional(),
             })
             .strict(),
           validationHook,
         ),
         async (c) => {
-          const item = await master.createBom(c.get('actor'), c.req.valid('json'))
+          const body = c.req.valid('json')
+          const item = await master.createBom(c.get('actor'), {
+            code: body.code,
+            materialId: body.materialId,
+            planName: body.planName,
+            note: body.note,
+            status: body.status
+              ? (body.status.toLowerCase() as 'draft' | 'active')
+              : undefined,
+          })
           return c.json(bomWire(item), 201)
         },
       )
@@ -329,6 +339,22 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
         async (c) => {
           await master.deleteBom(c.get('actor'), c.req.valid('param').id)
           return c.body(null, 204)
+        },
+      )
+      .post(
+        '/boms/:id/activate',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          const item = await master.activateBom(c.get('actor'), c.req.valid('param').id)
+          return c.json(bomWire(item))
+        },
+      )
+      .post(
+        '/boms/:id/deactivate',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          const item = await master.deactivateBom(c.get('actor'), c.req.valid('param').id)
+          return c.json(bomWire(item))
         },
       )
       .post(
@@ -688,7 +714,7 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
               idx: z.number().int(),
               qty: z.string().min(1),
               needDate: z.string().nullable().optional(),
-              fulfillmentMethod: z.string().min(1),
+              fulfillmentMethod: z.string().optional(),
               remarks: z.string().max(512).nullable().optional(),
             })
             .strict(),
@@ -763,6 +789,62 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
             ),
           ),
       )
+      .get(
+        '/demand-items/:id/arrangements',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          const rows = await demands.listArrangements(c.get('actor'), c.req.valid('param').id)
+          return c.json({
+            count: rows.length,
+            results: rows.map((r) => ({
+              id: r.id,
+              demandItemId: r.demandItemId,
+              companyId: r.companyId,
+              arrangementType: String(r.arrangementType).toUpperCase(),
+              qty: r.qty,
+              baseQty: r.baseQty,
+              workOrderId: r.workOrderId,
+              purchaseOrderItemId: r.purchaseOrderItemId,
+              remarks: r.remarks,
+              insertedAt: r.insertedAt.toISOString(),
+              updatedAt: r.updatedAt.toISOString(),
+            })),
+          })
+        },
+      )
+      .post(
+        '/demand-items/:id/arrangements',
+        zValidator('param', idParam, validationHook),
+        zValidator(
+          'json',
+          z
+            .object({
+              arrangementType: z.enum(['STOCK', 'CLOSE', 'stock', 'close']),
+              qty: z.string().min(1),
+              remarks: z.string().max(512).nullable().optional(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const body = c.req.valid('json')
+          const item = await demands.createArrangement(c.get('actor'), {
+            demandItemId: c.req.valid('param').id,
+            arrangementType: body.arrangementType.toLowerCase() as 'stock' | 'close',
+            qty: body.qty,
+            remarks: body.remarks,
+          })
+          return c.json(demandItemWire(item), 201)
+        },
+      )
+      .delete(
+        '/demand-arrangements/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          const item = await demands.removeArrangement(c.get('actor'), c.req.valid('param').id)
+          return c.json(demandItemWire(item))
+        },
+      )
       .post(
         '/demand-items/:id/fulfillment',
         zValidator('param', idParam, validationHook),
@@ -817,6 +899,7 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
             .object({
               demandItemId: z.string().uuid(),
               workOrderNo: z.string().max(32).nullable().optional(),
+              qty: z.string().min(1).nullable().optional(),
             })
             .strict(),
           validationHook,
@@ -857,6 +940,100 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
         async (c) => {
           await workOrders.deleteWorkOrder(c.get('actor'), c.req.valid('param').id)
           return c.body(null, 204)
+        },
+      )
+      .post(
+        '/work-orders/:id/apply-bom',
+        zValidator('param', idParam, validationHook),
+        zValidator(
+          'json',
+          z.object({ bomId: z.string().uuid().nullable() }).strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const item = await workOrders.applyBom(
+            c.get('actor'),
+            c.req.valid('param').id,
+            c.req.valid('json').bomId,
+          )
+          return c.json(workOrderWire(item))
+        },
+      )
+      .get(
+        '/work-orders/:id/bom-snapshot',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          const snap = await workOrders.getBomSnapshot(
+            c.get('actor'),
+            c.req.valid('param').id,
+          )
+          return c.json(snap)
+        },
+      )
+      .post(
+        '/work-orders/:id/create-bom',
+        zValidator('param', idParam, validationHook),
+        zValidator(
+          'json',
+          z
+            .object({
+              code: z.string().max(32).nullable().optional(),
+              planName: z.string().max(64).nullable().optional(),
+              note: z.string().max(255).nullable().optional(),
+              components: z
+                .array(
+                  z
+                    .object({
+                      materialId: z.string().uuid(),
+                      unitId: z.string().uuid(),
+                      quantity: z.string().min(1),
+                      lossRate: z.string().nullable().optional(),
+                      note: z.string().max(512).nullable().optional(),
+                    })
+                    .strict(),
+                )
+                .optional(),
+              routes: z
+                .array(
+                  z
+                    .object({
+                      operationId: z.string().uuid(),
+                      seq: z.number().int(),
+                      requirement: z.string().max(512).nullable().optional(),
+                      isOutsourced: z.boolean().optional(),
+                    })
+                    .strict(),
+                )
+                .optional(),
+              byproducts: z
+                .array(
+                  z
+                    .object({
+                      materialId: z.string().uuid(),
+                      unitId: z.string().uuid(),
+                      quantity: z.string().min(1),
+                      note: z.string().max(512).nullable().optional(),
+                    })
+                    .strict(),
+                )
+                .optional(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const result = await workOrders.createInlineBom(
+            c.get('actor'),
+            c.req.valid('param').id,
+            c.req.valid('json'),
+          )
+          return c.json(
+            {
+              workOrder: workOrderWire(result.workOrder),
+              bom: bomWire(result.bom),
+            },
+            201,
+          )
         },
       )
       .post(

@@ -11,6 +11,7 @@ import { createInventoryServices } from './modules/inventory/index.ts'
 import {
   createManufacturingServices,
   createManufacturingSettingService,
+  registerManufacturingFileOwners,
 } from './modules/manufacturing/index.ts'
 import { createPartyServices, registerPartyTodoSources } from './modules/party/index.ts'
 import { createCompanyAccountDefaultService } from './modules/sales/index.ts'
@@ -79,6 +80,7 @@ const numbering = createNumberingService(db)
 const owners = createOwnerRegistry()
 registerPrintingFileOwners(owners)
 registerFinanceFileOwners(owners)
+registerManufacturingFileOwners(owners)
 const files = createFileService({ db, owners })
 const storages = createStorageService({ db })
 const audit = createAuditService(db)

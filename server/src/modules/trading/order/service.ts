@@ -1294,12 +1294,26 @@ async function ensureVoidable(db: DbHandle, side: TradingSide, orderId: string) 
 }
 
 async function adjustDemandOnAudit(db: DbHandle, orderId: string, occupy: boolean) {
-  const rows = await sql<{ demand_line_id: string | null; base_qty: string }>`
-    SELECT demand_line_id, base_qty::text AS base_qty
+  const head = await sql<{ is_outsourced: boolean; company_id: string }>`
+    SELECT is_outsourced, company_id::text AS company_id
+    FROM pur_order WHERE id=${orderId}::uuid
+  `.execute(db)
+  const isOut = Boolean(head.rows[0]?.is_outsourced)
+  const companyId = head.rows[0]?.company_id
+  const arrangementType = isOut ? 'outsource' : 'purchase'
+  const rows = await sql<{
+    id: string
+    demand_line_id: string | null
+    base_qty: string
+    qty: string
+  }>`
+    SELECT id::text AS id, demand_line_id::text AS demand_line_id,
+      base_qty::text AS base_qty, qty::text AS qty
     FROM pur_order_item WHERE order_id=${orderId}::uuid AND demand_line_id IS NOT NULL
   `.execute(db)
+  const touched = new Set<string>()
   for (const row of rows.rows) {
-    if (!row.demand_line_id) continue
+    if (!row.demand_line_id || !companyId) continue
     const delta = occupy ? decimal(row.base_qty) : decimal(row.base_qty).neg()
     await sql`
       UPDATE mfg_demand_item
@@ -1307,6 +1321,49 @@ async function adjustDemandOnAudit(db: DbHandle, orderId: string, occupy: boolea
           updated_at=(now() AT TIME ZONE 'utc')
       WHERE id=${row.demand_line_id}::uuid
     `.execute(db)
+    if (occupy) {
+      // 超安排闸门：与工单/关闭共用 demand_overorder_ratio
+      const cap = await sql<{
+        base_qty: string
+        arranged_qty: string
+        ratio: string
+      }>`
+        SELECT di.base_qty::text AS base_qty, di.arranged_qty::text AS arranged_qty,
+          s.demand_overorder_ratio::text AS ratio
+        FROM mfg_demand_item di
+        CROSS JOIN sal_setting s
+        WHERE di.id=${row.demand_line_id}::uuid
+        FOR UPDATE OF di
+      `.execute(db)
+      const c = cap.rows[0]
+      if (c) {
+        const max = decimal(c.base_qty).mul(decimal(1).add(decimal(c.ratio)))
+        const nextArranged = decimal(c.arranged_qty).add(decimal(row.base_qty))
+        if (nextArranged.gt(max)) {
+          throw new ApiError('conflict', '已安排数量超过需求超安排比例允许上限')
+        }
+      }
+      await sql`
+        INSERT INTO mfg_demand_arrangement(
+          demand_item_id, company_id, arrangement_type, qty, base_qty, purchase_order_item_id
+        ) VALUES (
+          ${row.demand_line_id}::uuid, ${companyId}::uuid, ${arrangementType},
+          ${wireRequiredDecimal(row.qty)}, ${wireRequiredDecimal(row.base_qty)}, ${row.id}::uuid
+        )
+      `.execute(db)
+    } else {
+      await sql`
+        DELETE FROM mfg_demand_arrangement
+        WHERE purchase_order_item_id=${row.id}::uuid
+      `.execute(db)
+    }
+    touched.add(row.demand_line_id)
+  }
+  const { recomputeDemandItemProjections } = await import(
+    '~/modules/manufacturing/arrangement.ts'
+  )
+  for (const lineId of [...touched].sort()) {
+    await recomputeDemandItemProjections(db, lineId)
   }
 }
 

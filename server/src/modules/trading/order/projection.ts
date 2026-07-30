@@ -270,7 +270,7 @@ async function adjustOutsourcedIssue(
   }
 }
 
-/** 采购入库投影同步 mfg_demand_item.received_qty（对齐 Go adjustDemandReceived） */
+/** 采购入库投影同步 mfg_demand_item.received_qty，并重算已完成/行状态 */
 async function adjustDemandReceived(db: DbHandle, deltas: Map<string, Decimal>): Promise<void> {
   const lineIds = [...deltas.keys()].sort()
   for (const lineId of lineIds) {
@@ -284,13 +284,15 @@ async function adjustDemandReceived(db: DbHandle, deltas: Map<string, Decimal>):
     if (next.isNegative()) {
       throw new ApiError('conflict', '需求已收投影不能为负')
     }
-    const status = next.gte(decimal(r.base_qty)) ? 'completed' : 'pending'
     await sql`
       UPDATE mfg_demand_item
       SET received_qty = ${wireRequiredDecimal(next)},
-          status = ${status},
           updated_at = (now() AT TIME ZONE 'utc')
       WHERE id = ${lineId}::uuid
     `.execute(db)
+    const { recomputeDemandItemProjections } = await import(
+      '~/modules/manufacturing/arrangement.ts'
+    )
+    await recomputeDemandItemProjections(db, lineId)
   }
 }

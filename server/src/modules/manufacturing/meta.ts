@@ -58,6 +58,12 @@ const outputStatusOptions = [
   { value: 'VOIDED', label: '已作废' },
 ]
 
+const bomStatusOptions = [
+  { value: 'DRAFT', label: '草稿' },
+  { value: 'ACTIVE', label: '启用' },
+  { value: 'INACTIVE', label: '停用' },
+]
+
 const headCrud: ResourceMeta['actions'] = [
   { key: 'read', label: '查看', scope: 'both' },
   { key: 'create', label: '新增', scope: 'both' },
@@ -205,6 +211,12 @@ export function bomResourceMeta(): ResourceMeta {
         sortable: true,
       }),
       field('plan_name', 'planName', 'string', '方案名称', { filterable: true, sortable: true }),
+      field('status', 'status', 'enum', '状态', {
+        filterable: true,
+        sortable: true,
+        readonly: true,
+        enumOptions: bomStatusOptions,
+      }),
       field('note', 'note', 'string', '备注', { filterable: true, sortable: true }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
@@ -221,9 +233,13 @@ export function bomResourceMeta(): ResourceMeta {
         createOnly: true,
       }),
     ],
-    actions: headCrud,
+    actions: [
+      ...headCrud,
+      { key: 'activate', label: '启用', scope: 'row', permissionAction: 'update' },
+      { key: 'deactivate', label: '停用', scope: 'row', permissionAction: 'update' },
+    ],
     form: {
-      exclude: ['id', 'insertedAt', 'updatedAt'],
+      exclude: ['id', 'status', 'insertedAt', 'updatedAt'],
       fields: {
         code: { placeholder: '留空自动取号' },
         materialId: { required: true },
@@ -424,20 +440,31 @@ export function demandItemResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
-      field('ordered_qty', 'orderedQty', 'decimal', '已下单数量(物料默认单位,系统维护)', {
+      field('ordered_qty', 'orderedQty', 'decimal', '已下单数量(采购分量,系统维护)', {
         readonly: true,
         filterable: true,
         sortable: true,
       }),
-      field('received_qty', 'receivedQty', 'decimal', '已收数量(物料默认单位,系统维护)', {
+      field('received_qty', 'receivedQty', 'decimal', '已收数量(采购分量,系统维护)', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('arranged_qty', 'arrangedQty', 'decimal', '已安排数量(物料默认单位,系统维护)', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('completed_qty', 'completedQty', 'decimal', '已完成数量(物料默认单位,系统维护)', {
         readonly: true,
         filterable: true,
         sortable: true,
       }),
       field('need_date', 'needDate', 'date', '需求日', { filterable: true, sortable: true }),
-      field('fulfillment_method', 'fulfillmentMethod', 'enum', '履约方式', {
+      field('fulfillment_method', 'fulfillmentMethod', 'enum', '履约方式(已废弃)', {
         filterable: true,
         sortable: true,
+        readonly: true,
         enumOptions: fulfillmentOptions,
       }),
       field('status', 'status', 'enum', '行状态', {
@@ -481,18 +508,30 @@ export function demandItemResourceMeta(): ResourceMeta {
         'salesOrderItem',
         'materialCode',
       ),
-      field('ordered', 'ordered', 'boolean', '已下单(有已审核订单条目且未完成)', {
+      field('ordered', 'ordered', 'boolean', '已安排(有占量且未完成)', {
         calculated: true,
         readonly: true,
         filterable: true,
         sortable: true,
       }),
-      field('remaining_orderable_qty', 'remainingOrderableQty', 'decimal', '剩余可下单数量(物料默认单位)', {
+      field('remaining_orderable_qty', 'remainingOrderableQty', 'decimal', '剩余可安排数量(物料默认单位)', {
         calculated: true,
         readonly: true,
         filterable: true,
         sortable: true,
       }),
+      field(
+        'remaining_arrangeable_qty',
+        'remainingArrangeableQty',
+        'decimal',
+        '剩余可安排数量(物料默认单位)',
+        {
+          calculated: true,
+          readonly: true,
+          filterable: true,
+          sortable: true,
+        },
+      ),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     printLoops: [{ name: 'work_orders', resource: 'mfgWorkOrders' }],
@@ -559,6 +598,7 @@ export function workOrderResourceMeta(): ResourceMeta {
       fk('demand_item_id', 'demandItemId', '来源需求行', 'mfgDemandItems', 'demandItem', 'materialCode'),
       fk('material_id', 'materialId', '物料', 'invMaterials', 'material', 'name'),
       fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name'),
+      fk('bom_id', 'bomId', 'BOM(来源留痕)', 'mfgBoms', 'bom', 'code'),
       fk('created_by_id', 'createdById', '生成人', 'sysUsers', 'createdBy', 'name'),
       field('remaining_base_qty', 'remainingBaseQty', 'decimal', '未完成数量(默认单位)', {
         calculated: true,

@@ -179,6 +179,19 @@ run('PG 集成（订单履约投影 / 容差）', () => {
         ${orderId}::uuid, ${companyId}::uuid, ${materialId}::uuid, ${unitId}::uuid, ${demandLineId}::uuid, 0
       )
     `.execute(db)
+    // 审核占量等价：采购安排 + arranged/ordered 投影（本测直写分录，不经订单审核）
+    await sql`
+      INSERT INTO mfg_demand_arrangement(
+        demand_item_id, company_id, arrangement_type, qty, base_qty, purchase_order_item_id
+      ) VALUES (
+        ${demandLineId}::uuid, ${companyId}::uuid, 'purchase', 5, 5, ${itemId}::uuid
+      )
+    `.execute(db)
+    await sql`
+      UPDATE mfg_demand_item
+      SET ordered_qty = 5, arranged_qty = 5, status = 'scheduled'
+      WHERE id = ${demandLineId}::uuid
+    `.execute(db)
 
     await withTx(db, async (trx) => {
       await postFulfillment(trx, 'purchase', {
@@ -210,6 +223,6 @@ run('PG 集成（订单履约投影 / 容差）', () => {
       SELECT received_qty::text AS q, status AS s FROM mfg_demand_item WHERE id = ${demandLineId}::uuid
     `.execute(db)
     expectQty(dem2.rows[0]?.q, '3')
-    expect(dem2.rows[0]?.s).toBe('pending')
+    expect(dem2.rows[0]?.s).toBe('scheduled')
   })
 })

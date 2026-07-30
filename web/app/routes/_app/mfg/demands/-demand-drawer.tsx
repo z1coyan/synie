@@ -25,19 +25,10 @@ import {
 } from '../../scm/-audit-doc'
 import { SalesItemPicker } from './-sales-item-picker'
 import {
-  canChangeFulfillmentItem,
-  canCompleteItem,
   canGenerateWorkOrder,
   useDemandItemActions,
   useMyPermissions,
 } from './-item-actions'
-
-const FULFILLMENT_LABELS: Record<string, string> = {
-  MAKE: '自制',
-  BUY: '外购',
-  OUTSOURCE: '委外',
-  STOCK: '库存',
-}
 
 // 本地日期 YYYY-MM-DD（不用 toISOString：UTC 串在 UTC+8 凌晨会差一天）。
 function todayLocal(): string {
@@ -78,7 +69,6 @@ const ITEMS = {
     unitId: row.unitId,
     qty: row.qty,
     needDate: row.needDate ?? null,
-    fulfillmentMethod: row.fulfillmentMethod,
     salesOrderItemId: row.salesOrderItemId || null,
     remarks: row.remarks ?? null,
   }),
@@ -88,7 +78,6 @@ const ITEMS = {
     'unitId',
     'qty',
     'needDate',
-    'fulfillmentMethod',
     'salesOrderItemId',
     'remarks',
   ] as const,
@@ -119,14 +108,6 @@ export const DEMAND_AUDIT_CONFIG = {
     { key: 'unitName', label: '单位' },
     { key: 'qty', label: '数量', align: 'end' },
     { key: 'needDate', label: '需求日' },
-    {
-      key: 'fulfillmentMethod',
-      label: '履约方式',
-      render: (value) =>
-        value == null
-          ? undefined
-          : (FULFILLMENT_LABELS[String(value)] ?? String(value)),
-    },
     { key: 'remarks', label: '行备注' },
   ],
 } satisfies AuditDocConfig
@@ -146,7 +127,6 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
     if (drawer?.demand) load(drawer.demand.id)
   })
 
-  const canUpdateDemand = hasPermission(perms.data, 'mfg.demand:update')
   const canCreateWorkOrder = hasPermission(
     perms.data,
     'mfg.work_order:create',
@@ -233,44 +213,20 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
                   ? undefined
                   : (item) => {
                       if (isLocalRow(item)) return null
+                      if (
+                        !canCreateWorkOrder ||
+                        !canGenerateWorkOrder(item)
+                      ) {
+                        return null
+                      }
                       return (
-                        <>
-                          {canUpdateDemand && canCompleteItem(item) && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onPress={() =>
-                                itemActions.requestComplete(item)
-                              }
-                            >
-                              完成
-                            </Button>
-                          )}
-                          {canUpdateDemand &&
-                            canChangeFulfillmentItem(item) && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onPress={() =>
-                                  itemActions.requestChange(item)
-                                }
-                              >
-                                改履约方式
-                              </Button>
-                            )}
-                          {canCreateWorkOrder &&
-                            canGenerateWorkOrder(item) && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onPress={() =>
-                                  itemActions.requestGenerate(item)
-                                }
-                              >
-                                生成工单
-                              </Button>
-                            )}
-                        </>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onPress={() => itemActions.requestGenerate(item)}
+                        >
+                          生成工单
+                        </Button>
                       )
                     }
               }
@@ -280,8 +236,12 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
                 'baseQty',
                 'orderedQty',
                 'receivedQty',
+                'arrangedQty',
+                'completedQty',
                 'ordered',
                 'remainingOrderableQty',
+                'remainingArrangeableQty',
+                'fulfillmentMethod',
                 'status',
                 'materialCode',
                 'materialName',
@@ -294,7 +254,6 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
                 'unitId',
                 'qty',
                 'needDate',
-                'fulfillmentMethod',
                 'salesOrderItemId',
                 'remarks',
               ]}
@@ -308,16 +267,11 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
                 unitId: { order: 2, required: true },
                 qty: { order: 3, required: true },
                 needDate: { order: 4 },
-                fulfillmentMethod: {
-                  order: 5,
-                  required: true,
-                  defaultValue: 'MAKE',
-                },
                 salesOrderItemId: {
-                  order: 6,
+                  order: 5,
                   label: '来源销售条目',
                 },
-                remarks: { order: 7 },
+                remarks: { order: 6 },
               }}
             />
           )

@@ -41,6 +41,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     demands: [] as string[],
     workOrders: [] as string[],
     outputs: [] as string[],
+    files: [] as string[],
   }
 
   async function seed(): Promise<void> {
@@ -125,7 +126,16 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     }
     for (const id of cleanupIds.workOrders) {
       await db.deleteFrom('sys_audit_log').where('record_id', '=', id).execute()
+      await db
+        .deleteFrom('sys_attachment')
+        .where('owner_type', '=', 'mfg_work_order')
+        .where('owner_id', '=', id)
+        .execute()
       await db.deleteFrom('mfg_work_order').where('id', '=', id).execute()
+    }
+    for (const id of cleanupIds.files) {
+      await db.deleteFrom('sys_attachment').where('file_id', '=', id).execute()
+      await db.deleteFrom('sys_file').where('id', '=', id).execute()
     }
     for (const id of cleanupIds.demands) {
       await db.deleteFrom('sys_audit_log').where('record_id', '=', id).execute()
@@ -195,6 +205,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       planName: '自用',
     })
     cleanupIds.boms.push(bom.id)
+    expect(bom.status).toBe('draft')
 
     const comp = await mfg.master.createComponent(actor, {
       bomId: bom.id,
@@ -223,6 +234,88 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     await expect(mfg.master.applyRouteTemplate(actor, bom.id, tpl.id)).rejects.toMatchObject({
       code: 'conflict',
     })
+
+    const active = await mfg.master.activateBom(actor, bom.id)
+    expect(active.status).toBe('active')
+    const inactive = await mfg.master.deactivateBom(actor, bom.id)
+    expect(inactive.status).toBe('inactive')
+    await expect(mfg.master.deleteBom(actor, bom.id)).rejects.toMatchObject({ code: 'conflict' })
+    await mfg.master.activateBom(actor, bom.id)
+
+    const draftOnly = await mfg.master.createBom(actor, {
+      code: `BD${suffix}`,
+      materialId,
+      planName: '可删草稿',
+    })
+    await mfg.master.deleteBom(actor, draftOnly.id)
+
+    // 工单选 BOM 快照
+    const d = await mfg.demands.createDemand(actor, {
+      companyId,
+      demandNo: `DBOM${suffix}`,
+    })
+    cleanupIds.demands.push(d.id)
+    const li = await mfg.demands.createDemandItem(actor, {
+      demandId: d.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '2',
+    })
+    await mfg.demands.confirmDemand(actor, d.id)
+    const woBom = await mfg.workOrders.createWorkOrder(actor, {
+      demandItemId: li.id,
+      workOrderNo: `WOB${suffix}`,
+    })
+    cleanupIds.workOrders.push(woBom.id)
+    const applied = await mfg.workOrders.applyBom(actor, woBom.id, bom.id)
+    expect(applied.bomId).toBe(bom.id)
+    const snap = await mfg.workOrders.getBomSnapshot(actor, woBom.id)
+    expect(snap.components).toHaveLength(1)
+    expect(snap.routes).toHaveLength(1)
+    await mfg.workOrders.applyBom(actor, woBom.id, null)
+    expect((await mfg.workOrders.getBomSnapshot(actor, woBom.id)).components).toHaveLength(0)
+  })
+
+  test('库存/关闭安排与双投影', async () => {
+    const demand = await mfg.demands.createDemand(actor, {
+      companyId,
+      demandNo: `DST${suffix}`,
+      demandDate: '2026-07-20',
+    })
+    cleanupIds.demands.push(demand.id)
+    const line = await mfg.demands.createDemandItem(actor, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '100',
+      needDate: '2026-07-25',
+    })
+    await mfg.demands.confirmDemand(actor, demand.id)
+    const afterStock = await mfg.demands.createArrangement(actor, {
+      demandItemId: line.id,
+      arrangementType: 'stock',
+      qty: '40',
+    })
+    expect(afterStock.arrangedQty).toBe('40')
+    expect(afterStock.completedQty).toBe('40')
+    expect(afterStock.status).toBe('scheduled')
+    const afterClose = await mfg.demands.createArrangement(actor, {
+      demandItemId: line.id,
+      arrangementType: 'close',
+      qty: '60',
+    })
+    expect(afterClose.arrangedQty).toBe('100')
+    expect(afterClose.completedQty).toBe('100')
+    expect(afterClose.status).toBe('completed')
+    await expect(
+      mfg.demands.createArrangement(actor, {
+        demandItemId: line.id,
+        arrangementType: 'close',
+        qty: '1',
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' })
   })
 
   test('履约需求确认/自制工单/生产入库完工联动', async () => {
@@ -240,41 +333,46 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '100',
-      fulfillmentMethod: 'MAKE',
       needDate: '2026-08-01',
     })
     expect(line.baseQty).toBe('100')
     expect(line.status).toBe('pending')
-    expect(line.fulfillmentMethod).toBe('make')
+    expect(line.fulfillmentMethod).toBeNull()
 
     const confirmed = await mfg.demands.confirmDemand(actor, demand.id)
     expect(confirmed.status).toBe('confirmed')
 
-    // 自制行不可直接点完成
-    await expect(mfg.demands.completeDemandItem(actor, line.id)).rejects.toMatchObject({
-      code: 'conflict',
-    })
-
+    // 分批：先开 40，再开 60；满量后不可再开
     const wo = await mfg.workOrders.createWorkOrder(actor, {
       demandItemId: line.id,
       workOrderNo: `WO${suffix}`,
+      qty: '40',
     })
     cleanupIds.workOrders.push(wo.id)
     expect(wo.status).toBe('in_progress')
-    expect(wo.baseQty).toBe('100')
+    expect(wo.baseQty).toBe('40')
     expect(wo.receivedBaseQty).toBe('0')
-    expect(wo.remainingBaseQty).toBe('100')
+    expect(wo.remainingBaseQty).toBe('40')
 
-    // 一需求行至多一张未作废工单
+    const wo2 = await mfg.workOrders.createWorkOrder(actor, {
+      demandItemId: line.id,
+      workOrderNo: `WO2${suffix}`,
+      qty: '60',
+    })
+    cleanupIds.workOrders.push(wo2.id)
+    expect(wo2.baseQty).toBe('60')
+
     await expect(
       mfg.workOrders.createWorkOrder(actor, {
         demandItemId: line.id,
-        workOrderNo: `WO2${suffix}`,
+        workOrderNo: `WO3${suffix}`,
+        qty: '1',
       }),
     ).rejects.toMatchObject({ code: 'conflict' })
 
     const scheduled = await mfg.demands.getDemandItem(actor, line.id)
     expect(scheduled.status).toBe('scheduled')
+    expect(scheduled.arrangedQty).toBe('100')
 
     const output = await mfg.outputs.createOutput(actor, {
       companyId,
@@ -284,24 +382,24 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
     cleanupIds.outputs.push(output.id)
 
+    // 工单1(40) 分两次入库：30 + 10
     await mfg.outputs.createOutputItem(actor, {
       outputId: output.id,
       idx: 1,
       workOrderId: wo.id,
       unitId,
       warehouseId,
-      qty: '60',
+      qty: '30',
     })
 
     const audited1 = await mfg.outputs.auditOutput(actor, output.id)
     expect(audited1.status).toBe('audited')
 
     const woMid = await mfg.workOrders.getWorkOrder(actor, wo.id)
-    expect(woMid.receivedBaseQty).toBe('60')
-    expect(woMid.remainingBaseQty).toBe('40')
+    expect(woMid.receivedBaseQty).toBe('30')
+    expect(woMid.remainingBaseQty).toBe('10')
     expect(woMid.status).toBe('in_progress')
 
-    // 第二次入库满量
     const output2 = await mfg.outputs.createOutput(actor, {
       companyId,
       outputNo: `O2${suffix}`,
@@ -314,25 +412,43 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       workOrderId: wo.id,
       unitId,
       warehouseId,
-      qty: '40',
+      qty: '10',
     })
     await mfg.outputs.auditOutput(actor, output2.id)
 
     const woDone = await mfg.workOrders.getWorkOrder(actor, wo.id)
     expect(woDone.status).toBe('completed')
-    expect(woDone.receivedBaseQty).toBe('100')
-    expect(decimal(woDone.remainingBaseQty).eq(0)).toBe(true)
+    expect(woDone.receivedBaseQty).toBe('40')
+
+    // 工单2(60) 一次入满 → 需求行双投影完成
+    const output3 = await mfg.outputs.createOutput(actor, {
+      companyId,
+      outputNo: `O3${suffix}`,
+      warehouseId,
+    })
+    cleanupIds.outputs.push(output3.id)
+    await mfg.outputs.createOutputItem(actor, {
+      outputId: output3.id,
+      idx: 1,
+      workOrderId: wo2.id,
+      unitId,
+      warehouseId,
+      qty: '60',
+    })
+    await mfg.outputs.auditOutput(actor, output3.id)
 
     const lineDone = await mfg.demands.getDemandItem(actor, line.id)
+    expect(lineDone.completedQty).toBe('100')
     expect(lineDone.status).toBe('completed')
 
-    // 作废第二张入库 → 工单回进行中、需求行回已安排
-    await mfg.outputs.voidOutput(actor, output2.id)
-    const woReopen = await mfg.workOrders.getWorkOrder(actor, wo.id)
-    expect(woReopen.status).toBe('in_progress')
-    expect(woReopen.receivedBaseQty).toBe('60')
+    // 作废工单2入库 → 需求行回已安排
+    await mfg.outputs.voidOutput(actor, output3.id)
+    const wo2Reopen = await mfg.workOrders.getWorkOrder(actor, wo2.id)
+    expect(wo2Reopen.status).toBe('in_progress')
+    expect(wo2Reopen.receivedBaseQty).toBe('0')
     const lineReopen = await mfg.demands.getDemandItem(actor, line.id)
     expect(lineReopen.status).toBe('scheduled')
+    expect(lineReopen.completedQty).toBe('40')
   })
 
   test('生产入库超入容差硬拦', async () => {
@@ -347,7 +463,6 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '10',
-      fulfillmentMethod: 'MAKE',
     })
     await mfg.demands.confirmDemand(actor, demand.id)
     const wo = await mfg.workOrders.createWorkOrder(actor, {
@@ -376,7 +491,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
   })
 
-  test('库存行点完成 / 改履约方式', async () => {
+  test('兼容点完成→库存安排；改履约方式已取消', async () => {
     const demand = await mfg.demands.createDemand(actor, {
       companyId,
       demandNo: `DS${suffix}`,
@@ -388,11 +503,12 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '5',
-      fulfillmentMethod: 'STOCK',
     })
     await mfg.demands.confirmDemand(actor, demand.id)
     const done = await mfg.demands.completeDemandItem(actor, stockLine.id)
     expect(done.status).toBe('completed')
+    expect(done.arrangedQty).toBe('5')
+    expect(done.completedQty).toBe('5')
 
     const demand2 = await mfg.demands.createDemand(actor, {
       companyId,
@@ -405,10 +521,236 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       materialId,
       unitId,
       qty: '3',
-      fulfillmentMethod: 'BUY',
     })
     await mfg.demands.confirmDemand(actor, demand2.id)
-    const changed = await mfg.demands.changeFulfillment(actor, buyLine.id, 'MAKE')
-    expect(changed.fulfillmentMethod).toBe('make')
+    await expect(mfg.demands.changeFulfillment(actor, buyLine.id, 'MAKE')).rejects.toMatchObject({
+      code: 'conflict',
+    })
+  })
+
+  test('工单创建复制物料图纸挂接；无图不拦', async () => {
+    const fileId = crypto.randomUUID()
+    cleanupIds.files.push(fileId)
+    await db
+      .insertInto('sys_file')
+      .values({
+        id: fileId,
+        storage: 'local',
+        key: `mfg-draw-${suffix}`,
+        filename: `draw-${suffix}.png`,
+        content_type: 'image/png',
+        size: '12',
+        sha256: 'a'.repeat(64),
+      })
+      .execute()
+    await db
+      .insertInto('sys_attachment')
+      .values({
+        owner_type: 'inv_material',
+        owner_id: materialId,
+        category: 'drawing',
+        file_id: fileId,
+        company_id: null,
+      })
+      .execute()
+
+    const demand = await mfg.demands.createDemand(actor, {
+      companyId,
+      demandNo: `DDRAW${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    const line = await mfg.demands.createDemandItem(actor, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '8',
+    })
+    await mfg.demands.confirmDemand(actor, demand.id)
+    const wo = await mfg.workOrders.createWorkOrder(actor, {
+      demandItemId: line.id,
+      workOrderNo: `WODRAW${suffix}`,
+      qty: '8',
+    })
+    cleanupIds.workOrders.push(wo.id)
+
+    const copied = await db
+      .selectFrom('sys_attachment')
+      .selectAll()
+      .where('owner_type', '=', 'mfg_work_order')
+      .where('owner_id', '=', wo.id)
+      .where('category', '=', 'drawing')
+      .execute()
+    expect(copied).toHaveLength(1)
+    expect(copied[0]!.file_id).toBe(fileId)
+    expect(copied[0]!.company_id).toBe(companyId)
+
+    // 无图物料仍可开工单
+    await db
+      .deleteFrom('sys_attachment')
+      .where('owner_type', '=', 'inv_material')
+      .where('owner_id', '=', materialId)
+      .execute()
+    const demand2 = await mfg.demands.createDemand(actor, {
+      companyId,
+      demandNo: `DNODRAW${suffix}`,
+    })
+    cleanupIds.demands.push(demand2.id)
+    const line2 = await mfg.demands.createDemandItem(actor, {
+      demandId: demand2.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '1',
+    })
+    await mfg.demands.confirmDemand(actor, demand2.id)
+    const wo2 = await mfg.workOrders.createWorkOrder(actor, {
+      demandItemId: line2.id,
+      workOrderNo: `WONODRAW${suffix}`,
+      qty: '1',
+    })
+    cleanupIds.workOrders.push(wo2.id)
+    const none = await db
+      .selectFrom('sys_attachment')
+      .selectAll()
+      .where('owner_type', '=', 'mfg_work_order')
+      .where('owner_id', '=', wo2.id)
+      .execute()
+    expect(none).toHaveLength(0)
+  })
+
+  test('工单内嵌创建 BOM：启用态 + 立即选入快照', async () => {
+    const demand = await mfg.demands.createDemand(actor, {
+      companyId,
+      demandNo: `DINL${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    const line = await mfg.demands.createDemandItem(actor, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '12',
+    })
+    await mfg.demands.confirmDemand(actor, demand.id)
+    const wo = await mfg.workOrders.createWorkOrder(actor, {
+      demandItemId: line.id,
+      workOrderNo: `WOINL${suffix}`,
+      qty: '12',
+    })
+    cleanupIds.workOrders.push(wo.id)
+
+    const { workOrder, bom } = await mfg.workOrders.createInlineBom(actor, wo.id, {
+      code: `BINL${suffix}`,
+      planName: '工单内嵌',
+      components: [
+        {
+          materialId: componentId,
+          unitId,
+          quantity: '3',
+          lossRate: '0.1',
+        },
+      ],
+    })
+    cleanupIds.boms.push(bom.id)
+    expect(bom.status).toBe('active')
+    expect(bom.materialId).toBe(materialId)
+    expect(workOrder.bomId).toBe(bom.id)
+    const snap = await mfg.workOrders.getBomSnapshot(actor, wo.id)
+    expect(snap.components).toHaveLength(1)
+    expect(snap.components[0]!.quantity).toBe('3')
+    expect(snap.components[0]!.lossRate).toBe('0.1')
+  })
+
+  test('混排矩阵：40 工单 + 30 采购 + 30 关闭 + 入库', async () => {
+    // 完整路径：生产安排 + 采购安排（审核倒写语义）+ 关闭 + 生产入库完成判定
+    const { recomputeDemandItemProjections } = await import('./arrangement.ts')
+    const demand = await mfg.demands.createDemand(actor, {
+      companyId,
+      demandNo: `DMX${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    const line = await mfg.demands.createDemandItem(actor, {
+      demandId: demand.id,
+      idx: 1,
+      materialId,
+      unitId,
+      qty: '100',
+    })
+    await mfg.demands.confirmDemand(actor, demand.id)
+
+    const wo = await mfg.workOrders.createWorkOrder(actor, {
+      demandItemId: line.id,
+      workOrderNo: `WOMX${suffix}`,
+      qty: '40',
+    })
+    cleanupIds.workOrders.push(wo.id)
+
+    // 模拟已审核采购条目倒写（无 FK 到 pur_order_item，与运行时一致）
+    const fakePoItemId = crypto.randomUUID()
+    await db
+      .insertInto('mfg_demand_arrangement')
+      .values({
+        demand_item_id: line.id,
+        company_id: companyId,
+        arrangement_type: 'purchase',
+        qty: '30',
+        base_qty: '30',
+        purchase_order_item_id: fakePoItemId,
+      })
+      .execute()
+    await db
+      .updateTable('mfg_demand_item')
+      .set({ ordered_qty: '30' })
+      .where('id', '=', line.id)
+      .execute()
+    await recomputeDemandItemProjections(db, line.id)
+
+    await mfg.demands.createArrangement(actor, {
+      demandItemId: line.id,
+      arrangementType: 'close',
+      qty: '30',
+    })
+
+    let item = await mfg.demands.getDemandItem(actor, line.id)
+    expect(item.arrangedQty).toBe('100')
+    expect(item.completedQty).toBe('30') // 仅关闭完成；工单未入、采购未收
+    expect(item.status).toBe('scheduled')
+
+    const output = await mfg.outputs.createOutput(actor, {
+      companyId,
+      outputNo: `OMX${suffix}`,
+      warehouseId,
+    })
+    cleanupIds.outputs.push(output.id)
+    await mfg.outputs.createOutputItem(actor, {
+      outputId: output.id,
+      idx: 1,
+      workOrderId: wo.id,
+      unitId,
+      warehouseId,
+      qty: '40',
+    })
+    await mfg.outputs.auditOutput(actor, output.id)
+
+    item = await mfg.demands.getDemandItem(actor, line.id)
+    expect(item.completedQty).toBe('70') // 关闭 30 + 生产入 40
+    expect(item.status).toBe('scheduled')
+
+    // 采购入库回写 received → 完成
+    await db
+      .updateTable('mfg_demand_item')
+      .set({ received_qty: '30' })
+      .where('id', '=', line.id)
+      .execute()
+    await recomputeDemandItemProjections(db, line.id)
+    item = await mfg.demands.getDemandItem(actor, line.id)
+    expect(item.arrangedQty).toBe('100')
+    expect(item.completedQty).toBe('100')
+    expect(item.status).toBe('completed')
+
+    const arrangements = await mfg.demands.listArrangements(actor, line.id)
+    const types = arrangements.map((a) => a.arrangementType).sort()
+    expect(types).toEqual(['close', 'make', 'purchase'])
   })
 })

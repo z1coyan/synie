@@ -298,7 +298,6 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
         unitId: fixture.unitId,
         idx: 1,
         qty: '5',
-        fulfillmentMethod: 'MAKE',
         remarks: `${prefix}需求行`,
       },
     )
@@ -320,7 +319,6 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
       unitId: fixture.unitId,
       idx: 1,
       qty: '1',
-      fulfillmentMethod: 'STOCK',
     })
 
     await post<Row>(

@@ -175,7 +175,7 @@ test('四类设置通过 Go REST 保存，Settings GraphQL=0', async ({ page, re
     await expect(spotMax).toBeVisible()
     await spotMax.fill(String(sales.spotItemMaxQty === 93 ? 94 : 93))
     await page.getByLabel('入库超收比例(%)').fill('6')
-    await page.getByLabel('需求超下单比例(%)').fill('5')
+    await page.getByLabel('需求超安排比例(%)').fill('5')
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await expect(page.getByText('采购设置已保存')).toBeVisible()
 

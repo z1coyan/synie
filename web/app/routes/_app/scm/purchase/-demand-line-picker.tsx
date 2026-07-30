@@ -7,9 +7,9 @@ import type { Row } from '~/components/synie-data-grid/types'
 import { queryPurchaseOrderDemandLines } from '~/lib/resources/orders'
 
 /**
- * 「从需求单勾选」多选对话框:池 = 已确认未关闭未作废 + 未完成 + 剩余可下单>0 +
- * 公司一致 + 履约方式匹配单据委外标记(外购↔普通单、委外↔委外单)。
- * 带入落物料/数量(默认剩余可下单)/需求日/来源需求行;报价/单价走现有机制。
+ * 「从需求单勾选」多选对话框:池 = 已确认未关闭未作废 + 未完成 + 剩余可安排>0 +
+ * 公司一致（不再按行级履约方式过滤；普通采购/委外审核时分别倒写对应安排）。
+ * 带入落物料/数量(默认剩余可安排)/需求日/来源需求行;报价/单价走现有机制。
  * 权限挂 purchase.order:read,采购员不必持需求单读权限。
  */
 
@@ -139,9 +139,7 @@ export function DemandLinePicker(props: {
                   <EmptyState.Header>
                     <EmptyState.Title>暂无可下单需求行</EmptyState.Title>
                     <EmptyState.Description>
-                      仅列出已确认未完成、剩余可下单 &gt; 0 且履约方式为
-                      {props.isOutsourced ? '委外' : '外购'}
-                      的本公司需求行。
+                      仅列出已确认未完成、剩余可安排 &gt; 0 的本公司需求行（可与生产等混排）。
                     </EmptyState.Description>
                   </EmptyState.Header>
                 </EmptyState>
@@ -154,8 +152,8 @@ export function DemandLinePicker(props: {
                         <Table.Column>需求单号</Table.Column>
                         <Table.Column>物料</Table.Column>
                         <Table.Column>需求数量(默认单位)</Table.Column>
-                        <Table.Column>已下单</Table.Column>
-                        <Table.Column>剩余可下单</Table.Column>
+                        <Table.Column>已安排</Table.Column>
+                        <Table.Column>剩余可安排</Table.Column>
                         <Table.Column>需求日</Table.Column>
                       </Table.Header>
                       <Table.Body>

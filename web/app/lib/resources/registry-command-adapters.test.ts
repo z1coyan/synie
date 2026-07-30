@@ -12,6 +12,7 @@ const EXPECTED_COMMANDS = {
   invStockCounts: { approve: 'row', cancel: 'row' },
   invStockDocs: { audit: 'row', void: 'row' },
   invStockTransfers: { ship: 'row', receive: 'row' },
+  mfgBoms: { activate: 'row', deactivate: 'row' },
   mfgDemands: { audit: 'row', close: 'row', void: 'row' },
   mfgOutputs: { audit: 'row', void: 'row' },
   mfgWorkOrders: { void: 'row' },
@@ -41,7 +42,7 @@ describe('ResourceBinding 语义 CommandAdapter 覆盖', () => {
       expect(actual, resource).toEqual(expected)
       commandCount += Object.keys(actual).length
     }
-    expect(commandCount).toBe(53)
+    expect(commandCount).toBe(55)
   })
 
   test('未声明命令的资源不获得 Proxy/action fallback', () => {

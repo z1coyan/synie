@@ -135,7 +135,6 @@ export function SalesItemPicker(props: {
           unitId: r.unitId,
           qty: suggestQty(r, o.remainingBaseQty),
           needDate: null,
-          fulfillmentMethod: 'MAKE',
           salesOrderItemId: r.id,
           remarks: null,
           // 带上 join 对象,表格 fk 单元格零反查直接显示标签

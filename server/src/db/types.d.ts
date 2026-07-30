@@ -730,7 +730,22 @@ export interface MfgBom {
   material_id: string;
   note: string | null;
   plan_name: string | null;
+  status: Generated<string>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface MfgDemandArrangement {
+  arrangement_type: string;
+  base_qty: Generated<Numeric>;
+  company_id: string;
+  demand_item_id: string;
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  purchase_order_item_id: string | null;
+  qty: Numeric;
+  remarks: string | null;
+  updated_at: Generated<Timestamp>;
+  work_order_id: string | null;
 }
 
 export interface MfgBomByproduct {
@@ -780,10 +795,12 @@ export interface MfgDemand {
 }
 
 export interface MfgDemandItem {
+  arranged_qty: Generated<Numeric>;
   base_qty: Generated<Numeric>;
   company_id: string;
+  completed_qty: Generated<Numeric>;
   demand_id: string;
-  fulfillment_method: Generated<string>;
+  fulfillment_method: string | null;
   id: Generated<string>;
   idx: Int8;
   inserted_at: Generated<Timestamp>;
@@ -876,6 +893,7 @@ export interface MfgSetting {
 
 export interface MfgWorkOrder {
   base_qty: Generated<Numeric>;
+  bom_id: string | null;
   company_id: string;
   created_by_id: string | null;
   demand_id: string;
@@ -894,6 +912,42 @@ export interface MfgWorkOrder {
   unit_name: Generated<string>;
   updated_at: Generated<Timestamp>;
   work_order_no: string;
+}
+
+export interface MfgWorkOrderComponent {
+  id: Generated<string>;
+  work_order_id: string;
+  material_id: string;
+  unit_id: string;
+  quantity: Numeric;
+  loss_rate: Numeric | null;
+  note: string | null;
+  idx: Generated<Int8>;
+  inserted_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface MfgWorkOrderRoute {
+  id: Generated<string>;
+  work_order_id: string;
+  operation_id: string;
+  seq: Int8;
+  requirement: string | null;
+  is_outsourced: Generated<boolean>;
+  inserted_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface MfgWorkOrderByproduct {
+  id: Generated<string>;
+  work_order_id: string;
+  material_id: string;
+  unit_id: string;
+  quantity: Numeric;
+  note: string | null;
+  idx: Generated<Int8>;
+  inserted_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface PurOrder {
@@ -1727,6 +1781,7 @@ export interface DB {
   mfg_bom_component: MfgBomComponent;
   mfg_bom_route: MfgBomRoute;
   mfg_demand: MfgDemand;
+  mfg_demand_arrangement: MfgDemandArrangement;
   mfg_demand_item: MfgDemandItem;
   mfg_operation: MfgOperation;
   mfg_output: MfgOutput;
@@ -1735,6 +1790,9 @@ export interface DB {
   mfg_process_template_item: MfgProcessTemplateItem;
   mfg_setting: MfgSetting;
   mfg_work_order: MfgWorkOrder;
+  mfg_work_order_byproduct: MfgWorkOrderByproduct;
+  mfg_work_order_component: MfgWorkOrderComponent;
+  mfg_work_order_route: MfgWorkOrderRoute;
   pur_order: PurOrder;
   pur_order_item: PurOrderItem;
   pur_order_item_byproduct: PurOrderItemByproduct;

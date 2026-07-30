@@ -2,9 +2,12 @@
 
 export type DemandStatus = 'draft' | 'confirmed' | 'closed' | 'voided'
 export type DemandItemStatus = 'pending' | 'scheduled' | 'completed'
+/** @deprecated 行级履约方式已取消；存量只读兼容 */
 export type FulfillmentMethod = 'make' | 'buy' | 'outsource' | 'stock'
 export type WorkOrderStatus = 'in_progress' | 'completed' | 'voided'
 export type OutputStatus = 'draft' | 'audited' | 'voided'
+export type BomStatus = 'draft' | 'active' | 'inactive'
+export type ArrangementType = 'make' | 'purchase' | 'outsource' | 'stock' | 'close'
 
 export interface Operation {
   id: string
@@ -41,6 +44,21 @@ export interface Bom {
   planName: string | null
   note: string | null
   materialId: string
+  status: BomStatus
+  insertedAt: Date
+  updatedAt: Date
+}
+
+export interface DemandArrangement {
+  id: string
+  demandItemId: string
+  companyId: string
+  arrangementType: ArrangementType
+  qty: string
+  baseQty: string
+  workOrderId: string | null
+  purchaseOrderItemId: string | null
+  remarks: string | null
   insertedAt: Date
   updatedAt: Date
 }
@@ -102,8 +120,12 @@ export interface DemandItem {
   baseQty: string
   orderedQty: string
   receivedQty: string
+  arrangedQty: string
+  completedQty: string
+  remainingArrangeableQty: string
   needDate: string | null
-  fulfillmentMethod: FulfillmentMethod
+  /** 存量兼容；新行为空 */
+  fulfillmentMethod: FulfillmentMethod | null
   status: DemandItemStatus
   salesOrderItemId: string | null
   materialCode: string
@@ -135,6 +157,7 @@ export interface WorkOrder {
   demandItemId: string
   materialId: string
   unitId: string
+  bomId: string | null
   createdById: string | null
   insertedAt: Date
   updatedAt: Date

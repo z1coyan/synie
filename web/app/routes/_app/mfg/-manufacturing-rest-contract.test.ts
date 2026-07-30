@@ -68,12 +68,15 @@ describe('PR-2.17 制造域 REST 边界', () => {
     expect(demandDrawer).toContain('client={demandClient}')
     expect(demandDrawer).toContain('client={demandItemClient}')
     expect(source('./demands/items.tsx')).toContain('client={demandItemClient}')
+    expect(source('./demands/-item-actions.tsx')).toContain('workOrderClient')
     expect(source('./demands/-item-actions.tsx')).toContain(
-      "useGridMeta('mfgDemandItems', true)",
+      'requestGenerate',
     )
 
     const workOrder = source('./work-orders.tsx')
     expect(workOrder.match(/client=\{workOrderClient\}/g)?.length).toBe(2)
+    expect(workOrder).toContain('createWorkOrderInlineBom')
+    expect(workOrder).toContain("ownerType=\"mfg_work_order\"")
 
     const output = source('./outputs.tsx')
     expect(output.match(/client=\{outputClient\}/g)?.length).toBe(2)
@@ -87,9 +90,9 @@ describe('PR-2.17 制造域 REST 边界', () => {
       'confirmDemand',
       'closeDemand',
       'voidDemand',
-      'completeDemandItem',
-      'changeDemandItemFulfillment',
       'voidWorkOrder',
+      'applyWorkOrderBom',
+      'createWorkOrderInlineBom',
       'auditOutput',
       'voidOutput',
     ]) {
@@ -173,9 +176,9 @@ describe('PR-2.17 制造域 REST 边界', () => {
       'materialName',
       'materialSpec',
       'qty',
+      'remainingArrangeableQty',
       'unitName',
       'needDate',
-      'fulfillmentMethod',
       'status',
     ])
     expect(workOrderConfig).toContain(
@@ -199,12 +202,12 @@ describe('PR-2.17 制造域 REST 边界', () => {
         new RegExp(`${field}:\\s*\\{[\\s\\S]*?edit:\\s*'readOnly'`),
       )
     }
+    expect(workOrderConfig).toMatch(/qty:\s*\{[\s\S]*?edit:\s*'createOnly'/)
     for (const field of [
       'companyId',
       'demandId',
       'materialId',
       'unitId',
-      'qty',
       'baseQty',
       'needDate',
       'materialCode',
@@ -216,5 +219,6 @@ describe('PR-2.17 制造域 REST 边界', () => {
         new RegExp(`${field}:\\s*selectedRow\\?\\.${field}`),
       )
     }
+    expect(workOrderConfig).toContain('remainingArrangeableQty')
   })
 })

@@ -214,7 +214,7 @@ async function persistByproducts(
 }
 
 // 列白名单:编号/方案名称区分同物料多张;物料走 fk 列(join 展开编号/名称/规格),时间戳不进表格
-const GRID_COLUMNS = ['code', 'materialId', 'planName', 'note']
+const GRID_COLUMNS = ['code', 'materialId', 'planName', 'status', 'note']
 
 /** 物料列:「编号-名称(规格)」,点击开物料速览(join 默认只取 id/name,code/spec 经 joinFields 追加取回,同物料分类列先例) */
 function MaterialCell({ row }: { row: Row }) {
