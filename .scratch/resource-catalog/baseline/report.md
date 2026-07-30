@@ -1,6 +1,6 @@
 # Resource Catalog 迁移基线报告
 
-生成时间：2026-07-30T04:35:04.000Z
+生成时间：2026-07-30T05:21:05.647Z
 
 ## 摘要
 
@@ -87,12 +87,59 @@ _无_
 ```json
 {
   "declaredCommands": 51,
-  "adapterCommands": 51,
+  "adapterCommands": 3,
+  "adapterResources": [
+    "sysStorages",
+    "hrAttendanceDays",
+    "accBankTransactions"
+  ],
+  "proxyActionHooks": 17,
   "basicWritableFields": 98,
-  "legacyUsages": 0,
-  "writeStubs": 0,
+  "legacyUsages": 17,
+  "legacyDrawerFieldFacts": [],
+  "legacyPageFieldFacts": [
+    "web/app/routes/_app/finance/acceptance/-transaction-drawer.tsx",
+    "web/app/routes/_app/finance/-bank-import-drawers.tsx",
+    "web/app/routes/_app/finance/invoices.tsx",
+    "web/app/routes/_app/finance/bank-transactions.tsx",
+    "web/app/routes/_app/finance/bank-import-templates.tsx",
+    "web/app/routes/_app/finance/journals.tsx",
+    "web/app/routes/_app/system/numbering.tsx",
+    "web/app/routes/_app/system/storages.tsx",
+    "web/app/routes/_app/system/print-templates.tsx",
+    "web/app/routes/_app/scm/warehouses.tsx",
+    "web/app/routes/_app/scm/sales-orders/-order-drawer.tsx",
+    "web/app/routes/_app/scm/materials.tsx",
+    "web/app/routes/_app/scm/purchase/-order-drawer.tsx",
+    "web/app/routes/_app/hr/attendance/corrections.tsx",
+    "web/app/routes/_app/hr/payroll/loans.tsx",
+    "web/app/routes/_app/hr/payroll/slips.tsx",
+    "web/app/routes/_app/hr/payroll/-payments-section.tsx"
+  ],
+  "writeStubs": 14,
+  "writeStubPatterns": [
+    "binding-registry:1",
+    "system-ops:2",
+    "hr-operations.ts:2",
+    "finance-operations.ts:2",
+    "inventory.ts:3",
+    "system-ops.ts:2",
+    "accounting.ts:1",
+    "fulfillment.ts:1"
+  ],
+  "basicCatalogFormResources": 18,
+  "basicFormConsumerFiles": [
+    "web/app/routes/_app/finance/bank-accounts.tsx",
+    "web/app/routes/_app/system/users.tsx",
+    "web/app/routes/_app/system/companies.tsx",
+    "web/app/routes/_app/scm/suppliers.tsx",
+    "web/app/routes/_app/scm/material-categories.tsx",
+    "web/app/routes/_app/base/currencies.tsx",
+    "web/app/routes/_app/base/market.tsx",
+    "web/app/routes/_app/base/units.tsx",
+    "web/app/routes/_app/mfg/operations.tsx"
+  ],
   "typedResources": 97,
-  "legacyResources": 0,
   "formKindCounts": {
     "basic": 18,
     "none": 48,
@@ -104,7 +151,7 @@ _无_
     "none": 44,
     "reference-only": 0
   },
-  "notes": "工单 11：contract 完成；Meta 仅 ResourceDocument v2；无 legacy normalizer / v1 grid sibling / 宽 ResourceClient registry / drawer registry / remote defaults"
+  "notes": "实测 gaps：adapterCommands=SEMANTIC_COMMAND_ADAPTERS 覆盖的 catalog 命令数；legacyUsages=basic 资源 drawer/页面仍手写 required|edit|placeholder；writeStubs=抛「不支持 create/update/delete」的代码点"
 }
 ```
 

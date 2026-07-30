@@ -54,11 +54,16 @@ export interface GridColumnMeta {
 /**
  * Grid 扩展动作本地视图（由 ResourceDocument.commands 派生）。
  * 不再携带 mutation/http 等 v1 transport。
+ * requiredCapability 与 key 分离（如 setDefault → update）；target 决定 execute 入参形状。
  */
 export interface GridActionMeta {
   key: string
   label: string
   scope: 'row' | 'bulk' | 'both'
+  /** 鉴权门控用的 capability，可与 key 不同 */
+  requiredCapability: string
+  /** 命令 target：驱动 { id } / { ids } / collection 入参 */
+  target: 'collection' | 'row' | 'bulk' | 'rowOrBulk'
   isDanger: boolean
   confirmKind?: 'none' | 'generic' | 'audit_doc'
 }

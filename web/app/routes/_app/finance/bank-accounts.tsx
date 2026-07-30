@@ -9,13 +9,14 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { bankAccountClient } from '~/lib/resources/finance-operations'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 
 export const Route = createFileRoute('/_app/finance/bank-accounts')({
   component: BankAccountsPage,
 })
 
-// 公司放首列;支行/备注/时间戳不进表格(有序白名单,兼当 exclude)
+const RESOURCE = 'accBankAccounts'
+
 const GRID_COLUMNS = [
   'companyId',
   'alias',
@@ -27,7 +28,6 @@ const GRID_COLUMNS = [
   'active',
 ]
 
-// 卡片:别名标题、开户行副标题、账号/启停/币种摘要
 const GRID_OVERRIDES: Record<string, ColumnOverride> = {
   companyId: { mobileRole: 'hide' },
   alias: { mobileRole: 'title' },
@@ -40,6 +40,7 @@ const GRID_OVERRIDES: Record<string, ColumnOverride> = {
 function BankAccountsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
+  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '银行账户')
 
   return (
     <>
@@ -48,8 +49,8 @@ function BankAccountsPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="accBankAccounts"
-          client={bankAccountClient}
+          resource={RESOURCE}
+          client={client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
@@ -57,45 +58,38 @@ function BankAccountsPage() {
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
           rowActions={statusToggleActions({
             field: 'active',
-            update: bankAccountClient.update,
+            update: (id, input) => {
+              if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) {
+                throw new Error('银行账户不支持 update')
+              }
+              return binding.writer.update(id, input)
+            },
             rowLabel: (row) => String(row.alias ?? ''),
-            // 抽屉走 rowId 自查,状态翻转后一并失效行缓存
-            onDone: () => queryClient.invalidateQueries({ queryKey: ['rowById', 'accBankAccounts'] }),
+            onDone: () => queryClient.invalidateQueries({ queryKey: ['rowById', RESOURCE] }),
           })}
         />
       </div>
 
       <SynieRecordDrawer
-        resource="accBankAccounts"
-        client={bankAccountClient}
-        label="银行账户"
+        resource={RESOURCE}
+        client={client}
+        label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
-        // 表格列是白名单子集(无支行/备注),行数据不全;不传 row,走 rowId 自查完整记录
         rowId={drawer?.row?.id}
-        // 启用是状态不是表单字段(规范):新建默认启用,停用(账户退出)走列表行动作
-        exclude={['active']}
+        exclude={[...formProps.exclude, 'active']}
         fields={{
-          // 公司提到最前(绑定科目候选依赖它);建后不可改(update 动作不收 company_id);
-          // 换公司时清掉已选科目,避免跨公司科目挂错
-          companyId: { required: true, order: -1, edit: 'createOnly', effects: () => ({ accountId: null }) },
-          // 货币/绑定科目是 fk 列(meta 列序靠后),显式排序拉回账号之后
-          alias: { order: 1, required: true, placeholder: '如 招行基本户' },
-          bankName: { order: 2, required: true, cols: 6, placeholder: '如 招商银行' },
-          branchName: { order: 3, cols: 6, placeholder: '如 深圳分行营业部' },
-          holderName: { order: 4, required: true, placeholder: '通常与公司名一致' },
-          accountNo: { order: 5, required: true, placeholder: '对公账号/卡号' },
-          currencyId: {
-            order: 6,
-            required: true,
-            cols: 6,
-            remote: { filterState: { active: { kind: 'bool', eq: true } } },
+          ...formProps.fields,
+          companyId: {
+            ...formProps.fields.companyId,
+            order: -1,
+            effects: () => ({ accountId: null }),
           },
           accountId: {
+            ...formProps.fields.accountId,
             order: 7,
             cols: 6,
-            // 候选限定在所选公司、非汇总、启用科目(后端另有同公司/汇总/停用/币种校验兜底)
             input: ({ value, onChange, isDisabled, values }) => {
               const companyId = (values.companyId ?? null) as string | null
               return (
@@ -115,7 +109,6 @@ function BankAccountsPage() {
               )
             },
           },
-          note: { order: 9, placeholder: '用途说明等' },
         }}
         extraContent={(mode, row) => (
           <SynieAttachmentPanel
@@ -126,13 +119,20 @@ function BankAccountsPage() {
         )}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
+          if (!binding.writer) throw new Error('银行账户不支持写入')
           if (mode === 'create') {
-            await bankAccountClient.create(values)
+            if (!('create' in binding.writer) || !binding.writer.create) {
+              throw new Error('银行账户不支持 create')
+            }
+            await binding.writer.create(values)
           } else {
-            await bankAccountClient.update(drawer!.row!.id, values)
+            if (!('update' in binding.writer) || !binding.writer.update) {
+              throw new Error('银行账户不支持 update')
+            }
+            await binding.writer.update(drawer!.row!.id, values)
           }
           toast.success(mode === 'create' ? '银行账户已创建' : '银行账户已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankAccounts'] })
+          queryClient.invalidateQueries({ queryKey: ['gridRows', RESOURCE] })
         }}
       />
     </>

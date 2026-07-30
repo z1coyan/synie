@@ -4,8 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
-import { operationClient } from '~/lib/resources/manufacturing'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -13,7 +12,7 @@ export const Route = createFileRoute('/_app/mfg/operations')({
   component: OperationsPage,
 })
 
-// 列白名单:时间戳不进表格
+const RESOURCE = 'mfgOperations'
 const GRID_COLUMNS = ['code', 'name', 'note']
 
 function OperationsPage() {
@@ -22,6 +21,10 @@ function OperationsPage() {
     row: Row | null
   } | null>(null)
   const queryClient = useQueryClient()
+  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '工序')
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, RESOURCE] })
 
   return (
     <>
@@ -32,8 +35,8 @@ function OperationsPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="mfgOperations"
-          client={operationClient}
+          resource={RESOURCE}
+          client={client}
           columns={GRID_COLUMNS}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -42,24 +45,31 @@ function OperationsPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="mfgOperations"
-        client={operationClient}
-        {...drawerConfig('mfgOperations')}
+        resource={RESOURCE}
+        client={client}
+        label={formProps.label}
+        exclude={formProps.exclude}
+        fields={formProps.fields}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
+          if (!binding.writer) throw new Error('工序不支持写入')
           if (mode === 'create') {
-            await operationClient.create(values)
+            if (!('create' in binding.writer) || !binding.writer.create) {
+              throw new Error('工序不支持 create')
+            }
+            await binding.writer.create(values)
           } else {
-            await operationClient.update(drawer!.row!.id, values)
+            if (!('update' in binding.writer) || !binding.writer.update) {
+              throw new Error('工序不支持 update')
+            }
+            await binding.writer.update(drawer!.row!.id, values)
           }
           toast.success(mode === 'create' ? '工序已创建' : '工序已更新')
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'mfgOperations'],
-          })
+          invalidate()
         }}
       />
     </>

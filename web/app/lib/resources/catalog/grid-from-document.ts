@@ -27,6 +27,7 @@ export function gridMetaFromDocument(document: ResourceDocument): GridMeta {
     extendedActions: document.commands.map((c) => ({
       key: c.key,
       label: c.label,
+      // collection 命令通常挂工具栏；row/bulk/rowOrBulk 进行菜单与批量条
       scope:
         c.target === 'collection'
           ? ('both' as const)
@@ -35,6 +36,8 @@ export function gridMetaFromDocument(document: ResourceDocument): GridMeta {
             : c.target === 'bulk'
               ? ('bulk' as const)
               : ('both' as const),
+      requiredCapability: c.requiredCapability,
+      target: c.target,
       isDanger: c.isDanger ?? false,
       confirmKind: c.confirmKind,
     })),

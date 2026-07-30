@@ -1,8 +1,5 @@
 import { Label, ListBox, Select, TextArea, TextField } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
-import { currencyClient } from '~/lib/resources/currencies'
-import { marketInstrumentClient } from '~/lib/resources/market'
-import { unitClient } from '~/lib/resources/units'
 import { SynieAttachmentPanel } from '../synie-attachment-panel/SynieAttachmentPanel'
 import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
 import type { SynieRecordDrawerProps } from './SynieRecordDrawer'
@@ -37,44 +34,9 @@ const registry: Record<string, ResourceDrawerConfig> = {
   purSuppliers: { label: '供应商' },
   // 字段/effects 由 basAccounts Presentation Extension 拥有（页面经 createAccountPresentation）
   basAccounts: { label: '科目' },
-  basMarketInstruments: {
-    label: '行情品种',
-    fields: {
-      code: { required: true, edit: 'createOnly', placeholder: '如 SHFE_CU' },
-      name: { required: true, placeholder: '如 沪铜' },
-      sourceType: { required: true },
-      defaultPriceKind: { required: true },
-      currencyId: {
-        required: true,
-        edit: 'createOnly',
-        remote: {
-          client: currencyClient,
-          filterState: { active: { kind: 'bool', eq: true } },
-        },
-      },
-      unitId: { required: true, edit: 'createOnly', remote: { client: unitClient } },
-      fetchEnabled: {},
-      externalLastCode: { placeholder: '主连如 CU0' },
-      externalProductGroup: { placeholder: '上期所组如 cu' },
-    },
-  },
-  basMarketPricePoints: {
-    label: '行情价点',
-    // 价点不可改:无编辑态表单;币种/单位由品种继承
-    exclude: ['currencyId', 'unitId', 'isVoided', 'insertedAt', 'updatedAt'],
-    fields: {
-      instrumentId: {
-        required: true,
-        edit: 'createOnly',
-        remote: { client: marketInstrumentClient },
-      },
-      observedAt: { required: true, edit: 'createOnly' },
-      price: { required: true, edit: 'createOnly' },
-      priceKind: { edit: 'createOnly' },
-      source: { edit: 'createOnly' },
-      note: { edit: 'createOnly' },
-    },
-  },
+  // basic 资源：字段事实由 Catalog Basic Form 投影，本表仅保留 label
+  basMarketInstruments: { label: '行情品种' },
+  basMarketPricePoints: { label: '行情价点' },
   salCustomers: { label: '客户' },
   salOrders: {
     label: '销售订单',
@@ -815,15 +777,8 @@ const registry: Record<string, ResourceDrawerConfig> = {
   hrAttendanceImports: { label: '考勤导入' },
   // 字段/身份证影像由 hrEmployees Presentation Extension 拥有
   hrEmployees: { label: '员工' },
-  mfgOperations: {
-    label: '工序',
-    fields: {
-      // 编号可留空自动取号(后端 AutoNumber:mfg.operation),创建后不可改(update 不收 code)
-      code: { order: 0, cols: 6, edit: 'createOnly', placeholder: '留空自动编号' },
-      name: { order: 1, cols: 6, required: true, placeholder: '如 冲网' },
-      note: { order: 2 },
-    },
-  },
+  // basic：字段由 Catalog Basic Form 投影
+  mfgOperations: { label: '工序' },
   mfgProcessTemplates: {
     label: '工艺模板',
     // 工艺步骤 4 列,默认 480px 太挤,模板抽屉加宽(同物料先例;移动端仍全宽)
@@ -1185,14 +1140,9 @@ const registry: Record<string, ResourceDrawerConfig> = {
       paidTotal: { render: (v) => formatAmount(v) },
     },
   },
-  hrPayrollPayments: {
-    label: '发放记录',
-    fields: { amount: { render: (v) => formatAmount(v) } },
-  },
-  hrEmployeeLoans: {
-    label: '员工借款',
-    fields: { amount: { render: (v) => formatAmount(v) } },
-  },
+  // basic：金额展示格式由页面合并 catalog fields 后叠加 render（非 required/edit 事实）
+  hrPayrollPayments: { label: '发放记录' },
+  hrEmployeeLoans: { label: '员工借款' },
   sysAuditLogs: { label: '操作日志' },
   sysNumberingRules: { label: '编号规则' },
   sysNumberingCounters: { label: '计数器' },

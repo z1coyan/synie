@@ -19,34 +19,87 @@ interface PendingConfirm {
   execute: (rows: Row[]) => Promise<void>
 }
 
-/** 逐条执行删除或领域命令（经 ResourceBinding）。 */
-async function runIdMutation(
-  ids: string[],
+type CommandTarget = GridActionMeta['target']
+
+/**
+ * 删除或领域命令执行。
+ * - delete：逐条 writer.delete
+ * - row：逐条 commands.execute(key, { id })
+ * - bulk / rowOrBulk：一次 commands.execute(key, { ids })
+ * - collection：不传记录 ID
+ */
+export async function runBindingMutation(
+  rows: Row[],
   binding: ResourceBinding,
   actionKey: string,
+  target: CommandTarget | 'delete',
 ): Promise<{ ok: number; fail: number; messages: string[] }> {
-  let ok = 0
-  let fail = 0
   const messages: string[] = []
-  for (const id of ids) {
-    try {
-      if (actionKey === 'delete') {
+
+  if (actionKey === 'delete' || target === 'delete') {
+    let ok = 0
+    let fail = 0
+    for (const row of rows) {
+      try {
         const del = binding.writer && 'delete' in binding.writer ? binding.writer.delete : undefined
         if (!del) throw new Error(`资源「${binding.resource}」不支持 delete`)
-        await del(id)
-      } else if (binding.commands) {
-        await binding.commands.execute(actionKey, { ids: [id] } as never)
-      } else {
-        throw new Error(`资源「${binding.resource}」未绑定命令「${actionKey}」`)
+        await del(row.id)
+        ok += 1
+      } catch (e) {
+        fail += 1
+        const msg = e instanceof Error ? e.message : String(e)
+        if (msg) messages.push(msg)
       }
-      ok += 1
-    } catch (e) {
-      fail += 1
-      const msg = e instanceof Error ? e.message : String(e)
-      if (msg) messages.push(msg)
+    }
+    return { ok, fail, messages }
+  }
+
+  if (!binding.commands) {
+    return {
+      ok: 0,
+      fail: rows.length || 1,
+      messages: [`资源「${binding.resource}」未绑定命令「${actionKey}」`],
     }
   }
-  return { ok, fail, messages }
+
+  if (target === 'row') {
+    let ok = 0
+    let fail = 0
+    for (const row of rows) {
+      try {
+        await binding.commands.execute(actionKey, { id: row.id } as never)
+        ok += 1
+      } catch (e) {
+        fail += 1
+        const msg = e instanceof Error ? e.message : String(e)
+        if (msg) messages.push(msg)
+      }
+    }
+    return { ok, fail, messages }
+  }
+
+  if (target === 'collection') {
+    try {
+      await binding.commands.execute(actionKey, {} as never)
+      return { ok: 1, fail: 0, messages: [] }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: 0, fail: 1, messages: msg ? [msg] : [] }
+    }
+  }
+
+  // bulk / rowOrBulk：非空 ids 一次执行
+  const ids = rows.map((r) => r.id)
+  if (ids.length === 0) {
+    return { ok: 0, fail: 1, messages: ['未选择记录'] }
+  }
+  try {
+    await binding.commands.execute(actionKey, { ids } as never)
+    return { ok: ids.length, fail: 0, messages: [] }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: 0, fail: ids.length, messages: msg ? [msg] : [] }
+  }
 }
 
 function failureDescription(fail: number, ok: number, messages: string[]): string {
@@ -95,30 +148,28 @@ export function useGridActions(opts: {
     Boolean(meta?.canDelete) &&
     Boolean(binding.writer && 'delete' in binding.writer && binding.writer.delete)
 
-  const confirmThenMutate = (label: string, isDanger: boolean, actionKey: string) => (rows: Row[]) =>
-    setPending({
-      label,
-      isDanger,
-      rows,
-      execute: async (rs) => {
-        const { ok, fail, messages } = await runIdMutation(
-          rs.map((r) => r.id),
-          binding,
-          actionKey,
-        )
-        if (fail === 0) toast.success(`${label}成功(${ok} 条)`)
-        else if (ok === 0)
-          toast.danger(`${label}失败`, { description: failureDescription(fail, ok, messages) })
-        else
-          toast.danger(`${label}部分失败`, {
-            description: failureDescription(fail, ok, messages),
-          })
-        if (ok > 0) {
-          refetch()
-          clearSelection()
-        }
-      },
-    })
+  const confirmThenMutate =
+    (label: string, isDanger: boolean, actionKey: string, target: CommandTarget | 'delete') =>
+    (rows: Row[]) =>
+      setPending({
+        label,
+        isDanger,
+        rows,
+        execute: async (rs) => {
+          const { ok, fail, messages } = await runBindingMutation(rs, binding, actionKey, target)
+          if (fail === 0) toast.success(`${label}成功(${ok} 条)`)
+          else if (ok === 0)
+            toast.danger(`${label}失败`, { description: failureDescription(fail, ok, messages) })
+          else
+            toast.danger(`${label}部分失败`, {
+              description: failureDescription(fail, ok, messages),
+            })
+          if (ok > 0) {
+            refetch()
+            clearSelection()
+          }
+        },
+      })
 
   const extendedAction = (a: GridActionMeta): ResolvedAction => ({
     key: a.key,
@@ -127,12 +178,20 @@ export function useGridActions(opts: {
     mobile: opts.actionMobile?.[a.key],
     run: opts.actionHandlers?.[a.key]
       ? (rows) => opts.actionHandlers![a.key](rows, ctx)
-      : confirmThenMutate(a.label, a.isDanger, a.key),
+      : confirmThenMutate(a.label, a.isDanger, a.key, a.target),
   })
 
+  // 门控用 requiredCapability，不是 command key（setDefault → update）
   const extended = (scope: 'row' | 'bulk') =>
     (meta?.extendedActions ?? [])
-      .filter((a) => can(a.key) && (a.scope === scope || a.scope === 'both'))
+      .filter(
+        (a) =>
+          can(a.requiredCapability) &&
+          (a.scope === scope || a.scope === 'both') &&
+          // collection 命令不挂在按行选择的菜单上
+          !(scope === 'row' && a.target === 'collection') &&
+          !(scope === 'bulk' && a.target === 'row'),
+      )
       .map(extendedAction)
 
   const mob = (key: string) => opts.actionMobile?.[key]
@@ -146,6 +205,18 @@ export function useGridActions(opts: {
     ...(can('export') && opts.onExport
       ? [{ key: 'export', label: '导出', isDanger: false, mobile: mob('export'), run: () => opts.onExport!() }]
       : []),
+    // collection 命令进工具栏（如 recalc）
+    ...(meta?.extendedActions ?? [])
+      .filter((a) => a.target === 'collection' && can(a.requiredCapability))
+      .map((a) => ({
+        key: a.key,
+        label: a.label,
+        isDanger: a.isDanger,
+        mobile: opts.actionMobile?.[a.key],
+        run: opts.actionHandlers?.[a.key]
+          ? (rows: Row[]) => opts.actionHandlers![a.key](rows, ctx)
+          : confirmThenMutate(a.label, a.isDanger, a.key, 'collection'),
+      })),
   ]
 
   const vis = (key: string, row: Row) => opts.actionVisible?.[key]?.(row) ?? true
@@ -170,13 +241,29 @@ export function useGridActions(opts: {
         run: () => a.onAction(row, ctx),
       })),
     ...(canDelete && vis('delete', row)
-      ? [{ key: 'delete', label: '删除', isDanger: true, mobile: mob('delete'), run: confirmThenMutate('删除', true, 'delete') }]
+      ? [
+          {
+            key: 'delete',
+            label: '删除',
+            isDanger: true,
+            mobile: mob('delete'),
+            run: confirmThenMutate('删除', true, 'delete', 'delete'),
+          },
+        ]
       : []),
   ]
 
   const bulkBarActions: ResolvedAction[] = [
     ...(can('batch_print') && opts.onPrintRows
-      ? [{ key: 'batch_print', label: '批量打印', isDanger: false, mobile: mob('batch_print'), run: (rows: Row[]) => opts.onPrintRows!(rows) }]
+      ? [
+          {
+            key: 'batch_print',
+            label: '批量打印',
+            isDanger: false,
+            mobile: mob('batch_print'),
+            run: (rows: Row[]) => opts.onPrintRows!(rows),
+          },
+        ]
       : []),
     ...extended('bulk'),
     ...(opts.bulkActions ?? [])
@@ -189,7 +276,15 @@ export function useGridActions(opts: {
         run: (rows: Row[]) => a.onAction(rows, ctx),
       })),
     ...(can('batch_delete') && canDelete
-      ? [{ key: 'batch_delete', label: '批量删除', isDanger: true, mobile: mob('batch_delete'), run: confirmThenMutate('批量删除', true, 'delete') }]
+      ? [
+          {
+            key: 'batch_delete',
+            label: '批量删除',
+            isDanger: true,
+            mobile: mob('batch_delete'),
+            run: confirmThenMutate('批量删除', true, 'delete', 'delete'),
+          },
+        ]
       : []),
   ]
 
@@ -204,10 +299,16 @@ export function useGridActions(opts: {
                 <AlertDialog.Heading>确认{pending.label}?</AlertDialog.Heading>
               </AlertDialog.Header>
               <AlertDialog.Body>
-                <p>将对 {pending.rows.length} 条记录执行「{pending.label}」,此操作不可撤销。</p>
+                <p>
+                  {pending.rows.length > 0
+                    ? `将对 ${pending.rows.length} 条记录执行「${pending.label}」,此操作不可撤销。`
+                    : `将执行「${pending.label}」,此操作不可撤销。`}
+                </p>
               </AlertDialog.Body>
               <AlertDialog.Footer>
-                <Button slot="close" variant="tertiary" isDisabled={running}>取消</Button>
+                <Button slot="close" variant="tertiary" isDisabled={running}>
+                  取消
+                </Button>
                 <Button
                   variant={pending.isDanger ? 'danger' : 'primary'}
                   isPending={running}

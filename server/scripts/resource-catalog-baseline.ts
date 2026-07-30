@@ -9,8 +9,7 @@
  *   .scratch/resource-catalog/baseline/report.md
  *   .scratch/resource-catalog/baseline/currency-meta.superadmin.json
  *
- * 可扩展字段（declaredCommands / adapterCommands / basicWritableFields /
- * legacyUsages / writeStubs）在后续工单填充，本脚本先占位为零。
+ * 可扩展统计均为实测，禁止硬置零。
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -221,18 +220,206 @@ function main() {
     (n) => !explainedMissingClients.includes(n),
   )
 
+  // —— 实测：Adapter 命令 / legacy 字段事实 / write stubs ——
+  // 语义 CommandAdapter：registry 显式 SEMANTIC_COMMAND_ADAPTERS + commands.ts 内 defineCommand
+  const registryTs = clientSource
+  const semanticAdapterResources = [
+    ...registryTs.matchAll(/^\s*([A-Za-z][A-Za-z0-9_]*)\s*:\s*\w+CommandAdapter/gm),
+  ].map((m) => m[1]!)
+  // 每个 semantic 资源的 command 数从 catalog 取
+  let adapterCommands = 0
+  const adapterResourcesMeasured: string[] = []
+  for (const name of semanticAdapterResources) {
+    if (!serverNames.has(name)) continue
+    const catalog = decodeResourceDocument(registry.buildDocument(name, superAdmin))
+    adapterCommands += catalog.commands.length
+    adapterResourcesMeasured.push(name)
+  }
+  // Proxy 桥接：bindingFromResourceClient 在 client.action 存在时挂 open Proxy（非 typed）
+  // 扫描 transport 文件是否仍 export `action:` 方法
+  const webResourcesDir = join(repoRoot, 'web/app/lib/resources')
+  let proxyActionResources = 0
+  const resourceFiles = [
+    'files.ts',
+    'hr-operations.ts',
+    'finance-operations.ts',
+    'manufacturing.ts',
+    'inventory.ts',
+    'orders.ts',
+    'system-ops.ts',
+    'accounting.ts',
+    'fulfillment.ts',
+  ]
+  for (const file of resourceFiles) {
+    const path = join(webResourcesDir, file)
+    try {
+      const src = readFileSync(path, 'utf8')
+      const matches = src.match(/\baction\s*\(/g)
+      if (matches) proxyActionResources += matches.length
+    } catch {
+      /* skip */
+    }
+  }
+
+  // legacyUsages：basic 分类资源在 extension-drawer-props **本资源对象块**内仍含字段事实
+  const basicNames = new Set(
+    serverResources
+      .map((r) => r.name)
+      .filter((n) => classificationByName[n]?.presentation === 'basic'),
+  )
+  const drawerFieldFactResources: string[] = []
+  function extractResourceBlock(source: string, name: string): string | null {
+    const needle = `${name}:`
+    let searchFrom = 0
+    while (searchFrom < source.length) {
+      const idx = source.indexOf(needle, searchFrom)
+      if (idx < 0) return null
+      // 确保是对象 key（前为空白/换行，后为可选空白 + `{`）
+      const before = idx === 0 ? '\n' : source[idx - 1]!
+      if (!/[\s,{]/.test(before)) {
+        searchFrom = idx + needle.length
+        continue
+      }
+      let i = idx + needle.length
+      while (i < source.length && /\s/.test(source[i]!)) i++
+      if (source[i] !== '{') {
+        searchFrom = idx + needle.length
+        continue
+      }
+      // 花括号配对取本块
+      let depth = 0
+      const start = i
+      for (; i < source.length; i++) {
+        if (source[i] === '{') depth++
+        else if (source[i] === '}') {
+          depth--
+          if (depth === 0) return source.slice(start, i + 1)
+        }
+      }
+      return null
+    }
+    return null
+  }
+  for (const name of basicNames) {
+    const block = extractResourceBlock(drawerSource, name)
+    if (!block) continue
+    // 本块内有 fields 且含 required/edit/placeholder 才算字段事实残留
+    if (
+      /fields\s*:/.test(block) &&
+      /\brequired\s*:|\bedit\s*:|\bplaceholder\s*:/.test(block)
+    ) {
+      drawerFieldFactResources.push(name)
+    }
+  }
+  // 页面手写 fields 中 required/edit/placeholder，且涉及 basic 分类资源、未走 Catalog Basic Form
+  const routesRoot = join(repoRoot, 'web/app/routes')
+  const pageFieldFactFiles: string[] = []
+  function walkTsx(dir: string) {
+    const { readdirSync, statSync } = require('node:fs') as typeof import('node:fs')
+    for (const ent of readdirSync(dir)) {
+      const p = join(dir, ent)
+      if (statSync(p).isDirectory()) walkTsx(p)
+      else if (ent.endsWith('.tsx')) {
+        const src = readFileSync(p, 'utf8')
+        if (!/fields\s*=\s*\{|fields\s*:\s*\{/.test(src)) continue
+        if (!/\brequired\s*:|\bedit\s*:|\bplaceholder\s*:/.test(src)) continue
+        // 已走 Catalog Basic Form 的页面不算 legacy
+        if (/basicFormDrawerProps|useCatalogBasicForm/.test(src)) continue
+        // 仅统计引用了 basic 分类资源的页面（extension 的 PE 字段事实不计入 basic 迁移缺口）
+        let touchesBasic = false
+        for (const name of basicNames) {
+          if (src.includes(`'${name}'`) || src.includes(`"${name}"`) || src.includes(`\`${name}\``)) {
+            touchesBasic = true
+            break
+          }
+        }
+        if (!touchesBasic) continue
+        pageFieldFactFiles.push(p.slice(repoRoot.length + 1))
+      }
+    }
+  }
+  walkTsx(routesRoot)
+
+  const legacyUsages = drawerFieldFactResources.length + pageFieldFactFiles.length
+
+  // writeStubs：传输层或 binding 兼容层仍抛「不支持 create/update/delete」
+  let writeStubs = 0
+  const writeStubPatterns: string[] = []
+  function countWriteStubs(path: string, label: string) {
+    try {
+      const src = readFileSync(path, 'utf8')
+      const re = /不支持\s*(create|update|delete)|只读[^'"]*不支持写入|throw new Error\([^)]*不支持/g
+      const found = src.match(re)
+      if (found) {
+        writeStubs += found.length
+        writeStubPatterns.push(`${label}:${found.length}`)
+      }
+    } catch {
+      /* skip */
+    }
+  }
+  countWriteStubs(join(webResourcesDir, 'catalog/binding-registry.ts'), 'binding-registry')
+  countWriteStubs(join(webResourcesDir, 'system-ops.ts'), 'system-ops')
+  // 扫描 resources 下其它 client
+  for (const file of resourceFiles) {
+    countWriteStubs(join(webResourcesDir, file), file)
+  }
+
+  // basic 资源中 form.kind=basic 但页面未走 basicFormDrawerProps 的缺口
+  const basicFormPageSources = [
+    readFileSync(join(repoRoot, 'web/app/routes/_app/base/currencies.tsx'), 'utf8'),
+    readFileSync(join(repoRoot, 'web/app/routes/_app/base/units.tsx'), 'utf8'),
+    readFileSync(join(repoRoot, 'web/app/routes/_app/system/companies.tsx'), 'utf8'),
+    readFileSync(join(repoRoot, 'web/app/routes/_app/scm/suppliers.tsx'), 'utf8'),
+    readFileSync(join(repoRoot, 'web/app/routes/_app/scm/material-categories.tsx'), 'utf8'),
+  ]
+  // 扩大扫描：所有 routes 中 basicFormDrawerProps 引用
+  const basicFormConsumerFiles: string[] = []
+  function walkBasicConsumers(dir: string) {
+    const { readdirSync, statSync } = require('node:fs') as typeof import('node:fs')
+    for (const ent of readdirSync(dir)) {
+      const p = join(dir, ent)
+      if (statSync(p).isDirectory()) walkBasicConsumers(p)
+      else if (ent.endsWith('.tsx') || ent.endsWith('.ts')) {
+        const src = readFileSync(p, 'utf8')
+        if (/basicFormDrawerProps|useCatalogBasicForm/.test(src)) {
+          basicFormConsumerFiles.push(p.slice(repoRoot.length + 1))
+        }
+      }
+    }
+  }
+  walkBasicConsumers(routesRoot)
+  // 空引用避免 lint 未用
+  void basicFormPageSources
+
+  let basicCatalogFormResources = 0
+  for (const r of serverResources) {
+    if (classificationByName[r.name]?.presentation !== 'basic') continue
+    const catalog = decodeResourceDocument(registry.buildDocument(r.name, superAdmin))
+    if (catalog.form.kind === 'basic') basicCatalogFormResources++
+  }
+
   const extensible = {
     declaredCommands,
-    adapterCommands: declaredCommands,
+    adapterCommands,
+    adapterResources: adapterResourcesMeasured,
+    proxyActionHooks: proxyActionResources,
     basicWritableFields,
-    legacyUsages: 0,
-    writeStubs: 0,
+    legacyUsages,
+    legacyDrawerFieldFacts: drawerFieldFactResources,
+    legacyPageFieldFacts: pageFieldFactFiles,
+    writeStubs,
+    writeStubPatterns,
+    basicCatalogFormResources,
+    basicFormConsumerFiles,
     typedResources: sealStats.typed,
-    legacyResources: 0,
+    legacyResources: sealStats.legacy,
     formKindCounts,
     presentationCounts,
     notes:
-      '工单 11：contract 完成；Meta 仅 ResourceDocument v2；无 legacy normalizer / v1 grid sibling / 宽 ResourceClient registry / drawer registry / remote defaults',
+      '实测 gaps：adapterCommands=SEMANTIC_COMMAND_ADAPTERS 覆盖的 catalog 命令数；' +
+      'legacyUsages=basic 资源 drawer/页面仍手写 required|edit|placeholder；' +
+      'writeStubs=抛「不支持 create/update/delete」的代码点',
   }
 
   const classifications = serverResources.map((r) => {

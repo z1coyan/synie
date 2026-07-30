@@ -24,7 +24,6 @@ import {
   TrendChip,
 } from '@heroui-pro/react'
 import { isForbidden } from '~/lib/errors'
-import { currencyClient } from '~/lib/resources/currencies'
 import {
   getMarketChartInstruments,
   getMarketPriceSeries,
@@ -38,7 +37,7 @@ import {
   type MarketSeriesPriceKind,
 } from '~/lib/resources/market'
 import { getSystemSetting } from '~/lib/resources/settings'
-import { unitClient } from '~/lib/resources/units'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -297,6 +296,9 @@ function MarketPage() {
     mode: DrawerMode
     row: Row | null
   } | null>(null)
+
+  const priceForm = useCatalogBasicForm('basMarketPricePoints', '行情价点')
+  const instrumentForm = useCatalogBasicForm('basMarketInstruments', '行情品种')
 
   const priceMeta = useGridMeta('basMarketPricePoints', true)
   const instrumentMeta = useGridMeta('basMarketInstruments', true)
@@ -1117,98 +1119,77 @@ function MarketPage() {
         </Tabs>
       )}
 
-      {/* 价点抽屉 */}
+      {/* 价点抽屉 — 字段事实来自 Catalog Basic Form */}
       <SynieRecordDrawer
         resource="basMarketPricePoints"
-        client={marketPricePointClient}
-        label="行情价点"
+        client={priceForm.client}
+        label={priceForm.formProps.label}
         mode={priceDrawer?.mode ?? 'view'}
         isOpen={priceDrawer !== null}
         onOpenChange={(open) => !open && setPriceDrawer(null)}
         row={priceDrawer?.row}
-        exclude={
-          priceDrawer?.mode === 'create'
-            ? ['currencyId', 'unitId', 'isVoided', 'source', 'insertedAt', 'updatedAt']
-            : ['insertedAt', 'updatedAt']
-        }
-        fields={{
-          instrumentId: {
-            required: true,
-            edit: 'createOnly',
-            remote: { client: marketInstrumentClient },
-          },
-          observedAt: { required: true, edit: 'createOnly' },
-          price: { required: true, edit: 'createOnly', placeholder: '如 72000' },
-          priceKind: { required: true, edit: 'createOnly' },
-          note: { edit: 'createOnly', placeholder: '可选备注' },
-        }}
+        exclude={[
+          ...priceForm.formProps.exclude,
+          ...(priceDrawer?.mode === 'create'
+            ? (['currencyId', 'unitId', 'isVoided', 'source', 'insertedAt', 'updatedAt'] as string[])
+            : (['insertedAt', 'updatedAt'] as string[])),
+        ]}
+        fields={priceForm.formProps.fields}
         onSubmit={async (values, mode) => {
           if (mode !== 'create') return
-          const saved = await marketPricePointClient.create(values)
+          const create = priceForm.binding.writer && 'create' in priceForm.binding.writer
+            ? priceForm.binding.writer.create
+            : undefined
+          if (!create) throw new Error('价点不支持 create')
+          const saved = await create(values)
           toast.success('行情价点已录入')
           queryClient.invalidateQueries({
-            queryKey: ['gridRows', marketPricePointClient.id, 'basMarketPricePoints'],
+            queryKey: ['gridRows', priceForm.client.id, 'basMarketPricePoints'],
           })
           queryClient.invalidateQueries({ queryKey: ['marketPriceSeries'] })
-          return saved.id
+          return saved.id as string
         }}
       />
 
-      {/* 品种抽屉 */}
+      {/* 品种抽屉 — 字段事实来自 Catalog Basic Form */}
       <SynieRecordDrawer
         resource="basMarketInstruments"
-        client={marketInstrumentClient}
-        label="行情品种"
+        client={instrumentForm.client}
+        label={instrumentForm.formProps.label}
         mode={instrumentDrawer?.mode ?? 'view'}
         isOpen={instrumentDrawer !== null}
         onOpenChange={(open) => !open && setInstrumentDrawer(null)}
         row={instrumentDrawer?.row}
-        fields={{
-          code: { required: true, edit: 'createOnly', placeholder: '如 SHFE_CU', cols: 6 },
-          name: { required: true, placeholder: '如 沪铜', cols: 6 },
-          sourceType: { required: true, cols: 6 },
-          defaultPriceKind: { required: true, cols: 6 },
-          currencyId: {
-            required: true,
-            edit: 'createOnly',
-            cols: 6,
-            remote: {
-              client: currencyClient,
-              filterState: { active: { kind: 'bool', eq: true } },
-            },
-          },
-          unitId: {
-            required: true,
-            edit: 'createOnly',
-            cols: 6,
-            remote: { client: unitClient },
-          },
-          active: { defaultValue: true },
-          fetchEnabled: { defaultValue: false },
-          externalLastCode: { placeholder: '主连如 CU0', cols: 6 },
-          externalProductGroup: { placeholder: '上期所组如 cu', cols: 6 },
-          note: { placeholder: '可选备注' },
-        }}
+        exclude={instrumentForm.formProps.exclude}
+        fields={instrumentForm.formProps.fields}
         onEdit={() =>
           setInstrumentDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
         }
         onSubmit={async (values, mode) => {
           let saved: Row
           if (mode === 'create') {
-            saved = await marketInstrumentClient.create(values)
+            const create = instrumentForm.binding.writer && 'create' in instrumentForm.binding.writer
+              ? instrumentForm.binding.writer.create
+              : undefined
+            if (!create) throw new Error('品种不支持 create')
+            saved = await create(values)
           } else {
+            const update = instrumentForm.binding.writer && 'update' in instrumentForm.binding.writer
+              ? instrumentForm.binding.writer.update
+              : undefined
+            if (!update) throw new Error('品种不支持 update')
             const {
               code: _code,
               currencyId: _currencyId,
               unitId: _unitId,
               sourceType: _sourceType,
-              ...update
+              ...patch
             } = values
-            saved = await marketInstrumentClient.update(instrumentDrawer!.row!.id, update)
+            saved = await update(instrumentDrawer!.row!.id, patch)
           }
           toast.success(mode === 'create' ? '行情品种已创建' : '行情品种已更新')
           queryClient.invalidateQueries({
-            queryKey: ['gridRows', marketInstrumentClient.id, 'basMarketInstruments'],
+            queryKey: ['gridRows', instrumentForm.client.id, 'basMarketInstruments'],
           })
           queryClient.invalidateQueries({ queryKey: ['marketChartInstruments'] })
           return saved.id

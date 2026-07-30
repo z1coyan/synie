@@ -290,7 +290,8 @@ export function applyResourceClassification(meta: ResourceMeta): ResourceMeta {
   ) {
     // 分类优先：扩展/无表单不得保持 basic
     form = { ...form, kind: desiredKind as FormMeta['kind'] }
-  } else if (c.presentation === 'basic' && form.kind === 'none' && hasFormFieldHints(form)) {
+  } else if (c.presentation === 'basic' && form.kind === 'none') {
+    // basic 分类一律投影 basic 布局（由 toForm 从可写字段生成 placements）
     form = { ...form, kind: 'basic' }
   }
 
@@ -302,13 +303,6 @@ export function applyResourceClassification(meta: ResourceMeta): ResourceMeta {
     ...(lookup ? { lookup } : {}),
     catalogSource: 'typed',
   }
-}
-
-function hasFormFieldHints(form: FormMeta): boolean {
-  return Boolean(
-    (form.exclude && form.exclude.length > 0) ||
-      (form.fields && Object.keys(form.fields).length > 0),
-  )
 }
 
 /** 校验 classification 覆盖 registry 全部资源名 */

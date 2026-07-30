@@ -5,6 +5,7 @@ import { Button, Modal, toast } from '@heroui/react'
 import { fetchMe } from '~/lib/api/session'
 import { createUser, fetchUserAccess, resetUserPassword, roleClient, userClient } from '~/lib/resources/iam'
 import { companyClient } from '~/lib/resources/companies'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteMultiSelect } from '~/components/synie-remote-select/RemoteMultiSelect'
@@ -44,6 +45,7 @@ function JoinText({ label, items }: { label: string; items: string[] }) {
 function UsersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
+  const userForm = useCatalogBasicForm('sysUsers', '用户')
   const [myPerms, setMyPerms] = useState<Set<string>>(new Set())
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   // 一次性密码:仅存在于本次响应与此弹窗,关闭后无法再次查看
@@ -164,16 +166,16 @@ function UsersPage() {
 
       <SynieRecordDrawer
         resource="sysUsers"
-        client={userClient}
-        label="用户"
+        client={userForm.client}
+        label={userForm.formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
-        fields={{
-          username: { required: true, edit: 'createOnly', placeholder: '如 zhangsan' },
-          name: { placeholder: '如 张三' },
-        }}
+        exclude={userForm.formProps.exclude}
+        // username/name 的 required/edit/placeholder 由 Catalog Basic Form 投影；
+        // 角色/公司 multi-select 为 Presentation Extension（extraContent）
+        fields={userForm.formProps.fields}
         extraContent={(mode) =>
           joins && (
             <div className="grid grid-cols-1 gap-4">
