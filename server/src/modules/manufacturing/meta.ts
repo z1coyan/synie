@@ -609,9 +609,89 @@ export function workOrderResourceMeta(): ResourceMeta {
     actions: [
       ...headCrud,
       { key: 'void', label: '作废', scope: 'row', isDanger: true },
+      { key: 'print', label: '打印', scope: 'row' },
+      { key: 'export', label: '导出', scope: 'both' },
+      { key: 'batch_print', label: '批量打印', scope: 'bulk' },
+    ],
+    print: true,
+    printHead: true,
+    // 工单快照子表仅服务打印字段目录（无独立 CRUD 页）
+    printLoops: [
+      { name: 'components', resource: 'mfgWorkOrderComponents' },
+      { name: 'routes', resource: 'mfgWorkOrderRoutes' },
+      { name: 'byproducts', resource: 'mfgWorkOrderByproducts' },
     ],
     audit: { enabled: true },
 
+  }
+}
+
+/** 工单配料快照：打印循环区字段目录（只读投影） */
+export function workOrderComponentResourceMeta(): ResourceMeta {
+  return {
+    name: 'mfgWorkOrderComponents',
+    permissionPrefix: 'mfg.work_order',
+    permissionLabel: '生产工单',
+    table: 'mfg_work_order_component',
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true }),
+      field('quantity', 'quantity', 'decimal', '净用量', { filterable: true }),
+      field('loss_rate', 'lossRate', 'decimal', '损耗率'),
+      field('note', 'note', 'string', '备注'),
+      field('idx', 'idx', 'integer', '行序', { filterable: true, sortable: true }),
+      fk('work_order_id', 'workOrderId', '生产工单', 'mfgWorkOrders', 'workOrder', 'workOrderNo', {
+        required: true,
+        createOnly: true,
+      }),
+      fk('material_id', 'materialId', '物料', 'invMaterials', 'material', 'name', { required: true }),
+      fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name', { required: true }),
+    ],
+    actions: [{ key: 'read', label: '查看', scope: 'both' }],
+  }
+}
+
+/** 工单工艺路线快照：打印循环区 */
+export function workOrderRouteResourceMeta(): ResourceMeta {
+  return {
+    name: 'mfgWorkOrderRoutes',
+    permissionPrefix: 'mfg.work_order',
+    permissionLabel: '生产工单',
+    table: 'mfg_work_order_route',
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true }),
+      field('seq', 'seq', 'integer', '工序顺序', { required: true, filterable: true, sortable: true }),
+      field('requirement', 'requirement', 'string', '工艺要求'),
+      field('is_outsourced', 'isOutsourced', 'boolean', '外协标记', { required: true }),
+      fk('work_order_id', 'workOrderId', '生产工单', 'mfgWorkOrders', 'workOrder', 'workOrderNo', {
+        required: true,
+        createOnly: true,
+      }),
+      fk('operation_id', 'operationId', '工序', 'mfgOperations', 'operation', 'name', { required: true }),
+    ],
+    actions: [{ key: 'read', label: '查看', scope: 'both' }],
+  }
+}
+
+/** 工单副产品快照：打印循环区 */
+export function workOrderByproductResourceMeta(): ResourceMeta {
+  return {
+    name: 'mfgWorkOrderByproducts',
+    permissionPrefix: 'mfg.work_order',
+    permissionLabel: '生产工单',
+    table: 'mfg_work_order_byproduct',
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true }),
+      field('quantity', 'quantity', 'decimal', '产出量', { filterable: true }),
+      field('note', 'note', 'string', '备注'),
+      field('idx', 'idx', 'integer', '行序', { filterable: true, sortable: true }),
+      fk('work_order_id', 'workOrderId', '生产工单', 'mfgWorkOrders', 'workOrder', 'workOrderNo', {
+        required: true,
+        createOnly: true,
+      }),
+      fk('material_id', 'materialId', '物料', 'invMaterials', 'material', 'name', { required: true }),
+      fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name', { required: true }),
+    ],
+    actions: [{ key: 'read', label: '查看', scope: 'both' }],
   }
 }
 
@@ -729,6 +809,9 @@ export function allManufacturingResourceMetas(): ResourceMeta[] {
     demandResourceMeta(),
     demandItemResourceMeta(),
     workOrderResourceMeta(),
+    workOrderComponentResourceMeta(),
+    workOrderRouteResourceMeta(),
+    workOrderByproductResourceMeta(),
     outputResourceMeta(),
     outputItemResourceMeta(),
   ]

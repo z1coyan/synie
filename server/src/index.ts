@@ -12,6 +12,7 @@ import {
   createManufacturingServices,
   createManufacturingSettingService,
   registerManufacturingFileOwners,
+  registerWorkOrderDocBuilder,
 } from './modules/manufacturing/index.ts'
 import { createPartyServices, registerPartyTodoSources } from './modules/party/index.ts'
 import { createCompanyAccountDefaultService } from './modules/sales/index.ts'
@@ -96,6 +97,7 @@ const printing = createPrintingService({
 })
 // 业务域 DocBuilder 显式装配（platform 不内置业务表查询）
 registerSalesOrderDocBuilder(printing, db)
+registerWorkOrderDocBuilder(printing, db)
 const base = createBaseServices(db)
 const market = createMarketService(db, { settings })
 const iam = createIamService(db, registry)

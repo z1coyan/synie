@@ -16,6 +16,7 @@ import {
 import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
 import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
 
 export const Route = createFileRoute('/_app/mfg/work-orders')({
@@ -85,6 +86,8 @@ function WorkOrdersPageInner() {
   } | null>(null)
   const queryClient = useQueryClient()
   const openBomDrawer = useBomDrawer()
+  const { start: startPrint, dialog: printDialog } =
+    useTemplatePrint('mfg.work_order')
 
   const perms = useQuery({
     queryKey: ['myPermissions'],
@@ -330,6 +333,24 @@ function WorkOrdersPageInner() {
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          // 模板打印覆盖默认列表 HTML 打印（无模板时弹窗提示去上传）
+          onPrint={(rows) => void startPrint('print', rows)}
+          rowActions={[
+            {
+              key: 'exportExcel',
+              label: '导出 Excel',
+              capability: 'export',
+              onAction: (row) => void startPrint('export', [row]),
+            },
+          ]}
+          bulkActions={[
+            {
+              key: 'batchExportExcel',
+              label: '批量导出 Excel',
+              capability: 'export',
+              onAction: (rows) => void startPrint('export', rows),
+            },
+          ]}
         />
       </div>
 
@@ -445,6 +466,7 @@ function WorkOrdersPageInner() {
           invalidateWorkOrderLists()
         }}
       />
+      {printDialog}
     </>
   )
 }

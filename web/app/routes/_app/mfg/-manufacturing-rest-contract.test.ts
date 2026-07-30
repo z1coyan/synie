@@ -84,6 +84,9 @@ describe('PR-2.17 制造域 REST 边界', () => {
     expect(workOrder).toContain("openBomDrawer('view'")
     expect(workOrder).toContain('bomId: values.bomId')
     expect(workOrder).toContain("ownerType=\"mfg_work_order\"")
+    expect(workOrder).toContain("useTemplatePrint('mfg.work_order')")
+    expect(workOrder).toContain('onPrint=')
+    expect(workOrder).toContain('batchExportExcel')
 
     const output = source('./outputs.tsx')
     expect(output.match(/client=\{outputClient\}/g)?.length).toBe(2)

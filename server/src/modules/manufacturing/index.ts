@@ -14,6 +14,10 @@ import { registerManufacturingSettingResources } from './settings.ts'
 
 export { manufacturingRoutes, type ManufacturingRouteDeps } from './routes.ts'
 export { allManufacturingResourceMetas } from './meta.ts'
+export {
+  createWorkOrderDocBuilder,
+  registerWorkOrderDocBuilder,
+} from './work-order-docbuilder.ts'
 export { adjustDemandOrdered, adjustDemandReceived }
 export {
   createManufacturingSettingService,

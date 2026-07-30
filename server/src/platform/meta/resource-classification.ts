@@ -24,7 +24,7 @@ export interface ResourceClassification {
 }
 
 /**
- * 全量 97 资源分类。新增资源时必须在此登记，否则 seal/基线报告失败。
+ * 全量资源分类。新增资源时必须在此登记，否则 seal/基线报告失败。
  */
 export const RESOURCE_CLASSIFICATION: Record<string, ResourceClassification> = {
   // —— 基础主数据 basic ——
@@ -124,6 +124,21 @@ export const RESOURCE_CLASSIFICATION: Record<string, ResourceClassification> = {
   mfgDemands: { presentation: 'extension', interactive: true },
   mfgDemandItems: { presentation: 'none', interactive: false },
   mfgWorkOrders: { presentation: 'extension', interactive: true },
+  mfgWorkOrderComponents: {
+    presentation: 'none',
+    interactive: false,
+    note: '工单 BOM 配料快照；打印循环区',
+  },
+  mfgWorkOrderRoutes: {
+    presentation: 'none',
+    interactive: false,
+    note: '工单工艺路线快照；打印循环区',
+  },
+  mfgWorkOrderByproducts: {
+    presentation: 'none',
+    interactive: false,
+    note: '工单副产品快照；打印循环区',
+  },
   mfgOutputs: { presentation: 'extension', interactive: true },
   mfgOutputItems: { presentation: 'none', interactive: false },
   mfgSettings: {
