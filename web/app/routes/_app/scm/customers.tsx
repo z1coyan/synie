@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
+import {
+  createCustomerPresentation,
+  submitCustomerForm,
+} from '~/lib/resources/presentation'
+import { resourceBindingFor, resourceClientFor } from '~/lib/resources/registry'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { customerClient } from '~/lib/resources/customers'
 
 export const Route = createFileRoute('/_app/scm/customers')({
   component: CustomersPage,
@@ -20,9 +23,20 @@ const GRID_OVERRIDES = {
   shortName: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
+const RESOURCE = 'salCustomers'
+
 function CustomersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
+  // Presentation Extension 由 binding 构造，不二次 resourceClientFor 取写能力
+  const binding = resourceBindingFor(RESOURCE)
+  const client = resourceClientFor(RESOURCE)
+  const presentation = createCustomerPresentation(binding)
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({
+      queryKey: ['gridRows', client.id, RESOURCE],
+    })
 
   return (
     <>
@@ -31,8 +45,8 @@ function CustomersPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="salCustomers"
-          client={customerClient}
+          resource={RESOURCE}
+          client={client}
           overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -41,36 +55,27 @@ function CustomersPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="salCustomers"
-        client={customerClient}
-        label="客户"
+        resource={RESOURCE}
+        client={client}
+        label={presentation.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         row={drawer?.row}
-        fields={{
-          code: { required: true, placeholder: '如 C0001' },
-          name: { required: true, placeholder: '客户全称' },
-          shortName: { placeholder: '如 华为' },
-        }}
-        extraContent={(mode, row) => (
-          <SynieAttachmentPanel
-            ownerType="sal_customer"
-            ownerId={row?.id as string | undefined}
-            readonly={mode === 'view'}
-          />
-        )}
+        exclude={presentation.exclude}
+        fields={presentation.fields}
+        extraContent={presentation.extraContent}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          const saved =
-            mode === 'create'
-              ? await customerClient.create(values)
-              : await customerClient.update(drawer!.row!.id, values)
+          const id = await submitCustomerForm(
+            presentation,
+            values,
+            mode,
+            drawer?.row?.id != null ? String(drawer.row.id) : undefined,
+          )
           toast.success(mode === 'create' ? '客户已创建' : '客户已更新')
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', customerClient.id, 'salCustomers'],
-          })
-          return saved.id
+          invalidate()
+          return id
         }}
       />
     </>

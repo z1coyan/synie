@@ -222,4 +222,21 @@ describe('Resource Catalog seal 与双投影', () => {
     expect(catalog.label).toBe('客户')
     expect(catalog.form.kind).toBe('extension')
   })
+
+  test('发票 catalog：form.kind=extension（OCR Presentation Extension）', () => {
+    const registry = createSealedResourceRegistry()
+    const doc = registry.buildDocument('accVatInvoices', superAdmin)
+    const catalog = decodeResourceDocument(doc.catalog)
+    expect(catalog.form.kind).toBe('extension')
+    // ResourceDocument 无可执行脚本/组件路径
+    const wire = JSON.stringify(catalog)
+    expect(wire).not.toMatch(/function\s*\(|=>|componentPath|script/)
+  })
+
+  test('销售发货 catalog：form.kind=extension（聚合草稿 Presentation Extension）', () => {
+    const registry = createSealedResourceRegistry()
+    const doc = registry.buildDocument('salDeliveries', superAdmin)
+    const catalog = decodeResourceDocument(doc.catalog)
+    expect(catalog.form.kind).toBe('extension')
+  })
 })

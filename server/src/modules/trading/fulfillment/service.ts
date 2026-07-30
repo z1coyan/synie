@@ -912,6 +912,15 @@ export function createFulfillmentService(
     }
   }
 
+  /**
+   * 领域专用完整草稿读取：表头 + 全部发货条目 + 全部装箱箱/行。
+   * 无分页截断；供 AggregateDraftAdapter.loadDraft 与 create/replace 权威快照共用。
+   */
+  async function getSalesDraft(actor: Actor, id: string): Promise<SalesDraftDto> {
+    requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
+    return loadSalesDraft(db, actor, id)
+  }
+
   async function createSalesDraft(actor: Actor, input: SalesDraftInput) {
     requirePerm(actor, 'sales.delivery', 'create', '无权限执行该履约操作')
     if (!canAccessCompany(actor, input.companyId)) {
@@ -1130,7 +1139,7 @@ export function createFulfillmentService(
   }
 
   return {
-    createSalesDraft, replaceSalesDraft,
+    getSalesDraft, createSalesDraft, replaceSalesDraft,
     listHeads, getHead, createPurchaseHead, updatePurchaseHead, deleteHead, auditHead, voidHead,
     listItems, getItem, createPurchaseItem, updatePurchaseItem, deletePurchaseItem,
     listPackBoxes, getPackBox,

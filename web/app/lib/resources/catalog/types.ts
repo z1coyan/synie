@@ -81,8 +81,9 @@ export interface ResourceBinding<
   TRow = Row,
   TCreate = Record<string, unknown>,
   TUpdate = Record<string, unknown>,
-  TDraft = never,
-  TSaved = never,
+  /** expand 期默认 unknown，便于异构 draft 挂入 Map；具体资源可用类型参数收窄 */
+  TDraft = unknown,
+  TSaved = unknown,
   TCommands extends CommandMap = CommandMap,
 > {
   readonly resource: string

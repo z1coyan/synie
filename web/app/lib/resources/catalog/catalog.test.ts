@@ -176,5 +176,38 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(got.writer && 'create' in got.writer).toBe(true)
     expect(Object.keys(got.commands!.commands)).not.toContain('create')
   })
+
+  test('binding 可挂载 AggregateDraftAdapter；Draft 与 Saved 类型分离', async () => {
+    const client = mockClient()
+    registerBinding({
+      ...bindingFromResourceClient('salDeliveries', client, {
+        canCreate: false,
+        canUpdate: false,
+        canDelete: true,
+      }),
+      draft: {
+        loadDraft: async (id) => ({ id, items: [{ id: 'i1' }], packBoxes: [] }),
+        createDraft: async (input: { companyId: string }) => ({
+          id: 'd1',
+          companyId: input.companyId,
+          items: [],
+          packBoxes: [],
+        }),
+        replaceDraft: async (id, input: { companyId: string }) => ({
+          id,
+          companyId: input.companyId,
+          items: [],
+          packBoxes: [],
+        }),
+      },
+    })
+    const got = resourceBindingFor('salDeliveries')
+    expect(got.draft).toBeDefined()
+    expect(got.writer && 'create' in got.writer && (got.writer as { create?: unknown }).create).toBeFalsy()
+    const saved = await got.draft!.loadDraft('x')
+    expect(saved).toMatchObject({ id: 'x', items: [{ id: 'i1' }] })
+    const created = await got.draft!.createDraft({ companyId: 'c1' })
+    expect(created).toMatchObject({ id: 'd1', companyId: 'c1' })
+  })
 })
 

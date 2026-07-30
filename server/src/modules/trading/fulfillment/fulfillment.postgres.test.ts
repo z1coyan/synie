@@ -197,6 +197,60 @@ run('PG 集成（销售发货装箱箱）', () => {
     expect(draft.packBoxes[0]?.lines[0]?.packBoxId).toBe(draft.packBoxes[0]?.id)
   })
 
+  test('完整草稿读取覆盖超过默认分页的子记录且无静默截断', async () => {
+    const no = `${prefix}-FULL-DRAFT`
+    const created = await fulfillment.createSalesDraft(actor, draftInput(no))
+    // 默认 list 上限 200；直接插入超过分页数量的条目，证明 getSalesDraft 不走分页
+    const extra = 210
+    for (let i = 0; i < extra; i++) {
+      const itemId = crypto.randomUUID()
+      await sql`
+        INSERT INTO sal_delivery_item(
+          id, idx, qty, base_qty, delivery_id, company_id, order_item_id,
+          material_id, unit_id, warehouse_id,
+          material_code, material_name, unit_name, reconciled_qty
+        ) VALUES (
+          ${itemId}::uuid, ${i + 2}, 1, 1, ${created.id}::uuid, ${companyId}::uuid,
+          ${orderItemId}::uuid, ${materialId}::uuid, ${unitId}::uuid, ${warehouseId}::uuid,
+          ${'M' + suffix}, ${prefix + '物料'}, ${prefix + '件'}, 0
+        )
+      `.execute(db)
+    }
+    const expectedItems = 1 + extra
+
+    const full = await fulfillment.getSalesDraft(actor, created.id)
+    expect(full.items).toHaveLength(expectedItems)
+    expect(full.packBoxes).toHaveLength(1)
+    expect(full.packBoxes[0]?.lines).toHaveLength(1)
+
+    // 对照：列表分页会截断
+    const paged = await fulfillment.listItems(actor, 'sales', {
+      limit: 50,
+      offset: 0,
+      filter: {
+        deliveryId: { kind: 'fk', op: 'in', values: [created.id], labels: [] },
+      },
+    })
+    expect(paged.count).toBe(expectedItems)
+    expect(paged.results.length).toBe(50)
+    expect(paged.results.length).toBeLessThan(expectedItems)
+
+    // HTTP：GET /:id/draft 返回完整嵌套
+    const res = await http.request(`/api/v1/sales/deliveries/${created.id}/draft`, {
+      headers: { authorization: 'Bearer test' },
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { items: unknown[]; packBoxes: unknown[] }
+    expect(body.items).toHaveLength(expectedItems)
+    expect(body.packBoxes).toHaveLength(1)
+
+    // 只读权限可读；无 read 权限拒绝
+    const denied = await http.request(`/api/v1/sales/deliveries/${created.id}/draft`, {
+      headers: { authorization: 'Bearer none' },
+    })
+    expect(denied.status).toBe(401)
+  })
+
   test('整单创建的嵌套行失败时不残留表头、子记录或操作日志', async () => {
     const no = `${prefix}-ATOMIC-ROLLBACK`
     await expect(

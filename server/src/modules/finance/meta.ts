@@ -263,6 +263,8 @@ export function vatInvoiceResourceMeta(): ResourceMeta {
         http: { method: 'POST', path: '/finance/vat-invoices/{id}/reverse' },
       },
     ],
+    // OCR / 动态联动 / 附件：Presentation Extension，不走 Basic Form
+    form: { kind: 'extension' },
     audit: { enabled: true },
     destroyMutation: 'destroyAccVatInvoice',
   }

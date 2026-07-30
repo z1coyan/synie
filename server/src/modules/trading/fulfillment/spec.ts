@@ -210,6 +210,8 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
       }),
     ],
     actions,
+    // 销售发货：聚合草稿 + 子表/装箱 UI 为 Presentation Extension，不走 Basic Form
+    form: sales ? { kind: 'extension' } : undefined,
     print: sales,
     printHead: true,
     printLoops,

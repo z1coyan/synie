@@ -25,10 +25,15 @@ import { attachFile, type UploadedFile } from '~/lib/files'
 import { FinanceOcrButton } from './-ocr-button'
 import {
   auditVatInvoice,
-  ocrVatInvoice,
   reverseVatInvoice,
   vatInvoiceClient,
 } from '~/lib/resources/finance-operations'
+import {
+  createInvoicePresentation,
+  invoiceOcrRecognize,
+  submitInvoiceForm,
+} from '~/lib/resources/presentation'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import {
   purchaseReconciliationClient,
   salesReconciliationClient,
@@ -386,6 +391,9 @@ const safeParseDate = (v: string | null) => {
 
 function InvoicesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  // Presentation Extension：OCR/动态联动与 binding 共置；ResourceDocument 无脚本
+  const invoicePresentation = createInvoicePresentation(resourceBindingFor('accVatInvoices'))
+  const recognizeInvoice = invoiceOcrRecognize(invoicePresentation)
   // 退场动画期间冻结最后打开的抽屉态(承兑抽屉 lastRef 先例):fields/headerContent 闭包
   // 读 isCreate/createType,关闭瞬间 drawer 已置 null,不冻结会闪回非创建态排布
   const lastDrawerRef = useRef(drawer)
@@ -476,7 +484,7 @@ function InvoicesPage() {
     return (
       <div className="flex flex-col gap-4">
         <FinanceOcrButton
-          recognize={ocrVatInvoice}
+          recognize={recognizeInvoice}
           accept="image/*,.pdf"
           onRecognized={(fields, file) => {
             // items 走本地清单状态,其余字段直接回填表单草稿
@@ -887,12 +895,18 @@ function InvoicesPage() {
         }}
         onSubmit={async (values, mode) => {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
+          // 写入经 Presentation Extension → binding.writer，不二次全局 client 查找
           let savedId: string
           // edit 态 items 未就绪(FETCH_ITEMS 未回或失败)时省略 items 键,不用空清单覆盖后端原值
           const omitItems = mode === 'edit' && !itemsLoaded
           const input = omitItems ? values : { ...values, items: serializeItems(items) }
           if (mode === 'create') {
-            const createdId = (await vatInvoiceClient.create(input)).id
+            const { id: createdId } = await submitInvoiceForm(
+              invoicePresentation,
+              input,
+              'create',
+              undefined,
+            )
             // OCR 原图补挂为附件;挂接失败不阻断建票,提示手工补传即可
             if (ocrFileRef.current) {
               const fid = ocrFileRef.current
@@ -932,7 +946,7 @@ function InvoicesPage() {
             savedId = createdId
           } else {
             const invoiceId = drawer!.row!.id
-            await vatInvoiceClient.update(invoiceId, input)
+            await submitInvoiceForm(invoicePresentation, input, 'edit', String(invoiceId))
             toast.success(omitItems ? '发票已更新(销售清单未加载,本次未修改)' : '发票已更新')
             queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
             savedId = invoiceId

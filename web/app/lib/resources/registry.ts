@@ -34,6 +34,7 @@ import {
   purchaseReceiptClient,
   purchaseReceiptItemClient,
   salesDeliveryClient,
+  salesDeliveryDraftAdapter,
   salesDeliveryItemClient,
   salesDeliveryPackBoxClient,
   salesDeliveryPackLineClient,
@@ -117,6 +118,7 @@ import {
   bindingFromResourceClient,
   hasBinding,
   registerBinding,
+  replaceBinding,
   resourceBindingFor as bindingFor,
   resourceClientFromBinding,
   type CommandAdapter,
@@ -254,6 +256,22 @@ for (const [resource, client] of Object.entries(clients)) {
   } else {
     registerBinding(binding)
   }
+}
+
+/**
+ * 销售发货：聚合草稿 Adapter 是表单写 seam；不为表单暴露 RecordWriter create/update。
+ * delete 仍经 writer；Grid 列表读经 reader；权威草稿读/写经 draft。
+ */
+{
+  const base = bindingFromResourceClient('salDeliveries', salesDeliveryClient, {
+    canCreate: false,
+    canUpdate: false,
+    canDelete: true,
+  })
+  replaceBinding({
+    ...base,
+    draft: salesDeliveryDraftAdapter,
+  })
 }
 
 /**

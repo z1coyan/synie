@@ -1,5 +1,6 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { AggregateDraftAdapter } from './catalog/types'
 import { gridMeta } from './meta'
 import type { ResourceClient, ResourceQuery } from './types'
 
@@ -185,6 +186,44 @@ export async function voidPurchaseOutsourcedReceipt(id: string) {
   )
 }
 
+/**
+ * 销售发货聚合草稿 Adapter：完整 load + 原子 create/replace。
+ * 表单走 draft，不暴露 RecordWriter 的 create/update。
+ */
+export type SalesDeliveryDraftInput = Record<string, unknown>
+/** 权威 SavedDraft：表头 + 全部 items + 嵌套 packBoxes.lines */
+export type SalesDeliverySavedDraft = Row & {
+  items: Row[]
+  packBoxes: Array<Row & { lines: Row[] }>
+}
+
+export const salesDeliveryDraftAdapter: AggregateDraftAdapter<
+  SalesDeliveryDraftInput,
+  SalesDeliverySavedDraft
+> = {
+  async loadDraft(id) {
+    return (await apiData(
+      // 领域专用完整草稿读取；不走分页子资源 query
+      api.sales.deliveries[':id'].draft.$get({ param: { id } }),
+    )) as SalesDeliverySavedDraft
+  },
+  async createDraft(input) {
+    return (await apiData(
+      api.sales.deliveries.$post({
+        json: salesDeliveryDraftInput(input) as never,
+      }),
+    )) as SalesDeliverySavedDraft
+  },
+  async replaceDraft(id, input) {
+    return (await apiData(
+      api.sales.deliveries[':id'].$put({
+        param: { id },
+        json: salesDeliveryDraftInput(input) as never,
+      }),
+    )) as SalesDeliverySavedDraft
+  },
+}
+
 export const salesDeliveryClient = resourceClient('salDeliveries', {
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
@@ -197,18 +236,12 @@ export const salesDeliveryClient = resourceClient('salDeliveries', {
       api.sales.deliveries[':id'].$get({ param: { id } }),
     )) as Row
   },
+  // expand 兼容：Grid/旧路径仍可经 client 写；表单应使用 salesDeliveryDraftAdapter
   async create(input) {
-    return (await apiData(
-      api.sales.deliveries.$post({
-        json: salesDeliveryDraftInput(input) as never}),
-    )) as Row
+    return (await salesDeliveryDraftAdapter.createDraft(input)) as Row
   },
   async update(id, input) {
-    return (await apiData(
-      api.sales.deliveries[':id'].$put({
-        param: { id },
-        json: salesDeliveryDraftInput(input) as never}),
-    )) as Row
+    return (await salesDeliveryDraftAdapter.replaceDraft(id, input)) as Row
   },
   async delete(id) {
     await apiData<void>(

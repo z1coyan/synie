@@ -18,6 +18,7 @@ import {
   salesDeliveryPackBoxClient,
   salesDeliveryPackLineClient,
 } from '~/lib/resources/fulfillment'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { salesOrderItemClient } from '~/lib/resources/orders'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/registry'
@@ -35,7 +36,6 @@ import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { materialClient, materialUnitClient } from '~/lib/resources/inventory'
-import type { ResourceClient, ResourceQuery } from '~/lib/resources/types'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
@@ -53,22 +53,18 @@ export interface DeliveryRef {
 
 export type OpenDeliveryDrawer = (mode: DrawerMode, delivery: DeliveryRef | null) => void
 
-const DRAFT_PAGE_SIZE = 200
-
-async function queryAllDraftRows(
-  client: Pick<ResourceClient, 'query'>,
-  input: Omit<ResourceQuery, 'limit' | 'offset'>,
-): Promise<Row[]> {
-  const results: Row[] = []
-  while (true) {
-    const page = await client.query({
-      ...input,
-      limit: DRAFT_PAGE_SIZE,
-      offset: results.length,
-    })
-    results.push(...page.results)
-    if (results.length >= page.count || page.results.length === 0) return results
+/**
+ * 审核确认弹窗：子记录经完整草稿读取（无分页截断），不走默认 limit 的子资源 query。
+ */
+async function loadDeliveryItemsForAudit(deliveryId: string): Promise<Row[]> {
+  const binding = resourceBindingFor('salDeliveries')
+  if (!binding.draft) {
+    throw new Error('销售发货未绑定 AggregateDraftAdapter')
   }
+  const draft = (await binding.draft.loadDraft(deliveryId)) as {
+    items?: Row[]
+  }
+  return Array.isArray(draft.items) ? draft.items : []
 }
 
 // 「审核整单」确认弹窗配置:条目页行操作与发货单页「审核」动作共用(见 scm/-audit-doc)
@@ -86,12 +82,7 @@ export const deliveryAuditConfig = {
     { key: 'baseQty', label: '折算数量', align: 'end' },
     { key: 'remarks', label: '行备注' },
   ],
-  loadItems: (deliveryId: string) =>
-    queryAllDraftRows(salesDeliveryItemClient, {
-      filter: {
-        deliveryId: { kind: 'fk', op: 'in', values: [deliveryId], labels: [] },
-      },
-    }),
+  loadItems: loadDeliveryItemsForAudit,
   audit: (deliveryId: string) => salesDeliveryClient.action!('audit', [deliveryId]),
 } satisfies AuditDocConfig
 
@@ -1221,22 +1212,30 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
       return
     }
     setDetailLoaded(false)
-    const deliveryFilter = {
-      deliveryId: { kind: 'fk' as const, op: 'in' as const, values: [deliveryId], labels: [] },
+    const binding = resourceBindingFor('salDeliveries')
+    if (!binding.draft) {
+      toast.danger('无法打开发货单', { description: '销售发货未绑定 AggregateDraftAdapter' })
+      setItems([])
+      setPackBoxes([])
+      setPackLines([])
+      setDetailLoaded(true)
+      return
     }
-    Promise.all([
-      queryAllDraftRows(salesDeliveryItemClient, {
-        filter: deliveryFilter,
-      }),
-      queryAllDraftRows(salesDeliveryPackBoxClient, {
-        filter: deliveryFilter,
-      }),
-      queryAllDraftRows(salesDeliveryPackLineClient, {
-        filter: deliveryFilter,
-      }),
-    ])
-      .then(([itemRows, boxRows, lineRows]) => {
+    binding.draft
+      .loadDraft(deliveryId)
+      .then((raw) => {
         if (my !== reqIdRef.current) return
+        const saved = raw as {
+          items?: Row[]
+          packBoxes?: Array<Row & { lines?: Row[] }>
+        } & Row
+        const itemRows = Array.isArray(saved.items) ? saved.items : []
+        const boxRows = Array.isArray(saved.packBoxes) ? saved.packBoxes : []
+        const lineRows = boxRows.flatMap((box) =>
+          Array.isArray(box.lines)
+            ? box.lines.map((line) => ({ ...line, packBoxId: box.id }))
+            : [],
+        )
         // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
         for (const r of itemRows) {
           if (r.orderItemId != null) {
@@ -1257,6 +1256,8 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
         setItems(itemRows)
         setPackBoxes(boxRows)
         setPackLines(lineRows)
+        setAuthoritativeDraft(saved as Row)
+        draftHeadRef.current = saved as Record<string, unknown>
         setDetailLoaded(true)
       })
       .catch((e) => {
@@ -1833,6 +1834,17 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
           if (mode !== 'create' && !detailLoaded) {
             throw new Error('发货明细尚未完整加载，不能提交整单替换')
           }
+          const draftBinding = resourceBindingFor('salDeliveries')
+          if (!draftBinding.draft) {
+            throw new Error('销售发货未绑定 AggregateDraftAdapter')
+          }
+          // 表单只经 AggregateDraftAdapter；binding 不挂 create/update writer
+          const writerBag = draftBinding.writer as
+            | Partial<{ create: unknown; update: unknown }>
+            | undefined
+          if (writerBag?.create || writerBag?.update) {
+            throw new Error('销售发货表单不得暴露 RecordWriter create/update')
+          }
           const request = buildDeliveryDraft(
             { ...draftHeadRef.current, ...values },
             items,
@@ -1843,10 +1855,11 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
           setDraftErrorIndex(request.index)
           setSubmitting(true)
           try {
-            const saved =
+            const saved = (
               mode === 'create'
-                ? await salesDeliveryClient.create(request.draft)
-                : await salesDeliveryClient.update(drawer!.row!.id, request.draft)
+                ? await draftBinding.draft.createDraft(request.draft)
+                : await draftBinding.draft.replaceDraft(drawer!.row!.id, request.draft)
+            ) as Row
             acceptSavedDraft(saved)
             queryClient.setQueryData(
               ['rowById', salesDeliveryClient.id, 'salDeliveries', String(saved.id)],

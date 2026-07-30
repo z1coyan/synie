@@ -139,6 +139,10 @@ export function salesFulfillmentHeadRoutes(deps: {
           201,
         ),
     )
+    // 完整聚合草稿读取（无分页截断）；须在 /:id 之前注册更具体路径
+    .get('/:id/draft', zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await fulfillment.getSalesDraft(c.get('actor'), c.req.valid('param').id)),
+    )
     .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await fulfillment.getHead(c.get('actor'), 'sales', c.req.valid('param').id)),
     )
