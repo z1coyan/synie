@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { ResourceDocument } from '@synie/shared'
 import {
-  bindingFromResourceClient,
+  bindingFromResourceTransport,
   clearBindingsForTests,
   registerBinding,
   replaceBinding,
@@ -70,7 +70,7 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
   test('客户 PE：完整 form controller + 附件 extraContent；由 binding 构造', async () => {
     clearBindingsForTests()
     const client = mockClient(CUSTOMER_RESOURCE)
-    const binding = bindingFromResourceClient(CUSTOMER_RESOURCE, client)
+    const binding = bindingFromResourceTransport(CUSTOMER_RESOURCE, client)
     registerBinding(binding)
 
     const pe = createCustomerPresentation(resourceBindingFor(CUSTOMER_RESOURCE))
@@ -91,14 +91,14 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
     expect(id).toBe('new-id')
 
     // 错误 resource 的 binding 拒绝
-    const wrong = bindingFromResourceClient('purSuppliers', mockClient('purSuppliers'))
+    const wrong = bindingFromResourceTransport('purSuppliers', mockClient('purSuppliers'))
     expect(() => createCustomerPresentation(wrong)).toThrow(/salCustomers/)
   })
 
   test('发票 PE：OCR seam 共置；ResourceDocument 不含可执行代码', () => {
     clearBindingsForTests()
     registerBinding(
-      bindingFromResourceClient(VAT_INVOICE_RESOURCE, mockClient(VAT_INVOICE_RESOURCE)),
+      bindingFromResourceTransport(VAT_INVOICE_RESOURCE, mockClient(VAT_INVOICE_RESOURCE)),
     )
     const pe = createInvoicePresentation(resourceBindingFor(VAT_INVOICE_RESOURCE))
     expect(pe.kind).toBe('extension')
@@ -118,12 +118,12 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
   test('员工 PE：身份证影像 extraContent；物料 PE：tabs+effects 静态面', () => {
     clearBindingsForTests()
     registerBinding(
-      bindingFromResourceClient(EMPLOYEE_RESOURCE, mockClient(EMPLOYEE_RESOURCE)),
+      bindingFromResourceTransport(EMPLOYEE_RESOURCE, mockClient(EMPLOYEE_RESOURCE)),
     )
     registerBinding(
-      bindingFromResourceClient(MATERIAL_RESOURCE, mockClient(MATERIAL_RESOURCE)),
+      bindingFromResourceTransport(MATERIAL_RESOURCE, mockClient(MATERIAL_RESOURCE)),
     )
-    registerBinding(bindingFromResourceClient('basAccounts', mockClient('basAccounts')))
+    registerBinding(bindingFromResourceTransport('basAccounts', mockClient('basAccounts')))
 
     const emp = createEmployeePresentation(resourceBindingFor(EMPLOYEE_RESOURCE))
     expect(emp.kind).toBe('extension')
@@ -153,7 +153,7 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
     clearBindingsForTests()
     const client = mockClient('salDeliveries')
     // 与 registry 一致：无 create/update writer，挂 draft
-    const base = bindingFromResourceClient('salDeliveries', client, {
+    const base = bindingFromResourceTransport('salDeliveries', client, {
       canCreate: false,
       canUpdate: false,
       canDelete: true,
@@ -205,7 +205,7 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
   test('所有权分离：Catalog 不持 Adapter；PE 持 binding；Adapter 不声明 form.kind', () => {
     clearBindingsForTests()
     const binding: ResourceBinding = {
-      ...bindingFromResourceClient(CUSTOMER_RESOURCE, mockClient(CUSTOMER_RESOURCE)),
+      ...bindingFromResourceTransport(CUSTOMER_RESOURCE, mockClient(CUSTOMER_RESOURCE)),
     }
     registerBinding(binding)
     const pe = createCustomerPresentation(resourceBindingFor(CUSTOMER_RESOURCE))

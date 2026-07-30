@@ -46,7 +46,7 @@ describe('PR-2.15 标准与委外履约 REST 迁移契约', () => {
     for (const client of expected) expect(combined).toContain(`client={${client}}`)
   })
 
-  test('ResourceClient 覆盖十资源 CRUD、审核作废与默认科目读取 seam', () => {
+  test('ResourceTransport 覆盖十资源，语义命令与默认科目各有显式 seam', () => {
     for (const resource of [
       'salDeliveries',
       'salDeliveryItems',
@@ -62,8 +62,17 @@ describe('PR-2.15 标准与委外履约 REST 迁移契约', () => {
       expect(fulfillmentClients).toContain(`'${resource}'`)
       expect(registry).toContain(`${resource}:`)
     }
-    expect(fulfillmentClients).toContain("key === 'audit'")
-    expect(fulfillmentClients).toContain("key === 'void'")
+    for (const adapter of [
+      'salesDeliveryCommandAdapter',
+      'purchaseReceiptCommandAdapter',
+      'purchaseOutsourcedIssueCommandAdapter',
+      'purchaseOutsourcedReceiptCommandAdapter',
+    ]) {
+      expect(fulfillmentClients).toContain(`export const ${adapter} = createRowCommandAdapter`)
+      expect(registry).toContain(`${adapter},`)
+    }
+    expect(fulfillmentClients).not.toContain("key === 'audit'")
+    expect(fulfillmentClients).not.toContain("key === 'void'")
     expect(fulfillmentClients).toContain('fetchSalesCompanyAccountDefaults')
     expect(defaults).toContain('fetchSalesCompanyAccountDefaults(companyId)')
   })
@@ -79,7 +88,8 @@ describe('PR-2.15 标准与委外履约 REST 迁移契约', () => {
 
   test('销售发货只通过整单草稿写入口保存,子资源仅保留读取', () => {
     expect(salesDrawer).toContain('buildDeliveryDraft')
-    expect(salesDrawer).toContain('queryAllDraftRows')
+    expect(salesDrawer).toContain('binding.draft.loadDraft(deliveryId)')
+    expect(salesDrawer).not.toContain('queryAllDraftRows')
     expect(salesDrawer).toContain('发货明细尚未完整加载，不能提交整单替换')
     expect(salesDrawer).not.toContain('limit: 500')
     expect(salesDrawer).not.toContain('persistItems(')

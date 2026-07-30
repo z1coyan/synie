@@ -6,7 +6,7 @@ import {
   decodeCollectionTarget,
   defineCommand,
 } from './catalog/commands'
-import type { ResourceClient, ResourceQuery } from './types'
+import type { ResourceQuery, ResourceTransport } from './types'
 
 type AttendanceCorrectionCreate =
   Record<string, unknown>
@@ -117,23 +117,18 @@ function decimalInput(
   return result
 }
 
-const unsupported =
-  (label: string) =>
-  async (): Promise<Row> => {
-    throw new Error(`${label}不支持此操作`)
-  }
+type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
+  Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
 
-function resourceClient(
+function resourceClient<const TOperations extends ResourceOperations>(
   resource: string,
-  operations: Omit<ResourceClient, 'id'>,
-): ResourceClient {
+  operations: TOperations,
+): { id: string } & TOperations {
   return {
     id: `rest:${resource}`,
-        ...operations,
+    ...operations,
   }
 }
-
-const punchWrite = unsupported('原始打卡')
 
 export const attendancePunchClient = resourceClient('hrAttendancePunches', {
   async query(input) {
@@ -151,11 +146,6 @@ export const attendancePunchClient = resourceClient('hrAttendancePunches', {
       api.hr['attendance-punches'][':id'].$get({
         param: { id }}),
     )) as unknown as Row
-  },
-  create: punchWrite,
-  update: punchWrite,
-  delete: async () => {
-    await punchWrite()
   },
 })
 
@@ -182,7 +172,6 @@ export const attendanceImportClient = resourceClient('hrAttendanceImports', {
         json: input as never}),
     )) as unknown as Row
   },
-  update: unsupported('考勤导入批次'),
   async delete(id) {
     await apiData<void>(
       api.hr['attendance-imports'][':id'].$delete({
@@ -212,8 +201,6 @@ export async function importAttendanceImport(
   return result as AttendanceImportExecution
 }
 
-const dayWrite = unsupported('日考勤')
-
 export const attendanceDayClient = resourceClient('hrAttendanceDays', {
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
@@ -230,11 +217,6 @@ export const attendanceDayClient = resourceClient('hrAttendanceDays', {
       api.hr['attendance-days'][':id'].$get({
         param: { id }}),
     )) as unknown as Row
-  },
-  create: dayWrite,
-  update: dayWrite,
-  delete: async () => {
-    await dayWrite()
   },
 })
 
@@ -442,7 +424,6 @@ export const payrollPaymentClient = resourceClient('hrPayrollPayments', {
         json: decimalInput(input, ['amount']) as never as unknown as never}),
     )) as unknown as Row
   },
-  update: unsupported('工资发放记录'),
   async delete(id) {
     await apiData<void>(
       api.hr['payroll-payments'][':id'].$delete({

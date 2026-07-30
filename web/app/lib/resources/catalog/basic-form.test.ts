@@ -345,6 +345,9 @@ describe('basicFormDrawerProps', () => {
       placeholder: '三位大写字母,如 CNY',
     })
     expect(props.fields.symbol?.placeholder).toBe('如 ¥')
+    expect(props.fields.name?.order).toBe(0)
+    expect(props.fields.isoCode?.order).toBe(1)
+    expect(props.fields.symbol?.order).toBe(2)
     expect(props.fields.active).toBeUndefined()
   })
 

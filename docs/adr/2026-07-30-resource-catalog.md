@@ -1,7 +1,7 @@
 # ADR：以类型安全 Resource Catalog 收口资源声明与前端能力绑定
 
 2026-07-30，状态：已实施。本 ADR 固化 Resource Catalog 边界；expand–migrate–contract
-已完成（见 `.scratch/resource-catalog/` 工单 01–11）。
+已完成（见 `.scratch/resource-catalog/` 工单 01–12）。
 
 ## 背景
 
@@ -44,10 +44,12 @@ Catalog 投影 UI capability，但不替代服务端每次请求的独立鉴权�
 字段、外键目标、capabilities 和 commands；Grid 与基础 Form 都从这份文档派生。前端
 建立独立 Catalog client/cache，删除 `ResourceClient.meta()` 对 Grid 子集的所有权。
 
-表单使用强类型的字段引用与判别联合。字段是否必填、创建后锁定、只读或可清空属于字段
-输入策略，只声明一次；FormMeta 只描述字段摆放、分区/Tab、栅格宽度、占位和 showIn，
-不重复 required/edit 等字段事实。外键目标的 label/search/default sort/subtitle 归目标
-资源 lookup；引用字段只保留 picker、静态 FilterState 和必要的场景覆盖。
+表单提示使用强类型 `FormFieldMeta` 与判别联合；泛型定义入口在编译期约束字段键，所有
+存量定义还会在 Registry 注册期校验 `form.fields/form.exclude` 引用。字段是否必填、
+创建后锁定、只读或可清空属于字段输入策略，只声明一次；FormMeta 只描述字段摆放、
+分区/Tab、栅格宽度、占位和 showIn，不重复 required/edit 等字段事实。外键目标的
+label/search/default sort/subtitle 归目标资源 lookup；引用字段只保留 picker、静态
+FilterState 和必要的场景覆盖。
 
 ### 3. 按能力拆分前端端口
 
@@ -61,7 +63,7 @@ Catalog 投影 UI capability，但不替代服务端每次请求的独立鉴权�
 每个资源通过一个类型安全 `ResourceBinding` 绑定实际 Adapter。只读资源只绑定 Reader；
 普通主数据绑定 Reader + RecordWriter；聚合资源绑定 Reader/聚合草稿 Adapter；领域命令
 按命令映射绑定。基础 Grid、抽屉、外键预览和复杂页面都从同一 binding 入口取能力，
-从而收口 ResourceClient registry、drawer registry 和页面重复 client 选择。
+从而收口资源 transport registry、仅用于 PE 的 drawer 配置和页面重复 transport 选择。
 
 这些是前端到现有 Hono API 的 Adapter，不是写入实现。后端仍由各业务模块实现专用
 create/update、`createDraft`、`replaceDraft` 和命令服务。
@@ -98,6 +100,14 @@ registry 的静默 fallback 已删除。Grid Meta 由前端 `gridMetaFromDocumen
 命令经 CommandAdapter；基础表单经 `basicFormDrawerProps`；复杂表单经业务共置
 Presentation Extension。ResourceBinding 是唯一资源→Adapter 关联。
 
+contract 后复核进一步收口：`FormMeta.fields` 已由 `Record<string, unknown>` 改为受限的
+`FormFieldMeta`，basic form 在 Registry 规范化时拒绝重复 `required/edit/label`；
+17 个 basic 资源全部由 `useCatalogBasicForm` 消费。25 个资源的 53 个声明命令全部由
+显式 CommandAdapter 覆盖，Proxy/action fallback 为零。`ResourceTransport` 的写方法
+按真实能力可选，不支持的写方法直接缺席；聚合发货 transport 不再伪装普通 create/update。
+PE drawer registry 只保留 21 个实际调用的复杂配置，不再为 basic、none、子资源或模块
+共置 PE 重复维护 label。
+
 ## 否决方案
 
 - **另建低代码平台或完整表单 DSL**：扩大安全与维护面，也把局部重复配置升级成新的
@@ -119,6 +129,7 @@ Presentation Extension。ResourceBinding 是唯一资源→Adapter 关联。
 - Registry 启动 seal 校验跨资源引用、lookup 与布局；非法定义在服务流量前失败。
 - ResourceBinding 区分只读/CRUD/聚合/命令能力；不支持的写方法在 binding 上缺席。
 - 简单主数据走 Basic Form；复杂单据保留 Presentation Extension 与领域 Adapter。
+- Basic Form 的字段事实重复声明在注册时失败；迁移基线同时核对消费者与命令覆盖分母。
 - 打印字段目录从 sealed Catalog 派生，命名与 Resource Catalog 分离。
 
 ## 被取代的旧决策

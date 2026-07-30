@@ -219,3 +219,21 @@ Resource Catalog 不执行保存，也不会根据 table 和 fields 生成万能
 - Product documentation is updated only if a migration changes visible fields, labels, defaults,
   attachments, command behavior or business rules. A behaviorally equivalent migration records that no
   product rule changed.
+
+## Post-contract Verification
+
+- 工单 12 修正了最初基线的漏算与误报：扫描全部资源 transport，而不是硬编码文件清单；
+  basic 消费覆盖按 `useCatalogBasicForm` 的资源实参计算，不再把外键引用页当作表单拥有者。
+- 删除 Registry 运行时强制附加的 `catalogSource=typed`：该标记不能证明定义经过泛型
+  helper。基线现只报告可验证的 97 个已规范化并可 seal 资源。
+- 当前 17 个 basic 资源全部有 Catalog Basic Form 消费者；页面不再直接使用
+  `basicFormDrawerProps`/`useResourceDocument` 拼装基础表单。
+- 当前 25 个命令资源、53 个声明命令全部由显式 CommandAdapter 覆盖；不存在
+  Proxy/action fallback。
+- 不支持的写能力从 ResourceTransport/RecordWriter 结构中缺席；write stub 为零。
+- `FormMeta` 使用 `FormFieldMeta`、typed section/tab 与 order；basic form 重复声明
+  `required/edit/label` 会在注册期失败。
+- Presentation Extension registry 从混合 label 表缩为 21 个实际调用配置。模块共置 PE、
+  basic、none 与子资源不再登记占位项。
+- 本次为等价架构迁移，没有修改领域规则，因此未更新 `docs/产品文档/`；领域术语没有新增，
+  `CONTEXT.md` 无需变更。

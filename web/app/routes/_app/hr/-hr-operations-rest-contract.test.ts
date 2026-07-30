@@ -26,19 +26,27 @@ describe('PR-2.19 人力考勤与薪酬 REST 边界', () => {
     }
   })
 
-  test('七个 Grid 与 Drawer 显式绑定 REST client', () => {
+  test('只读/extension 绑定 REST transport，三个 basic 资源绑定 Catalog Form', () => {
     const bindings = [
       ['./attendance/punches.tsx', 'attendancePunchClient'],
       ['./attendance/imports.tsx', 'attendanceImportClient'],
       ['./attendance/days.tsx', 'attendanceDayClient'],
-      ['./attendance/corrections.tsx', 'attendanceCorrectionClient'],
       ['./payroll/slips.tsx', 'payrollClient'],
-      ['./payroll/payments.tsx', 'payrollPaymentClient'],
-      ['./payroll/loans.tsx', 'employeeLoanClient'],
     ] as const
 
     for (const [page, client] of bindings) {
       expect(source(page)).toContain(`client={${client}}`)
+    }
+
+    for (const [page, resource] of [
+      ['./attendance/corrections.tsx', 'hrAttendanceCorrections'],
+      ['./payroll/loans.tsx', 'hrEmployeeLoans'],
+      ['./payroll/-payments-section.tsx', 'hrPayrollPayments'],
+      ['./payroll/payments.tsx', 'hrPayrollPayments'],
+    ] as const) {
+      const text = source(page)
+      expect(text).toContain('useCatalogBasicForm')
+      expect(text).toContain(`'${resource}'`)
     }
   })
 
@@ -58,19 +66,17 @@ describe('PR-2.19 人力考勤与薪酬 REST 边界', () => {
     }
   })
 
-  test('工资发放子表与全部自定义表单复用 REST client', () => {
+  test('工资发放与 basic 自定义部分经 binding.writer，复杂表单保留领域 helper', () => {
     const payments = source('./payroll/-payments-section.tsx')
     expect(payments).toContain('queryPayrollPayments')
-    expect(payments).toContain('createPayrollPayment')
-    expect(payments).toContain('deletePayrollPayment')
+    expect(payments).toContain('paymentForm.binding.writer.create')
+    expect(payments).toContain('paymentForm.binding.writer.delete')
 
     expect(source('./attendance/-import-drawers.tsx')).toContain(
       'createAttendanceImport',
     )
-    expect(source('./attendance/corrections.tsx')).toContain(
-      'saveAttendanceCorrection',
-    )
+    expect(source('./attendance/corrections.tsx')).toContain('binding.writer.update')
     expect(source('./payroll/slips.tsx')).toContain('savePayroll')
-    expect(source('./payroll/loans.tsx')).toContain('saveEmployeeLoan')
+    expect(source('./payroll/loans.tsx')).toContain('binding.writer.update')
   })
 })

@@ -93,18 +93,20 @@ argon2id 校验路径；10 次/300 秒后限流。JWT 使用 HS256，`iss=synie`
 
 ### Resource Catalog
 
-> **2026-07-30 已接受目标设计，尚未实施**：本节描述 ADR 的目标形状；当前代码仍位于
-> `server/src/platform/meta/`，迁移由 `.scratch/resource-catalog/` 跟踪。
+> **2026-07-30 已实施**：ResourceDocument v2、ResourceBinding、Basic Form、
+> Presentation Extension、AggregateDraftAdapter 与 CommandAdapter 已完成 contract；
+> 当前基线与后续回归记录在 `.scratch/resource-catalog/`。
 
 所有业务模块的资源定义只在组合根显式注册一次；注册完成后 Catalog 必须 seal，
 并跨资源校验字段、枚举、外键、布局字段引用与动作能力。Catalog 从权威
 `ResourceDefinition` 投影带版本的 `ResourceDocument`，按 Actor 裁剪字段引用与
 capabilities，并为动态列表派生不可变的 `ResourceReadSpec`。
 
-前端单独获取并缓存完整 ResourceDocument，不再由 `ResourceClient.meta()` 返回
-Grid 子集。普通 CRUD 绑定 `ResourceReader` 与可选 `RecordWriter`；聚合草稿和领域命令
-分别绑定 `AggregateDraftAdapter` 与 `CommandAdapter`。动态 React 行为只放在与业务
-模块共置的 Presentation Extension，不能进入 wire 元数据。
+前端单独获取并缓存完整 ResourceDocument。HTTP `ResourceTransport` 只暴露实际存在的
+query/get/create/update/delete；`ResourceBinding` 将其收口为 `ResourceReader` 与可选
+`RecordWriter`。聚合草稿和领域命令分别绑定 `AggregateDraftAdapter` 与显式
+`CommandAdapter`，不提供 Proxy/action fallback。动态 React 行为只放在与业务模块
+共置的 Presentation Extension，不能进入 wire 元数据。
 
 ### base/currency
 

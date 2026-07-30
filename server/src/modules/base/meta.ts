@@ -64,8 +64,8 @@ export function currencyResourceMeta(): ResourceMeta {
       kind: 'basic',
       exclude: ['id', 'active', 'insertedAt', 'updatedAt'],
       fields: {
-        name: { required: true, placeholder: '如 人民币' },
-        isoCode: { required: true, edit: 'createOnly', placeholder: '三位大写字母,如 CNY' },
+        name: { placeholder: '如 人民币' },
+        isoCode: { placeholder: '三位大写字母,如 CNY' },
         symbol: { placeholder: '如 ¥' },
       },
     },
@@ -120,13 +120,11 @@ export function companyResourceMeta(): ResourceMeta {
       kind: 'basic',
       exclude: ['id'],
       fields: {
-        code: { required: true, edit: 'createOnly', placeholder: '两位英文字母,如 SH' },
-        name: { required: true, placeholder: '如 上海总部' },
-        shortName: { required: true, placeholder: '如 上海' },
+        code: { placeholder: '两位英文字母,如 SH' },
+        name: { placeholder: '如 上海总部' },
+        shortName: { placeholder: '如 上海' },
         // 本币：记账主体的记账货币；仅启用币种可选（拦新不拦旧）
         baseCurrencyId: {
-          required: true,
-          label: '本币',
           filterState: { active: { kind: 'bool', eq: true } },
         },
         parentId: {},
@@ -188,12 +186,12 @@ export function unitResourceMeta(): ResourceMeta {
       kind: 'basic',
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
-        unitType: { required: true },
+        unitType: {},
         isBase: {},
-        name: { required: true, placeholder: '如 千克', cols: 6 },
-        symbol: { required: true, placeholder: '如 kg', cols: 6 },
+        name: { placeholder: '如 千克', span: 6 },
+        symbol: { placeholder: '如 kg', span: 6 },
         // 基准单位比例恒为 1(后端校验)；普通单位填换算到基准单位的比例
-        ratio: { required: true, defaultValue: 1, placeholder: '换算到基准单位的比例' },
+        ratio: { initial: 1, placeholder: '换算到基准单位的比例' },
       },
     },
     lookup: {

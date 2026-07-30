@@ -22,6 +22,7 @@ import { registerNumberingResources } from '~/platform/numbering/index.ts'
 import { registerPrintingResources } from '~/platform/printing/index.ts'
 import { registerSettingResources } from '~/platform/settings/index.ts'
 import { createRegistry, type Registry } from './registry.ts'
+import { assertClassificationCoverage } from './resource-classification.ts'
 
 /**
  * 将全部产品资源注册进给定 Registry（幂等要求：registry 必须为空且未 seal）。
@@ -46,6 +47,8 @@ export function registerAllResources(registry: Registry): void {
   registerManufacturingResources(registry)
   // 打印模板 Meta 在业务域之后（字段目录自 Registry fail-closed 派生）
   registerPrintingResources(registry)
+  // 产品组合根 fail-closed；局部测试/插件 Registry 可注册自己的资源。
+  assertClassificationCoverage(registry.list().map((resource) => resource.name))
 }
 
 /** 创建已注册并 seal 的完整 Registry（生产与集成测试首选入口） */

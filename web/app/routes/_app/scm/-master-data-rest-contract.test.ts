@@ -11,6 +11,10 @@ const drawerRegistry = readFileSync(
   join(import.meta.dirname, '../../../components/synie-record-drawer/extension-drawer-props.tsx'),
   'utf8',
 )
+const employeePresentation = readFileSync(
+  join(import.meta.dirname, '../../../lib/resources/presentation/employee.tsx'),
+  'utf8',
+)
 
 const FORBIDDEN_GRAPHQL_MARKERS = {
   customers: ['gqlFetch', 'CREATE_CUSTOMER', 'UPDATE_CUSTOMER', 'createSalCustomer', 'updateSalCustomer'],
@@ -25,10 +29,14 @@ describe('客户/供应商/员工页 REST 迁移契约', () => {
     for (const marker of FORBIDDEN_GRAPHQL_MARKERS.employees) expect(employees).not.toContain(marker)
   })
 
-  test('三个 Grid 与三个 Drawer 均显式传入对应 ResourceClient', () => {
-    expect(customers.match(/client=\{customerClient\}/g)).toHaveLength(2)
-    expect(suppliers.match(/client=\{supplierClient\}/g)).toHaveLength(2)
-    expect(employees.match(/client=\{employeeClient\}/g)).toHaveLength(2)
+  test('客户/员工走 PE，供应商走 Catalog Basic Form', () => {
+    expect(customers).toContain('createCustomerPresentation(binding)')
+    expect(customers.match(/client=\{client\}/g)).toHaveLength(2)
+    expect(suppliers).toContain("const RESOURCE = 'purSuppliers'")
+    expect(suppliers).toContain('useCatalogBasicForm(RESOURCE')
+    expect(suppliers.match(/client=\{client\}/g)).toHaveLength(2)
+    expect(employees).toContain('createEmployeePresentation(binding)')
+    expect(employees.match(/client=\{client\}/g)).toHaveLength(2)
   })
 
   test('registry 让跨页面远程选择器与 FK 速览使用 REST client', () => {
@@ -42,7 +50,12 @@ describe('客户/供应商/员工页 REST 迁移契约', () => {
   })
 
   test('员工编号创建可空自动取号且编辑态仍可修改', () => {
-    expect(drawerRegistry).toContain("code: { order: 0, cols: 6, required: false, placeholder: '留空自动编号' }")
-    expect(drawerRegistry).not.toContain("code: { order: 0, cols: 6, required: false, edit: 'createOnly'")
+    expect(employeePresentation).toContain(
+      "code: { order: 0, cols: 6, required: false, placeholder: '留空自动编号' }",
+    )
+    expect(employeePresentation).not.toContain(
+      "code: { order: 0, cols: 6, required: false, edit: 'createOnly'",
+    )
+    expect(drawerRegistry).not.toContain('hrEmployees:')
   })
 })

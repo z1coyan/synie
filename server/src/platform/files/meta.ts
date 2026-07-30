@@ -275,10 +275,15 @@ export function storageResourceMeta(): ResourceMeta {
     form: {
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
-        name: { edit: 'createOnly' },
-        kind: { edit: 'createOnly' },
-        builtin: { edit: 'readOnly' },
-        isDefault: { edit: 'readOnly' },
+        name: { span: 6, placeholder: '如 oss-hz,建后不可改' },
+        label: { span: 6, placeholder: '如 杭州 OSS' },
+        kind: { span: 6 },
+        region: { span: 6, placeholder: '如 cn-hangzhou,可留空' },
+        root: { placeholder: '如 uploads(相对后端工作目录)或 /var/synie/uploads' },
+        endpoint: {
+          placeholder: '如 https://oss-cn-hangzhou.aliyuncs.com 或 http://127.0.0.1:9000',
+        },
+        prefix: { placeholder: '对象键前缀(默认路径),可留空' },
       },
     },
 

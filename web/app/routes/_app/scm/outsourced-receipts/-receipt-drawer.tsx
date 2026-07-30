@@ -23,6 +23,7 @@ import {
   purchaseOrderItemMaterialClient,
 } from '~/lib/resources/orders'
 import type { ResourceClient } from '~/lib/resources/types'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -68,8 +69,11 @@ export const receiptAuditConfig = {
         },
       })
       .then((result) => result.results),
-  audit: (receiptId: string) =>
-    purchaseOutsourcedReceiptClient.action!('audit', [receiptId]),
+  audit: (receiptId: string) => {
+    const commands = resourceBindingFor('purOutsourcedReceipts').commands
+    if (!commands) throw new Error('委外入库单未绑定 audit 命令')
+    return commands.execute('audit', { id: receiptId })
+  },
 } satisfies AuditDocConfig
 
 const ReceiptDrawerContext = createContext<OpenReceiptDrawer>(() => {})

@@ -1,6 +1,7 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import type { ResourceClient, ResourceQuery } from './types'
+import { createRowCommandAdapter } from './catalog/commands'
+import type { ResourceClient, ResourceQuery, ResourceTransport } from './types'
 
 type MaterialCategoryCreate = Record<string, unknown>
 type MaterialCategoryUpdate = Record<string, unknown>
@@ -202,11 +203,7 @@ export const warehouseClient: ResourceClient = {
   },
 }
 
-function readonlyMutation(resource: string): never {
-  throw new Error(`${resource} 是只读资源`)
-}
-
-export const stockEntryClient: ResourceClient = {
+export const stockEntryClient: ResourceTransport = {
   id: 'rest:invStockEntries',
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
@@ -218,15 +215,6 @@ export const stockEntryClient: ResourceClient = {
     return (await apiData(
       api.inventory['stock-entries'][':id'].$get({ param: { id } }),
     )) as Row
-  },
-  async create() {
-    return readonlyMutation('库存分录')
-  },
-  async update() {
-    return readonlyMutation('库存分录')
-  },
-  async delete() {
-    readonlyMutation('库存分录')
   },
 }
 
@@ -261,18 +249,20 @@ export const stockDocClient: ResourceClient = {
       api.inventory['stock-docs'][':id'].$delete({ param: { id } }),
     )
   },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') {
-        await apiData(api.inventory['stock-docs'][':id'].audit.$post({ param: { id } }))
-      } else if (key === 'void') {
-        await apiData(api.inventory['stock-docs'][':id'].void.$post({ param: { id } }))
-      } else {
-        throw new Error(`库存出入库单不支持动作 ${key}`)
-      }
-    }
-  },
 }
+
+async function auditStockDoc(id: string) {
+  return apiData(api.inventory['stock-docs'][':id'].audit.$post({ param: { id } }))
+}
+
+async function voidStockDoc(id: string) {
+  return apiData(api.inventory['stock-docs'][':id'].void.$post({ param: { id } }))
+}
+
+export const stockDocCommandAdapter = createRowCommandAdapter({
+  audit: auditStockDoc,
+  void: voidStockDoc,
+})
 
 export const stockDocItemClient: ResourceClient = {
   id: 'rest:invStockDocItems',
@@ -337,18 +327,16 @@ export const stockTransferClient: ResourceClient = {
       api.inventory['stock-transfers'][':id'].$delete({ param: { id } }),
     )
   },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'ship') {
-        await apiData(api.inventory['stock-transfers'][':id'].ship.$post({ param: { id } }))
-      } else if (key === 'receive') {
-        await receiveStockTransfer(id, {})
-      } else {
-        throw new Error(`库存调拨单不支持动作 ${key}`)
-      }
-    }
-  },
 }
+
+async function shipStockTransfer(id: string) {
+  return apiData(api.inventory['stock-transfers'][':id'].ship.$post({ param: { id } }))
+}
+
+export const stockTransferCommandAdapter = createRowCommandAdapter({
+  ship: shipStockTransfer,
+  receive: (id) => receiveStockTransfer(id, {}),
+})
 
 export const stockTransferItemClient: ResourceClient = {
   id: 'rest:invStockTransferItems',
@@ -413,18 +401,20 @@ export const stockCountClient: ResourceClient = {
       api.inventory['stock-counts'][':id'].$delete({ param: { id } }),
     )
   },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'approve') {
-        await apiData(api.inventory['stock-counts'][':id'].approve.$post({ param: { id } }))
-      } else if (key === 'cancel') {
-        await apiData(api.inventory['stock-counts'][':id'].cancel.$post({ param: { id } }))
-      } else {
-        throw new Error(`库存盘点单不支持动作 ${key}`)
-      }
-    }
-  },
 }
+
+async function approveStockCount(id: string) {
+  return apiData(api.inventory['stock-counts'][':id'].approve.$post({ param: { id } }))
+}
+
+async function cancelStockCount(id: string) {
+  return apiData(api.inventory['stock-counts'][':id'].cancel.$post({ param: { id } }))
+}
+
+export const stockCountCommandAdapter = createRowCommandAdapter({
+  approve: approveStockCount,
+  cancel: cancelStockCount,
+})
 
 export const stockCountItemClient: ResourceClient = {
   id: 'rest:invStockCountItems',

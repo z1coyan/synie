@@ -1,6 +1,6 @@
 /**
  * Resource Catalog 前端端口：按能力拆分 Reader / Writer / Draft / Command。
- * expand 期与 legacy ResourceClient 并存；binding 是唯一资源→Adapter 关联。
+ * contract 后 binding 是唯一资源→Adapter 关联；HTTP transport 不拥有 Meta 或命令。
  */
 import type { ResourceDocument } from '@synie/shared'
 import type { ResourceList, ResourceQuery } from '../types'
@@ -81,7 +81,7 @@ export interface ResourceBinding<
   TRow = Row,
   TCreate = Record<string, unknown>,
   TUpdate = Record<string, unknown>,
-  /** expand 期默认 unknown，便于异构 draft 挂入 Map；具体资源可用类型参数收窄 */
+  /** 异构 registry 默认 unknown；具体资源绑定可用类型参数收窄 */
   TDraft = unknown,
   TSaved = unknown,
   TCommands extends CommandMap = CommandMap,

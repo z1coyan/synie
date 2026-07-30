@@ -20,14 +20,14 @@ const superAdmin: Actor = {
 }
 
 describe('Resource Catalog seal 与 v2 投影', () => {
-  test('全部基线资源可 seal，typed 全覆盖', () => {
+  test('全部基线资源可规范化并 seal', () => {
     const registry = createRegistry()
     registerAllResources(registry)
     expect(registry.isSealed()).toBe(false)
     const report = registry.seal()
     expect(registry.isSealed()).toBe(true)
     expect(report.total).toBe(97)
-    expect(report.typed).toBe(97)
+    expect(report.normalized).toBe(97)
   })
 
   test('seal 后禁止继续注册', () => {
@@ -123,6 +123,41 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     const doc = registry.buildDocument('basCurrencies', superAdmin)
     expect(doc.commands).toEqual([])
     expect(doc.capabilities).toEqual(expect.arrayContaining(['create', 'update', 'delete']))
+  })
+
+  test('basic FormMeta 不得重复 required/edit/label 字段事实', () => {
+    const registry = createRegistry()
+    const broken = currencyResourceMeta()
+    broken.form!.fields!.name = {
+      ...broken.form!.fields!.name,
+      required: true,
+    }
+    expect(() => registry.register(broken)).toThrow(/重复字段事实: required/)
+  })
+
+  test('FormMeta 字段引用在注册期 fail-closed', () => {
+    const registry = createRegistry()
+    const broken = currencyResourceMeta()
+    broken.form!.fields!.notAField = { placeholder: 'typo' }
+    expect(() => registry.register(broken)).toThrow(
+      /form\.fields 引用未知字段: notAField/,
+    )
+  })
+
+  test('basic FormMeta order 只控制布局顺序', () => {
+    const registry = createRegistry()
+    const meta = currencyResourceMeta()
+    meta.form!.fields!.name = { ...meta.form!.fields!.name, order: -10 }
+    meta.form!.fields!.isoCode = { ...meta.form!.fields!.isoCode, order: -20 }
+    registry.register(meta)
+    const doc = registry.buildDocument('basCurrencies', superAdmin)
+    expect(doc.form.kind).toBe('basic')
+    if (doc.form.kind === 'basic') {
+      expect(doc.form.layout.fields?.slice(0, 2).map((field) => field.field)).toEqual([
+        'isoCode',
+        'name',
+      ])
+    }
   })
 
   test('断裂外键引用在 seal 时失败', () => {

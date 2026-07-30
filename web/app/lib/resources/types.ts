@@ -17,27 +17,23 @@ export interface ResourceList {
 }
 
 /**
- * 资源 HTTP 传输对象：query/get + 可选写。
- * contract 后：
- * - 不再拥有 meta()（Grid Meta 从 ResourceDocument 派生）
- * - 不再拥有 action()（命令经 CommandAdapter）
- * - 不支持的写方法可省略或在 binding 层不暴露
+ * 资源 HTTP 传输对象：query/get + 实际存在的普通记录写。
  *
- * 能力边界以 ResourceBinding 为准；本类型仅是 transport 实现细节。
+ * 命令不属于 transport；只经 ResourceBinding.commands 暴露。不支持的写方法省略，
+ * 禁止用抛错 stub 伪装能力。
  */
 export interface ResourceTransport {
   readonly id: string
   query(input: ResourceQuery): Promise<ResourceList>
   get(id: string): Promise<Row | null>
-  create(input: Record<string, unknown>): Promise<Row>
-  update(id: string, input: Record<string, unknown>): Promise<Row>
-  delete(id: string): Promise<void>
-  /**
-   * 历史命令桥：仅用于构造 binding.commands；不进 Grid Meta transport。
-   * 新代码请用 createCommandAdapter / defineCommand。
-   */
-  action?(key: string, ids: string[]): Promise<void>
+  create?(input: Record<string, unknown>): Promise<Row>
+  update?(id: string, input: Record<string, unknown>): Promise<Row>
+  delete?(id: string): Promise<void>
 }
 
-/** @deprecated 使用 ResourceTransport；能力组合请用 ResourceBinding */
-export type ResourceClient = ResourceTransport
+/**
+ * 需要完整普通 CRUD 的旧调用点。新模块优先依赖 ResourceBinding.writer 的实际能力。
+ * 该别名不会被只读/部分写资源实现。
+ */
+export type ResourceClient = ResourceTransport &
+  Required<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>

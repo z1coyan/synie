@@ -67,7 +67,7 @@ registerAllResources(registry)
 const sealReport = registry.seal()
 logJson('info', 'meta.catalog.sealed', {
   total: sealReport.total,
-  typed: sealReport.typed,
+  normalized: sealReport.normalized,
 })
 
 const settings = createSettingsService(db, {

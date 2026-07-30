@@ -102,10 +102,28 @@ export function printTemplateResourceMeta(): ResourceMeta {
       { key: 'create', label: '新增', scope: 'both' },
       { key: 'update', label: '编辑', scope: 'row' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
+      {
+        key: 'setDefault',
+        label: '设为默认',
+        scope: 'row',
+        commandTarget: 'row',
+        permissionAction: 'update',
+      },
+      {
+        key: 'unsetDefault',
+        label: '取消默认',
+        scope: 'row',
+        commandTarget: 'row',
+        permissionAction: 'update',
+      },
     ],
     form: {
       exclude: ['id', 'isDefault', 'insertedAt', 'updatedAt'],
-      fields: { resource: { edit: 'createOnly' } },
+      fields: {
+        name: { span: 6 },
+        resource: { span: 6 },
+        remarks: { span: 12 },
+      },
     },
   }
 }

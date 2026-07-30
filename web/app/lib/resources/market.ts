@@ -1,6 +1,7 @@
 import { apiData, api } from '../api/client'
 import type {Row, FilterState} from '~/components/synie-data-grid/types'
-import type { ResourceClient, ResourceQuery } from './types'
+import { createRowCommandAdapter } from './catalog/commands'
+import type { ResourceClient, ResourceQuery, ResourceTransport } from './types'
 
 export interface MarketChartInstrument {
   id: string
@@ -98,7 +99,19 @@ export const marketInstrumentClient: ResourceClient = {
   },
 }
 
-export const marketPricePointClient: ResourceClient = {
+export async function voidMarketPricePoint(id: string) {
+  return apiData(
+    api.base['market-price-points'][':id'].void.$post({
+      param: { id },
+    }),
+  )
+}
+
+export const marketPricePointCommandAdapter = createRowCommandAdapter({
+  void: voidMarketPricePoint,
+})
+
+export const marketPricePointClient: ResourceTransport = {
   id: 'rest:basMarketPricePoints',
 
 
@@ -124,25 +137,6 @@ export const marketPricePointClient: ResourceClient = {
     )) as Row
   },
 
-  async update() {
-    throw new Error('行情价点不可编辑；请作废后重新录入')
-  },
-
-  async delete() {
-    throw new Error('行情价点不可删除；请使用作废操作')
-  },
-
-  async action(key, ids) {
-    if (key !== 'void') throw new Error(`行情价点不支持操作 ${key}`)
-    await Promise.all(
-      ids.map((id) =>
-        apiData(
-          api.base['market-price-points'][':id'].void.$post({
-            param: { id }}),
-        ),
-      ),
-    )
-  },
 }
 
 export function getMarketChartInstruments(): Promise<MarketChartInstrument[]> {

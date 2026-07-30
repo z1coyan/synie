@@ -29,9 +29,13 @@ describe('行情页 REST 迁移契约', () => {
     expect(source).not.toContain("capabilities ?? []).includes('read')")
   })
 
-  test('两个 Grid 与两个 Drawer 均显式传入 ResourceClient', () => {
-    expect(source.match(/resource="basMarketPricePoints"\s+client=\{marketPricePointClient\}/g)).toHaveLength(2)
-    expect(source.match(/resource="basMarketInstruments"\s+client=\{marketInstrumentClient\}/g)).toHaveLength(2)
+  test('两个 Grid 与两个 Drawer 均消费 Catalog Basic Form transport', () => {
+    expect(source).toContain("useCatalogBasicForm('basMarketPricePoints'")
+    expect(source).toContain("useCatalogBasicForm('basMarketInstruments'")
+    expect(source).toContain('client={priceForm.client}')
+    expect(source).toContain('client={instrumentForm.client}')
+    expect(source.match(/resource="basMarketPricePoints"\s+client=\{marketPricePointClient\}/g)).toHaveLength(1)
+    expect(source.match(/resource="basMarketInstruments"\s+client=\{marketInstrumentClient\}/g)).toHaveLength(1)
   })
 
   test('行情相关远程选择器从 shared resolver 获得 REST client', () => {

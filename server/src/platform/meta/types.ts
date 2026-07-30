@@ -102,10 +102,6 @@ export interface ResourceMeta {
   printHead?: boolean
   printLoops?: PrintLoopMeta[]
   audit?: { enabled: boolean; sensitiveFields?: string[] }
-  /**
-   * 写入路径标记。contract 后仅允许 'typed'。
-   */
-  catalogSource?: 'typed'
 }
 
 /** 标准十件套（permission catalog 与 capabilities 的基准） */

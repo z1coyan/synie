@@ -15,7 +15,6 @@ export type ResourceDrawerConfig = Pick<
 > & { label: string }
 
 const registry: Record<string, ResourceDrawerConfig> = {
-  sysUsers: { label: '用户' },
   sysRoles: {
     label: '角色',
     // 启用是状态不是表单字段(规范):新建默认启用,启停走列表行动作
@@ -27,17 +26,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       builtin: { visible: () => false },
     },
   },
-  // 字段/exclude/placeholder/filterState 由 Resource Catalog Basic Form 投影（页面经 basicFormDrawerProps）
-  basCompanies: { label: '公司' },
-  basCurrencies: { label: '货币' },
-  basUnits: { label: '单位' },
-  purSuppliers: { label: '供应商' },
-  // 字段/effects 由 basAccounts Presentation Extension 拥有（页面经 createAccountPresentation）
-  basAccounts: { label: '科目' },
-  // basic 资源：字段事实由 Catalog Basic Form 投影，本表仅保留 label
-  basMarketInstruments: { label: '行情品种' },
-  basMarketPricePoints: { label: '行情价点' },
-  salCustomers: { label: '客户' },
   salOrders: {
     label: '销售订单',
     // 条目表 8 列,默认 480px 太挤,订单抽屉加宽(移动端仍全宽)
@@ -141,7 +129,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       },
     },
   },
-  salOrderItems: { label: '订单条目' },
   salQuotations: {
     label: '销售报价单',
     // 条目表含梯度概要列,默认 480px 太挤,报价抽屉加宽(移动端仍全宽)
@@ -236,8 +223,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       },
     },
   },
-  salQuotationItems: { label: '报价条目' },
-  salQuotationTiers: { label: '价格档' },
   purQuotations: {
     label: '采购报价单',
     // 条目表含梯度概要列,默认 480px 太挤,报价抽屉加宽(移动端仍全宽)
@@ -332,8 +317,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       },
     },
   },
-  purQuotationItems: { label: '采购报价条目' },
-  purQuotationTiers: { label: '采购报价价格档' },
   purOrders: {
     label: '采购订单',
     // 条目表 8 列,默认 480px 太挤,订单抽屉加宽(移动端仍全宽)
@@ -437,7 +420,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       },
     },
   },
-  purOrderItems: { label: '采购订单条目' },
   purReceipts: {
     label: '采购入库单',
     contentClassName: 'w-full lg:w-[960px]',
@@ -515,7 +497,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       },
     },
   },
-  purReceiptItems: { label: '入库条目' },
   purOutsourcedReceipts: {
     label: '委外入库单',
     contentClassName: 'w-full lg:w-[960px]',
@@ -597,9 +578,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       },
     },
   },
-  purOutsourcedReceiptItems: { label: '委外入库条目' },
-  purOutsourcedReceiptItemMaterials: { label: '委外入库材料扣减行' },
-  purOutsourcedReceiptItemByproducts: { label: '委外入库副产物行' },
   purOutsourcedIssues: {
     label: '委外发料单',
     contentClassName: 'w-full lg:w-[960px]',
@@ -670,7 +648,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       remarks: { order: 6, label: '备注' },
     },
   },
-  purOutsourcedIssueItems: { label: '委外发料条目' },
   purReconciliations: {
     label: '采购对账单',
     contentClassName: 'w-full lg:w-[960px]',
@@ -772,13 +749,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       creditAccountId: { order: 101, cols: 6, required: true, label: '贷方科目', hidden: true },
     },
   },
-  purReconciliationItems: { label: '对账条目' },
-  hrAttendancePunches: { label: '打卡记录' },
-  hrAttendanceImports: { label: '考勤导入' },
-  // 字段/身份证影像由 hrEmployees Presentation Extension 拥有
-  hrEmployees: { label: '员工' },
-  // basic：字段由 Catalog Basic Form 投影
-  mfgOperations: { label: '工序' },
   mfgProcessTemplates: {
     label: '工艺模板',
     // 工艺步骤 4 列,默认 480px 太挤,模板抽屉加宽(同物料先例;移动端仍全宽)
@@ -798,7 +768,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       updatedAt: { order: 99 },
     },
   },
-  mfgProcessTemplateItems: { label: '工艺步骤' },
   mfgBoms: {
     label: 'BOM',
     // 配料 5 列,默认 480px 太挤,BOM 抽屉加宽(同订单先例;移动端仍全宽)
@@ -823,9 +792,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       updatedAt: { order: 99 },
     },
   },
-  mfgBomComponents: { label: '配料' },
-  mfgBomRoutes: { label: '工艺路线' },
-  mfgBomByproducts: { label: '副产品' },
   mfgDemands: {
     label: '履约需求单',
     contentClassName: 'w-full lg:w-[960px]',
@@ -841,7 +807,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       remarks: { order: 2 },
     },
   },
-  mfgDemandItems: { label: '需求行' },
   mfgWorkOrders: {
     label: '生产工单',
     exclude: ['status', 'createdById', 'insertedAt', 'updatedAt', 'qty', 'baseQty', 'receivedBaseQty'],
@@ -871,13 +836,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       remarks: { order: 3 },
     },
   },
-  mfgOutputItems: { label: '入库行' },
-  // mfgSetting 历史拼写已删除；服务端/client 为 mfgSettings，设置页专用表单不经 drawer
-  mfgSettings: { label: '生产设置' },
-  // 字段/tabs/effects 由 invMaterials Presentation Extension 拥有
-  invMaterials: { label: '物料' },
-  invMaterialUnits: { label: '单位转换' },
-  invWarehouses: { label: '仓库' },
   invStockDocs: {
     label: '手工出入库单',
     // 行表格 6 列,默认 480px 太挤,单据抽屉加宽(同销售订单先例;移动端仍全宽)
@@ -898,7 +856,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       remarks: { order: 5, label: '备注' },
     },
   },
-  invStockDocItems: { label: '出入库行' },
   salDeliveries: {
     label: '销售发货单',
     contentClassName: 'w-full lg:w-[960px]',
@@ -976,7 +933,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       creditAccountId: { order: 101, cols: 6, required: true, label: '贷方科目', hidden: true },
     },
   },
-  salDeliveryItems: { label: '发货条目' },
   salReconciliations: {
     label: '销售对账单',
     contentClassName: 'w-full lg:w-[960px]',
@@ -1078,7 +1034,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       },
     },
   },
-  salReconciliationItems: { label: '对账条目' },
   invStockTransfers: {
     label: '手工调拨单',
     contentClassName: 'w-full lg:w-[880px]',
@@ -1106,7 +1061,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       remarks: { order: 6, label: '备注' },
     },
   },
-  invStockTransferItems: { label: '手工调拨行' },
   invStockCounts: {
     label: '库存盘点单',
     // 行表格 6 列(含差异计算列),默认 480px 太挤,单据抽屉加宽(同手工出入库单先例;移动端仍全宽)
@@ -1125,8 +1079,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       remarks: { order: 4, label: '备注' },
     },
   },
-  invStockCountItems: { label: '盘点行' },
-  invStockEntries: { label: '库存分录' },
   hrPayrolls: {
     label: '工资单',
     fields: {
@@ -1140,23 +1092,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       paidTotal: { render: (v) => formatAmount(v) },
     },
   },
-  // basic：金额展示格式由页面合并 catalog fields 后叠加 render（非 required/edit 事实）
-  hrPayrollPayments: { label: '发放记录' },
-  hrEmployeeLoans: { label: '员工借款' },
-  sysAuditLogs: { label: '操作日志' },
-  sysNumberingRules: { label: '编号规则' },
-  sysNumberingCounters: { label: '计数器' },
-  accGlJournals: { label: '凭证' },
-  accGlJournalLines: { label: '分录行' },
-  accGlEntries: { label: '分录' },
-  accBankAccounts: { label: '银行账户' },
-  accBankTransactions: { label: '银行流水' },
-  accBankImportTemplates: { label: '流水导入模板' },
-  accBankImports: { label: '流水导入' },
-  accBankImportItems: { label: '导入行' },
-  accVatInvoices: { label: '增值税发票' },
-  accExpenseReports: { label: '报销单' },
-  accExpenseReportItems: { label: '报销行' },
   // 票据台账页已并入持有承兑(票面修正走持有段行操作),这里是票据档案的唯一全量呈现:
   // 任何 billId fk 速览(含已处置票的历史交易行)都能看到完整票面+影像附件
   accBills: {
@@ -1198,13 +1133,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
       />
     ),
   },
-  accBillTransactions: { label: '承兑交易' },
-  accBillHoldings: { label: '持有承兑' },
-  accBankReconciliations: { label: '对账记录' },
-  // 文件速览:存储配置/对象键是实现细节,不进详情
-  sysFiles: { label: '文件', exclude: ['storage', 'key'] },
-  sysStorages: { label: '存储接入' },
-  sysPrintTemplates: { label: '打印模板' },
 }
 
 /**

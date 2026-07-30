@@ -1,5 +1,6 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { createRowCommandAdapter } from './catalog/commands'
 import type { ResourceClient, ResourceQuery } from './types'
 
 type FilterDocument = FilterState
@@ -43,7 +44,6 @@ interface ClientOperations {
   create(input: Record<string, unknown>): Promise<Row>
   update(id: string, input: Record<string, unknown>): Promise<Row>
   delete(id: string): Promise<void>
-  action?: (key: string, ids: string[]) => Promise<void>
 }
 
 function resourceClient(
@@ -84,6 +84,16 @@ export async function voidPurchaseQuotation(id: string) {
   )
 }
 
+export const salesQuotationCommandAdapter = createRowCommandAdapter({
+  audit: auditSalesQuotation,
+  void: voidSalesQuotation,
+})
+
+export const purchaseQuotationCommandAdapter = createRowCommandAdapter({
+  audit: auditPurchaseQuotation,
+  void: voidPurchaseQuotation,
+})
+
 export const salesQuotationClient = resourceClient('salQuotations', {
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
@@ -112,13 +122,6 @@ export const salesQuotationClient = resourceClient('salQuotations', {
     await apiData<void>(
       api.sales.quotations[':id'].$delete({ param: { id } }),
     )
-  },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditSalesQuotation(id)
-      else if (key === 'void') await voidSalesQuotation(id)
-      else throw new Error(`销售报价 REST Client 未实现动作 ${key}`)
-    }
   },
 })
 
@@ -214,13 +217,6 @@ export const purchaseQuotationClient = resourceClient('purQuotations', {
     await apiData<void>(
       api.purchase.quotations[':id'].$delete({ param: { id } }),
     )
-  },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditPurchaseQuotation(id)
-      else if (key === 'void') await voidPurchaseQuotation(id)
-      else throw new Error(`采购报价 REST Client 未实现动作 ${key}`)
-    }
   },
 })
 

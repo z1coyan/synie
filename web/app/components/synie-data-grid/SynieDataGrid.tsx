@@ -5,8 +5,8 @@ import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, Search
 import type { Selection } from 'react-aria-components'
 import { isForbidden } from '~/lib/errors'
 import { useMediaQuery } from '~/lib/use-media-query'
-import { resourceBindingFor, resourceClientFromResourceBinding } from '~/lib/resources/registry'
-import type { ResourceClient } from '~/lib/resources/types'
+import { resourceBindingFor, resourceTransportFromResourceBinding } from '~/lib/resources/registry'
+import type { ResourceTransport } from '~/lib/resources/types'
 import { AttachmentImagesCell } from './attachment-images-cell'
 import { cardFields } from './card-fields'
 import { CardList, type CardSelection } from './card-list'
@@ -66,7 +66,7 @@ export interface SynieDataGridProps {
    * 可选传输覆盖；缺省经 ResourceBinding 解析。
    * Meta 始终从 Catalog 拉取，不经 client.meta。
    */
-  client?: ResourceClient
+  client?: ResourceTransport
   /** 显示列及其顺序(有序白名单);缺省 = meta 全列。与 exclude 二选一即可 */
   columns?: string[]
   exclude?: string[]
@@ -164,7 +164,7 @@ export function selectedRows(selection: Selection, rows: Row[]): Row[] {
 export function SynieDataGrid(props: SynieDataGridProps) {
   const { resource, exclude = EMPTY_EXCLUDE, overrides = EMPTY_OVERRIDES } = props
   const binding = resourceBindingFor(resource)
-  const client = props.client ?? resourceClientFromResourceBinding(resource)
+  const client = props.client ?? resourceTransportFromResourceBinding(resource)
 
   const meta = useGridMeta(resource, true)
   const pickMode = props.pick != null

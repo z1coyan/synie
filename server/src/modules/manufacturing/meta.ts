@@ -104,7 +104,7 @@ function headMeta(
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
         code: { placeholder: '留空自动取号' },
-        name: { required: true },
+        name: {},
       },
     },
     print: true,

@@ -1,6 +1,7 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import type { ResourceClient, ResourceQuery } from './types'
+import { createRowCommandAdapter } from './catalog/commands'
+import type { ResourceQuery, ResourceTransport } from './types'
 
 type FilterDocument = FilterState
 
@@ -27,13 +28,16 @@ function decimalInput(input: Record<string, unknown>, fields: readonly string[])
   return result
 }
 
-function resourceClient(
+type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
+  Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
+
+function resourceClient<const TOperations extends ResourceOperations>(
   resource: string,
-  operations: Omit<ResourceClient, 'id'>,
-): ResourceClient {
+  operations: TOperations,
+): { id: string } & TOperations {
   return {
     id: `rest:${resource}`,
-        ...operations,
+    ...operations,
   }
 }
 
@@ -93,6 +97,20 @@ async function purchaseAction(
   )
 }
 
+export const salesReconciliationCommandAdapter = createRowCommandAdapter({
+  confirm: (id) => salesAction(id, 'confirm'),
+  unconfirm: (id) => salesAction(id, 'unconfirm'),
+  audit: (id) => salesAction(id, 'audit'),
+  void: (id) => salesAction(id, 'void'),
+})
+
+export const purchaseReconciliationCommandAdapter = createRowCommandAdapter({
+  confirm: (id) => purchaseAction(id, 'confirm'),
+  unconfirm: (id) => purchaseAction(id, 'unconfirm'),
+  audit: (id) => purchaseAction(id, 'audit'),
+  void: (id) => purchaseAction(id, 'void'),
+})
+
 export const salesReconciliationClient = resourceClient('salReconciliations', {
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
@@ -123,17 +141,6 @@ export const salesReconciliationClient = resourceClient('salReconciliations', {
       api.sales.reconciliations[':id'].$delete({
         param: { id }}),
     )
-  },
-  async action(key, ids) {
-    if (!['confirm', 'unconfirm', 'audit', 'void'].includes(key)) {
-      throw new Error(`销售对账单 REST Client 未实现动作 ${key}`)
-    }
-    for (const id of ids) {
-      await salesAction(
-        id,
-        key as 'confirm' | 'unconfirm' | 'audit' | 'void',
-      )
-    }
   },
 })
 
@@ -209,17 +216,6 @@ export const purchaseReconciliationClient = resourceClient(
           param: { id }}),
       )
     },
-    async action(key, ids) {
-      if (!['confirm', 'unconfirm', 'audit', 'void'].includes(key)) {
-        throw new Error(`采购对账单 REST Client 未实现动作 ${key}`)
-      }
-      for (const id of ids) {
-        await purchaseAction(
-          id,
-          key as 'confirm' | 'unconfirm' | 'audit' | 'void',
-        )
-      }
-    },
   },
 )
 
@@ -290,9 +286,6 @@ export const companyAccountDefaultClient = resourceClient(
           json: input as never}),
       )) as Row
     },
-    async delete() {
-      throw new Error('公司默认过账科目不支持删除；清配置请将四个科目槽更新为空')
-    },
   },
 )
 
@@ -309,14 +302,5 @@ export const orderFlowItemClient = resourceClient('scmOrderFlowItems', {
       api.scm['order-flow-items'][':id'].$get({
         param: { id }}),
     )) as Row
-  },
-  async create() {
-    throw new Error('订单收发货历史为只读资源')
-  },
-  async update() {
-    throw new Error('订单收发货历史为只读资源')
-  },
-  async delete() {
-    throw new Error('订单收发货历史为只读资源')
   },
 })

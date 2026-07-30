@@ -1,4 +1,4 @@
-import type { ResourceClient, ResourceQuery } from '~/lib/resources/types'
+import type { ResourceQuery, ResourceTransport } from '~/lib/resources/types'
 import type { GridColumnMeta, Row } from './types'
 
 export function toCsv<C extends Pick<GridColumnMeta, 'name' | 'label'>>(
@@ -20,7 +20,7 @@ export function toCsv<C extends Pick<GridColumnMeta, 'name' | 'label'>>(
 const EXPORT_PAGE = 200
 // ponytail: 前端循环拉页导出,万行级数据再改后端流式导出
 export async function fetchAllRows(
-  client: ResourceClient,
+  client: ResourceTransport,
   query: Omit<ResourceQuery, 'limit' | 'offset'>,
 ): Promise<Row[]> {
   const rows: Row[] = []

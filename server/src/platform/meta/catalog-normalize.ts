@@ -5,6 +5,8 @@
  */
 import type {
   BasicFormFieldPlacement,
+  BasicFormSection,
+  BasicFormTab,
   CommandDocument,
   CommandTarget,
   FieldDocument,
@@ -32,13 +34,7 @@ const STANDARD_ACTION_KEYS = new Set([
   'batch_print',
 ])
 
-/** 标记：typed ResourceDefinition 规范化结果 */
-export const TYPED_SOURCE_MARK = 'typed-resource-meta' as const
-
-export type NormalizedSource = typeof TYPED_SOURCE_MARK
-
 export interface NormalizedResource {
-  readonly source: NormalizedSource
   readonly meta: ResourceMeta
   /** 独立显示标签（可与 permissionLabel 不同） */
   readonly label: string
@@ -243,7 +239,7 @@ function applyFormFieldHints(fields: FieldDocument[], meta: ResourceMeta): Field
   if (Object.keys(hints).length === 0) return fields
 
   return fields.map((field) => {
-    const hint = hints[field.name] as Record<string, unknown> | undefined
+    const hint = hints[field.name]
     if (!hint) return field
 
     let next = field
@@ -288,37 +284,101 @@ function toForm(meta: ResourceMeta, fields: FieldDocument[]): FormDocument {
 
   const excluded = new Set(meta.form.exclude ?? [])
   const formFieldHints = meta.form.fields ?? {}
-  const placements: BasicFormFieldPlacement[] = []
+  const eligible = fields.filter(
+    (field) =>
+      !excluded.has(field.name) &&
+      (field.input.create !== 'forbidden' || field.input.update !== 'forbidden') &&
+      // JSON / polymorphic 留给 extension；basic renderer 不退化为文本
+      field.kind !== 'json' &&
+      field.kind !== 'polymorphicReference',
+  )
+  const eligibleNames = new Set(eligible.map((field) => field.name))
 
-  for (const field of fields) {
-    if (excluded.has(field.name)) continue
-    if (field.input.create === 'forbidden' && field.input.update === 'forbidden') continue
-    // JSON / polymorphic 留给 extension；basic 布局暂跳过以防 renderer 退化为文本
-    if (field.kind === 'json' || field.kind === 'polymorphicReference') continue
-
-    const hint = formFieldHints[field.name] as Record<string, unknown> | undefined
-    const placement: BasicFormFieldPlacement = { field: field.name }
-    if (typeof hint?.placeholder === 'string') placement.placeholder = hint.placeholder
+  const placementFor = (
+    fieldName: string,
+    declared: BasicFormFieldPlacement = { field: fieldName },
+  ): BasicFormFieldPlacement => {
+    const hint = formFieldHints[fieldName]
+    const placement: BasicFormFieldPlacement = { ...declared, field: fieldName }
+    if (placement.placeholder === undefined && typeof hint?.placeholder === 'string') {
+      placement.placeholder = hint.placeholder
+    }
     const span =
-      typeof hint?.span === 'number'
+      placement.span ??
+      (typeof hint?.span === 'number'
         ? hint.span
         : typeof hint?.cols === 'number'
           ? hint.cols
-          : undefined
+          : undefined)
     if (typeof span === 'number' && Number.isFinite(span)) {
       placement.span = Math.min(12, Math.max(1, Math.round(span)))
     }
-    placements.push(placement)
+    return placement
   }
+
+  const sections: BasicFormSection[] | undefined = meta.form.sections?.map((section) => ({
+    ...section,
+    fields: section.fields
+      .filter((placement) => eligibleNames.has(placement.field))
+      .map((placement) => placementFor(placement.field, placement)),
+  }))
+  const tabs: BasicFormTab[] | undefined = meta.form.tabs?.map((tab) => ({
+    ...tab,
+    fields: tab.fields
+      ?.filter((placement) => eligibleNames.has(placement.field))
+      .map((placement) => placementFor(placement.field, placement)),
+    sections: tab.sections?.map((section) => ({
+      ...section,
+      fields: section.fields
+        .filter((placement) => eligibleNames.has(placement.field))
+        .map((placement) => placementFor(placement.field, placement)),
+    })),
+  }))
+
+  if (sections?.length || tabs?.length) {
+    return {
+      kind: 'basic',
+      layout: {
+        ...(sections?.length ? { sections } : {}),
+        ...(tabs?.length ? { tabs } : {}),
+      },
+    }
+  }
+
+  const placements = eligible
+    .map((field, sourceIndex) => ({
+      placement: placementFor(field.name),
+      order: formFieldHints[field.name]?.order ?? sourceIndex,
+      sourceIndex,
+    }))
+    .sort((a, b) => a.order - b.order || a.sourceIndex - b.sourceIndex)
+    .map(({ placement }) => placement)
 
   if (placements.length === 0) return { kind: 'none' }
   return { kind: 'basic', layout: { fields: placements } }
+}
+
+function assertBasicFormDoesNotRepeatFieldFacts(meta: ResourceMeta): void {
+  if (meta.form?.kind !== 'basic') return
+  for (const [fieldName, hint] of Object.entries(meta.form.fields ?? {})) {
+    const repeated = [
+      hint.required !== undefined ? 'required' : null,
+      hint.edit !== undefined ? 'edit' : null,
+      hint.label !== undefined ? 'label' : null,
+    ].filter((name): name is string => name !== null)
+    if (repeated.length > 0) {
+      throw new Error(
+        `资源「${meta.name}」basic form 字段「${fieldName}」重复字段事实: ${repeated.join(', ')}`,
+      )
+    }
+  }
 }
 
 /**
  * 将 ResourceMeta 规范为 Catalog 中间事实。
  */
 export function buildNormalizedResource(meta: ResourceMeta): NormalizedResource {
+  assertBasicFormDoesNotRepeatFieldFacts(meta)
   const fields: FieldDocument[] = []
   for (const field of meta.fields) {
     const doc = toFieldDocument(field)
@@ -329,7 +389,6 @@ export function buildNormalizedResource(meta: ResourceMeta): NormalizedResource 
     columns: withHints.filter((f) => f.visibility === 'readable').map((f) => f.name),
   }
   return {
-    source: TYPED_SOURCE_MARK,
     meta,
     label: meta.label ?? meta.permissionLabel,
     fields: withHints,

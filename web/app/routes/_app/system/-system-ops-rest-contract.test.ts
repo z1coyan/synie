@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { fetchAllRows } from '~/components/synie-data-grid/csv'
 import { resolveSource } from '~/components/synie-remote-select/remote-query'
-import { resourceClientFor } from '~/lib/resources/registry'
-import type { ResourceClient, ResourceQuery } from '~/lib/resources/types'
+import { resourceTransportFor } from '~/lib/resources/registry'
+import type { ResourceQuery, ResourceTransport } from '~/lib/resources/types'
 
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
@@ -30,8 +30,7 @@ describe('PR-2.18 系统操作面 REST 边界', () => {
     expect(clients).toContain("id: 'rest:sysAuditLogs'")
     expect(clients).toContain("api.system['audit-logs'].query.\$post")
     expect(clients).toContain("api.system['audit-logs'][':id'].\$get")
-    expect(clients).toContain('create: readOnly')
-    expect(clients).toContain('update: readOnly')
+    expect(clients).not.toMatch(/\b(create|update|delete)\s*:/)
   })
 
   test('审计与 Todo 消费面不再包含 GraphQL 请求或 operation', () => {
@@ -46,15 +45,15 @@ describe('PR-2.18 系统操作面 REST 边界', () => {
       expect(text).not.toContain('gqlFetch')
     }
     expect(registry).toContain('sysAuditLogs: auditLogClient')
-    expect(resourceClientFor('sysAuditLogs').id).toBe('rest:sysAuditLogs')
+    expect(resourceTransportFor('sysAuditLogs').id).toBe('rest:sysAuditLogs')
     expect(resolveSource({ resource: 'sysAuditLogs' })?.client.id).toBe(
       'rest:sysAuditLogs',
     )
-    expect(() => resourceClientFor('missingResource')).toThrow(
-      '资源「missingResource」未注册 REST ResourceClient',
+    expect(() => resourceTransportFor('missingResource')).toThrow(
+      '资源「missingResource」未注册 ResourceBinding',
     )
     expect(() => resolveSource({ resource: 'missingRemoteResource' })).toThrow(
-      '资源「missingRemoteResource」未注册 REST ResourceClient',
+      '资源「missingRemoteResource」未注册 ResourceBinding',
     )
   })
 
@@ -68,7 +67,7 @@ describe('PR-2.18 系统操作面 REST 边界', () => {
           ? { count: 3, results: [{ id: '1' }, { id: '2' }] }
           : { count: 3, results: [{ id: '3' }] }
       },
-    } as ResourceClient
+    } as ResourceTransport
 
     await expect(fetchAllRows(client, { search: '审计' })).resolves.toEqual([
       { id: '1' },

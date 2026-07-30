@@ -8,7 +8,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { resourceBindingFor, resourceClientFor } from '~/lib/resources/registry'
+import { resourceBindingFor, resourceTransportFor } from '~/lib/resources/registry'
 import {
   createEmployeePresentation,
   submitEmployeeForm,
@@ -49,7 +49,7 @@ function EmployeesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
   const binding = resourceBindingFor(RESOURCE)
-  const client = resourceClientFor(RESOURCE)
+  const client = resourceTransportFor(RESOURCE)
   const presentation = createEmployeePresentation(binding)
 
   return (

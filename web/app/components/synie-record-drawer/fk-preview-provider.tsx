@@ -5,7 +5,7 @@ import { SynieRecordDrawer } from './SynieRecordDrawer'
 import { basicFormDrawerProps, fetchResourceDocument } from '~/lib/resources/catalog'
 import {
   resourceBindingFor,
-  resourceClientFromResourceBinding,
+  resourceTransportFromResourceBinding,
 } from '~/lib/resources/registry'
 
 interface Entry {
@@ -38,7 +38,7 @@ function FkPreviewDrawer({
           fields: {},
         }
 
-  const client = resourceClientFromResourceBinding(entry.resource)
+  const client = resourceTransportFromResourceBinding(entry.resource)
 
   return (
     <SynieRecordDrawer

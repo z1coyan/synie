@@ -23,6 +23,7 @@ import {
   salesReconciliationClient,
   salesReconciliationItemClient,
 } from '~/lib/resources/reconciliations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -86,8 +87,11 @@ export const reconciliationConfirmConfig = {
         },
       })
       .then((result) => result.results),
-  audit: (reconciliationId: string) =>
-    salesReconciliationClient.action!('confirm', [reconciliationId]),
+  audit: (reconciliationId: string) => {
+    const commands = resourceBindingFor('salReconciliations').commands
+    if (!commands) throw new Error('销售对账单未绑定 confirm 命令')
+    return commands.execute('confirm', { id: reconciliationId })
+  },
 } satisfies AuditDocConfig
 
 // 「结单审核」(赠送/样品单)确认弹窗
@@ -96,8 +100,11 @@ export const reconciliationAuditConfig = {
   itemsResource: 'salReconciliationItems',
   columns: AUDIT_COLUMNS,
   loadItems: reconciliationConfirmConfig.loadItems,
-  audit: (reconciliationId: string) =>
-    salesReconciliationClient.action!('audit', [reconciliationId]),
+  audit: (reconciliationId: string) => {
+    const commands = resourceBindingFor('salReconciliations').commands
+    if (!commands) throw new Error('销售对账单未绑定 audit 命令')
+    return commands.execute('audit', { id: reconciliationId })
+  },
 } satisfies AuditDocConfig
 
 const ReconciliationDrawerContext = createContext<OpenReconciliationDrawer>(

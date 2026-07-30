@@ -1,6 +1,6 @@
 # Synie
 
-项目使用 TanStack Start + HeroUI + **Bun/Hono REST**（`@synie/server` hono/client + ResourceClient）为产品技术栈。不引入 GraphQL / OpenAPI codegen。
+项目使用 TanStack Start + HeroUI + **Bun/Hono REST**（`@synie/server` hono/client + ResourceBinding/ResourceTransport）为产品技术栈。不引入 GraphQL / OpenAPI codegen。
 
 ## 项目守则
 
@@ -14,12 +14,12 @@
 ## 业务数据页标准组件
 
 - 数据列表一律用 `SynieDataGrid`（`~/components/synie-data-grid/`）；数据详情、新增、编辑一律用 `SynieRecordDrawer`（`~/components/synie-record-drawer/`）三态抽屉，不要自造表格或表单。
-- 字段行为（必填/只读 `edit`/条件显隐 `visible`/栅格 `cols`/默认值/分组标题 `section`/字段前插槽 `before`）通过 `fields` override 声明，提交写操作写在页面 `onSubmit` 回调；接入范例见 `routes/_app/system/roles.tsx`。
+- `form.kind=basic` 的必填、只读、标签、枚举、外键与静态布局由服务端 Resource Catalog 声明，页面通过 `useCatalogBasicForm` 消费，不得重复手写。复杂资源的条件显隐、effects、React input/render、附件和子表属于 Presentation Extension，才在共置模块或页面叠加 `fields` override；接入范例见 `routes/_app/system/roles.tsx`。
 - 「保存并审核」是所有表单的通用约定：资源 meta 下发 `audit` 扩展动作且当前用户具备 audit 权限时，`SynieRecordDrawer` 会在「保存」旁自动出现「保存并审核」按钮（仅草稿单），页面无需自绘；前提是 `onSubmit` 返回保存后的记录 id（create 态必须 return 新 id，否则只能保存不能自动审核）。审核确认统一用列出整单条目的核对弹窗（`routes/_app/scm/-audit-doc.tsx` 的 `useAuditDoc`，条目页行操作「审核整单」与单据页「审核」共用），不要再用只显示条数的通用确认框。
 - 启用/停用等状态类开关不进创建/编辑表单（表单 `exclude` 掉，新建由后端默认值兜底）：状态翻转用独立入口（表格行动作、详情页按钮）显式触发；仅记录固有属性的布尔（如叶子分类、基准单位）仍属表单字段。
 - 父表单内的子条目（单据行、明细行等）一律用 `SynieEditableTable`（`~/components/synie-editable-table/`）：表格纯展示，增改一律走二级 `SynieRecordDrawer`，不做行内编辑；`items`/`onChange` 受控、组件不发写请求，父表单提交时一并持久化，新增行 id 带 `local:` 前缀（`isLocalRow` 判别）。
 - 组件能力不够时先扩组件再用，不要在页面里绕过它手搭。
-- 外键单元格/字段默认渲染为可点 link，点击开全局速览抽屉（`FkPreviewProvider` 已挂 `_app` 布局，页面零接线）；资源解析经 `resourceBindingFor`，Meta 经 ResourceDocument。Basic Form 用 `basicFormDrawerProps`；Presentation Extension 静态 props 在 `synie-record-drawer/extension-drawer-props.tsx`（未知资源 fail-closed），复杂交互与业务模块共置。
+- 外键单元格/字段默认渲染为可点 link，点击开全局速览抽屉（`FkPreviewProvider` 已挂 `_app` 布局，页面零接线）；资源解析经 `resourceBindingFor`，Meta 经 ResourceDocument。页面 Basic Form 用 `useCatalogBasicForm`；`extension-drawer-props.tsx` 只收录实际调用的 Presentation Extension 静态配置（未知资源 fail-closed），模块专用复杂交互继续与业务模块共置。
 - 一切文件上传/下载必须走 `~/lib/files.ts`（REST `/api/v1/files*`），不要在页面自写 fetch/FormData；记录附件 UI 一律用 `SynieAttachmentPanel`（`~/components/synie-attachment-panel/`）挂 SynieRecordDrawer 的 `extraContent`，传 ownerType（资源/宿主类型名）/ownerId；固定单图槽位（证件照等）用同目录 `SynieImageAttachment`，一个 category 一张图。
 - 图片全屏预览一律用 `SyniePreview`（`~/components/synie-preview/`）：受控 `isOpen/onOpenChange`，`items` 传 `fileId`（经鉴权懒加载）或 `src`，内建下载/旋转/缩放/循环切换，抽屉/对话框内打开层级自然正确；不要自造 lightbox。缩略图用同目录 `FileThumb`；表格图片列用 DataGrid 列 override `image`（`true`=列值即 file id，或 `{ fileId(row), keepText }`），缩略图点击即全屏预览、同列循环；行记录的图片附件列用 DataGrid `attachmentImages={{ ownerType, category?, label? }}`（虚拟列，点开该行全部图片，与抽屉附件面板同 queryKey 联动刷新）。
 

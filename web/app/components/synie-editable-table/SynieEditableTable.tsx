@@ -2,8 +2,8 @@ import { useState, type ReactNode } from 'react'
 import { Button, Spinner, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import { defaultCell } from '../synie-data-grid/SynieDataGrid'
-import { resourceClientFromResourceBinding } from '~/lib/resources/registry'
-import type { ResourceClient } from '~/lib/resources/types'
+import { resourceTransportFromResourceBinding } from '~/lib/resources/registry'
+import type { ResourceTransport } from '~/lib/resources/types'
 import { useGridMeta } from '../synie-data-grid/meta'
 import type { EnumChipColor, GridColumnMeta, LocalGridMeta, Row } from '../synie-data-grid/types'
 import { SynieRecordDrawer, type SynieRecordDrawerProps } from '../synie-record-drawer/SynieRecordDrawer'
@@ -26,7 +26,7 @@ export interface SynieEditableTableProps<T extends Row = Row> {
   /** 子条目资源,与后端 GridMeta 白名单同名,如 "glEntryLines" */
   resource: string
   /** 已迁移资源的 REST client；同时供 Meta 与内部抽屉读取。 */
-  client?: ResourceClient
+  client?: ResourceTransport
   /**
    * 受控条目集合:组件不发任何写请求,增删改全部经 onChange 回给父级,
    * 由父表单提交时一并持久化。新增行 id 为 local: 前缀(isLocalRow 判别)。
@@ -91,7 +91,7 @@ function cellClass(col: GridColumnMeta, o?: EditableColumnOverride): string {
 
 export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTableProps<T>) {
   const { resource, items, label = '条目', overrides = {}, readOnly = false, canCreate = true, canDelete = true } = props
-  const client = props.client ?? (!props.meta ? resourceClientFromResourceBinding(resource) : undefined)
+  const client = props.client ?? (!props.meta ? resourceTransportFromResourceBinding(resource) : undefined)
   const remote = useGridMeta(resource, !props.meta) // 本地模式不发请求
   const [drawer, setDrawer] = useState<{ mode: 'create' | 'edit'; row: T | null } | null>(null)
 

@@ -1,6 +1,7 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import type { ResourceClient, ResourceQuery } from './types'
+import { createRowCommandAdapter } from './catalog/commands'
+import type { ResourceClient, ResourceQuery, ResourceTransport } from './types'
 
 type FilterDocument = FilterState
 type GLJournalCreate = Record<string, unknown>
@@ -57,11 +58,7 @@ function decimalInput(input: Record<string, unknown>): Record<string, unknown> {
   return body
 }
 
-const readOnly = (label: string) => async () => {
-  throw new Error(`${label}是只读财务事实,不支持写入`)
-}
-
-export const glEntryClient: ResourceClient = {
+export const glEntryClient: ResourceTransport = {
   id: 'rest:accGlEntries',
 
 
@@ -78,9 +75,6 @@ export const glEntryClient: ResourceClient = {
     )) as Row
   },
 
-  create: readOnly('总账分录'),
-  update: readOnly('总账分录'),
-  delete: readOnly('总账分录'),
 }
 
 export async function auditGlJournal(id: string, postingDate?: string) {
@@ -97,6 +91,11 @@ export async function cancelGlJournal(id: string) {
       param: { id }}),
   )
 }
+
+export const glJournalCommandAdapter = createRowCommandAdapter({
+  audit: (id) => auditGlJournal(id),
+  cancel: cancelGlJournal,
+})
 
 export const glJournalClient: ResourceClient = {
   id: 'rest:accGlJournals',
@@ -135,13 +134,6 @@ export const glJournalClient: ResourceClient = {
     )
   },
 
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditGlJournal(id)
-      else if (key === 'cancel') await cancelGlJournal(id)
-      else throw new Error(`会计凭证 REST Client 未实现动作 ${key}`)
-    }
-  },
 }
 
 export const glJournalLineClient: ResourceClient = {

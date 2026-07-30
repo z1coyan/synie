@@ -3,12 +3,10 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import {
-  basicFormDrawerProps,
   decodeCompanyCreate,
   decodeCompanyUpdate,
-  useResourceDocument,
+  useCatalogBasicForm,
 } from '~/lib/resources/catalog'
-import { resourceBindingFor, resourceClientFor } from '~/lib/resources/registry'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -23,12 +21,7 @@ const RESOURCE = 'basCompanies'
 function CompaniesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
-  const binding = resourceBindingFor(RESOURCE)
-  const client = resourceClientFor(RESOURCE)
-  const documentQuery = useResourceDocument(RESOURCE)
-  const formProps = documentQuery.data
-    ? basicFormDrawerProps(documentQuery.data)
-    : { label: '公司', exclude: [] as string[], fields: {} }
+  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '公司')
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, RESOURCE] })

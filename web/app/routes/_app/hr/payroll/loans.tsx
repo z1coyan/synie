@@ -4,14 +4,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Spinner, Table, toast } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
 import {
-  employeeLoanClient,
   fetchEmployeeLoanBalances,
-  saveEmployeeLoan,
   type EmployeeLoanBalance,
 } from '~/lib/resources/hr-operations'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -37,6 +35,10 @@ const GRID_OVERRIDES = {
 function EmployeeLoansPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
+  const { binding, client, formProps } = useCatalogBasicForm(
+    'hrEmployeeLoans',
+    '员工借款',
+  )
 
   const balances = useQuery({
     queryKey: ['loanBalances'],
@@ -101,7 +103,7 @@ function EmployeeLoansPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrEmployeeLoans"
-          client={employeeLoanClient}
+          client={client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'occurredOn', direction: 'descending' }}
@@ -115,23 +117,16 @@ function EmployeeLoansPage() {
       </div>
 
       <SynieRecordDrawer
-        {...drawerConfig('hrEmployeeLoans')}
         resource="hrEmployeeLoans"
-        client={employeeLoanClient}
+        client={client}
+        label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         rowId={drawer?.row?.id}
         onEdit={() => setDrawer((d) => (d && !d.row?.payrollId ? { ...d, mode: 'edit' } : d))}
-        exclude={['createdById', 'payrollId']}
-        fields={{
-          ...drawerConfig('hrEmployeeLoans').fields,
-          employeeId: { required: true, order: -3 },
-          kind: { required: true, order: -2, defaultValue: 'BORROW' },
-          occurredOn: { required: true, order: -1 },
-          amount: { required: true },
-          remarks: { placeholder: '如 预支生活费、现金还款' },
-        }}
+        exclude={formProps.exclude}
+        fields={formProps.fields}
         onSubmit={async (values, mode) => {
           const input = {
             employeeId: values.employeeId,
@@ -141,10 +136,18 @@ function EmployeeLoansPage() {
             remarks: values.remarks,
           }
 
-          await saveEmployeeLoan(
-            mode === 'create' ? null : drawer!.row!.id,
-            input,
-          )
+          if (!binding.writer) throw new Error('员工借款不支持写入')
+          if (mode === 'create') {
+            if (!('create' in binding.writer) || !binding.writer.create) {
+              throw new Error('员工借款不支持 create')
+            }
+            await binding.writer.create(input)
+          } else {
+            if (!('update' in binding.writer) || !binding.writer.update) {
+              throw new Error('员工借款不支持 update')
+            }
+            await binding.writer.update(drawer!.row!.id, input)
+          }
           toast.success(mode === 'create' ? '台账已记账' : '台账已更新')
           invalidateAll()
         }}

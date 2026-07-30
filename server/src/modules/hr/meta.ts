@@ -201,7 +201,11 @@ export function attendanceDayResourceMeta(): ResourceMeta {
     table: 'hr_attendance_day',
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('date', 'date', 'date', '日期', { filterable: true, sortable: true, readonly: true }),
+      field('date', 'date', 'date', '日期', {
+        filterable: true,
+        sortable: true,
+        readonly: true,
+      }),
       field('morning_in', 'morningIn', 'string', '上午上班', { sortable: true, readonly: true }),
       field('morning_out', 'morningOut', 'string', '上午下班', { sortable: true, readonly: true }),
       field('afternoon_in', 'afternoonIn', 'string', '下午上班', { sortable: true, readonly: true }),
@@ -271,9 +275,13 @@ export function attendanceCorrectionResourceMeta(): ResourceMeta {
     table: 'hr_attendance_correction',
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('date', 'date', 'date', '日期', { filterable: true, sortable: true, readonly: true }),
-      field('times', 'times', 'string', '补卡时刻', { readonly: true }),
-      field('note', 'note', 'string', '备注', { filterable: true, sortable: true, readonly: true }),
+      field('date', 'date', 'date', '日期', {
+        required: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('times', 'times', 'string', '补卡时刻', { required: true }),
+      field('note', 'note', 'string', '备注', { filterable: true, sortable: true }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         filterable: true,
         sortable: true,
@@ -285,8 +293,8 @@ export function attendanceCorrectionResourceMeta(): ResourceMeta {
         readonly: true,
       }),
       field('employee_id', 'employeeId', 'fk', '员工', {
+        required: true,
         filterable: true,
-        readonly: true,
         ref: { resource: 'hrEmployees', relation: 'employee', labelField: 'name' },
       }),
       field('created_by_id', 'createdById', 'fk', '录入人', {
@@ -296,6 +304,15 @@ export function attendanceCorrectionResourceMeta(): ResourceMeta {
       }),
     ],
     actions: crud,
+    form: {
+      kind: 'basic',
+      exclude: ['id', 'createdById', 'insertedAt', 'updatedAt'],
+      fields: {
+        employeeId: { order: -1 },
+        times: { initial: ['08:00:00'] },
+        note: { placeholder: '如 考勤机故障、外出办事漏打' },
+      },
+    },
     audit: { enabled: true },
 
   }
@@ -417,14 +434,14 @@ export function payrollPaymentResourceMeta(): ResourceMeta {
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('month', 'month', 'string', '月份', { filterable: true, sortable: true, readonly: true }),
       field('paid_on', 'paidOn', 'date', '发放日期', {
+        required: true,
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('amount', 'amount', 'decimal', '发放金额', {
+        required: true,
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('kind', 'kind', 'enum', '类型', {
         filterable: true,
@@ -438,7 +455,6 @@ export function payrollPaymentResourceMeta(): ResourceMeta {
       field('remarks', 'remarks', 'string', '备注', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         filterable: true,
@@ -471,6 +487,19 @@ export function payrollPaymentResourceMeta(): ResourceMeta {
       { key: 'create', label: '新增', scope: 'both' },
       { key: 'delete', label: '删除', scope: 'row', isDanger: true },
     ],
+    form: {
+      kind: 'basic',
+      exclude: [
+        'id',
+        'payrollId',
+        'employeeId',
+        'month',
+        'kind',
+        'createdById',
+        'insertedAt',
+        'updatedAt',
+      ],
+    },
     audit: { enabled: true },
 
   }
@@ -485,28 +514,27 @@ export function employeeLoanResourceMeta(): ResourceMeta {
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('kind', 'kind', 'enum', '类型', {
+        required: true,
         filterable: true,
         sortable: true,
-        readonly: true,
         enumOptions: enumOpts([
           { value: LOAN_BORROW, label: '借款' },
           { value: LOAN_REPAY, label: '归还' },
         ]),
       }),
       field('occurred_on', 'occurredOn', 'date', '发生日期', {
+        required: true,
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('amount', 'amount', 'decimal', '金额', {
+        required: true,
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('remarks', 'remarks', 'string', '备注', {
         filterable: true,
         sortable: true,
-        readonly: true,
       }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         filterable: true,
@@ -519,8 +547,8 @@ export function employeeLoanResourceMeta(): ResourceMeta {
         readonly: true,
       }),
       field('employee_id', 'employeeId', 'fk', '员工', {
+        required: true,
         filterable: true,
-        readonly: true,
         ref: { resource: 'hrEmployees', relation: 'employee', labelField: 'name' },
       }),
       field('payroll_id', 'payrollId', 'fk', '关联工资单', {
@@ -535,6 +563,16 @@ export function employeeLoanResourceMeta(): ResourceMeta {
       }),
     ],
     actions: crud,
+    form: {
+      kind: 'basic',
+      exclude: ['id', 'payrollId', 'createdById', 'insertedAt', 'updatedAt'],
+      fields: {
+        employeeId: { order: -3 },
+        kind: { initial: LOAN_BORROW, order: -2 },
+        occurredOn: { order: -1 },
+        remarks: { placeholder: '如 预支生活费、现金还款' },
+      },
+    },
     audit: { enabled: true },
 
   }

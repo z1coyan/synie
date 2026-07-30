@@ -3,10 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseTime } from '@internationalized/date'
 import { Button, DateField, Label, TimeField, toast } from '@heroui/react'
-import {
-  attendanceCorrectionClient,
-  saveAttendanceCorrection,
-} from '~/lib/resources/hr-operations'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -97,6 +94,10 @@ function TimesEditor(props: { value: unknown; onChange: (v: unknown) => void; is
 function AttendanceCorrectionsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
+  const { binding, client, formProps } = useCatalogBasicForm(
+    'hrAttendanceCorrections',
+    '补卡单',
+  )
 
   // 补卡增删改都会触发后端重算,日考勤一并失效
   const invalidateAll = () => {
@@ -115,7 +116,7 @@ function AttendanceCorrectionsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrAttendanceCorrections"
-          client={attendanceCorrectionClient}
+          client={client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'insertedAt', direction: 'descending' }}
@@ -128,37 +129,41 @@ function AttendanceCorrectionsPage() {
 
       <SynieRecordDrawer
         resource="hrAttendanceCorrections"
-        client={attendanceCorrectionClient}
-        label="补卡单"
+        client={client}
+        label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
         rowId={drawer?.row?.id}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
-        exclude={['createdById']}
+        exclude={formProps.exclude}
         fields={{
-          // 关系属性在 meta 列序靠后,表单里员工是第一输入项
-          employeeId: { required: true, order: -1 },
-          date: { required: true },
+          ...formProps.fields,
           times: {
-            required: true,
-            defaultValue: ['08:00:00'],
+            ...formProps.fields.times,
             render: (v) => timesPreview(v) || '—',
             input: ({ value, onChange, isDisabled }) => (
               <TimesEditor value={value} onChange={onChange} isDisabled={isDisabled} />
             ),
           },
-          note: { placeholder: '如 考勤机故障、外出办事漏打' },
         }}
         onSubmit={async (values, mode) => {
           const times = parseTimes(values.times)
           if (times.length === 0) throw new Error('至少需要一个补卡时刻')
           const input = { ...values, times }
 
-          await saveAttendanceCorrection(
-            mode === 'create' ? null : drawer!.row!.id,
-            input,
-          )
+          if (!binding.writer) throw new Error('补卡单不支持写入')
+          if (mode === 'create') {
+            if (!('create' in binding.writer) || !binding.writer.create) {
+              throw new Error('补卡单不支持 create')
+            }
+            await binding.writer.create(input)
+          } else {
+            if (!('update' in binding.writer) || !binding.writer.update) {
+              throw new Error('补卡单不支持 update')
+            }
+            await binding.writer.update(drawer!.row!.id, input)
+          }
           toast.success(mode === 'create' ? '补卡单已保存,当天日考勤已重算' : '补卡单已更新,当天日考勤已重算')
           invalidateAll()
         }}

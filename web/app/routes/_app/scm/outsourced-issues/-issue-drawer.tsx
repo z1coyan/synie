@@ -16,6 +16,7 @@ import {
 } from '~/lib/resources/fulfillment'
 import { queryOutsourcedWarehouses } from '~/lib/resources/inventory'
 import { purchaseOrderItemMaterialClient } from '~/lib/resources/orders'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -55,7 +56,11 @@ export const issueAuditConfig = {
         },
       })
       .then((result) => result.results),
-  audit: (issueId: string) => purchaseOutsourcedIssueClient.action!('audit', [issueId]),
+  audit: (issueId: string) => {
+    const commands = resourceBindingFor('purOutsourcedIssues').commands
+    if (!commands) throw new Error('委外发料单未绑定 audit 命令')
+    return commands.execute('audit', { id: issueId })
+  },
 } satisfies AuditDocConfig
 
 const IssueDrawerContext = createContext<OpenIssueDrawer>(() => {})

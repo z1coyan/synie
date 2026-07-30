@@ -4,11 +4,9 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Input, Label, TextField, toast } from '@heroui/react'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { storageClient } from '~/lib/resources/files'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 
 export const Route = createFileRoute('/_app/system/storages')({
   component: StoragesPage,
@@ -27,9 +25,12 @@ function StoragesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [secret, setSecret] = useState('')
   const queryClient = useQueryClient()
-  const binding = resourceBindingFor('sysStorages')
+  const { binding, client, formProps } = useCatalogBasicForm(
+    'sysStorages',
+    '存储接入',
+  )
   const invalidateGrid = () =>
-    queryClient.invalidateQueries({ queryKey: ['gridRows', storageClient.id, 'sysStorages'] })
+    queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, 'sysStorages'] })
 
   return (
     <>
@@ -41,7 +42,7 @@ function StoragesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="sysStorages"
-          client={storageClient}
+          client={client}
           columns={GRID_COLUMNS}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -72,9 +73,9 @@ function StoragesPage() {
       </div>
 
       <SynieRecordDrawer
-        {...drawerConfig('sysStorages')}
         resource="sysStorages"
-        client={storageClient}
+        client={client}
+        label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => {
@@ -84,14 +85,11 @@ function StoragesPage() {
           }
         }}
         row={drawer?.row}
+        exclude={formProps.exclude}
         fields={{
-          name: { order: 1, cols: 6, required: true, edit: 'createOnly', placeholder: '如 oss-hz,建后不可改' },
-          label: { order: 2, cols: 6, required: true, placeholder: '如 杭州 OSS' },
+          ...formProps.fields,
           kind: {
-            order: 3,
-            cols: 6,
-            required: true,
-            edit: 'createOnly',
+            ...formProps.fields.kind,
             effects: () => ({
               root: null,
               endpoint: null,
@@ -101,25 +99,28 @@ function StoragesPage() {
               accessKeyId: null,
             }),
           },
-          isDefault: { order: 4, cols: 6, edit: 'readOnly' },
-          secretConfigured: { visible: () => false },
-          builtin: { visible: () => false },
           root: {
-            order: 5,
+            ...formProps.fields.root,
             required: true,
             visible: (values) => values.kind === 'LOCAL',
-            placeholder: '如 uploads(相对后端工作目录)或 /var/synie/uploads',
           },
           endpoint: {
-            order: 6,
+            ...formProps.fields.endpoint,
             required: true,
             visible: isObjectStore,
-            placeholder: '如 https://oss-cn-hangzhou.aliyuncs.com 或 http://127.0.0.1:9000',
           },
-          region: { order: 7, cols: 6, visible: isObjectStore, placeholder: '如 cn-hangzhou,可留空' },
-          bucket: { order: 8, cols: 6, required: true, visible: isObjectStore },
-          prefix: { order: 9, visible: isObjectStore, placeholder: '对象键前缀(默认路径),可留空' },
-          accessKeyId: { order: 10, cols: 6, required: true, visible: isObjectStore },
+          region: { ...formProps.fields.region, visible: isObjectStore },
+          bucket: {
+            ...formProps.fields.bucket,
+            required: true,
+            visible: isObjectStore,
+          },
+          prefix: { ...formProps.fields.prefix, visible: isObjectStore },
+          accessKeyId: {
+            ...formProps.fields.accessKeyId,
+            required: true,
+            visible: isObjectStore,
+          },
         }}
         onEdit={() => setDrawer((value) => (value ? { ...value, mode: 'edit' } : value))}
         extraContent={(mode, _row, values) =>
@@ -144,14 +145,21 @@ function StoragesPage() {
             accessKeyId: optionalString(values.accessKeyId),
             ...(secret.trim() === '' ? {} : { secretAccessKey: secret }),
           }
+          if (!binding.writer) throw new Error('存储接入不支持写入')
           if (mode === 'create') {
-            await storageClient.create({
+            if (!('create' in binding.writer) || !binding.writer.create) {
+              throw new Error('存储接入不支持 create')
+            }
+            await binding.writer.create({
               ...common,
               name: String(values.name ?? ''),
               kind: String(values.kind ?? ''),
             })
           } else {
-            await storageClient.update(drawer!.row!.id, common)
+            if (!('update' in binding.writer) || !binding.writer.update) {
+              throw new Error('存储接入不支持 update')
+            }
+            await binding.writer.update(drawer!.row!.id, common)
           }
           toast.success(mode === 'create' ? '存储接入已创建' : '存储接入已更新')
           await invalidateGrid()

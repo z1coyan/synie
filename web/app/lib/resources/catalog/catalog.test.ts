@@ -6,9 +6,9 @@ import {
   getCatalogActor,
   resourceBindingFor,
   setCatalogActor,
-  bindingFromResourceClient,
+  bindingFromResourceTransport,
   registerBinding,
-  resourceClientFromBinding,
+  resourceTransportFromBinding,
   catalogCacheSize,
   setCachedDocument,
   getCachedDocument,
@@ -65,7 +65,7 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
 
   test('known binding 可取得 reader/writer', async () => {
     const client = mockClient()
-    const binding = bindingFromResourceClient('basCurrencies', client)
+    const binding = bindingFromResourceTransport('basCurrencies', client)
     registerBinding(binding)
     const got = resourceBindingFor('basCurrencies')
     expect(got.resource).toBe('basCurrencies')
@@ -78,7 +78,7 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
   test('单位/供应商/公司 binding 闭环 create', async () => {
     for (const resource of ['basUnits', 'purSuppliers', 'basCompanies'] as const) {
       const client = mockClient(`rest:${resource}`)
-      registerBinding(bindingFromResourceClient(resource, client))
+      registerBinding(bindingFromResourceTransport(resource, client))
       const binding = resourceBindingFor(resource)
       expect(binding.resource).toBe(resource)
       expect(binding.writer && 'create' in binding.writer).toBe(true)
@@ -89,7 +89,7 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
 
   test('只读 binding 省略写方法', () => {
     const client = mockClient()
-    const binding = bindingFromResourceClient('sysAuditLogs', client, {
+    const binding = bindingFromResourceTransport('sysAuditLogs', client, {
       canCreate: false,
       canUpdate: false,
       canDelete: false,
@@ -102,7 +102,7 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
   })
 
   test('部分写能力：update-only / create+delete 省略 stub', () => {
-    const updateOnly = bindingFromResourceClient('mfgSettings', mockClient('mfg'), {
+    const updateOnly = bindingFromResourceTransport('mfgSettings', mockClient('mfg'), {
       canCreate: false,
       canUpdate: true,
       canDelete: false,
@@ -112,7 +112,7 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(uw && 'update' in uw && uw.update).toBeTruthy()
     expect(uw && 'delete' in uw && uw.delete).toBeFalsy()
 
-    const createDelete = bindingFromResourceClient('sysFiles', mockClient('files'), {
+    const createDelete = bindingFromResourceTransport('sysFiles', mockClient('files'), {
       canCreate: true,
       canUpdate: false,
       canDelete: true,
@@ -135,18 +135,18 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(resolveResourceLookup('basUnits').subtitleFields).toEqual(['symbol'])
   })
 
-  test('兼容 transport 对不支持的写 reject；binding.writer 省略写方法', async () => {
+  test('transport 与 binding.writer 都省略不支持的写方法', () => {
     const client = mockClient()
-    const binding = bindingFromResourceClient('ro', client, {
+    const binding = bindingFromResourceTransport('ro', client, {
       canCreate: false,
       canUpdate: false,
       canDelete: false,
     })
     expect(binding.writer).toBeUndefined()
-    const legacy = resourceClientFromBinding(binding)
-    await expect(legacy.create({})).rejects.toThrow(/不支持 create/)
-    await expect(legacy.update('1', {})).rejects.toThrow(/不支持 update/)
-    await expect(legacy.delete('1')).rejects.toThrow(/不支持 delete/)
+    const transport = resourceTransportFromBinding(binding)
+    expect(transport.create).toBeUndefined()
+    expect(transport.update).toBeUndefined()
+    expect(transport.delete).toBeUndefined()
   })
 
   test('Catalog 缓存按 actor 隔离；切换 actor 清空', () => {
@@ -189,7 +189,7 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
       }),
     })
     registerBinding({
-      ...bindingFromResourceClient('sysStorages', client),
+      ...bindingFromResourceTransport('sysStorages', client),
       commands,
     })
     const got = resourceBindingFor('sysStorages')
@@ -203,7 +203,7 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
   test('binding 可挂载 AggregateDraftAdapter；Draft 与 Saved 类型分离', async () => {
     const client = mockClient()
     registerBinding({
-      ...bindingFromResourceClient('salDeliveries', client, {
+      ...bindingFromResourceTransport('salDeliveries', client, {
         canCreate: false,
         canUpdate: false,
         canDelete: true,
@@ -233,4 +233,3 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(created).toMatchObject({ id: 'd1', companyId: 'c1' })
   })
 })
-

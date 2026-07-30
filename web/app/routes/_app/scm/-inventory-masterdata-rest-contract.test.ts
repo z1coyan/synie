@@ -21,6 +21,7 @@ const stockDoc = read('-stock-doc.tsx')
 const drawerRegistry = read('../../../components/synie-record-drawer/extension-drawer-props.tsx')
 const resourceRegistry = read('../../../lib/resources/registry.ts')
 const inventoryClients = read('../../../lib/resources/inventory.ts')
+const inventoryMeta = read('../../../../../server/src/modules/inventory/meta.ts')
 
 describe('库存四主数据 REST 迁移契约', () => {
   test('三主页面不再包含四资源旧 GraphQL operation', () => {
@@ -43,8 +44,10 @@ describe('库存四主数据 REST 迁移契约', () => {
     }
   })
 
-  test('三主页面 Grid/Drawer 与单位转换表显式传入对应 client', () => {
-    expect(categories.match(/client=\{materialCategoryClient\}/g)).toHaveLength(2)
+  test('basic 分类走 Catalog Form，其余 PE/子表显式传入 transport', () => {
+    expect(categories).toContain("const RESOURCE = 'invMaterialCategories'")
+    expect(categories).toContain('useCatalogBasicForm(RESOURCE')
+    expect(categories.match(/client=\{client\}/g)).toHaveLength(2)
     expect(materials.match(/client=\{materialClient\}/g)).toHaveLength(2)
     expect(materials.match(/client=\{materialUnitClient\}/g)).toHaveLength(1)
     expect(warehouses.match(/client={warehouseClient}/g)).toHaveLength(2)
@@ -62,11 +65,12 @@ describe('库存四主数据 REST 迁移契约', () => {
     expect(inventory).toContain('filterState={warehouseFilterState(companyId)}')
   })
 
-  test('四 ResourceClient 注册后覆盖跨页面 RemoteSelect 与 FK 速览', () => {
+  test('四资源绑定覆盖 RemoteSelect/FK，分类候选过滤由服务端 Meta 声明', () => {
     for (const resource of ['invMaterialCategories', 'invMaterials', 'invMaterialUnits', 'invWarehouses']) {
       expect(resourceRegistry).toContain(`${resource}:`)
     }
-    expect(drawerRegistry).toContain("filterState: {\n            isLeaf: { kind: 'bool', eq: true },")
+    expect(inventoryMeta).toContain("filterState: { isLeaf: { kind: 'bool', eq: false } }")
+    expect(drawerRegistry).not.toContain('invMaterialCategories:')
   })
 
   test('跨业务页持续复用库存 REST client，履约页面同步切换 REST', () => {

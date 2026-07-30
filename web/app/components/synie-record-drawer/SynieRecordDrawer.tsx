@@ -19,8 +19,8 @@ import {
 } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { resourceBindingFor, resourceClientFromResourceBinding } from '~/lib/resources/registry'
-import type { ResourceClient } from '~/lib/resources/types'
+import { resourceBindingFor, resourceTransportFromResourceBinding } from '~/lib/resources/registry'
+import type { ResourceTransport } from '~/lib/resources/types'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
 import { UUID_RE } from '../synie-data-grid/query'
@@ -60,7 +60,7 @@ export interface SynieRecordDrawerProps {
   /** 与后端 GridMeta 白名单同名,如 "sysRoles" */
   resource: string
   /** 可显式传入 REST client；未传时由资源 registry 解析，未知资源立即报错。 */
-  client?: ResourceClient
+  client?: ResourceTransport
   mode: DrawerMode
   isOpen: boolean
   onOpenChange: (open: boolean) => void
@@ -156,7 +156,7 @@ const EMPTY_COLUMNS: GridColumnMeta[] = []
 
 export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const { resource, mode, isOpen, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
-  const client = props.client ?? (!props.meta ? resourceClientFromResourceBinding(resource) : undefined)
+  const client = props.client ?? (!props.meta ? resourceTransportFromResourceBinding(resource) : undefined)
   const remoteMeta = useGridMeta(resource, !props.meta) // 本地模式不发请求
   const columns = props.meta?.columns ?? remoteMeta.data?.columns ?? EMPTY_COLUMNS
   const metaPending = !props.meta && remoteMeta.isPending

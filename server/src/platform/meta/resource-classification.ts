@@ -127,9 +127,9 @@ export const RESOURCE_CLASSIFICATION: Record<string, ResourceClassification> = {
   mfgOutputs: { presentation: 'extension', interactive: true },
   mfgOutputItems: { presentation: 'none', interactive: false },
   mfgSettings: {
-    presentation: 'basic',
+    presentation: 'extension',
     interactive: true,
-    note: 'update-only 设置；前端历史拼写 mfgSetting 已删除',
+    note: 'update-only 单行设置卡片；含百分比显示转换',
   },
 
   // —— 贸易单据（动态对手类型 / 子表）——
@@ -148,7 +148,11 @@ export const RESOURCE_CLASSIFICATION: Record<string, ResourceClassification> = {
   salDeliveryPackLines: { presentation: 'none', interactive: false },
   salReconciliations: { presentation: 'extension', interactive: true },
   salReconciliationItems: { presentation: 'none', interactive: false },
-  salSettings: { presentation: 'basic', interactive: true, note: 'update-only' },
+  salSettings: {
+    presentation: 'extension',
+    interactive: true,
+    note: 'update-only 单行设置卡片',
+  },
   salCompanyAccountDefaults: {
     presentation: 'none',
     interactive: false,
@@ -201,7 +205,11 @@ export const RESOURCE_CLASSIFICATION: Record<string, ResourceClassification> = {
   accGlJournals: { presentation: 'extension', interactive: true },
   accGlJournalLines: { presentation: 'none', interactive: false },
   accGlEntries: { presentation: 'none', interactive: false, note: '只读总账分录' },
-  accSettings: { presentation: 'basic', interactive: true, note: 'update-only' },
+  accSettings: {
+    presentation: 'extension',
+    interactive: true,
+    note: 'update-only 单行设置卡片；含 OCR 密钥只写交互',
+  },
 
   // —— HR 业务 ——
   hrAttendancePunches: { presentation: 'none', interactive: false },
@@ -228,7 +236,11 @@ export const RESOURCE_CLASSIFICATION: Record<string, ResourceClassification> = {
     interactive: false,
     note: 'catalog-only：嵌于角色 PE，无独立 Client/抽屉',
   },
-  sysFiles: { presentation: 'basic', interactive: true, note: 'create+delete，无 update' },
+  sysFiles: {
+    presentation: 'none',
+    interactive: true,
+    note: '上传创建、只读详情与删除；无普通 create/edit Form',
+  },
   sysStorages: { presentation: 'basic', interactive: true, note: 'setDefault 命令' },
   sysPrintTemplates: { presentation: 'basic', interactive: true },
   sysNumberingRules: { presentation: 'basic', interactive: true },
@@ -237,7 +249,11 @@ export const RESOURCE_CLASSIFICATION: Record<string, ResourceClassification> = {
     interactive: false,
     note: '计数器只读投影',
   },
-  sysSettings: { presentation: 'basic', interactive: true, note: 'update-only' },
+  sysSettings: {
+    presentation: 'extension',
+    interactive: true,
+    note: 'update-only 单行设置卡片；含调度运行状态',
+  },
   sysAuditLogs: { presentation: 'none', interactive: false, note: '只读审计' },
 
   // —— SCM ——
@@ -269,7 +285,10 @@ export function getResourceClassification(name: string): ResourceClassification 
  * 按分类补齐 form.kind 与 lookup；不覆盖模块已显式声明的 form.kind / lookup。
  */
 export function applyResourceClassification(meta: ResourceMeta): ResourceMeta {
-  const c = getResourceClassification(meta.name)
+  const c = RESOURCE_CLASSIFICATION[meta.name]
+  // Registry 也用于隔离的测试/插件资源；生产资源的全量覆盖由
+  // registerAllResources 组合根统一断言，局部 Registry 不依赖产品清单。
+  if (!c) return meta
   let form = meta.form
   const desiredKind =
     c.presentation === 'basic'
@@ -301,7 +320,6 @@ export function applyResourceClassification(meta: ResourceMeta): ResourceMeta {
     ...meta,
     ...(form ? { form } : {}),
     ...(lookup ? { lookup } : {}),
-    catalogSource: 'typed',
   }
 }
 

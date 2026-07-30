@@ -90,12 +90,11 @@ export function materialCategoryResourceMeta(): ResourceMeta {
       kind: 'basic',
       exclude: ['id', 'active', 'insertedAt', 'updatedAt', 'hasChildren'],
       fields: {
-        code: { required: true, placeholder: '如 01、0101', cols: 6 },
-        name: { required: true, placeholder: '如 原材料', cols: 6 },
-        isLeaf: { defaultValue: true, cols: 6 },
+        code: { placeholder: '如 01、0101', span: 6 },
+        name: { placeholder: '如 原材料', span: 6 },
+        isLeaf: { initial: true, span: 6 },
         // 候选限定非叶子（叶子不能挂子分类；后端另有校验）
         parentId: {
-          label: '上级分类',
           filterState: { isLeaf: { kind: 'bool', eq: false } },
         },
       },

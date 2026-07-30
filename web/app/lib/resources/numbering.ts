@@ -1,7 +1,7 @@
 import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import type { ResourceClient, ResourceQuery } from './types'
+import type { ResourceClient, ResourceQuery, ResourceTransport } from './types'
 
 function queryBody(input: ResourceQuery): ListQuery {
   return {
@@ -45,14 +45,16 @@ export const numberingRuleClient: ResourceClient = {
   async create(input) {
     return (await apiData(
       api.system.numbering.rules.$post({
-        json: input as never}),
+        json: input as never,
+      }),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.system.numbering.rules[':id'].$patch({
         param: { id },
-        json: input as never}),
+        json: input as never,
+      }),
     )) as Row
   },
   async delete(id) {
@@ -62,7 +64,7 @@ export const numberingRuleClient: ResourceClient = {
   },
 }
 
-export const numberingCounterClient: ResourceClient = {
+export const numberingCounterClient = {
   id: 'rest:sysNumberingCounters',
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
@@ -75,20 +77,15 @@ export const numberingCounterClient: ResourceClient = {
       api.system.numbering.counters[':id'].$get({ param: { id } }),
     )) as Row
   },
-  async create() {
-    throw new Error('编号计数器由取号流程自动创建')
-  },
   async update(id, input) {
     return (await apiData(
       api.system.numbering.counters[':id'].$patch({
         param: { id },
-        json: input as never}),
+        json: input as never,
+      }),
     )) as Row
   },
-  async delete() {
-    throw new Error('编号计数器随规则自动维护')
-  },
-}
+} satisfies ResourceTransport
 
 export async function listNumberableResources(): Promise<NumberableResource[]> {
   const result = await apiData<{ resources: NumberableResource[] }>(

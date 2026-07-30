@@ -1,5 +1,6 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { createRowCommandAdapter } from './catalog/commands'
 import type { ResourceClient, ResourceQuery } from './types'
 
 type FilterDocument = FilterState
@@ -80,6 +81,18 @@ async function voidPurchaseOrder(id: string) {
   )
 }
 
+export const salesOrderCommandAdapter = createRowCommandAdapter({
+  audit: auditSalesOrder,
+  close: closeSalesOrder,
+  void: voidSalesOrder,
+})
+
+export const purchaseOrderCommandAdapter = createRowCommandAdapter({
+  audit: auditPurchaseOrder,
+  close: closePurchaseOrder,
+  void: voidPurchaseOrder,
+})
+
 export const salesOrderClient = resourceClient('salOrders', {
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
@@ -109,14 +122,6 @@ export const salesOrderClient = resourceClient('salOrders', {
     await apiData<void>(
       api.sales.orders[':id'].$delete({ param: { id } }),
     )
-  },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditSalesOrder(id)
-      else if (key === 'close') await closeSalesOrder(id)
-      else if (key === 'void') await voidSalesOrder(id)
-      else throw new Error(`销售订单 REST Client 未实现动作 ${key}`)
-    }
   },
 })
 
@@ -181,14 +186,6 @@ export const purchaseOrderClient = resourceClient('purOrders', {
     await apiData<void>(
       api.purchase.orders[':id'].$delete({ param: { id } }),
     )
-  },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditPurchaseOrder(id)
-      else if (key === 'close') await closePurchaseOrder(id)
-      else if (key === 'void') await voidPurchaseOrder(id)
-      else throw new Error(`采购订单 REST Client 未实现动作 ${key}`)
-    }
   },
 })
 

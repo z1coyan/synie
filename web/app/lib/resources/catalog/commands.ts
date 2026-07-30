@@ -110,3 +110,32 @@ export function defineCommand<TInput, TOutput = void>(
 ): CommandSpec<TInput, TOutput> {
   return { target, execute }
 }
+
+type RowCommandHandler = (id: string) => Promise<unknown>
+type RowCommandHandlers = Record<string, RowCommandHandler>
+
+type RowCommandSpecs<THandlers extends RowCommandHandlers> = {
+  [K in keyof THandlers]: CommandSpec<
+    unknown,
+    Awaited<ReturnType<THandlers[K]>>
+  >
+}
+
+/**
+ * 一组显式 row 命令的语义 Adapter。key 与 transport handler 在资源模块内逐项声明；
+ * 这里只复用 target 解码，不做开放 key Proxy。
+ */
+export function createRowCommandAdapter<const THandlers extends RowCommandHandlers>(
+  handlers: THandlers,
+): CommandAdapter<RowCommandSpecs<THandlers>> {
+  const commands = Object.fromEntries(
+    Object.entries(handlers).map(([key, handler]) => [
+      key,
+      defineCommand('row', async (input: unknown) => {
+        const id = decodeRowTarget(input)
+        return handler(id)
+      }),
+    ]),
+  ) as RowCommandSpecs<THandlers>
+  return createCommandAdapter(commands)
+}

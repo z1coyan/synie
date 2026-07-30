@@ -28,3 +28,7 @@ Status: resolved
 - 产品规则无变更，未改 `docs/产品文档/`。
 
 ## Comments
+
+- 2026-07-30 后续复核发现本工单最初的静态基线漏扫部分 Proxy/action 文件，并把外键使用
+  页误报为 basic 表单消费者；同时 `ResourceTransport` 兼容层仍有写入 stub。修正与实际
+  收口见工单 12，工单 11 的架构结论不变。

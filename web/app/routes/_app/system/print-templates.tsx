@@ -9,13 +9,10 @@ import { fetchFieldCatalog, type FieldCatalog } from '~/lib/print'
 import { fetchPermissionCatalog } from '~/lib/resources/iam'
 import {
   listPrintResources,
-  printTemplateClient,
-  setDefaultPrintTemplate,
-  unsetDefaultPrintTemplate,
 } from '~/lib/resources/printing'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -56,6 +53,10 @@ function PrintTemplatesPage() {
   const [resources, setResources] = useState<ResourceOption[]>([])
   const [currentFile, setCurrentFile] = useState<{ id: string; filename: string } | null>(null)
   const [uploading, setUploading] = useState(false)
+  const { binding, client, formProps } = useCatalogBasicForm(
+    'sysPrintTemplates',
+    '打印模板',
+  )
 
   useEffect(() => {
     void Promise.all([listPrintResources(), fetchPermissionCatalog()])
@@ -140,7 +141,7 @@ function PrintTemplatesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="sysPrintTemplates"
-          client={printTemplateClient}
+          client={client}
           columns={GRID_COLUMNS}
           overrides={{
             resource: {
@@ -177,7 +178,8 @@ function PrintTemplatesPage() {
               capability: 'update',
               onAction: async (row, context) => {
                 try {
-                  await setDefaultPrintTemplate(String(row.id))
+                  if (!binding.commands) throw new Error('打印模板未绑定 setDefault 命令')
+                  await binding.commands.execute('setDefault', { id: String(row.id) })
                   toast.success(`已将「${String(row.name)}」设为默认`)
                   context.refetch()
                 } catch (error) {
@@ -191,7 +193,8 @@ function PrintTemplatesPage() {
               capability: 'update',
               onAction: async (row, context) => {
                 try {
-                  await unsetDefaultPrintTemplate(String(row.id))
+                  if (!binding.commands) throw new Error('打印模板未绑定 unsetDefault 命令')
+                  await binding.commands.execute('unsetDefault', { id: String(row.id) })
                   toast.success(`已取消「${String(row.name)}」的默认标记`)
                   context.refetch()
                 } catch (error) {
@@ -204,10 +207,9 @@ function PrintTemplatesPage() {
       </div>
 
       <SynieRecordDrawer
-        {...drawerConfig('sysPrintTemplates')}
         resource="sysPrintTemplates"
-        client={printTemplateClient}
-        label="打印模板"
+        client={client}
+        label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => {
@@ -218,17 +220,14 @@ function PrintTemplatesPage() {
         }}
         row={drawer?.row}
         fields={{
-          name: { order: 1, cols: 6, required: true },
+          ...formProps.fields,
           resource: {
-            order: 2,
-            cols: 6,
-            edit: 'readOnly',
+            ...formProps.fields.resource,
             visible: (values) => values.resource != null && values.resource !== '',
           },
-          isDefault: { order: 3, cols: 6, edit: 'readOnly' },
-          fileId: { visible: () => false },
-          remarks: { order: 10, cols: 12 },
+          fileId: { ...formProps.fields.fileId, visible: () => false },
         }}
+        exclude={formProps.exclude}
         extraContent={(mode) => (
           <div className="mt-4 space-y-4 border-t border-border pt-4">
             {mode === 'create' && (
@@ -365,7 +364,10 @@ function PrintTemplatesPage() {
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             if (!fileId) throw new Error('请上传模板文件')
-            const created = await printTemplateClient.create({
+            if (!binding.writer || !('create' in binding.writer) || !binding.writer.create) {
+              throw new Error('打印模板不支持 create')
+            }
+            const created = await binding.writer.create({
               name: values.name,
               resource: resourcePick,
               fileId,
@@ -380,7 +382,10 @@ function PrintTemplatesPage() {
               remarks: values.remarks ?? null,
             }
             if (fileId) input.fileId = fileId
-            await printTemplateClient.update(String(drawer.row.id), input)
+            if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) {
+              throw new Error('打印模板不支持 update')
+            }
+            await binding.writer.update(String(drawer.row.id), input)
             await queryClient.invalidateQueries({ queryKey: ['gridRows'] })
           }
         }}

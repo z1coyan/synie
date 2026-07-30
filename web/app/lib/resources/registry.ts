@@ -2,6 +2,7 @@ import { accountClient } from './accounts'
 import {
   glEntryClient,
   glJournalClient,
+  glJournalCommandAdapter,
   glJournalLineClient,
 } from './accounting'
 import { companyClient } from './companies'
@@ -20,19 +21,26 @@ import {
   billClient,
   billHoldingClient,
   billTransactionClient,
+  billTransactionCommandAdapter,
   expenseReportClient,
+  expenseReportCommandAdapter,
   expenseReportItemClient,
   vatInvoiceClient,
+  vatInvoiceCommandAdapter,
 } from './finance-operations'
 import {
+  purchaseOutsourcedIssueCommandAdapter,
   purchaseOutsourcedIssueClient,
   purchaseOutsourcedIssueItemClient,
+  purchaseOutsourcedReceiptCommandAdapter,
   purchaseOutsourcedReceiptClient,
   purchaseOutsourcedReceiptItemByproductClient,
   purchaseOutsourcedReceiptItemClient,
   purchaseOutsourcedReceiptItemMaterialClient,
+  purchaseReceiptCommandAdapter,
   purchaseReceiptClient,
   purchaseReceiptItemClient,
+  salesDeliveryCommandAdapter,
   salesDeliveryClient,
   salesDeliveryDraftAdapter,
   salesDeliveryItemClient,
@@ -54,52 +62,68 @@ import {
   materialCategoryClient,
   materialClient,
   materialUnitClient,
+  stockCountCommandAdapter,
   stockCountClient,
   stockCountItemClient,
+  stockDocCommandAdapter,
   stockDocClient,
   stockDocItemClient,
   stockEntryClient,
+  stockTransferCommandAdapter,
   stockTransferClient,
   stockTransferItemClient,
   warehouseClient,
 } from './inventory'
-import { marketInstrumentClient, marketPricePointClient } from './market'
+import {
+  marketInstrumentClient,
+  marketPricePointClient,
+  marketPricePointCommandAdapter,
+} from './market'
 import {
   bomByproductClient,
   bomClient,
   bomComponentClient,
   bomRouteClient,
+  demandCommandAdapter,
   demandClient,
   demandItemClient,
   operationClient,
+  outputCommandAdapter,
   outputClient,
   outputItemClient,
   processTemplateClient,
   processTemplateItemClient,
+  workOrderCommandAdapter,
   workOrderClient,
 } from './manufacturing'
 import { numberingCounterClient, numberingRuleClient } from './numbering'
 import {
+  purchaseOrderCommandAdapter,
   purchaseOrderClient,
   purchaseOrderItemByproductClient,
   purchaseOrderItemClient,
   purchaseOrderItemMaterialClient,
+  salesOrderCommandAdapter,
   salesOrderClient,
   salesOrderItemClient,
 } from './orders'
-import { printTemplateClient } from './printing'
+import { printTemplateClient, printTemplateCommandAdapter } from './printing'
 import {
   companyAccountDefaultClient,
   orderFlowItemClient,
+  purchaseReconciliationCommandAdapter,
   purchaseReconciliationClient,
   purchaseReconciliationItemClient,
+  salesReconciliationCommandAdapter,
   salesReconciliationClient,
   salesReconciliationItemClient,
 } from './reconciliations'
 import {
+  purchaseQuotationCommandAdapter,
   purchaseQuotationClient,
   purchaseQuotationItemClient,
   purchaseQuotationTierClient,
+  salesQuotationCommandAdapter,
   salesQuotationClient,
   salesQuotationItemClient,
   salesQuotationTierClient,
@@ -113,19 +137,19 @@ import {
 } from './settings'
 import { auditLogClient } from './system-ops'
 import { unitClient } from './units'
-import type { ResourceClient } from './types'
+import type { ResourceTransport } from './types'
 import {
-  bindingFromResourceClient,
+  bindingFromResourceTransport,
   hasBinding,
   registerBinding,
   replaceBinding,
   resourceBindingFor as bindingFor,
-  resourceClientFromBinding,
+  resourceTransportFromBinding,
   type CommandAdapter,
   type ResourceBinding,
 } from './catalog'
 
-const clients: Record<string, ResourceClient> = {
+const transports: Record<string, ResourceTransport> = {
   accGlEntries: glEntryClient,
   accGlJournals: glJournalClient,
   accGlJournalLines: glJournalLineClient,
@@ -226,90 +250,38 @@ const clients: Record<string, ResourceClient> = {
   scmOrderFlowItems: orderFlowItemClient,
 }
 
-/**
- * 写能力边界：与服务端 actions 对齐。
- * 不在集合中的资源默认 full CRUD；下列显式省略不支持的写方法（无 stub）。
- */
-type WriteCaps = { create: boolean; update: boolean; delete: boolean }
-
-const WRITE_CAPS: Record<string, WriteCaps> = {
-  // 只读投影
-  sysAuditLogs: { create: false, update: false, delete: false },
-  accGlEntries: { create: false, update: false, delete: false },
-  invStockEntries: { create: false, update: false, delete: false },
-  scmOrderFlowItems: { create: false, update: false, delete: false },
-  accBillHoldings: { create: false, update: false, delete: false },
-  accBankImportItems: { create: false, update: false, delete: false },
-  accBankImports: { create: false, update: false, delete: false },
-  accBankReconciliations: { create: false, update: false, delete: false },
-  accExpenseReportItems: { create: false, update: false, delete: false },
-  accGlJournalLines: { create: false, update: false, delete: false },
-  hrAttendanceDays: { create: false, update: false, delete: false },
-  hrAttendanceImports: { create: false, update: false, delete: false },
-  hrAttendancePunches: { create: false, update: false, delete: false },
-  invMaterialUnits: { create: false, update: false, delete: false },
-  invStockCountItems: { create: false, update: false, delete: false },
-  invStockDocItems: { create: false, update: false, delete: false },
-  invStockTransferItems: { create: false, update: false, delete: false },
-  mfgBomByproducts: { create: false, update: false, delete: false },
-  mfgBomComponents: { create: false, update: false, delete: false },
-  mfgBomRoutes: { create: false, update: false, delete: false },
-  mfgDemandItems: { create: false, update: false, delete: false },
-  mfgOutputItems: { create: false, update: false, delete: false },
-  mfgProcessTemplateItems: { create: false, update: false, delete: false },
-  purOrderItemByproducts: { create: false, update: false, delete: false },
-  purOrderItemMaterials: { create: false, update: false, delete: false },
-  purOrderItems: { create: false, update: false, delete: false },
-  purOutsourcedIssueItems: { create: false, update: false, delete: false },
-  purOutsourcedReceiptItemByproducts: { create: false, update: false, delete: false },
-  purOutsourcedReceiptItemMaterials: { create: false, update: false, delete: false },
-  purOutsourcedReceiptItems: { create: false, update: false, delete: false },
-  purQuotationItems: { create: false, update: false, delete: false },
-  purQuotationTiers: { create: false, update: false, delete: false },
-  purReceiptItems: { create: false, update: false, delete: false },
-  purReconciliationItems: { create: false, update: false, delete: false },
-  salCompanyAccountDefaults: { create: false, update: false, delete: false },
-  salDeliveryItems: { create: false, update: false, delete: false },
-  salDeliveryPackBoxes: { create: false, update: false, delete: false },
-  salDeliveryPackLines: { create: false, update: false, delete: false },
-  salOrderItems: { create: false, update: false, delete: false },
-  salQuotationItems: { create: false, update: false, delete: false },
-  salQuotationTiers: { create: false, update: false, delete: false },
-  salReconciliationItems: { create: false, update: false, delete: false },
-  sysNumberingCounters: { create: false, update: false, delete: false },
-  // update-only 设置
-  accSettings: { create: false, update: true, delete: false },
-  mfgSettings: { create: false, update: true, delete: false },
-  salSettings: { create: false, update: true, delete: false },
-  sysSettings: { create: false, update: true, delete: false },
-  // 部分写
-  accBills: { create: false, update: true, delete: true },
-  basMarketPricePoints: { create: true, update: false, delete: false },
-  hrPayrollPayments: { create: true, update: false, delete: true },
-  sysFiles: { create: true, update: false, delete: true },
-  // 销售发货：表单写经 AggregateDraftAdapter，不暴露 create/update
-  salDeliveries: { create: false, update: false, delete: true },
-}
-
-function writeCapsFor(resource: string): WriteCaps {
-  return WRITE_CAPS[resource] ?? { create: true, update: true, delete: true }
-}
-
-/** 已迁移语义 CommandAdapter：覆盖自动生成的 proxy commands */
+/** Catalog 声明的全部语义 CommandAdapter；禁止开放 key Proxy。 */
 const SEMANTIC_COMMAND_ADAPTERS: Record<string, CommandAdapter> = {
-  sysStorages: storageCommandAdapter,
-  hrAttendanceDays: attendanceDayCommandAdapter,
   accBankTransactions: bankTransactionCommandAdapter,
+  accBillTransactions: billTransactionCommandAdapter,
+  accExpenseReports: expenseReportCommandAdapter,
+  accGlJournals: glJournalCommandAdapter,
+  accVatInvoices: vatInvoiceCommandAdapter,
+  basMarketPricePoints: marketPricePointCommandAdapter,
+  hrAttendanceDays: attendanceDayCommandAdapter,
+  invStockCounts: stockCountCommandAdapter,
+  invStockDocs: stockDocCommandAdapter,
+  invStockTransfers: stockTransferCommandAdapter,
+  mfgDemands: demandCommandAdapter,
+  mfgOutputs: outputCommandAdapter,
+  mfgWorkOrders: workOrderCommandAdapter,
+  purOrders: purchaseOrderCommandAdapter,
+  purOutsourcedIssues: purchaseOutsourcedIssueCommandAdapter,
+  purOutsourcedReceipts: purchaseOutsourcedReceiptCommandAdapter,
+  purQuotations: purchaseQuotationCommandAdapter,
+  purReceipts: purchaseReceiptCommandAdapter,
+  purReconciliations: purchaseReconciliationCommandAdapter,
+  salDeliveries: salesDeliveryCommandAdapter,
+  salOrders: salesOrderCommandAdapter,
+  salQuotations: salesQuotationCommandAdapter,
+  salReconciliations: salesReconciliationCommandAdapter,
+  sysPrintTemplates: printTemplateCommandAdapter,
+  sysStorages: storageCommandAdapter,
 }
 
-// 从现有 ResourceClient 一次性生成 ResourceBinding（第二事实源不再可编辑；以 clients 为运输实现）
-for (const [resource, client] of Object.entries(clients)) {
-  const caps = writeCapsFor(resource)
-  const binding = bindingFromResourceClient(resource, client, {
-    canCreate: caps.create,
-    canUpdate: caps.update,
-    canDelete: caps.delete,
-  })
+// 从 transport 一次性生成 ResourceBinding；命令逐资源显式挂载。
+for (const [resource, transport] of Object.entries(transports)) {
+  const binding = bindingFromResourceTransport(resource, transport)
   const commands = SEMANTIC_COMMAND_ADAPTERS[resource]
   if (commands) {
     registerBinding({ ...binding, commands })
@@ -323,29 +295,30 @@ for (const [resource, client] of Object.entries(clients)) {
  * delete 仍经 writer；Grid 列表读经 reader；权威草稿读/写经 draft。
  */
 {
-  const caps = writeCapsFor('salDeliveries')
-  const base = bindingFromResourceClient('salDeliveries', salesDeliveryClient, {
-    canCreate: caps.create,
-    canUpdate: caps.update,
-    canDelete: caps.delete,
+  const base = bindingFromResourceTransport('salDeliveries', salesDeliveryClient, {
+    canCreate: false,
+    canUpdate: false,
+    canDelete: true,
   })
   replaceBinding({
     ...base,
     draft: salesDeliveryDraftAdapter,
+    commands: salesDeliveryCommandAdapter,
   })
 }
 
 function seedBinding(resource: string): void {
-  const client = clients[resource]
-  if (!client) {
+  const transport = transports[resource]
+  if (!transport) {
     throw new Error(`资源「${resource}」未注册 ResourceBinding`)
   }
-  const caps = writeCapsFor(resource)
-  let binding = bindingFromResourceClient(resource, client, {
-    canCreate: caps.create,
-    canUpdate: caps.update,
-    canDelete: caps.delete,
-  })
+  let binding = bindingFromResourceTransport(
+    resource,
+    transport,
+    resource === 'salDeliveries'
+      ? { canCreate: false, canUpdate: false, canDelete: true }
+      : undefined,
+  )
   const commands = SEMANTIC_COMMAND_ADAPTERS[resource]
   if (commands) binding = { ...binding, commands }
   if (resource === 'salDeliveries') {
@@ -368,21 +341,16 @@ export function resourceBindingFor(resource: string): ResourceBinding {
  * 从 binding 派生传输对象（query/get/可选写）。
  * 不含 meta；供仍接受 client prop 的组件过渡使用。
  */
-export function resourceClientFromResourceBinding(resource: string): ResourceClient {
-  return resourceClientFromBinding(resourceBindingFor(resource))
+export function resourceTransportFromResourceBinding(resource: string): ResourceTransport {
+  return resourceTransportFromBinding(resourceBindingFor(resource))
 }
 
-/** @deprecated 使用 resourceBindingFor / resourceClientFromResourceBinding */
-export function resourceClientFor(resource: string): ResourceClient {
-  return resourceClientFromResourceBinding(resource)
-}
-
-/** 已绑定资源键（基线/契约用） */
-export function listResourceClientKeys(): string[] {
-  return Object.keys(clients).sort()
+/** 从唯一 binding 派生 query/get + 实际普通写能力。 */
+export function resourceTransportFor(resource: string): ResourceTransport {
+  return resourceTransportFromResourceBinding(resource)
 }
 
 /** 绑定资源键列表 */
 export function listResourceBindingKeys(): string[] {
-  return Object.keys(clients).sort()
+  return Object.keys(transports).sort()
 }

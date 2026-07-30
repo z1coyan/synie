@@ -1,6 +1,7 @@
 import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { createRowCommandAdapter } from './catalog/commands'
 import type { ResourceClient, ResourceQuery } from './types'
 
 function queryBody(input: ResourceQuery): ListQuery {
@@ -66,3 +67,8 @@ export function unsetDefaultPrintTemplate(id: string) {
       param: { id }}),
   )
 }
+
+export const printTemplateCommandAdapter = createRowCommandAdapter({
+  setDefault: setDefaultPrintTemplate,
+  unsetDefault: unsetDefaultPrintTemplate,
+})

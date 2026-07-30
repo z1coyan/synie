@@ -1,5 +1,6 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { createRowCommandAdapter } from './catalog/commands'
 import type { ResourceClient, ResourceQuery } from './types'
 
 type FilterDocument = FilterState
@@ -108,6 +109,21 @@ export async function voidOutput(id: string) {
       param: { id }}),
   )
 }
+
+export const demandCommandAdapter = createRowCommandAdapter({
+  confirm: confirmDemand,
+  close: closeDemand,
+  void: voidDemand,
+})
+
+export const workOrderCommandAdapter = createRowCommandAdapter({
+  void: voidWorkOrder,
+})
+
+export const outputCommandAdapter = createRowCommandAdapter({
+  audit: auditOutput,
+  void: voidOutput,
+})
 
 export const operationClient = resourceClient('mfgOperations', {
   async query(input) {
@@ -387,14 +403,6 @@ export const demandClient = resourceClient('mfgDemands', {
         param: { id }}),
     )
   },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'confirm') await confirmDemand(id)
-      else if (key === 'close') await closeDemand(id)
-      else if (key === 'void') await voidDemand(id)
-      else throw new Error(`履约需求单 REST Client 未实现动作 ${key}`)
-    }
-  },
 })
 
 export const demandItemClient = resourceClient('mfgDemandItems', {
@@ -429,12 +437,6 @@ export const demandItemClient = resourceClient('mfgDemandItems', {
       api.manufacturing['demand-items'][':id'].$delete({
         param: { id }}),
     )
-  },
-  async action(key, ids) {
-    if (key !== 'complete') {
-      throw new Error(`履约需求行 REST Client 未实现动作 ${key}`)
-    }
-    for (const id of ids) await completeDemandItem(id)
   },
 })
 
@@ -471,12 +473,6 @@ export const workOrderClient = resourceClient('mfgWorkOrders', {
         param: { id }}),
     )
   },
-  async action(key, ids) {
-    if (key !== 'void') {
-      throw new Error(`生产工单 REST Client 未实现动作 ${key}`)
-    }
-    for (const id of ids) await voidWorkOrder(id)
-  },
 })
 
 export const outputClient = resourceClient('mfgOutputs', {
@@ -510,13 +506,6 @@ export const outputClient = resourceClient('mfgOutputs', {
       api.manufacturing.outputs[':id'].$delete({
         param: { id }}),
     )
-  },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditOutput(id)
-      else if (key === 'void') await voidOutput(id)
-      else throw new Error(`生产入库单 REST Client 未实现动作 ${key}`)
-    }
   },
 })
 

@@ -11,7 +11,7 @@
  *
  * 可扩展统计均为实测，禁止硬置零。
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Actor } from '../src/platform/authz/actor.ts'
@@ -78,6 +78,16 @@ function extractRemoteDefaultKeys(source: string): string[] {
   return extractObjectKeys(source, /const RESOURCE_DEFAULTS_REMOVED/)
 }
 
+function walkFiles(dir: string, accept: (path: string) => boolean): string[] {
+  const files: string[] = []
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry)
+    if (statSync(path).isDirectory()) files.push(...walkFiles(path, accept))
+    else if (accept(path)) files.push(path)
+  }
+  return files
+}
+
 function main() {
   const registry = createSealedResourceRegistry()
   const resources = registry.list().slice().sort((a, b) => a.name.localeCompare(b.name))
@@ -132,7 +142,7 @@ function main() {
     'utf8',
   )
 
-  const clientKeys = extractObjectKeys(clientSource, /const clients[^=]*=\s*\{/)
+  const clientKeys = extractObjectKeys(clientSource, /const transports[^=]*=\s*\{/)
   const drawerKeys = extractObjectKeys(drawerSource, /const registry[^=]*=\s*\{/)
   const remoteDefaultKeys = extractRemoteDefaultKeys(remoteSource)
 
@@ -235,29 +245,21 @@ function main() {
     adapterCommands += catalog.commands.length
     adapterResourcesMeasured.push(name)
   }
-  // Proxy 桥接：bindingFromResourceClient 在 client.action 存在时挂 open Proxy（非 typed）
-  // 扫描 transport 文件是否仍 export `action:` 方法
+  // 禁止开放命令桥：扫描全部资源实现中的 Proxy 与 legacy action transport。
   const webResourcesDir = join(repoRoot, 'web/app/lib/resources')
-  let proxyActionResources = 0
-  const resourceFiles = [
-    'files.ts',
-    'hr-operations.ts',
-    'finance-operations.ts',
-    'manufacturing.ts',
-    'inventory.ts',
-    'orders.ts',
-    'system-ops.ts',
-    'accounting.ts',
-    'fulfillment.ts',
-  ]
-  for (const file of resourceFiles) {
-    const path = join(webResourcesDir, file)
-    try {
-      const src = readFileSync(path, 'utf8')
-      const matches = src.match(/\baction\s*\(/g)
-      if (matches) proxyActionResources += matches.length
-    } catch {
-      /* skip */
+  const resourceSourceFiles = walkFiles(
+    webResourcesDir,
+    (path) => /\.(ts|tsx)$/.test(path) && !/\.test\.(ts|tsx)$/.test(path),
+  )
+  const proxyActionSites: string[] = []
+  for (const path of resourceSourceFiles) {
+    const src = readFileSync(path, 'utf8')
+    const proxyCount = src.match(/\bnew\s+Proxy\s*\(/g)?.length ?? 0
+    const actionCount = src.match(/\baction\s*\(/g)?.length ?? 0
+    if (proxyCount || actionCount) {
+      proxyActionSites.push(
+        `${path.slice(repoRoot.length + 1)}:proxy=${proxyCount},action=${actionCount}`,
+      )
     }
   }
 
@@ -313,9 +315,8 @@ function main() {
   }
   // 页面手写 fields 中 required/edit/placeholder，且涉及 basic 分类资源、未走 Catalog Basic Form
   const routesRoot = join(repoRoot, 'web/app/routes')
-  const pageFieldFactFiles: string[] = []
+  const pageFieldFactCandidates: string[] = []
   function walkTsx(dir: string) {
-    const { readdirSync, statSync } = require('node:fs') as typeof import('node:fs')
     for (const ent of readdirSync(dir)) {
       const p = join(dir, ent)
       if (statSync(p).isDirectory()) walkTsx(p)
@@ -334,63 +335,77 @@ function main() {
           }
         }
         if (!touchesBasic) continue
-        pageFieldFactFiles.push(p.slice(repoRoot.length + 1))
+        pageFieldFactCandidates.push(p.slice(repoRoot.length + 1))
       }
     }
   }
   walkTsx(routesRoot)
 
-  const legacyUsages = drawerFieldFactResources.length + pageFieldFactFiles.length
-
-  // writeStubs：传输层或 binding 兼容层仍抛「不支持 create/update/delete」
+  // writeStubs：全部资源传输/绑定层仍伪造写方法并抛“不支持”。
   let writeStubs = 0
   const writeStubPatterns: string[] = []
-  function countWriteStubs(path: string, label: string) {
-    try {
-      const src = readFileSync(path, 'utf8')
-      const re = /不支持\s*(create|update|delete)|只读[^'"]*不支持写入|throw new Error\([^)]*不支持/g
-      const found = src.match(re)
-      if (found) {
-        writeStubs += found.length
-        writeStubPatterns.push(`${label}:${found.length}`)
-      }
-    } catch {
-      /* skip */
+  for (const path of resourceSourceFiles) {
+    const src = readFileSync(path, 'utf8')
+    const found = [
+      ...src.matchAll(
+        /(?:async\s+)?(?:create|update|delete)\s*\([^)]*\)\s*\{\s*throw\s+new\s+Error/g,
+      ),
+      ...src.matchAll(
+        /(?:create|update|delete)\s*:\s*(?:async\s*)?\([^)]*\)\s*=>\s*\{\s*throw\s+new\s+Error/g,
+      ),
+    ]
+    if (found.length) {
+      writeStubs += found.length
+      writeStubPatterns.push(`${path.slice(repoRoot.length + 1)}:${found.length}`)
     }
   }
-  countWriteStubs(join(webResourcesDir, 'catalog/binding-registry.ts'), 'binding-registry')
-  countWriteStubs(join(webResourcesDir, 'system-ops.ts'), 'system-ops')
-  // 扫描 resources 下其它 client
-  for (const file of resourceFiles) {
-    countWriteStubs(join(webResourcesDir, file), file)
-  }
 
-  // basic 资源中 form.kind=basic 但页面未走 basicFormDrawerProps 的缺口
-  const basicFormPageSources = [
-    readFileSync(join(repoRoot, 'web/app/routes/_app/base/currencies.tsx'), 'utf8'),
-    readFileSync(join(repoRoot, 'web/app/routes/_app/base/units.tsx'), 'utf8'),
-    readFileSync(join(repoRoot, 'web/app/routes/_app/system/companies.tsx'), 'utf8'),
-    readFileSync(join(repoRoot, 'web/app/routes/_app/scm/suppliers.tsx'), 'utf8'),
-    readFileSync(join(repoRoot, 'web/app/routes/_app/scm/material-categories.tsx'), 'utf8'),
-  ]
-  // 扩大扫描：所有 routes 中 basicFormDrawerProps 引用
+  // 全量扫描 useCatalogBasicForm 的资源实参（支持直接字面量与文件内 const）。
   const basicFormConsumerFiles: string[] = []
+  const basicFormConsumerResources = new Set<string>()
   function walkBasicConsumers(dir: string) {
-    const { readdirSync, statSync } = require('node:fs') as typeof import('node:fs')
     for (const ent of readdirSync(dir)) {
       const p = join(dir, ent)
       if (statSync(p).isDirectory()) walkBasicConsumers(p)
-      else if (ent.endsWith('.tsx') || ent.endsWith('.ts')) {
+      else if (
+        (ent.endsWith('.tsx') || ent.endsWith('.ts')) &&
+        !ent.includes('.test.')
+      ) {
         const src = readFileSync(p, 'utf8')
         if (/basicFormDrawerProps|useCatalogBasicForm/.test(src)) {
           basicFormConsumerFiles.push(p.slice(repoRoot.length + 1))
+          const constants = new Map<string, string>()
+          for (const match of src.matchAll(
+            /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*['"`]([A-Za-z][A-Za-z0-9_]*)['"`]/g,
+          )) {
+            constants.set(match[1]!, match[2]!)
+          }
+          for (const match of src.matchAll(
+            /\buseCatalogBasicForm\s*\(\s*(?:['"`]([A-Za-z][A-Za-z0-9_]*)['"`]|([A-Za-z_$][\w$]*))/g,
+          )) {
+            const resource = match[1] ?? constants.get(match[2]!)
+            if (resource) basicFormConsumerResources.add(resource)
+          }
         }
       }
     }
   }
   walkBasicConsumers(routesRoot)
-  // 空引用避免 lint 未用
-  void basicFormPageSources
+  const unconsumedBasicFormResources = [...basicNames]
+    .filter((name) => !basicFormConsumerResources.has(name))
+    .sort()
+  const legacyPageFieldFacts = pageFieldFactCandidates.filter((relativePath) => {
+    const src = readFileSync(join(repoRoot, relativePath), 'utf8')
+    return unconsumedBasicFormResources.some(
+      (name) =>
+        src.includes(`'${name}'`) ||
+        src.includes(`"${name}"`) ||
+        src.includes(`\`${name}\``),
+    )
+  })
+  const legacyUsages =
+    drawerFieldFactResources.length +
+    new Set([...unconsumedBasicFormResources, ...legacyPageFieldFacts]).size
 
   let basicCatalogFormResources = 0
   for (const r of serverResources) {
@@ -403,23 +418,27 @@ function main() {
     declaredCommands,
     adapterCommands,
     adapterResources: adapterResourcesMeasured,
-    proxyActionHooks: proxyActionResources,
+    proxyActionHooks: proxyActionSites.length,
+    proxyActionSites,
     basicWritableFields,
     legacyUsages,
     legacyDrawerFieldFacts: drawerFieldFactResources,
-    legacyPageFieldFacts: pageFieldFactFiles,
+    legacyPageFieldFacts,
     writeStubs,
     writeStubPatterns,
     basicCatalogFormResources,
     basicFormConsumerFiles,
-    typedResources: sealStats.typed,
-    legacyResources: sealStats.legacy,
+    basicFormConsumerResources: [...basicFormConsumerResources].sort(),
+    unconsumedBasicFormResources,
+    normalizedResources: sealStats.normalized,
     formKindCounts,
     presentationCounts,
     notes:
       '实测 gaps：adapterCommands=SEMANTIC_COMMAND_ADAPTERS 覆盖的 catalog 命令数；' +
+      'proxyActionHooks=资源实现中的 new Proxy/action transport；' +
       'legacyUsages=basic 资源 drawer/页面仍手写 required|edit|placeholder；' +
-      'writeStubs=抛「不支持 create/update/delete」的代码点',
+      'writeStubs=伪造写方法并抛「不支持」的代码点；' +
+      'unconsumedBasicFormResources=未由 useCatalogBasicForm 消费的 basic 资源',
   }
 
   const classifications = serverResources.map((r) => {
@@ -429,7 +448,7 @@ function main() {
       presentation: c.presentation,
       interactive: c.interactive,
       note: c.note ?? null,
-      hasClient: clientSet.has(r.name),
+      hasTransport: clientSet.has(r.name),
       hasDrawer: drawerSet.has(r.name),
     }
   })
@@ -444,15 +463,14 @@ function main() {
       fieldTotal,
       actionTotal,
       formDeclared,
-      clientCount: clientKeys.length,
+      transportCount: clientKeys.length,
       drawerKeyCount: drawerKeys.length,
       remoteDefaultCount: remoteDefaultKeys.length,
       missingClientCount: missingClients.length,
       extraClientCount: extraClients.length,
       missingDrawerCount: missingDrawers.length,
       extraDrawerCount: extraDrawers.length,
-      typedResources: sealStats.typed,
-      legacyResources: 0,
+      normalizedResources: sealStats.normalized,
       legacyNormalizerCalls: 0,
       unclassifiedCount: unclassified.length,
       unexplainedMissingClientCount: unexplainedMissingClients.length,
@@ -498,28 +516,27 @@ function main() {
   md.push(`| 字段总数 | ${report.summary.fieldTotal} |`)
   md.push(`| 动作总数 | ${report.summary.actionTotal} |`)
   md.push(`| 声明 Form 的资源 | ${report.summary.formDeclared} |`)
-  md.push(`| 前端 ResourceClient | ${report.summary.clientCount} |`)
-  md.push(`| 抽屉 registry 键 | ${report.summary.drawerKeyCount} |`)
+  md.push(`| 前端 ResourceTransport binding | ${report.summary.transportCount} |`)
+  md.push(`| Presentation Extension registry 键 | ${report.summary.drawerKeyCount} |`)
   md.push(`| Remote 默认配置 | ${report.summary.remoteDefaultCount} |`)
-  md.push(`| 缺 Client | ${report.summary.missingClientCount} |`)
-  md.push(`| 多余 Client | ${report.summary.extraClientCount} |`)
-  md.push(`| 缺 Drawer | ${report.summary.missingDrawerCount} |`)
-  md.push(`| 多余 Drawer | ${report.summary.extraDrawerCount} |`)
-  md.push(`| typed 资源 | ${report.summary.typedResources} |`)
-  md.push(`| legacy 资源 | ${report.summary.legacyResources} |`)
+  md.push(`| 缺 Transport | ${report.summary.missingClientCount} |`)
+  md.push(`| 多余 Transport | ${report.summary.extraClientCount} |`)
+  md.push(`| 缺 PE 配置 | ${report.summary.missingDrawerCount} |`)
+  md.push(`| 多余 PE 配置 | ${report.summary.extraDrawerCount} |`)
+  md.push(`| 已规范化资源 | ${report.summary.normalizedResources} |`)
   md.push(`| legacy normalizer 调用 | ${report.summary.legacyNormalizerCalls} |`)
   md.push(`| 未分类 | ${report.summary.unclassifiedCount} |`)
-  md.push(`| 未解释缺 Client | ${report.summary.unexplainedMissingClientCount} |`)
-  md.push(`| 未解释缺 Drawer | ${report.summary.unexplainedMissingDrawerCount} |`)
+  md.push(`| 未解释缺 Transport | ${report.summary.unexplainedMissingClientCount} |`)
+  md.push(`| 未解释缺 PE 配置 | ${report.summary.unexplainedMissingDrawerCount} |`)
   md.push(`| 拼写漂移 | ${report.summary.knownSpellingDriftCount} |`)
   md.push('')
   md.push('## 缺口与漂移')
   md.push('')
-  md.push('### 服务端有、前端 Client 无')
+  md.push('### 服务端有、前端 Transport 无')
   md.push('')
   md.push(missingClients.length ? missingClients.map((n) => `- \`${n}\``).join('\n') : '_无_')
   md.push('')
-  md.push('### 未解释缺 Client（应为 0）')
+  md.push('### 未解释缺 Transport（应为 0）')
   md.push('')
   md.push(
     unexplainedMissingClients.length
@@ -527,11 +544,11 @@ function main() {
       : '_无_',
   )
   md.push('')
-  md.push('### 前端 Client 有、服务端无')
+  md.push('### 前端 Transport 有、服务端无')
   md.push('')
   md.push(extraClients.length ? extraClients.map((n) => `- \`${n}\``).join('\n') : '_无_')
   md.push('')
-  md.push('### 服务端有、Drawer 无（含仅列表/只读投影属正常）')
+  md.push('### 服务端有、PE 配置无（basic/none/模块共置 PE 属正常）')
   md.push('')
   md.push(
     missingDrawers.length
@@ -539,7 +556,7 @@ function main() {
       : '_无_',
   )
   md.push('')
-  md.push('### 未解释缺 Drawer（应为 0）')
+  md.push('### 未解释缺 PE 配置（应为 0）')
   md.push('')
   md.push(
     unexplainedMissingDrawers.length
@@ -547,7 +564,7 @@ function main() {
       : '_无_',
   )
   md.push('')
-  md.push('### Drawer 有、服务端无')
+  md.push('### PE 配置有、服务端无')
   md.push('')
   md.push(extraDrawers.length ? extraDrawers.map((n) => `- \`${n}\``).join('\n') : '_无_')
   md.push('')
@@ -580,11 +597,11 @@ function main() {
   md.push('')
   md.push('## 资源分类明细')
   md.push('')
-  md.push('| 资源 | 呈现 | 交互 | Client | Drawer | 备注 |')
+  md.push('| 资源 | 呈现 | 交互 | Transport | PE 配置 | 备注 |')
   md.push('|------|------|------|--------|--------|------|')
   for (const c of classifications) {
     md.push(
-      `| \`${c.name}\` | ${c.presentation} | ${c.interactive ? 'yes' : ''} | ${c.hasClient ? 'yes' : ''} | ${c.hasDrawer ? 'yes' : ''} | ${c.note ?? ''} |`,
+      `| \`${c.name}\` | ${c.presentation} | ${c.interactive ? 'yes' : ''} | ${c.hasTransport ? 'yes' : ''} | ${c.hasDrawer ? 'yes' : ''} | ${c.note ?? ''} |`,
     )
   }
   md.push('')
@@ -606,7 +623,7 @@ function main() {
         outDir,
         serverResourceCount: report.summary.serverResourceCount,
         fieldTotal: report.summary.fieldTotal,
-        typed: sealStats.typed,
+        normalized: sealStats.normalized,
         legacyNormalizerCalls: 0,
         unexplainedMissingClients: unexplainedMissingClients.length,
         unexplainedMissingDrawers: unexplainedMissingDrawers.length,

@@ -1,6 +1,6 @@
 # Resource Catalog 迁移基线报告
 
-生成时间：2026-07-30T05:21:05.647Z
+生成时间：2026-07-30T05:58:36.276Z
 
 ## 摘要
 
@@ -8,58 +8,120 @@
 |------|------|
 | 服务端资源 | 97 |
 | 字段总数 | 1383 |
-| 动作总数 | 305 |
+| 动作总数 | 307 |
 | 声明 Form 的资源 | 62 |
-| 前端 ResourceClient | 96 |
-| 抽屉 registry 键 | 84 |
+| 前端 ResourceTransport binding | 96 |
+| Presentation Extension registry 键 | 21 |
 | Remote 默认配置 | 0 |
-| 缺 Client | 1 |
-| 多余 Client | 0 |
-| 缺 Drawer | 13 |
-| 多余 Drawer | 0 |
-| typed 资源 | 97 |
-| legacy 资源 | 0 |
+| 缺 Transport | 1 |
+| 多余 Transport | 0 |
+| 缺 PE 配置 | 76 |
+| 多余 PE 配置 | 0 |
+| 已规范化资源 | 97 |
 | legacy normalizer 调用 | 0 |
 | 未分类 | 0 |
-| 未解释缺 Client | 0 |
-| 未解释缺 Drawer | 0 |
+| 未解释缺 Transport | 0 |
+| 未解释缺 PE 配置 | 0 |
 | 拼写漂移 | 0 |
 
 ## 缺口与漂移
 
-### 服务端有、前端 Client 无
+### 服务端有、前端 Transport 无
 
 - `sysRolePermissions`
 
-### 未解释缺 Client（应为 0）
+### 未解释缺 Transport（应为 0）
 
 _无_
 
-### 前端 Client 有、服务端无
+### 前端 Transport 有、服务端无
 
 _无_
 
-### 服务端有、Drawer 无（含仅列表/只读投影属正常）
+### 服务端有、PE 配置无（basic/none/模块共置 PE 属正常）
 
+- `accBankAccounts`
+- `accBankImportItems`
+- `accBankImportTemplates`
+- `accBankImports`
+- `accBankReconciliations`
+- `accBankTransactions`
+- `accBillHoldings`
+- `accBillTransactions`
+- `accExpenseReportItems`
+- `accExpenseReports`
+- `accGlEntries`
+- `accGlJournalLines`
+- `accGlJournals`
 - `accSettings`
+- `accVatInvoices`
+- `basAccounts`
+- `basCompanies`
+- `basCurrencies`
+- `basMarketInstruments`
+- `basMarketPricePoints`
+- `basUnits`
 - `hrAttendanceCorrections`
 - `hrAttendanceDays`
+- `hrAttendanceImports`
+- `hrAttendancePunches`
+- `hrEmployeeLoans`
+- `hrEmployees`
+- `hrPayrollPayments`
 - `invMaterialCategories`
+- `invMaterialUnits`
+- `invMaterials`
+- `invStockCountItems`
+- `invStockDocItems`
+- `invStockEntries`
+- `invStockTransferItems`
+- `invWarehouses`
+- `mfgBomByproducts`
+- `mfgBomComponents`
+- `mfgBomRoutes`
+- `mfgDemandItems`
+- `mfgOperations`
+- `mfgOutputItems`
+- `mfgProcessTemplateItems`
+- `mfgSettings`
 - `purOrderItemByproducts`
 - `purOrderItemMaterials`
+- `purOrderItems`
+- `purOutsourcedIssueItems`
+- `purOutsourcedReceiptItemByproducts`
+- `purOutsourcedReceiptItemMaterials`
+- `purOutsourcedReceiptItems`
+- `purQuotationItems`
+- `purQuotationTiers`
+- `purReceiptItems`
+- `purReconciliationItems`
+- `purSuppliers`
 - `salCompanyAccountDefaults`
+- `salCustomers`
+- `salDeliveryItems`
 - `salDeliveryPackBoxes`
 - `salDeliveryPackLines`
+- `salOrderItems`
+- `salQuotationItems`
+- `salQuotationTiers`
+- `salReconciliationItems`
 - `salSettings`
 - `scmOrderFlowItems`
+- `sysAuditLogs`
+- `sysFiles`
+- `sysNumberingCounters`
+- `sysNumberingRules`
+- `sysPrintTemplates`
 - `sysRolePermissions`
 - `sysSettings`
+- `sysStorages`
+- `sysUsers`
 
-### 未解释缺 Drawer（应为 0）
+### 未解释缺 PE 配置（应为 0）
 
 _无_
 
-### Drawer 有、服务端无
+### PE 配置有、服务端无
 
 _无_
 
@@ -75,9 +137,9 @@ _无_
 
 ```json
 {
-  "basic": 22,
-  "extension": 31,
-  "none": 44,
+  "basic": 17,
+  "extension": 35,
+  "none": 45,
   "reference-only": 0
 }
 ```
@@ -86,72 +148,96 @@ _无_
 
 ```json
 {
-  "declaredCommands": 51,
-  "adapterCommands": 3,
+  "declaredCommands": 53,
+  "adapterCommands": 53,
   "adapterResources": [
-    "sysStorages",
+    "accBankTransactions",
+    "accBillTransactions",
+    "accExpenseReports",
+    "accGlJournals",
+    "accVatInvoices",
+    "basMarketPricePoints",
     "hrAttendanceDays",
-    "accBankTransactions"
+    "invStockCounts",
+    "invStockDocs",
+    "invStockTransfers",
+    "mfgDemands",
+    "mfgOutputs",
+    "mfgWorkOrders",
+    "purOrders",
+    "purOutsourcedIssues",
+    "purOutsourcedReceipts",
+    "purQuotations",
+    "purReceipts",
+    "purReconciliations",
+    "salDeliveries",
+    "salOrders",
+    "salQuotations",
+    "salReconciliations",
+    "sysPrintTemplates",
+    "sysStorages"
   ],
-  "proxyActionHooks": 17,
-  "basicWritableFields": 98,
-  "legacyUsages": 17,
+  "proxyActionHooks": 0,
+  "proxyActionSites": [],
+  "basicWritableFields": 99,
+  "legacyUsages": 0,
   "legacyDrawerFieldFacts": [],
-  "legacyPageFieldFacts": [
-    "web/app/routes/_app/finance/acceptance/-transaction-drawer.tsx",
-    "web/app/routes/_app/finance/-bank-import-drawers.tsx",
-    "web/app/routes/_app/finance/invoices.tsx",
-    "web/app/routes/_app/finance/bank-transactions.tsx",
-    "web/app/routes/_app/finance/bank-import-templates.tsx",
-    "web/app/routes/_app/finance/journals.tsx",
-    "web/app/routes/_app/system/numbering.tsx",
-    "web/app/routes/_app/system/storages.tsx",
-    "web/app/routes/_app/system/print-templates.tsx",
-    "web/app/routes/_app/scm/warehouses.tsx",
-    "web/app/routes/_app/scm/sales-orders/-order-drawer.tsx",
-    "web/app/routes/_app/scm/materials.tsx",
-    "web/app/routes/_app/scm/purchase/-order-drawer.tsx",
-    "web/app/routes/_app/hr/attendance/corrections.tsx",
-    "web/app/routes/_app/hr/payroll/loans.tsx",
-    "web/app/routes/_app/hr/payroll/slips.tsx",
-    "web/app/routes/_app/hr/payroll/-payments-section.tsx"
-  ],
-  "writeStubs": 14,
-  "writeStubPatterns": [
-    "binding-registry:1",
-    "system-ops:2",
-    "hr-operations.ts:2",
-    "finance-operations.ts:2",
-    "inventory.ts:3",
-    "system-ops.ts:2",
-    "accounting.ts:1",
-    "fulfillment.ts:1"
-  ],
-  "basicCatalogFormResources": 18,
+  "legacyPageFieldFacts": [],
+  "writeStubs": 0,
+  "writeStubPatterns": [],
+  "basicCatalogFormResources": 17,
   "basicFormConsumerFiles": [
     "web/app/routes/_app/finance/bank-accounts.tsx",
+    "web/app/routes/_app/finance/bank-import-templates.tsx",
+    "web/app/routes/_app/system/numbering.tsx",
     "web/app/routes/_app/system/users.tsx",
+    "web/app/routes/_app/system/storages.tsx",
+    "web/app/routes/_app/system/print-templates.tsx",
     "web/app/routes/_app/system/companies.tsx",
     "web/app/routes/_app/scm/suppliers.tsx",
     "web/app/routes/_app/scm/material-categories.tsx",
+    "web/app/routes/_app/hr/attendance/corrections.tsx",
+    "web/app/routes/_app/hr/payroll/loans.tsx",
+    "web/app/routes/_app/hr/payroll/payments.tsx",
+    "web/app/routes/_app/hr/payroll/-payments-section.tsx",
     "web/app/routes/_app/base/currencies.tsx",
     "web/app/routes/_app/base/market.tsx",
     "web/app/routes/_app/base/units.tsx",
     "web/app/routes/_app/mfg/operations.tsx"
   ],
-  "typedResources": 97,
+  "basicFormConsumerResources": [
+    "accBankAccounts",
+    "accBankImportTemplates",
+    "basCompanies",
+    "basCurrencies",
+    "basMarketInstruments",
+    "basMarketPricePoints",
+    "basUnits",
+    "hrAttendanceCorrections",
+    "hrEmployeeLoans",
+    "hrPayrollPayments",
+    "invMaterialCategories",
+    "mfgOperations",
+    "purSuppliers",
+    "sysNumberingRules",
+    "sysPrintTemplates",
+    "sysStorages",
+    "sysUsers"
+  ],
+  "unconsumedBasicFormResources": [],
+  "normalizedResources": 97,
   "formKindCounts": {
-    "basic": 18,
-    "none": 48,
-    "extension": 31
+    "basic": 17,
+    "none": 45,
+    "extension": 35
   },
   "presentationCounts": {
-    "basic": 22,
-    "extension": 31,
-    "none": 44,
+    "basic": 17,
+    "extension": 35,
+    "none": 45,
     "reference-only": 0
   },
-  "notes": "实测 gaps：adapterCommands=SEMANTIC_COMMAND_ADAPTERS 覆盖的 catalog 命令数；legacyUsages=basic 资源 drawer/页面仍手写 required|edit|placeholder；writeStubs=抛「不支持 create/update/delete」的代码点"
+  "notes": "实测 gaps：adapterCommands=SEMANTIC_COMMAND_ADAPTERS 覆盖的 catalog 命令数；proxyActionHooks=资源实现中的 new Proxy/action transport；legacyUsages=basic 资源 drawer/页面仍手写 required|edit|placeholder；writeStubs=伪造写方法并抛「不支持」的代码点；unconsumedBasicFormResources=未由 useCatalogBasicForm 消费的 basic 资源"
 }
 ```
 
@@ -161,105 +247,105 @@ _无_
 
 ## 资源分类明细
 
-| 资源 | 呈现 | 交互 | Client | Drawer | 备注 |
+| 资源 | 呈现 | 交互 | Transport | PE 配置 | 备注 |
 |------|------|------|--------|--------|------|
-| `accBankAccounts` | basic | yes | yes | yes |  |
-| `accBankImportItems` | none |  | yes | yes |  |
-| `accBankImports` | none |  | yes | yes |  |
-| `accBankImportTemplates` | basic | yes | yes | yes |  |
-| `accBankReconciliations` | none |  | yes | yes |  |
-| `accBankTransactions` | extension | yes | yes | yes | 对账 reconcile 命令 + 导入 |
-| `accBillHoldings` | none |  | yes | yes | 只读持有投影 |
+| `accBankAccounts` | basic | yes | yes |  |  |
+| `accBankImportItems` | none |  | yes |  |  |
+| `accBankImports` | none |  | yes |  |  |
+| `accBankImportTemplates` | basic | yes | yes |  |  |
+| `accBankReconciliations` | none |  | yes |  |  |
+| `accBankTransactions` | extension | yes | yes |  | 对账 reconcile 命令 + 导入 |
+| `accBillHoldings` | none |  | yes |  | 只读持有投影 |
 | `accBills` | extension | yes | yes | yes | 票面影像附件 |
-| `accBillTransactions` | extension | yes | yes | yes |  |
-| `accExpenseReportItems` | none |  | yes | yes |  |
-| `accExpenseReports` | extension | yes | yes | yes |  |
-| `accGlEntries` | none |  | yes | yes | 只读总账分录 |
-| `accGlJournalLines` | none |  | yes | yes |  |
-| `accGlJournals` | extension | yes | yes | yes |  |
-| `accSettings` | basic | yes | yes |  | update-only |
-| `accVatInvoices` | extension | yes | yes | yes | OCR Presentation Extension |
-| `basAccounts` | extension | yes | yes | yes | 汇总科目 effects + role 动态可见 + 公司上下文 parent 筛选 |
-| `basCompanies` | basic | yes | yes | yes |  |
-| `basCurrencies` | basic | yes | yes | yes |  |
-| `basMarketInstruments` | basic | yes | yes | yes |  |
-| `basMarketPricePoints` | basic | yes | yes | yes | create-only + void 命令；无 update |
-| `basUnits` | basic | yes | yes | yes |  |
+| `accBillTransactions` | extension | yes | yes |  |  |
+| `accExpenseReportItems` | none |  | yes |  |  |
+| `accExpenseReports` | extension | yes | yes |  |  |
+| `accGlEntries` | none |  | yes |  | 只读总账分录 |
+| `accGlJournalLines` | none |  | yes |  |  |
+| `accGlJournals` | extension | yes | yes |  |  |
+| `accSettings` | extension | yes | yes |  | update-only 单行设置卡片；含 OCR 密钥只写交互 |
+| `accVatInvoices` | extension | yes | yes |  | OCR Presentation Extension |
+| `basAccounts` | extension | yes | yes |  | 汇总科目 effects + role 动态可见 + 公司上下文 parent 筛选 |
+| `basCompanies` | basic | yes | yes |  |  |
+| `basCurrencies` | basic | yes | yes |  |  |
+| `basMarketInstruments` | basic | yes | yes |  |  |
+| `basMarketPricePoints` | basic | yes | yes |  | create-only + void 命令；无 update |
+| `basUnits` | basic | yes | yes |  |  |
 | `hrAttendanceCorrections` | basic | yes | yes |  |  |
 | `hrAttendanceDays` | none |  | yes |  | 列表 + collection recalc，无表单 |
-| `hrAttendanceImports` | none |  | yes | yes |  |
-| `hrAttendancePunches` | none |  | yes | yes |  |
-| `hrEmployeeLoans` | basic | yes | yes | yes |  |
-| `hrEmployees` | extension | yes | yes | yes | 身份证影像 extraContent |
-| `hrPayrollPayments` | basic | yes | yes | yes | create+delete，无 update |
+| `hrAttendanceImports` | none |  | yes |  |  |
+| `hrAttendancePunches` | none |  | yes |  |  |
+| `hrEmployeeLoans` | basic | yes | yes |  |  |
+| `hrEmployees` | extension | yes | yes |  | 身份证影像 extraContent |
+| `hrPayrollPayments` | basic | yes | yes |  | create+delete，无 update |
 | `hrPayrolls` | extension | yes | yes | yes |  |
 | `invMaterialCategories` | basic | yes | yes |  |  |
-| `invMaterials` | extension | yes | yes | yes | 单位转换 tab + 客户料 effects + 图纸附件 |
-| `invMaterialUnits` | none |  | yes | yes | 嵌于物料 PE 子表，无独立抽屉 |
-| `invStockCountItems` | none |  | yes | yes |  |
+| `invMaterials` | extension | yes | yes |  | 单位转换 tab + 客户料 effects + 图纸附件 |
+| `invMaterialUnits` | none |  | yes |  | 嵌于物料 PE 子表，无独立抽屉 |
+| `invStockCountItems` | none |  | yes |  |  |
 | `invStockCounts` | extension | yes | yes | yes |  |
-| `invStockDocItems` | none |  | yes | yes |  |
+| `invStockDocItems` | none |  | yes |  |  |
 | `invStockDocs` | extension | yes | yes | yes |  |
-| `invStockEntries` | none |  | yes | yes | 只读库存分录 |
-| `invStockTransferItems` | none |  | yes | yes |  |
+| `invStockEntries` | none |  | yes |  | 只读库存分录 |
+| `invStockTransferItems` | none |  | yes |  |  |
 | `invStockTransfers` | extension | yes | yes | yes |  |
-| `invWarehouses` | extension | yes | yes | yes | 协作方多态外键，Basic Form fail-closed |
-| `mfgBomByproducts` | none |  | yes | yes |  |
-| `mfgBomComponents` | none |  | yes | yes |  |
-| `mfgBomRoutes` | none |  | yes | yes |  |
+| `invWarehouses` | extension | yes | yes |  | 协作方多态外键，Basic Form fail-closed |
+| `mfgBomByproducts` | none |  | yes |  |  |
+| `mfgBomComponents` | none |  | yes |  |  |
+| `mfgBomRoutes` | none |  | yes |  |  |
 | `mfgBoms` | extension | yes | yes | yes |  |
-| `mfgDemandItems` | none |  | yes | yes |  |
+| `mfgDemandItems` | none |  | yes |  |  |
 | `mfgDemands` | extension | yes | yes | yes |  |
-| `mfgOperations` | basic | yes | yes | yes |  |
-| `mfgOutputItems` | none |  | yes | yes |  |
+| `mfgOperations` | basic | yes | yes |  |  |
+| `mfgOutputItems` | none |  | yes |  |  |
 | `mfgOutputs` | extension | yes | yes | yes |  |
-| `mfgProcessTemplateItems` | none |  | yes | yes |  |
+| `mfgProcessTemplateItems` | none |  | yes |  |  |
 | `mfgProcessTemplates` | extension | yes | yes | yes |  |
-| `mfgSettings` | basic | yes | yes | yes | update-only 设置；前端历史拼写 mfgSetting 已删除 |
+| `mfgSettings` | extension | yes | yes |  | update-only 单行设置卡片；含百分比显示转换 |
 | `mfgWorkOrders` | extension | yes | yes | yes |  |
 | `purOrderItemByproducts` | none |  | yes |  |  |
 | `purOrderItemMaterials` | none |  | yes |  |  |
-| `purOrderItems` | none |  | yes | yes |  |
+| `purOrderItems` | none |  | yes |  |  |
 | `purOrders` | extension | yes | yes | yes |  |
-| `purOutsourcedIssueItems` | none |  | yes | yes |  |
+| `purOutsourcedIssueItems` | none |  | yes |  |  |
 | `purOutsourcedIssues` | extension | yes | yes | yes |  |
-| `purOutsourcedReceiptItemByproducts` | none |  | yes | yes |  |
-| `purOutsourcedReceiptItemMaterials` | none |  | yes | yes |  |
-| `purOutsourcedReceiptItems` | none |  | yes | yes |  |
+| `purOutsourcedReceiptItemByproducts` | none |  | yes |  |  |
+| `purOutsourcedReceiptItemMaterials` | none |  | yes |  |  |
+| `purOutsourcedReceiptItems` | none |  | yes |  |  |
 | `purOutsourcedReceipts` | extension | yes | yes | yes |  |
-| `purQuotationItems` | none |  | yes | yes |  |
+| `purQuotationItems` | none |  | yes |  |  |
 | `purQuotations` | extension | yes | yes | yes |  |
-| `purQuotationTiers` | none |  | yes | yes |  |
-| `purReceiptItems` | none |  | yes | yes |  |
+| `purQuotationTiers` | none |  | yes |  |  |
+| `purReceiptItems` | none |  | yes |  |  |
 | `purReceipts` | extension | yes | yes | yes |  |
-| `purReconciliationItems` | none |  | yes | yes |  |
+| `purReconciliationItems` | none |  | yes |  |  |
 | `purReconciliations` | extension | yes | yes | yes |  |
-| `purSuppliers` | basic | yes | yes | yes |  |
+| `purSuppliers` | basic | yes | yes |  |  |
 | `salCompanyAccountDefaults` | none |  | yes |  | 公司科目默认只读投影 / 嵌入设置 |
-| `salCustomers` | extension | yes | yes | yes | 附件面板 Presentation Extension |
+| `salCustomers` | extension | yes | yes |  | 附件面板 Presentation Extension |
 | `salDeliveries` | extension | yes | yes | yes | AggregateDraftAdapter + 装箱 |
-| `salDeliveryItems` | none |  | yes | yes |  |
+| `salDeliveryItems` | none |  | yes |  |  |
 | `salDeliveryPackBoxes` | none |  | yes |  |  |
 | `salDeliveryPackLines` | none |  | yes |  |  |
-| `salOrderItems` | none |  | yes | yes |  |
+| `salOrderItems` | none |  | yes |  |  |
 | `salOrders` | extension | yes | yes | yes |  |
-| `salQuotationItems` | none |  | yes | yes |  |
+| `salQuotationItems` | none |  | yes |  |  |
 | `salQuotations` | extension | yes | yes | yes |  |
-| `salQuotationTiers` | none |  | yes | yes |  |
-| `salReconciliationItems` | none |  | yes | yes |  |
+| `salQuotationTiers` | none |  | yes |  |  |
+| `salReconciliationItems` | none |  | yes |  |  |
 | `salReconciliations` | extension | yes | yes | yes |  |
-| `salSettings` | basic | yes | yes |  | update-only |
+| `salSettings` | extension | yes | yes |  | update-only 单行设置卡片 |
 | `scmOrderFlowItems` | none |  | yes |  | 订单流只读投影 |
-| `sysAuditLogs` | none |  | yes | yes | 只读审计 |
-| `sysFiles` | basic | yes | yes | yes | create+delete，无 update |
-| `sysNumberingCounters` | none |  | yes | yes | 计数器只读投影 |
-| `sysNumberingRules` | basic | yes | yes | yes |  |
-| `sysPrintTemplates` | basic | yes | yes | yes |  |
+| `sysAuditLogs` | none |  | yes |  | 只读审计 |
+| `sysFiles` | none | yes | yes |  | 上传创建、只读详情与删除；无普通 create/edit Form |
+| `sysNumberingCounters` | none |  | yes |  | 计数器只读投影 |
+| `sysNumberingRules` | basic | yes | yes |  |  |
+| `sysPrintTemplates` | basic | yes | yes |  |  |
 | `sysRolePermissions` | none |  |  |  | catalog-only：嵌于角色 PE，无独立 Client/抽屉 |
 | `sysRoles` | extension | yes | yes | yes | builtin 动态隐藏 + 权限矩阵 |
-| `sysSettings` | basic | yes | yes |  | update-only |
-| `sysStorages` | basic | yes | yes | yes | setDefault 命令 |
-| `sysUsers` | basic | yes | yes | yes |  |
+| `sysSettings` | extension | yes | yes |  | update-only 单行设置卡片；含调度运行状态 |
+| `sysStorages` | basic | yes | yes |  | setDefault 命令 |
+| `sysUsers` | basic | yes | yes |  |  |
 
 ## 资源明细（名称 / 字段 / 动作 / Form）
 
@@ -356,7 +442,7 @@ _无_
 | `sysFiles` | `sys.file` | 9 | 3 | yes |
 | `sysNumberingCounters` | `sys.numbering_rule` | 6 | 0 | yes |
 | `sysNumberingRules` | `sys.numbering_rule` | 8 | 4 | yes |
-| `sysPrintTemplates` | `sys.print_template` | 8 | 4 | yes |
+| `sysPrintTemplates` | `sys.print_template` | 8 | 6 | yes |
 | `sysRolePermissions` | `sys.role_permission` | 4 | 3 |  |
 | `sysRoles` | `sys.role` | 7 | 8 | yes |
 | `sysSettings` | `sys.setting` | 8 | 2 | yes |

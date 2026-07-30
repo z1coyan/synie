@@ -3,7 +3,12 @@
  * ResourceDocument v2 是 Meta 资源响应的唯一 envelope（见 resource-document.ts）。
  * Grid 列/动作本地类型仍由此文件导出，供前端从 ResourceDocument 派生。
  */
-import type { ResourceDocument } from './resource-document.ts'
+import type { FilterState } from './filter.ts'
+import type {
+  BasicFormSection,
+  BasicFormTab,
+  ResourceDocument,
+} from './resource-document.ts'
 
 export type GridColumnType =
   | 'string'
@@ -76,16 +81,51 @@ export interface GridMeta {
   canDelete: boolean
 }
 
+/** 服务端 FormMeta 的字段呈现提示；字段事实仍以 FieldMeta 为唯一来源。 */
+export interface FormFieldMeta {
+  /** 创建时静态初值；不得用于依赖运行时上下文的默认值。 */
+  initial?: unknown
+  /** @deprecated 使用 initial；仅保留迁移兼容。 */
+  defaultValue?: unknown
+  placeholder?: string
+  /** 1–12 栅格跨度。 */
+  span?: number
+  /** @deprecated 使用 span；仅保留迁移兼容。 */
+  cols?: number
+  /** 扁平 basic 布局中的排序权重；缺省沿 fields 顺序。 */
+  order?: number
+  picker?: 'default' | 'dialog'
+  filterState?: FilterState
+  remote?: {
+    filterState?: FilterState
+  }
+  /**
+   * @deprecated 字段是否必填是 FieldMeta.required 的事实。
+   * 仅用于存量 extension 声明；basic form 在 seal 时拒绝此项。
+   */
+  required?: boolean
+  /**
+   * @deprecated 字段可写性是 FieldMeta.readonly/createOnly 的事实。
+   * 仅用于存量 extension 声明；basic form 在 seal 时拒绝此项。
+   */
+  edit?: 'readOnly' | 'createOnly'
+  /**
+   * @deprecated 字段标签是 FieldMeta.label 的事实。
+   * 仅用于存量 extension 声明；basic form 在 seal 时拒绝此项。
+   */
+  label?: string
+}
+
 /**
- * @deprecated 服务端 form 声明仅用于定义期；wire 使用 ResourceDocument.form。
- * 保留类型供服务端 ResourceMeta.form 使用。
+ * 服务端定义期 Form Meta。wire 只使用 ResourceDocument.form。
+ * 不携带校验函数、事务、命令、脚本或组件引用。
  */
 export interface FormMeta {
   kind?: 'basic' | 'extension' | 'none'
   exclude?: string[]
-  fields?: Record<string, Record<string, unknown>>
-  sections?: Record<string, unknown>[]
-  tabs?: Record<string, unknown>[]
+  fields?: Record<string, FormFieldMeta>
+  sections?: BasicFormSection[]
+  tabs?: BasicFormTab[]
 }
 
 /**

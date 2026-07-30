@@ -83,13 +83,10 @@ function BankAccountsPage() {
           ...formProps.fields,
           companyId: {
             ...formProps.fields.companyId,
-            order: -1,
             effects: () => ({ accountId: null }),
           },
           accountId: {
             ...formProps.fields.accountId,
-            order: 7,
-            cols: 6,
             input: ({ value, onChange, isDisabled, values }) => {
               const companyId = (values.companyId ?? null) as string | null
               return (

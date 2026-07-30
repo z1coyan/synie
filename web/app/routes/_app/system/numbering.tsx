@@ -15,8 +15,8 @@ import { resourceLabel } from '~/components/synie-permission-sheet/permission-la
 import {
   listNumberableResources,
   numberingCounterClient,
-  numberingRuleClient,
 } from '~/lib/resources/numbering'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -70,9 +70,13 @@ function NumberingPage() {
   const [countersSnapshot, setCountersSnapshot] = useState<Row[]>([])
   const queryClient = useQueryClient()
   const requestID = useRef(0)
+  const { binding, client, formProps } = useCatalogBasicForm(
+    'sysNumberingRules',
+    '编号规则',
+  )
 
   const numberables = useQuery({
-    queryKey: ['numberableResources', numberingRuleClient.id],
+    queryKey: ['numberableResources', client.id],
     queryFn: listNumberableResources,
     staleTime: 5 * 60_000,
   })
@@ -120,7 +124,7 @@ function NumberingPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="sysNumberingRules"
-          client={numberingRuleClient}
+          client={client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
@@ -128,10 +132,15 @@ function NumberingPage() {
           onEdit={(row) => openDrawer('edit', row)}
           rowActions={statusToggleActions({
             field: 'enabled',
-            update: numberingRuleClient.update,
+            update: (id, input) => {
+              if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) {
+                throw new Error('编号规则不支持 update')
+              }
+              return binding.writer.update(id, input)
+            },
             onDone: () =>
               queryClient.invalidateQueries({
-                queryKey: ['gridRows', numberingRuleClient.id, 'sysNumberingRules'],
+                queryKey: ['gridRows', client.id, 'sysNumberingRules'],
               }),
           })}
         />
@@ -139,8 +148,8 @@ function NumberingPage() {
 
       <SynieRecordDrawer
         resource="sysNumberingRules"
-        client={numberingRuleClient}
-        label="编号规则"
+        client={client}
+        label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => {
@@ -152,17 +161,16 @@ function NumberingPage() {
         }}
         row={drawer?.row}
         contentClassName="w-full lg:w-[640px]"
-        exclude={['enabled']}
+        exclude={[...formProps.exclude, 'enabled']}
         fields={{
+          ...formProps.fields,
           resource: {
-            required: true,
-            edit: 'createOnly',
+            ...formProps.fields.resource,
             effects: () => ({ segments: [] }),
             render: (value) => resourceLabel(String(value ?? '')),
             input: ({ value, onChange, isDisabled }) => (
               <Select
                 isDisabled={isDisabled}
-                isRequired
                 placeholder="选择要自动编号的单据…"
                 value={value == null ? null : String(value)}
                 onChange={(selected) => onChange(selected)}
@@ -192,9 +200,8 @@ function NumberingPage() {
               </Select>
             ),
           },
-          name: { required: true, placeholder: '如 记账凭证编号' },
           segments: {
-            required: true,
+            ...formProps.fields.segments,
             normalize: parseSegments,
             render: (value) => (
               <span className="font-mono text-sm">
@@ -210,7 +217,6 @@ function NumberingPage() {
               />
             ),
           },
-          perCompany: { defaultValue: true, cols: 6 },
         }}
         onEdit={() => setDrawer((current) => (current ? { ...current, mode: 'edit' } : current))}
         extraContent={(mode, row) =>
@@ -239,11 +245,18 @@ function NumberingPage() {
             throw new Error('编号段不能为空,且必须恰好包含一个序号段')
           }
           const input = { ...values, segments }
+          if (!binding.writer) throw new Error('编号规则不支持写入')
           if (mode === 'create') {
-            await numberingRuleClient.create(input)
+            if (!('create' in binding.writer) || !binding.writer.create) {
+              throw new Error('编号规则不支持 create')
+            }
+            await binding.writer.create(input)
             toast.success('编号规则已创建')
           } else {
-            await numberingRuleClient.update(drawer!.row!.id, input)
+            if (!('update' in binding.writer) || !binding.writer.update) {
+              throw new Error('编号规则不支持 update')
+            }
+            await binding.writer.update(drawer!.row!.id, input)
             const counterErrors = await persistCounters(counters, countersSnapshot)
             if (counterErrors.length > 0) {
               toast.danger('规则已更新,但部分计数器保存失败', {
@@ -254,7 +267,7 @@ function NumberingPage() {
             }
           }
           await queryClient.invalidateQueries({
-            queryKey: ['gridRows', numberingRuleClient.id, 'sysNumberingRules'],
+            queryKey: ['gridRows', client.id, 'sysNumberingRules'],
           })
         }}
       />

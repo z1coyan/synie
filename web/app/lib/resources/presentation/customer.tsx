@@ -9,7 +9,7 @@ import type { PresentationExtension } from './types'
 export const CUSTOMER_RESOURCE = 'salCustomers'
 
 /**
- * 由 salCustomers binding 构造；不得在内部再 resourceClientFor / resourceBindingFor。
+ * 由 salCustomers binding 构造；不得在内部再次解析 transport / binding。
  */
 export function createCustomerPresentation(
   binding: ResourceBinding,

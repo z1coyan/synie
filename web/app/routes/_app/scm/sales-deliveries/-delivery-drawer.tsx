@@ -83,7 +83,11 @@ export const deliveryAuditConfig = {
     { key: 'remarks', label: '行备注' },
   ],
   loadItems: loadDeliveryItemsForAudit,
-  audit: (deliveryId: string) => salesDeliveryClient.action!('audit', [deliveryId]),
+  audit: (deliveryId: string) => {
+    const commands = resourceBindingFor('salDeliveries').commands
+    if (!commands) throw new Error('销售发货单未绑定 audit 命令')
+    return commands.execute('audit', { id: deliveryId })
+  },
 } satisfies AuditDocConfig
 
 const DeliveryDrawerContext = createContext<OpenDeliveryDrawer>(() => {})

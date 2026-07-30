@@ -373,6 +373,14 @@ export function bankAccountResourceMeta(): ResourceMeta {
       }),
     ],
     actions: crudActions,
+    form: {
+      kind: 'basic',
+      exclude: ['id', 'active', 'insertedAt', 'updatedAt'],
+      fields: {
+        companyId: { order: -1 },
+        accountId: { order: 7, span: 6 },
+      },
+    },
     audit: { enabled: true },
 
   }
@@ -437,8 +445,12 @@ export function bankImportTemplateResourceMeta(): ResourceMeta {
     table: 'acc_bank_import_template',
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
-      field('name', 'name', 'string', '模板名称', { filterable: true, sortable: true }),
-      field('start_row', 'startRow', 'integer', '起始行', { filterable: true, sortable: true }),
+      field('name', 'name', 'string', '模板名称', {
+        required: true, filterable: true, sortable: true,
+      }),
+      field('start_row', 'startRow', 'integer', '起始行', {
+        required: true, filterable: true, sortable: true,
+      }),
       field('datetime_col', 'datetimeCol', 'string', '日期时间列', { filterable: true, sortable: true }),
       field('datetime_format', 'datetimeFormat', 'enum', '日期时间格式', {
         enumOptions: datetimeFormatOptions, filterable: true, sortable: true,
@@ -466,11 +478,32 @@ export function bankImportTemplateResourceMeta(): ResourceMeta {
         ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
       }),
       field('bank_account_id', 'bankAccountId', 'fk', '银行账户', {
-        filterable: true, sortable: true,
+        required: true, filterable: true, sortable: true,
         ref: { resource: 'accBankAccounts', relation: 'bankAccount', labelField: 'alias' },
       }),
     ],
     actions: crudActions,
+    form: {
+      kind: 'basic',
+      exclude: ['id', 'insertedAt', 'updatedAt'],
+      fields: {
+        companyId: { order: -1 },
+        name: { placeholder: '如 招行专业版对账单' },
+        startRow: { initial: 2, placeholder: '数据首行,1 起数' },
+        bankAccountId: { order: 2 },
+        datetimeCol: { placeholder: '如 A;与日期/时间列二选一' },
+        dateCol: { placeholder: '如 A;与日期时间列二选一' },
+        timeCol: { placeholder: '可空,缺省按 00:00:00' },
+        incomeCol: { placeholder: '如 C;与金额列互斥' },
+        expenseCol: { placeholder: '如 D;与金额列互斥' },
+        amountCol: { placeholder: '带符号:正=收入、负=支出' },
+        balanceCol: { placeholder: '如 E' },
+        counterpartyNameCol: { placeholder: '如 F' },
+        counterpartyAccountCol: { placeholder: '如 G' },
+        summaryCol: { placeholder: '如 H' },
+        noteCol: { placeholder: '如 I' },
+      },
+    },
     audit: { enabled: true },
 
   }

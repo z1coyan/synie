@@ -3,12 +3,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Chip, Spinner, Table, toast } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
 import {
-  createPayrollPayment,
-  deletePayrollPayment,
-  payrollPaymentClient,
   queryPayrollPayments,
   type PayrollPaymentRow,
 } from '~/lib/resources/hr-operations'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -25,6 +23,7 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
   const [createOpen, setCreateOpen] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  const paymentForm = useCatalogBasicForm('hrPayrollPayments', '工资发放')
 
   // 门控按 hrPayrollPayments 自身权限码(发放≠改单)
   const meta = useGridMeta(
@@ -50,7 +49,14 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
   const remove = async (row: PaymentRow) => {
     setDeleting(row.id)
     try {
-      await deletePayrollPayment(row.id)
+      if (
+        !paymentForm.binding.writer ||
+        !('delete' in paymentForm.binding.writer) ||
+        !paymentForm.binding.writer.delete
+      ) {
+        throw new Error('工资发放不支持 delete')
+      }
+      await paymentForm.binding.writer.delete(row.id)
       toast.success('发放记录已删除;该单已无发放记录时自动翻回待发放')
       refreshAll()
     } catch (e) {
@@ -131,21 +137,38 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
       {/* 登记发放/补发:二级抽屉复用 RecordDrawer 表单机制;payrollId 固定注入不进表单 */}
       <SynieRecordDrawer
         resource="hrPayrollPayments"
-        client={payrollPaymentClient}
+        client={paymentForm.client}
         label={isPaid ? '补发' : '发放'}
         mode="create"
         isOpen={createOpen}
         onOpenChange={(open) => !open && setCreateOpen(false)}
-        exclude={['payrollId', 'employeeId', 'month', 'kind', 'createdById', 'insertedAt', 'updatedAt']}
+        exclude={paymentForm.formProps.exclude}
         fields={{
-          paidOn: { required: true, order: 0, defaultValue: today() },
+          ...paymentForm.formProps.fields,
+          paidOn: {
+            ...paymentForm.formProps.fields.paidOn,
+            defaultValue: today(),
+          },
           // 默认带出未发差额(补发场景即漏算差额);冲回填负数
-          amount: { required: true, order: 1, defaultValue: diff !== 0 ? String(diff) : undefined },
-          remarks: { order: 2, placeholder: isPaid ? '如 考勤漏算补发' : undefined },
+          amount: {
+            ...paymentForm.formProps.fields.amount,
+            defaultValue: diff !== 0 ? String(diff) : undefined,
+          },
+          remarks: {
+            ...paymentForm.formProps.fields.remarks,
+            placeholder: isPaid ? '如 考勤漏算补发' : undefined,
+          },
         }}
         onSubmit={async (values) => {
           const input = { payrollId, paidOn: values.paidOn, amount: values.amount, remarks: values.remarks }
-          await createPayrollPayment(input)
+          if (
+            !paymentForm.binding.writer ||
+            !('create' in paymentForm.binding.writer) ||
+            !paymentForm.binding.writer.create
+          ) {
+            throw new Error('工资发放不支持 create')
+          }
+          await paymentForm.binding.writer.create(input)
           toast.success(isPaid ? '补发已登记' : '发放已登记,本单标记为已发放')
           refreshAll()
         }}

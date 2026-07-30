@@ -54,7 +54,7 @@ export function userResourceMeta(): ResourceMeta {
     form: {
       exclude: ['id', 'preferredLanguage', 'insertedAt', 'updatedAt'],
       fields: {
-        username: { required: true, edit: 'createOnly', placeholder: '如 zhangsan' },
+        username: { placeholder: '如 zhangsan' },
         name: { placeholder: '如 张三' },
       },
     },

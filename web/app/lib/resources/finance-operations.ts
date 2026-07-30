@@ -3,10 +3,11 @@ import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import {
   createCommandAdapter,
+  createRowCommandAdapter,
   decodeRowTarget,
   defineCommand,
 } from './catalog/commands'
-import type { ResourceClient, ResourceQuery } from './types'
+import type { ResourceQuery, ResourceTransport } from './types'
 
 type BankAccountCreate = Record<string, unknown>
 type BankAccountUpdate = Record<string, unknown>
@@ -101,19 +102,16 @@ function decimalInput(
   return result
 }
 
-const unsupported =
-  (label: string) =>
-  async (): Promise<Row> => {
-    throw new Error(`${label}不支持此操作`)
-  }
+type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
+  Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
 
-function resourceClient(
+function resourceClient<const TOperations extends ResourceOperations>(
   resource: FinanceMetaName,
-  operations: Omit<ResourceClient, 'id'>,
-): ResourceClient {
+  operations: TOperations,
+): { id: string } & TOperations {
   return {
     id: `rest:${resource}`,
-        ...operations,
+    ...operations,
   }
 }
 
@@ -247,7 +245,6 @@ export const bankImportClient = resourceClient('accBankImports', {
         json: input as never}),
     )) as Row
   },
-  update: unsupported('银行导入批次'),
   async delete(id) {
     await apiData<void>(
       api.finance['bank-imports'][':id'].$delete({
@@ -277,7 +274,6 @@ export const bankImportItemClient = resourceClient('accBankImportItems', {
         param: { id }}),
     )) as Row
   },
-  create: unsupported('银行导入暂存行'),
   async update(id, input) {
     return (await apiData(
       api.finance['bank-import-items'][':id'].$patch({
@@ -315,7 +311,6 @@ export const bankReconciliationClient = resourceClient(
           json: decimalInput(input, ['amount']) as never}),
       )) as Row
     },
-    update: unsupported('银行对账记录'),
     async delete(id) {
       await apiData<void>(
         api.finance['bank-reconciliations'][':id'].$delete({
@@ -418,13 +413,6 @@ export const vatInvoiceClient = resourceClient('accVatInvoices', {
         param: { id }}),
     )
   },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditVatInvoice(id)
-      else if (key === 'void') await voidVatInvoice(id)
-      else throw new Error(`增值税发票 REST Client 未实现动作 ${key}`)
-    }
-  },
 })
 
 export function auditVatInvoice(id: string, postingDate?: string) {
@@ -449,6 +437,33 @@ export function reverseVatInvoice(id: string, input: VatInvoiceReverse) {
       json: input as never}),
   )
 }
+
+export const vatInvoiceCommandAdapter = createCommandAdapter({
+  audit: defineCommand('row', async (input: unknown) => {
+    const id = decodeRowTarget(input)
+    const postingDate =
+      typeof input === 'object' && input !== null && 'postingDate' in input
+        ? String((input as Record<string, unknown>).postingDate ?? '')
+        : undefined
+    return auditVatInvoice(id, postingDate || undefined)
+  }),
+  void: defineCommand('row', (input: unknown) =>
+    voidVatInvoice(decodeRowTarget(input))),
+  reverse: defineCommand('row', (input: unknown) => {
+    const id = decodeRowTarget(input)
+    const raw = input as Record<string, unknown>
+    if (typeof raw.postingDate !== 'string' || raw.postingDate === '') {
+      throw new Error('reverse 需要 postingDate')
+    }
+    return reverseVatInvoice(id, {
+      postingDate: raw.postingDate,
+      redInvoiceNo:
+        raw.redInvoiceNo == null || raw.redInvoiceNo === ''
+          ? null
+          : String(raw.redInvoiceNo),
+    })
+  }),
+})
 
 export function ocrVatInvoice(fileId: string): Promise<FinanceOCRResult> {
   return apiData(
@@ -490,13 +505,6 @@ export const expenseReportClient = resourceClient('accExpenseReports', {
         param: { id }}),
     )
   },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditExpenseReport(id)
-      else if (key === 'void') await voidExpenseReport(id)
-      else throw new Error(`报销单 REST Client 未实现动作 ${key}`)
-    }
-  },
 })
 
 export function auditExpenseReport(id: string, postingDate?: string) {
@@ -514,6 +522,11 @@ export function voidExpenseReport(id: string) {
       param: { id }}),
   )
 }
+
+export const expenseReportCommandAdapter = createRowCommandAdapter({
+  audit: (id) => auditExpenseReport(id),
+  void: voidExpenseReport,
+})
 
 export const expenseReportItemClient = resourceClient(
   'accExpenseReportItems',
@@ -615,7 +628,6 @@ export const billClient = resourceClient('accBills', {
         param: { id }}),
     )) as Row
   },
-  create: unsupported('承兑票据'),
   async update(id, input) {
     return (await apiData(
       api.finance.bills[':id'].$patch({
@@ -671,13 +683,6 @@ export const billTransactionClient = resourceClient('accBillTransactions', {
         param: { id }}),
     )
   },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditBillTransaction(id)
-      else if (key === 'void') await voidBillTransaction(id)
-      else throw new Error(`承兑交易 REST Client 未实现动作 ${key}`)
-    }
-  },
 })
 
 export function auditBillTransaction(id: string, postingDate?: string) {
@@ -695,14 +700,17 @@ export function voidBillTransaction(id: string) {
   )
 }
 
+export const billTransactionCommandAdapter = createRowCommandAdapter({
+  audit: (id) => auditBillTransaction(id),
+  void: voidBillTransaction,
+})
+
 export function ocrBillTransaction(fileId: string): Promise<FinanceOCRResult> {
   return apiData(
     api.finance['bill-transactions'].ocr.$post({
       json: { fileId }}),
   )
 }
-
-const holdingWrite = unsupported('承兑持有投影')
 
 export const billHoldingClient = resourceClient('accBillHoldings', {
   async query(input) {
@@ -717,10 +725,5 @@ export const billHoldingClient = resourceClient('accBillHoldings', {
       api.finance['bill-holdings'][':id'].$get({
         param: { id }}),
     )) as Row
-  },
-  create: holdingWrite,
-  update: holdingWrite,
-  delete: async () => {
-    await holdingWrite()
   },
 })

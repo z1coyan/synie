@@ -87,6 +87,9 @@ export function basicFormDrawerProps(document: ResourceDocument): BasicFormDrawe
 
   const placements = placementMap(document)
   const placedNames = new Set(placements.keys())
+  const placementOrder = new Map(
+    [...placements.keys()].map((name, index) => [name, index] as const),
+  )
   const fields: Record<string, FieldOverride> = {}
   const exclude: string[] = []
 
@@ -107,7 +110,10 @@ export function basicFormDrawerProps(document: ResourceDocument): BasicFormDrawe
       exclude.push(field.name)
       continue
     }
-    fields[field.name] = fieldConfig(field, placements.get(field.name))
+    fields[field.name] = {
+      ...fieldConfig(field, placements.get(field.name)),
+      order: placementOrder.get(field.name),
+    }
   }
 
   // 确保布局中的字段都有配置
@@ -115,7 +121,10 @@ export function basicFormDrawerProps(document: ResourceDocument): BasicFormDrawe
     if (!fields[name]) {
       const field = document.fields.find((f) => f.name === name)
       if (!field) throw new Error(`布局字段 ${name} 不在 document.fields 中`)
-      fields[name] = fieldConfig(field, placements.get(name))
+      fields[name] = {
+        ...fieldConfig(field, placements.get(name)),
+        order: placementOrder.get(name),
+      }
     }
   }
 

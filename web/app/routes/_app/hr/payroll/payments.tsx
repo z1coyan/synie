@@ -3,9 +3,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { Row } from '~/components/synie-data-grid/types'
-import { payrollPaymentClient } from '~/lib/resources/hr-operations'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 
 export const Route = createFileRoute('/_app/hr/payroll/payments')({
   component: PayrollPaymentsPage,
@@ -28,6 +27,7 @@ const GRID_OVERRIDES = {
 function PayrollPaymentsPage() {
   const [viewRow, setViewRow] = useState<Row | null>(null)
   const queryClient = useQueryClient()
+  const paymentForm = useCatalogBasicForm('hrPayrollPayments', '工资发放')
 
   // 删除发放会翻转工资单状态并联动借款台账,一并失效
   const invalidateAll = () => {
@@ -50,7 +50,7 @@ function PayrollPaymentsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrPayrollPayments"
-          client={payrollPaymentClient}
+          client={paymentForm.client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'paidOn', direction: 'descending' }}
@@ -60,9 +60,9 @@ function PayrollPaymentsPage() {
       </div>
 
       <SynieRecordDrawer
-        {...drawerConfig('hrPayrollPayments')}
         resource="hrPayrollPayments"
-        client={payrollPaymentClient}
+        client={paymentForm.client}
+        label={paymentForm.formProps.label}
         mode="view"
         isOpen={viewRow !== null}
         onOpenChange={(open) => !open && setViewRow(null)}

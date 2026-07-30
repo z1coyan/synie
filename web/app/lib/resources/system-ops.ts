@@ -2,7 +2,7 @@ import type { ListQuery } from '@synie/shared'
 import { api, apiData } from '../api/client'
 import { isForbidden } from '../errors'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import type { ResourceClient, ResourceQuery } from './types'
+import type { ResourceQuery, ResourceTransport } from './types'
 
 export type TodoTab = 'active' | 'history' | 'recent'
 export type TodoType = 'ISSUE_INVOICE' | 'RECEIVE_INVOICE'
@@ -52,11 +52,7 @@ function listBody(input: ResourceQuery): ListQuery {
   }
 }
 
-const readOnly = async (): Promise<Row> => {
-  throw new Error('审计日志只读,不支持写入')
-}
-
-export const auditLogClient: ResourceClient = {
+export const auditLogClient: ResourceTransport = {
   id: 'rest:sysAuditLogs',
 
   async query(input) {
@@ -74,11 +70,6 @@ export const auditLogClient: ResourceClient = {
     )) as Row
   },
 
-  create: readOnly,
-  update: readOnly,
-  delete: async () => {
-    await readOnly()
-  },
 }
 
 export async function fetchTodos(

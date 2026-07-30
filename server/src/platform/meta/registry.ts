@@ -18,7 +18,7 @@ const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/
 
 export interface SealReport {
   total: number
-  typed: number
+  normalized: number
 }
 
 /**
@@ -38,22 +38,21 @@ export function createRegistry() {
       throw new Error(`Registry 已 seal，禁止注册: ${resource.name}`)
     }
     const classified = applyResourceClassification(resource)
-    const typed: ResourceMeta = { ...classified, catalogSource: 'typed' }
-    validate(typed)
-    if (resources.has(typed.name)) {
-      throw new Error(`重复 Meta 资源: ${typed.name}`)
+    validate(classified)
+    if (resources.has(classified.name)) {
+      throw new Error(`重复 Meta 资源: ${classified.name}`)
     }
-    const previous = permissionLabels.get(typed.permissionPrefix)
-    if (previous !== undefined && previous !== typed.permissionLabel) {
+    const previous = permissionLabels.get(classified.permissionPrefix)
+    if (previous !== undefined && previous !== classified.permissionLabel) {
       throw new Error(
-        `共享权限前缀 ${typed.permissionPrefix} 的标签不一致: ${previous} / ${typed.permissionLabel}`,
+        `共享权限前缀 ${classified.permissionPrefix} 的标签不一致: ${previous} / ${classified.permissionLabel}`,
       )
     }
 
-    const norm = buildNormalizedResource(typed)
-    normalized.set(typed.name, norm)
-    resources.set(typed.name, typed)
-    permissionLabels.set(typed.permissionPrefix, typed.permissionLabel)
+    const norm = buildNormalizedResource(classified)
+    normalized.set(classified.name, norm)
+    resources.set(classified.name, classified)
+    permissionLabels.set(classified.permissionPrefix, classified.permissionLabel)
   }
 
   function get(name: string): ResourceMeta | undefined {
@@ -264,7 +263,7 @@ export function createRegistry() {
   }
 
   function catalogStats(): SealReport {
-    return { total: resources.size, typed: resources.size }
+    return { total: resources.size, normalized: normalized.size }
   }
 
   return {
@@ -326,6 +325,16 @@ function validate(resource: ResourceMeta): void {
       throw new Error(`Meta 资源 ${resource.name} 重复字段: ${field.apiName}`)
     }
     fields.add(field.apiName)
+  }
+  for (const fieldName of resource.form?.exclude ?? []) {
+    if (!fields.has(fieldName)) {
+      throw new Error(`Meta 资源 ${resource.name} form.exclude 引用未知字段: ${fieldName}`)
+    }
+  }
+  for (const fieldName of Object.keys(resource.form?.fields ?? {})) {
+    if (!fields.has(fieldName)) {
+      throw new Error(`Meta 资源 ${resource.name} form.fields 引用未知字段: ${fieldName}`)
+    }
   }
   const actions = new Set<string>()
   for (const action of resource.actions) {

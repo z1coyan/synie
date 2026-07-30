@@ -1,6 +1,6 @@
 import { api, apiData } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
-import type { ResourceClient } from './types'
+import type { ResourceTransport } from './types'
 
 export interface SalesSetting {
   id: string
@@ -45,7 +45,7 @@ function singletonClient(
   resource: string,
   get: SingletonGetter,
   update: SingletonUpdater,
-): ResourceClient {
+): ResourceTransport {
   return {
     id: `rest:${resource}`,
     async query() {
@@ -56,14 +56,8 @@ function singletonClient(
       const value = await get()
       return value.id === id ? value : null
     },
-    async create() {
-      throw new Error('全局单行设置不支持新增')
-    },
     update(_id, input) {
       return update(input)
-    },
-    async delete() {
-      throw new Error('全局单行设置不支持删除')
     },
   }
 }

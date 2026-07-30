@@ -21,7 +21,7 @@ export {
 } from './cache'
 export { fetchResourceDocument } from './client'
 export {
-  bindingFromResourceClient,
+  bindingFromResourceTransport,
   clearBindingsForTests,
   hasBinding,
   listBoundResources,
@@ -29,10 +29,11 @@ export {
   registerBindings,
   replaceBinding,
   resourceBindingFor,
-  resourceClientFromBinding,
+  resourceTransportFromBinding,
 } from './binding-registry'
 export {
   createCommandAdapter,
+  createRowCommandAdapter,
   decodeBulkTarget,
   decodeCollectionTarget,
   decodeRowOrBulkTarget,

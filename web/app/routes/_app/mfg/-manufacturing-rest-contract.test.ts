@@ -45,9 +45,11 @@ describe('PR-2.17 制造域 REST 边界', () => {
     }
   })
 
-  test('Grid、Drawer 与明细表显式绑定制造 REST client', () => {
+  test('basic 工序走 Catalog Form，其余 Grid/Drawer/明细绑定 REST transport', () => {
     const operation = source('./operations.tsx')
-    expect(operation.match(/client=\{operationClient\}/g)?.length).toBe(2)
+    expect(operation).toContain("const RESOURCE = 'mfgOperations'")
+    expect(operation).toContain('useCatalogBasicForm(RESOURCE')
+    expect(operation.match(/client=\{client\}/g)?.length).toBe(2)
 
     const template = source('./process-templates.tsx')
     expect(template.match(/client=\{processTemplateClient\}/g)?.length).toBe(2)

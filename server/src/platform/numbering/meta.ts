@@ -93,8 +93,9 @@ export function ruleResourceMeta(): ResourceMeta {
     form: {
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
-        resource: { edit: 'createOnly' },
-        enabled: { defaultValue: true },
+        name: { placeholder: '如 记账凭证编号' },
+        perCompany: { initial: true, span: 6 },
+        enabled: { initial: true },
       },
     },
 

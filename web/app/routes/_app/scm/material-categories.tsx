@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { basicFormDrawerProps, useResourceDocument } from '~/lib/resources/catalog'
-import { resourceBindingFor, resourceClientFor } from '~/lib/resources/registry'
+import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -21,12 +20,7 @@ function MaterialCategoriesPage() {
   // 树的子层缓存在表格组件本地,写后 invalidate 只能刷新根层——一并 remount 清空子层与展开态
   const [reloadKey, setReloadKey] = useState(0)
   const queryClient = useQueryClient()
-  const binding = resourceBindingFor(RESOURCE)
-  const client = resourceClientFor(RESOURCE)
-  const documentQuery = useResourceDocument(RESOURCE)
-  const formProps = documentQuery.data
-    ? basicFormDrawerProps(documentQuery.data)
-    : { label: '物料分类', exclude: ['active'] as string[], fields: {} }
+  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '物料分类')
 
   return (
     <>

@@ -5,7 +5,7 @@ import {
   decodeRowTarget,
   defineCommand,
 } from './catalog/commands'
-import type { ResourceClient } from './types'
+import type { ResourceClient, ResourceTransport } from './types'
 
 function mergedFilter(input: { filter?: FilterState; fixedFilter?: Record<string, unknown> }) {
   return {
@@ -14,7 +14,7 @@ function mergedFilter(input: { filter?: FilterState; fixedFilter?: Record<string
   } as FilterState
 }
 
-export const fileClient: ResourceClient = {
+export const fileClient = {
   id: 'rest:sysFiles',
   async query(input) {
     const result = await apiData<{ count: number; results: Row[] }>(
@@ -33,18 +33,12 @@ export const fileClient: ResourceClient = {
       api.files[':id'].metadata.$get({ param: { id } }),
     )) as Row
   },
-  async create() {
-    throw new Error('文件请通过上传入口创建')
-  },
-  async update() {
-    throw new Error('文件对象不可修改')
-  },
   async delete(id) {
     await apiData<void>(
       api.files[':id'].$delete({ param: { id } }),
     )
   },
-}
+} satisfies ResourceTransport
 
 export const storageClient: ResourceClient = {
   id: 'rest:sysStorages',

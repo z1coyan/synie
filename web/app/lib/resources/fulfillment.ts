@@ -1,7 +1,8 @@
 import { apiData, api } from '../api/client'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { createRowCommandAdapter } from './catalog/commands'
 import type { AggregateDraftAdapter } from './catalog/types'
-import type { ResourceClient, ResourceQuery } from './types'
+import type { ResourceQuery, ResourceTransport } from './types'
 
 type FilterDocument = FilterState
 type FulfillmentAuditRequest = Record<string, unknown>
@@ -13,8 +14,6 @@ export interface CompanyAccountDefaults {
   receiptCreditAccountId: string | null
   [key: string]: unknown
 }
-type SalesDeliveryCreate = Record<string, unknown>
-type SalesDeliveryUpdate = Record<string, unknown>
 type PurchaseReceiptCreate = Record<string, unknown>
 type PurchaseReceiptUpdate = Record<string, unknown>
 type PurchaseReceiptItemCreate =
@@ -73,21 +72,15 @@ function decimalInput(
   return result
 }
 
-type ResourceOperations = Pick<ResourceClient, 'query' | 'get'> &
-  Partial<Pick<ResourceClient, 'create' | 'update' | 'delete' | 'action'>>
+type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
+  Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
 
-function resourceClient(
+function resourceClient<const TOperations extends ResourceOperations>(
   resource: string,
-  operations: ResourceOperations,
-): ResourceClient {
-  const unsupported = async () => {
-    throw new Error(`${resource} 是只读资源，不支持独立写入`)
-  }
+  operations: TOperations,
+): { id: string } & TOperations {
   return {
     id: `rest:${resource}`,
-        create: unsupported,
-    update: unsupported,
-    delete: unsupported,
     ...operations,
   }
 }
@@ -175,6 +168,26 @@ export async function voidPurchaseOutsourcedReceipt(id: string) {
   )
 }
 
+export const salesDeliveryCommandAdapter = createRowCommandAdapter({
+  audit: auditSalesDelivery,
+  void: voidSalesDelivery,
+})
+
+export const purchaseReceiptCommandAdapter = createRowCommandAdapter({
+  audit: auditPurchaseReceipt,
+  void: voidPurchaseReceipt,
+})
+
+export const purchaseOutsourcedIssueCommandAdapter = createRowCommandAdapter({
+  audit: auditPurchaseOutsourcedIssue,
+  void: voidPurchaseOutsourcedIssue,
+})
+
+export const purchaseOutsourcedReceiptCommandAdapter = createRowCommandAdapter({
+  audit: auditPurchaseOutsourcedReceipt,
+  void: voidPurchaseOutsourcedReceipt,
+})
+
 /**
  * 销售发货聚合草稿 Adapter：完整 load + 原子 create/replace。
  * 表单走 draft，不暴露 RecordWriter 的 create/update。
@@ -225,25 +238,11 @@ export const salesDeliveryClient = resourceClient('salDeliveries', {
       api.sales.deliveries[':id'].$get({ param: { id } }),
     )) as Row
   },
-  // expand 兼容：Grid/旧路径仍可经 client 写；表单应使用 salesDeliveryDraftAdapter
-  async create(input) {
-    return (await salesDeliveryDraftAdapter.createDraft(input)) as Row
-  },
-  async update(id, input) {
-    return (await salesDeliveryDraftAdapter.replaceDraft(id, input)) as Row
-  },
   async delete(id) {
     await apiData<void>(
       api.sales.deliveries[':id'].$delete({
         param: { id }}),
     )
-  },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditSalesDelivery(id)
-      else if (key === 'void') await voidSalesDelivery(id)
-      else throw new Error(`销售发货单 REST Client 未实现动作 ${key}`)
-    }
   },
 })
 
@@ -327,13 +326,6 @@ export const purchaseReceiptClient = resourceClient('purReceipts', {
         param: { id }}),
     )
   },
-  async action(key, ids) {
-    for (const id of ids) {
-      if (key === 'audit') await auditPurchaseReceipt(id)
-      else if (key === 'void') await voidPurchaseReceipt(id)
-      else throw new Error(`采购入库单 REST Client 未实现动作 ${key}`)
-    }
-  },
 })
 
 export const purchaseReceiptItemClient = resourceClient('purReceiptItems', {
@@ -405,13 +397,6 @@ export const purchaseOutsourcedIssueClient = resourceClient(
         api.purchase['outsourced-issues'][':id'].$delete({
           param: { id }}),
       )
-    },
-    async action(key, ids) {
-      for (const id of ids) {
-        if (key === 'audit') await auditPurchaseOutsourcedIssue(id)
-        else if (key === 'void') await voidPurchaseOutsourcedIssue(id)
-        else throw new Error(`委外发料单 REST Client 未实现动作 ${key}`)
-      }
     },
   },
 )
@@ -492,13 +477,6 @@ export const purchaseOutsourcedReceiptClient = resourceClient(
         api.purchase['outsourced-receipts'][':id'].$delete({
           param: { id }}),
       )
-    },
-    async action(key, ids) {
-      for (const id of ids) {
-        if (key === 'audit') await auditPurchaseOutsourcedReceipt(id)
-        else if (key === 'void') await voidPurchaseOutsourcedReceipt(id)
-        else throw new Error(`委外入库单 REST Client 未实现动作 ${key}`)
-      }
     },
   },
 )

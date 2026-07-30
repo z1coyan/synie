@@ -93,8 +93,8 @@ export function supplierResourceMeta(): ResourceMeta {
       kind: 'basic',
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
-        code: { required: true, placeholder: '如 S0001' },
-        name: { required: true, placeholder: '供应商全称' },
+        code: { placeholder: '如 S0001' },
+        name: { placeholder: '供应商全称' },
         shortName: { placeholder: '如 富士康' },
       },
     },

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { FilterState, GridColumnRef, Row } from '../synie-data-grid/types'
-import type { ResourceClient } from '~/lib/resources/types'
-import { resourceClientFromResourceBinding } from '~/lib/resources/registry'
+import type { ResourceTransport } from '~/lib/resources/types'
+import { resourceTransportFromResourceBinding } from '~/lib/resources/registry'
 import { resolveResourceLookup } from '~/lib/resources/catalog/lookups'
 import { createReferencePresentation } from '~/lib/resources/catalog/reference-presentation'
 
@@ -9,7 +9,7 @@ export interface RemoteSourceConfig {
   /** GridMeta 白名单资源名，如 "basCompanies"。 */
   resource: string
   /** 显式 REST 数据源；缺省时从资源 registry 解析，未知资源立即报错。 */
-  client?: ResourceClient
+  client?: ResourceTransport
   /** 显示字段，默认 gridMeta ref.labelField，再兜底目标 lookup.labelField / 'name'。 */
   labelField?: string
   /** 排序字段，默认 lookup.defaultSort 或 labelField。 */
@@ -31,7 +31,7 @@ export interface RemoteSourceConfig {
 
 export interface ResolvedSource {
   resource: string
-  client: ResourceClient
+  client: ResourceTransport
   labelField: string
   sortField: string
   searchFields: string[]
@@ -65,7 +65,7 @@ export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumn
   ])
   return {
     resource,
-    client: cfg.client ?? resourceClientFromResourceBinding(resource),
+    client: cfg.client ?? resourceTransportFromResourceBinding(resource),
     labelField,
     sortField,
     searchFields: searchFields.length > 0 ? searchFields : [labelField],

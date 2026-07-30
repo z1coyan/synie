@@ -28,11 +28,9 @@ describe('PR-2.20 财务业务操作 REST 边界', () => {
     }
   })
 
-  test('十二个 Grid 与 Drawer 显式绑定 typed REST client', () => {
+  test('extension 绑定 typed REST transport，basic 绑定 Catalog Basic Form', () => {
     const bindings = [
-      ['./bank-accounts.tsx', 'bankAccountClient'],
       ['./bank-transactions.tsx', 'bankTransactionClient'],
-      ['./bank-import-templates.tsx', 'bankImportTemplateClient'],
       ['./invoices.tsx', 'vatInvoiceClient'],
       ['./expense-reports.tsx', 'expenseReportClient'],
       ['./acceptance/transactions.tsx', 'billTransactionClient'],
@@ -43,6 +41,15 @@ describe('PR-2.20 财务业务操作 REST 边界', () => {
     for (const [page, client] of bindings) {
       expect(source(page)).toContain(`client={${client}}`)
     }
+
+    const bankAccounts = source('./bank-accounts.tsx')
+    expect(bankAccounts).toContain("const RESOURCE = 'accBankAccounts'")
+    expect(bankAccounts).toContain('useCatalogBasicForm(RESOURCE')
+    expect(bankAccounts.match(/client=\{client\}/g)).toHaveLength(2)
+
+    const importTemplates = source('./bank-import-templates.tsx')
+    expect(importTemplates).toContain("useCatalogBasicForm(\n    'accBankImportTemplates'")
+    expect(importTemplates.match(/client=\{client\}/g)).toHaveLength(2)
   })
 
   test('client 覆盖十二资源 query/get 与全部公开 finance actions', () => {
