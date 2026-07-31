@@ -18,7 +18,11 @@ import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { salesQuotationItemClient } from '~/lib/resources/quotations'
+
+// 条目表物料列渲染器(模块级常量,避免逐单元格重建);行图纸挂接 sal_order_item 优先
+const orderItemMaterialCell = materialCellRender({ drawingOwnerType: 'sal_order_item' })
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { OrderFlowHistory } from '../-order-flow-history'
 
@@ -59,7 +63,7 @@ export const salesOrderAuditConfig = {
     {
       key: 'materialName',
       label: '物料',
-      render: auditMaterialCell({ key: 'customerPartNo', label: '客户料号' }),
+      render: auditMaterialCell({ drawingOwnerType: 'sal_order_item' }),
     },
     { key: 'unitName', label: '单位' },
     { key: 'qty', label: '数量', align: 'end' },
@@ -760,11 +764,16 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                     : formatAmount(mulRound(r.amount, rate, 2)),
               },
               taxRate: { label: '税率(%)', render: (v) => formatPercent(v) },
-              // 物料/单位列显示口径:行快照名(下单时落库,防主数据改名);无快照返回 undefined 回落默认 fk 渲染
-              // ——本地新行/编辑中刚改选的行按 join 或 id 反查显示今日名(编辑本来就是选今天的物料,保存后后端重拍)
+              // 物料列:全站统一富单元格(图纸缩略图+快照四字段,编号点开物料速览);行图纸挂接优先。
+              // 快照字段随受控行在表上,无需 extraFields;行上无快照文本时(本地新行/刚改选物料,
+              // 如样品自由行)返回 undefined 回落默认 fk 渲染,保存后后端重拍快照
               materialId: {
-                render: (_v, row) =>
-                  row.materialName != null && row.materialName !== '' ? String(row.materialName) : undefined,
+                label: '物料',
+                render: (v, row) =>
+                  (row.materialCode != null && row.materialCode !== '') ||
+                  (row.materialName != null && row.materialName !== '')
+                    ? orderItemMaterialCell(v, row)
+                    : undefined,
               },
               unitId: {
                 render: (_v, row) => (row.unitName != null && row.unitName !== '' ? String(row.unitName) : undefined),
@@ -795,11 +804,14 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   : Math.round(((Number(values.qty) || 0) * (Number(values.price) || 0) + Number.EPSILON) * 100) / 100,
                 // 报价条目定价模式随行走(表格价格/金额列与行表单的梯度展示判定):缓存优先,存量行沿用
                 pricingMode: qitem?.pricingMode ?? editing?.pricingMode ?? null,
-                // 改选物料/单位后旧快照名作废(mergeItem 清旧 join 同理):清空让单元格回落 live 渲染,保存后后端重拍
-                ...(editing != null && values.materialId !== editing.materialId ? { materialName: null } : {}),
+                // 改选物料/单位后旧快照作废(mergeItem 清旧 join 同理):清空让单元格回落 live 渲染,保存后后端重拍
+                ...(editing != null && values.materialId !== editing.materialId
+                  ? { materialName: null, materialCode: null, materialSpec: null, customerPartNo: null }
+                  : {}),
                 ...(editing != null && values.unitId !== editing.unitId ? { unitName: null } : {}),
-                // 新选报价条目即时带出快照名(选择时缓存的是完整行);缓存缺名(存量行)保持原快照不动
+                // 新选报价条目即时带出快照编号/名称(选择时缓存的是完整行);缓存缺名(存量行)保持原快照不动
                 ...(qitem?.materialName != null ? { materialName: qitem.materialName } : {}),
+                ...(qitem?.materialCode != null ? { materialCode: qitem.materialCode } : {}),
                 ...(qitem?.unitName != null ? { unitName: qitem.unitName } : {}),
               }
             }}

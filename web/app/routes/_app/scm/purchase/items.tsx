@@ -4,6 +4,7 @@ import { Chip, Link } from '@heroui/react'
 import { formatAmount, formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useAuditDoc } from '../-audit-doc'
 import { purchaseOrderAuditConfig, useOrderDrawer, type OpenOrderDrawer } from './-order-drawer'
 import { QtyProgressCell } from '../-qty-progress-cell'
@@ -17,7 +18,8 @@ export const Route = createFileRoute('/_app/scm/purchase/items')({
 // calc/多态 fk 列下发,判别列 partyType 不出列也随查询取回,对手列照常解析)
 // + 行自身字段;行号/税率与客户料号不进网格(行号对跨单浏览无意义,税率进抽屉看),
 // companyId 作单据归属公司首列;insertedAt/updatedAt 不进表格(兼当 exclude)。
-// 物料/单位走快照文本列(下单时落库,防主数据改名/换码影响历史单显示)。
+// 物料/单位走快照文本列(下单时落库,防主数据改名/换码影响历史单显示);
+// 物料按全站约定合并为单个富单元格列(materialCode 列承载,其余快照字段经 extraFields 取回)。
 // 跨订单混合行,双币金额恒全列展示(本币单两套同值;简化只在订单抽屉内,ADR 双币)
 const GRID_COLUMNS = [
   'companyId',
@@ -26,8 +28,6 @@ const GRID_COLUMNS = [
   'partyId',
   'orderStatus',
   'materialCode',
-  'materialName',
-  'materialSpec',
   'unitName',
   // 数量/已收/未收并一列:列本体是未收数量计算列(筛选/排序即未收口径),
   // 单元格进度条渲染,行数量与已收由 extraFields 补取
@@ -54,16 +54,12 @@ function buildOverrides(openDrawer: OpenOrderDrawer) {
   return {
     // 卡片:物料作标题、供应商作副标题、状态/进度/金额作摘要;公司首列桌面保留筛选,卡片藏
     companyId: { mobileRole: 'hide' },
-    materialCode: { mobileRole: 'hide' },
-    materialSpec: { mobileRole: 'hide' },
-    materialName: {
+    // 物料列:全站统一富单元格(图纸缩略图+快照四字段,编号点开物料速览);行图纸挂接优先
+    materialCode: {
+      label: '物料',
       mobileRole: 'title',
-      render: (_v: unknown, row: Row) => {
-        const code = row.materialCode != null ? String(row.materialCode) : ''
-        const name = row.materialName != null ? String(row.materialName) : ''
-        const text = [code, name].filter(Boolean).join(' ')
-        return text || undefined
-      },
+      filterField: 'materialId',
+      render: materialCellRender({ drawingOwnerType: 'pur_order_item' }),
     },
     partyId: { mobileRole: 'subtitle' },
     orderId: {
@@ -124,10 +120,18 @@ function PurchaseOrderItemsTab() {
         columns={GRID_COLUMNS}
         overrides={overrides}
         // 合并进度列的取数(qty 行单位;baseQty/receivedQty 默认单位投影列);
-        // orderIsOutsourced 供订单号旁的「委外」胶囊(订单头计算列,不出独立列)
-        extraFields={['qty', 'baseQty', 'receivedQty', 'orderIsOutsourced']}
-        // 行图纸:sys_attachment 挂接(owner_type pur_order_item / category drawing),与销售订单条目同机制
-        attachmentImages={{ ownerType: 'pur_order_item', category: 'drawing', label: '图纸' }}
+        // orderIsOutsourced 供订单号旁的「委外」胶囊(订单头计算列,不出独立列);
+        // 后四个是物料富单元格所需快照字段与物料外键(撤列后仍随查询取回)
+        extraFields={[
+          'qty',
+          'baseQty',
+          'receivedQty',
+          'orderIsOutsourced',
+          'materialId',
+          'materialName',
+          'materialSpec',
+          'customerPartNo',
+        ]}
         // 默认订单日期倒序(新单在前);calc 列排序后端已验证支持
         defaultSort={{ column: 'orderDate', direction: 'descending' }}
         // purOrderItems 复用 purchase.order 权限码,meta capabilities 为空:显式声明本视图可用动作

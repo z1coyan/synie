@@ -8,6 +8,7 @@ import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { companyClient } from '~/lib/resources/companies'
@@ -203,6 +204,8 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
   const [detailLoaded, setDetailLoaded] = useState(false)
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
+  // 物料选择缓存:选中整行按 id 暂存,transformItem 带出 code/name/spec 供行内物料富单元格展示
+  const materialPickRef = useRef(new Map<string, Row>())
 
   const companies = useQuery({
     queryKey: [cfg.resource, 'companies'],
@@ -291,7 +294,10 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
     materialId: {
       order: 0,
       required: true,
-      effects: () => ({ unitId: null }),
+      effects: (_value, selectedRow) => {
+        if (selectedRow) materialPickRef.current.set(String(selectedRow.id), selectedRow)
+        return { unitId: null }
+      },
     },
     unitId: {
       order: 1,
@@ -384,10 +390,9 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
               ]}
               columns={['idx', 'materialId', 'unitId', 'qty', 'baseQty', 'remark']}
               overrides={{
-                materialId: {
-                  render: (_v, r) =>
-                    r.materialName != null && r.materialName !== '' ? String(r.materialName) : undefined,
-                },
+                // 物料列:全站统一富单元格(图纸缩略图+快照字段,编号点开物料速览);
+                // 库存类行无图纸挂接,缩略图回退物料当前图纸
+                materialId: { render: materialCellRender() },
                 unitId: {
                   render: (_v, r) => (r.unitName != null && r.unitName !== '' ? String(r.unitName) : undefined),
                 },
@@ -398,12 +403,29 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
               validateItem={(vals) => {
                 if (!(Number(vals.qty) > 0)) return '数量必须大于零'
               }}
-              transformItem={(values, editing) => ({
-                ...values,
-                idx: editing ? editing.idx : items.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
-                ...(editing != null && values.materialId !== editing.materialId ? { materialName: null } : {}),
-                ...(editing != null && values.unitId !== editing.unitId ? { unitName: null } : {}),
-              })}
+              transformItem={(values, editing) => {
+                // 改选物料/单位后旧快照名作废(mergeItem 清旧 join 同理);新选物料从选择缓存带出
+                // code/name/spec,本地新行的物料富单元格即时可见(保存后后端重拍快照)
+                const picked =
+                  values.materialId != null
+                    ? materialPickRef.current.get(String(values.materialId))
+                    : undefined
+                return {
+                  ...values,
+                  idx: editing ? editing.idx : items.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
+                  ...(editing != null && values.materialId !== editing.materialId
+                    ? { materialCode: null, materialName: null, materialSpec: null }
+                    : {}),
+                  ...(picked != null
+                    ? {
+                        materialCode: picked.code ?? null,
+                        materialName: picked.name ?? null,
+                        materialSpec: picked.spec ?? null,
+                      }
+                    : {}),
+                  ...(editing != null && values.unitId !== editing.unitId ? { unitName: null } : {}),
+                }
+              }}
             />
           </>
         )}

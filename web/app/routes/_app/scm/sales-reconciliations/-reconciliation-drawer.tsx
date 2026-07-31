@@ -38,6 +38,7 @@ import type {
   FieldOverride,
 } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { CompanyDefaultSync, defaultCompanyId } from '../-stock-doc'
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
@@ -57,7 +58,7 @@ const AUDIT_COLUMNS: AuditDocConfig['columns'] = [
   {
     key: 'materialName',
     label: '物料',
-    render: auditMaterialCell({ key: 'customerPartNo', label: '客户料号' }),
+    render: auditMaterialCell(),
   },
   { key: 'unitName', label: '单位' },
   { key: 'qty', label: '对账数量', align: 'end' },
@@ -1007,56 +1008,12 @@ export function ReconciliationDrawerProvider({
                 ]}
                 overrides={{
                   deliveryNo: { label: '发货单号' },
+                  // 物料列:全站统一富单元格(编号/名称/规格/客户料号随受控行在表上)。
+                  // 对账行 meta 无 materialId 也无图纸挂接:编号退纯文本、缩略图显占位
                   materialName: {
                     label: '物料',
-                    // 多行展示编号/名称/规格/客户料号,避免横向撑宽
                     className: 'min-w-[12rem] max-w-[18rem]',
-                    render: (_v, r) => {
-                      const code =
-                        r.materialCode != null ? String(r.materialCode) : ''
-                      const name =
-                        r.materialName != null ? String(r.materialName) : ''
-                      const title = [code, name].filter(Boolean).join(' ')
-                      if (
-                        !title &&
-                        r.materialSpec == null &&
-                        r.customerPartNo == null
-                      )
-                        return undefined
-                      const spec =
-                        r.materialSpec != null && r.materialSpec !== ''
-                          ? String(r.materialSpec)
-                          : null
-                      const cpn =
-                        r.customerPartNo != null && r.customerPartNo !== ''
-                          ? String(r.customerPartNo)
-                          : null
-                      return (
-                        <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
-                          {title ? (
-                            <span className="truncate font-medium">
-                              {title}
-                            </span>
-                          ) : null}
-                          {spec ? (
-                            <span
-                              className="truncate text-xs text-muted"
-                              title={spec}
-                            >
-                              规格 {spec}
-                            </span>
-                          ) : null}
-                          {cpn ? (
-                            <span
-                              className="truncate text-xs text-muted"
-                              title={cpn}
-                            >
-                              客户料号 {cpn}
-                            </span>
-                          ) : null}
-                        </div>
-                      )
-                    },
+                    render: materialCellRender(),
                   },
                   unitName: { label: '单位' },
                   qty: { render: (v) => formatQty(v) || undefined },

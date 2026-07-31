@@ -33,6 +33,7 @@ import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialo
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../-stock-doc'
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
 
@@ -51,7 +52,7 @@ export const receiptAuditConfig = {
     {
       key: 'materialName',
       label: '物料',
-      render: auditMaterialCell({ key: 'customerPartNo', label: '客户料号' }),
+      render: auditMaterialCell(),
     },
     { key: 'unitName', label: '单位' },
     { key: 'qty', label: '入库数量', align: 'end' },
@@ -561,6 +562,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
           if (lineId != null) {
             linesRef.current.set(String(lineId), {
               id: String(lineId),
+              materialId: r.materialId,
               materialCode: r.materialCode,
               materialName: r.materialName,
               materialSpec: r.materialSpec,
@@ -1120,14 +1122,11 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               label: '入库条目',
               render: (v: unknown) => itemLabel(v),
             },
+            // 材料/物料列:全站统一富单元格(图纸缩略图+快照字段,编号点开物料速览);
+            // 扣减/副产物行无图纸挂接,缩略图回退物料当前图纸
             materialName: {
               label: kind === 'material' ? '材料' : '物料',
-              render: (_v: unknown, r: Row) => {
-                const code = r.materialCode != null ? String(r.materialCode) : ''
-                const name = r.materialName != null ? String(r.materialName) : ''
-                const title = [code, name].filter(Boolean).join(' ')
-                return title || undefined
-              },
+              render: materialCellRender(),
             },
             unitName: { label: '单位' },
             qty: { label: kind === 'material' ? '扣减数量' : '入库数量' },
@@ -1216,38 +1215,9 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                   },
                   materialName: {
                     label: '物料',
-                    // 多行展示编号/名称/规格/客户料号,避免横向撑宽
+                    // 全站统一富单元格(图纸缩略图+快照四字段,编号点开物料速览),定宽避免横向撑宽
                     className: 'min-w-[12rem] max-w-[18rem]',
-                    render: (_v, r) => {
-                      const code = r.materialCode != null ? String(r.materialCode) : ''
-                      const name = r.materialName != null ? String(r.materialName) : ''
-                      const title = [code, name].filter(Boolean).join(' ')
-                      if (!title && r.materialSpec == null && r.customerPartNo == null)
-                        return undefined
-                      const spec =
-                        r.materialSpec != null && r.materialSpec !== ''
-                          ? String(r.materialSpec)
-                          : null
-                      const cpn =
-                        r.customerPartNo != null && r.customerPartNo !== ''
-                          ? String(r.customerPartNo)
-                          : null
-                      return (
-                        <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
-                          {title ? <span className="truncate font-medium">{title}</span> : null}
-                          {spec ? (
-                            <span className="truncate text-xs text-muted" title={spec}>
-                              规格 {spec}
-                            </span>
-                          ) : null}
-                          {cpn ? (
-                            <span className="truncate text-xs text-muted" title={cpn}>
-                              客户料号 {cpn}
-                            </span>
-                          ) : null}
-                        </div>
-                      )
-                    },
+                    render: materialCellRender(),
                   },
                   unitName: { label: '单位' },
                   baseQty: { label: '折算数量' },
@@ -1350,6 +1320,8 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                     idx: editing
                       ? editing.idx
                       : siblings.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
+                    // materialId 仅服务行内物料富单元格(缩略图/速览链接),提交 payload 不收
+                    materialId: line?.materialId ?? editing?.materialId ?? vals.materialId ?? null,
                     materialCode:
                       line?.materialCode ?? editing?.materialCode ?? vals.materialCode ?? null,
                     materialName:
@@ -1399,6 +1371,8 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                     idx: editing
                       ? editing.idx
                       : siblings.reduce((max, r) => Math.max(max, Number(r.idx) || 0), 0) + 1,
+                    // materialId 仅服务行内物料富单元格(缩略图/速览链接),提交 payload 不收
+                    materialId: line?.materialId ?? editing?.materialId ?? vals.materialId ?? null,
                     materialCode:
                       line?.materialCode ?? editing?.materialCode ?? vals.materialCode ?? null,
                     materialName:

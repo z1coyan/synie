@@ -5,6 +5,7 @@ import { parseDate, today, getLocalTimeZone } from '@internationalized/date'
 import { Calendar, Button, DateField, DatePicker, Label, Spinner, Switch, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
+import { MaterialCell } from '~/components/synie-material-cell/MaterialCell'
 import type { Row } from '~/components/synie-data-grid/types'
 import { companyClient } from '~/lib/resources/companies'
 import { queryStockBalance } from '~/lib/resources/inventory'
@@ -215,9 +216,7 @@ function InventoryPage() {
                 <Table.Content aria-label="库存余额">
                   <Table.Header>
                     <Table.Column isRowHeader>仓库</Table.Column>
-                    <Table.Column>物料编号</Table.Column>
-                    <Table.Column>物料名称</Table.Column>
-                    <Table.Column>规格</Table.Column>
+                    <Table.Column>物料</Table.Column>
                     <Table.Column>单位</Table.Column>
                     <Table.Column className="text-end">数量</Table.Column>
                   </Table.Header>
@@ -225,9 +224,11 @@ function InventoryPage() {
                     {rows.map((r) => (
                       <Table.Row key={`${r.warehouseId}-${r.materialId}`}>
                         <Table.Cell>{r.warehouseName}</Table.Cell>
-                        <Table.Cell>{r.materialCode}</Table.Cell>
-                        <Table.Cell>{r.materialName}</Table.Cell>
-                        <Table.Cell className="text-muted">{r.materialSpec ?? '—'}</Table.Cell>
+                        {/* 物料:全站统一富单元格(余额行是仓×物料主数据投影,无快照概念;
+                            无图纸挂接,缩略图回退物料当前图纸) */}
+                        <Table.Cell>
+                          <MaterialCell row={r as unknown as Row} />
+                        </Table.Cell>
                         <Table.Cell>{r.unitName}</Table.Cell>
                         <Table.Cell className="text-end font-medium">{formatQty(r.quantity)}</Table.Cell>
                       </Table.Row>

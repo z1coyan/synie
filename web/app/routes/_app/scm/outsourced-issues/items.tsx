@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useAuditDoc } from '../-audit-doc'
 import { purchaseOutsourcedIssueItemClient } from '~/lib/resources/fulfillment'
 import { issueAuditConfig, useIssueDrawer } from './-issue-drawer'
@@ -21,27 +22,13 @@ const GRID_OVERRIDES = {
   issueNo: { mobileRole: 'summary' },
   orderNo: { label: '订单号' },
   partyId: { mobileRole: 'subtitle' },
-  // 物料用快照列多行展示,不 join inv.material(避免无物料读权限时整表失败)
-  materialName: {
+  // 材料列:全站统一富单元格(图纸缩略图+快照字段,编号点开物料速览);走行上快照,
+  // 不 join inv.material(避免无物料读权限时整表失败);委外行无图纸挂接,缩略图回退物料当前图纸
+  materialCode: {
     label: '材料',
     mobileRole: 'title',
-    render: (_v: unknown, r: Row) => {
-      const code = r.materialCode != null ? String(r.materialCode) : ''
-      const name = r.materialName != null ? String(r.materialName) : ''
-      const title = [code, name].filter(Boolean).join(' ')
-      if (!title && r.materialSpec == null) return undefined
-      const spec = r.materialSpec != null && r.materialSpec !== '' ? String(r.materialSpec) : null
-      return (
-        <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
-          {title ? <span className="truncate font-medium">{title}</span> : null}
-          {spec ? (
-            <span className="truncate text-xs text-muted" title={spec}>
-              规格 {spec}
-            </span>
-          ) : null}
-        </div>
-      )
-    },
+    filterField: 'materialId',
+    render: materialCellRender(),
   },
   unitName: { label: '单位' },
   qty: { mobileRole: 'summary' },
@@ -59,7 +46,7 @@ const GRID_COLUMNS = [
   'orderNo',
   'partyType',
   'partyId',
-  'materialName',
+  'materialCode',
   'unitName',
   'qty',
   'baseQty',
@@ -85,8 +72,9 @@ function IssueItemsTab() {
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'issueDate', direction: 'descending' }}
-        // 开抽屉需要母单 id;不进展示列,经 extraFields 取回(避免 issueId 为 undefined 过滤报错)
-        extraFields={['issueId']}
+        // 开抽屉需要母单 id;不进展示列,经 extraFields 取回(避免 issueId 为 undefined 过滤报错);
+        // 材料富单元格所需快照字段与物料外键一并补取(发料行无 customerPartNo 快照,meta 无此字段)
+        extraFields={['issueId', 'materialId', 'materialName', 'materialSpec']}
         // purOutsourcedIssueItems 复用 purchase.outsourced_issue 权限码,meta capabilities 为空:
         // 显式声明本视图可用动作(整单「新建发料单」+ 草稿单「编辑/审核整单」),删除不进条目视图
         capabilities={['create', 'update', 'audit']}

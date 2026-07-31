@@ -17,6 +17,7 @@ import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
 import { WorkOrderProgressCell } from './-work-order-progress-cell'
 
@@ -24,13 +25,14 @@ export const Route = createFileRoute('/_app/mfg/work-orders')({
   component: WorkOrdersPage,
 })
 
-// 列白名单:companyId 作单据归属公司首列(桌面保留筛选,卡片藏);物料编码并入物料名称一格(render 拼接);
+// 列白名单:companyId 作单据归属公司首列(桌面保留筛选,卡片藏);物料按全站约定合并为单个富单元格
+// 列(materialCode 列承载,其余快照字段与物料外键经 extraFields 取回);
 // qty/receivedBaseQty/remainingBaseQty 三个数量列合并为「入库进度」一列——列本体是 remainingBaseQty
 // 计算列(筛选/排序即未完成数量口径),单元格进度条 + Popover 明细渲染,数量明细随 wire 全量返回无需 extraFields
 const GRID_COLUMNS = [
   'companyId',
   'workOrderNo',
-  'materialName',
+  'materialCode',
   'remainingBaseQty',
   'needDate',
   'status',
@@ -40,14 +42,13 @@ const GRID_COLUMNS = [
 
 const GRID_OVERRIDES = {
   companyId: { mobileRole: 'hide' },
-  materialName: {
+  // 物料列:全站统一富单元格(图纸缩略图+快照编号/名称/规格,编号点开物料速览);
+  // 创建工单时已复制物料图纸挂接到工单,缩略图优先用工单快照图纸
+  materialCode: {
+    label: '物料',
     mobileRole: 'title',
-    render: (_v: unknown, row: Row) => {
-      const code = row.materialCode != null ? String(row.materialCode) : ''
-      const name = row.materialName != null ? String(row.materialName) : ''
-      const text = [code, name].filter(Boolean).join(' ')
-      return text || undefined
-    },
+    filterField: 'materialId',
+    render: materialCellRender({ drawingOwnerType: 'mfg_work_order' }),
   },
   workOrderNo: { mobileRole: 'subtitle' },
   // 状态胶囊配色:进行中蓝、已完工绿、已作废红(与需求单页同套约定)
@@ -336,11 +337,8 @@ function WorkOrdersPageInner() {
           client={workOrderClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
-          attachmentImages={{
-            ownerType: 'mfg_work_order',
-            category: 'drawing',
-            label: '图纸',
-          }}
+          // 物料富单元格所需快照字段与物料外键(撤列后仍随查询取回;工单无 customerPartNo 快照)
+          extraFields={['materialId', 'materialName', 'materialSpec']}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}

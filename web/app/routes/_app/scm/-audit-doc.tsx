@@ -2,6 +2,10 @@ import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, Spinner, Table, toast } from '@heroui/react'
 import type { Row } from '~/components/synie-data-grid/types'
+import {
+  materialCellRender,
+  type MaterialCellOptions,
+} from '~/components/synie-material-cell/MaterialCell'
 
 /** 审核确认弹窗的条目列定义(render 缺省时按文本原样展示) */
 export interface AuditItemColumn {
@@ -25,32 +29,10 @@ export interface AuditDocConfig {
   audit: (docId: string) => Promise<unknown>
 }
 
-/** 物料快照单元格:编号+名称一行,规格/客户料号等次行小字(与各条目网格同一套展示) */
-export function auditMaterialCell(extra?: { key: string; label: string }) {
-  return (_v: unknown, r: Row): ReactNode => {
-    const code = r.materialCode != null ? String(r.materialCode) : ''
-    const name = r.materialName != null ? String(r.materialName) : ''
-    const title = [code, name].filter(Boolean).join(' ')
-    const spec = r.materialSpec != null && r.materialSpec !== '' ? String(r.materialSpec) : null
-    const extraVal =
-      extra && r[extra.key] != null && r[extra.key] !== '' ? String(r[extra.key]) : null
-    if (!title && !spec && !extraVal) return undefined
-    return (
-      <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
-        {title ? <span className="truncate font-medium">{title}</span> : null}
-        {spec ? (
-          <span className="truncate text-xs text-muted" title={spec}>
-            规格 {spec}
-          </span>
-        ) : null}
-        {extraVal ? (
-          <span className="truncate text-xs text-muted" title={extraVal}>
-            {extra!.label} {extraVal}
-          </span>
-        ) : null}
-      </div>
-    )
-  }
+/** 审核弹窗物料列:与全系统物料单元格同一组件(图纸缩略图+编号/名称+规格/客编),
+ *  条目行有图纸挂接时经 options.drawingOwnerType 声明(快照图纸优先,回退物料当前图纸) */
+export function auditMaterialCell(options?: MaterialCellOptions) {
+  return materialCellRender(options)
 }
 
 /**

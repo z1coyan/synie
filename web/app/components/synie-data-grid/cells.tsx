@@ -27,6 +27,9 @@ export interface ColumnOverride {
   mobileRole?: MobileRole
   /** 图片列:单元格渲染缩略图,点击全屏预览(SyniePreview),同列图片循环切换;true 即列值为 sys_file id */
   image?: true | GridImageOverride
+  /** 筛选代理字段:该列的筛选 UI/状态改按同行另一字段(目标须为 meta 中 filterable 字段,
+   *  可不在显示列白名单内),展示与排序仍属列本身。典型:物料列(快照文本)按 materialId 外键筛选 */
+  filterField?: string
 }
 
 /** 超宽文本单元格:截断收起,溢出时点击弹 Popover 看全文;未溢出就是普通文本。

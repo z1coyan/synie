@@ -342,21 +342,31 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   }, [rowsQuery.data, page, totalPages])
 
   const attachmentImages = props.attachmentImages
+  // 筛选代理:override.filterField 将该列筛选改按同行另一字段(如物料列按 materialId 外键),
+  // 展示/排序仍属列本身;目标字段取自 meta 全量列(可不在显示列白名单内),标签沿用列标签
+  const filterTargetOf = (col: GridColumnMeta): GridColumnMeta | null => {
+    const proxy = overrides[col.name]?.filterField
+    if (proxy == null) return col.filterable ? col : null
+    const target = meta.data?.columns.find((c) => c.name === proxy)
+    return target?.filterable ? { ...target, label: overrides[col.name]?.label ?? col.label } : null
+  }
   const gridColumns: DataGridColumn<Row>[] = useMemo(() => {
-    const mapped: DataGridColumn<Row>[] = columns.map((col, i) => ({
+    const mapped: DataGridColumn<Row>[] = columns.map((col, i) => {
+      const filterCol = filterTargetOf(col)
+      return {
         id: col.name,
         align: overrides[col.name]?.align ?? (col.type === 'integer' || col.type === 'decimal' ? 'end' : undefined),
         // 筛选按钮绝对定位吸右,右侧留出内边距防止列名/排序箭头滑到按钮下面(右对齐列尤甚)
-        headerClassName: col.filterable ? 'pe-9' : undefined,
+        headerClassName: filterCol ? 'pe-9' : undefined,
         // 函数式 header:DataGrid 自身按 allowsSorting 在文本后接排序箭头;筛选按钮脱离文档流吸在单元格右缘
         header: () => (
           <>
             {overrides[col.name]?.label ?? col.label}
-            {col.filterable && (
+            {filterCol && (
               <ColumnFilterButton
-                column={col}
-                filter={filters[col.name]}
-                onChange={(f) => applyFilter(col.name, f)}
+                column={filterCol}
+                filter={filters[filterCol.name]}
+                onChange={(f) => applyFilter(filterCol.name, f)}
               />
             )}
           </>
@@ -392,7 +402,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           }
           return thumb
         },
-      }))
+      }
+    })
     // 附件图片列:不来自 GridMeta 的虚拟列,不参与查询/排序/筛选/导出
     if (attachmentImages) {
       mapped.push({
@@ -586,8 +597,9 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         }
       : undefined
 
-  // 卡片模式工具栏:筛选/排序入口的可用列与生效计数
-  const hasFilterable = columns.some((c) => c.filterable)
+  // 卡片模式工具栏:筛选/排序入口的可用列与生效计数;filterField 代理列以其目标字段计入
+  const filterSheetColumns = columns.map((col) => filterTargetOf(col) ?? col)
+  const hasFilterable = filterSheetColumns.some((c) => c.filterable)
   const hasSortable = columns.some((c) => c.sortable)
   const activeFilterCount = Object.keys(filters).length
 
@@ -702,7 +714,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       {Object.keys(filters).length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {Object.entries(filters).map(([name, f]) => {
-            const col = columns.find((c) => c.name === name)
+            // filterField 代理筛选的键(如 materialId)可能不在显示列内,回退查 meta 全量列取标签
+            const col = columns.find((c) => c.name === name) ?? meta.data?.columns.find((c) => c.name === name)
             return (
               <Chip key={name} size="sm" className="pr-1">
                 <Chip.Label>{col ? `${col.label} ${filterSummary(col, f)}` : name}</Chip.Label>
@@ -885,7 +898,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           <CardFilterSheet
             isOpen={filterSheetOpen}
             onOpenChange={setFilterSheetOpen}
-            columns={columns}
+            columns={filterSheetColumns}
             filters={filters}
             onFilterChange={applyFilter}
             onClearAll={clearAllFilters}

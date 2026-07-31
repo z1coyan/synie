@@ -19,6 +19,7 @@ import {
   useAuditDoc,
   type AuditDocConfig,
 } from '../scm/-audit-doc'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 
 export const Route = createFileRoute('/_app/mfg/outputs')({
   component: OutputsPage,
@@ -95,6 +96,13 @@ const OUTPUT_AUDIT_CONFIG = {
   ],
 } satisfies AuditDocConfig
 
+// 条目表格物料列:全站统一富单元格(生产入库行无图纸挂接,缩略图回退物料当前图纸);
+// 本地新行物料由所选工单派生、尚无快照,返回 undefined 回落默认渲染(空值显 —)
+const outputItemMaterialCell = materialCellRender()
+const hasMaterialSnapshot = (row: Row) =>
+  (row.materialCode != null && row.materialCode !== '') ||
+  (row.materialName != null && row.materialName !== '')
+
 function OutputsPage() {
   const [drawer, setDrawer] = useState<{
     mode: DrawerMode
@@ -168,8 +176,11 @@ function OutputsPage() {
                 'materialSpec',
                 'unitName',
               ]}
+              // materialCode 在 exclude(快照列不进录入表单),此处借 overrides 同名声明合成
+              // 纯展示计算列(displayColumns 约定):值由 render 从行快照现算
               columns={[
                 'idx',
+                'materialCode',
                 'workOrderId',
                 'unitId',
                 'qty',
@@ -183,6 +194,15 @@ function OutputsPage() {
                 qty: { order: 3, required: true },
                 warehouseId: { order: 4, required: true },
                 remarks: { order: 5 },
+              }}
+              overrides={{
+                materialCode: {
+                  label: '物料',
+                  render: (v, row) =>
+                    hasMaterialSnapshot(row)
+                      ? outputItemMaterialCell(v, row)
+                      : undefined,
+                },
               }}
             />
           ),

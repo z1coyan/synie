@@ -38,6 +38,7 @@ import { MaterialUnitSelect } from '~/components/synie-material-unit-select/Mate
 import { materialClient, materialUnitClient } from '~/lib/resources/inventory'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import {
   CompanyDefaultSync,
@@ -75,7 +76,7 @@ export const deliveryAuditConfig = {
     {
       key: 'materialName',
       label: '物料',
-      render: auditMaterialCell({ key: 'customerPartNo', label: '客户料号' }),
+      render: auditMaterialCell({ drawingOwnerType: 'sal_delivery_item' }),
     },
     { key: 'unitName', label: '单位' },
     { key: 'qty', label: '发货数量', align: 'end' },
@@ -1019,35 +1020,11 @@ function PackLinesPanel({
         exclude={['deliveryId', 'companyId']}
         columns={['idx', 'materialName', 'unitName', 'qty', 'baseQty', 'remarks']}
         overrides={{
+        // 物料列:全站统一富单元格(装箱行无图纸挂接,缩略图回退物料当前图纸)
         materialName: {
           label: '物料',
           className: 'min-w-[12rem] max-w-[18rem]',
-          render: (_v, r) => {
-            const code = r.materialCode != null ? String(r.materialCode) : ''
-            const name = r.materialName != null ? String(r.materialName) : ''
-            const title = [code, name].filter(Boolean).join(' ')
-            if (!title && r.materialSpec == null && r.customerPartNo == null) return undefined
-            const spec = r.materialSpec != null && r.materialSpec !== '' ? String(r.materialSpec) : null
-            const cpn =
-              r.customerPartNo != null && r.customerPartNo !== ''
-                ? String(r.customerPartNo)
-                : null
-            return (
-              <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
-                {title ? <span className="truncate font-medium">{title}</span> : null}
-                {spec ? (
-                  <span className="truncate text-xs text-muted" title={spec}>
-                    规格 {spec}
-                  </span>
-                ) : null}
-                {cpn ? (
-                  <span className="truncate text-xs text-muted" title={cpn}>
-                    客户料号 {cpn}
-                  </span>
-                ) : null}
-              </div>
-            )
-          },
+          render: materialCellRender(),
         },
         unitName: { label: '单位' },
         baseQty: { label: '折算数量' },
@@ -1708,36 +1685,11 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
                     render: (_v, r) =>
                       r.orderNo != null && r.orderNo !== '' ? String(r.orderNo) : undefined,
                   },
+                  // 物料列:全站统一富单元格(图纸缩略图+快照四字段);行图纸挂接优先
                   materialName: {
                     label: '物料',
-                    // 多行展示编号/名称/规格/客户料号,避免横向撑宽
                     className: 'min-w-[12rem] max-w-[18rem]',
-                    render: (_v, r) => {
-                      const code = r.materialCode != null ? String(r.materialCode) : ''
-                      const name = r.materialName != null ? String(r.materialName) : ''
-                      const title = [code, name].filter(Boolean).join(' ')
-                      if (!title && r.materialSpec == null && r.customerPartNo == null) return undefined
-                      const spec = r.materialSpec != null && r.materialSpec !== '' ? String(r.materialSpec) : null
-                      const cpn =
-                        r.customerPartNo != null && r.customerPartNo !== ''
-                          ? String(r.customerPartNo)
-                          : null
-                      return (
-                        <div className="flex min-w-0 flex-col gap-0.5 py-0.5 text-sm leading-snug">
-                          {title ? <span className="truncate font-medium">{title}</span> : null}
-                          {spec ? (
-                            <span className="truncate text-xs text-muted" title={spec}>
-                              规格 {spec}
-                            </span>
-                          ) : null}
-                          {cpn ? (
-                            <span className="truncate text-xs text-muted" title={cpn}>
-                              客户料号 {cpn}
-                            </span>
-                          ) : null}
-                        </div>
-                      )
-                    },
+                    render: materialCellRender({ drawingOwnerType: 'sal_delivery_item' }),
                   },
                   unitName: { label: '单位' },
                   baseQty: { label: '折算数量' },

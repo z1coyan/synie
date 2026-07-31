@@ -16,6 +16,7 @@ import { SynieEditableTable } from '~/components/synie-editable-table/SynieEdita
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 
 /**
@@ -194,6 +195,9 @@ async function persistItems(quotationId: string, current: Row[], snapshot: Row[]
 
 // 税率库存小数(0.13),前端一律按百分比展示/录入
 const formatPercent = (v: unknown) => (v == null || v === '' ? '' : `${Math.round(Number(v) * 10000) / 100}%`)
+
+// 条目表物料单元格:全站统一富单元格(快照四字段,编号点开物料速览);报价条目无图纸挂接,不传 drawingOwnerType
+const quotationItemMaterialCell = materialCellRender()
 
 // 起订量 decimal 串去尾零展示(1000.0 → 1000)
 const formatQty = (v: unknown) => {
@@ -458,10 +462,15 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
                     ),
                 },
                 taxRate: { label: '税率(%)', render: (v) => formatPercent(v) },
-                // 物料/单位列显示口径:行快照名(报价时落库,防主数据改名);无快照回落默认 fk 渲染
+                // 物料列:全站统一富单元格(行快照四字段,防主数据改名);行上无快照文本时
+                // (本地新行/刚改选物料)返回 undefined 回落默认 fk 渲染,保存后后端重拍快照
                 materialId: {
-                  render: (_v, r) =>
-                    r.materialName != null && r.materialName !== '' ? String(r.materialName) : undefined,
+                  label: '物料',
+                  render: (v, r) =>
+                    (r.materialCode != null && r.materialCode !== '') ||
+                    (r.materialName != null && r.materialName !== '')
+                      ? quotationItemMaterialCell(v, r)
+                      : undefined,
                 },
                 unitId: {
                   render: (_v, r) => (r.unitName != null && r.unitName !== '' ? String(r.unitName) : undefined),
@@ -562,8 +571,10 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
                 // 梯度行单价空置(价在档上,后端 PricingRules 兜底);档草稿并入行,切回固定价即清档
                 price: values.pricingMode === 'QTY_TIERED' ? null : values.price,
                 tiers: values.pricingMode === 'QTY_TIERED' ? tierDraft : [],
-                // 改选物料/单位后旧快照名作废:清空让单元格回落 live 渲染,保存后后端重拍
-                ...(editing != null && values.materialId !== editing.materialId ? { materialName: null } : {}),
+                // 改选物料/单位后旧快照作废:清空让单元格回落 live 渲染,保存后后端重拍
+                ...(editing != null && values.materialId !== editing.materialId
+                  ? { materialName: null, materialCode: null, materialSpec: null, customerPartNo: null }
+                  : {}),
                 ...(editing != null && values.unitId !== editing.unitId ? { unitName: null } : {}),
               })}
             />

@@ -23,6 +23,7 @@ import {
   auditMaterialCell,
   type AuditDocConfig,
 } from '../../scm/-audit-doc'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { SalesItemPicker } from './-sales-item-picker'
 import {
   canGenerateWorkOrder,
@@ -111,6 +112,13 @@ export const DEMAND_AUDIT_CONFIG = {
     { key: 'remarks', label: '行备注' },
   ],
 } satisfies AuditDocConfig
+
+// 条目表格物料列:全站统一富单元格(需求行无图纸挂接,缩略图回退物料当前图纸);
+// 本地新行无平铺快照(销售条目选择器只带 join 对象)返回 undefined 回落默认 fk 渲染
+const demandItemMaterialCell = materialCellRender()
+const hasMaterialSnapshot = (row: Row) =>
+  (row.materialCode != null && row.materialCode !== '') ||
+  (row.materialName != null && row.materialName !== '')
 
 export function DemandDrawerProvider({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState<{
@@ -272,6 +280,15 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
                   label: '来源销售条目',
                 },
                 remarks: { order: 6 },
+              }}
+              overrides={{
+                materialId: {
+                  label: '物料',
+                  render: (v, row) =>
+                    hasMaterialSnapshot(row)
+                      ? demandItemMaterialCell(v, row)
+                      : undefined,
+                },
               }}
             />
           )

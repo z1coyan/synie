@@ -4,6 +4,7 @@ import { Chip, Link } from '@heroui/react'
 import { formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { salesQuotationItemClient } from '~/lib/resources/quotations'
 import { useAuditDoc } from '../-audit-doc'
 import { salesQuotationAuditConfig, useQuotationDrawer, type OpenQuotationDrawer } from './-quotation-drawer'
@@ -17,6 +18,7 @@ export const Route = createFileRoute('/_app/scm/quotations/items')({
 // 后端 gridMeta 以 calc/多态 fk 列下发)+ 行自身字段;行号/税率不进网格(税率进抽屉看),
 // companyId 作单据归属公司首列;insertedAt/updatedAt 不进表格(兼当 exclude)。
 // 物料/单位走快照文本列(报价时落库,防主数据改名影响历史单显示);
+// 物料按全站约定合并为单个富单元格列(materialCode 列承载,其余快照字段经 extraFields 取回);
 // 梯度行单价空、档数列提示进抽屉看阶梯
 const GRID_COLUMNS = [
   'companyId',
@@ -26,8 +28,6 @@ const GRID_COLUMNS = [
   'partyId',
   'quotationStatus',
   'materialCode',
-  'materialName',
-  'materialSpec',
   'unitName',
   'currencyCode',
   'pricingMode',
@@ -48,16 +48,13 @@ function buildOverrides(openDrawer: OpenQuotationDrawer) {
   return {
     // 卡片:物料作标题、客户作副标题、状态/单价/截止日期作摘要
     companyId: { mobileRole: 'hide' },
-    materialCode: { mobileRole: 'hide' },
-    materialSpec: { mobileRole: 'hide' },
-    materialName: {
+    // 物料列:全站统一富单元格(快照四字段,编号点开物料速览);报价条目无图纸挂接,
+    // 缩略图回退物料当前图纸
+    materialCode: {
+      label: '物料',
       mobileRole: 'title',
-      render: (_v: unknown, row: Row) => {
-        const code = row.materialCode != null ? String(row.materialCode) : ''
-        const name = row.materialName != null ? String(row.materialName) : ''
-        const text = [code, name].filter(Boolean).join(' ')
-        return text || undefined
-      },
+      filterField: 'materialId',
+      render: materialCellRender(),
     },
     partyId: { mobileRole: 'subtitle' },
     quotationId: {
@@ -114,6 +111,8 @@ function QuotationItemsTab() {
         client={salesQuotationItemClient}
         columns={GRID_COLUMNS}
         overrides={overrides}
+        // 物料富单元格所需快照字段与物料外键的取数
+        extraFields={['materialId', 'materialName', 'materialSpec', 'customerPartNo']}
         // 默认报价日期倒序(新单在前);calc 列排序沿用销售订单条目已验证的能力
         defaultSort={{ column: 'quotationDate', direction: 'descending' }}
         // salQuotationItems 复用 sales.quotation 权限码,meta capabilities 为空:显式声明本视图

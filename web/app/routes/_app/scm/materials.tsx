@@ -11,6 +11,7 @@ import {
 } from '~/lib/resources/presentation'
 import { attachFile, type UploadedFile } from '~/lib/files'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
+import { MaterialCell } from '~/components/synie-material-cell/MaterialCell'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -65,15 +66,13 @@ async function persistUnits(materialId: string, current: Row[], snapshot: Row[])
 }
 
 
-// 常用列白名单:时间戳不进表格,图纸走 attachmentImages 虚拟列;分类列置顶
+// 常用列白名单:时间戳不进表格;分类列置顶。物料按全站约定合并为单个富单元格列
+// (code 列承载,名称/规格/客户料经 extraFields 取回,图纸缩略图由单元格自查,不再要虚拟列)
 const GRID_COLUMNS = [
   'categoryId',
   'code',
-  'name',
-  'spec',
   'isCustomerMaterial',
   'customerId',
-  'customerPartNo',
   'defaultUnitId',
   'active',
 ]
@@ -171,17 +170,32 @@ function MaterialsPage() {
           columns={GRID_COLUMNS}
           joinFields={{ category: ['code'] }}
           overrides={{
-            // 卡片:名称标题、编号副标题、分类/客户料号/启停摘要(查料首看叫什么)
-            name: { mobileRole: 'title' },
-            code: { mobileRole: 'subtitle' },
+            // 卡片:物料标题(富单元格含编号/名称/规格/客户料)、分类/启停摘要
+            // 行即物料主数据:MaterialCell 读快照名,这里按主数据原名映射,materialId 即 row.id
+            code: {
+              label: '物料',
+              mobileRole: 'title',
+              render: (_value, row) => (
+                <MaterialCell
+                  row={{
+                    ...row,
+                    materialId: row.id,
+                    materialCode: row.code,
+                    materialName: row.name,
+                    materialSpec: row.spec,
+                    customerPartNo: row.customerPartNo,
+                  }}
+                />
+              ),
+            },
             categoryId: {
               mobileRole: 'summary',
               render: (_value, row) => <CategoryCell row={row} />,
             },
-            customerPartNo: { mobileRole: 'summary' },
             active: { mobileRole: 'summary' },
           }}
-          attachmentImages={{ ownerType: 'inv_material', category: 'drawing', label: '图纸' }}
+          // 富单元格渲染所需的名称/规格/客户料:列已撤,经 extraFields 继续取回
+          extraFields={['name', 'spec', 'customerPartNo']}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
           onEdit={(row) => openDrawer('edit', row)}
