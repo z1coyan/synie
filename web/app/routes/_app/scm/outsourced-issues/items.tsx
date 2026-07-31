@@ -3,7 +3,6 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useAuditDoc } from '../-audit-doc'
-import { purchaseOutsourcedIssueItemClient } from '~/lib/resources/fulfillment'
 import { issueAuditConfig, useIssueDrawer } from './-issue-drawer'
 
 export const Route = createFileRoute('/_app/scm/outsourced-issues/items')({
@@ -68,7 +67,6 @@ function IssueItemsTab() {
     <>
       <SynieDataGrid
         resource="purOutsourcedIssueItems"
-        client={purchaseOutsourcedIssueItemClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'issueDate', direction: 'descending' }}

@@ -5,7 +5,8 @@ import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { validationHook } from '~/platform/http/zod.ts'
+import { ApiError } from '~/platform/http/errors.ts'
+import { dateOnlySchema, decimalStringSchema, validationHook } from '~/platform/http/zod.ts'
 import type { TradingSide } from '../common.ts'
 import { presentKey } from '../common.ts'
 import type { OutsourcedConfigService } from './outsourced-config.ts'
@@ -24,6 +25,96 @@ const listQuerySchema = z
   .strict()
 
 const idParam = z.object({ id: z.string().uuid() })
+
+const orderDraftLineSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    materialId: z.string().uuid(),
+    unitId: z.string().uuid(),
+    quantity: decimalStringSchema,
+    remarks: z.string().nullable().optional(),
+  })
+  .strict()
+
+const orderDraftItemFields = {
+  id: z.string().uuid().optional(),
+  idx: z.number().int(),
+  qty: decimalStringSchema,
+  materialId: z.string().uuid(),
+  unitId: z.string().uuid(),
+  price: decimalStringSchema.nullable().optional(),
+  taxRate: decimalStringSchema.nullable().optional(),
+  remarks: z.string().nullable().optional(),
+  quotationItemId: z.string().uuid().nullable().optional(),
+  bomId: z.string().uuid().nullable().optional(),
+  demandLineId: z.string().uuid().nullable().optional(),
+  demandDate: dateOnlySchema.nullable().optional(),
+}
+
+const orderDraftCreateItemSchema = z
+  .object({
+    ...orderDraftItemFields,
+    issueLines: z.array(orderDraftLineSchema).default([]),
+    byproductLines: z.array(orderDraftLineSchema).default([]),
+  })
+  .strict()
+
+const orderDraftReplaceItemSchema = z
+  .object({
+    ...orderDraftItemFields,
+    issueLines: z.array(orderDraftLineSchema),
+    byproductLines: z.array(orderDraftLineSchema),
+  })
+  .strict()
+
+const orderDraftHeadFields = {
+  companyId: z.string().uuid(),
+  orderNo: z.string().nullable().optional(),
+  orderDate: dateOnlySchema.nullable().optional(),
+  orderType: z.string().optional(),
+  isOutsourced: z.boolean().optional(),
+  partyType: z.string().min(1),
+  partyId: z.string().uuid(),
+  currencyId: z.string().uuid().nullable().optional(),
+  exchangeRate: decimalStringSchema.nullable().optional(),
+  terms: z.string().nullable().optional(),
+  remarks: z.string().nullable().optional(),
+}
+
+const orderDraftCreateSchema = z
+  .object({
+    ...orderDraftHeadFields,
+    // 兼容仍只创建空表头的领域调用；聚合抽屉始终发送完整 items。
+    items: z.array(orderDraftCreateItemSchema).default([]),
+  })
+  .strict()
+
+// PUT 是全量替换：顶层 items 与每个条目的两类委外子树必须显式提交。
+const orderDraftReplaceSchema = z
+  .object({
+    ...orderDraftHeadFields,
+    items: z.array(orderDraftReplaceItemSchema),
+  })
+  .strict()
+
+function orderDraftValidationHook(result: {
+  success: boolean
+  error?: z.ZodError
+}): void {
+  if (result.success || !result.error) return
+  const fields: Record<string, string[]> = {}
+  for (const issue of result.error.issues) {
+    let key = ''
+    for (const part of issue.path) {
+      if (typeof part === 'number') key += `[${part}]`
+      else key += key ? `.${String(part)}` : String(part)
+    }
+    if (!key) key = '_'
+    else if (!key.startsWith('items')) key = `header.${key}`
+    ;(fields[key] ??= []).push(issue.message)
+  }
+  throw ApiError.validation('请求参数错误', fields)
+}
 
 function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
@@ -49,29 +140,28 @@ export function orderHeadRoutes(deps: {
     })
     .post(
       '/',
-      zValidator(
-        'json',
-        z
-          .object({
-            companyId: z.string().uuid(),
-            orderNo: z.string().nullable().optional(),
-            orderDate: z.string().nullable().optional(),
-            orderType: z.string().optional(),
-            isOutsourced: z.boolean().optional(),
-            partyType: z.string().min(1),
-            partyId: z.string().uuid(),
-            currencyId: z.string().uuid().nullable().optional(),
-            exchangeRate: z.string().nullable().optional(),
-            terms: z.string().nullable().optional(),
-            remarks: z.string().nullable().optional(),
-          })
-          .strict(),
-        validationHook,
-      ),
-      async (c) => c.json(await orders.createHead(c.get('actor'), side, c.req.valid('json')), 201),
+      zValidator('json', orderDraftCreateSchema, orderDraftValidationHook),
+      async (c) => c.json(await orders.createDraft(c.get('actor'), side, c.req.valid('json')), 201),
+    )
+    .get('/:id/draft', zValidator('param', idParam, validationHook), async (c) =>
+      c.json(await orders.getDraft(c.get('actor'), side, c.req.valid('param').id)),
     )
     .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await orders.getHead(c.get('actor'), side, c.req.valid('param').id)),
+    )
+    .put(
+      '/:id',
+      zValidator('param', idParam, validationHook),
+      zValidator('json', orderDraftReplaceSchema, orderDraftValidationHook),
+      async (c) =>
+        c.json(
+          await orders.replaceDraft(
+            c.get('actor'),
+            side,
+            c.req.valid('param').id,
+            c.req.valid('json'),
+          ),
+        ),
     )
     .patch(
       '/:id',

@@ -9,7 +9,10 @@ import type { GridColumnMeta, Row } from '../synie-data-grid/types'
 import { resolveVoucherPreviewTarget } from '../../routes/_app/scm/-stock-entry-preview'
 
 function eq(a: unknown, b: unknown, msg: string) {
-  if (a !== b) throw new Error(`${msg}: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`)
+  if (a !== b)
+    throw new Error(
+      `${msg}: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`,
+    )
 }
 
 // —— 纯 API ——
@@ -21,7 +24,6 @@ registerDocumentPreview('__test_preview__', {
     {
       title: '行',
       resource: 'xItems',
-      client: { id: 'test', query: async () => ({ count: 0, results: [] }), get: async () => null },
       parentIdField: 'docId',
     },
   ],
@@ -53,11 +55,21 @@ for (const resource of EXPECTED) {
     throw new Error(`${resource} 状态应只出现在标题区，不得重复进入头字段`)
   }
   for (const table of config.lineTables) {
-    if (!table.columns?.includes('materialCode')) {
-      throw new Error(`${resource}/${table.title} 必须以 materialCode 承载物料富单元格`)
+    if ('client' in table) {
+      throw new Error(`${resource}/${table.title} 不得保存具体 transport`)
     }
-    if (table.columns.includes('materialId') || table.columns.includes('materialName')) {
-      throw new Error(`${resource}/${table.title} 不得以 materialId/materialName 承载物料列`)
+    if (!table.columns?.includes('materialCode')) {
+      throw new Error(
+        `${resource}/${table.title} 必须以 materialCode 承载物料富单元格`,
+      )
+    }
+    if (
+      table.columns.includes('materialId') ||
+      table.columns.includes('materialName')
+    ) {
+      throw new Error(
+        `${resource}/${table.title} 不得以 materialId/materialName 承载物料列`,
+      )
     }
   }
 }

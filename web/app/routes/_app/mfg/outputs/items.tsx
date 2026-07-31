@@ -6,7 +6,6 @@ import {
 } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
-import { outputItemClient } from '~/lib/resources/manufacturing'
 import { useAuditDoc } from '../../scm/-audit-doc'
 import { outputAuditConfig, useOutputDrawer } from './-output-drawer'
 
@@ -72,7 +71,6 @@ function OutputItemsTab() {
     <>
       <SynieDataGrid
         resource="mfgOutputItems"
-        client={outputItemClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'outputDate', direction: 'descending' }}

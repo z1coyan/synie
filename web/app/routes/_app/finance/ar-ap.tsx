@@ -152,7 +152,6 @@ function ArApPage() {
         <div className="w-full lg:max-w-xs">
           <RemoteSelect
             resource="basCompanies"
-            client={companyClient}
             label="公司"
             placeholder="选择公司…"
             value={companyId}

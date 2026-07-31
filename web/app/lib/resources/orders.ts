@@ -1,33 +1,8 @@
 import { apiData, api } from '../api/client'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
 import { createRowCommandAdapter } from './catalog/commands'
-import type { ResourceClient, ResourceQuery } from './types'
-
-type FilterDocument = FilterState
-
-function queryBody(input: ResourceQuery) {
-  const filter = {
-    ...(input.filter ?? {}),
-    ...((input.fixedFilter ?? {}) as FilterState),
-  }
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: filter as FilterDocument,
-  }
-}
-
-function decimalInput(input: Record<string, unknown>, fields: readonly string[]) {
-  const result = { ...input }
-  for (const field of fields) {
-    if (!Object.hasOwn(input, field)) continue
-    const value = input[field]
-    result[field] = value == null || value === '' ? null : String(value)
-  }
-  return result
-}
+import { decimalWireInput, resourceListBody } from './resource-wire'
+import type { ResourceClient } from './types'
 
 function resourceClient(
   resource: string,
@@ -82,21 +57,47 @@ async function voidPurchaseOrder(id: string) {
 }
 
 export const salesOrderCommandAdapter = createRowCommandAdapter({
-  audit: auditSalesOrder,
-  close: closeSalesOrder,
-  void: voidSalesOrder,
+  audit: {
+    handler: auditSalesOrder,
+    affectedResources: ['salOrderItems'],
+  },
+  close: {
+    handler: closeSalesOrder,
+    affectedResources: ['salOrderItems'],
+  },
+  void: {
+    handler: voidSalesOrder,
+    affectedResources: ['salOrderItems'],
+  },
 })
 
 export const purchaseOrderCommandAdapter = createRowCommandAdapter({
-  audit: auditPurchaseOrder,
-  close: closePurchaseOrder,
-  void: voidPurchaseOrder,
+  audit: {
+    handler: auditPurchaseOrder,
+    affectedResources: [
+      'purOrderItems',
+      'purOrderItemMaterials',
+      'mfgDemandItems',
+    ],
+  },
+  close: {
+    handler: closePurchaseOrder,
+    affectedResources: ['purOrderItems', 'purOrderItemMaterials'],
+  },
+  void: {
+    handler: voidPurchaseOrder,
+    affectedResources: [
+      'purOrderItems',
+      'purOrderItemMaterials',
+      'mfgDemandItems',
+    ],
+  },
 })
 
 export const salesOrderClient = resourceClient('salOrders', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.sales.orders.query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.sales.orders.query.$post({ json: resourceListBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -108,18 +109,18 @@ export const salesOrderClient = resourceClient('salOrders', {
   async create(input) {
     return (await apiData(
       api.sales.orders.$post({
-        json: decimalInput(input, ['exchangeRate']) as never}),
+        json: decimalWireInput(input, ['exchangeRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.sales.orders[':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['exchangeRate']) as never}),
+        json: decimalWireInput(input, ['exchangeRate']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.sales.orders[':id'].$delete({ param: { id } }),
     )
   },
@@ -127,8 +128,8 @@ export const salesOrderClient = resourceClient('salOrders', {
 
 export const salesOrderItemClient = resourceClient('salOrderItems', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.sales['order-items'].query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.sales['order-items'].query.$post({ json: resourceListBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -140,18 +141,18 @@ export const salesOrderItemClient = resourceClient('salOrderItems', {
   async create(input) {
     return (await apiData(
       api.sales['order-items'].$post({
-        json: decimalInput(input, ['qty', 'price', 'taxRate']) as never}),
+        json: decimalWireInput(input, ['qty', 'price', 'taxRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.sales['order-items'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['qty', 'price', 'taxRate']) as never}),
+        json: decimalWireInput(input, ['qty', 'price', 'taxRate']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.sales['order-items'][':id'].$delete({ param: { id } }),
     )
   },
@@ -159,8 +160,8 @@ export const salesOrderItemClient = resourceClient('salOrderItems', {
 
 export const purchaseOrderClient = resourceClient('purOrders', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.purchase.orders.query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.purchase.orders.query.$post({ json: resourceListBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -172,18 +173,18 @@ export const purchaseOrderClient = resourceClient('purOrders', {
   async create(input) {
     return (await apiData(
       api.purchase.orders.$post({
-        json: decimalInput(input, ['exchangeRate']) as never}),
+        json: decimalWireInput(input, ['exchangeRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.purchase.orders[':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['exchangeRate']) as never}),
+        json: decimalWireInput(input, ['exchangeRate']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.purchase.orders[':id'].$delete({ param: { id } }),
     )
   },
@@ -191,8 +192,8 @@ export const purchaseOrderClient = resourceClient('purOrders', {
 
 export const purchaseOrderItemClient = resourceClient('purOrderItems', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.purchase['order-items'].query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.purchase['order-items'].query.$post({ json: resourceListBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -205,18 +206,18 @@ export const purchaseOrderItemClient = resourceClient('purOrderItems', {
   async create(input) {
     return (await apiData(
       api.purchase['order-items'].$post({
-        json: decimalInput(input, ['qty', 'price', 'taxRate']) as never}),
+        json: decimalWireInput(input, ['qty', 'price', 'taxRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.purchase['order-items'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['qty', 'price', 'taxRate']) as never}),
+        json: decimalWireInput(input, ['qty', 'price', 'taxRate']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.purchase['order-items'][':id'].$delete({
         param: { id }}),
     )
@@ -225,9 +226,9 @@ export const purchaseOrderItemClient = resourceClient('purOrderItems', {
 
 export const purchaseOrderItemMaterialClient = resourceClient('purOrderItemMaterials', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.purchase['order-item-materials'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -240,18 +241,18 @@ export const purchaseOrderItemMaterialClient = resourceClient('purOrderItemMater
   async create(input) {
     return (await apiData(
       api.purchase['order-item-materials'].$post({
-        json: decimalInput(input, ['quantity']) as never}),
+        json: decimalWireInput(input, ['quantity']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.purchase['order-item-materials'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['quantity']) as never}),
+        json: decimalWireInput(input, ['quantity']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.purchase['order-item-materials'][':id'].$delete({
         param: { id }}),
     )
@@ -260,9 +261,9 @@ export const purchaseOrderItemMaterialClient = resourceClient('purOrderItemMater
 
 export const purchaseOrderItemByproductClient = resourceClient('purOrderItemByproducts', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.purchase['order-item-byproducts'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -275,18 +276,18 @@ export const purchaseOrderItemByproductClient = resourceClient('purOrderItemBypr
   async create(input) {
     return (await apiData(
       api.purchase['order-item-byproducts'].$post({
-        json: decimalInput(input, ['quantity']) as never}),
+        json: decimalWireInput(input, ['quantity']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.purchase['order-item-byproducts'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['quantity']) as never}),
+        json: decimalWireInput(input, ['quantity']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.purchase['order-item-byproducts'][':id'].$delete({
         param: { id }}),
     )
@@ -298,7 +299,7 @@ export async function queryPurchaseOrderDemandLines(input: {
   isOutsourced: boolean
   search?: string
 }) {
-  const result = await apiData<{ count: number; results: Row[] }>(
+  const result = await apiData(
     api.purchase['order-demand-lines'].query.$post({
       json: { ...input, limit: 200 }}),
   )
@@ -306,7 +307,7 @@ export async function queryPurchaseOrderDemandLines(input: {
 }
 
 export async function expandPurchaseOrderBom(bomId: string, qty: unknown) {
-  return apiData<{ materials: Array<Record<string, unknown>>; byproducts: Array<Record<string, unknown>> }>(
+  return apiData(
     api.purchase['order-bom'].expand.$post({
       json: { bomId, qty: String(qty) }}),
   )
@@ -314,19 +315,22 @@ export async function expandPurchaseOrderBom(bomId: string, qty: unknown) {
 
 export interface OrderFlowHistoryRow {
   flowType: string
-  voucherNo: string
-  voucherDate: string
+  documentNo: string
+  documentDate: string
   status: string
+  companyId: string
+  orderId: string
+  orderItemId: string
   materialCode?: string | null
   materialName?: string | null
   materialSpec?: string | null
   customerPartNo?: string | null
   unitName?: string | null
-  qty?: string | null
+  quantity: string
 }
 
 export async function getSalesOrderHistory(orderId: string): Promise<OrderFlowHistoryRow[]> {
-  const result = await apiData<{ results: OrderFlowHistoryRow[] }>(
+  const result = await apiData(
     api.sales.orders[':id'].history.$get({
       param: { id: orderId },
     }),
@@ -335,7 +339,7 @@ export async function getSalesOrderHistory(orderId: string): Promise<OrderFlowHi
 }
 
 export async function getPurchaseOrderHistory(orderId: string): Promise<OrderFlowHistoryRow[]> {
-  const result = await apiData<{ results: OrderFlowHistoryRow[] }>(
+  const result = await apiData(
     api.purchase.orders[':id'].history.$get({
       param: { id: orderId },
     }),

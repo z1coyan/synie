@@ -4,7 +4,6 @@ import {
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
-import { demandClient } from '~/lib/resources/manufacturing'
 import {
   DEMAND_AUDIT_CONFIG,
   useDemandDrawer,
@@ -58,7 +57,6 @@ function DemandOrdersTab() {
     <>
       <SynieDataGrid
         resource="mfgDemands"
-        client={demandClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         onView={(row) => openDrawer('view', row)}

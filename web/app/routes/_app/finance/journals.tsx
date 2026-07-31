@@ -9,17 +9,14 @@ import { SynieEditableTable } from '~/components/synie-editable-table/SynieEdita
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import {
-  auditGlJournal,
   glJournalClient,
   glJournalLineClient,
 } from '~/lib/resources/accounting'
 import { accountClient } from '~/lib/resources/accounts'
-import { companyClient } from '~/lib/resources/companies'
-import { customerClient } from '~/lib/resources/customers'
-import { employeeClient } from '~/lib/resources/employees'
-import { supplierClient } from '~/lib/resources/suppliers'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/finance/journals')({
   component: JournalsPage,
@@ -139,12 +136,14 @@ function JournalsPage() {
     if (!auditDialog || !auditDate) return
     setAuditing(true)
     try {
-      await auditGlJournal(auditDialog.id, auditDate)
+      await executeCommandWithInvalidation(
+        resourceBindingFor('accGlJournals'),
+        'audit',
+        { id: auditDialog.id, postingDate: auditDate },
+        queryClient,
+      )
       toast.success('凭证已审核过账')
       setAuditDialog(null)
-      queryClient.invalidateQueries({
-        queryKey: ['gridRows', glJournalClient.id, 'accGlJournals'],
-      })
     } catch (e) {
       toast.danger('审核失败', { description: (e as Error).message })
     } finally {
@@ -192,7 +191,6 @@ function JournalsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accGlJournals"
-          client={glJournalClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
@@ -210,7 +208,6 @@ function JournalsPage() {
 
       <SynieRecordDrawer
         resource="accGlJournals"
-        client={glJournalClient}
         label="凭证"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -252,7 +249,6 @@ function JournalsPage() {
           return (
             <SynieEditableTable
               resource="accGlJournalLines"
-              client={glJournalLineClient}
               label="分录行"
               items={lines}
               onChange={setLines}
@@ -291,7 +287,7 @@ function JournalsPage() {
                 partyType: { cols: 6, effects: () => ({ partyId: null }) },
                 partyId: {
                   cols: 6,
-                  // 未选对手类型时不出现;四类往来对手均使用已经迁移的 REST 主数据 client
+                  // 未选对手类型时不出现；四类往来对手均由 resource binding 解析。
                   visible: (values) =>
                     ['SUPPLIER', 'CUSTOMER', 'COMPANY', 'EMPLOYEE'].includes(
                       String(values.partyType ?? ''),
@@ -301,29 +297,24 @@ function JournalsPage() {
                       SUPPLIER: {
                         resource: 'purSuppliers',
                         label: '供应商',
-                        client: supplierClient,
                       },
                       CUSTOMER: {
                         resource: 'salCustomers',
                         label: '客户',
-                        client: customerClient,
                       },
                       COMPANY: {
                         resource: 'basCompanies',
                         label: '内部公司',
-                        client: companyClient,
                       },
                       EMPLOYEE: {
                         resource: 'hrEmployees',
                         label: '员工',
-                        client: employeeClient,
                       },
                     }[String(values.partyType ?? '')]
                     if (!party) return null
                     return (
                       <RemoteSelect
                         resource={party.resource}
-                        client={party.client}
                         label={party.label}
                         placeholder={`选择${party.label}…`}
                         value={value == null ? null : String(value)}
@@ -368,9 +359,7 @@ function JournalsPage() {
             }
             savedId = journalId
           }
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', glJournalClient.id, 'accGlJournals'],
-          })
+          await resourceBindingFor('accGlJournals').cache.invalidateGrid(queryClient)
           return savedId
         }}
       />

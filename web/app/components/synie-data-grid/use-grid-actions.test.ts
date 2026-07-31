@@ -1,29 +1,80 @@
 import { describe, expect, test } from 'bun:test'
-import type { ResourceBinding } from '~/lib/resources/catalog'
+import {
+  bindingFromResourceTransport,
+  createResourceQueryCache,
+  type QueryInvalidationAdapter,
+  type ResourceBinding,
+} from '~/lib/resources/catalog'
+import {
+  createCommandAdapter,
+  defineCommand,
+} from '~/lib/resources/catalog/commands'
+import type { ResourceBindingResolver } from '~/lib/resources/command-invalidation'
 import { runBindingMutation } from './use-grid-actions'
 
-function bindingWithCommands(execute: (key: string, input: unknown) => Promise<void>): ResourceBinding {
-  const calls: Array<{ key: string; input: unknown }> = []
+function bindingWithCommands(
+  execute: (key: string, input: unknown) => Promise<void>,
+  affectedResources?: readonly string[],
+): ResourceBinding {
+  const command = (key: string, target: 'row' | 'bulk' | 'rowOrBulk' | 'collection') =>
+    defineCommand(
+      target,
+      async (input: unknown) => execute(key, input),
+      { affectedResources },
+    )
   return {
     resource: 'demo',
     reader: {
       query: async () => ({ count: 0, results: [] }),
       get: async () => null,
     },
-    commands: {
-      commands: {} as never,
-      execute: async (key, input) => {
-        calls.push({ key, input })
-        await execute(key, input)
-        return undefined as never
-      },
-    },
+    cache: createResourceQueryCache('demo', 'memory:demo'),
+    commands: createCommandAdapter({
+      setDefault: command('setDefault', 'row'),
+      batchTag: command('batchTag', 'bulk'),
+      audit: command('audit', 'rowOrBulk'),
+      recalc: command('recalc', 'collection'),
+    }),
     loadDocument: async () => {
       throw new Error('unused')
     },
-    // expose for assertions
-    ...({ _calls: calls } as object),
-  } as ResourceBinding & { _calls?: Array<{ key: string; input: unknown }> }
+  }
+}
+
+function cacheOnlyBinding(resource: string): ResourceBinding {
+  return bindingFromResourceTransport(resource, {
+      id: `memory:${resource}`,
+      query: async () => ({ count: 0, results: [] }),
+      get: async () => null,
+    })
+}
+
+function testResolver(
+  ...extraBindings: ResourceBinding[]
+): ResourceBindingResolver {
+  const bindings = new Map(
+    [cacheOnlyBinding('sysAuditLogs'), ...extraBindings].map((binding) => [
+      binding.resource,
+      binding,
+    ]),
+  )
+  return (resource) => {
+    const binding = bindings.get(resource)
+    if (!binding) {
+      throw new Error(`资源「${resource}」未注册 ResourceBinding`)
+    }
+    return binding
+  }
+}
+
+function recordingCache() {
+  const queryKeys: Array<readonly unknown[]> = []
+  const cache: QueryInvalidationAdapter = {
+    invalidateQueries: async ({ queryKey }) => {
+      queryKeys.push(queryKey)
+    },
+  }
+  return { cache, queryKeys }
 }
 
 describe('runBindingMutation 命令 target 契约', () => {
@@ -37,6 +88,8 @@ describe('runBindingMutation 命令 target 契约', () => {
       binding,
       'setDefault',
       'row',
+      recordingCache().cache,
+      testResolver(),
     )
     expect(result.ok).toBe(2)
     expect(result.fail).toBe(0)
@@ -56,6 +109,8 @@ describe('runBindingMutation 命令 target 契约', () => {
       binding,
       'batchTag',
       'bulk',
+      recordingCache().cache,
+      testResolver(),
     )
     expect(result.ok).toBe(2)
     expect(calls).toEqual([{ key: 'batchTag', input: { ids: ['a', 'b'] } }])
@@ -66,7 +121,14 @@ describe('runBindingMutation 命令 target 契约', () => {
     const binding = bindingWithCommands(async (key, input) => {
       calls.push({ key, input })
     })
-    await runBindingMutation([{ id: 'x' }], binding, 'audit', 'rowOrBulk')
+    await runBindingMutation(
+      [{ id: 'x' }],
+      binding,
+      'audit',
+      'rowOrBulk',
+      recordingCache().cache,
+      testResolver(),
+    )
     expect(calls).toEqual([{ key: 'audit', input: { ids: ['x'] } }])
   })
 
@@ -75,9 +137,40 @@ describe('runBindingMutation 命令 target 契约', () => {
     const binding = bindingWithCommands(async (key, input) => {
       calls.push({ key, input })
     })
-    const result = await runBindingMutation([], binding, 'recalc', 'collection')
+    const result = await runBindingMutation(
+      [],
+      binding,
+      'recalc',
+      'collection',
+      recordingCache().cache,
+      testResolver(),
+    )
     expect(result.ok).toBe(1)
     expect(calls).toEqual([{ key: 'recalc', input: {} }])
+  })
+
+  test('通用 Grid 命令也消费 affectedResources 并精确失效关联 binding', async () => {
+    const binding = bindingWithCommands(async () => undefined, ['projection'])
+    const { cache, queryKeys } = recordingCache()
+
+    const result = await runBindingMutation(
+      [{ id: 'x' }],
+      binding,
+      'setDefault',
+      'row',
+      cache,
+      testResolver(cacheOnlyBinding('projection')),
+    )
+
+    expect(result).toEqual({ ok: 1, fail: 0, messages: [] })
+    expect(queryKeys).toEqual([
+      ['gridRows', 'memory:demo', 'demo'],
+      ['rowById', 'memory:demo', 'demo'],
+      ['gridRows', 'memory:sysAuditLogs', 'sysAuditLogs'],
+      ['rowById', 'memory:sysAuditLogs', 'sysAuditLogs'],
+      ['gridRows', 'memory:projection', 'projection'],
+      ['rowById', 'memory:projection', 'projection'],
+    ])
   })
 
   test('requiredCapability 与 key 分离：gridMetaFromDocument 携带字段', async () => {

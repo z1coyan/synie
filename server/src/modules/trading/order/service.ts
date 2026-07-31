@@ -7,7 +7,7 @@ import type { ListQuery } from '@synie/shared'
 import { decimal, type Decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import { withReadSnapshot, withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import {
   auditCreated,
@@ -43,6 +43,13 @@ import {
 } from '../common.ts'
 import type { QuotationService } from '../quotation/service.ts'
 import { deriveItemAmounts } from './amounts.ts'
+import {
+  createOutsourcedConfigService,
+  type OutsourcedConfigService,
+  type OutsourcedDraftLineInput,
+  type OutsourcedSavedIssueLine,
+  type OutsourcedSavedLine,
+} from './outsourced-config.ts'
 import {
   orderHeadMeta,
   orderItemMeta,
@@ -136,12 +143,97 @@ export interface OrderItem {
   unit: { id: string; name: string }
 }
 
+export interface OrderHeadCreateInput {
+  companyId: string
+  orderNo?: string | null
+  orderDate?: string | null
+  orderType?: string
+  isOutsourced?: boolean
+  partyType: string
+  partyId: string
+  currencyId?: string | null
+  exchangeRate?: string | null
+  terms?: string | null
+  remarks?: string | null
+}
+
+export interface OrderHeadUpdateInput {
+  orderNo?: string
+  orderDate?: string
+  orderType?: string
+  isOutsourced?: boolean
+  partyType?: string
+  partyId?: string
+  currencyId?: string
+  exchangeRate?: string
+  terms?: string | null
+  termsPresent?: boolean
+  remarks?: string | null
+  remarksPresent?: boolean
+}
+
+export interface OrderItemCreateInput {
+  orderId: string
+  idx: number
+  qty: string
+  materialId: string
+  unitId: string
+  price?: string | null
+  taxRate?: string | null
+  remarks?: string | null
+  quotationItemId?: string | null
+  bomId?: string | null
+  demandLineId?: string | null
+  demandDate?: string | null
+}
+
+export interface OrderItemUpdateInput {
+  idx?: number
+  qty?: string
+  materialId?: string
+  unitId?: string
+  price?: string
+  taxRate?: string
+  remarks?: string | null
+  remarksPresent?: boolean
+  quotationItemId?: string | null
+  quotationItemIdPresent?: boolean
+  bomId?: string | null
+  bomIdPresent?: boolean
+  demandLineId?: string | null
+  demandLineIdPresent?: boolean
+  demandDate?: string | null
+  demandDatePresent?: boolean
+}
+
+export interface OrderDraftItemInput
+  extends Omit<OrderItemCreateInput, 'orderId'> {
+  id?: string
+  issueLines: OutsourcedDraftLineInput[]
+  byproductLines: OutsourcedDraftLineInput[]
+}
+
+export interface OrderDraftInput extends OrderHeadCreateInput {
+  items: OrderDraftItemInput[]
+}
+
+export type OrderSavedDraft = Order & {
+  items: Array<
+    OrderItem & {
+      issueLines: OutsourcedSavedIssueLine[]
+      byproductLines: OutsourcedSavedLine[]
+    }
+  >
+}
+
 type Numberer = Pick<NumberingService, 'nextInTx'>
+type OutsourcedDraftPort = OutsourcedConfigService['draft']
 
 export function createOrderService(
   db: Kysely<Database>,
   numberer: Numberer,
   quotations: QuotationService,
+  outsourcedDraft: OutsourcedDraftPort = createOutsourcedConfigService(db).draft,
 ) {
   async function listHeads(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
     const spec = orderSpec(side)
@@ -190,225 +282,217 @@ export function createOrderService(
   async function createHead(
     actor: Actor,
     side: TradingSide,
-    input: {
-      companyId: string
-      orderNo?: string | null
-      orderDate?: string | null
-      orderType?: string
-      isOutsourced?: boolean
-      partyType: string
-      partyId: string
-      currencyId?: string | null
-      exchangeRate?: string | null
-      terms?: string | null
-      remarks?: string | null
-    },
+    input: OrderHeadCreateInput,
   ): Promise<Order> {
     const spec = orderSpec(side)
     requirePerm(actor, spec.prefix, 'create', '无权限执行该订单操作')
     if (!canAccessCompany(actor, input.companyId)) {
       throw new ApiError('forbidden', '无权在该公司下操作数据')
     }
-    return withTx(db, async (trx) => {
-      const { currencyId, exchangeRate } = await normalizeCurrency(
-        trx, input.companyId, input.currencyId ?? null, input.exchangeRate ?? null,
-      )
-      const orderDate = input.orderDate ? toDateOnly(input.orderDate) : todayUTC()
-      let orderType = (input.orderType ?? 'REGULAR').toUpperCase()
-      if (orderType !== 'REGULAR' && orderType !== spec.nonRegularType) {
-        throw ApiError.validation(`${spec.label}参数不合法`, { orderType: ['订单类型不合法'] })
-      }
-      let orderNo = (input.orderNo ?? '').trim()
-      const partyType = lowerParty(input.partyType)
-      if (!orderNo) {
-        orderNo = await numberer.nextInTx(trx, {
-          resource: spec.numberResource,
-          values: {
-            company_id: input.companyId,
-            order_date: orderDate,
-            order_type: orderType.toLowerCase(),
-            party_type: partyType,
-            party_id: input.partyId,
-            currency_id: currencyId,
-          },
-        })
-      }
-      validateOrderShape(spec, {
-        orderNo, orderDate, orderType, partyType, partyId: input.partyId,
-        companyId: input.companyId, currencyId, exchangeRate, remarks: input.remarks ?? null,
+    return withTx(db, (trx) => createHeadInTx(trx, actor, side, input))
+  }
+
+  async function createHeadInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    input: OrderHeadCreateInput,
+  ): Promise<Order> {
+    const spec = orderSpec(side)
+    const { currencyId, exchangeRate } = await normalizeCurrency(
+      trx, input.companyId, input.currencyId ?? null, input.exchangeRate ?? null,
+    )
+    const orderDate = input.orderDate ? toDateOnly(input.orderDate) : todayUTC()
+    const orderType = (input.orderType ?? 'REGULAR').toUpperCase()
+    if (orderType !== 'REGULAR' && orderType !== spec.nonRegularType) {
+      throw ApiError.validation(`${spec.label}参数不合法`, { orderType: ['订单类型不合法'] })
+    }
+    let orderNo = (input.orderNo ?? '').trim()
+    const partyType = lowerParty(input.partyType)
+    if (!orderNo) {
+      orderNo = await numberer.nextInTx(trx, {
+        resource: spec.numberResource,
+        values: {
+          company_id: input.companyId,
+          order_date: orderDate,
+          order_type: orderType.toLowerCase(),
+          party_type: partyType,
+          party_id: input.partyId,
+          currency_id: currencyId,
+        },
       })
-      if (!(await partyExists(trx, partyType, input.partyId))) {
-        throw ApiError.validation('订单参数不合法', { partyId: ['对手不存在'] })
-      }
-      const createdById = actor.userId || null
-      const isOutsourced = side === 'purchase' ? Boolean(input.isOutsourced) : false
-      try {
-        let id: string
-        if (side === 'purchase') {
-          const ins = await sql<{ id: string }>`
-            INSERT INTO pur_order (
-              order_no,order_date,order_type,is_outsourced,party_type,party_id,exchange_rate,
-              terms,remarks,company_id,currency_id,created_by_id
-            ) VALUES (
-              ${orderNo},${orderDate}::date,${orderType.toLowerCase()},${isOutsourced},
-              ${partyType},${input.partyId}::uuid,${wireRequiredDecimal(exchangeRate)},
-              ${input.terms ?? null},${input.remarks ?? null},
-              ${input.companyId}::uuid,${currencyId}::uuid,${createdById}::uuid
-            ) RETURNING id
-          `.execute(trx)
-          id = ins.rows[0]!.id
-        } else {
-          const ins = await sql<{ id: string }>`
-            INSERT INTO sal_order (
-              order_no,order_date,order_type,party_type,party_id,exchange_rate,
-              terms,remarks,company_id,currency_id,created_by_id
-            ) VALUES (
-              ${orderNo},${orderDate}::date,${orderType.toLowerCase()},
-              ${partyType},${input.partyId}::uuid,${wireRequiredDecimal(exchangeRate)},
-              ${input.terms ?? null},${input.remarks ?? null},
-              ${input.companyId}::uuid,${currencyId}::uuid,${createdById}::uuid
-            ) RETURNING id
-          `.execute(trx)
-          id = ins.rows[0]!.id
-        }
-        const row = await loadHead(trx, spec, id)
-        const item = mapHead(row!)
-        await writeAudit(trx, actor, {
-          resource: spec.headTable,
-          recordId: id,
-          recordLabel: item.orderNo,
-          companyId: item.companyId,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(headSnap(item), HEAD_AUDIT),
-        })
-        return item
-      } catch (err) {
-        throw mapOrderWrite('创建订单失败', err)
-      }
+    }
+    validateOrderShape(spec, {
+      orderNo, orderDate, orderType, partyType, partyId: input.partyId,
+      companyId: input.companyId, currencyId, exchangeRate, remarks: input.remarks ?? null,
     })
+    if (!(await partyExists(trx, partyType, input.partyId))) {
+      throw ApiError.validation('订单参数不合法', { partyId: ['对手不存在'] })
+    }
+    const createdById = actor.userId || null
+    const isOutsourced = side === 'purchase' ? Boolean(input.isOutsourced) : false
+    try {
+      let id: string
+      if (side === 'purchase') {
+        const ins = await sql<{ id: string }>`
+          INSERT INTO pur_order (
+            order_no,order_date,order_type,is_outsourced,party_type,party_id,exchange_rate,
+            terms,remarks,company_id,currency_id,created_by_id
+          ) VALUES (
+            ${orderNo},${orderDate}::date,${orderType.toLowerCase()},${isOutsourced},
+            ${partyType},${input.partyId}::uuid,${wireRequiredDecimal(exchangeRate)},
+            ${input.terms ?? null},${input.remarks ?? null},
+            ${input.companyId}::uuid,${currencyId}::uuid,${createdById}::uuid
+          ) RETURNING id
+        `.execute(trx)
+        id = ins.rows[0]!.id
+      } else {
+        const ins = await sql<{ id: string }>`
+          INSERT INTO sal_order (
+            order_no,order_date,order_type,party_type,party_id,exchange_rate,
+            terms,remarks,company_id,currency_id,created_by_id
+          ) VALUES (
+            ${orderNo},${orderDate}::date,${orderType.toLowerCase()},
+            ${partyType},${input.partyId}::uuid,${wireRequiredDecimal(exchangeRate)},
+            ${input.terms ?? null},${input.remarks ?? null},
+            ${input.companyId}::uuid,${currencyId}::uuid,${createdById}::uuid
+          ) RETURNING id
+        `.execute(trx)
+        id = ins.rows[0]!.id
+      }
+      const row = await loadHead(trx, spec, id)
+      const item = mapHead(row!)
+      await writeAudit(trx, actor, {
+        resource: spec.headTable,
+        recordId: id,
+        recordLabel: item.orderNo,
+        companyId: item.companyId,
+        actionType: 'create',
+        actionName: 'create',
+        changes: auditCreated(headSnap(item), HEAD_AUDIT),
+      })
+      return item
+    } catch (err) {
+      throw mapOrderWrite('创建订单失败', err)
+    }
   }
 
   async function updateHead(
     actor: Actor,
     side: TradingSide,
     id: string,
-    input: {
-      orderNo?: string
-      orderDate?: string
-      orderType?: string
-      isOutsourced?: boolean
-      partyType?: string
-      partyId?: string
-      currencyId?: string
-      exchangeRate?: string
-      terms?: string | null
-      termsPresent?: boolean
-      remarks?: string | null
-      remarksPresent?: boolean
-    },
+    input: OrderHeadUpdateInput,
   ): Promise<Order> {
     const spec = orderSpec(side)
     requirePerm(actor, spec.prefix, 'update', '无权限执行该订单操作')
-    return withTx(db, async (trx) => {
-      const locked = await lockOrder(trx, actor, spec, id)
-      if (String(locked.status).toLowerCase() !== 'draft') {
-        throw new ApiError('conflict', '仅草稿订单可修改')
-      }
-      const before = mapHead(locked)
-      if (input.orderType !== undefined && input.orderType.toUpperCase() !== before.orderType) {
-        throw ApiError.validation('订单参数不合法', { orderType: ['订单类型不可变更'] })
-      }
-      if (
-        input.isOutsourced !== undefined &&
-        Boolean(input.isOutsourced) !== before.isOutsourced
-      ) {
-        throw ApiError.validation('订单参数不合法', { isOutsourced: ['委外标记不可变更'] })
-      }
-      let after: Order = {
-        ...before,
-        orderNo: input.orderNo !== undefined ? input.orderNo.trim() : before.orderNo,
-        orderDate: input.orderDate ? toDateOnly(input.orderDate) : before.orderDate,
-        partyType: input.partyType ? input.partyType.trim().toUpperCase() : before.partyType,
-        partyId: input.partyId ?? before.partyId,
-        currencyId: input.currencyId ?? before.currencyId,
-        exchangeRate: input.exchangeRate ?? before.exchangeRate,
-        terms: input.termsPresent ? (input.terms ?? null) : before.terms,
-        remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
-      }
-      const hasItems = await sql<{ e: boolean }>`
-        SELECT EXISTS(SELECT 1 FROM ${ident(spec.itemTable)} WHERE order_id=${id}::uuid) AS e
-      `.execute(trx)
-      const headChanged =
-        after.orderDate !== before.orderDate ||
-        lowerParty(after.partyType) !== lowerParty(before.partyType) ||
-        after.partyId !== before.partyId ||
-        after.currencyId !== before.currencyId
-      if (hasItems.rows[0]?.e && headChanged) {
-        throw new ApiError('conflict', '请先删除订单条目')
-      }
-      const norm = await normalizeCurrency(
-        trx,
-        after.companyId,
-        after.currencyId,
-        after.exchangeRate,
-      )
-      after = { ...after, currencyId: norm.currencyId, exchangeRate: wireRequiredDecimal(norm.exchangeRate) }
-      validateOrderShape(spec, {
-        orderNo: after.orderNo,
-        orderDate: after.orderDate,
-        orderType: after.orderType,
-        partyType: lowerParty(after.partyType),
-        partyId: after.partyId,
-        companyId: after.companyId,
-        currencyId: after.currencyId,
-        exchangeRate: decimal(after.exchangeRate),
-        remarks: after.remarks,
-      })
-      if (!(await partyExists(trx, after.partyType, after.partyId))) {
-        throw ApiError.validation('订单参数不合法', { partyId: ['对手不存在'] })
-      }
-      const changes = auditDiff(headSnap(before), headSnap(after), HEAD_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        await sql`
-          UPDATE ${ident(spec.headTable)} SET
-            order_no=${after.orderNo},
-            order_date=${after.orderDate}::date,
-            party_type=${lowerParty(after.partyType)},
-            party_id=${after.partyId}::uuid,
-            currency_id=${after.currencyId}::uuid,
-            exchange_rate=${after.exchangeRate},
-            terms=${after.terms},
-            remarks=${after.remarks},
-            updated_at=(now() AT TIME ZONE 'utc')
-          WHERE id=${id}::uuid
-        `.execute(trx)
-        if (after.exchangeRate !== before.exchangeRate) {
-          await sql`
-            UPDATE ${ident(spec.itemTable)}
-            SET base_price=round(price*${after.exchangeRate},4),
-                base_amount=round(amount*${after.exchangeRate},2),
-                updated_at=(now() AT TIME ZONE 'utc')
-            WHERE order_id=${id}::uuid
-          `.execute(trx)
-        }
-        const row = await loadHead(trx, spec, id)
-        const item = mapHead(row!)
-        await writeAudit(trx, actor, {
-          resource: spec.headTable,
-          recordId: id,
-          recordLabel: item.orderNo,
-          companyId: item.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return item
-      } catch (err) {
-        throw mapOrderWrite('更新订单失败', err)
-      }
+    return withTx(db, (trx) => updateHeadInTx(trx, actor, side, id, input))
+  }
+
+  async function updateHeadInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+    input: OrderHeadUpdateInput,
+  ): Promise<Order> {
+    const spec = orderSpec(side)
+    const locked = await lockOrder(trx, actor, spec, id)
+    if (String(locked.status).toLowerCase() !== 'draft') {
+      throw new ApiError('conflict', '仅草稿订单可修改')
+    }
+    const before = mapHead(locked)
+    if (input.orderType !== undefined && input.orderType.toUpperCase() !== before.orderType) {
+      throw ApiError.validation('订单参数不合法', { orderType: ['订单类型不可变更'] })
+    }
+    if (
+      input.isOutsourced !== undefined &&
+      Boolean(input.isOutsourced) !== before.isOutsourced
+    ) {
+      throw ApiError.validation('订单参数不合法', { isOutsourced: ['委外标记不可变更'] })
+    }
+    let after: Order = {
+      ...before,
+      orderNo: input.orderNo !== undefined ? input.orderNo.trim() : before.orderNo,
+      orderDate: input.orderDate ? toDateOnly(input.orderDate) : before.orderDate,
+      partyType: input.partyType ? input.partyType.trim().toUpperCase() : before.partyType,
+      partyId: input.partyId ?? before.partyId,
+      currencyId: input.currencyId ?? before.currencyId,
+      exchangeRate: input.exchangeRate ?? before.exchangeRate,
+      terms: input.termsPresent ? (input.terms ?? null) : before.terms,
+      remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
+    }
+    const hasItems = await sql<{ e: boolean }>`
+      SELECT EXISTS(SELECT 1 FROM ${ident(spec.itemTable)} WHERE order_id=${id}::uuid) AS e
+    `.execute(trx)
+    const headChanged =
+      after.orderDate !== before.orderDate ||
+      lowerParty(after.partyType) !== lowerParty(before.partyType) ||
+      after.partyId !== before.partyId ||
+      after.currencyId !== before.currencyId
+    if (hasItems.rows[0]?.e && headChanged) {
+      throw new ApiError('conflict', '请先删除订单条目')
+    }
+    const norm = await normalizeCurrency(
+      trx,
+      after.companyId,
+      after.currencyId,
+      after.exchangeRate,
+    )
+    after = { ...after, currencyId: norm.currencyId, exchangeRate: wireRequiredDecimal(norm.exchangeRate) }
+    validateOrderShape(spec, {
+      orderNo: after.orderNo,
+      orderDate: after.orderDate,
+      orderType: after.orderType,
+      partyType: lowerParty(after.partyType),
+      partyId: after.partyId,
+      companyId: after.companyId,
+      currencyId: after.currencyId,
+      exchangeRate: decimal(after.exchangeRate),
+      remarks: after.remarks,
     })
+    if (!(await partyExists(trx, after.partyType, after.partyId))) {
+      throw ApiError.validation('订单参数不合法', { partyId: ['对手不存在'] })
+    }
+    const changes = auditDiff(headSnap(before), headSnap(after), HEAD_AUDIT)
+    if (Object.keys(changes).length === 0) return before
+    try {
+      await sql`
+        UPDATE ${ident(spec.headTable)} SET
+          order_no=${after.orderNo},
+          order_date=${after.orderDate}::date,
+          party_type=${lowerParty(after.partyType)},
+          party_id=${after.partyId}::uuid,
+          currency_id=${after.currencyId}::uuid,
+          exchange_rate=${after.exchangeRate},
+          terms=${after.terms},
+          remarks=${after.remarks},
+          updated_at=(now() AT TIME ZONE 'utc')
+        WHERE id=${id}::uuid
+      `.execute(trx)
+      if (after.exchangeRate !== before.exchangeRate) {
+        await sql`
+          UPDATE ${ident(spec.itemTable)}
+          SET base_price=round(price*${after.exchangeRate},4),
+              base_amount=round(amount*${after.exchangeRate},2),
+              updated_at=(now() AT TIME ZONE 'utc')
+          WHERE order_id=${id}::uuid
+        `.execute(trx)
+      }
+      const row = await loadHead(trx, spec, id)
+      const item = mapHead(row!)
+      await writeAudit(trx, actor, {
+        resource: spec.headTable,
+        recordId: id,
+        recordLabel: item.orderNo,
+        companyId: item.companyId,
+        actionType: 'update',
+        actionName: 'update',
+        changes,
+      })
+      return item
+    } catch (err) {
+      throw mapOrderWrite('更新订单失败', err)
+    }
   }
 
   async function deleteHead(actor: Actor, side: TradingSide, id: string): Promise<void> {
@@ -564,140 +648,128 @@ export function createOrderService(
   async function createItem(
     actor: Actor,
     side: TradingSide,
-    input: {
-      orderId: string
-      idx: number
-      qty: string
-      materialId: string
-      unitId: string
-      price?: string | null
-      taxRate?: string | null
-      remarks?: string | null
-      quotationItemId?: string | null
-      bomId?: string | null
-      demandLineId?: string | null
-      demandDate?: string | null
-    },
+    input: OrderItemCreateInput,
   ): Promise<OrderItem> {
     const spec = orderSpec(side)
     requirePerm(actor, spec.prefix, 'create', '无权限执行该订单操作')
-    return withTx(db, async (trx) => {
-      const parent = await lockOrder(trx, actor, spec, input.orderId)
-      if (String(parent.status).toLowerCase() !== 'draft') {
-        throw new ApiError('conflict', '仅草稿订单可编辑条目')
-      }
-      const derived = await deriveAndValidateItem(trx, quotations, spec, parent, {
-        idx: input.idx,
-        qty: decimal(input.qty),
-        materialId: input.materialId,
-        unitId: input.unitId,
-        price: input.price != null && input.price !== '' ? decimal(input.price) : decimal(0),
-        taxRate: input.taxRate != null && input.taxRate !== '' ? decimal(input.taxRate) : decimal('0.13'),
-        taxExplicit: input.taxRate != null && input.taxRate !== '',
-        remarks: input.remarks ?? null,
-        quotationItemId: input.quotationItemId ?? null,
-        bomId: input.bomId ?? null,
-        demandLineId: input.demandLineId ?? null,
-        demandDate: input.demandDate ?? null,
-      })
-      try {
-        let id: string
-        if (side === 'purchase') {
-          const ins = await sql<{ id: string }>`
-            INSERT INTO pur_order_item (
-              idx,qty,base_qty,price,amount,base_price,base_amount,tax_rate,
-              material_code,material_name,material_spec,customer_part_no,unit_name,remarks,
-              order_id,company_id,material_id,unit_id,quotation_item_id,bom_id,demand_line_id,demand_date
-            ) VALUES (
-              ${derived.idx},${wireRequiredDecimal(derived.qty)},${wireRequiredDecimal(derived.baseQty)},
-              ${wireRequiredDecimal(derived.price)},${wireRequiredDecimal(derived.amount)},
-              ${wireRequiredDecimal(derived.basePrice)},${wireRequiredDecimal(derived.baseAmount)},
-              ${wireRequiredDecimal(derived.taxRate)},
-              ${derived.materialCode},${derived.materialName},${derived.materialSpec},
-              ${derived.customerPartNo},${derived.unitName},${derived.remarks},
-              ${input.orderId}::uuid,${String(parent.company_id)}::uuid,
-              ${derived.materialId}::uuid,${derived.unitId}::uuid,
-              ${derived.quotationItemId}::uuid,${derived.bomId}::uuid,
-              ${derived.demandLineId}::uuid,${derived.demandDate}::date
-            ) RETURNING id
-          `.execute(trx)
-          id = ins.rows[0]!.id
-        } else {
-          const ins = await sql<{ id: string }>`
-            INSERT INTO sal_order_item (
-              idx,qty,base_qty,price,amount,base_price,base_amount,tax_rate,
-              material_code,material_name,material_spec,customer_part_no,unit_name,remarks,
-              order_id,company_id,material_id,unit_id,quotation_item_id
-            ) VALUES (
-              ${derived.idx},${wireRequiredDecimal(derived.qty)},${wireRequiredDecimal(derived.baseQty)},
-              ${wireRequiredDecimal(derived.price)},${wireRequiredDecimal(derived.amount)},
-              ${wireRequiredDecimal(derived.basePrice)},${wireRequiredDecimal(derived.baseAmount)},
-              ${wireRequiredDecimal(derived.taxRate)},
-              ${derived.materialCode},${derived.materialName},${derived.materialSpec},
-              ${derived.customerPartNo},${derived.unitName},${derived.remarks},
-              ${input.orderId}::uuid,${String(parent.company_id)}::uuid,
-              ${derived.materialId}::uuid,${derived.unitId}::uuid,${derived.quotationItemId}::uuid
-            ) RETURNING id
-          `.execute(trx)
-          id = ins.rows[0]!.id
-        }
-        await syncDrawingAttachments(trx, spec.itemOwnerType, id, derived.materialId, String(parent.company_id))
-        const row = await loadItem(trx, spec, side, id)
-        const item = mapItem(side, row!)
-        await writeAudit(trx, actor, {
-          resource: spec.itemTable,
-          recordId: id,
-          recordLabel: String(item.idx),
-          companyId: item.companyId,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(itemSnap(item), ITEM_AUDIT),
-        })
-        return item
-      } catch (err) {
-        throw mapOrderWrite('创建订单条目失败', err)
-      }
+    return withTx(db, (trx) => createItemInTx(trx, actor, side, input))
+  }
+
+  async function createItemInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    input: OrderItemCreateInput,
+  ): Promise<OrderItem> {
+    const spec = orderSpec(side)
+    const parent = await lockOrder(trx, actor, spec, input.orderId)
+    if (String(parent.status).toLowerCase() !== 'draft') {
+      throw new ApiError('conflict', '仅草稿订单可编辑条目')
+    }
+    const derived = await deriveAndValidateItem(trx, quotations, spec, parent, {
+      idx: input.idx,
+      qty: decimal(input.qty),
+      materialId: input.materialId,
+      unitId: input.unitId,
+      price: input.price != null && input.price !== '' ? decimal(input.price) : decimal(0),
+      taxRate: input.taxRate != null && input.taxRate !== '' ? decimal(input.taxRate) : decimal('0.13'),
+      taxExplicit: input.taxRate != null && input.taxRate !== '',
+      remarks: input.remarks ?? null,
+      quotationItemId: input.quotationItemId ?? null,
+      bomId: input.bomId ?? null,
+      demandLineId: input.demandLineId ?? null,
+      demandDate: input.demandDate ?? null,
     })
+    try {
+      let id: string
+      if (side === 'purchase') {
+        const ins = await sql<{ id: string }>`
+          INSERT INTO pur_order_item (
+            idx,qty,base_qty,price,amount,base_price,base_amount,tax_rate,
+            material_code,material_name,material_spec,customer_part_no,unit_name,remarks,
+            order_id,company_id,material_id,unit_id,quotation_item_id,bom_id,demand_line_id,demand_date
+          ) VALUES (
+            ${derived.idx},${wireRequiredDecimal(derived.qty)},${wireRequiredDecimal(derived.baseQty)},
+            ${wireRequiredDecimal(derived.price)},${wireRequiredDecimal(derived.amount)},
+            ${wireRequiredDecimal(derived.basePrice)},${wireRequiredDecimal(derived.baseAmount)},
+            ${wireRequiredDecimal(derived.taxRate)},
+            ${derived.materialCode},${derived.materialName},${derived.materialSpec},
+            ${derived.customerPartNo},${derived.unitName},${derived.remarks},
+            ${input.orderId}::uuid,${String(parent.company_id)}::uuid,
+            ${derived.materialId}::uuid,${derived.unitId}::uuid,
+            ${derived.quotationItemId}::uuid,${derived.bomId}::uuid,
+            ${derived.demandLineId}::uuid,${derived.demandDate}::date
+          ) RETURNING id
+        `.execute(trx)
+        id = ins.rows[0]!.id
+      } else {
+        const ins = await sql<{ id: string }>`
+          INSERT INTO sal_order_item (
+            idx,qty,base_qty,price,amount,base_price,base_amount,tax_rate,
+            material_code,material_name,material_spec,customer_part_no,unit_name,remarks,
+            order_id,company_id,material_id,unit_id,quotation_item_id
+          ) VALUES (
+            ${derived.idx},${wireRequiredDecimal(derived.qty)},${wireRequiredDecimal(derived.baseQty)},
+            ${wireRequiredDecimal(derived.price)},${wireRequiredDecimal(derived.amount)},
+            ${wireRequiredDecimal(derived.basePrice)},${wireRequiredDecimal(derived.baseAmount)},
+            ${wireRequiredDecimal(derived.taxRate)},
+            ${derived.materialCode},${derived.materialName},${derived.materialSpec},
+            ${derived.customerPartNo},${derived.unitName},${derived.remarks},
+            ${input.orderId}::uuid,${String(parent.company_id)}::uuid,
+            ${derived.materialId}::uuid,${derived.unitId}::uuid,${derived.quotationItemId}::uuid
+          ) RETURNING id
+        `.execute(trx)
+        id = ins.rows[0]!.id
+      }
+      await syncDrawingAttachments(trx, spec.itemOwnerType, id, derived.materialId, String(parent.company_id))
+      const row = await loadItem(trx, spec, side, id)
+      const item = mapItem(side, row!)
+      await writeAudit(trx, actor, {
+        resource: spec.itemTable,
+        recordId: id,
+        recordLabel: String(item.idx),
+        companyId: item.companyId,
+        actionType: 'create',
+        actionName: 'create',
+        changes: auditCreated(itemSnap(item), ITEM_AUDIT),
+      })
+      return item
+    } catch (err) {
+      throw mapOrderWrite('创建订单条目失败', err)
+    }
   }
 
   async function updateItem(
     actor: Actor,
     side: TradingSide,
     id: string,
-    input: {
-      idx?: number
-      qty?: string
-      materialId?: string
-      unitId?: string
-      price?: string
-      taxRate?: string
-      remarks?: string | null
-      remarksPresent?: boolean
-      quotationItemId?: string | null
-      quotationItemIdPresent?: boolean
-      bomId?: string | null
-      bomIdPresent?: boolean
-      demandLineId?: string | null
-      demandLineIdPresent?: boolean
-      demandDate?: string | null
-      demandDatePresent?: boolean
-    },
+    input: OrderItemUpdateInput,
   ): Promise<OrderItem> {
     const spec = orderSpec(side)
     requirePerm(actor, spec.prefix, 'update', '无权限执行该订单操作')
-    return withTx(db, async (trx) => {
-      const existing = await sql<{ order_id: string }>`
-        SELECT order_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!existing.rows[0]) throw new ApiError('not_found', '订单条目不存在')
-      const parent = await lockOrder(trx, actor, spec, existing.rows[0].order_id)
-      if (String(parent.status).toLowerCase() !== 'draft') {
-        throw new ApiError('conflict', '仅草稿订单可编辑条目')
-      }
-      const beforeRow = await loadItem(trx, spec, side, id)
-      if (!beforeRow) throw new ApiError('not_found', '订单条目不存在')
-      const before = mapItem(side, beforeRow)
-      const derived = await deriveAndValidateItem(trx, quotations, spec, parent, {
+    return withTx(db, (trx) => updateItemInTx(trx, actor, side, id, input))
+  }
+
+  async function updateItemInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+    input: OrderItemUpdateInput,
+  ): Promise<OrderItem> {
+    const spec = orderSpec(side)
+    const existing = await sql<{ order_id: string }>`
+      SELECT order_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
+    `.execute(trx)
+    if (!existing.rows[0]) throw new ApiError('not_found', '订单条目不存在')
+    const parent = await lockOrder(trx, actor, spec, existing.rows[0].order_id)
+    if (String(parent.status).toLowerCase() !== 'draft') {
+      throw new ApiError('conflict', '仅草稿订单可编辑条目')
+    }
+    const beforeRow = await loadItem(trx, spec, side, id)
+    if (!beforeRow) throw new ApiError('not_found', '订单条目不存在')
+    const before = mapItem(side, beforeRow)
+    const derived = await deriveAndValidateItem(trx, quotations, spec, parent, {
         idx: input.idx ?? before.idx,
         qty: decimal(input.qty ?? before.qty),
         materialId: input.materialId ?? before.materialId,
@@ -716,8 +788,8 @@ export function createOrderService(
         demandDate: input.demandDatePresent
           ? (input.demandDate ?? null)
           : (before.demandDate ?? null),
-      })
-      const afterBase: OrderItem = {
+    })
+    const afterBase: OrderItem = {
         ...before,
         idx: derived.idx,
         qty: wireRequiredDecimal(derived.qty),
@@ -739,11 +811,11 @@ export function createOrderService(
         bomId: derived.bomId,
         demandLineId: derived.demandLineId,
         demandDate: derived.demandDate,
-      }
-      const changes = auditDiff(itemSnap(before), itemSnap(afterBase), ITEM_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        if (side === 'purchase') {
+    }
+    const changes = auditDiff(itemSnap(before), itemSnap(afterBase), ITEM_AUDIT)
+    if (Object.keys(changes).length === 0) return before
+    try {
+      if (side === 'purchase') {
           await sql`
             UPDATE pur_order_item SET
               idx=${afterBase.idx}, qty=${afterBase.qty}, base_qty=${afterBase.baseQty},
@@ -759,7 +831,7 @@ export function createOrderService(
               updated_at=(now() AT TIME ZONE 'utc')
             WHERE id=${id}::uuid
           `.execute(trx)
-        } else {
+      } else {
           await sql`
             UPDATE sal_order_item SET
               idx=${afterBase.idx}, qty=${afterBase.qty}, base_qty=${afterBase.baseQty},
@@ -773,60 +845,261 @@ export function createOrderService(
               updated_at=(now() AT TIME ZONE 'utc')
             WHERE id=${id}::uuid
           `.execute(trx)
-        }
-        await syncDrawingAttachments(
-          trx, spec.itemOwnerType, id, afterBase.materialId, afterBase.companyId,
-        )
-        const row = await loadItem(trx, spec, side, id)
-        const item = mapItem(side, row!)
-        await writeAudit(trx, actor, {
-          resource: spec.itemTable,
-          recordId: id,
-          recordLabel: String(item.idx),
-          companyId: item.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return item
-      } catch (err) {
-        throw mapOrderWrite('更新订单条目失败', err)
       }
-    })
-  }
-
-  async function deleteItem(actor: Actor, side: TradingSide, id: string): Promise<void> {
-    const spec = orderSpec(side)
-    requirePerm(actor, spec.prefix, 'delete', '无权限执行该订单操作')
-    await withTx(db, async (trx) => {
-      const existing = await sql<{ order_id: string }>`
-        SELECT order_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!existing.rows[0]) throw new ApiError('not_found', '订单条目不存在')
-      const parent = await lockOrder(trx, actor, spec, existing.rows[0].order_id)
-      if (String(parent.status).toLowerCase() !== 'draft') {
-        throw new ApiError('conflict', '仅草稿订单可编辑条目')
-      }
+      await syncDrawingAttachments(
+        trx, spec.itemOwnerType, id, afterBase.materialId, afterBase.companyId,
+      )
       const row = await loadItem(trx, spec, side, id)
-      if (!row) throw new ApiError('not_found', '订单条目不存在')
-      const item = mapItem(side, row)
+      const item = mapItem(side, row!)
       await writeAudit(trx, actor, {
         resource: spec.itemTable,
         recordId: id,
         recordLabel: String(item.idx),
         companyId: item.companyId,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(itemSnap(item), ITEM_AUDIT),
+        actionType: 'update',
+        actionName: 'update',
+        changes,
       })
-      await sql`
-        DELETE FROM sys_attachment WHERE owner_type=${spec.itemOwnerType} AND owner_id=${id}::uuid
-      `.execute(trx)
-      try {
-        await sql`DELETE FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid`.execute(trx)
-      } catch (err) {
-        throw mapOrderWrite('删除订单条目失败', err)
+      return item
+    } catch (err) {
+      throw mapOrderWrite('更新订单条目失败', err)
+    }
+  }
+
+  async function deleteItem(actor: Actor, side: TradingSide, id: string): Promise<void> {
+    const spec = orderSpec(side)
+    requirePerm(actor, spec.prefix, 'delete', '无权限执行该订单操作')
+    await withTx(db, (trx) => deleteItemInTx(trx, actor, side, id))
+  }
+
+  async function deleteItemInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+  ): Promise<void> {
+    const spec = orderSpec(side)
+    const existing = await sql<{ order_id: string }>`
+      SELECT order_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
+    `.execute(trx)
+    if (!existing.rows[0]) throw new ApiError('not_found', '订单条目不存在')
+    const parent = await lockOrder(trx, actor, spec, existing.rows[0].order_id)
+    if (String(parent.status).toLowerCase() !== 'draft') {
+      throw new ApiError('conflict', '仅草稿订单可编辑条目')
+    }
+    const row = await loadItem(trx, spec, side, id)
+    if (!row) throw new ApiError('not_found', '订单条目不存在')
+    const item = mapItem(side, row)
+    await writeAudit(trx, actor, {
+      resource: spec.itemTable,
+      recordId: id,
+      recordLabel: String(item.idx),
+      companyId: item.companyId,
+      actionType: 'destroy',
+      actionName: 'destroy',
+      changes: auditDestroyed(itemSnap(item), ITEM_AUDIT),
+    })
+    await sql`
+      DELETE FROM sys_attachment WHERE owner_type=${spec.itemOwnerType} AND owner_id=${id}::uuid
+    `.execute(trx)
+    try {
+      await sql`DELETE FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid`.execute(trx)
+    } catch (err) {
+      throw mapOrderWrite('删除订单条目失败', err)
+    }
+  }
+
+  async function loadDraft(
+    handle: DbHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+  ): Promise<OrderSavedDraft> {
+    const spec = orderSpec(side)
+    const headRow = await loadHead(handle, spec, id)
+    if (!headRow || !canAccessCompany(actor, String(headRow.company_id))) {
+      throw new ApiError('not_found', `${spec.label}不存在`)
+    }
+    const itemRows = await loadItemsForOrder(handle, spec, side, id)
+    const outsourcedLines =
+      side === 'purchase'
+        ? await outsourcedDraft.loadOrderLines(handle, actor, id)
+        : { issueLines: [], byproductLines: [] }
+    const issueByItem = groupDraftLinesByItem(outsourcedLines.issueLines)
+    const byproductByItem = groupDraftLinesByItem(outsourcedLines.byproductLines)
+    return {
+      ...mapHead(headRow),
+      items: itemRows.map((row) => {
+        const item = mapItem(side, row)
+        return {
+          ...item,
+          issueLines: issueByItem.get(item.id) ?? [],
+          byproductLines: byproductByItem.get(item.id) ?? [],
+        }
+      }),
+    }
+  }
+
+  /** 领域专用完整订单草稿读取：表头、全部条目及采购委外配置。 */
+  async function getDraft(
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+  ): Promise<OrderSavedDraft> {
+    const spec = orderSpec(side)
+    requirePerm(actor, spec.prefix, 'read', '无权限执行该订单操作')
+    return withReadSnapshot(db, (snapshot) => loadDraft(snapshot, actor, side, id))
+  }
+
+  async function createDraft(
+    actor: Actor,
+    side: TradingSide,
+    input: OrderDraftInput,
+  ): Promise<OrderSavedDraft> {
+    const spec = orderSpec(side)
+    requirePerm(actor, spec.prefix, 'create', '无权限执行该订单操作')
+    if (!canAccessCompany(actor, input.companyId)) {
+      throw new ApiError('forbidden', '无权在该公司下操作数据')
+    }
+    validateNewOrderDraftIdentities(side, input)
+    return withTx(db, async (trx) => {
+      const head = await withIndexedFields('header', () =>
+        createHeadInTx(trx, actor, side, input),
+      )
+      for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
+        const inputItem = input.items[itemIndex]!
+        const item = await withIndexedFields(`items[${itemIndex}]`, () =>
+          createItemInTx(trx, actor, side, {
+            ...inputItem,
+            orderId: head.id,
+          }),
+        )
+        if (side === 'purchase') {
+          await withIndexedFields(`items[${itemIndex}]`, () =>
+            outsourcedDraft.replaceItemLines(trx, actor, item.id, {
+              issueLines: inputItem.issueLines,
+              byproductLines: inputItem.byproductLines,
+            }),
+          )
+        }
       }
+      return loadDraft(trx, actor, side, head.id)
+    })
+  }
+
+  async function replaceDraft(
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+    input: OrderDraftInput,
+  ): Promise<OrderSavedDraft> {
+    const spec = orderSpec(side)
+    requirePerm(actor, spec.prefix, 'update', '无权限执行该订单操作')
+    validateSalesOrderDraftHasNoOutsourcedLines(side, input)
+    return withTx(db, async (trx) => {
+      const before = mapHead(await lockOrder(trx, actor, spec, id))
+      if (input.companyId !== before.companyId) {
+        throw ApiError.validation('订单草稿参数不合法', {
+          'header.companyId': ['创建后不可修改公司'],
+        })
+      }
+      const existingItems = await sql<{ id: string }>`
+        SELECT id FROM ${ident(spec.itemTable)} WHERE order_id=${id}::uuid
+      `.execute(trx)
+      const existingItemIds = new Set(existingItems.rows.map((item) => item.id))
+      const existingOutsourcedLines = side === 'purchase'
+        ? await outsourcedDraft.loadOrderLines(trx, actor, id)
+        : { issueLines: [], byproductLines: [] }
+      const issueLineOwner = new Map(
+        existingOutsourcedLines.issueLines.map((line) => [line.id, line.orderItemId]),
+      )
+      const byproductLineOwner = new Map(
+        existingOutsourcedLines.byproductLines.map((line) => [line.id, line.orderItemId]),
+      )
+      validateOrderDraftIdentities(
+        input,
+        existingItemIds,
+        issueLineOwner,
+        byproductLineOwner,
+      )
+
+      const effects = orderDraftChildEffects(
+        input,
+        existingItemIds,
+        issueLineOwner,
+        byproductLineOwner,
+      )
+      if (effects.creates) {
+        requirePerm(actor, spec.prefix, 'create', '无权限执行该订单操作')
+      }
+      if (effects.deletes) {
+        requirePerm(actor, spec.prefix, 'delete', '无权限执行该订单操作')
+      }
+
+      // 先移除完整草稿中已不存在的旧行；这样头部派生维度变化时，调用者可在同一
+      // transaction 中清空旧行并重建，而不会被单记录 update 的“先删条目”闸门误挡。
+      for (const oldId of existingItemIds) {
+        if (!effects.requestedItems.has(oldId)) {
+          await deleteItemInTx(trx, actor, side, oldId)
+        }
+      }
+
+      await withIndexedFields('header', () =>
+        updateHeadInTx(trx, actor, side, id, {
+          orderNo: input.orderNo ?? before.orderNo,
+          orderDate: input.orderDate ?? before.orderDate,
+          orderType: input.orderType ?? before.orderType,
+          isOutsourced: input.isOutsourced ?? before.isOutsourced,
+          partyType: input.partyType,
+          partyId: input.partyId,
+          currencyId: input.currencyId ?? before.currencyId,
+          exchangeRate: input.exchangeRate ?? before.exchangeRate,
+          terms: input.terms ?? null,
+          termsPresent: true,
+          remarks: input.remarks ?? null,
+          remarksPresent: true,
+        }),
+      )
+
+      for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
+        const inputItem = input.items[itemIndex]!
+        const savedItem = inputItem.id === undefined
+          ? await withIndexedFields(`items[${itemIndex}]`, () =>
+              createItemInTx(trx, actor, side, {
+                ...inputItem,
+                orderId: id,
+              }),
+            )
+          : await withIndexedFields(`items[${itemIndex}]`, () =>
+              updateItemInTx(trx, actor, side, inputItem.id!, {
+                idx: inputItem.idx,
+                qty: inputItem.qty,
+                materialId: inputItem.materialId,
+                unitId: inputItem.unitId,
+                price: inputItem.price ?? undefined,
+                taxRate: inputItem.taxRate ?? undefined,
+                remarks: inputItem.remarks ?? null,
+                remarksPresent: true,
+                quotationItemId: inputItem.quotationItemId ?? null,
+                quotationItemIdPresent: true,
+                bomId: inputItem.bomId ?? null,
+                bomIdPresent: true,
+                demandLineId: inputItem.demandLineId ?? null,
+                demandLineIdPresent: true,
+                demandDate: inputItem.demandDate ?? null,
+                demandDatePresent: true,
+              }),
+            )
+        if (side === 'purchase') {
+          await withIndexedFields(`items[${itemIndex}]`, () =>
+            outsourcedDraft.replaceItemLines(trx, actor, savedItem.id, {
+              issueLines: inputItem.issueLines,
+              byproductLines: inputItem.byproductLines,
+            }),
+          )
+        }
+      }
+      return loadDraft(trx, actor, side, id)
     })
   }
 
@@ -909,6 +1182,9 @@ export function createOrderService(
     createItem,
     updateItem,
     deleteItem,
+    getDraft,
+    createDraft,
+    replaceDraft,
     history,
   }
 }
@@ -916,6 +1192,148 @@ export function createOrderService(
 export type OrderService = ReturnType<typeof createOrderService>
 
 // ---- helpers ----
+
+async function withIndexedFields<T>(
+  prefix: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.code !== 'validation' || !error.fields) throw error
+    const fields = Object.fromEntries(
+      Object.entries(error.fields).map(([field, messages]) => [
+        `${prefix}.${field}`,
+        messages,
+      ]),
+    )
+    throw ApiError.validation(error.message, fields)
+  }
+}
+
+function validateSalesOrderDraftHasNoOutsourcedLines(
+  side: TradingSide,
+  input: OrderDraftInput,
+): void {
+  if (side !== 'sales') return
+  const fields: Record<string, string[]> = {}
+  input.items.forEach((item, index) => {
+    if (item.issueLines.length > 0) {
+      fields[`items[${index}].issueLines`] = ['销售订单不支持委外发料清单']
+    }
+    if (item.byproductLines.length > 0) {
+      fields[`items[${index}].byproductLines`] = ['销售订单不支持委外副产物清单']
+    }
+  })
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation('订单草稿参数不合法', fields)
+  }
+}
+
+function validateNewOrderDraftIdentities(
+  side: TradingSide,
+  input: OrderDraftInput,
+): void {
+  validateSalesOrderDraftHasNoOutsourcedLines(side, input)
+  const fields: Record<string, string[]> = {}
+  input.items.forEach((item, itemIndex) => {
+    if (item.id !== undefined) {
+      fields[`items[${itemIndex}].id`] = ['新记录不能包含 id']
+    }
+    for (const [name, lines] of [
+      ['issueLines', item.issueLines],
+      ['byproductLines', item.byproductLines],
+    ] as const) {
+      lines.forEach((line, lineIndex) => {
+        if (line.id !== undefined) {
+          fields[`items[${itemIndex}].${name}[${lineIndex}].id`] = [
+            '新记录不能包含 id',
+          ]
+        }
+      })
+    }
+  })
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation('订单草稿参数不合法', fields)
+  }
+}
+
+function validateOrderDraftIdentities(
+  input: OrderDraftInput,
+  existingItems: ReadonlySet<string>,
+  issueLineOwner: ReadonlyMap<string, string>,
+  byproductLineOwner: ReadonlyMap<string, string>,
+): void {
+  const fields: Record<string, string[]> = {}
+  const seenItems = new Set<string>()
+  const seenIssueLines = new Set<string>()
+  const seenByproductLines = new Set<string>()
+  input.items.forEach((item, itemIndex) => {
+    if (item.id !== undefined) {
+      const field = `items[${itemIndex}].id`
+      if (seenItems.has(item.id)) fields[field] = ['同一草稿中不能重复']
+      else if (!existingItems.has(item.id)) fields[field] = ['不属于该订单']
+      seenItems.add(item.id)
+    }
+    for (const [name, lines, owner, seen] of [
+      ['issueLines', item.issueLines, issueLineOwner, seenIssueLines],
+      ['byproductLines', item.byproductLines, byproductLineOwner, seenByproductLines],
+    ] as const) {
+      lines.forEach((line, lineIndex) => {
+        if (line.id === undefined) return
+        const field = `items[${itemIndex}].${name}[${lineIndex}].id`
+        if (seen.has(line.id)) fields[field] = ['同一草稿中不能重复']
+        else if (item.id === undefined || owner.get(line.id) !== item.id) {
+          fields[field] = ['不属于该订单条目']
+        }
+        seen.add(line.id)
+      })
+    }
+  })
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation('订单草稿子记录身份不合法', fields)
+  }
+}
+
+function orderDraftChildEffects(
+  input: OrderDraftInput,
+  existingItems: ReadonlySet<string>,
+  issueLineOwner: ReadonlyMap<string, string>,
+  byproductLineOwner: ReadonlyMap<string, string>,
+) {
+  const requestedItems = new Set<string>()
+  const requestedIssueLines = new Set<string>()
+  const requestedByproductLines = new Set<string>()
+  let creates = false
+  for (const item of input.items) {
+    if (item.id === undefined) creates = true
+    else requestedItems.add(item.id)
+    for (const line of item.issueLines) {
+      if (line.id === undefined) creates = true
+      else requestedIssueLines.add(line.id)
+    }
+    for (const line of item.byproductLines) {
+      if (line.id === undefined) creates = true
+      else requestedByproductLines.add(line.id)
+    }
+  }
+  const deletes =
+    [...existingItems].some((itemId) => !requestedItems.has(itemId)) ||
+    [...issueLineOwner.keys()].some((lineId) => !requestedIssueLines.has(lineId)) ||
+    [...byproductLineOwner.keys()].some((lineId) => !requestedByproductLines.has(lineId))
+  return { creates, deletes, requestedItems }
+}
+
+function groupDraftLinesByItem<T extends { orderItemId: string }>(
+  lines: T[],
+): Map<string, T[]> {
+  const result = new Map<string, T[]>()
+  for (const line of lines) {
+    const itemId = String(line.orderItemId)
+    result.set(itemId, [...(result.get(itemId) ?? []), line])
+  }
+  return result
+}
 
 function validateOrderShape(
   spec: OrderSideSpec,
@@ -1066,6 +1484,48 @@ async function loadItem(
     WHERE i.id=${id}::uuid
   `.execute(db)
   return rows.rows[0]
+}
+
+async function loadItemsForOrder(
+  db: DbHandle,
+  spec: OrderSideSpec,
+  side: TradingSide,
+  orderId: string,
+): Promise<Record<string, unknown>[]> {
+  const proj = spec.projectionColumn
+  const extra =
+    side === 'purchase'
+      ? `,i.bom_id,i.demand_line_id,i.demand_date,o.is_outsourced AS order_is_outsourced,
+         bom.code AS bom_code,bom.plan_name AS bom_plan_name,d.demand_no`
+      : ',null::uuid AS bom_id,null::uuid AS demand_line_id,null::date AS demand_date,false AS order_is_outsourced,null::text AS bom_code,null::text AS bom_plan_name,null::text AS demand_no'
+  const joins =
+    side === 'purchase'
+      ? `LEFT JOIN mfg_bom bom ON bom.id=i.bom_id
+         LEFT JOIN mfg_demand_item dl ON dl.id=i.demand_line_id
+         LEFT JOIN mfg_demand d ON d.id=dl.demand_id`
+      : ''
+  const rows = await sql<Record<string, unknown>>`
+    SELECT i.id,i.idx,i.qty,i.base_qty,i.${sql.raw(proj)} AS projection_qty,i.price,i.amount,
+      i.base_price,i.base_amount,i.tax_rate,i.material_code,i.material_name,i.material_spec,
+      i.customer_part_no,i.unit_name,i.remarks,i.inserted_at,i.updated_at,i.order_id,i.company_id,
+      i.material_id,i.unit_id,i.quotation_item_id,
+      o.order_no,o.order_date,o.status AS order_status,o.party_type,o.party_id,
+      cur.iso_code AS currency_code,c.name AS company_name,m.name AS material_live_name,
+      u.name AS unit_live_name,qi.pricing_mode
+      ${sql.raw(extra)}
+    FROM ${ident(spec.itemTable)} i
+    JOIN ${ident(spec.headTable)} o ON o.id=i.order_id
+    JOIN bas_company c ON c.id=i.company_id
+    JOIN bas_currency cur ON cur.id=o.currency_id
+    JOIN inv_material m ON m.id=i.material_id
+    JOIN bas_unit u ON u.id=i.unit_id
+    LEFT JOIN ${ident(side === 'sales' ? 'sal_quotation_item' : 'pur_quotation_item')} qi
+      ON qi.id=i.quotation_item_id
+    ${sql.raw(joins)}
+    WHERE i.order_id=${orderId}::uuid
+    ORDER BY i.idx,i.id
+  `.execute(db)
+  return rows.rows
 }
 
 interface DerivedItem {

@@ -6,7 +6,7 @@ import type { ListQuery } from '@synie/shared'
 import { decimal, type Decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import { withReadSnapshot, withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import {
   auditCreated,
@@ -149,6 +149,74 @@ export interface QuotationTier {
   company: { id: string; name: string }
 }
 
+export interface QuotationHeadCreateInput {
+  companyId: string
+  quotationNo?: string | null
+  quotationDate?: string | null
+  validUntil: string
+  partyType: string
+  partyId: string
+  currencyId?: string | null
+  terms?: string | null
+  remarks?: string | null
+}
+
+export interface QuotationHeadUpdateInput {
+  quotationNo?: string
+  quotationDate?: string
+  validUntil?: string
+  partyType?: string
+  partyId?: string
+  currencyId?: string
+  terms?: string | null
+  termsPresent?: boolean
+  remarks?: string | null
+  remarksPresent?: boolean
+}
+
+export interface QuotationItemCreateInput {
+  quotationId: string
+  idx: number
+  materialId: string
+  unitId: string
+  pricingMode?: string
+  price?: string | null
+  taxRate?: string | null
+  remarks?: string | null
+}
+
+export interface QuotationItemUpdateInput {
+  idx?: number
+  materialId?: string
+  unitId?: string
+  pricingMode?: string
+  price?: string | null
+  pricePresent?: boolean
+  taxRate?: string
+  remarks?: string | null
+  remarksPresent?: boolean
+}
+
+export interface QuotationDraftTierInput {
+  id?: string
+  minQty: string
+  price: string
+}
+
+export interface QuotationDraftItemInput
+  extends Omit<QuotationItemCreateInput, 'quotationId'> {
+  id?: string
+  tiers: QuotationDraftTierInput[]
+}
+
+export interface QuotationDraftInput extends QuotationHeadCreateInput {
+  items: QuotationDraftItemInput[]
+}
+
+export type QuotationSavedDraft = Quotation & {
+  items: Array<QuotationItem & { tiers: QuotationTier[] }>
+}
+
 export interface ResolveOrderInput {
   quotationItemId: string
   orderDate: string
@@ -212,187 +280,183 @@ export function createQuotationService(db: Kysely<Database>, numberer: Numberer)
   async function createHead(
     actor: Actor,
     side: TradingSide,
-    input: {
-      companyId: string
-      quotationNo?: string | null
-      quotationDate?: string | null
-      validUntil: string
-      partyType: string
-      partyId: string
-      currencyId?: string | null
-      terms?: string | null
-      remarks?: string | null
-    },
+    input: QuotationHeadCreateInput,
   ): Promise<Quotation> {
     const spec = quotationSpec(side)
     requirePerm(actor, spec.prefix, 'create', '无权限执行该报价操作')
     if (!canAccessCompany(actor, input.companyId)) {
       throw new ApiError('forbidden', '无权在该公司下操作数据')
     }
-    return withTx(db, async (trx) => {
-      const company = await trx
-        .selectFrom('bas_company')
-        .select(['id', 'base_currency_id'])
-        .where('id', '=', input.companyId)
-        .executeTakeFirst()
-      if (!company) {
-        throw ApiError.validation('报价参数不合法', { companyId: ['公司不存在'] })
-      }
-      const currencyId = input.currencyId ?? company.base_currency_id
-      const quotationDate = input.quotationDate ? toDateOnly(input.quotationDate) : todayUTC()
-      let quotationNo = (input.quotationNo ?? '').trim()
-      if (!quotationNo) {
-        quotationNo = await numberer.nextInTx(trx, {
-          resource: spec.prefix,
-          values: {
-            company_id: input.companyId,
-            quotation_date: quotationDate,
-            valid_until: toDateOnly(input.validUntil),
-            party_type: lowerParty(input.partyType),
-            party_id: input.partyId,
-            currency_id: currencyId,
-          },
-        })
-      }
-      const partyType = lowerParty(input.partyType)
-      validateHeadShape(spec, {
-        quotationNo,
-        quotationDate,
-        validUntil: toDateOnly(input.validUntil),
-        partyType,
-        partyId: input.partyId,
-        companyId: input.companyId,
-        currencyId,
-        remarks: input.remarks ?? null,
+    return withTx(db, (trx) => createHeadInTx(trx, actor, side, input))
+  }
+
+  async function createHeadInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    input: QuotationHeadCreateInput,
+  ): Promise<Quotation> {
+    const spec = quotationSpec(side)
+    const company = await trx
+      .selectFrom('bas_company')
+      .select(['id', 'base_currency_id'])
+      .where('id', '=', input.companyId)
+      .executeTakeFirst()
+    if (!company) {
+      throw ApiError.validation('报价参数不合法', { companyId: ['公司不存在'] })
+    }
+    const currencyId = input.currencyId ?? company.base_currency_id
+    const quotationDate = input.quotationDate ? toDateOnly(input.quotationDate) : todayUTC()
+    let quotationNo = (input.quotationNo ?? '').trim()
+    if (!quotationNo) {
+      quotationNo = await numberer.nextInTx(trx, {
+        resource: spec.prefix,
+        values: {
+          company_id: input.companyId,
+          quotation_date: quotationDate,
+          valid_until: toDateOnly(input.validUntil),
+          party_type: lowerParty(input.partyType),
+          party_id: input.partyId,
+          currency_id: currencyId,
+        },
       })
-      if (!(await partyExists(trx, partyType, input.partyId))) {
-        throw ApiError.validation('报价参数不合法', { partyId: ['对手不存在'] })
-      }
-      const createdById = actor.userId || null
-      try {
-        const inserted = await sql<{ id: string }>`
-          INSERT INTO ${ident(spec.headTable)} (
-            quotation_no,quotation_date,valid_until,party_type,party_id,terms,remarks,
-            company_id,currency_id,created_by_id
-          ) VALUES (
-            ${quotationNo},${quotationDate}::date,${toDateOnly(input.validUntil)}::date,
-            ${partyType},${input.partyId}::uuid,${input.terms ?? null},${input.remarks ?? null},
-            ${input.companyId}::uuid,${currencyId}::uuid,${createdById}::uuid
-          ) RETURNING id
-        `.execute(trx)
-        const id = inserted.rows[0]!.id
-        const row = await loadHeadRow(trx, spec, id)
-        const item = mapHead(row!)
-        await writeAudit(trx, actor, {
-          resource: spec.headAudit,
-          recordId: id,
-          recordLabel: item.quotationNo,
-          companyId: item.companyId,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(headSnap(item), HEAD_AUDIT),
-        })
-        return item
-      } catch (err) {
-        throw mapQuotationWrite('创建报价单失败', err)
-      }
+    }
+    const partyType = lowerParty(input.partyType)
+    validateHeadShape(spec, {
+      quotationNo,
+      quotationDate,
+      validUntil: toDateOnly(input.validUntil),
+      partyType,
+      partyId: input.partyId,
+      companyId: input.companyId,
+      currencyId,
+      remarks: input.remarks ?? null,
     })
+    if (!(await partyExists(trx, partyType, input.partyId))) {
+      throw ApiError.validation('报价参数不合法', { partyId: ['对手不存在'] })
+    }
+    const createdById = actor.userId || null
+    try {
+      const inserted = await sql<{ id: string }>`
+        INSERT INTO ${ident(spec.headTable)} (
+          quotation_no,quotation_date,valid_until,party_type,party_id,terms,remarks,
+          company_id,currency_id,created_by_id
+        ) VALUES (
+          ${quotationNo},${quotationDate}::date,${toDateOnly(input.validUntil)}::date,
+          ${partyType},${input.partyId}::uuid,${input.terms ?? null},${input.remarks ?? null},
+          ${input.companyId}::uuid,${currencyId}::uuid,${createdById}::uuid
+        ) RETURNING id
+      `.execute(trx)
+      const id = inserted.rows[0]!.id
+      const row = await loadHeadRow(trx, spec, id)
+      const item = mapHead(row!)
+      await writeAudit(trx, actor, {
+        resource: spec.headAudit,
+        recordId: id,
+        recordLabel: item.quotationNo,
+        companyId: item.companyId,
+        actionType: 'create',
+        actionName: 'create',
+        changes: auditCreated(headSnap(item), HEAD_AUDIT),
+      })
+      return item
+    } catch (err) {
+      throw mapQuotationWrite('创建报价单失败', err)
+    }
   }
 
   async function updateHead(
     actor: Actor,
     side: TradingSide,
     id: string,
-    input: {
-      quotationNo?: string
-      quotationDate?: string
-      validUntil?: string
-      partyType?: string
-      partyId?: string
-      currencyId?: string
-      terms?: string | null
-      termsPresent?: boolean
-      remarks?: string | null
-      remarksPresent?: boolean
-    },
+    input: QuotationHeadUpdateInput,
   ): Promise<Quotation> {
     const spec = quotationSpec(side)
     requirePerm(actor, spec.prefix, 'update', '无权限执行该报价操作')
-    return withTx(db, async (trx) => {
-      const locked = await lockDraftHead(trx, actor, spec, id, '')
-      const before = mapHead(locked)
-      const after: Quotation = {
-        ...before,
-        quotationNo: input.quotationNo !== undefined ? input.quotationNo.trim() : before.quotationNo,
-        quotationDate: input.quotationDate
-          ? toDateOnly(input.quotationDate)
-          : before.quotationDate,
-        validUntil: input.validUntil ? toDateOnly(input.validUntil) : before.validUntil,
-        partyType: input.partyType
-          ? input.partyType.trim().toUpperCase()
-          : before.partyType,
-        partyId: input.partyId ?? before.partyId,
-        currencyId: input.currencyId ?? before.currencyId,
-        terms: input.termsPresent ? (input.terms ?? null) : before.terms,
-        remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
+    return withTx(db, (trx) => updateHeadInTx(trx, actor, side, id, input))
+  }
+
+  async function updateHeadInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+    input: QuotationHeadUpdateInput,
+  ): Promise<Quotation> {
+    const spec = quotationSpec(side)
+    const locked = await lockDraftHead(trx, actor, spec, id, '')
+    const before = mapHead(locked)
+    const after: Quotation = {
+      ...before,
+      quotationNo: input.quotationNo !== undefined ? input.quotationNo.trim() : before.quotationNo,
+      quotationDate: input.quotationDate
+        ? toDateOnly(input.quotationDate)
+        : before.quotationDate,
+      validUntil: input.validUntil ? toDateOnly(input.validUntil) : before.validUntil,
+      partyType: input.partyType
+        ? input.partyType.trim().toUpperCase()
+        : before.partyType,
+      partyId: input.partyId ?? before.partyId,
+      currencyId: input.currencyId ?? before.currencyId,
+      terms: input.termsPresent ? (input.terms ?? null) : before.terms,
+      remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
+    }
+    const headChanged =
+      lowerParty(after.partyType) !== lowerParty(before.partyType) ||
+      after.partyId !== before.partyId ||
+      after.currencyId !== before.currencyId
+    if (headChanged) {
+      const has = await sql<{ e: boolean }>`
+        SELECT EXISTS(SELECT 1 FROM ${ident(spec.itemTable)} WHERE quotation_id=${id}::uuid) AS e
+      `.execute(trx)
+      if (has.rows[0]?.e) {
+        throw new ApiError('conflict', '请先删除报价条目')
       }
-      const headChanged =
-        lowerParty(after.partyType) !== lowerParty(before.partyType) ||
-        after.partyId !== before.partyId ||
-        after.currencyId !== before.currencyId
-      if (headChanged) {
-        const has = await sql<{ e: boolean }>`
-          SELECT EXISTS(SELECT 1 FROM ${ident(spec.itemTable)} WHERE quotation_id=${id}::uuid) AS e
-        `.execute(trx)
-        if (has.rows[0]?.e) {
-          throw new ApiError('conflict', '请先删除报价条目')
-        }
-      }
-      validateHeadShape(spec, {
-        quotationNo: after.quotationNo,
-        quotationDate: after.quotationDate,
-        validUntil: after.validUntil,
-        partyType: lowerParty(after.partyType),
-        partyId: after.partyId,
-        companyId: after.companyId,
-        currencyId: after.currencyId,
-        remarks: after.remarks,
-      })
-      if (!(await partyExists(trx, after.partyType, after.partyId))) {
-        throw ApiError.validation('报价参数不合法', { partyId: ['对手不存在'] })
-      }
-      const changes = auditDiff(headSnap(before), headSnap(after), HEAD_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        await sql`
-          UPDATE ${ident(spec.headTable)} SET
-            quotation_no=${after.quotationNo},
-            quotation_date=${after.quotationDate}::date,
-            valid_until=${after.validUntil}::date,
-            party_type=${lowerParty(after.partyType)},
-            party_id=${after.partyId}::uuid,
-            currency_id=${after.currencyId}::uuid,
-            terms=${after.terms},
-            remarks=${after.remarks},
-            updated_at=(now() AT TIME ZONE 'utc')
-          WHERE id=${id}::uuid
-        `.execute(trx)
-        const row = await loadHeadRow(trx, spec, id)
-        const item = mapHead(row!)
-        await writeAudit(trx, actor, {
-          resource: spec.headAudit,
-          recordId: id,
-          recordLabel: item.quotationNo,
-          companyId: item.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return item
-      } catch (err) {
-        throw mapQuotationWrite('更新报价单失败', err)
-      }
+    }
+    validateHeadShape(spec, {
+      quotationNo: after.quotationNo,
+      quotationDate: after.quotationDate,
+      validUntil: after.validUntil,
+      partyType: lowerParty(after.partyType),
+      partyId: after.partyId,
+      companyId: after.companyId,
+      currencyId: after.currencyId,
+      remarks: after.remarks,
     })
+    if (!(await partyExists(trx, after.partyType, after.partyId))) {
+      throw ApiError.validation('报价参数不合法', { partyId: ['对手不存在'] })
+    }
+    const changes = auditDiff(headSnap(before), headSnap(after), HEAD_AUDIT)
+    if (Object.keys(changes).length === 0) return before
+    try {
+      await sql`
+        UPDATE ${ident(spec.headTable)} SET
+          quotation_no=${after.quotationNo},
+          quotation_date=${after.quotationDate}::date,
+          valid_until=${after.validUntil}::date,
+          party_type=${lowerParty(after.partyType)},
+          party_id=${after.partyId}::uuid,
+          currency_id=${after.currencyId}::uuid,
+          terms=${after.terms},
+          remarks=${after.remarks},
+          updated_at=(now() AT TIME ZONE 'utc')
+        WHERE id=${id}::uuid
+      `.execute(trx)
+      const row = await loadHeadRow(trx, spec, id)
+      const item = mapHead(row!)
+      await writeAudit(trx, actor, {
+        resource: spec.headAudit,
+        recordId: id,
+        recordLabel: item.quotationNo,
+        companyId: item.companyId,
+        actionType: 'update',
+        actionName: 'update',
+        changes,
+      })
+      return item
+    } catch (err) {
+      throw mapQuotationWrite('更新报价单失败', err)
+    }
   }
 
   async function deleteHead(actor: Actor, side: TradingSide, id: string): Promise<void> {
@@ -551,198 +615,204 @@ export function createQuotationService(db: Kysely<Database>, numberer: Numberer)
   async function createItem(
     actor: Actor,
     side: TradingSide,
-    input: {
-      quotationId: string
-      idx: number
-      materialId: string
-      unitId: string
-      pricingMode?: string
-      price?: string | null
-      taxRate?: string | null
-      remarks?: string | null
-    },
+    input: QuotationItemCreateInput,
   ): Promise<QuotationItem> {
     const spec = quotationSpec(side)
     requirePerm(actor, spec.prefix, 'create', '无权限执行该报价操作')
-    return withTx(db, async (trx) => {
-      const parent = await lockDraftHead(trx, actor, spec, input.quotationId, 'item')
-      const { mode, price, taxRate } = normalizeItemShape(
-        input.pricingMode,
-        input.price,
-        input.taxRate,
-        input.materialId,
-        input.unitId,
-        input.remarks,
+    return withTx(db, (trx) => createItemInTx(trx, actor, side, input))
+  }
+
+  async function createItemInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    input: QuotationItemCreateInput,
+  ): Promise<QuotationItem> {
+    const spec = quotationSpec(side)
+    const parent = await lockDraftHead(trx, actor, spec, input.quotationId, 'item')
+    const { mode, price, taxRate } = normalizeItemShape(
+      input.pricingMode,
+      input.price,
+      input.taxRate,
+      input.materialId,
+      input.unitId,
+      input.remarks,
+    )
+    const snap = await loadMaterialSnap(trx, input.materialId, input.unitId)
+    if (spec.customerMaterialGuard) {
+      guardCustomerMaterial(
+        side,
+        String(parent.party_type),
+        String(parent.party_id),
+        snap,
       )
-      const snap = await loadMaterialSnap(trx, input.materialId, input.unitId)
-      if (spec.customerMaterialGuard) {
-        guardCustomerMaterial(
-          side,
-          String(parent.party_type),
-          String(parent.party_id),
-          snap,
-        )
-      }
-      try {
-        const inserted = await sql<{ id: string }>`
-          INSERT INTO ${ident(spec.itemTable)} (
-            idx,pricing_mode,price,tax_rate,material_code,material_name,material_spec,
-            customer_part_no,unit_name,remarks,quotation_id,company_id,material_id,unit_id
-          ) VALUES (
-            ${input.idx},${mode.toLowerCase()},${price !== null ? wireRequiredDecimal(price) : null},
-            ${wireRequiredDecimal(taxRate)},${snap.code},${snap.name},${snap.spec},
-            ${snap.customerPartNo},${snap.unitName},${input.remarks ?? null},
-            ${input.quotationId}::uuid,${String(parent.company_id)}::uuid,
-            ${input.materialId}::uuid,${input.unitId}::uuid
-          ) RETURNING id
-        `.execute(trx)
-        const id = inserted.rows[0]!.id
-        const row = await loadItemRow(trx, spec, id)
-        const item = mapItem(row!)
-        await writeAudit(trx, actor, {
-          resource: spec.itemAudit,
-          recordId: id,
-          recordLabel: String(item.idx),
-          companyId: item.companyId,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(itemSnap(item), ITEM_AUDIT),
-        })
-        return item
-      } catch (err) {
-        throw mapQuotationWrite('创建报价条目失败', err)
-      }
-    })
+    }
+    try {
+      const inserted = await sql<{ id: string }>`
+        INSERT INTO ${ident(spec.itemTable)} (
+          idx,pricing_mode,price,tax_rate,material_code,material_name,material_spec,
+          customer_part_no,unit_name,remarks,quotation_id,company_id,material_id,unit_id
+        ) VALUES (
+          ${input.idx},${mode.toLowerCase()},${price !== null ? wireRequiredDecimal(price) : null},
+          ${wireRequiredDecimal(taxRate)},${snap.code},${snap.name},${snap.spec},
+          ${snap.customerPartNo},${snap.unitName},${input.remarks ?? null},
+          ${input.quotationId}::uuid,${String(parent.company_id)}::uuid,
+          ${input.materialId}::uuid,${input.unitId}::uuid
+        ) RETURNING id
+      `.execute(trx)
+      const id = inserted.rows[0]!.id
+      const row = await loadItemRow(trx, spec, id)
+      const item = mapItem(row!)
+      await writeAudit(trx, actor, {
+        resource: spec.itemAudit,
+        recordId: id,
+        recordLabel: String(item.idx),
+        companyId: item.companyId,
+        actionType: 'create',
+        actionName: 'create',
+        changes: auditCreated(itemSnap(item), ITEM_AUDIT),
+      })
+      return item
+    } catch (err) {
+      throw mapQuotationWrite('创建报价条目失败', err)
+    }
   }
 
   async function updateItem(
     actor: Actor,
     side: TradingSide,
     id: string,
-    input: {
-      idx?: number
-      materialId?: string
-      unitId?: string
-      pricingMode?: string
-      price?: string | null
-      pricePresent?: boolean
-      taxRate?: string
-      remarks?: string | null
-      remarksPresent?: boolean
-    },
+    input: QuotationItemUpdateInput,
   ): Promise<QuotationItem> {
     const spec = quotationSpec(side)
     requirePerm(actor, spec.prefix, 'update', '无权限执行该报价操作')
-    return withTx(db, async (trx) => {
-      const existing = await sql<{ quotation_id: string }>`
-        SELECT quotation_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
-      `.execute(trx)
-      if (!existing.rows[0]) throw new ApiError('not_found', '报价条目不存在')
-      const parent = await lockDraftHead(
-        trx,
-        actor,
-        spec,
-        existing.rows[0].quotation_id,
-        'item',
-      )
-      const beforeRow = await loadItemRow(trx, spec, id)
-      if (!beforeRow) throw new ApiError('not_found', '报价条目不存在')
-      const before = mapItem(beforeRow)
-      const afterMode = input.pricingMode ?? before.pricingMode
-      const afterPrice = input.pricePresent
-        ? input.price
-        : before.price
-      const { mode, price, taxRate } = normalizeItemShape(
-        afterMode,
-        afterPrice,
-        input.taxRate ?? before.taxRate,
-        input.materialId ?? before.materialId,
-        input.unitId ?? before.unitId,
-        input.remarksPresent ? input.remarks : before.remarks,
-      )
-      const materialId = input.materialId ?? before.materialId
-      const unitId = input.unitId ?? before.unitId
-      const snap = await loadMaterialSnap(trx, materialId, unitId)
-      if (spec.customerMaterialGuard) {
-        guardCustomerMaterial(side, String(parent.party_type), String(parent.party_id), snap)
-      }
-      const after: QuotationItem = {
-        ...before,
-        idx: input.idx ?? before.idx,
-        pricingMode: mode,
-        price: price !== null ? wireRequiredDecimal(price) : null,
-        taxRate: wireRequiredDecimal(taxRate),
-        materialId,
-        unitId,
-        materialCode: snap.code,
-        materialName: snap.name,
-        materialSpec: snap.spec,
-        customerPartNo: snap.customerPartNo,
-        unitName: snap.unitName,
-        remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
-      }
-      const changes = auditDiff(itemSnap(before), itemSnap(after), ITEM_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        await sql`
-          UPDATE ${ident(spec.itemTable)} SET
-            idx=${after.idx}, pricing_mode=${mode.toLowerCase()},
-            price=${after.price}, tax_rate=${after.taxRate},
-            material_code=${after.materialCode}, material_name=${after.materialName},
-            material_spec=${after.materialSpec}, customer_part_no=${after.customerPartNo},
-            unit_name=${after.unitName}, remarks=${after.remarks},
-            material_id=${after.materialId}::uuid, unit_id=${after.unitId}::uuid,
-            updated_at=(now() AT TIME ZONE 'utc')
-          WHERE id=${id}::uuid
-        `.execute(trx)
-        if (before.pricingMode === 'QTY_TIERED' && mode === 'FIXED') {
-          await purgeTiers(trx, actor, spec, id)
-        }
-        const row = await loadItemRow(trx, spec, id)
-        const item = mapItem(row!)
-        await writeAudit(trx, actor, {
-          resource: spec.itemAudit,
-          recordId: id,
-          recordLabel: String(item.idx),
-          companyId: item.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return item
-      } catch (err) {
-        throw mapQuotationWrite('更新报价条目失败', err)
-      }
-    })
+    return withTx(db, (trx) => updateItemInTx(trx, actor, side, id, input))
   }
 
-  async function deleteItem(actor: Actor, side: TradingSide, id: string): Promise<void> {
+  async function updateItemInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+    input: QuotationItemUpdateInput,
+  ): Promise<QuotationItem> {
     const spec = quotationSpec(side)
-    requirePerm(actor, spec.prefix, 'delete', '无权限执行该报价操作')
-    await withTx(db, async (trx) => {
-      const existing = await sql<{ quotation_id: string }>`
-        SELECT quotation_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
+    const existing = await sql<{ quotation_id: string }>`
+      SELECT quotation_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
+    `.execute(trx)
+    if (!existing.rows[0]) throw new ApiError('not_found', '报价条目不存在')
+    const parent = await lockDraftHead(
+      trx,
+      actor,
+      spec,
+      existing.rows[0].quotation_id,
+      'item',
+    )
+    const beforeRow = await loadItemRow(trx, spec, id)
+    if (!beforeRow) throw new ApiError('not_found', '报价条目不存在')
+    const before = mapItem(beforeRow)
+    const afterMode = input.pricingMode ?? before.pricingMode
+    const afterPrice = input.pricePresent
+      ? input.price
+      : before.price
+    const { mode, price, taxRate } = normalizeItemShape(
+      afterMode,
+      afterPrice,
+      input.taxRate ?? before.taxRate,
+      input.materialId ?? before.materialId,
+      input.unitId ?? before.unitId,
+      input.remarksPresent ? input.remarks : before.remarks,
+    )
+    const materialId = input.materialId ?? before.materialId
+    const unitId = input.unitId ?? before.unitId
+    const snap = await loadMaterialSnap(trx, materialId, unitId)
+    if (spec.customerMaterialGuard) {
+      guardCustomerMaterial(side, String(parent.party_type), String(parent.party_id), snap)
+    }
+    const after: QuotationItem = {
+      ...before,
+      idx: input.idx ?? before.idx,
+      pricingMode: mode,
+      price: price !== null ? wireRequiredDecimal(price) : null,
+      taxRate: wireRequiredDecimal(taxRate),
+      materialId,
+      unitId,
+      materialCode: snap.code,
+      materialName: snap.name,
+      materialSpec: snap.spec,
+      customerPartNo: snap.customerPartNo,
+      unitName: snap.unitName,
+      remarks: input.remarksPresent ? (input.remarks ?? null) : before.remarks,
+    }
+    const changes = auditDiff(itemSnap(before), itemSnap(after), ITEM_AUDIT)
+    if (Object.keys(changes).length === 0) return before
+    try {
+      await sql`
+        UPDATE ${ident(spec.itemTable)} SET
+          idx=${after.idx}, pricing_mode=${mode.toLowerCase()},
+          price=${after.price}, tax_rate=${after.taxRate},
+          material_code=${after.materialCode}, material_name=${after.materialName},
+          material_spec=${after.materialSpec}, customer_part_no=${after.customerPartNo},
+          unit_name=${after.unitName}, remarks=${after.remarks},
+          material_id=${after.materialId}::uuid, unit_id=${after.unitId}::uuid,
+          updated_at=(now() AT TIME ZONE 'utc')
+        WHERE id=${id}::uuid
       `.execute(trx)
-      if (!existing.rows[0]) throw new ApiError('not_found', '报价条目不存在')
-      await lockDraftHead(trx, actor, spec, existing.rows[0].quotation_id, 'item')
+      if (before.pricingMode === 'QTY_TIERED' && mode === 'FIXED') {
+        await purgeTiers(trx, actor, spec, id)
+      }
       const row = await loadItemRow(trx, spec, id)
-      if (!row) throw new ApiError('not_found', '报价条目不存在')
-      const item = mapItem(row)
+      const item = mapItem(row!)
       await writeAudit(trx, actor, {
         resource: spec.itemAudit,
         recordId: id,
         recordLabel: String(item.idx),
         companyId: item.companyId,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(itemSnap(item), ITEM_AUDIT),
+        actionType: 'update',
+        actionName: 'update',
+        changes,
       })
-      try {
-        await sql`DELETE FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid`.execute(trx)
-      } catch (err) {
-        throw mapQuotationWrite('删除报价条目失败', err)
-      }
+      return item
+    } catch (err) {
+      throw mapQuotationWrite('更新报价条目失败', err)
+    }
+  }
+
+  async function deleteItem(actor: Actor, side: TradingSide, id: string): Promise<void> {
+    const spec = quotationSpec(side)
+    requirePerm(actor, spec.prefix, 'delete', '无权限执行该报价操作')
+    await withTx(db, (trx) => deleteItemInTx(trx, actor, side, id))
+  }
+
+  async function deleteItemInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+  ): Promise<void> {
+    const spec = quotationSpec(side)
+    const existing = await sql<{ quotation_id: string }>`
+      SELECT quotation_id FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid
+    `.execute(trx)
+    if (!existing.rows[0]) throw new ApiError('not_found', '报价条目不存在')
+    await lockDraftHead(trx, actor, spec, existing.rows[0].quotation_id, 'item')
+    const row = await loadItemRow(trx, spec, id)
+    if (!row) throw new ApiError('not_found', '报价条目不存在')
+    const item = mapItem(row)
+    await writeAudit(trx, actor, {
+      resource: spec.itemAudit,
+      recordId: id,
+      recordLabel: String(item.idx),
+      companyId: item.companyId,
+      actionType: 'destroy',
+      actionName: 'destroy',
+      changes: auditDestroyed(itemSnap(item), ITEM_AUDIT),
     })
+    try {
+      await sql`DELETE FROM ${ident(spec.itemTable)} WHERE id=${id}::uuid`.execute(trx)
+    } catch (err) {
+      throw mapQuotationWrite('删除报价条目失败', err)
+    }
   }
 
   async function listTiers(actor: Actor, side: TradingSide, query: Partial<ListQuery>) {
@@ -784,41 +854,49 @@ export function createQuotationService(db: Kysely<Database>, numberer: Numberer)
   ): Promise<QuotationTier> {
     const spec = quotationSpec(side)
     requirePerm(actor, spec.prefix, 'create', '无权限执行该报价操作')
+    return withTx(db, (trx) => createTierInTx(trx, actor, side, input))
+  }
+
+  async function createTierInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    input: { itemId: string; minQty: string; price: string },
+  ): Promise<QuotationTier> {
+    const spec = quotationSpec(side)
     const minQty = decimal(input.minQty)
     const price = decimal(input.price)
     validateTierShape(minQty, price)
-    return withTx(db, async (trx) => {
-      const parent = await tierParent(trx, spec, input.itemId)
-      await lockDraftHead(trx, actor, spec, parent.quotationId, 'tier')
-      if (parent.mode !== 'qty_tiered') {
-        throw ApiError.validation('报价价格档参数不合法', {
-          itemId: ['仅数量梯度条目可维护价格档'],
-        })
-      }
-      try {
-        const inserted = await sql<{ id: string }>`
-          INSERT INTO ${ident(spec.tierTable)} (min_qty,price,item_id,company_id)
-          VALUES (${wireRequiredDecimal(minQty)},${wireRequiredDecimal(price)},
-            ${input.itemId}::uuid,${parent.companyId}::uuid)
-          RETURNING id
-        `.execute(trx)
-        const id = inserted.rows[0]!.id
-        const row = await loadTierRow(trx, spec, id)
-        const item = mapTier(row!)
-        await writeAudit(trx, actor, {
-          resource: spec.tierAudit,
-          recordId: id,
-          recordLabel: item.minQty,
-          companyId: item.companyId,
-          actionType: 'create',
-          actionName: 'create',
-          changes: auditCreated(tierSnap(item), TIER_AUDIT),
-        })
-        return item
-      } catch (err) {
-        throw mapQuotationWrite('创建报价价格档失败', err)
-      }
-    })
+    const parent = await tierParent(trx, spec, input.itemId)
+    await lockDraftHead(trx, actor, spec, parent.quotationId, 'tier')
+    if (parent.mode !== 'qty_tiered') {
+      throw ApiError.validation('报价价格档参数不合法', {
+        itemId: ['仅数量梯度条目可维护价格档'],
+      })
+    }
+    try {
+      const inserted = await sql<{ id: string }>`
+        INSERT INTO ${ident(spec.tierTable)} (min_qty,price,item_id,company_id)
+        VALUES (${wireRequiredDecimal(minQty)},${wireRequiredDecimal(price)},
+          ${input.itemId}::uuid,${parent.companyId}::uuid)
+        RETURNING id
+      `.execute(trx)
+      const id = inserted.rows[0]!.id
+      const row = await loadTierRow(trx, spec, id)
+      const item = mapTier(row!)
+      await writeAudit(trx, actor, {
+        resource: spec.tierAudit,
+        recordId: id,
+        recordLabel: item.minQty,
+        companyId: item.companyId,
+        actionType: 'create',
+        actionName: 'create',
+        changes: auditCreated(tierSnap(item), TIER_AUDIT),
+      })
+      return item
+    } catch (err) {
+      throw mapQuotationWrite('创建报价价格档失败', err)
+    }
   }
 
   async function updateTier(
@@ -829,78 +907,294 @@ export function createQuotationService(db: Kysely<Database>, numberer: Numberer)
   ): Promise<QuotationTier> {
     const spec = quotationSpec(side)
     requirePerm(actor, spec.prefix, 'update', '无权限执行该报价操作')
-    return withTx(db, async (trx) => {
-      const beforeRow = await loadTierRow(trx, spec, id)
-      if (!beforeRow) throw new ApiError('not_found', '报价价格档不存在')
-      const parent = await tierParent(trx, spec, String(beforeRow.item_id))
-      await lockDraftHead(trx, actor, spec, parent.quotationId, 'tier')
-      if (parent.mode !== 'qty_tiered') {
-        throw ApiError.validation('报价价格档参数不合法', {
-          itemId: ['仅数量梯度条目可维护价格档'],
-        })
-      }
-      const before = mapTier(beforeRow)
-      const after: QuotationTier = {
-        ...before,
-        minQty: input.minQty !== undefined ? wireRequiredDecimal(input.minQty) : before.minQty,
-        price: input.price !== undefined ? wireRequiredDecimal(input.price) : before.price,
-      }
-      validateTierShape(decimal(after.minQty), decimal(after.price))
-      const changes = auditDiff(tierSnap(before), tierSnap(after), TIER_AUDIT)
-      if (Object.keys(changes).length === 0) return before
-      try {
-        await sql`
-          UPDATE ${ident(spec.tierTable)} SET
-            min_qty=${after.minQty}, price=${after.price},
-            updated_at=(now() AT TIME ZONE 'utc')
-          WHERE id=${id}::uuid
-        `.execute(trx)
-        const row = await loadTierRow(trx, spec, id)
-        const item = mapTier(row!)
-        await writeAudit(trx, actor, {
-          resource: spec.tierAudit,
-          recordId: id,
-          recordLabel: item.minQty,
-          companyId: item.companyId,
-          actionType: 'update',
-          actionName: 'update',
-          changes,
-        })
-        return item
-      } catch (err) {
-        throw mapQuotationWrite('更新报价价格档失败', err)
-      }
-    })
+    return withTx(db, (trx) => updateTierInTx(trx, actor, side, id, input))
   }
 
-  async function deleteTier(actor: Actor, side: TradingSide, id: string): Promise<void> {
+  async function updateTierInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+    input: { minQty?: string; price?: string },
+  ): Promise<QuotationTier> {
     const spec = quotationSpec(side)
-    requirePerm(actor, spec.prefix, 'delete', '无权限执行该报价操作')
-    await withTx(db, async (trx) => {
+    const beforeRow = await loadTierRow(trx, spec, id)
+    if (!beforeRow) throw new ApiError('not_found', '报价价格档不存在')
+    const parent = await tierParent(trx, spec, String(beforeRow.item_id))
+    await lockDraftHead(trx, actor, spec, parent.quotationId, 'tier')
+    if (parent.mode !== 'qty_tiered') {
+      throw ApiError.validation('报价价格档参数不合法', {
+        itemId: ['仅数量梯度条目可维护价格档'],
+      })
+    }
+    const before = mapTier(beforeRow)
+    const after: QuotationTier = {
+      ...before,
+      minQty: input.minQty !== undefined ? wireRequiredDecimal(input.minQty) : before.minQty,
+      price: input.price !== undefined ? wireRequiredDecimal(input.price) : before.price,
+    }
+    validateTierShape(decimal(after.minQty), decimal(after.price))
+    const changes = auditDiff(tierSnap(before), tierSnap(after), TIER_AUDIT)
+    if (Object.keys(changes).length === 0) return before
+    try {
+      await sql`
+        UPDATE ${ident(spec.tierTable)} SET
+          min_qty=${after.minQty}, price=${after.price},
+          updated_at=(now() AT TIME ZONE 'utc')
+        WHERE id=${id}::uuid
+      `.execute(trx)
       const row = await loadTierRow(trx, spec, id)
-      if (!row) throw new ApiError('not_found', '报价价格档不存在')
-      const parent = await tierParent(trx, spec, String(row.item_id))
-      await lockDraftHead(trx, actor, spec, parent.quotationId, 'tier')
-      if (parent.mode !== 'qty_tiered') {
-        throw ApiError.validation('报价价格档参数不合法', {
-          itemId: ['仅数量梯度条目可维护价格档'],
-        })
-      }
-      const item = mapTier(row)
+      const item = mapTier(row!)
       await writeAudit(trx, actor, {
         resource: spec.tierAudit,
         recordId: id,
         recordLabel: item.minQty,
         companyId: item.companyId,
-        actionType: 'destroy',
-        actionName: 'destroy',
-        changes: auditDestroyed(tierSnap(item), TIER_AUDIT),
+        actionType: 'update',
+        actionName: 'update',
+        changes,
       })
-      try {
-        await sql`DELETE FROM ${ident(spec.tierTable)} WHERE id=${id}::uuid`.execute(trx)
-      } catch (err) {
-        throw mapQuotationWrite('删除报价价格档失败', err)
+      return item
+    } catch (err) {
+      throw mapQuotationWrite('更新报价价格档失败', err)
+    }
+  }
+
+  async function deleteTier(actor: Actor, side: TradingSide, id: string): Promise<void> {
+    const spec = quotationSpec(side)
+    requirePerm(actor, spec.prefix, 'delete', '无权限执行该报价操作')
+    await withTx(db, (trx) => deleteTierInTx(trx, actor, side, id))
+  }
+
+  async function deleteTierInTx(
+    trx: TrxHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+  ): Promise<void> {
+    const spec = quotationSpec(side)
+    const row = await loadTierRow(trx, spec, id)
+    if (!row) throw new ApiError('not_found', '报价价格档不存在')
+    const parent = await tierParent(trx, spec, String(row.item_id))
+    await lockDraftHead(trx, actor, spec, parent.quotationId, 'tier')
+    if (parent.mode !== 'qty_tiered') {
+      throw ApiError.validation('报价价格档参数不合法', {
+        itemId: ['仅数量梯度条目可维护价格档'],
+      })
+    }
+    const item = mapTier(row)
+    await writeAudit(trx, actor, {
+      resource: spec.tierAudit,
+      recordId: id,
+      recordLabel: item.minQty,
+      companyId: item.companyId,
+      actionType: 'destroy',
+      actionName: 'destroy',
+      changes: auditDestroyed(tierSnap(item), TIER_AUDIT),
+    })
+    try {
+      await sql`DELETE FROM ${ident(spec.tierTable)} WHERE id=${id}::uuid`.execute(trx)
+    } catch (err) {
+      throw mapQuotationWrite('删除报价价格档失败', err)
+    }
+  }
+
+  async function loadDraft(
+    handle: DbHandle,
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+  ): Promise<QuotationSavedDraft> {
+    const spec = quotationSpec(side)
+    const headRow = await loadHeadRow(handle, spec, id)
+    if (!headRow || !canAccessCompany(actor, String(headRow.company_id))) {
+      throw new ApiError('not_found', `${spec.label}不存在`)
+    }
+    const itemRows = await loadItemRowsForQuotation(handle, spec, id)
+    const tierRows = await loadTierRowsForQuotation(handle, spec, id)
+    const tiersByItem = new Map<string, QuotationTier[]>()
+    for (const row of tierRows) {
+      const tier = mapTier(row)
+      const tiers = tiersByItem.get(tier.itemId) ?? []
+      tiers.push(tier)
+      tiersByItem.set(tier.itemId, tiers)
+    }
+    return {
+      ...mapHead(headRow),
+      items: itemRows.map((row) => {
+        const item = mapItem(row)
+        return { ...item, tiers: tiersByItem.get(item.id) ?? [] }
+      }),
+    }
+  }
+
+  /** 领域专用完整报价草稿读取：表头 + 全部条目 + 全部价格档。 */
+  async function getDraft(
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+  ): Promise<QuotationSavedDraft> {
+    const spec = quotationSpec(side)
+    requirePerm(actor, spec.prefix, 'read', '无权限执行该报价操作')
+    return withReadSnapshot(db, (snapshot) => loadDraft(snapshot, actor, side, id))
+  }
+
+  async function createDraft(
+    actor: Actor,
+    side: TradingSide,
+    input: QuotationDraftInput,
+  ): Promise<QuotationSavedDraft> {
+    const spec = quotationSpec(side)
+    requirePerm(actor, spec.prefix, 'create', '无权限执行该报价操作')
+    if (!canAccessCompany(actor, input.companyId)) {
+      throw new ApiError('forbidden', '无权在该公司下操作数据')
+    }
+    validateNewQuotationDraftIdentities(input)
+    return withTx(db, async (trx) => {
+      const head = await withIndexedFields('header', () =>
+        createHeadInTx(trx, actor, side, input),
+      )
+      for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
+        const inputItem = input.items[itemIndex]!
+        const item = await withIndexedFields(`items[${itemIndex}]`, () =>
+          createItemInTx(trx, actor, side, {
+            ...inputItem,
+            quotationId: head.id,
+          }),
+        )
+        for (let tierIndex = 0; tierIndex < inputItem.tiers.length; tierIndex++) {
+          const tier = inputItem.tiers[tierIndex]!
+          await withIndexedFields(
+            `items[${itemIndex}].tiers[${tierIndex}]`,
+            () => createTierInTx(trx, actor, side, { ...tier, itemId: item.id }),
+          )
+        }
       }
+      return loadDraft(trx, actor, side, head.id)
+    })
+  }
+
+  async function replaceDraft(
+    actor: Actor,
+    side: TradingSide,
+    id: string,
+    input: QuotationDraftInput,
+  ): Promise<QuotationSavedDraft> {
+    const spec = quotationSpec(side)
+    requirePerm(actor, spec.prefix, 'update', '无权限执行该报价操作')
+    return withTx(db, async (trx) => {
+      const before = mapHead(await lockDraftHead(trx, actor, spec, id, ''))
+      if (input.companyId !== before.companyId) {
+        throw ApiError.validation('报价草稿参数不合法', {
+          'header.companyId': ['创建后不可修改公司'],
+        })
+      }
+
+      const existingItems = await sql<{ id: string }>`
+        SELECT id FROM ${ident(spec.itemTable)}
+        WHERE quotation_id=${id}::uuid
+      `.execute(trx)
+      const existingTiers = await sql<{ id: string; item_id: string }>`
+        SELECT t.id,t.item_id
+        FROM ${ident(spec.tierTable)} t
+        JOIN ${ident(spec.itemTable)} i ON i.id=t.item_id
+        WHERE i.quotation_id=${id}::uuid
+      `.execute(trx)
+      const existingItemIds = new Set(existingItems.rows.map((item) => item.id))
+      const tierOwner = new Map(
+        existingTiers.rows.map((tier) => [tier.id, tier.item_id]),
+      )
+      validateQuotationDraftIdentities(input, existingItemIds, tierOwner)
+
+      const effects = quotationDraftChildEffects(input, existingItemIds, tierOwner)
+      if (effects.creates) {
+        requirePerm(actor, spec.prefix, 'create', '无权限执行该报价操作')
+      }
+      if (effects.deletes) {
+        requirePerm(actor, spec.prefix, 'delete', '无权限执行该报价操作')
+      }
+
+      // 全量替换先移除 omitted 旧行，使“清空条目 + 修改对手/币种”能在
+      // 同一事务内完成；后续任一校验失败会连同删除一起回滚。
+      for (const oldId of existingItemIds) {
+        if (!effects.requestedItems.has(oldId)) {
+          await deleteItemInTx(trx, actor, side, oldId)
+        }
+      }
+
+      await withIndexedFields('header', () =>
+        updateHeadInTx(trx, actor, side, id, {
+          quotationNo: input.quotationNo ?? before.quotationNo,
+          quotationDate: input.quotationDate ?? before.quotationDate,
+          validUntil: input.validUntil,
+          partyType: input.partyType,
+          partyId: input.partyId,
+          currencyId: input.currencyId ?? before.currencyId,
+          terms: input.terms ?? null,
+          termsPresent: true,
+          remarks: input.remarks ?? null,
+          remarksPresent: true,
+        }),
+      )
+
+      for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
+        const inputItem = input.items[itemIndex]!
+        let savedItem: QuotationItem
+        if (inputItem.id === undefined) {
+          savedItem = await withIndexedFields(`items[${itemIndex}]`, () =>
+            createItemInTx(trx, actor, side, {
+              ...inputItem,
+              quotationId: id,
+            }),
+          )
+        } else {
+          const requestedTierIds = new Set(
+            inputItem.tiers.flatMap((tier) =>
+              tier.id === undefined ? [] : [tier.id],
+            ),
+          )
+          for (const [tierId, ownerId] of tierOwner) {
+            if (ownerId === inputItem.id && !requestedTierIds.has(tierId)) {
+              await deleteTierInTx(trx, actor, side, tierId)
+            }
+          }
+          savedItem = await withIndexedFields(`items[${itemIndex}]`, () =>
+            updateItemInTx(trx, actor, side, inputItem.id!, {
+              idx: inputItem.idx,
+              materialId: inputItem.materialId,
+              unitId: inputItem.unitId,
+              pricingMode: inputItem.pricingMode,
+              price: inputItem.price ?? null,
+              pricePresent: true,
+              taxRate: inputItem.taxRate ?? undefined,
+              remarks: inputItem.remarks ?? null,
+              remarksPresent: true,
+            }),
+          )
+        }
+
+        for (let tierIndex = 0; tierIndex < inputItem.tiers.length; tierIndex++) {
+          const inputTier = inputItem.tiers[tierIndex]!
+          const prefix = `items[${itemIndex}].tiers[${tierIndex}]`
+          if (inputTier.id === undefined) {
+            await withIndexedFields(prefix, () =>
+              createTierInTx(trx, actor, side, {
+                itemId: savedItem.id,
+                minQty: inputTier.minQty,
+                price: inputTier.price,
+              }),
+            )
+          } else {
+            await withIndexedFields(prefix, () =>
+              updateTierInTx(trx, actor, side, inputTier.id!, {
+                minQty: inputTier.minQty,
+                price: inputTier.price,
+              }),
+            )
+          }
+        }
+      }
+      return loadDraft(trx, actor, side, id)
     })
   }
 
@@ -1010,11 +1304,101 @@ export function createQuotationService(db: Kysely<Database>, numberer: Numberer)
     createTier,
     updateTier,
     deleteTier,
+    getDraft,
+    createDraft,
+    replaceDraft,
     resolveForOrder,
   }
 }
 
 export type QuotationService = ReturnType<typeof createQuotationService>
+
+async function withIndexedFields<T>(
+  prefix: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.code !== 'validation' || !error.fields) throw error
+    const fields = Object.fromEntries(
+      Object.entries(error.fields).map(([field, messages]) => [
+        `${prefix}.${field}`,
+        messages,
+      ]),
+    )
+    throw ApiError.validation(error.message, fields)
+  }
+}
+
+function validateNewQuotationDraftIdentities(input: QuotationDraftInput): void {
+  const fields: Record<string, string[]> = {}
+  input.items.forEach((item, itemIndex) => {
+    if (item.id !== undefined) {
+      fields[`items[${itemIndex}].id`] = ['新记录不能包含 id']
+    }
+    item.tiers.forEach((tier, tierIndex) => {
+      if (tier.id !== undefined) {
+        fields[`items[${itemIndex}].tiers[${tierIndex}].id`] = ['新记录不能包含 id']
+      }
+    })
+  })
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation('报价草稿参数不合法', fields)
+  }
+}
+
+function validateQuotationDraftIdentities(
+  input: QuotationDraftInput,
+  existingItems: ReadonlySet<string>,
+  tierOwner: ReadonlyMap<string, string>,
+): void {
+  const fields: Record<string, string[]> = {}
+  const seenItems = new Set<string>()
+  const seenTiers = new Set<string>()
+  input.items.forEach((item, itemIndex) => {
+    if (item.id !== undefined) {
+      const field = `items[${itemIndex}].id`
+      if (seenItems.has(item.id)) fields[field] = ['同一草稿中不能重复']
+      else if (!existingItems.has(item.id)) fields[field] = ['不属于该报价单']
+      seenItems.add(item.id)
+    }
+    item.tiers.forEach((tier, tierIndex) => {
+      if (tier.id === undefined) return
+      const field = `items[${itemIndex}].tiers[${tierIndex}].id`
+      if (seenTiers.has(tier.id)) fields[field] = ['同一草稿中不能重复']
+      else if (item.id === undefined || tierOwner.get(tier.id) !== item.id) {
+        fields[field] = ['不属于该报价条目']
+      }
+      seenTiers.add(tier.id)
+    })
+  })
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation('报价草稿子记录身份不合法', fields)
+  }
+}
+
+function quotationDraftChildEffects(
+  input: QuotationDraftInput,
+  existingItems: ReadonlySet<string>,
+  tierOwner: ReadonlyMap<string, string>,
+) {
+  const requestedItems = new Set<string>()
+  const requestedTiers = new Set<string>()
+  let creates = false
+  for (const item of input.items) {
+    if (item.id === undefined) creates = true
+    else requestedItems.add(item.id)
+    for (const tier of item.tiers) {
+      if (tier.id === undefined) creates = true
+      else requestedTiers.add(tier.id)
+    }
+  }
+  const deletes =
+    [...existingItems].some((itemId) => !requestedItems.has(itemId)) ||
+    [...tierOwner.keys()].some((tierId) => !requestedTiers.has(tierId))
+  return { creates, deletes, requestedItems }
+}
 
 function validateHeadShape(
   spec: QuotationSideSpec,
@@ -1098,7 +1482,7 @@ function normalizeItemShape(
 
 function validateTierShape(minQty: Decimal, price: Decimal) {
   const fields: Record<string, string[]> = {}
-  if (!minQty.isPositive()) fields.minQty = ['起订量必须大于零']
+  if (!minQty.gt(0)) fields.minQty = ['起订量必须大于零']
   if (price.isNegative()) fields.price = ['含税档价不能为负']
   if (Object.keys(fields).length > 0) {
     throw ApiError.validation('报价价格档参数不合法', fields)
@@ -1194,6 +1578,31 @@ async function loadItemRow(
   return rows.rows[0]
 }
 
+async function loadItemRowsForQuotation(
+  db: DbHandle,
+  spec: QuotationSideSpec,
+  quotationId: string,
+): Promise<Record<string, unknown>[]> {
+  const rows = await sql<Record<string, unknown>>`
+    SELECT i.id,i.idx,i.pricing_mode,i.price,i.tax_rate,i.material_code,i.material_name,
+      i.material_spec,i.customer_part_no,i.unit_name,i.remarks,i.inserted_at,i.updated_at,
+      i.quotation_id,i.company_id,i.material_id,i.unit_id,
+      (SELECT count(*) FROM ${ident(spec.tierTable)} t WHERE t.item_id=i.id)::bigint AS tier_count,
+      q.quotation_date,q.valid_until,q.status AS quotation_status,q.party_type,q.party_id,
+      cur.iso_code AS currency_code,q.quotation_no,c.name AS company_name,
+      m.name AS material_live_name,u.name AS unit_live_name
+    FROM ${ident(spec.itemTable)} i
+    JOIN ${ident(spec.headTable)} q ON q.id=i.quotation_id
+    JOIN bas_company c ON c.id=i.company_id
+    JOIN bas_currency cur ON cur.id=q.currency_id
+    JOIN inv_material m ON m.id=i.material_id
+    JOIN bas_unit u ON u.id=i.unit_id
+    WHERE i.quotation_id=${quotationId}::uuid
+    ORDER BY i.idx,i.id
+  `.execute(db)
+  return rows.rows
+}
+
 async function loadTierRow(
   db: DbHandle,
   spec: QuotationSideSpec,
@@ -1207,6 +1616,23 @@ async function loadTierRow(
     WHERE t.id=${id}::uuid
   `.execute(db)
   return rows.rows[0]
+}
+
+async function loadTierRowsForQuotation(
+  db: DbHandle,
+  spec: QuotationSideSpec,
+  quotationId: string,
+): Promise<Record<string, unknown>[]> {
+  const rows = await sql<Record<string, unknown>>`
+    SELECT t.id,t.min_qty,t.price,t.inserted_at,t.updated_at,t.item_id,t.company_id,
+      c.name AS company_name
+    FROM ${ident(spec.tierTable)} t
+    JOIN ${ident(spec.itemTable)} i ON i.id=t.item_id
+    JOIN bas_company c ON c.id=t.company_id
+    WHERE i.quotation_id=${quotationId}::uuid
+    ORDER BY i.idx,t.min_qty,t.id
+  `.execute(db)
+  return rows.rows
 }
 
 async function tierParent(

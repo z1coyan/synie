@@ -122,9 +122,8 @@ function NumberingPage() {
       </p>
 
       <div className="mt-6">
-        <SynieDataGrid
-          resource="sysNumberingRules"
-          client={client}
+          <SynieDataGrid
+            resource="sysNumberingRules"
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
@@ -139,16 +138,13 @@ function NumberingPage() {
               return binding.writer.update(id, input)
             },
             onDone: () =>
-              queryClient.invalidateQueries({
-                queryKey: ['gridRows', client.id, 'sysNumberingRules'],
-              }),
+              binding.cache.invalidateGrid(queryClient),
           })}
         />
       </div>
 
       <SynieRecordDrawer
         resource="sysNumberingRules"
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -183,7 +179,7 @@ function NumberingPage() {
                 <Select.Popover>
                   <ListBox>
                     {(numberables.data ?? []).map((resource) => {
-                      const prefix = resource.prefix ?? resource.resource
+                      const prefix = resource.prefix
                       return (
                         <ListBox.Item
                           key={prefix}
@@ -223,7 +219,6 @@ function NumberingPage() {
           row == null ? null : (
             <SynieEditableTable
               resource="sysNumberingCounters"
-              client={numberingCounterClient}
               label="计数器"
               title="计数器(当前序号)"
               items={counters}
@@ -266,9 +261,7 @@ function NumberingPage() {
               toast.success('编号规则已更新')
             }
           }
-          await queryClient.invalidateQueries({
-            queryKey: ['gridRows', client.id, 'sysNumberingRules'],
-          })
+          await binding.cache.invalidateGrid(queryClient)
         }}
       />
     </>

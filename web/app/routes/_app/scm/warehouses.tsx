@@ -12,6 +12,7 @@ import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/scm/warehouses')({
   component: WarehousesPage,
@@ -129,7 +130,6 @@ function WarehousesPage() {
           <SynieDataGrid
             key={`${companyId}-${reloadKey}`}
             resource="invWarehouses"
-            client={warehouseClient}
             columns={GRID_COLUMNS}
             tree={{ hasChildrenField: 'hasChildren', sort: { field: 'name', order: 'ASC' } }}
             fixedFilter={companyFilterState}
@@ -150,7 +150,6 @@ function WarehousesPage() {
 
       <SynieRecordDrawer
         resource="invWarehouses"
-        client={warehouseClient}
         label="仓库"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -258,9 +257,8 @@ function WarehousesPage() {
             await warehouseClient.update(drawer!.row!.id, values)
           }
           toast.success(mode === 'create' ? '仓库已创建' : '仓库已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', warehouseClient.id, 'invWarehouses'] })
           // 抽屉走 rowId 自查,编辑后一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          queryClient.invalidateQueries({ queryKey: ['rowById', warehouseClient.id, 'invWarehouses'] })
+          await resourceBindingFor('invWarehouses').cache.invalidateAll(queryClient)
           setReloadKey((k) => k + 1)
         }}
       />

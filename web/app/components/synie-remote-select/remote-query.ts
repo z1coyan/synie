@@ -8,7 +8,10 @@ import { createReferencePresentation } from '~/lib/resources/catalog/reference-p
 export interface RemoteSourceConfig {
   /** GridMeta 白名单资源名，如 "basCompanies"。 */
   resource: string
-  /** 显式 REST 数据源；缺省时从资源 registry 解析，未知资源立即报错。 */
+  /**
+   * 显式测试/本地 Adapter；生产标准路径只传 resource，由 binding 解析。
+   * 缺省时未知资源立即报错。
+   */
   client?: ResourceTransport
   /** 显示字段，默认 gridMeta ref.labelField，再兜底目标 lookup.labelField / 'name'。 */
   labelField?: string
@@ -31,7 +34,10 @@ export interface RemoteSourceConfig {
 
 export interface ResolvedSource {
   resource: string
+  /** 供远程选项查询使用的最终 Adapter。 */
   client: ResourceTransport
+  /** 仅调用者确实注入 Adapter 时存在；内嵌 DataGrid 据此保留测试 seam。 */
+  explicitClient?: ResourceTransport
   labelField: string
   sortField: string
   searchFields: string[]
@@ -66,6 +72,7 @@ export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumn
   return {
     resource,
     client: cfg.client ?? resourceTransportFromResourceBinding(resource),
+    ...(cfg.client ? { explicitClient: cfg.client } : {}),
     labelField,
     sortField,
     searchFields: searchFields.length > 0 ? searchFields : [labelField],

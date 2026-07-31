@@ -8,7 +8,6 @@ import { dateOnlyText } from '~/components/synie-data-grid/format'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
-import { stockEntryClient } from '~/lib/resources/inventory'
 import { resolveVoucherPreviewTarget } from './-stock-entry-preview'
 
 export const Route = createFileRoute('/_app/scm/stock-entries')({
@@ -117,7 +116,6 @@ function StockEntriesPage() {
         {/* 分录只读:不传 onCreate/onEdit 即无新增/编辑入口;来源单据是多态 fk 链接列(GridMeta poly_refs 反射) */}
         <SynieDataGrid
           resource="invStockEntries"
-          client={stockEntryClient}
           columns={GRID_COLUMNS}
           overrides={gridOverrides}
           defaultSort={{ column: 'postingDate', direction: 'descending' }}
@@ -127,7 +125,6 @@ function StockEntriesPage() {
 
       <SynieRecordDrawer
         resource="invStockEntries"
-        client={stockEntryClient}
         label="库存分录"
         mode="view"
         isOpen={viewRow !== null}

@@ -4,33 +4,43 @@ import { Button, Input, Label, ListBox, Modal, NumberField, Select, TextArea, Te
 import { isForbidden } from '~/lib/errors'
 import { companyClient } from '~/lib/resources/companies'
 import {
-  auditPurchaseOrder,
   expandPurchaseOrderBom,
-  purchaseOrderClient,
-  purchaseOrderItemByproductClient,
   purchaseOrderItemClient,
-  purchaseOrderItemMaterialClient,
 } from '~/lib/resources/orders'
+import { buildOrderDraft } from '~/lib/resources/order-draft'
+import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
+import {
+  aggregateDraftFor,
+  resourceBindingFor,
+} from '~/lib/resources/registry'
 import { getSalesSetting } from '~/lib/resources/settings'
 import { formatAmount, formatPrice } from '~/lib/amount'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow, localRowId } from '~/components/synie-editable-table/editable'
+import { localRowId } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import { purchaseQuotationItemClient } from '~/lib/resources/quotations'
-import type { ResourceClient } from '~/lib/resources/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { OrderFlowHistory } from '../-order-flow-history'
 import { DemandLinePicker } from './-demand-line-picker'
 
+const purchaseOrderBinding = resourceBindingFor('purOrders')
+const purchaseOrderItemBinding = resourceBindingFor('purOrderItems')
+const purchaseOrderItemMaterialBinding = resourceBindingFor(
+  'purOrderItemMaterials',
+)
+const purchaseOrderItemByproductBinding = resourceBindingFor(
+  'purOrderItemByproducts',
+)
+const purchaseOrderDraft = aggregateDraftFor('purOrders')
+
 /**
  * 采购订单共享抽屉:布局层挂载一份,订单 tab(整单 grid)与订单条目 tab(行级 grid)
- * 经 context 调起同一个三态抽屉(条目表编辑/交易条款/提交 diff/审核流转动作完全一致)。
+ * 经 context 调起同一个三态抽屉(条目表编辑/交易条款/提交聚合草稿/审核流转动作完全一致)。
  * 订单分型:常规订单条目只能从有效采购报价条目挑选(物料/单位/单价随报价锁定带出,税率带入可改,
  * 数量梯度条目价保存时由后端按数量套档);零星订单条目自由录入,单行数量受供应链设置上限约束。
  * 采购侧不校验客户物料约束:零星行任何物料可录。类型建后锁死(后端 OrderTypeLocked 报错兜底,
@@ -50,6 +60,8 @@ export type OpenOrderDrawer = (mode: DrawerMode, order: OrderRef | null) => void
 // 列只取行上快照/计算字段(materialCode 等保存时已冻结),不 join 会触发嵌套授权的 fk
 export const purchaseOrderAuditConfig = {
   docLabel: '采购订单',
+  resource: 'purOrders',
+  commandKey: 'audit',
   itemsResource: 'purOrderItems',
   loadItems: (orderId: string) =>
     purchaseOrderItemClient
@@ -62,7 +74,6 @@ export const purchaseOrderAuditConfig = {
         },
       })
       .then((result) => result.results),
-  audit: auditPurchaseOrder,
   columns: [
     {
       key: 'materialName',
@@ -84,175 +95,9 @@ export function useOrderDrawer(): OpenOrderDrawer {
   return useContext(OrderDrawerContext)
 }
 
-// mutation input 只收行自身字段:amount 后端系统算(writable? false)、companyId 冗余自订单(后端回填)、
-// 快照字段(materialName/unitName 等)由后端保存时重拍,本地草稿 id 与行上挂的 material/unit join 对象一律不进 payload。
-// 常规订单行的物料/单位/单价由后端按报价条目强制派生（DeriveQuotation），传值用于满足资源必填约束：
-// 数量梯度行本地无价(price 为 null),占位 0——与后端测试惯例一致,保存后以后端返回的套档价为准
-function itemInput(row: Row) {
-  return {
-    idx: row.idx,
-    materialId: row.materialId,
-    unitId: row.unitId,
-    qty: row.qty,
-    price: row.price ?? 0,
-    taxRate: row.taxRate,
-    remarks: row.remarks ?? null,
-    quotationItemId: row.quotationItemId ?? null,
-    bomId: row.bomId ?? null,
-    demandLineId: row.demandLineId ?? null,
-    demandDate: row.demandDate ?? null,
-  }
-}
-
-const ITEM_COMPARE_KEYS = [
-  'idx',
-  'materialId',
-  'unitId',
-  'qty',
-  'price',
-  'taxRate',
-  'remarks',
-  'quotationItemId',
-  'bomId',
-  'demandLineId',
-  'demandDate',
-] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-// 子表行(发料清单/副产物清单)mutation input:材料/单位/数量/行备注;行上挂的 material/unit
-// join 对象与已发料量投影(后端系统维护)不进 payload
-function subLineInput(row: Row) {
-  return {
-    materialId: row.materialId,
-    unitId: row.unitId,
-    quantity: row.quantity,
-    remarks: row.remarks ?? null,
-  }
-}
-
-const SUB_LINE_COMPARE_KEYS = ['materialId', 'unitId', 'quantity', 'remarks'] as const
-
-function subLineChanged(before: Row, after: Row): boolean {
-  return SUB_LINE_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-/** 子表行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy(同 BOM 子表先例) */
-async function persistSubLines(
-  client: ResourceClient,
-  orderItemId: string,
-  current: Row[],
-  snapshot: Row[],
-): Promise<string[]> {
-  const errors: string[] = []
-  const label = (row: Row) => String((row.material as Row | undefined)?.name ?? '清单行')
-  const attempt = async <T,>(row: Row, operation: () => Promise<T>): Promise<T | null> => {
-    try {
-      return await operation()
-    } catch (error) {
-      errors.push(`${label(row)}:${(error as Error).message}`)
-      return null
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await attempt(old, () => client.delete(String(old.id)))
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      await attempt(row, () => client.create({ orderItemId, ...subLineInput(row) }))
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && subLineChanged(old, row)) {
-      await attempt(row, () => client.update(String(row.id), subLineInput(row)))
-    }
-  }
-  return errors
-}
-
 // 行上委外配置子表集合的读取(行对象附加键,不进 mutation payload)
 const issueLinesOf = (row: Row | null | undefined): Row[] => (row?.issueLines as Row[] | undefined) ?? []
 const byproductLinesOf = (row: Row | null | undefined): Row[] => (row?.byproductLines as Row[] | undefined) ?? []
-
-/** 行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy。全程收集错误文案(带行号定位),不中途抛出(同销售订单先例)。
- *  条目落库后顺带持久化该行委外配置两子表(diff 基准为行上 issueLines/byproductLines 快照);
- *  被删条目的清单行走 DB 级联,无需显式删 */
-async function persistItems(orderId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const attempt = async <T,>(idx: unknown, operation: () => Promise<T>): Promise<T | null> => {
-    try {
-      return await operation()
-    } catch (error) {
-      errors.push(`第${idx}行:${(error as Error).message}`)
-      return null
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await attempt(old.idx, () => purchaseOrderItemClient.delete(String(old.id)))
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      const created = await attempt(row.idx, () =>
-        purchaseOrderItemClient.create({ orderId, ...itemInput(row) }),
-      )
-      const newId = created?.id == null ? null : String(created.id)
-      if (newId) {
-        errors.push(
-          ...(await persistSubLines(
-            purchaseOrderItemMaterialClient,
-            newId,
-            issueLinesOf(row),
-            [],
-          )),
-        )
-        errors.push(
-          ...(await persistSubLines(
-            purchaseOrderItemByproductClient,
-            newId,
-            byproductLinesOf(row),
-            [],
-          )),
-        )
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      await attempt(row.idx, () =>
-        purchaseOrderItemClient.update(String(row.id), itemInput(row)),
-      )
-    }
-    if (old) {
-      errors.push(
-        ...(await persistSubLines(
-          purchaseOrderItemMaterialClient,
-          String(row.id),
-          issueLinesOf(row),
-          issueLinesOf(old),
-        )),
-      )
-      errors.push(
-        ...(await persistSubLines(
-          purchaseOrderItemByproductClient,
-          String(row.id),
-          byproductLinesOf(row),
-          byproductLinesOf(old),
-        )),
-      )
-    }
-  }
-  return errors
-}
 
 // 税率库存小数(0.13),前端一律按百分比展示/录入(条目 tab 的 taxRate 列也用它渲染)
 export const formatPercent = (v: unknown) => (v == null || v === '' ? '' : `${Math.round(Number(v) * 10000) / 100}%`)
@@ -296,7 +141,7 @@ const subLineValidate = (vals: Record<string, unknown>) => {
 
 /**
  * 条目行抽屉内的委外配置区(仅委外订单渲染):发料清单/副产物清单两个子表 + 「从 BOM 代入」。
- * 行对象上的 issueLines/byproductLines 是真源(随条目行 diff 持久化,见 persistItems);
+ * 行对象上的 issueLines/byproductLines 是真源(随订单 Aggregate Draft 整体持久化);
  * 抽屉打开期间由本组件内部 state 接管,经 syncRef 上报,行提交时由 transformItem 并回行对象。
  * 代入是快照复制:代入后与 BOM 脱钩可自由增删改,改条目数量不自动重算(重算=清空清单再代入)。
  */
@@ -356,7 +201,6 @@ function OutsourcedConfig({
     <div className="mt-4 flex flex-col gap-4 border-t border-separator pt-4">
       <SynieEditableTable
         resource="purOrderItemMaterials"
-        client={purchaseOrderItemMaterialClient}
         label="发料清单"
         items={issue}
         onChange={setIssue}
@@ -379,7 +223,6 @@ function OutsourcedConfig({
       />
       <SynieEditableTable
         resource="purOrderItemByproducts"
-        client={purchaseOrderItemByproductClient}
         label="副产物清单"
         items={byproduct}
         onChange={setByproduct}
@@ -500,7 +343,6 @@ function todayLocal(): string {
 export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; order: OrderRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   // 交易条款不走抽屉字段(要排在条目表之下,抽屉 extraContent 固定在字段后渲染),由页面自持
   const [terms, setTerms] = useState('')
   // edit/view 态条目与条款靠订单 REST 异步拉取,未完成前禁止编辑,防回填覆盖在输行
@@ -517,6 +359,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张订单的行回填到当前订单
   const reqIdRef = useRef(0)
+  const draftHeadRef = useRef<Row | null>(null)
 
   // 零星单行数量上限:抽屉打开时查一次(5 分钟 stale);无权限/失败按 null 降级(跳过客户端校验,后端兜底)
   const salSettingQuery = useQuery({
@@ -540,61 +383,22 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   const openDrawer: OpenOrderDrawer = useCallback((mode, order) => {
     const my = ++reqIdRef.current
     setDrawer({ mode, order })
+    draftHeadRef.current = null
     if (mode === 'create') {
       setItems([])
-      setItemsSnapshot([])
       setTerms('')
       setDetailLoaded(true)
       return
     }
     setDetailLoaded(false)
-    Promise.all([
-      purchaseOrderClient.get(order!.id),
-      purchaseOrderItemClient.query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        fixedFilter: {
-          orderId: { kind: 'fk', op: 'in', values: [order!.id], labels: [] },
-        },
-      }),
-    ])
-      .then(async ([head, itemResult]) => {
+    purchaseOrderDraft
+      .loadDraft(order!.id)
+      .then((draft) => {
         if (my !== reqIdRef.current) return
-        const itemIds = itemResult.results.map((item) => String(item.id))
-        const sublineFilter = {
-          orderItemId: { kind: 'fk', op: 'in', values: itemIds, labels: [] },
-        }
-        const [issueResult, byproductResult] =
-          itemIds.length === 0
-            ? [{ results: [] as Row[] }, { results: [] as Row[] }]
-            : await Promise.all([
-                purchaseOrderItemMaterialClient.query({
-                  limit: 200,
-                  offset: 0,
-                  fixedFilter: sublineFilter,
-                }),
-                purchaseOrderItemByproductClient.query({
-                  limit: 200,
-                  offset: 0,
-                  fixedFilter: sublineFilter,
-                }),
-              ])
-        if (my !== reqIdRef.current) return
-        // 委外配置两子表按 orderItemId 归组挂到条目行(随条目 diff 持久化,快照留作提交基准)
-        const groupByItem = (rows: Row[]) => {
-          const m = new Map<string, Row[]>()
-          for (const r of rows) {
-            const k = String(r.orderItemId)
-            m.set(k, [...(m.get(k) ?? []), r])
-          }
-          return m
-        }
-        const issueByItem = groupByItem(issueResult.results)
-        const byproductByItem = groupByItem(byproductResult.results)
+        draftHeadRef.current = draft
         // 报价条目定价模式摊平到行(价格/金额列的梯度展示判定),并回填缓存供行表单只读派生;
         // 与选择时写入的完整行合并,不覆盖已有的快照名
-        const rows = itemResult.results.map((r) => {
+        const rows = draft.items.map((r) => {
           const quotationItemId =
             r.quotationItemId == null ? null : String(r.quotationItemId)
           if (quotationItemId && r.pricingMode) {
@@ -612,21 +416,20 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                 ? null
                 : { id: r.bomId, code: r.bomCode, planName: r.bomPlanName },
             pricingMode: r.pricingMode ?? null,
-            issueLines: issueByItem.get(String(r.id)) ?? [],
-            byproductLines: byproductByItem.get(String(r.id)) ?? [],
+            issueLines: r.issueLines,
+            byproductLines: r.byproductLines,
           }
         })
-        setTerms(String(head?.terms ?? ''))
+        setTerms(String(draft.terms ?? ''))
         setItems(rows)
-        setItemsSnapshot(rows)
         setDetailLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
+        draftHeadRef.current = null
         toast.danger('订单详情加载失败', { description: (e as Error).message })
         setTerms('')
         setItems([])
-        setItemsSnapshot([])
       })
   }, [])
 
@@ -702,18 +505,18 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
 
       <SynieRecordDrawer
         resource="purOrders"
-        client={purchaseOrderClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
+        isSubmitDisabled={drawer?.mode === 'edit' && !detailLoaded}
         onOpenChange={(open) => {
           if (open) return
-          // 关闭即作废在途请求并清空快照,防止残留快照被下次提交按差异写误用到别的订单
+          // 关闭即作废在途请求并清空本地草稿,防止慢响应回填到下一张订单
           reqIdRef.current++
           setDrawer(null)
           setItems([])
-          setItemsSnapshot([])
           setTerms('')
+          draftHeadRef.current = null
         }}
         // 表格列是白名单子集,行数据不全(缺交易条款/备注);不传 row,走 rowId 自查完整记录
         rowId={drawer?.order?.id}
@@ -790,7 +593,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             // 行号系统自动分配(transformItem),表格照常展示
             idx: { visible: () => false },
             quotationItemId: isSpot
-              ? // 零星行不得挂报价条目(后端校验兜底):表单不出字段,itemInput 恒送 null
+              ? // 零星行不得挂报价条目(后端校验兜底):表单不出字段,聚合草稿恒送 null
                 { visible: () => false }
               : {
                   order: 0,
@@ -799,7 +602,6 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
                     <RemoteSelect
                       resource="purQuotationItems"
-                      client={purchaseQuotationItemClient}
                       label="报价条目"
                       placeholder={quotationFilter ? '选择有效报价条目…' : '订单头信息未选齐'}
                       labelField="materialName"
@@ -950,7 +752,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                 </NumberField>
               ),
             },
-            // 含税金额系统算(后端 writable? false):表单只读展示 数量×单价 即时结果,不录入(提交 payload 见 itemInput);
+            // 含税金额系统算(后端 writable? false):表单只读展示 数量×单价 即时结果,不录入聚合草稿;
             // 常规单梯度条目无价可算,只读提示
             amount: {
               order: fo + 5,
@@ -1040,7 +842,6 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             <ItemsResetGuard mode={mode} row={row} values={values} onReset={resetItems} />
             <SynieEditableTable
             resource="purOrderItems"
-            client={purchaseOrderItemClient}
             label="订单条目"
             items={items}
             onChange={setItems}
@@ -1220,41 +1021,32 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
           )
         }}
         onSubmit={async (values, mode) => {
+          assertAggregateDraftReady(mode, detailLoaded, '采购订单明细')
+          const draft = buildOrderDraft(
+            'purchase',
+            { ...draftHeadRef.current, ...values },
+            terms,
+            items,
+          )
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          let savedId: string
+          let saved: Row
           if (mode === 'create') {
-            const created = await purchaseOrderClient.create({
-              ...values,
-              terms: terms === '' ? null : terms,
-            })
-            const orderId = String(created.id)
-            const itemErrors = await persistItems(orderId, items, [])
-            if (itemErrors.length > 0) {
-              toast.danger('订单已创建,但部分条目保存失败', { description: itemErrors.join('; ') })
-            } else {
-              toast.success('采购订单已创建')
-            }
-            savedId = orderId
+            saved = await purchaseOrderDraft.createDraft(draft)
+            toast.success('采购订单已创建')
           } else {
-            const orderId = drawer!.order!.id
-            await purchaseOrderClient.update(orderId, {
-              ...values,
-              terms: terms === '' ? null : terms,
-            })
-            const itemErrors = await persistItems(orderId, items, itemsSnapshot)
-            if (itemErrors.length > 0) {
-              toast.danger('订单已更新,但部分条目保存失败', { description: itemErrors.join('; ') })
-            } else {
-              toast.success('采购订单已更新')
-            }
-            savedId = orderId
+            saved = await purchaseOrderDraft.replaceDraft(
+              drawer!.order!.id,
+              draft,
+            )
+            toast.success('采购订单已更新')
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOrders'] })
-          // 条目 tab 的行级 grid 也要失效:条目增删改/整单提交都落在 purOrderItems 上
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOrderItems'] })
-          // 抽屉走 rowId 自查,一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'purOrders'] })
-          return savedId
+          await Promise.all([
+            purchaseOrderBinding.cache.invalidateAll(queryClient),
+            purchaseOrderItemBinding.cache.invalidateGrid(queryClient),
+            purchaseOrderItemMaterialBinding.cache.invalidateGrid(queryClient),
+            purchaseOrderItemByproductBinding.cache.invalidateGrid(queryClient),
+          ])
+          return String(saved.id)
         }}
       />
 
@@ -1276,7 +1068,6 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   </p>
                   <SynieEditableTable
                     resource="purOrderItemMaterials"
-                    client={purchaseOrderItemMaterialClient}
                     label="发料清单"
                     items={issueLinesOf(linesView)}
                     onChange={() => {}}
@@ -1287,7 +1078,6 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
                   />
                   <SynieEditableTable
                     resource="purOrderItemByproducts"
-                    client={purchaseOrderItemByproductClient}
                     label="副产物清单"
                     items={byproductLinesOf(linesView)}
                     onChange={() => {}}

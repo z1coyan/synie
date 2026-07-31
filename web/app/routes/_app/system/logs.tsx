@@ -4,7 +4,6 @@ import { CodeBlock } from '@heroui-pro/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
-import { auditLogClient } from '~/lib/resources/system-ops'
 
 export const Route = createFileRoute('/_app/system/logs')({
   component: LogsPage,
@@ -202,7 +201,6 @@ function LogsPage() {
         {/* 审计日志只读:不传 onCreate/onEdit 即无新增/编辑入口 */}
         <SynieDataGrid
           resource="sysAuditLogs"
-          client={auditLogClient}
           exclude={EXCLUDE}
           overrides={GRID_OVERRIDES}
           onView={setRow}
@@ -211,7 +209,6 @@ function LogsPage() {
 
       <SynieRecordDrawer
         resource="sysAuditLogs"
-        client={auditLogClient}
         label="操作日志"
         mode="view"
         isOpen={row !== null}

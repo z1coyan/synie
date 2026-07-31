@@ -6,7 +6,7 @@ import type { ListQuery } from '@synie/shared'
 import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle } from '~/db/tx.ts'
+import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -21,6 +21,50 @@ import {
   wireRequiredDecimal,
 } from '../common.ts'
 import { orderByproductMeta, orderMaterialMeta } from './spec.ts'
+
+export interface OutsourcedDraftLineInput {
+  id?: string
+  materialId: string
+  unitId: string
+  quantity: string
+  remarks?: string | null
+}
+
+export interface OutsourcedDraftItemInput {
+  issueLines: OutsourcedDraftLineInput[]
+  byproductLines: OutsourcedDraftLineInput[]
+}
+
+export interface OutsourcedSavedLine {
+  id: string
+  quantity: string
+  remarks: string | null
+  insertedAt: string
+  updatedAt: string
+  orderItemId: string
+  companyId: string
+  materialId: string
+  materialCode: string
+  materialName: string
+  materialSpec: string | null
+  unitId: string
+  unitName: string
+}
+
+export interface OutsourcedSavedIssueLine extends OutsourcedSavedLine {
+  issuedQty: string
+  orderNo: string
+  orderStatus: string
+  orderIsOutsourced: boolean
+  partyType: string
+  partyId: string
+  remainingIssueQty: string
+}
+
+export interface OutsourcedDraftLines {
+  issueLines: OutsourcedSavedIssueLine[]
+  byproductLines: OutsourcedSavedLine[]
+}
 
 export function createOutsourcedConfigService(db: Kysely<Database>) {
 
@@ -410,6 +454,86 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
   }
 }
 
+  /**
+   * 订单聚合专用 seam：完整读取全部委外清单，不经过分页列表。
+   * 权限由订单 Aggregate Draft 入口负责；这里仍执行公司范围 fail-closed。
+   */
+  async function loadOrderDraftLines(
+    handle: DbHandle,
+    actor: Actor,
+    orderId: string,
+  ): Promise<OutsourcedDraftLines> {
+    const head = await sql<{ company_id: string }>`
+      SELECT company_id FROM pur_order WHERE id=${orderId}::uuid
+    `.execute(handle)
+    if (!head.rows[0] || !canAccessCompany(actor, head.rows[0].company_id)) {
+      throw new ApiError('not_found', '采购订单不存在')
+    }
+    const issueRows = await sql<Record<string, unknown>>`
+      SELECT m.id,m.quantity,m.issued_qty,m.remarks,m.inserted_at,m.updated_at,m.order_item_id,
+        m.company_id,m.material_id,mat.code AS material_code,mat.name AS material_name,
+        mat.spec AS material_spec,m.unit_id,u.name AS unit_name,
+        o.order_no,o.status AS order_status,o.is_outsourced AS order_is_outsourced,
+        o.party_type,o.party_id,(m.quantity - m.issued_qty) AS remaining_issue_qty
+      FROM pur_order_item_material m
+      JOIN pur_order_item oi ON oi.id=m.order_item_id
+      JOIN pur_order o ON o.id=oi.order_id
+      JOIN inv_material mat ON mat.id=m.material_id
+      JOIN bas_unit u ON u.id=m.unit_id
+      WHERE oi.order_id=${orderId}::uuid
+      ORDER BY oi.idx,m.id
+    `.execute(handle)
+    const byproductRows = await sql<Record<string, unknown>>`
+      SELECT b.id,b.quantity,b.remarks,b.inserted_at,b.updated_at,b.order_item_id,b.company_id,
+        b.material_id,mat.code AS material_code,mat.name AS material_name,
+        mat.spec AS material_spec,b.unit_id,u.name AS unit_name
+      FROM pur_order_item_byproduct b
+      JOIN pur_order_item oi ON oi.id=b.order_item_id
+      JOIN inv_material mat ON mat.id=b.material_id
+      JOIN bas_unit u ON u.id=b.unit_id
+      WHERE oi.order_id=${orderId}::uuid
+      ORDER BY oi.idx,b.id
+    `.execute(handle)
+    return {
+      issueLines: issueRows.rows.map(mapMaterial),
+      byproductLines: byproductRows.rows.map(mapByproduct),
+    }
+  }
+
+  /**
+   * 订单聚合专用 seam：以一个条目的完整子快照替换发料/副产物清单。
+   * 调用者传入同一个 TrxHandle，因此任一嵌套行失败会回滚订单头、条目及全部清单。
+   */
+  async function replaceItemDraftLines(
+    trx: TrxHandle,
+    actor: Actor,
+    orderItemId: string,
+    input: OutsourcedDraftItemInput,
+  ): Promise<void> {
+    const parent = await lockPurchaseItemParent(trx, actor, orderItemId)
+    if (!parent.isOutsourced && (input.issueLines.length > 0 || input.byproductLines.length > 0)) {
+      throw ApiError.validation('委外配置参数不合法', {
+        issueLines: ['仅委外订单可维护发料清单'],
+        byproductLines: ['仅委外订单可维护副产物清单'],
+      })
+    }
+
+    await replaceDraftLineKind(
+      trx,
+      'issue',
+      orderItemId,
+      parent.companyId,
+      input.issueLines,
+    )
+    await replaceDraftLineKind(
+      trx,
+      'byproduct',
+      orderItemId,
+      parent.companyId,
+      input.byproductLines,
+    )
+  }
+
   return {
     listMaterials,
     getMaterial,
@@ -423,10 +547,132 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     deleteByproduct,
     queryDemandPool,
     expandBom,
+    draft: {
+      loadOrderLines: loadOrderDraftLines,
+      replaceItemLines: replaceItemDraftLines,
+    },
   }
 }
 
 export type OutsourcedConfigService = ReturnType<typeof createOutsourcedConfigService>
+
+type DraftLineKind = 'issue' | 'byproduct'
+
+async function replaceDraftLineKind(
+  trx: TrxHandle,
+  kind: DraftLineKind,
+  orderItemId: string,
+  companyId: string,
+  input: OutsourcedDraftLineInput[],
+): Promise<void> {
+  const existing = kind === 'issue'
+    ? await sql<{ id: string }>`
+        SELECT id FROM pur_order_item_material
+        WHERE order_item_id=${orderItemId}::uuid
+      `.execute(trx)
+    : await sql<{ id: string }>`
+        SELECT id FROM pur_order_item_byproduct
+        WHERE order_item_id=${orderItemId}::uuid
+      `.execute(trx)
+  const existingIds = new Set(existing.rows.map((line) => line.id))
+  const seenIds = new Set<string>()
+  const seenMaterialUnits = new Set<string>()
+  const fields: Record<string, string[]> = {}
+  const fieldPrefix = kind === 'issue' ? 'issueLines' : 'byproductLines'
+
+  for (let index = 0; index < input.length; index++) {
+    const line = input[index]!
+    if (line.id !== undefined) {
+      if (seenIds.has(line.id)) {
+        fields[`${fieldPrefix}[${index}].id`] = ['同一清单中不能重复']
+      } else if (!existingIds.has(line.id)) {
+        fields[`${fieldPrefix}[${index}].id`] = ['不属于该订单条目']
+      }
+      seenIds.add(line.id)
+    }
+    const materialUnit = `${line.materialId}:${line.unitId}`
+    if (seenMaterialUnits.has(materialUnit)) {
+      fields[`${fieldPrefix}[${index}].materialId`] = ['同一物料与单位在本清单中不能重复']
+    }
+    seenMaterialUnits.add(materialUnit)
+    try {
+      await loadMaterialSnap(trx, line.materialId, line.unitId)
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'validation' && error.fields) {
+        for (const [field, messages] of Object.entries(error.fields)) {
+          fields[`${fieldPrefix}[${index}].${field}`] = messages
+        }
+      } else {
+        throw error
+      }
+    }
+    if (!decimal(line.quantity).gt(0)) {
+      fields[`${fieldPrefix}[${index}].quantity`] = ['必须大于 0']
+    }
+  }
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation(
+      kind === 'issue' ? '发料清单参数不合法' : '副产物清单参数不合法',
+      fields,
+    )
+  }
+
+  const requestedIds = new Set(
+    input.flatMap((line) => (line.id === undefined ? [] : [line.id])),
+  )
+  for (const id of existingIds) {
+    if (requestedIds.has(id)) continue
+    if (kind === 'issue') {
+      await sql`DELETE FROM pur_order_item_material WHERE id=${id}::uuid`.execute(trx)
+    } else {
+      await sql`DELETE FROM pur_order_item_byproduct WHERE id=${id}::uuid`.execute(trx)
+    }
+  }
+
+  for (const line of input) {
+    const quantity = wireRequiredDecimal(decimal(line.quantity))
+    if (line.id === undefined) {
+      if (kind === 'issue') {
+        await sql`
+          INSERT INTO pur_order_item_material (
+            quantity,remarks,order_item_id,company_id,material_id,unit_id
+          ) VALUES (
+            ${quantity},${line.remarks ?? null},${orderItemId}::uuid,${companyId}::uuid,
+            ${line.materialId}::uuid,${line.unitId}::uuid
+          )
+        `.execute(trx)
+      } else {
+        await sql`
+          INSERT INTO pur_order_item_byproduct (
+            quantity,remarks,order_item_id,company_id,material_id,unit_id
+          ) VALUES (
+            ${quantity},${line.remarks ?? null},${orderItemId}::uuid,${companyId}::uuid,
+            ${line.materialId}::uuid,${line.unitId}::uuid
+          )
+        `.execute(trx)
+      }
+      continue
+    }
+    if (kind === 'issue') {
+      await sql`
+        UPDATE pur_order_item_material SET
+          quantity=${quantity},material_id=${line.materialId}::uuid,
+          unit_id=${line.unitId}::uuid,remarks=${line.remarks ?? null},
+          updated_at=(now() AT TIME ZONE 'utc')
+        WHERE id=${line.id}::uuid
+      `.execute(trx)
+    } else {
+      await sql`
+        UPDATE pur_order_item_byproduct SET
+          quantity=${quantity},material_id=${line.materialId}::uuid,
+          unit_id=${line.unitId}::uuid,remarks=${line.remarks ?? null},
+          updated_at=(now() AT TIME ZONE 'utc')
+        WHERE id=${line.id}::uuid
+      `.execute(trx)
+    }
+  }
+
+}
 
 async function lockPurchaseItemParent(
   db: DbHandle,
@@ -458,7 +704,7 @@ async function lockPurchaseItemParent(
     status: row.status,
   }
 }
-function mapMaterial(row: Record<string, unknown>) {
+function mapMaterial(row: Record<string, unknown>): OutsourcedSavedIssueLine {
   return {
     id: String(row.id),
     quantity: wireRequiredDecimal(String(row.quantity)),
@@ -483,7 +729,7 @@ function mapMaterial(row: Record<string, unknown>) {
   }
 }
 
-function mapByproduct(row: Record<string, unknown>) {
+function mapByproduct(row: Record<string, unknown>): OutsourcedSavedLine {
   return {
     id: String(row.id),
     quantity: wireRequiredDecimal(String(row.quantity)),

@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Button, toast } from '@heroui/react'
 import { downloadFile } from '~/lib/files'
-import { fileClient, queryAttachments } from '~/lib/resources/files'
+import { queryAttachments } from '~/lib/resources/files'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -61,7 +61,6 @@ function FilesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="sysFiles"
-          client={fileClient}
           columns={GRID_COLUMNS}
           overrides={{
             filename: {
@@ -80,7 +79,6 @@ function FilesPage() {
 
       <SynieRecordDrawer
         resource="sysFiles"
-        client={fileClient}
         label="文件"
         mode="view"
         isOpen={drawer !== null}

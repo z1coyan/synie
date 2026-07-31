@@ -1,4 +1,11 @@
-export type { PresentationExtension, PresentationExtraContent, PresentationFactory } from './types'
+export type {
+  DocumentPreviewConfig,
+  DocumentPreviewLineTable,
+  PresentationExtension,
+  PresentationExtraContent,
+  PresentationFactory,
+  ResourceDrawerConfig,
+} from './types'
 export {
   CUSTOMER_RESOURCE,
   createCustomerPresentation,
@@ -26,3 +33,10 @@ export {
   createAccountPresentation,
   submitAccountForm,
 } from './account'
+export {
+  createInventoryDocumentPresentation,
+  INVENTORY_DOCUMENT_RESOURCES,
+  type InventoryDocumentPresentation,
+  type InventoryDocumentResource,
+} from './inventory-documents'
+export { listPresentationResources, presentationFor } from './registry'

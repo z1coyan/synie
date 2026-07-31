@@ -5,6 +5,7 @@
 import type { ResourceDocument } from '@synie/shared'
 import type { ResourceList, ResourceQuery } from '../types'
 import type { Row } from '~/components/synie-data-grid/types'
+import type { ResourceQueryCache } from './query-cache'
 
 /** 列表与单条读取；不含 Meta 生命周期 */
 export interface ResourceReader<TRow = Row> {
@@ -54,7 +55,12 @@ export interface AggregateDraftAdapter<TDraft = unknown, TSaved = TDraft> {
 export type CommandTarget = 'collection' | 'row' | 'bulk' | 'rowOrBulk'
 
 export interface CommandSpec<TInput = unknown, TOutput = unknown> {
-  target: CommandTarget
+  readonly target: CommandTarget
+  /**
+   * 命令成功后需要刷新的 ResourceBinding 资源名。
+   * 失效 implementation 始终加入命令所属资源与系统审计日志，并对本列表去重。
+   */
+  readonly affectedResources?: readonly string[]
   execute(input: TInput): Promise<TOutput>
 }
 
@@ -88,6 +94,11 @@ export interface ResourceBinding<
 > {
   readonly resource: string
   readonly reader: ResourceReader<TRow>
+  /**
+   * Reader 对应的查询缓存身份与失效动作。
+   * 调用者不得再拼 transport id 或 gridRows/rowById key。
+   */
+  readonly cache: ResourceQueryCache
   readonly writer?: RecordWriter<TRow, TCreate, TUpdate>
   readonly draft?: AggregateDraftAdapter<TDraft, TSaved>
   readonly commands?: CommandAdapter<TCommands>

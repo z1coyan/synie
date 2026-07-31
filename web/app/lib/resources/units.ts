@@ -1,19 +1,14 @@
 import { apiData, api } from '../api/client'
-import type { Row, FilterState } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
+import { resourceListBody } from './resource-wire'
 import type { ResourceClient } from './types'
 
 export const unitClient: ResourceClient = {
   id: 'rest:basUnits',
   async query(input) {
-    const x = await apiData<{ count: number; results: Row[] }>(
+    const x = await apiData(
       api.base.units.query.$post({
-        json: {
-          limit: input.limit,
-          offset: input.offset,
-          search: input.search || undefined,
-          sort: input.sort ?? undefined,
-          filter: input.filter as FilterState,
-        },
+        json: resourceListBody(input),
       }),
     )
     return { count: x.count, results: x.results as Row[] }
@@ -30,6 +25,6 @@ export const unitClient: ResourceClient = {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(api.base.units[':id'].$delete({ param: { id } }))
+    await apiData(api.base.units[':id'].$delete({ param: { id } }))
   },
 }

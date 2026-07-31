@@ -548,7 +548,7 @@ function InvoicesPage() {
       await auditVatInvoice(auditDialog.id, auditDate)
       toast.success('发票已审核过账')
       setAuditDialog(null)
-      queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
+      await invoicePresentation.binding.cache.invalidateGrid(queryClient)
     } catch (e) {
       toast.danger('审核失败', { description: (e as Error).message })
     } finally {
@@ -572,7 +572,7 @@ function InvoicesPage() {
       })
       toast.success('发票已红冲')
       setReverseDialog(null)
-      queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
+      await invoicePresentation.binding.cache.invalidateGrid(queryClient)
     } catch (e) {
       toast.danger('红冲失败', { description: (e as Error).message })
     } finally {
@@ -614,7 +614,7 @@ function InvoicesPage() {
       } catch (e) {
         toast.warning('对向发票已创建,但原票互链回写失败', { description: (e as Error).message })
       }
-      queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
+      await invoicePresentation.binding.cache.invalidateGrid(queryClient)
     } finally {
       setMirroring(false)
       closeMirrorAsk()
@@ -659,7 +659,6 @@ function InvoicesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accVatInvoices"
-          client={vatInvoiceClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           attachmentImages={{ ownerType: 'acc_vat_invoice', category: 'original', label: '票面' }}
@@ -675,7 +674,6 @@ function InvoicesPage() {
 
       <SynieRecordDrawer
         resource="accVatInvoices"
-        client={vatInvoiceClient}
         label="发票"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -935,7 +933,7 @@ function InvoicesPage() {
               setPendingFiles([])
             }
             toast.success('发票已创建')
-            queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
+            await invoicePresentation.binding.cache.invalidateGrid(queryClient)
             const source = { ...input, id: createdId } as Row
             if (values.partyType === 'COMPANY') {
               // 对手是内部公司:优先弹对向发票确认(比顺手审核优先级高)
@@ -948,7 +946,7 @@ function InvoicesPage() {
             const invoiceId = drawer!.row!.id
             await submitInvoiceForm(invoicePresentation, input, 'edit', String(invoiceId))
             toast.success(omitItems ? '发票已更新(销售清单未加载,本次未修改)' : '发票已更新')
-            queryClient.invalidateQueries({ queryKey: ['gridRows', 'accVatInvoices'] })
+            await invoicePresentation.binding.cache.invalidateGrid(queryClient)
             savedId = invoiceId
           }
           return savedId

@@ -21,10 +21,10 @@ const RESOURCE = 'basUnits'
 function UnitsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
-  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '单位')
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '单位')
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, RESOURCE] })
+    binding.cache.invalidateGrid(queryClient)
 
   return (
     <>
@@ -34,7 +34,6 @@ function UnitsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource={RESOURCE}
-          client={client}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
@@ -43,7 +42,6 @@ function UnitsPage() {
 
       <SynieRecordDrawer
         resource={RESOURCE}
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}

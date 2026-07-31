@@ -1,13 +1,13 @@
-import type { ListQuery } from '@synie/shared'
 import { api, apiData } from '../api/client'
 import { isForbidden } from '../errors'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import type { ResourceQuery, ResourceTransport } from './types'
+import type { Row } from '~/components/synie-data-grid/types'
+import { resourceListBody } from './resource-wire'
+import type { ResourceTransport } from './types'
 
 export type TodoTab = 'active' | 'history' | 'recent'
-export type TodoType = 'ISSUE_INVOICE' | 'RECEIVE_INVOICE'
-export type TodoStatus = 'ACTIVE' | 'CLOSED'
-export type TodoClosedReason = 'UNCONFIRM' | 'INVOICE_AUDIT' | null
+export type TodoType = string
+export type TodoStatus = string
+export type TodoClosedReason = string | null
 
 export interface SysTodo {
   id: string
@@ -36,28 +36,20 @@ export interface TodoList {
   results: SysTodo[]
 }
 
-function listBody(input: ResourceQuery): ListQuery {
-  if (input.extraFields?.length || input.joinFields) {
-    throw new Error('审计日志 REST 资源不支持额外字段或 joinFields')
-  }
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: {
-      ...(input.filter ?? {}),
-      ...((input.fixedFilter ?? {}) as FilterState),
-    },
-  }
-}
+const listWireOptions = {
+  resourceLabel: '审计日志',
+  extraFields: 'reject',
+  joinFields: 'reject',
+} as const
 
 export const auditLogClient: ResourceTransport = {
   id: 'rest:sysAuditLogs',
 
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.system['audit-logs'].query.$post({ json: listBody(input) }),
+    const result = await apiData(
+      api.system['audit-logs'].query.$post({
+        json: resourceListBody(input, listWireOptions),
+      }),
     )
     return { count: result.count, results: result.results }
   },
@@ -83,7 +75,7 @@ export async function fetchTodos(
     offset: opts?.offset ?? 0,
   }
   try {
-    return await apiData<TodoList>(api.todos.query.$post({ json: body }))
+    return await apiData(api.todos.query.$post({ json: body }))
   } catch (error) {
     if (isForbidden(error)) return { results: [], count: 0 }
     throw error
@@ -92,7 +84,7 @@ export async function fetchTodos(
 
 export async function fetchUnreadCount(): Promise<number> {
   try {
-    const data = await apiData<{ count: number }>(api.todos['unread-count'].$get())
+    const data = await apiData(api.todos['unread-count'].$get())
     return data.count ?? 0
   } catch (error) {
     if (isForbidden(error)) return 0

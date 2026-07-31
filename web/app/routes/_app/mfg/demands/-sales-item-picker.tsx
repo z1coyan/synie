@@ -95,7 +95,7 @@ export function SalesItemPicker(props: {
     queryKey: ['mfgSalesItemOccupancies', ids],
     enabled: open && ids.length > 0,
     queryFn: () =>
-      apiData<{ results: unknown[] }>(
+      apiData(
         api.manufacturing['sales-item-occupancies'].$post({
           json: { salesOrderItemIds: ids },
         }),

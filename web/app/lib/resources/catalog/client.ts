@@ -16,7 +16,7 @@ export async function fetchResourceDocument(resource: string): Promise<ResourceD
   const cached = getCachedDocument(resource)
   if (cached) return cached
 
-  const raw = await apiData<unknown>(
+  const raw = await apiData(
     api.meta.resources[':name'].$get({ param: { name: resource } }),
   )
 

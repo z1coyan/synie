@@ -82,7 +82,13 @@ export function RemoteDialogMultiSelect(props: RemoteDialogMultiSelectProps) {
               )}
               <div className="flex gap-4">
                 <div className="min-w-0 flex-1">
-                  <SynieDataGrid resource={src.resource} client={src.client} pick="multiple" pickedRows={draft} onPickChange={setDraft} />
+                  <SynieDataGrid
+                    resource={src.resource}
+                    client={src.explicitClient}
+                    pick="multiple"
+                    pickedRows={draft}
+                    onPickChange={setDraft}
+                  />
                 </div>
                 {/* 桌面右侧已选面板:跨页/跨搜索累积,可单个移除 */}
                 <aside className="hidden w-56 shrink-0 flex-col gap-2 lg:flex">

@@ -5,7 +5,6 @@ import {
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
-import { bomClient } from '~/lib/resources/manufacturing'
 import type { Row } from '~/components/synie-data-grid/types'
 import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
 
@@ -71,7 +70,6 @@ function BomsPageInner() {
       <div className="mt-6">
         <SynieDataGrid
           resource="mfgBoms"
-          client={bomClient}
           columns={GRID_COLUMNS}
           joinFields={{ material: ['code', 'spec'] }}
           overrides={GRID_OVERRIDES}

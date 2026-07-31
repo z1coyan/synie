@@ -114,8 +114,8 @@ export function createTradingServices(db: Kysely<Database>, numbering: Numbering
   const inventory = createInventoryEngine()
   const engines = { inventory, gl }
   const quotations = createQuotationService(db, numbering)
-  const orders = createOrderService(db, numbering, quotations)
   const outsourcedConfig = createOutsourcedConfigService(db)
+  const orders = createOrderService(db, numbering, quotations, outsourcedConfig.draft)
   const fulfillment = createFulfillmentService(db, numbering, engines)
   const outsourced = createOutsourcedService(db, numbering, engines)
   const reconciliations = createReconciliationService(db, numbering, gl)

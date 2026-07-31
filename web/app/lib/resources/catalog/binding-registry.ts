@@ -11,6 +11,7 @@ import type {
   ResourceReader,
   RecordWriter,
 } from './types'
+import { createResourceQueryCache } from './query-cache'
 
 const bindings = new Map<string, ResourceBinding>()
 
@@ -36,7 +37,10 @@ export function bindingFromResourceTransport(
     get: (id) => transport.get(id),
   }
 
-  const hasWriter = canCreate || canUpdate || canDelete
+  const hasWriter =
+    (canCreate && transport.create != null) ||
+    (canUpdate && transport.update != null) ||
+    (canDelete && transport.delete != null)
   const writer: RecordWriter | undefined = hasWriter
     ? ({
         ...(canCreate && transport.create
@@ -61,6 +65,7 @@ export function bindingFromResourceTransport(
   return {
     resource,
     reader,
+    cache: createResourceQueryCache(resource, transport.id),
     writer,
     loadDocument: () => fetchResourceDocument(resource),
   }
@@ -120,7 +125,9 @@ export function resourceTransportFromBinding(binding: ResourceBinding): Resource
     | undefined
 
   return {
-    id: `rest:${binding.resource}`,
+    // 兼容 transport 必须复用 binding 的真实 Adapter identity，否则 custom/memory
+    // Reader 产生的查询 key 会与 binding.cache 的失效 scope 永久错位。
+    id: binding.cache.adapterId,
     query: (input) => binding.reader.query(input),
     get: (id) => binding.reader.get(id),
     ...(writer && 'create' in writer && writer.create

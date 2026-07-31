@@ -8,7 +8,6 @@ import { materialCellRender } from '~/components/synie-material-cell/MaterialCel
 import { useOrderDrawer, salesOrderAuditConfig, type OpenOrderDrawer } from './-order-drawer'
 import { useAuditDoc } from '../-audit-doc'
 import { QtyProgressCell } from '../-qty-progress-cell'
-import { salesOrderItemClient } from '~/lib/resources/orders'
 
 export const Route = createFileRoute('/_app/scm/sales-orders/items')({
   component: SalesOrderItemsTab,
@@ -107,7 +106,6 @@ function SalesOrderItemsTab() {
     <>
       <SynieDataGrid
         resource="salOrderItems"
-        client={salesOrderItemClient}
         columns={GRID_COLUMNS}
         overrides={overrides}
         // 合并进度列(qty/baseQty/shippedQty)+物料列富单元格所需快照字段与物料外键的取数

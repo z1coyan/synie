@@ -1,36 +1,11 @@
 import { apiData, api } from '../api/client'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
 import { createRowCommandAdapter } from './catalog/commands'
-import type { ResourceClient, ResourceQuery } from './types'
-
-type FilterDocument = FilterState
-
-function queryBody(input: ResourceQuery) {
-  const filter = {
-    ...(input.filter ?? {}),
-    ...((input.fixedFilter ?? {}) as FilterState),
-  }
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: filter as FilterDocument,
-  }
-}
-
-function decimalInput(
-  input: Record<string, unknown>,
-  fields: readonly string[],
-) {
-  const result = { ...input }
-  for (const field of fields) {
-    if (!Object.hasOwn(input, field)) continue
-    const value = input[field]
-    result[field] = value == null || value === '' ? null : String(value)
-  }
-  return result
-}
+import {
+  decimalWireInput,
+  resourceListBody,
+} from './resource-wire'
+import type { ResourceClient } from './types'
 
 function resourceClient(
   resource: string,
@@ -186,12 +161,33 @@ export const demandCommandAdapter = createRowCommandAdapter({
 })
 
 export const workOrderCommandAdapter = createRowCommandAdapter({
-  void: voidWorkOrder,
+  void: {
+    handler: voidWorkOrder,
+    affectedResources: ['mfgDemandItems', 'mfgDemands'],
+  },
 })
 
 export const outputCommandAdapter = createRowCommandAdapter({
-  audit: auditOutput,
-  void: voidOutput,
+  audit: {
+    handler: auditOutput,
+    affectedResources: [
+      'mfgOutputItems',
+      'mfgWorkOrders',
+      'mfgDemandItems',
+      'mfgDemands',
+      'invStockEntries',
+    ],
+  },
+  void: {
+    handler: voidOutput,
+    affectedResources: [
+      'mfgOutputItems',
+      'mfgWorkOrders',
+      'mfgDemandItems',
+      'mfgDemands',
+      'invStockEntries',
+    ],
+  },
 })
 
 export const bomCommandAdapter = createRowCommandAdapter({
@@ -201,9 +197,9 @@ export const bomCommandAdapter = createRowCommandAdapter({
 
 export const operationClient = resourceClient('mfgOperations', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing.operations.query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -226,7 +222,7 @@ export const operationClient = resourceClient('mfgOperations', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing.operations[':id'].$delete({
         param: { id }}),
     )
@@ -235,9 +231,9 @@ export const operationClient = resourceClient('mfgOperations', {
 
 export const processTemplateClient = resourceClient('mfgProcessTemplates', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing['process-templates'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -261,7 +257,7 @@ export const processTemplateClient = resourceClient('mfgProcessTemplates', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing['process-templates'][':id'].$delete({
         param: { id }}),
     )
@@ -272,9 +268,9 @@ export const processTemplateItemClient = resourceClient(
   'mfgProcessTemplateItems',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.manufacturing['process-template-items'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -298,7 +294,7 @@ export const processTemplateItemClient = resourceClient(
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.manufacturing['process-template-items'][':id'].$delete({
           param: { id }}),
       )
@@ -308,9 +304,9 @@ export const processTemplateItemClient = resourceClient(
 
 export const bomClient = resourceClient('mfgBoms', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing.boms.query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -333,7 +329,7 @@ export const bomClient = resourceClient('mfgBoms', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing.boms[':id'].$delete({
         param: { id }}),
     )
@@ -342,9 +338,9 @@ export const bomClient = resourceClient('mfgBoms', {
 
 export const bomComponentClient = resourceClient('mfgBomComponents', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing['bom-components'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -357,18 +353,18 @@ export const bomComponentClient = resourceClient('mfgBomComponents', {
   async create(input) {
     return (await apiData(
       api.manufacturing['bom-components'].$post({
-        json: decimalInput(input, ['quantity', 'lossRate']) as never}),
+        json: decimalWireInput(input, ['quantity', 'lossRate']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.manufacturing['bom-components'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['quantity', 'lossRate']) as never}),
+        json: decimalWireInput(input, ['quantity', 'lossRate']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing['bom-components'][':id'].$delete({
         param: { id }}),
     )
@@ -377,9 +373,9 @@ export const bomComponentClient = resourceClient('mfgBomComponents', {
 
 export const bomRouteClient = resourceClient('mfgBomRoutes', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing['bom-routes'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -403,7 +399,7 @@ export const bomRouteClient = resourceClient('mfgBomRoutes', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing['bom-routes'][':id'].$delete({
         param: { id }}),
     )
@@ -412,9 +408,9 @@ export const bomRouteClient = resourceClient('mfgBomRoutes', {
 
 export const bomByproductClient = resourceClient('mfgBomByproducts', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing['bom-byproducts'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -427,18 +423,18 @@ export const bomByproductClient = resourceClient('mfgBomByproducts', {
   async create(input) {
     return (await apiData(
       api.manufacturing['bom-byproducts'].$post({
-        json: decimalInput(input, ['quantity']) as never}),
+        json: decimalWireInput(input, ['quantity']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.manufacturing['bom-byproducts'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['quantity']) as never}),
+        json: decimalWireInput(input, ['quantity']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing['bom-byproducts'][':id'].$delete({
         param: { id }}),
     )
@@ -447,9 +443,9 @@ export const bomByproductClient = resourceClient('mfgBomByproducts', {
 
 export const demandClient = resourceClient('mfgDemands', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing.demands.query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -472,7 +468,7 @@ export const demandClient = resourceClient('mfgDemands', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing.demands[':id'].$delete({
         param: { id }}),
     )
@@ -481,9 +477,9 @@ export const demandClient = resourceClient('mfgDemands', {
 
 export const demandItemClient = resourceClient('mfgDemandItems', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing['demand-items'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -496,18 +492,18 @@ export const demandItemClient = resourceClient('mfgDemandItems', {
   async create(input) {
     return (await apiData(
       api.manufacturing['demand-items'].$post({
-        json: decimalInput(input, ['qty']) as never}),
+        json: decimalWireInput(input, ['qty']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.manufacturing['demand-items'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['qty']) as never}),
+        json: decimalWireInput(input, ['qty']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing['demand-items'][':id'].$delete({
         param: { id }}),
     )
@@ -516,9 +512,9 @@ export const demandItemClient = resourceClient('mfgDemandItems', {
 
 export const workOrderClient = resourceClient('mfgWorkOrders', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing['work-orders'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -542,7 +538,7 @@ export const workOrderClient = resourceClient('mfgWorkOrders', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing['work-orders'][':id'].$delete({
         param: { id }}),
     )
@@ -551,9 +547,9 @@ export const workOrderClient = resourceClient('mfgWorkOrders', {
 
 export const outputClient = resourceClient('mfgOutputs', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing.outputs.query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -576,7 +572,7 @@ export const outputClient = resourceClient('mfgOutputs', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing.outputs[':id'].$delete({
         param: { id }}),
     )
@@ -585,9 +581,9 @@ export const outputClient = resourceClient('mfgOutputs', {
 
 export const outputItemClient = resourceClient('mfgOutputItems', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.manufacturing['output-items'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -600,18 +596,18 @@ export const outputItemClient = resourceClient('mfgOutputItems', {
   async create(input) {
     return (await apiData(
       api.manufacturing['output-items'].$post({
-        json: decimalInput(input, ['qty']) as never}),
+        json: decimalWireInput(input, ['qty']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.manufacturing['output-items'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['qty']) as never}),
+        json: decimalWireInput(input, ['qty']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.manufacturing['output-items'][':id'].$delete({
         param: { id }}),
     )

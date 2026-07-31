@@ -1,7 +1,8 @@
 import { apiData, api } from '../api/client'
-import type {Row, FilterState} from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
 import { createRowCommandAdapter } from './catalog/commands'
-import type { ResourceClient, ResourceQuery, ResourceTransport } from './types'
+import { strictResourceListBody } from './resource-wire'
+import type { ResourceClient, ResourceTransport } from './types'
 
 export interface MarketChartInstrument {
   id: string
@@ -31,7 +32,11 @@ export interface MarketPriceSeries {
 }
 export interface MarketRefreshResult {
   count: number
-  items: Array<{ code?: string; message?: string; status?: string }>
+  items: Array<{
+    code?: string
+    message?: string | null
+    status?: string
+  }>
 }
 export type MarketSeriesPriceKind = string
 
@@ -39,22 +44,6 @@ type MarketInstrumentCreate = Record<string, unknown>
 type MarketInstrumentUpdate = Record<string, unknown>
 type MarketPricePointCreate = Record<string, unknown>
 type MarketPriceKind = string
-
-function ensureSupportedQuery(resource: string, input: ResourceQuery) {
-  if (input.fixedFilter || input.extraFields?.length || input.joinFields) {
-    throw new Error(`${resource} REST 资源不支持额外字段、joinFields 或受信 fixedFilter`)
-  }
-}
-
-function listBody(input: ResourceQuery) {
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: input.filter as FilterState,
-  }
-}
 
 function wirePriceKind(value: MarketSeriesPriceKind): MarketPriceKind {
   return value.toUpperCase() as never
@@ -65,9 +54,10 @@ export const marketInstrumentClient: ResourceClient = {
 
 
   async query(input) {
-    ensureSupportedQuery('行情品种', input)
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.base['market-instruments'].query.$post({ json: listBody(input) }),
+    const result = await apiData(
+      api.base['market-instruments'].query.$post({
+        json: strictResourceListBody(input, '行情品种'),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -93,7 +83,7 @@ export const marketInstrumentClient: ResourceClient = {
   },
 
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.base['market-instruments'][':id'].$delete({ param: { id } }),
     )
   },
@@ -116,9 +106,10 @@ export const marketPricePointClient: ResourceTransport = {
 
 
   async query(input) {
-    ensureSupportedQuery('行情价点', input)
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.base['market-price-points'].query.$post({ json: listBody(input) }),
+    const result = await apiData(
+      api.base['market-price-points'].query.$post({
+        json: strictResourceListBody(input, '行情价点'),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -140,7 +131,7 @@ export const marketPricePointClient: ResourceTransport = {
 }
 
 export function getMarketChartInstruments(): Promise<MarketChartInstrument[]> {
-  return apiData<MarketChartInstrument[]>(
+  return apiData(
     api.base['market-price-points']['chart-instruments'].$get(),
   )
 }
@@ -151,7 +142,7 @@ export function getMarketPriceSeries(input: {
   from: string
   to: string
 }): Promise<MarketPriceSeries> {
-  return apiData<MarketPriceSeries>(
+  return apiData(
     api.base['market-price-points']['price-series'].$post({
       json: { ...input, priceKind: wirePriceKind(input.priceKind) } as never,
     }),
@@ -161,7 +152,7 @@ export function getMarketPriceSeries(input: {
 export function refreshMarketPricePoints(
   input: Record<string, unknown> = {},
 ): Promise<MarketRefreshResult> {
-  return apiData<MarketRefreshResult>(
+  return apiData(
     api.base['market-price-points'].refresh.$post({ json: input as never }),
   )
 }

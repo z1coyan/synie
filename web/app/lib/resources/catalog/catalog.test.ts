@@ -13,7 +13,8 @@ import {
   setCachedDocument,
   getCachedDocument,
 } from './index'
-import type { ResourceClient } from '../types'
+import type { ResourceClient, ResourceTransport } from '../types'
+import { currencyClient } from '../currencies'
 
 function sampleDocument(name = 'basCurrencies'): ResourceDocument {
   return {
@@ -53,6 +54,34 @@ function mockClient(id = 'rest:basCurrencies'): ResourceClient {
   }
 }
 
+function inMemoryResourceAdapter(
+  resource: string,
+  initial: Array<Record<string, unknown>> = [],
+): ResourceTransport {
+  let rows = initial.map((row) => ({ ...row })) as Array<{ id: string } & Record<string, unknown>>
+  return {
+    id: `memory:${resource}`,
+    query: async ({ limit, offset }) => ({
+      count: rows.length,
+      results: rows.slice(offset, offset + limit),
+    }),
+    get: async (id) => rows.find((row) => row.id === id) ?? null,
+    create: async (input) => {
+      const saved = { id: `memory-${rows.length + 1}`, ...input }
+      rows = [...rows, saved]
+      return saved
+    },
+    update: async (id, input) => {
+      const saved = { id, ...input }
+      rows = rows.map((row) => (row.id === id ? saved : row))
+      return saved
+    },
+    delete: async (id) => {
+      rows = rows.filter((row) => row.id !== id)
+    },
+  }
+}
+
 describe('Resource Catalog 前端 binding 与缓存', () => {
   beforeEach(() => {
     clearCatalogCache()
@@ -73,6 +102,89 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(got.writer).toBeDefined()
     const created = await got.writer!.create!({ name: 'CNY' } as never)
     expect(created).toMatchObject({ id: '1', name: 'CNY' })
+  })
+
+  test('binding 拥有 reader 对应的查询缓存身份；调用者不拼 Adapter id', async () => {
+    const binding = bindingFromResourceTransport(
+      'basCurrencies',
+      inMemoryResourceAdapter('basCurrencies', [{ id: 'cny', name: '人民币' }]),
+    )
+
+    expect(binding.cache.gridScope).toEqual([
+      'gridRows',
+      'memory:basCurrencies',
+      'basCurrencies',
+    ])
+    expect(binding.cache.gridKey(1, 20, '人民币')).toEqual([
+      'gridRows',
+      'memory:basCurrencies',
+      'basCurrencies',
+      1,
+      20,
+      '人民币',
+    ])
+    expect(binding.cache.rowKey('cny')).toEqual([
+      'rowById',
+      'memory:basCurrencies',
+      'basCurrencies',
+      'cny',
+    ])
+    await expect(binding.reader.get('cny')).resolves.toMatchObject({ name: '人民币' })
+  })
+
+  test('binding cache 通过 interface 精确失效列表与单条查询', async () => {
+    const binding = bindingFromResourceTransport(
+      'basCurrencies',
+      inMemoryResourceAdapter('basCurrencies'),
+    )
+    const invalidated: Array<readonly unknown[]> = []
+    const cache = {
+      invalidateQueries: async ({ queryKey }: { queryKey: readonly unknown[] }) => {
+        invalidated.push(queryKey)
+      },
+    }
+
+    await binding.cache.invalidateGrid(cache)
+    await binding.cache.invalidateRow(cache, 'cny')
+    await binding.cache.invalidateAll(cache)
+
+    expect(invalidated).toEqual([
+      ['gridRows', 'memory:basCurrencies', 'basCurrencies'],
+      ['rowById', 'memory:basCurrencies', 'basCurrencies', 'cny'],
+      ['gridRows', 'memory:basCurrencies', 'basCurrencies'],
+      ['rowById', 'memory:basCurrencies', 'basCurrencies'],
+    ])
+  })
+
+  test('生产 Hono Adapter 与测试 in-memory Adapter 在同一 seam 下隔离缓存身份', () => {
+    const production = bindingFromResourceTransport(
+      'basCurrencies',
+      currencyClient,
+    )
+    const memory = bindingFromResourceTransport(
+      'basCurrencies',
+      inMemoryResourceAdapter('basCurrencies'),
+    )
+    const custom = bindingFromResourceTransport(
+      'basCurrencies',
+      mockClient('custom:currency-read-model'),
+    )
+
+    expect(production.cache.gridScope).not.toEqual(memory.cache.gridScope)
+    expect(production.cache.gridScope).toEqual([
+      'gridRows',
+      'rest:basCurrencies',
+      'basCurrencies',
+    ])
+    for (const binding of [production, memory, custom]) {
+      const transport = resourceTransportFromBinding(binding)
+      expect(transport.id).toBe(binding.cache.adapterId)
+      expect(binding.cache.gridScope).toEqual([
+        'gridRows',
+        transport.id,
+        'basCurrencies',
+      ])
+    }
   })
 
   test('单位/供应商/公司 binding 闭环 create', async () => {

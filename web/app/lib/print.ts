@@ -28,14 +28,14 @@ export interface FieldCatalog {
 }
 
 export async function fetchPrintTemplates(resource: string): Promise<PrintTemplateOption[]> {
-  const data = await apiData<{ results: PrintTemplateOption[] }>(
+  const data = await apiData(
     api.printing.templates.$get({ query: { resource } }),
   )
   return data.results
 }
 
 export async function fetchFieldCatalog(resource: string): Promise<FieldCatalog> {
-  return apiData<FieldCatalog>(
+  return apiData(
     api.printing['field-catalog'].$get({ query: { resource } }),
   )
 }

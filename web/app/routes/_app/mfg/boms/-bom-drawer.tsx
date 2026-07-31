@@ -22,6 +22,7 @@ import {
   bomRouteClient,
 } from '~/lib/resources/manufacturing'
 import type { Row } from '~/components/synie-data-grid/types'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 // mutation input 只收行自身字段,行上挂的 material/unit/operation join 对象不进 payload
 function componentInput(row: Row) {
@@ -371,7 +372,6 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
 
       <SynieRecordDrawer
         resource="mfgBoms"
-        client={bomClient}
         {...baseConfig}
         fields={fields}
         mode={drawer?.mode ?? 'view'}
@@ -383,7 +383,6 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
           components: (mode) => (
             <SynieEditableTable
               resource="mfgBomComponents"
-              client={bomComponentClient}
               label="配料"
               items={components}
               onChange={setComponents}
@@ -441,7 +440,6 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
           routes: (mode) => (
             <SynieEditableTable
               resource="mfgBomRoutes"
-              client={bomRouteClient}
               label="工艺路线"
               items={routes}
               onChange={setRoutes}
@@ -491,7 +489,6 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
           byproducts: (mode) => (
             <SynieEditableTable
               resource="mfgBomByproducts"
-              client={bomByproductClient}
               label="副产品"
               items={byproducts}
               onChange={setByproducts}
@@ -592,8 +589,7 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
               toast.success('BOM 已更新')
             }
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'mfgBoms'] })
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'mfgBoms'] })
+          await resourceBindingFor('mfgBoms').cache.invalidateAll(queryClient)
         }}
       />
 

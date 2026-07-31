@@ -11,15 +11,18 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, NumberField, TextField, toast } from '@heroui/react'
 import { companyClient } from '~/lib/resources/companies'
 import {
-  purchaseReceiptClient,
   purchaseReceiptItemClient,
 } from '~/lib/resources/fulfillment'
+import { buildPurchaseReceiptDraft } from '~/lib/resources/purchase-receipt-draft'
+import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import { purchaseOrderItemClient } from '~/lib/resources/orders'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import {
+  aggregateDraftFor,
+  resourceBindingFor,
+} from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
@@ -33,6 +36,11 @@ import {
 } from '../-stock-doc'
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
 
+const purchaseReceiptBinding = resourceBindingFor('purReceipts')
+const purchaseReceiptItemBinding = resourceBindingFor('purReceiptItems')
+const purchaseOrderItemBinding = resourceBindingFor('purOrderItems')
+const purchaseReceiptDraft = aggregateDraftFor('purReceipts')
+
 export interface ReceiptRef {
   id: string
   status?: unknown
@@ -43,6 +51,8 @@ export type OpenReceiptDrawer = (mode: DrawerMode, receipt: ReceiptRef | null) =
 // 「审核整单」确认弹窗配置:条目页行操作与入库单页「审核」动作共用(见 scm/-audit-doc)
 export const receiptAuditConfig = {
   docLabel: '采购入库单',
+  resource: 'purReceipts',
+  commandKey: 'audit',
   itemsResource: 'purReceiptItems',
   columns: [
     {
@@ -66,11 +76,6 @@ export const receiptAuditConfig = {
         },
       })
       .then((result) => result.results),
-  audit: (receiptId: string) => {
-    const commands = resourceBindingFor('purReceipts').commands
-    if (!commands) throw new Error('采购入库单未绑定 audit 命令')
-    return commands.execute('audit', { id: receiptId })
-  },
 } satisfies AuditDocConfig
 
 const ReceiptDrawerContext = createContext<OpenReceiptDrawer>(() => {})
@@ -83,66 +88,6 @@ function todayLocal(): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
-/** 提交 mutation:物料/单位由订单条目锁定带出,后端再快照与折算 */
-function itemInput(row: Row) {
-  return {
-    idx: row.idx,
-    orderItemId: row.orderItemId,
-    materialId: row.materialId,
-    unitId: row.unitId,
-    qty: row.qty,
-    warehouseId: row.warehouseId,
-    remarks: row.remarks ?? null,
-  }
-}
-
-const ITEM_COMPARE_KEYS = ['idx', 'orderItemId', 'materialId', 'unitId', 'qty', 'warehouseId', 'remarks'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-async function persistItems(
-  receiptId: string,
-  current: Row[],
-  snapshot: Row[],
-): Promise<string[]> {
-  const errors: string[] = []
-  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await purchaseReceiptItemClient.delete(String(old.id))
-    } catch (error) {
-      collect(old.idx, [{ message: (error as Error).message }])
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await purchaseReceiptItemClient.create({ receiptId, ...itemInput(row) })
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      try {
-        await purchaseReceiptItemClient.update(String(row.id), itemInput(row))
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-    }
-  }
-  return errors
 }
 
 /** 科目候选的 REST 结构化筛选。 */
@@ -327,13 +272,13 @@ function ItemsResetGuard({
 export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: ReceiptRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
   const [filters] = useState<FilterState>({})
   // 订单条目缓存:选择时写入完整行,transformItem 带出快照名
   const orderItemsRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
+  const draftHeadRef = useRef<Row | null>(null)
 
   const companies = useQuery({
     queryKey: ['purReceipts', 'companies'],
@@ -355,9 +300,9 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
     const my = ++reqIdRef.current
     setDrawer({ mode, row: receipt })
     orderItemsRef.current = new Map()
+    draftHeadRef.current = null
     if (mode === 'create') {
       setItems([])
-      setItemsSnapshot([])
       setDetailLoaded(true)
       return
     }
@@ -366,23 +311,16 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
     if (receiptId == null || receiptId === '' || receiptId === 'undefined') {
       toast.danger('无法打开入库单', { description: '缺少入库单 id' })
       setItems([])
-      setItemsSnapshot([])
       setDetailLoaded(true)
       return
     }
     setDetailLoaded(false)
-    purchaseReceiptItemClient
-      .query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        filter: {
-          receiptId: { kind: 'fk', op: 'in', values: [receiptId], labels: [] },
-        },
-      })
-      .then((result) => {
+    purchaseReceiptDraft
+      .loadDraft(receiptId)
+      .then((draft) => {
         if (my !== reqIdRef.current) return
-        const rows = result.results
+        draftHeadRef.current = draft
+        const rows = draft.items
         // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
         for (const r of rows) {
           if (r.orderItemId != null) {
@@ -401,14 +339,13 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
           }
         }
         setItems(rows)
-        setItemsSnapshot(rows)
         setDetailLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
+        draftHeadRef.current = null
         toast.danger('入库条目加载失败', { description: (e as Error).message })
         setItems([])
-        setItemsSnapshot([])
       })
   }, [])
 
@@ -456,17 +393,17 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
       {children}
       <SynieRecordDrawer
         resource="purReceipts"
-        client={purchaseReceiptClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
+        isSubmitDisabled={drawer?.mode === 'edit' && !detailLoaded}
         onOpenChange={(open) => {
           if (open) return
           reqIdRef.current++
           setDrawer(null)
           setItems([])
-          setItemsSnapshot([])
           orderItemsRef.current = new Map()
+          draftHeadRef.current = null
         }}
         rowId={drawer?.row?.id}
         onEdit={
@@ -490,7 +427,6 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
                 <RemoteDialogSelect
                   resource="purOrderItems"
-                  client={purchaseOrderItemClient}
                   label="订单条目"
                   dialogTitle="选择可入库订单条目"
                   placeholder={oiGridFilter ? '点击选择订单条目…' : '先选齐公司与对手'}
@@ -685,7 +621,6 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               />
               <SynieEditableTable
                 resource="purReceiptItems"
-                client={purchaseReceiptItemClient}
                 label="入库条目"
                 items={items}
                 onChange={setItems}
@@ -815,37 +750,29 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
           )
         }}
         onSubmit={async (values, mode) => {
+          assertAggregateDraftReady(mode, detailLoaded, '采购入库明细')
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          let savedId: string
+          const draft = buildPurchaseReceiptDraft(
+            { ...draftHeadRef.current, ...values },
+            items,
+          )
+          let saved: Row
           if (mode === 'create') {
-            const saved = await purchaseReceiptClient.create(values)
-            const receiptId = String(saved.id)
-            const itemErrors = await persistItems(receiptId, items, [])
-            if (itemErrors.length > 0) {
-              toast.danger('入库单已创建,但部分条目保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('采购入库单已创建')
-            }
-            savedId = receiptId
+            saved = await purchaseReceiptDraft.createDraft(draft)
+            toast.success('采购入库单已创建')
           } else {
-            await purchaseReceiptClient.update(drawer!.row!.id, values)
-            const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
-            if (itemErrors.length > 0) {
-              toast.danger('入库单已更新,但部分条目保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('采购入库单已更新')
-            }
-            savedId = drawer!.row!.id
+            saved = await purchaseReceiptDraft.replaceDraft(
+              drawer!.row!.id,
+              draft,
+            )
+            toast.success('采购入库单已更新')
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purReceipts'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purReceiptItems'] })
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'purReceipts'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOrderItems'] })
-          return savedId
+          await Promise.all([
+            purchaseReceiptBinding.cache.invalidateAll(queryClient),
+            purchaseReceiptItemBinding.cache.invalidateGrid(queryClient),
+            purchaseOrderItemBinding.cache.invalidateGrid(queryClient),
+          ])
+          return String(saved.id)
         }}
       />
     </ReceiptDrawerContext.Provider>

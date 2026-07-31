@@ -1,12 +1,15 @@
-import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
 import {
   createCommandAdapter,
   createRowCommandAdapter,
   decodeRowTarget,
   defineCommand,
 } from './catalog/commands'
+import {
+  decimalWireInput,
+  resourceListBody,
+} from './resource-wire'
 import type { ResourceQuery, ResourceTransport } from './types'
 
 type BankAccountCreate = Record<string, unknown>
@@ -73,34 +76,11 @@ const metaNames = [
 
 type FinanceMetaName = (typeof metaNames)[number]
 
-function queryBody(input: ResourceQuery): ListQuery {
-  if (input.extraFields?.length || input.joinFields) {
-    throw new Error('财务 REST 资源不支持额外字段或 joinFields')
-  }
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: {
-      ...(input.filter ?? {}),
-      ...((input.fixedFilter ?? {}) as FilterState),
-    } as FilterState,
-  }
-}
-
-function decimalInput(
-  input: Record<string, unknown>,
-  fields: readonly string[],
-) {
-  const result = { ...input }
-  for (const field of fields) {
-    if (!Object.hasOwn(input, field)) continue
-    const value = input[field]
-    result[field] = value == null || value === '' ? null : String(value)
-  }
-  return result
-}
+const listWireOptions = {
+  resourceLabel: '财务',
+  extraFields: 'reject',
+  joinFields: 'reject',
+} as const
 
 type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
   Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
@@ -119,9 +99,9 @@ const bankAmountFields = ['income', 'expense', 'balance'] as const
 
 export const bankAccountClient = resourceClient('accBankAccounts', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.finance['bank-accounts'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -145,7 +125,7 @@ export const bankAccountClient = resourceClient('accBankAccounts', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.finance['bank-accounts'][':id'].$delete({
         param: { id }}),
     )
@@ -154,9 +134,9 @@ export const bankAccountClient = resourceClient('accBankAccounts', {
 
 export const bankTransactionClient = resourceClient('accBankTransactions', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.finance['bank-transactions'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -169,18 +149,18 @@ export const bankTransactionClient = resourceClient('accBankTransactions', {
   async create(input) {
     return (await apiData(
       api.finance['bank-transactions'].$post({
-        json: decimalInput(input, bankAmountFields) as never}),
+        json: decimalWireInput(input, bankAmountFields) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.finance['bank-transactions'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, bankAmountFields) as never}),
+        json: decimalWireInput(input, bankAmountFields) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.finance['bank-transactions'][':id'].$delete({
         param: { id }}),
     )
@@ -191,9 +171,9 @@ export const bankImportTemplateClient = resourceClient(
   'accBankImportTemplates',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.finance['bank-import-templates'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input, listWireOptions)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -217,7 +197,7 @@ export const bankImportTemplateClient = resourceClient(
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.finance['bank-import-templates'][':id'].$delete({
           param: { id }}),
       )
@@ -227,9 +207,9 @@ export const bankImportTemplateClient = resourceClient(
 
 export const bankImportClient = resourceClient('accBankImports', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.finance['bank-imports'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -246,7 +226,7 @@ export const bankImportClient = resourceClient('accBankImports', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.finance['bank-imports'][':id'].$delete({
         param: { id }}),
     )
@@ -262,9 +242,9 @@ export async function importBankImport(id: string): Promise<BankImportRow> {
 
 export const bankImportItemClient = resourceClient('accBankImportItems', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.finance['bank-import-items'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -278,11 +258,11 @@ export const bankImportItemClient = resourceClient('accBankImportItems', {
     return (await apiData(
       api.finance['bank-import-items'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, bankAmountFields) as never}),
+        json: decimalWireInput(input, bankAmountFields) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.finance['bank-import-items'][':id'].$delete({
         param: { id }}),
     )
@@ -293,9 +273,9 @@ export const bankReconciliationClient = resourceClient(
   'accBankReconciliations',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.finance['bank-reconciliations'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input, listWireOptions)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -308,11 +288,11 @@ export const bankReconciliationClient = resourceClient(
     async create(input) {
       return (await apiData(
         api.finance['bank-reconciliations'].$post({
-          json: decimalInput(input, ['amount']) as never}),
+          json: decimalWireInput(input, ['amount']) as never}),
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.finance['bank-reconciliations'][':id'].$delete({
           param: { id }}),
       )
@@ -324,7 +304,7 @@ export async function fetchBankReconciliationRemaining(
   bankTransactionId: string,
   journalId: string,
 ) {
-  const result = await apiData<{ amount: string }>(
+  const result = await apiData(
     api.finance['bank-reconciliations'].remaining.$get({
       query: { bankTransactionId, journalId },
     }),
@@ -357,34 +337,38 @@ export type BankReconcileCommandInput = {
  * 快速新建凭证并对账仍走 quickCreateBankReconciliation（复合 UI 流程）。
  */
 export const bankTransactionCommandAdapter = createCommandAdapter({
-  reconcile: defineCommand('row', async (input: unknown) => {
-    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-      throw new Error('reconcile 输入须为对象')
-    }
-    const raw = input as Record<string, unknown>
-    const id = decodeRowTarget({ id: raw.id })
-    const journalId = raw.journalId
-    if (typeof journalId !== 'string' || journalId.trim() === '') {
-      throw new Error('reconcile 需要 journalId')
-    }
-    if (raw.amount === undefined || raw.amount === null || raw.amount === '') {
-      throw new Error('reconcile 需要 amount')
-    }
-    return bankReconciliationClient.create({
-      bankTransactionId: id,
-      journalId,
-      amount: String(raw.amount),
-    })
-  }),
+  reconcile: defineCommand(
+    'row',
+    async (input: unknown) => {
+      if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+        throw new Error('reconcile 输入须为对象')
+      }
+      const raw = input as Record<string, unknown>
+      const id = decodeRowTarget({ id: raw.id })
+      const journalId = raw.journalId
+      if (typeof journalId !== 'string' || journalId.trim() === '') {
+        throw new Error('reconcile 需要 journalId')
+      }
+      if (raw.amount === undefined || raw.amount === null || raw.amount === '') {
+        throw new Error('reconcile 需要 amount')
+      }
+      return bankReconciliationClient.create({
+        bankTransactionId: id,
+        journalId,
+        amount: String(raw.amount),
+      })
+    },
+    { affectedResources: ['accBankReconciliations'] },
+  ),
 })
 
 const invoiceAmounts = ['netTotal', 'taxTotal', 'grossTotal'] as const
 
 export const vatInvoiceClient = resourceClient('accVatInvoices', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.finance['vat-invoices'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -397,18 +381,18 @@ export const vatInvoiceClient = resourceClient('accVatInvoices', {
   async create(input) {
     return (await apiData(
       api.finance['vat-invoices'].$post({
-        json: decimalInput(input, invoiceAmounts) as never}),
+        json: decimalWireInput(input, invoiceAmounts) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.finance['vat-invoices'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, invoiceAmounts) as never}),
+        json: decimalWireInput(input, invoiceAmounts) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.finance['vat-invoices'][':id'].$delete({
         param: { id }}),
     )
@@ -474,9 +458,9 @@ export function ocrVatInvoice(fileId: string): Promise<FinanceOCRResult> {
 
 export const expenseReportClient = resourceClient('accExpenseReports', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.finance['expense-reports'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -500,7 +484,7 @@ export const expenseReportClient = resourceClient('accExpenseReports', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.finance['expense-reports'][':id'].$delete({
         param: { id }}),
     )
@@ -532,9 +516,9 @@ export const expenseReportItemClient = resourceClient(
   'accExpenseReportItems',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.finance['expense-report-items'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input, listWireOptions)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -547,18 +531,18 @@ export const expenseReportItemClient = resourceClient(
     async create(input) {
       return (await apiData(
         api.finance['expense-report-items'].$post({
-          json: decimalInput(input, ['amount']) as never}),
+          json: decimalWireInput(input, ['amount']) as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
         api.finance['expense-report-items'][':id'].$patch({
           param: { id },
-          json: decimalInput(input, ['amount']) as never}),
+          json: decimalWireInput(input, ['amount']) as never}),
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.finance['expense-report-items'][':id'].$delete({
           param: { id }}),
       )
@@ -617,8 +601,8 @@ export async function saveExpenseReportItems(
 
 export const billClient = resourceClient('accBills', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.finance.bills.query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.finance.bills.query.$post({ json: resourceListBody(input, listWireOptions) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -632,11 +616,11 @@ export const billClient = resourceClient('accBills', {
     return (await apiData(
       api.finance.bills[':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['faceAmount']) as never}),
+        json: decimalWireInput(input, ['faceAmount']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.finance.bills[':id'].$delete({
         param: { id }}),
     )
@@ -652,9 +636,9 @@ const billAmounts = [
 
 export const billTransactionClient = resourceClient('accBillTransactions', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.finance['bill-transactions'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -667,18 +651,18 @@ export const billTransactionClient = resourceClient('accBillTransactions', {
   async create(input) {
     return (await apiData(
       api.finance['bill-transactions'].$post({
-        json: decimalInput(input, billAmounts) as never}),
+        json: decimalWireInput(input, billAmounts) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.finance['bill-transactions'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, billAmounts) as never}),
+        json: decimalWireInput(input, billAmounts) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.finance['bill-transactions'][':id'].$delete({
         param: { id }}),
     )
@@ -714,9 +698,9 @@ export function ocrBillTransaction(fileId: string): Promise<FinanceOCRResult> {
 
 export const billHoldingClient = resourceClient('accBillHoldings', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.finance['bill-holdings'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },

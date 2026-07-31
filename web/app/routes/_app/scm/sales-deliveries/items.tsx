@@ -4,7 +4,6 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useAuditDoc } from '../-audit-doc'
-import { salesDeliveryItemClient } from '~/lib/resources/fulfillment'
 import { deliveryAuditConfig, useDeliveryDrawer } from './-delivery-drawer'
 
 export const Route = createFileRoute('/_app/scm/sales-deliveries/items')({
@@ -70,7 +69,6 @@ function DeliveryItemsTab() {
     <>
       <SynieDataGrid
         resource="salDeliveryItems"
-        client={salesDeliveryItemClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'deliveryDate', direction: 'descending' }}

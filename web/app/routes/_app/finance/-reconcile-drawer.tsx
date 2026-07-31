@@ -15,12 +15,11 @@ import { formatAmount } from '~/lib/amount'
 import { bankAccountClient } from '~/lib/resources/finance-operations'
 import {
   bankReconciliationClient,
-  bankTransactionClient,
   fetchBankReconciliationRemaining,
   quickCreateBankReconciliation,
 } from '~/lib/resources/finance-operations'
 import { resourceBindingFor } from '~/lib/resources/registry'
-import { glJournalClient } from '~/lib/resources/accounting'
+import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -43,7 +42,6 @@ export function FinanceReconcileDrawer({
     <SynieRecordDrawer
       key={txn?.id ?? ''}
       resource="accBankTransactions"
-      client={bankTransactionClient}
       label="流水对账"
       mode="view"
       isOpen={txn !== null}
@@ -56,12 +54,13 @@ export function FinanceReconcileDrawer({
           <FinanceReconcileSection
             txn={row}
             onChanged={() => {
-              queryClient.invalidateQueries({
-                queryKey: ['rowById', 'accBankTransactions', row.id],
-              })
-              queryClient.invalidateQueries({
-                queryKey: ['gridRows', 'accBankReconciliations'],
-              })
+              void resourceBindingFor('accBankTransactions').cache.invalidateRow(
+                queryClient,
+                row.id,
+              )
+              void resourceBindingFor('accBankReconciliations').cache.invalidateGrid(
+                queryClient,
+              )
               onChanged()
             }}
           />
@@ -125,7 +124,6 @@ function FinanceReconcileSection({
       </div>
       <SynieDataGrid
         resource="accBankReconciliations"
-        client={bankReconciliationClient}
         columns={['journalId', 'amount', 'insertedAt']}
         fixedFilter={{
           bankTransactionId: {
@@ -215,6 +213,7 @@ function LinkJournalModal({
   const [picked, setPicked] = useState<Row[]>([])
   const [amount, setAmount] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const queryClient = useQueryClient()
   const journal = picked[0]
 
   const close = () => {
@@ -233,7 +232,6 @@ function LinkJournalModal({
           <Modal.Body>
             <SynieDataGrid
               resource="accGlJournals"
-              client={glJournalClient}
               columns={[
                 'voucherNo',
                 'date',
@@ -293,13 +291,15 @@ function LinkJournalModal({
                 setSubmitting(true)
                 try {
                   // 语义 command reconcile：row target + transport 仅在 CommandAdapter
-                  await resourceBindingFor('accBankTransactions').commands!.execute(
+                  await executeCommandWithInvalidation(
+                    resourceBindingFor('accBankTransactions'),
                     'reconcile',
                     {
                       id: String(txn.id),
                       journalId: String(journal.id),
                       amount: String(amount),
                     },
+                    queryClient,
                   )
                   close()
                   onChanged()

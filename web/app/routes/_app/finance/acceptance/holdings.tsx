@@ -10,9 +10,8 @@ import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-
 import type { Row, RowAction } from '~/components/synie-data-grid/types'
 import {
   billClient,
-  billHoldingClient,
-  billTransactionClient,
 } from '~/lib/resources/finance-operations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import {
   AcceptanceTransactionDrawer,
   TX_TYPE_LABEL,
@@ -88,9 +87,9 @@ function BillHoldingsPage() {
   ]
 
   const invalidateAcceptance = () => {
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBillTransactions'] })
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBillHoldings'] })
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBills'] })
+    void resourceBindingFor('accBillTransactions').cache.invalidateGrid(queryClient)
+    void resourceBindingFor('accBillHoldings').cache.invalidateGrid(queryClient)
+    void resourceBindingFor('accBills').cache.invalidateGrid(queryClient)
   }
 
   return (
@@ -102,7 +101,6 @@ function BillHoldingsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="accBillHoldings"
-          client={billHoldingClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'dueDate', direction: 'ascending' }}
@@ -118,7 +116,6 @@ function BillHoldingsPage() {
 
       <SynieRecordDrawer
         resource="accBillHoldings"
-        client={billHoldingClient}
         label="持有承兑"
         mode="view"
         isOpen={viewRow !== null}
@@ -133,7 +130,6 @@ function BillHoldingsPage() {
       <SynieRecordDrawer
         {...drawerConfig('accBills')}
         resource="accBills"
-        client={billClient}
         mode="edit"
         isOpen={billEdit !== null}
         onOpenChange={(open) => !open && setBillEdit(null)}
@@ -142,8 +138,10 @@ function BillHoldingsPage() {
           await billClient.update(billEdit!.billId, values)
           toast.success('票据已更新')
           // 持有段冗余票号/到期日取自票据主档,一并失效
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBills'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBillHoldings'] })
+          await Promise.all([
+            resourceBindingFor('accBills').cache.invalidateGrid(queryClient),
+            resourceBindingFor('accBillHoldings').cache.invalidateGrid(queryClient),
+          ])
         }}
       />
     </>

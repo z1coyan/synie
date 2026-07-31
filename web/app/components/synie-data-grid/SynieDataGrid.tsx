@@ -5,7 +5,8 @@ import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, Search
 import type { Selection } from 'react-aria-components'
 import { isForbidden } from '~/lib/errors'
 import { useMediaQuery } from '~/lib/use-media-query'
-import { resourceBindingFor, resourceTransportFromResourceBinding } from '~/lib/resources/registry'
+import { createResourceQueryCache } from '~/lib/resources/catalog'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import type { ResourceTransport } from '~/lib/resources/types'
 import { AttachmentImagesCell } from './attachment-images-cell'
 import { cardFields } from './card-fields'
@@ -63,7 +64,8 @@ export interface SynieDataGridProps {
   /** 与后端 GridMeta 白名单同名,如 "sysRoles" */
   resource: string
   /**
-   * 可选传输覆盖；缺省经 ResourceBinding 解析。
+   * @deprecated 生产调用只传 resource。仅保留给显式测试/本地 Adapter；
+   * 缺省直接使用 ResourceBinding.reader。
    * Meta 始终从 Catalog 拉取，不经 client.meta。
    */
   client?: ResourceTransport
@@ -164,7 +166,12 @@ export function selectedRows(selection: Selection, rows: Row[]): Row[] {
 export function SynieDataGrid(props: SynieDataGridProps) {
   const { resource, exclude = EMPTY_EXCLUDE, overrides = EMPTY_OVERRIDES } = props
   const binding = resourceBindingFor(resource)
-  const client = props.client ?? resourceTransportFromResourceBinding(resource)
+  // 显式 client 只服务测试/本地 Adapter 这一真实第二 Adapter；即使覆盖 Reader，
+  // 缓存身份仍在本模块内构造，调用者不需要知道 key 中包含 Adapter id。
+  const reader = props.client ?? binding.reader
+  const queryCache = props.client
+    ? createResourceQueryCache(resource, props.client.id)
+    : binding.cache
 
   const meta = useGridMeta(resource, true)
   const pickMode = props.pick != null
@@ -233,10 +240,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   }, [fixedFilterKey])
 
   const rowsQuery = useQuery({
-    queryKey: [
-      'gridRows',
-      client.id,
-      resource,
+    queryKey: queryCache.gridKey(
       treeActive,
       page,
       pageSize,
@@ -246,11 +250,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       fixedFilterKey,
       // extraFields 影响 results 形状,进 key 防与无 extra 的列表缓存串味
       queryExtraFieldsOrUndef?.slice().sort().join(',') ?? '',
-    ],
+    ),
     enabled: !!meta.data,
     placeholderData: keepPreviousData,
     queryFn: () =>
-      client.query({
+      reader.query({
         limit: treeActive ? TREE_LEVEL_LIMIT : pageSize,
         offset: treeActive ? 0 : (page - 1) * pageSize,
         search: treeActive ? undefined : search,
@@ -292,7 +296,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   // 展开某节点时按 parentField eq 拉它的直接子层,结果进缓存;getChildren 从缓存读,折叠不清缓存
   const fetchChildren = (parentId: string) => {
     setLoadingParents((prev) => new Set(prev).add(parentId))
-    client
+    reader
       .query({
         limit: TREE_LEVEL_LIMIT,
         offset: 0,
@@ -463,7 +467,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     setExporting(true)
     const id = toast(`正在导出…`, { isLoading: true, timeout: 0 })
     try {
-      const all = await fetchAllRows(client, {
+      const all = await fetchAllRows(reader, {
         search,
         sort,
         filter: filters,

@@ -3,8 +3,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
-import { attendanceDayClient } from '~/lib/resources/hr-operations'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
@@ -108,13 +108,13 @@ function AttendanceDaysPage() {
     try {
       if (!binding.commands) throw new Error('日考勤未绑定 recalc 命令')
       // collection command：日期区间 payload，不传伪造记录 ID
-      const count = (await binding.commands.execute('recalc', {
-        dateFrom,
-        dateTo,
-      })) as number
+      const count = (await executeCommandWithInvalidation(
+        binding,
+        'recalc',
+        { dateFrom, dateTo },
+        queryClient,
+      )) as number
       toast.success(`已重算 ${count} 个员工日`)
-      queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrAttendanceDays'] })
-      queryClient.invalidateQueries({ queryKey: ['rowById', 'hrAttendanceDays'] })
       setRecalcOpen(false)
     } catch (e) {
       toast.danger('重算失败', { description: (e as Error).message })
@@ -140,7 +140,6 @@ function AttendanceDaysPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrAttendanceDays"
-          client={attendanceDayClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'date', direction: 'descending' }}
@@ -150,7 +149,6 @@ function AttendanceDaysPage() {
 
       <SynieRecordDrawer
         resource="hrAttendanceDays"
-        client={attendanceDayClient}
         label="日考勤"
         mode="view"
         isOpen={viewRow !== null}

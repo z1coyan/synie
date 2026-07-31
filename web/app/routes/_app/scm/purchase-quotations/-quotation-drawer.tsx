@@ -3,28 +3,33 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, TextArea, TextField, toast } from '@heroui/react'
 import { formatPrice } from '~/lib/amount'
 import { companyClient } from '~/lib/resources/companies'
+import { purchaseQuotationItemClient } from '~/lib/resources/quotations'
+import { buildQuotationDraft } from '~/lib/resources/quotation-draft'
+import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import {
-  auditPurchaseQuotation,
-  purchaseQuotationClient,
-  purchaseQuotationItemClient,
-  purchaseQuotationTierClient,
-} from '~/lib/resources/quotations'
+  aggregateDraftFor,
+  resourceBindingFor,
+} from '~/lib/resources/registry'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
+
+const purchaseQuotationBinding = resourceBindingFor('purQuotations')
+const purchaseQuotationItemBinding = resourceBindingFor('purQuotationItems')
+const purchaseQuotationTierBinding = resourceBindingFor('purQuotationTiers')
+const purchaseQuotationDraft = aggregateDraftFor('purQuotations')
 
 /**
  * 采购报价单共享抽屉:布局层挂载一份,报价单 tab(整单 grid)与报价条目 tab(行级 grid)
  * 经 context 调起同一个三态抽屉。三层录入:报价抽屉 → 条目表(SynieEditableTable)→
  * 条目二级抽屉内嵌价格档子表(extraContent 透传,数量梯度条目专用)。
  * 价格档草稿由本页自持(collectValues 会剥离非字段键,不能塞进抽屉草稿),
- * 提交经条目 transformItem 并入行数据、persistItems 时按差异持久化。
+ * 提交时组装 Aggregate Draft,由适配器一次性持久化报价头、条目和价格档。
  * 与销售报价的唯一差异:对手限供应商/内部公司,条目选料不校验客户物料约束(任何物料可录)。
  */
 
@@ -42,6 +47,8 @@ export type OpenQuotationDrawer = (mode: DrawerMode, quotation: QuotationRef | n
 // 梯度行单价为空属正常(价在价格档上),定价模式列已标明
 export const purchaseQuotationAuditConfig = {
   docLabel: '采购报价单',
+  resource: 'purQuotations',
+  commandKey: 'audit',
   itemsResource: 'purQuotationItems',
   loadItems: (quotationId: string) =>
     purchaseQuotationItemClient
@@ -54,7 +61,6 @@ export const purchaseQuotationAuditConfig = {
         },
       })
       .then((result) => result.results),
-  audit: auditPurchaseQuotation,
   columns: [
     { key: 'materialName', label: '物料', render: auditMaterialCell() },
     { key: 'unitName', label: '单位' },
@@ -82,115 +88,8 @@ export function useQuotationDrawer(): OpenQuotationDrawer {
   return useContext(QuotationDrawerContext)
 }
 
-// mutation input 只收行自身字段:companyId 冗余自报价单(后端回填)、快照字段由后端保存时
-// 重拍;梯度行单价强制空置(后端 PricingRules 兜底);tiers/join 对象不进 payload
-function itemInput(row: Row) {
-  return {
-    idx: row.idx,
-    materialId: row.materialId,
-    unitId: row.unitId,
-    pricingMode: row.pricingMode,
-    price: row.pricingMode === 'QTY_TIERED' ? null : row.price,
-    taxRate: row.taxRate,
-    remarks: row.remarks ?? null,
-  }
-}
-
-const ITEM_COMPARE_KEYS = ['idx', 'materialId', 'unitId', 'pricingMode', 'price', 'taxRate', 'remarks'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
 function rowTiers(row: Row): Row[] {
   return (row.tiers as Row[] | undefined) ?? []
-}
-
-function tierChanged(before: Row, after: Row): boolean {
-  return String(before.minQty ?? '') !== String(after.minQty ?? '') || String(before.price ?? '') !== String(after.price ?? '')
-}
-
-/** 单个条目的价格档差异持久化(条目已存在/已更新后调用);切回固定价由后端清档,不在此发删除 */
-async function persistTiers(itemId: string, itemIdx: unknown, row: Row, snapshot: Row[], errors: string[]) {
-  const attempt = async (operation: () => Promise<unknown>) => {
-    try {
-      await operation()
-    } catch (error) {
-      errors.push(`第${itemIdx}行价格档:${(error as Error).message}`)
-    }
-  }
-  if (row.pricingMode !== 'QTY_TIERED') return
-
-  const current = rowTiers(row)
-  const currentIds = new Set(current.filter((t) => !isLocalRow(t)).map((t) => t.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await attempt(() => purchaseQuotationTierClient.delete(String(old.id)))
-  }
-
-  for (const tier of current) {
-    if (isLocalRow(tier)) {
-      await attempt(() =>
-        purchaseQuotationTierClient.create({
-          itemId,
-          minQty: tier.minQty,
-          price: tier.price,
-        }),
-      )
-      continue
-    }
-    const old = snapshot.find((s) => s.id === tier.id)
-    if (old && tierChanged(old, tier)) {
-      await attempt(() =>
-        purchaseQuotationTierClient.update(String(tier.id), {
-          minQty: tier.minQty,
-          price: tier.price,
-        }),
-      )
-    }
-  }
-}
-
-/**
- * 行差异持久化:本地草稿行 create(再建其价格档);存量行有变 update,档按差异增改删;
- * 快照有、当前无 destroy(档随行 DB 级联)。全程收集错误文案(带行号定位),
- * 不中途抛出(同销售报价先例)。条目先于档写入——固定价切梯度时档必须挂在已是梯度模式的行上。
- */
-async function persistItems(quotationId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const attempt = async <T,>(idx: unknown, operation: () => Promise<T>): Promise<T | null> => {
-    try {
-      return await operation()
-    } catch (error) {
-      errors.push(`第${idx}行:${(error as Error).message}`)
-      return null
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await attempt(old.idx, () => purchaseQuotationItemClient.delete(String(old.id)))
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      const created = await attempt(row.idx, () =>
-        purchaseQuotationItemClient.create({ quotationId, ...itemInput(row) }),
-      )
-      if (created?.id) await persistTiers(String(created.id), row.idx, row, [], errors)
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      await attempt(row.idx, () =>
-        purchaseQuotationItemClient.update(String(row.id), itemInput(row)),
-      )
-    }
-    await persistTiers(String(row.id), row.idx, row, old ? rowTiers(old) : [], errors)
-  }
-  return errors
 }
 
 // 税率库存小数(0.13),前端一律按百分比展示/录入
@@ -281,7 +180,6 @@ function TierEditor({
   return (
     <SynieEditableTable
       resource="purQuotationTiers"
-      client={purchaseQuotationTierClient}
       label="价格档"
       items={tiers}
       onChange={onChange}
@@ -308,7 +206,6 @@ function TierEditor({
 export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; quotation: QuotationRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   // 报价条款不走抽屉字段(要排在条目表之下,抽屉 extraContent 固定在字段后渲染),由页面自持
   const [terms, setTerms] = useState('')
   // edit/view 态条目与条款靠 REST 异步拉取,未完成前禁止编辑,防回填覆盖在输行
@@ -318,64 +215,34 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张单的行回填到当前单
   const reqIdRef = useRef(0)
+  const draftHeadRef = useRef<Row | null>(null)
 
   const openDrawer: OpenQuotationDrawer = useCallback((mode, quotation) => {
     const my = ++reqIdRef.current
     setDrawer({ mode, quotation })
+    draftHeadRef.current = null
     if (mode === 'create') {
       setItems([])
-      setItemsSnapshot([])
       setTerms('')
       setDetailLoaded(true)
       return
     }
     setDetailLoaded(false)
-    Promise.all([
-      purchaseQuotationClient.get(quotation!.id),
-      purchaseQuotationItemClient.query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        fixedFilter: {
-          quotationId: { kind: 'fk', op: 'in', values: [quotation!.id], labels: [] },
-        },
-      }),
-    ])
-      .then(async ([head, itemResult]) => {
-        const itemIds = itemResult.results.map((row) => String(row.id))
-        const tierResult =
-          itemIds.length === 0
-            ? { results: [] as Row[] }
-            : await purchaseQuotationTierClient.query({
-                limit: 1000,
-                offset: 0,
-                sort: { column: 'minQty', direction: 'ascending' },
-                fixedFilter: {
-                  itemId: { kind: 'fk', op: 'in', values: itemIds, labels: [] },
-                },
-              })
+    purchaseQuotationDraft
+      .loadDraft(quotation!.id)
+      .then((draft) => {
         if (my !== reqIdRef.current) return
-        // 价格档按 itemId 归组挂上行(行内 tiers 保持起订量升序,查询已排序)
-        const byItem = new Map<string, Row[]>()
-        for (const t of tierResult.results) {
-          const key = String(t.itemId)
-          byItem.set(key, [...(byItem.get(key) ?? []), t])
-        }
-        const rows = itemResult.results.map((r) => ({
-          ...r,
-          tiers: byItem.get(String(r.id)) ?? [],
-        }))
-        setTerms(String(head?.terms ?? ''))
-        setItems(rows)
-        setItemsSnapshot(rows)
+        draftHeadRef.current = draft
+        setTerms(String(draft.terms ?? ''))
+        setItems(draft.items)
         setDetailLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
+        draftHeadRef.current = null
         toast.danger('报价单详情加载失败', { description: (e as Error).message })
         setTerms('')
         setItems([])
-        setItemsSnapshot([])
       })
   }, [])
 
@@ -398,18 +265,18 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
 
       <SynieRecordDrawer
         resource="purQuotations"
-        client={purchaseQuotationClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
+        isSubmitDisabled={drawer?.mode === 'edit' && !detailLoaded}
         onOpenChange={(open) => {
           if (open) return
-          // 关闭即作废在途请求并清空快照,防止残留快照被下次提交按差异写误用到别的报价单
+          // 关闭即作废在途请求并清空本地草稿,防止慢响应回填到下一张报价单
           reqIdRef.current++
           setDrawer(null)
           setItems([])
-          setItemsSnapshot([])
           setTerms('')
+          draftHeadRef.current = null
         }}
         // 表格列是白名单子集,行数据不全(缺条款/备注);不传 row,走 rowId 自查完整记录
         rowId={drawer?.quotation?.id}
@@ -423,7 +290,6 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
             <CompanyCurrencyDefault mode={mode} row={row} values={values} patchValues={patchValues} />
             <SynieEditableTable
               resource="purQuotationItems"
-              client={purchaseQuotationItemClient}
               label="报价条目"
               items={items}
               onChange={setItems}
@@ -592,41 +458,30 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
           </>
         )}
         onSubmit={async (values, mode) => {
+          assertAggregateDraftReady(mode, detailLoaded, '采购报价明细')
+          const draft = buildQuotationDraft(
+            { ...draftHeadRef.current, ...values },
+            terms,
+            items,
+          )
           // 返回值供抽屉「保存并审核」取 id 调 REST action(通用约定)
-          let savedId: string
+          let saved: Row
           if (mode === 'create') {
-            const created = await purchaseQuotationClient.create({
-              ...values,
-              terms: terms === '' ? null : terms,
-            })
-            const quotationId = String(created.id)
-            const itemErrors = await persistItems(quotationId, items, [])
-            if (itemErrors.length > 0) {
-              toast.danger('报价单已创建,但部分条目保存失败', { description: itemErrors.join('; ') })
-            } else {
-              toast.success('采购报价单已创建')
-            }
-            savedId = quotationId
+            saved = await purchaseQuotationDraft.createDraft(draft)
+            toast.success('采购报价单已创建')
           } else {
-            const quotationId = drawer!.quotation!.id
-            await purchaseQuotationClient.update(quotationId, {
-              ...values,
-              terms: terms === '' ? null : terms,
-            })
-            const itemErrors = await persistItems(quotationId, items, itemsSnapshot)
-            if (itemErrors.length > 0) {
-              toast.danger('报价单已更新,但部分条目保存失败', { description: itemErrors.join('; ') })
-            } else {
-              toast.success('采购报价单已更新')
-            }
-            savedId = quotationId
+            saved = await purchaseQuotationDraft.replaceDraft(
+              drawer!.quotation!.id,
+              draft,
+            )
+            toast.success('采购报价单已更新')
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purQuotations'] })
-          // 条目 tab 的行级 grid 也要失效:条目/价格档增删改都落在 purQuotationItems 上
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purQuotationItems'] })
-          // 抽屉走 rowId 自查,一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'purQuotations'] })
-          return savedId
+          await Promise.all([
+            purchaseQuotationBinding.cache.invalidateAll(queryClient),
+            purchaseQuotationItemBinding.cache.invalidateGrid(queryClient),
+            purchaseQuotationTierBinding.cache.invalidateGrid(queryClient),
+          ])
+          return String(saved.id)
         }}
       />
     </QuotationDrawerContext.Provider>

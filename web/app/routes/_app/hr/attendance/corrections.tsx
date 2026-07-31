@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { parseTime } from '@internationalized/date'
 import { Button, DateField, Label, TimeField, toast } from '@heroui/react'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -94,17 +95,15 @@ function TimesEditor(props: { value: unknown; onChange: (v: unknown) => void; is
 function AttendanceCorrectionsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
-  const { binding, client, formProps } = useCatalogBasicForm(
+  const { binding, formProps } = useCatalogBasicForm(
     'hrAttendanceCorrections',
     '补卡单',
   )
 
   // 补卡增删改都会触发后端重算,日考勤一并失效
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrAttendanceCorrections'] })
-    queryClient.invalidateQueries({ queryKey: ['rowById', 'hrAttendanceCorrections'] })
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrAttendanceDays'] })
-    queryClient.invalidateQueries({ queryKey: ['rowById', 'hrAttendanceDays'] })
+    void binding.cache.invalidateAll(queryClient)
+    void resourceBindingFor('hrAttendanceDays').cache.invalidateAll(queryClient)
   }
 
   return (
@@ -116,7 +115,6 @@ function AttendanceCorrectionsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrAttendanceCorrections"
-          client={client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'insertedAt', direction: 'descending' }}
@@ -129,7 +127,6 @@ function AttendanceCorrectionsPage() {
 
       <SynieRecordDrawer
         resource="hrAttendanceCorrections"
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}

@@ -35,7 +35,7 @@ const GRID_OVERRIDES = {
 function EmployeeLoansPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
-  const { binding, client, formProps } = useCatalogBasicForm(
+  const { binding, formProps } = useCatalogBasicForm(
     'hrEmployeeLoans',
     '员工借款',
   )
@@ -46,8 +46,7 @@ function EmployeeLoansPage() {
   })
 
   const invalidateAll = () => {
-    void queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrEmployeeLoans'] })
-    void queryClient.invalidateQueries({ queryKey: ['rowById', 'hrEmployeeLoans'] })
+    void binding.cache.invalidateAll(queryClient)
     void queryClient.invalidateQueries({ queryKey: ['loanBalances'] })
   }
 
@@ -103,7 +102,6 @@ function EmployeeLoansPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrEmployeeLoans"
-          client={client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'occurredOn', direction: 'descending' }}
@@ -118,7 +116,6 @@ function EmployeeLoansPage() {
 
       <SynieRecordDrawer
         resource="hrEmployeeLoans"
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}

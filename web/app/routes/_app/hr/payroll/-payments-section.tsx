@@ -137,7 +137,6 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
       {/* 登记发放/补发:二级抽屉复用 RecordDrawer 表单机制;payrollId 固定注入不进表单 */}
       <SynieRecordDrawer
         resource="hrPayrollPayments"
-        client={paymentForm.client}
         label={isPaid ? '补发' : '发放'}
         mode="create"
         isOpen={createOpen}

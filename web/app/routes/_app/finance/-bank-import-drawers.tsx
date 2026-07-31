@@ -14,6 +14,7 @@ import {
   importBankImport,
   type BankImportRow,
 } from '~/lib/resources/finance-operations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 const historyColumns = [
   'companyId',
@@ -71,9 +72,7 @@ export function FinanceBankImportDrawers(props: Props) {
   }, [props.createOpen])
 
   const refreshRecord = () => {
-    queryClient.invalidateQueries({
-      queryKey: ['rowById', 'accBankImports'],
-    })
+    void resourceBindingFor('accBankImports').cache.invalidateRow(queryClient)
     setItemsKey((key) => key + 1)
   }
 
@@ -90,7 +89,6 @@ export function FinanceBankImportDrawers(props: Props) {
     <>
       <SynieRecordDrawer
         resource="accBankImports"
-        client={bankImportClient}
         label="流水导入"
         mode="create"
         isOpen={props.createOpen}
@@ -240,7 +238,6 @@ export function FinanceBankImportDrawers(props: Props) {
                 <SynieDataGrid
                   key={props.historyKey}
                   resource="accBankImports"
-                  client={bankImportClient}
                   columns={historyColumns}
                   defaultSort={{
                     column: 'insertedAt',
@@ -275,7 +272,6 @@ export function FinanceBankImportDrawers(props: Props) {
 
       <SynieRecordDrawer
         resource="accBankImports"
-        client={bankImportClient}
         label="流水导入"
         mode="view"
         isOpen={props.importId !== null}
@@ -295,7 +291,6 @@ export function FinanceBankImportDrawers(props: Props) {
             <SynieDataGrid
               key={itemsKey}
               resource="accBankImportItems"
-              client={bankImportItemClient}
               columns={itemColumns}
               fixedFilter={{
                 importId: {
@@ -343,7 +338,6 @@ export function FinanceBankImportDrawers(props: Props) {
 
       <SynieRecordDrawer
         resource="accBankImportItems"
-        client={bankImportItemClient}
         label="导入行"
         mode={itemDrawer?.mode ?? 'view'}
         isOpen={itemDrawer !== null}

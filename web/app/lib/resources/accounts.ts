@@ -1,5 +1,6 @@
 import { apiData, api } from '../api/client'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
+import { resourceListBody } from './resource-wire'
 import type { ResourceClient } from './types'
 
 type AccountCreate = Record<string, unknown>
@@ -11,18 +12,10 @@ export const accountClient: ResourceClient = {
 
 
   async query(input) {
-    const filter = {
-      ...(input.filter ?? {}),
-      ...((input.fixedFilter ?? {}) as FilterState),
-    }
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.base.accounts.query.$post({
-        json: {
-          limit: input.limit,
-          offset: input.offset,
-          search: input.search || undefined,
-          sort: input.sort ?? undefined,
-          filter: filter as FilterState} }),
+        json: resourceListBody(input),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -48,14 +41,14 @@ export const accountClient: ResourceClient = {
   },
 
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.base.accounts[':id'].$delete({ param: { id } }),
     )
   },
 }
 
 export async function initializeAccountTemplate(companyId: string, template: AccountTemplate) {
-  return apiData<{ createdCount: number }>(
+  return apiData(
     api.base.accounts['init-template'].$post({
       json: { companyId, template },
     }),

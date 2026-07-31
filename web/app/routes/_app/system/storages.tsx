@@ -7,6 +7,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 
 export const Route = createFileRoute('/_app/system/storages')({
   component: StoragesPage,
@@ -25,12 +26,12 @@ function StoragesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [secret, setSecret] = useState('')
   const queryClient = useQueryClient()
-  const { binding, client, formProps } = useCatalogBasicForm(
+  const { binding, formProps } = useCatalogBasicForm(
     'sysStorages',
     '存储接入',
   )
   const invalidateGrid = () =>
-    queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, 'sysStorages'] })
+    binding.cache.invalidateGrid(queryClient)
 
   return (
     <>
@@ -42,7 +43,6 @@ function StoragesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="sysStorages"
-          client={client}
           columns={GRID_COLUMNS}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -60,7 +60,12 @@ function StoragesPage() {
                 }
                 try {
                   if (!binding.commands) throw new Error('存储接入未绑定 setDefault 命令')
-                  await binding.commands.execute('setDefault', { id: String(row.id) })
+                  await executeSingleRowCommandWithInvalidation(
+                    binding.resource,
+                    'setDefault',
+                    String(row.id),
+                    queryClient,
+                  )
                   toast.success(`已将「${String(row.label)}」设为默认存储`)
                   await context.refetch()
                 } catch (error) {
@@ -74,7 +79,6 @@ function StoragesPage() {
 
       <SynieRecordDrawer
         resource="sysStorages"
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}

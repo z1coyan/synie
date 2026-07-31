@@ -102,7 +102,6 @@ function BankTransactionsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accBankTransactions"
-          client={bankTransactionClient}
           columns={GRID_COLUMNS}
           attachmentImages={{ ownerType: 'acc_bank_transaction', label: '回单' }}
           defaultSort={{ column: 'occurredAt', direction: 'descending' }}
@@ -141,15 +140,12 @@ function BankTransactionsPage() {
         onImportIdChange={setImportRecordId}
         onChanged={() => {
           setHistoryKey((key) => key + 1)
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'accBankTransactions'],
-          })
+          void resourceBindingFor('accBankTransactions').cache.invalidateGrid(queryClient)
         }}
       />
 
       <SynieRecordDrawer
         resource="accBankTransactions"
-        client={bankTransactionClient}
         label="银行流水"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -222,7 +218,7 @@ function BankTransactionsPage() {
             await bankTransactionClient.update(drawer!.row!.id, values)
           }
           toast.success(mode === 'create' ? '银行流水已登记' : '银行流水已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankTransactions'] })
+          await resourceBindingFor('accBankTransactions').cache.invalidateGrid(queryClient)
         }}
       />
 
@@ -230,7 +226,9 @@ function BankTransactionsPage() {
         txn={reconcileTxn}
         onOpenChange={(open) => !open && setReconcileTxn(null)}
         // 对账增删改变派生列:失效列表查询即可,分页/筛选状态得以保留(main 的 query 失效范式)
-        onChanged={() => queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankTransactions'] })}
+        onChanged={() =>
+          resourceBindingFor('accBankTransactions').cache.invalidateGrid(queryClient)
+        }
       />
     </>
   )

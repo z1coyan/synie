@@ -15,8 +15,8 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import type { Row } from '~/components/synie-data-grid/types'
 import {
   auditBillTransaction,
-  billTransactionClient,
 } from '~/lib/resources/finance-operations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import {
   AcceptanceTransactionDrawer,
   safeParseDate,
@@ -61,11 +61,11 @@ function BillTransactionsPage() {
   // 两视图同页联动:审核/作废驱动持有重放,接收顺带建档票据——写后统一显式失效兄弟缓存,
   // 免得切 tab 撞上 staleTime 内的陈旧缓存(重挂不重取)
   const invalidateSiblings = () => {
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBillHoldings'] })
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBills'] })
+    void resourceBindingFor('accBillHoldings').cache.invalidateGrid(queryClient)
+    void resourceBindingFor('accBills').cache.invalidateGrid(queryClient)
   }
   const invalidateAcceptance = () => {
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBillTransactions'] })
+    void resourceBindingFor('accBillTransactions').cache.invalidateGrid(queryClient)
     invalidateSiblings()
   }
 
@@ -127,7 +127,6 @@ function BillTransactionsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="accBillTransactions"
-          client={billTransactionClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           attachmentImages={{ ownerType: 'acc_bill_transaction', label: '票面' }}

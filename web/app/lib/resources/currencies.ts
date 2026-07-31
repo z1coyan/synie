@@ -1,35 +1,26 @@
 import { apiData, api } from '../api/client'
-import type {Row, FilterState} from '~/components/synie-data-grid/types'
-import type { ResourceClient, ResourceQuery } from './types'
+import type { Row } from '~/components/synie-data-grid/types'
+import { strictResourceListBody } from './resource-wire'
+import type { ResourceClient } from './types'
 
 type CurrencyCreate = Record<string, unknown>
 type CurrencyUpdate = Record<string, unknown>
-function ensureSupportedQuery(input: ResourceQuery) {
-  if (input.fixedFilter || input.extraFields?.length || input.joinFields) {
-    throw new Error('币种 REST 资源不支持额外字段、joinFields 或受信 fixedFilter')
-  }
-}
 
 export const currencyClient: ResourceClient = {
   id: 'rest:basCurrencies',
 
 
   async query(input) {
-    ensureSupportedQuery(input)
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.base.currencies.query.$post({
-        json: {
-          limit: input.limit,
-          offset: input.offset,
-          search: input.search || undefined,
-          sort: input.sort ?? undefined,
-          filter: input.filter as FilterState} }),
+        json: strictResourceListBody(input, '币种'),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
 
   async get(id) {
-    const result = await apiData<{ count?: number; results?: Row[]; resources?: unknown[] }>(
+    const result = await apiData(
       api.base.currencies[':id'].$get({ param: { id } }),
     )
     return result as Row
@@ -50,7 +41,7 @@ export const currencyClient: ResourceClient = {
   },
 
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.base.currencies[':id'].$delete({ param: { id } }),
     )
   },

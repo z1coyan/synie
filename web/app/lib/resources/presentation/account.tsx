@@ -5,8 +5,6 @@ import type { ResourceBinding } from '../catalog/types'
 import type { PresentationExtension } from './types'
 import type { FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState } from '~/components/synie-data-grid/types'
-import { accountClient } from '../accounts'
-import { currencyClient } from '../currencies'
 
 export const ACCOUNT_RESOURCE = 'basAccounts'
 
@@ -33,7 +31,6 @@ export function createAccountPresentation(
       cols: 6,
       label: '币种',
       remote: {
-        client: currencyClient,
         filterState: { active: { kind: 'bool', eq: true } },
       },
     },
@@ -42,7 +39,6 @@ export function createAccountPresentation(
       cols: 6,
       label: '上级科目',
       remote: {
-        client: accountClient,
         filterState: options?.companyFilter,
       },
     },

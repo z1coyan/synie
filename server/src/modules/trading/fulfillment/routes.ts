@@ -6,7 +6,7 @@ import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { validationHook } from '~/platform/http/zod.ts'
+import { dateOnlySchema, decimalStringSchema, validationHook } from '~/platform/http/zod.ts'
 import { presentKey } from '../common.ts'
 import type { FulfillmentService } from './service.ts'
 
@@ -27,7 +27,7 @@ const salesDraftItemSchema = z
   .object({
     id: z.string().uuid().optional(),
     idx: z.number().int(),
-    qty: z.string().min(1),
+    qty: decimalStringSchema,
     orderItemId: z.string().uuid(),
     unitId: z.string().uuid().nullable().optional(),
     warehouseId: z.string().uuid(),
@@ -39,7 +39,7 @@ const salesDraftPackLineSchema = z
   .object({
     id: z.string().uuid().optional(),
     idx: z.number().int(),
-    qty: z.string().min(1),
+    qty: decimalStringSchema,
     materialId: z.string().uuid(),
     unitId: z.string().uuid().nullable().optional(),
     remarks: z.string().nullable().optional(),
@@ -53,24 +53,64 @@ const salesDraftPackBoxSchema = z
   })
   .strict()
 
-const salesDraftSchema = z
+const salesDraftFields = {
+  companyId: z.string().uuid(),
+  deliveryNo: z.string().nullable().optional(),
+  deliveryDate: dateOnlySchema.nullable().optional(),
+  postingDate: dateOnlySchema.nullable().optional(),
+  partyType: z.string().min(1),
+  partyId: z.string().uuid(),
+  remarks: z.string().nullable().optional(),
+  warehouseId: z.string().uuid().nullable().optional(),
+  debitAccountId: z.string().uuid(),
+  creditAccountId: z.string().uuid(),
+}
+
+const salesDraftCreateSchema = z
   .object({
-    companyId: z.string().uuid(),
-    deliveryNo: z.string().nullable().optional(),
-    deliveryDate: z.string().nullable().optional(),
-    postingDate: z.string().nullable().optional(),
-    partyType: z.string().min(1),
-    partyId: z.string().uuid(),
-    remarks: z.string().nullable().optional(),
-    warehouseId: z.string().uuid().nullable().optional(),
-    debitAccountId: z.string().uuid(),
-    creditAccountId: z.string().uuid(),
+    ...salesDraftFields,
     items: z.array(salesDraftItemSchema),
     packBoxes: z.array(salesDraftPackBoxSchema),
   })
   .strict()
 
-function salesDraftValidationHook(result: {
+const salesDraftReplaceSchema = z
+  .object({
+    ...salesDraftFields,
+    items: z.array(salesDraftItemSchema),
+    packBoxes: z.array(salesDraftPackBoxSchema),
+  })
+  .strict()
+
+const purchaseReceiptDraftFields = {
+  companyId: z.string().uuid(),
+  receiptNo: z.string().nullable().optional(),
+  receiptDate: dateOnlySchema.nullable().optional(),
+  postingDate: dateOnlySchema.nullable().optional(),
+  partyType: z.string().min(1),
+  partyId: z.string().uuid(),
+  remarks: z.string().nullable().optional(),
+  warehouseId: z.string().uuid().nullable().optional(),
+  debitAccountId: z.string().uuid(),
+  creditAccountId: z.string().uuid(),
+}
+
+const purchaseReceiptDraftCreateSchema = z
+  .object({
+    ...purchaseReceiptDraftFields,
+    // 兼容仍只创建空表头的领域调用；聚合抽屉始终显式发送完整 items。
+    items: z.array(salesDraftItemSchema).default([]),
+  })
+  .strict()
+
+const purchaseReceiptDraftReplaceSchema = z
+  .object({
+    ...purchaseReceiptDraftFields,
+    items: z.array(salesDraftItemSchema),
+  })
+  .strict()
+
+function draftValidationHook(result: {
   success: boolean
   error?: z.ZodError
 }): void {
@@ -89,7 +129,9 @@ function salesDraftValidationHook(result: {
   throw ApiError.validation('请求参数错误', fields)
 }
 
-function toSalesDraftInput(body: z.infer<typeof salesDraftSchema>) {
+function toSalesDraftInput(
+  body: z.infer<typeof salesDraftCreateSchema> | z.infer<typeof salesDraftReplaceSchema>,
+) {
   return {
     companyId: body.companyId,
     no: body.deliveryNo,
@@ -103,6 +145,26 @@ function toSalesDraftInput(body: z.infer<typeof salesDraftSchema>) {
     creditAccountId: body.creditAccountId,
     items: body.items,
     packBoxes: body.packBoxes,
+  }
+}
+
+function toPurchaseReceiptDraftInput(
+  body:
+    | z.infer<typeof purchaseReceiptDraftCreateSchema>
+    | z.infer<typeof purchaseReceiptDraftReplaceSchema>,
+) {
+  return {
+    companyId: body.companyId,
+    no: body.receiptNo,
+    documentDate: body.receiptDate,
+    postingDate: body.postingDate,
+    partyType: body.partyType,
+    partyId: body.partyId,
+    remarks: body.remarks,
+    warehouseId: body.warehouseId,
+    debitAccountId: body.debitAccountId,
+    creditAccountId: body.creditAccountId,
+    items: body.items,
   }
 }
 
@@ -129,7 +191,7 @@ export function salesFulfillmentHeadRoutes(deps: {
     })
     .post(
       '/',
-      zValidator('json', salesDraftSchema, salesDraftValidationHook),
+      zValidator('json', salesDraftCreateSchema, draftValidationHook),
       async (c) =>
         c.json(
           await fulfillment.createSalesDraft(
@@ -149,7 +211,7 @@ export function salesFulfillmentHeadRoutes(deps: {
     .put(
       '/:id',
       zValidator('param', idParam, validationHook),
-      zValidator('json', salesDraftSchema, salesDraftValidationHook),
+      zValidator('json', salesDraftReplaceSchema, draftValidationHook),
       async (c) =>
         c.json(
           await fulfillment.replaceSalesDraft(
@@ -187,45 +249,40 @@ export function purchaseFulfillmentHeadRoutes(deps: {
     })
     .post(
       '/',
-      zValidator(
-        'json',
-        z
-          .object({
-            companyId: z.string().uuid(),
-            [numberKey]: z.string().nullable().optional(),
-            [dateKey]: z.string().nullable().optional(),
-            postingDate: z.string().nullable().optional(),
-            partyType: z.string().min(1),
-            partyId: z.string().uuid(),
-            remarks: z.string().nullable().optional(),
-            warehouseId: z.string().uuid().nullable().optional(),
-            debitAccountId: z.string().uuid(),
-            creditAccountId: z.string().uuid(),
-          })
-          .strict(),
-        validationHook,
-      ),
-      async (c) => {
-        const body = c.req.valid('json') as Record<string, unknown>
-        return c.json(
-          await fulfillment.createPurchaseHead(c.get('actor'), {
-            companyId: body.companyId as string,
-            no: body[numberKey] as string | null | undefined,
-            documentDate: body[dateKey] as string | null | undefined,
-            postingDate: body.postingDate as string | null | undefined,
-            partyType: body.partyType as string,
-            partyId: body.partyId as string,
-            remarks: body.remarks as string | null | undefined,
-            warehouseId: body.warehouseId as string | null | undefined,
-            debitAccountId: body.debitAccountId as string,
-            creditAccountId: body.creditAccountId as string,
-          }),
+      zValidator('json', purchaseReceiptDraftCreateSchema, draftValidationHook),
+      async (c) =>
+        c.json(
+          await fulfillment.createPurchaseReceiptDraft(
+            c.get('actor'),
+            toPurchaseReceiptDraftInput(c.req.valid('json')),
+          ),
           201,
-        )
-      },
+        ),
+    )
+    // 完整聚合草稿读取（无分页截断）
+    .get('/:id/draft', zValidator('param', idParam, validationHook), async (c) =>
+      c.json(
+        await fulfillment.getPurchaseReceiptDraft(
+          c.get('actor'),
+          c.req.valid('param').id,
+        ),
+      ),
     )
     .get('/:id', zValidator('param', idParam, validationHook), async (c) =>
       c.json(await fulfillment.getHead(c.get('actor'), side, c.req.valid('param').id)),
+    )
+    .put(
+      '/:id',
+      zValidator('param', idParam, validationHook),
+      zValidator('json', purchaseReceiptDraftReplaceSchema, draftValidationHook),
+      async (c) =>
+        c.json(
+          await fulfillment.replacePurchaseReceiptDraft(
+            c.get('actor'),
+            c.req.valid('param').id,
+            toPurchaseReceiptDraftInput(c.req.valid('json')),
+          ),
+        ),
     )
     .patch(
       '/:id',

@@ -166,7 +166,6 @@ function MaterialsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="invMaterials"
-          client={materialClient}
           columns={GRID_COLUMNS}
           joinFields={{ category: ['code'] }}
           overrides={{
@@ -203,14 +202,14 @@ function MaterialsPage() {
             field: 'active',
             update: materialClient.update,
             // 抽屉走 rowId 自查,状态翻转后一并失效行缓存
-            onDone: () => queryClient.invalidateQueries({ queryKey: ['rowById', materialClient.id, 'invMaterials'] }),
+            onDone: () =>
+              resourceBindingFor('invMaterials').cache.invalidateRow(queryClient),
           })}
         />
       </div>
 
       <SynieRecordDrawer
         resource="invMaterials"
-        client={materialClient}
         label={materialPresentation.label}
         exclude={materialPresentation.exclude}
         fields={materialPresentation.fields}
@@ -272,7 +271,6 @@ function MaterialsPage() {
             return (
               <SynieEditableTable
                 resource="invMaterialUnits"
-                client={materialUnitClient}
                 label="单位转换"
                 title={
                   <span>
@@ -325,8 +323,7 @@ function MaterialsPage() {
             } else if (failed.length === 0) {
               toast.success('物料已创建')
             }
-            queryClient.invalidateQueries({ queryKey: ['gridRows', materialClient.id, 'invMaterials'] })
-            queryClient.invalidateQueries({ queryKey: ['rowById', materialClient.id, 'invMaterials'] })
+            await resourceBindingFor('invMaterials').cache.invalidateAll(queryClient)
             return materialId
           }
           const materialId = String(drawer!.row!.id)
@@ -337,8 +334,7 @@ function MaterialsPage() {
           } else {
             toast.success('物料已更新')
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', materialClient.id, 'invMaterials'] })
-          queryClient.invalidateQueries({ queryKey: ['rowById', materialClient.id, 'invMaterials'] })
+          await resourceBindingFor('invMaterials').cache.invalidateAll(queryClient)
           return materialId
         }}
       />

@@ -5,7 +5,6 @@ import { AlertDialog, Button, Label, NumberField, Spinner, toast } from '@heroui
 import { EmptyState } from '@heroui-pro/react'
 import { companyClient } from '~/lib/resources/companies'
 import {
-  receiveStockTransfer,
   stockTransferClient,
   stockTransferItemClient,
   warehouseClient,
@@ -24,6 +23,8 @@ import {
   WarehouseRemoteSelect,
   defaultCompanyId,
 } from '../-stock-doc'
+import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/scm/other-stock/transfers')({
   component: StockTransfersTab,
@@ -246,8 +247,7 @@ function StockTransfersTab() {
   }, [receiveItems.data])
 
   const invalidateGrids = () => {
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'invStockTransfers'] })
-    queryClient.invalidateQueries({ queryKey: ['rowById', 'invStockTransfers'] })
+    void resourceBindingFor('invStockTransfers').cache.invalidateAll(queryClient)
   }
 
   const submitReceive = async () => {
@@ -260,10 +260,14 @@ function StockTransfersTab() {
           qty: String(Number.isFinite(receipts[r.id]) ? receipts[r.id] : 0),
         })),
       }
-      await receiveStockTransfer(receiveDoc.id, input)
+      await executeCommandWithInvalidation(
+        resourceBindingFor('invStockTransfers'),
+        'receive',
+        { id: receiveDoc.id, ...input },
+        queryClient,
+      )
       toast.success('调拨单已收货')
       setReceiveDoc(null)
-      invalidateGrids()
     } catch (e) {
       toast.danger('收货失败', { description: (e as Error).message })
     } finally {
@@ -395,7 +399,6 @@ function StockTransfersTab() {
 
       <SynieDataGrid
         resource="invStockTransfers"
-        client={stockTransferClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'docDate', direction: 'descending' }}
@@ -410,7 +413,6 @@ function StockTransfersTab() {
 
       <SynieRecordDrawer
         resource="invStockTransfers"
-        client={stockTransferClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -444,7 +446,6 @@ function StockTransfersTab() {
               />
               <SynieEditableTable
                 resource="invStockTransferItems"
-                client={stockTransferItemClient}
                 label="调拨行"
                 items={items}
                 onChange={setItems}

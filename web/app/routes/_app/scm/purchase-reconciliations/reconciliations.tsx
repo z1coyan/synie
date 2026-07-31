@@ -5,7 +5,6 @@ import {
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
-import { purchaseReconciliationClient } from '~/lib/resources/reconciliations'
 import { useAuditDoc } from '../-audit-doc'
 import {
   reconciliationAuditConfig,
@@ -83,7 +82,6 @@ function ReconciliationsTab() {
     <>
       <SynieDataGrid
         resource="purReconciliations"
-        client={purchaseReconciliationClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'reconciliationNo', direction: 'descending' }}

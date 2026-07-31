@@ -1,11 +1,14 @@
-import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
 import {
   createCommandAdapter,
   decodeCollectionTarget,
   defineCommand,
 } from './catalog/commands'
+import {
+  decimalWireInput,
+  resourceListBody,
+} from './resource-wire'
 import type { ResourceQuery, ResourceTransport } from './types'
 
 type AttendanceCorrectionCreate =
@@ -51,13 +54,13 @@ export type AttendanceImportRow = Record<string, unknown> & {
   id: string
   status?: string
   error?: string | null
-  totalRows?: number
+  totalRows?: number | null
   matchedRows?: number | null
-  unmatchedRows?: number
-  importedCount?: number
-  skippedExistingRows?: number
-  skippedUnmatchedRows?: number
-  autoCreatedCount?: number
+  unmatchedRows?: number | null
+  importedCount?: number | null
+  skippedExistingRows?: number | null
+  skippedUnmatchedRows?: number | null
+  autoCreatedCount?: number | null
 }
 export type PayrollPaymentKind = string
 export interface PayrollPaymentRow {
@@ -88,34 +91,11 @@ export type AttendanceImportExecution = Omit<
   autoCreatedCount: number
 }
 
-function queryBody(input: ResourceQuery): ListQuery {
-  if (input.extraFields?.length || input.joinFields) {
-    throw new Error('人力 REST 资源不支持额外字段或 joinFields')
-  }
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: {
-      ...(input.filter ?? {}),
-      ...((input.fixedFilter ?? {}) as FilterState),
-    } as FilterState,
-  }
-}
-
-function decimalInput(
-  input: Record<string, unknown>,
-  fields: readonly string[],
-) {
-  const result = { ...input }
-  for (const field of fields) {
-    if (!Object.hasOwn(input, field)) continue
-    const value = input[field]
-    result[field] = value == null || value === '' ? null : String(value)
-  }
-  return result
-}
+const listWireOptions = {
+  resourceLabel: '人力',
+  extraFields: 'reject',
+  joinFields: 'reject',
+} as const
 
 type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
   Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
@@ -132,9 +112,9 @@ function resourceClient<const TOperations extends ResourceOperations>(
 
 export const attendancePunchClient = resourceClient('hrAttendancePunches', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.hr['attendance-punches'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return {
       count: result.count,
@@ -151,9 +131,9 @@ export const attendancePunchClient = resourceClient('hrAttendancePunches', {
 
 export const attendanceImportClient = resourceClient('hrAttendanceImports', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.hr['attendance-imports'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return {
       count: result.count,
@@ -173,7 +153,7 @@ export const attendanceImportClient = resourceClient('hrAttendanceImports', {
     )) as unknown as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.hr['attendance-imports'][':id'].$delete({
         param: { id }}),
     )
@@ -183,7 +163,7 @@ export const attendanceImportClient = resourceClient('hrAttendanceImports', {
 export async function createAttendanceImport(
   fileId: string,
 ): Promise<AttendanceImportRow> {
-  return apiData<AttendanceImportRow>(
+  return apiData(
     api.hr['attendance-imports'].$post({
       json: { fileId }}),
   )
@@ -193,7 +173,7 @@ export async function importAttendanceImport(
   id: string,
   autoCreateEmployees: boolean,
 ): Promise<AttendanceImportExecution> {
-  const result = await apiData<{ count?: number; results?: Row[]; resources?: unknown[] }>(
+  const result = await apiData(
     api.hr['attendance-imports'][':id'].import.$post({
       param: { id },
       json: { autoCreateEmployees }}),
@@ -203,9 +183,9 @@ export async function importAttendanceImport(
 
 export const attendanceDayClient = resourceClient('hrAttendanceDays', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.hr['attendance-days'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return {
       count: result.count,
@@ -224,7 +204,7 @@ export async function recalcAttendanceDays(
   dateFrom: string,
   dateTo: string,
 ): Promise<number> {
-  const result = await apiData<{ count?: number; results?: Row[]; resources?: unknown[] }>(
+  const result = await apiData(
     api.hr['attendance-days'].recalc.$post({
       json: { dateFrom, dateTo }}),
   )
@@ -250,7 +230,7 @@ export const attendanceDayCommandAdapter = createCommandAdapter({
 })
 
 export function fetchAttendanceMonthSummary(month: string) {
-  return apiData<AttendanceMonthSummary[]>(
+  return apiData(
     api.hr['attendance-days']['month-summary'].$get({
       query: { month },
     }),
@@ -261,9 +241,9 @@ export const attendanceCorrectionClient = resourceClient(
   'hrAttendanceCorrections',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.hr['attendance-corrections'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input, listWireOptions)}),
       )
       return {
         count: result.count,
@@ -290,7 +270,7 @@ export const attendanceCorrectionClient = resourceClient(
       )) as unknown as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.hr['attendance-corrections'][':id'].$delete({
           param: { id }}),
       )
@@ -320,7 +300,7 @@ const payrollDecimals = [
 function payrollCreateInput(
   input: Record<string, unknown>,
 ): PayrollCreate {
-  const result = decimalInput(input, payrollDecimals)
+  const result = decimalWireInput(input, payrollDecimals)
   for (const field of payrollDecimals) {
     if (result[field] == null) result[field] = '0'
   }
@@ -332,8 +312,8 @@ function payrollCreateInput(
 
 export const payrollClient = resourceClient('hrPayrolls', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.hr.payrolls.query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.hr.payrolls.query.$post({ json: resourceListBody(input, listWireOptions) }),
     )
     return {
       count: result.count,
@@ -356,11 +336,11 @@ export const payrollClient = resourceClient('hrPayrolls', {
     return (await apiData(
       api.hr.payrolls[':id'].$patch({
         param: { id },
-        json: decimalInput(input, payrollDecimals) as never}),
+        json: decimalWireInput(input, payrollDecimals) as never}),
     )) as unknown as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.hr.payrolls[':id'].$delete({
         param: { id }}),
     )
@@ -384,7 +364,7 @@ export function refreshPayroll(id: string) {
 export function generatePayrolls(
   month: string,
 ): Promise<PayrollGenerationResult> {
-  return apiData<PayrollGenerationResult>(
+  return apiData(
     api.hr.payrolls.generate.$post({
       json: { month },
     }),
@@ -394,7 +374,7 @@ export function generatePayrolls(
 export function fetchPayrollMonthStats(
   month: string,
 ): Promise<PayrollMonthStats> {
-  return apiData<PayrollMonthStats>(
+  return apiData(
     api.hr.payrolls['month-stats'].$get({
       query: { month },
     }),
@@ -403,9 +383,9 @@ export function fetchPayrollMonthStats(
 
 export const payrollPaymentClient = resourceClient('hrPayrollPayments', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.hr['payroll-payments'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return {
       count: result.count,
@@ -421,11 +401,11 @@ export const payrollPaymentClient = resourceClient('hrPayrollPayments', {
   async create(input) {
     return (await apiData(
       api.hr['payroll-payments'].$post({
-        json: decimalInput(input, ['amount']) as never as unknown as never}),
+        json: decimalWireInput(input, ['amount']) as never as unknown as never}),
     )) as unknown as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.hr['payroll-payments'][':id'].$delete({
         param: { id }}),
     )
@@ -464,7 +444,7 @@ export function payRemainingPayroll(
   paidOn: string,
   remarks?: string,
 ): Promise<PayrollGenerationResult> {
-  return apiData<PayrollGenerationResult>(
+  return apiData(
     api.hr['payroll-payments']['pay-remaining'].$post({
       json: { payrollId, paidOn, remarks }}),
   )
@@ -472,9 +452,9 @@ export function payRemainingPayroll(
 
 export const employeeLoanClient = resourceClient('hrEmployeeLoans', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.hr['employee-loans'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input, listWireOptions)}),
     )
     return {
       count: result.count,
@@ -490,18 +470,18 @@ export const employeeLoanClient = resourceClient('hrEmployeeLoans', {
   async create(input) {
     return (await apiData(
       api.hr['employee-loans'].$post({
-        json: decimalInput(input, ['amount']) as never as unknown as never}),
+        json: decimalWireInput(input, ['amount']) as never as unknown as never}),
     )) as unknown as Row
   },
   async update(id, input) {
     return (await apiData(
       api.hr['employee-loans'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['amount']) as never}),
+        json: decimalWireInput(input, ['amount']) as never}),
     )) as unknown as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.hr['employee-loans'][':id'].$delete({
         param: { id }}),
     )

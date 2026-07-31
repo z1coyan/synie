@@ -16,7 +16,6 @@ import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { formatQty } from '~/lib/amount'
 import {
-  auditOutput,
   outputClient,
   outputItemClient,
   workOrderClient,
@@ -27,6 +26,7 @@ import {
 } from '../../scm/-audit-doc'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { WorkOrderProgressCell } from '../-work-order-progress-cell'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 /**
  * 生产入库共享抽屉:入库条目与入库单两个列表共用同一份整单录入界面。
@@ -151,6 +151,8 @@ const ITEMS = {
 // 「审核整单」确认弹窗配置(同 scm 单据先例:只取行快照字段)
 export const outputAuditConfig = {
   docLabel: '生产入库单',
+  resource: 'mfgOutputs',
+  commandKey: 'audit',
   itemsResource: 'mfgOutputItems',
   loadItems: (docId) =>
     outputItemClient
@@ -168,7 +170,6 @@ export const outputAuditConfig = {
         sort: { column: 'idx', direction: 'ascending' },
       })
       .then((result) => result.results),
-  audit: auditOutput,
   columns: [
     { key: 'materialName', label: '物料', render: auditMaterialCell() },
     { key: 'unitName', label: '单位' },
@@ -210,7 +211,6 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
 
       <SynieRecordDrawer
         resource="mfgOutputs"
-        client={outputClient}
         {...drawerConfig('mfgOutputs')}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -227,7 +227,6 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
         extraContent={(mode) => (
           <SynieEditableTable
             resource="mfgOutputItems"
-            client={outputItemClient}
             label="入库条目"
             items={items}
             onChange={setItems}
@@ -434,12 +433,10 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
             toast.success('生产入库单已更新')
             savedId = drawer!.output!.id
           }
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'mfgOutputs'],
-          })
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'mfgOutputItems'],
-          })
+          await Promise.all([
+            resourceBindingFor('mfgOutputs').cache.invalidateGrid(queryClient),
+            resourceBindingFor('mfgOutputItems').cache.invalidateGrid(queryClient),
+          ])
           return savedId
         }}
       />

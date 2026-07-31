@@ -6,7 +6,6 @@ import {
 } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
-import { demandItemClient } from '~/lib/resources/manufacturing'
 import { hasPermission } from '~/lib/permissions'
 import {
   canGenerateWorkOrder,
@@ -89,7 +88,6 @@ function DemandItemsTab() {
     <>
       <SynieDataGrid
         resource="mfgDemandItems"
-        client={demandItemClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         // 物料富单元格所需快照字段与物料外键(撤列后仍随查询取回;需求行无 customerPartNo 快照)

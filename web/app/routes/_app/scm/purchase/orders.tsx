@@ -4,7 +4,6 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import type { Row } from '~/components/synie-data-grid/types'
 import { useAuditDoc } from '../-audit-doc'
 import { purchaseOrderAuditConfig, useOrderDrawer } from './-order-drawer'
-import { purchaseOrderClient } from '~/lib/resources/orders'
 
 export const Route = createFileRoute('/_app/scm/purchase/orders')({
   component: PurchaseOrdersTab,
@@ -67,7 +66,6 @@ function PurchaseOrdersTab() {
     <>
       <SynieDataGrid
         resource="purOrders"
-        client={purchaseOrderClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         onView={(row) => openDrawer('view', row)}

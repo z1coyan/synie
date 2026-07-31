@@ -27,8 +27,6 @@ import { isForbidden } from '~/lib/errors'
 import {
   getMarketChartInstruments,
   getMarketPriceSeries,
-  marketInstrumentClient,
-  marketPricePointClient,
   refreshMarketPricePoints,
   type MarketChartInstrument,
   type MarketPriceSeries,
@@ -38,6 +36,7 @@ import {
 } from '~/lib/resources/market'
 import { getSystemSetting } from '~/lib/resources/settings'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -566,9 +565,7 @@ function MarketPage() {
     try {
       const result = await refreshMarketPricePoints()
       toast.success(summarizeRefresh(result))
-      queryClient.invalidateQueries({
-        queryKey: ['gridRows', marketPricePointClient.id, 'basMarketPricePoints'],
-      })
+      await resourceBindingFor('basMarketPricePoints').cache.invalidateGrid(queryClient)
       queryClient.invalidateQueries({ queryKey: ['marketPriceSeries'] })
       queryClient.invalidateQueries({ queryKey: ['marketChartInstruments'] })
       queryClient.invalidateQueries({ queryKey: ['sysSetting'] })
@@ -1094,7 +1091,6 @@ function MarketPage() {
               <SynieDataGrid
                 key={`prices-${gridFilterKey}`}
                 resource="basMarketPricePoints"
-                client={marketPricePointClient}
                 columns={PRICE_COLUMNS}
                 defaultFilters={priceFilters}
                 onView={(row) => setPriceDrawer({ mode: 'view', row })}
@@ -1108,7 +1104,6 @@ function MarketPage() {
             <Tabs.Panel id="instruments" className="pt-4">
               <SynieDataGrid
                 resource="basMarketInstruments"
-                client={marketInstrumentClient}
                 columns={INSTRUMENT_COLUMNS}
                 onView={(row) => setInstrumentDrawer({ mode: 'view', row })}
                 onCreate={() => setInstrumentDrawer({ mode: 'create', row: null })}
@@ -1122,7 +1117,6 @@ function MarketPage() {
       {/* 价点抽屉 — 字段事实来自 Catalog Basic Form */}
       <SynieRecordDrawer
         resource="basMarketPricePoints"
-        client={priceForm.client}
         label={priceForm.formProps.label}
         mode={priceDrawer?.mode ?? 'view'}
         isOpen={priceDrawer !== null}
@@ -1143,9 +1137,7 @@ function MarketPage() {
           if (!create) throw new Error('价点不支持 create')
           const saved = await create(values)
           toast.success('行情价点已录入')
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', priceForm.client.id, 'basMarketPricePoints'],
-          })
+          await priceForm.binding.cache.invalidateGrid(queryClient)
           queryClient.invalidateQueries({ queryKey: ['marketPriceSeries'] })
           return saved.id as string
         }}
@@ -1154,7 +1146,6 @@ function MarketPage() {
       {/* 品种抽屉 — 字段事实来自 Catalog Basic Form */}
       <SynieRecordDrawer
         resource="basMarketInstruments"
-        client={instrumentForm.client}
         label={instrumentForm.formProps.label}
         mode={instrumentDrawer?.mode ?? 'view'}
         isOpen={instrumentDrawer !== null}
@@ -1188,9 +1179,7 @@ function MarketPage() {
             saved = await update(instrumentDrawer!.row!.id, patch)
           }
           toast.success(mode === 'create' ? '行情品种已创建' : '行情品种已更新')
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', instrumentForm.client.id, 'basMarketInstruments'],
-          })
+          await instrumentForm.binding.cache.invalidateGrid(queryClient)
           queryClient.invalidateQueries({ queryKey: ['marketChartInstruments'] })
           return saved.id
         }}

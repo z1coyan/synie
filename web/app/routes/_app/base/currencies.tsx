@@ -22,10 +22,10 @@ const RESOURCE = 'basCurrencies'
 function CurrenciesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
-  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '货币')
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '货币')
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, RESOURCE] })
+    binding.cache.invalidateGrid(queryClient)
 
   return (
     <>
@@ -37,7 +37,6 @@ function CurrenciesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource={RESOURCE}
-          client={client}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
           onEdit={(row) => setDrawer({ mode: 'edit', row })}
@@ -57,7 +56,6 @@ function CurrenciesPage() {
 
       <SynieRecordDrawer
         resource={RESOURCE}
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}

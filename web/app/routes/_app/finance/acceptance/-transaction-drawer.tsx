@@ -31,7 +31,6 @@ import type { FieldInputProps } from '~/components/synie-record-drawer/fields'
 import type { FilterState, GridColumnMeta, Row } from '~/components/synie-data-grid/types'
 import {
   billClient,
-  billHoldingClient,
   billTransactionClient,
   ocrBillTransaction,
 } from '~/lib/resources/finance-operations'
@@ -619,7 +618,6 @@ export function AcceptanceTransactionDrawer({
   return (
     <SynieRecordDrawer
       resource="accBillTransactions"
-      client={billTransactionClient}
       label={createType ? `承兑${TX_TYPE_LABEL[createType]}` : '承兑交易'}
       mode={mode}
       isOpen={state !== null}
@@ -703,7 +701,6 @@ export function AcceptanceTransactionDrawer({
           input: ({ isDisabled, values, patchValues }) => (
             <RemoteSelect
               resource="accBillHoldings"
-              client={billHoldingClient}
               labelField="label"
               isRequired
               searchFields={['billNo']}

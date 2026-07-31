@@ -8,7 +8,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { resourceBindingFor, resourceTransportFor } from '~/lib/resources/registry'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import {
   createEmployeePresentation,
   submitEmployeeForm,
@@ -49,7 +49,6 @@ function EmployeesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
   const binding = resourceBindingFor(RESOURCE)
-  const client = resourceTransportFor(RESOURCE)
   const presentation = createEmployeePresentation(binding)
 
   return (
@@ -60,7 +59,6 @@ function EmployeesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource={RESOURCE}
-          client={client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
@@ -71,7 +69,6 @@ function EmployeesPage() {
 
       <SynieRecordDrawer
         resource={RESOURCE}
-        client={client}
         label={presentation.label}
         exclude={presentation.exclude}
         fields={presentation.fields}
@@ -91,12 +88,7 @@ function EmployeesPage() {
             drawer?.row?.id as string | undefined,
           )
           toast.success(mode === 'create' ? '员工已创建,进入详情可上传身份证照片' : '员工已更新')
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', client.id, RESOURCE],
-          })
-          queryClient.invalidateQueries({
-            queryKey: ['rowById', client.id, RESOURCE],
-          })
+          await binding.cache.invalidateAll(queryClient)
           return id
         }}
       />

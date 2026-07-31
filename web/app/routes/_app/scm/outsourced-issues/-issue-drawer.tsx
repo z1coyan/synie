@@ -37,6 +37,8 @@ export type OpenIssueDrawer = (mode: DrawerMode, issue: IssueRef | null) => void
 // 「审核整单」确认弹窗配置:条目页行操作与发料单页「审核」动作共用(见 scm/-audit-doc)
 export const issueAuditConfig = {
   docLabel: '委外发料单',
+  resource: 'purOutsourcedIssues',
+  commandKey: 'audit',
   itemsResource: 'purOutsourcedIssueItems',
   columns: [
     { key: 'materialName', label: '材料', render: auditMaterialCell() },
@@ -56,11 +58,6 @@ export const issueAuditConfig = {
         },
       })
       .then((result) => result.results),
-  audit: (issueId: string) => {
-    const commands = resourceBindingFor('purOutsourcedIssues').commands
-    if (!commands) throw new Error('委外发料单未绑定 audit 命令')
-    return commands.execute('audit', { id: issueId })
-  },
 } satisfies AuditDocConfig
 
 const IssueDrawerContext = createContext<OpenIssueDrawer>(() => {})
@@ -427,7 +424,6 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
       {children}
       <SynieRecordDrawer
         resource="purOutsourcedIssues"
-        client={purchaseOutsourcedIssueClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -464,7 +460,6 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
               input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
                 <RemoteDialogSelect
                   resource="purOrderItemMaterials"
-                  client={purchaseOrderItemMaterialClient}
                   label="发料清单行"
                   dialogTitle="选择发料清单行"
                   placeholder={lineGridFilter ? '点击选择发料清单行…' : '先选齐公司与对手'}
@@ -652,7 +647,6 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
               />
               <SynieEditableTable
                 resource="purOutsourcedIssueItems"
-                client={purchaseOutsourcedIssueItemClient}
                 label="发料条目"
                 items={items}
                 onChange={setItems}
@@ -798,10 +792,17 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
             }
             savedId = drawer!.row!.id
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOutsourcedIssues'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOutsourcedIssueItems'] })
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'purOutsourcedIssues'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOrderItemMaterials'] })
+          await Promise.all([
+            resourceBindingFor('purOutsourcedIssues').cache.invalidateAll(
+              queryClient,
+            ),
+            resourceBindingFor(
+              'purOutsourcedIssueItems',
+            ).cache.invalidateGrid(queryClient),
+            resourceBindingFor(
+              'purOrderItemMaterials',
+            ).cache.invalidateGrid(queryClient),
+          ])
           return savedId
         }}
       />

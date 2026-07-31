@@ -4,7 +4,6 @@ import {
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
-import { outputClient } from '~/lib/resources/manufacturing'
 import { useAuditDoc } from '../../scm/-audit-doc'
 import { outputAuditConfig, useOutputDrawer } from './-output-drawer'
 
@@ -47,7 +46,6 @@ function OutputsTab() {
     <>
       <SynieDataGrid
         resource="mfgOutputs"
-        client={outputClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'outputDate', direction: 'descending' }}

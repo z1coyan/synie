@@ -1,9 +1,15 @@
 import { apiData, api } from '../api/client'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import { createRowCommandAdapter } from './catalog/commands'
-import type { ResourceClient, ResourceQuery, ResourceTransport } from './types'
-
-type FilterDocument = FilterState
+import type { Row } from '~/components/synie-data-grid/types'
+import {
+  createCommandAdapter,
+  decodeRowTarget,
+  defineCommand,
+} from './catalog/commands'
+import {
+  decimalWireInput,
+  resourceListBody,
+} from './resource-wire'
+import type { ResourceClient, ResourceTransport } from './types'
 type GLJournalCreate = Record<string, unknown>
 type GLJournalUpdate = Record<string, unknown>
 type GLJournalLineCreate = Record<string, unknown>
@@ -34,37 +40,15 @@ export interface ARAPReport {
   rows: ARAPReportRow[]
 }
 
-function queryBody(input: ResourceQuery) {
-  const filter = {
-    ...(input.filter ?? {}),
-    ...((input.fixedFilter ?? {}) as FilterState),
-  }
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: filter as FilterDocument,
-  }
-}
-
-function decimalInput(input: Record<string, unknown>): Record<string, unknown> {
-  const body = { ...input }
-  for (const field of ['debit', 'credit'] as const) {
-    if (!Object.hasOwn(input, field)) continue
-    const value = input[field]
-    body[field] = value == null || value === '' ? '0' : String(value)
-  }
-  return body
-}
-
 export const glEntryClient: ResourceTransport = {
   id: 'rest:accGlEntries',
 
 
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.accounting['gl-entries'].query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.accounting['gl-entries'].query.$post({
+        json: resourceListBody(input),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -77,7 +61,7 @@ export const glEntryClient: ResourceTransport = {
 
 }
 
-export async function auditGlJournal(id: string, postingDate?: string) {
+async function auditGlJournal(id: string, postingDate?: string) {
   return apiData(
     api.accounting['gl-journals'][':id'].audit.$post({
       param: { id },
@@ -92,9 +76,27 @@ export async function cancelGlJournal(id: string) {
   )
 }
 
-export const glJournalCommandAdapter = createRowCommandAdapter({
-  audit: (id) => auditGlJournal(id),
-  cancel: cancelGlJournal,
+export const glJournalCommandAdapter = createCommandAdapter({
+  audit: defineCommand(
+    'row',
+    async (input: unknown) => {
+      const id = decodeRowTarget(input)
+      const postingDate = (input as Record<string, unknown>).postingDate
+      if (
+        postingDate !== undefined &&
+        (typeof postingDate !== 'string' || postingDate.trim() === '')
+      ) {
+        throw new Error('audit postingDate 须为非空字符串')
+      }
+      return auditGlJournal(id, postingDate)
+    },
+    { affectedResources: ['accGlEntries'] },
+  ),
+  cancel: defineCommand(
+    'row',
+    async (input: unknown) => cancelGlJournal(decodeRowTarget(input)),
+    { affectedResources: ['accGlEntries'] },
+  ),
 })
 
 export const glJournalClient: ResourceClient = {
@@ -102,8 +104,10 @@ export const glJournalClient: ResourceClient = {
 
 
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.accounting['gl-journals'].query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.accounting['gl-journals'].query.$post({
+        json: resourceListBody(input),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -129,7 +133,7 @@ export const glJournalClient: ResourceClient = {
   },
 
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.accounting['gl-journals'][':id'].$delete({ param: { id } }),
     )
   },
@@ -141,8 +145,10 @@ export const glJournalLineClient: ResourceClient = {
 
 
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.accounting['gl-journal-lines'].query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.accounting['gl-journal-lines'].query.$post({
+        json: resourceListBody(input),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -156,7 +162,11 @@ export const glJournalLineClient: ResourceClient = {
   async create(input) {
     return (await apiData(
       api.accounting['gl-journal-lines'].$post({
-        json: decimalInput(input) as never}),
+        json: decimalWireInput(
+          input,
+          ['debit', 'credit'],
+          { empty: '0' },
+        ) as never}),
     )) as Row
   },
 
@@ -164,12 +174,16 @@ export const glJournalLineClient: ResourceClient = {
     return (await apiData(
       api.accounting['gl-journal-lines'][':id'].$patch({
         param: { id },
-        json: decimalInput(input) as never}),
+        json: decimalWireInput(
+          input,
+          ['debit', 'credit'],
+          { empty: '0' },
+        ) as never}),
     )) as Row
   },
 
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.accounting['gl-journal-lines'][':id'].$delete({
         param: { id }}),
     )

@@ -8,7 +8,6 @@ import { materialCellRender } from '~/components/synie-material-cell/MaterialCel
 import { useAuditDoc } from '../-audit-doc'
 import { purchaseOrderAuditConfig, useOrderDrawer, type OpenOrderDrawer } from './-order-drawer'
 import { QtyProgressCell } from '../-qty-progress-cell'
-import { purchaseOrderItemClient } from '~/lib/resources/orders'
 
 export const Route = createFileRoute('/_app/scm/purchase/items')({
   component: PurchaseOrderItemsTab,
@@ -116,7 +115,6 @@ function PurchaseOrderItemsTab() {
     <>
       <SynieDataGrid
         resource="purOrderItems"
-        client={purchaseOrderItemClient}
         columns={GRID_COLUMNS}
         overrides={overrides}
         // 合并进度列的取数(qty 行单位;baseQty/receivedQty 默认单位投影列);

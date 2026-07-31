@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Chip, toast } from '@heroui/react'
 import { fetchMe } from '~/lib/api/session'
 import { roleClient } from '~/lib/resources/iam'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
@@ -68,7 +69,6 @@ function RolesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="sysRoles"
-          client={roleClient}
           overrides={GRID_OVERRIDES}
           // 内置角色:禁用编辑/启停开关与删除(后端另有强制校验兜底);配置权限保留入口但矩阵只读
           actionVisible={{
@@ -88,7 +88,8 @@ function RolesPage() {
             ...statusToggleActions({
               field: 'enabled',
               update: roleClient.update.bind(roleClient),
-              onDone: () => queryClient.invalidateQueries({ queryKey: ['gridRows', roleClient.id, 'sysRoles'] }),
+              onDone: () =>
+                resourceBindingFor('sysRoles').cache.invalidateGrid(queryClient),
             }),
           ]}
         />
@@ -96,7 +97,6 @@ function RolesPage() {
 
       <SynieRecordDrawer
         resource="sysRoles"
-        client={roleClient}
         {...drawerConfig('sysRoles')}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -115,7 +115,7 @@ function RolesPage() {
             await roleClient.update(drawer!.row!.id, values)
           }
           toast.success(mode === 'create' ? '角色已创建' : '角色已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', roleClient.id, 'sysRoles'] })
+          await resourceBindingFor('sysRoles').cache.invalidateGrid(queryClient)
         }}
       />
 

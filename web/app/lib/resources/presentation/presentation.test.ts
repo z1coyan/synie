@@ -91,16 +91,24 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
     expect(id).toBe('new-id')
 
     // 错误 resource 的 binding 拒绝
-    const wrong = bindingFromResourceTransport('purSuppliers', mockClient('purSuppliers'))
+    const wrong = bindingFromResourceTransport(
+      'purSuppliers',
+      mockClient('purSuppliers'),
+    )
     expect(() => createCustomerPresentation(wrong)).toThrow(/salCustomers/)
   })
 
   test('发票 PE：OCR seam 共置；ResourceDocument 不含可执行代码', () => {
     clearBindingsForTests()
     registerBinding(
-      bindingFromResourceTransport(VAT_INVOICE_RESOURCE, mockClient(VAT_INVOICE_RESOURCE)),
+      bindingFromResourceTransport(
+        VAT_INVOICE_RESOURCE,
+        mockClient(VAT_INVOICE_RESOURCE),
+      ),
     )
-    const pe = createInvoicePresentation(resourceBindingFor(VAT_INVOICE_RESOURCE))
+    const pe = createInvoicePresentation(
+      resourceBindingFor(VAT_INVOICE_RESOURCE),
+    )
     expect(pe.kind).toBe('extension')
     expect(pe.resource).toBe(VAT_INVOICE_RESOURCE)
 
@@ -111,29 +119,52 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
     const doc = extensionDoc(VAT_INVOICE_RESOURCE, '增值税发票')
     expect(doc.form.kind).toBe('extension')
     const wire = JSON.stringify(doc)
-    expect(wire).not.toMatch(/function|=>|React|ocrVatInvoice|componentPath|script/)
+    expect(wire).not.toMatch(
+      /function|=>|React|ocrVatInvoice|componentPath|script/,
+    )
     expect(JSON.parse(wire).form).toEqual({ kind: 'extension' })
   })
 
   test('员工 PE：身份证影像 extraContent；物料 PE：tabs+effects 静态面', () => {
     clearBindingsForTests()
     registerBinding(
-      bindingFromResourceTransport(EMPLOYEE_RESOURCE, mockClient(EMPLOYEE_RESOURCE)),
+      bindingFromResourceTransport(
+        EMPLOYEE_RESOURCE,
+        mockClient(EMPLOYEE_RESOURCE),
+      ),
     )
     registerBinding(
-      bindingFromResourceTransport(MATERIAL_RESOURCE, mockClient(MATERIAL_RESOURCE)),
+      bindingFromResourceTransport(
+        MATERIAL_RESOURCE,
+        mockClient(MATERIAL_RESOURCE),
+      ),
     )
-    registerBinding(bindingFromResourceTransport('basAccounts', mockClient('basAccounts')))
+    registerBinding(
+      bindingFromResourceTransport('basAccounts', mockClient('basAccounts')),
+    )
 
-    const emp = createEmployeePresentation(resourceBindingFor(EMPLOYEE_RESOURCE))
+    const emp = createEmployeePresentation(
+      resourceBindingFor(EMPLOYEE_RESOURCE),
+    )
     expect(emp.kind).toBe('extension')
     expect(typeof emp.extraContent).toBe('function')
     expect(emp.fields.name?.required).toBe(true)
+    expect(emp.fields.code).toMatchObject({
+      required: false,
+      placeholder: '留空自动编号',
+    })
+    expect(emp.fields.code?.edit).toBeUndefined()
 
-    const mat = createMaterialPresentation(resourceBindingFor(MATERIAL_RESOURCE))
+    const mat = createMaterialPresentation(
+      resourceBindingFor(MATERIAL_RESOURCE),
+    )
     expect(mat.kind).toBe('extension')
     expect(mat.tabs.map((t) => t.key)).toEqual(['basic', 'units'])
     expect(typeof mat.fields.isCustomerMaterial?.effects).toBe('function')
+    expect(mat.fields.categoryId?.remote?.filterState).toEqual({
+      isLeaf: { kind: 'bool', eq: true },
+      active: { kind: 'bool', eq: true },
+    })
 
     const acc = createAccountPresentation(resourceBindingFor('basAccounts'))
     expect(acc.kind).toBe('extension')
@@ -158,14 +189,20 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
       canUpdate: false,
       canDelete: true,
     })
-    const draft: AggregateDraftAdapter<Record<string, unknown>, {
-      id: string
-      items: Array<{ id: string; idx: number }>
-      packBoxes: unknown[]
-    }> = {
+    const draft: AggregateDraftAdapter<
+      Record<string, unknown>,
+      {
+        id: string
+        items: Array<{ id: string; idx: number }>
+        packBoxes: unknown[]
+      }
+    > = {
       loadDraft: async (id) => ({
         id,
-        items: Array.from({ length: 250 }, (_, i) => ({ id: `i${i}`, idx: i + 1 })),
+        items: Array.from({ length: 250 }, (_, i) => ({
+          id: `i${i}`,
+          idx: i + 1,
+        })),
         packBoxes: [],
       }),
       createDraft: async (input) => ({
@@ -185,8 +222,16 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
 
     const binding = resourceBindingFor('salDeliveries')
     expect(binding.draft).toBeDefined()
-    expect(binding.writer && 'create' in binding.writer && (binding.writer as { create?: unknown }).create).toBeFalsy()
-    expect(binding.writer && 'update' in binding.writer && (binding.writer as { update?: unknown }).update).toBeFalsy()
+    expect(
+      binding.writer &&
+        'create' in binding.writer &&
+        (binding.writer as { create?: unknown }).create,
+    ).toBeFalsy()
+    expect(
+      binding.writer &&
+        'update' in binding.writer &&
+        (binding.writer as { update?: unknown }).update,
+    ).toBeFalsy()
     expect(binding.writer && 'delete' in binding.writer).toBe(true)
 
     // loadDraft 完整返回超过默认分页数量的子记录
@@ -205,7 +250,10 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
   test('所有权分离：Catalog 不持 Adapter；PE 持 binding；Adapter 不声明 form.kind', () => {
     clearBindingsForTests()
     const binding: ResourceBinding = {
-      ...bindingFromResourceTransport(CUSTOMER_RESOURCE, mockClient(CUSTOMER_RESOURCE)),
+      ...bindingFromResourceTransport(
+        CUSTOMER_RESOURCE,
+        mockClient(CUSTOMER_RESOURCE),
+      ),
     }
     registerBinding(binding)
     const pe = createCustomerPresentation(resourceBindingFor(CUSTOMER_RESOURCE))

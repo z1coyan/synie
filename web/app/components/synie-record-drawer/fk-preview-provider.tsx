@@ -7,10 +7,7 @@ import { getDocumentPreview } from './document-preview'
 // 侧效登记库存来源单据只读速览
 import './document-preview-registry'
 import { basicFormDrawerProps, fetchResourceDocument } from '~/lib/resources/catalog'
-import {
-  resourceBindingFor,
-  resourceTransportFromResourceBinding,
-} from '~/lib/resources/registry'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 interface Entry {
   key: number
@@ -43,12 +40,9 @@ function BasicFkPreviewDrawer({
           fields: {},
         }
 
-  const client = resourceTransportFromResourceBinding(entry.resource)
-
   return (
     <SynieRecordDrawer
       resource={entry.resource}
-      client={client}
       mode="view"
       rowId={entry.id}
       isOpen={entry.open}

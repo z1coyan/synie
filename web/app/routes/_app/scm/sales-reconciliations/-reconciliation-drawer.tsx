@@ -70,6 +70,8 @@ const AUDIT_COLUMNS: AuditDocConfig['columns'] = [
 // 「客户确认」(常规单)确认弹窗:列出整单条目核对,与赠送/样品单「结单审核」同一套(见 scm/-audit-doc)
 export const reconciliationConfirmConfig = {
   docLabel: '销售对账单',
+  resource: 'salReconciliations',
+  commandKey: 'confirm',
   itemsResource: 'salReconciliationItems',
   columns: AUDIT_COLUMNS,
   loadItems: (reconciliationId: string) =>
@@ -88,24 +90,16 @@ export const reconciliationConfirmConfig = {
         },
       })
       .then((result) => result.results),
-  audit: (reconciliationId: string) => {
-    const commands = resourceBindingFor('salReconciliations').commands
-    if (!commands) throw new Error('销售对账单未绑定 confirm 命令')
-    return commands.execute('confirm', { id: reconciliationId })
-  },
 } satisfies AuditDocConfig
 
 // 「结单审核」(赠送/样品单)确认弹窗
 export const reconciliationAuditConfig = {
   docLabel: '销售对账单',
+  resource: 'salReconciliations',
+  commandKey: 'audit',
   itemsResource: 'salReconciliationItems',
   columns: AUDIT_COLUMNS,
   loadItems: reconciliationConfirmConfig.loadItems,
-  audit: (reconciliationId: string) => {
-    const commands = resourceBindingFor('salReconciliations').commands
-    if (!commands) throw new Error('销售对账单未绑定 audit 命令')
-    return commands.execute('audit', { id: reconciliationId })
-  },
 } satisfies AuditDocConfig
 
 const ReconciliationDrawerContext = createContext<OpenReconciliationDrawer>(
@@ -600,7 +594,6 @@ export function ReconciliationDrawerProvider({
       {children}
       <SynieRecordDrawer
         resource="salReconciliations"
-        client={salesReconciliationClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -959,7 +952,6 @@ export function ReconciliationDrawerProvider({
               />
               <SynieEditableTable
                 resource="salReconciliationItems"
-                client={salesReconciliationItemClient}
                 label="对账条目"
                 items={items}
                 onChange={setItems}
@@ -1182,15 +1174,14 @@ export function ReconciliationDrawerProvider({
             }
             savedId = drawer!.row!.id
           }
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'salReconciliations'],
-          })
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'salReconciliationItems'],
-          })
-          queryClient.invalidateQueries({
-            queryKey: ['rowById', 'salReconciliations'],
-          })
+          await Promise.all([
+            resourceBindingFor('salReconciliations').cache.invalidateAll(
+              queryClient,
+            ),
+            resourceBindingFor(
+              'salReconciliationItems',
+            ).cache.invalidateGrid(queryClient),
+          ])
           return savedId
         }}
       />

@@ -18,6 +18,7 @@ import {
 } from '~/lib/form-defaults'
 import { companyClient } from '~/lib/resources/companies'
 import type { ResourceClient } from '~/lib/resources/types'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export { CompanyDefaultSync, defaultCompanyId, todayLocal }
 
@@ -304,7 +305,6 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
 
       <SynieDataGrid
         resource={cfg.resource}
-        client={cfg.docClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'docDate', direction: 'descending' }}
@@ -318,7 +318,6 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
 
       <SynieRecordDrawer
         resource={cfg.resource}
-        client={cfg.docClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -343,7 +342,6 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
             />
             <SynieEditableTable
               resource={cfg.itemResource}
-              client={cfg.itemClient}
               label={cfg.itemLabel}
               items={items}
               onChange={setItems}
@@ -421,8 +419,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
             }
             savedId = drawer!.row!.id
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', cfg.resource] })
-          queryClient.invalidateQueries({ queryKey: ['rowById', cfg.resource] })
+          await resourceBindingFor(cfg.resource).cache.invalidateAll(queryClient)
           return savedId
         }}
       />

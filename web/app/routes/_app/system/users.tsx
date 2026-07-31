@@ -3,8 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, toast } from '@heroui/react'
 import { fetchMe } from '~/lib/api/session'
-import { createUser, fetchUserAccess, resetUserPassword, roleClient, userClient } from '~/lib/resources/iam'
-import { companyClient } from '~/lib/resources/companies'
+import { createUser, fetchUserAccess, resetUserPassword, userClient } from '~/lib/resources/iam'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -152,7 +151,6 @@ function UsersPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="sysUsers"
-          client={userClient}
           onView={(row) => void openDrawer('view', row)}
           onCreate={() => void openDrawer('create', null)}
           onEdit={(row) => void openDrawer('edit', row)}
@@ -166,7 +164,6 @@ function UsersPage() {
 
       <SynieRecordDrawer
         resource="sysUsers"
-        client={userForm.client}
         label={userForm.formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -188,7 +185,6 @@ function UsersPage() {
                 <>
                   <RemoteMultiSelect
                     resource="sysRoles"
-                    client={roleClient}
                     label="角色"
                     placeholder="搜索并选择角色…"
                     value={roleSel}
@@ -200,7 +196,6 @@ function UsersPage() {
                   />
                   <RemoteMultiSelect
                     resource="basCompanies"
-                    client={companyClient}
                     label="可访问公司"
                     placeholder="搜索并选择公司…"
                     value={companySel}
@@ -236,7 +231,7 @@ function UsersPage() {
             })
           }
           toast.success(mode === 'create' ? '用户已创建' : '用户已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', userClient.id, 'sysUsers'] })
+          await userForm.binding.cache.invalidateGrid(queryClient)
         }}
       />
 

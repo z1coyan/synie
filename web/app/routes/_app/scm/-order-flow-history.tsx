@@ -2,25 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { Chip, Spinner, Table } from '@heroui/react'
 import { formatQty } from '~/lib/amount'
 import { getPurchaseOrderHistory, getSalesOrderHistory } from '~/lib/resources/orders'
-
-interface FlowRow {
-  flowType: string
-  voucherNo: string
-  voucherDate: string
-  status: string
-  materialCode?: string | null
-  materialName?: string | null
-  materialSpec?: string | null
-  customerPartNo?: string | null
-  unitName?: string | null
-  qty: string
-}
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 const FLOW_LABELS: Record<string, string> = {
-  PURCHASE_RECEIPT: '采购入库',
-  OUTSOURCED_RECEIPT: '委外入库',
-  OUTSOURCED_ISSUE: '委外发料',
-  SALES_DELIVERY: '销售发货',
+  'purchase.receipt': '采购入库',
+  'sales.delivery': '销售发货',
 }
 
 /** 订单「收发货历史」只读表；历史由订单专用 REST 端点聚合，不再查询 GraphQL 视图。 */
@@ -31,8 +17,9 @@ export function OrderFlowHistory({
   orderId: string
   side: 'sales' | 'purchase'
 }) {
+  const orderFlowCache = resourceBindingFor('scmOrderFlowItems').cache
   const history = useQuery({
-    queryKey: ['orderFlowHistory', side, orderId],
+    queryKey: orderFlowCache.gridKey('orderHistory', side, orderId),
     queryFn: () =>
       (side === 'sales'
         ? getSalesOrderHistory(orderId)
@@ -71,11 +58,11 @@ export function OrderFlowHistory({
               const material = [row.materialCode, row.materialName].filter(Boolean).join(' ')
               return (
                 <Table.Row
-                  key={`${row.flowType}:${row.voucherNo}:${row.voucherDate}:${index}`}
+                  key={`${row.flowType}:${row.documentNo}:${row.documentDate}:${index}`}
                 >
                   <Table.Cell>{FLOW_LABELS[row.flowType] ?? row.flowType}</Table.Cell>
-                  <Table.Cell>{row.voucherNo}</Table.Cell>
-                  <Table.Cell>{row.voucherDate}</Table.Cell>
+                  <Table.Cell>{row.documentNo}</Table.Cell>
+                  <Table.Cell>{row.documentDate}</Table.Cell>
                   <Table.Cell>
                     <Chip
                       size="sm"
@@ -104,7 +91,7 @@ export function OrderFlowHistory({
                     </div>
                   </Table.Cell>
                   <Table.Cell>{row.unitName ?? '—'}</Table.Cell>
-                  <Table.Cell>{formatQty(row.qty) || '—'}</Table.Cell>
+                  <Table.Cell>{formatQty(row.quantity) || '—'}</Table.Cell>
                 </Table.Row>
               )
             })}

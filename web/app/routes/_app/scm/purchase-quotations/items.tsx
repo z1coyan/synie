@@ -5,7 +5,6 @@ import { formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
-import { purchaseQuotationItemClient } from '~/lib/resources/quotations'
 import { useAuditDoc } from '../-audit-doc'
 import {
   purchaseQuotationAuditConfig,
@@ -111,7 +110,6 @@ function QuotationItemsTab() {
     <>
       <SynieDataGrid
         resource="purQuotationItems"
-        client={purchaseQuotationItemClient}
         columns={GRID_COLUMNS}
         overrides={overrides}
         // 物料富单元格所需快照字段与物料外键(撤列后仍随查询取回)

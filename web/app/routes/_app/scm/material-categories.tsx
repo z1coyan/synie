@@ -20,7 +20,7 @@ function MaterialCategoriesPage() {
   // 树的子层缓存在表格组件本地,写后 invalidate 只能刷新根层——一并 remount 清空子层与展开态
   const [reloadKey, setReloadKey] = useState(0)
   const queryClient = useQueryClient()
-  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '物料分类')
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '物料分类')
 
   return (
     <>
@@ -31,7 +31,6 @@ function MaterialCategoriesPage() {
         <SynieDataGrid
           key={reloadKey}
           resource={RESOURCE}
-          client={client}
           exclude={['parentId', 'hasChildren']}
           tree={{ hasChildrenField: 'hasChildren', sort: { field: 'code', order: 'ASC' } }}
           onView={(row) => setDrawer({ mode: 'view', row })}
@@ -53,7 +52,6 @@ function MaterialCategoriesPage() {
 
       <SynieRecordDrawer
         resource={RESOURCE}
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -76,8 +74,7 @@ function MaterialCategoriesPage() {
             await binding.writer.update(String(drawer!.row!.id), values)
           }
           toast.success(mode === 'create' ? '分类已创建' : '分类已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, RESOURCE] })
-          queryClient.invalidateQueries({ queryKey: ['rowById', client.id, RESOURCE] })
+          await binding.cache.invalidateAll(queryClient)
           setReloadKey((k) => k + 1)
         }}
       />

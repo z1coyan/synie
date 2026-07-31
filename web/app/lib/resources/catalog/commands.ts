@@ -107,8 +107,15 @@ export function createCommandAdapter<TCommands extends CommandMap>(
 export function defineCommand<TInput, TOutput = void>(
   target: CommandTarget,
   execute: (input: TInput) => Promise<TOutput>,
+  options: Pick<CommandSpec, 'affectedResources'> = {},
 ): CommandSpec<TInput, TOutput> {
-  return { target, execute }
+  return {
+    target,
+    ...(options.affectedResources
+      ? { affectedResources: options.affectedResources }
+      : {}),
+    execute,
+  }
 }
 
 /**
@@ -124,12 +131,29 @@ export function executeSingleRowCommand(
 }
 
 type RowCommandHandler = (id: string) => Promise<unknown>
-type RowCommandHandlers = Record<string, RowCommandHandler>
+export interface RowCommandDefinition<
+  THandler extends RowCommandHandler = RowCommandHandler,
+> {
+  readonly handler: THandler
+  readonly affectedResources?: readonly string[]
+}
 
-type RowCommandSpecs<THandlers extends RowCommandHandlers> = {
-  [K in keyof THandlers]: CommandSpec<
+type RowCommandDeclaration =
+  | RowCommandHandler
+  | RowCommandDefinition<RowCommandHandler>
+type RowCommandDeclarations = Record<string, RowCommandDeclaration>
+
+type RowCommandHandlerOf<TDeclaration> =
+  TDeclaration extends RowCommandHandler
+    ? TDeclaration
+    : TDeclaration extends RowCommandDefinition<infer THandler>
+      ? THandler
+      : never
+
+type RowCommandSpecs<TDeclarations extends RowCommandDeclarations> = {
+  [K in keyof TDeclarations]: CommandSpec<
     unknown,
-    Awaited<ReturnType<THandlers[K]>>
+    Awaited<ReturnType<RowCommandHandlerOf<TDeclarations[K]>>>
   >
 }
 
@@ -137,17 +161,29 @@ type RowCommandSpecs<THandlers extends RowCommandHandlers> = {
  * 一组显式 row 命令的语义 Adapter。key 与 transport handler 在资源模块内逐项声明；
  * 这里只复用 target 解码，不做开放 key Proxy。
  */
-export function createRowCommandAdapter<const THandlers extends RowCommandHandlers>(
-  handlers: THandlers,
-): CommandAdapter<RowCommandSpecs<THandlers>> {
+export function createRowCommandAdapter<
+  const TDeclarations extends RowCommandDeclarations,
+>(
+  declarations: TDeclarations,
+): CommandAdapter<RowCommandSpecs<TDeclarations>> {
   const commands = Object.fromEntries(
-    Object.entries(handlers).map(([key, handler]) => [
-      key,
-      defineCommand('row', async (input: unknown) => {
-        const id = decodeRowTarget(input)
-        return handler(id)
-      }),
-    ]),
-  ) as RowCommandSpecs<THandlers>
+    Object.entries(declarations).map(([key, declaration]) => {
+      const definition =
+        typeof declaration === 'function'
+          ? { handler: declaration }
+          : declaration
+      return [
+        key,
+        defineCommand(
+          'row',
+          async (input: unknown) => {
+            const id = decodeRowTarget(input)
+            return definition.handler(id)
+          },
+          { affectedResources: definition.affectedResources },
+        ),
+      ]
+    }),
+  ) as RowCommandSpecs<TDeclarations>
   return createCommandAdapter(commands)
 }

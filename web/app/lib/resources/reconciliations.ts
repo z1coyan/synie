@@ -1,32 +1,8 @@
 import { apiData, api } from '../api/client'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
 import { createRowCommandAdapter } from './catalog/commands'
-import type { ResourceQuery, ResourceTransport } from './types'
-
-type FilterDocument = FilterState
-
-function queryBody(input: ResourceQuery) {
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: {
-      ...(input.filter ?? {}),
-      ...((input.fixedFilter ?? {}) as FilterState),
-    } as FilterDocument,
-  }
-}
-
-function decimalInput(input: Record<string, unknown>, fields: readonly string[]) {
-  const result = { ...input }
-  for (const field of fields) {
-    if (!Object.hasOwn(input, field)) continue
-    const value = input[field]
-    result[field] = value == null || value === '' ? null : String(value)
-  }
-  return result
-}
+import { decimalWireInput, resourceListBody } from './resource-wire'
+import type { ResourceTransport } from './types'
 
 type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
   Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
@@ -98,23 +74,73 @@ async function purchaseAction(
 }
 
 export const salesReconciliationCommandAdapter = createRowCommandAdapter({
-  confirm: (id) => salesAction(id, 'confirm'),
-  unconfirm: (id) => salesAction(id, 'unconfirm'),
-  audit: (id) => salesAction(id, 'audit'),
-  void: (id) => salesAction(id, 'void'),
+  confirm: {
+    handler: (id) => salesAction(id, 'confirm'),
+    affectedResources: ['salReconciliationItems', 'salDeliveryItems'],
+  },
+  unconfirm: {
+    handler: (id) => salesAction(id, 'unconfirm'),
+    affectedResources: ['salReconciliationItems', 'salDeliveryItems'],
+  },
+  audit: {
+    handler: (id) => salesAction(id, 'audit'),
+    affectedResources: [
+      'salReconciliationItems',
+      'salDeliveryItems',
+      'accGlEntries',
+    ],
+  },
+  void: {
+    handler: (id) => salesAction(id, 'void'),
+    affectedResources: [
+      'salReconciliationItems',
+      'salDeliveryItems',
+      'accGlEntries',
+    ],
+  },
 })
 
 export const purchaseReconciliationCommandAdapter = createRowCommandAdapter({
-  confirm: (id) => purchaseAction(id, 'confirm'),
-  unconfirm: (id) => purchaseAction(id, 'unconfirm'),
-  audit: (id) => purchaseAction(id, 'audit'),
-  void: (id) => purchaseAction(id, 'void'),
+  confirm: {
+    handler: (id) => purchaseAction(id, 'confirm'),
+    affectedResources: [
+      'purReconciliationItems',
+      'purReceiptItems',
+      'purOutsourcedReceiptItems',
+    ],
+  },
+  unconfirm: {
+    handler: (id) => purchaseAction(id, 'unconfirm'),
+    affectedResources: [
+      'purReconciliationItems',
+      'purReceiptItems',
+      'purOutsourcedReceiptItems',
+    ],
+  },
+  audit: {
+    handler: (id) => purchaseAction(id, 'audit'),
+    affectedResources: [
+      'purReconciliationItems',
+      'purReceiptItems',
+      'purOutsourcedReceiptItems',
+      'accGlEntries',
+    ],
+  },
+  void: {
+    handler: (id) => purchaseAction(id, 'void'),
+    affectedResources: [
+      'purReconciliationItems',
+      'purReceiptItems',
+      'purOutsourcedReceiptItems',
+      'accGlEntries',
+    ],
+  },
 })
 
 export const salesReconciliationClient = resourceClient('salReconciliations', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.sales.reconciliations.query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.sales.reconciliations.query.$post({ json: resourceListBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -137,7 +163,7 @@ export const salesReconciliationClient = resourceClient('salReconciliations', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.sales.reconciliations[':id'].$delete({
         param: { id }}),
     )
@@ -148,9 +174,9 @@ export const salesReconciliationItemClient = resourceClient(
   'salReconciliationItems',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.sales['reconciliation-items'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -163,18 +189,18 @@ export const salesReconciliationItemClient = resourceClient(
     async create(input) {
       return (await apiData(
         api.sales['reconciliation-items'].$post({
-          json: decimalInput(input, ['qty']) as never}),
+          json: decimalWireInput(input, ['qty']) as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
         api.sales['reconciliation-items'][':id'].$patch({
           param: { id },
-          json: decimalInput(input, ['qty']) as never}),
+          json: decimalWireInput(input, ['qty']) as never}),
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.sales['reconciliation-items'][':id'].$delete({
           param: { id }}),
       )
@@ -186,9 +212,9 @@ export const purchaseReconciliationClient = resourceClient(
   'purReconciliations',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.purchase.reconciliations.query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -211,7 +237,7 @@ export const purchaseReconciliationClient = resourceClient(
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.purchase.reconciliations[':id'].$delete({
           param: { id }}),
       )
@@ -223,9 +249,9 @@ export const purchaseReconciliationItemClient = resourceClient(
   'purReconciliationItems',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.purchase['reconciliation-items'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -238,18 +264,18 @@ export const purchaseReconciliationItemClient = resourceClient(
     async create(input) {
       return (await apiData(
         api.purchase['reconciliation-items'].$post({
-          json: decimalInput(input, ['qty']) as never}),
+          json: decimalWireInput(input, ['qty']) as never}),
       )) as Row
     },
     async update(id, input) {
       return (await apiData(
         api.purchase['reconciliation-items'][':id'].$patch({
           param: { id },
-          json: decimalInput(input, ['qty']) as never}),
+          json: decimalWireInput(input, ['qty']) as never}),
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.purchase['reconciliation-items'][':id'].$delete({
           param: { id }}),
       )
@@ -261,9 +287,9 @@ export const companyAccountDefaultClient = resourceClient(
   'salCompanyAccountDefaults',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.sales['company-account-defaults'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -291,9 +317,9 @@ export const companyAccountDefaultClient = resourceClient(
 
 export const orderFlowItemClient = resourceClient('scmOrderFlowItems', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.scm['order-flow-items'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },

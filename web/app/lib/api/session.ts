@@ -23,9 +23,9 @@ export interface LoginResponse {
 }
 
 export const login = (username: string, password: string) =>
-  apiData<LoginResponse>(api.auth.login.$post({ json: { username, password } }))
+  apiData(api.auth.login.$post({ json: { username, password } }))
 
-export const fetchMe = () => apiData<MeResponse>(api.auth.me.$get())
+export const fetchMe = () => apiData(api.auth.me.$get())
 
 // 保留 ApiErrorCode 引用，避免 shared 错误码漂移时 session 侧无感知
 export type { ApiErrorCode }

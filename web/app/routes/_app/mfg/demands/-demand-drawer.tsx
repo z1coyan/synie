@@ -13,9 +13,9 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { hasPermission } from '~/lib/permissions'
 import {
-  confirmDemand,
   demandClient,
   demandItemClient,
 } from '~/lib/resources/manufacturing'
@@ -86,6 +86,8 @@ const ITEMS = {
 
 export const DEMAND_AUDIT_CONFIG = {
   docLabel: '履约需求单',
+  resource: 'mfgDemands',
+  commandKey: 'audit',
   itemsResource: 'mfgDemandItems',
   loadItems: (demandId) =>
     demandItemClient
@@ -103,7 +105,6 @@ export const DEMAND_AUDIT_CONFIG = {
         sort: { column: 'idx', direction: 'ascending' },
       })
       .then((result) => result.results),
-  audit: confirmDemand,
   columns: [
     { key: 'materialName', label: '物料', render: auditMaterialCell() },
     { key: 'unitName', label: '单位' },
@@ -167,7 +168,6 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
 
       <SynieRecordDrawer
         resource="mfgDemands"
-        client={demandClient}
         {...demandDrawerConfig}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -195,7 +195,6 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
           return (
             <SynieEditableTable
               resource="mfgDemandItems"
-              client={demandItemClient}
               label="需求行"
               items={items}
               onChange={setItems}
@@ -311,15 +310,10 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
             }
             toast.success('需求单已更新')
           }
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'mfgDemands'],
-          })
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'mfgDemandItems'],
-          })
-          queryClient.invalidateQueries({
-            queryKey: ['rowById', 'mfgDemands'],
-          })
+          await Promise.all([
+            resourceBindingFor('mfgDemands').cache.invalidateAll(queryClient),
+            resourceBindingFor('mfgDemandItems').cache.invalidateGrid(queryClient),
+          ])
           return savedId
         }}
       />

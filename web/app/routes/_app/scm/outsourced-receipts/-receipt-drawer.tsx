@@ -47,6 +47,8 @@ export type OpenReceiptDrawer = (mode: DrawerMode, receipt: ReceiptRef | null) =
 // 「审核整单」确认弹窗配置:条目页行操作与入库单页「审核」动作共用(见 scm/-audit-doc)
 export const receiptAuditConfig = {
   docLabel: '委外入库单',
+  resource: 'purOutsourcedReceipts',
+  commandKey: 'audit',
   itemsResource: 'purOutsourcedReceiptItems',
   columns: [
     {
@@ -70,11 +72,6 @@ export const receiptAuditConfig = {
         },
       })
       .then((result) => result.results),
-  audit: (receiptId: string) => {
-    const commands = resourceBindingFor('purOutsourcedReceipts').commands
-    if (!commands) throw new Error('委外入库单未绑定 audit 命令')
-    return commands.execute('audit', { id: receiptId })
-  },
 } satisfies AuditDocConfig
 
 const ReceiptDrawerContext = createContext<OpenReceiptDrawer>(() => {})
@@ -660,7 +657,6 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
       {children}
       <SynieRecordDrawer
         resource="purOutsourcedReceipts"
-        client={purchaseOutsourcedReceiptClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -714,7 +710,6 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               input: ({ value, onChange, isDisabled, patchValues: patchItem }) => (
                 <RemoteDialogSelect
                   resource="purOrderItems"
-                  client={purchaseOrderItemClient}
                   label="委外订单条目"
                   dialogTitle="选择可入库委外订单条目"
                   placeholder={oiGridFilter ? '点击选择委外订单条目…' : '先选齐公司与对手'}
@@ -966,7 +961,6 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                   return (
                     <RemoteDialogSelect
                       resource={lineResource}
-                      client={lineClient}
                       label={lineLabel}
                       dialogTitle={`选择${lineLabel}`}
                       placeholder={lineFilter ? `点击选择${lineLabel}…` : '先选所属入库条目'}
@@ -1161,7 +1155,6 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               />
               <SynieEditableTable
                 resource="purOutsourcedReceiptItems"
-                client={purchaseOutsourcedReceiptItemClient}
                 label="入库条目"
                 items={items}
                 onChange={setItems}
@@ -1279,7 +1272,6 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               </p>
               <SynieEditableTable
                 resource="purOutsourcedReceiptItemMaterials"
-                client={purchaseOutsourcedReceiptItemMaterialClient}
                 label="材料扣减行"
                 items={materialRows}
                 onChange={setMaterialRows}
@@ -1335,7 +1327,6 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
               />
               <SynieEditableTable
                 resource="purOutsourcedReceiptItemByproducts"
-                client={purchaseOutsourcedReceiptItemByproductClient}
                 label="副产物行"
                 items={byproductRows}
                 onChange={setByproductRows}
@@ -1488,16 +1479,23 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             }
             savedId = drawer!.row!.id
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOutsourcedReceipts'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOutsourcedReceiptItems'] })
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'purOutsourcedReceiptItemMaterials'],
-          })
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'purOutsourcedReceiptItemByproducts'],
-          })
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'purOutsourcedReceipts'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'purOrderItems'] })
+          await Promise.all([
+            resourceBindingFor(
+              'purOutsourcedReceipts',
+            ).cache.invalidateAll(queryClient),
+            resourceBindingFor(
+              'purOutsourcedReceiptItems',
+            ).cache.invalidateGrid(queryClient),
+            resourceBindingFor(
+              'purOutsourcedReceiptItemMaterials',
+            ).cache.invalidateGrid(queryClient),
+            resourceBindingFor(
+              'purOutsourcedReceiptItemByproducts',
+            ).cache.invalidateGrid(queryClient),
+            resourceBindingFor('purOrderItems').cache.invalidateGrid(
+              queryClient,
+            ),
+          ])
           return savedId
         }}
       />

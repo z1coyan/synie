@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, toast } from '@heroui/react'
 import { attendanceImportClient } from '~/lib/resources/hr-operations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { ActionContext, Row } from '~/components/synie-data-grid/types'
 import {
@@ -42,8 +43,8 @@ function AttendanceImportsPage() {
   const queryClient = useQueryClient()
 
   const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrAttendanceImports'] })
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrAttendancePunches'] })
+    void resourceBindingFor('hrAttendanceImports').cache.invalidateGrid(queryClient)
+    void resourceBindingFor('hrAttendancePunches').cache.invalidateGrid(queryClient)
   }
 
   const confirmDelete = async () => {
@@ -55,7 +56,7 @@ function AttendanceImportsPage() {
         deleteAsk.row.status === 'IMPORTED' ? '批次已删除,其导入的打卡已整批撤销' : '批次已删除'
       )
       deleteAsk.ctx.refetch()
-      queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrAttendancePunches'] })
+      void resourceBindingFor('hrAttendancePunches').cache.invalidateGrid(queryClient)
       setDeleteAsk(null)
     } catch (e) {
       toast.danger('删除失败', { description: (e as Error).message })
@@ -73,7 +74,6 @@ function AttendanceImportsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrAttendanceImports"
-          client={attendanceImportClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'insertedAt', direction: 'descending' }}
@@ -97,7 +97,7 @@ function AttendanceImportsPage() {
         isOpen={createOpen}
         onOpenChange={setCreateOpen}
         onParsed={(result) => {
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'hrAttendanceImports'] })
+          void resourceBindingFor('hrAttendanceImports').cache.invalidateGrid(queryClient)
           setRecordId(result.id)
         }}
       />

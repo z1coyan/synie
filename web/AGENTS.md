@@ -9,6 +9,7 @@
 - 尽可能使用组件库已有的组件进行开发而不是自己使用html+tailwindcss搭建
 - 表单/筛选控件一律用 HeroUI(Pro) 现成组件（日期用 DatePicker/DateRangePicker、数值用 NumberField、下拉用 Select 等），不要包装浏览器原生 input；有已封装的业务组件时优先复用业务组件
 - 业务数据请求走 `~/lib/api`（hono/client）或 `~/lib/resources` registry；禁止新增 GraphQL / `gqlFetch` / openapi-fetch 路径
+- 生产页面的 `SynieDataGrid` / `SynieRecordDrawer` / 远程选择器只传 `resource`，由 `ResourceBinding.reader` 解析规范生产 Adapter；不要显式传 `client`。显式 Adapter 只用于 custom/in-memory 局部读模型与 interface 测试。列表与单条缓存键、失效一律经 `resourceBindingFor(resource).cache`，不得手写 `['gridRows', ...]` / `['rowById', ...]` 或依赖 transport id。
 - Vite 仅代理 `/api/v1` → Bun server（`SYNIE_API_PORT`/`GO_API_PORT`，默认 8080）；认证为 JWT
 
 ## 业务数据页标准组件
@@ -17,10 +18,12 @@
 - 表格列名与表单字段标签只写简短、明确的业务名称（如「数量」）；不得把正负方向、单位口径、计算规则等说明塞进名称（如「数量(带符号,入正出负,物料默认单位口径)」），这些说明应放在页面说明、帮助文案或产品文档中。
 - `form.kind=basic` 的必填、只读、标签、枚举、外键与静态布局由服务端 Resource Catalog 声明，页面通过 `useCatalogBasicForm` 消费，不得重复手写。复杂资源的条件显隐、effects、React input/render、附件和子表属于 Presentation Extension，才在共置模块或页面叠加 `fields` override；接入范例见 `routes/_app/system/roles.tsx`。
 - 「保存并审核」是所有表单的通用约定：资源 meta 下发 `audit` 扩展动作且当前用户具备 audit 权限时，`SynieRecordDrawer` 会在「保存」旁自动出现「保存并审核」按钮（仅草稿单），页面无需自绘；前提是 `onSubmit` 返回保存后的记录 id（create 态必须 return 新 id，否则只能保存不能自动审核）。审核确认统一用列出整单条目的核对弹窗（`routes/_app/scm/-audit-doc.tsx` 的 `useAuditDoc`，条目页行操作「审核整单」与单据页「审核」共用），不要再用只显示条数的通用确认框。
+- 领域命令若会改变关联资源，必须在对应 `CommandSpec.affectedResources` 旁声明；当前资源与系统审计日志由统一失效实现自动补入。所有 row/bulk/rowOrBulk/collection 命令一律经 `executeCommandWithInvalidation` 先解析完整 effects、再执行并精确失效；单记录场景可用 `executeSingleRowCommandWithInvalidation` 便利入口。不得在页面手拼查询键、另维护依赖清单或遍历全部 ResourceBinding 全局失效。
 - 启用/停用等状态类开关不进创建/编辑表单（表单 `exclude` 掉，新建由后端默认值兜底）：状态翻转用独立入口（表格行动作、详情页按钮）显式触发；仅记录固有属性的布尔（如叶子分类、基准单位）仍属表单字段。
 - 父表单内的子条目（单据行、明细行等）一律用 `SynieEditableTable`（`~/components/synie-editable-table/`）：表格纯展示，增改一律走二级 `SynieRecordDrawer`，不做行内编辑；`items`/`onChange` 受控、组件不发写请求，父表单提交时一并持久化，新增行 id 带 `local:` 前缀（`isLocalRow` 判别）。
+- 表头与子条目共同构成业务聚合时，父表单经该业务模块的 `AggregateDraftAdapter` 整单读取/创建/替换；后端必须在领域事务内保存完整草稿，多 SELECT 的 load 使用一致读快照，replace wire 必须显式提交全部集合/嵌套子树并按实际差异保留原有 create/update/delete 授权。禁止在页面或通用 Catalog 中循环 create/update/delete 并把它描述为原子保存。
 - 组件能力不够时先扩组件再用，不要在页面里绕过它手搭。
-- 外键单元格/字段默认渲染为可点 link，点击开全局速览抽屉（`FkPreviewProvider` 已挂 `_app` 布局，页面零接线）；资源解析经 `resourceBindingFor`，Meta 经 ResourceDocument。页面 Basic Form 用 `useCatalogBasicForm`；`extension-drawer-props.tsx` 只收录实际调用的 Presentation Extension 静态配置（未知资源 fail-closed），模块专用复杂交互继续与业务模块共置。
+- 外键单元格/字段默认渲染为可点 link，点击开全局速览抽屉（`FkPreviewProvider` 已挂 `_app` 布局，页面零接线）；资源解析经 `resourceBindingFor`，Meta 经 ResourceDocument。页面 Basic Form 用 `useCatalogBasicForm`；Presentation Extension 的 Drawer / audit / document preview implementation 与对应业务模块共置，全局 registry 只做薄装配且未知资源 fail-closed。
 - **物料列**：所有用到物料的表格（DataGrid 列表、SynieEditableTable 子条目、审核确认弹窗等只读/半只读表格）一律用统一物料单元格（`~/components/synie-material-cell/MaterialCell`）：保留 `materialCode` 列并 override 为 `materialCellRender({ drawingOwnerType? })`（label「物料」、DataGrid 上 `mobileRole: 'title'`、`filterField: 'materialId'`——快照行的列筛选仍按物料外键走 fk 选择器，不做编号文本筛选），撤掉 `materialName`/`materialSpec`/`customerPartNo` 独立列（撤列后经 `extraFields` 继续取回这三个字段与 `materialId`）。单元格形态为「图纸缩略图 + 编号/名称 + 规格 + 客编」；文本四字段严格取行上快照值不回退，缩略图快照图纸挂接优先、无挂接回退物料当前图纸；行有图纸挂接时传 `drawingOwnerType`（如 `sal_order_item`），无挂接的行（库存/报价/制造类）不传。物料选择器/挑选对话框不适用本约定。
 - 一切文件上传/下载必须走 `~/lib/files.ts`（REST `/api/v1/files*`），不要在页面自写 fetch/FormData；记录附件 UI 一律用 `SynieAttachmentPanel`（`~/components/synie-attachment-panel/`）挂 SynieRecordDrawer 的 `extraContent`，传 ownerType（资源/宿主类型名）/ownerId；固定单图槽位（证件照等）用同目录 `SynieImageAttachment`，一个 category 一张图。
 - 图片全屏预览一律用 `SyniePreview`（`~/components/synie-preview/`）：受控 `isOpen/onOpenChange`，`items` 传 `fileId`（经鉴权懒加载）或 `src`，内建下载/旋转/缩放/循环切换，抽屉/对话框内打开层级自然正确；不要自造 lightbox。缩略图用同目录 `FileThumb`；表格图片列用 DataGrid 列 override `image`（`true`=列值即 file id，或 `{ fileId(row), keepText }`），缩略图点击即全屏预览、同列循环；行记录的图片附件列用 DataGrid `attachmentImages={{ ownerType, category?, label? }}`（虚拟列，点开该行全部图片，与抽屉附件面板同 queryKey 联动刷新）。

@@ -13,6 +13,7 @@ import type { DB as Database } from './types.ts'
 export type DbHandle = Kysely<Database> | Transaction<Database>
 
 declare const trxBrand: unique symbol
+declare const readSnapshotBrand: unique symbol
 
 /**
  * 事务内句柄。仅 withTx 可产生（brand 不可伪造）；
@@ -20,6 +21,24 @@ declare const trxBrand: unique symbol
  */
 export type TrxHandle = Transaction<Database> & { readonly [trxBrand]: true }
 
+/**
+ * 多 SELECT 聚合读取的一致快照片段。Repeatable Read 保证同一次 loader 看到同一提交代际；
+ * 独立 brand 让公开读入口不能把它误当成可过账的 TrxHandle。
+ */
+export type ReadSnapshotHandle = Transaction<Database> & {
+  readonly [readSnapshotBrand]: true
+}
+
 export function withTx<T>(db: Kysely<Database>, run: (trx: TrxHandle) => Promise<T>): Promise<T> {
   return db.transaction().execute((trx) => run(trx as TrxHandle))
+}
+
+export function withReadSnapshot<T>(
+  db: Kysely<Database>,
+  run: (snapshot: ReadSnapshotHandle) => Promise<T>,
+): Promise<T> {
+  return db
+    .transaction()
+    .setIsolationLevel('repeatable read')
+    .execute((trx) => run(trx as ReadSnapshotHandle))
 }

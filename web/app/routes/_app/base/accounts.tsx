@@ -77,7 +77,7 @@ function AccountsPage() {
   })
 
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['gridRows', accountClient.id, 'basAccounts'] })
+    void resourceBindingFor('basAccounts').cache.invalidateGrid(queryClient)
     setReloadKey((key) => key + 1)
   }
 
@@ -108,7 +108,6 @@ function AccountsPage() {
       <div className="mt-6 max-w-xs">
         <RemoteSelect
           resource="basCompanies"
-          client={companyClient}
           label="公司"
           placeholder="选择公司…"
           value={companyId}
@@ -170,7 +169,6 @@ function AccountsPage() {
           <SynieDataGrid
             key={`${companyId}-${reloadKey}`}
             resource="basAccounts"
-            client={accountClient}
             exclude={['parentId', 'companyId', 'hasChildren']}
             tree={{ hasChildrenField: 'hasChildren', sort: { field: 'code', order: 'ASC' } }}
             fixedFilter={fixedFilter}
@@ -214,7 +212,6 @@ function AccountDrawer(props: {
   return (
     <SynieRecordDrawer
       resource="basAccounts"
-      client={accountClient}
       label={presentation.label}
       mode={props.drawer?.mode ?? 'view'}
       isOpen={props.drawer !== null}

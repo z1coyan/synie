@@ -104,9 +104,16 @@ capabilities，并为动态列表派生不可变的 `ResourceReadSpec`。
 
 前端单独获取并缓存完整 ResourceDocument。HTTP `ResourceTransport` 只暴露实际存在的
 query/get/create/update/delete；`ResourceBinding` 将其收口为 `ResourceReader` 与可选
-`RecordWriter`。聚合草稿和领域命令分别绑定 `AggregateDraftAdapter` 与显式
-`CommandAdapter`，不提供 Proxy/action fallback。动态 React 行为只放在与业务模块
-共置的 Presentation Extension，不能进入 wire 元数据。
+`RecordWriter`，并拥有对应 Reader 的列表/单条缓存身份与精确失效动作，页面不得传具体
+client 或拼 transport id。聚合草稿和领域命令分别绑定 `AggregateDraftAdapter` 与显式
+`CommandAdapter`，不提供 Proxy/action fallback；命令在自身 spec 旁声明成功后受影响的
+资源，统一失效模块自动包含当前资源、去重并 fail-closed，列表审核与保存并审核不得各自
+维护缓存依赖或全局失效。聚合 create/replace 必须由后端业务模块在单一事务内保存完整
+草稿；replace 明确要求全部集合快照并按新增/更新/删除差异保持原授权，聚合 load 的多次
+查询使用 repeatable-read 一致快照。动态 React 行为、Drawer 与文档速览只放在与业务模块共置的 Presentation
+Extension，全局 registry 只装配资源键，不能把业务 JSX 放进 wire 元数据或集中配置；
+文档速览子表通过资源 binding 取得 Reader 与缓存身份，特殊 loader 只注入最小 Reader
+resolver。
 
 ### base/currency
 

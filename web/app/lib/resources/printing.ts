@@ -1,27 +1,16 @@
-import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
 import { createRowCommandAdapter } from './catalog/commands'
-import type { ResourceClient, ResourceQuery } from './types'
-
-function queryBody(input: ResourceQuery): ListQuery {
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: {
-      ...(input.filter ?? {}),
-      ...((input.fixedFilter ?? {}) as FilterState),
-    } as FilterState,
-  }
-}
+import { resourceListBody } from './resource-wire'
+import type { ResourceClient } from './types'
 
 export const printTemplateClient: ResourceClient = {
   id: 'rest:sysPrintTemplates',
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.system.printing.templates.query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.system.printing.templates.query.$post({
+        json: resourceListBody(input),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -44,14 +33,14 @@ export const printTemplateClient: ResourceClient = {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.system.printing.templates[':id'].$delete({ param: { id } }),
     )
   },
 }
 
 export function listPrintResources() {
-  return apiData<{ resources: string[] }>(api.printing.resources.$get())
+  return apiData(api.printing.resources.$get())
 }
 
 export function setDefaultPrintTemplate(id: string) {

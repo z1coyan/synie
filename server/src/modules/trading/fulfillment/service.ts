@@ -6,7 +6,7 @@ import type { ListQuery } from '@synie/shared'
 import { decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
-import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
+import { withReadSnapshot, withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { GlEngine } from '~/engines/gl/index.ts'
 import type { InventoryEngine } from '~/engines/inventory/index.ts'
@@ -168,6 +168,11 @@ export interface SalesDraftInput extends FulfillmentHeadDraftInput {
   packBoxes: SalesDraftPackBoxInput[]
 }
 
+/** 采购入库聚合草稿：表头与全部入库条目作为一个事务写入。 */
+export interface PurchaseReceiptDraftInput extends FulfillmentHeadDraftInput {
+  items: SalesDraftItemInput[]
+}
+
 export interface SalesDraftDto {
   id: string
   deliveryNo: string
@@ -190,6 +195,27 @@ export interface SalesDraftDto {
   packBoxes: Array<ReturnType<typeof mapPackBoxDto> & {
     lines: ReturnType<typeof mapPackDto>[]
   }>
+}
+
+export interface PurchaseReceiptDraftDto {
+  id: string
+  receiptNo: string
+  receiptDate: string
+  postingDate: string | null
+  partyType: string
+  partyId: string
+  remarks: string | null
+  status: string
+  auditedAt: string | null
+  insertedAt: string
+  updatedAt: string
+  companyId: string
+  warehouseId: string | null
+  debitAccountId: string
+  creditAccountId: string
+  createdById: string | null
+  auditedById: string | null
+  items: ReturnType<typeof mapItemDto>[]
 }
 
 type Numberer = Pick<NumberingService, 'nextInTx'>
@@ -918,7 +944,7 @@ export function createFulfillmentService(
    */
   async function getSalesDraft(actor: Actor, id: string): Promise<SalesDraftDto> {
     requirePerm(actor, 'sales.delivery', 'read', '无权限执行该履约操作')
-    return loadSalesDraft(db, actor, id)
+    return withReadSnapshot(db, (snapshot) => loadSalesDraft(snapshot, actor, id))
   }
 
   async function createSalesDraft(actor: Actor, input: SalesDraftInput) {
@@ -1007,6 +1033,23 @@ export function createFulfillmentService(
         lines: existingLineIds,
       })
 
+      const requestedItems = new Set(input.items.flatMap((item) => item.id ?? []))
+      const requestedBoxes = new Set(input.packBoxes.flatMap((box) => box.id ?? []))
+      const requestedLines = new Set(
+        input.packBoxes.flatMap((box) => box.lines.flatMap((line) => line.id ?? [])),
+      )
+
+      // 先删 omitted 发货条目，再修改头：完整快照清空旧条目时可同步换对手。
+      // 删除、头修改与后续子树写入共用同一 transaction，任一失败整体回滚。
+      for (const oldId of existingItemIds) {
+        if (requestedItems.has(oldId)) continue
+        await sql`
+          DELETE FROM sys_attachment
+          WHERE owner_type='sal_delivery_item' AND owner_id=${oldId}::uuid
+        `.execute(trx)
+        await trx.deleteFrom('sal_delivery_item').where('id', '=', oldId).execute()
+      }
+
       await withIndexedFields(
         'header',
         () =>
@@ -1027,17 +1070,6 @@ export function createFulfillmentService(
         { number: 'deliveryNo', documentDate: 'deliveryDate' },
       )
 
-      const requestedItemIds = new Set(
-        input.items.flatMap((item) => (item.id === undefined ? [] : [item.id])),
-      )
-      for (const oldId of existingItemIds) {
-        if (requestedItemIds.has(oldId)) continue
-        await sql`
-          DELETE FROM sys_attachment
-          WHERE owner_type='sal_delivery_item' AND owner_id=${oldId}::uuid
-        `.execute(trx)
-        await trx.deleteFrom('sal_delivery_item').where('id', '=', oldId).execute()
-      }
       for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
         const item = input.items[itemIndex]!
         if (item.id === undefined) {
@@ -1060,15 +1092,12 @@ export function createFulfillmentService(
         }
       }
 
-      const requestedBoxIds = new Set<string>()
-      const requestedLineIds = new Set<string>()
       for (let boxIndex = 0; boxIndex < input.packBoxes.length; boxIndex++) {
         const inputBox = input.packBoxes[boxIndex]!
         const box = inputBox.id === undefined
           ? await createPackBoxInTx(trx, actor, id)
           : await readPackBox(trx, actor, inputBox.id)
         const boxId = String(box.id)
-        if (inputBox.id !== undefined) requestedBoxIds.add(inputBox.id)
         for (let lineIndex = 0; lineIndex < inputBox.lines.length; lineIndex++) {
           const line = inputBox.lines[lineIndex]!
           const prefix = `packBoxes[${boxIndex}].lines[${lineIndex}]`
@@ -1077,7 +1106,6 @@ export function createFulfillmentService(
               createPackLineInTx(trx, actor, { ...line, deliveryId: id, packBoxId: boxId }),
             )
           } else {
-            requestedLineIds.add(line.id)
             await withIndexedFields(prefix, () =>
               updatePackLineInTx(trx, actor, line.id!, {
                 idx: line.idx,
@@ -1094,16 +1122,173 @@ export function createFulfillmentService(
         }
       }
       for (const oldId of existingLineIds) {
-        if (!requestedLineIds.has(oldId)) {
+        if (!requestedLines.has(oldId)) {
           await trx.deleteFrom('sal_delivery_pack_line').where('id', '=', oldId).execute()
         }
       }
       for (const oldId of existingBoxIds) {
-        if (!requestedBoxIds.has(oldId)) {
+        if (!requestedBoxes.has(oldId)) {
           await trx.deleteFrom('sal_delivery_pack_box').where('id', '=', oldId).execute()
         }
       }
       return loadSalesDraft(trx, actor, id)
+    })
+  }
+
+  async function loadPurchaseReceiptDraft(
+    handle: DbHandle,
+    actor: Actor,
+    id: string,
+  ): Promise<PurchaseReceiptDraftDto> {
+    const spec = fulfillmentSpec('purchase')
+    const headRow = await loadHead(handle, spec, id)
+    if (!headRow || !canAccessCompany(actor, String(headRow.company_id))) {
+      throw new ApiError('not_found', '采购入库单不存在')
+    }
+    const itemRows = await sql<Record<string, unknown>>`
+      SELECT i.*, h.receipt_no, h.receipt_date, h.status AS receipt_status,
+        h.party_type, h.party_id,
+        (i.base_qty - i.reconciled_qty) AS remaining_reconcilable_qty
+      FROM pur_receipt_item i
+      JOIN pur_receipt h ON h.id=i.receipt_id
+      WHERE i.receipt_id=${id}::uuid
+      ORDER BY i.idx, i.id
+    `.execute(handle)
+    return {
+      ...mapHeadDto('purchase', headRow),
+      id: String(headRow.id),
+      receiptNo: String(headRow.receipt_no),
+      receiptDate: asDate(headRow.receipt_date),
+      items: itemRows.rows.map((row) => mapItemDto('purchase', row)),
+    }
+  }
+
+  /** 领域专用完整草稿读取；不经过分页子资源 query。 */
+  async function getPurchaseReceiptDraft(
+    actor: Actor,
+    id: string,
+  ): Promise<PurchaseReceiptDraftDto> {
+    requirePerm(actor, 'purchase.receipt', 'read', '无权限执行该履约操作')
+    return withReadSnapshot(db, (snapshot) => loadPurchaseReceiptDraft(snapshot, actor, id))
+  }
+
+  async function createPurchaseReceiptDraft(
+    actor: Actor,
+    input: PurchaseReceiptDraftInput,
+  ): Promise<PurchaseReceiptDraftDto> {
+    requirePerm(actor, 'purchase.receipt', 'create', '无权限执行该履约操作')
+    if (!canAccessCompany(actor, input.companyId)) {
+      throw new ApiError('forbidden', '无权在该公司创建履约单')
+    }
+    const identityFields: Record<string, string[]> = {}
+    input.items.forEach((item, itemIndex) => {
+      if (item.id !== undefined) {
+        identityFields[`items[${itemIndex}].id`] = ['新记录不能包含 id']
+      }
+    })
+    if (Object.keys(identityFields).length > 0) {
+      throw ApiError.validation('采购入库草稿参数不合法', identityFields)
+    }
+
+    return withTx(db, async (trx) => {
+      const head = await withIndexedFields(
+        'header',
+        () => createHeadInTx(trx, actor, 'purchase', input),
+        { number: 'receiptNo', documentDate: 'receiptDate' },
+      )
+      const receiptId = String(head.id)
+      for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
+        const item = input.items[itemIndex]!
+        await withIndexedFields(`items[${itemIndex}]`, () =>
+          createItemInTx(trx, actor, 'purchase', { ...item, headId: receiptId }),
+        )
+      }
+      return loadPurchaseReceiptDraft(trx, actor, receiptId)
+    })
+  }
+
+  async function replacePurchaseReceiptDraft(
+    actor: Actor,
+    id: string,
+    input: PurchaseReceiptDraftInput,
+  ): Promise<PurchaseReceiptDraftDto> {
+    requirePerm(actor, 'purchase.receipt', 'update', '无权限执行该履约操作')
+    return withTx(db, async (trx) => {
+      const spec = fulfillmentSpec('purchase')
+      const before = mapHead(await lockDraftHead(trx, actor, spec, id))
+      if (input.companyId !== before.companyId) {
+        throw ApiError.validation('采购入库草稿参数不合法', {
+          'header.companyId': ['创建后不可修改公司'],
+        })
+      }
+
+      const existingItems = await trx
+        .selectFrom('pur_receipt_item')
+        .select('id')
+        .where('receipt_id', '=', id)
+        .execute()
+      const existingItemIds = new Set(existingItems.map((item) => item.id))
+      validatePurchaseReceiptDraftIdentities(input, existingItemIds)
+
+      const effects = purchaseReceiptDraftChildEffects(input, existingItemIds)
+      if (effects.creates) {
+        requirePerm(actor, spec.prefix, 'create', '无权限执行该履约操作')
+      }
+      if (effects.deletes) {
+        requirePerm(actor, spec.prefix, 'delete', '无权限执行该履约操作')
+      }
+
+      for (const oldId of existingItemIds) {
+        if (effects.requestedItems.has(oldId)) continue
+        await sql`
+          DELETE FROM sys_attachment
+          WHERE owner_type=${spec.itemOwnerType} AND owner_id=${oldId}::uuid
+        `.execute(trx)
+        await trx.deleteFrom('pur_receipt_item').where('id', '=', oldId).execute()
+      }
+
+      await withIndexedFields(
+        'header',
+        () =>
+          updateHeadInTx(trx, actor, 'purchase', id, {
+            no: input.no ?? before.no,
+            documentDate: input.documentDate ?? before.documentDate,
+            postingDate: input.postingDate ?? null,
+            postingDatePresent: true,
+            partyType: input.partyType,
+            partyId: input.partyId,
+            remarks: input.remarks ?? null,
+            remarksPresent: true,
+            warehouseId: input.warehouseId ?? null,
+            warehouseIdPresent: true,
+            debitAccountId: input.debitAccountId,
+            creditAccountId: input.creditAccountId,
+          }),
+        { number: 'receiptNo', documentDate: 'receiptDate' },
+      )
+
+      for (let itemIndex = 0; itemIndex < input.items.length; itemIndex++) {
+        const item = input.items[itemIndex]!
+        if (item.id === undefined) {
+          await withIndexedFields(`items[${itemIndex}]`, () =>
+            createItemInTx(trx, actor, 'purchase', { ...item, headId: id }),
+          )
+        } else {
+          await withIndexedFields(`items[${itemIndex}]`, () =>
+            updateItemInTx(trx, actor, 'purchase', item.id!, {
+              idx: item.idx,
+              qty: item.qty,
+              orderItemId: item.orderItemId,
+              unitId: item.unitId ?? null,
+              unitIdPresent: true,
+              warehouseId: item.warehouseId,
+              remarks: item.remarks ?? null,
+              remarksPresent: true,
+            }),
+          )
+        }
+      }
+      return loadPurchaseReceiptDraft(trx, actor, id)
     })
   }
 
@@ -1140,6 +1325,7 @@ export function createFulfillmentService(
 
   return {
     getSalesDraft, createSalesDraft, replaceSalesDraft,
+    getPurchaseReceiptDraft, createPurchaseReceiptDraft, replacePurchaseReceiptDraft,
     listHeads, getHead, createPurchaseHead, updatePurchaseHead, deleteHead, auditHead, voidHead,
     listItems, getItem, createPurchaseItem, updatePurchaseItem, deletePurchaseItem,
     listPackBoxes, getPackBox,
@@ -1207,6 +1393,38 @@ function validateSalesDraftIdentities(
   if (Object.keys(fields).length > 0) {
     throw ApiError.validation('销售发货草稿子记录身份不合法', fields)
   }
+}
+
+function validatePurchaseReceiptDraftIdentities(
+  input: PurchaseReceiptDraftInput,
+  existingItems: ReadonlySet<string>,
+): void {
+  const fields: Record<string, string[]> = {}
+  const seenItems = new Set<string>()
+  input.items.forEach((item, itemIndex) => {
+    if (item.id === undefined) return
+    const field = `items[${itemIndex}].id`
+    if (seenItems.has(item.id)) fields[field] = ['同一草稿中不能重复']
+    else if (!existingItems.has(item.id)) fields[field] = ['不属于该采购入库单']
+    seenItems.add(item.id)
+  })
+  if (Object.keys(fields).length > 0) {
+    throw ApiError.validation('采购入库草稿子记录身份不合法', fields)
+  }
+}
+
+function purchaseReceiptDraftChildEffects(
+  input: PurchaseReceiptDraftInput,
+  existingItems: ReadonlySet<string>,
+) {
+  const requestedItems = new Set<string>()
+  let creates = false
+  for (const item of input.items) {
+    if (item.id === undefined) creates = true
+    else requestedItems.add(item.id)
+  }
+  const deletes = [...existingItems].some((itemId) => !requestedItems.has(itemId))
+  return { creates, deletes, requestedItems }
 }
 
 function validateHeadShape(spec: FulfillmentSideSpec, item: FulfillmentHead) {

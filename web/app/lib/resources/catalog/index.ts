@@ -12,6 +12,12 @@ export type {
   UpdateWriter,
 } from './types'
 export {
+  createResourceQueryCache,
+  type QueryInvalidationAdapter,
+  type ResourceQueryCache,
+  type ResourceQueryKey,
+} from './query-cache'
+export {
   clearCatalogCache,
   catalogCacheSize,
   getCachedDocument,
@@ -40,6 +46,7 @@ export {
   decodeRowTarget,
   defineCommand,
   type BulkCommandInput,
+  type RowCommandDefinition,
   type RowCommandInput,
   type RowOrBulkCommandInput,
 } from './commands'

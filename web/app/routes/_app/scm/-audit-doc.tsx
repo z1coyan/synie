@@ -6,6 +6,9 @@ import {
   materialCellRender,
   type MaterialCellOptions,
 } from '~/components/synie-material-cell/MaterialCell'
+import type { ResourceBinding } from '~/lib/resources/catalog'
+import { resourceBindingFor } from '~/lib/resources/registry'
+import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 
 /** 审核确认弹窗的条目列定义(render 缺省时按文本原样展示) */
 export interface AuditItemColumn {
@@ -25,14 +28,32 @@ export interface AuditDocConfig {
   columns: AuditItemColumn[]
   /** 通过资源 REST client 读取整单条目 */
   loadItems: (docId: string) => Promise<Row[]>
-  /** 通过资源 REST client 审核整单 */
-  audit: (docId: string) => Promise<unknown>
+  /** 审核命令所属 ResourceBinding。 */
+  resource: string
+  /** ResourceBinding.commands 中的语义命令 key。 */
+  commandKey: string
 }
 
 /** 审核弹窗物料列:与全系统物料单元格同一组件(图纸缩略图+编号/名称+规格/客编),
  *  条目行有图纸挂接时经 options.drawingOwnerType 声明(快照图纸优先,回退物料当前图纸) */
 export function auditMaterialCell(options?: MaterialCellOptions) {
   return materialCellRender(options)
+}
+
+export type AuditDocBindingResolver = (
+  resource: string,
+) => Pick<ResourceBinding, 'cache'>
+
+/** 审核条目查询沿用 items ResourceBinding 的 grid scope，命令 effects 可精确命中。 */
+export function auditDocItemsQueryKey(
+  itemsResource: string,
+  docId: string | undefined,
+  resolveBinding: AuditDocBindingResolver = resourceBindingFor,
+) {
+  return resolveBinding(itemsResource).cache.gridKey(
+    'auditDocItems',
+    docId,
+  )
 }
 
 /**
@@ -46,7 +67,10 @@ export function useAuditDoc(cfg: AuditDocConfig) {
   const [running, setRunning] = useState(false)
 
   const itemsQuery = useQuery({
-    queryKey: ['auditDocItems', cfg.itemsResource, pending?.docId],
+    queryKey: auditDocItemsQueryKey(
+      cfg.itemsResource,
+      pending?.docId,
+    ),
     enabled: pending != null,
     queryFn: () => cfg.loadItems(pending!.docId),
   })
@@ -56,10 +80,13 @@ export function useAuditDoc(cfg: AuditDocConfig) {
     if (!pending) return
     setRunning(true)
     try {
-      await cfg.audit(pending.docId)
+      await executeSingleRowCommandWithInvalidation(
+        cfg.resource,
+        cfg.commandKey,
+        pending.docId,
+        queryClient,
+      )
       toast.success(`${cfg.docLabel}已审核`)
-      queryClient.invalidateQueries({ queryKey: ['gridRows'] })
-      queryClient.invalidateQueries({ queryKey: ['rowById'] })
       pending.refetch()
       setPending(null)
     } catch (e) {

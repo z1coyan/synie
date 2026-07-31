@@ -22,6 +22,7 @@ import {
   WarehouseRemoteSelect,
   defaultCompanyId,
 } from '../-stock-doc'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/scm/other-stock/counts')({
   component: StockCountsTab,
@@ -174,8 +175,7 @@ function StockCountsTab() {
   )
 
   const invalidateGrids = () => {
-    queryClient.invalidateQueries({ queryKey: ['gridRows', 'invStockCounts'] })
-    queryClient.invalidateQueries({ queryKey: ['rowById', 'invStockCounts'] })
+    void resourceBindingFor('invStockCounts').cache.invalidateAll(queryClient)
   }
 
   const refreshBook = async () => {
@@ -295,7 +295,6 @@ function StockCountsTab() {
 
       <SynieDataGrid
         resource="invStockCounts"
-        client={stockCountClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'postingDate', direction: 'descending' }}
@@ -309,7 +308,6 @@ function StockCountsTab() {
 
       <SynieRecordDrawer
         resource="invStockCounts"
-        client={stockCountClient}
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -362,7 +360,6 @@ function StockCountsTab() {
             )}
             <SynieEditableTable
               resource="invStockCountItems"
-              client={stockCountItemClient}
               label="盘点行"
               items={items}
               onChange={setItems}

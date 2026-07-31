@@ -13,6 +13,7 @@ import {
 } from '~/lib/resources/manufacturing'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/mfg/process-templates')({
   component: ProcessTemplatesPage,
@@ -153,7 +154,6 @@ function ProcessTemplatesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="mfgProcessTemplates"
-          client={processTemplateClient}
           columns={GRID_COLUMNS}
           onView={(row) => openDrawer('view', row)}
           onCreate={() => openDrawer('create', null)}
@@ -163,7 +163,6 @@ function ProcessTemplatesPage() {
 
       <SynieRecordDrawer
         resource="mfgProcessTemplates"
-        client={processTemplateClient}
         {...drawerConfig('mfgProcessTemplates')}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -175,7 +174,6 @@ function ProcessTemplatesPage() {
           items: (mode) => (
             <SynieEditableTable
               resource="mfgProcessTemplateItems"
-              client={processTemplateItemClient}
               label="工艺步骤"
               items={items}
               onChange={setItems}
@@ -230,13 +228,8 @@ function ProcessTemplatesPage() {
               toast.success('工艺模板已更新')
             }
           }
-          queryClient.invalidateQueries({
-            queryKey: ['gridRows', 'mfgProcessTemplates'],
-          })
           // 抽屉走 rowId 自查,一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          queryClient.invalidateQueries({
-            queryKey: ['rowById', 'mfgProcessTemplates'],
-          })
+          await resourceBindingFor('mfgProcessTemplates').cache.invalidateAll(queryClient)
         }}
       />
     </>

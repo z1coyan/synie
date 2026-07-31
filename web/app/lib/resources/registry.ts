@@ -47,6 +47,15 @@ import {
   salesDeliveryPackBoxClient,
   salesDeliveryPackLineClient,
 } from './fulfillment'
+import { purchaseReceiptDraftAdapter } from './purchase-receipt-draft'
+import {
+  purchaseQuotationDraftAdapter,
+  salesQuotationDraftAdapter,
+} from './quotation-draft'
+import {
+  purchaseOrderDraftAdapter,
+  salesOrderDraftAdapter,
+} from './order-draft'
 import { roleClient, userClient } from './iam'
 import {
   attendanceCorrectionClient,
@@ -141,12 +150,11 @@ import { unitClient } from './units'
 import type { ResourceTransport } from './types'
 import {
   bindingFromResourceTransport,
-  hasBinding,
   registerBinding,
   replaceBinding,
-  resourceBindingFor as bindingFor,
   resourceTransportFromBinding,
   type CommandAdapter,
+  type AggregateDraftAdapter,
   type ResourceBinding,
 } from './catalog'
 
@@ -281,62 +289,85 @@ const SEMANTIC_COMMAND_ADAPTERS: Record<string, CommandAdapter> = {
   sysStorages: storageCommandAdapter,
 }
 
-// 从 transport 一次性生成 ResourceBinding；命令逐资源显式挂载。
-for (const [resource, transport] of Object.entries(transports)) {
-  const binding = bindingFromResourceTransport(resource, transport)
-  const commands = SEMANTIC_COMMAND_ADAPTERS[resource]
-  if (commands) {
-    registerBinding({ ...binding, commands })
-  } else {
-    registerBinding(binding)
-  }
-}
+const DRAFT_ADAPTERS = {
+  purOrders: purchaseOrderDraftAdapter,
+  purQuotations: purchaseQuotationDraftAdapter,
+  purReceipts: purchaseReceiptDraftAdapter,
+  salDeliveries: salesDeliveryDraftAdapter,
+  salOrders: salesOrderDraftAdapter,
+  salQuotations: salesQuotationDraftAdapter,
+} satisfies Record<string, AggregateDraftAdapter<unknown, unknown>>
+
+type AggregateDraftResource = keyof typeof DRAFT_ADAPTERS
 
 /**
- * 销售发货：聚合草稿 Adapter 是表单写 seam；不为表单暴露 RecordWriter create/update。
- * delete 仍经 writer；Grid 列表读经 reader；权威草稿读/写经 draft。
+ * 聚合头资源不通过普通 RecordWriter 暴露 create/update。
+ * 删除草稿仍是单记录命令，继续保留 writer.delete。
  */
-{
-  const base = bindingFromResourceTransport('salDeliveries', salesDeliveryClient, {
-    canCreate: false,
-    canUpdate: false,
-    canDelete: true,
-  })
-  replaceBinding({
-    ...base,
-    draft: salesDeliveryDraftAdapter,
-    commands: salesDeliveryCommandAdapter,
-  })
+const AGGREGATE_WRITER_OPTIONS: Record<
+  AggregateDraftResource,
+  { canCreate: false; canUpdate: false; canDelete: true }
+> = {
+  purOrders: { canCreate: false, canUpdate: false, canDelete: true },
+  purQuotations: { canCreate: false, canUpdate: false, canDelete: true },
+  purReceipts: { canCreate: false, canUpdate: false, canDelete: true },
+  salDeliveries: { canCreate: false, canUpdate: false, canDelete: true },
+  salOrders: { canCreate: false, canUpdate: false, canDelete: true },
+  salQuotations: { canCreate: false, canUpdate: false, canDelete: true },
 }
 
-function seedBinding(resource: string): void {
-  const transport = transports[resource]
-  if (!transport) {
-    throw new Error(`资源「${resource}」未注册 ResourceBinding`)
-  }
-  let binding = bindingFromResourceTransport(
+function draftAdapterFor(resource: string): AggregateDraftAdapter | undefined {
+  return DRAFT_ADAPTERS[resource as AggregateDraftResource] as
+    | AggregateDraftAdapter
+    | undefined
+}
+
+function aggregateWriterOptions(resource: string) {
+  return AGGREGATE_WRITER_OPTIONS[resource as AggregateDraftResource]
+}
+
+// 从 transport 一次性生成规范 ResourceBinding；命令与 Aggregate Draft 逐资源显式挂载。
+const productionBindings = new Map<string, ResourceBinding>()
+for (const [resource, transport] of Object.entries(transports)) {
+  const binding = bindingFromResourceTransport(
     resource,
     transport,
-    resource === 'salDeliveries'
-      ? { canCreate: false, canUpdate: false, canDelete: true }
-      : undefined,
+    aggregateWriterOptions(resource),
   )
   const commands = SEMANTIC_COMMAND_ADAPTERS[resource]
-  if (commands) binding = { ...binding, commands }
-  if (resource === 'salDeliveries') {
-    binding = { ...binding, draft: salesDeliveryDraftAdapter }
+  const draft = draftAdapterFor(resource)
+  const productionBinding = {
+    ...binding,
+    ...(commands ? { commands } : {}),
+    ...(draft ? { draft } : {}),
   }
-  if (hasBinding(resource)) replaceBinding(binding)
-  else registerBinding(binding)
+  productionBindings.set(resource, productionBinding)
+  registerBinding(productionBinding)
 }
 
 /**
  * 类型安全 ResourceBinding 入口（唯一资源解析）。未知资源显式失败。
- * 若测试 clear 了 binding 表，按传输表防御性补种（仍不接受未知资源名）。
+ * 生产入口始终恢复模块装配时创建的规范 binding；测试/本地自定义 binding 应通过
+ * 显式 Adapter seam 或注入 resolver 使用，不能污染同名生产资源。
  */
 export function resourceBindingFor(resource: string): ResourceBinding {
-  if (!hasBinding(resource)) seedBinding(resource)
-  return bindingFor(resource)
+  const binding = productionBindings.get(resource)
+  if (!binding) {
+    throw new Error(`资源「${resource}」未注册 ResourceBinding`)
+  }
+  replaceBinding(binding)
+  return binding
+}
+
+/** 已注册 Aggregate Draft 的类型恢复入口；未知或漏挂能力显式失败。 */
+export function aggregateDraftFor<K extends AggregateDraftResource>(
+  resource: K,
+): (typeof DRAFT_ADAPTERS)[K] {
+  const draft = resourceBindingFor(resource).draft
+  if (!draft) {
+    throw new Error(`资源「${resource}」未注册 Aggregate Draft Adapter`)
+  }
+  return draft as (typeof DRAFT_ADAPTERS)[K]
 }
 
 /**

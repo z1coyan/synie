@@ -28,10 +28,10 @@ const RESOURCE = 'purSuppliers'
 function SuppliersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
-  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '供应商')
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '供应商')
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, RESOURCE] })
+    binding.cache.invalidateGrid(queryClient)
 
   return (
     <>
@@ -41,7 +41,6 @@ function SuppliersPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource={RESOURCE}
-          client={client}
           overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -51,7 +50,6 @@ function SuppliersPage() {
 
       <SynieRecordDrawer
         resource={RESOURCE}
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}

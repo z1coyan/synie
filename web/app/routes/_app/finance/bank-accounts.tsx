@@ -40,7 +40,7 @@ const GRID_OVERRIDES: Record<string, ColumnOverride> = {
 function BankAccountsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
-  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '银行账户')
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '银行账户')
 
   return (
     <>
@@ -50,7 +50,6 @@ function BankAccountsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource={RESOURCE}
-          client={client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => setDrawer({ mode: 'view', row })}
@@ -65,14 +64,13 @@ function BankAccountsPage() {
               return binding.writer.update(id, input)
             },
             rowLabel: (row) => String(row.alias ?? ''),
-            onDone: () => queryClient.invalidateQueries({ queryKey: ['rowById', RESOURCE] }),
+            onDone: () => binding.cache.invalidateRow(queryClient),
           })}
         />
       </div>
 
       <SynieRecordDrawer
         resource={RESOURCE}
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -129,7 +127,7 @@ function BankAccountsPage() {
             await binding.writer.update(drawer!.row!.id, values)
           }
           toast.success(mode === 'create' ? '银行账户已创建' : '银行账户已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', RESOURCE] })
+          await binding.cache.invalidateGrid(queryClient)
         }}
       />
     </>

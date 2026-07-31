@@ -7,7 +7,6 @@ import {
   fetchPayrollMonthStats,
   generatePayrolls,
   payRemainingPayroll,
-  payrollClient,
   payrollPaymentClient,
   refreshPayroll,
   savePayroll,
@@ -18,6 +17,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { MonthSelect, monthOptions, today } from './-shared'
 import { PaymentsSection } from './-payments-section'
 
@@ -91,8 +91,7 @@ function PayrollSlipsPage() {
   // 发放/借款联动跨资源,一律广播失效(staleTime 下重挂不重取,必须显式失效)
   const invalidateAll = () => {
     for (const resource of ['hrPayrolls', 'hrPayrollPayments', 'hrEmployeeLoans']) {
-      void queryClient.invalidateQueries({ queryKey: ['gridRows', resource] })
-      void queryClient.invalidateQueries({ queryKey: ['rowById', resource] })
+      void resourceBindingFor(resource).cache.invalidateAll(queryClient)
     }
     void queryClient.invalidateQueries({ queryKey: ['payrollMonthStats'] })
     void queryClient.invalidateQueries({ queryKey: ['loanBalances'] })
@@ -176,7 +175,6 @@ function PayrollSlipsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrPayrolls"
-          client={payrollClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           fixedFilter={{
@@ -210,7 +208,6 @@ function PayrollSlipsPage() {
       <SynieRecordDrawer
         {...drawerConfig('hrPayrolls')}
         resource="hrPayrolls"
-        client={payrollClient}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}

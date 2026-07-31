@@ -1,30 +1,20 @@
 import { apiData, api } from '../api/client'
-import type {Row, FilterState} from '~/components/synie-data-grid/types'
-import type { ResourceClient, ResourceQuery } from './types'
+import type { Row } from '~/components/synie-data-grid/types'
+import { strictResourceListBody } from './resource-wire'
+import type { ResourceClient } from './types'
 
 type CustomerCreate = Record<string, unknown>
 type CustomerUpdate = Record<string, unknown>
-
-function ensureSupportedQuery(input: ResourceQuery) {
-  if (input.fixedFilter || input.extraFields?.length || input.joinFields) {
-    throw new Error('客户 REST 资源不支持额外字段、joinFields 或受信 fixedFilter')
-  }
-}
 
 export const customerClient: ResourceClient = {
   id: 'rest:salCustomers',
 
 
   async query(input) {
-    ensureSupportedQuery(input)
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.sales.customers.query.$post({
-        json: {
-          limit: input.limit,
-          offset: input.offset,
-          search: input.search || undefined,
-          sort: input.sort ?? undefined,
-          filter: input.filter as FilterState} }),
+        json: strictResourceListBody(input, '客户'),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -52,7 +42,7 @@ export const customerClient: ResourceClient = {
   },
 
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.sales.customers[':id'].$delete({
         param: { id }}),
     )

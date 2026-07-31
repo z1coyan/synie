@@ -20,9 +20,8 @@ import {
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { defaultCompanyId, useAuthorizedCompanies } from '~/lib/form-defaults'
-import { resourceBindingFor, resourceTransportFromResourceBinding } from '~/lib/resources/registry'
-import { executeSingleRowCommand } from '~/lib/resources/catalog/commands'
-import type { ResourceTransport } from '~/lib/resources/types'
+import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
 import { UUID_RE } from '../synie-data-grid/query'
@@ -62,8 +61,6 @@ export interface DrawerTab {
 export interface SynieRecordDrawerProps {
   /** 与后端 GridMeta 白名单同名,如 "sysRoles" */
   resource: string
-  /** 可显式传入 REST client；未传时由资源 registry 解析，未知资源立即报错。 */
-  client?: ResourceTransport
   mode: DrawerMode
   isOpen: boolean
   onOpenChange: (open: boolean) => void
@@ -87,6 +84,8 @@ export interface SynieRecordDrawerProps {
   onEdit?: () => void
   /** create/edit 态提交按钮文案,默认「保存」(如导入表单的「解析」) */
   submitLabel?: string
+  /** 外部聚合/附件等提交前置数据尚未就绪时，禁用所有保存入口。 */
+  isSubmitDisabled?: boolean
   /** 服务端提交失败后的字段错误；key 与表单字段名一致，抽屉在字段下方就近展示。 */
   fieldErrors?: Record<string, string[]>
   /** 提交错误位于非当前 tab 时，由页面指定应切换到的 tab。 */
@@ -156,10 +155,12 @@ const safeParseDateTime = (v: unknown) => {
 // 稳定空数组回退:remoteMeta.data?.columns 未就绪时若每次渲染都 `?? []` 新建数组,
 // 会让下方以 columns 为依赖的 effect 每次渲染都判定"变了",存在自激重渲染风险
 const EMPTY_COLUMNS: GridColumnMeta[] = []
+const DISABLED_LOCAL_ROW_QUERY_KEY = ['disabledLocalRecord'] as const
 
 export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const { resource, mode, isOpen, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
-  const client = props.client ?? (!props.meta ? resourceTransportFromResourceBinding(resource) : undefined)
+  // 本地 Meta 可以使用未注册的展示资源，因此只在远程 Meta 模式解析 binding。
+  const binding = !props.meta ? resourceBindingFor(resource) : undefined
   const remoteMeta = useGridMeta(resource, !props.meta) // 本地模式不发请求
   const columns = props.meta?.columns ?? remoteMeta.data?.columns ?? EMPTY_COLUMNS
   const metaPending = !props.meta && remoteMeta.isPending
@@ -172,9 +173,10 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const wantsFetch = !props.meta && !props.row && !!props.rowId
   const validId = !!props.rowId && UUID_RE.test(props.rowId)
   const byId = useQuery({
-    queryKey: ['rowById', client?.id, resource, props.rowId],
+    queryKey:
+      binding?.cache.rowKey(props.rowId) ?? DISABLED_LOCAL_ROW_QUERY_KEY,
     enabled: isOpen && wantsFetch && validId && !!remoteMeta.data,
-    queryFn: () => client!.get(props.rowId!),
+    queryFn: () => binding!.reader.get(props.rowId!),
   })
   const row = props.row ?? byId.data ?? null
   // isPending 含 enabled 未就绪(等 meta)阶段;data === null 是「查过了但没有」(未查完是 undefined)
@@ -277,7 +279,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   }
 
   const save = async (andAudit = false) => {
-    if (!props.onSubmit || mode === 'view') return
+    if (!props.onSubmit || mode === 'view' || props.isSubmitDisabled) return
     const missing = missingRequiredFields(fields, values, mode)
     if (missing.length > 0) {
       // 缺失字段在非当前 tab 时先切过去,toast 指名字段,用户不用猜去哪儿补
@@ -298,11 +300,12 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
         } else {
           let errors: { message: string }[] | null | undefined
           try {
-            const cmds = resourceBindingFor(resource).commands
-            if (!cmds) {
-              throw new Error(`资源「${resource}」未绑定命令「${auditAction.key}」`)
-            }
-            await executeSingleRowCommand(cmds, auditAction.key, String(auditId))
+            await executeSingleRowCommandWithInvalidation(
+              resource,
+              auditAction.key,
+              String(auditId),
+              queryClient,
+            )
           } catch (error) {
             errors = [{ message: error instanceof Error ? error.message : String(error) }]
           }
@@ -315,8 +318,6 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
           } else {
             toast.success('已保存并审核')
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows'] })
-          queryClient.invalidateQueries({ queryKey: ['rowById'] })
         }
       }
       if (closeAfterSave) props.onOpenChange(false)
@@ -494,12 +495,16 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
                       variant="secondary"
                       onPress={() => void save(true)}
                       isPending={saving}
-                      isDisabled={metaError}
+                      isDisabled={metaError || props.isSubmitDisabled}
                     >
                       保存并审核
                     </Button>
                   )}
-                  <Button onPress={() => void save()} isPending={saving} isDisabled={metaError}>
+                  <Button
+                    onPress={() => void save()}
+                    isPending={saving}
+                    isDisabled={metaError || props.isSubmitDisabled}
+                  >
                     {props.submitLabel ?? '保存'}
                   </Button>
                 </>

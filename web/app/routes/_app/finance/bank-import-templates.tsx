@@ -19,7 +19,7 @@ const GRID_COLUMNS = ['companyId', 'name', 'bankAccountId', 'startRow', 'datetim
 function BankImportTemplatesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
-  const { binding, client, formProps } = useCatalogBasicForm(
+  const { binding, formProps } = useCatalogBasicForm(
     'accBankImportTemplates',
     '导入模板',
   )
@@ -34,7 +34,6 @@ function BankImportTemplatesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accBankImportTemplates"
-          client={client}
           columns={GRID_COLUMNS}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -44,7 +43,6 @@ function BankImportTemplatesPage() {
 
       <SynieRecordDrawer
         resource="accBankImportTemplates"
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -95,7 +93,7 @@ function BankImportTemplatesPage() {
             await binding.writer.update(drawer!.row!.id, values)
           }
           toast.success(mode === 'create' ? '导入模板已创建' : '导入模板已更新')
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accBankImportTemplates'] })
+          await binding.cache.invalidateGrid(queryClient)
         }}
       />
     </>

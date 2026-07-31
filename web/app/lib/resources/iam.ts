@@ -1,30 +1,19 @@
-import type { ListQuery } from '@synie/shared'
 import { apiData, api } from '../api/client'
-import type {Row, FilterState} from '~/components/synie-data-grid/types'
-import type { ResourceClient, ResourceQuery } from './types'
+import type { Row } from '~/components/synie-data-grid/types'
+import { strictResourceListBody } from './resource-wire'
+import type { ResourceClient } from './types'
 
 type UserCreate = Record<string, unknown>
 type UserUpdate = Record<string, unknown>
 type RoleCreate = Record<string, unknown>
 type RoleUpdate = Record<string, unknown>
 
-function listBody(input: ResourceQuery): ListQuery {
-  if (input.fixedFilter || input.extraFields?.length || input.joinFields) {
-    throw new Error('IAM REST 资源不支持 GraphQL fixedFilter、额外字段或 joinFields')
-  }
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: input.filter as FilterState,
-  }
-}
-
 export const userClient: ResourceClient = {
   id: 'rest:sysUsers',
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(api.system.users.query.$post({ json: listBody(input) }))
+    const result = await apiData(api.system.users.query.$post({
+      json: strictResourceListBody(input, 'IAM'),
+    }))
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
@@ -46,7 +35,9 @@ export const userClient: ResourceClient = {
 export const roleClient: ResourceClient = {
   id: 'rest:sysRoles',
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(api.system.roles.query.$post({ json: listBody(input) }))
+    const result = await apiData(api.system.roles.query.$post({
+      json: strictResourceListBody(input, 'IAM'),
+    }))
     return { count: result.count, results: result.results as Row[] }
   },
   async get(id) {
@@ -65,18 +56,15 @@ export const roleClient: ResourceClient = {
 }
 
 export const createUser = (body: UserCreate) =>
-  apiData<{ user: Row; password?: string }>(api.system.users.$post({ json: body as never }))
+  apiData(api.system.users.$post({ json: body as never }))
 export const fetchUserAccess = (id: string) =>
-  apiData<{
-    roles: Array<{ id: string; name: string }>
-    companies: Array<{ id: string; name: string }>
-  }>(api.system.users[':id'].access.$get({ param: { id } }))
+  apiData(api.system.users[':id'].access.$get({ param: { id } }))
 export const resetUserPassword = (id: string) =>
-  apiData<{ password: string }>(
+  apiData(
     api.system.users[':id']['reset-password'].$post({ param: { id } }),
   )
 export const fetchRolePermissions = (id: string) =>
-  apiData<{ rows: Array<Record<string, unknown>> }>(
+  apiData(
     api.system.roles[':id'].permissions.$get({ param: { id } }),
   )
 export const syncRolePermissions = (id: string, permissions: string[]) =>
@@ -87,6 +75,6 @@ export const syncRolePermissions = (id: string, permissions: string[]) =>
     }),
   )
 export const fetchPermissionCatalog = () =>
-  apiData<{ groups: Array<{ prefix: string; label: string; actions: string[] }> }>(
+  apiData(
     api.meta['permission-catalog'].$get(),
   )

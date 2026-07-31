@@ -12,11 +12,11 @@ import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { ExpenseRoleSelect, expenseRoleLabel, findRoleAccounts } from './-expense-role'
 import {
   expenseReportClient,
-  expenseReportItemClient,
   queryExpenseReportItems,
   saveExpenseReportItems,
   vatInvoiceClient,
 } from '~/lib/resources/finance-operations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/finance/expense-reports')({
   component: ExpenseReportsPage,
@@ -289,7 +289,6 @@ function ExpenseReportsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="accExpenseReports"
-          client={expenseReportClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
@@ -301,7 +300,6 @@ function ExpenseReportsPage() {
 
       <SynieRecordDrawer
         resource="accExpenseReports"
-        client={expenseReportClient}
         label="报销单"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -449,7 +447,6 @@ function ExpenseReportsPage() {
               />
               <SynieEditableTable
                 resource="accExpenseReportItems"
-                client={expenseReportItemClient}
                 label="报销行"
                 items={items}
                 onChange={setItems}
@@ -549,9 +546,10 @@ function ExpenseReportsPage() {
             }
             savedId = reportId
           }
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accExpenseReports'] })
-          queryClient.invalidateQueries({ queryKey: ['gridRows', 'accExpenseReportItems'] })
-          queryClient.invalidateQueries({ queryKey: ['rowById', 'accExpenseReports'] })
+          await Promise.all([
+            resourceBindingFor('accExpenseReports').cache.invalidateAll(queryClient),
+            resourceBindingFor('accExpenseReportItems').cache.invalidateGrid(queryClient),
+          ])
           return savedId
         }}
       />

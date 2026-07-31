@@ -5,10 +5,10 @@ import { DropZone } from '@heroui-pro/react'
 import { uploadFile } from '~/lib/files'
 import { employeeClient } from '~/lib/resources/employees'
 import {
-  attendanceImportClient,
   createAttendanceImport,
   importAttendanceImport,
 } from '~/lib/resources/hr-operations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 
@@ -57,7 +57,6 @@ export function AttendanceImportCreateDrawer({ isOpen, onOpenChange, onParsed }:
   return (
     <SynieRecordDrawer
       resource="hrAttendanceImports"
-      client={attendanceImportClient}
       label="考勤导入"
       mode="create"
       isOpen={isOpen}
@@ -192,7 +191,7 @@ export function AttendanceImportRecordDrawer({ importId, onOpenChange, onImporte
       toast.success(`已导入 ${r.importedCount} 条打卡`, skipped ? { description: skipped } : undefined)
 
       setImportAsk(null)
-      queryClient.invalidateQueries({ queryKey: ['rowById', 'hrAttendanceImports'] })
+      await resourceBindingFor('hrAttendanceImports').cache.invalidateRow(queryClient)
       onImported()
     } catch (e) {
       toast.danger('导入失败', { description: (e as Error).message })
@@ -205,7 +204,6 @@ export function AttendanceImportRecordDrawer({ importId, onOpenChange, onImporte
     <>
       <SynieRecordDrawer
         resource="hrAttendanceImports"
-        client={attendanceImportClient}
         label="考勤导入"
         mode="view"
         isOpen={importId !== null}

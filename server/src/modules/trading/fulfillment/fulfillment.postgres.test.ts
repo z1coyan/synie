@@ -1,6 +1,6 @@
 /**
- * 销售发货装箱箱 PG 集成：箱实体生命周期（自增箱号/删箱级联/随单级联/审核锁死）、
- * 装箱行挂箱校验、全有或全无审核校验回归。门控 SYNIE_TEST_DATABASE_URL。
+ * 履约聚合草稿 PG 集成：销售发货装箱箱与采购入库整单事务。
+ * 门控 SYNIE_TEST_DATABASE_URL。
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
@@ -16,16 +16,23 @@ import { createNumberingService } from '~/platform/numbering/index.ts'
 import {
   packBoxRoutes,
   packLineRoutes,
+  purchaseFulfillmentHeadRoutes,
   salesFulfillmentHeadRoutes,
   salesFulfillmentItemRoutes,
 } from './routes.ts'
-import { createFulfillmentService } from './service.ts'
+import {
+  createFulfillmentService,
+  type PurchaseReceiptDraftDto,
+  type PurchaseReceiptDraftInput,
+  type SalesDraftDto,
+  type SalesDraftInput,
+} from './service.ts'
 import { fulfillmentItemMeta, packBoxMeta, packLineMeta } from './spec.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
-run('PG 集成（销售发货装箱箱）', () => {
+run('PG 集成（履约聚合草稿）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db)
   const fulfillment = createFulfillmentService(db, numbering, {
@@ -38,6 +45,9 @@ run('PG 集成（销售发货装箱箱）', () => {
   const currencyId = crypto.randomUUID()
   const companyId = crypto.randomUUID()
   const customerId = crypto.randomUUID()
+  const customer2Id = crypto.randomUUID()
+  const supplierId = crypto.randomUUID()
+  const supplier2Id = crypto.randomUUID()
   const unitId = crypto.randomUUID()
   const categoryId = crypto.randomUUID()
   const materialId = crypto.randomUUID()
@@ -45,9 +55,16 @@ run('PG 集成（销售发货装箱箱）', () => {
   const warehouseId = crypto.randomUUID()
   const debitAccountId = crypto.randomUUID()
   const creditAccountId = crypto.randomUUID()
+  const payableAccountId = crypto.randomUUID()
   const orderId = crypto.randomUUID()
   const orderItemId = crypto.randomUUID()
   const orderItem2Id = crypto.randomUUID()
+  const order2Id = crypto.randomUUID()
+  const order2ItemId = crypto.randomUUID()
+  const purchaseOrderId = crypto.randomUUID()
+  const purchaseOrderItemId = crypto.randomUUID()
+  const purchaseOrder2Id = crypto.randomUUID()
+  const purchaseOrder2ItemId = crypto.randomUUID()
 
   const actor: Actor = {
     userId: '',
@@ -64,14 +81,36 @@ run('PG 集成（销售发货装箱箱）', () => {
     superAdmin: false,
     permissions: new Set(['sales.delivery:read']),
   }
+  const noReadActor: Actor = {
+    ...actor,
+    username: 'packbox-no-read',
+    superAdmin: false,
+    permissions: new Set(),
+  }
+  function limitedActor(prefix: string, actions: Array<'read' | 'update' | 'create' | 'delete'>): Actor {
+    return {
+      ...actor,
+      username: `${prefix}-${actions.join('-')}`,
+      superAdmin: false,
+      permissions: new Set(actions.map((action) => `${prefix}:${action}`)),
+    }
+  }
   const auth = {
-    authenticate: async (token: string) => token === 'read-only' ? readOnlyActor : actor,
+    authenticate: async (token: string) => {
+      if (token === 'read-only') return readOnlyActor
+      if (token === 'no-read') return noReadActor
+      return actor
+    },
   } as unknown as AuthService
   const http = new Hono<AppEnv>()
     .route('/api/v1/sales/deliveries', salesFulfillmentHeadRoutes({ auth, fulfillment }))
     .route('/api/v1/sales/delivery-items', salesFulfillmentItemRoutes({ auth, fulfillment }))
     .route('/api/v1/sales/delivery-pack-boxes', packBoxRoutes({ auth, fulfillment }))
     .route('/api/v1/sales/delivery-pack-lines', packLineRoutes({ auth, fulfillment }))
+    .route(
+      '/api/v1/purchase/receipts',
+      purchaseFulfillmentHeadRoutes({ auth, fulfillment }),
+    )
   http.onError(onError)
 
   function draftInput(no: string, itemQty = '10', packQty = '10') {
@@ -105,6 +144,82 @@ run('PG 集成（销售发货装箱箱）', () => {
     const { no: deliveryNo, documentDate: deliveryDate, ...rest } = input
     return { ...rest, deliveryNo, deliveryDate }
   }
+  function purchaseReceiptDraftInput(no: string, items = [{
+    idx: 1,
+    qty: '10',
+    orderItemId: purchaseOrderItemId,
+    warehouseId,
+  }]) {
+    return {
+      companyId,
+      no,
+      documentDate: '2026-07-25',
+      postingDate: '2026-07-25',
+      partyType: 'supplier',
+      partyId: supplierId,
+      warehouseId,
+      debitAccountId,
+      creditAccountId: payableAccountId,
+      items,
+    }
+  }
+  function salesReplaceInput(saved: SalesDraftDto): SalesDraftInput {
+    return {
+      companyId: saved.companyId,
+      no: saved.deliveryNo,
+      documentDate: saved.deliveryDate,
+      postingDate: saved.postingDate,
+      partyType: saved.partyType,
+      partyId: saved.partyId,
+      remarks: saved.remarks,
+      warehouseId: saved.warehouseId,
+      debitAccountId: saved.debitAccountId,
+      creditAccountId: saved.creditAccountId,
+      items: saved.items.map((item) => ({
+        id: item.id,
+        idx: item.idx,
+        qty: item.qty,
+        orderItemId: item.orderItemId,
+        unitId: item.unitId,
+        warehouseId: item.warehouseId,
+        remarks: item.remarks,
+      })),
+      packBoxes: saved.packBoxes.map((box) => ({
+        id: box.id,
+        lines: box.lines.map((line) => ({
+          id: line.id,
+          idx: line.idx,
+          qty: line.qty,
+          materialId: line.materialId,
+          unitId: line.unitId,
+          remarks: line.remarks,
+        })),
+      })),
+    }
+  }
+  function purchaseReplaceInput(saved: PurchaseReceiptDraftDto): PurchaseReceiptDraftInput {
+    return {
+      companyId: saved.companyId,
+      no: saved.receiptNo,
+      documentDate: saved.receiptDate,
+      postingDate: saved.postingDate,
+      partyType: saved.partyType,
+      partyId: saved.partyId,
+      remarks: saved.remarks,
+      warehouseId: saved.warehouseId,
+      debitAccountId: saved.debitAccountId,
+      creditAccountId: saved.creditAccountId,
+      items: saved.items.map((item) => ({
+        id: item.id,
+        idx: item.idx,
+        qty: item.qty,
+        orderItemId: item.orderItemId,
+        unitId: item.unitId,
+        warehouseId: item.warehouseId,
+        remarks: item.remarks,
+      })),
+    }
+  }
 
   beforeAll(async () => {
     await sql`
@@ -117,7 +232,15 @@ run('PG 集成（销售发货装箱箱）', () => {
     `.execute(db)
     await sql`
       INSERT INTO sal_customers(id,code,name,short_name)
-      VALUES (${customerId}::uuid, ${'CU' + suffix}, ${prefix + '客户'}, 'CU')
+      VALUES
+        (${customerId}::uuid, ${'CU' + suffix}, ${prefix + '客户'}, 'CU'),
+        (${customer2Id}::uuid, ${'CV' + suffix}, ${prefix + '客户二'}, 'CV')
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_supplier(id,code,name,short_name)
+      VALUES
+        (${supplierId}::uuid, ${'SU' + suffix}, ${prefix + '供应商'}, 'SU'),
+        (${supplier2Id}::uuid, ${'SV' + suffix}, ${prefix + '供应商二'}, 'SV')
     `.execute(db)
     await sql`
       INSERT INTO bas_unit(id,unit_type,is_base,name,symbol,ratio)
@@ -139,12 +262,16 @@ run('PG 集成（销售发货装箱箱）', () => {
     await sql`
       INSERT INTO bas_account(id,code,name,direction,is_group,active,company_id,currency_id,role) VALUES
         (${debitAccountId}::uuid, ${'SD' + suffix}, ${prefix + '未开应收'}, 'debit', false, true, ${companyId}::uuid, ${currencyId}::uuid, 'unbilled_receivable'),
-        (${creditAccountId}::uuid, ${'SC' + suffix}, ${prefix + '销贷'}, 'credit', false, true, ${companyId}::uuid, ${currencyId}::uuid, NULL)
+        (${creditAccountId}::uuid, ${'SC' + suffix}, ${prefix + '销贷'}, 'credit', false, true, ${companyId}::uuid, ${currencyId}::uuid, NULL),
+        (${payableAccountId}::uuid, ${'PC' + suffix}, ${prefix + '未开应付'}, 'credit', false, true, ${companyId}::uuid, ${currencyId}::uuid, 'unbilled_payable')
     `.execute(db)
     await sql`
       INSERT INTO sal_order(id,order_no,order_date,party_type,party_id,status,company_id,exchange_rate,currency_id,order_type)
-      VALUES (${orderId}::uuid, ${prefix + '-SO'}, '2026-07-20', 'customer', ${customerId}::uuid,
-        'audited', ${companyId}::uuid, 1, ${currencyId}::uuid, 'regular')
+      VALUES
+        (${orderId}::uuid, ${prefix + '-SO'}, '2026-07-20', 'customer', ${customerId}::uuid,
+          'audited', ${companyId}::uuid, 1, ${currencyId}::uuid, 'regular'),
+        (${order2Id}::uuid, ${prefix + '-SO2'}, '2026-07-20', 'customer', ${customer2Id}::uuid,
+          'audited', ${companyId}::uuid, 1, ${currencyId}::uuid, 'regular')
     `.execute(db)
     await sql`
       INSERT INTO sal_order_item(id,idx,qty,price,amount,order_id,company_id,material_id,unit_id,
@@ -152,7 +279,30 @@ run('PG 集成（销售发货装箱箱）', () => {
         (${orderItemId}::uuid,1,1000,10,10000,${orderId}::uuid,${companyId}::uuid,
           ${materialId}::uuid,${unitId}::uuid,${'M' + suffix},${prefix + '物料'},${prefix + '件'},1000,10,10000,0),
         (${orderItem2Id}::uuid,2,500,10,5000,${orderId}::uuid,${companyId}::uuid,
+          ${material2Id}::uuid,${unitId}::uuid,${'N' + suffix},${prefix + '物料二'},${prefix + '件'},500,10,5000,0),
+        (${order2ItemId}::uuid,1,500,10,5000,${order2Id}::uuid,${companyId}::uuid,
           ${material2Id}::uuid,${unitId}::uuid,${'N' + suffix},${prefix + '物料二'},${prefix + '件'},500,10,5000,0)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_order(id,order_no,order_date,party_type,party_id,status,company_id,
+        exchange_rate,currency_id,is_outsourced)
+      VALUES
+        (${purchaseOrderId}::uuid, ${prefix + '-PO'}, '2026-07-20', 'supplier',
+          ${supplierId}::uuid, 'audited', ${companyId}::uuid, 1, ${currencyId}::uuid, false),
+        (${purchaseOrder2Id}::uuid, ${prefix + '-PO2'}, '2026-07-20', 'supplier',
+          ${supplier2Id}::uuid, 'audited', ${companyId}::uuid, 1, ${currencyId}::uuid, false)
+    `.execute(db)
+    await sql`
+      INSERT INTO pur_order_item(
+        id,idx,qty,base_qty,price,amount,order_id,company_id,material_id,unit_id,
+        material_code,material_name,unit_name
+      ) VALUES
+        (${purchaseOrderItemId}::uuid,1,1000,1000,8,8000,${purchaseOrderId}::uuid,
+          ${companyId}::uuid,${materialId}::uuid,${unitId}::uuid,
+          ${'M' + suffix},${prefix + '物料'},${prefix + '件'}),
+        (${purchaseOrder2ItemId}::uuid,1,500,500,8,4000,${purchaseOrder2Id}::uuid,
+          ${companyId}::uuid,${material2Id}::uuid,${unitId}::uuid,
+          ${'N' + suffix},${prefix + '物料二'},${prefix + '件'})
     `.execute(db)
     // 负库存校验需要先有结存
     await sql`
@@ -168,14 +318,18 @@ run('PG 集成（销售发货装箱箱）', () => {
     await sql`DELETE FROM inv_stock_entry WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sys_audit_log WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM sal_delivery WHERE company_id=${companyId}::uuid`.execute(db)
-    await sql`DELETE FROM sal_order_item WHERE order_id=${orderId}::uuid`.execute(db)
-    await sql`DELETE FROM sal_order WHERE id=${orderId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_receipt WHERE company_id=${companyId}::uuid`.execute(db)
+    await sql`DELETE FROM pur_order_item WHERE order_id IN (${purchaseOrderId}::uuid, ${purchaseOrder2Id}::uuid)`.execute(db)
+    await sql`DELETE FROM pur_order WHERE id IN (${purchaseOrderId}::uuid, ${purchaseOrder2Id}::uuid)`.execute(db)
+    await sql`DELETE FROM sal_order_item WHERE order_id IN (${orderId}::uuid, ${order2Id}::uuid)`.execute(db)
+    await sql`DELETE FROM sal_order WHERE id IN (${orderId}::uuid, ${order2Id}::uuid)`.execute(db)
     await sql`DELETE FROM bas_account WHERE company_id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM inv_warehouse WHERE id=${warehouseId}::uuid`.execute(db)
     await sql`DELETE FROM inv_material WHERE id IN (${materialId}::uuid, ${material2Id}::uuid)`.execute(db)
     await sql`DELETE FROM inv_material_category WHERE id=${categoryId}::uuid`.execute(db)
     await sql`DELETE FROM bas_unit WHERE id=${unitId}::uuid`.execute(db)
-    await sql`DELETE FROM sal_customers WHERE id=${customerId}::uuid`.execute(db)
+    await sql`DELETE FROM sal_customers WHERE id IN (${customerId}::uuid, ${customer2Id}::uuid)`.execute(db)
+    await sql`DELETE FROM pur_supplier WHERE id IN (${supplierId}::uuid, ${supplier2Id}::uuid)`.execute(db)
     await sql`DELETE FROM bas_company WHERE id=${companyId}::uuid`.execute(db)
     await sql`DELETE FROM bas_currency WHERE id=${currencyId}::uuid`.execute(db)
     await db.destroy()
@@ -197,6 +351,95 @@ run('PG 集成（销售发货装箱箱）', () => {
     expect(draft.packBoxes[0]?.lines[0]?.packBoxId).toBe(draft.packBoxes[0]?.id)
   })
 
+  test('采购入库完整草稿经 Hono seam 整单创建、读取与替换', async () => {
+    const no = `${prefix}-PUR-DRAFT`
+    const serviceInput = purchaseReceiptDraftInput(no)
+    const { no: receiptNo, documentDate: receiptDate, ...wireInput } = serviceInput
+    const headers = {
+      authorization: 'Bearer test',
+      'content-type': 'application/json',
+    }
+    const createdResponse = await http.request('/api/v1/purchase/receipts', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...wireInput, receiptNo, receiptDate }),
+    })
+    expect(createdResponse.status).toBe(201)
+    const created = await createdResponse.json() as {
+      id: string
+      receiptNo: string
+      items: Array<{ id: string; qty: string; receiptId: string }>
+    }
+    expect(created.receiptNo).toBe(no)
+    expect(created.items).toHaveLength(1)
+    expect(created.items[0]?.receiptId).toBe(created.id)
+
+    const loadedResponse = await http.request(
+      `/api/v1/purchase/receipts/${created.id}/draft`,
+      { headers: { authorization: 'Bearer test' } },
+    )
+    expect(loadedResponse.status).toBe(200)
+    expect(((await loadedResponse.json()) as { items: unknown[] }).items).toHaveLength(1)
+
+    const replacedResponse = await http.request(
+      `/api/v1/purchase/receipts/${created.id}`,
+      {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          ...wireInput,
+          receiptNo,
+          receiptDate,
+          remarks: '整单替换',
+          items: [{ ...wireInput.items[0], id: created.items[0]!.id, qty: '12' }],
+        }),
+      },
+    )
+    expect(replacedResponse.status).toBe(200)
+    const replaced = await replacedResponse.json() as {
+      remarks: string
+      items: Array<{ id: string; qty: string }>
+    }
+    expect(replaced.remarks).toBe('整单替换')
+    expect(replaced.items[0]?.id).toBe(created.items[0]?.id)
+    expect(replaced.items[0]?.qty).toBe('12')
+  })
+
+  test('采购入库第二条明细失败时回滚表头与第一条明细', async () => {
+    const no = `${prefix}-PUR-ROLLBACK`
+    await expect(
+      fulfillment.createPurchaseReceiptDraft(
+        actor,
+        purchaseReceiptDraftInput(no, [
+          {
+            idx: 1,
+            qty: '10',
+            orderItemId: purchaseOrderItemId,
+            warehouseId,
+          },
+          {
+            idx: 2,
+            qty: '0',
+            orderItemId: purchaseOrderItemId,
+            warehouseId,
+          },
+        ]),
+      ),
+    ).rejects.toThrow(/入库条目参数不合法/)
+
+    const heads = await sql<{ count: string }>`
+      SELECT count(*)::text AS count FROM pur_receipt WHERE receipt_no=${no}
+    `.execute(db)
+    expect(heads.rows[0]?.count).toBe('0')
+    const items = await sql<{ count: string }>`
+      SELECT count(*)::text AS count
+      FROM pur_receipt_item i
+      JOIN pur_receipt h ON h.id=i.receipt_id
+      WHERE h.receipt_no=${no}
+    `.execute(db)
+    expect(items.rows[0]?.count).toBe('0')
+  })
+
   test('完整草稿读取覆盖超过默认分页的子记录且无静默截断', async () => {
     const no = `${prefix}-FULL-DRAFT`
     const created = await fulfillment.createSalesDraft(actor, draftInput(no))
@@ -208,11 +451,13 @@ run('PG 集成（销售发货装箱箱）', () => {
         INSERT INTO sal_delivery_item(
           id, idx, qty, base_qty, delivery_id, company_id, order_item_id,
           material_id, unit_id, warehouse_id,
-          material_code, material_name, unit_name, reconciled_qty
+          material_code, material_name, unit_name, order_no, order_unit_name,
+          order_currency_code, reconciled_qty
         ) VALUES (
           ${itemId}::uuid, ${i + 2}, 1, 1, ${created.id}::uuid, ${companyId}::uuid,
           ${orderItemId}::uuid, ${materialId}::uuid, ${unitId}::uuid, ${warehouseId}::uuid,
-          ${'M' + suffix}, ${prefix + '物料'}, ${prefix + '件'}, 0
+          ${'M' + suffix}, ${prefix + '物料'}, ${prefix + '件'}, ${prefix + '-SO'},
+          ${prefix + '件'}, ${'P' + suffix.slice(0, 2)}, 0
         )
       `.execute(db)
     }
@@ -246,9 +491,9 @@ run('PG 集成（销售发货装箱箱）', () => {
 
     // 只读权限可读；无 read 权限拒绝
     const denied = await http.request(`/api/v1/sales/deliveries/${created.id}/draft`, {
-      headers: { authorization: 'Bearer none' },
+      headers: { authorization: 'Bearer no-read' },
     })
-    expect(denied.status).toBe(401)
+    expect(denied.status).toBe(403)
   })
 
   test('整单创建的嵌套行失败时不残留表头、子记录或操作日志', async () => {
@@ -364,7 +609,7 @@ run('PG 集成（销售发货装箱箱）', () => {
     const partyBody = await partyResponse.json() as {
       error: { fields?: Record<string, string[]> }
     }
-    expect(partyBody.error.fields?.['header.partyType']).toBeDefined()
+    expect(partyBody.error.fields?.['header.partyType']).toBeUndefined()
     expect(partyBody.error.fields?.['header.partyId']).toBeDefined()
 
     const replaceResponse = await http.request(`/api/v1/sales/deliveries/${created.id}`, {
@@ -461,11 +706,11 @@ run('PG 集成（销售发货装箱箱）', () => {
       expect((await http.request(path, { method: 'DELETE', headers: tokenHeaders })).status).toBe(404)
     }
 
-    // contract：销售发货条目/装箱无独立 delete 动作；采购入库条目可删
+    // contract：聚合草稿的子资源只读；采购入库旧 create/delete 语义由整单 diff 鉴权保留
     expect(fulfillmentItemMeta('sales').actions.some((a) => a.key === 'delete')).toBe(false)
     expect(packBoxMeta().actions.some((a) => a.key === 'delete')).toBe(false)
     expect(packLineMeta().actions.some((a) => a.key === 'delete')).toBe(false)
-    expect(fulfillmentItemMeta('purchase').actions.some((a) => a.key === 'delete')).toBe(true)
+    expect(fulfillmentItemMeta('purchase').actions.some((a) => a.key === 'delete')).toBe(false)
   })
 
   test('整单替换以完整快照同时新增、修改和删除子记录', async () => {
@@ -526,6 +771,146 @@ run('PG 集成（销售发货装箱箱）', () => {
     })
     expect(cleared.items).toEqual([])
     expect(cleared.packBoxes).toEqual([])
+  })
+
+  test('整单替换先移除旧来源条目，允许同步切换往来方与新来源', async () => {
+    const sales = await fulfillment.createSalesDraft(
+      actor,
+      draftInput(`${prefix}-SALES-PARTY-SWITCH`),
+    )
+    const replacedSales = await fulfillment.replaceSalesDraft(actor, sales.id, {
+      ...salesReplaceInput(sales),
+      partyId: customer2Id,
+      items: [{ idx: 1, qty: '5', orderItemId: order2ItemId, warehouseId }],
+      packBoxes: [],
+    })
+    expect(replacedSales.partyId).toBe(customer2Id)
+    expect(replacedSales.items).toHaveLength(1)
+    expect(replacedSales.items[0]?.id).not.toBe(sales.items[0]?.id)
+    expect(replacedSales.items[0]?.orderItemId).toBe(order2ItemId)
+
+    const purchase = await fulfillment.createPurchaseReceiptDraft(
+      actor,
+      purchaseReceiptDraftInput(`${prefix}-PUR-PARTY-SWITCH`),
+    )
+    const replacedPurchase = await fulfillment.replacePurchaseReceiptDraft(
+      actor,
+      purchase.id,
+      {
+        ...purchaseReplaceInput(purchase),
+        partyId: supplier2Id,
+        items: [{ idx: 1, qty: '5', orderItemId: purchaseOrder2ItemId, warehouseId }],
+      },
+    )
+    expect(replacedPurchase.partyId).toBe(supplier2Id)
+    expect(replacedPurchase.items).toHaveLength(1)
+    expect(replacedPurchase.items[0]?.id).not.toBe(purchase.items[0]?.id)
+    expect(replacedPurchase.items[0]?.orderItemId).toBe(purchaseOrder2ItemId)
+  })
+
+  test('切换往来方后若新子项失败，销售与采购完整草稿均回滚', async () => {
+    const sales = await fulfillment.createSalesDraft(
+      actor,
+      draftInput(`${prefix}-S-PTY-RB`),
+    )
+    const salesBefore = await fulfillment.getSalesDraft(actor, sales.id)
+    await expect(
+      fulfillment.replaceSalesDraft(actor, sales.id, {
+        ...salesReplaceInput(salesBefore),
+        partyId: customer2Id,
+        items: [
+          { idx: 1, qty: '5', orderItemId: order2ItemId, warehouseId },
+          { idx: 2, qty: '0', orderItemId: order2ItemId, warehouseId },
+        ],
+        packBoxes: [],
+      }),
+    ).rejects.toThrow(/发货条目参数不合法/)
+    expect(await fulfillment.getSalesDraft(actor, sales.id)).toEqual(salesBefore)
+
+    const purchase = await fulfillment.createPurchaseReceiptDraft(
+      actor,
+      purchaseReceiptDraftInput(`${prefix}-PUR-PARTY-ROLLBACK`),
+    )
+    const purchaseBefore = await fulfillment.getPurchaseReceiptDraft(actor, purchase.id)
+    await expect(
+      fulfillment.replacePurchaseReceiptDraft(actor, purchase.id, {
+        ...purchaseReplaceInput(purchaseBefore),
+        partyId: supplier2Id,
+        items: [
+          { idx: 1, qty: '5', orderItemId: purchaseOrder2ItemId, warehouseId },
+          { idx: 2, qty: '0', orderItemId: purchaseOrder2ItemId, warehouseId },
+        ],
+      }),
+    ).rejects.toThrow(/入库条目参数不合法/)
+    expect(await fulfillment.getPurchaseReceiptDraft(actor, purchase.id)).toEqual(purchaseBefore)
+  })
+
+  test('销售发货保持既有 Aggregate Draft 授权：update 可同时增删子树', async () => {
+    const created = await fulfillment.createSalesDraft(
+      actor,
+      draftInput(`${prefix}-SALES-UPDATE-ONLY`),
+    )
+    const replaced = await fulfillment.replaceSalesDraft(
+      limitedActor('sales.delivery', ['update']),
+      created.id,
+      {
+        ...salesReplaceInput(created),
+        items: [{ idx: 1, qty: '3', orderItemId: orderItem2Id, warehouseId }],
+        packBoxes: [],
+      },
+    )
+    expect(replaced.items).toHaveLength(1)
+    expect(replaced.items[0]?.id).not.toBe(created.items[0]?.id)
+    expect(replaced.packBoxes).toEqual([])
+  })
+
+  test('采购入库替换按子项差异追加 create/delete 权限', async () => {
+    const created = await fulfillment.createPurchaseReceiptDraft(
+      actor,
+      purchaseReceiptDraftInput(`${prefix}-PUR-DIFF-RBAC`),
+    )
+    const updateOnly = limitedActor('purchase.receipt', ['update'])
+    const pureUpdate = await fulfillment.replacePurchaseReceiptDraft(
+      updateOnly,
+      created.id,
+      { ...purchaseReplaceInput(created), remarks: '只改现有内容' },
+    )
+    expect(pureUpdate.remarks).toBe('只改现有内容')
+
+    const addItem = {
+      ...purchaseReplaceInput(pureUpdate),
+      items: [
+        ...purchaseReplaceInput(pureUpdate).items,
+        { idx: 2, qty: '2', orderItemId: purchaseOrderItemId, warehouseId },
+      ],
+    }
+    await expect(
+      fulfillment.replacePurchaseReceiptDraft(updateOnly, created.id, addItem),
+    ).rejects.toMatchObject({ code: 'forbidden' })
+
+    const withAdded = await fulfillment.replacePurchaseReceiptDraft(
+      limitedActor('purchase.receipt', ['update', 'create']),
+      created.id,
+      addItem,
+    )
+    expect(withAdded.items).toHaveLength(2)
+
+    const removeAdded = {
+      ...purchaseReplaceInput(withAdded),
+      items: purchaseReplaceInput(withAdded).items.filter(
+        (item) => item.id === created.items[0]?.id,
+      ),
+    }
+    await expect(
+      fulfillment.replacePurchaseReceiptDraft(updateOnly, created.id, removeAdded),
+    ).rejects.toMatchObject({ code: 'forbidden' })
+
+    const withoutAdded = await fulfillment.replacePurchaseReceiptDraft(
+      limitedActor('purchase.receipt', ['update', 'delete']),
+      created.id,
+      removeAdded,
+    )
+    expect(withoutAdded.items.map((item) => item.id)).toEqual([created.items[0]!.id])
   })
 
   test('整单替换的嵌套行失败时保持保存前的完整草稿', async () => {

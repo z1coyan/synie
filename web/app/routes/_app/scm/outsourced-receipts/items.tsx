@@ -3,7 +3,6 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useAuditDoc } from '../-audit-doc'
-import { purchaseOutsourcedReceiptItemClient } from '~/lib/resources/fulfillment'
 import { receiptAuditConfig, useReceiptDrawer } from './-receipt-drawer'
 
 export const Route = createFileRoute('/_app/scm/outsourced-receipts/items')({
@@ -67,7 +66,6 @@ function ReceiptItemsTab() {
     <>
       <SynieDataGrid
         resource="purOutsourcedReceiptItems"
-        client={purchaseOutsourcedReceiptItemClient}
         columns={GRID_COLUMNS}
         overrides={GRID_OVERRIDES}
         defaultSort={{ column: 'receiptDate', direction: 'descending' }}

@@ -11,6 +11,7 @@ import {
   listPrintResources,
 } from '~/lib/resources/printing'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -53,7 +54,7 @@ function PrintTemplatesPage() {
   const [resources, setResources] = useState<ResourceOption[]>([])
   const [currentFile, setCurrentFile] = useState<{ id: string; filename: string } | null>(null)
   const [uploading, setUploading] = useState(false)
-  const { binding, client, formProps } = useCatalogBasicForm(
+  const { binding, formProps } = useCatalogBasicForm(
     'sysPrintTemplates',
     '打印模板',
   )
@@ -92,7 +93,7 @@ function PrintTemplatesPage() {
       setCurrentFile(null)
       return
     }
-    void apiData<{ id: string; filename: string }>(
+    void apiData(
       api.files[':id'].metadata.$get({ param: { id: currentFileId } }),
     )
       .then((file) => setCurrentFile({ id: file.id, filename: file.filename }))
@@ -141,7 +142,6 @@ function PrintTemplatesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource="sysPrintTemplates"
-          client={client}
           columns={GRID_COLUMNS}
           overrides={{
             resource: {
@@ -179,7 +179,12 @@ function PrintTemplatesPage() {
               onAction: async (row, context) => {
                 try {
                   if (!binding.commands) throw new Error('打印模板未绑定 setDefault 命令')
-                  await binding.commands.execute('setDefault', { id: String(row.id) })
+                  await executeSingleRowCommandWithInvalidation(
+                    binding.resource,
+                    'setDefault',
+                    String(row.id),
+                    queryClient,
+                  )
                   toast.success(`已将「${String(row.name)}」设为默认`)
                   context.refetch()
                 } catch (error) {
@@ -194,7 +199,12 @@ function PrintTemplatesPage() {
               onAction: async (row, context) => {
                 try {
                   if (!binding.commands) throw new Error('打印模板未绑定 unsetDefault 命令')
-                  await binding.commands.execute('unsetDefault', { id: String(row.id) })
+                  await executeSingleRowCommandWithInvalidation(
+                    binding.resource,
+                    'unsetDefault',
+                    String(row.id),
+                    queryClient,
+                  )
                   toast.success(`已取消「${String(row.name)}」的默认标记`)
                   context.refetch()
                 } catch (error) {
@@ -208,7 +218,6 @@ function PrintTemplatesPage() {
 
       <SynieRecordDrawer
         resource="sysPrintTemplates"
-        client={client}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
@@ -373,7 +382,7 @@ function PrintTemplatesPage() {
               fileId,
               remarks: values.remarks ?? null,
             })
-            await queryClient.invalidateQueries({ queryKey: ['gridRows'] })
+            await binding.cache.invalidateGrid(queryClient)
             return String(created.id)
           }
           if (mode === 'edit' && drawer?.row) {
@@ -386,7 +395,7 @@ function PrintTemplatesPage() {
               throw new Error('打印模板不支持 update')
             }
             await binding.writer.update(String(drawer.row.id), input)
-            await queryClient.invalidateQueries({ queryKey: ['gridRows'] })
+            await binding.cache.invalidateGrid(queryClient)
           }
         }}
       />

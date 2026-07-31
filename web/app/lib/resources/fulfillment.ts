@@ -1,10 +1,10 @@
 import { apiData, api } from '../api/client'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
 import { createRowCommandAdapter } from './catalog/commands'
 import type { AggregateDraftAdapter } from './catalog/types'
-import type { ResourceQuery, ResourceTransport } from './types'
+import { decimalWireInput, resourceListBody } from './resource-wire'
+import type { ResourceTransport } from './types'
 
-type FilterDocument = FilterState
 type FulfillmentAuditRequest = Record<string, unknown>
 export interface CompanyAccountDefaults {
   id: string
@@ -14,64 +14,6 @@ export interface CompanyAccountDefaults {
   receiptCreditAccountId: string | null
   [key: string]: unknown
 }
-type PurchaseReceiptCreate = Record<string, unknown>
-type PurchaseReceiptUpdate = Record<string, unknown>
-type PurchaseReceiptItemCreate =
-  Record<string, unknown>
-type PurchaseReceiptItemUpdate =
-  Record<string, unknown>
-type PurchaseOutsourcedIssueCreate =
-  Record<string, unknown>
-type PurchaseOutsourcedIssueUpdate =
-  Record<string, unknown>
-type PurchaseOutsourcedIssueItemCreate =
-  Record<string, unknown>
-type PurchaseOutsourcedIssueItemUpdate =
-  Record<string, unknown>
-type PurchaseOutsourcedReceiptCreate =
-  Record<string, unknown>
-type PurchaseOutsourcedReceiptUpdate =
-  Record<string, unknown>
-type PurchaseOutsourcedReceiptItemCreate =
-  Record<string, unknown>
-type PurchaseOutsourcedReceiptItemUpdate =
-  Record<string, unknown>
-type PurchaseOutsourcedReceiptItemMaterialCreate =
-  Record<string, unknown>
-type PurchaseOutsourcedReceiptItemMaterialUpdate =
-  Record<string, unknown>
-type PurchaseOutsourcedReceiptItemByproductCreate =
-  Record<string, unknown>
-type PurchaseOutsourcedReceiptItemByproductUpdate =
-  Record<string, unknown>
-
-function queryBody(input: ResourceQuery) {
-  const filter = {
-    ...(input.filter ?? {}),
-    ...((input.fixedFilter ?? {}) as FilterState),
-  }
-  return {
-    limit: input.limit,
-    offset: input.offset,
-    search: input.search || undefined,
-    sort: input.sort ?? undefined,
-    filter: filter as FilterDocument,
-  }
-}
-
-function decimalInput(
-  input: Record<string, unknown>,
-  fields: readonly string[],
-) {
-  const result = { ...input }
-  for (const field of fields) {
-    if (!Object.hasOwn(input, field)) continue
-    const value = input[field]
-    result[field] = value == null || value === '' ? null : String(value)
-  }
-  return result
-}
-
 type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
   Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
 
@@ -85,31 +27,11 @@ function resourceClient<const TOperations extends ResourceOperations>(
   }
 }
 
-function salesDeliveryDraftInput(input: Record<string, unknown>) {
-  const items = Array.isArray(input.items)
-    ? input.items.map((item) => decimalInput(item as Record<string, unknown>, ['qty']))
-    : []
-  const packBoxes = Array.isArray(input.packBoxes)
-    ? input.packBoxes.map((box) => {
-        const record = box as Record<string, unknown>
-        return {
-          ...record,
-          lines: Array.isArray(record.lines)
-            ? record.lines.map((line) =>
-                decimalInput(line as Record<string, unknown>, ['qty']),
-              )
-            : [],
-        }
-      })
-    : []
-  return { ...input, items, packBoxes }
-}
-
 export async function fetchSalesCompanyAccountDefaults(
   companyId: string,
 ): Promise<CompanyAccountDefaults | null> {
   try {
-    return await apiData<CompanyAccountDefaults>(
+    return await apiData(
       api.sales['company-account-defaults']['by-company'][':companyId'].$get({
         param: { companyId },
       }),
@@ -169,67 +91,263 @@ export async function voidPurchaseOutsourcedReceipt(id: string) {
 }
 
 export const salesDeliveryCommandAdapter = createRowCommandAdapter({
-  audit: auditSalesDelivery,
-  void: voidSalesDelivery,
+  audit: {
+    handler: auditSalesDelivery,
+    affectedResources: [
+      'salDeliveryItems',
+      'salOrderItems',
+      'invStockEntries',
+      'accGlEntries',
+      'scmOrderFlowItems',
+    ],
+  },
+  void: {
+    handler: voidSalesDelivery,
+    affectedResources: [
+      'salDeliveryItems',
+      'salOrderItems',
+      'invStockEntries',
+      'accGlEntries',
+      'scmOrderFlowItems',
+    ],
+  },
 })
 
 export const purchaseReceiptCommandAdapter = createRowCommandAdapter({
-  audit: auditPurchaseReceipt,
-  void: voidPurchaseReceipt,
+  audit: {
+    handler: auditPurchaseReceipt,
+    affectedResources: [
+      'purReceiptItems',
+      'purOrderItems',
+      'mfgDemandItems',
+      'invStockEntries',
+      'accGlEntries',
+      'scmOrderFlowItems',
+    ],
+  },
+  void: {
+    handler: voidPurchaseReceipt,
+    affectedResources: [
+      'purReceiptItems',
+      'purOrderItems',
+      'mfgDemandItems',
+      'invStockEntries',
+      'accGlEntries',
+      'scmOrderFlowItems',
+    ],
+  },
 })
 
 export const purchaseOutsourcedIssueCommandAdapter = createRowCommandAdapter({
-  audit: auditPurchaseOutsourcedIssue,
-  void: voidPurchaseOutsourcedIssue,
+  audit: {
+    handler: auditPurchaseOutsourcedIssue,
+    affectedResources: [
+      'purOutsourcedIssueItems',
+      'purOrderItemMaterials',
+      'invStockEntries',
+      'scmOrderFlowItems',
+    ],
+  },
+  void: {
+    handler: voidPurchaseOutsourcedIssue,
+    affectedResources: [
+      'purOutsourcedIssueItems',
+      'purOrderItemMaterials',
+      'invStockEntries',
+      'scmOrderFlowItems',
+    ],
+  },
 })
 
 export const purchaseOutsourcedReceiptCommandAdapter = createRowCommandAdapter({
-  audit: auditPurchaseOutsourcedReceipt,
-  void: voidPurchaseOutsourcedReceipt,
+  audit: {
+    handler: auditPurchaseOutsourcedReceipt,
+    affectedResources: [
+      'purOutsourcedReceiptItems',
+      'purOrderItems',
+      'mfgDemandItems',
+      'invStockEntries',
+      'accGlEntries',
+      'scmOrderFlowItems',
+    ],
+  },
+  void: {
+    handler: voidPurchaseOutsourcedReceipt,
+    affectedResources: [
+      'purOutsourcedReceiptItems',
+      'purOrderItems',
+      'mfgDemandItems',
+      'invStockEntries',
+      'accGlEntries',
+      'scmOrderFlowItems',
+    ],
+  },
 })
 
 /**
  * 销售发货聚合草稿 Adapter：完整 load + 原子 create/replace。
  * 表单走 draft，不暴露 RecordWriter 的 create/update。
  */
-export type SalesDeliveryDraftInput = Record<string, unknown>
+export interface SalesDeliveryDraftItemInput {
+  id?: string
+  idx: number
+  qty: string
+  orderItemId: string
+  unitId?: string | null
+  warehouseId: string
+  remarks?: string | null
+}
+
+export interface SalesDeliveryDraftPackLineInput {
+  id?: string
+  idx: number
+  qty: string
+  materialId: string
+  unitId?: string | null
+  remarks?: string | null
+}
+
+export interface SalesDeliveryDraftPackBoxInput {
+  id?: string
+  /** 完整快照字段；即使清空也必须显式传 []。 */
+  lines: SalesDeliveryDraftPackLineInput[]
+}
+
+export interface SalesDeliveryDraftInput {
+  companyId: string
+  deliveryNo?: string | null
+  deliveryDate?: string | null
+  postingDate?: string | null
+  partyType: string
+  partyId: string
+  remarks?: string | null
+  warehouseId?: string | null
+  debitAccountId: string
+  creditAccountId: string
+  /** 完整快照字段；省略与显式清空语义不同，因此不可选。 */
+  items: SalesDeliveryDraftItemInput[]
+  /** 完整快照字段；省略与显式清空语义不同，因此不可选。 */
+  packBoxes: SalesDeliveryDraftPackBoxInput[]
+}
+
 /** 权威 SavedDraft：表头 + 全部 items + 嵌套 packBoxes.lines */
 export type SalesDeliverySavedDraft = Row & {
   items: Row[]
   packBoxes: Array<Row & { lines: Row[] }>
 }
 
-export const salesDeliveryDraftAdapter: AggregateDraftAdapter<
-  SalesDeliveryDraftInput,
-  SalesDeliverySavedDraft
-> = {
+function draftRecord(value: unknown, path: string): Record<string, unknown> {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`销售发货草稿 ${path} 必须是对象`)
+  }
+  return value as Record<string, unknown>
+}
+
+function draftArray(
+  record: Readonly<Record<string, unknown>>,
+  field: string,
+  path: string,
+): unknown[] {
+  const value = record[field]
+  if (!Array.isArray(value)) {
+    throw new TypeError(`销售发货草稿 ${path} 必须显式提交数组`)
+  }
+  return value
+}
+
+/**
+ * Aggregate Draft → wire 的唯一转换入口。
+ * 集合字段 fail-closed：缺失、null 或非数组不能被解释为“清空全部子项”。
+ */
+export function salesDeliveryDraftInput(
+  input: SalesDeliveryDraftInput,
+): SalesDeliveryDraftInput {
+  const record = draftRecord(input, '根对象')
+  const items = draftArray(record, 'items', 'items').map((item, itemIndex) =>
+    decimalWireInput(
+      draftRecord(item, `items[${itemIndex}]`),
+      ['qty'],
+    ) as unknown as SalesDeliveryDraftItemInput,
+  )
+  const packBoxes = draftArray(record, 'packBoxes', 'packBoxes').map(
+    (box, boxIndex) => {
+      const boxRecord = draftRecord(box, `packBoxes[${boxIndex}]`)
+      const lines = draftArray(
+        boxRecord,
+        'lines',
+        `packBoxes[${boxIndex}].lines`,
+      ).map((line, lineIndex) =>
+        decimalWireInput(
+          draftRecord(
+            line,
+            `packBoxes[${boxIndex}].lines[${lineIndex}]`,
+          ),
+          ['qty'],
+        ) as unknown as SalesDeliveryDraftPackLineInput,
+      )
+      return { ...boxRecord, lines } as unknown as SalesDeliveryDraftPackBoxInput
+    },
+  )
+  return { ...input, items, packBoxes }
+}
+
+export interface SalesDeliveryDraftGateway {
+  loadDraft(id: string): Promise<SalesDeliverySavedDraft>
+  createDraft(input: SalesDeliveryDraftInput): Promise<SalesDeliverySavedDraft>
+  replaceDraft(
+    id: string,
+    input: SalesDeliveryDraftInput,
+  ): Promise<SalesDeliverySavedDraft>
+}
+
+const productionSalesDeliveryDraftGateway: SalesDeliveryDraftGateway = {
   async loadDraft(id) {
-    return (await apiData(
-      // 领域专用完整草稿读取；不走分页子资源 query
+    return apiData(
       api.sales.deliveries[':id'].draft.$get({ param: { id } }),
-    )) as SalesDeliverySavedDraft
+    )
   },
   async createDraft(input) {
-    return (await apiData(
-      api.sales.deliveries.$post({
-        json: salesDeliveryDraftInput(input) as never,
-      }),
-    )) as SalesDeliverySavedDraft
+    return apiData(
+      api.sales.deliveries.$post({ json: input as never }),
+    )
   },
   async replaceDraft(id, input) {
-    return (await apiData(
+    return apiData(
       api.sales.deliveries[':id'].$put({
         param: { id },
-        json: salesDeliveryDraftInput(input) as never,
+        json: input as never,
       }),
-    )) as SalesDeliverySavedDraft
+    )
   },
 }
 
+export function createSalesDeliveryDraftAdapter(
+  gateway: SalesDeliveryDraftGateway,
+): AggregateDraftAdapter<
+  SalesDeliveryDraftInput,
+  SalesDeliverySavedDraft
+> {
+  return {
+    loadDraft: (id) => gateway.loadDraft(id),
+    async createDraft(input) {
+      const wire = salesDeliveryDraftInput(input)
+      return gateway.createDraft(wire)
+    },
+    async replaceDraft(id, input) {
+      const wire = salesDeliveryDraftInput(input)
+      return gateway.replaceDraft(id, wire)
+    },
+  }
+}
+
+export const salesDeliveryDraftAdapter = createSalesDeliveryDraftAdapter(
+  productionSalesDeliveryDraftGateway,
+)
+
 export const salesDeliveryClient = resourceClient('salDeliveries', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.sales.deliveries.query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.sales.deliveries.query.$post({ json: resourceListBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -239,7 +357,7 @@ export const salesDeliveryClient = resourceClient('salDeliveries', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.sales.deliveries[':id'].$delete({
         param: { id }}),
     )
@@ -248,9 +366,9 @@ export const salesDeliveryClient = resourceClient('salDeliveries', {
 
 export const salesDeliveryItemClient = resourceClient('salDeliveryItems', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.sales['delivery-items'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -264,9 +382,9 @@ export const salesDeliveryItemClient = resourceClient('salDeliveryItems', {
 
 export const salesDeliveryPackBoxClient = resourceClient('salDeliveryPackBoxes', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.sales['delivery-pack-boxes'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -280,9 +398,9 @@ export const salesDeliveryPackBoxClient = resourceClient('salDeliveryPackBoxes',
 
 export const salesDeliveryPackLineClient = resourceClient('salDeliveryPackLines', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.sales['delivery-pack-lines'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -296,8 +414,8 @@ export const salesDeliveryPackLineClient = resourceClient('salDeliveryPackLines'
 
 export const purchaseReceiptClient = resourceClient('purReceipts', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
-      api.purchase.receipts.query.$post({ json: queryBody(input) }),
+    const result = await apiData(
+      api.purchase.receipts.query.$post({ json: resourceListBody(input) }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -321,7 +439,7 @@ export const purchaseReceiptClient = resourceClient('purReceipts', {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.purchase.receipts[':id'].$delete({
         param: { id }}),
     )
@@ -330,9 +448,9 @@ export const purchaseReceiptClient = resourceClient('purReceipts', {
 
 export const purchaseReceiptItemClient = resourceClient('purReceiptItems', {
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.purchase['receipt-items'].query.$post({
-        json: queryBody(input)}),
+        json: resourceListBody(input)}),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -345,18 +463,18 @@ export const purchaseReceiptItemClient = resourceClient('purReceiptItems', {
   async create(input) {
     return (await apiData(
       api.purchase['receipt-items'].$post({
-        json: decimalInput(input, ['qty']) as never}),
+        json: decimalWireInput(input, ['qty']) as never}),
     )) as Row
   },
   async update(id, input) {
     return (await apiData(
       api.purchase['receipt-items'][':id'].$patch({
         param: { id },
-        json: decimalInput(input, ['qty']) as never}),
+        json: decimalWireInput(input, ['qty']) as never}),
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.purchase['receipt-items'][':id'].$delete({
         param: { id }}),
     )
@@ -367,9 +485,9 @@ export const purchaseOutsourcedIssueClient = resourceClient(
   'purOutsourcedIssues',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.purchase['outsourced-issues'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -393,7 +511,7 @@ export const purchaseOutsourcedIssueClient = resourceClient(
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.purchase['outsourced-issues'][':id'].$delete({
           param: { id }}),
       )
@@ -405,9 +523,9 @@ export const purchaseOutsourcedIssueItemClient = resourceClient(
   'purOutsourcedIssueItems',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.purchase['outsourced-issue-items'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -420,7 +538,7 @@ export const purchaseOutsourcedIssueItemClient = resourceClient(
     async create(input) {
       return (await apiData(
         api.purchase['outsourced-issue-items'].$post({
-          json: decimalInput(input, [
+          json: decimalWireInput(input, [
             'qty',
           ]) as never}),
       )) as Row
@@ -429,13 +547,13 @@ export const purchaseOutsourcedIssueItemClient = resourceClient(
       return (await apiData(
         api.purchase['outsourced-issue-items'][':id'].$patch({
           param: { id },
-          json: decimalInput(input, [
+          json: decimalWireInput(input, [
             'qty',
           ]) as never}),
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.purchase['outsourced-issue-items'][':id'].$delete({
           param: { id }}),
       )
@@ -447,9 +565,9 @@ export const purchaseOutsourcedReceiptClient = resourceClient(
   'purOutsourcedReceipts',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.purchase['outsourced-receipts'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -473,7 +591,7 @@ export const purchaseOutsourcedReceiptClient = resourceClient(
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.purchase['outsourced-receipts'][':id'].$delete({
           param: { id }}),
       )
@@ -485,9 +603,9 @@ export const purchaseOutsourcedReceiptItemClient = resourceClient(
   'purOutsourcedReceiptItems',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.purchase['outsourced-receipt-items'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -500,7 +618,7 @@ export const purchaseOutsourcedReceiptItemClient = resourceClient(
     async create(input) {
       return (await apiData(
         api.purchase['outsourced-receipt-items'].$post({
-          json: decimalInput(input, [
+          json: decimalWireInput(input, [
             'qty',
           ]) as never}),
       )) as Row
@@ -509,13 +627,13 @@ export const purchaseOutsourcedReceiptItemClient = resourceClient(
       return (await apiData(
         api.purchase['outsourced-receipt-items'][':id'].$patch({
           param: { id },
-          json: decimalInput(input, [
+          json: decimalWireInput(input, [
             'qty',
           ]) as never}),
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.purchase['outsourced-receipt-items'][':id'].$delete({
           param: { id }}),
       )
@@ -527,9 +645,9 @@ export const purchaseOutsourcedReceiptItemMaterialClient = resourceClient(
   'purOutsourcedReceiptItemMaterials',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.purchase['outsourced-receipt-item-materials'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -542,7 +660,7 @@ export const purchaseOutsourcedReceiptItemMaterialClient = resourceClient(
     async create(input) {
       return (await apiData(
         api.purchase['outsourced-receipt-item-materials'].$post({
-          json: decimalInput(input, [
+          json: decimalWireInput(input, [
             'qty',
           ]) as never}),
       )) as Row
@@ -551,13 +669,13 @@ export const purchaseOutsourcedReceiptItemMaterialClient = resourceClient(
       return (await apiData(
         api.purchase['outsourced-receipt-item-materials'][':id'].$patch({
           param: { id },
-          json: decimalInput(input, [
+          json: decimalWireInput(input, [
             'qty',
           ]) as never}),
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.purchase['outsourced-receipt-item-materials'][':id'].$delete({
           param: { id }}),
       )
@@ -569,9 +687,9 @@ export const purchaseOutsourcedReceiptItemByproductClient = resourceClient(
   'purOutsourcedReceiptItemByproducts',
   {
     async query(input) {
-      const result = await apiData<{ count: number; results: Row[] }>(
+      const result = await apiData(
         api.purchase['outsourced-receipt-item-byproducts'].query.$post({
-          json: queryBody(input)}),
+          json: resourceListBody(input)}),
       )
       return { count: result.count, results: result.results as Row[] }
     },
@@ -584,7 +702,7 @@ export const purchaseOutsourcedReceiptItemByproductClient = resourceClient(
     async create(input) {
       return (await apiData(
         api.purchase['outsourced-receipt-item-byproducts'].$post({
-          json: decimalInput(input, [
+          json: decimalWireInput(input, [
             'qty',
           ]) as never}),
       )) as Row
@@ -593,13 +711,13 @@ export const purchaseOutsourcedReceiptItemByproductClient = resourceClient(
       return (await apiData(
         api.purchase['outsourced-receipt-item-byproducts'][':id'].$patch({
           param: { id },
-          json: decimalInput(input, [
+          json: decimalWireInput(input, [
             'qty',
           ]) as never}),
       )) as Row
     },
     async delete(id) {
-      await apiData<void>(
+      await apiData(
         api.purchase['outsourced-receipt-item-byproducts'][':id'].$delete({
           param: { id }}),
       )

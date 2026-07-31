@@ -1,30 +1,20 @@
 import { apiData, api } from '../api/client'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
 import {
   createCommandAdapter,
   decodeRowTarget,
   defineCommand,
 } from './catalog/commands'
+import { resourceListBody } from './resource-wire'
 import type { ResourceClient, ResourceTransport } from './types'
-
-function mergedFilter(input: { filter?: FilterState; fixedFilter?: Record<string, unknown> }) {
-  return {
-    ...(input.filter ?? {}),
-    ...((input.fixedFilter ?? {}) as FilterState),
-  } as FilterState
-}
 
 export const fileClient = {
   id: 'rest:sysFiles',
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.files.query.$post({
-        json: {
-          limit: input.limit,
-          offset: input.offset,
-          search: input.search || undefined,
-          sort: input.sort ?? undefined,
-          filter: mergedFilter(input)} }),
+        json: resourceListBody(input),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -34,7 +24,7 @@ export const fileClient = {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.files[':id'].$delete({ param: { id } }),
     )
   },
@@ -43,14 +33,10 @@ export const fileClient = {
 export const storageClient: ResourceClient = {
   id: 'rest:sysStorages',
   async query(input) {
-    const result = await apiData<{ count: number; results: Row[] }>(
+    const result = await apiData(
       api.system.storages.query.$post({
-        json: {
-          limit: input.limit,
-          offset: input.offset,
-          search: input.search || undefined,
-          sort: input.sort ?? undefined,
-          filter: mergedFilter(input)} }),
+        json: resourceListBody(input),
+      }),
     )
     return { count: result.count, results: result.results as Row[] }
   },
@@ -73,14 +59,14 @@ export const storageClient: ResourceClient = {
     )) as Row
   },
   async delete(id) {
-    await apiData<void>(
+    await apiData(
       api.system.storages[':id'].$delete({ param: { id } }),
     )
   },
 }
 
 export async function setDefaultStorage(id: string): Promise<void> {
-  await apiData<void>(
+  await apiData(
     api.system.storages[':id']['set-default'].$post({
       param: { id }}),
   )
@@ -95,21 +81,13 @@ export const storageCommandAdapter = createCommandAdapter({
 })
 
 export async function queryAttachments(input: Record<string, unknown>) {
-  return apiData<{
-    count: number
-    results: Array<{
-      id: string
-      category: string
-      insertedAt: string
-      ownerType?: string
-      ownerId?: string
-      file?: { id: string; filename: string; contentType: string | null; size: number } | null
-    }>
-  }>(api.files.attachments.query.$post({ json: input as never }))
+  return apiData(
+    api.files.attachments.query.$post({ json: input as never }),
+  )
 }
 
 export async function deleteAttachment(id: string): Promise<void> {
-  await apiData<void>(
+  await apiData(
     api.files.attachments[':id'].$delete({ param: { id } }),
   )
 }

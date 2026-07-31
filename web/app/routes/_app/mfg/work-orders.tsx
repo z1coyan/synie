@@ -20,6 +20,7 @@ import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
 import { WorkOrderProgressCell } from './-work-order-progress-cell'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/mfg/work-orders')({
   component: WorkOrdersPage,
@@ -126,13 +127,10 @@ function WorkOrdersPageInner() {
   const baseDrawer = drawerConfig('mfgWorkOrders')
 
   const invalidateWorkOrderLists = () => {
-    // gridRows key = [gridRows, client.id, resource, ...]；须带 client.id 才能命中
-    queryClient.invalidateQueries({
-      queryKey: ['gridRows', workOrderClient.id, 'mfgWorkOrders'],
-    })
-    // 建单占安排，需求行剩余可安排也要刷新
-    queryClient.invalidateQueries({ queryKey: ['gridRows'] })
-    queryClient.invalidateQueries({ queryKey: ['rowById'] })
+    // 建单占安排，工单与来源需求投影都要刷新；缓存身份由各 binding 拥有。
+    for (const resource of ['mfgWorkOrders', 'mfgDemandItems', 'mfgDemands']) {
+      void resourceBindingFor(resource).cache.invalidateAll(queryClient)
+    }
   }
 
   /** 打开完整 BOM 创建 drawer；成功后回填 bomId / 已有工单则 apply */
@@ -334,7 +332,6 @@ function WorkOrdersPageInner() {
       <div className="mt-6">
         <SynieDataGrid
           resource="mfgWorkOrders"
-          client={workOrderClient}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           // 物料富单元格所需快照字段与物料外键(撤列后仍随查询取回;工单无 customerPartNo 快照)
@@ -365,7 +362,6 @@ function WorkOrdersPageInner() {
 
       <SynieRecordDrawer
         resource="mfgWorkOrders"
-        client={workOrderClient}
         {...baseDrawer}
         fields={drawerFields}
         mode={drawer?.mode ?? 'view'}

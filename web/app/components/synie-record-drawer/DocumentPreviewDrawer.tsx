@@ -1,12 +1,17 @@
 import { useQueries } from '@tanstack/react-query'
 import { Chip, Spinner } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
-import { resourceTransportFromResourceBinding } from '~/lib/resources/registry'
+import type { ResourceBinding } from '~/lib/resources/catalog'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { useGridMeta } from '../synie-data-grid/meta'
 import type { Row } from '../synie-data-grid/types'
 import { cellText } from '../synie-data-grid/format'
 import { SynieEditableTable } from '../synie-editable-table/SynieEditableTable'
-import { getDocumentPreview, type DocumentPreviewConfig } from './document-preview'
+import {
+  getDocumentPreview,
+  type DocumentPreviewConfig,
+  type DocumentPreviewLineTable,
+} from './document-preview'
 import { SynieRecordDrawer } from './SynieRecordDrawer'
 
 export interface DocumentPreviewDrawerProps {
@@ -16,9 +21,60 @@ export interface DocumentPreviewDrawerProps {
   onOpenChange: (open: boolean) => void
 }
 
+export type DocumentPreviewBindingResolver = (
+  resource: string,
+) => Pick<ResourceBinding, 'reader' | 'cache'>
+
+/**
+ * Preview 子表查询的唯一 runtime seam：Reader、query key 与失效 scope 来自同一 binding。
+ * resolver 参数让测试或嵌入方可替换为 memory binding，而不改 Presentation 配置。
+ */
+export function documentPreviewLineQuery(
+  table: DocumentPreviewLineTable,
+  documentResource: string,
+  documentId: string,
+  resolveBinding: DocumentPreviewBindingResolver = resourceBindingFor,
+) {
+  const binding = resolveBinding(table.resource)
+  return {
+    queryKey: binding.cache.gridKey(
+      'documentPreview',
+      documentResource,
+      documentId,
+    ),
+    queryFn: async (): Promise<{ results: Row[] }> => {
+      if (table.load) {
+        return {
+          results: await table.load(
+            documentId,
+            (resource) => resolveBinding(resource).reader,
+          ),
+        }
+      }
+      const result = await binding.reader.query({
+        limit: table.limit ?? 200,
+        offset: 0,
+        sort: {
+          column: table.sortColumn ?? 'idx',
+          direction: 'ascending',
+        },
+        fixedFilter: {
+          [table.parentIdField]: {
+            kind: 'fk',
+            op: 'in',
+            values: [documentId],
+            labels: [],
+          },
+        },
+      })
+      return { results: result.results }
+    },
+  }
+}
+
 /**
  * 已登记资源的单据只读速览：标题区单号+状态、业务抽屉对齐头字段、库存相关子表只读。
- * 无编辑/审核；头 get 与子表 query 走各资源既有 transport（权限 fail-closed）。
+ * 无编辑/审核；头 get 与子表 query 走各资源 ResourceBinding（权限 fail-closed）。
  */
 export function DocumentPreviewDrawer({
   resource,
@@ -31,36 +87,13 @@ export function DocumentPreviewDrawer({
     throw new Error(`资源「${resource}」未登记单据只读速览`)
   }
 
-  const client = resourceTransportFromResourceBinding(resource)
   const meta = useGridMeta(resource, isOpen)
   const statusField = config.statusField ?? 'status'
   const statusCol = meta.data?.columns.find((c) => c.name === statusField)
 
   const lineQueries = useQueries({
     queries: config.lineTables.map((table) => ({
-      queryKey: ['documentPreviewLines', resource, id, table.resource] as const,
-      queryFn: async () => {
-        if (table.load) {
-          return { results: await table.load(id) }
-        }
-        const result = await table.client.query({
-          limit: table.limit ?? 200,
-          offset: 0,
-          sort: {
-            column: table.sortColumn ?? 'idx',
-            direction: 'ascending' as const,
-          },
-          fixedFilter: {
-            [table.parentIdField]: {
-              kind: 'fk',
-              op: 'in',
-              values: [id],
-              labels: [],
-            },
-          },
-        })
-        return { results: result.results }
-      },
+      ...documentPreviewLineQuery(table, resource, id),
       enabled: isOpen && !!id,
       staleTime: 30_000,
     })),
@@ -72,7 +105,6 @@ export function DocumentPreviewDrawer({
   return (
     <SynieRecordDrawer
       resource={resource}
-      client={client}
       mode="view"
       rowId={id}
       isOpen={isOpen}
@@ -98,12 +130,18 @@ export function DocumentPreviewDrawer({
         return (
           <div className="flex flex-wrap items-center gap-2">
             {docNo != null ? (
-              <span className="font-medium tabular-nums tracking-wide">{docNo}</span>
+              <span className="font-medium tabular-nums tracking-wide">
+                {docNo}
+              </span>
             ) : (
               <span className="text-muted">无单号</span>
             )}
             {statusLabel != null ? (
-              <Chip size="sm" variant="soft" color={statusChipColor(String(statusRaw ?? ''))}>
+              <Chip
+                size="sm"
+                variant="soft"
+                color={statusChipColor(String(statusRaw ?? ''))}
+              >
                 {statusLabel}
               </Chip>
             ) : null}
@@ -129,7 +167,12 @@ function PreviewLineTables({
   linesError,
 }: {
   config: DocumentPreviewConfig
-  lineQueries: { data?: { results: Row[] }; isPending: boolean; isError: boolean; error: unknown }[]
+  lineQueries: {
+    data?: { results: Row[] }
+    isPending: boolean
+    isError: boolean
+    error: unknown
+  }[]
   linesPending: boolean
   linesError: { error: unknown } | undefined
 }) {
@@ -138,7 +181,9 @@ function PreviewLineTables({
       <EmptyState size="sm" className="py-8">
         <EmptyState.Header>
           <EmptyState.Title>子表加载失败</EmptyState.Title>
-          <EmptyState.Description>{(linesError.error as Error).message}</EmptyState.Description>
+          <EmptyState.Description>
+            {(linesError.error as Error).message}
+          </EmptyState.Description>
         </EmptyState.Header>
       </EmptyState>
     )
@@ -159,7 +204,6 @@ function PreviewLineTables({
           <SynieEditableTable
             key={table.resource}
             resource={table.resource}
-            client={table.client}
             label={table.title}
             title={table.title}
             items={items}
@@ -182,7 +226,8 @@ function statusChipColor(
 ): 'default' | 'accent' | 'success' | 'warning' | 'danger' {
   const s = status.toUpperCase()
   if (s === 'DRAFT') return 'default'
-  if (s === 'AUDITED' || s === 'RECEIVED' || s === 'CLOSED' || s === 'POSTED') return 'success'
+  if (s === 'AUDITED' || s === 'RECEIVED' || s === 'CLOSED' || s === 'POSTED')
+    return 'success'
   if (s === 'SHIPPED' || s === 'CONFIRMED') return 'accent'
   if (s === 'VOID' || s === 'CANCELLED' || s === 'VOIDED') return 'danger'
   return 'default'

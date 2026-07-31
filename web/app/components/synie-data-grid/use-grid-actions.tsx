@@ -1,6 +1,13 @@
 import { useState, type ReactNode } from 'react'
 import { AlertDialog, Button, toast } from '@heroui/react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { ResourceBinding } from '~/lib/resources/catalog'
+import type { QueryInvalidationAdapter } from '~/lib/resources/catalog/query-cache'
+import {
+  executeCommandWithInvalidation,
+  type ResourceBindingResolver,
+} from '~/lib/resources/command-invalidation'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import type { ActionContext, BulkAction, GridActionMeta, GridMeta, Row, RowAction } from './types'
 
 export interface ResolvedAction {
@@ -24,8 +31,8 @@ type CommandTarget = GridActionMeta['target']
 /**
  * 删除或领域命令执行。
  * - delete：逐条 writer.delete
- * - row：逐条 commands.execute(key, { id })
- * - bulk / rowOrBulk：一次 commands.execute(key, { ids })
+ * - row：逐条经统一命令失效 interface 传 { id }
+ * - bulk / rowOrBulk：一次经统一命令失效 interface 传 { ids }
  * - collection：不传记录 ID
  */
 export async function runBindingMutation(
@@ -33,6 +40,8 @@ export async function runBindingMutation(
   binding: ResourceBinding,
   actionKey: string,
   target: CommandTarget | 'delete',
+  cache: QueryInvalidationAdapter,
+  resolveBinding: ResourceBindingResolver = resourceBindingFor,
 ): Promise<{ ok: number; fail: number; messages: string[] }> {
   const messages: string[] = []
 
@@ -67,7 +76,13 @@ export async function runBindingMutation(
     let fail = 0
     for (const row of rows) {
       try {
-        await binding.commands.execute(actionKey, { id: row.id } as never)
+        await executeCommandWithInvalidation(
+          binding,
+          actionKey,
+          { id: row.id },
+          cache,
+          resolveBinding,
+        )
         ok += 1
       } catch (e) {
         fail += 1
@@ -80,7 +95,13 @@ export async function runBindingMutation(
 
   if (target === 'collection') {
     try {
-      await binding.commands.execute(actionKey, {} as never)
+      await executeCommandWithInvalidation(
+        binding,
+        actionKey,
+        {},
+        cache,
+        resolveBinding,
+      )
       return { ok: 1, fail: 0, messages: [] }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -94,7 +115,13 @@ export async function runBindingMutation(
     return { ok: 0, fail: 1, messages: ['未选择记录'] }
   }
   try {
-    await binding.commands.execute(actionKey, { ids } as never)
+    await executeCommandWithInvalidation(
+      binding,
+      actionKey,
+      { ids },
+      cache,
+      resolveBinding,
+    )
     return { ok: ids.length, fail: 0, messages: [] }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -136,6 +163,7 @@ export function useGridActions(opts: {
   rowActions?: RowAction[]
 }) {
   const { meta, refetch, clearSelection, binding } = opts
+  const queryClient = useQueryClient()
   const [pending, setPending] = useState<PendingConfirm | null>(null)
   const [running, setRunning] = useState(false)
 
@@ -156,7 +184,13 @@ export function useGridActions(opts: {
         isDanger,
         rows,
         execute: async (rs) => {
-          const { ok, fail, messages } = await runBindingMutation(rs, binding, actionKey, target)
+          const { ok, fail, messages } = await runBindingMutation(
+            rs,
+            binding,
+            actionKey,
+            target,
+            queryClient,
+          )
           if (fail === 0) toast.success(`${label}成功(${ok} 条)`)
           else if (ok === 0)
             toast.danger(`${label}失败`, { description: failureDescription(fail, ok, messages) })

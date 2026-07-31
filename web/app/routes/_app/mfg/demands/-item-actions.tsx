@@ -4,6 +4,7 @@ import { AlertDialog, Button, toast } from '@heroui/react'
 import type { Row } from '~/components/synie-data-grid/types'
 import { fetchMyPermissions } from '~/lib/permissions'
 import { workOrderClient } from '~/lib/resources/manufacturing'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 /**
  * 需求行行级操作：生成工单（分批可多张）。
@@ -40,8 +41,9 @@ export function useDemandItemActions(after: () => void) {
   const [running, setRunning] = useState(false)
 
   const done = () => {
-    queryClient.invalidateQueries({ queryKey: ['gridRows'] })
-    queryClient.invalidateQueries({ queryKey: ['rowById'] })
+    for (const resource of ['mfgWorkOrders', 'mfgDemandItems', 'mfgDemands']) {
+      void resourceBindingFor(resource).cache.invalidateAll(queryClient)
+    }
     after()
   }
 

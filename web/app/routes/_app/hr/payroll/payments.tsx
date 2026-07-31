@@ -5,6 +5,7 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/hr/payroll/payments')({
   component: PayrollPaymentsPage,
@@ -32,8 +33,7 @@ function PayrollPaymentsPage() {
   // 删除发放会翻转工资单状态并联动借款台账,一并失效
   const invalidateAll = () => {
     for (const resource of ['hrPayrolls', 'hrPayrollPayments', 'hrEmployeeLoans']) {
-      void queryClient.invalidateQueries({ queryKey: ['gridRows', resource] })
-      void queryClient.invalidateQueries({ queryKey: ['rowById', resource] })
+      void resourceBindingFor(resource).cache.invalidateAll(queryClient)
     }
     void queryClient.invalidateQueries({ queryKey: ['payrollMonthStats'] })
     void queryClient.invalidateQueries({ queryKey: ['payrollPayments'] })
@@ -50,7 +50,6 @@ function PayrollPaymentsPage() {
       <div className="mt-4">
         <SynieDataGrid
           resource="hrPayrollPayments"
-          client={paymentForm.client}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'paidOn', direction: 'descending' }}
@@ -61,7 +60,6 @@ function PayrollPaymentsPage() {
 
       <SynieRecordDrawer
         resource="hrPayrollPayments"
-        client={paymentForm.client}
         label={paymentForm.formProps.label}
         mode="view"
         isOpen={viewRow !== null}

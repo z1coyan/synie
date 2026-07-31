@@ -63,39 +63,39 @@ function singletonClient(
 }
 
 export function getSalesSetting() {
-  return apiData<SalesSetting>(api.settings['supply-chain'].$get())
+  return apiData(api.settings['supply-chain'].$get())
 }
 
 export function updateSalesSetting(input: Record<string, unknown>) {
-  return apiData<SalesSetting>(api.settings['supply-chain'].$patch({ json: input as never }))
+  return apiData(api.settings['supply-chain'].$patch({ json: input as never }))
 }
 
 export function getManufacturingSetting() {
-  return apiData<ManufacturingSetting>(api.settings.production.$get())
+  return apiData(api.settings.production.$get())
 }
 
 export function updateManufacturingSetting(input: Record<string, unknown>) {
-  return apiData<ManufacturingSetting>(api.settings.production.$patch({ json: input as never }))
+  return apiData(api.settings.production.$patch({ json: input as never }))
 }
 
 export function getAccountingSetting() {
-  return apiData<AccountingSetting>(api.settings.finance.$get())
+  return apiData(api.settings.finance.$get())
 }
 
 export function updateAccountingSetting(input: Record<string, unknown>) {
-  return apiData<AccountingSetting>(api.settings.finance.$patch({ json: input as never }))
+  return apiData(api.settings.finance.$patch({ json: input as never }))
 }
 
 export function getAccountingOCRConfigured() {
-  return apiData<{ configured: boolean }>(api.settings.finance['ocr-configured'].$get())
+  return apiData(api.settings.finance['ocr-configured'].$get())
 }
 
 export function getSystemSetting() {
-  return apiData<SystemSetting>(api.settings.system.$get())
+  return apiData(api.settings.system.$get())
 }
 
 export function updateSystemSetting(input: Record<string, unknown>) {
-  return apiData<SystemSetting>(api.settings.system.$patch({ json: input as never }))
+  return apiData(api.settings.system.$patch({ json: input as never }))
 }
 
 export const salesSettingClient = singletonClient(

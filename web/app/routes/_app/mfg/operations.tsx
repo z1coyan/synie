@@ -21,10 +21,10 @@ function OperationsPage() {
     row: Row | null
   } | null>(null)
   const queryClient = useQueryClient()
-  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '工序')
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '工序')
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ['gridRows', client.id, RESOURCE] })
+    binding.cache.invalidateGrid(queryClient)
 
   return (
     <>
@@ -36,7 +36,6 @@ function OperationsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource={RESOURCE}
-          client={client}
           columns={GRID_COLUMNS}
           onView={(row) => setDrawer({ mode: 'view', row })}
           onCreate={() => setDrawer({ mode: 'create', row: null })}
@@ -46,7 +45,6 @@ function OperationsPage() {
 
       <SynieRecordDrawer
         resource={RESOURCE}
-        client={client}
         label={formProps.label}
         exclude={formProps.exclude}
         fields={formProps.fields}

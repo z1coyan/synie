@@ -5,7 +5,6 @@ import {
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
-import { purchaseReconciliationItemClient } from '~/lib/resources/reconciliations'
 import { useReconciliationDrawer } from './-reconciliation-drawer'
 
 export const Route = createFileRoute(
@@ -70,7 +69,6 @@ function ReconciliationItemsTab() {
   return (
     <SynieDataGrid
       resource="purReconciliationItems"
-      client={purchaseReconciliationItemClient}
       columns={GRID_COLUMNS}
       overrides={GRID_OVERRIDES}
       defaultSort={{ column: 'receiptDate', direction: 'descending' }}
