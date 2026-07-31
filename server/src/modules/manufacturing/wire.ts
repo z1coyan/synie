@@ -204,6 +204,9 @@ export function outputItemWire(item: OutputItem) {
     materialSpec: item.materialSpec,
     unitName: item.unitName,
     remarks: item.remarks,
+    outputNo: item.outputNo,
+    outputDate: item.outputDate,
+    outputStatus: item.outputStatus == null ? null : upper(item.outputStatus),
     insertedAt: item.insertedAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
   }

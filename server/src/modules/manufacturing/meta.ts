@@ -790,6 +790,26 @@ export function outputItemResourceMeta(): ResourceMeta {
       fk('material_id', 'materialId', '物料', 'invMaterials', 'material', 'name'),
       fk('unit_id', 'unitId', '单位', 'basUnits', 'unit', 'name'),
       fk('warehouse_id', 'warehouseId', '入库仓库', 'invWarehouses', 'warehouse', 'name'),
+      // 母单投影：list 子查询 join mfg_output 暴露同名列，供条目 tab 筛/排/展示（同履约条目先例）
+      field('output_no', 'outputNo', 'string', '入库单号', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('output_date', 'outputDate', 'date', '入库日期', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('output_status', 'outputStatus', 'enum', '入库状态', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+        sortable: true,
+        enumOptions: outputStatusOptions,
+      }),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: true },

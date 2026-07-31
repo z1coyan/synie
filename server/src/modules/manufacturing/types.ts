@@ -194,6 +194,10 @@ export interface OutputItem {
   materialSpec: string | null
   unitName: string
   remarks: string | null
+  /** 列表 join 母单投影；单条 create/update 响应可空 */
+  outputNo: string | null
+  outputDate: string | null
+  outputStatus: OutputStatus | null
   insertedAt: Date
   updatedAt: Date
 }

@@ -15,6 +15,9 @@ const pages = [
   './demands/-sales-item-picker.tsx',
   './work-orders.tsx',
   './outputs.tsx',
+  './outputs/-output-drawer.tsx',
+  './outputs/items.tsx',
+  './outputs/outputs.tsx',
 ] as const
 
 describe('PR-2.17 制造域 REST 边界', () => {
@@ -88,9 +91,27 @@ describe('PR-2.17 制造域 REST 边界', () => {
     expect(workOrder).toContain('onPrint=')
     expect(workOrder).toContain('batchExportExcel')
 
-    const output = source('./outputs.tsx')
-    expect(output.match(/client=\{outputClient\}/g)?.length).toBe(2)
-    expect(output).toContain('client={outputItemClient}')
+    const outputLayout = source('./outputs.tsx')
+    expect(outputLayout).toContain('OutputDrawerProvider')
+    expect(outputLayout).toContain("id: 'items'")
+    expect(outputLayout).toContain("id: 'outputs'")
+    expect(outputLayout).toContain("label: '入库条目'")
+    expect(outputLayout).toContain("label: '入库单'")
+    expect(outputLayout).toMatch(/\/mfg\/outputs\/\$\{/)
+
+    const outputDrawer = source('./outputs/-output-drawer.tsx')
+    expect(outputDrawer).toContain('client={outputClient}')
+    expect(outputDrawer).toContain('client={outputItemClient}')
+    expect(outputDrawer).toContain('label="入库条目"')
+
+    const outputItems = source('./outputs/items.tsx')
+    expect(outputItems).toContain('client={outputItemClient}')
+    expect(outputItems).toContain('createLabel="新建入库单"')
+    expect(outputItems).toContain('审核整单')
+
+    const outputDocs = source('./outputs/outputs.tsx')
+    expect(outputDocs).toContain('client={outputClient}')
+    expect(outputDocs).toContain('requestAudit')
   })
 
   test('制造动作与子行 diff 全部经 REST client', () => {

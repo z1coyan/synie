@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { demandItemResourceMeta, demandResourceMeta } from './meta.ts'
+import {
+  demandItemResourceMeta,
+  demandResourceMeta,
+  outputItemResourceMeta,
+} from './meta.ts'
 
 describe('制造资源 Meta', () => {
   test('履约需求行的采购履约投影只读', () => {
@@ -33,5 +37,29 @@ describe('制造资源 Meta', () => {
     expect(
       demandResourceMeta().actions.some((action) => action.key === 'confirm'),
     ).toBe(false)
+  })
+
+  test('生产入库条目暴露母单号/日期/状态 calculated 列（条目 tab 筛排）', () => {
+    const fields = new Map(
+      outputItemResourceMeta().fields.map((field) => [field.apiName, field]),
+    )
+    expect(fields.get('outputNo')).toMatchObject({
+      dbColumn: 'output_no',
+      calculated: true,
+      filterable: true,
+      sortable: true,
+    })
+    expect(fields.get('outputDate')).toMatchObject({
+      dbColumn: 'output_date',
+      calculated: true,
+      filterable: true,
+      sortable: true,
+    })
+    expect(fields.get('outputStatus')).toMatchObject({
+      dbColumn: 'output_status',
+      calculated: true,
+      filterable: true,
+      sortable: true,
+    })
   })
 })

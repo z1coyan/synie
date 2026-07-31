@@ -343,10 +343,15 @@ export function createOutputService(
       scope.where,
       query.outputId ? sql`output_id = ${query.outputId}` : null,
     ].filter(Boolean)
+    // 列名须与 ResourceMeta.dbColumn 一致（filterbuild 按 apiName→dbColumn 排序筛选）
     return listFromSource({
       db,
       resource: outputItemResourceMeta(),
-      source: sql` FROM mfg_output_item`,
+      source: sql` FROM (
+        SELECT i.*, h.output_no, h.output_date, h.status AS output_status
+        FROM mfg_output_item i
+        JOIN mfg_output h ON h.id = i.output_id
+      ) mfg_output_items`,
       select: sql`SELECT *`,
       defaultOrder: sql`"idx" ASC, "id" ASC`,
       query: q,
@@ -778,6 +783,9 @@ function mapOutputItem(row: {
   material_spec: string | null
   unit_name: string
   remarks: string | null
+  output_no?: string | null
+  output_date?: Date | string | null
+  output_status?: string | null
   inserted_at: Date
   updated_at: Date
 }): OutputItem {
@@ -797,6 +805,12 @@ function mapOutputItem(row: {
     materialSpec: row.material_spec,
     unitName: row.unit_name,
     remarks: row.remarks,
+    outputNo: row.output_no == null || row.output_no === '' ? null : String(row.output_no),
+    outputDate: row.output_date == null ? null : asDate(row.output_date),
+    outputStatus:
+      row.output_status == null || row.output_status === ''
+        ? null
+        : (String(row.output_status) as OutputStatus),
     insertedAt: new Date(row.inserted_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -819,6 +833,9 @@ function mapOutputItemRow(r: Record<string, unknown>): OutputItem {
     material_spec: r.material_spec == null ? null : String(r.material_spec),
     unit_name: String(r.unit_name),
     remarks: r.remarks == null ? null : String(r.remarks),
+    output_no: r.output_no == null ? null : String(r.output_no),
+    output_date: r.output_date == null ? null : (r.output_date as Date | string),
+    output_status: r.output_status == null ? null : String(r.output_status),
     inserted_at: r.inserted_at as Date,
     updated_at: r.updated_at as Date,
   })
