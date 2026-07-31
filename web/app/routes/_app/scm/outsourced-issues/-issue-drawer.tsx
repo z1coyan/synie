@@ -48,7 +48,7 @@ export const issueAuditConfig = {
   loadItems: (issueId: string) =>
     purchaseOutsourcedIssueItemClient
       .query({
-        limit: 500,
+        limit: 200,
         offset: 0,
         sort: { column: 'idx', direction: 'ascending' },
         filter: {

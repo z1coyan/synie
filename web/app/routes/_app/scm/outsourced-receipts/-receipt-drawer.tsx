@@ -62,7 +62,7 @@ export const receiptAuditConfig = {
   loadItems: (receiptId: string) =>
     purchaseOutsourcedReceiptItemClient
       .query({
-        limit: 500,
+        limit: 200,
         offset: 0,
         sort: { column: 'idx', direction: 'ascending' },
         filter: {
@@ -523,13 +523,13 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             ? [{ results: [] as Row[] }, { results: [] as Row[] }]
             : await Promise.all([
                 purchaseOutsourcedReceiptItemMaterialClient.query({
-                  limit: 500,
+                  limit: 200,
                   offset: 0,
                   sort: { column: 'idx', direction: 'ascending' },
                   filter: childFilter,
                 }),
                 purchaseOutsourcedReceiptItemByproductClient.query({
-                  limit: 500,
+                  limit: 200,
                   offset: 0,
                   sort: { column: 'idx', direction: 'ascending' },
                   filter: childFilter,

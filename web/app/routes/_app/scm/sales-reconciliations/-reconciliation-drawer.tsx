@@ -75,7 +75,7 @@ export const reconciliationConfirmConfig = {
   loadItems: (reconciliationId: string) =>
     salesReconciliationItemClient
       .query({
-        limit: 500,
+        limit: 200,
         offset: 0,
         sort: { column: 'idx', direction: 'ascending' },
         filter: {

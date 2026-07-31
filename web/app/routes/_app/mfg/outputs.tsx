@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { toast } from '@heroui/react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Label, NumberField, toast } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { useDocItems } from '~/components/synie-editable-table/use-doc-items'
@@ -10,10 +10,12 @@ import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { formatQty } from '~/lib/amount'
 import {
   auditOutput,
   outputClient,
   outputItemClient,
+  workOrderClient,
 } from '~/lib/resources/manufacturing'
 import {
   auditMaterialCell,
@@ -21,6 +23,78 @@ import {
   type AuditDocConfig,
 } from '../scm/-audit-doc'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
+import { WorkOrderProgressCell } from './-work-order-progress-cell'
+
+/**
+ * 工单「当前未入」折回行单位（与 WorkOrderProgressCell 同口径）。
+ * receivedBaseQty/remainingBaseQty 是默认单位；qty/baseQty 比把未入折回工单行单位展示。
+ */
+function remainingInItemUnit(wo: Row | null | undefined): string | null {
+  if (wo == null) return null
+  const qty = Number(wo.qty)
+  const base = Number(wo.baseQty)
+  const received = Number(wo.receivedBaseQty)
+  const unit = wo.unitName != null && wo.unitName !== '' ? String(wo.unitName) : ''
+  if (Number.isFinite(qty) && Number.isFinite(base) && Number.isFinite(received) && base > 0) {
+    const remainingItem = qty - (qty * received) / base
+    return `${formatQty(remainingItem, 4)}${unit ? ` ${unit}` : ''}`
+  }
+  const rem = Number(wo.remainingBaseQty)
+  if (!Number.isFinite(rem)) return null
+  return `${formatQty(rem, 4)}${unit ? ` ${unit}` : ''}`
+}
+
+/** 入库数量 + 尾部「未入」提示；按工单实时取当前未完成量 */
+function OutputQtyField({
+  value,
+  onChange,
+  isDisabled,
+  workOrderId,
+}: {
+  value: unknown
+  onChange: (v: unknown) => void
+  isDisabled: boolean
+  workOrderId: unknown
+}) {
+  const id =
+    workOrderId == null || workOrderId === '' ? null : String(workOrderId)
+  const woQuery = useQuery({
+    queryKey: ['mfgWorkOrder', 'remaining-hint', id],
+    enabled: id != null,
+    staleTime: 15_000,
+    queryFn: () => workOrderClient.get(id!),
+  })
+  const remaining = remainingInItemUnit(woQuery.data)
+
+  return (
+    <div className="flex items-end gap-2">
+      <div className="min-w-0 flex-1">
+        <NumberField
+          fullWidth
+          isDisabled={isDisabled}
+          isRequired
+          value={value == null || value === '' ? NaN : Number(value)}
+          onChange={(n) => onChange(Number.isFinite(n) ? n : null)}
+        >
+          <Label>数量</Label>
+          <NumberField.Group className="grid-cols-[1fr]">
+            <NumberField.Input placeholder="本次入库数量" />
+          </NumberField.Group>
+        </NumberField>
+      </div>
+      {remaining != null ? (
+        <span
+          className="mb-2.5 shrink-0 text-xs tabular-nums text-muted"
+          title="工单当前未入库数量（已审核入库累计后的剩余，不含本单草稿）"
+        >
+          未入 {remaining}
+        </span>
+      ) : id != null && woQuery.isPending ? (
+        <span className="mb-2.5 shrink-0 text-xs text-muted">未入 …</span>
+      ) : null}
+    </div>
+  )
+}
 
 export const Route = createFileRoute('/_app/mfg/outputs')({
   component: OutputsPage,
@@ -74,7 +148,7 @@ const OUTPUT_AUDIT_CONFIG = {
   loadItems: (docId) =>
     outputItemClient
       .query({
-        limit: 500,
+        limit: 200,
         offset: 0,
         filter: {
           outputId: {
@@ -209,21 +283,27 @@ function OutputsPage() {
                     'materialCode',
                     'materialName',
                     'materialSpec',
-                    'qty',
-                    'unitName',
+                    // 入库进度列本体是 remainingBaseQty;数量明细随 wire 全量返回
+                    'remainingBaseQty',
                     'needDate',
                     'status',
                   ],
                   // 确认选中时带工单单位,供 effects 锁到行单位
-                  gridExtraFields: ['unitId'],
+                  gridExtraFields: ['unitId', 'qty', 'baseQty', 'receivedBaseQty', 'unitName'],
                   gridOverrides: {
                     workOrderNo: { mobileRole: 'title' },
                     companyId: { mobileRole: 'hide' },
                     materialCode: { label: '物料编号', mobileRole: 'hide' },
                     materialName: { label: '物料名称', mobileRole: 'subtitle' },
                     materialSpec: { label: '规格', mobileRole: 'hide' },
-                    qty: { mobileRole: 'summary' },
-                    unitName: { label: '单位', mobileRole: 'hide' },
+                    remainingBaseQty: {
+                      label: '入库进度',
+                      mobileRole: 'summary',
+                      align: 'start' as const,
+                      render: (_v: unknown, row: Row) => (
+                        <WorkOrderProgressCell row={row} />
+                      ),
+                    },
                     needDate: { mobileRole: 'summary' },
                     status: { mobileRole: 'summary' },
                   },
@@ -281,7 +361,19 @@ function OutputsPage() {
                   />
                 ),
               },
-              qty: { order: 3, required: true },
+              // 数量尾部展示工单当前未入(行单位);实时 GET 工单,编辑存量行也准确
+              qty: {
+                order: 3,
+                required: true,
+                input: ({ value, onChange, isDisabled, values }) => (
+                  <OutputQtyField
+                    value={value}
+                    onChange={onChange}
+                    isDisabled={isDisabled}
+                    workOrderId={values.workOrderId}
+                  />
+                ),
+              },
               warehouseId: { order: 4, required: true },
               remarks: { order: 5 },
             }}
