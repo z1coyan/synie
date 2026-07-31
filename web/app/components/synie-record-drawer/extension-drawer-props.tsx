@@ -929,10 +929,6 @@ const registry: Record<string, ResourceDrawerConfig> = {
     label: '生产入库单',
     contentClassName: 'w-full lg:w-[960px]',
     exclude: ['status', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt'],
-    tabs: [
-      { key: 'basic', label: '基本信息' },
-      { key: 'items', label: '入库行' },
-    ],
     fields: {
       companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
       outputNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
