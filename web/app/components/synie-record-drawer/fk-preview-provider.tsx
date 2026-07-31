@@ -2,6 +2,10 @@ import { useCallback, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FkPreviewContext } from './fk-preview'
 import { SynieRecordDrawer } from './SynieRecordDrawer'
+import { DocumentPreviewDrawer } from './DocumentPreviewDrawer'
+import { getDocumentPreview } from './document-preview'
+// 侧效登记库存来源单据只读速览
+import './document-preview-registry'
 import { basicFormDrawerProps, fetchResourceDocument } from '~/lib/resources/catalog'
 import {
   resourceBindingFor,
@@ -17,7 +21,8 @@ interface Entry {
 
 let seq = 0
 
-function FkPreviewDrawer({
+/** 未登记单据速览：仅基础资源表单头字段（历史行为） */
+function BasicFkPreviewDrawer({
   entry,
   onClose,
 }: {
@@ -57,9 +62,31 @@ function FkPreviewDrawer({
   )
 }
 
+function FkPreviewDrawer({
+  entry,
+  onClose,
+}: {
+  entry: Entry
+  onClose: () => void
+}) {
+  if (getDocumentPreview(entry.resource)) {
+    return (
+      <DocumentPreviewDrawer
+        resource={entry.resource}
+        id={entry.id}
+        isOpen={entry.open}
+        onOpenChange={(o) => {
+          if (!o) onClose()
+        }}
+      />
+    )
+  }
+  return <BasicFkPreviewDrawer entry={entry} onClose={onClose} />
+}
+
 /**
- * 全局 fk 速览栈:每层一个 view 态 SynieRecordDrawer(按 rowId 自取数)。
- * 配置来自 ResourceDocument / Basic Form；无全局 drawer registry fallback。
+ * 全局 fk 速览栈:每层一个 view 态抽屉(按 rowId 自取数)。
+ * 已登记 DocumentPreview 的资源 → 头+库存相关子表；否则 ResourceDocument 基础表单。
  */
 export function FkPreviewProvider({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<Entry[]>([])

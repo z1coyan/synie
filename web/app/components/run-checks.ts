@@ -4,6 +4,7 @@
 import './synie-data-grid/grid-checks.ts'
 import './synie-data-grid/card-mode-checks.ts'
 import './synie-record-drawer/record-drawer-checks.ts'
+import './synie-record-drawer/document-preview-checks.ts'
 import './synie-remote-select/remote-select-checks.ts'
 import './synie-editable-table/editable-table-checks.ts'
 import './synie-permission-sheet/permission-sheet-checks.ts'
