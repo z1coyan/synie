@@ -48,7 +48,7 @@ function InventoryPage() {
   // 后端 hideZero 缺省 true(隐藏零余额行);开关打开时传 false 把零行也列出来
   const [showZero, setShowZero] = useState(false)
 
-  // 公司列表:仅一家时自动选中(照应收应付报表先例)
+  // 公司列表:默认第一家,降低选公司操作(列表按 code 升序)
   const companies = useQuery({
     queryKey: ['inventoryCompanies'],
     queryFn: () =>
@@ -60,10 +60,10 @@ function InventoryPage() {
   })
 
   useEffect(() => {
-    if (companyId == null && companies.data?.count === 1) {
-      const only = companies.data.results[0]
-      setCompanyId(only.id)
-      setCompanyRow(only)
+    if (companyId == null && (companies.data?.results?.length ?? 0) >= 1) {
+      const first = companies.data!.results[0]
+      setCompanyId(first.id)
+      setCompanyRow(first)
     }
   }, [companies.data, companyId])
 

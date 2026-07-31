@@ -68,7 +68,7 @@ function ArApPage() {
   const [asOf, setAsOf] = useState(() => today(getLocalTimeZone()).toString())
   const [tab, setTab] = useState<string>('ar')
 
-  // 公司列表:仅一家时自动选中(照科目表页)
+  // 公司列表:默认第一家(照科目表页)
   const companies = useQuery({
     queryKey: ['arApCompanies'],
     queryFn: () =>
@@ -80,10 +80,10 @@ function ArApPage() {
   })
 
   useEffect(() => {
-    if (companyId == null && companies.data?.count === 1) {
-      const only = companies.data.results[0]
-      setCompanyId(only.id)
-      setCompanyRow(only)
+    if (companyId == null && (companies.data?.results?.length ?? 0) >= 1) {
+      const first = companies.data!.results[0]
+      setCompanyId(first.id)
+      setCompanyRow(first)
     }
   }, [companies.data, companyId])
 

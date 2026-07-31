@@ -55,10 +55,11 @@ function AccountsPage() {
   })
 
   useEffect(() => {
-    if (companyId == null && companies.data?.count === 1) {
-      const only = companies.data.results[0]
-      setCompanyId(only.id)
-      setCompanyRow(only)
+    // 默认第一家授权公司(按 code 升序),多公司时用户仍可切换
+    if (companyId == null && (companies.data?.results?.length ?? 0) >= 1) {
+      const first = companies.data!.results[0]
+      setCompanyId(first.id)
+      setCompanyRow(first)
     }
   }, [companies.data, companyId])
 

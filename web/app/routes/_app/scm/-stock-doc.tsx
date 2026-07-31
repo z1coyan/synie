@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, toast } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
@@ -11,13 +11,20 @@ import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
+import {
+  CompanyDefaultSync,
+  defaultCompanyId,
+  todayLocal,
+} from '~/lib/form-defaults'
 import { companyClient } from '~/lib/resources/companies'
 import type { ResourceClient } from '~/lib/resources/types'
+
+export { CompanyDefaultSync, defaultCompanyId, todayLocal }
 
 /**
  * 手工出入库单页面实现(其他库存单 → 出入库 tab)。
  * 列表公司为首列可筛(无顶部全局公司);建单时公司为表单头必填(createOnly),
- * 默认值:列筛唯一公司 → 唯一授权公司 → 空。仓候选绑表单当前公司。
+ * 默认值:列筛唯一公司 → 授权列表第一家 → 空。仓候选绑表单当前公司。
  */
 
 export interface StockDocConfig {
@@ -74,20 +81,6 @@ const ACTION_VISIBLE = {
   delete: (row: Row) => row.status === 'DRAFT',
 } satisfies Record<string, (row: Row) => boolean>
 
-function todayLocal(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
-/** 新建公司默认:列筛恰好 1 家 → 唯一授权公司 → 空 */
-export function defaultCompanyId(filters: FilterState, companies: Row[]): string | null {
-  const f = filters.companyId
-  if (f?.kind === 'fk' && f.values.length === 1) return f.values[0]
-  if (companies.length === 1) return companies[0].id
-  return null
-}
-
 /** 本公司启用叶子仓的 REST 结构化筛选；未选公司时不发起候选查询。 */
 export function warehouseFilterState(companyId: string | null): FilterState | undefined {
   if (companyId == null || companyId === '') return undefined
@@ -123,30 +116,6 @@ export function WarehouseRemoteSelect({
       filterState={warehouseFilterState(companyId)}
     />
   )
-}
-
-/**
- * create 态公司默认值回填(列筛/唯一授权公司):表单 defaultValue 只在挂载时读一次,
- * 公司列表异步到达后由本组件补丁写入。
- */
-export function CompanyDefaultSync({
-  mode,
-  values,
-  patchValues,
-  defaultId,
-}: {
-  mode: DrawerMode
-  values: Record<string, unknown>
-  patchValues: (patch: Record<string, unknown>) => void
-  defaultId: string | null
-}) {
-  useEffect(() => {
-    if (mode !== 'create' || defaultId == null) return
-    if (values.companyId != null && values.companyId !== '') return
-    patchValues({ companyId: defaultId })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, defaultId, values.companyId])
-  return null
 }
 
 function itemInput(row: Row) {

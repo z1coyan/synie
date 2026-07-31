@@ -62,7 +62,7 @@ function WarehousesPage() {
   const [reloadKey, setReloadKey] = useState(0)
   const queryClient = useQueryClient()
 
-  // 公司列表:仅一家时自动选中,并作为选择器回显数据(同科目表页先例)
+  // 公司列表:默认第一家,并作为选择器回显数据(同科目表页先例)
   const companies = useQuery({
     queryKey: ['warehouseCompanies'],
     queryFn: () =>
@@ -74,10 +74,10 @@ function WarehousesPage() {
   })
 
   useEffect(() => {
-    if (companyId == null && companies.data?.count === 1) {
-      const only = companies.data.results[0]
-      setCompanyId(only.id)
-      setCompanyRow(only)
+    if (companyId == null && (companies.data?.results?.length ?? 0) >= 1) {
+      const first = companies.data!.results[0]
+      setCompanyId(first.id)
+      setCompanyRow(first)
     }
   }, [companies.data, companyId])
 

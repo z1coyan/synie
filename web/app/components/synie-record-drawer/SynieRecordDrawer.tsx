@@ -19,6 +19,7 @@ import {
 } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { defaultCompanyId, useAuthorizedCompanies } from '~/lib/form-defaults'
 import { resourceBindingFor, resourceTransportFromResourceBinding } from '~/lib/resources/registry'
 import { executeSingleRowCommand } from '~/lib/resources/catalog/commands'
 import type { ResourceTransport } from '~/lib/resources/types'
@@ -198,6 +199,11 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const [saving, setSaving] = useState(false)
   const queryClient = useQueryClient()
 
+  // 新建态公司默认:授权列表第一家(字段 defaultValue / 列筛优先;异步到达后补丁)
+  const hasCompanyField = fields.some((f) => f.name === 'companyId')
+  const companiesQuery = useAuthorizedCompanies(isOpen && mode === 'create' && hasCompanyField)
+  const autoCompanyId = defaultCompanyId(undefined, companiesQuery.data ?? [])
+
   // 「保存并审核」通用约定:资源 meta 下发 key=audit 的行级扩展动作、且当前用户 capabilities
   // 含 audit 时,保存按钮旁多出该按钮。行带 status 字段且非草稿时不给入口(服务端权威校验兜底)。
   const auditAction = remoteMeta.data?.extendedActions?.find(
@@ -222,6 +228,15 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mode, row, columns])
+
+  // 公司列表异步到达后回填(不覆盖用户已选 / 字段 defaultValue 已写入的值)
+  useEffect(() => {
+    if (!isOpen || mode !== 'create' || autoCompanyId == null || !hasCompanyField) return
+    setValues((v) => {
+      if (v.companyId != null && v.companyId !== '') return v
+      return { ...v, companyId: autoCompanyId }
+    })
+  }, [isOpen, mode, autoCompanyId, hasCompanyField])
 
   // 每次打开抽屉回到首 tab(isOpen 翻转才触发,mode/row 切换不清用户所在 tab)
   useEffect(() => {

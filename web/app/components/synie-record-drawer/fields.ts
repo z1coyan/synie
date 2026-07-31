@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { isBusinessDateField, todayLocal } from '~/lib/form-defaults'
 import type { GridColumnMeta, Row } from '../synie-data-grid/types'
 import type { RemoteDialogSelectProps } from '../synie-remote-select/RemoteDialogSelect'
 import type { RemoteSourceConfig } from '../synie-remote-select/remote-query'
@@ -195,8 +196,10 @@ export function initialValues(fields: ResolvedField[], row: Row | null | undefin
         break
       }
       case 'date':
-        // DatePicker(day 粒度)只吃 YYYY-MM-DD
-        out[f.name] = row ? (raw ? String(raw).slice(0, 10) : null) : (f.defaultValue ?? null)
+        // DatePicker(day 粒度)只吃 YYYY-MM-DD；业务日字段新建默认今天（可被 defaultValue 覆盖）
+        out[f.name] = row
+          ? (raw ? String(raw).slice(0, 10) : null)
+          : (f.defaultValue ?? (isBusinessDateField(f.name) ? todayLocal() : null))
         break
       case 'datetime':
         // ISO UTC → 本地 YYYY-MM-DDTHH:mm:ss(DatePicker second 粒度编辑);提交时转回 UTC

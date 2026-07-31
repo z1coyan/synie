@@ -118,8 +118,21 @@ const ivCreate = initialValues(resolveFields(cols, 'create', [], { enabled: { de
 eq(ivCreate.code, '', 'create string 初值空串')
 eq(ivCreate.enabled, true, 'create defaultValue 生效')
 eq(ivCreate.seq, null, 'create number 初值 null')
-eq(ivCreate.dueOn, null, 'create date 初值 null')
+eq(ivCreate.dueOn, null, 'create 非业务日 date 初值 null')
 eq(ivCreate.counterpartyType, null, 'create enum 初值 null')
+
+// 业务日字段新建默认今天(orderDate 等);非业务日 dueOn 仍 null
+const bizDateFields = resolveFields(
+  [col('orderDate', 'date'), col('postingDate', 'date'), col('dueOn', 'date')],
+  'create',
+  [],
+  {},
+)
+const ivBiz = initialValues(bizDateFields, null)
+eq(typeof ivBiz.orderDate, 'string', 'create orderDate 默认今天(string)')
+eq(/^\d{4}-\d{2}-\d{2}$/.test(String(ivBiz.orderDate)), true, 'create orderDate 为 YYYY-MM-DD')
+eq(ivBiz.postingDate, null, 'create postingDate 不默认今天')
+eq(ivBiz.dueOn, null, 'create dueOn 不默认今天')
 
 const row: Row = {
   id: '1',
