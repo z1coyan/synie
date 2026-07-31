@@ -97,6 +97,14 @@
       "is_group": false
     },
     {
+      "code": "1124",
+      "name": "未开票应收",
+      "parent": "1",
+      "direction": "debit",
+      "role": "unbilled_receivable",
+      "is_group": false
+    },
+    {
       "code": "1131",
       "name": "应收股利",
       "parent": "1",
@@ -329,6 +337,14 @@
       "is_group": false
     },
     {
+      "code": "2204",
+      "name": "未开票应付",
+      "parent": "2",
+      "direction": "credit",
+      "role": "unbilled_payable",
+      "is_group": false
+    },
+    {
       "code": "2211",
       "name": "应付职工薪酬",
       "parent": "2",
@@ -365,7 +381,7 @@
       "name": "其他应付款",
       "parent": "2",
       "direction": "credit",
-      "role": null,
+      "role": "other_payable",
       "is_group": false
     },
     {
@@ -534,6 +550,46 @@
       "parent": "5",
       "direction": "debit",
       "role": null,
+      "is_group": true
+    },
+    {
+      "code": "560201",
+      "name": "差旅费",
+      "parent": "5602",
+      "direction": "debit",
+      "role": "travel",
+      "is_group": false
+    },
+    {
+      "code": "560202",
+      "name": "办公费",
+      "parent": "5602",
+      "direction": "debit",
+      "role": "office",
+      "is_group": false
+    },
+    {
+      "code": "560203",
+      "name": "业务招待费",
+      "parent": "5602",
+      "direction": "debit",
+      "role": "entertainment",
+      "is_group": false
+    },
+    {
+      "code": "560204",
+      "name": "交通费",
+      "parent": "5602",
+      "direction": "debit",
+      "role": "transport",
+      "is_group": false
+    },
+    {
+      "code": "560299",
+      "name": "其他费用",
+      "parent": "5602",
+      "direction": "debit",
+      "role": "other_expense",
       "is_group": false
     },
     {
@@ -672,6 +728,14 @@
       "parent": "1",
       "direction": "debit",
       "role": "advance_paid",
+      "is_group": false
+    },
+    {
+      "code": "1124",
+      "name": "未开票应收",
+      "parent": "1",
+      "direction": "debit",
+      "role": "unbilled_receivable",
       "is_group": false
     },
     {
@@ -1003,6 +1067,14 @@
       "is_group": false
     },
     {
+      "code": "2204",
+      "name": "未开票应付",
+      "parent": "2",
+      "direction": "credit",
+      "role": "unbilled_payable",
+      "is_group": false
+    },
+    {
       "code": "2211",
       "name": "应付职工薪酬",
       "parent": "2",
@@ -1039,7 +1111,7 @@
       "name": "其他应付款",
       "parent": "2",
       "direction": "credit",
-      "role": null,
+      "role": "other_payable",
       "is_group": false
     },
     {
@@ -1296,6 +1368,46 @@
       "parent": "6",
       "direction": "debit",
       "role": null,
+      "is_group": true
+    },
+    {
+      "code": "660201",
+      "name": "差旅费",
+      "parent": "6602",
+      "direction": "debit",
+      "role": "travel",
+      "is_group": false
+    },
+    {
+      "code": "660202",
+      "name": "办公费",
+      "parent": "6602",
+      "direction": "debit",
+      "role": "office",
+      "is_group": false
+    },
+    {
+      "code": "660203",
+      "name": "业务招待费",
+      "parent": "6602",
+      "direction": "debit",
+      "role": "entertainment",
+      "is_group": false
+    },
+    {
+      "code": "660204",
+      "name": "交通费",
+      "parent": "6602",
+      "direction": "debit",
+      "role": "transport",
+      "is_group": false
+    },
+    {
+      "code": "660299",
+      "name": "其他费用",
+      "parent": "6602",
+      "direction": "debit",
+      "role": "other_expense",
       "is_group": false
     },
     {
@@ -1421,6 +1533,14 @@
       "is_group": false
     },
     {
+      "code": "1104",
+      "name": "未开票应收",
+      "parent": "1",
+      "direction": "debit",
+      "role": "unbilled_receivable",
+      "is_group": false
+    },
+    {
       "code": "1201",
       "name": "存货",
       "parent": "1",
@@ -1497,7 +1617,7 @@
       "name": "其他应付款",
       "parent": "2",
       "direction": "credit",
-      "role": null,
+      "role": "other_payable",
       "is_group": false
     },
     {
@@ -1506,6 +1626,14 @@
       "parent": "2",
       "direction": "credit",
       "role": "advance_received",
+      "is_group": false
+    },
+    {
+      "code": "2104",
+      "name": "未开票应付",
+      "parent": "2",
+      "direction": "credit",
+      "role": "unbilled_payable",
       "is_group": false
     },
     {
@@ -1634,6 +1762,46 @@
       "parent": "5",
       "direction": "debit",
       "role": null,
+      "is_group": true
+    },
+    {
+      "code": "520201",
+      "name": "差旅费",
+      "parent": "5202",
+      "direction": "debit",
+      "role": "travel",
+      "is_group": false
+    },
+    {
+      "code": "520202",
+      "name": "办公费",
+      "parent": "5202",
+      "direction": "debit",
+      "role": "office",
+      "is_group": false
+    },
+    {
+      "code": "520203",
+      "name": "业务招待费",
+      "parent": "5202",
+      "direction": "debit",
+      "role": "entertainment",
+      "is_group": false
+    },
+    {
+      "code": "520204",
+      "name": "交通费",
+      "parent": "5202",
+      "direction": "debit",
+      "role": "transport",
+      "is_group": false
+    },
+    {
+      "code": "520299",
+      "name": "其他费用",
+      "parent": "5202",
+      "direction": "debit",
+      "role": "other_expense",
       "is_group": false
     },
     {

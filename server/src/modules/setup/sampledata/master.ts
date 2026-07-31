@@ -53,7 +53,7 @@ export async function seedPrerequisites(
     inventory: await accountByCode(deps.db, company.id, '1405'),
     bank: await accountByCode(deps.db, company.id, '1002'),
     capital: await accountByCode(deps.db, company.id, '3001'),
-    expense: await accountByCode(deps.db, company.id, '5602'),
+    expense: await accountByCode(deps.db, company.id, '560299'),
     receivable: await accountByCode(deps.db, company.id, '1122'),
     payable: await accountByCode(deps.db, company.id, '2202'),
     tax: await accountByCode(deps.db, company.id, '2221'),

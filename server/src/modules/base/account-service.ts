@@ -71,18 +71,18 @@ export interface TemplateResult {
 
 const DIRECTIONS = new Set(['debit', 'credit'])
 const ROLES = new Set([
-  'UNBILLED_RECEIVABLE',
-  'RECEIVABLE',
-  'ADVANCE_RECEIVED',
-  'UNBILLED_PAYABLE',
-  'PAYABLE',
-  'OTHER_PAYABLE',
-  'ADVANCE_PAID',
-  'TRAVEL',
-  'OFFICE',
-  'ENTERTAINMENT',
-  'TRANSPORT',
-  'OTHER_EXPENSE',
+  'unbilled_receivable',
+  'receivable',
+  'advance_received',
+  'unbilled_payable',
+  'payable',
+  'other_payable',
+  'advance_paid',
+  'travel',
+  'office',
+  'entertainment',
+  'transport',
+  'other_expense',
 ])
 
 const AUDIT = [
@@ -364,7 +364,7 @@ parent_name, company_name, currency_name, has_children`,
           if (!pid) throw new ApiError('internal', '会计科目模板父子顺序不合法')
           parentId = pid
         }
-        const role = entry.role ? entry.role.toUpperCase() : null
+        const role = entry.role ? entry.role.toLowerCase() : null
         try {
           const inserted = await trx
             .insertInto('bas_account')
@@ -425,7 +425,7 @@ export function normalizeCreate(input: CreateAccountInput): {
   let role =
     input.role === undefined || input.role === null
       ? null
-      : input.role.trim().toUpperCase()
+      : input.role.trim().toLowerCase()
   if (isGroup) role = null
   return {
     code,
@@ -591,7 +591,7 @@ function mapJoined(row: AccountRow): Account {
     direction: row.direction.toUpperCase() as 'DEBIT' | 'CREDIT',
     isGroup: row.is_group,
     active: row.active,
-    role: row.role,
+    role: row.role?.toUpperCase() ?? null,
     parentId: row.parent_id,
     companyId: row.company_id,
     currencyId: row.currency_id,
@@ -631,7 +631,7 @@ function mapLocked(row: {
     direction: row.direction.toUpperCase() as 'DEBIT' | 'CREDIT',
     isGroup: row.is_group,
     active: row.active,
-    role: row.role,
+    role: row.role?.toUpperCase() ?? null,
     parentId: row.parent_id,
     companyId: row.company_id,
     currencyId: row.currency_id,

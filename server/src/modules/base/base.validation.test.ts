@@ -31,6 +31,16 @@ describe('base 校验与 Meta', () => {
   })
 
   test('会计科目：方向/角色/汇总清 role', () => {
+    const leaf = normalizeCreate({
+      code: '1124',
+      name: '未开票应收',
+      direction: 'DEBIT',
+      role: 'UNBILLED_RECEIVABLE',
+      companyId: '00000000-0000-0000-0000-000000000001',
+    })
+    expect(leaf.role).toBe('unbilled_receivable')
+    validateInput(leaf)
+
     const group = normalizeCreate({
       code: '1',
       name: '资产',
