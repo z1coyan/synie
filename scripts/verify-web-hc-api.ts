@@ -7,7 +7,7 @@
  */
 const apiBase = process.env.SYNIE_API_URL ?? process.env.API_BASE ?? 'http://127.0.0.1:8091/api/v1'
 const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'synie-integration-admin-password'
+const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const suffix = Date.now().toString(36).toUpperCase()
 
 async function call(

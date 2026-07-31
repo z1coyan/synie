@@ -4,6 +4,7 @@ import { Link } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import type { GridColumnMeta, Row } from '~/components/synie-data-grid/types'
+import { dateOnlyText } from '~/components/synie-data-grid/format'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
@@ -70,7 +71,10 @@ const BASE_GRID_OVERRIDES: Record<string, ColumnOverride> = {
     filterField: 'materialId',
     render: materialCellRender(),
   },
-  postingDate: { mobileRole: 'subtitle' },
+  postingDate: {
+    mobileRole: 'subtitle',
+    render: (value) => dateOnlyText(value) || undefined,
+  },
   quantity: {
     mobileRole: 'summary',
     render: (v) => {

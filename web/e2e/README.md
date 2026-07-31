@@ -26,7 +26,7 @@ E2E_BASE_URL=http://localhost:3011 bun run e2e:api          # 全量
 E2E_BASE_URL=http://localhost:3011 bun run e2e:api -- settings.api.e2e.ts   # 定向
 ```
 
-超管账号默认 `admin` / `synie-integration-admin-password`，可用 `E2E_ADMIN_USERNAME` /
+超管账号默认 `admin` / `admin123`，可用 `E2E_ADMIN_USERNAME` /
 `E2E_ADMIN_PASSWORD` 覆盖（脚本与 spec 共用这两个变量）。
 
 API 地址环境变量优先 `SYNIE_API_URL`（兼容旧名 `GO_API_URL`）；Vite 代理端口优先

@@ -27,7 +27,7 @@ DATABASE_URL="${DATABASE_URL:-postgres://synie:synie@localhost:5441/${PG_DB}?ssl
 
 ADMIN_USERNAME="${E2E_ADMIN_USERNAME:-admin}"
 # 必须与各 *.api.e2e.ts 的 E2E_ADMIN_PASSWORD 默认值一致
-ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-synie-integration-admin-password}"
+ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-admin123}"
 # 仅本脚本内使用,e2e 栈专用,不得复用到其他环境
 AUTH_SECRET="${AUTH_SECRET:-e2e-local-secret-do-not-use-elsewhere-32b}"
 

@@ -98,7 +98,7 @@ async function login() {
     body: body({
       username: process.env.E2E_ADMIN_USERNAME ?? "admin",
       password:
-        process.env.E2E_ADMIN_PASSWORD ?? "synie-integration-admin-password",
+        process.env.E2E_ADMIN_PASSWORD ?? "admin123",
     }),
   });
   return headers(result.token);

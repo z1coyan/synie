@@ -541,7 +541,7 @@ try {
   fixture = await createBaseFixture();
   const admin = await login(
     process.env.E2E_ADMIN_USERNAME ?? "admin",
-    process.env.E2E_ADMIN_PASSWORD ?? "synie-integration-admin-password",
+    process.env.E2E_ADMIN_PASSWORD ?? "admin123",
   );
 
   const superMeta = await request<{ grid: unknown; record?: unknown }>(

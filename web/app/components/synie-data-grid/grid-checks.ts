@@ -1,7 +1,7 @@
 // bun app/components/synie-data-grid/grid-checks.ts 可直接运行的纯函数自检
 import { dayEnd, dayStart, nextSort, UUID_RE } from './query'
 import { toCsv } from './csv'
-import { cellText } from './format'
+import { cellText, dateOnlyText } from './format'
 import { mergePick } from './pick'
 import type { GridColumnMeta, Row } from './types'
 import type { Selection } from 'react-aria-components'
@@ -40,6 +40,10 @@ eq(
 const date = '2026-01-05'
 eq(dayStart(date), new Date(`${date}T00:00:00`).toISOString(), '日期起点换算')
 eq(dayEnd(date), new Date(`${date}T23:59:59.999`).toISOString(), '日期终点换算')
+eq(dateOnlyText('2026-07-31T00:00:00.000Z'), '2026-07-31', '业务日 ISO 格式化为 YYYY-MM-DD')
+eq(dateOnlyText('2026-07-31'), '2026-07-31', '业务日 wire 保持 YYYY-MM-DD')
+eq(dateOnlyText('未知日期'), '未知日期', '非 ISO 业务日原样回落')
+eq(dateOnlyText(null), '', '空业务日为空串')
 
 const uuid = '11111111-1111-1111-1111-111111111111'
 eq(UUID_RE.test(uuid), true, '合法 UUID')

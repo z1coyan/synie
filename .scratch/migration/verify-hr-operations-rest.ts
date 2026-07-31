@@ -7,7 +7,7 @@ const databaseURL =
   "postgres://synie:synie@127.0.0.1:5441/synie?sslmode=disable";
 const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
 const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "synie-integration-admin-password";
+  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const db = new SQL(databaseURL);
 const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase();
 const prefix = `ZZR219${suffix}`;

@@ -282,8 +282,8 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     expect(
       decodeResourceDocument(registry.buildDocument('invMaterialCategories', superAdmin)).form.kind,
     ).toBe('basic')
-    expect(
-      decodeResourceDocument(registry.buildDocument('invStockEntries', superAdmin)).form.kind,
-    ).toBe('none')
+    const stockEntries = decodeResourceDocument(registry.buildDocument('invStockEntries', superAdmin))
+    expect(stockEntries.form.kind).toBe('none')
+    expect(stockEntries.fields.find((field) => field.name === 'quantity')?.label).toBe('数量')
   })
 })

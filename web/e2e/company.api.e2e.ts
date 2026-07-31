@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'synie-integration-admin-password'
+const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 const sequence = Date.now() % (alphabet.length * alphabet.length)
 const isoCode = `R${alphabet[Math.floor(sequence / alphabet.length)]}${alphabet[sequence % alphabet.length]}`

@@ -2,7 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test'
 
 const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
 const password =
-  process.env.E2E_ADMIN_PASSWORD ?? 'synie-integration-admin-password'
+  process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const materialId = '00000000-0000-4000-8000-000000000099'
 
 interface PreviewCase {

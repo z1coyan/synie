@@ -77,12 +77,12 @@ describeIf('printing integration', () => {
       (await tryLogin(
         process.env.E2E_ADMIN_USERNAME ?? 'admin',
         process.env.E2E_ADMIN_PASSWORD ?? 'admin123',
-      )) ?? (await tryLogin('admin', 'synie-integration-admin-password'))
+      )) ?? (await tryLogin('admin', 'admin123'))
 
     // 共享库可能被 setup 截断；自建超管
     if (!body) {
       const { hashPassword } = await import('~/platform/auth/password.ts')
-      const password = 'synie-integration-admin-password'
+      const password = 'admin123'
       const hashed = await hashPassword(password)
       await db
         .insertInto('sys_user')

@@ -1,5 +1,12 @@
 import type { GridColumnMeta, Row } from './types'
 
+/** date wire/ISO → YYYY-MM-DD；非 ISO 值原样回落，避免时区换算改变业务日。 */
+export function dateOnlyText(value: unknown): string {
+  if (value == null || value === '') return ''
+  const text = String(value)
+  return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text
+}
+
 /** 共享单元格文本格式化:表格默认渲染、CSV 导出、打印视图三条路径保持一致 */
 export function cellText(col: GridColumnMeta, value: unknown, row?: Row): string {
   if (col.type === 'fk' && col.ref) {

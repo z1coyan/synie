@@ -8,12 +8,12 @@
  * 环境变量:
  *   API_BASE               默认 http://localhost:8080/api/v1
  *   E2E_ADMIN_USERNAME     默认 admin
- *   E2E_ADMIN_PASSWORD     默认 synie-integration-admin-password（与各 *.api.e2e.ts 一致）
+ *   E2E_ADMIN_PASSWORD     默认 admin123（与各 *.api.e2e.ts 一致）
  */
 
 const apiBase = process.env.API_BASE ?? process.env.SYNIE_API_URL ?? 'http://localhost:8080/api/v1'
 const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'synie-integration-admin-password'
+const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 
 async function call<T>(
   method: string,

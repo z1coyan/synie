@@ -343,7 +343,7 @@ export function stockEntryResourceMeta(): ResourceMeta {
         'quantity',
         'quantity',
         'decimal',
-        '数量(带符号,入正出负,物料默认单位口径)',
+        '数量',
         { readonly: true, filterable: true, sortable: true },
       ),
       field('posting_date', 'postingDate', 'date', '业务日期', {

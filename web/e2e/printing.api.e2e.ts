@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 
 const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'synie-integration-admin-password'
+const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const suffix = Date.now().toString(36)
 const templateName = `浏览器打印模板-${suffix}`
 const updatedName = `${templateName}-已更新`

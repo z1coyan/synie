@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'synie-integration-admin-password'
+const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const suffix = Date.now().toString(36)
 const storageName = `e2e-local-${suffix}`
 const storageLabel = `浏览器测试存储-${suffix}`

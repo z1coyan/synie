@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
 const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "synie-integration-admin-password";
+  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const goAPIURL = process.env.SYNIE_API_URL ?? process.env.GO_API_URL ?? 'http://127.0.0.1:8080/api/v1'
 const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
