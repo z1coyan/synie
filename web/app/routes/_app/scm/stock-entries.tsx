@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { stockEntryClient } from '~/lib/resources/inventory'
 
 export const Route = createFileRoute('/_app/scm/stock-entries')({
@@ -16,12 +17,13 @@ export const Route = createFileRoute('/_app/scm/stock-entries')({
  * 常规列筛选 + 来源单据多态链接列;无顶部全局公司选择器。
  */
 
-// 列白名单:公司首列(对齐总账分录);seq/时间戳不进表格
+// 列白名单:公司首列(对齐总账分录);seq/时间戳不进表格;
+// 物料按全站约定合并为单个富单元格列(materialCode 列承载,分录无快照,后端 join 物料主数据投影)
 const GRID_COLUMNS = [
   'companyId',
   'postingDate',
   'warehouseId',
-  'materialId',
+  'materialCode',
   'quantity',
   'voucherId',
   'voucherNo',
@@ -33,7 +35,13 @@ const GRID_COLUMNS = [
 // 卡片:物料标题、业务日副标题、数量/仓/来源单号摘要
 const GRID_OVERRIDES: Record<string, ColumnOverride> = {
   companyId: { mobileRole: 'hide' },
-  materialId: { mobileRole: 'title' },
+  // 物料列:全站统一富单元格(分录无图纸挂接,缩略图回退物料当前图纸);筛选按 materialId 外键
+  materialCode: {
+    label: '物料',
+    mobileRole: 'title',
+    filterField: 'materialId',
+    render: materialCellRender(),
+  },
   postingDate: { mobileRole: 'subtitle' },
   quantity: {
     mobileRole: 'summary',

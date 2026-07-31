@@ -28,6 +28,11 @@ export interface StockEntry {
   companyId: string
   warehouseId: string
   materialId: string
+  /** 物料主数据投影(list join;详情 get 同样 join) */
+  materialCode: string | null
+  materialName: string | null
+  materialSpec: string | null
+  customerPartNo: string | null
 }
 
 const META = stockEntryResourceMeta()
@@ -36,9 +41,11 @@ export function createStockEntryService(db: Kysely<Database>, inventory: Invento
   async function get(actor: Actor, id: string): Promise<StockEntry> {
     requirePermission(actor, 'inv.stock_entry:read')
     const row = await db
-      .selectFrom('inv_stock_entry')
-      .selectAll()
-      .where('id', '=', id)
+      .selectFrom('inv_stock_entry as e')
+      .innerJoin('inv_material as m', 'm.id', 'e.material_id')
+      .selectAll('e')
+      .select(['m.code as material_code', 'm.name as material_name', 'm.spec as material_spec', 'm.customer_part_no'])
+      .where('e.id', '=', id)
       .executeTakeFirst()
     if (!row || !canAccessCompany(actor, row.company_id)) {
       throw new ApiError('not_found', '库存分录不存在')
@@ -53,9 +60,15 @@ export function createStockEntryService(db: Kysely<Database>, inventory: Invento
     return listFromSource({
       db,
       resource: META,
-      source: sql` FROM inv_stock_entry`,
+      // join 物料主数据投影四字段(分录无快照,展示/搜索口径即物料当前值,见 ADR 物料列)
+      source: sql` FROM (
+        SELECT e.*, m.code AS material_code, m.name AS material_name,
+          m.spec AS material_spec, m.customer_part_no AS customer_part_no
+        FROM inv_stock_entry e JOIN inv_material m ON m.id = e.material_id
+      ) AS x`,
       select: sql`SELECT id,seq,quantity,posting_date,voucher_type,voucher_id,voucher_no,
-        is_cancelled,remarks,inserted_at,company_id,warehouse_id,material_id,cancelled_at`,
+        is_cancelled,remarks,inserted_at,company_id,warehouse_id,material_id,cancelled_at,
+        material_code,material_name,material_spec,customer_part_no`,
       defaultOrder: sql`"seq" ASC`,
       query,
       extraWhere: scope.where,
@@ -107,6 +120,10 @@ function mapEntry(row: {
   company_id: string
   warehouse_id: string
   material_id: string
+  material_code?: string | null
+  material_name?: string | null
+  material_spec?: string | null
+  customer_part_no?: string | null
 }): StockEntry {
   return {
     id: row.id,
@@ -123,5 +140,9 @@ function mapEntry(row: {
     companyId: row.company_id,
     warehouseId: row.warehouse_id,
     materialId: row.material_id,
+    materialCode: row.material_code ?? null,
+    materialName: row.material_name ?? null,
+    materialSpec: row.material_spec ?? null,
+    customerPartNo: row.customer_part_no ?? null,
   }
 }

@@ -439,6 +439,28 @@ export function stockEntryResourceMeta(): ResourceMeta {
         filterable: true,
         ref: { resource: 'invMaterials', relation: 'material', labelField: 'name' },
       }),
+      // 物料主数据投影(列表 SQL join inv_material,分录无快照概念):供物料富单元格与四字段搜索
+      field('material_code', 'materialCode', 'string', '物料编号(物料主数据)', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('material_name', 'materialName', 'string', '物料名称(物料主数据)', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+      }),
+      field('material_spec', 'materialSpec', 'string', '规格(物料主数据)', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+      }),
+      field('customer_part_no', 'customerPartNo', 'string', '客户方产品编号(物料主数据)', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+      }),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     audit: { enabled: false },
