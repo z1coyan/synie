@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as candidateRepair from "../candidateRepair.js";
 import type * as catalog_all from "../catalog/all.js";
 import type * as catalog_get from "../catalog/get.js";
 import type * as catalog_permissions from "../catalog/permissions.js";
@@ -52,6 +53,7 @@ import type * as domains_platform_settings from "../domains/platform/settings.js
 import type * as domains_platform_settingsSeed from "../domains/platform/settingsSeed.js";
 import type * as domains_shared_aggregate from "../domains/shared/aggregate.js";
 import type * as domains_shared_api from "../domains/shared/api.js";
+import type * as domains_shared_candidates from "../domains/shared/candidates.js";
 import type * as domains_shared_policies from "../domains/shared/policies.js";
 import type * as domains_shared_queryProfiles from "../domains/shared/queryProfiles.js";
 import type * as domains_shared_records from "../domains/shared/records.js";
@@ -161,6 +163,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  candidateRepair: typeof candidateRepair;
   "catalog/all": typeof catalog_all;
   "catalog/get": typeof catalog_get;
   "catalog/permissions": typeof catalog_permissions;
@@ -204,6 +207,7 @@ declare const fullApi: ApiFromModules<{
   "domains/platform/settingsSeed": typeof domains_platform_settingsSeed;
   "domains/shared/aggregate": typeof domains_shared_aggregate;
   "domains/shared/api": typeof domains_shared_api;
+  "domains/shared/candidates": typeof domains_shared_candidates;
   "domains/shared/policies": typeof domains_shared_policies;
   "domains/shared/queryProfiles": typeof domains_shared_queryProfiles;
   "domains/shared/records": typeof domains_shared_records;
