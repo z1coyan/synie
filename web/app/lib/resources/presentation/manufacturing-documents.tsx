@@ -6,6 +6,7 @@
  */
 import type { ResourceBinding } from '../catalog/types'
 import {
+  AUDIT_TRAIL_EXCLUDE,
   LINE_REMARK_OVERRIDE,
   materialCodeOverride,
   previewHead,
@@ -269,14 +270,7 @@ const DEFINITIONS = {
   mfgOutputs: {
     label: '生产入库单',
     contentClassName: 'w-full lg:w-[960px]',
-    exclude: [
-      'status',
-      'auditedAt',
-      'auditedById',
-      'createdById',
-      'insertedAt',
-      'updatedAt',
-    ],
+    exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
         required: true,

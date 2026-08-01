@@ -4,6 +4,16 @@ import type { EditableColumnOverride } from '~/components/synie-editable-table/S
 import type { FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { DocumentPreviewConfig, PresentationExtension } from './types'
 
+/** 单据表单统一剔除的审计/系统字段（状态、审核与创建人、时间戳）。 */
+export const AUDIT_TRAIL_EXCLUDE = [
+  'status',
+  'auditedAt',
+  'auditedById',
+  'createdById',
+  'insertedAt',
+  'updatedAt',
+]
+
 export const UNIT_NAME_OVERRIDE = {
   label: '单位',
 } satisfies EditableColumnOverride
@@ -65,7 +75,10 @@ export function unhideAccountFields(
 }
 
 export function previewHead(
-  presentation: PresentationExtension,
+  presentation: Pick<
+    PresentationExtension,
+    'exclude' | 'fields' | 'contentClassName'
+  >,
   options?: { unhideAccounts?: boolean },
 ): DocumentPreviewConfig['head'] {
   return {

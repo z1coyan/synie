@@ -29,21 +29,12 @@ export interface DeleteWriter {
 }
 
 /**
- * 普通单记录写：按资源实际能力组合。
- * 不支持的操作类型上不存在（不写抛错 stub）。
+ * 普通单记录写：create/update/delete 三方法全量形态。
+ * 不支持的操作在运行时不存在（不写抛错 stub），调用方用 in/可选链收窄。
  */
-export type RecordWriter<
-  TRow = Row,
-  TCreate = Record<string, unknown>,
-  TUpdate = Record<string, unknown>,
-  TFlags extends {
-    create?: boolean
-    update?: boolean
-    delete?: boolean
-  } = { create: true; update: true; delete: true },
-> = (TFlags['create'] extends false ? unknown : CreateWriter<TRow, TCreate>) &
-  (TFlags['update'] extends false ? unknown : UpdateWriter<TRow, TUpdate>) &
-  (TFlags['delete'] extends false ? unknown : DeleteWriter)
+export type RecordWriter = CreateWriter<Row, Record<string, unknown>> &
+  UpdateWriter<Row, Record<string, unknown>> &
+  DeleteWriter
 
 /** 聚合草稿：Draft 输入与权威 SavedDraft 输出分离 */
 export interface AggregateDraftAdapter<TDraft = unknown, TSaved = TDraft> {
@@ -82,26 +73,19 @@ export interface CommandAdapter<TCommands extends CommandMap = CommandMap> {
 
 /**
  * 单一资源绑定：Grid / Drawer / 外键预览都从本入口取能力。
+ * 异构 registry 一律用默认宽类型；具体资源在消费边界自行收窄。
  */
-export interface ResourceBinding<
-  TRow = Row,
-  TCreate = Record<string, unknown>,
-  TUpdate = Record<string, unknown>,
-  /** 异构 registry 默认 unknown；具体资源绑定可用类型参数收窄 */
-  TDraft = unknown,
-  TSaved = unknown,
-  TCommands extends CommandMap = CommandMap,
-> {
+export interface ResourceBinding {
   readonly resource: string
-  readonly reader: ResourceReader<TRow>
+  readonly reader: ResourceReader
   /**
    * Reader 对应的查询缓存身份与失效动作。
    * 调用者不得再拼 transport id 或 gridRows/rowById key。
    */
   readonly cache: ResourceQueryCache
-  readonly writer?: RecordWriter<TRow, TCreate, TUpdate>
-  readonly draft?: AggregateDraftAdapter<TDraft, TSaved>
-  readonly commands?: CommandAdapter<TCommands>
+  readonly writer?: RecordWriter
+  readonly draft?: AggregateDraftAdapter
+  readonly commands?: CommandAdapter
   /** 拉取并缓存完整 ResourceDocument v2 */
   loadDocument(): Promise<ResourceDocument>
 }

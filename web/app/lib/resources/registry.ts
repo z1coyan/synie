@@ -303,18 +303,13 @@ type AggregateDraftResource = keyof typeof DRAFT_ADAPTERS
 /**
  * 聚合头资源不通过普通 RecordWriter 暴露 create/update。
  * 删除草稿仍是单记录命令，继续保留 writer.delete。
+ * 资源集合直接由 DRAFT_ADAPTERS 的 key 派生（集合判断），不再重复列举。
  */
-const AGGREGATE_WRITER_OPTIONS: Record<
-  AggregateDraftResource,
-  { canCreate: false; canUpdate: false; canDelete: true }
-> = {
-  purOrders: { canCreate: false, canUpdate: false, canDelete: true },
-  purQuotations: { canCreate: false, canUpdate: false, canDelete: true },
-  purReceipts: { canCreate: false, canUpdate: false, canDelete: true },
-  salDeliveries: { canCreate: false, canUpdate: false, canDelete: true },
-  salOrders: { canCreate: false, canUpdate: false, canDelete: true },
-  salQuotations: { canCreate: false, canUpdate: false, canDelete: true },
-}
+const AGGREGATE_WRITER_OPTIONS = {
+  canCreate: false,
+  canUpdate: false,
+  canDelete: true,
+} as const
 
 function draftAdapterFor(resource: string): AggregateDraftAdapter | undefined {
   return DRAFT_ADAPTERS[resource as AggregateDraftResource] as
@@ -323,7 +318,7 @@ function draftAdapterFor(resource: string): AggregateDraftAdapter | undefined {
 }
 
 function aggregateWriterOptions(resource: string) {
-  return AGGREGATE_WRITER_OPTIONS[resource as AggregateDraftResource]
+  return resource in DRAFT_ADAPTERS ? AGGREGATE_WRITER_OPTIONS : undefined
 }
 
 // 从 transport 一次性生成规范 ResourceBinding；命令与 Aggregate Draft 逐资源显式挂载。
@@ -347,16 +342,25 @@ for (const [resource, transport] of Object.entries(transports)) {
 
 /**
  * 类型安全 ResourceBinding 入口（唯一资源解析）。未知资源显式失败。
- * 生产入口始终恢复模块装配时创建的规范 binding；测试/本地自定义 binding 应通过
- * 显式 Adapter seam 或注入 resolver 使用，不能污染同名生产资源。
+ * 纯读路径，无副作用；测试在 clearBindingsForTests 后如需把生产 binding
+ * 恢复到 Catalog 注册表，应显式调用 restoreProductionBindingsForTests。
  */
 export function resourceBindingFor(resource: string): ResourceBinding {
   const binding = productionBindings.get(resource)
   if (!binding) {
     throw new Error(`资源「${resource}」未注册 ResourceBinding`)
   }
-  replaceBinding(binding)
   return binding
+}
+
+/**
+ * 测试专用：clearBindingsForTests 清空 Catalog 注册表后，
+ * 把模块装配时创建的全部生产 binding 显式恢复回去。
+ */
+export function restoreProductionBindingsForTests(): void {
+  for (const binding of productionBindings.values()) {
+    replaceBinding(binding)
+  }
 }
 
 /** 已注册 Aggregate Draft 的类型恢复入口；未知或漏挂能力显式失败。 */
@@ -371,16 +375,11 @@ export function aggregateDraftFor<K extends AggregateDraftResource>(
 }
 
 /**
- * 从 binding 派生传输对象（query/get/可选写）。
+ * 从唯一 binding 派生传输对象（query/get + 实际普通写能力）。
  * 不含 meta；供仍接受 client prop 的组件过渡使用。
  */
-export function resourceTransportFromResourceBinding(resource: string): ResourceTransport {
-  return resourceTransportFromBinding(resourceBindingFor(resource))
-}
-
-/** 从唯一 binding 派生 query/get + 实际普通写能力。 */
 export function resourceTransportFor(resource: string): ResourceTransport {
-  return resourceTransportFromResourceBinding(resource)
+  return resourceTransportFromBinding(resourceBindingFor(resource))
 }
 
 /** 绑定资源键列表 */

@@ -7,6 +7,7 @@
 import { Label, TextArea, TextField } from '@heroui/react'
 import type { ResourceBinding } from '../catalog/types'
 import {
+  AUDIT_TRAIL_EXCLUDE,
   BASE_QTY_OVERRIDE,
   LINE_REMARK_OVERRIDE,
   ORDER_NO_OVERRIDE,
@@ -60,20 +61,11 @@ function longTextField(
   }
 }
 
-const STANDARD_SYSTEM_EXCLUDE = [
-  'status',
-  'auditedAt',
-  'auditedById',
-  'createdById',
-  'insertedAt',
-  'updatedAt',
-]
-
 const DEFINITIONS = {
   purQuotations: {
     label: '采购报价单',
     contentClassName: 'w-full lg:w-[880px]',
-    exclude: STANDARD_SYSTEM_EXCLUDE,
+    exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
         required: true,
@@ -118,16 +110,7 @@ const DEFINITIONS = {
   purOrders: {
     label: '采购订单',
     contentClassName: 'w-full lg:w-[880px]',
-    exclude: [
-      'status',
-      'auditedAt',
-      'auditedById',
-      'createdById',
-      'grossTotal',
-      'baseGrossTotal',
-      'insertedAt',
-      'updatedAt',
-    ],
+    exclude: [...AUDIT_TRAIL_EXCLUDE, 'grossTotal', 'baseGrossTotal'],
     fields: {
       companyId: {
         required: true,
@@ -172,7 +155,7 @@ const DEFINITIONS = {
   purReceipts: {
     label: '采购入库单',
     contentClassName: 'w-full lg:w-[960px]',
-    exclude: STANDARD_SYSTEM_EXCLUDE,
+    exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
         required: true,
@@ -278,7 +261,7 @@ const DEFINITIONS = {
   purOutsourcedReceipts: {
     label: '委外入库单',
     contentClassName: 'w-full lg:w-[960px]',
-    exclude: STANDARD_SYSTEM_EXCLUDE,
+    exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
         required: true,
@@ -448,7 +431,7 @@ const DEFINITIONS = {
   purOutsourcedIssues: {
     label: '委外发料单',
     contentClassName: 'w-full lg:w-[960px]',
-    exclude: STANDARD_SYSTEM_EXCLUDE,
+    exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
         required: true,
