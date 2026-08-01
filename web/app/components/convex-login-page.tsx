@@ -16,6 +16,7 @@ import { authClient, signInErrorMessage } from '~/lib/auth-client'
 import { api } from '~/lib/convex-api'
 import { mapConvexError } from '~/lib/convex-errors'
 import { clearCatalogCache } from '~/lib/resources/catalog'
+import { shouldRedirectLoginToSetup } from '~/lib/setup-navigation'
 import { ConvexAuthFrame } from './convex-auth-frame'
 
 export function ConvexLoginPage() {
@@ -34,7 +35,10 @@ export function ConvexLoginPage() {
   })
 
   useEffect(() => {
-    if (setupStatus.data && !setupStatus.data.initialized) {
+    if (
+      setupStatus.data &&
+      shouldRedirectLoginToSetup(setupStatus.data)
+    ) {
       navigate({ to: '/setup', replace: true })
     }
   }, [navigate, setupStatus.data])
