@@ -9,7 +9,7 @@
 | 计划 | `advisor-plans/001`–`008` |
 | 删除前提交 | `b6d5d7957c066cec7a380959259a1ac059693f37` |
 | 删除前标签 | annotated tag `server-bun-final`（tag object `527abc38e66519dba6b38ddc2eda64414054362b`） |
-| 运行代码/函数提交 | `65acd2b0c53512826877159cbff6a7f5e5562aaf` |
+| 运行代码/函数提交 | `10c7a8d6db176aca1fba0043facbc0648bc66e12` |
 
 ## 结论
 
@@ -64,11 +64,15 @@ Compose service。`check:no-legacy-server` 留在本地 `check` 与 CI，防止�
 登录/Actor/退出和两次 backend 重启。最终状态为 `hasUsers=true, initialized=true`，样例同时产生库存与
 总账事实以及销售、采购、制造、委外、财务和薪资代表单据。
 
+旧候选投影已在最终 deployment 分页重建，处理量为 finance documents 4、trading documents 12、
+manufacturing documents 3；重建后 Web 候选查询只走 purpose-bound profile，不再把普通列表误判为候选。
+
 ## 发布候选验收
 
 以下门禁均在固定版本的真实 self-hosted stack 上通过：
 
 - `bun run check && bun run typecheck && bun run test && bun run build`；
+- 最终全量测试为 475 pass / 0 fail、3,137 assertions；Convex/Web/infra 类型检查与 `git diff --check` 通过；
 - `bun run e2e:self-hosted`，一次性覆盖 auth/Setup/ERP、浏览器 ResourceBinding、facts/projections、S3 与 PDF；
 - 编号 101 次全部提交；热点库存 50 路竞争为 10 成功/40 拒绝；十年历史扫描 3,653 天、150 buckets；
 - S3 private/product-only CORS、presigned PUT/GET/HEAD、copy checksum、provider checksum rejection、
@@ -76,6 +80,10 @@ Compose service。`check:no-legacy-server` 留在本地 `check` 与 CI，防止�
 - Worker down 时单条/批量 xlsx 降级；真实 LibreOffice 单条、批量、100 份 PDF、幂等和权限反例；
 - production bundle 与镜像不含 `server/`、`/api/v1`、旧 client、Worker secret 或内部 Worker 浏览器调用；
 - 删除前标签在隔离工作树完成 frozen install、typecheck、test 与旧 Docker build，未连接现有数据。
+
+最后一次资源闭环使用全新 `synie-plan003-resources-836005493a` 隔离 deployment，浏览器 1/1 通过（2.1
+分钟）；除 ResourceBinding 主链外还覆盖附件容量/权限/审计/S3 补偿、失效宿主清理、制造图纸快照、
+BOM 读取权限反例及权限实时生效。最终静态安全复核结论为无 P0/P1 阻断项。
 
 打印验收使用 LibreOffice `25.2.3.2`；单条、批量、100 份 PDF 分别为 22,740、25,045、263,520 bytes。
 
@@ -96,7 +104,8 @@ Compose service。`check:no-legacy-server` 留在本地 `check` 与 CI，防止�
 | 产品文件 SHA-256 | `a620e67d54c84b2aa4948563d60b2db1fc5a58bcd3a2ded3139cb4263ad98a62` |
 
 该 30.10 秒是本地小样本的实测恢复时间，不是生产 RTO 承诺；相对演练 marker 的 RPO 为 0。目标在
-恢复后重启并再次按 bytes/hash 对拍。临时容器已停止，但 target/source volumes、六桶对象和备份均未删除。
+恢复后重启并再次按 bytes/hash 对拍。演练备份文件继续保留；演练容器、网络与临时 volumes 已在用户明确
+授权后删除，不与交付栈并存。
 
 ## 最终本地 Compose
 
@@ -104,24 +113,30 @@ Compose service。`check:no-legacy-server` 留在本地 `check` 与 CI，防止�
 
 | 服务 | 本地地址/端口 |
 |---|---|
-| Web / auth / PDF Worker | `http://127.0.0.1:23000` |
-| Convex backend | `http://127.0.0.1:23210` |
-| Convex site | `http://127.0.0.1:23211` |
+| Web / auth / PDF Worker | `0.0.0.0:23000`；Tailscale `http://100.93.251.66:23000` |
+| Convex backend | `0.0.0.0:23210`；Tailscale `http://100.93.251.66:23210` |
+| Convex site | `0.0.0.0:23211`；Tailscale `http://100.93.251.66:23211` |
 | Convex dashboard | `http://127.0.0.1:26791` |
-| 产品 S3 proxy / MinIO console | `http://127.0.0.1:29000` / `http://127.0.0.1:29001` |
+| 产品 S3 proxy / MinIO console | `0.0.0.0:29000` / `http://127.0.0.1:29001` |
 | Convex PostgreSQL | `127.0.0.1:25442` |
 
 Convex backend/dashboard 固定版本是 `19431ea0dd90bc55ae58dbbd06d9aa045f97336f`；backend image digest 为
 `sha256:467964cc6af57ba3e757e3e6cb1fa09a1c577803a19f03f0f42c9c4b134b070c`，dashboard 为
 `sha256:5f4620ca0640ed863a8c5109123b9831157e889c6294e28c5e96ea0a62375efb`。Web image 是
-`synie-web-print:cutover-final-093d8a8f`，digest 为
-`sha256:a30f6f0ddb2e31a6e7563fed0be76d0713de897e41d5882e8e8d5c0c55c9d202`。部署的 Convex source-tree
-fingerprint 为 `4178e0b1552ab7e3b42d89d5d6e35bf2483247c7ed15188f62488d7d28fd860a`；运行代码/函数提交
-`65acd2b0c53512826877159cbff6a7f5e5562aaf` 是可复现的 deployment revision 坐标。
+`synie-web-print:cutover-convex-final-093d8a8f`，digest 为
+`sha256:4b51c0be9daf9fe9e870e60d4293bc303d23413bf98280a969f9c7df8b83c448`。部署的 Convex source-tree
+fingerprint 为 `8269c56a46461c594e742c9feee0a70add8884671ad43ab8cbea2ccbab9193e5`；运行代码/函数提交
+`10c7a8d6db176aca1fba0043facbc0648bc66e12` 是可复现的 deployment revision 坐标。fingerprint 的复算
+口径为 `git ls-tree -r --full-tree <commit> convex | sha256sum`。
 
 六个且仅六个 private bucket 已由 health gate 复核；Web root、Worker health、Convex version 与 dashboard
 均成功，所有常驻容器 healthy，`minio-init` 按设计 exit 0。Web 容器启用只读根文件系统、drop ALL
 capabilities、256 PID、2 GiB/2 CPU 限制。
+
+最终 Docker 主机只保留一个 Compose project、6 个 healthy 常驻容器、6 个被运行栈引用的镜像、3 个
+主栈 volumes 和 1 个主栈 network；隔离验收栈、旧 Web 镜像、`minio/mc` 测试工具镜像与 BuildKit cache
+均已删除。生产入库库存分录 `M(R)-20260801-0001` 已从 Tailscale 页面重新打开，详情子表完整显示物料、
+工单、数量和成品仓，未再出现“每页条数必须是 1-100 的整数”。
 
 自动闭环使用的随机探针管理员不作为交付凭据。日常本地登录账号 `admin` 已通过内置管理员角色和首公司
 授权创建，并实际完成登录、session 查询与退出；初始密码仅写入 gitignored、权限 0600 的
@@ -134,8 +149,9 @@ capabilities、256 PID、2 GiB/2 CPU 限制。
 - 新栈恢复：将同一时点的 Convex portable snapshot、五个 Convex bucket、产品 bucket、函数 Git SHA 与
   secret reference 成对恢复；
 - 新旧数据不做在线合并或双写；
-- 本迁移没有执行 `docker compose down -v`、`docker volume rm`、bucket cleanup 或备份删除；
-- 旧 volume/bucket 的观察期后清理是单独的破坏性运维动作，必须由用户明确指定目标并再次授权。
+- 按用户本次明确授权，全部隔离验收 Compose project 及其 volumes 已执行精确目标清理；当前只保留
+  `synie-cutover-final-093d8a8f` 的 3 个数据卷，未删除该主栈 bucket 或 gitignored 备份文件；
+- 后续若清理主栈 volume/bucket 或备份，仍是独立破坏性运维动作，必须重新明确目标并授权。
 
 相关架构边界见 [Convex-only 应用边界 ADR](../adr/2026-08-01-convex-only-application-boundary.md)，操作步骤与
 生产责任见 [自托管 Convex runbook](../runbooks/convex-self-hosted.md)。
