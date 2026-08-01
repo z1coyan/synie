@@ -96,6 +96,8 @@ function candidateKey(parts: ReadonlyArray<readonly [string, string | boolean]>)
   ]))
 }
 
+const ALL_COMPANIES_CANDIDATE_KEY = candidateKey([['scope', 'allCompanies']])
+
 function canonicalDate(value: unknown, field: string): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw synieError('validation', `${field} 必须是 YYYY-MM-DD 日期`)
@@ -432,6 +434,7 @@ export async function candidateProjectionRows(
     if (companyId && demand?.status === 'CONFIRMED' && wire.status !== 'COMPLETED' &&
         positiveDecimal(resource, 'remainingArrangeableQty', wire.remainingArrangeableQty)) {
       rows.push(projection(resource, recordId, 'demandItemWorkOrder', candidateKey([['companyId', companyId]]), 'needDate', wire))
+      rows.push(projection(resource, recordId, 'demandItemWorkOrder', ALL_COMPANIES_CANDIDATE_KEY, 'needDate', wire))
     }
     return rows
   }
@@ -532,8 +535,19 @@ export function resolveDomainCandidateProfile(
     return one(parts)
   }
   if (resource === 'mfgDemandItems' && profile === 'demandItemWorkOrder') {
-    exactArgs(args, ['companyId'])
-    return one([['companyId', company(actor, args)]])
+    exactArgs(args, [], ['companyId'])
+    if (Object.prototype.hasOwnProperty.call(args, 'companyId')) {
+      return one([['companyId', company(actor, args)]])
+    }
+    if (actor.superAdmin || actor.allCompanies) {
+      return { profile, keys: [ALL_COMPANIES_CANDIDATE_KEY] }
+    }
+    return {
+      profile,
+      keys: [...new Set(actor.companyIds)]
+        .sort()
+        .map((companyId) => candidateKey([['companyId', companyId]])),
+    }
   }
   if (resource === 'mfgWorkOrders' && profile === 'workOrderOutput') {
     exactArgs(args, ['companyId'])

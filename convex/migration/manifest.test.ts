@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { resourceManifest } from './resourceManifest'
 import { legacySqlTables, tableManifest } from './tableManifest'
 import { decimalManifest, legacyNumericColumns } from './decimalManifest'
+import schema from '../schema'
 
 describe('Convex migration ledger', () => {
   test('covers every current SQL table and sealed Catalog resource exactly once', () => {
@@ -11,6 +12,18 @@ describe('Convex migration ledger', () => {
 
     expect(resourceManifest).toHaveLength(100)
     expect(new Set(resourceManifest.map((entry) => entry.resource)).size).toBe(100)
+  })
+
+  test('每个 targetTable 都是当前 schema 中的真实物理表', () => {
+    const schemaTables = new Set(Object.keys(schema.tables))
+    const targets = tableManifest.flatMap((entry) =>
+      'targetTable' in entry.disposition ? [entry.disposition.targetTable] : [],
+    )
+    expect(targets.length).toBeGreaterThan(0)
+    for (const target of targets) expect(schemaTables.has(target)).toBe(true)
+    expect(
+      tableManifest.find((entry) => entry.legacyTable === 'sys_attachment')?.disposition,
+    ).toEqual({ targetTable: 'attachments' })
   })
 
   test('proves every legacy numeric column fits scaled signed int64', () => {

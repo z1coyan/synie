@@ -8,6 +8,7 @@ import {
   proportionalReceiptLines,
   shouldCarryReceiptChildren,
 } from './fulfillmentDrafts'
+import { tradingDrawingSnapshotOwnerType } from './drafts'
 
 function stored(
   id: string,
@@ -59,6 +60,14 @@ function context(documents: Record<string, FakeDocument>) {
 }
 
 describe('委外履约 Aggregate Draft 派生', () => {
+  test('标准单据条目映射到稳定的图纸快照宿主类型', () => {
+    expect(tradingDrawingSnapshotOwnerType('salOrderItems')).toBe('sal_order_item')
+    expect(tradingDrawingSnapshotOwnerType('purOrderItems')).toBe('pur_order_item')
+    expect(tradingDrawingSnapshotOwnerType('salDeliveryItems')).toBe('sal_delivery_item')
+    expect(tradingDrawingSnapshotOwnerType('purReceiptItems')).toBe('pur_receipt_item')
+    expect(tradingDrawingSnapshotOwnerType('salQuotationItems')).toBeNull()
+  })
+
   test('已对账数量只从既有受控值继承，剩余量使用默认单位数量扣减', () => {
     expect(controlledReceiptQuantities('12.5', undefined)).toEqual({
       reconciledQty: '0.000000',

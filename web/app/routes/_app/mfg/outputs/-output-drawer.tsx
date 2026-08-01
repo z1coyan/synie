@@ -23,6 +23,7 @@ import { materialCellRender } from '~/components/synie-material-cell/MaterialCel
 import { WorkOrderProgressCell } from '../-work-order-progress-cell'
 import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
 import { readResourceRowsBounded } from '~/lib/resources/bounded-reader'
+import { workOrderOutputCandidateFilter } from '~/lib/resources/candidate-query'
 
 const outputDraft = aggregateDraftFor('mfgOutputs')
 
@@ -227,7 +228,7 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
                 )
             : undefined
         }
-        extraContent={(mode) => (
+        extraContent={(mode, _row, values) => (
           <SynieEditableTable
             resource="mfgOutputItems"
             label="入库条目"
@@ -274,6 +275,7 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
                 dialog: {
                   dialogTitle: '选择生产工单',
                   dialogClassName: 'max-w-6xl',
+                  gridFilter: workOrderOutputCandidateFilter(values.companyId),
                   gridColumns: [
                     'workOrderNo',
                     'companyId',

@@ -1,14 +1,20 @@
 import { Decimal, roundBaseQty } from '@synie/shared'
 import { v } from 'convex/values'
+import {
+  removeOwnerAttachments,
+  replaceMaterialDrawingSnapshot,
+} from '../../files/drawingSnapshots'
+import type { Actor } from '../../lib/actor'
 import { authedMutation, authedQuery } from '../../lib/auth'
 import { canAccessCompany } from '../../lib/companyScope'
-import { synieError } from '../../lib/errors'
+import { synieError, validationError } from '../../lib/errors'
 import { requirePermission } from '../../lib/permissions'
 import {
   createAggregate,
   loadAggregate,
   removeAggregate,
   replaceAggregate,
+  requireHeadPermission,
   type AggregatePolicy,
 } from '../shared/aggregate'
 import {
@@ -28,6 +34,116 @@ import {
 } from './arrangements'
 
 type MutationCtx = Parameters<NonNullable<AggregatePolicy['nodes'][number]['derive']>>[0]
+type AggregateRow = Record<string, unknown>
+
+export function defaultUtcBusinessDate(value: unknown, now = new Date()): string {
+  if (value === undefined || value === null || value === '') {
+    return now.toISOString().slice(0, 10)
+  }
+  if (typeof value !== 'string') {
+    throw synieError('validation', '业务日期必须是日期字符串')
+  }
+  return value.trim() || now.toISOString().slice(0, 10)
+}
+
+function positiveBomQuantity(value: unknown): void {
+  if (typeof value !== 'string') {
+    throw validationError('BOM行参数不合法', { quantity: ['必须大于零'] })
+  }
+  let quantity: Decimal
+  try { quantity = new Decimal(value) } catch {
+    throw validationError('BOM行参数不合法', { quantity: ['必须大于零'] })
+  }
+  if (!quantity.isFinite() || quantity.lte(0)) {
+    throw validationError('BOM行参数不合法', { quantity: ['必须大于零'] })
+  }
+}
+
+function nonNegativeLossRate(value: unknown): void {
+  if (value === null || value === undefined || value === '') return
+  if (typeof value !== 'string') {
+    throw validationError('BOM行参数不合法', { lossRate: ['必须是十进制字符串'] })
+  }
+  let lossRate: Decimal
+  try { lossRate = new Decimal(value) } catch {
+    throw validationError('BOM行参数不合法', { lossRate: ['必须是十进制字符串'] })
+  }
+  if (!lossRate.isFinite()) {
+    throw validationError('BOM行参数不合法', { lossRate: ['必须是十进制字符串'] })
+  }
+  if (lossRate.isNegative()) {
+    throw validationError('BOM行参数不合法', { lossRate: ['不能为负'] })
+  }
+}
+
+async function assertBomMaterialUnit(
+  ctx: MutationCtx,
+  materialValue: unknown,
+  unitValue: unknown,
+): Promise<void> {
+  if (typeof materialValue !== 'string' || typeof unitValue !== 'string') {
+    throw validationError('BOM行参数不合法', { unitId: ['单位必须是该物料默认单位或转换单位'] })
+  }
+  const materialId = ctx.db.normalizeId('materials', materialValue)
+  const unitId = ctx.db.normalizeId('units', unitValue)
+  const [material, unit] = await Promise.all([
+    materialId ? ctx.db.get(materialId) : null,
+    unitId ? ctx.db.get(unitId) : null,
+  ])
+  if (!material || !unit) {
+    throw validationError('BOM行参数不合法', { unitId: ['单位必须是该物料默认单位或转换单位'] })
+  }
+  if (material.defaultUnitId === unit._id) return
+  const conversion = await ctx.db.query('materialUnits').withIndex('by_material_unit', (query) =>
+    query.eq('materialId', material._id).eq('unitId', unit._id),
+  ).unique()
+  if (!conversion) {
+    throw validationError('BOM行参数不合法', { unitId: ['单位必须是该物料默认单位或转换单位'] })
+  }
+}
+
+export async function deriveBomComponent(
+  ctx: MutationCtx,
+  { head, input }: { head: AggregateRow; input: AggregateRow },
+): Promise<AggregateRow> {
+  if (input.materialId === head.materialId) {
+    throw synieError('validation', 'BOM 配料不能使用母物料自身')
+  }
+  positiveBomQuantity(input.quantity)
+  nonNegativeLossRate(input.lossRate)
+  await assertBomMaterialUnit(ctx, input.materialId, input.unitId)
+  return {}
+}
+
+export async function deriveBomByproduct(
+  ctx: MutationCtx,
+  { head, input }: { head: AggregateRow; input: AggregateRow },
+): Promise<AggregateRow> {
+  if (input.materialId === head.materialId) {
+    throw synieError('validation', 'BOM 副产品不能使用母物料自身')
+  }
+  positiveBomQuantity(input.quantity)
+  await assertBomMaterialUnit(ctx, input.materialId, input.unitId)
+  return {}
+}
+
+export async function deriveBomHead(
+  _ctx: MutationCtx,
+  _actor: Parameters<typeof createAggregate>[1],
+  _input: AggregateRow,
+  previous: AggregateRow | null,
+): Promise<AggregateRow> {
+  return previous ? { status: previous.status, materialId: previous.materialId } : {}
+}
+
+export function assertSelectableBom(selected: AggregateRow, workOrderMaterialId: unknown): void {
+  if (selected.status !== 'ACTIVE') {
+    throw synieError('conflict', '仅启用中的 BOM 可选入工单')
+  }
+  if (selected.materialId !== workOrderMaterialId) {
+    throw synieError('conflict', 'BOM 物料须与工单物料一致')
+  }
+}
 
 async function source(ctx: MutationCtx, resource: string, value: unknown) {
   if (typeof value !== 'string') throw synieError('validation', '来源记录不能为空')
@@ -61,41 +177,34 @@ async function hasAuditedOutput(ctx: MutationCtx, workOrderId: string): Promise<
 
 const processTemplate: AggregatePolicy = {
   headResource: 'mfgProcessTemplates',
+  replaceChildPermission: 'update',
   nodes: [{ resource: 'mfgProcessTemplateItems', collection: 'items', parentField: 'templateId' }],
 }
 
 const bom: AggregatePolicy = {
   headResource: 'mfgBoms',
-  deriveHead: async (_ctx, _actor, _input, previous) => {
-    if (previous && previous.status !== 'DRAFT') throw synieError('conflict', '仅草稿 BOM 可修改')
-    return previous ? { status: previous.status, materialId: previous.materialId } : {}
-  },
+  replaceChildPermission: 'update',
+  deriveHead: deriveBomHead,
   nodes: [
     {
       resource: 'mfgBomComponents', collection: 'components', parentField: 'bomId',
-      derive: async (_ctx, { head, input }) => {
-        if (input.materialId === head.materialId) throw synieError('validation', 'BOM 配料不能使用母物料自身')
-        return {}
-      },
+      derive: deriveBomComponent,
     },
     { resource: 'mfgBomRoutes', collection: 'routes', parentField: 'bomId' },
     {
       resource: 'mfgBomByproducts', collection: 'byproducts', parentField: 'bomId',
-      derive: async (_ctx, { head, input }) => {
-        if (input.materialId === head.materialId) throw synieError('validation', 'BOM 副产品不能使用母物料自身')
-        return {}
-      },
+      derive: deriveBomByproduct,
     },
   ],
 }
 
 const demand: AggregatePolicy = {
   headResource: 'mfgDemands',
-  deriveHead: async (_ctx, actor, _input, previous) => {
+  deriveHead: async (_ctx, actor, input, previous) => {
     if (previous && previous.status !== 'DRAFT') throw synieError('conflict', '仅草稿履约需求单可修改')
     return previous
       ? { companyId: previous.companyId, status: previous.status, createdById: previous.createdById }
-      : { createdById: actor.userId }
+      : { createdById: actor.userId, demandDate: defaultUtcBusinessDate(input.demandDate) }
   },
   nodes: [{
     resource: 'mfgDemandItems', collection: 'items', parentField: 'demandId',
@@ -118,6 +227,7 @@ const demand: AggregatePolicy = {
 
 const workOrder: AggregatePolicy = {
   headResource: 'mfgWorkOrders',
+  replaceChildPermission: 'update',
   deriveHead: async (ctx, actor, input, previous) => {
     if (previous) {
       if (previous.status !== 'IN_PROGRESS') throw synieError('conflict', '仅进行中的生产工单可修改')
@@ -154,8 +264,7 @@ const workOrder: AggregatePolicy = {
     const snapshot = await materialUnitSnapshot(ctx, demandItem.materialId, demandItem.unitId, { field: 'qty', value: qty })
     if (input.bomId) {
       const selected = await source(ctx, 'mfgBoms', input.bomId)
-      if (selected.status !== 'ACTIVE') throw synieError('conflict', '仅启用中的 BOM 可选入工单')
-      if (selected.materialId !== demandItem.materialId) throw synieError('conflict', 'BOM 物料须与工单物料一致')
+      assertSelectableBom(selected, demandItem.materialId)
     }
     return {
       ...snapshot,
@@ -197,7 +306,7 @@ const output: AggregatePolicy = {
     await assertWarehouse(ctx, input.warehouseId ?? previous?.warehouseId, companyId)
     return previous
       ? { companyId: previous.companyId, status: previous.status, createdById: previous.createdById }
-      : { createdById: actor.userId }
+      : { createdById: actor.userId, outputDate: defaultUtcBusinessDate(input.outputDate) }
   },
   nodes: [{
     resource: 'mfgOutputItems', collection: 'items', parentField: 'outputId',
@@ -240,8 +349,9 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-async function bomSnapshotInput(ctx: MutationCtx, bomId: string) {
+async function bomSnapshotInput(ctx: MutationCtx, bomId: string, workOrderMaterialId?: unknown) {
   const selected = await source(ctx, 'mfgBoms', bomId)
+  if (workOrderMaterialId !== undefined) assertSelectableBom(selected, workOrderMaterialId)
   const components = await childrenFor(ctx, 'mfgBomComponents', bomId)
   const routes = await childrenFor(ctx, 'mfgBomRoutes', bomId)
   const byproducts = await childrenFor(ctx, 'mfgBomByproducts', bomId)
@@ -271,10 +381,20 @@ async function bomSnapshotInput(ctx: MutationCtx, bomId: string) {
   }
 }
 
-async function normalizedCreateInput(ctx: MutationCtx, resource: string, raw: unknown): Promise<unknown> {
+export function requireBomSnapshotPermission(actor: Actor): void {
+  requirePermission(actor, 'mfg.bom:read')
+}
+
+async function normalizedCreateInput(
+  ctx: MutationCtx,
+  actor: Actor,
+  resource: string,
+  raw: unknown,
+): Promise<unknown> {
   const input = record(raw)
   if (resource !== 'mfgWorkOrders') return input
   if (typeof input.bomId === 'string') {
+    requireBomSnapshotPermission(actor)
     const snapshot = await bomSnapshotInput(ctx, input.bomId)
     return { ...input, components: snapshot.components, routes: snapshot.routes, byproducts: snapshot.byproducts }
   }
@@ -292,7 +412,25 @@ export async function createManufacturingDraftInMutation(
   resource: string,
   input: unknown,
 ) {
-  return createAggregate(ctx, actor, policy(resource), await normalizedCreateInput(ctx, resource, input))
+  const selected = policy(resource)
+  // Fail before any BOM/source lookup so missing head permission cannot be
+  // used as a record-existence or status oracle.
+  requireHeadPermission(actor, selected.headResource, 'create')
+  const created = await createAggregate(
+    ctx,
+    actor,
+    selected,
+    await normalizedCreateInput(ctx, actor, resource, input),
+  )
+  if (resource === 'mfgWorkOrders') {
+    await replaceMaterialDrawingSnapshot(ctx, {
+      materialId: String(created.materialId),
+      ownerType: 'mfg_work_order',
+      ownerId: String(created.id),
+      companyId: typeof created.companyId === 'string' ? created.companyId : null,
+    })
+  }
+  return created
 }
 
 export const loadDraft = authedQuery({ args: { resource: v.string(), id: v.string() }, returns: v.any(), handler: (ctx, args) => loadAggregate(ctx, ctx.actor, policy(args.resource), args.id) })
@@ -305,7 +443,19 @@ export const removeDraft = authedMutation({
   args: { resource: v.string(), id: v.string() }, returns: v.null(),
   handler: async (ctx, args) => {
     const selected = policy(args.resource)
-    if (args.resource === 'mfgWorkOrders') await removeMakeArrangement(ctx, ctx.actor, args.id)
+    if (args.resource === 'mfgWorkOrders') {
+      requirePermission(ctx.actor, 'mfg.work_order:delete')
+      const current = await getDomainRecord(ctx, ctx.actor, 'mfgWorkOrders', args.id)
+      if (!current) throw synieError('not_found', '生产工单不存在')
+      if (current.status !== 'IN_PROGRESS' && current.status !== 'VOIDED') {
+        throw synieError('conflict', '仅进行中或已作废的生产工单可删除')
+      }
+      if (await hasAuditedOutput(ctx, args.id)) {
+        throw synieError('conflict', '存在已审核生产入库,不可删除工单')
+      }
+      await removeMakeArrangement(ctx, ctx.actor, args.id)
+      await removeOwnerAttachments(ctx, 'mfg_work_order', args.id)
+    }
     await removeAggregate(ctx, ctx.actor, selected, args.id)
     return null
   },
@@ -325,9 +475,10 @@ export const applyBom = authedMutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     requirePermission(ctx.actor, 'mfg.work_order:update')
+    if (args.bomId) requireBomSnapshotPermission(ctx.actor)
     const current = await loadAggregate(ctx, ctx.actor, workOrder, args.id)
     const next = args.bomId
-      ? await bomSnapshotInput(ctx, args.bomId)
+      ? await bomSnapshotInput(ctx, args.bomId, current.materialId)
       : { components: [], routes: [], byproducts: [] }
     return replaceAggregate(ctx, ctx.actor, workOrder, args.id, {
       ...current,
@@ -349,6 +500,7 @@ export const createInlineBom = authedMutation({
   handler: async (ctx, args) => {
     requirePermission(ctx.actor, 'mfg.work_order:update')
     requirePermission(ctx.actor, 'mfg.bom:create')
+    requireBomSnapshotPermission(ctx.actor)
     const current = await loadAggregate(ctx, ctx.actor, workOrder, args.id)
     const input = record(args.input)
     const created = await createAggregate(ctx, ctx.actor, bom, {
@@ -366,7 +518,7 @@ export const createInlineBom = authedMutation({
       'ACTIVE',
       'activate',
     )
-    const snapshot = await bomSnapshotInput(ctx, String(created.id))
+    const snapshot = await bomSnapshotInput(ctx, String(created.id), current.materialId)
     const updated = await replaceAggregate(ctx, ctx.actor, workOrder, args.id, {
       ...current,
       bomId: created.id,
@@ -468,25 +620,42 @@ export const salesItemCandidates = authedQuery({
   },
 })
 
+export async function arrangeManualInMutation(
+  ctx: MutationCtx,
+  actor: Actor,
+  args: {
+    demandItemId: string
+    arrangementType: 'STOCK' | 'CLOSE'
+    qty: string
+    remarks?: string | null
+  },
+) {
+  requirePermission(actor, 'mfg.demand:update')
+  return createManualArrangement(ctx, actor, {
+    demandItemId: args.demandItemId,
+    type: args.arrangementType,
+    qty: args.qty,
+    remarks: args.remarks,
+  })
+}
+
+export async function removeArrangementInMutation(
+  ctx: MutationCtx,
+  actor: Actor,
+  id: string,
+): Promise<null> {
+  requirePermission(actor, 'mfg.demand:update')
+  await removeManualArrangement(ctx, actor, id)
+  return null
+}
+
 export const arrangeManual = authedMutation({
   args: { demandItemId: v.string(), arrangementType: v.union(v.literal('STOCK'), v.literal('CLOSE')), qty: v.string(), remarks: v.optional(v.union(v.string(), v.null())) },
   returns: v.any(),
-  handler: async (ctx, args) => {
-    requirePermission(ctx.actor, 'mfg.demand:update')
-    return createManualArrangement(ctx, ctx.actor, {
-      demandItemId: args.demandItemId,
-      type: args.arrangementType,
-      qty: args.qty,
-      remarks: args.remarks,
-    })
-  },
+  handler: (ctx, args) => arrangeManualInMutation(ctx, ctx.actor, args),
 })
 
 export const removeArrangement = authedMutation({
   args: { id: v.string() }, returns: v.null(),
-  handler: async (ctx, args) => {
-    requirePermission(ctx.actor, 'mfg.demand:update')
-    await removeManualArrangement(ctx, ctx.actor, args.id)
-    return null
-  },
+  handler: (ctx, args) => removeArrangementInMutation(ctx, ctx.actor, args.id),
 })

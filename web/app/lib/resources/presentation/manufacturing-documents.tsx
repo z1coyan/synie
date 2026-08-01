@@ -5,6 +5,7 @@
  * 配置继续由各自业务 drawer module 导出。
  */
 import type { ResourceBinding } from '../catalog/types'
+import { demandItemWorkOrderCandidateFilter } from '../candidate-query'
 import {
   LINE_REMARK_OVERRIDE,
   materialCodeOverride,
@@ -132,6 +133,7 @@ const DEFINITIONS = {
         dialog: {
           dialogTitle: '选择来源需求行',
           dialogClassName: 'max-w-6xl',
+          gridFilter: demandItemWorkOrderCandidateFilter(),
           gridColumns: [
             'companyId',
             'demandId',

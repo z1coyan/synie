@@ -420,6 +420,83 @@ describe('Convex ResourceBinding', () => {
     expect(calls).toEqual([])
   })
 
+  test('制造选择器下推需求行与工单候选 profile，并允许需求行按交期排序', async () => {
+    const { client, calls } = fakeClient()
+    const resolve = createConvexBindingResolver(client)
+    const companyFilter = {
+      companyId: {
+        kind: 'fk' as const,
+        op: 'in' as const,
+        values: ['company-1'],
+        labels: [],
+      },
+    }
+
+    await resolve('mfgDemandItems').reader.query({
+      profile: 'default',
+      numItems: 20,
+      sort: { column: 'needDate', direction: 'ascending' },
+      fixedFilter: {
+        candidatePurpose: {
+          kind: 'enum',
+          values: ['WORK_ORDER'],
+        },
+      },
+    })
+    await resolve('mfgWorkOrders').reader.query({
+      profile: 'default',
+      numItems: 20,
+      sort: { column: 'needDate', direction: 'ascending' },
+      fixedFilter: {
+        ...companyFilter,
+        candidatePurpose: {
+          kind: 'enum',
+          values: ['OUTPUT'],
+        },
+      },
+    })
+
+    expect(calls.map((call) => call.args)).toEqual([
+      {
+        resource: 'mfgDemandItems',
+        numItems: 20,
+        cursor: null,
+        queryArgs: {
+          candidateProfile: 'demandItemWorkOrder',
+        },
+      },
+      {
+        resource: 'mfgWorkOrders',
+        numItems: 20,
+        cursor: null,
+        queryArgs: {
+          candidateProfile: 'workOrderOutput',
+          companyId: 'company-1',
+        },
+      },
+    ])
+  })
+
+  test('生产需求行普通列表支持页面声明的 needDate 默认排序', async () => {
+    const { client, calls } = fakeClient()
+
+    await createConvexBindingResolver(client)('mfgDemandItems').reader.query({
+      profile: 'default',
+      numItems: 20,
+      sort: { column: 'needDate', direction: 'ascending' },
+    })
+
+    expect(calls.map((call) => call.args)).toEqual([{
+      resource: 'mfgDemandItems',
+      numItems: 20,
+      cursor: null,
+      queryArgs: {
+        sortField: 'needDate',
+        sortDirection: 'ascending',
+      },
+    }])
+  })
+
   test('父范围来源优先级保持 args 高于 fixedFilter 高于 filter', async () => {
     const { client, calls } = fakeClient()
     const reader = createConvexBindingResolver(client)('mfgOutputItems').reader

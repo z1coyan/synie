@@ -169,6 +169,296 @@ export const get = permissionedQuery('inv.warehouse:read')({
   },
 })
 
+const supportKind = v.union(
+  v.literal('companies'),
+  v.literal('accounts'),
+  v.literal('suppliers'),
+  v.literal('parents'),
+)
+const supportOption = v.object({ id: v.string(), name: v.string(), code: v.optional(v.string()) })
+const supportOptionPage = v.object({
+  results: v.array(supportOption),
+  pageInfo: v.object({ continueCursor: v.union(v.string(), v.null()), isDone: v.boolean() }),
+})
+
+type WarehouseSupportKind = 'companies' | 'accounts' | 'suppliers' | 'parents'
+type WarehouseSupportSource =
+  | 'formalCompanies'
+  | 'pilotCompanies'
+  | 'companyAssignments'
+  | 'formalAccounts'
+  | 'pilotAccounts'
+  | 'formalSuppliers'
+  | 'pilotSuppliers'
+  | 'parentWarehouses'
+type WarehouseSupportOption = { id: string; name: string; code?: string }
+type WarehouseSupportArgs = {
+  kind: WarehouseSupportKind
+  numItems: number
+  cursor?: string | null
+  companyId?: string
+}
+type WarehouseSupportCursorScope = {
+  kind: WarehouseSupportKind
+  companyId: string | null
+  actorId: string
+}
+type WarehouseSupportCursor = {
+  source: WarehouseSupportSource
+  cursor: string | null
+}
+
+const WAREHOUSE_SUPPORT_CURSOR_PREFIX = 'warehouse-support:v1:'
+
+function encodeWarehouseSupportCursor(
+  scope: WarehouseSupportCursorScope,
+  source: WarehouseSupportSource,
+  cursor: string | null,
+): string {
+  return `${WAREHOUSE_SUPPORT_CURSOR_PREFIX}${JSON.stringify({
+    version: 1,
+    kind: scope.kind,
+    companyId: scope.companyId,
+    actorId: scope.actorId,
+    source,
+    cursor,
+  })}`
+}
+
+function decodeWarehouseSupportCursor(
+  raw: string | null | undefined,
+  scope: WarehouseSupportCursorScope,
+  initialSource: WarehouseSupportSource,
+  allowedSources: readonly WarehouseSupportSource[],
+): WarehouseSupportCursor {
+  if (raw == null) return { source: initialSource, cursor: null }
+  if (!raw.startsWith(WAREHOUSE_SUPPORT_CURSOR_PREFIX)) {
+    throw synieError('validation', '仓库辅助选项 cursor 不合法')
+  }
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(raw.slice(WAREHOUSE_SUPPORT_CURSOR_PREFIX.length))
+  } catch {
+    throw synieError('validation', '仓库辅助选项 cursor 不合法')
+  }
+  if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
+    throw synieError('validation', '仓库辅助选项 cursor 不合法')
+  }
+  const value = decoded as Record<string, unknown>
+  const source = value.source
+  const cursor = value.cursor
+  if (
+    value.version !== 1
+    || value.kind !== scope.kind
+    || value.companyId !== scope.companyId
+    || value.actorId !== scope.actorId
+    || typeof source !== 'string'
+    || !allowedSources.includes(source as WarehouseSupportSource)
+    || (cursor !== null && typeof cursor !== 'string')
+  ) {
+    throw synieError('validation', '仓库辅助选项 cursor 不合法')
+  }
+  return { source: source as WarehouseSupportSource, cursor }
+}
+
+function warehouseSupportPage(
+  results: WarehouseSupportOption[],
+  raw: { continueCursor: string; isDone: boolean },
+  scope: WarehouseSupportCursorScope,
+  source: WarehouseSupportSource,
+  nextSource?: WarehouseSupportSource,
+) {
+  if (!raw.isDone) {
+    return {
+      results,
+      pageInfo: {
+        continueCursor: encodeWarehouseSupportCursor(scope, source, raw.continueCursor),
+        isDone: false,
+      },
+    }
+  }
+  if (nextSource) {
+    return {
+      results,
+      pageInfo: {
+        continueCursor: encodeWarehouseSupportCursor(scope, nextSource, null),
+        isDone: false,
+      },
+    }
+  }
+  return { results, pageInfo: { continueCursor: null, isDone: true } }
+}
+
+function warehouseSupportCompanyId(args: WarehouseSupportArgs): string | null {
+  if (args.kind === 'accounts' || args.kind === 'parents') {
+    const companyId = args.companyId?.trim()
+    if (!companyId) throw synieError('validation', `${args.kind} 辅助选项需要 companyId`)
+    return companyId
+  }
+  if (args.companyId !== undefined) {
+    throw synieError('validation', `${args.kind} 辅助选项不接受 companyId`)
+  }
+  return null
+}
+
+/**
+ * Purpose-bound picker data for warehouses. It deliberately keeps the
+ * inv.warehouse:read permission boundary while exposing only minimal option rows.
+ */
+export async function paginateWarehouseSupportOptions(
+  ctx: ReadCtx,
+  actor: Actor,
+  args: WarehouseSupportArgs,
+) {
+  const companyId = warehouseSupportCompanyId(args)
+  const validated = paginationOptions({ numItems: args.numItems, cursor: null })
+  const scope: WarehouseSupportCursorScope = {
+    kind: args.kind,
+    companyId,
+    actorId: actor.userId,
+  }
+
+  if (args.kind === 'companies') {
+    if (actor.superAdmin || actor.allCompanies) {
+      const state = decodeWarehouseSupportCursor(
+        args.cursor,
+        scope,
+        'formalCompanies',
+        ['formalCompanies', 'pilotCompanies'],
+      )
+      if (state.source === 'formalCompanies') {
+        const raw = await ctx.db
+          .query('companies')
+          .withIndex('by_code_key')
+          .order('asc')
+          .paginate({ ...validated, cursor: state.cursor })
+        const results: WarehouseSupportOption[] = []
+        for (const row of raw.page) results.push({ id: row._id, name: row.name, code: row.code })
+        return warehouseSupportPage(results, raw, scope, state.source, 'pilotCompanies')
+      }
+      const raw = await ctx.db
+        .query('pilotCompanies')
+        .withIndex('by_code_key')
+        .order('asc')
+        .paginate({ ...validated, cursor: state.cursor })
+      const results: WarehouseSupportOption[] = []
+      for (const row of raw.page) results.push({ id: row._id, name: row.name, code: row.code })
+      return warehouseSupportPage(results, raw, scope, state.source)
+    }
+
+    const state = decodeWarehouseSupportCursor(
+      args.cursor,
+      scope,
+      'companyAssignments',
+      ['companyAssignments'],
+    )
+    const raw = await ctx.db
+      .query('iamUserCompanies')
+      .withIndex('by_user_company', (query) => query.eq('userId', actor.userId))
+      .order('asc')
+      .paginate({ ...validated, cursor: state.cursor })
+    const results: WarehouseSupportOption[] = []
+    for (const assignment of raw.page) {
+      const company = await companyAny(ctx, assignment.companyId)
+      if (company) results.push({ id: company._id, name: company.name, code: company.code })
+    }
+    return warehouseSupportPage(results, raw, scope, state.source)
+  }
+
+  if (args.kind === 'suppliers') {
+    const state = decodeWarehouseSupportCursor(
+      args.cursor,
+      scope,
+      'formalSuppliers',
+      ['formalSuppliers', 'pilotSuppliers'],
+    )
+    if (state.source === 'formalSuppliers') {
+      const raw = await ctx.db
+        .query('suppliers')
+        .withIndex('by_code_key')
+        .order('asc')
+        .paginate({ ...validated, cursor: state.cursor })
+      const results: WarehouseSupportOption[] = []
+      for (const row of raw.page) results.push({ id: row._id, name: row.name })
+      return warehouseSupportPage(results, raw, scope, state.source, 'pilotSuppliers')
+    }
+    const raw = await ctx.db
+      .query('pilotSuppliers')
+      .withIndex('by_name_key')
+      .order('asc')
+      .paginate({ ...validated, cursor: state.cursor })
+    const results: WarehouseSupportOption[] = []
+    for (const row of raw.page) {
+      if (row.enabled) results.push({ id: row._id, name: row.name })
+    }
+    return warehouseSupportPage(results, raw, scope, state.source)
+  }
+
+  requireCompanyAccess(actor, companyId!)
+  await requireCompany(ctx, companyId!)
+
+  if (args.kind === 'accounts') {
+    const formalCompanyId = ctx.db.normalizeId('companies', companyId!)
+    const formalCompany = formalCompanyId ? await ctx.db.get(formalCompanyId) : null
+    const accountSource = formalCompany ? 'formalAccounts' : 'pilotAccounts'
+    const state = decodeWarehouseSupportCursor(args.cursor, scope, accountSource, [accountSource])
+    if (state.source === 'formalAccounts') {
+      const raw = await ctx.db
+        .query('accounts')
+        .withIndex('by_company_is_group_code_key', (query) => query
+          .eq('companyId', formalCompanyId!)
+          .eq('isGroup', false))
+        .order('asc')
+        .paginate({ ...validated, cursor: state.cursor })
+      const results: WarehouseSupportOption[] = []
+      for (const row of raw.page) {
+        if (row.currencyId === null) results.push({ id: row._id, name: row.name, code: row.code })
+      }
+      return warehouseSupportPage(results, raw, scope, state.source)
+    }
+    const raw = await ctx.db
+      .query('pilotAccounts')
+      .withIndex('by_company_code', (query) => query.eq('companyId', companyId!))
+      .order('asc')
+      .paginate({ ...validated, cursor: state.cursor })
+    const results: WarehouseSupportOption[] = []
+    for (const row of raw.page) {
+      if (!row.isGroup && row.currencyId === null) {
+        results.push({ id: row._id, name: row.name, code: row.code })
+      }
+    }
+    return warehouseSupportPage(results, raw, scope, state.source)
+  }
+
+  const state = decodeWarehouseSupportCursor(
+    args.cursor,
+    scope,
+    'parentWarehouses',
+    ['parentWarehouses'],
+  )
+  const raw = await ctx.db
+    .query('warehouses')
+    .withIndex('by_company_name_key', (query) => query.eq('companyId', companyId!))
+    .order('asc')
+    .paginate({ ...validated, cursor: state.cursor })
+  const results: WarehouseSupportOption[] = []
+  for (const row of raw.page) {
+    if (!row.isLeaf) results.push({ id: row._id, name: row.name })
+  }
+  return warehouseSupportPage(results, raw, scope, state.source)
+}
+
+export const supportOptions = permissionedQuery('inv.warehouse:read')({
+  args: {
+    kind: supportKind,
+    numItems: v.number(),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    companyId: v.optional(v.string()),
+  },
+  returns: supportOptionPage,
+  handler: (ctx, args) => paginateWarehouseSupportOptions(ctx, ctx.actor, args),
+})
+
 type WarehouseListArgs = {
   profile: 'default' | 'lookup' | 'treeChildren' | 'search'
   numItems: number

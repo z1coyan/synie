@@ -1,4 +1,5 @@
 import { legacyResourceInventory } from './resourceManifest'
+import { storeForResource } from '../domains/shared/policies'
 
 export type TableMigrationDisposition =
   | { targetTable: string }
@@ -49,6 +50,39 @@ const resourceTargetByLegacyTable = new Map(
   legacyResourceInventory.map(([resource, legacyTable]) => [legacyTable, resource]),
 )
 
+const dedicatedTargetByResource: Readonly<Record<string, string>> = Object.freeze({
+  basCurrencies: 'currencies',
+  basCompanies: 'companies',
+  basUnits: 'units',
+  basAccounts: 'accounts',
+  sysUsers: 'appUsers',
+  sysRoles: 'iamRoles',
+  sysRolePermissions: 'iamRolePermissions',
+  sysAuditLogs: 'auditLogs',
+  sysNumberingRules: 'numberingRules',
+  sysNumberingCounters: 'numberingCounters',
+  salCustomers: 'customers',
+  purSuppliers: 'suppliers',
+  hrEmployees: 'employees',
+  salCompanyAccountDefaults: 'companyAccountDefaults',
+  invMaterialCategories: 'materialCategories',
+  invMaterials: 'materials',
+  invMaterialUnits: 'materialUnits',
+  invWarehouses: 'warehouses',
+  salSettings: 'salesSettings',
+  mfgSettings: 'manufacturingSettings',
+  accSettings: 'accountingSettings',
+  sysSettings: 'systemSettings',
+  sysFiles: 'files',
+  sysPrintTemplates: 'printTemplates',
+})
+
+function physicalTargetForResource(resource: string): string {
+  const table = dedicatedTargetByResource[resource] ?? storeForResource(resource)
+  if (!table) throw new Error(`资源 ${resource} 缺少物理 Convex table 去向`)
+  return table
+}
+
 const dispositionOverrides: Record<string, TableMigrationDisposition> = {
   acc_gl_entry: { targetTable: 'glEntries' },
   bas_currency: { targetTable: 'currencies' },
@@ -56,7 +90,7 @@ const dispositionOverrides: Record<string, TableMigrationDisposition> = {
   inv_warehouse: { targetTable: 'warehouses' },
   inv_stock_entry: { targetTable: 'stockEntries' },
   mfg_demand_arrangement: { targetTable: 'mfgDemandArrangements' },
-  sys_attachment: { targetTable: 'fileAttachments' },
+  sys_attachment: { targetTable: 'attachments' },
   sys_audit_log: { targetTable: 'auditLogs' },
   sys_numbering_counter: { targetTable: 'numberingCounters' },
   sys_numbering_rule: { targetTable: 'numberingRules' },
@@ -71,14 +105,17 @@ const dispositionOverrides: Record<string, TableMigrationDisposition> = {
 }
 
 export const tableManifest: readonly TableMigrationEntry[] = legacySqlTables.map(
-  (legacyTable) => ({
-    legacyTable,
-    ownerDomain: legacyTable.split('_', 1)[0] || 'unknown',
-    disposition:
-      dispositionOverrides[legacyTable] ?? {
-        targetTable:
-          resourceTargetByLegacyTable.get(legacyTable) ??
-          legacyTable.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()),
-      },
-  }),
+  (legacyTable) => {
+    const resource = resourceTargetByLegacyTable.get(legacyTable)
+    return {
+      legacyTable,
+      ownerDomain: legacyTable.split('_', 1)[0] || 'unknown',
+      disposition:
+        dispositionOverrides[legacyTable] ?? {
+          targetTable: resource
+            ? physicalTargetForResource(resource)
+            : legacyTable.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()),
+        },
+    }
+  },
 )

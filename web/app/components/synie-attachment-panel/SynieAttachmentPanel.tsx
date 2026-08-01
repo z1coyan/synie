@@ -67,6 +67,7 @@ export function SynieAttachmentPanel({
 
   // 无共享权限 hook,面板自查;queryKey 共享,多实例只发一次。fail-closed:拉不到=无权限
   const permissions = useCurrentPermissions()
+  const canRead = hasPermission(permissions, 'sys.file:read')
   const canCreate =
     hasPermission(permissions, 'sys.file:create') && !readonly
   const canDelete =
@@ -76,7 +77,7 @@ export function SynieAttachmentPanel({
 
   const list = useQuery({
     queryKey: listKey,
-    enabled: !!ownerId,
+    enabled: !!ownerId && canRead,
     queryFn: () => fetchAttachmentList(ownerType, ownerId!, category),
   })
 
@@ -169,7 +170,9 @@ export function SynieAttachmentPanel({
         )}
       </div>
 
-      {!ownerId && !pendingMode ? (
+      {!pendingMode && ownerId && !canRead ? (
+        <p className="text-sm text-muted">无权查看{label}</p>
+      ) : !ownerId && !pendingMode ? (
         <p className="text-sm text-muted">保存后即可上传{label}</p>
       ) : !pendingMode && list.isLoading ? (
         <div className="flex justify-center py-4">

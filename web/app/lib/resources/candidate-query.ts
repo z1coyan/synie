@@ -1,9 +1,46 @@
-import type { SortState } from '~/components/synie-data-grid/types'
+import type { FilterState, SortState } from '~/components/synie-data-grid/types'
 import type { ResourceQuery } from './types'
 
 export interface DomainCandidateQuery {
   candidateProfile: string
   args: Record<string, string | boolean>
+}
+
+/**
+ * 制造候选弹窗的公司固定范围。公司尚未回填时仍保留空 FK 条件，
+ * 让 candidate adapter 在请求 Convex 前 fail-closed，不能退回普通跨公司列表。
+ */
+export function candidateCompanyFilter(companyId: unknown): FilterState {
+  const value = typeof companyId === 'string' ? companyId.trim() : ''
+  return {
+    companyId: {
+      kind: 'fk',
+      op: 'in',
+      values: value ? [value] : [],
+      labels: [],
+    },
+  }
+}
+
+/** 来源需求行在选中前尚无单据公司，以语义标记启用 Actor 范围候选。 */
+export function demandItemWorkOrderCandidateFilter(): FilterState {
+  return {
+    candidatePurpose: {
+      kind: 'enum',
+      values: ['WORK_ORDER'],
+    },
+  }
+}
+
+/** 生产入库选择工单：语义标记 + 单头公司缺一不可。 */
+export function workOrderOutputCandidateFilter(companyId: unknown): FilterState {
+  return {
+    ...candidateCompanyFilter(companyId),
+    candidatePurpose: {
+      kind: 'enum',
+      values: ['OUTPUT'],
+    },
+  }
 }
 
 type CandidateResource =
@@ -22,6 +59,8 @@ type CandidateResource =
   | 'purReceiptItems'
   | 'purOutsourcedReceiptItems'
   | 'mfgBoms'
+  | 'mfgDemandItems'
+  | 'mfgWorkOrders'
 
 const CANDIDATE_RESOURCES = new Set<CandidateResource>([
   'accBankAccounts',
@@ -39,6 +78,8 @@ const CANDIDATE_RESOURCES = new Set<CandidateResource>([
   'purReceiptItems',
   'purOutsourcedReceiptItems',
   'mfgBoms',
+  'mfgDemandItems',
+  'mfgWorkOrders',
 ])
 
 function unsupported(message: string): never {
@@ -451,6 +492,47 @@ export function resolveDomainCandidateQuery(
     return {
       candidateProfile: 'bomByMaterial',
       args: { materialId, ...(status === undefined ? {} : { status }) },
+    }
+  }
+
+  if (resource === 'mfgDemandItems') {
+    if (!hasAnyField(input, ['candidatePurpose'])) return undefined
+    expectOnlyFields(input, ['companyId', 'candidatePurpose'])
+    expectSort(input, { column: 'needDate', direction: 'ascending' })
+    const candidatePurpose = requireValue(parseConsistent(
+      input,
+      'candidatePurpose',
+      parseEnum('candidatePurpose'),
+    ), 'candidatePurpose')
+    expectLiteral(candidatePurpose, 'WORK_ORDER', 'candidatePurpose')
+    const companyId = parseConsistent(
+      input,
+      'companyId',
+      parseFk('companyId'),
+      false,
+    )
+    return {
+      candidateProfile: 'demandItemWorkOrder',
+      args: companyId === undefined ? {} : { companyId },
+    }
+  }
+
+  if (resource === 'mfgWorkOrders') {
+    if (!hasAnyField(input, ['candidatePurpose'])) return undefined
+    expectOnlyFields(input, ['companyId', 'candidatePurpose'])
+    expectSort(input, { column: 'needDate', direction: 'ascending' })
+    const candidatePurpose = requireValue(
+      parseConsistent(input, 'candidatePurpose', parseEnum('candidatePurpose')),
+      'candidatePurpose',
+    )
+    expectLiteral(candidatePurpose, 'OUTPUT', 'candidatePurpose')
+    const companyId = requireValue(
+      parseConsistent(input, 'companyId', parseFk('companyId')),
+      'companyId',
+    )
+    return {
+      candidateProfile: 'workOrderOutput',
+      args: { companyId },
     }
   }
 

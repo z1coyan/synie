@@ -17,6 +17,10 @@ import {
   productBucket,
   publicProductS3Client,
 } from './s3'
+import {
+  deleteRejectedUploadObjects,
+  isDeterministicFinalizeRejection,
+} from './uploadFinalizeErrors'
 
 type Intent = {
   status: 'pending' | 'finalized' | 'failed'; expiresAt: number; sha256: string
@@ -76,6 +80,17 @@ function copySource(key: string): string {
   return encodeURIComponent(`${productBucket()}/${key}`).replaceAll('%2F', '/')
 }
 
+async function deleteIntentObjects(
+  client: ReturnType<typeof internalProductS3Client>,
+  intent: Pick<Intent, 'objectKey'>,
+  finalObjectKey: string,
+): Promise<boolean> {
+  return deleteRejectedUploadObjects(
+    [finalObjectKey, intent.objectKey],
+    (Key) => client.send(new DeleteObjectCommand({ Bucket: productBucket(), Key })),
+  )
+}
+
 export const signUpload = action({
   args: { intentId: v.id('uploadIntents') }, returns: v.any(),
   handler: async (ctx, args) => {
@@ -118,19 +133,22 @@ export const finalizeUpload = action({
     }
     if (intent.status !== 'pending' || intent.expiresAt < Date.now()) throw synieError('conflict', '上传凭据已失效')
     const internalClient = internalProductS3Client()
+    const finalObjectKey = intent.finalObjectKey ?? intent.objectKey
+    let finalizeStarted = false
     try {
-      const finalObjectKey = intent.finalObjectKey ?? intent.objectKey
       const staged = await headObject(internalClient, intent.objectKey)
       if (staged && !objectMatches(staged, intent)) {
-        await internalClient.send(new DeleteObjectCommand({ Bucket: productBucket(), Key: intent.objectKey }))
-        await ctx.runMutation(failRef, { id: args.intentId, userId: actor.userId, code: 'object_mismatch' })
+        if (await deleteIntentObjects(internalClient, intent, finalObjectKey)) {
+          await ctx.runMutation(failRef, { id: args.intentId, userId: actor.userId, code: 'object_mismatch' })
+        }
         throw synieError('validation', '上传文件校验失败，请重新选择文件')
       }
       if (finalObjectKey !== intent.objectKey) {
         const existingFinal = await headObject(internalClient, finalObjectKey)
         if (existingFinal && !objectMatches(existingFinal, intent)) {
-          await internalClient.send(new DeleteObjectCommand({ Bucket: productBucket(), Key: finalObjectKey }))
-          await ctx.runMutation(failRef, { id: args.intentId, userId: actor.userId, code: 'object_mismatch' })
+          if (await deleteIntentObjects(internalClient, intent, finalObjectKey)) {
+            await ctx.runMutation(failRef, { id: args.intentId, userId: actor.userId, code: 'object_mismatch' })
+          }
           throw synieError('validation', '上传文件校验失败，请重新选择文件')
         }
         if (!existingFinal) {
@@ -152,12 +170,23 @@ export const finalizeUpload = action({
       } else if (!staged) {
         throw synieError('validation', '尚未收到完整文件，请重试上传')
       }
+      finalizeStarted = true
       const result = await ctx.runMutation(finalizeRef, { id: args.intentId, userId: actor.userId })
       return result
     } catch (error) {
       if (error instanceof Error &&
           (error.message.includes('上传文件校验失败') || error.message.includes('尚未收到完整文件'))) throw error
-      throw synieError('validation', '尚未收到完整文件，请重试上传')
+      if (finalizeStarted && isDeterministicFinalizeRejection(error)) {
+        if (await deleteIntentObjects(internalClient, intent, finalObjectKey)) {
+          await ctx.runMutation(failRef, {
+            id: args.intentId,
+            userId: actor.userId,
+            code: 'finalize_business_rejected',
+          }).catch(() => undefined)
+        }
+        throw error
+      }
+      throw synieError('internal', '上传确认暂时失败，请重试')
     } finally {
       internalClient.destroy()
     }

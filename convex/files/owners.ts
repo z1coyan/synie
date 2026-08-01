@@ -5,6 +5,7 @@ import { canAccessCompany } from '../lib/companyScope'
 import { synieError } from '../lib/errors'
 import { requirePermission } from '../lib/permissions'
 import { getDomainRecord } from '../domains/shared/records'
+import { catalogDocument } from '../domains/shared/policies'
 
 type QueryCtx = GenericQueryCtx<DataModel>
 
@@ -25,6 +26,40 @@ const OWNER_RESOURCES = Object.freeze({
   sys_print_template: 'sysPrintTemplates',
 } as const)
 
+export type AttachmentOwnerType = keyof typeof OWNER_RESOURCES
+
+export const ATTACHMENT_OWNER_TYPES = Object.freeze(
+  Object.keys(OWNER_RESOURCES) as AttachmentOwnerType[],
+)
+
+const GLOBAL_OWNER_RESOURCES = new Set([
+  'invMaterials',
+  'hrEmployees',
+  'salCustomers',
+  'sysPrintTemplates',
+])
+
+export function ownerReadPermission(ownerType: string): string {
+  return `${catalogDocument(ownerResource(ownerType)).permissionPrefix}:read`
+}
+
+export function ownerUsesCompanyScope(ownerType: string): boolean {
+  return !GLOBAL_OWNER_RESOURCES.has(ownerResource(ownerType))
+}
+
+export function validatedOwnerCompanyId(
+  ownerType: string,
+  value: unknown,
+): string | null {
+  if (ownerUsesCompanyScope(ownerType)) {
+    if (typeof value !== 'string' || !value) {
+      throw synieError('forbidden', '宿主公司归属缺失')
+    }
+    return value
+  }
+  return null
+}
+
 async function dedicatedOwner(
   ctx: QueryCtx,
   actor: Actor,
@@ -32,7 +67,7 @@ async function dedicatedOwner(
   ownerId: string,
 ): Promise<Record<string, unknown> | null> {
   if (resource === 'invMaterials') {
-    requirePermission(actor, 'inventory.material:read')
+    requirePermission(actor, 'inv.material:read')
     const id = ctx.db.normalizeId('materials', ownerId)
     return id ? await ctx.db.get(id) : null
   }
@@ -71,7 +106,7 @@ export async function resolveOwner(
     row = await getDomainRecord(ctx, actor, resource, ownerId)
   }
   if (!row) throw synieError('forbidden', '无权访问该宿主记录')
-  const companyId = typeof row.companyId === 'string' ? row.companyId : null
+  const companyId = validatedOwnerCompanyId(ownerType, row.companyId)
   if (companyId && !canAccessCompany(actor, companyId)) {
     throw synieError('forbidden', '无权访问该宿主记录')
   }

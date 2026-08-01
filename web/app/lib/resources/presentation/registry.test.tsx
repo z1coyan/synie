@@ -126,6 +126,13 @@ describe('Presentation Extension 薄 registry interface', () => {
       column: 'needDate',
       direction: 'ascending',
     })
+    const demandGridFilter = workOrder.fields.demandItemId?.dialog?.gridFilter
+    expect(demandGridFilter).toEqual({
+      candidatePurpose: {
+        kind: 'enum',
+        values: ['WORK_ORDER'],
+      },
+    })
     expect(workOrder.fields.demandItemId?.dialog?.gridExtraFields).toEqual([
       'materialId',
       'unitId',
@@ -148,14 +155,14 @@ describe('Presentation Extension 薄 registry interface', () => {
     expect(
       workOrder.fields.demandItemId?.effects?.('demand-item-1', {
         id: 'demand-item-1',
-        companyId: 'company-1',
+        companyId: 'company-2',
         demandId: 'demand-1',
         materialId: 'material-1',
         unitId: 'unit-1',
         remainingArrangeableQty: '3',
       }),
     ).toMatchObject({
-      companyId: 'company-1',
+      companyId: 'company-2',
       demandId: 'demand-1',
       materialId: 'material-1',
       unitId: 'unit-1',

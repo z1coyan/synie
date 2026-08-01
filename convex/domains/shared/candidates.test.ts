@@ -132,8 +132,189 @@ describe('domain candidate projection profiles', () => {
       demandId: 'demand', companyId: 'company-1', status: 'PENDING',
       remainingArrangeableQty: '1', needDate: '2026-08-01', materialCode: 'M-1',
     }
-    expect(await candidateProjectionRows(confirmed, 'mfgDemandItems', 'demand-item', wire)).toHaveLength(1)
+    expect(await candidateProjectionRows(confirmed, 'mfgDemandItems', 'demand-item', wire)).toHaveLength(2)
     expect(await candidateProjectionRows(draft, 'mfgDemandItems', 'demand-item', wire)).toEqual([])
+    expect(await candidateProjectionRows(confirmed, 'mfgDemandItems', 'demand-item', {
+      ...wire,
+      remainingArrangeableQty: '0',
+    })).toEqual([])
+    expect(await candidateProjectionRows(confirmed, 'mfgDemandItems', 'demand-item', {
+      ...wire,
+      status: 'COMPLETED',
+    })).toEqual([])
+  })
+
+  test('生产入库候选仅保留同公司进行中且仍有剩余量的工单', async () => {
+    const wire = {
+      companyId: 'company-1',
+      status: 'IN_PROGRESS',
+      remainingBaseQty: '1',
+      needDate: '2026-08-01',
+      workOrderNo: 'WO-1',
+    }
+    const eligible = await candidateProjectionRows(
+      emptyCtx,
+      'mfgWorkOrders',
+      'work-order-1',
+      wire,
+    )
+    expect(eligible).toHaveLength(1)
+    expect(eligible[0]?.profile).toBe('workOrderOutput')
+    expect(await candidateProjectionRows(emptyCtx, 'mfgWorkOrders', 'work-order-1', {
+      ...wire,
+      status: 'COMPLETED',
+    })).toEqual([])
+    expect(await candidateProjectionRows(emptyCtx, 'mfgWorkOrders', 'work-order-1', {
+      ...wire,
+      remainingBaseQty: '0',
+    })).toEqual([])
+
+    expect(resolveDomainCandidateProfile(actor, 'mfgWorkOrders', {
+      candidateProfile: 'workOrderOutput',
+      companyId: 'company-1',
+    })).toEqual({
+      profile: 'workOrderOutput',
+      keys: [eligible[0]!.key],
+    })
+    expect(() => resolveDomainCandidateProfile(actor, 'mfgWorkOrders', {
+      candidateProfile: 'workOrderOutput',
+      companyId: 'company-2',
+    })).toThrow(/公司不存在/)
+  })
+
+  test('来源需求候选在公司带入前按 Actor 公司集合解析，超级管理员走全局 key', async () => {
+    const confirmed = relatedCtx({
+      demand: stored('demand', 'mfgDemands', {}, { companyId: 'company-1', status: 'CONFIRMED' }),
+    })
+    const rows = await candidateProjectionRows(confirmed, 'mfgDemandItems', 'demand-item-1', {
+      demandId: 'demand',
+      companyId: 'company-1',
+      status: 'PENDING',
+      remainingArrangeableQty: '1',
+      needDate: '2026-08-01',
+      materialCode: 'M-1',
+    })
+    const company = resolveDomainCandidateProfile(actor, 'mfgDemandItems', {
+      candidateProfile: 'demandItemWorkOrder',
+      companyId: 'company-1',
+    })
+    const restricted = resolveDomainCandidateProfile({
+      ...actor,
+      companyIds: ['company-2', 'company-1'],
+    }, 'mfgDemandItems', {
+      candidateProfile: 'demandItemWorkOrder',
+    })
+    const global = resolveDomainCandidateProfile({
+      ...actor,
+      superAdmin: true,
+      companyIds: [],
+    }, 'mfgDemandItems', {
+      candidateProfile: 'demandItemWorkOrder',
+    })
+
+    expect(rows).toHaveLength(2)
+    expect(restricted.keys).toContain(company.keys[0])
+    expect(restricted.keys).toHaveLength(2)
+    expect(global.keys).toHaveLength(1)
+    expect(global.keys[0]).not.toBe(company.keys[0])
+    expect(rows.map((row) => row.key)).toEqual(expect.arrayContaining([
+      company.keys[0],
+      global.keys[0],
+    ]))
+
+    const projections = (await Promise.all(
+      ['company-1', 'company-2', 'company-3'].map(async (companyId, index) => {
+        const demandId = `demand-${index + 1}`
+        const ctx = relatedCtx({
+          [demandId]: stored(demandId, 'mfgDemands', {}, {
+            companyId,
+            status: 'CONFIRMED',
+          }),
+        })
+        return candidateProjectionRows(ctx, 'mfgDemandItems', `demand-item-${index + 1}`, {
+          demandId,
+          companyId,
+          status: 'PENDING',
+          remainingArrangeableQty: '1',
+          needDate: `2026-08-0${index + 1}`,
+          materialCode: `M-${index + 1}`,
+        })
+      }),
+    )).flat().map((row, index) => ({
+      ...row,
+      resource: 'mfgDemandItems',
+      _id: `projection-${index}`,
+      _creationTime: index,
+    }))
+    const queriedKeys: string[] = []
+    const ctx = {
+      db: {
+        query(table: string) {
+          expect(table).toBe('domainCandidateRows')
+          return {
+            withIndex(name: string, configure: (q: {
+              eq: (field: string, value: unknown) => unknown
+              gt: (field: string, value: unknown) => unknown
+            }) => unknown) {
+              expect(name).toBe('by_resource_profile_key_sort')
+              const equals: Array<[string, unknown]> = []
+              let after: string | null = null
+              const q = {
+                eq(field: string, value: unknown) {
+                  equals.push([field, value])
+                  if (field === 'key') queriedKeys.push(String(value))
+                  return q
+                },
+                gt(field: string, value: unknown) {
+                  expect(field).toBe('sortValue')
+                  after = String(value)
+                  return q
+                },
+              }
+              configure(q)
+              return {
+                async take(limit: number) {
+                  return projections
+                    .filter((row) =>
+                      equals.every(([field, value]) => row[field as keyof typeof row] === value) &&
+                      (after === null || row.sortValue > after),
+                    )
+                    .sort((left, right) => left.sortValue.localeCompare(right.sortValue))
+                    .slice(0, limit)
+                },
+              }
+            },
+          }
+        },
+      },
+    } as never
+
+    const restrictedPage = await paginateDomainCandidateRows(ctx, {
+      ...actor,
+      companyIds: ['company-2', 'company-1'],
+    } as never, 'mfgDemandItems', {
+      numItems: 20,
+      args: { candidateProfile: 'demandItemWorkOrder' },
+    })
+    expect(restrictedPage.page.map((row) => row.recordId)).toEqual([
+      'demand-item-1',
+      'demand-item-2',
+    ])
+    expect(new Set(queriedKeys)).toEqual(new Set(restricted.keys))
+
+    const globalPage = await paginateDomainCandidateRows(ctx, {
+      ...actor,
+      superAdmin: true,
+      companyIds: [],
+    } as never, 'mfgDemandItems', {
+      numItems: 20,
+      args: { candidateProfile: 'demandItemWorkOrder' },
+    })
+    expect(globalPage.page.map((row) => row.recordId)).toEqual([
+      'demand-item-1',
+      'demand-item-2',
+      'demand-item-3',
+    ])
   })
 
   test('发票占用检查排除自身、允许已作废报销单，并拒绝另一张活动报销单', async () => {

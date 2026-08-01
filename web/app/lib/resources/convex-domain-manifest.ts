@@ -1173,7 +1173,8 @@ export const CONVEX_DOMAIN_MANIFEST = {
     "commandTargets": {},
     "parentField": "demandId",
     "sortFields": [
-      "idx"
+      "idx",
+      "needDate"
     ],
     "equalityFields": [],
     "aggregate": false,

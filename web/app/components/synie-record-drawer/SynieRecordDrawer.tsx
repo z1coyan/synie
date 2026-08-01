@@ -38,6 +38,7 @@ import {
   missingRequiredFields,
   renderableFields,
   resolveFields,
+  hasWritableCompanyField,
   type DrawerMode,
   type FieldOverride,
   type ResolvedField,
@@ -202,8 +203,8 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const [saving, setSaving] = useState(false)
   const queryClient = useQueryClient()
 
-  // 新建态公司默认:授权列表第一家(字段 defaultValue / 列筛优先;异步到达后补丁)
-  const hasCompanyField = fields.some((f) => f.name === 'companyId')
+  // 新建态可写公司默认:授权列表第一家；只读派生公司保持空，等待来源选择 effects 带入。
+  const hasCompanyField = hasWritableCompanyField(fields)
   const companiesQuery = useAuthorizedCompanies(isOpen && mode === 'create' && hasCompanyField)
   const autoCompanyId = defaultCompanyId(undefined, companiesQuery.data ?? [])
 

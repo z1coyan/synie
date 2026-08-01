@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import type { FilterState } from '~/components/synie-data-grid/types'
-import { resolveDomainCandidateQuery } from './candidate-query'
+import {
+  candidateCompanyFilter,
+  demandItemWorkOrderCandidateFilter,
+  resolveDomainCandidateQuery,
+  workOrderOutputCandidateFilter,
+} from './candidate-query'
 import type { ResourceQuery } from './types'
 
 const fk = (value: string) => ({ kind: 'fk' as const, op: 'in' as const, values: [value], labels: [] })
@@ -206,6 +211,69 @@ describe('domain candidate query parser', () => {
     expect(resolveDomainCandidateQuery('mfgBoms', {
       profile: 'default', numItems: 20,
     })).toBeUndefined()
+  })
+
+  test('生产需求行与工单候选分别按 Actor 范围和单公司收敛到命名 profile', () => {
+    expect(resolveDomainCandidateQuery('mfgDemandItems', query(
+      demandItemWorkOrderCandidateFilter(),
+      { sort: { column: 'needDate', direction: 'ascending' } },
+    ))).toEqual({
+      candidateProfile: 'demandItemWorkOrder',
+      args: {},
+    })
+
+    expect(resolveDomainCandidateQuery('mfgWorkOrders', query(
+      workOrderOutputCandidateFilter('company-1'),
+      { sort: { column: 'needDate', direction: 'ascending' } },
+    ))).toEqual({
+      candidateProfile: 'workOrderOutput',
+      args: { companyId: 'company-1' },
+    })
+  })
+
+  test('生产入库候选固定筛选始终保持单公司，缺公司时 fail-closed', () => {
+    expect(candidateCompanyFilter(' company-1 ')).toEqual({
+      companyId: fk('company-1'),
+    })
+    const missingCompany = workOrderOutputCandidateFilter(null)
+    expect(missingCompany.companyId).toEqual({
+      kind: 'fk',
+      op: 'in',
+      values: [],
+      labels: [],
+    })
+    expect(() => resolveDomainCandidateQuery('mfgWorkOrders', query(
+      missingCompany,
+      { sort: { column: 'needDate', direction: 'ascending' } },
+    ))).toThrow(/单值外键/)
+  })
+
+  test('制造普通列表即使按公司与交期查询也不会误入候选 profile', () => {
+    const companyFilter = candidateCompanyFilter('company-1')
+    expect(resolveDomainCandidateQuery('mfgDemandItems', query(
+      companyFilter,
+      { sort: { column: 'needDate', direction: 'ascending' } },
+    ))).toBeUndefined()
+    expect(resolveDomainCandidateQuery('mfgWorkOrders', query(
+      companyFilter,
+      { sort: { column: 'needDate', direction: 'ascending' } },
+    ))).toBeUndefined()
+  })
+
+  test('来源需求行候选标记可在公司带入前启用，且伪造标记 fail-closed', () => {
+    expect(demandItemWorkOrderCandidateFilter()).toEqual({
+      candidatePurpose: one('WORK_ORDER'),
+    })
+    expect(resolveDomainCandidateQuery('mfgDemandItems', query(
+      demandItemWorkOrderCandidateFilter(),
+      { sort: { column: 'needDate', direction: 'ascending' } },
+    ))).toEqual({
+      candidateProfile: 'demandItemWorkOrder',
+      args: {},
+    })
+    expect(() => resolveDomainCandidateQuery('mfgDemandItems', query({
+      candidatePurpose: one('OUTPUT'),
+    }, { sort: { column: 'needDate', direction: 'ascending' } }))).toThrow(/WORK_ORDER/)
   })
 
   test('缺资格、多值、区间错配、错误排序与额外条件均 fail-closed', () => {

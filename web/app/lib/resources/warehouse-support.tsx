@@ -60,23 +60,23 @@ export async function loadWarehouseSupportContext(
   companyId?: string | null,
 ): Promise<WarehouseSupportContext> {
   const companiesPromise = readAllWarehouseSupportRows((numItems, cursor) => client.query(
-    api.domains.base.companies.list,
-    { profile: 'default', numItems, cursor },
+    api.resources.warehouses.supportOptions,
+    { kind: 'companies', numItems, cursor },
   ) as Promise<OptionPage>)
   const suppliersPromise = readAllWarehouseSupportRows((numItems, cursor) => client.query(
-    api.domains.party.parties.listSuppliers,
-    { profile: 'default', numItems, cursor },
+    api.resources.warehouses.supportOptions,
+    { kind: 'suppliers', numItems, cursor },
   ) as Promise<OptionPage>)
   const accountsPromise = companyId
     ? readAllWarehouseSupportRows((numItems, cursor) => client.query(
-        api.domains.base.accounts.list,
-        { profile: 'default', numItems, cursor, companyId: companyId as never },
+        api.resources.warehouses.supportOptions,
+        { kind: 'accounts', numItems, cursor, companyId },
       ) as Promise<OptionPage>)
     : Promise.resolve([])
   const parentsPromise = companyId
     ? readAllWarehouseSupportRows((numItems, cursor) => client.query(
-        api.resources.warehouses.list,
-        { profile: 'default', numItems, cursor, args: { companyId } },
+        api.resources.warehouses.supportOptions,
+        { kind: 'parents', numItems, cursor, companyId },
       ) as Promise<OptionPage>)
     : Promise.resolve([])
 
@@ -89,11 +89,9 @@ export async function loadWarehouseSupportContext(
   const companies = companyRows.map(option).sort((left, right) =>
     String(left.code ?? '').localeCompare(String(right.code ?? '')),
   )
-  const accounts = accountRows
-    .filter((row) => row.isGroup !== true && row.currencyId == null)
-    .map(option)
+  const accounts = accountRows.map(option)
   const suppliers = supplierRows.map(option)
-  const parents = parentRows.filter((row) => row.isLeaf === false).map(option)
+  const parents = parentRows.map(option)
   return { companies, accounts, suppliers, parents }
 }
 

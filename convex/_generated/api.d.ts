@@ -79,10 +79,13 @@ import type * as engines_reconciliation_model from "../engines/reconciliation/mo
 import type * as engines_reconciliation_rebuild from "../engines/reconciliation/rebuild.js";
 import type * as engines_shared from "../engines/shared.js";
 import type * as files_actions from "../files/actions.js";
+import type * as files_attachmentLimits from "../files/attachmentLimits.js";
 import type * as files_domain from "../files/domain.js";
+import type * as files_drawingSnapshots from "../files/drawingSnapshots.js";
 import type * as files_maintenance from "../files/maintenance.js";
 import type * as files_owners from "../files/owners.js";
 import type * as files_s3 from "../files/s3.js";
+import type * as files_uploadFinalizeErrors from "../files/uploadFinalizeErrors.js";
 import type * as http from "../http.js";
 import type * as iam_loginRateLimit from "../iam/loginRateLimit.js";
 import type * as iam_me from "../iam/me.js";
@@ -233,10 +236,13 @@ declare const fullApi: ApiFromModules<{
   "engines/reconciliation/rebuild": typeof engines_reconciliation_rebuild;
   "engines/shared": typeof engines_shared;
   "files/actions": typeof files_actions;
+  "files/attachmentLimits": typeof files_attachmentLimits;
   "files/domain": typeof files_domain;
+  "files/drawingSnapshots": typeof files_drawingSnapshots;
   "files/maintenance": typeof files_maintenance;
   "files/owners": typeof files_owners;
   "files/s3": typeof files_s3;
+  "files/uploadFinalizeErrors": typeof files_uploadFinalizeErrors;
   http: typeof http;
   "iam/loginRateLimit": typeof iam_loginRateLimit;
   "iam/me": typeof iam_me;

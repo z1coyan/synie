@@ -63,13 +63,19 @@ const FORMAL_TABLES: Readonly<Record<string, keyof DataModel>> = Object.freeze({
 })
 
 const EDITABLE_STATUSES: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  mfgBoms: ['DRAFT', 'INACTIVE'],
+  mfgBoms: ['DRAFT', 'ACTIVE', 'INACTIVE'],
   mfgWorkOrders: ['IN_PROGRESS'],
   hrPayrolls: ['PENDING'],
 })
 
-function editableStatus(resource: string, status: string | null): boolean {
+export function domainRecordCanUpdate(resource: string, status: string | null): boolean {
   return status === null || status === 'DRAFT' || (EDITABLE_STATUSES[resource]?.includes(status) ?? false)
+}
+
+export function domainRecordCanDelete(resource: string, status: string | null): boolean {
+  if (resource === 'mfgBoms') return status === 'DRAFT'
+  if (resource === 'mfgWorkOrders') return status === 'IN_PROGRESS' || status === 'VOIDED'
+  return domainRecordCanUpdate(resource, status)
 }
 
 function record(value: unknown, label = '参数'): WireRecord {
@@ -1028,7 +1034,7 @@ export async function updateDomainRecord(
   const row = await getStored(ctx, resource, id)
   if (!row) throw synieError('not_found', `${document.label}不存在`)
   if (row.companyId !== null) requireCompany(actor, row.companyId)
-  if (!options.permissionChecked && !editableStatus(resource, row.status)) {
+  if (!options.permissionChecked && !domainRecordCanUpdate(resource, row.status)) {
     throw synieError('conflict', '只有草稿记录可以修改')
   }
   const before = hydrate(row)
@@ -1085,7 +1091,7 @@ export async function removeDomainRecord(
   if (row.companyId !== null) requireCompany(actor, row.companyId)
   // Aggregate gateways already checked the head-level permission, but that must
   // never turn into a status bypass: audited/terminal documents remain immutable.
-  if ((!options.permissionChecked || AGGREGATE_HEADS.has(resource)) && !editableStatus(resource, row.status)) {
+  if ((!options.permissionChecked || AGGREGATE_HEADS.has(resource)) && !domainRecordCanDelete(resource, row.status)) {
     throw synieError('conflict', '当前状态不可删除')
   }
   const before = hydrate(row)
@@ -1210,6 +1216,24 @@ export async function childrenFor(
 export async function unsafeStoredForMutation(ctx: MutationCtx, resource: string, id: string): Promise<RecordDoc> {
   const row = await getStored(ctx, resource, id)
   if (!row) throw synieError('not_found', `${catalogDocument(resource).label}不存在`)
+  return row
+}
+
+/**
+ * Internal mutation read that preserves the caller's permission decision while
+ * still enforcing the record's company scope. Public gateways must check their
+ * write permission before crossing this seam.
+ */
+export async function companyScopedStoredForMutation(
+  ctx: MutationCtx,
+  actor: Actor,
+  resource: string,
+  id: string,
+): Promise<RecordDoc> {
+  const row = await unsafeStoredForMutation(ctx, resource, id)
+  if (row.companyId !== null && !canAccessCompany(actor, row.companyId)) {
+    throw synieError('not_found', `${catalogDocument(resource).label}不存在`)
+  }
   return row
 }
 

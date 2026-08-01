@@ -36,6 +36,7 @@ export function SynieImageAttachment({ ownerType, ownerId, category, label, read
 
   // 与 SynieAttachmentPanel 同一套权限自查,queryKey 共享只发一次
   const permissions = useCurrentPermissions()
+  const canRead = hasPermission(permissions, 'sys.file:read')
   const canCreate =
     hasPermission(permissions, 'sys.file:create') && !readonly
   const canDelete =
@@ -46,7 +47,7 @@ export function SynieImageAttachment({ ownerType, ownerId, category, label, read
 
   const list = useQuery({
     queryKey: listKey,
-    enabled: !!ownerId,
+    enabled: !!ownerId && canRead,
     queryFn: () => fetchAttachmentList(ownerType, ownerId!, category),
   })
   // 槽位语义:只呈现最新一张;历史残留(替换失败留下的旧图)不展示
@@ -134,6 +135,8 @@ export function SynieImageAttachment({ ownerType, ownerId, category, label, read
       <div className="flex aspect-[8/5] w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-default/30">
         {!ownerId ? (
           <span className="px-4 text-center text-sm text-muted">保存后即可上传</span>
+        ) : !canRead ? (
+          <span className="px-4 text-center text-sm text-muted">无权查看{label}</span>
         ) : list.isLoading || (current && blob.isLoading) ? (
           <Spinner size="sm" />
         ) : list.isError ? (

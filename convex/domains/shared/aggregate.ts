@@ -7,6 +7,7 @@ import { catalogDocument } from './policies'
 import {
   childrenFor,
   createDomainRecord,
+  domainRecordCanDelete,
   getDomainRecord,
   removeDomainRecord,
   updateDomainRecord,
@@ -42,6 +43,12 @@ export type AggregateNode = {
 export type AggregatePolicy = {
   /** Server-owned aggregate head. Never accepted from client input. */
   headResource: string
+  /**
+   * Default replace semantics keep child create/update/delete aligned with the
+   * corresponding head permission. Manufacturing-owned snapshot/master rows
+   * are an explicit exception: every child change is part of editing the head.
+   */
+  replaceChildPermission?: 'update'
   nodes: readonly AggregateNode[]
   deriveHead?: (
     ctx: MutationCtx,
@@ -95,8 +102,18 @@ function declared(resource: string, values: AggregateRecord): AggregateRecord {
   )
 }
 
-function requireHeadPermission(actor: Actor, headResource: string, action: 'create' | 'update' | 'delete'): void {
+export function requireHeadPermission(actor: Actor, headResource: string, action: 'create' | 'update' | 'delete'): void {
   requirePermission(actor, `${catalogDocument(headResource).permissionPrefix}:${action}`)
+}
+
+export function aggregateChildPermissionAction(
+  policy: Pick<AggregatePolicy, 'replaceChildPermission'>,
+  aggregateAction: 'create' | 'replace',
+  childAction: 'create' | 'update' | 'delete',
+): 'create' | 'update' | 'delete' {
+  return aggregateAction === 'replace' && policy.replaceChildPermission === 'update'
+    ? 'update'
+    : childAction
 }
 
 function sorted(rows: AggregateRecord[]): AggregateRecord[] {
@@ -152,6 +169,7 @@ async function saveNodeCollection(
   parent: AggregateRecord,
   parentInput: AggregateRecord,
   node: AggregateNode,
+  aggregateAction: 'create' | 'replace',
 ): Promise<void> {
   const inputs = collection(parentInput, node, catalogDocument(policy.headResource).label)
   const existing = await childrenFor(ctx, node.resource, String(parent.id))
@@ -159,8 +177,16 @@ async function saveNodeCollection(
   const seen = new Set<string>()
   const creates = inputs.some((item) => typeof item.id !== 'string')
   const updates = inputs.some((item) => typeof item.id === 'string')
-  if (creates) requireHeadPermission(actor, policy.headResource, 'create')
-  if (updates) requireHeadPermission(actor, policy.headResource, 'update')
+  if (creates) requireHeadPermission(
+    actor,
+    policy.headResource,
+    aggregateChildPermissionAction(policy, aggregateAction, 'create'),
+  )
+  if (updates) requireHeadPermission(
+    actor,
+    policy.headResource,
+    aggregateChildPermissionAction(policy, aggregateAction, 'update'),
+  )
 
   for (const [index, input] of inputs.entries()) {
     const id = typeof input.id === 'string' ? input.id : null
@@ -183,14 +209,18 @@ async function saveNodeCollection(
       : await createDomainRecord(ctx, actor, node.resource, clean, {
           permissionChecked: true,
           trustedDerived: derived,
-        })
+    })
     for (const child of node.children ?? []) {
-      await saveNodeCollection(ctx, actor, policy, head, saved, input, child)
+      await saveNodeCollection(ctx, actor, policy, head, saved, input, child, aggregateAction)
     }
   }
 
   const removed = existing.filter((row) => !seen.has(String(row.id)))
-  if (removed.length) requireHeadPermission(actor, policy.headResource, 'delete')
+  if (removed.length) requireHeadPermission(
+    actor,
+    policy.headResource,
+    aggregateChildPermissionAction(policy, aggregateAction, 'delete'),
+  )
   for (const row of removed) await deleteNodeTree(ctx, actor, node, row)
 }
 
@@ -200,9 +230,10 @@ async function saveCollections(
   policy: AggregatePolicy,
   head: AggregateRecord,
   input: AggregateRecord,
+  aggregateAction: 'create' | 'replace',
 ): Promise<void> {
   for (const node of policy.nodes) {
-    await saveNodeCollection(ctx, actor, policy, head, head, input, node)
+    await saveNodeCollection(ctx, actor, policy, head, head, input, node, aggregateAction)
   }
   await policy.afterSave?.(ctx, actor, head, input)
 }
@@ -220,7 +251,7 @@ export async function createAggregate(
     allowAggregateHead: true,
     trustedDerived: declared(policy.headResource, derived),
   })
-  await saveCollections(ctx, actor, policy, head, input)
+  await saveCollections(ctx, actor, policy, head, input, 'create')
   return loadAggregate(ctx, actor, policy, String(head.id))
 }
 
@@ -240,7 +271,7 @@ export async function replaceAggregate(
     allowAggregateHead: true,
     trustedDerived: declared(policy.headResource, derived),
   })
-  await saveCollections(ctx, actor, policy, head, input)
+  await saveCollections(ctx, actor, policy, head, input, 'replace')
   return loadAggregate(ctx, actor, policy, id)
 }
 
@@ -253,6 +284,10 @@ export async function removeAggregate(
   requireHeadPermission(actor, policy.headResource, 'delete')
   const head = await getDomainRecord(ctx, actor, policy.headResource, id)
   if (!head) throw synieError('not_found', `${catalogDocument(policy.headResource).label}不存在`)
+  const status = typeof head.status === 'string' ? head.status : null
+  if (!domainRecordCanDelete(policy.headResource, status)) {
+    throw synieError('conflict', '当前状态不可删除')
+  }
   for (const node of policy.nodes) {
     for (const row of await childrenFor(ctx, node.resource, id)) {
       await deleteNodeTree(ctx, actor, node, row)

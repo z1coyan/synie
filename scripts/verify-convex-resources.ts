@@ -10,6 +10,7 @@ type ResourcePage<T> = {
 type Currency = { id: string; name: string; isoCode: string; symbol: string | null; active: boolean }
 type Unit = { id: string; unitType: string; isBase: boolean; name: string; symbol: string; ratio: string }
 type Warehouse = { id: string; name: string; companyId: string; parentId: string | null; isLeaf: boolean }
+type WarehouseSupportOption = { id: string; name: string; code?: string }
 type Fixture = { companyId: string; accountId: string; supplierId: string }
 type GenericRow = Record<string, unknown> & { id: string }
 let verificationStage = 'bootstrap'
@@ -77,12 +78,12 @@ const warehouseCreateRef = makeFunctionReference<'mutation', {
 }, Warehouse>('resources/warehouses:create')
 const warehouseRemoveRef = makeFunctionReference<'mutation', { id: string }, null>('resources/warehouses:remove')
 const warehouseSeedRef = makeFunctionReference<'mutation', { companyId: string }, number>('resources/warehouses:seedDefaults')
-const warehouseContextRef = makeFunctionReference<'query', { companyId?: string | null }, {
-  companies: Array<{ id: string; name: string; code?: string }>
-  accounts: Array<{ id: string; name: string; code?: string }>
-  suppliers: Array<{ id: string; name: string }>
-  parents: Array<{ id: string; name: string }>
-}>('resources/warehouses:context')
+const warehouseSupportOptionsRef = makeFunctionReference<'query', {
+  kind: 'companies' | 'accounts' | 'suppliers' | 'parents'
+  numItems: number
+  cursor?: string | null
+  companyId?: string
+}, ResourcePage<WarehouseSupportOption>>('resources/warehouses:supportOptions')
 
 const catalogRef = makeFunctionReference<'query', { resource: 'basCurrencies' | 'basUnits' | 'invWarehouses' }, {
   capabilities: string[]; commands: Array<{ key: string }>
@@ -103,6 +104,7 @@ const supplierCreateRef = makeFunctionReference<'mutation', { code: string; name
 const employeeCreateRef = makeFunctionReference<'mutation', { code: string; name: string; attendanceNo?: string | null; dailyWage?: string | null; monthlyAllowance?: string | null; insuranceTypes?: string[] }, GenericRow>('domains/party/parties:createEmployee')
 const categoryCreateRef = makeFunctionReference<'mutation', { code: string; name: string; isLeaf?: boolean }, GenericRow>('domains/inventory/master:createCategory')
 const materialCreateRef = makeFunctionReference<'mutation', { code: string; name: string; categoryId: string; defaultUnitId: string; customerId?: string | null; isCustomerMaterial?: boolean }, GenericRow>('domains/inventory/master:createMaterial')
+const materialRemoveRef = makeFunctionReference<'mutation', { id: string }, null>('domains/inventory/master:removeMaterial')
 const materialUnitCreateRef = makeFunctionReference<'mutation', { materialId: string; unitId: string; factor: string }, GenericRow>('domains/inventory/master:createMaterialUnit')
 const fileCreateIntentRef = makeFunctionReference<'mutation', {
   filename: string; contentType: string; size: number; sha256: string
@@ -114,6 +116,9 @@ const fileSignUploadRef = makeFunctionReference<'action', { intentId: string }, 
 const fileFinalizeRef = makeFunctionReference<'action', { intentId: string }, {
   file: GenericRow; attachment: GenericRow | null
 }>('files/actions:finalizeUpload')
+const fileAttachRef = makeFunctionReference<'mutation', {
+  fileId: string; ownerType: string; ownerId: string; category?: string
+}, GenericRow>('files/domain:attach')
 const fileDownloadRef = makeFunctionReference<'action', { fileId: string }, { url: string }>('files/actions:downloadUrl')
 const fileRemoveRef = makeFunctionReference<'action', { fileId: string }, null>('files/actions:removeFile')
 const fileListAttachmentsRef = makeFunctionReference<'query', {
@@ -186,6 +191,9 @@ const manufacturingDraftCreateRef = makeFunctionReference<'mutation', {
 const manufacturingDraftLoadRef = makeFunctionReference<'query', {
   resource: string; id: string
 }, GenericRow>('domains/manufacturing/drafts:loadDraft')
+const manufacturingDraftRemoveRef = makeFunctionReference<'mutation', {
+  resource: string; id: string
+}, null>('domains/manufacturing/drafts:removeDraft')
 const manufacturingDomainGetRef = makeFunctionReference<'query', {
   resource: string; id: string
 }, GenericRow | null>('domains/manufacturing/domain:get')
@@ -236,6 +244,10 @@ function client(url: string): ConvexHttpClient {
 
 function endpoint(base: string, path: string): string {
   return `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
+}
+
+function utcToday(): string {
+  return new Date().toISOString().slice(0, 10)
 }
 
 function cookieHeader(headers: Headers): string {
@@ -312,10 +324,12 @@ async function uploadProductFile(
   bytes: Uint8Array,
   filename: string,
   contentType: string,
+  attachment?: { ownerType: string; ownerId: string; category: string },
 ): Promise<GenericRow> {
   const sha256 = Buffer.from(await crypto.subtle.digest('SHA-256', bytes)).toString('hex')
   const intent = await admin.mutation(fileCreateIntentRef, {
     filename, contentType, size: bytes.byteLength, sha256,
+    ...attachment,
   })
   const signed = await admin.action(fileSignUploadRef, { intentId: intent.id })
   invariant(!signed.finalized && signed.url, `${filename} 未返回签名上传 URL`)
@@ -526,6 +540,74 @@ async function main() {
   await admin.mutation(fileRemoveAttachmentRef, { id: finalizedFile.attachment!.id })
   await admin.action(fileRemoveRef, { fileId: finalizedFile.file.id })
   invariant(await admin.query(fileGetRef, { id: finalizedFile.file.id }) === null, '删除对象后文件元数据仍存在')
+  const finalizedFileAudits = await admin.query(auditListRef, {
+    numItems: 20, cursor: null, resource: 'sys_file', recordId: finalizedFile.file.id,
+  })
+  const finalizedAttachmentAudits = await admin.query(auditListRef, {
+    numItems: 20, cursor: null, resource: 'sys_attachment', recordId: finalizedFile.attachment!.id,
+  })
+  invariant(
+    ['create', 'destroy'].every((action) =>
+      finalizedFileAudits.results.some((row) => row.actionType === action)),
+    '文件 finalize/删除缺少 formal audit',
+  )
+  invariant(
+    ['create', 'destroy'].every((action) =>
+      finalizedAttachmentAudits.results.some((row) => row.actionType === action)),
+    '附件 finalize/移除缺少 formal audit',
+  )
+
+  // A deleted owner must not strand its attachment and permanently lock the
+  // underlying file. This also exercises the direct attach audit path.
+  verificationStage = 'stale-owner-attachment-cleanup-audit'
+  const disposableMaterial = await admin.mutation(materialCreateRef, {
+    code: `MD-${marker}`, name: `待删宿主物料-${marker}`,
+    categoryId: category.id, defaultUnitId: baseUnit.id,
+  })
+  const staleFile = await uploadProductFile(
+    admin, fileBytes, `失效宿主-${marker}.txt`, 'text/plain',
+  )
+  const staleAttachment = await admin.mutation(fileAttachRef, {
+    fileId: staleFile.id, ownerType: 'inv_material',
+    ownerId: disposableMaterial.id, category: 'stale-owner',
+  })
+  await admin.mutation(materialRemoveRef, { id: disposableMaterial.id })
+  const staleWitnesses = await admin.query(fileListByFileRef, { fileId: staleFile.id })
+  invariant(
+    staleWitnesses.results.some((row) => row.id === staleAttachment.id),
+    '宿主删除后文件管理员无法枚举失效挂接',
+  )
+  await admin.mutation(fileRemoveAttachmentRef, { id: staleAttachment.id })
+  await admin.action(fileRemoveRef, { fileId: staleFile.id })
+  invariant(await admin.query(fileGetRef, { id: staleFile.id }) === null, '失效挂接清理后文件仍无法删除')
+  const directAttachmentAudits = await admin.query(auditListRef, {
+    numItems: 20, cursor: null, resource: 'sys_attachment', recordId: staleAttachment.id,
+  })
+  invariant(
+    ['create', 'destroy'].every((action) =>
+      directAttachmentAudits.results.some((row) => row.actionType === action)),
+    '直接挂接/失效宿主清理缺少 formal audit',
+  )
+
+  // Keep one material drawing through the standard trading/manufacturing waves
+  // so every document-line snapshot seam is verified against real S3 metadata.
+  const drawingBytes = Uint8Array.from(Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  ))
+  const drawingDigest = Buffer.from(await crypto.subtle.digest('SHA-256', drawingBytes)).toString('hex')
+  const drawingIntent = await admin.mutation(fileCreateIntentRef, {
+    filename: `图纸-${marker}.png`, contentType: 'image/png', size: drawingBytes.byteLength,
+    sha256: drawingDigest, ownerType: 'inv_material', ownerId: material.id, category: 'drawing',
+  })
+  const signedDrawingUpload = await admin.action(fileSignUploadRef, { intentId: drawingIntent.id })
+  invariant(!signedDrawingUpload.finalized && signedDrawingUpload.url, '物料图纸未返回短时签名上传 URL')
+  const drawingUploadResponse = await fetch(signedDrawingUpload.url, {
+    method: 'PUT', headers: signedDrawingUpload.headers, body: drawingBytes,
+  })
+  invariant(drawingUploadResponse.ok, `物料图纸直传 S3 失败：HTTP ${drawingUploadResponse.status}`)
+  const drawingFile = await admin.action(fileFinalizeRef, { intentId: drawingIntent.id })
+  invariant(drawingFile.attachment?.category === 'drawing', '物料图纸挂接未落到 drawing 槽位')
 
   // Waves B/C: all six AggregateDraft seams and posting effects share one mutation.
   verificationStage = 'wave-bc-fixtures'
@@ -534,7 +616,7 @@ async function main() {
   const postingWarehouse = await admin.mutation(warehouseCreateRef, {
     name: `允许负库存验收仓-${marker}`, companyId: formalCompany.id, allowNegative: true,
   })
-  const today = new Date().toISOString().slice(0, 10)
+  const today = utcToday()
   verificationStage = 'sales-quotation-create'
   const salesQuotation = await admin.mutation(draftCreateRef, {
     resource: 'salQuotations',
@@ -567,18 +649,37 @@ async function main() {
   await admin.mutation(domainCommandRef, { resource: 'salQuotations', id: salesQuotation.id, key: 'audit' })
 
   verificationStage = 'sales-order-create'
-  const salesOrder = await admin.mutation(draftCreateRef, {
-    resource: 'salOrders',
-    input: {
+  const salesOrderInput = (itemId?: string) => ({
       companyId: formalCompany.id, orderDate: today, orderType: 'REGULAR',
       partyType: 'CUSTOMER', partyId: customer.id, currencyId: formalCurrency.id, exchangeRate: '1',
       terms: null, remarks: null,
-      items: [{ idx: 1, qty: '5', materialId: material.id, unitId: baseUnit.id, price: '12.3456', taxRate: '0.13', remarks: null, quotationItemId: salesQuotationItems[0].id, issueLines: [], byproductLines: [] }],
+      items: [{ ...(itemId ? { id: itemId } : {}), idx: 1, qty: '5', materialId: material.id, unitId: baseUnit.id, price: '12.3456', taxRate: '0.13', remarks: null, quotationItemId: salesQuotationItems[0].id, issueLines: [], byproductLines: [] }],
+  })
+  const salesOrder = await admin.mutation(draftCreateRef, {
+    resource: 'salOrders', input: salesOrderInput(),
+  })
+  const createdSalesOrderItem = (salesOrder.items as GenericRow[])[0]!
+  const refreshedDrawingFile = await uploadProductFile(
+    admin,
+    drawingBytes,
+    `图纸更新-${marker}.png`,
+    'image/png',
+    { ownerType: 'inv_material', ownerId: material.id, category: 'drawing' },
+  )
+  const replacedSalesOrder = await admin.mutation(draftReplaceRef, {
+    resource: 'salOrders', id: salesOrder.id, input: {
+      ...salesOrderInput(createdSalesOrderItem.id),
+      orderNo: salesOrder.orderNo,
     },
   })
+  const salesOrderItem = (replacedSalesOrder.items as GenericRow[])[0]!
+  const refreshedOrderDrawing = await admin.query(fileListByFileRef, { fileId: refreshedDrawingFile.id })
+  invariant(
+    refreshedOrderDrawing.results.some((row) => row.ownerType === 'sal_order_item' && row.ownerId === salesOrderItem.id),
+    '销售订单条目 replace 未重拍物料 drawing 挂接',
+  )
   verificationStage = 'sales-order-audit'
   await admin.mutation(domainCommandRef, { resource: 'salOrders', id: salesOrder.id, key: 'audit' })
-  const salesOrderItem = (salesOrder.items as GenericRow[])[0]
   const indexedOrderItems = await admin.query(orderDocumentListRef, {
     resource: 'salOrderItems', numItems: 20,
     queryArgs: { parentId: salesOrder.id, sortField: 'idx', sortDirection: 'ascending' },
@@ -770,6 +871,119 @@ async function main() {
   })
   invariant(!attendanceDaysAfterRemoval.results.some((row) => row.employeeId === employee.id && row.date === attendanceDate), '删除考勤批次后日投影未回滚')
 
+  // Finalize must re-authorize after direct S3 upload. A permission change in
+  // this window rejects the metadata mutation and removes both staged/final
+  // objects, which the reconciliation assertion below proves end to end.
+  verificationStage = 'file-finalize-live-authorization-cleanup'
+  const finalizeRole = await admin.mutation(createRoleRef, {
+    code: `file-finalize-${marker}`,
+    name: '文件确认时授权验收角色',
+  })
+  await admin.mutation(syncPermissionsRef, {
+    id: finalizeRole.id,
+    permissions: ['sys.file:create', 'inv.material:read'],
+  })
+  const finalizeUsername = `file-${marker}`
+  const finalizeUser = await admin.mutation(createUserRef, {
+    username: finalizeUsername,
+    roleIds: [finalizeRole.id],
+    companyIds: [formalCompany.id],
+  })
+  const finalizeClient = await signIn({
+    authBaseUrl,
+    siteOrigin,
+    convexUrl,
+    username: finalizeUsername,
+    password: finalizeUser.password,
+  })
+  const rejectedIntent = await finalizeClient.mutation(fileCreateIntentRef, {
+    filename: `授权变化-${marker}.txt`,
+    contentType: 'text/plain',
+    size: fileBytes.byteLength,
+    sha256: fileDigest,
+    ownerType: 'inv_material',
+    ownerId: material.id,
+    category: 'revoked-finalize',
+  })
+  const rejectedSignedUpload = await finalizeClient.action(fileSignUploadRef, {
+    intentId: rejectedIntent.id,
+  })
+  invariant(!rejectedSignedUpload.finalized && rejectedSignedUpload.url, '授权变化验收未返回签名上传 URL')
+  const rejectedUploadResponse = await fetch(rejectedSignedUpload.url, {
+    method: 'PUT',
+    headers: rejectedSignedUpload.headers,
+    body: fileBytes,
+  })
+  invariant(rejectedUploadResponse.ok, `授权变化验收直传 S3 失败：HTTP ${rejectedUploadResponse.status}`)
+  await admin.mutation(syncPermissionsRef, {
+    id: finalizeRole.id,
+    permissions: ['inv.material:read'],
+  })
+  await expectRejected(
+    () => finalizeClient.action(fileFinalizeRef, { intentId: rejectedIntent.id }),
+    '上传后撤销 sys.file:create 的 finalize',
+  )
+  await expectRejected(
+    () => finalizeClient.action(fileFinalizeRef, { intentId: rejectedIntent.id }),
+    '已业务拒绝的上传意图再次 finalize',
+  )
+  const rejectedAttachments = await admin.query(fileListAttachmentsRef, {
+    ownerType: 'inv_material',
+    ownerId: material.id,
+    category: 'revoked-finalize',
+  })
+  invariant(rejectedAttachments.count === 0, '权限撤销后 finalize 仍创建了附件元数据')
+
+  verificationStage = 'file-download-live-owner-authorization'
+  await admin.mutation(syncPermissionsRef, {
+    id: finalizeRole.id,
+    permissions: ['sys.file:create', 'sys.file:read', 'inv.material:read'],
+  })
+  const uploaderAttachedFile = await uploadProductFile(
+    finalizeClient,
+    fileBytes,
+    `上传者挂接-${marker}.txt`,
+    'text/plain',
+    { ownerType: 'inv_material', ownerId: material.id, category: 'uploader-scope' },
+  )
+  await admin.mutation(syncPermissionsRef, {
+    id: finalizeRole.id,
+    permissions: ['sys.file:read'],
+  })
+  await expectRejected(
+    () => finalizeClient.action(fileDownloadRef, { fileId: uploaderAttachedFile.id }),
+    '已挂接文件的上传者丢失宿主权限后下载',
+  )
+  const uploaderAttachmentRows = await admin.query(fileListByFileRef, {
+    fileId: uploaderAttachedFile.id,
+  })
+  invariant(uploaderAttachmentRows.count === 1, '上传者授权验收文件缺少挂接')
+  await admin.mutation(fileRemoveAttachmentRef, { id: uploaderAttachmentRows.results[0].id })
+  await admin.action(fileRemoveRef, { fileId: uploaderAttachedFile.id })
+
+  await admin.mutation(syncPermissionsRef, {
+    id: finalizeRole.id,
+    permissions: ['sys.file:create', 'sys.file:read'],
+  })
+  const otherUsersBareFile = await uploadProductFile(
+    finalizeClient, fileBytes, `裸文件-${marker}.txt`, 'text/plain',
+  )
+  await admin.mutation(syncPermissionsRef, {
+    id: finalizeRole.id,
+    permissions: ['sys.file:read'],
+  })
+  const superAdminDownload = await admin.action(fileDownloadRef, {
+    fileId: otherUsersBareFile.id,
+  })
+  const superAdminBytes = new Uint8Array(
+    await (await fetch(superAdminDownload.url)).arrayBuffer(),
+  )
+  invariant(
+    Buffer.from(superAdminBytes).equals(Buffer.from(fileBytes)),
+    '超级管理员无法下载其他用户上传的无挂接文件',
+  )
+  await admin.action(fileRemoveRef, { fileId: otherUsersBareFile.id })
+
   verificationStage = 'io-env-cron-storage-maintenance'
   invariant((await admin.action(ocrConfiguredRef, {})).configured === false, '未配置 OCR deployment secret 时不应报告可用')
   const emptyMarketRefresh = await admin.action(marketRefreshRef, { instrumentId: null })
@@ -939,16 +1153,23 @@ async function main() {
     },
   })
   await admin.mutation(domainCommandRef, { resource: 'mfgBoms', id: bom.id, key: 'activate' })
+  const demandDateBefore = utcToday()
   const demand = await admin.mutation(manufacturingDraftCreateRef, {
     resource: 'mfgDemands',
     input: {
-      companyId: formalCompany.id, demandDate: today, remarks: '制造闭环验收',
+      companyId: formalCompany.id, remarks: '制造闭环验收',
       items: [
         { idx: 1, materialId: material.id, unitId: baseUnit.id, qty: '100', needDate: today, salesOrderItemId: null, remarks: null },
         { idx: 2, materialId: componentMaterial.id, unitId: baseUnit.id, qty: '10', needDate: today, salesOrderItemId: null, remarks: '手工关闭安排验收' },
       ],
     },
   })
+  const demandDateAfter = utcToday()
+  invariant(
+    [demandDateBefore, demandDateAfter].includes(String(demand.demandDate)) &&
+      String(demand.demandNo).length > 0,
+    '履约需求缺省日期/编号未按 mutation 时点 UTC 当天派生',
+  )
   await admin.mutation(domainCommandRef, { resource: 'mfgDemands', id: demand.id, key: 'audit' })
   const demandItems = demand.items as GenericRow[]
   const productionDemandItem = demandItems.find((row) => Number(row.idx) === 1)!
@@ -963,10 +1184,129 @@ async function main() {
   const manualReopened = await admin.query(manufacturingDomainGetRef, { resource: 'mfgDemandItems', id: manualDemandItem.id })
   invariant(manualReopened?.status === 'PENDING' && Number(manualReopened.arrangedQty) === 0, '删除关闭安排没有恢复需求行投影')
 
+  const workOrderRole = await admin.mutation(createRoleRef, {
+    code: `work-order-${marker}`, name: '无文件写权限工单验收角色',
+  })
+  await admin.mutation(syncPermissionsRef, {
+    id: workOrderRole.id,
+    permissions: ['mfg.work_order:read', 'mfg.work_order:create', 'mfg.work_order:delete'],
+  })
+  const workOrderUser = await admin.mutation(createUserRef, {
+    username: `工单验收-${marker}`,
+    name: '无文件写权限工单验收用户',
+    roleIds: [workOrderRole.id],
+    companyIds: [formalCompany.id],
+  })
+  const workOrderOperator = await signIn({
+    authBaseUrl,
+    siteOrigin,
+    convexUrl,
+    username: `工单验收-${marker}`,
+    password: workOrderUser.password,
+  })
+  await expectRejected(() => workOrderOperator.mutation(manufacturingDraftCreateRef, {
+    resource: 'mfgWorkOrders',
+    input: { demandItemId: productionDemandItem.id, qty: '1', bomId: bom.id },
+  }), '无 BOM 查看权限的工单创建')
+  const disposableWorkOrder = await workOrderOperator.mutation(manufacturingDraftCreateRef, {
+    resource: 'mfgWorkOrders', input: { demandItemId: productionDemandItem.id, qty: '1' },
+  })
+  invariant(
+    (await admin.query(fileListByFileRef, { fileId: drawingFile.file.id })).results.some(
+      (row) => row.ownerType === 'mfg_work_order' && row.ownerId === disposableWorkOrder.id,
+    ),
+    '无 sys.file:create 权限的业务用户未能触发服务端图纸快照',
+  )
+  const disposableAttachmentFile = await uploadProductFile(
+    admin,
+    new TextEncoder().encode(`disposable work-order attachment ${marker}`),
+    `待清理工单附件-${marker}.txt`,
+    'text/plain',
+    { ownerType: 'mfg_work_order', ownerId: disposableWorkOrder.id, category: 'default' },
+  )
+  await workOrderOperator.mutation(manufacturingDraftRemoveRef, {
+    resource: 'mfgWorkOrders', id: disposableWorkOrder.id,
+  })
+  invariant(
+    (await admin.query(fileListByFileRef, { fileId: disposableAttachmentFile.id })).count === 0,
+    '删除工单未清理非 drawing 附件挂接',
+  )
+  await admin.action(fileRemoveRef, { fileId: disposableAttachmentFile.id })
+  const demandAfterDisposableWorkOrder = await admin.query(manufacturingDomainGetRef, {
+    resource: 'mfgDemandItems', id: productionDemandItem.id,
+  })
+  invariant(Number(demandAfterDisposableWorkOrder?.arrangedQty) === 0, '删除工单未释放生产安排')
+
   const workOrder1 = await admin.mutation(manufacturingDraftCreateRef, {
     resource: 'mfgWorkOrders', input: { demandItemId: productionDemandItem.id, qty: '40', bomId: bom.id },
   })
   invariant(workOrder1.status === 'IN_PROGRESS' && Number(workOrder1.baseQty) === 40 && (workOrder1.components as unknown[]).length === 1, '工单创建没有复制 BOM 快照')
+  const workOrderEditorRole = await admin.mutation(createRoleRef, {
+    code: `work-order-editor-${marker}`, name: '仅工单编辑权限验收角色',
+  })
+  await admin.mutation(syncPermissionsRef, {
+    id: workOrderEditorRole.id,
+    permissions: ['mfg.work_order:read', 'mfg.work_order:update'],
+  })
+  const workOrderEditorUser = await admin.mutation(createUserRef, {
+    username: `工单编辑-${marker}`,
+    name: '仅工单编辑权限验收用户',
+    roleIds: [workOrderEditorRole.id],
+    companyIds: [formalCompany.id],
+  })
+  const workOrderEditor = await signIn({
+    authBaseUrl,
+    siteOrigin,
+    convexUrl,
+    username: `工单编辑-${marker}`,
+    password: workOrderEditorUser.password,
+  })
+  await expectRejected(() => workOrderEditor.mutation(manufacturingApplyBomRef, {
+    id: workOrder1.id,
+    bomId: bom.id,
+  }), '无 BOM 查看权限的工单快照替换')
+  await admin.mutation(syncPermissionsRef, {
+    id: workOrderEditorRole.id,
+    permissions: ['mfg.work_order:read', 'mfg.work_order:update', 'mfg.bom:read'],
+  })
+  const updateOnlyWorkOrder = await workOrderEditor.mutation(manufacturingApplyBomRef, {
+    id: workOrder1.id,
+    bomId: bom.id,
+  })
+  invariant(
+    (updateOnlyWorkOrder.components as unknown[]).length === 1,
+    '仅 update 权限用户无法替换工单 BOM 子行快照',
+  )
+  const drawingSnapshots = await admin.query(fileListByFileRef, { fileId: drawingFile.file.id })
+  const drawingOwners = new Set(drawingSnapshots.results.map((row) => `${row.ownerType}:${row.ownerId}`))
+  for (const [ownerType, ownerId] of [
+    ['inv_material', material.id],
+    ['sal_order_item', salesOrderItem.id],
+    ['sal_delivery_item', (delivery.items as GenericRow[])[0]!.id],
+    ['pur_order_item', (purchaseOrder.items as GenericRow[])[0]!.id],
+    ['pur_receipt_item', (receipt.items as GenericRow[])[0]!.id],
+    ['mfg_work_order', workOrder1.id],
+  ]) {
+    invariant(drawingOwners.has(`${ownerType}:${ownerId}`), `${ownerType} 未复制物料 drawing 挂接快照`)
+  }
+  const refreshedDrawingSnapshots = await admin.query(fileListByFileRef, { fileId: refreshedDrawingFile.id })
+  invariant(
+    refreshedDrawingSnapshots.results.some((row) => row.ownerType === 'mfg_work_order' && row.ownerId === workOrder1.id),
+    '工单创建未复制物料新增 drawing 挂接',
+  )
+  const lateDrawingFile = await uploadProductFile(
+    admin,
+    drawingBytes,
+    `图纸冻结-${marker}.png`,
+    'image/png',
+    { ownerType: 'inv_material', ownerId: material.id, category: 'drawing' },
+  )
+  await admin.mutation(manufacturingApplyBomRef, { id: workOrder1.id, bomId: bom.id })
+  const lateDrawingSnapshots = await admin.query(fileListByFileRef, { fileId: lateDrawingFile.id })
+  invariant(
+    !lateDrawingSnapshots.results.some((row) => row.ownerType === 'mfg_work_order' && row.ownerId === workOrder1.id),
+    '工单修改错误地重拍了创建时冻结的 drawing 挂接',
+  )
   await expectRejected(() => admin.mutation(manufacturingDraftCreateRef, {
     resource: 'mfgWorkOrders', input: { demandItemId: productionDemandItem.id, qty: '61' },
   }), '需求超安排')
@@ -992,11 +1332,18 @@ async function main() {
   const createOutput = (workOrderId: string, qty: string) => admin.mutation(manufacturingDraftCreateRef, {
     resource: 'mfgOutputs',
     input: {
-      companyId: formalCompany.id, outputDate: today, warehouseId: postingWarehouse.id, remarks: '制造入库验收',
+      companyId: formalCompany.id, warehouseId: postingWarehouse.id, remarks: '制造入库验收',
       items: [{ idx: 1, workOrderId, unitId: baseUnit.id, qty, warehouseId: postingWarehouse.id, remarks: null }],
     },
   })
+  const outputDateBefore = utcToday()
   const output1 = await createOutput(workOrder1.id, '30')
+  const outputDateAfter = utcToday()
+  invariant(
+    [outputDateBefore, outputDateAfter].includes(String(output1.outputDate)) &&
+      String(output1.outputNo).length > 0,
+    '生产入库缺省日期/编号未按 mutation 时点 UTC 当天派生',
+  )
   await admin.mutation(domainCommandRef, { resource: 'mfgOutputs', id: output1.id, key: 'audit' })
   const workOrderAfterFirstBatch = await admin.query(manufacturingDomainGetRef, { resource: 'mfgWorkOrders', id: workOrder1.id })
   invariant(workOrderAfterFirstBatch?.status === 'IN_PROGRESS' && Number(workOrderAfterFirstBatch.receivedBaseQty) === 30 && Number(workOrderAfterFirstBatch.remainingBaseQty) === 10, '工单第一批入库投影不正确')
@@ -1030,6 +1377,7 @@ async function main() {
   })
   invariant(waveAudit.results.some(row => row.resource === 'basCompanies' && row.recordId === formalCompany.id), '正式 Wave A 写入缺少审计')
 
+  verificationStage = 'limited-actor-permission-company-scope'
   const role = await admin.mutation(createRoleRef, { code: `resource-${marker}`, name: '资源只读验收角色' })
   await admin.mutation(syncPermissionsRef, {
     id: role.id,
@@ -1053,11 +1401,65 @@ async function main() {
   await expectRejected(() => limited.mutation(currencyCreateRef, {
     name: '越权币种', isoCode: 'BAD',
   }), '只读 Actor 币种 create')
-  const limitedContext = await limited.query(warehouseContextRef, {})
-  invariant(limitedContext.companies.length === 1 && limitedContext.companies[0].id === first.companyId, '只读 Actor 公司范围泄漏')
+  const limitedWarehouses = await limited.query(warehouseListRef, {
+    profile: 'default', numItems: 100, cursor: null, args: { companyId: first.companyId },
+  })
+  invariant(
+    limitedWarehouses.results.length > 0 && limitedWarehouses.results.every((row) => row.companyId === first.companyId),
+    '只读 Actor 无法读取授权公司的仓库或发生公司范围泄漏',
+  )
+  const limitedCompanies = await collectAll((cursor) => limited.query(warehouseSupportOptionsRef, {
+    kind: 'companies', numItems: 100, cursor,
+  }))
+  invariant(
+    limitedCompanies.length === 1 && limitedCompanies[0].id === first.companyId,
+    '仓库专用公司候选泄漏未授权公司',
+  )
+  const limitedAccounts = await collectAll((cursor) => limited.query(warehouseSupportOptionsRef, {
+    kind: 'accounts', companyId: first.companyId, numItems: 100, cursor,
+  }))
+  invariant(
+    limitedAccounts.some((row) => row.id === first.accountId),
+    '只有仓库读取权限时无法加载 pilot 科目候选',
+  )
+  const limitedSuppliers = await collectAll((cursor) => limited.query(warehouseSupportOptionsRef, {
+    kind: 'suppliers', numItems: 100, cursor,
+  }))
+  invariant(
+    limitedSuppliers.some((row) => row.id === first.supplierId),
+    '只有仓库读取权限时无法加载 pilot 供应商候选',
+  )
+  const limitedParents = await collectAll((cursor) => limited.query(warehouseSupportOptionsRef, {
+    kind: 'parents', companyId: first.companyId, numItems: 100, cursor,
+  }))
+  invariant(limitedParents.length === 1, '仓库父级候选没有只返回授权公司的非叶仓')
+  await expectRejected(() => limited.query(companyListRef, {
+    profile: 'default', numItems: 10, cursor: null,
+  }), '仓库只读 Actor 通用公司 list')
+  await expectRejected(() => limited.query(warehouseSupportOptionsRef, {
+    kind: 'companies', numItems: 101, cursor: null,
+  }), '仓库辅助选项超大分页')
+  await expectRejected(() => limited.query(warehouseSupportOptionsRef, {
+    kind: 'companies', numItems: 1.5, cursor: null,
+  }), '仓库辅助选项小数分页')
   await expectRejected(() => limited.query(warehouseListRef, {
     profile: 'default', numItems: 10, args: { companyId: second.companyId },
   }), '只读 Actor 越权公司查询')
+  await expectRejected(() => limited.query(warehouseSupportOptionsRef, {
+    kind: 'accounts', companyId: second.companyId, numItems: 10, cursor: null,
+  }), '只读 Actor 越权公司科目候选')
+
+  const firstParentPage = await admin.query(warehouseSupportOptionsRef, {
+    kind: 'parents', companyId: first.companyId, numItems: 1, cursor: null,
+  })
+  invariant(firstParentPage.pageInfo.continueCursor, '仓库父级候选没有产生可验证的 opaque cursor')
+  await expectRejected(() => admin.query(warehouseSupportOptionsRef, {
+    kind: 'parents', companyId: second.companyId, numItems: 1,
+    cursor: firstParentPage.pageInfo.continueCursor,
+  }), '仓库辅助 cursor 跨公司重放')
+  await expectRejected(() => admin.query(warehouseSupportOptionsRef, {
+    kind: 'suppliers', numItems: 1, cursor: firstParentPage.pageInfo.continueCursor,
+  }), '仓库辅助 cursor 跨 kind 重放')
 
   const formalRole = await admin.mutation(createRoleRef, { code: `wave-a-${marker}`, name: 'Wave A 公司范围验收角色' })
   await admin.mutation(syncPermissionsRef, {

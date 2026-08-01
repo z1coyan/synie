@@ -2,9 +2,16 @@ import { Decimal, decimalToScaledInt64, roundBaseQty, scaledInt64ToDecimal } fro
 import type { GenericMutationCtx, GenericQueryCtx } from 'convex/server'
 import type { DataModel } from '../../_generated/dataModel'
 import type { Actor } from '../../lib/actor'
+import { canAccessCompany } from '../../lib/companyScope'
 import { asDomainMutationCtx } from '../../lib/mutationContext'
 import { synieError } from '../../lib/errors'
-import { getDomainRecord, hydrateStored, patchDomainComputed, unsafeStoredForMutation } from '../shared/records'
+import {
+  companyScopedStoredForMutation,
+  getDomainRecord,
+  hydrateStored,
+  patchDomainComputed,
+  unsafeStoredForMutation,
+} from '../shared/records'
 
 type MutationCtx = GenericMutationCtx<DataModel>
 type QueryCtx = GenericQueryCtx<DataModel>
@@ -19,6 +26,10 @@ function positive(value: string): Decimal {
 
 async function demandItem(ctx: MutationCtx, id: string) {
   return hydrateStored(await unsafeStoredForMutation(ctx, 'mfgDemandItems', id))
+}
+
+async function scopedDemandItem(ctx: MutationCtx, actor: Actor, id: string) {
+  return hydrateStored(await companyScopedStoredForMutation(ctx, actor, 'mfgDemandItems', id))
 }
 
 async function allowedRatio(ctx: MutationCtx): Promise<Decimal> {
@@ -163,8 +174,8 @@ export async function createManualArrangement(
   actor: Actor,
   input: { demandItemId: string; type: 'STOCK' | 'CLOSE'; qty: string; remarks?: string | null },
 ) {
-  const item = await demandItem(ctx, input.demandItemId)
-  const parent = await demandItemParent(ctx, item)
+  const item = await scopedDemandItem(ctx, actor, input.demandItemId)
+  const parent = await demandItemParent(ctx, actor, item)
   if (parent.status !== 'CONFIRMED') throw synieError('conflict', '仅已确认未关闭需求单上的行可手工安排')
   const qty = positive(input.qty)
   const factor = new Decimal(String(item.baseQty)).div(String(item.qty))
@@ -187,15 +198,18 @@ export async function createManualArrangement(
   return { id, baseQty: roundBaseQty(base) }
 }
 
-async function demandItemParent(ctx: MutationCtx, item: Record<string, unknown>) {
+async function demandItemParent(ctx: MutationCtx, actor: Actor, item: Record<string, unknown>) {
   if (typeof item.demandId !== 'string') throw synieError('internal', '需求行缺少需求单锚点')
-  return hydrateStored(await unsafeStoredForMutation(ctx, 'mfgDemands', item.demandId))
+  return hydrateStored(await companyScopedStoredForMutation(ctx, actor, 'mfgDemands', item.demandId))
 }
 
 export async function removeManualArrangement(ctx: MutationCtx, actor: Actor, id: string): Promise<void> {
   const normalized = ctx.db.normalizeId('mfgDemandArrangements', id)
   const row = normalized ? await ctx.db.get(normalized) : null
   if (!row) throw synieError('not_found', '安排不存在')
+  if (!canAccessCompany(actor, row.companyId)) throw synieError('not_found', '安排不存在')
+  const item = await scopedDemandItem(ctx, actor, row.demandItemId)
+  if (item.companyId !== row.companyId) throw synieError('internal', '安排与需求行公司不一致')
   if (row.arrangementType !== 'STOCK' && row.arrangementType !== 'CLOSE') throw synieError('conflict', '仅库存/关闭安排可手工删除')
   await ctx.db.delete(row._id)
   await recomputeDemandItem(ctx, actor, row.demandItemId)

@@ -2,6 +2,7 @@
 import {
   collectValues,
   fieldChangePatch,
+  hasWritableCompanyField,
   initialValues,
   isFieldDisabled,
   missingRequired,
@@ -254,6 +255,21 @@ eq(
   'dialog 默认排序透传',
 )
 eq(fkFields[0].remote?.searchFields, ['name', 'code'], 'remote 透传')
+
+eq(
+  hasWritableCompanyField(resolveFields([
+    { ...parentCol, name: 'companyId' },
+  ], 'create', [], { companyId: { edit: 'readOnly' } })),
+  false,
+  'readOnly 派生公司不接受授权公司默认值',
+)
+eq(
+  hasWritableCompanyField(resolveFields([
+    { ...parentCol, name: 'companyId' },
+  ], 'create', [], {})),
+  true,
+  '可编辑公司字段接受授权公司默认值',
+)
 
 // —— dialog 选中整行须进入字段 effects，供来源单据带入派生字段 ——
 const selectedDemandItem = {

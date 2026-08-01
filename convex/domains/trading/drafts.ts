@@ -18,6 +18,11 @@ import {
 } from '../shared/records'
 import { currencySnapshot } from '../shared/snapshots'
 import {
+  removeOwnerAttachments,
+  replaceMaterialDrawingSnapshot,
+  type DrawingSnapshotOwnerType,
+} from '../../files/drawingSnapshots'
+import {
   removePurchaseArrangement,
   upsertPurchaseArrangement,
 } from '../manufacturing/arrangements'
@@ -269,6 +274,14 @@ async function loadAggregate(
 
 type UpsertResult = { saved: DraftRecord[]; missing: DraftRecord[] }
 
+export function tradingDrawingSnapshotOwnerType(resource: string): DrawingSnapshotOwnerType | null {
+  if (resource === 'salOrderItems') return 'sal_order_item'
+  if (resource === 'purOrderItems') return 'pur_order_item'
+  if (resource === 'salDeliveryItems') return 'sal_delivery_item'
+  if (resource === 'purReceiptItems') return 'pur_receipt_item'
+  return null
+}
+
 async function upsertChildren(
   ctx: MutationCtx,
   actor: Actor,
@@ -300,9 +313,19 @@ async function upsertChildren(
       companyId,
     })
     const clean = without(input, ['id', 'tiers', 'issueLines', 'byproductLines', 'lines'])
-    saved.push(id
+    const savedRow = id
       ? await updateDomainRecord(ctx, actor, childResource, id, clean, { permissionChecked: true, trustedDerived })
-      : await createDomainRecord(ctx, actor, childResource, clean, { permissionChecked: true, trustedDerived }))
+      : await createDomainRecord(ctx, actor, childResource, clean, { permissionChecked: true, trustedDerived })
+    const ownerType = tradingDrawingSnapshotOwnerType(childResource)
+    if (ownerType) {
+      await replaceMaterialDrawingSnapshot(ctx, {
+        materialId: String(savedRow.materialId),
+        ownerType,
+        ownerId: String(savedRow.id),
+        companyId: typeof savedRow.companyId === 'string' ? savedRow.companyId : null,
+      })
+    }
+    saved.push(savedRow)
   }
   const missing = existing.filter((row) => !seen.has(String(row.id)))
   if (missing.length) permission(actor, headResource, 'delete')
@@ -310,7 +333,11 @@ async function upsertChildren(
 }
 
 async function deleteRows(ctx: MutationCtx, actor: Actor, resource: string, rows: DraftRecord[]): Promise<void> {
-  for (const row of rows) await removeDomainRecord(ctx, actor, resource, String(row.id), { permissionChecked: true })
+  const ownerType = tradingDrawingSnapshotOwnerType(resource)
+  for (const row of rows) {
+    if (ownerType) await removeOwnerAttachments(ctx, ownerType, String(row.id))
+    await removeDomainRecord(ctx, actor, resource, String(row.id), { permissionChecked: true })
+  }
 }
 
 async function saveQuotationChildren(

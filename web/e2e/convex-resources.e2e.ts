@@ -79,7 +79,7 @@ test('三个 ResourceBinding pilot 在 self-hosted Convex 完成浏览器闭环'
   await waitForHydration(page)
   await expect(page.getByRole('heading', { name: '仓库管理' })).toBeVisible()
   await expect(page.getByText(new RegExp(smoke.companyCode)).first()).toBeVisible()
-  await page.getByRole('button', { name: '初始化默认仓库' }).click()
+  await page.getByRole('button', { name: '初始化默认仓库' }).first().click()
   await expect(page.getByText('默认仓库已经存在')).toBeVisible()
 
   await page.goto('/system/companies')

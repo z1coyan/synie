@@ -35,7 +35,7 @@ export const DOMAIN_SORT_FIELDS: Readonly<Record<string, readonly string[]>> = O
   invStockTransferItems: ['idx'],
   invStockTransfers: ['docDate'],
   mfgBomRoutes: ['seq'],
-  mfgDemandItems: ['idx'],
+  mfgDemandItems: ['idx', 'needDate'],
   mfgOutputItems: ['idx', 'outputDate'],
   mfgOutputs: ['outputDate'],
   mfgProcessTemplateItems: ['seq'],

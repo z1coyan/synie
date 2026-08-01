@@ -133,7 +133,8 @@ export default defineSchema({
   })
     .index('by_owner', ['ownerType', 'ownerId', 'insertedAt'])
     .index('by_owner_category', ['ownerType', 'ownerId', 'category', 'insertedAt'])
-    .index('by_file', ['fileId', 'insertedAt']),
+    .index('by_file', ['fileId', 'insertedAt'])
+    .index('by_file_owner_type_company', ['fileId', 'ownerType', 'companyId', 'insertedAt']),
 
   uploadIntents: defineTable({
     objectKey: v.string(),
