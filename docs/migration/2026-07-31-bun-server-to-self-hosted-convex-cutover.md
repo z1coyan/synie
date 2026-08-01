@@ -9,6 +9,7 @@
 | 计划 | `advisor-plans/001`–`008` |
 | 删除前提交 | `b6d5d7957c066cec7a380959259a1ac059693f37` |
 | 删除前标签 | annotated tag `server-bun-final`（tag object `527abc38e66519dba6b38ddc2eda64414054362b`） |
+| 运行代码/函数提交 | `65acd2b0c53512826877159cbff6a7f5e5562aaf` |
 
 ## 结论
 
@@ -115,8 +116,8 @@ Convex backend/dashboard 固定版本是 `19431ea0dd90bc55ae58dbbd06d9aa045f9733
 `sha256:5f4620ca0640ed863a8c5109123b9831157e889c6294e28c5e96ea0a62375efb`。Web image 是
 `synie-web-print:cutover-final-093d8a8f`，digest 为
 `sha256:a30f6f0ddb2e31a6e7563fed0be76d0713de897e41d5882e8e8d5c0c55c9d202`。部署的 Convex source-tree
-fingerprint 为 `4178e0b1552ab7e3b42d89d5d6e35bf2483247c7ed15188f62488d7d28fd860a`；最终 Git 提交是可复现的
-functions revision 坐标。
+fingerprint 为 `4178e0b1552ab7e3b42d89d5d6e35bf2483247c7ed15188f62488d7d28fd860a`；运行代码/函数提交
+`65acd2b0c53512826877159cbff6a7f5e5562aaf` 是可复现的 deployment revision 坐标。
 
 六个且仅六个 private bucket 已由 health gate 复核；Web root、Worker health、Convex version 与 dashboard
 均成功，所有常驻容器 healthy，`minio-init` 按设计 exit 0。Web 容器启用只读根文件系统、drop ALL
