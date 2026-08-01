@@ -1,6 +1,4 @@
 import { Label, ListBox, Select } from '@heroui/react'
-import type { Row } from '~/components/synie-data-grid/types'
-import { accountClient } from '~/lib/resources/accounts'
 
 // 报销类型 = 科目角色的五个费用角色(bas_account_role 枚举,与后端 AccountRole.expense_roles/0 同序);
 // 纯录入辅助:单据上不存角色值、只存科目(见 CONTEXT.md「费用角色」)
@@ -17,28 +15,6 @@ export const expenseRoleLabel = (value: string) =>
 
 // 「其他应付款」往来角色:费用报销发票的往来科目(员工报销挂账)挂此角色
 export const OTHER_PAYABLE_ROLE = 'OTHER_PAYABLE'
-
-/**
- * 按公司 + 科目角色查询启用中的非汇总科目；role 只传本文件枚举常量。
- * 恰好一个 → 调用方自动带科目;零个/多个 → 调用方提示手选。
- */
-export async function findRoleAccounts(companyId: string, role: string): Promise<Row[]> {
-  const data = await accountClient.query({
-    limit: 10,
-    offset: 0,
-    filter: {
-      companyId: {
-        kind: 'fk',
-        values: [companyId],
-        labels: [companyId],
-      },
-      isGroup: { kind: 'bool', eq: false },
-      active: { kind: 'bool', eq: true },
-      role: { kind: 'enum', values: [role] },
-    },
-  })
-  return data.results
-}
 
 /** 报销类型选择器:只产出角色值,带科目逻辑由调用方接 onChange 实现 */
 export function ExpenseRoleSelect({

@@ -18,6 +18,9 @@ import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
+import { todayLocal } from '~/lib/form-defaults'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 
 const salesQuotationBinding = resourceBindingFor('salQuotations')
 const salesQuotationItemBinding = resourceBindingFor('salQuotationItems')
@@ -150,13 +153,6 @@ function CompanyCurrencyDefault({
   return null
 }
 
-// 本地日期 YYYY-MM-DD(不用 toISOString:UTC 串在 UTC+8 凌晨会差一天)
-function todayLocal(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
 /**
  * 价格档子表(条目二级抽屉的 extraContent):档草稿由 provider 自持,
  * 挂载时以行上已存的档为初值——条目抽屉关闭即卸载,每次打开都重新挂载,
@@ -216,11 +212,11 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
   const [tierDraft, setTierDraft] = useState<Row[]>([])
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张单的行回填到当前单
-  const reqIdRef = useRef(0)
+  const guard = useRequestGuard()
   const draftHeadRef = useRef<Row | null>(null)
 
   const openDrawer: OpenQuotationDrawer = useCallback((mode, quotation) => {
-    const my = ++reqIdRef.current
+    const my = guard.begin()
     setDrawer({ mode, quotation })
     draftHeadRef.current = null
     if (mode === 'create') {
@@ -233,16 +229,16 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
     salesQuotationDraft
       .loadDraft(quotation!.id)
       .then((draft) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         draftHeadRef.current = draft
         setTerms(String(draft.terms ?? ''))
         setItems(draft.items)
         setDetailLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         draftHeadRef.current = null
-        toast.danger('报价单详情加载失败', { description: (e as Error).message })
+        toastError('报价单详情加载失败')(e)
         setTerms('')
         setItems([])
       })
@@ -274,7 +270,7 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
         onOpenChange={(open) => {
           if (open) return
           // 关闭即作废在途请求并清空本地草稿,防止慢响应回填到下一张报价单
-          reqIdRef.current++
+          guard.invalidate()
           setDrawer(null)
           setItems([])
           setTerms('')
@@ -297,7 +293,7 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
               onChange={setItems}
               readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)}
               // 行表单物料/模式/单价双列排布,默认 420px 局促,加宽一档
-              drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+              drawerClassName="w-full lg:w-[560px]"
               exclude={[
                 'quotationId',
                 'companyId',

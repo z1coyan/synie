@@ -1,15 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
+import { toastError } from '~/lib/toast'
+import { todayLocal } from '~/lib/form-defaults'
+import { AUDIT_DOC_STATUS_ENUM_COLORS, AUDIT_DOC_EDIT_ACTION_VISIBLE } from '~/lib/doc-status'
+import { ItemsResetGuard } from '~/components/items-reset-guard'
+import { useRequestGuard } from '~/lib/use-request-guard'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import { ExpenseRoleSelect, expenseRoleLabel, findRoleAccounts } from './-expense-role'
+import { ExpenseRoleSelect, expenseRoleLabel } from './-expense-role'
+import { findRoleAccounts } from '~/lib/resources/accounts'
 import {
   expenseReportClient,
   queryExpenseReportItems,
@@ -44,12 +50,6 @@ function accountFilter(companyId: string | null): FilterState | undefined {
     isGroup: { kind: 'bool', eq: false },
     active: { kind: 'bool', eq: true },
   }
-}
-
-function todayLocal(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
 /**
@@ -134,7 +134,7 @@ function ManualExpenseAccountInput({
               )
             }
           } catch (e) {
-            toast.danger('按报销类型带科目失败', { description: (e as Error).message })
+            toastError('按报销类型带科目失败')(e)
           } finally {
             setBusy(false)
           }
@@ -157,45 +157,9 @@ function ManualExpenseAccountInput({
   )
 }
 
-/**
- * 头关键字段变更清行:公司/员工任一变则清空报销行草稿(挂票行发票不再匹配条目池;
- * 与对账抽屉 ItemsResetGuard 同构,edit 等行主数据回填后再布防)。
- */
-function ItemsResetGuard({
-  mode,
-  row,
-  values,
-  onReset,
-}: {
-  mode: DrawerMode
-  row: Row | null | undefined
-  values: Record<string, unknown>
-  onReset: () => void
-}) {
-  const armedRef = useRef(false)
-  const baselineRef = useRef('')
-  const fpOf = (v: Record<string, unknown>) => [v.companyId, v.employeeId].map((x) => String(x ?? '')).join('|')
-  const fp = fpOf(values)
-  const rowFp = row != null ? fpOf(row) : null
-
-  useEffect(() => {
-    if (mode === 'view') return
-    if (!armedRef.current) {
-      if (mode === 'create' || (rowFp != null && fp === rowFp)) {
-        baselineRef.current = fp
-        armedRef.current = true
-      }
-      return
-    }
-    if (fp !== baselineRef.current) {
-      baselineRef.current = fp
-      onReset()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fp, rowFp, mode, onReset])
-
-  return null
-}
+// 头关键字段变更清行:公司/员工任一变则清空报销行草稿(挂票行发票不再匹配条目池);
+// 指纹字段清单(共享 ItemsResetGuard 的 fields prop,顺序影响指纹串,勿改)
+const ITEMS_RESET_FIELDS = ['companyId', 'employeeId'] as const
 
 const GRID_COLUMNS = ['companyId', 'employeeId', 'docNo', 'expenseDate', 'postingDate', 'status', 'auditedAt']
 
@@ -208,17 +172,12 @@ const GRID_OVERRIDES = {
   expenseDate: { mobileRole: 'summary' },
   status: {
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+    enumColors: AUDIT_DOC_STATUS_ENUM_COLORS,
   },
 } satisfies Record<string, ColumnOverride>
 
 // 行操作按状态出:草稿(编辑/删除/审核)、已审核(作废;无红冲,纠错=作废+重开)
-const ACTION_VISIBLE = {
-  audit: (row: Row) => row.status === 'DRAFT',
-  void: (row: Row) => row.status === 'AUDITED',
-  edit: (row: Row) => row.status === 'DRAFT',
-  delete: (row: Row) => row.status === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = AUDIT_DOC_EDIT_ACTION_VISIBLE
 
 function ExpenseReportsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
@@ -229,12 +188,15 @@ function ExpenseReportsPage() {
   // 挂票发票缓存:选择时写入完整行,行表单核对提示与表格金额列共用
   const invoiceCacheRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
+  const guard = useRequestGuard()
+  // ItemsResetGuard 的 key 需随开抽屉世代变(守卫序号不外暴露,开抽屉时同步 begin() 返回值)
+  const genRef = useRef(0)
 
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
-    const my = ++reqIdRef.current
+    const my = guard.begin()
+    genRef.current = my
     setDrawer({ mode, row })
     invoiceCacheRef.current = new Map()
     if (mode === 'create' || row == null) {
@@ -246,7 +208,7 @@ function ExpenseReportsPage() {
     setDetailLoaded(false)
     queryExpenseReportItems(row.id)
       .then(async (result) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         // REST 行不做 relationship join；只对挂票行按公开发票 get 补展示信息。
         const invoices = await Promise.all(
           result.map((item) =>
@@ -271,8 +233,8 @@ function ExpenseReportsPage() {
         setDetailLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('报销行加载失败', { description: (e as Error).message })
+        if (!guard.isCurrent(my)) return
+        toastError('报销行加载失败')(e)
         // 加载失败保持空快照:提交不会误删后端原行(同对账抽屉语义)
         setItems([])
         setItemsSnapshot([])
@@ -305,7 +267,7 @@ function ExpenseReportsPage() {
         isOpen={drawer !== null}
         onOpenChange={(open) => {
           if (open) return
-          reqIdRef.current++
+          guard.invalidate()
           setDrawer(null)
           setItems([])
           setItemsSnapshot([])
@@ -439,10 +401,11 @@ function ExpenseReportsPage() {
             <>
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${drawer?.row?.id ?? 'create'}-${reqIdRef.current}`}
+                key={`${drawer?.row?.id ?? 'create'}-${genRef.current}`}
                 mode={mode}
                 row={row}
                 values={values}
+                fields={ITEMS_RESET_FIELDS}
                 onReset={resetItems}
               />
               <SynieEditableTable
@@ -457,7 +420,7 @@ function ExpenseReportsPage() {
                     <span className="text-xs text-muted">先选齐公司与员工</span>
                   )
                 }
-                drawerProps={{ contentClassName: 'w-full lg:w-[480px]' }}
+                drawerClassName="w-full lg:w-[480px]"
                 exclude={['reportId', 'companyId']}
                 columns={['idx', 'kind', 'invoiceId', 'summary', 'amount', 'remarks']}
                 overrides={{

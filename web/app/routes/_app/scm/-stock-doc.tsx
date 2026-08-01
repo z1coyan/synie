@@ -19,6 +19,12 @@ import {
 import { companyClient } from '~/lib/resources/companies'
 import type { ResourceClient } from '~/lib/resources/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import {
+  AUDIT_DOC_EDIT_ACTION_VISIBLE,
+  AUDIT_DOC_STATUS_ENUM_COLORS,
+} from '~/lib/doc-status'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 
 export { CompanyDefaultSync, defaultCompanyId, todayLocal }
 
@@ -70,17 +76,12 @@ const GRID_OVERRIDES = {
   docDate: { mobileRole: 'summary' },
   status: {
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+    enumColors: AUDIT_DOC_STATUS_ENUM_COLORS,
   },
   summary: { width: 240 },
 } satisfies Record<string, ColumnOverride>
 
-const ACTION_VISIBLE = {
-  audit: (row: Row) => row.status === 'DRAFT',
-  void: (row: Row) => row.status === 'AUDITED',
-  edit: (row: Row) => row.status === 'DRAFT',
-  delete: (row: Row) => row.status === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = AUDIT_DOC_EDIT_ACTION_VISIBLE
 
 /** 本公司启用叶子仓的 REST 结构化筛选；未选公司时不发起候选查询。 */
 export function warehouseFilterState(companyId: string | null): FilterState | undefined {
@@ -173,7 +174,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
+  const guard = useRequestGuard()
   // 物料选择缓存:选中整行按 id 暂存,transformItem 带出 code/name/spec 供行内物料富单元格展示
   const materialPickRef = useRef(new Map<string, Row>())
 
@@ -190,7 +191,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 
   const openDrawer = useCallback((mode: DrawerMode, row: Row | null) => {
-    const my = ++reqIdRef.current
+    const my = guard.begin()
     setDrawer({ mode, row })
     if (mode === 'create') {
       setItems([])
@@ -209,15 +210,15 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
         },
       })
       .then((result) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         const rows = result.results
         setItems(rows)
         setItemsSnapshot(rows)
         setDetailLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger(`${cfg.label}行加载失败`, { description: (e as Error).message })
+        if (!guard.isCurrent(my)) return
+        toastError(`${cfg.label}行加载失败`)(e)
         setItems([])
         setItemsSnapshot([])
       })
@@ -323,7 +324,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
         isOpen={drawer !== null}
         onOpenChange={(open) => {
           if (open) return
-          reqIdRef.current++
+          guard.invalidate()
           setDrawer(null)
           setItems([])
           setItemsSnapshot([])
@@ -346,7 +347,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
               items={items}
               onChange={setItems}
               readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)}
-              drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+              drawerClassName="w-full lg:w-[560px]"
               exclude={[
                 cfg.docIdField,
                 'companyId',

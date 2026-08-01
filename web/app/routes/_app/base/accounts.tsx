@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { EmptyState, InlineSelect } from '@heroui-pro/react'
 import { Button, ListBox, Spinner, toast } from '@heroui/react'
+import { toastError } from '~/lib/toast'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -92,7 +93,7 @@ function AccountsPage() {
       refresh()
     } catch (error) {
       toast.close(id)
-      toast.danger('初始化失败', { description: (error as Error).message })
+      toastError('初始化失败')(error)
     } finally {
       setInitializing(false)
     }

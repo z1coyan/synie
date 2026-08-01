@@ -45,6 +45,8 @@ import { materialCellRender } from '~/components/synie-material-cell/MaterialCel
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { CompanyDefaultSync, defaultCompanyId } from '../-stock-doc'
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
+import { ItemsResetGuard } from '~/components/items-reset-guard'
+import { toastError } from '~/lib/toast'
 
 export interface ReconciliationRef {
   id: string
@@ -402,47 +404,9 @@ function LockedNumber({ label, value }: { label: string; value: unknown }) {
 }
 
 /**
- * 头关键字段变更清行:公司/对手类型/对手/对账类型任一变则清空条目草稿
- * (与发货抽屉 ItemsResetGuard 同构;edit 等行主数据回填后再布防)。
+ * 头关键字段变更清行(ItemsResetGuard)的指纹字段:公司/对手类型/对手/对账类型任一变则清空条目草稿。
  */
-function ItemsResetGuard({
-  mode,
-  row,
-  values,
-  onReset,
-}: {
-  mode: DrawerMode
-  row: Row | null | undefined
-  values: Record<string, unknown>
-  onReset: () => void
-}) {
-  const armedRef = useRef(false)
-  const baselineRef = useRef('')
-  const fpOf = (v: Record<string, unknown>) =>
-    [v.companyId, v.partyType, v.partyId, v.reconciliationType]
-      .map((x) => String(x ?? ''))
-      .join('|')
-  const fp = fpOf(values)
-  const rowFp = row != null ? fpOf(row) : null
-
-  useEffect(() => {
-    if (mode === 'view') return
-    if (!armedRef.current) {
-      if (mode === 'create' || (rowFp != null && fp === rowFp)) {
-        baselineRef.current = fp
-        armedRef.current = true
-      }
-      return
-    }
-    if (fp !== baselineRef.current) {
-      baselineRef.current = fp
-      onReset()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fp, rowFp, mode, onReset])
-
-  return null
-}
+const ITEMS_RESET_FIELDS = ['companyId', 'partyType', 'partyId', 'reconciliationType'] as const
 
 /** 数量(2 位)预览:与后端金额链同形(qty×快照单价),仅草稿展示,落库以后端为准 */
 function previewAmount(qty: unknown, price: unknown): number | null {
@@ -599,9 +563,7 @@ export function ReconciliationDrawerProvider({
         })
         .catch((e) => {
           if (my !== reqIdRef.current) return
-          toast.danger('对账条目加载失败', {
-            description: (e as Error).message,
-          })
+          toastError('对账条目加载失败')(e)
           setItems([])
           setItemsSnapshot([])
         })
@@ -755,9 +717,7 @@ export function ReconciliationDrawerProvider({
               setItems((cur) => [...cur, ...imported])
               toast.success(`已导入 ${imported.length} 条未对账入库条目`)
             } catch (e) {
-              toast.danger('导入未对账条目失败', {
-                description: (e as Error).message,
-              })
+              toastError('导入未对账条目失败')(e)
             } finally {
               setImporting(false)
             }
@@ -1039,6 +999,7 @@ export function ReconciliationDrawerProvider({
                 mode={mode}
                 row={row}
                 values={values}
+                fields={ITEMS_RESET_FIELDS}
                 onReset={resetItems}
               />
               <SynieEditableTable
@@ -1067,7 +1028,7 @@ export function ReconciliationDrawerProvider({
                     </div>
                   )
                 }
-                drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+                drawerClassName="w-full lg:w-[560px]"
                 exclude={[
                   'reconciliationId',
                   'companyId',

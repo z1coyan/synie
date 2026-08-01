@@ -5,6 +5,7 @@ import type { FilterState } from '~/components/synie-data-grid/types'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { fetchSalesCompanyAccountDefaults } from '~/lib/resources/fulfillment'
 import { companyAccountDefaultClient } from '~/lib/resources/reconciliations'
+import { toastError } from '~/lib/toast'
 
 type CompanyDefaultRow = {
   id: string
@@ -103,7 +104,7 @@ export function CompanyAccountDefaultsCard({ side }: { side: CompanyAccountSide 
       toast.success(side === 'delivery' ? '发货默认科目已保存' : '入库默认科目已保存')
       queryClient.invalidateQueries({ queryKey: ['salCompanyAccountDefaults'] })
     } catch (e) {
-      toast.danger('保存失败', { description: (e as Error).message })
+      toastError('保存失败')(e)
     } finally {
       setSaving(false)
     }

@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Chip, toast } from '@heroui/react'
-import { fetchMe } from '~/lib/api/session'
 import { roleClient } from '~/lib/resources/iam'
+import { useMyPerms } from '~/lib/use-my-perms'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
@@ -40,18 +40,8 @@ function RolesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
   const [permRole, setPermRole] = useState<Row | null>(null)
-  const [myPerms, setMyPerms] = useState<Set<string>>(new Set())
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
-
   // 权限配置入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
-  useEffect(() => {
-    fetchMe()
-      .then((d) => {
-        setMyPerms(new Set(d.permissions))
-        setIsSuperAdmin(d.superAdmin)
-      })
-      .catch((e) => toast.danger('权限信息加载失败', { description: (e as Error).message }))
-  }, [])
+  const { myPerms, isSuperAdmin } = useMyPerms()
 
   const canConfigure = isSuperAdmin || myPerms.has('sys.role_permission:read')
   const canWrite = isSuperAdmin || (myPerms.has('sys.role_permission:create') && myPerms.has('sys.role_permission:delete'))

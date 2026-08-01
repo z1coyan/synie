@@ -1,7 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { formatAmount } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
-import type { Row } from '~/components/synie-data-grid/types'
+import {
+  ORDER_DOC_ACTION_VISIBLE,
+  ORDER_DOC_STATUS_ENUM_COLORS,
+  SALES_ORDER_TYPE_ENUM_COLORS,
+} from '~/lib/doc-status'
 import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
 import { useOrderDrawer, salesOrderAuditConfig } from './-order-drawer'
 import { useAuditDoc } from '../-audit-doc'
@@ -20,7 +24,7 @@ const GRID_OVERRIDES = {
   partyType: { label: '对手类型', mobileRole: 'hide' },
   orderDate: { mobileRole: 'summary' },
   // 订单分型:常规灰、样品蓝;枚举筛选由 meta(filterable)自动带出
-  orderType: { label: '类型', enumColors: { REGULAR: 'default', SAMPLE: 'accent' } },
+  orderType: { label: '类型', enumColors: SALES_ORDER_TYPE_ENUM_COLORS },
   currencyId: { label: '币种' },
   grossTotal: { label: '原币含税总额', render: (v: unknown) => formatAmount(v) },
   baseGrossTotal: {
@@ -30,7 +34,7 @@ const GRID_OVERRIDES = {
   },
   status: {
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', CLOSED: 'warning', VOIDED: 'danger' },
+    enumColors: ORDER_DOC_STATUS_ENUM_COLORS,
   },
 } satisfies Record<string, ColumnOverride>
 
@@ -49,12 +53,7 @@ const GRID_COLUMNS = [
 ]
 
 // 状态机动作显隐:审核/删除仅草稿,关闭/作废仅已审核(后端权威校验兜底,这里做体验层)
-const ACTION_VISIBLE = {
-  audit: (row: Row) => row.status === 'DRAFT',
-  close: (row: Row) => row.status === 'AUDITED',
-  void: (row: Row) => row.status === 'AUDITED',
-  delete: (row: Row) => row.status === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = ORDER_DOC_ACTION_VISIBLE
 
 function SalesOrdersTab() {
   const openDrawer = useOrderDrawer()

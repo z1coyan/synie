@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, toast } from '@heroui/react'
@@ -20,6 +20,8 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 
 export const Route = createFileRoute('/_app/scm/materials')({
   component: MaterialsPage,
@@ -107,7 +109,7 @@ function MaterialsPage() {
   const [pendingOthers, setPendingOthers] = useState<UploadedFile[]>([])
   const queryClient = useQueryClient()
   // 请求守卫:防止慢响应把上一条物料的转换行回填到当前物料(同凭证页先例)
-  const reqIdRef = useRef(0)
+  const guard = useRequestGuard()
   const materialPresentation = createMaterialPresentation(resourceBindingFor('invMaterials'))
 
   // 单位名称表:单位转换 tab 的「基准单位」提示按默认单位 id 反查名称
@@ -125,7 +127,7 @@ function MaterialsPage() {
 
   // 打开抽屉:create 清空转换行与暂存附件;view/edit 按物料 id 拉行(快照留作提交时 diff 基准)
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
-    const my = ++reqIdRef.current
+    const my = guard.begin()
     setDrawer({ mode, row })
     if (mode === 'create' || !row) {
       setUnits([])
@@ -143,14 +145,14 @@ function MaterialsPage() {
       filter: { materialId: { kind: 'fk', op: 'in', values: [row.id], labels: [] } },
     })
       .then((result) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         setUnits(result.results)
         setUnitsSnapshot(result.results)
         setUnitsLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('单位转换加载失败', { description: (e as Error).message })
+        if (!guard.isCurrent(my)) return
+        toastError('单位转换加载失败')(e)
         setUnits([])
         setUnitsSnapshot([])
       })

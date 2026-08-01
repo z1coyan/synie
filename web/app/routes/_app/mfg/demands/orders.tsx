@@ -4,6 +4,7 @@ import {
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { DEMAND_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import {
   DEMAND_AUDIT_CONFIG,
   useDemandDrawer,
@@ -39,12 +40,7 @@ const GRID_OVERRIDES = {
   demandDate: { mobileRole: 'subtitle' },
   status: {
     mobileRole: 'summary',
-    enumColors: {
-      DRAFT: 'default',
-      CONFIRMED: 'success',
-      CLOSED: 'warning',
-      VOIDED: 'danger',
-    },
+    enumColors: DEMAND_DOC_STATUS_ENUM_COLORS,
   },
   companyId: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>

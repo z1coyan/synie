@@ -1,7 +1,6 @@
 import {
   createContext,
   useContext,
-  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -23,6 +22,8 @@ import {
 } from '~/lib/resources/manufacturing'
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 
 // mutation input 只收行自身字段,行上挂的 material/unit/operation join 对象不进 payload
 function componentInput(row: Row) {
@@ -253,10 +254,11 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
   const [templateId, setTemplateId] = useState<string | null>(null)
   const [applying, setApplying] = useState(false)
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
+  // 请求守卫:防慢响应把上一张 BOM 的明细回填到当前抽屉
+  const guard = useRequestGuard()
 
   const openDrawer: OpenBomDrawer = (mode, row, options) => {
-    const my = ++reqIdRef.current
+    const my = guard.begin()
     setDrawer({ mode, row, options })
     if (mode === 'create' || !row) {
       setComponents([])
@@ -288,7 +290,7 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
       bomByproductClient.query({ limit: 200, offset: 0, filter }),
     ])
       .then(([componentResult, routeResult, byproductResult]) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         setComponents(componentResult.results)
         setComponentsSnapshot(componentResult.results)
         setRoutes(routeResult.results)
@@ -298,8 +300,8 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
         setLinesLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('BOM 明细加载失败', { description: (e as Error).message })
+        if (!guard.isCurrent(my)) return
+        toastError('BOM 明细加载失败')(e)
         setComponents([])
         setComponentsSnapshot([])
         setRoutes([])
@@ -334,7 +336,7 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
       setTemplatePickerOpen(false)
       setTemplateId(null)
     } catch (e) {
-      toast.danger('从模板带入失败', { description: (e as Error).message })
+      toastError('从模板带入失败')(e)
     } finally {
       setApplying(false)
     }

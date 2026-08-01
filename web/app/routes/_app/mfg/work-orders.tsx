@@ -17,6 +17,8 @@ import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
+import { WORK_ORDER_STATUS_ENUM_COLORS } from '~/lib/doc-status'
+import { toastError } from '~/lib/toast'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
 import { WorkOrderProgressCell } from './-work-order-progress-cell'
@@ -55,7 +57,7 @@ const GRID_OVERRIDES = {
   // 状态胶囊配色:进行中蓝、已完工绿、已作废红(与需求单页同套约定)
   status: {
     mobileRole: 'summary',
-    enumColors: { IN_PROGRESS: 'accent', COMPLETED: 'success', VOIDED: 'danger' },
+    enumColors: WORK_ORDER_STATUS_ENUM_COLORS,
   },
   // 合并列:进度条 + Popover 展示 已入/数量·未完成(折回行单位,见 WorkOrderProgressCell);
   // 列筛选/排序 = 未完成数量
@@ -178,9 +180,7 @@ function WorkOrdersPageInner() {
               queryKey: ['workOrderBomSnapshot', rowId],
             })
           } catch (e) {
-            toast.danger('BOM 已创建但选入工单失败', {
-              description: (e as Error).message,
-            })
+            toastError('BOM 已创建但选入工单失败')(e)
             patchValues({ bomId: id })
           }
         })()
@@ -241,9 +241,7 @@ function WorkOrdersPageInner() {
                           queryKey: ['workOrderBomSnapshot', rowId],
                         })
                       } catch (e) {
-                        toast.danger('更新 BOM 失败', {
-                          description: (e as Error).message,
-                        })
+                        toastError('更新 BOM 失败')(e)
                       }
                     })()
                   }}
@@ -419,9 +417,7 @@ function WorkOrdersPageInner() {
                             toast.success('已清空 BOM 快照')
                             refreshWo()
                           } catch (e) {
-                            toast.danger('清空失败', {
-                              description: (e as Error).message,
-                            })
+                            toastError('清空失败')(e)
                           }
                         })()
                       }}

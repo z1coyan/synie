@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Input, Label, Spinner, TextField, toast } from '@heroui/react'
+import { toastError } from '~/lib/toast'
 import {
   getAccountingOCRConfigured,
   getAccountingSetting,
@@ -49,7 +50,7 @@ function FinanceSettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['accSetting'] })
       queryClient.invalidateQueries({ queryKey: ['accOcrConfigured'] })
     } catch (e) {
-      toast.danger('保存失败', { description: (e as Error).message })
+      toastError('保存失败')(e)
     } finally {
       setSaving(false)
     }

@@ -13,6 +13,7 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { PAYROLL_LOAN_KIND_ENUM_COLORS } from '~/lib/doc-status'
 
 export const Route = createFileRoute('/_app/hr/payroll/loans')({
   component: EmployeeLoansPage,
@@ -27,7 +28,7 @@ const GRID_OVERRIDES = {
   employeeId: { mobileRole: 'title' },
   kind: {
     mobileRole: 'subtitle',
-    enumColors: { BORROW: 'warning', REPAY: 'success' },
+    enumColors: PAYROLL_LOAN_KIND_ENUM_COLORS,
   },
   amount: { mobileRole: 'summary' },
   occurredOn: { mobileRole: 'summary' },

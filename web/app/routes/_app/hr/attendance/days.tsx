@@ -9,6 +9,8 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import type { Row } from '~/components/synie-data-grid/types'
+import { ATTENDANCE_DAY_STATUS_ENUM_COLORS } from '~/lib/doc-status'
+import { toastError } from '~/lib/toast'
 
 export const Route = createFileRoute('/_app/hr/attendance/days')({
   component: AttendanceDaysPage,
@@ -41,7 +43,7 @@ const GRID_OVERRIDES = {
   afternoonOut: { render: timeHM },
   status: {
     mobileRole: 'summary',
-    enumColors: { OK: 'success', MISSING: 'danger' },
+    enumColors: ATTENDANCE_DAY_STATUS_ENUM_COLORS,
   },
   normalHours: { mobileRole: 'summary' },
   overtimeHours: { mobileRole: 'summary' },
@@ -117,7 +119,7 @@ function AttendanceDaysPage() {
       toast.success(`已重算 ${count} 个员工日`)
       setRecalcOpen(false)
     } catch (e) {
-      toast.danger('重算失败', { description: (e as Error).message })
+      toastError('重算失败')(e)
     } finally {
       setRunning(false)
     }

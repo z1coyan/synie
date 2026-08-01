@@ -10,6 +10,7 @@ import {
   TextField,
   toast,
 } from '@heroui/react'
+import { toastError } from '~/lib/toast'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatAmount } from '~/lib/amount'
 import { bankAccountClient } from '~/lib/resources/finance-operations'
@@ -183,9 +184,7 @@ function FinanceReconcileSection({
                     onChanged()
                     toast.success('已解除对账')
                   } catch (error) {
-                    toast.danger('解除失败', {
-                      description: (error as Error).message,
-                    })
+                    toastError('解除失败')(error)
                   }
                 }}
               >
@@ -259,11 +258,7 @@ function LinkJournalModal({
                 }
                 void fetchBankReconciliationRemaining(txn.id, id)
                   .then((value) => setAmount(Number(value)))
-                  .catch((error) =>
-                    toast.danger('剩余额度查询失败', {
-                      description: (error as Error).message,
-                    }),
-                  )
+                  .catch(toastError('剩余额度查询失败'))
               }}
             />
           </Modal.Body>
@@ -305,9 +300,7 @@ function LinkJournalModal({
                   onChanged()
                   toast.success('已关联凭证')
                 } catch (error) {
-                  toast.danger('关联失败', {
-                    description: (error as Error).message,
-                  })
+                  toastError('关联失败')(error)
                 } finally {
                   setSubmitting(false)
                 }
@@ -419,9 +412,7 @@ function QuickCreateModal({
                   onChanged()
                   toast.success('凭证已创建并完成对账')
                 } catch (error) {
-                  toast.danger('快速对账失败', {
-                    description: (error as Error).message,
-                  })
+                  toastError('快速对账失败')(error)
                 } finally {
                   setSubmitting(false)
                 }

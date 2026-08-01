@@ -1,6 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
-import type { Row } from '~/components/synie-data-grid/types'
+import {
+  AUDIT_DOC_ACTION_VISIBLE,
+  AUDIT_DOC_STATUS_ENUM_COLORS,
+} from '~/lib/doc-status'
 import { useAuditDoc } from '../-audit-doc'
 import { receiptAuditConfig, useReceiptDrawer } from './-receipt-drawer'
 
@@ -17,7 +20,7 @@ const GRID_OVERRIDES = {
   receiptDate: { mobileRole: 'summary' },
   status: {
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+    enumColors: AUDIT_DOC_STATUS_ENUM_COLORS,
   },
   warehouseId: { label: '默认入仓' },
   outsourcedWarehouseId: { label: '默认外协仓' },
@@ -34,11 +37,7 @@ const GRID_COLUMNS = [
   'outsourcedWarehouseId',
 ]
 
-const ACTION_VISIBLE = {
-  audit: (row: Row) => row.status === 'DRAFT',
-  void: (row: Row) => row.status === 'AUDITED',
-  delete: (row: Row) => row.status === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = AUDIT_DOC_ACTION_VISIBLE
 
 function ReceiptsTab() {
   const openDrawer = useReceiptDrawer()

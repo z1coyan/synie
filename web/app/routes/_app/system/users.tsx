@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, toast } from '@heroui/react'
-import { fetchMe } from '~/lib/api/session'
 import { createUser, fetchUserAccess, resetUserPassword, userClient } from '~/lib/resources/iam'
+import { toastError } from '~/lib/toast'
+import { useMyPerms } from '~/lib/use-my-perms'
+import { useRequestGuard } from '~/lib/use-request-guard'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -45,8 +47,8 @@ function UsersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
   const userForm = useCatalogBasicForm('sysUsers', '用户')
-  const [myPerms, setMyPerms] = useState<Set<string>>(new Set())
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  // 重置密码入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
+  const { myPerms, isSuperAdmin } = useMyPerms()
   // 一次性密码:仅存在于本次响应与此弹窗,关闭后无法再次查看
   const [oneTime, setOneTime] = useState<{ username: string; password: string } | null>(null)
   const [resetTarget, setResetTarget] = useState<Row | null>(null)
@@ -57,17 +59,7 @@ function UsersPage() {
   const [companySel, setCompanySel] = useState<string[]>([])
   const [names, setNames] = useState<Map<string, string>>(new Map())
   // 请求守卫:每次开抽屉自增,await 回来后比对最新序号——防止先发的慢请求(A)覆盖已切到 B 的关联/勾选
-  const reqIdRef = useRef(0)
-
-  // 重置密码入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
-  useEffect(() => {
-    fetchMe()
-      .then((d) => {
-        setMyPerms(new Set(d.permissions))
-        setIsSuperAdmin(d.superAdmin)
-      })
-      .catch((e) => toast.danger('权限信息加载失败', { description: (e as Error).message }))
-  }, [])
+  const guard = useRequestGuard()
 
   const canReset = isSuperAdmin || myPerms.has('sys.user:update')
 
@@ -81,7 +73,7 @@ function UsersPage() {
   // 先拉关联再开抽屉,避免表单已开、回显未到的中间态
   const openDrawer = async (mode: DrawerMode, row: Row | null) => {
     // 每次开抽屉先占号:create 同步回填也占号,作废上一张单据可能还在途的慢请求
-    const my = ++reqIdRef.current
+    const my = guard.begin()
     if (mode === 'create' || !row) {
       setJoins({ roles: [], companies: [] })
       setRoleSel([])
@@ -93,7 +85,7 @@ function UsersPage() {
     try {
       const d = await fetchUserAccess(String(row.id))
       // 抽屉已切走(开了别的单据/关了):丢弃过期响应,不写 joins/勾选,避免覆盖当前单据
-      if (my !== reqIdRef.current) return
+      if (!guard.isCurrent(my)) return
       const roles = d.roles.map((r) => ({
         id: r.id,
         targetId: r.id,
@@ -110,7 +102,7 @@ function UsersPage() {
       setNames(new Map([...roles, ...companies].map((r) => [r.targetId, r.name])))
       setDrawer({ mode, row })
     } catch (e) {
-      toast.danger('用户角色/公司加载失败', { description: (e as Error).message })
+      toastError('用户角色/公司加载失败')(e)
     }
   }
 
@@ -123,7 +115,7 @@ function UsersPage() {
       setResetTarget(null)
       toast.success('密码已重置')
     } catch (e) {
-      toast.danger('重置密码失败', { description: (e as Error).message })
+      toastError('重置密码失败')(e)
     } finally {
       setResetting(false)
     }

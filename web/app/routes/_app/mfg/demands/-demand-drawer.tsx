@@ -14,6 +14,7 @@ import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { todayLocal } from '~/lib/form-defaults'
 import { hasPermission } from '~/lib/permissions'
 import {
   demandClient,
@@ -30,13 +31,6 @@ import {
   useDemandItemActions,
   useMyPermissions,
 } from './-item-actions'
-
-// 本地日期 YYYY-MM-DD（不用 toISOString：UTC 串在 UTC+8 凌晨会差一天）。
-function todayLocal(): string {
-  const date = new Date()
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
 
 /**
  * 需求单共享抽屉：需求单与需求行两个列表共用同一份整单录入界面。

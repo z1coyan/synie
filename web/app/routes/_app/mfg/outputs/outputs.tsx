@@ -3,7 +3,10 @@ import {
   SynieDataGrid,
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
-import type { Row } from '~/components/synie-data-grid/types'
+import {
+  AUDIT_DOC_ACTION_VISIBLE,
+  AUDIT_DOC_STATUS_ENUM_COLORS,
+} from '~/lib/doc-status'
 import { useAuditDoc } from '../../scm/-audit-doc'
 import { outputAuditConfig, useOutputDrawer } from './-output-drawer'
 
@@ -27,16 +30,12 @@ const GRID_OVERRIDES = {
   outputDate: { mobileRole: 'subtitle' },
   status: {
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+    enumColors: AUDIT_DOC_STATUS_ENUM_COLORS,
   },
   warehouseId: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
-const ACTION_VISIBLE = {
-  audit: (row: Row) => row.status === 'DRAFT',
-  void: (row: Row) => row.status === 'AUDITED',
-  delete: (row: Row) => row.status === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = AUDIT_DOC_ACTION_VISIBLE
 
 function OutputsTab() {
   const openDrawer = useOutputDrawer()

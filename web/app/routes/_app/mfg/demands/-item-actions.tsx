@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, toast } from '@heroui/react'
 import type { Row } from '~/components/synie-data-grid/types'
 import { fetchMyPermissions } from '~/lib/permissions'
+import { toastError } from '~/lib/toast'
 import { workOrderClient } from '~/lib/resources/manufacturing'
 import { resourceBindingFor } from '~/lib/resources/registry'
 
@@ -68,7 +69,7 @@ export function useDemandItemActions(after: () => void) {
         setPending(null)
         done()
       } catch (e) {
-        toast.danger('生成工单失败', { description: (e as Error).message })
+        toastError('生成工单失败')(e)
       }
     })
 

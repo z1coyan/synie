@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, toast } from '@heroui/react'
+import { toastError } from '~/lib/toast'
 import { DropZone, Sheet } from '@heroui-pro/react'
 import { uploadFile } from '~/lib/files'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
@@ -396,9 +397,7 @@ export function FinanceBankImportDrawers(props: Props) {
                     props.onChanged()
                     toast.success('导入记录已删除')
                   } catch (error) {
-                    toast.danger('删除失败', {
-                      description: (error as Error).message,
-                    })
+                    toastError('删除失败')(error)
                   } finally {
                     setRunning(false)
                   }
@@ -480,9 +479,7 @@ export function FinanceBankImportDrawers(props: Props) {
                     props.onChanged()
                     toast.success('银行流水已导入')
                   } catch (error) {
-                    toast.danger('导入失败', {
-                      description: (error as Error).message,
-                    })
+                    toastError('导入失败')(error)
                   } finally {
                     setRunning(false)
                   }

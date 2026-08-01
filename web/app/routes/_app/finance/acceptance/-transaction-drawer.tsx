@@ -18,6 +18,7 @@ import {
   toast,
 } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
+import { toastError } from '~/lib/toast'
 import { BANKS } from '~/lib/banks'
 import { attachFile, type UploadedFile } from '~/lib/files'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -413,7 +414,7 @@ function ReceiveBillSection({
       setBillLookup(hit)
       patchValues({ billId: hit ? hit.id : null })
     } catch (e) {
-      toast.danger('票据查档失败', { description: (e as Error).message })
+      toastError('票据查档失败')(e)
     } finally {
       setLoading(false)
     }

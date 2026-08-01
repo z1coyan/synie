@@ -24,6 +24,7 @@ import {
   seedSetupCommonCurrencies,
 } from '~/lib/setup'
 import type { SetupLanguage } from '~/lib/setup'
+import { toastError } from '~/lib/toast'
 import { accountClient, initializeAccountTemplate } from '~/lib/resources/accounts'
 import { companyClient } from '~/lib/resources/companies'
 import { currencyClient } from '~/lib/resources/currencies'
@@ -460,7 +461,7 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
   useEffect(() => {
     let cancelled = false
     seedSetupCommonCurrencies()
-      .catch((e) => toast.danger('预置常用货币失败', { description: (e as Error).message }))
+      .catch(toastError('预置常用货币失败'))
       .finally(() => {
         if (!cancelled) setSeeded(true)
       })
@@ -550,7 +551,7 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
       props.onDone()
     } catch (e) {
       toast.close(id)
-      toast.danger('创建公司失败', { description: (e as Error).message })
+      toastError('创建公司失败')(e)
       // 公司可能已创建、仅科目初始化失败:刷新列表,按续作分支只补初始化
       companies.refetch()
     } finally {
@@ -573,7 +574,7 @@ function StepCompany(props: { path: SetupPath; onDone: () => void }) {
       props.onDone()
     } catch (e) {
       toast.close(id)
-      toast.danger('初始化科目失败', { description: (e as Error).message })
+      toastError('初始化科目失败')(e)
     } finally {
       setPending(false)
     }

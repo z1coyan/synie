@@ -1,8 +1,10 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } from '@heroui/react'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -118,7 +120,7 @@ function JournalsPage() {
   const [linesLoaded, setLinesLoaded] = useState(false)
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张凭证的行回填到当前凭证
-  const reqIdRef = useRef(0)
+  const guard = useRequestGuard()
 
   // 行内「审核」确认框允许补填/修正过账日期(草稿可不填,审核时必填);
   // 抽屉「保存并审核」由标准组件在保存成功后调用同一 REST client action
@@ -145,7 +147,7 @@ function JournalsPage() {
       toast.success('凭证已审核过账')
       setAuditDialog(null)
     } catch (e) {
-      toast.danger('审核失败', { description: (e as Error).message })
+      toastError('审核失败')(e)
     } finally {
       setAuditing(false)
     }
@@ -153,7 +155,7 @@ function JournalsPage() {
 
   // 打开头抽屉:create 行清空;view/edit 按凭证 id 拉行(快照留作提交时 diff 基准)
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
-    const my = ++reqIdRef.current
+    const my = guard.begin()
     setDrawer({ mode, row })
     if (mode === 'create') {
       setLines([])
@@ -170,14 +172,14 @@ function JournalsPage() {
         filter: { journalId: { kind: 'fk', values: [row!.id], labels: [] } },
       })
       .then((d) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         setLines(d.results)
         setLinesSnapshot(d.results)
         setLinesLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('分录行加载失败', { description: (e as Error).message })
+        if (!guard.isCurrent(my)) return
+        toastError('分录行加载失败')(e)
         setLines([])
         setLinesSnapshot([])
       })
@@ -214,7 +216,7 @@ function JournalsPage() {
         onOpenChange={(open) => {
           if (open) return
           // 关闭即作废在途请求并清空快照,防止残留快照被下次提交按差异写误用到别的凭证
-          reqIdRef.current++
+          guard.invalidate()
           setDrawer(null)
           setLines([])
           setLinesSnapshot([])
@@ -259,7 +261,7 @@ function JournalsPage() {
                 ) : undefined
               }
               // 行表单金额/对手双列排布,默认 420px 局促,加宽一档
-              drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+              drawerClassName="w-full lg:w-[560px]"
               exclude={['journalId', 'companyId']}
               columns={['idx', 'accountId', 'debit', 'credit', 'partyType', 'partyId', 'remarks']}
               fields={{

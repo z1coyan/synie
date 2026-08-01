@@ -25,6 +25,10 @@ import {
 } from '../-stock-doc'
 import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { TRANSFER_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
+import { todayLocal } from '~/lib/form-defaults'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 
 export const Route = createFileRoute('/_app/scm/other-stock/transfers')({
   component: StockTransfersTab,
@@ -55,7 +59,7 @@ const GRID_OVERRIDES = {
   docDate: { mobileRole: 'summary' },
   status: {
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', SHIPPED: 'accent', RECEIVED: 'success' },
+    enumColors: TRANSFER_DOC_STATUS_ENUM_COLORS,
   },
   summary: { width: 200 },
 } satisfies Record<string, ColumnOverride>
@@ -66,12 +70,6 @@ const ACTION_VISIBLE = {
   edit: (row: Row) => row.status === 'DRAFT',
   delete: (row: Row) => row.status === 'DRAFT',
 } satisfies Record<string, (row: Row) => boolean>
-
-function todayLocal(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
 
 function itemInput(row: Row) {
   return {
@@ -174,7 +172,7 @@ function StockTransfersTab() {
   const [receipts, setReceipts] = useState<Record<string, number>>({})
   const [receiving, setReceiving] = useState(false)
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
+  const guard = useRequestGuard()
   // 物料选择缓存:选中整行按 id 暂存,transformItem 带出 code/name/spec 供行内物料富单元格展示
   const materialPickRef = useRef(new Map<string, Row>())
 
@@ -193,7 +191,7 @@ function StockTransfersTab() {
   const codeById = new Map((companies.data ?? []).map((c) => [c.id, String(c.code ?? '')]))
 
   const openDrawer = useCallback((mode: DrawerMode, row: Row | null) => {
-    const my = ++reqIdRef.current
+    const my = guard.begin()
     setDrawer({ mode, row })
     if (mode === 'create') {
       setItems([])
@@ -212,15 +210,15 @@ function StockTransfersTab() {
         },
       })
       .then((result) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         const rows = result.results
         setItems(rows)
         setItemsSnapshot(rows)
         setDetailLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('调拨单行加载失败', { description: (e as Error).message })
+        if (!guard.isCurrent(my)) return
+        toastError('调拨单行加载失败')(e)
         setItems([])
         setItemsSnapshot([])
       })
@@ -269,7 +267,7 @@ function StockTransfersTab() {
       toast.success('调拨单已收货')
       setReceiveDoc(null)
     } catch (e) {
-      toast.danger('收货失败', { description: (e as Error).message })
+      toastError('收货失败')(e)
     } finally {
       setReceiving(false)
     }
@@ -418,7 +416,7 @@ function StockTransfersTab() {
         isOpen={drawer !== null}
         onOpenChange={(open) => {
           if (open) return
-          reqIdRef.current++
+          guard.invalidate()
           setDrawer(null)
           setItems([])
           setItemsSnapshot([])
@@ -452,7 +450,7 @@ function StockTransfersTab() {
                 readOnly={
                   mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)
                 }
-                drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+                drawerClassName="w-full lg:w-[560px]"
                 exclude={[
                   'stockTransferId',
                   'companyId',

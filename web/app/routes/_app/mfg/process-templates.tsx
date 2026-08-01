@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
@@ -14,6 +14,8 @@ import {
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 
 export const Route = createFileRoute('/_app/mfg/process-templates')({
   component: ProcessTemplatesPage,
@@ -102,11 +104,11 @@ function ProcessTemplatesPage() {
   const [itemsLoaded, setItemsLoaded] = useState(false)
   const queryClient = useQueryClient()
   // 请求守卫:防止慢响应把上一个模板的步骤行回填到当前模板(同物料先例)
-  const reqIdRef = useRef(0)
+  const guard = useRequestGuard()
 
   // 打开抽屉:create 清空步骤行;view/edit 按模板 id 拉行(快照留作提交时 diff 基准)
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
-    const my = ++reqIdRef.current
+    const my = guard.begin()
     setDrawer({ mode, row })
     if (mode === 'create' || !row) {
       setItems([])
@@ -130,14 +132,14 @@ function ProcessTemplatesPage() {
         sort: { column: 'seq', direction: 'ascending' },
       })
       .then((d) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         setItems(d.results)
         setItemsSnapshot(d.results)
         setItemsLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('工艺步骤加载失败', { description: (e as Error).message })
+        if (!guard.isCurrent(my)) return
+        toastError('工艺步骤加载失败')(e)
         setItems([])
         setItemsSnapshot([])
       })

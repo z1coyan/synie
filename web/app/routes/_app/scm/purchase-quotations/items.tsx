@@ -4,6 +4,7 @@ import { Chip, Link } from '@heroui/react'
 import { formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { AUDIT_DOC_STATUS_ENUM_COLORS, docActionVisible } from '~/lib/doc-status'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useAuditDoc } from '../-audit-doc'
 import {
@@ -40,10 +41,7 @@ const GRID_COLUMNS = [
 ]
 
 // 行编辑/审核整单仅草稿单放行(后端 SyncQuotation 权威校验兜底,这里做体验层);删除不进条目视图
-const ACTION_VISIBLE = {
-  edit: (row: Row) => row.quotationStatus === 'DRAFT',
-  auditDoc: (row: Row) => row.quotationStatus === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = docActionVisible({ edit: ['DRAFT'], auditDoc: ['DRAFT'] }, 'quotationStatus')
 
 // quotationId 列覆盖默认 FkLink(速览抽屉):点击开共享完整报价抽屉,与点行的「查看」一致。
 // fk label 读取资源返回的 quotation 关系标签，拿不到时退回截断 id。
@@ -78,7 +76,7 @@ function buildOverrides(openDrawer: OpenQuotationDrawer) {
     quotationStatus: {
       label: '状态',
       mobileRole: 'summary',
-      enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+      enumColors: AUDIT_DOC_STATUS_ENUM_COLORS,
       render: (v: unknown, row: Row) =>
         isExpired(v, row.validUntil) ? (
           <Chip size="sm" className="whitespace-nowrap" color="warning">

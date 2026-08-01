@@ -10,9 +10,16 @@ import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
-import { PAYMENT_KIND_LABELS, today } from './-shared'
+import { todayLocal } from '~/lib/form-defaults'
+import { toastError } from '~/lib/toast'
 
 type PaymentRow = PayrollPaymentRow
+
+// 枚举 wire 大写值 → 中文
+const PAYMENT_KIND_LABELS: Record<string, string> = {
+  NORMAL: '发放',
+  SUPPLEMENT: '补发',
+}
 
 /**
  * 工资单抽屉的发放记录区:列表 + 登记发放/补发(二级抽屉)+ 删除。
@@ -60,7 +67,7 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
       toast.success('发放记录已删除;该单已无发放记录时自动翻回待发放')
       refreshAll()
     } catch (e) {
-      toast.danger('删除失败', { description: (e as Error).message })
+      toastError('删除失败')(e)
     } finally {
       setDeleting(null)
     }
@@ -146,7 +153,7 @@ export function PaymentsSection(props: { payroll: Row; onChanged: () => void }) 
           ...paymentForm.formProps.fields,
           paidOn: {
             ...paymentForm.formProps.fields.paidOn,
-            defaultValue: today(),
+            defaultValue: todayLocal(),
           },
           // 默认带出未发差额(补发场景即漏算差额);冲回填负数
           amount: {

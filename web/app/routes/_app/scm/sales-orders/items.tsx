@@ -4,6 +4,7 @@ import { Link } from '@heroui/react'
 import { formatAmount, formatPrice } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { docActionVisible, ORDER_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useOrderDrawer, salesOrderAuditConfig, type OpenOrderDrawer } from './-order-drawer'
 import { useAuditDoc } from '../-audit-doc'
@@ -40,10 +41,7 @@ const GRID_COLUMNS = [
 ]
 
 // 行编辑/审核整单仅草稿单放行(后端权威校验兜底,这里做体验层);关闭/作废/删除不进条目视图
-const ACTION_VISIBLE = {
-  edit: (row: Row) => row.orderStatus === 'DRAFT',
-  auditDoc: (row: Row) => row.orderStatus === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = docActionVisible({ edit: ['DRAFT'], auditDoc: ['DRAFT'] }, 'orderStatus')
 
 // orderId 列覆盖默认 FkLink(速览抽屉):点击开共享完整订单抽屉,与点行的「查看」一致。
 // fk label 读取资源返回的 order 关系标签，拿不到时退回截断 id。
@@ -77,7 +75,7 @@ function buildOverrides(openDrawer: OpenOrderDrawer) {
     orderStatus: {
       label: '状态',
       mobileRole: 'summary',
-      enumColors: { DRAFT: 'default', AUDITED: 'success', CLOSED: 'warning', VOIDED: 'danger' },
+      enumColors: ORDER_DOC_STATUS_ENUM_COLORS,
     },
     // 合并列:进度条展示 已发/数量·未发(折回行单位,见 QtyProgressCell);列筛选/排序=未发数量
     remainingBaseQty: {

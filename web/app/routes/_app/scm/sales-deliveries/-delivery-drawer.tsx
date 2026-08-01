@@ -50,6 +50,9 @@ import {
   defaultCompanyId,
 } from '../-stock-doc'
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
+import { ItemsResetGuard } from '~/components/items-reset-guard'
+import { todayLocal } from '~/lib/form-defaults'
+import { toastError } from '~/lib/toast'
 
 const salesDeliveryBinding = resourceBindingFor('salDeliveries')
 const salesDeliveryDraft = aggregateDraftFor('salDeliveries')
@@ -92,12 +95,6 @@ const DeliveryDrawerContext = createContext<OpenDeliveryDrawer>(() => {})
 
 export function useDeliveryDrawer(): OpenDeliveryDrawer {
   return useContext(DeliveryDrawerContext)
-}
-
-function todayLocal(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
 /** 提交 mutation:物料/单位由订单条目锁定带出,后端再快照与折算 */
@@ -461,45 +458,9 @@ function LiveBaseQtyField({
 }
 
 /**
- * 头关键字段变更清行:公司/对手类型/对手任一变则清空条目草稿
- * (与销售订单 ItemsResetGuard 同构;edit 等行主数据回填后再布防)。
+ * 头关键字段变更清行(ItemsResetGuard)的指纹字段:公司/对手类型/对手任一变则清空条目草稿。
  */
-function ItemsResetGuard({
-  mode,
-  row,
-  values,
-  onReset,
-}: {
-  mode: DrawerMode
-  row: Row | null | undefined
-  values: Record<string, unknown>
-  onReset: () => void
-}) {
-  const armedRef = useRef(false)
-  const baselineRef = useRef('')
-  const fpOf = (v: Record<string, unknown>) =>
-    [v.companyId, v.partyType, v.partyId].map((x) => String(x ?? '')).join('|')
-  const fp = fpOf(values)
-  const rowFp = row != null ? fpOf(row) : null
-
-  useEffect(() => {
-    if (mode === 'view') return
-    if (!armedRef.current) {
-      if (mode === 'create' || (rowFp != null && fp === rowFp)) {
-        baselineRef.current = fp
-        armedRef.current = true
-      }
-      return
-    }
-    if (fp !== baselineRef.current) {
-      baselineRef.current = fp
-      onReset()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fp, rowFp, mode, onReset])
-
-  return null
-}
+const ITEMS_RESET_FIELDS = ['companyId', 'partyType', 'partyId'] as const
 
 /**
  * 「从装箱清单获取」按钮(发货条目工具栏):按装箱汇总 FIFO 分摊生成缺失物料的发货草稿行。
@@ -697,7 +658,7 @@ function GenerateFromPackButton({
         setReport(result)
       }
     } catch (error) {
-      toast.danger('从装箱清单获取失败', { description: (error as Error).message })
+      toastError('从装箱清单获取失败')(error)
     } finally {
       setBusy(false)
     }
@@ -1018,7 +979,7 @@ function PackLinesPanel({
             </Button>
           ) : undefined
         }
-        drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+        drawerClassName="w-full lg:w-[560px]"
         exclude={['deliveryId', 'companyId']}
         columns={['idx', 'materialName', 'unitName', 'qty', 'baseQty', 'remarks']}
         overrides={{
@@ -1230,7 +1191,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
-        toast.danger('发货明细加载失败', { description: (e as Error).message })
+        toastError('发货明细加载失败')(e)
         setItems([])
         setPackBoxes([])
         setPackLines([])
@@ -1594,6 +1555,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
                 mode={mode}
                 row={row}
                 values={values}
+                fields={ITEMS_RESET_FIELDS}
                 onReset={resetItems}
               />
               <SynieEditableTable
@@ -1628,7 +1590,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
                     />
                   )
                 }
-                drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+                drawerClassName="w-full lg:w-[560px]"
                 exclude={[
                   'deliveryId',
                   'companyId',

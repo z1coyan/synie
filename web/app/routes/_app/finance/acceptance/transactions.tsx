@@ -11,6 +11,8 @@ import {
   toast,
 } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
+import { toastError } from '~/lib/toast'
+import { AUDIT_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import {
@@ -50,7 +52,7 @@ const GRID_OVERRIDES = {
   amount: { mobileRole: 'summary', render: (v: unknown) => formatAmount(v) },
   status: {
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+    enumColors: AUDIT_DOC_STATUS_ENUM_COLORS,
   },
 } satisfies Record<string, ColumnOverride>
 
@@ -96,7 +98,7 @@ function BillTransactionsPage() {
       setAuditDialog(null)
       invalidateAcceptance()
     } catch (e) {
-      toast.danger('审核失败', { description: (e as Error).message })
+      toastError('审核失败')(e)
     } finally {
       setAuditing(false)
     }
@@ -111,7 +113,7 @@ function BillTransactionsPage() {
       setReallocateAuditDialog(null)
       invalidateAcceptance()
     } catch (e) {
-      toast.danger('审核失败', { description: (e as Error).message })
+      toastError('审核失败')(e)
     } finally {
       setReallocateAuditing(false)
     }

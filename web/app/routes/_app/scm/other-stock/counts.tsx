@@ -23,6 +23,10 @@ import {
   defaultCompanyId,
 } from '../-stock-doc'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { COUNT_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
+import { todayLocal } from '~/lib/form-defaults'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 
 export const Route = createFileRoute('/_app/scm/other-stock/counts')({
   component: StockCountsTab,
@@ -43,7 +47,7 @@ const GRID_OVERRIDES = {
   postingDate: { mobileRole: 'summary' },
   status: {
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', CANCELLED: 'danger' },
+    enumColors: COUNT_DOC_STATUS_ENUM_COLORS,
   },
   summary: { width: 240 },
 } satisfies Record<string, ColumnOverride>
@@ -54,12 +58,6 @@ const ACTION_VISIBLE = {
   edit: (row: Row) => row.status === 'DRAFT',
   delete: (row: Row) => row.status === 'DRAFT',
 } satisfies Record<string, (row: Row) => boolean>
-
-function todayLocal(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
 
 function itemInput(row: Row) {
   return {
@@ -117,7 +115,7 @@ function StockCountsTab() {
   const [loadAll, setLoadAll] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
+  const guard = useRequestGuard()
   // 物料选择缓存:选中整行按 id 暂存,transformItem 带出 code/name/spec 供行内物料富单元格展示
   const materialPickRef = useRef(new Map<string, Row>())
 
@@ -147,7 +145,7 @@ function StockCountsTab() {
 
   const openDrawer = useCallback(
     (mode: DrawerMode, row: Row | null) => {
-      const my = ++reqIdRef.current
+      const my = guard.begin()
       setDrawer({ mode, row })
       setLoadAll(false)
       if (mode === 'create') {
@@ -159,14 +157,14 @@ function StockCountsTab() {
       setDetailLoaded(false)
       fetchItems(row!.id)
         .then((rows) => {
-          if (my !== reqIdRef.current) return
+          if (!guard.isCurrent(my)) return
           setItems(rows)
           setItemsSnapshot(rows)
           setDetailLoaded(true)
         })
         .catch((e) => {
-          if (my !== reqIdRef.current) return
-          toast.danger('库存盘点单行加载失败', { description: (e as Error).message })
+          if (!guard.isCurrent(my)) return
+          toastError('库存盘点单行加载失败')(e)
           setItems([])
           setItemsSnapshot([])
         })
@@ -190,7 +188,7 @@ function StockCountsTab() {
       toast.success('账面数已刷新')
       invalidateGrids()
     } catch (e) {
-      toast.danger('刷新账面数失败', { description: (e as Error).message })
+      toastError('刷新账面数失败')(e)
     } finally {
       setRefreshing(false)
     }
@@ -313,7 +311,7 @@ function StockCountsTab() {
         isOpen={drawer !== null}
         onOpenChange={(open) => {
           if (open) return
-          reqIdRef.current++
+          guard.invalidate()
           setDrawer(null)
           setItems([])
           setItemsSnapshot([])
@@ -369,7 +367,7 @@ function StockCountsTab() {
                 (row != null && row.status !== 'DRAFT') ||
                 (mode !== 'create' && !detailLoaded)
               }
-              drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+              drawerClassName="w-full lg:w-[560px]"
               exclude={[
                 'countId',
                 'companyId',

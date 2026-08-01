@@ -5,6 +5,7 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { PAYROLL_PAYMENT_KIND_ENUM_COLORS } from '~/lib/doc-status'
 import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/hr/payroll/payments')({
@@ -21,7 +22,7 @@ const GRID_OVERRIDES = {
   paidOn: { mobileRole: 'summary' },
   kind: {
     mobileRole: 'summary',
-    enumColors: { NORMAL: 'success', SUPPLEMENT: 'accent' },
+    enumColors: PAYROLL_PAYMENT_KIND_ENUM_COLORS,
   },
 } satisfies Record<string, ColumnOverride>
 

@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertDialog, Button, toast } from '@heroui/react'
+import { AlertDialog, Button, Label, ListBox, Select, toast } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
+import { PAYROLL_SLIP_STATUS_ENUM_COLORS } from '~/lib/doc-status'
+import { todayLocal } from '~/lib/form-defaults'
+import { toastError } from '~/lib/toast'
 import {
   fetchPayrollMonthStats,
   generatePayrolls,
@@ -18,12 +21,50 @@ import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
-import { MonthSelect, monthOptions, today } from './-shared'
 import { PaymentsSection } from './-payments-section'
 
 export const Route = createFileRoute('/_app/hr/payroll/slips')({
   component: PayrollSlipsPage,
 })
+
+// 近 24 个月候选(照考勤月汇总先例;薪资数据从上线月起,更早无意义)
+function monthOptions(): { value: string; label: string }[] {
+  const now = new Date()
+  return Array.from({ length: 24 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    return { value, label: `${d.getFullYear()} 年 ${d.getMonth() + 1} 月` }
+  })
+}
+
+function MonthSelect(props: { value: string; onChange: (v: string) => void }) {
+  const options = monthOptions()
+
+  return (
+    <Select
+      className="w-full lg:w-44"
+      value={props.value}
+      onChange={(v) => v != null && props.onChange(String(v))}
+      aria-label="选择月份"
+    >
+      <Label>月份</Label>
+      <Select.Trigger>
+        <Select.Value />
+        <Select.Indicator />
+      </Select.Trigger>
+      <Select.Popover>
+        <ListBox>
+          {options.map((o) => (
+            <ListBox.Item key={o.value} id={o.value} textValue={o.label}>
+              {o.label}
+              <ListBox.ItemIndicator />
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </Select.Popover>
+    </Select>
+  )
+}
 
 // 未发差额(以行数据估算,仅作展示;实发金额由后端锁内权威计算)
 const remainingOf = (row: Row) => Number(row.payable || 0) - Number(row.paidTotal || 0)
@@ -52,7 +93,7 @@ const GRID_OVERRIDES = {
   payable: { mobileRole: 'subtitle' },
   status: {
     mobileRole: 'summary',
-    enumColors: { PENDING: 'warning', PAID: 'success' },
+    enumColors: PAYROLL_SLIP_STATUS_ENUM_COLORS,
   },
   paidTotal: { mobileRole: 'summary' },
   missingDays: {
@@ -106,7 +147,7 @@ function PayrollSlipsPage() {
       })
       invalidateAll()
     } catch (e) {
-      toast.danger('生成失败', { description: (e as Error).message })
+      toastError('生成失败')(e)
     } finally {
       setGenerating(false)
     }
@@ -121,7 +162,7 @@ function PayrollSlipsPage() {
 
     for (const row of targets) {
       try {
-        await payRemainingPayroll(row.id, today())
+        await payRemainingPayroll(row.id, todayLocal())
         done += 1
       } catch (e) {
         failures.push((e as Error).message)
@@ -142,7 +183,7 @@ function PayrollSlipsPage() {
       toast.success('已按当前考勤与员工档案重取快照')
       invalidateAll()
     } catch (e) {
-      toast.danger('重取快照失败', { description: (e as Error).message })
+      toastError('重取快照失败')(e)
     }
   }
 

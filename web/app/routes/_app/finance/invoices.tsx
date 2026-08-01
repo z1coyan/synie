@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
 import {
@@ -42,9 +44,9 @@ import {
   EXPENSE_ROLES,
   ExpenseRoleSelect,
   expenseRoleLabel,
-  findRoleAccounts,
   OTHER_PAYABLE_ROLE,
 } from './-expense-role'
+import { findRoleAccounts } from '~/lib/resources/accounts'
 import type { DrawerMode, FieldInputProps } from '~/components/synie-record-drawer/fields'
 import type { FilterState, LocalGridMeta, Row } from '~/components/synie-data-grid/types'
 
@@ -306,7 +308,7 @@ function ExpenseRoleAccountPicker({
             toast.success(`已按报销类型「${roleLabel}」带出金额/往来科目`)
           }
         } catch (e) {
-          toast.danger('按报销类型带科目失败', { description: (e as Error).message })
+          toastError('按报销类型带科目失败')(e)
         } finally {
           setBusy(false)
         }
@@ -517,7 +519,7 @@ function InvoicesPage() {
   const [itemsLoaded, setItemsLoaded] = useState(false)
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张发票的清单回填到当前发票
-  const reqIdRef = useRef(0)
+  const guard = useRequestGuard()
   // OCR 用图的裸文件 id:创建成功后补挂为附件,抽屉关闭即作废
   const ocrFileRef = useRef<string | null>(null)
 
@@ -550,7 +552,7 @@ function InvoicesPage() {
       setAuditDialog(null)
       await invoicePresentation.binding.cache.invalidateGrid(queryClient)
     } catch (e) {
-      toast.danger('审核失败', { description: (e as Error).message })
+      toastError('审核失败')(e)
     } finally {
       setAuditing(false)
     }
@@ -574,7 +576,7 @@ function InvoicesPage() {
       setReverseDialog(null)
       await invoicePresentation.binding.cache.invalidateGrid(queryClient)
     } catch (e) {
-      toast.danger('红冲失败', { description: (e as Error).message })
+      toastError('红冲失败')(e)
     } finally {
       setReversing(false)
     }
@@ -601,7 +603,7 @@ function InvoicesPage() {
       try {
         mirrorId = (await vatInvoiceClient.create(input)).id
       } catch (e) {
-        toast.danger('对向发票创建失败,请到对方公司手工登记', { description: (e as Error).message })
+        toastError('对向发票创建失败,请到对方公司手工登记')(e)
         return
       }
 
@@ -624,7 +626,7 @@ function InvoicesPage() {
   // 打开抽屉:create 清空清单;view/edit 按发票 id 拉 items(表单字段本身走 rowId 自查完整记录,
   // 见下方 SynieRecordDrawer——表格列是白名单子集,行数据不全,不能直接传 row)
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
-    const my = ++reqIdRef.current
+    const my = guard.begin()
     setDrawer({ mode, row })
     setCreateType(null)
     setPendingFiles([])
@@ -637,13 +639,13 @@ function InvoicesPage() {
     vatInvoiceClient
       .get(row.id)
       .then((record) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         setItems(parseItems(record?.items))
         setItemsLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('销售清单加载失败', { description: (e as Error).message })
+        if (!guard.isCurrent(my)) return
+        toastError('销售清单加载失败')(e)
         setItems([])
         setItemsLoaded(false)
       })
@@ -679,7 +681,7 @@ function InvoicesPage() {
         isOpen={drawer !== null}
         onOpenChange={(open) => {
           if (open) return
-          reqIdRef.current++
+          guard.invalidate()
           ocrFileRef.current = null
           setDrawer(null)
           setItems([])

@@ -9,6 +9,7 @@ import {
   importAttendanceImport,
 } from '~/lib/resources/hr-operations'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { toastError } from '~/lib/toast'
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 
@@ -194,7 +195,7 @@ export function AttendanceImportRecordDrawer({ importId, onOpenChange, onImporte
       await resourceBindingFor('hrAttendanceImports').cache.invalidateRow(queryClient)
       onImported()
     } catch (e) {
-      toast.danger('导入失败', { description: (e as Error).message })
+      toastError('导入失败')(e)
     } finally {
       setRunning(false)
     }
