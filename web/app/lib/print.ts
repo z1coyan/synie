@@ -1,7 +1,3 @@
-import type { ApiErrorBody } from '@synie/shared'
-import { APIError, api, apiData } from './api/client'
-import { AppError } from './errors'
-
 export interface PrintTemplateOption {
   id: string
   name: string
@@ -10,91 +6,88 @@ export interface PrintTemplateOption {
   remarks: string | null
 }
 
-export interface FieldCatalogEntry {
-  name: string
-  label: string
+export interface FieldCatalogEntry { name: string; label: string }
+export interface FieldCatalogLoop { name: string; label: string; fields: FieldCatalogEntry[] }
+export interface FieldCatalog { resource: string; fields: FieldCatalogEntry[]; loops: FieldCatalogLoop[] }
+
+export interface PrintJobSummary {
+  id: string
+  status: 'queued' | 'running' | 'succeeded' | 'retryable' | 'failed' | 'expired'
+  attempts: number
+  errorCode: string | null
+  filename: string
 }
 
-export interface FieldCatalogLoop {
-  name: string
-  label: string
-  fields: FieldCatalogEntry[]
+export interface PrintingSemanticOperations {
+  listResources(): Promise<{ resources: string[] }>
+  listTemplates(resource: string): Promise<PrintTemplateOption[]>
+  fieldCatalog(resource: string): Promise<FieldCatalog>
+  exportXlsx(input: { resource: string; ids: string[]; templateId: string; requestNonce: string }): Promise<{ url: string; filename: string }>
+  startPrint(input: { resource: string; ids: string[]; templateId: string; requestNonce: string }): Promise<PrintJobSummary>
+  resultUrl(jobId: string): Promise<{ url: string; filename: string }>
 }
 
-export interface FieldCatalog {
-  resource: string
-  fields: FieldCatalogEntry[]
-  loops: FieldCatalogLoop[]
+let operations: PrintingSemanticOperations | null = null
+
+export function activatePrintingSemanticOperations(next: PrintingSemanticOperations): void {
+  operations = next
 }
 
-export async function fetchPrintTemplates(resource: string): Promise<PrintTemplateOption[]> {
-  const data = await apiData(
-    api.printing.templates.$get({ query: { resource } }),
-  )
-  return data.results
+function printing(): PrintingSemanticOperations {
+  if (!operations) throw new Error('打印能力尚未由 Convex 应用壳装配')
+  return operations
 }
 
-export async function fetchFieldCatalog(resource: string): Promise<FieldCatalog> {
-  return apiData(
-    api.printing['field-catalog'].$get({ query: { resource } }),
-  )
+export function listPrintResources() {
+  return printing().listResources()
 }
 
-/** 调用后端打印/导出（契约端点 POST /printing/render）；返回 blob 与文件名。 */
-export async function runTemplateOutput(opts: {
-  resource: string
-  ids: string[]
-  templateId: string
-  mode: 'print' | 'export'
-}): Promise<{ blob: Blob; filename: string }> {
-  const response = await api.printing.render.$post({
-    json: {
-      resource: opts.resource,
-      ids: opts.ids,
-      templateId: opts.templateId,
-      mode: opts.mode,
-    },
-  })
-  if (!response.ok) {
-    let envelope: ApiErrorBody | undefined
-    try {
-      envelope = (await response.json()) as ApiErrorBody
-    } catch {
-      // 非 JSON
-    }
-    if (envelope?.error) throw new APIError(envelope.error, response.status)
-    throw new AppError(`打印/导出失败: ${response.status}`, ['http_error'])
+export function fetchPrintTemplates(resource: string): Promise<PrintTemplateOption[]> {
+  return printing().listTemplates(resource)
+}
+
+export function fetchFieldCatalog(resource: string): Promise<FieldCatalog> {
+  return printing().fieldCatalog(resource)
+}
+
+export function exportTemplateXlsx(input: {
+  resource: string; ids: string[]; templateId: string; requestNonce: string
+}) {
+  return printing().exportXlsx(input)
+}
+
+export function startTemplatePrint(input: {
+  resource: string; ids: string[]; templateId: string; requestNonce: string
+}) {
+  return printing().startPrint(input)
+}
+
+export function fetchPrintResultUrl(jobId: string) {
+  return printing().resultUrl(jobId)
+}
+
+export function downloadSignedUrl(url: string, filename: string): void {
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.rel = 'noopener'
+  anchor.click()
+}
+
+export function openPdfUrl(url: string): boolean {
+  const win = window.open(url, '_blank', 'noopener')
+  return Boolean(win)
+}
+
+export function printErrorMessage(code: string | null | undefined): string {
+  switch (code) {
+    case 'worker_unavailable': return 'PDF 转换服务暂不可用，请改用导出 Excel 或稍后重试'
+    case 'busy': return 'PDF 转换服务繁忙，请稍后重试'
+    case 'timeout': return 'PDF 转换超时，请减少批量条数或稍后重试'
+    case 'input_mismatch': return '打印模板文件校验失败，请联系管理员'
+    case 'output_failed': return 'PDF 结果保存失败，请稍后重试'
+    case 'convert_failed': return 'PDF 转换失败，请检查模板版式'
+    case 'input_expired': return '打印任务已过期，请重新发起'
+    default: return 'PDF 生成失败，请稍后重试'
   }
-
-  const cd = response.headers.get('content-disposition') || ''
-  const m = /filename="([^"]+)"/.exec(cd)
-  const filename = m
-    ? decodeURIComponent(m[1]!)
-    : opts.mode === 'print'
-      ? 'print.pdf'
-      : 'export.xlsx'
-  const blob = await response.blob()
-  return { blob, filename }
-}
-
-export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-/** 打开 PDF blob（弹窗拦截时返回 false）。 */
-export function openPdfBlob(blob: Blob): boolean {
-  const url = URL.createObjectURL(blob)
-  const win = window.open(url, '_blank')
-  if (!win) {
-    URL.revokeObjectURL(url)
-    return false
-  }
-  // 延迟 revoke 给浏览器加载时间
-  setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  return true
 }

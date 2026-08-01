@@ -1,5 +1,8 @@
 # ADR：打印模板与单据打印/导出管线
 
+> 执行面已由 [Convex 调度 + TanStack Start PDF Worker](2026-07-31-convex-print-worker.md)
+> 修订；本文的单 xlsx、页面设置、100 条上限、不留打印历史与导出降级语义仍有效。
+
 2026-07-23，拷问访谈定案。
 
 - **Excel 模板填充 + LibreOffice 转 PDF，一条引擎两个产物**：打印=填充后 xlsx 经 LibreOffice headless（`soffice --convert-to pdf`）转 PDF 交浏览器；导出=同一份填充结果直接下载 xlsx。拒绝「打印走前端 HTML 版式、导出走 Excel」双版式体系——同一单据维护两套模板必漂移；拒绝前端 SheetJS 渲 HTML 打印——丢打印区域/页眉页脚等关键版式。

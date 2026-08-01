@@ -15,7 +15,7 @@ interface StatusToggleBase {
 }
 
 export type StatusToggleOptions = StatusToggleBase & {
-  /** 资源通过 REST ResourceClient 更新。 */
+  /** 资源通过当前 ResourceBinding 更新。 */
   update: (id: string, input: Record<string, unknown>) => Promise<unknown>
 }
 

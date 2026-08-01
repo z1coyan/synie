@@ -1,7 +1,9 @@
 import type { SortState } from './types'
 
-/** REST 资源 id 白名单；非法值不参与远程查询。 */
-export const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+/** Convex opaque ID 门槛：仅要求非空且不接受隐式 trim。 */
+export function isOpaqueResourceId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value === value.trim()
+}
 
 /** 表头点击三态循环：顺序 → 逆序 → 取消排序。 */
 export function nextSort(prev: SortState | null, column: string, direction: SortState['direction']): SortState | null {

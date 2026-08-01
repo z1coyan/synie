@@ -1,139 +1,180 @@
 #!/usr/bin/env bun
 /**
- * 一键本地开发启动：
- * 1. 确保 server/.env
- * 2. docker compose up -d postgres 并等待就绪
- * 3. 执行 SQL 迁移（不 seed）
- * 4. turbo 并行启动 @synie/server + synie-web
+ * 唯一本地开发入口：
+ * 1. 启动 PostgreSQL 17 + MinIO + 自托管 Convex + dashboard
+ * 2. 校验基础设施并在首次启动时安全生成本地 admin key
+ * 3. 并行启动 Convex function watcher 与 TanStack Start
  *
  * 用法：
  *   bun run dev
- *   bun run dev -- --no-docker   # 已有本机 PG 时跳过 compose
+ *   bun run dev -- --no-docker   # 全部自托管 Convex/S3 依赖由操作者提供
  *
- * 管理员 / 示例数据请走初始化向导；开发复位：bun run db:reset
+ * 停止本地基础设施使用 `bun run infra:down`；该命令不删除 volume。
  */
-import { copyFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
-import { $ } from 'bun'
-
-const root = join(import.meta.dir, '..')
-process.chdir(root)
+import { checkInfra } from '../infra/convex/health.ts'
+import { hostWebEnv } from '../infra/convex/host-web-env.ts'
+import {
+  localConvexEnv,
+  log as infraLog,
+  run,
+  runCompose,
+  waitForHttp,
+} from '../infra/convex/lib.ts'
 
 const args = new Set(process.argv.slice(2))
 const noDocker = args.has('--no-docker')
 
-const DEFAULT_DATABASE_URL =
-  process.env.DATABASE_URL ??
-  'postgres://synie:synie@localhost:5441/synie?sslmode=disable'
-
-function log(msg: string) {
-  console.log(`[synie:dev] ${msg}`)
+function log(message: string) {
+  console.log(`[synie:dev] ${message}`)
 }
 
-function ensureServerEnv() {
-  const envPath = join(root, 'server/.env')
-  const example = join(root, 'server/.env.example')
-  if (!existsSync(envPath)) {
-    if (!existsSync(example)) {
-      throw new Error('缺少 server/.env 与 server/.env.example')
-    }
-    copyFileSync(example, envPath)
-    log('已从 server/.env.example 生成 server/.env')
-  }
+function requiredExternalEnvironment(env: NodeJS.ProcessEnv): string[] {
+  return [
+    'CONVEX_SELF_HOSTED_URL',
+    'CONVEX_SELF_HOSTED_SITE_URL',
+    'CONVEX_SELF_HOSTED_ADMIN_KEY',
+    'VITE_CONVEX_URL',
+    'VITE_CONVEX_SITE_URL',
+    'SYNIE_S3_INTERNAL_ENDPOINT',
+    'SYNIE_S3_PUBLIC_ENDPOINT',
+    'AWS_ACCESS_KEY_ID',
+    'AWS_SECRET_ACCESS_KEY',
+  ].filter((name) => !env[name])
 }
 
-async function waitPostgres(maxAttempts = 60) {
-  for (let i = 1; i <= maxAttempts; i++) {
-    const r =
-      await $`docker compose exec -T postgres pg_isready -U synie -d synie`.quiet().nothrow()
-    if (r.exitCode === 0) {
-      log('PostgreSQL 就绪')
-      return
+async function assertExternalS3Reachable(endpoint: string): Promise<void> {
+  let lastError = ''
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try {
+      const response = await fetch(endpoint, { redirect: 'manual' })
+      if (response.status < 500) return
+      lastError = `HTTP ${response.status}`
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
     }
-    if (i === maxAttempts) {
-      throw new Error('等待 PostgreSQL 超时，请检查 docker compose logs postgres')
-    }
-    await Bun.sleep(500)
+    await Bun.sleep(1_000)
   }
+  throw new Error(`外部 S3 不可达 (${endpoint}): ${lastError}`)
+}
+
+async function ensureLocalCredentials(): Promise<NodeJS.ProcessEnv> {
+  let env = localConvexEnv()
+  if (env.CONVEX_SELF_HOSTED_URL && env.CONVEX_SELF_HOSTED_ADMIN_KEY) return env
+
+  log('首次启动：生成本地 Convex admin key…')
+  await run(['bun', 'run', 'convex:bootstrap'])
+  env = localConvexEnv()
+  if (!env.CONVEX_SELF_HOSTED_URL || !env.CONVEX_SELF_HOSTED_ADMIN_KEY) {
+    throw new Error('convex:bootstrap 未生成完整的 .env.local')
+  }
+  return env
 }
 
 async function main() {
-  log(`仓库根目录 ${root}`)
-  ensureServerEnv()
-
-  process.env.DATABASE_URL = DEFAULT_DATABASE_URL
-  process.env.AUTH_SECRET ??= 'local-development-secret-change-me-32-bytes'
-
   if (!noDocker) {
-    log('启动 PostgreSQL（docker compose up -d postgres）…')
-    const up = await $`docker compose up -d postgres`.nothrow()
-    if (up.exitCode !== 0) {
-      throw new Error(
-        'docker compose 启动 postgres 失败。确认 Docker 已运行，或使用: bun run dev -- --no-docker',
-      )
+    log('启动自托管 Convex、PostgreSQL 与 MinIO…')
+    await runCompose([
+      'up',
+      '-d',
+      'convex-postgres',
+      'minio',
+      'minio-public',
+      'minio-init',
+      'convex-backend',
+      'convex-dashboard',
+    ])
+    await checkInfra()
+  }
+
+  const env = noDocker ? localConvexEnv() : await ensureLocalCredentials()
+  if (noDocker) {
+    const missing = requiredExternalEnvironment(env)
+    if (missing.length > 0) {
+      throw new Error(`--no-docker 缺少显式外部依赖配置：${missing.join('、')}`)
     }
-    await waitPostgres()
-  } else {
-    log('跳过 Docker（--no-docker），使用已有 DATABASE_URL')
+    log('跳过 Docker，检查操作者提供的 Convex 与 S3…')
+    await waitForHttp(
+      '外部 Convex',
+      `${env.CONVEX_SELF_HOSTED_URL!.replace(/\/$/, '')}/version`,
+    )
+    await assertExternalS3Reachable(env.SYNIE_S3_PUBLIC_ENDPOINT!)
   }
 
-  log('执行数据库迁移（不 seed）…')
-  const mig = await $`bun run --filter @synie/server db:migrate`.nothrow()
-  if (mig.exitCode !== 0) {
-    throw new Error('迁移失败，请检查 DATABASE_URL 与 Postgres')
-  }
+  const webPort = env.WEB_PORT ?? '3000'
+  const webEnv = hostWebEnv(env)
+  const webUrl = env.VITE_SITE_URL ?? `http://127.0.0.1:${webPort}`
+  const convexUrl = env.VITE_CONVEX_URL ?? env.CONVEX_SELF_HOSTED_URL
+  const convexSiteUrl = env.VITE_CONVEX_SITE_URL ?? env.CONVEX_SELF_HOSTED_SITE_URL
+  const dashboardPort = env.CONVEX_DASHBOARD_PORT ?? '6791'
+  const minioPort = env.MINIO_API_PORT ?? '9000'
+  const minioUrl =
+    env.SYNIE_S3_PUBLIC_ENDPOINT ?? `http://127.0.0.1:${minioPort}`
+  const minioConsolePort = env.MINIO_CONSOLE_PORT ?? '9001'
 
-  log('Turbo 并行启动 server(:8080) + web(:3000)…')
-  log('  API healthz → http://localhost:8080/api/v1/healthz')
-  log('  前端        → http://localhost:3000  （/api/v1 代理到 8080）')
+  log('启动 Convex function watcher 与 TanStack Start…')
+  log(`  Web       → ${webUrl}`)
+  log(`  Convex    → ${convexUrl}`)
+  log(`  Auth site → ${convexSiteUrl}`)
+  if (!noDocker) {
+    log(`  Dashboard → http://127.0.0.1:${dashboardPort}`)
+    log(`  MinIO     → ${minioUrl} (console: http://127.0.0.1:${minioConsolePort})`)
+  }
   log('  停止：Ctrl+C')
 
-  // turbo 负责常驻 dev；继承当前 env（DATABASE_URL / AUTH_SECRET）
-  const turbo = Bun.spawn(
-    [
-      'bunx',
-      'turbo',
-      'run',
-      'dev',
-      '--filter=@synie/server',
-      '--filter=synie-web',
-      '--ui=tui',
-    ],
+  const children = [
     {
-      cwd: root,
-      env: {
-        ...process.env,
-        DATABASE_URL: process.env.DATABASE_URL,
-        AUTH_SECRET: process.env.AUTH_SECRET,
-        // API：server/.env 或下列默认（HOST 默认 0.0.0.0）
-        PORT: process.env.PORT ?? '8080',
-        HOST: process.env.HOST ?? '0.0.0.0',
-        // 前端端口独立，避免吃到 API 的 PORT
-        WEB_PORT: process.env.WEB_PORT ?? '3000',
-        WEB_HOST: process.env.WEB_HOST ?? process.env.HOST ?? '0.0.0.0',
-        SYNIE_API_PORT: process.env.SYNIE_API_PORT ?? process.env.PORT ?? '8080',
-      },
-      stdin: 'inherit',
-      stdout: 'inherit',
-      stderr: 'inherit',
+      name: 'Convex watcher',
+      process: Bun.spawn(['bunx', 'convex', 'dev'], {
+        env,
+        stdin: 'inherit',
+        stdout: 'inherit',
+        stderr: 'inherit',
+      }),
     },
-  )
+    {
+      name: 'TanStack Start',
+      process: Bun.spawn(['bun', 'run', '--filter', 'synie-web', 'dev'], {
+        env: {
+          ...webEnv,
+          WEB_HOST: env.WEB_HOST ?? '0.0.0.0',
+          WEB_PORT: webPort,
+        },
+        stdin: 'inherit',
+        stdout: 'inherit',
+        stderr: 'inherit',
+      }),
+    },
+  ]
 
-  const shutdown = () => {
-    try {
-      turbo.kill()
-    } catch {
-      /* ignore */
+  let stopping = false
+  const stop = () => {
+    if (stopping) return
+    stopping = true
+    for (const child of children) {
+      try {
+        child.process.kill('SIGTERM')
+      } catch {
+        // 子进程可能已经退出。
+      }
     }
   }
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', stop)
+  process.on('SIGTERM', stop)
 
-  const code = await turbo.exited
-  process.exit(code)
+  const result = await Promise.race(
+    children.map(async (child) => ({
+      name: child.name,
+      exitCode: await child.process.exited,
+    })),
+  )
+  stop()
+  await Promise.all(children.map((child) => child.process.exited))
+  if (!stopping || result.exitCode !== 0) {
+    throw new Error(`${result.name} 退出（code=${result.exitCode}）`)
+  }
 }
 
-main().catch((err) => {
-  console.error('[synie:dev] 失败:', err instanceof Error ? err.message : err)
+main().catch((error) => {
+  infraLog(`开发环境启动失败：${error instanceof Error ? error.message : error}`)
   process.exit(1)
 })

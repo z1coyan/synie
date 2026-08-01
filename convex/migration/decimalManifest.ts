@@ -1,0 +1,195 @@
+export type DecimalStorageScale = 2 | 4 | 6
+
+export type DecimalMigrationEntry = {
+  legacyColumn: string
+  scale: DecimalStorageScale
+  storage: 'int64'
+  maxAbsWire: string
+  maxAbsScaled: bigint
+  storageAllowsNegative: true
+}
+
+/** All unconstrained PostgreSQL numeric columns across the six legacy migrations. */
+export const legacyNumericColumns = [
+  'acc_bank_import_item.balance',
+  'acc_bank_import_item.expense',
+  'acc_bank_import_item.income',
+  'acc_bank_reconciliation.amount',
+  'acc_bank_transaction.balance',
+  'acc_bank_transaction.expense',
+  'acc_bank_transaction.income',
+  'acc_bank_transaction.reconciled_amount',
+  'acc_bank_transaction.unreconciled_amount',
+  'acc_bill.face_amount',
+  'acc_bill_holding.amount',
+  'acc_bill_transaction.amount',
+  'acc_bill_transaction.discount_rate',
+  'acc_bill_transaction.interest',
+  'acc_bill_transaction.net_amount',
+  'acc_expense_report_item.amount',
+  'acc_gl_entry.credit',
+  'acc_gl_entry.debit',
+  'acc_gl_journal_line.credit',
+  'acc_gl_journal_line.debit',
+  'acc_vat_invoice.gross_total',
+  'acc_vat_invoice.net_total',
+  'acc_vat_invoice.tax_total',
+  'bas_market_price_point.price',
+  'bas_unit.ratio',
+  'hr_attendance_day.bonus_workday',
+  'hr_attendance_day.normal_hours',
+  'hr_attendance_day.overtime_hours',
+  'hr_employee_loan.amount',
+  'hr_employees.daily_wage',
+  'hr_employees.monthly_allowance',
+  'hr_payroll.allowance',
+  'hr_payroll.base_amount',
+  'hr_payroll.bonus',
+  'hr_payroll.daily_wage',
+  'hr_payroll.fine',
+  'hr_payroll.loan_deduction',
+  'hr_payroll.overtime_hours',
+  'hr_payroll.payable',
+  'hr_payroll.workdays',
+  'hr_payroll_payment.amount',
+  'inv_material_unit.factor',
+  'inv_stock_count_item.book_quantity',
+  'inv_stock_count_item.converted_counted',
+  'inv_stock_count_item.counted_quantity',
+  'inv_stock_doc_item.base_qty',
+  'inv_stock_doc_item.qty',
+  'inv_stock_entry.quantity',
+  'inv_stock_transfer_item.base_qty',
+  'inv_stock_transfer_item.qty',
+  'inv_stock_transfer_item.received_qty',
+  'mfg_bom_byproduct.quantity',
+  'mfg_bom_component.loss_rate',
+  'mfg_bom_component.quantity',
+  'mfg_demand_arrangement.base_qty',
+  'mfg_demand_arrangement.qty',
+  'mfg_demand_item.base_qty',
+  'mfg_demand_item.ordered_qty',
+  'mfg_demand_item.qty',
+  'mfg_demand_item.received_qty',
+  'mfg_output_item.base_qty',
+  'mfg_output_item.qty',
+  'mfg_setting.output_overreceive_ratio',
+  'mfg_work_order.base_qty',
+  'mfg_work_order.qty',
+  'mfg_work_order.received_base_qty',
+  'mfg_work_order_byproduct.quantity',
+  'mfg_work_order_component.loss_rate',
+  'mfg_work_order_component.quantity',
+  'pur_order.exchange_rate',
+  'pur_order_item.amount',
+  'pur_order_item.base_amount',
+  'pur_order_item.base_price',
+  'pur_order_item.base_qty',
+  'pur_order_item.price',
+  'pur_order_item.qty',
+  'pur_order_item.received_qty',
+  'pur_order_item.tax_rate',
+  'pur_order_item_byproduct.quantity',
+  'pur_order_item_material.issued_qty',
+  'pur_order_item_material.quantity',
+  'pur_outsourced_issue_item.base_qty',
+  'pur_outsourced_issue_item.qty',
+  'pur_outsourced_receipt_item.base_qty',
+  'pur_outsourced_receipt_item.order_amount',
+  'pur_outsourced_receipt_item.order_base_amount',
+  'pur_outsourced_receipt_item.order_base_price',
+  'pur_outsourced_receipt_item.order_base_qty',
+  'pur_outsourced_receipt_item.order_price',
+  'pur_outsourced_receipt_item.order_qty',
+  'pur_outsourced_receipt_item.order_tax_rate',
+  'pur_outsourced_receipt_item.qty',
+  'pur_outsourced_receipt_item.reconciled_qty',
+  'pur_outsourced_receipt_item_byproduct.base_qty',
+  'pur_outsourced_receipt_item_byproduct.qty',
+  'pur_outsourced_receipt_item_material.base_qty',
+  'pur_outsourced_receipt_item_material.qty',
+  'pur_quotation_item.price',
+  'pur_quotation_item.tax_rate',
+  'pur_quotation_tier.min_qty',
+  'pur_quotation_tier.price',
+  'pur_receipt_item.base_qty',
+  'pur_receipt_item.order_amount',
+  'pur_receipt_item.order_base_amount',
+  'pur_receipt_item.order_base_price',
+  'pur_receipt_item.order_base_qty',
+  'pur_receipt_item.order_price',
+  'pur_receipt_item.order_qty',
+  'pur_receipt_item.order_tax_rate',
+  'pur_receipt_item.qty',
+  'pur_receipt_item.reconciled_qty',
+  'pur_reconciliation_item.amount',
+  'pur_reconciliation_item.base_amount',
+  'pur_reconciliation_item.base_qty',
+  'pur_reconciliation_item.qty',
+  'sal_delivery_item.base_qty',
+  'sal_delivery_item.order_amount',
+  'sal_delivery_item.order_base_amount',
+  'sal_delivery_item.order_base_price',
+  'sal_delivery_item.order_base_qty',
+  'sal_delivery_item.order_price',
+  'sal_delivery_item.order_qty',
+  'sal_delivery_item.order_tax_rate',
+  'sal_delivery_item.qty',
+  'sal_delivery_item.reconciled_qty',
+  'sal_delivery_pack_line.base_qty',
+  'sal_delivery_pack_line.qty',
+  'sal_order.exchange_rate',
+  'sal_order_item.amount',
+  'sal_order_item.base_amount',
+  'sal_order_item.base_price',
+  'sal_order_item.base_qty',
+  'sal_order_item.price',
+  'sal_order_item.qty',
+  'sal_order_item.shipped_qty',
+  'sal_order_item.tax_rate',
+  'sal_quotation_item.price',
+  'sal_quotation_item.tax_rate',
+  'sal_quotation_tier.min_qty',
+  'sal_quotation_tier.price',
+  'sal_reconciliation_item.amount',
+  'sal_reconciliation_item.base_amount',
+  'sal_reconciliation_item.base_qty',
+  'sal_reconciliation_item.qty',
+  'sal_setting.delivery_overship_ratio',
+  'sal_setting.demand_overorder_ratio',
+  'sal_setting.receipt_overreceive_ratio',
+  'sys_todo.amount',
+] as const
+
+const MONEY_COLUMN = /(?:^|_)(?:amount|balance|income|expense|debit|credit|interest|allowance|bonus|fine|payable|wage|total)$/
+const PRICE_COLUMN = /(?:^|_)price$/
+
+export function decimalScaleForLegacyColumn(legacyColumn: string): DecimalStorageScale {
+  const column = legacyColumn.slice(legacyColumn.lastIndexOf('.') + 1)
+  if (PRICE_COLUMN.test(column)) return 4
+  if (MONEY_COLUMN.test(column)) return 2
+  return 6
+}
+
+const BOUNDS: Record<DecimalStorageScale, string> = {
+  2: '90000000000000',
+  4: '900000000000',
+  6: '9000000000',
+}
+
+/**
+ * Every bound encodes to at most 9e15, leaving >1000x headroom under int64 max.
+ * Business guards may narrow sign/range; storage remains signed for reversals.
+ */
+export const decimalManifest: readonly DecimalMigrationEntry[] =
+  legacyNumericColumns.map((legacyColumn) => {
+    const scale = decimalScaleForLegacyColumn(legacyColumn)
+    return {
+      legacyColumn,
+      scale,
+      storage: 'int64',
+      maxAbsWire: BOUNDS[scale],
+      maxAbsScaled: 9_000_000_000_000_000n,
+      storageAllowsNegative: true,
+    }
+  })

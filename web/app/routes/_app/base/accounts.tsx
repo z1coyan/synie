@@ -9,9 +9,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import { accountClient, initializeAccountTemplate } from '~/lib/resources/accounts'
-import { companyClient } from '~/lib/resources/companies'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import { useResourceBinding } from '~/lib/resources/resource-context'
 import {
   createAccountPresentation,
   submitAccountForm,
@@ -43,15 +41,12 @@ function AccountsPage() {
   const [initializing, setInitializing] = useState(false)
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const companyBinding = useResourceBinding('basCompanies')
+  const accountBinding = useResourceBinding('basAccounts')
 
   const companies = useQuery({
-    queryKey: ['accountsCompanies', companyClient.id],
-    queryFn: () =>
-      companyClient.query({
-        limit: 50,
-        offset: 0,
-        sort: { column: 'code', direction: 'ascending' },
-      }),
+    queryKey: companyBinding.cache.gridKey('accounts-company-picker'),
+    queryFn: () => companyBinding.reader.query({ profile: 'default', numItems: 50, cursor: null }),
   })
 
   useEffect(() => {
@@ -64,20 +59,14 @@ function AccountsPage() {
   }, [companies.data, companyId])
 
   const accountCount = useQuery({
-    queryKey: ['accountsCount', accountClient.id, companyId, reloadKey],
+    queryKey: accountBinding.cache.gridKey('count', companyId, reloadKey),
     enabled: companyId != null,
     queryFn: () =>
-      accountClient
-        .query({
-          limit: 1,
-          offset: 0,
-          fixedFilter: companyFilter(companyId!),
-        })
-        .then((result) => result.count),
+      accountBinding.reader.query({ profile: 'default', numItems: 1, cursor: null, fixedFilter: companyFilter(companyId!) }).then((result) => result.totalCount ?? result.results.length),
   })
 
   const refresh = () => {
-    void resourceBindingFor('basAccounts').cache.invalidateGrid(queryClient)
+    void accountBinding.cache.invalidateGrid(queryClient)
     setReloadKey((key) => key + 1)
   }
 
@@ -86,7 +75,11 @@ function AccountsPage() {
     setInitializing(true)
     const id = toast('正在初始化科目表…', { isLoading: true, timeout: 0 })
     try {
-      const result = await initializeAccountTemplate(companyId, template)
+      if (!accountBinding.commands) throw new Error('科目表未绑定初始化命令')
+      const result = await accountBinding.commands.execute(
+        'initializeTemplate',
+        { companyId, template },
+      ) as { createdCount: number }
       toast.close(id)
       toast.success(`已创建 ${result.createdCount} 个科目`)
       refresh()
@@ -177,7 +170,10 @@ function AccountsPage() {
             onEdit={(row) => setDrawer({ mode: 'edit', row })}
             rowActions={statusToggleActions({
               field: 'active',
-              update: accountClient.update,
+              update: (id, input) => {
+                if (!accountBinding.writer || !('update' in accountBinding.writer) || !accountBinding.writer.update) throw new Error('科目不支持 update')
+                return accountBinding.writer.update(id, input)
+              },
               onDone: refresh,
             })}
           />
@@ -202,7 +198,7 @@ function AccountDrawer(props: {
   onEdit: () => void
   onSaved: () => void
 }) {
-  const binding = resourceBindingFor('basAccounts')
+  const binding = useResourceBinding('basAccounts')
   const presentation = createAccountPresentation(binding, {
     companyId: props.companyId,
     companyFilter:

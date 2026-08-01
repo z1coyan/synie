@@ -2,9 +2,8 @@ import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, toast } from '@heroui/react'
-import { materialClient, materialUnitClient } from '~/lib/resources/inventory'
-import { unitClient } from '~/lib/resources/units'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import { useResourceBinding } from '~/lib/resources/resource-context'
+import type { ResourceBinding } from '~/lib/resources/catalog'
 import {
   createMaterialPresentation,
   submitMaterialForm,
@@ -20,6 +19,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { readResourceRowsBounded } from '~/lib/resources/bounded-reader'
 
 export const Route = createFileRoute('/_app/scm/materials')({
   component: MaterialsPage,
@@ -35,7 +35,7 @@ function unitChanged(before: Row, after: Row): boolean {
 }
 
 /** 转换行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy(同凭证分录行先例) */
-async function persistUnits(materialId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
+async function persistUnits(binding: ResourceBinding, materialId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
   const unitLabel = (row: Row) => (row.unit as Row | undefined)?.name ?? '转换行'
   const attempt = async (row: Row, operation: () => Promise<unknown>) => {
@@ -49,17 +49,26 @@ async function persistUnits(materialId: string, current: Row[], snapshot: Row[])
 
   for (const old of snapshot) {
     if (currentIds.has(old.id)) continue
-    await attempt(old, () => materialUnitClient.delete(old.id))
+    await attempt(old, async () => {
+      if (!binding.writer || !('delete' in binding.writer) || !binding.writer.delete) throw new Error('单位转换不支持 delete')
+      await binding.writer.delete(String(old.id))
+    })
   }
 
   for (const row of current) {
     if (isLocalRow(row)) {
-      await attempt(row, () => materialUnitClient.create({ materialId, ...unitInput(row) }))
+      await attempt(row, () => {
+        if (!binding.writer || !('create' in binding.writer) || !binding.writer.create) throw new Error('单位转换不支持 create')
+        return binding.writer.create({ materialId, ...unitInput(row) })
+      })
       continue
     }
     const old = snapshot.find((s) => s.id === row.id)
     if (old && unitChanged(old, row)) {
-      await attempt(row, () => materialUnitClient.update(row.id, unitInput(row)))
+      await attempt(row, () => {
+        if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) throw new Error('单位转换不支持 update')
+        return binding.writer.update(String(row.id), unitInput(row))
+      })
     }
   }
   return errors
@@ -108,17 +117,19 @@ function MaterialsPage() {
   const queryClient = useQueryClient()
   // 请求守卫:防止慢响应把上一条物料的转换行回填到当前物料(同凭证页先例)
   const reqIdRef = useRef(0)
-  const materialPresentation = createMaterialPresentation(resourceBindingFor('invMaterials'))
+  const materialBinding = useResourceBinding('invMaterials')
+  const materialUnitBinding = useResourceBinding('invMaterialUnits')
+  const unitBinding = useResourceBinding('basUnits')
+  const materialPresentation = createMaterialPresentation(materialBinding)
 
   // 单位名称表:单位转换 tab 的「基准单位」提示按默认单位 id 反查名称
   const { data: unitNames } = useQuery({
-    queryKey: ['basUnitNames'],
-    queryFn: () =>
-      unitClient.query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'name', direction: 'ascending' },
-      }).then((result) => result.results),
+    queryKey: unitBinding.cache.gridKey('material-unit-names'),
+    queryFn: () => readResourceRowsBounded(
+      unitBinding.reader,
+      { profile: 'default' },
+      200,
+    ),
     enabled: drawer !== null,
     staleTime: 60_000,
   })
@@ -136,16 +147,25 @@ function MaterialsPage() {
       return
     }
     setUnitsLoaded(false)
-    materialUnitClient.query({
-      limit: 200,
-      offset: 0,
-      sort: { column: 'insertedAt', direction: 'ascending' },
-      filter: { materialId: { kind: 'fk', op: 'in', values: [row.id], labels: [] } },
-    })
+    readResourceRowsBounded(
+      materialUnitBinding.reader,
+      {
+        profile: 'default',
+        fixedFilter: {
+          materialId: {
+            kind: 'fk',
+            op: 'in',
+            values: [row.id],
+            labels: [],
+          },
+        },
+      },
+      200,
+    )
       .then((result) => {
         if (my !== reqIdRef.current) return
-        setUnits(result.results)
-        setUnitsSnapshot(result.results)
+        setUnits(result)
+        setUnitsSnapshot(result)
         setUnitsLoaded(true)
       })
       .catch((e) => {
@@ -200,10 +220,13 @@ function MaterialsPage() {
           onEdit={(row) => openDrawer('edit', row)}
           rowActions={statusToggleActions({
             field: 'active',
-            update: materialClient.update,
+            update: (id, input) => {
+              if (!materialBinding.writer || !('update' in materialBinding.writer) || !materialBinding.writer.update) throw new Error('物料不支持 update')
+              return materialBinding.writer.update(id, input)
+            },
             // 抽屉走 rowId 自查,状态翻转后一并失效行缓存
             onDone: () =>
-              resourceBindingFor('invMaterials').cache.invalidateRow(queryClient),
+              materialBinding.cache.invalidateRow(queryClient),
           })}
         />
       </div>
@@ -302,7 +325,7 @@ function MaterialsPage() {
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const materialId = await submitMaterialForm(materialPresentation, values, mode, undefined)
-            const unitErrors = await persistUnits(materialId, units, [])
+            const unitErrors = await persistUnits(materialUnitBinding, materialId, units, [])
             // 暂存附件按槽位统一挂接;个别失败不阻断建料,提示手工补传即可
             const failed: string[] = []
             for (const { file, category } of [
@@ -323,18 +346,18 @@ function MaterialsPage() {
             } else if (failed.length === 0) {
               toast.success('物料已创建')
             }
-            await resourceBindingFor('invMaterials').cache.invalidateAll(queryClient)
+            await materialBinding.cache.invalidateAll(queryClient)
             return materialId
           }
           const materialId = String(drawer!.row!.id)
           await submitMaterialForm(materialPresentation, values, mode, materialId)
-          const unitErrors = await persistUnits(materialId, units, unitsSnapshot)
+          const unitErrors = await persistUnits(materialUnitBinding, materialId, units, unitsSnapshot)
           if (unitErrors.length > 0) {
             toast.danger('物料已更新,但部分单位转换保存失败', { description: unitErrors.join('; ') })
           } else {
             toast.success('物料已更新')
           }
-          await resourceBindingFor('invMaterials').cache.invalidateAll(queryClient)
+          await materialBinding.cache.invalidateAll(queryClient)
           return materialId
         }}
       />

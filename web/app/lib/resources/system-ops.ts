@@ -1,8 +1,5 @@
-import { api, apiData } from '../api/client'
 import { isForbidden } from '../errors'
-import type { Row } from '~/components/synie-data-grid/types'
-import { resourceListBody } from './resource-wire'
-import type { ResourceTransport } from './types'
+import { unboundResourceClient } from './unbound'
 
 export type TodoTab = 'active' | 'history' | 'recent'
 export type TodoType = string
@@ -18,7 +15,7 @@ export interface SysTodo {
   partyType: string
   partyId: string
   partyName: string
-    company?: { name?: string | null; shortName?: string | null } | null
+  company?: { name?: string | null; shortName?: string | null } | null
   amount: string
   status: TodoStatus
   closedReason: TodoClosedReason
@@ -36,46 +33,34 @@ export interface TodoList {
   results: SysTodo[]
 }
 
-const listWireOptions = {
-  resourceLabel: '审计日志',
-  extraFields: 'reject',
-  joinFields: 'reject',
-} as const
-
-export const auditLogClient: ResourceTransport = {
-  id: 'rest:sysAuditLogs',
-
-  async query(input) {
-    const result = await apiData(
-      api.system['audit-logs'].query.$post({
-        json: resourceListBody(input, listWireOptions),
-      }),
-    )
-    return { count: result.count, results: result.results }
-  },
-
-  async get(id) {
-    return (await apiData(
-      api.system['audit-logs'][':id'].$get({
-        param: { id },
-      }),
-    )) as Row
-  },
-
+export interface TodoSemanticOperations {
+  list(tab: TodoTab, opts?: { limit?: number; offset?: number }): Promise<TodoList>
+  unreadCount(): Promise<number>
+  markRead(id: string): Promise<void>
+  dismiss(id: string): Promise<void>
 }
+
+let semanticOperations: TodoSemanticOperations | null = null
+
+export function activateTodoSemanticOperations(
+  operations: TodoSemanticOperations,
+): void {
+  semanticOperations = operations
+}
+
+function todos(): TodoSemanticOperations {
+  if (!semanticOperations) throw new Error('待办能力尚未由 Convex 应用壳装配')
+  return semanticOperations
+}
+
+export const auditLogClient = unboundResourceClient('sysAuditLogs')
 
 export async function fetchTodos(
   tab: TodoTab,
   opts?: { limit?: number; offset?: number },
 ): Promise<TodoList> {
-  const body = {
-    tab,
-    includeDismissed: false,
-    limit: opts?.limit ?? 20,
-    offset: opts?.offset ?? 0,
-  }
   try {
-    return await apiData(api.todos.query.$post({ json: body }))
+    return await todos().list(tab, opts)
   } catch (error) {
     if (isForbidden(error)) return { results: [], count: 0 }
     throw error
@@ -84,26 +69,12 @@ export async function fetchTodos(
 
 export async function fetchUnreadCount(): Promise<number> {
   try {
-    const data = await apiData(api.todos['unread-count'].$get())
-    return data.count ?? 0
+    return await todos().unreadCount()
   } catch (error) {
     if (isForbidden(error)) return 0
     throw error
   }
 }
 
-export async function markTodoRead(id: string): Promise<void> {
-  await apiData(
-    api.todos[':id'].read.$post({
-      param: { id },
-    }),
-  )
-}
-
-export async function dismissTodo(id: string): Promise<void> {
-  await apiData(
-    api.todos[':id'].dismiss.$post({
-      param: { id },
-    }),
-  )
-}
+export const markTodoRead = (id: string) => todos().markRead(id)
+export const dismissTodo = (id: string) => todos().dismiss(id)

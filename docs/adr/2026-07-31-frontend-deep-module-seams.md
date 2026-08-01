@@ -28,8 +28,9 @@ AggregateDraftAdapter 与 Presentation Extension，但 implementation 仍有五�
 `SynieRecordDrawer` 与业务页面只表达资源内查询维度或“失效此资源”意图，不知道
 transport id，也不手写 TanStack Query key。
 
-生产 Hono Adapter 与测试用 in-memory Adapter 通过同一 ResourceBinding interface。
-生产资源入口持有并恢复模块装配时创建的规范 binding，同名测试替身不能污染生产解析。
+生产 Adapter 与测试用 in-memory Adapter 通过同一 ResourceBinding interface；2026-08-01 起生产
+Adapter 只绑定 Convex query/mutation/action。生产资源入口持有并恢复模块装配时创建的规范 binding，
+同名测试替身不能污染生产解析。
 生产页面不再向 Grid、Drawer、EditableTable 或远程选择器传具体 client；DataGrid 与远程
 source 仅保留显式 custom/in-memory Adapter seam，供局部读模型与 interface 测试使用。
 

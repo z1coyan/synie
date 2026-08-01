@@ -1,23 +1,23 @@
 # Resource Catalog 迁移基线报告
 
-生成时间：2026-07-30T05:58:36.276Z
+生成时间：2026-07-31T15:25:53.457Z
 
 ## 摘要
 
 | 指标 | 数量 |
 |------|------|
-| 服务端资源 | 97 |
-| 字段总数 | 1383 |
-| 动作总数 | 307 |
+| 服务端资源 | 100 |
+| 字段总数 | 1416 |
+| 动作总数 | 315 |
 | 声明 Form 的资源 | 62 |
 | 前端 ResourceTransport binding | 96 |
-| Presentation Extension registry 键 | 21 |
+| Presentation Extension registry 键 | 0 |
 | Remote 默认配置 | 0 |
-| 缺 Transport | 1 |
+| 缺 Transport | 4 |
 | 多余 Transport | 0 |
-| 缺 PE 配置 | 76 |
+| 缺 PE 配置 | 100 |
 | 多余 PE 配置 | 0 |
-| 已规范化资源 | 97 |
+| 已规范化资源 | 100 |
 | legacy normalizer 调用 | 0 |
 | 未分类 | 0 |
 | 未解释缺 Transport | 0 |
@@ -28,6 +28,9 @@
 
 ### 服务端有、前端 Transport 无
 
+- `mfgWorkOrderByproducts`
+- `mfgWorkOrderComponents`
+- `mfgWorkOrderRoutes`
 - `sysRolePermissions`
 
 ### 未解释缺 Transport（应为 0）
@@ -48,6 +51,7 @@ _无_
 - `accBankTransactions`
 - `accBillHoldings`
 - `accBillTransactions`
+- `accBills`
 - `accExpenseReportItems`
 - `accExpenseReports`
 - `accGlEntries`
@@ -68,43 +72,65 @@ _无_
 - `hrEmployeeLoans`
 - `hrEmployees`
 - `hrPayrollPayments`
+- `hrPayrolls`
 - `invMaterialCategories`
 - `invMaterialUnits`
 - `invMaterials`
 - `invStockCountItems`
+- `invStockCounts`
 - `invStockDocItems`
+- `invStockDocs`
 - `invStockEntries`
 - `invStockTransferItems`
+- `invStockTransfers`
 - `invWarehouses`
 - `mfgBomByproducts`
 - `mfgBomComponents`
 - `mfgBomRoutes`
+- `mfgBoms`
 - `mfgDemandItems`
+- `mfgDemands`
 - `mfgOperations`
 - `mfgOutputItems`
+- `mfgOutputs`
 - `mfgProcessTemplateItems`
+- `mfgProcessTemplates`
 - `mfgSettings`
+- `mfgWorkOrderByproducts`
+- `mfgWorkOrderComponents`
+- `mfgWorkOrderRoutes`
+- `mfgWorkOrders`
 - `purOrderItemByproducts`
 - `purOrderItemMaterials`
 - `purOrderItems`
+- `purOrders`
 - `purOutsourcedIssueItems`
+- `purOutsourcedIssues`
 - `purOutsourcedReceiptItemByproducts`
 - `purOutsourcedReceiptItemMaterials`
 - `purOutsourcedReceiptItems`
+- `purOutsourcedReceipts`
 - `purQuotationItems`
 - `purQuotationTiers`
+- `purQuotations`
 - `purReceiptItems`
+- `purReceipts`
 - `purReconciliationItems`
+- `purReconciliations`
 - `purSuppliers`
 - `salCompanyAccountDefaults`
 - `salCustomers`
+- `salDeliveries`
 - `salDeliveryItems`
 - `salDeliveryPackBoxes`
 - `salDeliveryPackLines`
 - `salOrderItems`
+- `salOrders`
 - `salQuotationItems`
 - `salQuotationTiers`
+- `salQuotations`
 - `salReconciliationItems`
+- `salReconciliations`
 - `salSettings`
 - `scmOrderFlowItems`
 - `sysAuditLogs`
@@ -113,6 +139,7 @@ _无_
 - `sysNumberingRules`
 - `sysPrintTemplates`
 - `sysRolePermissions`
+- `sysRoles`
 - `sysSettings`
 - `sysStorages`
 - `sysUsers`
@@ -139,7 +166,7 @@ _无_
 {
   "basic": 17,
   "extension": 35,
-  "none": 45,
+  "none": 48,
   "reference-only": 0
 }
 ```
@@ -148,8 +175,8 @@ _无_
 
 ```json
 {
-  "declaredCommands": 53,
-  "adapterCommands": 53,
+  "declaredCommands": 55,
+  "adapterCommands": 55,
   "adapterResources": [
     "accBankTransactions",
     "accBillTransactions",
@@ -161,6 +188,7 @@ _无_
     "invStockCounts",
     "invStockDocs",
     "invStockTransfers",
+    "mfgBoms",
     "mfgDemands",
     "mfgOutputs",
     "mfgWorkOrders",
@@ -225,16 +253,16 @@ _无_
     "sysUsers"
   ],
   "unconsumedBasicFormResources": [],
-  "normalizedResources": 97,
+  "normalizedResources": 100,
   "formKindCounts": {
     "basic": 17,
-    "none": 45,
+    "none": 48,
     "extension": 35
   },
   "presentationCounts": {
     "basic": 17,
     "extension": 35,
-    "none": 45,
+    "none": 48,
     "reference-only": 0
   },
   "notes": "实测 gaps：adapterCommands=SEMANTIC_COMMAND_ADAPTERS 覆盖的 catalog 命令数；proxyActionHooks=资源实现中的 new Proxy/action transport；legacyUsages=basic 资源 drawer/页面仍手写 required|edit|placeholder；writeStubs=伪造写方法并抛「不支持」的代码点；unconsumedBasicFormResources=未由 useCatalogBasicForm 消费的 basic 资源"
@@ -256,7 +284,7 @@ _无_
 | `accBankReconciliations` | none |  | yes |  |  |
 | `accBankTransactions` | extension | yes | yes |  | 对账 reconcile 命令 + 导入 |
 | `accBillHoldings` | none |  | yes |  | 只读持有投影 |
-| `accBills` | extension | yes | yes | yes | 票面影像附件 |
+| `accBills` | extension | yes | yes |  | 票面影像附件 |
 | `accBillTransactions` | extension | yes | yes |  |  |
 | `accExpenseReportItems` | none |  | yes |  |  |
 | `accExpenseReports` | extension | yes | yes |  |  |
@@ -278,62 +306,65 @@ _无_
 | `hrEmployeeLoans` | basic | yes | yes |  |  |
 | `hrEmployees` | extension | yes | yes |  | 身份证影像 extraContent |
 | `hrPayrollPayments` | basic | yes | yes |  | create+delete，无 update |
-| `hrPayrolls` | extension | yes | yes | yes |  |
+| `hrPayrolls` | extension | yes | yes |  |  |
 | `invMaterialCategories` | basic | yes | yes |  |  |
 | `invMaterials` | extension | yes | yes |  | 单位转换 tab + 客户料 effects + 图纸附件 |
 | `invMaterialUnits` | none |  | yes |  | 嵌于物料 PE 子表，无独立抽屉 |
 | `invStockCountItems` | none |  | yes |  |  |
-| `invStockCounts` | extension | yes | yes | yes |  |
+| `invStockCounts` | extension | yes | yes |  |  |
 | `invStockDocItems` | none |  | yes |  |  |
-| `invStockDocs` | extension | yes | yes | yes |  |
+| `invStockDocs` | extension | yes | yes |  |  |
 | `invStockEntries` | none |  | yes |  | 只读库存分录 |
 | `invStockTransferItems` | none |  | yes |  |  |
-| `invStockTransfers` | extension | yes | yes | yes |  |
+| `invStockTransfers` | extension | yes | yes |  |  |
 | `invWarehouses` | extension | yes | yes |  | 协作方多态外键，Basic Form fail-closed |
 | `mfgBomByproducts` | none |  | yes |  |  |
 | `mfgBomComponents` | none |  | yes |  |  |
 | `mfgBomRoutes` | none |  | yes |  |  |
-| `mfgBoms` | extension | yes | yes | yes |  |
+| `mfgBoms` | extension | yes | yes |  |  |
 | `mfgDemandItems` | none |  | yes |  |  |
-| `mfgDemands` | extension | yes | yes | yes |  |
+| `mfgDemands` | extension | yes | yes |  |  |
 | `mfgOperations` | basic | yes | yes |  |  |
 | `mfgOutputItems` | none |  | yes |  |  |
-| `mfgOutputs` | extension | yes | yes | yes |  |
+| `mfgOutputs` | extension | yes | yes |  |  |
 | `mfgProcessTemplateItems` | none |  | yes |  |  |
-| `mfgProcessTemplates` | extension | yes | yes | yes |  |
+| `mfgProcessTemplates` | extension | yes | yes |  |  |
 | `mfgSettings` | extension | yes | yes |  | update-only 单行设置卡片；含百分比显示转换 |
-| `mfgWorkOrders` | extension | yes | yes | yes |  |
+| `mfgWorkOrderByproducts` | none |  |  |  | 工单副产品快照；打印循环区 |
+| `mfgWorkOrderComponents` | none |  |  |  | 工单 BOM 配料快照；打印循环区 |
+| `mfgWorkOrderRoutes` | none |  |  |  | 工单工艺路线快照；打印循环区 |
+| `mfgWorkOrders` | extension | yes | yes |  |  |
 | `purOrderItemByproducts` | none |  | yes |  |  |
 | `purOrderItemMaterials` | none |  | yes |  |  |
 | `purOrderItems` | none |  | yes |  |  |
-| `purOrders` | extension | yes | yes | yes |  |
+| `purOrders` | extension | yes | yes |  |  |
 | `purOutsourcedIssueItems` | none |  | yes |  |  |
-| `purOutsourcedIssues` | extension | yes | yes | yes |  |
+| `purOutsourcedIssues` | extension | yes | yes |  |  |
 | `purOutsourcedReceiptItemByproducts` | none |  | yes |  |  |
 | `purOutsourcedReceiptItemMaterials` | none |  | yes |  |  |
 | `purOutsourcedReceiptItems` | none |  | yes |  |  |
-| `purOutsourcedReceipts` | extension | yes | yes | yes |  |
+| `purOutsourcedReceipts` | extension | yes | yes |  |  |
 | `purQuotationItems` | none |  | yes |  |  |
-| `purQuotations` | extension | yes | yes | yes |  |
+| `purQuotations` | extension | yes | yes |  |  |
 | `purQuotationTiers` | none |  | yes |  |  |
 | `purReceiptItems` | none |  | yes |  |  |
-| `purReceipts` | extension | yes | yes | yes |  |
+| `purReceipts` | extension | yes | yes |  |  |
 | `purReconciliationItems` | none |  | yes |  |  |
-| `purReconciliations` | extension | yes | yes | yes |  |
+| `purReconciliations` | extension | yes | yes |  |  |
 | `purSuppliers` | basic | yes | yes |  |  |
 | `salCompanyAccountDefaults` | none |  | yes |  | 公司科目默认只读投影 / 嵌入设置 |
 | `salCustomers` | extension | yes | yes |  | 附件面板 Presentation Extension |
-| `salDeliveries` | extension | yes | yes | yes | AggregateDraftAdapter + 装箱 |
+| `salDeliveries` | extension | yes | yes |  | AggregateDraftAdapter + 装箱 |
 | `salDeliveryItems` | none |  | yes |  |  |
 | `salDeliveryPackBoxes` | none |  | yes |  |  |
 | `salDeliveryPackLines` | none |  | yes |  |  |
 | `salOrderItems` | none |  | yes |  |  |
-| `salOrders` | extension | yes | yes | yes |  |
+| `salOrders` | extension | yes | yes |  |  |
 | `salQuotationItems` | none |  | yes |  |  |
-| `salQuotations` | extension | yes | yes | yes |  |
+| `salQuotations` | extension | yes | yes |  |  |
 | `salQuotationTiers` | none |  | yes |  |  |
 | `salReconciliationItems` | none |  | yes |  |  |
-| `salReconciliations` | extension | yes | yes | yes |  |
+| `salReconciliations` | extension | yes | yes |  |  |
 | `salSettings` | extension | yes | yes |  | update-only 单行设置卡片 |
 | `scmOrderFlowItems` | none |  | yes |  | 订单流只读投影 |
 | `sysAuditLogs` | none |  | yes |  | 只读审计 |
@@ -342,7 +373,7 @@ _无_
 | `sysNumberingRules` | basic | yes | yes |  |  |
 | `sysPrintTemplates` | basic | yes | yes |  |  |
 | `sysRolePermissions` | none |  |  |  | catalog-only：嵌于角色 PE，无独立 Client/抽屉 |
-| `sysRoles` | extension | yes | yes | yes | builtin 动态隐藏 + 权限矩阵 |
+| `sysRoles` | extension | yes | yes |  | builtin 动态隐藏 + 权限矩阵 |
 | `sysSettings` | extension | yes | yes |  | update-only 单行设置卡片；含调度运行状态 |
 | `sysStorages` | basic | yes | yes |  | setDefault 命令 |
 | `sysUsers` | basic | yes | yes |  |  |
@@ -388,23 +419,26 @@ _无_
 | `invStockCounts` | `inv.stock_count` | 14 | 6 | yes |
 | `invStockDocItems` | `inv.stock_doc` | 15 | 1 | yes |
 | `invStockDocs` | `inv.stock_doc` | 14 | 6 | yes |
-| `invStockEntries` | `inv.stock_entry` | 14 | 1 |  |
+| `invStockEntries` | `inv.stock_entry` | 18 | 1 |  |
 | `invStockTransferItems` | `inv.stock_transfer` | 16 | 1 | yes |
 | `invStockTransfers` | `inv.stock_transfer` | 17 | 6 | yes |
 | `invWarehouses` | `inv.warehouse` | 14 | 4 | yes |
 | `mfgBomByproducts` | `mfg.bom` | 8 | 1 | yes |
 | `mfgBomComponents` | `mfg.bom` | 9 | 1 | yes |
 | `mfgBomRoutes` | `mfg.bom` | 8 | 1 | yes |
-| `mfgBoms` | `mfg.bom` | 7 | 4 | yes |
-| `mfgDemandItems` | `mfg.demand` | 23 | 1 |  |
+| `mfgBoms` | `mfg.bom` | 8 | 6 | yes |
+| `mfgDemandItems` | `mfg.demand` | 26 | 1 |  |
 | `mfgDemands` | `mfg.demand` | 9 | 7 | yes |
 | `mfgOperations` | `mfg.operation` | 6 | 4 | yes |
-| `mfgOutputItems` | `mfg.output` | 17 | 1 |  |
+| `mfgOutputItems` | `mfg.output` | 20 | 1 |  |
 | `mfgOutputs` | `mfg.output` | 12 | 6 | yes |
 | `mfgProcessTemplateItems` | `mfg.route_template` | 8 | 1 | yes |
 | `mfgProcessTemplates` | `mfg.route_template` | 6 | 4 | yes |
 | `mfgSettings` | `mfg.setting` | 4 | 2 | yes |
-| `mfgWorkOrders` | `mfg.work_order` | 20 | 5 | yes |
+| `mfgWorkOrderByproducts` | `mfg.work_order` | 7 | 1 |  |
+| `mfgWorkOrderComponents` | `mfg.work_order` | 8 | 1 |  |
+| `mfgWorkOrderRoutes` | `mfg.work_order` | 6 | 1 |  |
+| `mfgWorkOrders` | `mfg.work_order` | 21 | 8 | yes |
 | `purOrderItemByproducts` | `purchase.order` | 9 | 1 |  |
 | `purOrderItemMaterials` | `purchase.order` | 16 | 1 |  |
 | `purOrderItems` | `purchase.order` | 33 | 1 |  |

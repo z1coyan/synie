@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Checkbox, Label, ListBox, Select, Spinner, toast } from '@heroui/react'
-import { getSystemSetting, updateSystemSetting } from '~/lib/resources/settings'
+import { useResourceBinding } from '~/lib/resources/resource-context'
+import type { SystemSetting } from '~/lib/resources/settings'
 
 export const Route = createFileRoute('/_app/base/settings/market-fetch')({
   component: MarketFetchSettingsTab,
@@ -14,12 +15,12 @@ const INTERVALS = [
   { value: '120', label: '120 分钟' },
 ]
 
-function formatRunAt(iso: string | null): string {
+function formatRunAt(iso: string | number | null): string {
   if (!iso) return '尚未运行'
   try {
     return new Date(iso).toLocaleString('zh-CN', { hour12: false })
   } catch {
-    return iso
+    return String(iso)
   }
 }
 
@@ -34,9 +35,10 @@ function scheduleBlurb(scheduleOn: boolean, interval: number, settlementOn: bool
 
 function MarketFetchSettingsTab() {
   const queryClient = useQueryClient()
+  const binding = useResourceBinding('sysSettings')
   const query = useQuery({
-    queryKey: ['sysSetting', 'marketFetch'],
-    queryFn: getSystemSetting,
+    queryKey: binding.cache.gridKey('market-fetch'),
+    queryFn: () => binding.reader.query({ profile: 'default', numItems: 1, cursor: null }).then((page) => page.results[0] as unknown as SystemSetting),
   })
 
   const [scheduleEnabled, setScheduleEnabled] = useState(true)
@@ -62,13 +64,15 @@ function MarketFetchSettingsTab() {
     }
     setSaving(true)
     try {
-      await updateSystemSetting({
+      if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) throw new Error('系统设置不支持 update')
+      await binding.writer.update(String(query.data.id), {
         marketFetchScheduleEnabled: scheduleEnabled,
         marketFetchLastIntervalMinutes: intervalNum as 30 | 60 | 120,
         marketFetchSettlementEnabled: settlementEnabled,
       })
       toast.success('行情拉取设置已保存')
       queryClient.invalidateQueries({ queryKey: ['sysSetting'] })
+      await binding.cache.invalidateAll(queryClient)
     } catch (e) {
       toast.danger('保存失败', { description: (e as Error).message })
     } finally {

@@ -1,72 +1,30 @@
-import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Input, Label, Spinner, TextField, toast } from '@heroui/react'
-import {
-  getAccountingOCRConfigured,
-  getAccountingSetting,
-  updateAccountingSetting,
-} from '~/lib/resources/settings'
+import { useQuery } from '@tanstack/react-query'
+import { Card, Spinner } from '@heroui/react'
+import { getAccountingOCRConfigured } from '~/lib/resources/settings'
 
 export const Route = createFileRoute('/_app/finance/settings')({
   component: FinanceSettingsPage,
 })
 
 function FinanceSettingsPage() {
-  const queryClient = useQueryClient()
   const query = useQuery({
-    queryKey: ['accSetting'],
-    queryFn: async () => {
-      const [accSetting, ocr] = await Promise.all([
-        getAccountingSetting(),
-        getAccountingOCRConfigured(),
-      ])
-      return { accSetting, accOcrConfigured: ocr.configured }
-    },
+    queryKey: ['accOcrConfigured'],
+    queryFn: getAccountingOCRConfigured,
   })
-
-  const [keyId, setKeyId] = useState('')
-  const [secret, setSecret] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  // 查询回填本地草稿(单行配置,页面即表单);密钥只写不回读,不回填
-  useEffect(() => {
-    if (query.data?.accSetting) {
-      setKeyId(query.data.accSetting.ocrAccessKeyId ?? '')
-    }
-  }, [query.data])
-
-  const save = async () => {
-    if (!query.data?.accSetting) return
-    setSaving(true)
-    try {
-      await updateAccountingSetting({
-        ocrAccessKeyId: keyId || null,
-        ...(secret.trim() ? { ocrAccessKeySecret: secret } : {}),
-      })
-      toast.success('财务设置已保存')
-      setSecret('')
-      queryClient.invalidateQueries({ queryKey: ['accSetting'] })
-      queryClient.invalidateQueries({ queryKey: ['accOcrConfigured'] })
-    } catch (e) {
-      toast.danger('保存失败', { description: (e as Error).message })
-    } finally {
-      setSaving(false)
-    }
-  }
 
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">财务设置</h1>
       <p className="mt-2 text-sm text-ink-500">
-        财务模块全局配置。阿里云 OCR 凭证用于发票/承兑汇票的票面识别,留空即停用识别入口。
+        票据 OCR 的访问凭证由运维在部署环境中统一配置，业务数据与浏览器均不保存密钥。
       </p>
 
       <Card className="mt-6 max-w-2xl">
         <Card.Header>
           <Card.Title>票据 OCR(阿里云)</Card.Title>
           <Card.Description>
-            阿里云 RAM 用户的 AccessKey,需授权 AliyunOCRFullAccess;仅本页与识别调用使用。
+            本页只显示可用状态；需要启用或轮换凭证时请联系管理员。
           </Card.Description>
         </Card.Header>
         <Card.Content>
@@ -76,26 +34,9 @@ function FinanceSettingsPage() {
             </div>
           ) : query.isError ? (
             <p className="text-sm text-danger">加载失败:{(query.error as Error).message}</p>
-          ) : (
-            <div className="flex flex-col gap-4">
-              <TextField value={keyId} onChange={setKeyId}>
-                <Label>AccessKey ID</Label>
-                <Input placeholder="如 LTAI5t…" />
-              </TextField>
-              <TextField value={secret} onChange={setSecret}>
-                <Label>AccessKey Secret</Label>
-                <Input
-                  type="password"
-                  placeholder={query.data?.accOcrConfigured ? '已配置,留空不修改' : '未配置'}
-                />
-              </TextField>
-              <div>
-                <Button isPending={saving} onPress={save}>
-                  保存
-                </Button>
-              </div>
-            </div>
-          )}
+          ) : <p className="text-sm text-ink-700">
+            当前状态：{query.data?.configured ? '已配置，可使用' : '未配置，请联系管理员'}
+          </p>}
         </Card.Content>
       </Card>
     </>

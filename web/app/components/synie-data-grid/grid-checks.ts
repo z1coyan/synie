@@ -1,5 +1,5 @@
 // bun app/components/synie-data-grid/grid-checks.ts 可直接运行的纯函数自检
-import { dayEnd, dayStart, nextSort, UUID_RE } from './query'
+import { dayEnd, dayStart, isOpaqueResourceId, nextSort } from './query'
 import { toCsv } from './csv'
 import { cellText, dateOnlyText } from './format'
 import { mergePick } from './pick'
@@ -46,8 +46,10 @@ eq(dateOnlyText('未知日期'), '未知日期', '非 ISO 业务日原样回落'
 eq(dateOnlyText(null), '', '空业务日为空串')
 
 const uuid = '11111111-1111-1111-1111-111111111111'
-eq(UUID_RE.test(uuid), true, '合法 UUID')
-eq(UUID_RE.test('DROP TABLE'), false, '非法资源 id')
+eq(isOpaqueResourceId(uuid), true, 'UUID 仍是合法 opaque id')
+eq(isOpaqueResourceId('opaque:record/1'), true, 'Convex opaque id')
+eq(isOpaqueResourceId(''), false, '空资源 id')
+eq(isOpaqueResourceId(' padded '), false, '含隐式 trim 的资源 id')
 
 const rows: Row[] = [{ id: '1', code: 'a,b', name: '含"引号"', enabled: true }]
 eq(

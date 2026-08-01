@@ -55,7 +55,7 @@ export interface DocumentPreviewLineTable {
   overrides?: Record<string, EditableColumnOverride>
   /** 排序列，默认 idx */
   sortColumn?: string
-  /** 拉取上限，默认 200（与业务抽屉对齐） */
+  /** 总拉取上限，默认 200；runtime 按统一单页上限沿 cursor 分批读取。 */
   limit?: number
 }
 

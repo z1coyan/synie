@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, toast } from '@heroui/react'
 import type { Row } from '~/components/synie-data-grid/types'
-import { fetchMyPermissions } from '~/lib/permissions'
-import { workOrderClient } from '~/lib/resources/manufacturing'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import { useCurrentActor } from '~/lib/actor-context'
+import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
+
+const workOrderDraft = aggregateDraftFor('mfgWorkOrders')
 
 /**
  * 需求行行级操作：生成工单（分批可多张）。
@@ -23,11 +24,13 @@ export const canGenerateWorkOrder = (row: Row) => {
 
 /** 当前用户权限集(other-stock 页同一取法;60s 缓存) */
 export function useMyPermissions() {
-  return useQuery({
-    queryKey: ['myPermissions'],
-    queryFn: fetchMyPermissions,
-    staleTime: 60_000,
-  })
+  const actor = useCurrentActor()
+  const data = useMemo(() => {
+    const permissions = new Set(actor.permissions)
+    if (actor.superAdmin) permissions.add('*')
+    return permissions as ReadonlySet<string>
+  }, [actor.permissions, actor.superAdmin])
+  return { data }
 }
 
 const rowLabel = (row: Row) =>
@@ -60,10 +63,10 @@ export function useDemandItemActions(after: () => void) {
     run(async () => {
       const row = pending!.row
       try {
-        const created = await workOrderClient.create({
+        const created = await workOrderDraft.createDraft({
           demandItemId: row.id,
           workOrderNo: null,
-        })
+        }) as Row
         toast.success(`生产工单已生成(${String(created.workOrderNo ?? '')})`)
         setPending(null)
         done()

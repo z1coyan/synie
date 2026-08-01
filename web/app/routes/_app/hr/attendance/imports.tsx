@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, toast } from '@heroui/react'
-import { attendanceImportClient } from '~/lib/resources/hr-operations'
+import { removeAttendanceImport } from '~/lib/resources/hr-operations'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { ActionContext, Row } from '~/components/synie-data-grid/types'
@@ -51,7 +51,7 @@ function AttendanceImportsPage() {
     if (!deleteAsk) return
     setRunning(true)
     try {
-      await attendanceImportClient.delete(deleteAsk.row.id)
+      await removeAttendanceImport(deleteAsk.row.id)
       toast.success(
         deleteAsk.row.status === 'IMPORTED' ? '批次已删除,其导入的打卡已整批撤销' : '批次已删除'
       )

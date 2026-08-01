@@ -27,11 +27,10 @@ const EXPECTED_COMMANDS = {
   salQuotations: { audit: 'row', void: 'row' },
   salReconciliations: { confirm: 'row', unconfirm: 'row', audit: 'row', void: 'row' },
   sysPrintTemplates: { setDefault: 'row', unsetDefault: 'row' },
-  sysStorages: { setDefault: 'row' },
 } as const
 
 describe('ResourceBinding 语义 CommandAdapter 覆盖', () => {
-  test('声明命令的 25 个资源均由显式 key/target adapter 覆盖', () => {
+  test('声明命令的 24 个资源均由显式 key/target adapter 覆盖', () => {
     let commandCount = 0
     for (const [resource, expected] of Object.entries(EXPECTED_COMMANDS)) {
       const commands = resourceBindingFor(resource).commands?.commands
@@ -42,7 +41,7 @@ describe('ResourceBinding 语义 CommandAdapter 覆盖', () => {
       expect(actual, resource).toEqual(expected)
       commandCount += Object.keys(actual).length
     }
-    expect(commandCount).toBe(55)
+    expect(commandCount).toBe(54)
   })
 
   test('未声明命令的资源不获得 Proxy/action fallback', () => {

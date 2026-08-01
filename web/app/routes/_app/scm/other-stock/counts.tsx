@@ -3,18 +3,13 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Label, NumberField, Switch, toast } from '@heroui/react'
 import { companyClient } from '~/lib/resources/companies'
-import {
-  refreshStockCount,
-  stockCountClient,
-  stockCountItemClient,
-} from '~/lib/resources/inventory'
+import { refreshStockCount } from '~/lib/resources/inventory'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import {
@@ -22,11 +17,21 @@ import {
   WarehouseRemoteSelect,
   defaultCompanyId,
 } from '../-stock-doc'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import {
+  assertAggregateDraftReady,
+  submitAggregateDraft,
+} from '~/lib/resources/aggregate-draft-submit'
+import {
+  aggregateDraftRows,
+  stockCountDraftRow,
+} from '~/lib/resources/aggregate-draft-rows'
+import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/scm/other-stock/counts')({
   component: StockCountsTab,
 })
+
+const stockCountDraft = aggregateDraftFor('invStockCounts')
 
 /**
  * 库存盘点单(其他库存单 → 盘点 tab):核对账实并校正库存。
@@ -61,58 +66,10 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-function itemInput(row: Row) {
-  return {
-    materialId: row.materialId,
-    unitId: row.unitId,
-    countedQuantity: row.countedQuantity ?? null,
-    remark: row.remark ?? null,
-  }
-}
-
-const ITEM_COMPARE_KEYS = ['materialId', 'unitId', 'countedQuantity', 'remark'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-async function persistItems(docId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const run = async (at: string, operation: () => Promise<unknown>) => {
-    try {
-      await operation()
-    } catch (error) {
-      errors.push(`${at}:${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await run(`行「${String(old.materialName ?? old.id)}」`, () =>
-      stockCountItemClient.delete(old.id),
-    )
-  }
-
-  for (const [i, row] of current.entries()) {
-    const at = `第${i + 1}行`
-    if (isLocalRow(row)) {
-      await run(at, () => stockCountItemClient.create({ countId: docId, ...itemInput(row) }))
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      await run(at, () => stockCountItemClient.update(row.id, itemInput(row)))
-    }
-  }
-  return errors
-}
-
 function StockCountsTab() {
   const [filters, setFilters] = useState<FilterState>({})
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
   const [loadAll, setLoadAll] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -134,15 +91,8 @@ function StockCountsTab() {
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 
   const fetchItems = useCallback(async (docId: string): Promise<Row[]> => {
-    const result = await stockCountItemClient.query({
-      limit: 200,
-      offset: 0,
-      sort: { column: 'insertedAt', direction: 'ascending' },
-      fixedFilter: {
-        countId: { kind: 'fk', op: 'in', values: [docId], labels: [] },
-      },
-    })
-    return result.results
+    const saved = await stockCountDraft.loadDraft(docId)
+    return aggregateDraftRows(saved, 'items', '库存盘点单')
   }, [])
 
   const openDrawer = useCallback(
@@ -152,7 +102,6 @@ function StockCountsTab() {
       setLoadAll(false)
       if (mode === 'create') {
         setItems([])
-        setItemsSnapshot([])
         setDetailLoaded(true)
         return
       }
@@ -161,34 +110,34 @@ function StockCountsTab() {
         .then((rows) => {
           if (my !== reqIdRef.current) return
           setItems(rows)
-          setItemsSnapshot(rows)
           setDetailLoaded(true)
         })
         .catch((e) => {
           if (my !== reqIdRef.current) return
           toast.danger('库存盘点单行加载失败', { description: (e as Error).message })
           setItems([])
-          setItemsSnapshot([])
         })
     },
     [fetchItems]
   )
 
-  const invalidateGrids = () => {
-    void resourceBindingFor('invStockCounts').cache.invalidateAll(queryClient)
-  }
+  const invalidateGrids = () => Promise.all([
+    resourceBindingFor('invStockCounts').cache.invalidateAll(queryClient),
+    resourceBindingFor('invStockCountItems').cache.invalidateAll(queryClient),
+  ])
 
   const refreshBook = async () => {
     const docId = drawer?.row?.id
     if (!docId) return
     setRefreshing(true)
+    setDetailLoaded(false)
     try {
       await refreshStockCount(docId)
       const rows = await fetchItems(docId)
       setItems(rows)
-      setItemsSnapshot(rows)
+      setDetailLoaded(true)
       toast.success('账面数已刷新')
-      invalidateGrids()
+      await invalidateGrids()
     } catch (e) {
       toast.danger('刷新账面数失败', { description: (e as Error).message })
     } finally {
@@ -316,7 +265,6 @@ function StockCountsTab() {
           reqIdRef.current++
           setDrawer(null)
           setItems([])
-          setItemsSnapshot([])
         }}
         rowId={drawer?.row?.id}
         onEdit={
@@ -432,23 +380,20 @@ function StockCountsTab() {
           </>
         )}
         onSubmit={async (values, mode) => {
-          if (mode === 'create') {
-            await stockCountClient.create({
-              ...values,
-              loadAll,
-              items: loadAll ? undefined : items.map(itemInput),
-            })
-            toast.success('库存盘点单已创建')
-          } else {
-            await stockCountClient.update(drawer!.row!.id, values)
-            const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
-            if (itemErrors.length > 0) {
-              toast.danger('库存盘点单已更新,但部分盘点行保存失败', { description: itemErrors.join('; ') })
-            } else {
-              toast.success('库存盘点单已更新')
-            }
-          }
-          invalidateGrids()
+          assertAggregateDraftReady(mode, detailLoaded, '库存盘点单行')
+          const input = mode === 'create' && loadAll
+            ? { ...values, loadAll: true }
+            : { ...values, items: items.map(stockCountDraftRow) }
+          const savedId = await submitAggregateDraft(
+            stockCountDraft,
+            mode,
+            drawer?.row?.id,
+            input,
+            '库存盘点单',
+          )
+          toast.success(`库存盘点单已${mode === 'create' ? '创建' : '更新'}`)
+          await invalidateGrids()
+          return savedId
         }}
       />
     </>
