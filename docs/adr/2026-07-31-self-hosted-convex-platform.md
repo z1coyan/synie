@@ -1,7 +1,8 @@
 # ADR：以 PostgreSQL 17 与 S3 承载自托管 Convex
 
-2026-07-31，状态：已实施（迁移基础设施阶段）。本 ADR 固定后端迁移的运行平台，不代表业务函数
-已经完成切流；旧 Bun/Hono 服务会保留到最终清场阶段。
+2026-07-31，状态：已实施；2026-08-01 已完成全部业务切流与旧服务清场。本 ADR 固定运行平台，
+最终应用边界与禁止回退约束见
+[`2026-08-01-convex-only-application-boundary.md`](2026-08-01-convex-only-application-boundary.md)。
 
 ## 背景
 
@@ -30,8 +31,8 @@ query/mutation/action、定时任务与状态的唯一事实源，同时保留�
 ### PostgreSQL 17 是 Convex 唯一持久数据库
 
 Convex 使用独立 `convex-postgres` 和 volume，数据库为 `convex_self_hosted`。backend 的
-`POSTGRES_URL` 不含数据库名；`INSTANCE_NAME=convex-self-hosted` 决定数据库名。旧 `synie`
-业务 PostgreSQL 只在迁移期保留，不复用、不同步或双写。
+`POSTGRES_URL` 不含数据库名；`INSTANCE_NAME=convex-self-hosted` 决定数据库名。迁移期的独立业务
+PostgreSQL 从未与该库复用、同步或双写，并已随旧服务退出当前 Compose 与工作树。
 
 `/convex/data` 仍使用小型持久 volume 保存 instance name/secret。即使业务数据已在 PostgreSQL/S3，
 丢失该 secret 仍会使既有 admin key 失效。
@@ -81,8 +82,8 @@ MinIO Community 自 2025 年起不支持 per-bucket CORS，因此 MinIO API 不�
 
 ## 后果
 
-- 开发机一次启动 legacy PostgreSQL 与目标 Convex/MinIO，迁移期间可按进程模式验收，不在单次事务
-  混用两个后端。
+- 开发机和 CI 只启动 Convex PostgreSQL、Convex backend/dashboard 与 MinIO；不存在业务数据库或
+  进程模式开关。
 - Convex PostgreSQL、五个内部 S3 bucket、产品 bucket、函数代码与 deployment env 共同组成恢复单元；
   单独保存任一部分都不构成完整备份。
 - 更换生产 S3 provider 前必须通过 SigV4、private、presigned PUT/GET/HEAD、checksum、CORS 和 lifecycle

@@ -31,19 +31,31 @@ const createFirstUserRef = makeFunctionReference<'mutation', {
 }, { user: { id: string; username: string; name: string | null } }>(
   'setup/createFirstUser:createFirstUser',
 )
+const setupOptionsRef = makeFunctionReference<'query', {}, {
+  currencies: Array<{ id: string; isoCode: string }>
+}>('setup/complete:options')
+const completeSetupRef = makeFunctionReference<'mutation', {
+  company: {
+    code: string
+    name: string
+    shortName: string
+    baseCurrencyId: string
+    accountTemplate: 'SMALL'
+  }
+  preferredLanguage: string
+  seedSampleData: boolean
+}, { companyId: string }>('setup/complete:complete')
 const currencyCreateRef = makeFunctionReference<'mutation', {
   name: string
   isoCode: string
   symbol?: string | null
   active?: boolean
 }, GenericRow>('resources/currencies:create')
-const unitCreateRef = makeFunctionReference<'mutation', {
-  unitType: 'QUANTITY'
-  isBase?: boolean
-  name: string
-  symbol: string
-  ratio: string
-}, GenericRow>('resources/units:create')
+const unitListRef = makeFunctionReference<'query', {
+  profile: 'lookup'
+  numItems: number
+  args: { unitType: 'QUANTITY' }
+}, { results: Array<GenericRow & { isBase: boolean }> }>('resources/units:list')
 const companyCreateRef = makeFunctionReference<'mutation', {
   code: string
   name: string
@@ -388,7 +400,6 @@ async function main() {
   const image = process.env.SYNIE_WEB_IMAGE?.trim() || `synie-web-print:${suffix}`
   const env = composeEnv({
     COMPOSE_PROJECT_NAME: project,
-    SYNIE_POSTGRES_PORT: safePort('SYNIE_PRINTING_SMOKE_LEGACY_POSTGRES_PORT', 38_441),
     CONVEX_POSTGRES_PORT: safePort('SYNIE_PRINTING_SMOKE_CONVEX_POSTGRES_PORT', 38_442),
     MINIO_API_PORT: minioPort,
     MINIO_CONSOLE_PORT: safePort('SYNIE_PRINTING_SMOKE_MINIO_CONSOLE_PORT', 38_201),
@@ -427,7 +438,7 @@ async function main() {
       'convex-backend', 'convex-dashboard',
     ], { env })
     started = true
-    await checkInfra({ includeLegacyPostgres: false, env })
+    await checkInfra({ env })
 
     const keyResult = await runCompose(
       ['exec', '-T', 'convex-backend', './generate_admin_key.sh'],
@@ -481,13 +492,25 @@ async function main() {
     })
     const authBaseUrl = endpoint(convexSiteUrl, 'api/auth')
     const admin = await signIn({ authBaseUrl, siteOrigin: webOrigin, convexUrl, username, password })
+    const setupOptions = await admin.query(setupOptionsRef, {})
+    const cny = setupOptions.currencies.find((item) => item.isoCode === 'CNY')
+    invariant(cny, '打印烟测初始化缺少 CNY 种子')
+    await admin.mutation(completeSetupRef, {
+      company: {
+        code: 'PI', name: '打印初始化公司', shortName: '打印初始化',
+        baseCurrencyId: cny.id, accountTemplate: 'SMALL',
+      },
+      preferredLanguage: 'zh-CN',
+      seedSampleData: false,
+    })
 
     const currency = await admin.mutation(currencyCreateRef, {
       name: '打印闭环人民币', isoCode: 'PRT', symbol: '¥', active: true,
     })
-    const unit = await admin.mutation(unitCreateRef, {
-      unitType: 'QUANTITY', isBase: true, name: '打印闭环件', symbol: '件', ratio: '1',
-    })
+    const unit = (await admin.query(unitListRef, {
+      profile: 'lookup', numItems: 100, args: { unitType: 'QUANTITY' },
+    })).results.find((item) => item.isBase)
+    invariant(unit, '打印烟测初始化缺少数量基准单位')
     const company = await admin.mutation(companyCreateRef, {
       code: 'PT', name: '打印闭环公司', shortName: '打印公司', baseCurrencyId: currency.id,
     })

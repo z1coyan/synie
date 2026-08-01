@@ -25,7 +25,6 @@ async function main() {
   const sitePort = safePort('SYNIE_AUTH_SMOKE_SITE_PORT', 36_211)
   const env = composeEnv({
     COMPOSE_PROJECT_NAME: project,
-    SYNIE_POSTGRES_PORT: safePort('SYNIE_AUTH_SMOKE_LEGACY_POSTGRES_PORT', 35_441),
     CONVEX_POSTGRES_PORT: safePort('SYNIE_AUTH_SMOKE_CONVEX_POSTGRES_PORT', 35_442),
     MINIO_API_PORT: safePort('SYNIE_AUTH_SMOKE_MINIO_PORT', 39_100),
     MINIO_CONSOLE_PORT: safePort('SYNIE_AUTH_SMOKE_MINIO_CONSOLE_PORT', 39_101),
@@ -62,7 +61,7 @@ async function main() {
       { env },
     )
     started = true
-    await checkInfra({ includeLegacyPostgres: false, env })
+    await checkInfra({ env })
 
     const keyResult = await runCompose(
       ['exec', '-T', 'convex-backend', './generate_admin_key.sh'],

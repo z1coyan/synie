@@ -433,20 +433,32 @@ export const loadDraft = authedQuery({
   handler: (ctx, args) => loadAggregate(ctx, ctx.actor, headResource(args.resource), args.id),
 })
 
+export async function createTradingDraftInMutation(
+  ctx: MutationCtx,
+  actor: Actor,
+  resourceName: string,
+  rawInput: unknown,
+): Promise<DraftRecord> {
+  const resource = headResource(resourceName)
+  const input = object(rawInput, '根对象')
+  // Validate the complete aggregate shape before the first write.
+  array(input, 'items')
+  if (resource === 'salDeliveries') array(input, 'packBoxes')
+  const head = await createDomainRecord(
+    ctx,
+    actor,
+    resource,
+    without(input, ['items', 'packBoxes']),
+    { allowAggregateHead: true },
+  )
+  await saveChildren(ctx, actor, resource, head, input)
+  return loadAggregate(ctx, actor, resource, String(head.id))
+}
+
 export const createDraft = authedMutation({
   args: { resource: v.string(), input: v.any() },
   returns: v.any(),
-  handler: async (ctx, args) => {
-    const resource = headResource(args.resource)
-    const input = object(args.input, '根对象')
-    // Fail closed before the first write; Convex would roll back either way,
-    // but this keeps validation errors independent from insertion order.
-    array(input, 'items')
-    if (resource === 'salDeliveries') array(input, 'packBoxes')
-    const head = await createDomainRecord(ctx, ctx.actor, resource, without(input, ['items', 'packBoxes']), { allowAggregateHead: true })
-    await saveChildren(ctx, ctx.actor, resource, head, input)
-    return loadAggregate(ctx, ctx.actor, resource, String(head.id))
-  },
+  handler: (ctx, args) => createTradingDraftInMutation(ctx, ctx.actor, args.resource, args.input),
 })
 
 export const replaceDraft = authedMutation({

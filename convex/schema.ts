@@ -559,6 +559,12 @@ export default defineSchema({
     key: v.literal('singleton'),
     authInitializedAt: v.number(),
     firstAdminUserId: v.id('appUsers'),
+    firstCompanyId: v.optional(v.id('companies')),
+    completedAt: v.optional(v.number()),
+    sampleRequested: v.optional(v.boolean()),
+    sampleStage: v.optional(v.string()),
+    sampleData: v.optional(v.any()),
+    sampleSeededAt: v.optional(v.number()),
   }).index('by_key', ['key']),
 
   appUsers: defineTable({

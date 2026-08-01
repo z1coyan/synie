@@ -65,7 +65,7 @@ LibreOffice 稳定性。计划把它们分别前置到 002、004/005、006、007
 | 005 | [按事务闭包迁移全部业务域](005-migrate-business-domains.md) | P1 | L | 004 | DONE |
 | 006 | [迁移 S3 文件、导入、OCR、定时任务与外部 I/O](006-move-files-imports-and-jobs.md) | P1 | L | 003 | DONE |
 | 007 | [在 TanStack Start 落地可替换的 PDF worker](007-run-pdf-worker-in-tanstack-start.md) | P2 | L | 005, 006 | DONE |
-| 008 | [完成切流并删除 Bun/Hono/Kysely 后端](008-complete-cutover-and-remove-legacy-server.md) | P1 | L | 005, 006, 007 | TODO |
+| 008 | [完成切流并删除 Bun/Hono/Kysely 后端](008-complete-cutover-and-remove-legacy-server.md) | P1 | L | 005, 006, 007 | DONE |
 
 状态值：`TODO` | `IN PROGRESS` | `DONE` | `BLOCKED（原因）` |
 `REJECTED（原因）`。

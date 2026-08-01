@@ -8,6 +8,8 @@ import { paginationOptions, requireSearchTerm, resourcePage } from '../../lib/pa
 import { changedFields } from '../../platform/audit/model'
 import { writeAudit } from '../../platform/audit/write'
 import accountTemplates from './accountTemplates.json'
+import type { Actor } from '../../lib/actor'
+import type { DomainMutationCtx } from '../../lib/mutationContext'
 
 const ROLES = new Set(['unbilled_receivable','receivable','advance_received','unbilled_payable','payable','other_payable','advance_paid','travel','office','entertainment','transport','other_expense'])
 function requireCompanyAccess(actor: Parameters<typeof canAccessCompany>[0], companyId: string): void { if (!canAccessCompany(actor, companyId)) throw synieError('forbidden', '无权访问该公司') }
@@ -48,13 +50,15 @@ export const update = permissionedMutation('base.account:update')({args:{id:v.id
 export const remove = permissionedMutation('base.account:delete')({args:{id:v.id('accounts')},returns:v.null(),handler:async(ctx,args)=>{const row=await ctx.db.get(args.id);if(!row)throw synieError('not_found','会计科目不存在');requireCompanyAccess(ctx.actor,row.companyId);if(await ctx.db.query('accounts').withIndex('by_parent',q=>q.eq('parentId',row._id)).first())throw synieError('conflict','存在子科目，不能删除');const fact=await ctx.db.query('glEntries').withIndex('by_company_account_date',q=>q.eq('companyId',row.companyId).eq('accountId',row._id)).first();if(fact)throw synieError('conflict','会计科目已被引用，不能删除');await ctx.db.delete(row._id);await writeAudit(asDomainMutationCtx(ctx),ctx.actor,{resource:'basAccounts',recordId:row._id,recordLabel:row.name,companyId:row.companyId,action:'destroy',changes:present(row)});return null}})
 
 type TemplateEntry = { code:string; name:string; parent:string|null; direction:string; role:string|null; is_group:boolean }
-const templates = accountTemplates as Record<string,TemplateEntry[]>
+export const ACCOUNT_TEMPLATES = accountTemplates as Record<string,TemplateEntry[]>
 
-export const initializeTemplate = permissionedMutation('base.account:create')({
-  args:{companyId:v.id('companies'),template:v.string()},returns:v.object({createdCount:v.number()}),
-  handler:async(ctx,args)=>{
-    requireCompanyAccess(ctx.actor,args.companyId)
-    const entries=templates[args.template.trim().toLocaleLowerCase()]
+export async function initializeAccountTemplateInMutation(
+  ctx: DomainMutationCtx,
+  actor: Actor,
+  args: { companyId: Id<'companies'>; template: string },
+): Promise<{ createdCount: number }> {
+    requireCompanyAccess(actor,args.companyId)
+    const entries=ACCOUNT_TEMPLATES[args.template.trim().toLocaleLowerCase()]
     if(!entries)throw validationError('会计科目模板参数不合法',{template:['仅支持 CAS/SMALL/INTL']})
     if(!(await ctx.db.get(args.companyId)))throw validationError('会计科目模板参数不合法',{companyId:['公司不存在']})
     if(await ctx.db.query('accounts').withIndex('by_company_code_key',q=>q.eq('companyId',args.companyId)).first())throw synieError('conflict','该公司已有会计科目，不能重复初始化')
@@ -65,8 +69,12 @@ export const initializeTemplate = permissionedMutation('base.account:create')({
       const now=Date.now(),codeKey=entry.code.toLocaleLowerCase()
       const id=await ctx.db.insert('accounts',{code:entry.code,codeKey,name:entry.name,direction:entry.direction.toUpperCase() as 'DEBIT'|'CREDIT',isGroup:entry.is_group,active:true,role:entry.role?.toLocaleLowerCase()??null,parentId,companyId:args.companyId,currencyId:null,searchText:`${entry.code} ${entry.name}`.toLocaleLowerCase(),insertedAt:now,updatedAt:now})
       parents.set(entry.code,id)
-      await writeAudit(asDomainMutationCtx(ctx),ctx.actor,{resource:'basAccounts',recordId:id,recordLabel:entry.name,companyId:args.companyId,action:'init_from_template',changes:{code:entry.code,name:entry.name,direction:entry.direction,isGroup:entry.is_group,role:entry.role,parentId}})
+      await writeAudit(ctx,actor,{resource:'basAccounts',recordId:id,recordLabel:entry.name,companyId:args.companyId,action:'init_from_template',changes:{code:entry.code,name:entry.name,direction:entry.direction,isGroup:entry.is_group,role:entry.role,parentId}})
     }
     return{createdCount:entries.length}
-  }
+}
+
+export const initializeTemplate = permissionedMutation('base.account:create')({
+  args:{companyId:v.id('companies'),template:v.string()},returns:v.object({createdCount:v.number()}),
+  handler:(ctx,args)=>initializeAccountTemplateInMutation(asDomainMutationCtx(ctx),ctx.actor,args)
 })

@@ -2,9 +2,7 @@ import { checkInfra } from './health.ts'
 import { log, runCompose } from './lib.ts'
 
 async function main() {
-  const convexOnly = process.argv.includes('--convex-only')
   const services = [
-    ...(convexOnly ? [] : ['postgres']),
     'convex-postgres',
     'minio',
     'minio-public',
@@ -14,7 +12,7 @@ async function main() {
   ]
   log(`启动 ${services.join(', ')}`)
   await runCompose(['up', '-d', ...services])
-  await checkInfra({ includeLegacyPostgres: !convexOnly })
+  await checkInfra()
 }
 
 main().catch((error) => {

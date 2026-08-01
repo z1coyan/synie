@@ -5,7 +5,7 @@ type ComposeConfig = {
 }
 
 export async function checkInfra(
-  options: { includeLegacyPostgres?: boolean; env?: NodeJS.ProcessEnv } = {},
+  options: { env?: NodeJS.ProcessEnv } = {},
 ) {
   const env = options.env ?? composeEnv()
   const version = expectedConvexVersion(env)
@@ -38,13 +38,6 @@ export async function checkInfra(
     ],
     { env },
   )
-  if (options.includeLegacyPostgres) {
-    await runCompose(
-      ['exec', '-T', 'postgres', 'pg_isready', '-U', 'synie', '-d', 'synie'],
-      { env },
-    )
-  }
-
   const convexPort = env.CONVEX_PORT ?? '3210'
   const dashboardPort = env.CONVEX_DASHBOARD_PORT ?? '6791'
   const minioPort = env.MINIO_API_PORT ?? '9000'
@@ -120,8 +113,7 @@ export async function checkInfra(
 }
 
 if (import.meta.main) {
-  const convexOnly = process.argv.includes('--convex-only')
-  checkInfra({ includeLegacyPostgres: !convexOnly }).catch((error) => {
+  checkInfra().catch((error) => {
     console.error('[synie:convex] 健康检查失败:', error instanceof Error ? error.message : error)
     process.exit(1)
   })

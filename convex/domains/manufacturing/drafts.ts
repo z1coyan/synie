@@ -286,15 +286,19 @@ async function normalizedCreateInput(ctx: MutationCtx, resource: string, raw: un
   }
 }
 
+export async function createManufacturingDraftInMutation(
+  ctx: MutationCtx,
+  actor: Parameters<typeof createAggregate>[1],
+  resource: string,
+  input: unknown,
+) {
+  return createAggregate(ctx, actor, policy(resource), await normalizedCreateInput(ctx, resource, input))
+}
+
 export const loadDraft = authedQuery({ args: { resource: v.string(), id: v.string() }, returns: v.any(), handler: (ctx, args) => loadAggregate(ctx, ctx.actor, policy(args.resource), args.id) })
 export const createDraft = authedMutation({
   args: { resource: v.string(), input: v.any() }, returns: v.any(),
-  handler: async (ctx, args) => createAggregate(
-    ctx,
-    ctx.actor,
-    policy(args.resource),
-    await normalizedCreateInput(ctx, args.resource, args.input),
-  ),
+  handler: (ctx, args) => createManufacturingDraftInMutation(ctx, ctx.actor, args.resource, args.input),
 })
 export const replaceDraft = authedMutation({ args: { resource: v.string(), id: v.string(), input: v.any() }, returns: v.any(), handler: (ctx, args) => replaceAggregate(ctx, ctx.actor, policy(args.resource), args.id, args.input) })
 export const removeDraft = authedMutation({

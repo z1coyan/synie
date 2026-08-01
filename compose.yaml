@@ -1,71 +1,8 @@
-# 迁移期开发栈：现有 Bun/Hono 后端保留，同时启动自托管 Convex 基础设施。
+# Synie 唯一运行栈：TanStack Start + 自托管 Convex + PostgreSQL 17 + MinIO。
 # Convex backend/dashboard 必须使用同一个固定版本；缺少版本时 Compose 会立即失败。
 # 不固定顶层 name：Compose 默认从 checkout/worktree 目录派生 project，避免不同工作树互相操作。
 
 services:
-  # Legacy 业务数据库；在 Plan 008 完成切流前保留。
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: synie
-      POSTGRES_USER: synie
-      POSTGRES_PASSWORD: synie
-    ports:
-      - "127.0.0.1:${SYNIE_POSTGRES_PORT:-5441}:5432"
-    volumes:
-      - synie-postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U synie -d synie"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-    restart: unless-stopped
-    stop_grace_period: 10s
-
-  migrate:
-    build:
-      context: .
-      dockerfile: server/Dockerfile
-    command: ["bun", "db/migrate.ts"]
-    environment:
-      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
-
-  server:
-    build:
-      context: .
-      dockerfile: server/Dockerfile
-    environment:
-      PORT: "8080"
-      HOST: 0.0.0.0
-      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
-      AUTH_SECRET: local-development-secret-change-me-32-bytes
-      AUTH_TOKEN_TTL: 168h
-      LOG_LEVEL: info
-    ports:
-      - "127.0.0.1:8080:8080"
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-  seed:
-    build:
-      context: .
-      dockerfile: server/Dockerfile
-    command: ["bun", "db/seed.ts"]
-    profiles: ["tools"]
-    environment:
-      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
-      SEED_ADMIN_USERNAME: admin
-      SEED_ADMIN_PASSWORD: admin123
-      SEED_ADMIN_NAME: 系统管理员
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
   # Convex 专用 PostgreSQL。POSTGRES_URL 在 backend 中故意不带数据库名；
   # INSTANCE_NAME=convex-self-hosted 会选择 convex_self_hosted。
   convex-postgres:
@@ -205,11 +142,11 @@ services:
     image: ${SYNIE_WEB_IMAGE:-synie-web-print:local}
     build:
       context: .
-      dockerfile: web/Dockerfile
+      dockerfile: ${SYNIE_WEB_DOCKERFILE:-web/Dockerfile}
       secrets:
         - heroui_auth_token
       args:
-        VITE_SYNIE_BACKEND: convex
+        SYNIE_WEB_LICENSED_BASE_IMAGE: ${SYNIE_WEB_LICENSED_BASE_IMAGE:-synie-web-print:plan007-final}
         VITE_CONVEX_URL: ${VITE_CONVEX_URL:-http://127.0.0.1:3210}
         VITE_CONVEX_SITE_URL: ${VITE_CONVEX_SITE_URL:-http://127.0.0.1:3211}
         VITE_SITE_URL: ${VITE_SITE_URL:-http://127.0.0.1:3000}
@@ -217,7 +154,6 @@ services:
       HOST: 0.0.0.0
       PORT: "3000"
       NODE_ENV: production
-      VITE_SYNIE_BACKEND: convex
       VITE_CONVEX_URL: ${VITE_CONVEX_URL:-http://127.0.0.1:3210}
       VITE_CONVEX_SITE_URL: ${VITE_CONVEX_SITE_URL:-http://127.0.0.1:3211}
       VITE_SITE_URL: ${VITE_SITE_URL:-http://127.0.0.1:3000}
@@ -279,7 +215,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  synie-postgres:
   convex-postgres:
   synie-minio:
   convex-backend-data:

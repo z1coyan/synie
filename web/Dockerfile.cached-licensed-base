@@ -4,7 +4,18 @@ ARG SYNIE_WEB_LICENSED_BASE_IMAGE=synie-web-print:plan007-final
 FROM ${SYNIE_WEB_LICENSED_BASE_IMAGE} AS build
 
 USER root
+# 缓存基座只复用已授权依赖与 LibreOffice；先清空其应用字节，
+# 避免已删除的 workspace/源文件因 Docker COPY 合并语义残留。
+RUN cd / \
+  && mv /app/node_modules /opt/synie-root-node-modules \
+  && mv /app/web/node_modules /opt/synie-web-node-modules \
+  && rm -rf /app \
+  && mkdir -p /app/web \
+  && mv /opt/synie-root-node-modules /app/node_modules \
+  && mv /opt/synie-web-node-modules /app/web/node_modules \
+  && find /app/node_modules/@synie -mindepth 1 -maxdepth 1 ! -name shared -exec rm -rf {} +
 COPY --chown=bun:bun . /app
+RUN bun install --frozen-lockfile --ignore-scripts
 RUN rm -rf /app/web/dist \
   && mkdir -p /app/web/node_modules/.vite-temp \
   && chown -R bun:bun /app/web/node_modules/.vite-temp
@@ -22,6 +33,17 @@ ARG SYNIE_WEB_LICENSED_BASE_IMAGE=synie-web-print:plan007-final
 FROM ${SYNIE_WEB_LICENSED_BASE_IMAGE} AS runtime
 
 USER root
+RUN cd / \
+  && mv /app/node_modules /opt/synie-root-node-modules \
+  && mv /app/web/node_modules /opt/synie-web-node-modules \
+  && rm -rf /app \
+  && mkdir -p /app/web \
+  && mv /opt/synie-root-node-modules /app/node_modules \
+  && mv /opt/synie-web-node-modules /app/web/node_modules \
+  && find /app/node_modules/@synie -mindepth 1 -maxdepth 1 ! -name shared -exec rm -rf {} +
+COPY --from=build --chown=bun:bun /app/package.json /app/package.json
+COPY --from=build --chown=bun:bun /app/bun.lock /app/bun.lock
+COPY --from=build --chown=bun:bun /app/packages /app/packages
 COPY --from=build --chown=bun:bun /app/web/dist /app/web/dist
 COPY --from=build --chown=bun:bun /app/web/runtime-server.ts /app/web/runtime-server.ts
 COPY --from=build --chown=bun:bun /app/web/package.json /app/web/package.json

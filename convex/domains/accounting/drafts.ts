@@ -25,6 +25,14 @@ const policy: AggregatePolicy = {
   },
 }
 
+export function createJournalDraftInMutation(
+  ctx: Parameters<typeof createAggregate>[0],
+  actor: Parameters<typeof createAggregate>[1],
+  input: unknown,
+) {
+  return createAggregate(ctx, actor, policy, input)
+}
+
 export const loadDraft = authedQuery({
   args: { resource: v.literal('accGlJournals'), id: v.string() }, returns: v.any(),
   handler: (ctx, args) => loadAggregate(ctx, ctx.actor, policy, args.id),
@@ -32,7 +40,7 @@ export const loadDraft = authedQuery({
 
 export const createDraft = authedMutation({
   args: { resource: v.literal('accGlJournals'), input: v.any() }, returns: v.any(),
-  handler: (ctx, args) => createAggregate(ctx, ctx.actor, policy, args.input),
+  handler: (ctx, args) => createJournalDraftInMutation(ctx, ctx.actor, args.input),
 })
 
 export const replaceDraft = authedMutation({

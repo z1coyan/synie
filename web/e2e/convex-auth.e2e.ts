@@ -28,7 +28,14 @@ test('Convex 初始化、SSR session、退出与重登闭环', async ({ page, co
   await page.getByLabel('姓名（可选）').fill('浏览器验收管理员')
   await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByLabel('确认密码').fill(password)
-  await page.getByRole('button', { name: '创建管理员并进入系统' }).click()
+  await page.getByRole('button', { name: '创建管理员并继续' }).click()
+
+  await expect(page.getByLabel('公司编号（2 位英文）')).toBeVisible()
+  await page.getByLabel('公司编号（2 位英文）').fill('QA')
+  await page.getByLabel('公司简称').fill('认证验收')
+  await page.getByLabel('公司名称').fill('认证闭环验收公司')
+  await expect(page.getByRole('button', { name: '完成初始化' })).toBeEnabled()
+  await page.getByRole('button', { name: '完成初始化' }).click()
 
   await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible({
     timeout: 30_000,

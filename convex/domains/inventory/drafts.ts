@@ -105,13 +105,22 @@ function policy(resource: string): AggregatePolicy {
   return result
 }
 
+export function createInventoryDraftInMutation(
+  ctx: Parameters<typeof createAggregate>[0],
+  actor: Parameters<typeof createAggregate>[1],
+  resource: string,
+  input: unknown,
+) {
+  return createAggregate(ctx, actor, policy(resource), input)
+}
+
 export const loadDraft = authedQuery({
   args: { resource: v.string(), id: v.string() }, returns: v.any(),
   handler: (ctx, args) => loadAggregate(ctx, ctx.actor, policy(args.resource), args.id),
 })
 export const createDraft = authedMutation({
   args: { resource: v.string(), input: v.any() }, returns: v.any(),
-  handler: (ctx, args) => createAggregate(ctx, ctx.actor, policy(args.resource), args.input),
+  handler: (ctx, args) => createInventoryDraftInMutation(ctx, ctx.actor, args.resource, args.input),
 })
 export const replaceDraft = authedMutation({
   args: { resource: v.string(), id: v.string(), input: v.any() }, returns: v.any(),

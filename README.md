@@ -1,232 +1,155 @@
 # Synie
 
-Synie 是一个多公司财务 ERP，**纯 TypeScript monorepo**（Bun workspaces）：
+Synie 是面向中小企业的多公司财务 ERP，使用单一 TypeScript 工具链。当前运行架构只有：
 
-- `server/`：产品后端 —— Bun + Hono + Kysely + PostgreSQL；`hono/client` 全链路类型契约（`ApiType` 为事实源）。
-- `web/`：TanStack Start 前端 —— React 19、HeroUI Pro、Tailwind v4、TanStack Query、`@synie/server` hono/client。
-- `packages/shared`：前后端共享 TS 契约（Filter DSL、Meta DTO、错误模型、decimal 纪律）。
-- `infra/convex`：迁移目标的自托管 Convex、PostgreSQL 17、MinIO、备份与恢复工具。
+- `web/`：TanStack Start + React 19，承载 SSR、Better Auth 同源路由与内部 PDF Worker。
+- `convex/`：自托管 Convex 函数、schema、鉴权、领域事务、任务与定时调度，是唯一业务事实源。
+- `packages/shared/`：前端与 Convex 共用的纯 TypeScript 领域原语。
+- `infra/convex/`：PostgreSQL 17、MinIO、Convex backend/dashboard、健康检查、备份与恢复工具。
 
-业务仍默认走 `/api/v1`（Vite 代理至 `server`）；迁移期间本地同时启动目标 Convex 基础设施，
-按事务闭包验收后才在最终阶段删除旧后端，禁止 REST/Convex 双写。
+Resource Catalog 声明资源字段与查询 profile；业务写入仍由各领域 mutation 与 Aggregate Draft
+事务闭包承载。产品文件字节位于私有 S3-compatible storage，Convex 保存元数据、权限和任务状态。
 
-> **登录提示：**JWT HS256 与历史 Phoenix.Token 不兼容。若旧会话无法正常退出，请清除浏览器 `localStorage` 中的 `synie:token` 后重新登录。
+旧独立后端的完成记录、恢复坐标与删除证据见
+[`docs/migration/2026-07-31-bun-server-to-self-hosted-convex-cutover.md`](docs/migration/2026-07-31-bun-server-to-self-hosted-convex-cutover.md)。
 
-已交付的核心模块包括总账、发票、银行与票据、客户和供应商、销售采购库存制造、人力薪酬、基础资料及系统管理。
-
-历史栈清场记录见 [`docs/migration/2026-07-28-go-to-bun-ts-cutover.md`](docs/migration/2026-07-28-go-to-bun-ts-cutover.md)（Go tag `server-go-final`、Elixir tag `backend-elixir-final`；OpenAPI 归档 `docs/migration/openapi-server-go-final.yaml`）。
-
-## 目录结构
+## 目录
 
 ```text
 .
-├── package.json                # Bun workspaces 根（packages/* + server + web）
-├── server/                     # 产品后端：Bun + Hono + Kysely
-│   ├── src/                    # platform 横切层 / engines / modules / db
-│   ├── db/migrations/          # SQL 迁移 + migrate.ts
-│   └── test/                   # bun test；PG 集成门控 SYNIE_TEST_DATABASE_URL
-├── packages/
-│   └── shared/                 # @synie/shared：前后端共享契约（filter/meta/error/decimal）
-├── web/                        # TanStack Start 前端
-│   ├── app/lib/api/            # hono/client 与 Resource Client
-│   ├── app/lib/resources/      # ResourceClient registry
-│   └── app/routes/             # 页面与路由
-├── infra/convex/               # self-host infra、bucket bootstrap、备份/恢复 smoke
-├── contracts/                  # 历史 fixtures（authz 等）；HTTP 类型源为 ApiType
-├── CONTEXT.md                  # 领域术语（ubiquitous language）
-├── docs/
-│   ├── adr/                    # 架构决策记录
-│   ├── migration/              # 迁移设计与归档（含历史 OpenAPI）
-│   └── 产品文档/               # 功能说明书
-└── .scratch/                   # 活跃规格与本地工单
+├── convex/                 # 业务函数、schema、auth、engines、jobs
+├── web/                    # TanStack Start 与内部 PDF Worker
+├── packages/shared/        # 共享领域原语
+├── infra/convex/           # Compose 编排、S3、备份/恢复/烟测
+├── docs/adr/               # 架构决策
+├── docs/产品文档/          # 功能说明书
+├── CONTEXT.md              # 领域术语唯一定义
+└── compose.yaml            # 完整自托管目标栈
 ```
 
-> Monorepo：根 `package.json` 统一管理 Bun workspaces（`packages/*` + `server` + `web`），
-> 依赖安装一律在**仓库根**执行 `bun install`。
+根 `package.json` 统一管理 `packages/*` 与 `web` workspaces；依赖安装始终在仓库根执行。
 
 ## 环境要求
 
-- Bun `1.3.14`（唯一运行时与包管理器）
-- TypeScript `7.0.2`（固定版本的原生编译器）
-- PostgreSQL 17（推荐使用根目录 Compose）
-- Docker / Docker Compose（推荐开发路径）
-- 固定版本的 self-hosted Convex backend/dashboard（由 Compose 拉取）
-- 本地 MinIO（仅内部开发替身）及 product-only CORS loopback proxy；生产使用第三方
-  S3-compatible provider
+- Bun `1.3.14`
+- TypeScript `7.0.2`
+- Docker Engine 与 Docker Compose v2
+- 能拉取固定版本的 Convex backend/dashboard、PostgreSQL 17 与 MinIO 镜像
+- Web 全新构建需 `HEROUI_AUTH_TOKEN`；本地无 token 时只可显式复用同 lockfile 下已合法构建的 licensed base 镜像
 
-VS Code 请安装仓库推荐的 “TypeScript 7” extension（extension id
-`TypeScriptTeam.native-preview`）；工作区配置会启用原生语言服务并使用根目录安装的
-TypeScript。依赖仍一律只在仓库根执行 `bun install`。
-
-TypeScript 7.0 尚无稳定 Compiler API。未来引入 lint、codegen 或 editor plugin 时，
-若工具会直接导入 `typescript`，必须先评估 TS 7 兼容性，不应默认增加 TypeScript 6
-alias。
-
-先复制本地配置；`CONVEX_VERSION` 是 backend/dashboard 共用的完整、不可变 tag：
+先创建本地配置。`CONVEX_VERSION` 必须是 backend 与 dashboard 共用的 40 位不可变 commit tag：
 
 ```bash
 cp .env.example .env
+bun install --frozen-lockfile
 ```
 
-Compose 默认把端口全部绑定在 `127.0.0.1`。主要环境变量：
+本地默认端口均只绑定 `127.0.0.1`：
 
-```text
-PORT=8080
-HOST=0.0.0.0
-DATABASE_URL=postgres://synie:synie@localhost:5441/synie?sslmode=disable
-AUTH_SECRET=<至少 32 字节的随机值>
-AUTH_TOKEN_TTL=168h
-CONVEX_VERSION=19431ea0dd90bc55ae58dbbd06d9aa045f97336f
-CONVEX_SELF_HOSTED_URL=http://127.0.0.1:3210       # bootstrap 写入 .env.local
-SYNIE_S3_INTERNAL_ENDPOINT=http://minio:9000
-SYNIE_S3_PUBLIC_ENDPOINT=http://localhost:9000
-```
+| 服务 | 默认地址 |
+|---|---|
+| Web / Better Auth / PDF Worker | `http://127.0.0.1:3000` |
+| Convex backend | `http://127.0.0.1:3210` |
+| Convex site / HTTP actions | `http://127.0.0.1:3211` |
+| Convex dashboard | `http://127.0.0.1:6791` |
+| 产品 S3 代理 / MinIO console | `http://127.0.0.1:9000` / `http://127.0.0.1:9001` |
+| Convex PostgreSQL | `127.0.0.1:5442` |
 
-DDL 由 SQL 迁移唯一管理（`server/db/migrations/` + `server/db/migrate.ts`），不再用 Ecto/Ash 迁移产品数据库。
+## 本地开发
 
-## 安装依赖
+一条命令启动基础设施，首次静默创建 `.env.local` admin key，然后并行运行 Convex watcher 与
+TanStack Start：
 
 ```bash
-# 仓库根：一次安装全部 workspace（packages/shared + server + web）
-bun install
+bun run dev
 ```
 
-## 本地启动（一键）
-
-根目录用 **Turborepo** 编排。迁移期默认一条命令：启动 legacy PostgreSQL 与目标
-Convex PostgreSQL/MinIO/backend/dashboard → 迁移旧 SQL → 并行跑 API + 前端。
+`--no-docker` 只适用于操作者已显式提供完整 self-hosted Convex URL/admin key 与 S3 endpoint/credential
+的情况：
 
 ```bash
-bun install
-bun run dev                 # 一键：完整迁移期 infra + migrate + server + web（不 seed）
-bun run dev -- --no-docker  # 跳过 compose；要求显式提供 PG、Convex 与 S3
-bun run db:reset            # 开发库复位到未 setup（仅 localhost 等 dev DSN）
+bun run dev -- --no-docker
 ```
 
-| 服务 | 地址 |
-|------|------|
-| API | http://localhost:8080 |
-| healthz | http://localhost:8080/api/v1/healthz |
-| 前端 | http://localhost:3000（`/api/v1` 代理到 8080） |
-| Legacy PostgreSQL | `localhost:5441` |
-| Convex PostgreSQL | `localhost:5442` |
-| 产品 S3 API proxy / MinIO console | http://localhost:9000 / http://localhost:9001 |
-| Convex backend / HTTP actions | http://localhost:3210 / http://localhost:3211 |
-| Convex dashboard | http://localhost:6791 |
-
-分项命令（可选）：
+常用分项命令：
 
 ```bash
-bun run dev:infra        # 只启动 legacy PG + Convex/MinIO 基础设施并跑健康门禁
-bun run infra:health     # 镜像/PG/S3/六桶/product-only CORS/backend/dashboard 对拍
-bun run convex:bootstrap # admin key 静默写入 gitignored .env.local（0600）
+bun run infra:up          # 启动并健检 PostgreSQL/MinIO/Convex/dashboard
+bun run convex:bootstrap  # admin key 写入 .env.local（0600，不输出 key）
+bun run dev:convex        # 单独运行 function watcher
+bun run dev:web           # 单独运行 TanStack Start
+bun run infra:health
 bun run infra:logs
-bun run infra:down       # 不带 -v，不删除 volume
-bun run db:up            # 仅 postgres
-bun run db:migrate
-bun run db:reset         # 清空业务数据 → 未 setup（dev only）
-bun run db:seed          # 可选：仅幂等管理员（一般用初始化向导）
-bun run dev:apps         # 仅 turbo 并行 server+web（假设库已就绪）
-bun run dev:server
-bun run dev:web
+bun run infra:down        # 不带 -v，不删除 volume
 ```
 
-Docker 全容器后端（不跑本机 hot reload）：
+全容器栈首次启动流程：
 
 ```bash
-docker compose up --build server
+docker compose up -d convex-postgres minio minio-public minio-init convex-backend convex-dashboard
+bun run convex:bootstrap
+bunx convex dev --once --typecheck-components
+docker compose up -d --build
+docker compose ps
+bun run infra:health
 ```
 
-备份与隔离恢复演练：
+标准 `web/Dockerfile` 用 BuildKit secret 读取 `HEROUI_AUTH_TOKEN`。如当前机器已有同一依赖版本下合法构建的
+Web/LibreOffice 镜像，可在本地显式选择 `web/Dockerfile.cached-licensed-base`；该路径会先清空基座中的
+应用文件，只复用授权依赖和 LibreOffice：
+
+```bash
+SYNIE_WEB_DOCKERFILE=web/Dockerfile.cached-licensed-base \
+SYNIE_WEB_LICENSED_BASE_IMAGE=synie-web-print:plan007-final \
+docker compose up -d --build
+```
+
+## 验证
+
+```bash
+bun run check                         # coverage/readiness/生成物/零残留/Web checks
+bun run typecheck
+bun run test
+bun run build
+bun run e2e:self-hosted               # auth + ERP + engines + S3 + PDF
+bun run test:self-hosted-restore      # 隔离快照与六 bucket 恢复演练
+```
+
+`check:no-legacy-server` 扫描活动源码、配置与锁文件，禁止独立业务后端、业务 REST fallback、旧会话
+token 和旧数据库工具重新进入当前栈。历史迁移文档与 committed coverage manifests 不属于活动运行面。
+
+## 备份与恢复
 
 ```bash
 bun run convex:backup -- /explicit/safe/output-directory
-bun run test:self-hosted-restore -- /explicit/output synie-restore-YYYYMMDD
+bun run convex:restore -- <backup-directory> <new-target-project>
+bun run test:self-hosted-restore
 ```
 
-恢复工具使用包含 Convex file storage 的 portable snapshot，目标栈必须是从未存在过的独立
-project/ports/volumes；它会从源/目标实际读回同一数据库记录与文件并按字节 SHA-256 对拍，不比较 ZIP
-文件本身。演练结束只停止临时容器，不删除 volume。生产责任、升级与告警见
+备份由 Convex portable snapshot（含 Convex file storage）与六个 S3 bucket 组成。恢复只允许全新的独立 project/ports/volumes，
+并对数据库记录和对象 bytes 做 SHA-256 对拍。演练清理不删除 volumes 或备份。生产职责、升级与告警见
 [`docs/runbooks/convex-self-hosted.md`](docs/runbooks/convex-self-hosted.md)。
 
-## 常用命令
+## 运行边界
 
-### 后端（server/）
-
-```bash
-cd server
-bun test                 # 单测；SYNIE_TEST_DATABASE_URL 设置后含 PG 集成
-bun run typecheck
-bun run db:migrate
-bun run db:codegen       # 重新生成 src/db/types.d.ts（须已迁移开发库）
-```
-
-### 前端检查与构建
-
-```bash
-cd web
-bun run check
-bun run typecheck
-bun test
-bun run build
-```
-
-Playwright 验收：
-
-```bash
-cd web
-bun run e2e          # run-smoke.sh：迁移 + Bun server + 前端 + playwright.api.config.ts
-bun run e2e:api      # 仅跑 *.api.e2e.ts（需已起栈）
-```
-
-前端契约来自 `@synie/server` 的 `ApiType` + `createApiClient`（hono/client），不再使用 OpenAPI codegen。
-
-## 当前 API 合约
-
-类型事实源：`server/src/app.ts` 的 `ApiType`（经 `hono/client` 传导到 web）。主要入口包括：
-
-- 登录：`POST /api/v1/auth/login`
-- 当前用户：`GET /api/v1/auth/me`
-- 初始化向导：`/api/v1/setup/*`
-- 资源元数据：`GET /api/v1/meta/resources/{name}`
-- 资源查询：各资源的 `/api/v1/.../query`
-- 文件：`/api/v1/files*`
-- 打印及业务命令：对应的 `/api/v1/...` REST endpoint
-
-登录后前端把 JWT 存入 `web/app/lib/auth.ts`，后续请求带 `Authorization: Bearer <token>`。资源权限、角色与公司范围由服务端在每次请求时从 PostgreSQL 构建，不固化在 JWT 中。
+- 浏览器业务数据请求只经 Convex generated API/ResourceBinding。
+- Better Auth 只经 TanStack Start 同源 `/api/auth/*` cookie 路由。
+- 文件上下载先经 Convex 鉴权，再使用短时 SigV4 URL 直连私有产品 bucket。
+- TanStack Start 的 `/api/internal/print-worker/v1/*` 只是带 HMAC 的内部 xlsx→PDF Worker 契约，不读取业务数据。
+- Convex backend/dashboard 必须固定同一版本；PostgreSQL、dashboard、S3 internal endpoint 不对公网暴露。
 
 ## HeroUI Pro
 
-前端使用 [HeroUI Pro](https://heroui.pro)：`@heroui/react` v3 与 `@heroui-pro/react`，要求 React 19 + Tailwind v4。开发规范见 `web/AGENTS.md`。
+HeroUI token 只能放在已忽略的本地环境文件或 CI secret store：
 
-从 [Pro dashboard](https://heroui.pro/dashboard) 获取 token，存放在仓库根目录 `.env`（已 gitignore，模板见 `.env.example`）：
+- `HEROUI_PERSONAL_TOKEN`：个人本地工具。
+- `HEROUI_AUTH_TOKEN`：非交互安装与标准 Web 镜像构建。
 
-- `HEROUI_PERSONAL_TOKEN`：个人本地 MCP / skills 使用。
-- `HEROUI_AUTH_TOKEN`：CI/CD 与非交互安装使用。
+两者均不得提交、写入 Docker ARG/ENV 或输出到日志。
 
-两个 token 均不得提交或写入代码。若 `bun install` 后 Pro 组件缺失，可带 token 重跑安装：
+## 生产最低要求
 
-```bash
-cd web
-HEROUI_AUTH_TOKEN=xxx node node_modules/@heroui-pro/react/dist/postinstall/index.js
-```
-
-或执行一次本地授权：`bunx heroui-pro@latest login`。
-
-## 生产环境提示
-
-进入生产部署前至少需要：
-
-- 配置真实 `DATABASE_URL`。
-- 配置至少 32 字节、不可预测的 `AUTH_SECRET`，并按需设置 `AUTH_TOKEN_TTL`。
-- 使用 `bun run db:migrate` 执行并审查数据库迁移。
-- 通过 seed 或初始化向导创建首个管理员，不在日志或代码中保存口令。
-- 验证 `/api/v1/healthz`、后端测试、前端检查/构建与 Playwright e2e。
-- Convex backend 与 PostgreSQL 17 同 region；backend/dashboard 固定同一 image tag，升级前先 export。
-- Convex 3210/3211 只经 TLS reverse proxy 暴露，dashboard、数据库与 S3 internal endpoint 不公开。
-- 使用通过 SigV4/private/presigned/checksum/CORS 测试的第三方 S3-compatible provider；本地 MinIO
-  只在容器网络提供存储，浏览器经 product-only loopback proxy 访问，不得部署到生产。
-- 配对备份 Convex portable snapshot、PostgreSQL、六个 S3 bucket、函数 Git SHA 与 env secret reference，
-  并按 runbook 定期在全新环境恢复。
-
-历史 Elixir（`backend/`）与 Go（`server-go/`）实现已移出工作树；考古见 git tag `backend-elixir-final` / `server-go-final`。
+- 以 secret manager 注入 Convex admin/deployment secrets、S3 credential 与 Worker HMAC，不复用本地默认值。
+- Convex backend 与 PostgreSQL 17 同 region，升级前导出快照并演练空环境恢复。
+- 使用通过 SigV4、private access、presigned URL、checksum 与 CORS 矩阵的第三方 S3 provider。
+- 成对备份 Convex snapshot、六个 bucket、函数 Git SHA 和 secret reference，定期恢复而不只是生成备份。

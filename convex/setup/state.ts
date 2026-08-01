@@ -12,7 +12,7 @@ export async function readSetupPresence(db: DatabaseReader) {
   return {
     setupState,
     firstAppUser,
-    initialized: setupState !== null,
+    initialized: setupState?.completedAt !== undefined,
     hasUsers: firstAppUser !== null,
   }
 }

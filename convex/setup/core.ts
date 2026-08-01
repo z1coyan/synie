@@ -4,8 +4,7 @@ import { createPasswordPrincipal } from '../iam/principal'
 import { synieError, validationError } from '../lib/errors'
 import { prepareFirstUser, type FirstUserInput } from './model'
 import { readSetupPresence } from './state'
-import { seedSettings } from '../domains/platform/settingsSeed'
-import { seedDefaultNumberingRules } from '../platform/numbering/defaults'
+import { seedCommonCurrencies } from './seeds'
 
 export const setupFaultPoints = [
   'after_auth_user',
@@ -93,8 +92,7 @@ export async function createFirstUserTransaction(
     firstAdminUserId: appUserId,
   })
 
-  await seedSettings(ctx)
-  await seedDefaultNumberingRules(ctx)
+  await seedCommonCurrencies(ctx)
 
   if (options.faultPoint === 'after_setup_state') injectedFault(options.faultPoint)
 

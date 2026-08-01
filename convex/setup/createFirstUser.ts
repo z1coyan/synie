@@ -2,7 +2,7 @@ import { v } from 'convex/values'
 import { mutation } from '../_generated/server'
 import { createFirstUserTransaction } from './core'
 
-/** Public only while setupState is absent; user creation remains server-controlled. */
+/** Public only before the first principal exists; business setup completes after sign-in. */
 export const createFirstUser = mutation({
   args: {
     username: v.string(),

@@ -8,6 +8,8 @@ import { changedFields } from '../../platform/audit/model'
 import { writeAudit } from '../../platform/audit/write'
 import { seedDefaultWarehouses } from '../../resources/warehouseSeed'
 import { canAccessCompany } from '../../lib/companyScope'
+import type { Actor } from '../../lib/actor'
+import type { DomainMutationCtx } from '../../lib/mutationContext'
 
 function key(value: string): string { return value.trim().toLocaleLowerCase() }
 function present(row: Doc<'companies'>) {
@@ -73,10 +75,17 @@ export const list = permissionedQuery('base.company:read')({
     return resourcePage({ ...page, page: page.page.map(present) })
   },
 })
-export const create = permissionedMutation('base.company:create')({
-  args: { code: v.string(), name: v.string(), shortName: v.string(), parentId: v.optional(v.union(v.id('companies'), v.null())), baseCurrencyId: v.id('currencies') },
-  returns: v.any(),
-  handler: async (ctx, args) => {
+export async function createCompanyInMutation(
+  ctx: DomainMutationCtx,
+  actor: Actor,
+  args: {
+    code: string
+    name: string
+    shortName: string
+    parentId?: Id<'companies'> | null
+    baseCurrencyId: Id<'currencies'>
+  },
+) {
     const code = args.code.trim().toUpperCase()
     if (!/^[A-Z]{2}$/.test(code)) throw validationError('公司参数不合法', { code: ['必须为两个英文字母'] })
     const codeKey = key(code)
@@ -90,10 +99,15 @@ export const create = permissionedMutation('base.company:create')({
       searchText: `${code} ${args.name} ${args.shortName}`.toLocaleLowerCase(), insertedAt: now, updatedAt: now,
     })
     const row = (await ctx.db.get(id))!
-    await seedDefaultWarehouses(ctx, ctx.actor, row)
-    await writeAudit(asDomainMutationCtx(ctx), ctx.actor, { resource: 'basCompanies', recordId: id, recordLabel: row.name, action: 'create', changes: snapshot(present(row)) })
+    await seedDefaultWarehouses(ctx, actor, row)
+    await writeAudit(ctx, actor, { resource: 'basCompanies', recordId: id, recordLabel: row.name, action: 'create', changes: snapshot(present(row)) })
     return present(row)
-  },
+}
+
+export const create = permissionedMutation('base.company:create')({
+  args: { code: v.string(), name: v.string(), shortName: v.string(), parentId: v.optional(v.union(v.id('companies'), v.null())), baseCurrencyId: v.id('currencies') },
+  returns: v.any(),
+  handler: (ctx, args) => createCompanyInMutation(asDomainMutationCtx(ctx), ctx.actor, args),
 })
 export const update = permissionedMutation('base.company:update')({
   args: { id: v.id('companies'), name: v.optional(v.string()), shortName: v.optional(v.string()), parentId: v.optional(v.union(v.id('companies'), v.null())), baseCurrencyId: v.optional(v.id('currencies')) },

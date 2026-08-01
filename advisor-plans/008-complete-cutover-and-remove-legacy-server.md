@@ -294,15 +294,15 @@ Docker volumes 的删除属于独立、用户明确授权的破坏性操作，�
 
 ## 完成条件
 
-- [ ] readiness 报告为 0 legacy/REST/gap/cross-backend，且覆盖分母机器生成。
-- [ ] “无生产数据、无需 importer/双写”前提被再次明确确认并记录。
-- [ ] `server-bun-final` 指向删除前可构建提交，旧完整 release 可在隔离环境恢复。
-- [ ] `server/`、Hono/Kysely、业务 SQL migrations、JWT localStorage、`/api/v1` 全部退出活动树。
-- [ ] 本地默认启动 Convex PostgreSQL + MinIO/init + backend/dashboard；六 buckets 幂等存在。
-- [ ] 生产/本地都是 Convex + S3 code path，TanStack 只保留 auth/Web/internal PDF Worker server 能力。
-- [ ] 新 CI、fresh clone、自托管 E2E、生产 Web image、backup/restore 全绿。
-- [ ] README/AGENTS/CONTEXT/产品文档/ADR/migration record 收敛且链接有效。
-- [ ] 未删除任何 volume/bucket/backup；迁移 flags 清除；最终 coverage gate 留在 CI；索引 DONE。
+- [x] readiness 报告为 0 legacy/REST/gap/cross-backend，且覆盖分母机器生成。
+- [x] “无生产数据、无需 importer/双写”前提被再次明确确认并记录。
+- [x] `server-bun-final` 指向删除前可构建提交，旧完整 release 可在隔离环境恢复。
+- [x] `server/`、Hono/Kysely、业务 SQL migrations、JWT localStorage、`/api/v1` 全部退出活动树。
+- [x] 本地默认启动 Convex PostgreSQL + MinIO/init + backend/dashboard；六 buckets 幂等存在。
+- [x] 生产/本地都是 Convex + S3 code path，TanStack 只保留 auth/Web/internal PDF Worker server 能力。
+- [x] 新 CI、fresh clone、自托管 E2E、生产 Web image、backup/restore 全绿。
+- [x] README/AGENTS/CONTEXT/产品文档/ADR/migration record 收敛且链接有效。
+- [x] 未删除任何 volume/bucket/backup；迁移 flags 清除；最终 coverage gate 留在 CI；索引 DONE。
 
 ## STOP 条件
 

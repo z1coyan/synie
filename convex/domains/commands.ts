@@ -247,7 +247,7 @@ async function glPosting(
     const net = decimal(row.netTotal)
     const tax = decimal(row.taxTotal)
     if (!row.partyAccountId || !row.amountAccountId || gross.lte(0)) return null
-    const output = String(row.direction).toUpperCase() === 'OUTPUT'
+    const output = String(row.direction).toUpperCase() === 'OUTBOUND'
     const party: GlLine = {
       accountId: String(row.partyAccountId) as Id<'accounts'>,
       debit: output ? roundAmount(gross) : '0', credit: output ? '0' : roundAmount(gross),
@@ -592,21 +592,21 @@ async function syncChildStatus(
   }
 }
 
-export const execute = authedMutation({
-  args: { resource: v.string(), id: v.string(), key: v.string(), input: v.optional(v.any()) },
-  returns: v.any(),
-  handler: async (rawCtx, args) => {
-    const ctx = asDomainMutationCtx(rawCtx)
+export async function executeCommandInMutation(
+  ctx: DomainMutationCtx,
+  actor: Actor,
+  args: { resource: string; id: string; key: string; input?: unknown },
+) {
     const document = catalogDocument(args.resource)
     const command = document.commands.find((item) => item.key === args.key)
     if (!command) throw synieError('validation', `${document.label}不支持命令 ${args.key}`)
-    requirePermission(rawCtx.actor, `${document.permissionPrefix}:${command.requiredCapability}`)
+    requirePermission(actor, `${document.permissionPrefix}:${command.requiredCapability}`)
     const key = args.key as CommandKey
     if (args.resource === 'accBankTransactions' && key === 'reconcile') {
       const input = (args.input ?? {}) as Wire
       return createBankReconciliation(
         ctx,
-        rawCtx.actor,
+        actor,
         args.id,
         text(input.journalId, '会计凭证'),
         text(input.amount, '对账金额'),
@@ -659,9 +659,9 @@ export const execute = authedMutation({
       const postingDate = text((args.input as Wire | undefined)?.postingDate, '红冲过账日期')
       await reverseGlInMutation(ctx, document.permissionPrefix, args.id, postingDate)
     } else if (key === 'void' || key === 'cancel' || key === 'unconfirm') {
-      await reverseEffects(ctx, rawCtx.actor, args.resource, args.id, before, key)
+      await reverseEffects(ctx, actor, args.resource, args.id, before, key)
     } else if (key === 'audit' || key === 'approve' || key === 'ship' || key === 'receive' || key === 'confirm') {
-      await postEffects(ctx, rawCtx.actor, args.resource, args.id, row, key)
+      await postEffects(ctx, actor, args.resource, args.id, row, key)
     }
     const statusExtra = args.resource === 'accVatInvoices' && (key === 'void' || key === 'reverse')
       ? {
@@ -681,16 +681,25 @@ export const execute = authedMutation({
       ] as const) {
         if (typeof targetId === 'string') {
           const target = await rowFor(ctx, targetResource, targetId)
-          await patchDomainStatus(ctx, rawCtx.actor, targetResource, targetId, 'CONFIRMED', 'reopenFromInvoice')
-          await openReconciliationTodo(ctx, rawCtx.actor, targetResource, targetId, target, false)
+          await patchDomainStatus(ctx, actor, targetResource, targetId, 'CONFIRMED', 'reopenFromInvoice')
+          await openReconciliationTodo(ctx, actor, targetResource, targetId, target, false)
         }
       }
     }
-    const result = await patchDomainStatus(ctx, rawCtx.actor, args.resource, args.id, transition.to, key, statusExtra)
-    await syncChildStatus(ctx, rawCtx.actor, args.resource, args.id, transition.to)
+    const result = await patchDomainStatus(ctx, actor, args.resource, args.id, transition.to, key, statusExtra)
+    await syncChildStatus(ctx, actor, args.resource, args.id, transition.to)
     if (args.resource === 'mfgWorkOrders' && key === 'void') {
-      await removeMakeArrangement(ctx, rawCtx.actor, args.id)
+      await removeMakeArrangement(ctx, actor, args.id)
     }
     return result
-  },
+}
+
+export const execute = authedMutation({
+  args: { resource: v.string(), id: v.string(), key: v.string(), input: v.optional(v.any()) },
+  returns: v.any(),
+  handler: (rawCtx, args) => executeCommandInMutation(
+    asDomainMutationCtx(rawCtx),
+    rawCtx.actor,
+    args,
+  ),
 })

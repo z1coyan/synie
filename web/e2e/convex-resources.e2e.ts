@@ -31,7 +31,13 @@ test('三个 ResourceBinding pilot 在 self-hosted Convex 完成浏览器闭环'
   await page.getByLabel('姓名（可选）').fill('资源验收管理员')
   await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByLabel('确认密码').fill(password)
-  await page.getByRole('button', { name: '创建管理员并进入系统' }).click()
+  await page.getByRole('button', { name: '创建管理员并继续' }).click()
+  await expect(page.getByLabel('公司编号（2 位英文）')).toBeVisible()
+  await page.getByLabel('公司编号（2 位英文）').fill('QR')
+  await page.getByLabel('公司简称').fill('资源验收')
+  await page.getByLabel('公司名称').fill('资源闭环验收公司')
+  await expect(page.getByRole('button', { name: '完成初始化' })).toBeEnabled()
+  await page.getByRole('button', { name: '完成初始化' }).click()
   await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible()
 
   const verifier = spawnSync('bun', ['scripts/verify-convex-resources.ts'], {
@@ -60,6 +66,7 @@ test('三个 ResourceBinding pilot 在 self-hosted Convex 完成浏览器闭环'
   await expect(page.getByText('浏览器验收币种', { exact: true })).toBeVisible()
   await page.reload()
   await waitForHydration(page)
+  await page.getByRole('searchbox', { name: '搜索' }).fill('浏览器验收币种')
   await expect(page.getByText('浏览器验收币种', { exact: true })).toBeVisible()
 
   await page.goto('/base/units')

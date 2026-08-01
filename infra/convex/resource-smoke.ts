@@ -26,7 +26,6 @@ async function main() {
   const minioPort = safePort('SYNIE_RESOURCE_SMOKE_MINIO_PORT', 39_200)
   const env = composeEnv({
     COMPOSE_PROJECT_NAME: project,
-    SYNIE_POSTGRES_PORT: safePort('SYNIE_RESOURCE_SMOKE_LEGACY_POSTGRES_PORT', 37_441),
     CONVEX_POSTGRES_PORT: safePort('SYNIE_RESOURCE_SMOKE_CONVEX_POSTGRES_PORT', 37_442),
     MINIO_API_PORT: minioPort,
     MINIO_CONSOLE_PORT: safePort('SYNIE_RESOURCE_SMOKE_MINIO_CONSOLE_PORT', 39_201),
@@ -50,7 +49,7 @@ async function main() {
       'convex-backend', 'convex-dashboard',
     ], { env })
     started = true
-    await checkInfra({ includeLegacyPostgres: false, env })
+    await checkInfra({ env })
 
     const keyResult = await runCompose(
       ['exec', '-T', 'convex-backend', './generate_admin_key.sh'],
@@ -92,7 +91,6 @@ async function main() {
       CONVEX_SELF_HOSTED_URL: `http://127.0.0.1:${convexPort}`,
       CONVEX_SELF_HOSTED_SITE_URL: `http://127.0.0.1:${sitePort}`,
       CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey,
-      VITE_SYNIE_BACKEND: 'convex',
       VITE_CONVEX_URL: `http://127.0.0.1:${convexPort}`,
       VITE_CONVEX_SITE_URL: `http://127.0.0.1:${sitePort}`,
       VITE_SITE_URL: webOrigin,

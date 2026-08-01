@@ -1,7 +1,8 @@
 # ADR：Better Auth 认证与 ERP Actor 授权分层
 
-2026-07-31，状态：已实施（认证与应用内核阶段）。本 ADR 只覆盖身份、授权内核和首用户原子
-初始化；完整业务资源仍按迁移计划逐步切换，最终由清场阶段移除临时双模式。
+2026-07-31，状态：已实施；2026-08-01 已完成全部业务切流并移除临时双模式。本 ADR 固定身份、
+授权内核和首用户原子初始化；最终应用边界见
+[`2026-08-01-convex-only-application-boundary.md`](2026-08-01-convex-only-application-boundary.md)。
 
 ## 背景
 
@@ -72,11 +73,10 @@ Actor。未知/停用用户、停用角色、缺少权限与无公司授权一�
 管理员创建用户和重置密码只返回一次性随机密码；重置密码会撤销该用户所有既有 session，删除用户
 会在同一 mutation 删除认证 principal、授权关系和 ERP 用户。认证库不接管 ERP 角色或公司模型。
 
-### 迁移模式是进程级临时设施
+### 迁移模式已经退役
 
-`VITE_SYNIE_BACKEND=legacy|convex` 在进程启动时二选一。`legacy` 继续承载尚未迁移的完整产品；
-`convex` 当前只开放 login、setup 与最小认证 shell，未迁移路由 fail-closed 回到 shell。一次页面或
-事务不得 fallback 到另一后端，也不建立 JWT/token bridge。最终切流后删除该模式、旧 auth 与 REST。
+2026-08-01 清场后，运行时只有 Convex generated API/ResourceBinding；迁移期的进程模式、旧认证与
+业务 REST transport 已删除。页面和事务没有 fallback 或 token bridge，架构门禁阻止这些入口重新出现。
 
 Convex React client 不启用 `expectAuth`：该选项会在没有 token 时暂停所有请求，使公开的首用户
 mutation 无法执行。客户端连接状态不是安全边界，身份与权限仍全部在函数端强制校验。
@@ -95,13 +95,13 @@ mutation 无法执行。客户端连接状态不是安全边界，身份与权�
   拒绝、用户名登录、统一错误、10/5 分钟限流、内部 email 脱敏、SSR token、退出与 session 撤销。
 - 同一 session 下角色权限、公司授权和角色停用立即生效；密码重置与用户删除立即撤销旧 session。
 - backend/dashboard 重启后既有 session 与 Actor 可恢复。
-- 真实 Chromium 通过 setup → 自动登录 → SSR 刷新 → 未迁移路由 fail-closed → 退出 → 大小写不敏感
-  重登；过程中无 `/api/v1` 请求、无 `synie:token`，cookie 为 HttpOnly/SameSite=Lax。
+- 真实 Chromium 通过完整 setup → 自动登录 → SSR 刷新 → 业务资源闭环 → 退出 → 大小写不敏感
+  重登；浏览器业务请求只走 Convex，cookie 为 HttpOnly/SameSite=Lax。
 - `test:self-hosted-auth` 在 CI 每次以新 Compose project/volume 验证，测试结束只停止容器并保留卷。
 
 ## 后果
 
 - 认证 schema 与 ERP 授权 schema 独立演进，但 principal/app user 关联必须作为一致性约束维护。
 - 升级四个固定依赖中的任一个，都必须成组核对兼容矩阵并重跑真实 self-host smoke，不能只依赖类型检查。
-- 完整初始化向导、权限目录和业务用户界面在后续资源/业务迁移计划中扩展，不得绕开本 ADR 的
-  principal、Actor、session 与原子写入边界。
+- 完整初始化向导、权限目录和业务用户界面均已落在 Convex，后续演进不得绕开本 ADR 的 principal、
+  Actor、session 与原子写入边界。

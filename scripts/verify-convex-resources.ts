@@ -388,7 +388,7 @@ async function main() {
   ))
   invariant(raced.filter((item) => item.status === 'fulfilled').length === 1, '20 并发 ISO create 未保持唯一性')
 
-  const paginationCodes = ['CAA', 'CAB', 'CAC', 'CAD', 'CAE']
+  const paginationCodes = ['CAA', 'CAB', 'CAC', 'CAX', 'CAE']
   for (const code of paginationCodes) {
     await admin.mutation(currencyCreateRef, { name: `游标币种-${marker}-${code}`, isoCode: code })
   }

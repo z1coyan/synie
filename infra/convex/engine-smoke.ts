@@ -19,7 +19,6 @@ async function main() {
   const sitePort = safePort('SYNIE_ENGINE_SMOKE_SITE_PORT', 38_211)
   const env = composeEnv({
     COMPOSE_PROJECT_NAME: project,
-    SYNIE_POSTGRES_PORT: safePort('SYNIE_ENGINE_SMOKE_LEGACY_POSTGRES_PORT', 38_441),
     CONVEX_POSTGRES_PORT: safePort('SYNIE_ENGINE_SMOKE_CONVEX_POSTGRES_PORT', 38_442),
     MINIO_API_PORT: safePort('SYNIE_ENGINE_SMOKE_MINIO_PORT', 39_300),
     MINIO_CONSOLE_PORT: safePort('SYNIE_ENGINE_SMOKE_MINIO_CONSOLE_PORT', 39_301),
@@ -39,7 +38,7 @@ async function main() {
     log(`启动隔离事实引擎烟测栈 ${project}（测试后停止容器并保留卷）`)
     await runCompose(['up', '-d', 'convex-postgres', 'minio', 'minio-public', 'minio-init', 'convex-backend', 'convex-dashboard'], { env })
     started = true
-    await checkInfra({ includeLegacyPostgres: false, env })
+    await checkInfra({ env })
     const keyResult = await runCompose(['exec', '-T', 'convex-backend', './generate_admin_key.sh'], {
       env, capture: true, sensitiveOutput: true,
     })

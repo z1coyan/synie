@@ -72,6 +72,47 @@ const statusRef = makeFunctionReference<
   Record<string, never>,
   { initialized: boolean; hasUsers: boolean }
 >('setup/status:get')
+const setupOptionsRef = makeFunctionReference<'query', Record<string, never>, {
+  currencies: Array<{ id: string; isoCode: string }>
+}>('setup/complete:options')
+const completeSetupRef = makeFunctionReference<'mutation', {
+  company: {
+    code: string
+    name: string
+    shortName: string
+    baseCurrencyId: string
+    accountTemplate: 'SMALL'
+  }
+  preferredLanguage: string
+  seedSampleData: boolean
+}, { companyId: string; sampleRequired: boolean }>('setup/complete:complete')
+const seedSampleRef = makeFunctionReference<'action', Record<string, never>, {
+  stage: string
+  completed: boolean
+}>('setup/sampleAction:seed')
+type SetupSummary = {
+  completed: boolean
+  sampleSeeded: boolean
+  stage: string
+  currencies: number
+  activeCurrencies: number
+  units: number
+  categories: number
+  roles: number
+  numberingRules: number
+  warehouses: number
+  accounts: number
+  customers: number
+  suppliers: number
+  employees: number
+  materials: number
+  stockFacts: number
+  glFacts: number
+  resources: Record<string, number>
+}
+const setupSummaryRef = makeFunctionReference<'query', Record<string, never>, SetupSummary>(
+  'setup/sample:summary',
+)
 const meRef = makeFunctionReference<'query', Record<string, never>, Me>('iam/me:get')
 const createRoleRef = makeFunctionReference<
   'mutation',
@@ -646,7 +687,7 @@ async function main() {
   assertInvariant(finalInspection.setupStateLinkedToAppUser, 'setupState 未链接首管理员')
 
   const status = await client.query(statusRef, {})
-  assertInvariant(status.initialized && status.hasUsers, 'setup/status 未反映首管理员状态')
+  assertInvariant(!status.initialized && status.hasUsers, '首管理员创建后不应跳过业务底座初始化')
   await signInAndVerifyMe({
     authBaseUrl,
     siteOrigin,
@@ -656,9 +697,107 @@ async function main() {
     expectedUserId: created.user.id,
   })
 
+  const setupSession = await signIn({
+    authBaseUrl,
+    siteOrigin,
+    convexUrl,
+    username,
+    password,
+    forwardedFor: '198.51.100.60',
+  })
+  const options = await setupSession.client.query(setupOptionsRef, {})
+  const cny = options.currencies.find((currency) => currency.isoCode === 'CNY')
+  assertInvariant(cny, 'Setup 未预置 CNY')
+  const base = await setupSession.client.mutation(completeSetupRef, {
+    company: {
+      code: 'SA',
+      name: '自托管示例验收公司',
+      shortName: '示例验收',
+      baseCurrencyId: cny.id,
+      accountTemplate: 'SMALL',
+    },
+    preferredLanguage: 'zh-CN',
+    seedSampleData: true,
+  })
+  assertInvariant(base.sampleRequired, '选择示例数据后 Setup 未进入分阶段生成')
+  assertInvariant(!(await client.query(statusRef, {})).initialized, '示例链完成前不应开放系统')
+  let seeded: { stage: string; completed: boolean }
+  try {
+    seeded = await setupSession.client.action(seedSampleRef, {})
+  } catch (error) {
+    const partial = await setupSession.client.query(setupSummaryRef, {})
+    const details =
+      error && typeof error === 'object' && 'data' in error
+        ? JSON.stringify(error.data)
+        : error instanceof Error
+          ? error.message
+          : String(error)
+    console.error(`Setup 示例链失败阶段=${partial.stage} details=${details}`)
+    throw error
+  }
+  assertInvariant(seeded.completed && seeded.stage === 'done', `示例链未完成：${seeded.stage}`)
+  const summary = await setupSession.client.query(setupSummaryRef, {})
+  assertInvariant(summary.completed && summary.sampleSeeded && summary.stage === 'done', 'Setup 完成旗标不正确')
+  assertInvariant(summary.currencies === 20 && summary.activeCurrencies === 1, 'Setup 常用币种/本币启用口径不正确')
+  assertInvariant(summary.units === 26 && summary.categories === 16, 'Setup 单位或物料分类种子数量不正确')
+  assertInvariant(summary.roles >= 2 && summary.numberingRules >= 25, 'Setup 内置角色或编号规则不完整')
+  assertInvariant(summary.warehouses === 5 && summary.accounts > 20, 'Setup 公司仓库或科目模板不完整')
+  assertInvariant(
+    summary.customers === 1 && summary.suppliers === 1 && summary.employees === 1 && summary.materials === 2,
+    'Setup 示例主数据数量不正确',
+  )
+  for (const resource of [
+    'invStockDocs', 'invStockTransfers', 'invStockCounts',
+    'salQuotations', 'salOrders', 'salDeliveries', 'salReconciliations',
+    'purQuotations', 'purReceipts', 'purOutsourcedIssues', 'purOutsourcedReceipts',
+    'mfgProcessTemplates', 'mfgBoms', 'mfgDemands', 'mfgWorkOrders', 'mfgOutputs',
+    'accGlJournals', 'accBankAccounts', 'accBankTransactions', 'accExpenseReports',
+    'hrPayrolls', 'hrPayrollPayments',
+  ]) {
+    assertInvariant((summary.resources[resource] ?? 0) >= 1, `Setup 示例链缺少 ${resource}`)
+  }
+  assertInvariant(summary.resources.purOrders >= 2 && summary.resources.purReconciliations >= 2, '采购/委外双链不完整')
+  assertInvariant(summary.resources.accVatInvoices >= 3, '销项、进项与委外发票不完整')
+  assertInvariant(summary.stockFacts > 0 && summary.glFacts > 0, '示例链未生成库存或总账事实')
+  const repeated = await setupSession.client.action(seedSampleRef, {})
+  assertInvariant(repeated.completed && repeated.stage === 'done', '重复执行示例生成未保持幂等')
+  assertInvariant(
+    JSON.stringify(await setupSession.client.query(setupSummaryRef, {})) === JSON.stringify(summary),
+    '重复执行示例生成改变了业务数据',
+  )
+  assertInvariant((await client.query(statusRef, {})).initialized, 'Setup 完成后状态未开放')
+
+  const restartProject = process.env.SYNIE_AUTH_SPIKE_COMPOSE_PROJECT?.trim()
+  if (restartProject) {
+    const restart = Bun.spawn(
+      ['bun', 'infra/convex/compose.ts', 'restart', 'convex-backend'],
+      { cwd: new URL('..', import.meta.url).pathname, env: process.env, stdout: 'inherit', stderr: 'inherit' },
+    )
+    assertInvariant((await restart.exited) === 0, '完整 Setup 后 Convex backend 重启失败')
+    let ready = false
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      try {
+        if ((await fetch(endpoint(convexUrl, 'version'))).ok) { ready = true; break }
+      } catch {
+        // Restart briefly refuses connections.
+      }
+      await Bun.sleep(250)
+    }
+    assertInvariant(ready, '完整 Setup 后 backend 未恢复健康')
+    setupSession.client.setAuth(await setupSession.fetchToken())
+    const afterRestart = await setupSession.client.query(setupSummaryRef, {})
+    assertInvariant(JSON.stringify(afterRestart) === JSON.stringify(summary), '重启后 Setup/示例业务链发生漂移')
+  }
+  await signOut({
+    authBaseUrl,
+    siteOrigin,
+    cookie: setupSession.cookie,
+    forwardedFor: '198.51.100.60',
+  })
+
   console.log(
     `Convex auth atomicity spike 通过：faults=${faultPoints.length} concurrency=${concurrency} ` +
-      'auth/component/app/setup=atomic signin/me/signout=ok',
+      'auth/component/app/setup=atomic full-sample/restart/idempotency=ok signin/me/signout=ok',
   )
 }
 
