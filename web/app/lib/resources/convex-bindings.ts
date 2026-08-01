@@ -1,4 +1,4 @@
-import { decodeResourceDocument } from '@synie/shared'
+import { decodeResourceDocument, MAX_RESOURCE_PAGE_SIZE } from '@synie/shared'
 import type { ConvexReactClient } from 'convex/react'
 import type { Row } from '~/components/synie-data-grid/types'
 import { api } from '~/lib/convex-api'
@@ -19,6 +19,7 @@ import type { AccountingSemanticOperations } from './accounting'
 import type { InventorySemanticOperations } from './inventory'
 import type { OrderSemanticOperations } from './orders'
 import { CONVEX_DOMAIN_MANIFEST, type ConvexDomainResource } from './convex-domain-manifest'
+import { resolveDomainCandidateQuery } from './candidate-query'
 
 const PILOTS = ['basCurrencies', 'basUnits', 'invWarehouses'] as const
 type PilotResource = (typeof PILOTS)[number]
@@ -30,6 +31,20 @@ const WAVE_A = [
   'salSettings', 'mfgSettings', 'accSettings', 'sysSettings',
   'salCompanyAccountDefaults',
 ] as const
+const ACCOUNT_ROLES = new Set([
+  'unbilled_receivable',
+  'receivable',
+  'advance_received',
+  'unbilled_payable',
+  'payable',
+  'other_payable',
+  'advance_paid',
+  'travel',
+  'office',
+  'entertainment',
+  'transport',
+  'other_expense',
+])
 const MIGRATED = [...PILOTS, ...WAVE_A, ...Object.keys(CONVEX_DOMAIN_MANIFEST), 'sysFiles', 'sysPrintTemplates'] as const
 
 function isPilotResource(resource: string): resource is PilotResource {
@@ -41,48 +56,197 @@ function failUnsupported(parts: string[]): never {
 }
 
 function singleFixedId(input: ResourceQuery, field: string): string | undefined {
-  const explicit = input.args?.[field]
-  if (typeof explicit === 'string' && explicit) return explicit
-  const raw = input.fixedFilter?.[field]
-  if (typeof raw === 'string' && raw) return raw
-  if (typeof raw === 'object' && raw !== null && 'values' in raw) {
-    const values = (raw as { values?: unknown }).values
-    if (Array.isArray(values) && values.length === 1 && typeof values[0] === 'string') return values[0]
+  if (input.args && Object.prototype.hasOwnProperty.call(input.args, field)) {
+    const explicit = input.args[field]
+    if (typeof explicit === 'string' && explicit.trim()) return explicit
+    failUnsupported([`${field} 仅支持单值外键`])
+  }
+  if (input.fixedFilter && Object.prototype.hasOwnProperty.call(input.fixedFilter, field)) {
+    const fixed = input.fixedFilter[field]
+    if (typeof fixed === 'string' && fixed.trim()) return fixed
+    if (typeof fixed === 'object' && fixed !== null && 'values' in fixed) {
+      const candidate = fixed as { kind?: unknown; op?: unknown; values?: unknown }
+      if (
+        (candidate.kind === undefined || candidate.kind === 'fk') &&
+        (candidate.op === undefined || candidate.op === 'in') &&
+        Array.isArray(candidate.values) &&
+        candidate.values.length === 1 &&
+        typeof candidate.values[0] === 'string' &&
+        candidate.values[0].trim()
+      ) {
+        return candidate.values[0]
+      }
+    }
+    failUnsupported([`${field} 仅支持单值外键`])
+  }
+  if (input.filter && Object.prototype.hasOwnProperty.call(input.filter, field)) {
+    const filtered = input.filter[field]
+    if (
+      filtered?.kind === 'fk' &&
+      (filtered.op === undefined || filtered.op === 'in') &&
+      filtered.values.length === 1 &&
+      typeof filtered.values[0] === 'string' &&
+      filtered.values[0].trim()
+    ) {
+      return filtered.values[0]
+    }
+    failUnsupported([`${field} 仅支持单值外键`])
   }
   return undefined
 }
 
-function booleanFilter(input: ResourceQuery, field: string): boolean | undefined {
-  const explicit = input.args?.[field]
-  if (typeof explicit === 'boolean') return explicit
-  const raw = input.filter?.[field]
-  return raw?.kind === 'bool' ? raw.eq : undefined
-}
+function singleNullableFixedId(
+  input: ResourceQuery,
+  field: string,
+): string | null | undefined {
+  const parse = (value: unknown): string | null => {
+    if (value === null) return null
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'object' && value !== null && 'kind' in value) {
+      const candidate = value as { kind?: unknown; op?: unknown; values?: unknown }
+      if (
+        candidate.kind === 'fk' &&
+        candidate.op === 'isNil' &&
+        Array.isArray(candidate.values) &&
+        candidate.values.length === 0
+      ) {
+        return null
+      }
+      if (
+        candidate.kind === 'fk' &&
+        (candidate.op === undefined || candidate.op === 'in') &&
+        Array.isArray(candidate.values) &&
+        candidate.values.length === 1 &&
+        typeof candidate.values[0] === 'string' &&
+        candidate.values[0].trim()
+      ) {
+        return candidate.values[0].trim()
+      }
+    }
+    failUnsupported([`${field} 仅支持单值外键、null 或 isNil`])
+  }
 
-function enumFilter(input: ResourceQuery, field: string): string | undefined {
-  const explicit = input.args?.[field]
-  if (typeof explicit === 'string') return explicit
-  const raw = input.filter?.[field]
-  if (raw?.kind === 'enum' && raw.values.length === 1) return raw.values[0]
-  const fixed = input.fixedFilter?.[field]
-  return typeof fixed === 'object' && fixed !== null && 'kind' in fixed && fixed.kind === 'enum' &&
-    'values' in fixed && Array.isArray(fixed.values) && fixed.values.length === 1 && typeof fixed.values[0] === 'string'
-    ? fixed.values[0]
-    : undefined
-}
-
-function textEquality(input: ResourceQuery, field: string): string | undefined {
-  const explicit = input.args?.[field]
-  if (typeof explicit === 'string' && explicit.trim()) return explicit.trim()
-  const raw = input.filter?.[field]
-  if (raw?.kind === 'text' && raw.op === 'eq' && raw.value.trim()) return raw.value.trim()
-  const fixed = input.fixedFilter?.[field]
-  if (typeof fixed === 'string' && fixed.trim()) return fixed.trim()
-  if (typeof fixed === 'object' && fixed !== null && 'kind' in fixed && fixed.kind === 'text' &&
-      'op' in fixed && fixed.op === 'eq' && 'value' in fixed && typeof fixed.value === 'string' && fixed.value.trim()) {
-    return fixed.value.trim()
+  if (input.args && Object.prototype.hasOwnProperty.call(input.args, field)) {
+    return parse(input.args[field])
+  }
+  if (input.fixedFilter && Object.prototype.hasOwnProperty.call(input.fixedFilter, field)) {
+    return parse(input.fixedFilter[field])
+  }
+  if (input.filter && Object.prototype.hasOwnProperty.call(input.filter, field)) {
+    return parse(input.filter[field])
   }
   return undefined
+}
+
+function singleBooleanFilter(input: ResourceQuery, field: string): boolean | undefined {
+  if (input.args && Object.prototype.hasOwnProperty.call(input.args, field)) {
+    const explicit = input.args[field]
+    if (typeof explicit === 'boolean') return explicit
+    failUnsupported([`${field} 仅支持布尔值`])
+  }
+  if (input.fixedFilter && Object.prototype.hasOwnProperty.call(input.fixedFilter, field)) {
+    const fixed = input.fixedFilter[field]
+    if (typeof fixed === 'boolean') return fixed
+    if (typeof fixed === 'object' && fixed !== null && 'kind' in fixed && 'eq' in fixed) {
+      const candidate = fixed as { kind?: unknown; eq?: unknown }
+      if (candidate.kind === 'bool' && typeof candidate.eq === 'boolean') return candidate.eq
+    }
+    failUnsupported([`${field} 仅支持布尔值`])
+  }
+  if (input.filter && Object.prototype.hasOwnProperty.call(input.filter, field)) {
+    const filtered = input.filter[field]
+    if (filtered?.kind === 'bool' && typeof filtered.eq === 'boolean') return filtered.eq
+    failUnsupported([`${field} 仅支持布尔值`])
+  }
+  return undefined
+}
+
+function singleEnumFilter(input: ResourceQuery, field: string): string | undefined {
+  if (input.args && Object.prototype.hasOwnProperty.call(input.args, field)) {
+    const explicit = input.args[field]
+    if (typeof explicit === 'string' && explicit.trim()) return explicit.trim()
+    failUnsupported([`${field} 仅支持单值枚举`])
+  }
+  if (input.fixedFilter && Object.prototype.hasOwnProperty.call(input.fixedFilter, field)) {
+    const fixed = input.fixedFilter[field]
+    if (typeof fixed === 'string' && fixed.trim()) return fixed.trim()
+    if (typeof fixed === 'object' && fixed !== null && 'kind' in fixed && 'values' in fixed) {
+      const candidate = fixed as { kind?: unknown; values?: unknown }
+      if (
+        candidate.kind === 'enum' &&
+        Array.isArray(candidate.values) &&
+        candidate.values.length === 1 &&
+        typeof candidate.values[0] === 'string' &&
+        candidate.values[0].trim()
+      ) {
+        return candidate.values[0].trim()
+      }
+    }
+    failUnsupported([`${field} 仅支持单值枚举`])
+  }
+  if (input.filter && Object.prototype.hasOwnProperty.call(input.filter, field)) {
+    const filtered = input.filter[field]
+    if (
+      filtered?.kind === 'enum' &&
+      filtered.values.length === 1 &&
+      typeof filtered.values[0] === 'string' &&
+      filtered.values[0].trim()
+    ) {
+      return filtered.values[0].trim()
+    }
+    failUnsupported([`${field} 仅支持单值枚举`])
+  }
+  return undefined
+}
+
+function accountRoleFilter(input: ResourceQuery): string | undefined {
+  const raw = singleEnumFilter(input, 'role')
+  if (raw === undefined) return undefined
+  const normalized = raw.toLocaleLowerCase()
+  if (!ACCOUNT_ROLES.has(normalized)) failUnsupported(['role 不是合法科目角色'])
+  return normalized
+}
+
+function singleTextEquality(input: ResourceQuery, field: string): string | undefined {
+  const parse = (value: unknown): string => {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'kind' in value &&
+      'op' in value &&
+      'value' in value &&
+      value.kind === 'text' &&
+      value.op === 'eq' &&
+      typeof value.value === 'string' &&
+      value.value.trim()
+    ) {
+      return value.value.trim()
+    }
+    failUnsupported([`${field} 仅支持单值文本等值筛选`])
+  }
+
+  if (input.args && Object.prototype.hasOwnProperty.call(input.args, field)) {
+    return parse(input.args[field])
+  }
+  if (input.fixedFilter && Object.prototype.hasOwnProperty.call(input.fixedFilter, field)) {
+    return parse(input.fixedFilter[field])
+  }
+  if (input.filter && Object.prototype.hasOwnProperty.call(input.filter, field)) {
+    return parse(input.filter[field])
+  }
+  return undefined
+}
+
+function domainEqualityValue(
+  input: ResourceQuery,
+  resource: ConvexDomainResource,
+  field: string,
+): string | undefined {
+  if (resource === 'mfgBoms' && field === 'materialId') {
+    return singleFixedId(input, field)
+  }
+  return singleTextEquality(input, field)
 }
 
 function rejectCommonUnsupported(
@@ -108,12 +272,40 @@ async function call<T>(invoke: () => Promise<T>): Promise<T> {
   }
 }
 
+async function loadAllRolePermissions(
+  client: ConvexReactClient,
+  roleId: string,
+): Promise<Row[]> {
+  const rows: Row[] = []
+  const seenCursors = new Set<string>()
+  let cursor: string | null = null
+  for (;;) {
+    const page: {
+      results: Row[]
+      pageInfo: { continueCursor: string | null; isDone: boolean }
+    } = await client.query(
+      api.domains.platform.resources.listRolePermissions,
+      {
+        roleId: roleId as never,
+        numItems: MAX_RESOURCE_PAGE_SIZE,
+        cursor,
+      },
+    )
+    rows.push(...page.results)
+    if (page.pageInfo.isDone) return rows
+    const next: string | null = page.pageInfo.continueCursor
+    if (!next) throw new Error('角色权限分页未结束但缺少 continueCursor')
+    if (seenCursors.has(next)) throw new Error('角色权限分页 cursor 重复')
+    seenCursors.add(next)
+    cursor = next
+  }
+}
+
 function currencyReader(client: ConvexReactClient): ResourceReader {
   return {
     query: async (input) => {
       rejectCommonUnsupported(input, ['active'])
-      const active = booleanFilter(input, 'active')
-      if (input.search && active !== undefined) failUnsupported(['搜索 + 启用筛选'])
+      const active = singleBooleanFilter(input, 'active')
       const profile = input.search ? 'search' : active === undefined ? 'default' : 'lookup'
       return call(() => client.query(api.resources.currencies.list, {
         profile,
@@ -131,7 +323,7 @@ function unitReader(client: ConvexReactClient): ResourceReader {
   return {
     query: async (input) => {
       rejectCommonUnsupported(input, ['unitType'])
-      const unitType = enumFilter(input, 'unitType')
+      const unitType = singleEnumFilter(input, 'unitType')
       if (input.search && unitType !== undefined) failUnsupported(['搜索 + 单位类型筛选'])
       const profile = input.search ? 'search' : unitType === undefined ? 'default' : 'lookup'
       return call(() => client.query(api.resources.units.list, {
@@ -149,21 +341,43 @@ function unitReader(client: ConvexReactClient): ResourceReader {
 function warehouseReader(client: ConvexReactClient): ResourceReader {
   return {
     query: async (input) => {
-      rejectCommonUnsupported(input, ['parentId'])
+      rejectCommonUnsupported(
+        input,
+        ['companyId', 'parentId', 'active', 'isLeaf'],
+        ['name'],
+        true,
+      )
+      const unsupportedArgs = Object.keys(input.args ?? {}).filter((field) =>
+        !['companyId', 'parentId', 'active', 'isLeaf'].includes(field),
+      )
+      if (unsupportedArgs.length > 0) failUnsupported(unsupportedArgs)
+      if (input.sort?.direction === 'descending') {
+        failUnsupported(['仓库仅支持 name 升序'])
+      }
       const companyId = singleFixedId(input, 'companyId')
       if (!companyId) failUnsupported(['缺少公司范围'])
-      let parentId: string | null | undefined = input.args?.parentId as string | null | undefined
-      const parentFilter = input.filter?.parentId
-      if (parentFilter?.kind === 'fk') {
-        parentId = parentFilter.op === 'isNil' ? null : parentFilter.values.length === 1 ? parentFilter.values[0] : undefined
-      }
+      const parentId = singleNullableFixedId(input, 'parentId')
+      const active = singleBooleanFilter(input, 'active')
+      const isLeaf = singleBooleanFilter(input, 'isLeaf')
       const profile = input.profile === 'treeChildren'
         ? 'treeChildren'
-        : input.search
+        : input.search || input.profile === 'search'
           ? 'search'
-          : 'default'
+          : input.profile === 'lookup'
+            ? 'lookup'
+            : 'default'
+      const hasCandidateFilters = active !== undefined || isLeaf !== undefined
       if (profile === 'treeChildren' && parentId === undefined) failUnsupported(['treeChildren 缺少 parentId'])
       if (profile !== 'treeChildren' && parentId !== undefined) failUnsupported(['parentId 仅支持树查询'])
+      if (profile === 'lookup' && (active === undefined || isLeaf === undefined)) {
+        failUnsupported(['lookup 必须同时提供 active 与 isLeaf'])
+      }
+      if (profile === 'search' && hasCandidateFilters && (active === undefined || isLeaf === undefined)) {
+        failUnsupported(['搜索候选筛选必须同时提供 active 与 isLeaf'])
+      }
+      if ((profile === 'default' || profile === 'treeChildren') && hasCandidateFilters) {
+        failUnsupported([`${profile} 不接受候选筛选`])
+      }
       return call(() => client.query(api.resources.warehouses.list, {
         profile,
         numItems: input.numItems,
@@ -172,6 +386,8 @@ function warehouseReader(client: ConvexReactClient): ResourceReader {
         args: {
           companyId,
           ...(parentId === undefined ? {} : { parentId: parentId as never }),
+          ...(active === undefined ? {} : { active }),
+          ...(isLeaf === undefined ? {} : { isLeaf }),
         },
       })) as Promise<Awaited<ReturnType<ResourceReader['query']>>>
     },
@@ -233,43 +449,121 @@ function waveBinding(client: ConvexReactClient, resource: WaveResource): Resourc
   const entry = refs[resource]
   const reader: ResourceReader = {
     query: async (input) => {
-      rejectCommonUnsupported(input, [])
       const common: Record<string, unknown> = { numItems: input.numItems, cursor: input.cursor ?? null }
       if (resource === 'basAccounts') {
+        rejectCommonUnsupported(input, ['companyId', 'parentId', 'active', 'isGroup', 'role'], ['code'], true)
+        const unsupportedArgs = Object.keys(input.args ?? {}).filter((field) =>
+          !['companyId', 'parentId', 'active', 'isGroup', 'role'].includes(field),
+        )
+        if (unsupportedArgs.length > 0) failUnsupported(unsupportedArgs)
+        if (input.sort?.direction === 'descending') failUnsupported(['科目仅支持 code 升序'])
         const companyId = singleFixedId(input, 'companyId')
         if (!companyId) failUnsupported(['缺少公司范围'])
-        const parentId = input.args?.parentId as string | null | undefined
+        const parentId = singleNullableFixedId(input, 'parentId')
+        const active = singleBooleanFilter(input, 'active')
+        const isGroup = singleBooleanFilter(input, 'isGroup')
+        const role = accountRoleFilter(input)
+        const profile = input.profile === 'treeChildren'
+          ? 'treeChildren'
+          : input.search !== undefined || input.profile === 'search'
+            ? 'search'
+            : input.profile === 'lookup'
+              ? 'lookup'
+              : 'default'
+        const hasCandidateFilters = active !== undefined || isGroup !== undefined || role !== undefined
+        if (profile === 'treeChildren' && hasCandidateFilters) {
+          failUnsupported(['treeChildren 不接受候选筛选'])
+        }
+        if (profile !== 'treeChildren' && parentId !== undefined) {
+          failUnsupported(['parentId 仅支持 treeChildren profile'])
+        }
+        if (profile === 'default' && hasCandidateFilters) {
+          failUnsupported(['候选筛选需要 lookup profile'])
+        }
         Object.assign(common, {
-          profile: input.profile === 'treeChildren' ? 'treeChildren' : input.search ? 'search' : 'default',
+          profile,
           companyId,
           ...(parentId === undefined ? {} : { parentId }),
-          ...(input.search ? { search: input.search } : {}),
+          ...(input.search === undefined ? {} : { search: input.search }),
+          ...(active === undefined ? {} : { active }),
+          ...(isGroup === undefined ? {} : { isGroup }),
+          ...(role === undefined ? {} : { role }),
         })
       } else if (resource === 'invMaterialCategories') {
+        rejectCommonUnsupported(input, ['parentId', 'active', 'isLeaf'], ['code'], true)
+        const unsupportedArgs = Object.keys(input.args ?? {}).filter((field) =>
+          !['parentId', 'active', 'isLeaf'].includes(field),
+        )
+        if (unsupportedArgs.length > 0) failUnsupported(unsupportedArgs)
+        if (input.sort?.direction === 'descending') {
+          failUnsupported(['物料分类仅支持 code 升序'])
+        }
+        const parentId = singleNullableFixedId(input, 'parentId')
+        const active = singleBooleanFilter(input, 'active')
+        const isLeaf = singleBooleanFilter(input, 'isLeaf')
+        const profile = input.profile === 'treeChildren'
+          ? 'treeChildren'
+          : input.search !== undefined || input.profile === 'search'
+            ? 'search'
+            : input.profile === 'lookup'
+              ? 'lookup'
+            : 'default'
+        const hasCandidateFilters = active !== undefined || isLeaf !== undefined
+        if (profile === 'treeChildren' && parentId === undefined) {
+          failUnsupported(['treeChildren 缺少 parentId'])
+        }
+        if (profile !== 'treeChildren' && parentId !== undefined) {
+          failUnsupported(['parentId 仅支持 treeChildren profile'])
+        }
+        if ((profile === 'default' || profile === 'treeChildren') && hasCandidateFilters) {
+          failUnsupported([`${profile} 不接受候选筛选`])
+        }
+        if (profile === 'lookup' && !hasCandidateFilters) {
+          failUnsupported(['lookup 缺少候选筛选'])
+        }
+        if (
+          hasCandidateFilters &&
+          !(
+            (active === undefined && isLeaf === false) ||
+            (active === true && isLeaf === true)
+          )
+        ) {
+          failUnsupported(['物料分类候选仅支持非叶分类或启用叶分类'])
+        }
         Object.assign(common, {
-          profile: input.profile === 'treeChildren' ? 'treeChildren' : input.search ? 'search' : 'default',
-          ...(input.args?.parentId === undefined ? {} : { parentId: input.args.parentId }),
-          ...(input.search ? { search: input.search } : {}),
+          profile,
+          ...(parentId === undefined ? {} : { parentId }),
+          ...(input.search === undefined ? {} : { search: input.search }),
+          ...(active === undefined ? {} : { active }),
+          ...(isLeaf === undefined ? {} : { isLeaf }),
         })
       } else if (resource === 'invMaterialUnits') {
+        rejectCommonUnsupported(input, ['materialId'], [], true)
         const materialId = singleFixedId(input, 'materialId')
         if (!materialId) failUnsupported(['缺少物料范围'])
         Object.assign(common, { materialId })
       } else if (resource === 'sysRolePermissions') {
+        rejectCommonUnsupported(input, [])
         const roleId = singleFixedId(input, 'roleId')
         if (!roleId) failUnsupported(['缺少角色范围'])
         Object.assign(common, { roleId })
       } else if (resource === 'sysAuditLogs') {
+        rejectCommonUnsupported(input, [])
         const companyId = singleFixedId(input, 'companyId')
         if (companyId) Object.assign(common, { companyId })
       } else if (resource === 'sysNumberingCounters') {
+        rejectCommonUnsupported(input, [])
         const ruleId = singleFixedId(input, 'ruleId')
         if (ruleId) Object.assign(common, { ruleId })
       } else if (resource === 'salCompanyAccountDefaults') {
+        rejectCommonUnsupported(input, [])
         const companyId = singleFixedId(input, 'companyId')
         if (companyId) Object.assign(common, { companyId })
       } else if (['basCompanies', 'salCustomers', 'purSuppliers', 'hrEmployees', 'invMaterials'].includes(resource)) {
+        rejectCommonUnsupported(input, [])
         Object.assign(common, { profile: input.search ? 'search' : 'default', ...(input.search ? { search: input.search } : {}) })
+      } else {
+        rejectCommonUnsupported(input, [])
       }
       return call(() => queryRef(entry.list, common))
     },
@@ -298,9 +592,9 @@ function waveBinding(client: ConvexReactClient, resource: WaveResource): Resourc
             call(async () => {
               const [catalog, page] = await Promise.all([
                 client.query(api.catalog.permissions.get, {}),
-                client.query(api.domains.platform.resources.listRolePermissions, { roleId: input.id as never, numItems: 500, cursor: null }),
+                loadAllRolePermissions(client, input.id),
               ])
-              return { catalog, rows: page.results }
+              return { catalog, rows: page }
             })),
           syncPermissions: defineCommand('row', (input: { id: string; permissions: string[] }) =>
             call(() => client.mutation(api.iam.roles.syncPermissions, { id: input.id as never, permissions: input.permissions }))),
@@ -428,6 +722,19 @@ function domainBinding(client: ConvexReactClient, resource: ConvexDomainResource
     client.mutation(ref as Parameters<ConvexReactClient['mutation']>[0], args as never) as Promise<any>
   const reader: ResourceReader = {
     query: async (input) => {
+      const candidate = resolveDomainCandidateQuery(resource, input)
+      if (candidate) {
+        return call(() => queryRef(refs.list, {
+          resource,
+          numItems: input.numItems,
+          cursor: input.cursor ?? null,
+          ...(input.search ? { search: input.search } : {}),
+          queryArgs: {
+            candidateProfile: candidate.candidateProfile,
+            ...candidate.args,
+          },
+        }))
+      }
       const allowedFilters = [
         'companyId', 'status',
         ...(manifest.parentField ? [manifest.parentField] : []),
@@ -441,14 +748,14 @@ function domainBinding(client: ConvexReactClient, resource: ConvexDomainResource
         const parentId = singleFixedId(input, manifest.parentField)
         if (parentId) queryArgs.parentId = parentId
       }
-      const status = enumFilter(input, 'status')
+      const status = singleEnumFilter(input, 'status')
       if (status) queryArgs.status = status
       if (input.sort) {
         queryArgs.sortField = String(input.sort.column)
         queryArgs.sortDirection = input.sort.direction
       }
       for (const field of manifest.equalityFields) {
-        const value = textEquality(input, field)
+        const value = domainEqualityValue(input, resource, field)
         if (value) queryArgs[field] = value
       }
       return call(() => queryRef(refs.list, {
@@ -906,10 +1213,14 @@ export function createConvexTodoSemanticOperations(
   return {
     list: async (tab, options) => {
       if ((options?.offset ?? 0) !== 0) throw new Error('Convex 待办仅支持游标分页')
+      const numItems = options?.limit ?? 20
+      if (!Number.isSafeInteger(numItems) || numItems < 1 || numItems > MAX_RESOURCE_PAGE_SIZE) {
+        throw new Error(`待办 limit 必须是 1..${MAX_RESOURCE_PAGE_SIZE} 的整数`)
+      }
       const result = await call(() => client.query(api.domains.todo.domain.list, {
         tab,
         includeDismissed: false,
-        numItems: options?.limit ?? 20,
+        numItems,
         cursor: null,
       }))
       return { count: result.count, results: result.results } as Awaited<ReturnType<TodoSemanticOperations['list']>>

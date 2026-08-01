@@ -16,18 +16,20 @@
 
 - Convex backend 与 PostgreSQL 17 必须部署在同 region/低延迟网络。
 - 外部只通过 TLS reverse proxy 暴露 Convex 3210（client）与 3211（HTTP actions）。
-- Dashboard 6791、PostgreSQL、S3 internal endpoint 不直接公开；本地 Compose 全部绑定 loopback。
+- Dashboard 6791、PostgreSQL、S3 internal endpoint 不直接公开；本地 Compose 默认绑定 loopback。
+  受信任的 Tailscale 开发验证可通过 `SYNIE_BIND_HOST` 临时开放应用浏览器访问面；dashboard、
+  PostgreSQL 与 MinIO console 仍强制使用 loopback。
 - backend/dashboard 必须使用同一个固定 tag；当前为
   `19431ea0dd90bc55ae58dbbd06d9aa045f97336f`。
 - 本地 MinIO 仅是开发替身。生产使用通过兼容性闸门的第三方 S3-compatible provider，六个 bucket
   均为 private，产品 bucket 与五个 Convex bucket 使用不同 lifecycle/CORS 策略。
 
 本地 MinIO Community 不再提供 per-bucket CORS，因此 MinIO API 不直接映射到宿主机。固定版本的
-`minio-public` loopback proxy 在 `127.0.0.1:9000` 只为 `synie-product-files` 添加限定 origin 的
+`minio-public` proxy 默认在 `127.0.0.1:9000` 只为 `synie-product-files` 添加限定 origin 的
 `GET/HEAD/PUT` CORS；五个 Convex 内部 bucket 即使经该端口诊断也不会收到 CORS capability。CORS
 不是授权，六个 bucket 仍全部 private。最后一个官方预构建 MinIO 镜像早于 CVE-2025-62506 修复，
-它只能使用 root key、绑定 loopback，不得用于生产、共享开发服务器或局域网暴露。生产 provider
-必须原生支持 `synie-product-files` 的 bucket-level CORS。
+它只能使用 root key；除下述受控 Tailscale 临时验证外必须绑定 loopback，不得用于生产、共享开发
+服务器或不受控局域网。生产 provider 必须原生支持 `synie-product-files` 的 bucket-level CORS。
 
 产品 bucket 的 `uploads/` 与 `print-tmp/` 是可过期临时前缀，本地规则为 1 天；正式 `files/` 前缀
 绝不配置 provider 自动过期，只能由 Convex 持久删除任务在挂接保护通过后删除。生产可按实际任务时长
@@ -46,6 +48,18 @@ bun run convex:bootstrap
 
 `convex:bootstrap` 只在 `.env.local` 写入 self-host URL/site/admin key，文件权限为 `0600`，终端不显示
 key。不要复制到 `.env.example`、issue、日志或 CI artifact。
+
+跨设备 Tailscale 验证时，先用 `tailscale ip -4` 获取地址，再在 `.env` 设置
+`SYNIE_BIND_HOST=0.0.0.0`，并将 `CONVEX_CLOUD_ORIGIN`、`SYNIE_CONVEX_PUBLIC_SITE_URL`、三个
+`VITE_*` URL、`SYNIE_S3_PUBLIC_ENDPOINT` 与 `SYNIE_PRODUCT_FILES_CORS_ORIGIN` 统一改为该地址。
+容器间的 `CONVEX_INTERNAL_ORIGIN`、`CONVEX_SITE_ORIGIN`、`SYNIE_CONVEX_INTERNAL_*` 和
+`SYNIE_S3_INTERNAL_ENDPOINT` 不得改成宿主机地址。变更后重新构建 Web、运行
+`convex:bootstrap`，并同步 deployment 的 `SITE_URL` 与 `SYNIE_S3_PUBLIC_ENDPOINT`。
+
+`0.0.0.0` 也会监听物理网卡；仅在主机防火墙/Tailscale ACL 已限制受信任来源时短期开启，完成验证后
+恢复 `SYNIE_BIND_HOST=127.0.0.1`。dashboard、PostgreSQL 与 MinIO console 不随此开关开放。纯 HTTP
+Tailscale IP 不是浏览器 secure context；依赖 Web Crypto 的附件校验/打印只能在 localhost 或受信任
+HTTPS 入口做浏览器验收。
 
 重复健康检查：
 
@@ -130,6 +144,27 @@ functions、恢复产品对象 → `convex import --replace-all --yes` → 从�
 8. 全部通过后才切 DNS/外部流量；失败时保留两边证据，不覆盖源环境。
 
 ## 升级
+
+### 候选投影回填
+
+部署包含 `domainCandidateRows` 的函数与 schema 后、开放业务写流量前，旧实例必须用一个已启用的 ERP
+超级管理员通过 Better Auth 登录，再分页重建三个 closure store。`convex run` 不带业务会话会被
+`authedMutation` 拒绝；不要用 deployment admin key 绕过 Actor。仓库提供的 runner 会用用户名/密码
+换取短时 session 与 Convex JWT，按 opaque cursor 自动跑完 finance、trading、manufacturing：
+
+```bash
+bun run convex:repair-candidates
+```
+
+runner 默认读取
+`infra/convex/backups/final-local-admin-${COMPOSE_PROJECT_NAME}.txt`；也可把一个显式凭据文件路径作为唯一
+参数传入，例如 `bun run convex:repair-candidates -- /absolute/credential.txt`。凭据文件必须是 `0600`
+普通文件，且其中 `project` 必须等于当前 Compose project；登录的
+`siteOrigin` 固定取文件中的 `web`（包括当前 Tailscale 入口），不接受 username/password 环境变量。
+runner 从权限为 `0600` 的 `.env.local` 读取 self-hosted URL，不打印密码、cookie 或 JWT，并在 `finally`
+调用 Better Auth sign-out，避免遗留 repair session；服务端每页最多处理 64 条，且再次断言 Actor 是
+`superAdmin`。三项都输出“repair 完成”后，再运行资源 smoke。旧报价条目缺少有效期/状态/币种快照、
+旧委外用料条目缺少最新订单状态时，repair 会从权威父单回溯，不需要人工改业务记录。
 
 1. 确认 backend/dashboard 新 tag 的两个官方 manifest 均存在且架构匹配。
 2. 在 staging 用生产大小 fixture 完成 export/import 与应用 smoke。

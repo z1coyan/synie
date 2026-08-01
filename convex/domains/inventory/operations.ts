@@ -9,10 +9,13 @@ import { synieError, validationError } from '../../lib/errors'
 import { asDomainMutationCtx } from '../../lib/mutationContext'
 import {
   childrenFor,
+  domainInternalForMutation,
   hydrateStored,
   patchDomainComputed,
+  patchDomainInternal,
   unsafeStoredForMutation,
 } from '../shared/records'
+import { freezeStockCountWarehouseSnapshot, warehouseRevision } from './revisions'
 
 export const stockBalance = permissionedQuery('inv.stock_entry:read')({
   args: {
@@ -112,7 +115,7 @@ export const refreshStockCount = permissionedMutation('inv.stock_count:update')(
         'sync_book_quantity',
       )
     }
-    return patchDomainComputed(
+    await patchDomainComputed(
       ctx,
       ctx.actor,
       'invStockCounts',
@@ -120,5 +123,14 @@ export const refreshStockCount = permissionedMutation('inv.stock_count:update')(
       { snapshotTakenAt: Date.now() },
       'refresh',
     )
+    const internal = await domainInternalForMutation(ctx, 'invStockCounts', args.id)
+    await freezeStockCountWarehouseSnapshot(
+      internal,
+      String(warehouseId),
+      (snapshotWarehouseId) => warehouseRevision(ctx, snapshotWarehouseId),
+      (snapshot) => patchDomainInternal(ctx, 'invStockCounts', args.id, snapshot),
+      true,
+    )
+    return hydrateStored(await unsafeStoredForMutation(ctx, 'invStockCounts', args.id))
   },
 })

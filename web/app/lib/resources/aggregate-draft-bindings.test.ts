@@ -21,8 +21,11 @@ import {
   purchaseOrderDraftAdapter,
   salesOrderDraftAdapter,
 } from './order-draft'
+import { expenseReportDraftAdapter } from './expense-report-draft'
+import { CONVEX_DOMAIN_MANIFEST } from './convex-domain-manifest'
 import {
   aggregateDraftFor,
+  listAggregateDraftResourceKeys,
   resourceBindingFor,
 } from './registry'
 
@@ -53,11 +56,18 @@ const aggregateResources = {
   },
 } as const
 
+const manifestAggregateResources = Object.entries(CONVEX_DOMAIN_MANIFEST)
+  .filter(([, manifest]) => manifest.aggregate)
+  .map(([resource]) => resource)
+  .sort()
+
 describe('Aggregate Draft ResourceBinding 能力边界', () => {
-  test('六个聚合头只经 draft 创建/替换，普通 writer 仅保留删除', () => {
-    for (const [resource, expected] of Object.entries(aggregateResources)) {
-      const key = resource as keyof typeof aggregateResources
-      const binding = resourceBindingFor(key)
+  test('生成 manifest 中全部聚合头均只经 draft 创建/替换，普通 writer 仅保留删除', () => {
+    const registered = listAggregateDraftResourceKeys()
+    expect(registered.map(String)).toEqual(manifestAggregateResources)
+
+    for (const resource of registered) {
+      const binding = resourceBindingFor(resource)
       const writer = binding.writer as
         | {
             create?: unknown
@@ -66,10 +76,8 @@ describe('Aggregate Draft ResourceBinding 能力边界', () => {
           }
         | undefined
 
-      expect(binding.draft, `${resource}.draft`).toBe(expected.draft)
-      expect(aggregateDraftFor(key), `${resource} typed draft`).toBe(
-        expected.draft,
-      )
+      expect(binding.draft, `${resource}.draft`).toBeDefined()
+      expect(aggregateDraftFor(resource), `${resource} typed draft`).toBe(binding.draft!)
       expect(writer?.create, `${resource}.writer.create`).toBeUndefined()
       expect(writer?.update, `${resource}.writer.update`).toBeUndefined()
       expect(typeof writer?.delete, `${resource}.writer.delete`).toBe(
@@ -78,21 +86,12 @@ describe('Aggregate Draft ResourceBinding 能力边界', () => {
     }
   })
 
-  test('五个制造聚合头同样只经 draft 创建/替换', () => {
-    for (const resource of [
-      'mfgProcessTemplates',
-      'mfgBoms',
-      'mfgDemands',
-      'mfgWorkOrders',
-      'mfgOutputs',
-    ] as const) {
-      const binding = resourceBindingFor(resource)
-      expect(binding.draft).toBeDefined()
-      expect(aggregateDraftFor(resource)).toBe(binding.draft!)
-      expect(binding.writer?.create).toBeUndefined()
-      expect(binding.writer?.update).toBeUndefined()
-      expect(typeof binding.writer?.delete).toBe('function')
+  test('既有具名 adapter 与费用报销 adapter 保持模块级对象身份', () => {
+    for (const [resource, expected] of Object.entries(aggregateResources)) {
+      const key = resource as keyof typeof aggregateResources
+      expect(aggregateDraftFor(key), `${resource}.draft`).toBe(expected.draft)
     }
+    expect(aggregateDraftFor('accExpenseReports')).toBe(expenseReportDraftAdapter)
   })
 
   test('挂载 draft 不替换既有语义命令适配器', () => {

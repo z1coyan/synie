@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkInfra } from './health.ts'
-import { composeEnv, log, root, run, runCompose } from './lib.ts'
+import { isolatedComposeEnv, log, root, run, runCompose } from './lib.ts'
 
 function safePort(name: string, fallback: number): string {
   const value = process.env[name] ?? String(fallback)
@@ -17,7 +17,7 @@ async function main() {
   if (!/^[a-z0-9][a-z0-9_-]{5,80}$/.test(project)) throw new Error('SYNIE_ENGINE_SMOKE_PROJECT 不是安全的 Compose project name')
   const convexPort = safePort('SYNIE_ENGINE_SMOKE_CONVEX_PORT', 38_210)
   const sitePort = safePort('SYNIE_ENGINE_SMOKE_SITE_PORT', 38_211)
-  const env = composeEnv({
+  const env = isolatedComposeEnv({
     COMPOSE_PROJECT_NAME: project,
     CONVEX_POSTGRES_PORT: safePort('SYNIE_ENGINE_SMOKE_CONVEX_POSTGRES_PORT', 38_442),
     MINIO_API_PORT: safePort('SYNIE_ENGINE_SMOKE_MINIO_PORT', 39_300),

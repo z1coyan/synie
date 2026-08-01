@@ -2,7 +2,8 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkInfra } from './health.ts'
-import { composeEnv, log, root, run, runCompose } from './lib.ts'
+import { isolatedComposeEnv, log, root, run, runCompose } from './lib.ts'
+import { resourceSmokeHostWebEnv } from './resource-smoke-env.ts'
 
 function safePort(name: string, fallback: number): string {
   const value = process.env[name] ?? String(fallback)
@@ -24,7 +25,7 @@ async function main() {
   const webPort = safePort('SYNIE_RESOURCE_SMOKE_WEB_PORT', 4_303)
   const webOrigin = `http://127.0.0.1:${webPort}`
   const minioPort = safePort('SYNIE_RESOURCE_SMOKE_MINIO_PORT', 39_200)
-  const env = composeEnv({
+  const env = isolatedComposeEnv({
     COMPOSE_PROJECT_NAME: project,
     CONVEX_POSTGRES_PORT: safePort('SYNIE_RESOURCE_SMOKE_CONVEX_POSTGRES_PORT', 37_442),
     MINIO_API_PORT: minioPort,
@@ -85,23 +86,20 @@ async function main() {
     )
     chmodSync(envFile, 0o600)
 
-    deploymentEnv = {
-      ...env,
-      CONVEX_SELF_HOSTED_PROJECT: project,
-      CONVEX_SELF_HOSTED_URL: `http://127.0.0.1:${convexPort}`,
-      CONVEX_SELF_HOSTED_SITE_URL: `http://127.0.0.1:${sitePort}`,
-      CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey,
-      VITE_CONVEX_URL: `http://127.0.0.1:${convexPort}`,
-      VITE_CONVEX_SITE_URL: `http://127.0.0.1:${sitePort}`,
-      VITE_SITE_URL: webOrigin,
-      WEB_HOST: '127.0.0.1',
-      WEB_PORT: webPort,
-      E2E_BASE_URL: webOrigin,
-      E2E_CONVEX_USERNAME: '资源验收管理员',
-      E2E_CONVEX_PASSWORD: 'Convex-resource-E2E-only-password',
-      SYNIE_RESOURCE_SPIKE_SECRET: resourceSecret,
-      SYNIE_RESOURCE_RESULT_FILE: resultFile,
-    }
+    deploymentEnv = resourceSmokeHostWebEnv(
+      {
+        ...env,
+        CONVEX_SELF_HOSTED_PROJECT: project,
+        CONVEX_SELF_HOSTED_URL: `http://127.0.0.1:${convexPort}`,
+        CONVEX_SELF_HOSTED_SITE_URL: `http://127.0.0.1:${sitePort}`,
+        CONVEX_SELF_HOSTED_ADMIN_KEY: adminKey,
+        E2E_CONVEX_USERNAME: '资源验收管理员',
+        E2E_CONVEX_PASSWORD: 'Convex-resource-E2E-only-password',
+        SYNIE_RESOURCE_SPIKE_SECRET: resourceSecret,
+        SYNIE_RESOURCE_RESULT_FILE: resultFile,
+      },
+      { convexPort, sitePort, webPort },
+    )
     await run(['bunx', 'convex', 'env', 'set', '--force', '--from-file', envFile], {
       cwd: root, env: deploymentEnv, sensitiveOutput: true,
     })

@@ -10,6 +10,7 @@ import { exportSnapshot, requireSafeOutputDirectory } from './backup.ts'
 import {
   composeEnv,
   composeProjectName,
+  isolatedComposeEnv,
   localConvexEnv,
   log,
   run,
@@ -265,7 +266,7 @@ async function main() {
 
   const targetConvexPort = process.env.RESTORE_CONVEX_PORT ?? '13210'
   const targetSitePort = process.env.RESTORE_CONVEX_SITE_PORT ?? '13211'
-  const targetEnv = composeEnv({
+  const targetEnv = isolatedComposeEnv({
     COMPOSE_PROJECT_NAME: targetProject,
     CONVEX_POSTGRES_PORT: process.env.RESTORE_CONVEX_POSTGRES_PORT ?? '15442',
     MINIO_API_PORT: process.env.RESTORE_MINIO_API_PORT ?? '19000',

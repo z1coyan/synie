@@ -2,6 +2,7 @@ import type { GenericMutationCtx } from 'convex/server'
 import type { DataModel } from '../../_generated/dataModel'
 import { decimalToScaledInt64 } from '../../lib/decimal'
 import { synieError } from '../../lib/errors'
+import { candidateProjectionRows } from './candidates'
 import { catalogDocument, decimalScaleForField } from './policies'
 
 type MutationCtx = GenericMutationCtx<DataModel>
@@ -64,6 +65,7 @@ export const DOMAIN_SORT_FIELDS: Readonly<Record<string, readonly string[]>> = O
 
 /** Finite non-scope equalities needed by current grids. */
 export const DOMAIN_EQUALITY_FIELDS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  accBills: ['billNo'],
   hrPayrolls: ['month'],
   mfgBoms: ['materialId'],
 })
@@ -125,10 +127,16 @@ export async function replaceDomainQueryRows(
   wire: WireRecord | null,
   scope?: { companyId?: string | null; parentId?: string | null; status?: string | null },
 ): Promise<void> {
-  const existing = await ctx.db.query('domainQueryRows').withIndex('by_record', (q) =>
-    q.eq('resource', resource).eq('recordId', recordId),
-  ).collect()
+  const [existing, existingCandidates] = await Promise.all([
+    ctx.db.query('domainQueryRows').withIndex('by_record', (q) =>
+      q.eq('resource', resource).eq('recordId', recordId),
+    ).collect(),
+    ctx.db.query('domainCandidateRows').withIndex('by_record', (q) =>
+      q.eq('resource', resource).eq('recordId', recordId),
+    ).collect(),
+  ])
   for (const row of existing) await ctx.db.delete(row._id)
+  for (const row of existingCandidates) await ctx.db.delete(row._id)
   if (!wire) return
 
   const companyId = scope?.companyId ?? (typeof wire.companyId === 'string' ? wire.companyId : null)
@@ -160,6 +168,16 @@ export async function replaceDomainQueryRows(
       equalityField: field,
       equalityValue: value,
       sortValue: valueKey(resource, catalogDocument(resource).lookup.labelField, wire[catalogDocument(resource).lookup.labelField]),
+    })
+  }
+  for (const row of await candidateProjectionRows(ctx, resource, recordId, wire)) {
+    await ctx.db.insert('domainCandidateRows', {
+      resource,
+      profile: row.profile,
+      recordId: row.recordId,
+      key: row.key,
+      sortValue: row.sortValue,
+      searchText: row.searchText,
     })
   }
 }

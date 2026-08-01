@@ -23,17 +23,22 @@ import {
   purchaseReceiptItemClient,
 } from '~/lib/resources/fulfillment'
 import {
-  purchaseReconciliationClient,
   purchaseReconciliationItemClient,
 } from '~/lib/resources/reconciliations'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import {
+  aggregateDraftFor,
+  resourceBindingFor,
+} from '~/lib/resources/registry'
+import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
+import {
+  buildReconciliationDraft,
+  decodeFlatSavedDraft,
+  type FlatSavedDraft,
+} from '~/lib/resources/scm-aggregate-draft'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import {
-  isLocalRow,
-  localRowId,
-} from '~/components/synie-editable-table/editable'
+import { localRowId } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import type {
@@ -45,6 +50,12 @@ import { materialCellRender } from '~/components/synie-material-cell/MaterialCel
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { CompanyDefaultSync, defaultCompanyId } from '../-stock-doc'
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
+
+const purchaseReconciliationBinding = resourceBindingFor('purReconciliations')
+const purchaseReconciliationItemBinding = resourceBindingFor(
+  'purReconciliationItems',
+)
+const purchaseReconciliationDraft = aggregateDraftFor('purReconciliations')
 
 export interface ReconciliationRef {
   id: string
@@ -112,83 +123,6 @@ const ReconciliationDrawerContext = createContext<OpenReconciliationDrawer>(
 
 export function useReconciliationDrawer(): OpenReconciliationDrawer {
   return useContext(ReconciliationDrawerContext)
-}
-
-/** 提交 mutation:金额/baseQty 由后端按金额链与折算比例算(不可手改);入库条目双来源恰一 */
-function itemInput(row: Row) {
-  return {
-    idx: row.idx,
-    receiptItemId: row.receiptItemId ?? null,
-    outsourcedReceiptItemId: row.outsourcedReceiptItemId ?? null,
-    qty: row.qty,
-    remarks: row.remarks ?? null,
-  }
-}
-
-const ITEM_COMPARE_KEYS = [
-  'idx',
-  'receiptItemId',
-  'outsourcedReceiptItemId',
-  'qty',
-  'remarks',
-] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some(
-    (k) => String(before[k] ?? '') !== String(after[k] ?? ''),
-  )
-}
-
-async function persistItems(
-  reconciliationId: string,
-  current: Row[],
-  snapshot: Row[],
-): Promise<string[]> {
-  const errors: string[] = []
-  const collect = (
-    idx: unknown,
-    msgs: { message: string }[] | null | undefined,
-  ) => {
-    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
-  }
-  const currentIds = new Set(
-    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
-  )
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await purchaseReconciliationItemClient.delete(String(old.id))
-    } catch (error) {
-      collect(old.idx, [{ message: (error as Error).message }])
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await purchaseReconciliationItemClient.create({
-          reconciliationId,
-          ...itemInput(row),
-        })
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      try {
-        await purchaseReconciliationItemClient.update(
-          String(row.id),
-          itemInput(row),
-        )
-      } catch (error) {
-        collect(row.idx, [{ message: (error as Error).message }])
-      }
-    }
-  }
-  return errors
 }
 
 /** 科目候选使用结构化 REST FilterState。 */
@@ -462,7 +396,6 @@ export function ReconciliationDrawerProvider({
     row: ReconciliationRef | null
   } | null>(null)
   const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
   const [importing, setImporting] = useState(false)
   const [filters] = useState<FilterState>({})
@@ -470,6 +403,7 @@ export function ReconciliationDrawerProvider({
   const receiptItemsRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
+  const draftHeadRef = useRef<FlatSavedDraft | null>(null)
 
   const companies = useQuery({
     queryKey: ['purReconciliations', 'companies'],
@@ -495,9 +429,9 @@ export function ReconciliationDrawerProvider({
       const my = ++reqIdRef.current
       setDrawer({ mode, row: reconciliation })
       receiptItemsRef.current = new Map()
+      draftHeadRef.current = null
       if (mode === 'create') {
         setItems([])
-        setItemsSnapshot([])
         setDetailLoaded(true)
         return
       }
@@ -510,28 +444,17 @@ export function ReconciliationDrawerProvider({
       ) {
         toast.danger('无法打开采购对账单', { description: '缺少对账单 id' })
         setItems([])
-        setItemsSnapshot([])
-        setDetailLoaded(true)
+        setDetailLoaded(false)
         return
       }
       setDetailLoaded(false)
-      purchaseReconciliationItemClient
-        .query({
-          limit: 200,
-          offset: 0,
-          sort: { column: 'idx', direction: 'ascending' },
-          filter: {
-            reconciliationId: {
-              kind: 'fk',
-              op: 'in',
-              values: [reconciliationId],
-              labels: [],
-            },
-          },
-        })
-        .then(async (d) => {
+      purchaseReconciliationDraft
+        .loadDraft(reconciliationId)
+        .then(async (value) => {
           if (my !== reqIdRef.current) return
-          const rows = d.results
+          const draft = decodeFlatSavedDraft(value, '采购对账草稿')
+          draftHeadRef.current = draft
+          const rows = draft.items
           // 编辑态预热缓存:按行上入库条目 id 取剩余可对账量/快照价/币种(双来源各自拉取)
           const receiptIds = [
             ...new Set(
@@ -594,16 +517,15 @@ export function ReconciliationDrawerProvider({
             }
           })
           setItems(enriched)
-          setItemsSnapshot(enriched)
           setDetailLoaded(true)
         })
         .catch((e) => {
           if (my !== reqIdRef.current) return
+          draftHeadRef.current = null
           toast.danger('对账条目加载失败', {
             description: (e as Error).message,
           })
           setItems([])
-          setItemsSnapshot([])
         })
     },
     [],
@@ -630,13 +552,14 @@ export function ReconciliationDrawerProvider({
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
+        isSubmitDisabled={drawer?.mode === 'edit' && !detailLoaded}
         onOpenChange={(open) => {
           if (open) return
           reqIdRef.current++
           setDrawer(null)
           setItems([])
-          setItemsSnapshot([])
           receiptItemsRef.current = new Map()
+          draftHeadRef.current = null
         }}
         rowId={drawer?.row?.id}
         onEdit={
@@ -866,7 +789,7 @@ export function ReconciliationDrawerProvider({
                   }}
                   gridDefaultSort={{
                     column: 'receiptDate',
-                    direction: 'descending',
+                    direction: 'ascending',
                   }}
                   gridExtraFields={[
                     'baseQty',
@@ -1239,45 +1162,29 @@ export function ReconciliationDrawerProvider({
           )
         }}
         onSubmit={async (values, mode) => {
+          assertAggregateDraftReady(mode, detailLoaded, '采购对账明细')
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          let savedId: string
+          const draft = buildReconciliationDraft(
+            'purchase',
+            { ...draftHeadRef.current, ...values },
+            items,
+          )
+          let saved: unknown
           if (mode === 'create') {
-            const created = await purchaseReconciliationClient.create(values)
-            const reconciliationId = String(created.id)
-            const itemErrors = await persistItems(reconciliationId, items, [])
-            if (itemErrors.length > 0) {
-              toast.danger('采购对账单已创建,但部分条目保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('采购对账单已创建')
-            }
-            savedId = reconciliationId
+            saved = await purchaseReconciliationDraft.createDraft(draft)
+            toast.success('采购对账单已创建')
           } else {
-            await purchaseReconciliationClient.update(drawer!.row!.id, values)
-            const itemErrors = await persistItems(
+            saved = await purchaseReconciliationDraft.replaceDraft(
               drawer!.row!.id,
-              items,
-              itemsSnapshot,
+              draft,
             )
-            if (itemErrors.length > 0) {
-              toast.danger('采购对账单已更新,但部分条目保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('采购对账单已更新')
-            }
-            savedId = drawer!.row!.id
+            toast.success('采购对账单已更新')
           }
           await Promise.all([
-            resourceBindingFor('purReconciliations').cache.invalidateAll(
-              queryClient,
-            ),
-            resourceBindingFor(
-              'purReconciliationItems',
-            ).cache.invalidateGrid(queryClient),
+            purchaseReconciliationBinding.cache.invalidateAll(queryClient),
+            purchaseReconciliationItemBinding.cache.invalidateGrid(queryClient),
           ])
-          return savedId
+          return String(decodeFlatSavedDraft(saved, '采购对账草稿').id)
         }}
       />
     </ReconciliationDrawerContext.Provider>

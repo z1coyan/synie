@@ -20,6 +20,7 @@ import { useResourceBinding } from '~/lib/resources/resource-context'
 import type { ResourceBinding } from '~/lib/resources/catalog'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { readResourceRowsBounded } from '~/lib/resources/bounded-reader'
 
 export const Route = createFileRoute('/_app/system/numbering')({
   component: NumberingPage,
@@ -96,17 +97,20 @@ function NumberingPage() {
       setCountersSnapshot([])
       return
     }
-    counterBinding.reader
-      .query({
-        profile: 'default', numItems: 200, cursor: null,
+    readResourceRowsBounded(
+      counterBinding.reader,
+      {
+        profile: 'default',
         fixedFilter: {
           ruleId: { kind: 'fk', values: [row.id], labels: [] },
         },
-      })
+      },
+      200,
+    )
       .then((result) => {
         if (currentRequest !== requestID.current) return
-        setCounters(result.results)
-        setCountersSnapshot(result.results)
+        setCounters(result)
+        setCountersSnapshot(result)
       })
       .catch((error) => {
         if (currentRequest !== requestID.current) return

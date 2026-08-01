@@ -429,6 +429,22 @@ export default defineSchema({
     .index('by_resource_profile_equality_sort', ['resource', 'profile', 'equalityField', 'equalityValue', 'sortValue', 'recordId'])
     .index('by_resource_profile_equality_status_sort', ['resource', 'profile', 'equalityField', 'equalityValue', 'status', 'sortValue', 'recordId']),
 
+  /** Server-owned, eligibility-complete candidate pools for compound pickers. */
+  domainCandidateRows: defineTable({
+    resource: v.string(),
+    profile: v.string(),
+    recordId: v.string(),
+    key: v.string(),
+    sortValue: v.string(),
+    searchText: v.string(),
+  })
+    .index('by_record', ['resource', 'recordId'])
+    .index('by_resource_profile_key_sort', ['resource', 'profile', 'key', 'sortValue', 'recordId'])
+    .searchIndex('search_text', {
+      searchField: 'searchText',
+      filterFields: ['resource', 'profile', 'key'],
+    }),
+
   domainRevisions: defineTable({
     scope: v.string(),
     key: v.string(),
@@ -683,6 +699,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_company_name_key', ['companyId', 'nameKey'])
+    .index('by_company_active_is_leaf_name_key', ['companyId', 'active', 'isLeaf', 'nameKey'])
     .index('by_company_parent_name_key', ['companyId', 'parentId', 'nameKey'])
     .index('by_party_name_key', ['partyType', 'partyId', 'nameKey'])
     .index('by_parent', ['parentId'])
@@ -763,6 +780,13 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_company_code_key', ['companyId', 'codeKey'])
+    .index('by_company_active_code_key', ['companyId', 'active', 'codeKey'])
+    .index('by_company_is_group_code_key', ['companyId', 'isGroup', 'codeKey'])
+    .index('by_company_role_code_key', ['companyId', 'role', 'codeKey'])
+    .index('by_company_active_is_group_code_key', ['companyId', 'active', 'isGroup', 'codeKey'])
+    .index('by_company_active_role_code_key', ['companyId', 'active', 'role', 'codeKey'])
+    .index('by_company_is_group_role_code_key', ['companyId', 'isGroup', 'role', 'codeKey'])
+    .index('by_company_active_is_group_role_code_key', ['companyId', 'active', 'isGroup', 'role', 'codeKey'])
     .index('by_company_parent_code_key', ['companyId', 'parentId', 'codeKey'])
     .index('by_parent', ['parentId'])
     .index('by_currency', ['currencyId'])
@@ -804,8 +828,10 @@ export default defineSchema({
     searchText: v.string(), insertedAt: v.number(), updatedAt: v.number(),
   })
     .index('by_code_key', ['codeKey'])
+    .index('by_is_leaf_code_key', ['isLeaf', 'codeKey'])
+    .index('by_active_is_leaf_code_key', ['active', 'isLeaf', 'codeKey'])
     .index('by_parent_code_key', ['parentId', 'codeKey'])
-    .searchIndex('search_text', { searchField: 'searchText' }),
+    .searchIndex('search_text', { searchField: 'searchText', filterFields: ['active', 'isLeaf'] }),
 
   materials: defineTable({
     code: v.string(),

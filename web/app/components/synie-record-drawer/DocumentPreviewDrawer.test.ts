@@ -75,7 +75,7 @@ describe('Document Preview ResourceBinding seam', () => {
     expect(calls).toEqual([
       {
         profile: 'default',
-        numItems: 200,
+        numItems: 100,
         cursor: null,
         sort: { column: 'idx', direction: 'ascending' },
         fixedFilter: {
@@ -115,6 +115,42 @@ describe('Document Preview ResourceBinding seam', () => {
     expect(matched).toBe(true)
   })
 
+  test('默认 200 行上限按 Convex 单页 100 行限制游标拉取', async () => {
+    const calls: Array<Pick<ResourceQuery, 'numItems' | 'cursor'>> = []
+    const lineBinding = memoryBinding('mfgOutputItems', async (input) => {
+      calls.push({ numItems: input.numItems, cursor: input.cursor })
+      if (input.numItems > 100) {
+        throw new Error('每页条数必须是 1..100 的整数')
+      }
+      return input.cursor == null
+        ? {
+            results: [{ id: 'line-1' }],
+            pageInfo: { continueCursor: 'next/opaque', isDone: false },
+          }
+        : {
+            results: [{ id: 'line-2' }],
+            pageInfo: { continueCursor: null, isDone: true },
+          }
+    })
+
+    const table = presentationFor('mfgOutputs').documentPreview?.lineTables[0]
+    if (!table) throw new Error('生产入库单缺少速览子表配置')
+    const query = documentPreviewLineQuery(
+      table,
+      'mfgOutputs',
+      'output-1',
+      resolver({ mfgOutputItems: lineBinding }),
+    )
+
+    await expect(query.queryFn()).resolves.toEqual({
+      results: [{ id: 'line-1' }, { id: 'line-2' }],
+    })
+    expect(calls).toEqual([
+      { numItems: 100, cursor: null },
+      { numItems: 100, cursor: 'next/opaque' },
+    ])
+  })
+
   test('委外入库两项两段 loader 也只解析注入的 Reader', async () => {
     const calls: Array<{ resource: string; input: ResourceQuery }> = []
     const items = memoryBinding('purOutsourcedReceiptItems', async (input) => {
@@ -125,14 +161,20 @@ describe('Document Preview ResourceBinding seam', () => {
       'purOutsourcedReceiptItemMaterials',
       async (input) => {
         calls.push({ resource: 'purOutsourcedReceiptItemMaterials', input })
-        return done([{ id: 'material-1' }])
+        const parent = input.fixedFilter?.receiptItemId as
+          | { values?: string[] }
+          | undefined
+        return done([{ id: `material-${parent?.values?.[0] ?? 'unscoped'}` }])
       },
     )
     const byproducts = memoryBinding(
       'purOutsourcedReceiptItemByproducts',
       async (input) => {
         calls.push({ resource: 'purOutsourcedReceiptItemByproducts', input })
-        return done([{ id: 'byproduct-1' }])
+        const parent = input.fixedFilter?.receiptItemId as
+          | { values?: string[] }
+          | undefined
+        return done([{ id: `byproduct-${parent?.values?.[0] ?? 'unscoped'}` }])
       },
     )
     const resolve = resolver({
@@ -161,27 +203,44 @@ describe('Document Preview ResourceBinding seam', () => {
     }
 
     expect(results).toEqual([
-      { results: [{ id: 'material-1' }] },
-      { results: [{ id: 'byproduct-1' }] },
+      {
+        results: [{ id: 'material-item-1' }, { id: 'material-item-2' }],
+      },
+      {
+        results: [{ id: 'byproduct-item-1' }, { id: 'byproduct-item-2' }],
+      },
     ])
     expect(calls.map(({ resource }) => resource)).toEqual([
       'purOutsourcedReceiptItems',
       'purOutsourcedReceiptItemMaterials',
+      'purOutsourcedReceiptItemMaterials',
       'purOutsourcedReceiptItems',
       'purOutsourcedReceiptItemByproducts',
+      'purOutsourcedReceiptItemByproducts',
     ])
+    for (const call of calls) expect(call.input.numItems).toBeLessThanOrEqual(100)
+    for (const call of calls.filter(({ resource }) => resource === 'purOutsourcedReceiptItems')) {
+      expect(call.input.fixedFilter).toEqual({
+        receiptId: {
+          kind: 'fk',
+          op: 'in',
+          values: ['receipt-1'],
+          labels: [],
+        },
+      })
+    }
     for (const call of calls.filter(
       ({ resource }) =>
         resource.endsWith('Materials') || resource.endsWith('Byproducts'),
     )) {
-      expect(call.input.filter).toEqual({
-        receiptItemId: {
-          kind: 'fk',
-          op: 'in',
-          values: ['item-1', 'item-2'],
-          labels: [],
-        },
-      })
+      const parent = call.input.fixedFilter?.receiptItemId as
+        | { values?: string[] }
+        | undefined
+      expect(parent?.values).toHaveLength(1)
+      const parentId = parent?.values?.[0]
+      expect(parentId).toBeDefined()
+      expect(['item-1', 'item-2']).toContain(parentId as string)
+      expect(call.input.filter).toBeUndefined()
     }
   })
 })

@@ -1,12 +1,13 @@
 import { v } from 'convex/values'
 import type { Doc, Id } from '../../_generated/dataModel'
+import type { QueryCtx } from '../../_generated/server'
 import type { Actor } from '../../lib/actor'
 import type { DomainMutationCtx } from '../../lib/mutationContext'
 import { permissionedMutation, permissionedQuery } from '../../lib/auth'
 import { canAccessCompany } from '../../lib/companyScope'
 import { asDomainMutationCtx } from '../../lib/mutationContext'
 import { synieError, validationError } from '../../lib/errors'
-import { resourcePage } from '../../lib/pagination'
+import { paginationOptions, resourcePage } from '../../lib/pagination'
 import { changedFields } from '../../platform/audit/model'
 import { writeAudit } from '../../platform/audit/write'
 
@@ -16,11 +17,32 @@ async function validateAccounts(ctx: { db: any }, companyId: Id<'companies'>, va
   for (const id of values) { if (!id) continue; const account = await ctx.db.get(id) as Doc<'accounts'> | null; if (!account || account.companyId !== companyId || account.isGroup || !account.active) throw validationError('默认科目参数不合法', { accountId: ['科目须为同公司启用的明细科目'] }) }
 }
 
-export const list = permissionedQuery('sales.setting:read')({ args: { numItems: v.number(), cursor: v.optional(v.union(v.string(), v.null())), companyId: v.optional(v.id('companies')) }, returns: v.any(), handler: async (ctx, args) => {
-  if (args.companyId) { requireCompany(ctx.actor, args.companyId); const row = await ctx.db.query('companyAccountDefaults').withIndex('by_company', q => q.eq('companyId', args.companyId!)).unique(); return resourcePage({ page: row ? [present(row)] : [], continueCursor: '', isDone: true }) }
-  const companies = ctx.actor.superAdmin || ctx.actor.allCompanies ? null : new Set(ctx.actor.companyIds)
-  const rows = await ctx.db.query('companyAccountDefaults').withIndex('by_company').take(Math.min(args.numItems, 200)); return resourcePage({ page: rows.filter(row => !companies || companies.has(String(row.companyId))).map(present), continueCursor: '', isDone: true })
-} })
+export async function paginateCompanyAccountDefaults(
+  db: QueryCtx['db'],
+  actor: Actor,
+  args: { numItems: number; cursor?: string | null; companyId?: Id<'companies'> },
+) {
+  const options = paginationOptions(args)
+  if (args.companyId) {
+    requireCompany(actor, args.companyId)
+    const row = await db.query('companyAccountDefaults')
+      .withIndex('by_company', q => q.eq('companyId', args.companyId!))
+      .unique()
+    return resourcePage({ page: row ? [present(row)] : [], continueCursor: '', isDone: true })
+  }
+  const companies = actor.superAdmin || actor.allCompanies ? null : new Set(actor.companyIds)
+  const page = await db.query('companyAccountDefaults').withIndex('by_company').paginate(options)
+  return resourcePage({
+    ...page,
+    page: page.page
+      .filter(row => !companies || companies.has(String(row.companyId)))
+      .map(present),
+  })
+}
+
+export const list = permissionedQuery('sales.setting:read')({ args: { numItems: v.number(), cursor: v.optional(v.union(v.string(), v.null())), companyId: v.optional(v.id('companies')) }, returns: v.any(), handler: (ctx, args) =>
+  paginateCompanyAccountDefaults(ctx.db, ctx.actor, args)
+})
 export const get = permissionedQuery('sales.setting:read')({ args: { id: v.id('companyAccountDefaults') }, returns: v.any(), handler: async (ctx, args) => { const row = await ctx.db.get(args.id); if (!row) return null; requireCompany(ctx.actor, row.companyId); return present(row) } })
 export const byCompany = permissionedQuery('sales.setting:read')({ args: { companyId: v.id('companies') }, returns: v.any(), handler: async (ctx, args) => { requireCompany(ctx.actor, args.companyId); const row = await ctx.db.query('companyAccountDefaults').withIndex('by_company', q => q.eq('companyId', args.companyId)).unique(); return row ? present(row) : null } })
 type DefaultsInput = { companyId: Id<'companies'>; deliveryDebitAccountId?: Id<'accounts'> | null; deliveryCreditAccountId?: Id<'accounts'> | null; receiptDebitAccountId?: Id<'accounts'> | null; receiptCreditAccountId?: Id<'accounts'> | null }

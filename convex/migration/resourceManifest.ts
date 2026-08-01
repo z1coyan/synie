@@ -178,11 +178,23 @@ const pilotConfiguration: Record<
       'units.search_text',
     ],
   },
+  invMaterialCategories: {
+    targetFunctionModule: 'convex/domains/inventory/master',
+    queryProfiles: ['default', 'lookup', 'treeChildren', 'search'],
+    indexes: [
+      'materialCategories.by_code_key',
+      'materialCategories.by_is_leaf_code_key',
+      'materialCategories.by_active_is_leaf_code_key',
+      'materialCategories.by_parent_code_key',
+      'materialCategories.search_text',
+    ],
+  },
   invWarehouses: {
     targetFunctionModule: 'convex/resources/warehouses',
     queryProfiles: ['default', 'lookup', 'treeChildren', 'search'],
     indexes: [
       'warehouses.by_company_name_key',
+      'warehouses.by_company_active_is_leaf_name_key',
       'warehouses.by_company_parent_name_key',
       'warehouses.by_parent',
       'warehouses.search_text',

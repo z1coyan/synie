@@ -39,9 +39,32 @@ transport 隔离，因此查询能力应在这两个深模块内一次收口，�
 选择器按 cursor 追加；CSV 循环到 `isDone`，发现 cursor 重复立即中止。缓存键包含资源、轮廓、规范
 参数与 cursor，不含函数名或 transport id。
 
+资源查询的统一单页上限是 100；业务组件声明的 200 等数值只表示总拉取上限，runtime 必须按至多
+100 条跟随服务端 opaque cursor 聚合，不能直接放大 `numItems`。仍依赖 `limit/offset` 的前端组件只可
+经中央兼容 adapter 重放真实 cursor 并在本地跳过 offset；adapter 自己的 synthetic offset cursor
+不得传入 Convex。父单、公司等固定范围也必须在每一页保持，无法归一为单值的范围筛选 fail-closed。
+
 没有受控 counter 的查询不返回精确总数，界面不推算总页数。迁移期 legacy 模式只有一个中央
 adapter 将 cursor 编码为 offset，并把 SQL count 映射为 `totalCount`；Plan 008 删除该 adapter。
 页面和通用组件从此不知道 offset。
+
+### 复合业务候选使用服务端命名投影
+
+订单履约、对账、报销挂票、报价有效期等选择器不把旧 REST FilterState 翻译成动态查询。Web 适配器
+必须把完整旧筛选归一成 `candidateProfile + profile args`；服务端再次逐项验证参数集合、类型、公司范围与
+固定资格，缺项、额外字段和未知 profile 均 fail-closed。候选资格与单据写入在同一 mutation 内重建到
+`domainCandidateRows`，普通读取只使用 `resource + profile + canonical key + sortValue` 复合索引，搜索也
+必须在 search index 中保持相同三段 filter key。
+
+报价的 `quotationDate <= orderDate <= validUntil` 使用固定日期域的 segment-tree 区间投影：写入把区间
+分解为至多 O(log N) 个 canonical node，点查询使用祖先 node，并在服务端按 profile 固定排序合并；不做
+内存 post-filter。多 key 普通分页 cursor 保存最后一个服务端 sort key，多 key 搜索 cursor 保存当前
+segment 与原生 search cursor；两者都绑定资源、profile、完整 key 集和搜索词指纹，不能跨查询重放。
+
+费用报销发票的「一票一单」同时由候选反向引用投影和写入前 `domainReferences.by_target` 事务断言保证；
+损坏引用一律视为已占用。旧实例通过超级管理员认证的 `candidateRepair:rebuildPage` 分页重建 finance、
+trading、manufacturing 三个 closure store；旧报价行与委外用料行缺少受控快照时，从权威父单回溯，避免
+repair 只覆盖新代码写入的数据。
 
 ### 值类型与约束保持业务口径
 

@@ -5,6 +5,9 @@
  * translate the cursor internally, but offset/count never leak through this seam.
  */
 
+/** 单次资源查询的统一上限；需要更多结果的调用方必须沿 opaque cursor 继续拉页。 */
+export const MAX_RESOURCE_PAGE_SIZE = 100
+
 export type ResourceQueryArgument = string | boolean | null
 
 export interface ResourceCursorQuery {

@@ -1955,7 +1955,11 @@
       "searchFields": [
         "code",
         "name"
-      ]
+      ],
+      "defaultSort": {
+        "column": "code",
+        "direction": "ascending"
+      }
     },
     "list": {
       "columns": [
@@ -1983,6 +1987,25 @@
         "kind": "index",
         "equalityFields": [
           "companyId"
+        ],
+        "fixedSort": "ascending",
+        "companyScopeField": "companyId"
+      },
+      {
+        "key": "lookup",
+        "kind": "index",
+        "equalityFields": [
+          "companyId"
+        ],
+        "fixedSort": "ascending",
+        "companyScopeField": "companyId"
+      },
+      {
+        "key": "treeChildren",
+        "kind": "index",
+        "equalityFields": [
+          "companyId",
+          "parentId"
         ],
         "fixedSort": "ascending",
         "companyScopeField": "companyId"
@@ -5639,6 +5662,22 @@
         "key": "default",
         "kind": "index",
         "equalityFields": [],
+        "fixedSort": "ascending"
+      },
+      {
+        "key": "lookup",
+        "kind": "index",
+        "equalityFields": [
+          "isLeaf"
+        ],
+        "fixedSort": "ascending"
+      },
+      {
+        "key": "treeChildren",
+        "kind": "index",
+        "equalityFields": [
+          "parentId"
+        ],
         "fixedSort": "ascending"
       },
       {
@@ -24839,6 +24878,14 @@
         "key": "default",
         "kind": "index",
         "equalityFields": [],
+        "fixedSort": "ascending"
+      },
+      {
+        "key": "equality:billNo",
+        "kind": "index",
+        "equalityFields": [
+          "billNo"
+        ],
         "fixedSort": "ascending"
       },
       {

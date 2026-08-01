@@ -1,5 +1,7 @@
 import { v } from 'convex/values'
+import type { PaginationResult } from 'convex/server'
 import type { Doc } from '../_generated/dataModel'
+import type { QueryCtx } from '../_generated/server'
 import { permissionedMutation, permissionedQuery } from '../lib/auth'
 import { synieError, validationError } from '../lib/errors'
 import { paginationOptions, rejectSearch, requireSearchTerm, resourcePage } from '../lib/pagination'
@@ -48,6 +50,60 @@ export const get = permissionedQuery('base.currency:read')({
   },
 })
 
+type CurrencyListArgs = {
+  profile: 'default' | 'lookup' | 'search'
+  numItems: number
+  cursor?: string | null
+  search?: string
+  active?: boolean
+}
+
+/** Indexed currency query seam shared by the permissioned list query and contract tests. */
+export async function paginateCurrencyDocs(
+  db: QueryCtx['db'],
+  args: CurrencyListArgs,
+): Promise<PaginationResult<Doc<'currencies'>>> {
+  const options = paginationOptions(args)
+  if (args.profile === 'search') {
+    const term = requireSearchTerm(args.search)
+    if (args.active !== undefined) {
+      return db
+        .query('currencies')
+        .withSearchIndex('search_text', (query) => query
+          .search('searchText', term)
+          .eq('active', args.active!))
+        .paginate(options)
+    }
+    return db
+      .query('currencies')
+      .withSearchIndex('search_text', (query) => query.search('searchText', term))
+      .paginate(options)
+  }
+
+  rejectSearch(args.search)
+  if (args.profile === 'lookup') {
+    if (args.active === undefined) {
+      throw synieError('validation', 'lookup profile 需要 active 参数')
+    }
+    return db
+      .query('currencies')
+      .withIndex('by_active_iso_code_key', (query) => query.eq('active', args.active!))
+      .order('asc')
+      .paginate(options)
+  }
+  if (args.profile !== 'default') {
+    throw synieError('validation', '未知 currency query profile')
+  }
+  if (args.active !== undefined) {
+    throw synieError('validation', 'default profile 不接受参数')
+  }
+  return db
+    .query('currencies')
+    .withIndex('by_iso_code_key')
+    .order('asc')
+    .paginate(options)
+}
+
 export const list = permissionedQuery('base.currency:read')({
   args: {
     profile: v.union(v.literal('default'), v.literal('lookup'), v.literal('search')),
@@ -58,39 +114,13 @@ export const list = permissionedQuery('base.currency:read')({
   },
   returns: page,
   handler: async (ctx, args) => {
-    const options = paginationOptions(args)
-    if (args.profile === 'search') {
-      if (args.args?.active !== undefined) {
-        throw synieError('validation', 'search profile 不接受 active 参数')
-      }
-      const term = requireSearchTerm(args.search)
-      const result = await ctx.db
-        .query('currencies')
-        .withSearchIndex('search_text', (query) => query.search('searchText', term))
-        .paginate(options)
-      return resourcePage({ ...result, page: result.page.map(present) })
-    }
-
-    rejectSearch(args.search)
-    if (args.profile === 'lookup') {
-      if (args.args?.active === undefined) {
-        throw synieError('validation', 'lookup profile 需要 active 参数')
-      }
-      const result = await ctx.db
-        .query('currencies')
-        .withIndex('by_active_iso_code_key', (query) => query.eq('active', args.args!.active!))
-        .order('asc')
-        .paginate(options)
-      return resourcePage({ ...result, page: result.page.map(present) })
-    }
-    if (args.args?.active !== undefined) {
-      throw synieError('validation', 'default profile 不接受参数')
-    }
-    const result = await ctx.db
-      .query('currencies')
-      .withIndex('by_iso_code_key')
-      .order('asc')
-      .paginate(options)
+    const result = await paginateCurrencyDocs(ctx.db, {
+      profile: args.profile,
+      numItems: args.numItems,
+      cursor: args.cursor,
+      search: args.search,
+      active: args.args?.active,
+    })
     return resourcePage({ ...result, page: result.page.map(present) })
   },
 })

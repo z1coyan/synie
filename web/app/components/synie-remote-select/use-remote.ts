@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import type { Row } from '../synie-data-grid/types'
 import { isOpaqueResourceId } from '../synie-data-grid/query'
-import type { ResolvedSource } from './remote-query'
+import { buildRemoteOptionsQuery, type ResolvedSource } from './remote-query'
 
 /** 选项无限滚动：弹层打开后查询 REST 资源；影响结果的维度全部进入缓存 key。 */
 export function useRemoteOptions(src: ResolvedSource | null, search: string, enabled: boolean) {
@@ -12,6 +12,7 @@ export function useRemoteOptions(src: ResolvedSource | null, search: string, ena
       src?.adapterId,
       src?.labelField,
       src?.sortField,
+      JSON.stringify(src?.querySort ?? null),
       JSON.stringify(src?.filterState ?? null),
       src?.searchFields.join('|'),
       src?.fields.join('|'),
@@ -21,14 +22,8 @@ export function useRemoteOptions(src: ResolvedSource | null, search: string, ena
     enabled: enabled && src != null,
     staleTime: 30_000,
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => src!.reader.query({
-      profile: search.trim() ? 'search' : 'lookup',
-      numItems: src!.pageSize,
-      cursor: pageParam,
-      search: search.trim() || undefined,
-      sort: { column: src!.sortField, direction: 'ascending' },
-      filter: src!.filterState,
-    }),
+    queryFn: ({ pageParam }) =>
+      src!.reader.query(buildRemoteOptionsQuery(src!, search, pageParam)),
     getNextPageParam: (last) =>
       last.pageInfo.isDone ? undefined : (last.pageInfo.continueCursor ?? undefined),
   })

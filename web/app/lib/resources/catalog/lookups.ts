@@ -8,6 +8,11 @@ import { getCachedDocument } from './cache'
 
 /** 与 server resource-classification / 模块 meta.lookup 对齐的种子 */
 export const LOOKUP_SEEDS: Record<string, ResourceLookupMeta> = {
+  basAccounts: {
+    labelField: 'name',
+    searchFields: ['code', 'name'],
+    defaultSort: { column: 'code', direction: 'ascending' },
+  },
   hrEmployees: {
     labelField: 'name',
     searchFields: ['name', 'code', 'attendanceNo'],

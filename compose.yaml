@@ -53,7 +53,7 @@ services:
     environment:
       SYNIE_PRODUCT_FILES_CORS_ORIGIN: ${SYNIE_PRODUCT_FILES_CORS_ORIGIN:-http://localhost:3000}
     ports:
-      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "${SYNIE_BIND_HOST:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000"
     volumes:
       - ./infra/convex/minio-public.conf.template:/etc/nginx/templates/default.conf.template:ro
     depends_on:
@@ -87,8 +87,8 @@ services:
     stop_signal: SIGINT
     stop_grace_period: 30s
     ports:
-      - "127.0.0.1:${CONVEX_PORT:-3210}:3210"
-      - "127.0.0.1:${CONVEX_SITE_PORT:-3211}:3211"
+      - "${SYNIE_BIND_HOST:-127.0.0.1}:${CONVEX_PORT:-3210}:3210"
+      - "${SYNIE_BIND_HOST:-127.0.0.1}:${CONVEX_SITE_PORT:-3211}:3211"
     volumes:
       # 业务数据在 PostgreSQL/S3；此 volume 持久化 instance secret 等节点凭据。
       - convex-backend-data:/convex/data
@@ -168,7 +168,7 @@ services:
       PRINT_WORKER_TIMEOUT_MS: ${PRINT_WORKER_TIMEOUT_MS:-120000}
       PRINT_WORKER_CONCURRENCY: ${PRINT_WORKER_CONCURRENCY:-2}
     ports:
-      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+      - "${SYNIE_BIND_HOST:-127.0.0.1}:${WEB_PORT:-3000}:3000"
     depends_on:
       convex-backend:
         condition: service_healthy

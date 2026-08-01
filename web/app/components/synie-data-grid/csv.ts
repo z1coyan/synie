@@ -1,3 +1,4 @@
+import { MAX_RESOURCE_PAGE_SIZE } from '@synie/shared'
 import type { ResourceQuery } from '~/lib/resources/types'
 import type { ResourceReader } from '~/lib/resources/catalog'
 import type { GridColumnMeta, Row } from './types'
@@ -18,7 +19,6 @@ export function toCsv<C extends Pick<GridColumnMeta, 'name' | 'label'>>(
   return [header, ...lines].join('\r\n')
 }
 
-const EXPORT_PAGE = 200
 // ponytail: 前端循环拉页导出,万行级数据再改后端流式导出
 export async function fetchAllRows(
   reader: Pick<ResourceReader, 'query'>,
@@ -28,9 +28,13 @@ export async function fetchAllRows(
   let cursor: string | null = null
   const seenCursors = new Set<string>()
   for (;;) {
-    const page = await reader.query({ ...query, numItems: EXPORT_PAGE, cursor })
+    const page = await reader.query({
+      ...query,
+      numItems: MAX_RESOURCE_PAGE_SIZE,
+      cursor,
+    })
     rows.push(...page.results)
-    if (page.pageInfo.isDone || page.results.length === 0) return rows
+    if (page.pageInfo.isDone) return rows
     const next = page.pageInfo.continueCursor
     if (!next) throw new Error('分页未结束但缺少 continueCursor')
     if (seenCursors.has(next)) throw new Error('分页 cursor 重复,已中止导出')

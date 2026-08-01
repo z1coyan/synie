@@ -57,12 +57,16 @@ MinIO Community 自 2025 年起不支持 per-bucket CORS，因此 MinIO API 不�
 `GET/HEAD/PUT` CORS，并剥离五个 Convex 内部 bucket 的 CORS headers。所有 bucket 仍为 private，
 应用只会为产品 bucket 签发浏览器 URL；生产 provider 必须原生支持产品 bucket 独立 CORS。最后一个
 官方预构建 MinIO 镜像缺少 CVE-2025-62506 的后续修复，因此它只作为 loopback、root-key、本地开发
-替身；禁止用于生产或暴露到局域网。若本地安全政策禁止该镜像，应从官方
+替身；仅允许在主机防火墙/Tailscale ACL 同时限制来源时短暂开放产品代理作内网验证，禁止用于生产、
+共享开发服务器或不受控局域网。若本地安全政策禁止该镜像，应从官方
 `RELEASE.2025-10-15T17-29-55Z` 源码构建后再启用，而不是换用未知第三方镜像。
 
 ### 安全与可恢复性
 
-- 本地端口全部只绑定 `127.0.0.1`；生产只由 TLS reverse proxy 暴露 3210/3211，dashboard 不公开。
+- 本地浏览器访问面默认绑定 `127.0.0.1`；受信任的 Tailscale 开发验证可显式设置
+  `SYNIE_BIND_HOST=0.0.0.0`，但必须依靠主机防火墙/Tailscale ACL 限制来源，且 PostgreSQL 与 MinIO
+  console 始终保持 loopback；dashboard 也不随该开关开放。生产仍只由 TLS reverse proxy 暴露
+  3210/3211，dashboard 不公开。
 - backend 设置客户端日志脱敏并关闭匿名 beacon；secret 仅从部署环境/secret manager 注入。
 - backend 使用容器内 `http://convex-backend:3211` 作为 site origin；浏览器与 CLI 使用单独的公开
   site URL。二者禁止复用宿主机 loopback 地址，避免容器内认证请求错误回连自身宿主端口。

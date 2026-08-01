@@ -504,7 +504,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                     unitName: { label: '单位' },
                     remainingBaseQty: { label: '未入库数量' },
                   }}
-                  gridDefaultSort={{ column: 'orderDate', direction: 'descending' }}
+                  gridDefaultSort={{ column: 'orderDate', direction: 'ascending' }}
                   gridExtraFields={['materialId', 'unitId']}
                   dialogClassName="max-w-5xl"
                   renderValue={(r) => orderItemDisplay(r)}

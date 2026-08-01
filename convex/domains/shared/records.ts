@@ -10,6 +10,7 @@ import { requirePermission } from '../../lib/permissions'
 import { changedFields } from '../../platform/audit/model'
 import { writeAudit } from '../../platform/audit/write'
 import { nextInMutation } from '../../platform/numbering/service'
+import { paginateDomainCandidateRows } from './candidates'
 import {
   domainEqualityFields,
   domainSortFields,
@@ -310,15 +311,152 @@ async function assertReferences(ctx: QueryCtx | MutationCtx, resource: string, w
   }
 }
 
+export async function assertExpenseReportHeadRules(
+  ctx: QueryCtx | MutationCtx,
+  wire: WireRecord,
+): Promise<void> {
+  const companyId = typeof wire.companyId === 'string' && wire.companyId.trim() ? wire.companyId.trim() : null
+  const employeeId = typeof wire.employeeId === 'string' && wire.employeeId.trim() ? wire.employeeId.trim() : null
+  const paymentAccountId = typeof wire.paymentAccountId === 'string' && wire.paymentAccountId.trim()
+    ? wire.paymentAccountId.trim()
+    : null
+  const normalizedEmployeeId = employeeId ? ctx.db.normalizeId('employees', employeeId) : null
+  const normalizedAccountId = paymentAccountId ? ctx.db.normalizeId('accounts', paymentAccountId) : null
+  const [employee, account] = await Promise.all([
+    normalizedEmployeeId ? ctx.db.get(normalizedEmployeeId) : null,
+    normalizedAccountId ? ctx.db.get(normalizedAccountId) : null,
+  ])
+  if (
+    !companyId || !employee || !account || account.companyId !== companyId ||
+    account.active !== true || account.isGroup
+  ) {
+    throw validationError('费用报销单参数不合法', { references: ['员工或付款科目不合法'] })
+  }
+}
+
+export async function assertExpenseInvoiceAvailableForItem(
+  ctx: QueryCtx | MutationCtx,
+  sourceRecordId: string,
+  wire: WireRecord,
+): Promise<void> {
+  await validateExpenseReportItemRules(ctx, sourceRecordId, wire)
+}
+
+async function expenseReportForItem(
+  ctx: QueryCtx | MutationCtx,
+  wire: WireRecord,
+): Promise<WireRecord> {
+  const reportId = typeof wire.reportId === 'string' && wire.reportId.trim() ? wire.reportId.trim() : null
+  const reportStored = reportId ? await getStored(ctx, 'accExpenseReports', reportId) : null
+  if (!reportStored) throw validationError('报销行参数不合法', { reportId: ['报销单不存在'] })
+  return hydrate(reportStored)
+}
+
+export async function assertExpenseReportItemParentDraft(
+  ctx: QueryCtx | MutationCtx,
+  wire: WireRecord,
+): Promise<void> {
+  const report = await expenseReportForItem(ctx, wire)
+  if (report.status !== 'DRAFT') throw synieError('conflict', '仅草稿报销单可增删改行')
+}
+
+export async function validateExpenseReportItemRules(
+  ctx: QueryCtx | MutationCtx,
+  sourceRecordId: string,
+  wire: WireRecord,
+): Promise<WireRecord | null> {
+  const report = await expenseReportForItem(ctx, wire)
+  if (report.status !== 'DRAFT') throw synieError('conflict', '仅草稿报销单可增删改行')
+  if (wire.companyId !== report.companyId) {
+    throw validationError('报销行参数不合法', { companyId: ['必须与报销单公司一致'] })
+  }
+  if (typeof wire.idx !== 'number' || !Number.isSafeInteger(wire.idx) || wire.idx < 1) {
+    throw validationError('报销行参数不合法', { idx: ['必须是大于零的整数'] })
+  }
+
+  const kind = typeof wire.kind === 'string' ? wire.kind : null
+  if (kind !== 'INVOICED' && kind !== 'MANUAL') {
+    throw validationError('报销行参数不合法', { kind: ['只允许 INVOICED 或 MANUAL'] })
+  }
+  const invoiceId = typeof wire.invoiceId === 'string' && wire.invoiceId.trim() ? wire.invoiceId.trim() : null
+  if (kind === 'MANUAL') {
+    const accountId = typeof wire.expenseAccountId === 'string' && wire.expenseAccountId.trim()
+      ? wire.expenseAccountId.trim()
+      : null
+    let positiveAmount = false
+    if (typeof wire.amount === 'string') {
+      try { positiveAmount = decimalToScaledInt64(wire.amount, 2) > 0n } catch { /* handled below */ }
+    }
+    if (invoiceId || typeof wire.summary !== 'string' || !wire.summary.trim() || !positiveAmount || !accountId) {
+      throw validationError('报销行参数不合法', { kind: ['无票行须填写摘要、正金额与费用科目，且不能关联发票'] })
+    }
+    const normalizedAccountId = ctx.db.normalizeId('accounts', accountId)
+    const account = normalizedAccountId ? await ctx.db.get(normalizedAccountId) : null
+    if (!account || account.companyId !== report.companyId || account.active !== true || account.isGroup) {
+      throw validationError('报销行参数不合法', { expenseAccountId: ['费用科目必须为本公司启用非汇总科目'] })
+    }
+    return null
+  }
+
+  if (!invoiceId || wire.summary != null || wire.amount != null || wire.expenseAccountId != null) {
+    throw validationError('报销行参数不合法', { kind: ['挂票行仅允许发票与备注'] })
+  }
+  const invoiceStored = await getStored(ctx, 'accVatInvoices', invoiceId)
+  if (!invoiceStored) {
+    throw synieError('conflict', '挂票发票必须为同公司同员工的已审核未报销开入发票')
+  }
+  const invoice = hydrate(invoiceStored)
+  assertExpenseInvoiceMatchesReport(report, invoice)
+  const references = await ctx.db.query('domainReferences').withIndex('by_target', (q) =>
+    q.eq('targetResource', 'accVatInvoices').eq('targetRecordId', invoiceId),
+  ).collect()
+  for (const reference of references) {
+    if (reference.sourceResource !== 'accExpenseReportItems' || reference.field !== 'invoiceId' ||
+        reference.sourceRecordId === sourceRecordId) continue
+    const item = await getStored(ctx, 'accExpenseReportItems', reference.sourceRecordId)
+    if (!item) throw synieError('conflict', '发票占用关系损坏，请先修复后重试')
+    const itemWire = hydrate(item)
+    const reportId = typeof itemWire.reportId === 'string' ? itemWire.reportId : item.parentId
+    const report = reportId ? await getStored(ctx, 'accExpenseReports', reportId) : null
+    if (!report || report.status !== 'VOIDED') throw synieError('conflict', '该发票已被其他报销单引用')
+  }
+  return invoice
+}
+
+function assertExpenseInvoiceMatchesReport(
+  report: WireRecord,
+  invoice: WireRecord,
+): void {
+  if (
+    typeof report.companyId !== 'string' || typeof report.employeeId !== 'string' ||
+    invoice.companyId !== report.companyId || invoice.partyType !== 'EMPLOYEE' ||
+    invoice.partyId !== report.employeeId || invoice.direction !== 'INBOUND' ||
+    invoice.status !== 'AUDITED'
+  ) {
+    throw synieError('conflict', '挂票发票必须为同公司同员工的已审核未报销开入发票')
+  }
+}
+
 async function replaceReferenceWitnesses(
   ctx: MutationCtx,
   resource: string,
   recordId: string,
   wire: WireRecord,
 ): Promise<void> {
+  if (resource === 'accExpenseReportItems') {
+    await assertExpenseInvoiceAvailableForItem(ctx, recordId, wire)
+  }
   const old = await ctx.db.query('domainReferences').withIndex('by_source', (q) =>
     q.eq('sourceResource', resource).eq('sourceRecordId', recordId),
   ).collect()
+  const affectedExpenseInvoices = new Set<string>()
+  if (resource === 'accExpenseReportItems') {
+    for (const row of old) {
+      if (row.field === 'invoiceId' && row.targetResource === 'accVatInvoices') {
+        affectedExpenseInvoices.add(row.targetRecordId)
+      }
+    }
+  }
   for (const row of old) await ctx.db.delete(row._id)
   for (const field of catalogDocument(resource).fields) {
     const value = wire[field.name]
@@ -336,6 +474,31 @@ async function replaceReferenceWitnesses(
       targetResource: target,
       targetRecordId: String(value),
     })
+    if (resource === 'accExpenseReportItems' && field.name === 'invoiceId' && target === 'accVatInvoices') {
+      affectedExpenseInvoices.add(String(value))
+    }
+  }
+  for (const invoiceId of affectedExpenseInvoices) await refreshCandidateRecord(ctx, 'accVatInvoices', invoiceId)
+}
+
+async function refreshCandidateRecord(ctx: MutationCtx, resource: string, id: string): Promise<void> {
+  const row = await getStored(ctx, resource, id)
+  if (!row) return
+  await replaceDomainQueryRows(ctx, resource, id, hydrate(row), {
+    companyId: row.companyId,
+    parentId: row.parentId,
+    status: row.status,
+  })
+}
+
+/** Rebuilds server-owned list/candidate projections without changing the record. */
+export async function refreshDomainRecordProjection(ctx: MutationCtx, resource: string, id: string): Promise<void> {
+  await refreshCandidateRecord(ctx, resource, id)
+}
+
+async function refreshExpenseInvoicesForReport(ctx: MutationCtx, reportId: string): Promise<void> {
+  for (const item of await childrenFor(ctx, 'accExpenseReportItems', reportId)) {
+    if (typeof item.invoiceId === 'string') await refreshCandidateRecord(ctx, 'accVatInvoices', item.invoiceId)
   }
 }
 
@@ -697,6 +860,30 @@ export async function listDomainRecords(
   if (!table) throw synieError('validation', `资源 ${resource} 不属于该领域记录面`)
   paginationOptions(input)
   const args = input.args ?? {}
+  if (Object.prototype.hasOwnProperty.call(args, 'candidateProfile')) {
+    const candidatePage = await paginateDomainCandidateRows(ctx, actor, resource, {
+      numItems: input.numItems,
+      cursor: input.cursor,
+      search: input.search,
+      args,
+    })
+    const results: WireRecord[] = []
+    for (const projection of candidatePage.page) {
+      const row = await getStored(ctx, resource, projection.recordId)
+      if (!row) throw synieError('internal', `${resource} 候选投影指向不存在的记录`)
+      if (row.companyId !== null && !canAccessCompany(actor, row.companyId)) {
+        throw synieError('internal', `${resource} 候选投影越过公司范围`)
+      }
+      if (await importRecordVisible(ctx, row)) results.push(hydrate(row))
+    }
+    return {
+      results,
+      pageInfo: {
+        continueCursor: candidatePage.isDone ? null : candidatePage.continueCursor,
+        isDone: candidatePage.isDone,
+      },
+    }
+  }
   const allowed = new Set([
     'companyId', 'parentId', 'status', 'sortField', 'sortDirection',
     ...domainEqualityFields(resource),
@@ -797,6 +984,7 @@ export async function createDomainRecord(
   Object.assign(wire, options.trustedDerived ?? {})
   const { parentId, companyId } = await deriveParentAndCompany(ctx, actor, resource, wire)
   await assertReferences(ctx, resource, wire)
+  if (resource === 'accExpenseReports') await assertExpenseReportHeadRules(ctx, wire)
   const now = Date.now()
   const encoded = encodeDecimals(resource, wire)
   const id = await ctx.db.insert(table, {
@@ -852,9 +1040,13 @@ export async function updateDomainRecord(
   // Immutable ownership/system facts never come from an update payload.
   wire.companyId = before.companyId
   wire.status = before.status
+  if (resource === 'accExpenseReportItems' && wire.reportId !== before.reportId) {
+    throw validationError('报销行参数不合法', { reportId: ['所属报销单不可修改'] })
+  }
   for (const field of SYSTEM_FIELDS) if (field in before) wire[field] = before[field]
   const { parentId, companyId } = await deriveParentAndCompany(ctx, actor, resource, wire)
   await assertReferences(ctx, resource, wire)
+  if (resource === 'accExpenseReports') await assertExpenseReportHeadRules(ctx, wire)
   await replaceUniqueClaims(ctx, resource, id, wire)
   await replaceReferenceWitnesses(ctx, resource, id, wire)
   await replaceAttendanceIndex(ctx, resource, id, wire)
@@ -891,18 +1083,33 @@ export async function removeDomainRecord(
   const row = await getStored(ctx, resource, id)
   if (!row) throw synieError('not_found', `${document.label}不存在`)
   if (row.companyId !== null) requireCompany(actor, row.companyId)
-  if (!options.permissionChecked && !editableStatus(resource, row.status)) throw synieError('conflict', '当前状态不可删除')
+  // Aggregate gateways already checked the head-level permission, but that must
+  // never turn into a status bypass: audited/terminal documents remain immutable.
+  if ((!options.permissionChecked || AGGREGATE_HEADS.has(resource)) && !editableStatus(resource, row.status)) {
+    throw synieError('conflict', '当前状态不可删除')
+  }
+  const before = hydrate(row)
+  if (resource === 'accExpenseReportItems') await assertExpenseReportItemParentDraft(ctx, before)
+  if (resource === 'accExpenseReports' && row.status !== 'DRAFT') {
+    throw synieError('conflict', '仅草稿报销单可删除')
+  }
   const reference = await ctx.db.query('domainReferences').withIndex('by_target', (q) =>
     q.eq('targetResource', resource).eq('targetRecordId', id),
   ).first()
   if (reference) throw synieError('conflict', `${document.label}已被业务数据引用,不可删除`)
-  const before = hydrate(row)
   const [claims, witnesses] = await Promise.all([
     ctx.db.query('domainUniqueClaims').withIndex('by_record', (q) => q.eq('resource', resource).eq('recordId', id)).collect(),
     ctx.db.query('domainReferences').withIndex('by_source', (q) => q.eq('sourceResource', resource).eq('sourceRecordId', id)).collect(),
   ])
   for (const claim of claims) await ctx.db.delete(claim._id)
   for (const witness of witnesses) await ctx.db.delete(witness._id)
+  if (resource === 'accExpenseReportItems') {
+    for (const witness of witnesses) {
+      if (witness.field === 'invoiceId' && witness.targetResource === 'accVatInvoices') {
+        await refreshCandidateRecord(ctx, 'accVatInvoices', witness.targetRecordId)
+      }
+    }
+  }
   await replaceAttendanceIndex(ctx, resource, id, null)
   await replaceDomainQueryRows(ctx, resource, id, null)
   await ctx.db.delete(row._id)
@@ -941,6 +1148,7 @@ export async function patchDomainStatus(
   // Keep the indexed FK witness projection in the same transaction as the status change.
   await replaceReferenceWitnesses(ctx, resource, id, after)
   await replaceDomainQueryRows(ctx, resource, id, after, { companyId: row.companyId, parentId: row.parentId, status: nextStatus })
+  if (resource === 'accExpenseReports') await refreshExpenseInvoicesForReport(ctx, id)
   await writeAudit(asDomainMutationCtx(ctx), actor, {
     resource, recordId: id, recordLabel: labelFor(resource, after), companyId: row.companyId,
     action, changes: changedFields(before, after),

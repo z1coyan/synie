@@ -5,6 +5,8 @@ backend
 server-go
 docs
 .scratch
+infra/convex/backups
+infra/convex/backups/**
 uploads
 **/*.log
 **/.env

@@ -1,7 +1,8 @@
 import type { PaginationResult } from 'convex/server'
+import { MAX_RESOURCE_PAGE_SIZE } from '@synie/shared'
 import { synieError } from './errors'
 
-export const MAX_RESOURCE_PAGE_SIZE = 100
+export { MAX_RESOURCE_PAGE_SIZE } from '@synie/shared'
 
 export function paginationOptions(input: {
   numItems: number

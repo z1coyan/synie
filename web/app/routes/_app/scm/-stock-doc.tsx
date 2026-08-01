@@ -7,7 +7,6 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
@@ -17,8 +16,15 @@ import {
   todayLocal,
 } from '~/lib/form-defaults'
 import { companyClient } from '~/lib/resources/companies'
-import type { ResourceClient } from '~/lib/resources/types'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import {
+  assertAggregateDraftReady,
+  submitAggregateDraft,
+} from '~/lib/resources/aggregate-draft-submit'
+import {
+  aggregateDraftRows,
+  stockMovementDraftRow,
+} from '~/lib/resources/aggregate-draft-rows'
+import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
 
 export { CompanyDefaultSync, defaultCompanyId, todayLocal }
 
@@ -30,7 +36,7 @@ export { CompanyDefaultSync, defaultCompanyId, todayLocal }
 
 export interface StockDocConfig {
   /** 头资源(GridMeta 白名单名):invStockDocs */
-  resource: string
+  resource: 'invStockDocs'
   /** 行资源:invStockDocItems */
   itemResource: string
   /** 单据中文名:抽屉标题/toast */
@@ -43,11 +49,11 @@ export interface StockDocConfig {
   createLabel: string
   /** 行上指向头的 fk 字段(camel):stockDocId */
   docIdField: string
-  docClient: ResourceClient
-  itemClient: ResourceClient
   /** 摘要占位(「货从哪来/到哪去」) */
   summaryPlaceholder: string
 }
+
+const stockDocDraft = aggregateDraftFor('invStockDocs')
 
 // 列表列:公司首列(对齐总账分录/会计凭证);录入人/审核人/时间戳不进表格
 const GRID_COLUMNS = [
@@ -82,7 +88,7 @@ const ACTION_VISIBLE = {
   delete: (row: Row) => row.status === 'DRAFT',
 } satisfies Record<string, (row: Row) => boolean>
 
-/** 本公司启用叶子仓的 REST 结构化筛选；未选公司时不发起候选查询。 */
+/** 本公司启用叶子仓的结构化筛选；未选公司时不发起候选查询。 */
 export function warehouseFilterState(companyId: string | null): FilterState | undefined {
   if (companyId == null || companyId === '') return undefined
   return {
@@ -119,58 +125,10 @@ export function WarehouseRemoteSelect({
   )
 }
 
-function itemInput(row: Row) {
-  return {
-    idx: row.idx,
-    materialId: row.materialId,
-    unitId: row.unitId,
-    qty: row.qty,
-    remark: row.remark ?? null,
-  }
-}
-
-const ITEM_COMPARE_KEYS = ['idx', 'materialId', 'unitId', 'qty', 'remark'] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-async function persistItems(cfg: StockDocConfig, docId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  const run = async (idx: unknown, operation: () => Promise<unknown>) => {
-    try {
-      await operation()
-    } catch (error) {
-      errors.push(`第${idx}行:${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await run(old.idx, () => cfg.itemClient.delete(old.id))
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      await run(row.idx, () =>
-        cfg.itemClient.create({ [cfg.docIdField]: docId, ...itemInput(row) }),
-      )
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      await run(row.idx, () => cfg.itemClient.update(row.id, itemInput(row)))
-    }
-  }
-  return errors
-}
-
 export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
   const [filters, setFilters] = useState<FilterState>({})
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
@@ -194,32 +152,22 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
     setDrawer({ mode, row })
     if (mode === 'create') {
       setItems([])
-      setItemsSnapshot([])
       setDetailLoaded(true)
       return
     }
     setDetailLoaded(false)
-    cfg.itemClient
-      .query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        fixedFilter: {
-          [cfg.docIdField]: { kind: 'fk', op: 'in', values: [row!.id], labels: [] },
-        },
-      })
-      .then((result) => {
+    stockDocDraft
+      .loadDraft(row!.id)
+      .then((saved) => {
         if (my !== reqIdRef.current) return
-        const rows = result.results
+        const rows = aggregateDraftRows(saved, 'items', cfg.label)
         setItems(rows)
-        setItemsSnapshot(rows)
         setDetailLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
         toast.danger(`${cfg.label}行加载失败`, { description: (e as Error).message })
         setItems([])
-        setItemsSnapshot([])
       })
   }, [cfg])
 
@@ -326,7 +274,6 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
           reqIdRef.current++
           setDrawer(null)
           setItems([])
-          setItemsSnapshot([])
         }}
         rowId={drawer?.row?.id}
         onEdit={
@@ -397,29 +344,20 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
           </>
         )}
         onSubmit={async (values, mode) => {
-          // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          let savedId: string
-          if (mode === 'create') {
-            const saved = await cfg.docClient.create(values)
-            const docId = saved.id
-            const itemErrors = await persistItems(cfg, docId, items, [])
-            if (itemErrors.length > 0) {
-              toast.danger(`${cfg.label}已创建,但部分单据行保存失败`, { description: itemErrors.join('; ') })
-            } else {
-              toast.success(`${cfg.label}已创建`)
-            }
-            savedId = docId
-          } else {
-            await cfg.docClient.update(drawer!.row!.id, values)
-            const itemErrors = await persistItems(cfg, drawer!.row!.id, items, itemsSnapshot)
-            if (itemErrors.length > 0) {
-              toast.danger(`${cfg.label}已更新,但部分单据行保存失败`, { description: itemErrors.join('; ') })
-            } else {
-              toast.success(`${cfg.label}已更新`)
-            }
-            savedId = drawer!.row!.id
-          }
-          await resourceBindingFor(cfg.resource).cache.invalidateAll(queryClient)
+          assertAggregateDraftReady(mode, detailLoaded, `${cfg.label}行`)
+          const input = { ...values, items: items.map(stockMovementDraftRow) }
+          const savedId = await submitAggregateDraft(
+            stockDocDraft,
+            mode,
+            drawer?.row?.id,
+            input,
+            cfg.label,
+          )
+          toast.success(`${cfg.label}已${mode === 'create' ? '创建' : '更新'}`)
+          await Promise.all([
+            resourceBindingFor(cfg.resource).cache.invalidateAll(queryClient),
+            resourceBindingFor(cfg.itemResource).cache.invalidateAll(queryClient),
+          ])
           return savedId
         }}
       />

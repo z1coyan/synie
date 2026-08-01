@@ -14,6 +14,7 @@ import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
+import { readResourceRowsBounded } from '~/lib/resources/bounded-reader'
 import { hasPermission } from '~/lib/permissions'
 import {
   auditMaterialCell,
@@ -76,15 +77,15 @@ export const DEMAND_AUDIT_CONFIG = {
   commandKey: 'audit',
   itemsResource: 'mfgDemandItems',
   loadItems: (demandId) =>
-    resourceBindingFor('mfgDemandItems').reader
-      .query({
+    readResourceRowsBounded(
+      resourceBindingFor('mfgDemandItems').reader,
+      {
         profile: 'default',
-        numItems: 200,
-        cursor: null,
         fixedFilter: { demandId },
         sort: { column: 'idx', direction: 'ascending' },
-      })
-      .then((result) => result.results),
+      },
+      200,
+    ),
   columns: [
     { key: 'materialName', label: '物料', render: auditMaterialCell() },
     { key: 'unitName', label: '单位' },

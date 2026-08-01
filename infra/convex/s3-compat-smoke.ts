@@ -1,4 +1,4 @@
-import { composeEnv, log, runCompose } from './lib.ts'
+import { isolatedComposeEnv, log, runCompose } from './lib.ts'
 import { verifyS3Compatibility } from './s3-compat.ts'
 
 function safePort(name: string, fallback: number): string {
@@ -17,7 +17,7 @@ async function main() {
   const corsOrigin = 'http://127.0.0.1:4303'
   const accessKeyId = 'synie-local'
   const secretAccessKey = 'synie-local-development-only'
-  const env = composeEnv({
+  const env = isolatedComposeEnv({
     COMPOSE_PROJECT_NAME: project,
     MINIO_API_PORT: apiPort,
     MINIO_CONSOLE_PORT: consolePort,

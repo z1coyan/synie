@@ -1,4 +1,4 @@
-import { Decimal } from '@synie/shared'
+import { Decimal, MAX_RESOURCE_PAGE_SIZE } from '@synie/shared'
 import { v } from 'convex/values'
 import type { GenericQueryCtx } from 'convex/server'
 import type { DataModel } from '../../_generated/dataModel'
@@ -17,19 +17,41 @@ function positive(value: string): Decimal {
   throw validationError('BOM 展开参数不合法', { quantity: ['必须大于 0'] })
 }
 
-export const purchaseDemandLines = permissionedQuery('purchase.order:read')({
-  args: { companyId: v.string(), isOutsourced: v.boolean(), search: v.optional(v.string()) },
-  returns: v.any(),
-  handler: async (ctx, args) => {
-    const demands = await listDomainRecords(ctx, ctx.actor, 'mfgDemands', {
-      numItems: 200,
-      cursor: null,
-      args: { companyId: args.companyId, status: 'CONFIRMED' },
-    })
-    const needle = args.search?.trim().toLocaleLowerCase() ?? ''
-    const results = []
+type DemandRow = Record<string, unknown> & { id: unknown }
+type DemandItemRow = Record<string, unknown> & { id: unknown }
+
+interface DemandPage {
+  results: DemandRow[]
+  pageInfo: { continueCursor: string | null; isDone: boolean }
+}
+
+interface PurchaseDemandLineSource {
+  loadDemands: (numItems: number, cursor: string | null) => Promise<DemandPage>
+  loadItems: (demandId: string) => Promise<DemandItemRow[]>
+}
+
+/**
+ * 旧接口最多检查 200 张需求；Convex 单页上限为 100，因此沿 opaque cursor
+ * 分两页保持原预算。空资格页也必须继续，不能把“本页无候选”误当作结束。
+ */
+export async function collectPurchaseDemandLines(
+  source: PurchaseDemandLineSource,
+  input: { isOutsourced: boolean; search?: string },
+): Promise<Record<string, unknown>[]> {
+  const needle = input.search?.trim().toLocaleLowerCase() ?? ''
+  const results: Record<string, unknown>[] = []
+  const seenCursors = new Set<string>()
+  let cursor: string | null = null
+  let scannedDemands = 0
+  let pages = 0
+
+  while (pages < 2 && scannedDemands < 200 && results.length < 200) {
+    const pageSize = Math.min(MAX_RESOURCE_PAGE_SIZE, 200 - scannedDemands)
+    const demands = await source.loadDemands(pageSize, cursor)
+    pages += 1
+    scannedDemands += demands.results.length
     for (const demand of demands.results) {
-      for (const item of await childrenFor(ctx, 'mfgDemandItems', String(demand.id))) {
+      for (const item of await source.loadItems(String(demand.id))) {
         if (item.status === 'COMPLETED') continue
         const remaining = new Decimal(String(item.remainingArrangeableQty ?? '0'))
         if (remaining.lte(0)) continue
@@ -53,11 +75,34 @@ export const purchaseDemandLines = permissionedQuery('purchase.order:read')({
           arrangedQty: item.arrangedQty ?? '0',
           remainingBaseQty: remaining.toString(),
           suggestedQty: remaining.toString(),
-          isOutsourced: args.isOutsourced,
+          isOutsourced: input.isOutsourced,
         })
+        if (results.length === 200) return results
       }
     }
-    return results.slice(0, 200)
+    if (demands.pageInfo.isDone) break
+    const next = demands.pageInfo.continueCursor
+    if (!next) throw synieError('internal', '需求分页未结束但缺少 continueCursor')
+    if (seenCursors.has(next)) throw synieError('internal', '需求分页 continueCursor 重复')
+    seenCursors.add(next)
+    cursor = next
+    if (demands.results.length === 0) continue
+  }
+  return results
+}
+
+export const purchaseDemandLines = permissionedQuery('purchase.order:read')({
+  args: { companyId: v.string(), isOutsourced: v.boolean(), search: v.optional(v.string()) },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    return collectPurchaseDemandLines({
+      loadDemands: (numItems, cursor) => listDomainRecords(ctx, ctx.actor, 'mfgDemands', {
+        numItems,
+        cursor,
+        args: { companyId: args.companyId, status: 'CONFIRMED' },
+      }) as Promise<DemandPage>,
+      loadItems: (demandId) => childrenFor(ctx, 'mfgDemandItems', demandId) as Promise<DemandItemRow[]>,
+    }, args)
   },
 })
 

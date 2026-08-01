@@ -7,13 +7,16 @@ import {
   resourceBindingFor,
   setCatalogActor,
   bindingFromResourceTransport,
+  readerFromResourceTransport,
   registerBinding,
   resourceTransportFromBinding,
   catalogCacheSize,
   setCachedDocument,
   getCachedDocument,
+  createResourceQueryCache,
 } from './index'
-import type { ResourceClient, ResourceTransport } from '../types'
+import type { ResourceBinding } from './types'
+import type { ResourceClient, ResourceQuery, ResourceTransport } from '../types'
 import { currencyClient } from '../currencies'
 
 function sampleDocument(name = 'basCurrencies'): ResourceDocument {
@@ -185,6 +188,114 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
         'basCurrencies',
       ])
     }
+  })
+
+  test('binding 兼容 transport 用真实 opaque cursor 分批满足 limit/offset', async () => {
+    const rows = Array.from({ length: 250 }, (_, index) => ({
+      id: `row-${index}`,
+    }))
+    const calls: Array<Pick<ResourceQuery, 'numItems' | 'cursor'>> = []
+    const binding: ResourceBinding = {
+      resource: 'rows',
+      reader: {
+        query: async (input) => {
+          calls.push({ numItems: input.numItems, cursor: input.cursor })
+          if (input.numItems > 100) {
+            throw new Error('每页条数必须是 1..100 的整数')
+          }
+          if (input.cursor?.startsWith('transport-offset:')) {
+            throw new Error('兼容层不得伪造 Convex cursor')
+          }
+          const start = input.cursor == null
+            ? 0
+            : Number(input.cursor.replace('opaque:', ''))
+          const end = Math.min(start + input.numItems, rows.length)
+          return {
+            results: rows.slice(start, end),
+            pageInfo: {
+              continueCursor: end < rows.length ? `opaque:${end}` : null,
+              isDone: end >= rows.length,
+            },
+          }
+        },
+        get: async () => null,
+      },
+      cache: createResourceQueryCache('rows', 'memory:cursor-rows'),
+      loadDocument: async () => sampleDocument('rows'),
+    }
+    const transport = resourceTransportFromBinding(binding)
+
+    const first = await transport.query({ limit: 200, offset: 0 })
+    expect(first.results).toHaveLength(200)
+    expect(first.results[0]?.id).toBe('row-0')
+    expect(first.results.at(-1)?.id).toBe('row-199')
+    expect(first.count).toBe(201)
+
+    const second = await transport.query({ limit: 200, offset: 200 })
+    expect(second.results).toHaveLength(50)
+    expect(second.results[0]?.id).toBe('row-200')
+    expect(second.results.at(-1)?.id).toBe('row-249')
+    expect(second.count).toBe(250)
+    expect(calls).toEqual([
+      { numItems: 100, cursor: null },
+      { numItems: 100, cursor: 'opaque:100' },
+      { numItems: 100, cursor: null },
+      { numItems: 100, cursor: 'opaque:100' },
+      { numItems: 100, cursor: 'opaque:200' },
+    ])
+  })
+
+  test('binding 兼容 transport 被 Reader 包装后可沿返回 cursor 读取第二页', async () => {
+    const rows = Array.from({ length: 40 }, (_, index) => ({
+      id: `row-${index}`,
+    }))
+    const binding: ResourceBinding = {
+      resource: 'rows',
+      reader: {
+        query: async (input) => {
+          if (input.cursor?.startsWith('transport-offset:')) {
+            throw new Error('synthetic transport cursor 泄漏到资源 Reader')
+          }
+          const start = input.cursor == null
+            ? 0
+            : Number(input.cursor.replace('opaque:', ''))
+          const end = Math.min(start + input.numItems, rows.length)
+          return {
+            results: rows.slice(start, end),
+            pageInfo: {
+              continueCursor: end < rows.length ? `opaque:${end}` : null,
+              isDone: end >= rows.length,
+            },
+          }
+        },
+        get: async () => null,
+      },
+      cache: createResourceQueryCache('rows', 'memory:wrapped-cursor-rows'),
+      loadDocument: async () => sampleDocument('rows'),
+    }
+    const reader = readerFromResourceTransport(
+      resourceTransportFromBinding(binding),
+    )
+
+    const first = await reader.query({
+      profile: 'default',
+      numItems: 20,
+      cursor: null,
+    })
+    expect(first.results.map((row) => row.id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => `row-${index}`),
+    )
+    expect(first.pageInfo.isDone).toBe(false)
+
+    const second = await reader.query({
+      profile: 'default',
+      numItems: 20,
+      cursor: first.pageInfo.continueCursor,
+    })
+    expect(second.results.map((row) => row.id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => `row-${index + 20}`),
+    )
+    expect(second.pageInfo).toEqual({ continueCursor: null, isDone: true })
   })
 
   test('单位/供应商/公司 binding 闭环 create', async () => {

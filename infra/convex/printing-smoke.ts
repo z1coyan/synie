@@ -7,7 +7,7 @@ import { bytesToText, textToBytes, unzipParts, zipParts } from '@synie/shared'
 import { ConvexHttpClient } from 'convex/browser'
 import { makeFunctionReference } from 'convex/server'
 import { checkInfra } from './health.ts'
-import { composeEnv, log, root, run, runCompose, waitForHttp } from './lib.ts'
+import { isolatedComposeEnv, log, root, run, runCompose, waitForHttp } from './lib.ts'
 import { verifyPrintWorkerContract } from './print-worker-contract-test.ts'
 import { preparePrintBaseline } from './printing-smoke-fixtures.ts'
 
@@ -398,7 +398,7 @@ async function main() {
   const accessKeyId = 'synie-local'
   const secretAccessKey = 'synie-local-development-only'
   const image = process.env.SYNIE_WEB_IMAGE?.trim() || `synie-web-print:${suffix}`
-  const env = composeEnv({
+  const env = isolatedComposeEnv({
     COMPOSE_PROJECT_NAME: project,
     CONVEX_POSTGRES_PORT: safePort('SYNIE_PRINTING_SMOKE_CONVEX_POSTGRES_PORT', 38_442),
     MINIO_API_PORT: minioPort,

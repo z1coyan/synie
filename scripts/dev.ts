@@ -12,6 +12,7 @@
  * 停止本地基础设施使用 `bun run infra:down`；该命令不删除 volume。
  */
 import { checkInfra } from '../infra/convex/health.ts'
+import { hostWebEnv } from '../infra/convex/host-web-env.ts'
 import {
   localConvexEnv,
   log as infraLog,
@@ -100,19 +101,23 @@ async function main() {
   }
 
   const webPort = env.WEB_PORT ?? '3000'
+  const webEnv = hostWebEnv(env)
+  const webUrl = env.VITE_SITE_URL ?? `http://127.0.0.1:${webPort}`
   const convexUrl = env.VITE_CONVEX_URL ?? env.CONVEX_SELF_HOSTED_URL
   const convexSiteUrl = env.VITE_CONVEX_SITE_URL ?? env.CONVEX_SELF_HOSTED_SITE_URL
   const dashboardPort = env.CONVEX_DASHBOARD_PORT ?? '6791'
   const minioPort = env.MINIO_API_PORT ?? '9000'
+  const minioUrl =
+    env.SYNIE_S3_PUBLIC_ENDPOINT ?? `http://127.0.0.1:${minioPort}`
   const minioConsolePort = env.MINIO_CONSOLE_PORT ?? '9001'
 
   log('启动 Convex function watcher 与 TanStack Start…')
-  log(`  Web       → http://127.0.0.1:${webPort}`)
+  log(`  Web       → ${webUrl}`)
   log(`  Convex    → ${convexUrl}`)
   log(`  Auth site → ${convexSiteUrl}`)
   if (!noDocker) {
     log(`  Dashboard → http://127.0.0.1:${dashboardPort}`)
-    log(`  MinIO     → http://127.0.0.1:${minioPort} (console: ${minioConsolePort})`)
+    log(`  MinIO     → ${minioUrl} (console: http://127.0.0.1:${minioConsolePort})`)
   }
   log('  停止：Ctrl+C')
 
@@ -130,7 +135,7 @@ async function main() {
       name: 'TanStack Start',
       process: Bun.spawn(['bun', 'run', '--filter', 'synie-web', 'dev'], {
         env: {
-          ...env,
+          ...webEnv,
           WEB_HOST: env.WEB_HOST ?? '0.0.0.0',
           WEB_PORT: webPort,
         },

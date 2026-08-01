@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import type { PaginationResult } from 'convex/server'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
 import type { Actor } from '../lib/actor'
@@ -168,74 +169,95 @@ export const get = permissionedQuery('inv.warehouse:read')({
   },
 })
 
-const option = v.object({ id: v.string(), name: v.string(), code: v.optional(v.string()) })
+type WarehouseListArgs = {
+  profile: 'default' | 'lookup' | 'treeChildren' | 'search'
+  numItems: number
+  cursor?: string | null
+  search?: string
+  companyId: string
+  parentId?: Id<'warehouses'> | null
+  active?: boolean
+  isLeaf?: boolean
+}
 
-/** Supporting picker data for the warehouse vertical slice; not a fourth Catalog resource. */
-export const context = permissionedQuery('inv.warehouse:read')({
-  args: { companyId: v.optional(v.union(v.string(), v.null())) },
-  returns: v.object({
-    companies: v.array(option),
-    accounts: v.array(option),
-    suppliers: v.array(option),
-    parents: v.array(option),
-  }),
-  handler: async (ctx, args) => {
-    const companies: Array<{ id: string; name: string; code: string }> = []
-    if (ctx.actor.superAdmin || ctx.actor.allCompanies) {
-      const [formal, pilot] = await Promise.all([
-        ctx.db.query('companies').withIndex('by_code_key').take(100),
-        ctx.db.query('pilotCompanies').withIndex('by_code_key').take(100),
-      ])
-      companies.push(...formal.map(row => ({ id: row._id, name: row.name, code: row.code })), ...pilot.map(row => ({ id: row._id, name: row.name, code: row.code })))
-    } else {
-      for (const rawId of ctx.actor.companyIds) {
-        const company = await companyAny(ctx, rawId)
-        if (company) companies.push({ id: company._id, name: company.name, code: company.code })
-      }
-    }
-    companies.sort((left, right) => left.code.localeCompare(right.code))
+function hasCandidateFilters(args: WarehouseListArgs): boolean {
+  return args.active !== undefined || args.isLeaf !== undefined
+}
 
-    const selected = args.companyId ?? null
-    if (selected) {
-      requireCompanyAccess(ctx.actor, selected)
-      await requireCompany(ctx, selected)
+function requireLookupFilters(args: WarehouseListArgs): { active: boolean; isLeaf: boolean } {
+  if (args.active === undefined || args.isLeaf === undefined) {
+    throw synieError('validation', 'lookup profile 需要 active 与 isLeaf 参数')
+  }
+  return { active: args.active, isLeaf: args.isLeaf }
+}
+
+function optionalCandidateFilters(args: WarehouseListArgs): { active: boolean; isLeaf: boolean } | null {
+  if (!hasCandidateFilters(args)) return null
+  if (args.active === undefined || args.isLeaf === undefined) {
+    throw synieError('validation', '候选筛选必须同时提供 active 与 isLeaf 参数')
+  }
+  return { active: args.active, isLeaf: args.isLeaf }
+}
+
+/** Indexed warehouse query seam kept separate so filters and opaque cursors are testable without bypassing auth. */
+export async function paginateWarehouseDocs(
+  db: QueryCtx['db'],
+  args: WarehouseListArgs,
+): Promise<PaginationResult<Doc<'warehouses'>>> {
+  const options = paginationOptions(args)
+  if (args.profile === 'search') {
+    if (args.parentId !== undefined) throw synieError('validation', 'search profile 不接受 parentId')
+    const filters = optionalCandidateFilters(args)
+    if (filters) {
+      return db
+        .query('warehouses')
+        .withSearchIndex('search_text', (query) => query
+          .search('searchText', requireSearchTerm(args.search))
+          .eq('companyId', args.companyId)
+          .eq('active', filters.active)
+          .eq('isLeaf', filters.isLeaf))
+        .paginate(options)
     }
-    const accounts = selected
-      ? (ctx.db.normalizeId('companies', selected)
-          ? await ctx.db.query('accounts').withIndex('by_company_code_key', (query) => query.eq('companyId', selected as Id<'companies'>)).take(200)
-          : await ctx.db.query('pilotAccounts').withIndex('by_company_code', (query) => query.eq('companyId', selected)).take(200))
-      : []
-    const [formalSuppliers, pilotSuppliers] = await Promise.all([
-      ctx.db.query('suppliers').withIndex('by_code_key').take(200),
-      ctx.db.query('pilotSuppliers').withIndex('by_name_key').take(200),
-    ])
-    const warehouses = selected
-      ? await ctx.db
-          .query('warehouses')
-          .withIndex('by_company_name_key', (query) => query.eq('companyId', selected))
-          .take(200)
-      : []
-    const accountOptions: { id: string; name: string; code: string }[] = []
-    for (const account of accounts) {
-      if (!account.isGroup && account.currencyId === null) {
-        accountOptions.push({ id: account._id, name: account.name, code: account.code })
-      }
-    }
-    const supplierOptions: { id: string; name: string }[] = []
-    for (const supplier of formalSuppliers) supplierOptions.push({ id: supplier._id, name: supplier.name })
-    for (const supplier of pilotSuppliers) if (supplier.enabled) supplierOptions.push({ id: supplier._id, name: supplier.name })
-    const parentOptions: { id: string; name: string }[] = []
-    for (const row of warehouses) {
-      if (!row.isLeaf) parentOptions.push({ id: row._id, name: row.name })
-    }
-    return {
-      companies,
-      accounts: accountOptions,
-      suppliers: supplierOptions,
-      parents: parentOptions,
-    }
-  },
-})
+    return db
+      .query('warehouses')
+      .withSearchIndex('search_text', (query) =>
+        query.search('searchText', requireSearchTerm(args.search)).eq('companyId', args.companyId),
+      )
+      .paginate(options)
+  }
+
+  rejectSearch(args.search)
+  if (args.profile === 'treeChildren') {
+    if (hasCandidateFilters(args)) throw synieError('validation', 'treeChildren profile 不接受候选筛选参数')
+    if (args.parentId === undefined) throw synieError('validation', 'treeChildren profile 需要 parentId（根层传 null）')
+    return db
+      .query('warehouses')
+      .withIndex('by_company_parent_name_key', (query) =>
+        query.eq('companyId', args.companyId).eq('parentId', args.parentId!),
+      )
+      .order('asc')
+      .paginate(options)
+  }
+
+  if (args.parentId !== undefined) throw synieError('validation', `${args.profile} profile 不接受 parentId`)
+  if (args.profile === 'lookup') {
+    const filters = requireLookupFilters(args)
+    return db
+      .query('warehouses')
+      .withIndex('by_company_active_is_leaf_name_key', (query) => query
+        .eq('companyId', args.companyId)
+        .eq('active', filters.active)
+        .eq('isLeaf', filters.isLeaf))
+      .order('asc')
+      .paginate(options)
+  }
+  if (hasCandidateFilters(args)) throw synieError('validation', 'default profile 不接受候选筛选参数')
+  return db
+    .query('warehouses')
+    .withIndex('by_company_name_key', (query) => query.eq('companyId', args.companyId))
+    .order('asc')
+    .paginate(options)
+}
 
 export const list = permissionedQuery('inv.warehouse:read')({
   args: {
@@ -246,41 +268,24 @@ export const list = permissionedQuery('inv.warehouse:read')({
     args: v.object({
       companyId: v.string(),
       parentId: v.optional(v.union(v.id('warehouses'), v.null())),
+      active: v.optional(v.boolean()),
+      isLeaf: v.optional(v.boolean()),
     }),
   },
   returns: page,
   handler: async (ctx, args) => {
     requireCompanyAccess(ctx.actor, args.args.companyId)
     await requireCompany(ctx, args.args.companyId)
-    const options = paginationOptions(args)
-    let result
-    if (args.profile === 'search') {
-      if (args.args.parentId !== undefined) throw synieError('validation', 'search profile 不接受 parentId')
-      result = await ctx.db
-        .query('warehouses')
-        .withSearchIndex('search_text', (query) =>
-          query.search('searchText', requireSearchTerm(args.search)).eq('companyId', args.args.companyId),
-        )
-        .paginate(options)
-    } else if (args.profile === 'treeChildren') {
-      rejectSearch(args.search)
-      if (args.args.parentId === undefined) throw synieError('validation', 'treeChildren profile 需要 parentId（根层传 null）')
-      result = await ctx.db
-        .query('warehouses')
-        .withIndex('by_company_parent_name_key', (query) =>
-          query.eq('companyId', args.args.companyId).eq('parentId', args.args.parentId!),
-        )
-        .order('asc')
-        .paginate(options)
-    } else {
-      rejectSearch(args.search)
-      if (args.args.parentId !== undefined) throw synieError('validation', `${args.profile} profile 不接受 parentId`)
-      result = await ctx.db
-        .query('warehouses')
-        .withIndex('by_company_name_key', (query) => query.eq('companyId', args.args.companyId))
-        .order('asc')
-        .paginate(options)
-    }
+    const result = await paginateWarehouseDocs(ctx.db, {
+      profile: args.profile,
+      numItems: args.numItems,
+      cursor: args.cursor,
+      search: args.search,
+      companyId: args.args.companyId,
+      parentId: args.args.parentId,
+      active: args.args.active,
+      isLeaf: args.args.isLeaf,
+    })
     const rows = await Promise.all(result.page.map((row) => present(ctx, row)))
     return resourcePage({ ...result, page: rows })
   },

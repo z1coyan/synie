@@ -24,8 +24,8 @@ describe('CSV 导出 Reader interface', () => {
       { id: '3' },
     ])
     expect(calls).toEqual([
-      { numItems: 200, cursor: null, search: '审计' },
-      { numItems: 200, cursor: 'next/opaque', search: '审计' },
+      { numItems: 100, cursor: null, search: '审计' },
+      { numItems: 100, cursor: 'next/opaque', search: '审计' },
     ])
   })
 
@@ -37,5 +37,28 @@ describe('CSV 导出 Reader interface', () => {
       }),
     }
     await expect(fetchAllRows(reader, { profile: 'default' })).rejects.toThrow(/cursor 重复/)
+  })
+
+  test('未结束的空页继续跟随 opaque cursor', async () => {
+    let calls = 0
+    const reader: Pick<ResourceReader, 'query'> = {
+      query: async () => {
+        calls += 1
+        return calls === 1
+          ? {
+              results: [],
+              pageInfo: { continueCursor: 'after-empty', isDone: false },
+            }
+          : {
+              results: [{ id: 'visible' }],
+              pageInfo: { continueCursor: null, isDone: true },
+            }
+      },
+    }
+
+    await expect(fetchAllRows(reader, { profile: 'default' })).resolves.toEqual([
+      { id: 'visible' },
+    ])
+    expect(calls).toBe(2)
   })
 })

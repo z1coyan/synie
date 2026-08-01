@@ -52,6 +52,7 @@ import {
   purchaseQuotationDraftAdapter,
   salesQuotationDraftAdapter,
 } from './quotation-draft'
+import { expenseReportDraftAdapter } from './expense-report-draft'
 import {
   purchaseOrderDraftAdapter,
   salesOrderDraftAdapter,
@@ -288,7 +289,7 @@ const SEMANTIC_COMMAND_ADAPTERS: Record<string, CommandAdapter> = {
   sysPrintTemplates: printTemplateCommandAdapter,
 }
 
-function unavailableManufacturingDraft(resource: string): AggregateDraftAdapter {
+function unavailableAggregateDraft(resource: string): AggregateDraftAdapter {
   const unavailable = (): never => {
     throw new Error(`资源「${resource}」的聚合草稿仅在 Convex 模式可用`)
   }
@@ -300,17 +301,26 @@ function unavailableManufacturingDraft(resource: string): AggregateDraftAdapter 
 }
 
 const DRAFT_ADAPTERS = {
-  mfgBoms: unavailableManufacturingDraft('mfgBoms'),
-  mfgDemands: unavailableManufacturingDraft('mfgDemands'),
-  mfgOutputs: unavailableManufacturingDraft('mfgOutputs'),
-  mfgProcessTemplates: unavailableManufacturingDraft('mfgProcessTemplates'),
-  mfgWorkOrders: unavailableManufacturingDraft('mfgWorkOrders'),
+  accExpenseReports: expenseReportDraftAdapter,
+  accGlJournals: unavailableAggregateDraft('accGlJournals'),
+  invStockCounts: unavailableAggregateDraft('invStockCounts'),
+  invStockDocs: unavailableAggregateDraft('invStockDocs'),
+  invStockTransfers: unavailableAggregateDraft('invStockTransfers'),
+  mfgBoms: unavailableAggregateDraft('mfgBoms'),
+  mfgDemands: unavailableAggregateDraft('mfgDemands'),
+  mfgOutputs: unavailableAggregateDraft('mfgOutputs'),
+  mfgProcessTemplates: unavailableAggregateDraft('mfgProcessTemplates'),
+  mfgWorkOrders: unavailableAggregateDraft('mfgWorkOrders'),
   purOrders: purchaseOrderDraftAdapter,
+  purOutsourcedIssues: unavailableAggregateDraft('purOutsourcedIssues'),
+  purOutsourcedReceipts: unavailableAggregateDraft('purOutsourcedReceipts'),
   purQuotations: purchaseQuotationDraftAdapter,
   purReceipts: purchaseReceiptDraftAdapter,
+  purReconciliations: unavailableAggregateDraft('purReconciliations'),
   salDeliveries: salesDeliveryDraftAdapter,
   salOrders: salesOrderDraftAdapter,
   salQuotations: salesQuotationDraftAdapter,
+  salReconciliations: unavailableAggregateDraft('salReconciliations'),
 } satisfies Record<string, AggregateDraftAdapter<unknown, unknown>>
 
 type AggregateDraftResource = keyof typeof DRAFT_ADAPTERS
@@ -323,17 +333,26 @@ const AGGREGATE_WRITER_OPTIONS: Record<
   AggregateDraftResource,
   { canCreate: false; canUpdate: false; canDelete: true }
 > = {
+  accExpenseReports: { canCreate: false, canUpdate: false, canDelete: true },
+  accGlJournals: { canCreate: false, canUpdate: false, canDelete: true },
+  invStockCounts: { canCreate: false, canUpdate: false, canDelete: true },
+  invStockDocs: { canCreate: false, canUpdate: false, canDelete: true },
+  invStockTransfers: { canCreate: false, canUpdate: false, canDelete: true },
   mfgBoms: { canCreate: false, canUpdate: false, canDelete: true },
   mfgDemands: { canCreate: false, canUpdate: false, canDelete: true },
   mfgOutputs: { canCreate: false, canUpdate: false, canDelete: true },
   mfgProcessTemplates: { canCreate: false, canUpdate: false, canDelete: true },
   mfgWorkOrders: { canCreate: false, canUpdate: false, canDelete: true },
   purOrders: { canCreate: false, canUpdate: false, canDelete: true },
+  purOutsourcedIssues: { canCreate: false, canUpdate: false, canDelete: true },
+  purOutsourcedReceipts: { canCreate: false, canUpdate: false, canDelete: true },
   purQuotations: { canCreate: false, canUpdate: false, canDelete: true },
   purReceipts: { canCreate: false, canUpdate: false, canDelete: true },
+  purReconciliations: { canCreate: false, canUpdate: false, canDelete: true },
   salDeliveries: { canCreate: false, canUpdate: false, canDelete: true },
   salOrders: { canCreate: false, canUpdate: false, canDelete: true },
   salQuotations: { canCreate: false, canUpdate: false, canDelete: true },
+  salReconciliations: { canCreate: false, canUpdate: false, canDelete: true },
 }
 
 function draftAdapterFor(resource: string): AggregateDraftAdapter | undefined {
@@ -407,6 +426,11 @@ export function aggregateDraftFor<K extends AggregateDraftResource>(
     throw new Error(`资源「${resource}」未注册 Aggregate Draft Adapter`)
   }
   return draft as (typeof DRAFT_ADAPTERS)[K]
+}
+
+/** 与生成的 Convex manifest 对照聚合能力覆盖时使用。 */
+export function listAggregateDraftResourceKeys(): AggregateDraftResource[] {
+  return Object.keys(DRAFT_ADAPTERS).sort() as AggregateDraftResource[]
 }
 
 /**

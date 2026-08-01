@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { FilterState, GridColumnRef, Row } from '../synie-data-grid/types'
-import type { ResourceTransport } from '~/lib/resources/types'
+import { MAX_RESOURCE_PAGE_SIZE } from '@synie/shared'
+import type { ResourceQuery, ResourceTransport } from '~/lib/resources/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { readerFromResourceTransport, resourceTransportFromBinding } from '~/lib/resources/catalog'
 import type { ResourceBinding, ResourceReader } from '~/lib/resources/catalog'
@@ -45,6 +46,8 @@ export interface ResolvedSource {
   explicitClient?: ResourceTransport
   labelField: string
   sortField: string
+  /** 只有显式排序或 Catalog defaultSort 才会进入 lookup query。 */
+  querySort?: ResourceQuery['sort']
   searchFields: string[]
   filterState?: FilterState
   fields: string[]
@@ -70,8 +73,14 @@ export function resolveSource(
   const itemSubtitleFields = cfg.renderItem
     ? []
     : (cfg.itemSubtitleFields ?? lookup.subtitleFields ?? [])
-  const sortField =
-    cfg.sortField ?? lookup.defaultSort?.column ?? labelField
+  const querySort = cfg.sortField
+    ? { column: cfg.sortField, direction: 'ascending' as const }
+    : lookup.defaultSort
+  const sortField = querySort?.column ?? labelField
+  const pageSize = cfg.pageSize ?? 20
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > MAX_RESOURCE_PAGE_SIZE) {
+    throw new Error(`RemoteSelect pageSize 必须是 1..${MAX_RESOURCE_PAGE_SIZE} 的整数`)
+  }
   // 确保 subtitle 字段被取回
   const extraFields = new Set([
     ...(cfg.fields ?? []),
@@ -87,11 +96,32 @@ export function resolveSource(
     ...(cfg.client ? { explicitClient: cfg.client } : {}),
     labelField,
     sortField,
+    ...(querySort ? { querySort } : {}),
     searchFields: searchFields.length > 0 ? searchFields : [labelField],
     filterState: cfg.filterState,
     fields: [...extraFields],
-    pageSize: cfg.pageSize ?? 20,
+    pageSize,
     itemSubtitleFields,
+  }
+}
+
+/**
+ * RemoteSelect 只把服务端已声明的排序发给 lookup。labelField 仅是
+ * 显示回退，不代表后端存在该排序 profile；search index 也自行决定顺序。
+ */
+export function buildRemoteOptionsQuery(
+  src: ResolvedSource,
+  search: string,
+  cursor: string | null,
+): ResourceQuery {
+  const term = search.trim()
+  return {
+    profile: term ? 'search' : 'lookup',
+    numItems: src.pageSize,
+    cursor,
+    ...(term ? { search: term } : {}),
+    ...(!term && src.querySort ? { sort: src.querySort } : {}),
+    ...(src.filterState ? { filter: src.filterState } : {}),
   }
 }
 

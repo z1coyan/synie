@@ -19,6 +19,7 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { readResourceRowsBounded } from '~/lib/resources/bounded-reader'
 
 export const Route = createFileRoute('/_app/scm/materials')({
   component: MaterialsPage,
@@ -124,7 +125,11 @@ function MaterialsPage() {
   // 单位名称表:单位转换 tab 的「基准单位」提示按默认单位 id 反查名称
   const { data: unitNames } = useQuery({
     queryKey: unitBinding.cache.gridKey('material-unit-names'),
-    queryFn: () => unitBinding.reader.query({ profile: 'default', numItems: 200, cursor: null }).then((result) => result.results),
+    queryFn: () => readResourceRowsBounded(
+      unitBinding.reader,
+      { profile: 'default' },
+      200,
+    ),
     enabled: drawer !== null,
     staleTime: 60_000,
   })
@@ -142,14 +147,25 @@ function MaterialsPage() {
       return
     }
     setUnitsLoaded(false)
-    materialUnitBinding.reader.query({
-      profile: 'default', numItems: 200, cursor: null,
-      fixedFilter: { materialId: { kind: 'fk', op: 'in', values: [row.id], labels: [] } },
-    })
+    readResourceRowsBounded(
+      materialUnitBinding.reader,
+      {
+        profile: 'default',
+        fixedFilter: {
+          materialId: {
+            kind: 'fk',
+            op: 'in',
+            values: [row.id],
+            labels: [],
+          },
+        },
+      },
+      200,
+    )
       .then((result) => {
         if (my !== reqIdRef.current) return
-        setUnits(result.results)
-        setUnitsSnapshot(result.results)
+        setUnits(result)
+        setUnitsSnapshot(result)
         setUnitsLoaded(true)
       })
       .catch((e) => {

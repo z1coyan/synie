@@ -1,4 +1,3 @@
-import type { Row } from '~/components/synie-data-grid/types'
 import {
   createCommandAdapter,
   decodeRowTarget,
@@ -46,7 +45,6 @@ export type BankImportRow = Record<string, unknown> & {
 export type BankImportItemRow = Record<string, unknown> & { id: string }
 export type BankReconciliationRow = Record<string, unknown> & { id: string }
 export type FinanceOCRResult = Record<string, unknown>
-export type ExpenseReportItemRow = Record<string, unknown> & { id: string }
 
 let semanticOperations: FinanceBankingSemanticOperations | null = null
 
@@ -159,47 +157,3 @@ export const auditBillTransaction = (id: string, postingDate?: string) =>
   } as never)
 export const voidBillTransaction = (id: string) =>
   billTransactionCommandAdapter.execute('void', { id } as never)
-
-export async function queryExpenseReportItems(reportId: string): Promise<Row[]> {
-  const result = await expenseReportItemClient.query({
-    limit: 200,
-    offset: 0,
-    filter: {
-      reportId: { kind: 'fk', values: [reportId], labels: [reportId] },
-    },
-    sort: { column: 'idx', direction: 'ascending' },
-  })
-  return result.results
-}
-
-export async function saveExpenseReportItems(
-  reportId: string,
-  current: Row[],
-  previous: Row[],
-  input: (row: Row) => Record<string, unknown>,
-): Promise<string[]> {
-  const errors: string[] = []
-  const currentIds = new Set(
-    current.filter((row) => !row.id.startsWith('local:')).map((row) => row.id),
-  )
-  for (const old of previous) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await expenseReportItemClient.delete(old.id)
-    } catch (error) {
-      errors.push(`第 ${old.idx ?? '?'} 行删除失败: ${(error as Error).message}`)
-    }
-  }
-  for (const row of current) {
-    try {
-      if (row.id.startsWith('local:')) {
-        await expenseReportItemClient.create({ ...input(row), reportId })
-      } else {
-        await expenseReportItemClient.update(row.id, input(row))
-      }
-    } catch (error) {
-      errors.push(`第 ${row.idx ?? '?'} 行保存失败: ${(error as Error).message}`)
-    }
-  }
-  return errors
-}

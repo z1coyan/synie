@@ -2,7 +2,7 @@
  * ResourceBinding 注册表：known key 恢复类型；unknown 显式失败。
  * contract 后 binding 是唯一资源→Adapter 关联；无独立 ResourceClient registry 入口。
  */
-import type { ResourceDocument } from '@synie/shared'
+import { MAX_RESOURCE_PAGE_SIZE, type ResourceDocument } from '@synie/shared'
 import type { Row } from '~/components/synie-data-grid/types'
 import type { ResourceTransport } from '../types'
 import { fetchResourceDocument } from './client'
@@ -163,15 +163,72 @@ export function resourceTransportFromBinding(binding: ResourceBinding): Resource
     // Reader 产生的查询 key 会与 binding.cache 的失效 scope 永久错位。
     id: binding.cache.adapterId,
     query: async (input) => {
-      const page = await binding.reader.query({
-        ...input,
-        profile: input.profile ?? 'default',
-        numItems: input.numItems ?? input.limit ?? 20,
-        cursor: input.cursor ?? (input.offset ? encodeTransportCursor(input.offset) : null),
-      })
+      const {
+        numItems,
+        limit,
+        offset: rawOffset,
+        cursor: initialCursor,
+        ...query
+      } = input
+      let offset = rawOffset ?? 0
+      if (initialCursor != null) {
+        const cursorOffset = decodeTransportCursor(initialCursor)
+        if (rawOffset !== undefined && rawOffset !== cursorOffset) {
+          throw new Error('transport cursor 与 offset 不一致')
+        }
+        offset = cursorOffset
+      }
+      const requested = numItems ?? limit ?? 20
+      if (!Number.isSafeInteger(requested) || requested < 1) {
+        throw new Error('transport limit 必须是正整数')
+      }
+      if (!Number.isSafeInteger(offset) || offset < 0) {
+        throw new Error('transport offset 非法')
+      }
+      const targetEnd = offset + requested
+      if (!Number.isSafeInteger(targetEnd)) {
+        throw new Error('transport 分页范围超出安全整数')
+      }
+
+      const results: Row[] = []
+      const seenCursors = new Set<string>()
+      let cursor: string | null = null
+      let consumed = 0
+      let isDone = false
+      let totalCount: number | undefined
+
+      while (!isDone && consumed < targetEnd) {
+        const page = await binding.reader.query({
+          ...query,
+          profile: query.profile ?? 'default',
+          numItems: Math.min(
+            MAX_RESOURCE_PAGE_SIZE,
+            targetEnd - consumed,
+          ),
+          cursor,
+        })
+        if (page.totalCount !== undefined) totalCount = page.totalCount
+        for (const row of page.results) {
+          if (consumed >= offset && results.length < requested) {
+            results.push(row)
+          }
+          consumed += 1
+          if (consumed >= targetEnd) break
+        }
+        isDone = page.pageInfo.isDone
+        if (isDone || consumed >= targetEnd) break
+        const next = page.pageInfo.continueCursor
+        if (!next) throw new Error('transport 分页未结束但缺少 continueCursor')
+        if (seenCursors.has(next)) throw new Error('transport 分页 cursor 重复')
+        seenCursors.add(next)
+        cursor = next
+      }
+
       return {
-        count: page.totalCount ?? page.results.length,
-        results: page.results,
+        count:
+          totalCount ??
+          (isDone ? consumed : offset + results.length + 1),
+        results,
       }
     },
     get: (id) => binding.reader.get(id),

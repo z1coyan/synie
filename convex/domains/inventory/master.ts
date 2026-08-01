@@ -1,17 +1,107 @@
 import { v } from 'convex/values'
+import type { PaginationResult } from 'convex/server'
 import type { Doc, Id } from '../../_generated/dataModel'
+import type { QueryCtx } from '../../_generated/server'
 import { permissionedMutation, permissionedQuery } from '../../lib/auth'
 import { asDomainMutationCtx } from '../../lib/mutationContext'
 import { decimalToScaledInt64, scaledInt64ToDecimal } from '../../lib/decimal'
 import { synieError } from '../../lib/errors'
-import { paginationOptions, requireSearchTerm, resourcePage } from '../../lib/pagination'
+import { paginationOptions, rejectSearch, requireSearchTerm, resourcePage } from '../../lib/pagination'
 import { writeAudit } from '../../platform/audit/write'
 import { nextInMutation } from '../../platform/numbering/service'
 
 function categoryPresent(row:Doc<'materialCategories'>){return{id:row._id,code:row.code,name:row.name,isLeaf:row.isLeaf,active:row.active,parentId:row.parentId,insertedAt:row.insertedAt,updatedAt:row.updatedAt}}
 async function categoryParent(ctx:{db:any},self:Id<'materialCategories'>|null,parentId:Id<'materialCategories'>|null){let cursor=parentId;for(let depth=0;cursor;depth++){if(depth>=100||cursor===self)throw synieError('validation','物料分类上级形成循环');const parent=await ctx.db.get(cursor) as Doc<'materialCategories'>|null;if(!parent)throw synieError('validation','上级物料分类不存在');cursor=parent.parentId}}
 export const getCategory=permissionedQuery('inv.material_category:read')({args:{id:v.id('materialCategories')},returns:v.any(),handler:async(ctx,args)=>{const row=await ctx.db.get(args.id);return row?categoryPresent(row):null}})
-export const listCategories=permissionedQuery('inv.material_category:read')({args:{profile:v.union(v.literal('default'),v.literal('treeChildren'),v.literal('search')),numItems:v.number(),cursor:v.optional(v.union(v.string(),v.null())),search:v.optional(v.string()),parentId:v.optional(v.union(v.id('materialCategories'),v.null()))},returns:v.any(),handler:async(ctx,args)=>{const o=paginationOptions(args);const page=args.profile==='search'?await ctx.db.query('materialCategories').withSearchIndex('search_text',q=>q.search('searchText',requireSearchTerm(args.search))).paginate(o):args.profile==='treeChildren'?await ctx.db.query('materialCategories').withIndex('by_parent_code_key',q=>q.eq('parentId',args.parentId??null)).paginate(o):await ctx.db.query('materialCategories').withIndex('by_code_key').paginate(o);return resourcePage({...page,page:page.page.map(categoryPresent)})}})
+
+type MaterialCategoryListArgs = {
+  profile: 'default' | 'lookup' | 'treeChildren' | 'search'
+  numItems: number
+  cursor?: string | null
+  search?: string
+  parentId?: Id<'materialCategories'> | null
+  active?: boolean
+  isLeaf?: boolean
+}
+
+function hasCategoryCandidateFilters(args: MaterialCategoryListArgs): boolean {
+  return args.active !== undefined || args.isLeaf !== undefined
+}
+
+function categoryCandidateKind(args: MaterialCategoryListArgs): 'parent' | 'material' {
+  if (args.active === undefined && args.isLeaf === false) return 'parent'
+  if (args.active === true && args.isLeaf === true) return 'material'
+  throw synieError('validation', '物料分类候选筛选组合暂不支持')
+}
+
+/** Indexed category query seam for candidate filters and opaque cursor tests. */
+export async function paginateMaterialCategoryDocs(
+  db: QueryCtx['db'],
+  args: MaterialCategoryListArgs,
+): Promise<PaginationResult<Doc<'materialCategories'>>> {
+  const options = paginationOptions(args)
+  if (args.profile === 'search') {
+    if (args.parentId !== undefined) throw synieError('validation', 'search profile 不接受 parentId')
+    const term = requireSearchTerm(args.search)
+    if (hasCategoryCandidateFilters(args)) {
+      const kind = categoryCandidateKind(args)
+      if (kind === 'material') {
+        return db.query('materialCategories')
+          .withSearchIndex('search_text', (query) => query
+            .search('searchText', term)
+            .eq('active', true)
+            .eq('isLeaf', true))
+          .paginate(options)
+      }
+      return db.query('materialCategories')
+        .withSearchIndex('search_text', (query) => query.search('searchText', term).eq('isLeaf', false))
+        .paginate(options)
+    }
+    return db.query('materialCategories')
+      .withSearchIndex('search_text', (query) => query.search('searchText', term))
+      .paginate(options)
+  }
+
+  rejectSearch(args.search)
+  if (args.profile === 'treeChildren') {
+    if (hasCategoryCandidateFilters(args)) throw synieError('validation', 'treeChildren profile 不接受候选筛选')
+    return db.query('materialCategories')
+      .withIndex('by_parent_code_key', (query) => query.eq('parentId', args.parentId ?? null))
+      .order('asc')
+      .paginate(options)
+  }
+  if (args.parentId !== undefined) throw synieError('validation', `${args.profile} profile 不接受 parentId`)
+  if (args.profile === 'lookup') {
+    const kind = categoryCandidateKind(args)
+    if (kind === 'material') {
+      return db.query('materialCategories')
+        .withIndex('by_active_is_leaf_code_key', (query) => query.eq('active', true).eq('isLeaf', true))
+        .order('asc')
+        .paginate(options)
+    }
+    return db.query('materialCategories')
+      .withIndex('by_is_leaf_code_key', (query) => query.eq('isLeaf', false))
+      .order('asc')
+      .paginate(options)
+  }
+  if (args.profile !== 'default') throw synieError('validation', '未知 material category query profile')
+  if (hasCategoryCandidateFilters(args)) throw synieError('validation', 'default profile 不接受候选筛选')
+  return db.query('materialCategories').withIndex('by_code_key').order('asc').paginate(options)
+}
+
+export const listCategories=permissionedQuery('inv.material_category:read')({
+  args:{
+    profile:v.union(v.literal('default'),v.literal('lookup'),v.literal('treeChildren'),v.literal('search')),
+    numItems:v.number(),cursor:v.optional(v.union(v.string(),v.null())),search:v.optional(v.string()),
+    parentId:v.optional(v.union(v.id('materialCategories'),v.null())),
+    active:v.optional(v.boolean()),isLeaf:v.optional(v.boolean()),
+  },
+  returns:v.any(),
+  handler:async(ctx,args)=>{
+    const page=await paginateMaterialCategoryDocs(ctx.db,args)
+    return resourcePage({...page,page:page.page.map(categoryPresent)})
+  },
+})
 export const createCategory=permissionedMutation('inv.material_category:create')({args:{code:v.string(),name:v.string(),isLeaf:v.optional(v.boolean()),active:v.optional(v.boolean()),parentId:v.optional(v.union(v.id('materialCategories'),v.null()))},returns:v.any(),handler:async(ctx,args)=>{const code=args.code.trim(),name=args.name.trim(),codeKey=code.toLocaleLowerCase();if(!code||!name)throw synieError('validation','物料分类参数不合法');if(await ctx.db.query('materialCategories').withIndex('by_code_key',q=>q.eq('codeKey',codeKey)).unique())throw synieError('conflict','分类编号已存在');await categoryParent(ctx,null,args.parentId??null);const now=Date.now(),id=await ctx.db.insert('materialCategories',{code,codeKey,name,isLeaf:args.isLeaf??true,active:args.active??true,parentId:args.parentId??null,searchText:`${code} ${name}`.toLocaleLowerCase(),insertedAt:now,updatedAt:now});const row=(await ctx.db.get(id))!;await writeAudit(asDomainMutationCtx(ctx),ctx.actor,{resource:'invMaterialCategories',recordId:id,recordLabel:name,action:'create',changes:categoryPresent(row)});return categoryPresent(row)}})
 export const updateCategory=permissionedMutation('inv.material_category:update')({args:{id:v.id('materialCategories'),code:v.optional(v.string()),name:v.optional(v.string()),isLeaf:v.optional(v.boolean()),active:v.optional(v.boolean()),parentId:v.optional(v.union(v.id('materialCategories'),v.null()))},returns:v.any(),handler:async(ctx,args)=>{const row=await ctx.db.get(args.id);if(!row)throw synieError('not_found','物料分类不存在');const code=args.code?.trim()??row.code,name=args.name?.trim()??row.name,codeKey=code.toLocaleLowerCase(),parentId=args.parentId===undefined?row.parentId:args.parentId,isLeaf=args.isLeaf??row.isLeaf;if(codeKey!==row.codeKey&&await ctx.db.query('materialCategories').withIndex('by_code_key',q=>q.eq('codeKey',codeKey)).unique())throw synieError('conflict','分类编号已存在');await categoryParent(ctx,row._id,parentId);if(isLeaf&&!row.isLeaf&&await ctx.db.query('materialCategories').withIndex('by_parent_code_key',q=>q.eq('parentId',row._id)).first())throw synieError('validation','存在下级分类,不能改为叶子分类');if(!isLeaf&&row.isLeaf&&await ctx.db.query('materials').withIndex('by_category',q=>q.eq('categoryId',row._id)).first())throw synieError('validation','分类下存在物料,不能改为非叶子分类');await ctx.db.patch(row._id,{code,codeKey,name,isLeaf,active:args.active??row.active,parentId,searchText:`${code} ${name}`.toLocaleLowerCase(),updatedAt:Date.now()});return categoryPresent((await ctx.db.get(row._id))!)}})
 export const removeCategory=permissionedMutation('inv.material_category:delete')({args:{id:v.id('materialCategories')},returns:v.null(),handler:async(ctx,args)=>{const row=await ctx.db.get(args.id);if(!row)throw synieError('not_found','物料分类不存在');const [child,material]=await Promise.all([ctx.db.query('materialCategories').withIndex('by_parent_code_key',q=>q.eq('parentId',row._id)).first(),ctx.db.query('materials').withIndex('by_category',q=>q.eq('categoryId',row._id)).first()]);if(child)throw synieError('conflict','存在下级分类,不能删除');if(material)throw synieError('conflict','分类下存在物料,不能删除');await ctx.db.delete(row._id);await writeAudit(asDomainMutationCtx(ctx),ctx.actor,{resource:'invMaterialCategories',recordId:row._id,recordLabel:row.name,action:'destroy',changes:categoryPresent(row)});return null}})

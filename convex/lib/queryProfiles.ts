@@ -94,13 +94,13 @@ export const pilotQueryProfiles = {
     {
       key: 'lookup',
       kind: 'index',
-      equalityFields: ['companyId'],
+      equalityFields: ['companyId', 'active', 'isLeaf'],
       fixedSort: 'ascending',
       companyScopeField: 'companyId',
       source: {
         kind: 'index',
-        name: 'by_company_name_key',
-        fields: ['companyId', 'nameKey'],
+        name: 'by_company_active_is_leaf_name_key',
+        fields: ['companyId', 'active', 'isLeaf', 'nameKey'],
       },
     },
     {

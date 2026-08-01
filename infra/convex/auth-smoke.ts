@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkInfra } from './health.ts'
-import { composeEnv, log, root, run, runCompose } from './lib.ts'
+import { isolatedComposeEnv, log, root, run, runCompose } from './lib.ts'
 
 function safePort(name: string, fallback: number): string {
   const value = process.env[name] ?? String(fallback)
@@ -23,7 +23,7 @@ async function main() {
   }
   const convexPort = safePort('SYNIE_AUTH_SMOKE_CONVEX_PORT', 36_210)
   const sitePort = safePort('SYNIE_AUTH_SMOKE_SITE_PORT', 36_211)
-  const env = composeEnv({
+  const env = isolatedComposeEnv({
     COMPOSE_PROJECT_NAME: project,
     CONVEX_POSTGRES_PORT: safePort('SYNIE_AUTH_SMOKE_CONVEX_POSTGRES_PORT', 35_442),
     MINIO_API_PORT: safePort('SYNIE_AUTH_SMOKE_MINIO_PORT', 39_100),

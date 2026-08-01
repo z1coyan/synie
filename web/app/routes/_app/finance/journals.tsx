@@ -6,72 +6,26 @@ import { AlertDialog, Button, Calendar, DateField, DatePicker, Label, toast } fr
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
-import {
-  glJournalClient,
-  glJournalLineClient,
-} from '~/lib/resources/accounting'
 import { accountClient } from '~/lib/resources/accounts'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import {
+  assertAggregateDraftReady,
+  submitAggregateDraft,
+} from '~/lib/resources/aggregate-draft-submit'
+import {
+  aggregateDraftRows,
+  journalDraftLine,
+} from '~/lib/resources/aggregate-draft-rows'
 import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/finance/journals')({
   component: JournalsPage,
 })
 
-// REST input 只收行自身字段:本地草稿 id、companyId(冗余自凭证,后端回填)、currencyId(科目复制,不可手改)
-// 与行上挂的 account/currency join 对象一律不进 payload
-function lineInput(row: Row) {
-  return {
-    idx: row.idx,
-    accountId: row.accountId,
-    debit: row.debit,
-    credit: row.credit,
-    partyType: row.partyType ?? null,
-    partyId: row.partyId ?? null,
-    remarks: row.remarks ?? null,
-  }
-}
-
-const LINE_COMPARE_KEYS = ['idx', 'accountId', 'debit', 'credit', 'partyType', 'partyId', 'remarks'] as const
-
-function lineChanged(before: Row, after: Row): boolean {
-  return LINE_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
-}
-
-/** 行差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy。全程收集错误文案(带行号定位),不中途抛出 */
-async function persistLines(journalId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
-  const errors: string[] = []
-  // 多行部分失败时用户要能定位到行,错误文案统一冠以行号(destroy 分支用被删行的 idx)
-  const run = async (idx: unknown, request: () => Promise<unknown>) => {
-    try {
-      await request()
-    } catch (error) {
-      errors.push(`第${idx}行:${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    await run(old.idx, () => glJournalLineClient.delete(old.id))
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      await run(row.idx, () => glJournalLineClient.create({ journalId, ...lineInput(row) }))
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && lineChanged(old, row)) {
-      await run(row.idx, () => glJournalLineClient.update(row.id, lineInput(row)))
-    }
-  }
-  return errors
-}
+const journalDraft = aggregateDraftFor('accGlJournals')
 
 const safeParseDate = (v: string | null) => {
   if (!v) return null
@@ -113,8 +67,7 @@ const GRID_COLUMNS = [
 function JournalsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [lines, setLines] = useState<Row[]>([])
-  const [linesSnapshot, setLinesSnapshot] = useState<Row[]>([])
-  // edit/view 态分录行靠 REST 异步拉取,未完成前禁止编辑,防回填覆盖在输行
+  // edit/view 态由聚合草稿完整加载分录行,未完成前禁止编辑,防回填覆盖在输行
   const [linesLoaded, setLinesLoaded] = useState(false)
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张凭证的行回填到当前凭证
@@ -157,29 +110,21 @@ function JournalsPage() {
     setDrawer({ mode, row })
     if (mode === 'create') {
       setLines([])
-      setLinesSnapshot([])
       setLinesLoaded(true)
       return
     }
     setLinesLoaded(false)
-    glJournalLineClient
-      .query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        filter: { journalId: { kind: 'fk', values: [row!.id], labels: [] } },
-      })
-      .then((d) => {
+    journalDraft
+      .loadDraft(row!.id)
+      .then((saved) => {
         if (my !== reqIdRef.current) return
-        setLines(d.results)
-        setLinesSnapshot(d.results)
+        setLines(aggregateDraftRows(saved, 'lines', '会计凭证'))
         setLinesLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
         toast.danger('分录行加载失败', { description: (e as Error).message })
         setLines([])
-        setLinesSnapshot([])
       })
   }
 
@@ -217,7 +162,6 @@ function JournalsPage() {
           reqIdRef.current++
           setDrawer(null)
           setLines([])
-          setLinesSnapshot([])
         }}
         row={drawer?.row}
         // 分录行表 7 列,默认 480px 太挤,凭证抽屉加宽(移动端仍全宽)
@@ -336,30 +280,20 @@ function JournalsPage() {
           )
         }}
         onSubmit={async (values, mode) => {
-          // 返回值供抽屉「保存并审核」取 id 调审核动作(通用约定)
-          let savedId: string
-          if (mode === 'create') {
-            const journal = await glJournalClient.create(values)
-            const journalId = journal.id
-            const lineErrors = await persistLines(journalId, lines, [])
-            if (lineErrors.length > 0) {
-              toast.danger('凭证已创建,但部分分录行保存失败', { description: lineErrors.join('; ') })
-            } else {
-              toast.success('凭证已创建')
-            }
-            savedId = journalId
-          } else {
-            const journalId = drawer!.row!.id
-            await glJournalClient.update(journalId, values)
-            const lineErrors = await persistLines(journalId, lines, linesSnapshot)
-            if (lineErrors.length > 0) {
-              toast.danger('凭证已更新,但部分分录行保存失败', { description: lineErrors.join('; ') })
-            } else {
-              toast.success('凭证已更新')
-            }
-            savedId = journalId
-          }
-          await resourceBindingFor('accGlJournals').cache.invalidateGrid(queryClient)
+          assertAggregateDraftReady(mode, linesLoaded, '会计凭证分录行')
+          const input = { ...values, lines: lines.map(journalDraftLine) }
+          const savedId = await submitAggregateDraft(
+            journalDraft,
+            mode,
+            drawer?.row?.id,
+            input,
+            '会计凭证',
+          )
+          toast.success(`凭证已${mode === 'create' ? '创建' : '更新'}`)
+          await Promise.all([
+            resourceBindingFor('accGlJournals').cache.invalidateAll(queryClient),
+            resourceBindingFor('accGlJournalLines').cache.invalidateAll(queryClient),
+          ])
           return savedId
         }}
       />

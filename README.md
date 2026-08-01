@@ -55,6 +55,25 @@ bun install --frozen-lockfile
 | 产品 S3 代理 / MinIO console | `http://127.0.0.1:9000` / `http://127.0.0.1:9001` |
 | Convex PostgreSQL | `127.0.0.1:5442` |
 
+需要从另一台 Tailscale 设备验证时，可在 `.env` 将浏览器访问面显式绑定到所有 IPv4 接口，并把
+public URL 与产品文件 CORS origin 统一改为本机 Tailscale IPv4（下面的 `100.x.y.z`）：
+
+```dotenv
+SYNIE_BIND_HOST=0.0.0.0
+CONVEX_CLOUD_ORIGIN=http://100.x.y.z:3210
+SYNIE_CONVEX_PUBLIC_SITE_URL=http://100.x.y.z:3211
+VITE_CONVEX_URL=http://100.x.y.z:3210
+VITE_CONVEX_SITE_URL=http://100.x.y.z:3211
+VITE_SITE_URL=http://100.x.y.z:3000
+SYNIE_S3_PUBLIC_ENDPOINT=http://100.x.y.z:9000
+SYNIE_PRODUCT_FILES_CORS_ORIGIN=http://100.x.y.z:3000
+```
+
+该开关只影响 Web、Convex backend/site 与产品 S3 代理；dashboard、PostgreSQL 和 MinIO console
+仍固定绑定 `127.0.0.1`。`0.0.0.0` 同时监听非 Tailscale 网卡，主机防火墙必须只允许受信任来源；
+此模式仅供短期内网开发验证，不得用于公网或共享开发服务器。纯 HTTP 的 Tailscale IP 也不是浏览器
+secure context；依赖 Web Crypto 的附件校验/打印应继续从 localhost 验证，或另配受信任 HTTPS 入口。
+
 ## 本地开发
 
 一条命令启动基础设施，首次静默创建 `.env.local` admin key，然后并行运行 Convex watcher 与

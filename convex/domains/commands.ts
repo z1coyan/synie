@@ -12,19 +12,24 @@ import { cancelInventoryInMutation, postInventoryInMutation } from '../engines/i
 import type { StockLine } from '../engines/inventory/model'
 import { catalogDocument } from './shared/policies'
 import {
+  assertExpenseReportHeadRules,
   childrenFor,
   createDomainRecord,
   domainInternalForMutation,
   hydrateStored,
   patchDomainComputed,
   patchDomainStatus,
+  refreshDomainRecordProjection,
   unsafeStoredForMutation,
+  validateExpenseReportItemRules,
 } from './shared/records'
-import { warehouseRevision } from './inventory/revisions'
+import { assertStockCountWarehouseSnapshotCurrent, warehouseRevision } from './inventory/revisions'
 import { recomputeDemandItem, removeMakeArrangement } from './manufacturing/arrangements'
 import { replayBill } from './finance/bills'
 import { assertJournalNotBankReconciled, createBankReconciliation } from './finance/banking'
 import { voidPriceIndex } from './market/domain'
+import { assertOutsourcedDraftCanActivate } from './trading/fulfillmentDrafts'
+import { assertReconciliationDraftCanActivate } from './trading/reconciliationDrafts'
 import {
   closeReconciliationTodo,
   openReconciliationTodo,
@@ -64,7 +69,7 @@ const TRANSITIONS: Readonly<Record<string, Readonly<Partial<Record<CommandKey, T
     audit: { from: ['DRAFT'], to: 'AUDITED' }, void: { from: ['DRAFT', 'AUDITED'], to: 'VOIDED' },
     reverse: { from: ['AUDITED'], to: 'REVERSED' },
   },
-  accExpenseReports: { audit: { from: ['DRAFT'], to: 'AUDITED' }, void: { from: ['DRAFT', 'AUDITED'], to: 'VOIDED' } },
+  accExpenseReports: { audit: { from: ['DRAFT'], to: 'AUDITED' }, void: { from: ['AUDITED'], to: 'VOIDED' } },
   accBillTransactions: { audit: { from: ['DRAFT'], to: 'AUDITED' }, void: { from: ['DRAFT', 'AUDITED'], to: 'VOIDED' } },
   mfgBoms: { activate: { from: ['DRAFT', 'INACTIVE'], to: 'ACTIVE' }, deactivate: { from: ['ACTIVE'], to: 'INACTIVE' } },
   mfgDemands: { audit: { from: ['DRAFT'], to: 'CONFIRMED' }, close: { from: ['CONFIRMED'], to: 'CLOSED' }, void: { from: ['CONFIRMED'], to: 'VOIDED' } },
@@ -109,7 +114,16 @@ function stockLine(item: Wire, warehouseId: unknown, direction: 'in' | 'out'): S
   }
 }
 
-async function stockPosting(
+export function assertStockCountItemsReady(items: readonly Wire[]): void {
+  if (!items.length) throw synieError('conflict', '审核前必须至少填写一行盘点明细')
+  const missing = (value: unknown) =>
+    value === null || value === undefined || (typeof value === 'string' && value.trim() === '')
+  if (items.some((item) => missing(item.countedQuantity) || missing(item.convertedCounted))) {
+    throw synieError('conflict', '审核前每行都必须填写实盘数量')
+  }
+}
+
+export async function stockPosting(
   ctx: DomainMutationCtx,
   resource: string,
   id: string,
@@ -137,9 +151,11 @@ async function stockPosting(
     return { type: `${catalogDocument(resource).permissionPrefix}.${command}`, lines }
   }
   if (resource === 'invStockCounts' && command === 'approve') {
+    const items = await childRows(ctx, 'invStockCountItems', id)
+    assertStockCountItemsReady(items)
     const lines: StockLine[] = []
-    for (const item of await childRows(ctx, 'invStockCountItems', id)) {
-      const delta = decimal(item.convertedCounted ?? item.countedQuantity).sub(decimal(item.bookQuantity))
+    for (const item of items) {
+      const delta = decimal(item.convertedCounted).sub(decimal(item.bookQuantity))
       if (delta.isZero()) continue
       lines.push({
         warehouseId: text(row.warehouseId, '仓库') as Id<'warehouses'>,
@@ -206,6 +222,52 @@ async function amountFromChildren(ctx: DomainMutationCtx, resource: string, pare
     )), new Decimal(0))
 }
 
+/** 报销过账独立接缝：行类型取数规则可直接做混合行回归测试。 */
+export async function expenseReportGlLines(
+  ctx: DomainMutationCtx,
+  id: string,
+  row: Wire,
+): Promise<GlLine[] | null> {
+  await assertExpenseReportHeadRules(ctx, row)
+  const items = await childRows(ctx, 'accExpenseReportItems', id)
+  if (!items.length) throw synieError('conflict', '报销单必须至少有一行')
+  const employeeId = text(row.employeeId, '报销员工')
+  const lines: GlLine[] = []
+  let total = new Decimal(0)
+  for (const item of items) {
+    const invoice = await validateExpenseReportItemRules(ctx, String(item.id), item)
+    if (item.kind === 'INVOICED') {
+      if (!invoice) throw synieError('internal', '挂票行校验未返回发票')
+      const value = decimal(invoice.grossTotal)
+      if (!value.isFinite() || value.lte(0)) throw synieError('conflict', '挂票行发票状态已变化')
+      lines.push({
+        accountId: text(invoice.partyAccountId, '发票往来科目') as Id<'accounts'>,
+        debit: roundAmount(value), credit: '0',
+        partyType: 'EMPLOYEE', partyId: employeeId,
+      })
+      total = total.add(value)
+      continue
+    }
+    if (item.kind === 'MANUAL') {
+      const value = decimal(item.amount)
+      if (!value.isFinite() || value.lte(0)) throw synieError('conflict', '无票报销行不完整')
+      lines.push({
+        accountId: text(item.expenseAccountId, '费用科目') as Id<'accounts'>,
+        debit: roundAmount(value), credit: '0',
+      })
+      total = total.add(value)
+      continue
+    }
+    throw synieError('conflict', '报销行类型不合法')
+  }
+  if (!total.isFinite() || total.lte(0)) throw synieError('conflict', '报销单必须至少有一行')
+  lines.push({
+    accountId: text(row.paymentAccountId, '付款科目') as Id<'accounts'>,
+    debit: '0', credit: roundAmount(total),
+  })
+  return lines
+}
+
 async function glPosting(
   ctx: DomainMutationCtx,
   resource: string,
@@ -228,16 +290,7 @@ async function glPosting(
   if (resource === 'purReceipts') return balancedPair(row.debitAccountId, row.creditAccountId, await amountFromChildren(ctx, 'purReceiptItems', id), row)
   if (resource === 'purOutsourcedReceipts') return balancedPair(row.debitAccountId, row.creditAccountId, await amountFromChildren(ctx, 'purOutsourcedReceiptItems', id), row)
   if (resource === 'accExpenseReports') {
-    const items = await childRows(ctx, 'accExpenseReportItems', id)
-    const total = items.reduce((sum, item) => sum.add(decimal(item.amount)), new Decimal(0))
-    if (!row.paymentAccountId || total.lte(0)) return null
-    const lines: GlLine[] = items.map((item) => ({
-      accountId: text(item.expenseAccountId, '费用科目') as Id<'accounts'>,
-      debit: roundAmount(decimal(item.amount)), credit: '0',
-      partyType: 'EMPLOYEE', partyId: String(row.employeeId),
-    }))
-    lines.push({ accountId: String(row.paymentAccountId) as Id<'accounts'>, debit: '0', credit: roundAmount(total), partyType: 'EMPLOYEE', partyId: String(row.employeeId) })
-    return lines
+    return expenseReportGlLines(ctx, id, row)
   }
   if (resource === 'accBillTransactions') {
     return balancedPair(row.billAccountId, row.settleAccountId ?? row.bankAccountId, decimal(row.netAmount ?? row.amount), row)
@@ -444,7 +497,9 @@ async function assertReconciliationCommand(
   }
   if ((key === 'confirm' || key === 'audit')) {
     const child = resource === 'salReconciliations' ? 'salReconciliationItems' : 'purReconciliationItems'
-    if (!(await childRows(ctx, child, id)).length) throw synieError('conflict', '对账单至少需要一行')
+    const items = await childRows(ctx, child, id)
+    if (!items.length) throw synieError('conflict', '对账单至少需要一行')
+    await assertReconciliationDraftCanActivate(ctx, resource, row, items)
   }
   if (key === 'unconfirm') {
     const references = await ctx.db.query('domainReferences').withIndex('by_target', (q) =>
@@ -574,7 +629,15 @@ async function syncChildStatus(
   id: string,
   status: string,
 ): Promise<void> {
+  if (resource === 'mfgDemands') {
+    for (const child of await childRows(ctx, 'mfgDemandItems', id)) {
+      await refreshDomainRecordProjection(ctx, 'mfgDemandItems', String(child.id))
+    }
+    return
+  }
   const mapping: Readonly<Record<string, { child: string; field: string }>> = {
+    salQuotations: { child: 'salQuotationItems', field: 'quotationStatus' },
+    purQuotations: { child: 'purQuotationItems', field: 'quotationStatus' },
     salOrders: { child: 'salOrderItems', field: 'orderStatus' },
     purOrders: { child: 'purOrderItems', field: 'orderStatus' },
     salDeliveries: { child: 'salDeliveryItems', field: 'deliveryStatus' },
@@ -589,6 +652,13 @@ async function syncChildStatus(
   if (!target) return
   for (const child of await childRows(ctx, target.child, id)) {
     await patchDomainComputed(ctx, actor, target.child, String(child.id), { [target.field]: status }, 'statusProjection')
+    if (resource === 'purOrders') {
+      for (const material of await childRows(ctx, 'purOrderItemMaterials', String(child.id))) {
+        await patchDomainComputed(ctx, actor, 'purOrderItemMaterials', String(material.id), {
+          orderStatus: status,
+        }, 'statusProjection')
+      }
+    }
   }
 }
 
@@ -629,6 +699,9 @@ export async function executeCommandInMutation(
         ['confirm', 'unconfirm', 'audit', 'void'].includes(key)) {
       await assertReconciliationCommand(ctx, args.resource, args.id, row, key)
     }
+    if ((args.resource === 'purOutsourcedIssues' || args.resource === 'purOutsourcedReceipts') && key === 'audit') {
+      await assertOutsourcedDraftCanActivate(ctx, args.resource, row)
+    }
     if (args.resource === 'mfgDemands' && key === 'void') {
       await assertDemandCanVoid(ctx, args.id)
     }
@@ -649,11 +722,9 @@ export async function executeCommandInMutation(
     }
     if (args.resource === 'invStockCounts' && key === 'approve') {
       const internal = await domainInternalForMutation(ctx, args.resource, args.id)
-      const snapshotRevision = internal.warehouseRevision
-      const currentRevision = await warehouseRevision(ctx, text(row.warehouseId, '仓库'))
-      if (typeof snapshotRevision !== 'bigint' || snapshotRevision !== currentRevision) {
-        throw synieError('conflict', '盘点快照后仓库已有库存变动，请重新创建盘点快照')
-      }
+      const warehouseId = text(row.warehouseId, '仓库')
+      const currentRevision = await warehouseRevision(ctx, warehouseId)
+      assertStockCountWarehouseSnapshotCurrent(internal, warehouseId, currentRevision)
     }
     if (key === 'reverse') {
       const postingDate = text((args.input as Wire | undefined)?.postingDate, '红冲过账日期')

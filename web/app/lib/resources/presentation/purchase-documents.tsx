@@ -19,6 +19,10 @@ import {
   type PresentationDefinition,
 } from './group'
 import { tradingPartyFields } from './trading-party-fields'
+import {
+  readResourceRowsBounded,
+  readResourceRowsForParentsBounded,
+} from '../bounded-reader'
 import type {
   DocumentPreviewConfig,
   DocumentPreviewReaderResolver,
@@ -600,41 +604,39 @@ async function loadOutsourcedChildRows(
   kind: 'material' | 'byproduct',
   resolveReader: DocumentPreviewReaderResolver,
 ): Promise<Row[]> {
-  const items = await resolveReader('purOutsourcedReceiptItems').query({
-    profile: 'default',
-    numItems: 200,
-    cursor: null,
-    sort: { column: 'idx', direction: 'ascending' },
-    filter: {
-      receiptId: {
-        kind: 'fk',
-        op: 'in',
-        values: [receiptId],
-        labels: [],
+  const limit = 200
+  const items = await readResourceRowsBounded(
+    resolveReader('purOutsourcedReceiptItems'),
+    {
+      profile: 'default',
+      sort: { column: 'idx', direction: 'ascending' },
+      fixedFilter: {
+        receiptId: {
+          kind: 'fk',
+          op: 'in',
+          values: [receiptId],
+          labels: [],
+        },
       },
     },
-  })
-  const itemIds = items.results.map((row) => String(row.id))
+    limit,
+  )
+  const itemIds = items.map((row) => String(row.id))
   if (itemIds.length === 0) return []
   const resource =
     kind === 'material'
       ? 'purOutsourcedReceiptItemMaterials'
       : 'purOutsourcedReceiptItemByproducts'
-  const result = await resolveReader(resource).query({
-    profile: 'default',
-    numItems: 200,
-    cursor: null,
-    sort: { column: 'idx', direction: 'ascending' },
-    filter: {
-      receiptItemId: {
-        kind: 'fk',
-        op: 'in',
-        values: itemIds,
-        labels: [],
-      },
+  return readResourceRowsForParentsBounded(
+    resolveReader(resource),
+    {
+      profile: 'default',
+      sort: { column: 'idx', direction: 'ascending' },
     },
-  })
-  return result.results
+    'receiptItemId',
+    itemIds,
+    limit,
+  )
 }
 
 export function createPurchaseDocumentPresentation(

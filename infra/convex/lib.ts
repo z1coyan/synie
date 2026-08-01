@@ -37,12 +37,30 @@ export function expectedConvexVersion(env: NodeJS.ProcessEnv = process.env): str
   return version
 }
 
-export function composeEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
+function composeEnvironment(
+  baseEnv: NodeJS.ProcessEnv,
+  overrides: Record<string, string>,
+): NodeJS.ProcessEnv {
   return {
-    ...process.env,
-    CONVEX_VERSION: expectedConvexVersion(process.env),
+    ...baseEnv,
+    CONVEX_VERSION: expectedConvexVersion(baseEnv),
     SYNIE_COMPOSE_WORKSPACE: root,
     ...overrides,
+  }
+}
+
+export function composeEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return composeEnvironment(process.env, overrides)
+}
+
+/** 随机/隔离 smoke stack 永远只监听宿主 loopback，不继承主栈的公开绑定。 */
+export function isolatedComposeEnv(
+  overrides: Record<string, string> = {},
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return {
+    ...composeEnvironment(baseEnv, overrides),
+    SYNIE_BIND_HOST: '127.0.0.1',
   }
 }
 

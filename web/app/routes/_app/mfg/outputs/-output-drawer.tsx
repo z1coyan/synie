@@ -22,6 +22,7 @@ import {
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { WorkOrderProgressCell } from '../-work-order-progress-cell'
 import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
+import { readResourceRowsBounded } from '~/lib/resources/bounded-reader'
 
 const outputDraft = aggregateDraftFor('mfgOutputs')
 
@@ -141,15 +142,15 @@ export const outputAuditConfig = {
   commandKey: 'audit',
   itemsResource: 'mfgOutputItems',
   loadItems: (docId) =>
-    resourceBindingFor('mfgOutputItems').reader
-      .query({
+    readResourceRowsBounded(
+      resourceBindingFor('mfgOutputItems').reader,
+      {
         profile: 'default',
-        numItems: 200,
-        cursor: null,
         fixedFilter: { outputId: docId },
         sort: { column: 'idx', direction: 'ascending' },
-      })
-      .then((result) => result.results),
+      },
+      200,
+    ),
   columns: [
     { key: 'materialName', label: '物料', render: auditMaterialCell() },
     { key: 'unitName', label: '单位' },

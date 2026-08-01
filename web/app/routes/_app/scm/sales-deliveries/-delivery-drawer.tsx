@@ -1481,7 +1481,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
                     shippedQty: { label: '已发数量' },
                     remainingBaseQty: { label: '未发数量' },
                   }}
-                  gridDefaultSort={{ column: 'orderDate', direction: 'descending' }}
+                  gridDefaultSort={{ column: 'orderDate', direction: 'ascending' }}
                   gridExtraFields={['materialId', 'unitId']}
                   dialogClassName="max-w-5xl"
                   renderValue={(r) => orderItemDisplay(r)}

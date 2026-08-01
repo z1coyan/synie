@@ -984,7 +984,9 @@ export const CONVEX_DOMAIN_MANIFEST = {
     "commandTargets": {},
     "parentField": null,
     "sortFields": [],
-    "equalityFields": [],
+    "equalityFields": [
+      "billNo"
+    ],
     "aggregate": false,
     "draftGateway": null
   },

@@ -181,6 +181,12 @@ async function enrichItem(
       derived.orderNo = order.orderNo
     }
   }
+  if (childResource === 'salQuotationItems' || childResource === 'purQuotationItems') {
+    Object.assign(derived, await currencySnapshot(ctx, head.currencyId))
+    derived.quotationDate = head.quotationDate
+    derived.validUntil = head.validUntil
+    derived.quotationStatus = head.status
+  }
   if (childResource.endsWith('OrderItems')) {
     const qty = positiveDecimal(input.qty, 'qty')
     const price = typeof input.price === 'string' ? input.price : '0'

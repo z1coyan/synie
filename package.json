@@ -19,6 +19,7 @@
     "convex:bootstrap": "bun infra/convex/bootstrap.ts",
     "convex:backup": "bun infra/convex/backup.ts",
     "convex:restore": "bun infra/convex/restore.ts",
+    "convex:repair-candidates": "bun infra/convex/candidate-repair.ts",
     "test:self-hosted-restore": "bun infra/convex/restore-smoke-runner.ts",
     "test:self-hosted-auth": "bun infra/convex/auth-smoke.ts",
     "test:self-hosted-resources": "bun infra/convex/resource-smoke.ts",
