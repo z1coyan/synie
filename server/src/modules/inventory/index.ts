@@ -1,0 +1,50 @@
+import type { Kysely } from 'kysely'
+import { createInventoryEngine } from '~/engines/inventory/index.ts'
+import type { DB as Database } from '~/db/types.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import type { NumberingService } from '~/platform/numbering/service.ts'
+import { createMaterialCategoryService } from './category-service.ts'
+import { createMaterialService } from './material-service.ts'
+import { createMaterialUnitService } from './material-unit-service.ts'
+import { allInventoryResourceMetas } from './meta.ts'
+import { inventoryRoutes } from './routes.ts'
+import { createStockCountService } from './stock-count-service.ts'
+import { createStockDocService } from './stock-doc-service.ts'
+import { createStockEntryService } from './stock-entry-service.ts'
+import { createStockTransferService } from './stock-transfer-service.ts'
+import { createWarehouseService } from './warehouse-service.ts'
+
+export { inventoryRoutes } from './routes.ts'
+export { allInventoryResourceMetas } from './meta.ts'
+export type { MaterialCategoryService } from './category-service.ts'
+export type { MaterialService } from './material-service.ts'
+export type { MaterialUnitService } from './material-unit-service.ts'
+export type { WarehouseService } from './warehouse-service.ts'
+export type { StockDocService } from './stock-doc-service.ts'
+export type { StockTransferService } from './stock-transfer-service.ts'
+export type { StockCountService } from './stock-count-service.ts'
+export type { StockEntryService } from './stock-entry-service.ts'
+
+export function registerInventoryResources(registry: Registry): void {
+  for (const meta of allInventoryResourceMetas()) {
+    registry.register(meta)
+  }
+}
+
+/** 装配库存域全部服务（主数据 + 单据 + 分录/余额） */
+export function createInventoryServices(db: Kysely<Database>, numbering: NumberingService) {
+  const inventory = createInventoryEngine()
+  return {
+    inventory,
+    categories: createMaterialCategoryService(db),
+    materials: createMaterialService(db, numbering),
+    materialUnits: createMaterialUnitService(db),
+    warehouses: createWarehouseService(db),
+    stockDocs: createStockDocService(db, numbering, inventory),
+    stockTransfers: createStockTransferService(db, numbering, inventory),
+    stockCounts: createStockCountService(db, numbering, inventory),
+    stockEntries: createStockEntryService(db, inventory),
+  }
+}
+
+export type InventoryServices = ReturnType<typeof createInventoryServices>

@@ -5,15 +5,13 @@ import type { Row } from '../synie-data-grid/types'
 import { optionLabel, resolveSource } from './remote-query'
 import { useRemoteRecords } from './use-remote'
 import type { RemoteMultiSelectProps } from './RemoteMultiSelect'
-import { useResourceBinding } from '~/lib/resources/resource-context'
 
 export interface RemoteDialogMultiSelectProps extends RemoteMultiSelectProps {
   dialogTitle?: string
 }
 
 export function RemoteDialogMultiSelect(props: RemoteDialogMultiSelectProps) {
-  const binding = useResourceBinding(props.resource)
-  const src = resolveSource(props, undefined, binding)
+  const src = resolveSource(props)
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState<Row[]>([])
 

@@ -136,6 +136,5 @@ PE drawer registry 只保留 21 个实际调用的复杂配置，不再为 basic
 
 本 ADR 取代 `2026-07-25-go-fullstack-meta-migration.md` 中关于 Go Meta Registry、
 OpenAPI Resource Client 和“前端 registry 作为 Form 过渡权威源”的技术形状。旧 ADR
-关于单一元数据权威源、未知资源 fail-closed、不过度复刻 Ash DSL 的原则继续有效。2026-08-01
-资源执行面已全部切到 Convex，最终边界见
-[`2026-08-01-convex-only-application-boundary.md`](2026-08-01-convex-only-application-boundary.md)。
+关于单一元数据权威源、未知资源 fail-closed、不过度复刻 Ash DSL 的原则继续有效；当前
+后端技术栈以 Bun/TS/Hono 的既成迁移结果为准。

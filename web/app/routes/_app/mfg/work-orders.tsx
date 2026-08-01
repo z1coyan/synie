@@ -11,18 +11,16 @@ import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialo
 import {
   applyWorkOrderBom,
   getWorkOrderBomSnapshot,
+  workOrderClient,
 } from '~/lib/resources/manufacturing'
-import { hasPermission } from '~/lib/permissions'
-import { useCurrentActor } from '~/lib/actor-context'
+import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
 import { WorkOrderProgressCell } from './-work-order-progress-cell'
-import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
-
-const workOrderDraft = aggregateDraftFor('mfgWorkOrders')
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/mfg/work-orders')({
   component: WorkOrdersPage,
@@ -104,14 +102,13 @@ function WorkOrdersPageInner() {
   const { start: startPrint, dialog: printDialog } =
     useTemplatePrint('mfg.work_order')
 
-  const actor = useCurrentActor()
-  const permissions = useMemo(() => {
-    const current = new Set(actor.permissions)
-    if (actor.superAdmin) current.add('*')
-    return current as ReadonlySet<string>
-  }, [actor.permissions, actor.superAdmin])
-  const canCreateBom = hasPermission(permissions, 'mfg.bom:create')
-  const canUpdateWo = hasPermission(permissions, 'mfg.work_order:update')
+  const perms = useQuery({
+    queryKey: ['myPermissions'],
+    queryFn: fetchMyPermissions,
+    staleTime: 60_000,
+  })
+  const canCreateBom = hasPermission(perms.data, 'mfg.bom:create')
+  const canUpdateWo = hasPermission(perms.data, 'mfg.work_order:update')
 
   const rowId = drawer?.row?.id ? String(drawer.row.id) : null
   const woStatus = drawer?.row?.status != null ? String(drawer.row.status) : ''
@@ -155,21 +152,38 @@ function WorkOrdersPageInner() {
       materialId,
       lockMaterial: true,
       createStatus: 'ACTIVE',
-      ...(canEditBomOnExisting && rowId ? { workOrderId: rowId } : {}),
       onCreated: (bom) => {
         const id = String(bom.id)
-        patchValues({ bomId: id })
-        toast.success(
-          `BOM ${String(bom.code ?? '')} 已选入表单，保存工单时快照`,
-        )
-      },
-      onInlineCreated: ({ workOrder, bom }) => {
-        const id = String(bom.id)
-        patchValues({ bomId: id })
-        setDrawer((d) => d ? { ...d, row: { ...d.row, ...workOrder } } : d)
-        toast.success(`BOM ${String(bom.code ?? '')} 已创建并选入工单`)
-        invalidateWorkOrderLists()
-        queryClient.invalidateQueries({ queryKey: ['workOrderBomSnapshot', rowId] })
+        if (drawer?.mode === 'create' || !rowId) {
+          patchValues({ bomId: id })
+          toast.success(
+            `BOM ${String(bom.code ?? '')} 已选入表单，保存工单时快照`,
+          )
+          return
+        }
+        if (!canEditBomOnExisting) {
+          patchValues({ bomId: id })
+          return
+        }
+        void (async () => {
+          try {
+            const updated = (await applyWorkOrderBom(rowId, id)) as Row
+            patchValues({ bomId: id })
+            setDrawer((d) =>
+              d ? { ...d, row: { ...d.row, ...updated } } : d,
+            )
+            toast.success(`BOM ${String(bom.code ?? '')} 已创建并选入工单`)
+            invalidateWorkOrderLists()
+            queryClient.invalidateQueries({
+              queryKey: ['workOrderBomSnapshot', rowId],
+            })
+          } catch (e) {
+            toast.danger('BOM 已创建但选入工单失败', {
+              description: (e as Error).message,
+            })
+            patchValues({ bomId: id })
+          }
+        })()
       },
     })
   }
@@ -247,6 +261,10 @@ function WorkOrdersPageInner() {
                     materialId ? bomGridFilter(materialId) : undefined
                   }
                   gridColumns={['code', 'planName', 'status', 'note']}
+                  gridDefaultSort={{
+                    column: 'code',
+                    direction: 'ascending',
+                  }}
                   // 行菜单「查看」→ 完整 BOM 只读抽屉(配料/路线/副产品)
                   onView={(row) => openBomDrawer('view', row)}
                 />
@@ -437,26 +455,20 @@ function WorkOrdersPageInner() {
         }}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            const created = await workOrderDraft.createDraft({
+            await workOrderClient.create({
               demandItemId: values.demandItemId,
               workOrderNo: values.workOrderNo || null,
               qty: values.qty || null,
               bomId: values.bomId || null,
-            }) as Row
+            })
             toast.success('生产工单已生成')
-            invalidateWorkOrderLists()
-            return created.id
           } else {
-            const id = drawer!.row!.id
-            const current = await workOrderDraft.loadDraft(id) as Row
-            await workOrderDraft.replaceDraft(id, {
-              ...current,
+            await workOrderClient.update(drawer!.row!.id, {
               workOrderNo: values.workOrderNo,
             })
             toast.success('生产工单已更新')
-            invalidateWorkOrderLists()
-            return id
           }
+          invalidateWorkOrderLists()
         }}
       />
       {printDialog}

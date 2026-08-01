@@ -1,8 +1,6 @@
 # Synie
 
-项目使用 TanStack Start + HeroUI，业务后端只有自托管 Convex。浏览器业务数据经 generated
-Convex API 与 ResourceBinding；TanStack Start 只承载 SSR、Better Auth 同源路由和内部 PDF Worker。
-禁止新增第二业务 transport、fallback、双写、GraphQL 或 OpenAPI codegen。
+项目使用 TanStack Start + HeroUI + **Bun/Hono REST**（`@synie/server` hono/client + ResourceBinding/ResourceTransport）为产品技术栈。不引入 GraphQL / OpenAPI codegen。
 
 ## 项目守则
 
@@ -10,11 +8,9 @@ Convex API 与 ResourceBinding；TanStack Start 只承载 SSR、Better Auth 同�
 - 所有请求均要进行错误处理，有合适的报错信息方便排查
 - 尽可能使用组件库已有的组件进行开发而不是自己使用html+tailwindcss搭建
 - 表单/筛选控件一律用 HeroUI(Pro) 现成组件（日期用 DatePicker/DateRangePicker、数值用 NumberField、下拉用 Select 等），不要包装浏览器原生 input；有已封装的业务组件时优先复用业务组件
-- 业务数据请求走 `@convex-dev/react-query`、生成的 Convex API 与 `~/lib/resources` registry。页面不得
-  自行创建其他 transport；禁止新增 GraphQL / `gqlFetch` / openapi-fetch 路径。
+- 业务数据请求走 `~/lib/api`（hono/client）或 `~/lib/resources` registry；禁止新增 GraphQL / `gqlFetch` / openapi-fetch 路径
 - 生产页面的 `SynieDataGrid` / `SynieRecordDrawer` / 远程选择器只传 `resource`，由 `ResourceBinding.reader` 解析规范生产 Adapter；不要显式传 `client`。显式 Adapter 只用于 custom/in-memory 局部读模型与 interface 测试。列表与单条缓存键、失效一律经 `resourceBindingFor(resource).cache`，不得手写 `['gridRows', ...]` / `['rowById', ...]` 或依赖 transport id。
-- 认证只走 TanStack Start 同源 `/api/auth/*` cookie 路由与 Better Auth Convex component；业务页面不自行
-  保存 bearer token。
+- Vite 仅代理 `/api/v1` → Bun server（`SYNIE_API_PORT`/`GO_API_PORT`，默认 8080）；认证为 JWT
 
 ## 业务数据页标准组件
 
@@ -29,7 +25,7 @@ Convex API 与 ResourceBinding；TanStack Start 只承载 SSR、Better Auth 同�
 - 组件能力不够时先扩组件再用，不要在页面里绕过它手搭。
 - 外键单元格/字段默认渲染为可点 link，点击开全局速览抽屉（`FkPreviewProvider` 已挂 `_app` 布局，页面零接线）；资源解析经 `resourceBindingFor`，Meta 经 ResourceDocument。页面 Basic Form 用 `useCatalogBasicForm`；Presentation Extension 的 Drawer / audit / document preview implementation 与对应业务模块共置，全局 registry 只做薄装配且未知资源 fail-closed。
 - **物料列**：所有用到物料的表格（DataGrid 列表、SynieEditableTable 子条目、审核确认弹窗等只读/半只读表格）一律用统一物料单元格（`~/components/synie-material-cell/MaterialCell`）：保留 `materialCode` 列并 override 为 `materialCellRender({ drawingOwnerType? })`（label「物料」、DataGrid 上 `mobileRole: 'title'`、`filterField: 'materialId'`——快照行的列筛选仍按物料外键走 fk 选择器，不做编号文本筛选），撤掉 `materialName`/`materialSpec`/`customerPartNo` 独立列（撤列后经 `extraFields` 继续取回这三个字段与 `materialId`）。单元格形态为「图纸缩略图 + 编号/名称 + 规格 + 客编」；文本四字段严格取行上快照值不回退，缩略图快照图纸挂接优先、无挂接回退物料当前图纸；行有图纸挂接时传 `drawingOwnerType`（如 `sal_order_item`），无挂接的行（库存/报价/制造类）不传。物料选择器/挑选对话框不适用本约定。
-- 一切文件上传/下载必须走 `~/lib/files.ts`（Convex 鉴权 + 短时 S3 签名 URL），不要在页面自写 fetch/FormData；记录附件 UI 一律用 `SynieAttachmentPanel`（`~/components/synie-attachment-panel/`）挂 SynieRecordDrawer 的 `extraContent`，传 ownerType（资源/宿主类型名）/ownerId；固定单图槽位（证件照等）用同目录 `SynieImageAttachment`，一个 category 一张图。
+- 一切文件上传/下载必须走 `~/lib/files.ts`（REST `/api/v1/files*`），不要在页面自写 fetch/FormData；记录附件 UI 一律用 `SynieAttachmentPanel`（`~/components/synie-attachment-panel/`）挂 SynieRecordDrawer 的 `extraContent`，传 ownerType（资源/宿主类型名）/ownerId；固定单图槽位（证件照等）用同目录 `SynieImageAttachment`，一个 category 一张图。
 - 图片全屏预览一律用 `SyniePreview`（`~/components/synie-preview/`）：受控 `isOpen/onOpenChange`，`items` 传 `fileId`（经鉴权懒加载）或 `src`，内建下载/旋转/缩放/循环切换，抽屉/对话框内打开层级自然正确；不要自造 lightbox。缩略图用同目录 `FileThumb`；表格图片列用 DataGrid 列 override `image`（`true`=列值即 file id，或 `{ fileId(row), keepText }`），缩略图点击即全屏预览、同列循环；行记录的图片附件列用 DataGrid `attachmentImages={{ ownerType, category?, label? }}`（虚拟列，点开该行全部图片，与抽屉附件面板同 queryKey 联动刷新）。
 
 ## 移动端适配

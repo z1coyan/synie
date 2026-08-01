@@ -1,3 +1,4 @@
+import { api, apiData } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import type { AggregateDraftAdapter } from './catalog/types'
@@ -78,13 +79,41 @@ export function buildPurchaseReceiptDraft(
   }
 }
 
+function wireDraft(input: PurchaseReceiptDraft): PurchaseReceiptDraft {
+  return {
+    ...input,
+    items: input.items.map((item) => ({
+      ...item,
+      qty: String(item.qty),
+    })),
+  }
+}
+
+/** production Hono Adapter：一次请求跨越采购入库聚合写 seam。 */
 export const purchaseReceiptDraftAdapter: AggregateDraftAdapter<
   PurchaseReceiptDraft,
   PurchaseReceiptSavedDraft
 > = {
-  loadDraft: async () => { throw new Error('采购入库草稿尚未由 Convex 应用壳装配') },
-  createDraft: async () => { throw new Error('采购入库草稿尚未由 Convex 应用壳装配') },
-  replaceDraft: async () => { throw new Error('采购入库草稿尚未由 Convex 应用壳装配') },
+  async loadDraft(id) {
+    return apiData(
+      api.purchase.receipts[':id'].draft.$get({ param: { id } }),
+    )
+  },
+  async createDraft(input) {
+    return apiData(
+      api.purchase.receipts.$post({
+        json: wireDraft(input) as never,
+      }),
+    )
+  },
+  async replaceDraft(id, input) {
+    return apiData(
+      api.purchase.receipts[':id'].$put({
+        param: { id },
+        json: wireDraft(input) as never,
+      }),
+    )
+  },
 }
 
 function clone<T>(value: T): T {

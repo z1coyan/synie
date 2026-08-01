@@ -1,0 +1,60 @@
+/**
+ * 生产与测试共用的资源注册组合入口。
+ * 顺序固定：平台横切 → 基础/IAM/业务域 → 打印（字段目录依赖已注册资源）。
+ * 新增业务资源时只应扩展本入口或其调用的模块 register* 函数，禁止在 index.ts
+ * 与 test/helpers.ts 再维护第二份列表。
+ */
+import { registerAccountingResources } from '~/modules/accounting/index.ts'
+import { registerBaseResources } from '~/modules/base/index.ts'
+import { registerMarketResources } from '~/modules/base/market/index.ts'
+import { registerFinanceResources } from '~/modules/finance/index.ts'
+import { registerHrResources } from '~/modules/hr/index.ts'
+import { registerIamResources } from '~/modules/iam/index.ts'
+import { registerInventoryResources } from '~/modules/inventory/index.ts'
+import { registerManufacturingResources } from '~/modules/manufacturing/index.ts'
+import { registerPartyResources } from '~/modules/party/index.ts'
+import { registerSalesCompanyAccountDefault } from '~/modules/sales/index.ts'
+import { registerScmResources } from '~/modules/scm/index.ts'
+import { registerTradingResources } from '~/modules/trading/index.ts'
+import { registerAuditResources } from '~/platform/audit/index.ts'
+import { registerFileResources } from '~/platform/files/index.ts'
+import { registerNumberingResources } from '~/platform/numbering/index.ts'
+import { registerPrintingResources } from '~/platform/printing/index.ts'
+import { registerSettingResources } from '~/platform/settings/index.ts'
+import { createRegistry, type Registry } from './registry.ts'
+import { assertClassificationCoverage } from './resource-classification.ts'
+
+/**
+ * 将全部产品资源注册进给定 Registry（幂等要求：registry 必须为空且未 seal）。
+ * 不自动 seal，便于测试在注册后继续注入夹具；生产路径请用 createSealedResourceRegistry。
+ */
+export function registerAllResources(registry: Registry): void {
+  registerSettingResources(registry)
+  registerNumberingResources(registry)
+  registerFileResources(registry)
+  registerAuditResources(registry)
+  registerBaseResources(registry)
+  registerMarketResources(registry)
+  registerIamResources(registry)
+  registerPartyResources(registry)
+  registerHrResources(registry)
+  registerSalesCompanyAccountDefault(registry)
+  registerInventoryResources(registry)
+  registerAccountingResources(registry)
+  registerTradingResources(registry)
+  registerFinanceResources(registry)
+  registerScmResources(registry)
+  registerManufacturingResources(registry)
+  // 打印模板 Meta 在业务域之后（字段目录自 Registry fail-closed 派生）
+  registerPrintingResources(registry)
+  // 产品组合根 fail-closed；局部测试/插件 Registry 可注册自己的资源。
+  assertClassificationCoverage(registry.list().map((resource) => resource.name))
+}
+
+/** 创建已注册并 seal 的完整 Registry（生产与集成测试首选入口） */
+export function createSealedResourceRegistry(): Registry {
+  const registry = createRegistry()
+  registerAllResources(registry)
+  registry.seal()
+  return registry
+}

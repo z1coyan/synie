@@ -3,8 +3,13 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button, Label, ListBox, Select, toast } from '@heroui/react'
 import { DropZone } from '@heroui-pro/react'
-import { uploadFile, downloadFile, getProductFile } from '~/lib/files'
-import { fetchFieldCatalog, listPrintResources, type FieldCatalog } from '~/lib/print'
+import { apiData, api } from '~/lib/api/client'
+import { uploadFile, downloadFile } from '~/lib/files'
+import { fetchFieldCatalog, type FieldCatalog } from '~/lib/print'
+import { fetchPermissionCatalog } from '~/lib/resources/iam'
+import {
+  listPrintResources,
+} from '~/lib/resources/printing'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
@@ -55,16 +60,15 @@ function PrintTemplatesPage() {
   )
 
   useEffect(() => {
-    void listPrintResources()
-      .then((printResources) => {
+    void Promise.all([listPrintResources(), fetchPermissionCatalog()])
+      .then(([printResources, permissionCatalog]) => {
+        const labels = new Map(
+          permissionCatalog.groups.map((group) => [group.prefix, group.label]),
+        )
         setResources(
           printResources.resources.map((prefix) => ({
             prefix,
-            label: prefix === 'sales.order'
-              ? '销售订单'
-              : prefix === 'mfg.work_order'
-                ? '生产工单'
-                : prefix,
+            label: labels.get(prefix) ?? prefix,
           })),
         )
       })
@@ -89,12 +93,10 @@ function PrintTemplatesPage() {
       setCurrentFile(null)
       return
     }
-    void getProductFile(currentFileId)
-      .then((value) => {
-        const file = value as { id: string; filename: string } | null
-        if (!file) throw new Error('模板文件不存在')
-        setCurrentFile({ id: file.id, filename: file.filename })
-      })
+    void apiData(
+      api.files[':id'].metadata.$get({ param: { id: currentFileId } }),
+    )
+      .then((file) => setCurrentFile({ id: file.id, filename: file.filename }))
       .catch((error: unknown) => {
         setCurrentFile(null)
         toast.danger(error instanceof Error ? error.message : '加载模板文件失败')

@@ -1,14 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
   decimal,
-  decimalToScaledInt64,
-  INT64_MAX,
-  INT64_MIN,
   isDecimalString,
   roundAmount,
   roundBasePrice,
   roundBaseQty,
-  scaledInt64ToDecimal,
   toDecimalString,
 } from './decimal.ts'
 
@@ -47,25 +43,5 @@ describe('decimal 金额纪律', () => {
     expect(isDecimalString('1e5')).toBe(false)
     expect(isDecimalString('abc')).toBe(false)
     expect(isDecimalString('')).toBe(false)
-  })
-
-  test('scaled int64 codec 保持 half-up 与 2/4/6 档', () => {
-    expect(decimalToScaledInt64('1.005', 2)).toBe(101n)
-    expect(decimalToScaledInt64('-1.005', 2)).toBe(-101n)
-    expect(decimalToScaledInt64('12.34567', 4)).toBe(123457n)
-    expect(decimalToScaledInt64('1.0000005', 6)).toBe(1000001n)
-    expect(scaledInt64ToDecimal(101n, 2) as string).toBe('1.01')
-    expect(scaledInt64ToDecimal(-123457n, 4) as string).toBe('-12.3457')
-    expect(scaledInt64ToDecimal(1000000n, 6) as string).toBe('1')
-  })
-
-  test('scaled int64 边界与业务上限 fail-closed', () => {
-    expect(decimalToScaledInt64(INT64_MAX.toString(), 0)).toBe(INT64_MAX)
-    expect(decimalToScaledInt64(INT64_MIN.toString(), 0)).toBe(INT64_MIN)
-    expect(() => decimalToScaledInt64('9223372036854775808', 0)).toThrow()
-    expect(() => decimalToScaledInt64('-9223372036854775809', 0)).toThrow()
-    expect(() => decimalToScaledInt64('10.01', 2, { maxAbsScaled: 1000n })).toThrow()
-    expect(() => decimalToScaledInt64('1e5', 2)).toThrow()
-    expect(() => scaledInt64ToDecimal(1n, 19)).toThrow()
   })
 })

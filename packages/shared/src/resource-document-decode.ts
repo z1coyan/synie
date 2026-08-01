@@ -21,7 +21,6 @@ import {
   type ResourceLookupMeta,
   type ScalarFieldType,
 } from './resource-document.ts'
-import type { ResourceQueryProfileDocument } from './resource-query.ts'
 
 export class ResourceDocumentDecodeError extends Error {
   readonly path: string
@@ -58,7 +57,6 @@ const FORM_KINDS = new Set(['none', 'extension', 'basic'])
 const SHOW_IN = new Set<FormShowIn>(['create', 'edit', 'view'])
 const PICKERS = new Set(['default', 'dialog'])
 const CONFIRM_KINDS = new Set(['none', 'generic', 'audit_doc'])
-const QUERY_PROFILE_KINDS = new Set(['index', 'search'])
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -386,41 +384,6 @@ function decodeCommand(raw: unknown, path: string): CommandDocument {
   return cmd
 }
 
-function decodeQueryProfile(raw: unknown, path: string): ResourceQueryProfileDocument {
-  if (!isObject(raw)) fail(path, '须为对象')
-  const kind = asString(raw.kind, `${path}.kind`)
-  if (!QUERY_PROFILE_KINDS.has(kind)) fail(`${path}.kind`, `非法 query profile kind: ${kind}`)
-  const fixedSort = asString(raw.fixedSort, `${path}.fixedSort`)
-  if (fixedSort !== 'ascending' && fixedSort !== 'descending') {
-    fail(`${path}.fixedSort`, `非法方向: ${fixedSort}`)
-  }
-  const profile: ResourceQueryProfileDocument = {
-    key: asString(raw.key, `${path}.key`),
-    kind: kind as ResourceQueryProfileDocument['kind'],
-    equalityFields: asStringArray(raw.equalityFields, `${path}.equalityFields`),
-    fixedSort,
-  }
-  if (raw.rangeField !== undefined) {
-    profile.rangeField = asString(raw.rangeField, `${path}.rangeField`)
-  }
-  if (raw.acceptsSearch !== undefined) {
-    profile.acceptsSearch = asBoolean(raw.acceptsSearch, `${path}.acceptsSearch`)
-  }
-  if (raw.companyScopeField !== undefined) {
-    profile.companyScopeField = asString(raw.companyScopeField, `${path}.companyScopeField`)
-  }
-  if (raw.exactCounterKey !== undefined) {
-    profile.exactCounterKey = asString(raw.exactCounterKey, `${path}.exactCounterKey`)
-  }
-  if (profile.kind === 'search' && profile.acceptsSearch !== true) {
-    fail(path, 'search profile 必须声明 acceptsSearch=true')
-  }
-  if (profile.kind === 'index' && profile.acceptsSearch === true) {
-    fail(path, 'index profile 不得声明 acceptsSearch=true')
-  }
-  return profile
-}
-
 /** 解码并校验完整 ResourceDocument v2 */
 export function decodeResourceDocument(raw: unknown): ResourceDocument {
   if (!isObject(raw)) fail('$', '须为对象')
@@ -467,29 +430,6 @@ export function decodeResourceDocument(raw: unknown): ResourceDocument {
   const cmdKeys = new Set(commands.map((c) => c.key))
   if (cmdKeys.size !== commands.length) fail('$.commands', 'command key 重复')
 
-  let queryProfiles: ResourceQueryProfileDocument[] | undefined
-  if (raw.queryProfiles !== undefined) {
-    if (!Array.isArray(raw.queryProfiles) || raw.queryProfiles.length === 0) {
-      fail('$.queryProfiles', '须为非空数组')
-    }
-    queryProfiles = raw.queryProfiles.map((p, i) =>
-      decodeQueryProfile(p, `$.queryProfiles[${i}]`),
-    )
-    const profileKeys = new Set(queryProfiles.map((profile) => profile.key))
-    if (profileKeys.size !== queryProfiles.length) fail('$.queryProfiles', 'profile key 重复')
-    for (const [index, profile] of queryProfiles.entries()) {
-      const p = `$.queryProfiles[${index}]`
-      const argFields = [...profile.equalityFields, ...(profile.rangeField ? [profile.rangeField] : [])]
-      if (new Set(argFields).size !== argFields.length) fail(p, '参数字段重复')
-      for (const field of argFields) {
-        if (!fieldNames.has(field)) fail(p, `引用未知字段: ${field}`)
-      }
-      if (profile.companyScopeField && !profile.equalityFields.includes(profile.companyScopeField)) {
-        fail(`${p}.companyScopeField`, '公司范围字段必须位于 equalityFields')
-      }
-    }
-  }
-
   // create-required 字段在 basic form 中必须可出现在 create 模式
   if (form.kind === 'basic') {
     const createVisible = new Set<string>()
@@ -530,7 +470,6 @@ export function decodeResourceDocument(raw: unknown): ResourceDocument {
     list,
     form,
     commands,
-    ...(queryProfiles ? { queryProfiles } : {}),
   }
 }
 

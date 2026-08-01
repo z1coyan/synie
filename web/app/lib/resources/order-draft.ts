@@ -1,3 +1,4 @@
+import { api, apiData } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import type { AggregateDraftAdapter } from './catalog/types'
@@ -148,15 +149,75 @@ export function buildOrderDraft(
   }
 }
 
-function unavailableOrderDraft(side: OrderSide): AggregateDraftAdapter<OrderDraft, OrderSavedDraft> {
-  const unavailable = async (): Promise<never> => {
-    throw new Error(`${side === 'sales' ? '销售' : '采购'}订单草稿尚未由 Convex 应用壳装配`)
+function wireDraft(input: OrderDraft): OrderDraft {
+  return {
+    ...input,
+    exchangeRate:
+      input.exchangeRate == null ? null : String(input.exchangeRate),
+    items: input.items.map((item) => ({
+      ...item,
+      qty: String(item.qty),
+      price: String(item.price),
+      taxRate: String(item.taxRate),
+      issueLines: item.issueLines.map((line) => ({
+        ...line,
+        quantity: String(line.quantity),
+      })),
+      byproductLines: item.byproductLines.map((line) => ({
+        ...line,
+        quantity: String(line.quantity),
+      })),
+    })),
   }
-  return { loadDraft: unavailable, createDraft: unavailable, replaceDraft: unavailable }
 }
 
-export const salesOrderDraftAdapter = unavailableOrderDraft('sales')
-export const purchaseOrderDraftAdapter = unavailableOrderDraft('purchase')
+export const salesOrderDraftAdapter: AggregateDraftAdapter<
+  OrderDraft,
+  OrderSavedDraft
+> = {
+  async loadDraft(id) {
+    return apiData(
+      api.sales.orders[':id'].draft.$get({ param: { id } }),
+    )
+  },
+  async createDraft(input) {
+    return apiData(
+      api.sales.orders.$post({ json: wireDraft(input) as never }),
+    )
+  },
+  async replaceDraft(id, input) {
+    return apiData(
+      api.sales.orders[':id'].$put({
+        param: { id },
+        json: wireDraft(input) as never,
+      }),
+    )
+  },
+}
+
+export const purchaseOrderDraftAdapter: AggregateDraftAdapter<
+  OrderDraft,
+  OrderSavedDraft
+> = {
+  async loadDraft(id) {
+    return apiData(
+      api.purchase.orders[':id'].draft.$get({ param: { id } }),
+    )
+  },
+  async createDraft(input) {
+    return apiData(
+      api.purchase.orders.$post({ json: wireDraft(input) as never }),
+    )
+  },
+  async replaceDraft(id, input) {
+    return apiData(
+      api.purchase.orders[':id'].$put({
+        param: { id },
+        json: wireDraft(input) as never,
+      }),
+    )
+  },
+}
 
 function clone<T>(value: T): T {
   return structuredClone(value)

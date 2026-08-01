@@ -6,7 +6,6 @@
  */
 import type { FilterState, SortState } from './filter.ts'
 import type { GridEnumOption } from './meta.ts'
-import type { ResourceQueryProfileDocument } from './resource-query.ts'
 
 /** 当前支持的 ResourceDocument schema 版本 */
 export const RESOURCE_DOCUMENT_SCHEMA_VERSION = 2 as const
@@ -210,10 +209,6 @@ export interface ResourceDocument {
   list: ListLayoutMeta
   form: FormDocument
   commands: CommandDocument[]
-  /**
-   * Named, finite query shapes. Optional only while legacy ResourceDocuments are
-   * being migrated; every Convex-owned resource must publish a non-empty list.
-   */
-  queryProfiles?: ResourceQueryProfileDocument[]
 }
+
 

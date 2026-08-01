@@ -129,19 +129,19 @@ export interface FormMeta {
 }
 
 /**
- * Convex Catalog 查询返回的完整 ResourceDocument v2。
+ * GET /api/v1/meta/resources/{name} 的 wire 响应：完整 ResourceDocument v2。
  * 别名保留便于渐进替换 import。
  */
 export type ResourceMetaDocument = ResourceDocument
 
-/** Convex Catalog 资源列表项。 */
+/** GET /api/v1/meta/resources 的列表项 */
 export interface ResourceSummary {
   name: string
   permissionPrefix: string
   permissionLabel: string
 }
 
-/** 权限目录分组：前缀 + 中文标签 + 动作集。 */
+/** 权限目录分组：前缀 + 中文标签 + 动作集（GET /api/v1/meta/permission-catalog） */
 export interface PermissionGroup {
   prefix: string
   label: string

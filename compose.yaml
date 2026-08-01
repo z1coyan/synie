@@ -1,226 +1,68 @@
-# Synie 唯一运行栈：TanStack Start + 自托管 Convex + PostgreSQL 17 + MinIO。
-# Convex backend/dashboard 必须使用同一个固定版本；缺少版本时 Compose 会立即失败。
-# 不固定顶层 name：Compose 默认从 checkout/worktree 目录派生 project，避免不同工作树互相操作。
+name: synie
+
+# 产品栈：PostgreSQL + Bun/TS server（Hono）+ 可选 seed。
+# 前端 Vite 代理默认目标 localhost:8080。
 
 services:
-  # Convex 专用 PostgreSQL。POSTGRES_URL 在 backend 中故意不带数据库名；
-  # INSTANCE_NAME=convex-self-hosted 会选择 convex_self_hosted。
-  convex-postgres:
+  postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: convex_self_hosted
-      POSTGRES_USER: ${CONVEX_POSTGRES_USER:-convex}
-      POSTGRES_PASSWORD: ${CONVEX_POSTGRES_PASSWORD:-convex-local-development-only}
+      POSTGRES_DB: synie
+      POSTGRES_USER: synie
+      POSTGRES_PASSWORD: synie
     ports:
-      - "127.0.0.1:${CONVEX_POSTGRES_PORT:-5442}:5432"
+      - "5441:5432"
     volumes:
-      - convex-postgres:/var/lib/postgresql/data
+      - synie-postgres:/var/lib/postgresql/data
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${CONVEX_POSTGRES_USER:-convex} -d convex_self_hosted",
-        ]
+      test: ["CMD-SHELL", "pg_isready -U synie -d synie"]
       interval: 2s
       timeout: 3s
-      retries: 60
-    restart: unless-stopped
-    stop_grace_period: 30s
+      retries: 30
 
-  minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: ["server", "/data", "--console-address", ":9001"]
+  migrate:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ["bun", "db/migrate.ts"]
     environment:
-      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-synie-local}
-      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-synie-local-development-only}
-    ports:
-      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      - synie-minio:/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live"]
-      interval: 2s
-      timeout: 3s
-      retries: 60
-      start_period: 5s
-    restart: unless-stopped
-    stop_grace_period: 30s
-
-  # MinIO Community 不再提供 per-bucket CORS。浏览器只经这个固定版本的薄代理访问；
-  # 它仅为 synie-product-files 回 CORS，五个 Convex 内部 bucket 保持不可跨域。
-  minio-public:
-    image: nginx:1.28.0-alpine3.21
-    environment:
-      SYNIE_PRODUCT_FILES_CORS_ORIGIN: ${SYNIE_PRODUCT_FILES_CORS_ORIGIN:-http://localhost:3000}
-    ports:
-      - "${SYNIE_BIND_HOST:-127.0.0.1}:${MINIO_API_PORT:-9000}:9000"
-    volumes:
-      - ./infra/convex/minio-public.conf.template:/etc/nginx/templates/default.conf.template:ro
+      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
     depends_on:
-      minio:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9000/minio/health/live >/dev/null"]
-      interval: 2s
-      timeout: 3s
-      retries: 60
-    restart: unless-stopped
-    stop_grace_period: 10s
-
-  minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
-    entrypoint: ["/bin/sh", "/bootstrap/minio-init.sh"]
-    command: ["init"]
-    environment:
-      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-synie-local}
-      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-synie-local-development-only}
-      SYNIE_S3_INTERNAL_ENDPOINT: ${SYNIE_S3_INTERNAL_ENDPOINT:-http://minio:9000}
-    volumes:
-      - ./infra/convex/minio-init.sh:/bootstrap/minio-init.sh:ro
-    depends_on:
-      minio:
+      postgres:
         condition: service_healthy
     restart: "no"
 
-  convex-backend:
-    image: ghcr.io/get-convex/convex-backend:${CONVEX_VERSION:?请在 .env 中设置固定的 CONVEX_VERSION}
-    stop_signal: SIGINT
-    stop_grace_period: 30s
-    ports:
-      - "${SYNIE_BIND_HOST:-127.0.0.1}:${CONVEX_PORT:-3210}:3210"
-      - "${SYNIE_BIND_HOST:-127.0.0.1}:${CONVEX_SITE_PORT:-3211}:3211"
-    volumes:
-      # 业务数据在 PostgreSQL/S3；此 volume 持久化 instance secret 等节点凭据。
-      - convex-backend-data:/convex/data
-    environment:
-      # 生产应直接注入已 URL-encode 且启用 TLS 的完整 DSN；下方拼接值仅供本地 Compose。
-      POSTGRES_URL: ${CONVEX_POSTGRES_URL:-postgresql://${CONVEX_POSTGRES_USER:-convex}:${CONVEX_POSTGRES_PASSWORD:-convex-local-development-only}@convex-postgres:5432}
-      DO_NOT_REQUIRE_SSL: ${CONVEX_POSTGRES_DO_NOT_REQUIRE_SSL:-1}
-      INSTANCE_NAME: convex-self-hosted
-      INSTANCE_SECRET: ${CONVEX_INSTANCE_SECRET:-}
-      CONVEX_RELEASE_VERSION_DEV: ${CONVEX_VERSION}
-      # Node actions use this origin to call query/mutation back inside the
-      # deployment. It must be reachable from the backend container and is
-      # deliberately separate from the browser/CLI-facing cloud origin.
-      CONVEX_CLOUD_ORIGIN: ${CONVEX_INTERNAL_ORIGIN:-http://convex-backend:3210}
-      # Local JWT verification fetches JWKS from inside this container. The
-      # browser-facing site URL is kept separately as SYNIE_CONVEX_PUBLIC_SITE_URL.
-      CONVEX_SITE_ORIGIN: ${CONVEX_SITE_ORIGIN:-http://convex-backend:3211}
-      APPLICATION_MAX_CONCURRENT_MUTATIONS: "16"
-      APPLICATION_MAX_CONCURRENT_NODE_ACTIONS: "16"
-      APPLICATION_MAX_CONCURRENT_QUERIES: "16"
-      APPLICATION_MAX_CONCURRENT_V8_ACTIONS: "16"
-      AWS_REGION: ${SYNIE_S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-synie-local}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-synie-local-development-only}
-      AWS_S3_FORCE_PATH_STYLE: "true"
-      AWS_S3_DISABLE_SSE: ${AWS_S3_DISABLE_SSE:-true}
-      S3_ENDPOINT_URL: ${SYNIE_S3_INTERNAL_ENDPOINT:-http://minio:9000}
-      S3_STORAGE_EXPORTS_BUCKET: convex-snapshot-exports
-      S3_STORAGE_SNAPSHOT_IMPORTS_BUCKET: convex-snapshot-imports
-      S3_STORAGE_MODULES_BUCKET: convex-modules
-      S3_STORAGE_FILES_BUCKET: convex-user-files
-      S3_STORAGE_SEARCH_BUCKET: convex-search-indexes
-      REDACT_LOGS_TO_CLIENT: ${CONVEX_REDACT_LOGS_TO_CLIENT:-true}
-      DISABLE_BEACON: "true"
-      PRINT_WORKER_URL: ${PRINT_WORKER_URL:-http://web:3000}
-      PRINT_WORKER_HMAC_SECRET: ${PRINT_WORKER_HMAC_SECRET:-synie-local-print-worker-secret-32-bytes}
-    depends_on:
-      convex-postgres:
-        condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3210/version"]
-      interval: 5s
-      timeout: 5s
-      retries: 60
-      start_period: 15s
-    restart: unless-stopped
-
-  web:
-    image: ${SYNIE_WEB_IMAGE:-synie-web-print:local}
+  server:
     build:
       context: .
-      dockerfile: ${SYNIE_WEB_DOCKERFILE:-web/Dockerfile}
-      secrets:
-        - heroui_auth_token
-      args:
-        SYNIE_WEB_LICENSED_BASE_IMAGE: ${SYNIE_WEB_LICENSED_BASE_IMAGE:-synie-web-print:plan007-final}
-        VITE_CONVEX_URL: ${VITE_CONVEX_URL:-http://127.0.0.1:3210}
-        VITE_CONVEX_SITE_URL: ${VITE_CONVEX_SITE_URL:-http://127.0.0.1:3211}
-        VITE_SITE_URL: ${VITE_SITE_URL:-http://127.0.0.1:3000}
+      dockerfile: server/Dockerfile
     environment:
+      PORT: "8080"
       HOST: 0.0.0.0
-      PORT: "3000"
-      NODE_ENV: production
-      VITE_CONVEX_URL: ${VITE_CONVEX_URL:-http://127.0.0.1:3210}
-      VITE_CONVEX_SITE_URL: ${VITE_CONVEX_SITE_URL:-http://127.0.0.1:3211}
-      VITE_SITE_URL: ${VITE_SITE_URL:-http://127.0.0.1:3000}
-      # SSR/server functions use private service DNS; the browser bundle keeps
-      # the public VITE_* URLs above.
-      SYNIE_CONVEX_INTERNAL_URL: ${SYNIE_CONVEX_INTERNAL_URL:-http://convex-backend:3210}
-      SYNIE_CONVEX_INTERNAL_SITE_URL: ${SYNIE_CONVEX_INTERNAL_SITE_URL:-http://convex-backend:3211}
-      PRINT_WORKER_HMAC_SECRET: ${PRINT_WORKER_HMAC_SECRET:-synie-local-print-worker-secret-32-bytes}
-      PRINT_WORKER_HMAC_PREVIOUS_SECRET: ${PRINT_WORKER_HMAC_PREVIOUS_SECRET:-}
-      PRINT_WORKER_ALLOWED_HOSTS: ${PRINT_WORKER_ALLOWED_HOSTS:-minio}
-      PRINT_WORKER_SOFFICE_PATH: /usr/bin/soffice
-      PRINT_WORKER_TIMEOUT_MS: ${PRINT_WORKER_TIMEOUT_MS:-120000}
-      PRINT_WORKER_CONCURRENCY: ${PRINT_WORKER_CONCURRENCY:-2}
+      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
+      AUTH_SECRET: local-development-secret-change-me-32-bytes
+      AUTH_TOKEN_TTL: 168h
+      LOG_LEVEL: info
     ports:
-      - "${SYNIE_BIND_HOST:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+      - "8080:8080"
     depends_on:
-      convex-backend:
-        condition: service_healthy
-      minio-init:
+      migrate:
         condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/internal/print-worker/v1/health | grep -q '\"ready\":true'"]
-      interval: 5s
-      timeout: 10s
-      retries: 30
-      start_period: 20s
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=512m,mode=1777
-    pids_limit: 256
-    mem_limit: 2g
-    cpus: 2.0
-    cap_drop: ["ALL"]
-    security_opt: ["no-new-privileges:true"]
-    restart: unless-stopped
 
-  convex-dashboard:
-    image: ghcr.io/get-convex/convex-dashboard:${CONVEX_VERSION:?请在 .env 中设置固定的 CONVEX_VERSION}
-    stop_signal: SIGINT
-    stop_grace_period: 20s
-    ports:
-      - "127.0.0.1:${CONVEX_DASHBOARD_PORT:-6791}:6791"
+  seed:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ["bun", "db/seed.ts"]
+    profiles: ["tools"]
     environment:
-      NEXT_PUBLIC_DEPLOYMENT_URL: ${CONVEX_CLOUD_ORIGIN:-http://127.0.0.1:3210}
-      NEXT_PUBLIC_LOAD_MONACO_INTERNALLY: "true"
+      DATABASE_URL: postgres://synie:synie@postgres:5432/synie?sslmode=disable
+      SEED_ADMIN_USERNAME: admin
+      SEED_ADMIN_PASSWORD: admin123
+      SEED_ADMIN_NAME: 系统管理员
     depends_on:
-      convex-backend:
-        condition: service_healthy
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -fsS http://127.0.0.1:6791 >/dev/null",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
-    restart: unless-stopped
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
-  convex-postgres:
-  synie-minio:
-  convex-backend-data:
-
-secrets:
-  # Licensed frontend assets are fetched at build time. Compose reads this
-  # value from the caller environment and BuildKit never persists it.
-  heroui_auth_token:
-    environment: HEROUI_AUTH_TOKEN
+  synie-postgres:

@@ -5,7 +5,6 @@ import type { Row, SortState } from '../synie-data-grid/types'
 import { optionLabel, resolveSource } from './remote-query'
 import { useRemoteRecords } from './use-remote'
 import type { RemoteSelectProps } from './RemoteSelect'
-import { useResourceBinding } from '~/lib/resources/resource-context'
 
 export interface RemoteDialogSelectProps extends RemoteSelectProps {
   dialogTitle?: string
@@ -30,8 +29,7 @@ export interface RemoteDialogSelectProps extends RemoteSelectProps {
 }
 
 export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
-  const binding = useResourceBinding(props.resource)
-  const src = resolveSource(props, undefined, binding)
+  const src = resolveSource(props)
   const [open, setOpen] = useState(false)
   // 弹窗内草稿,确认才提交
   const [draft, setDraft] = useState<Row[]>([])

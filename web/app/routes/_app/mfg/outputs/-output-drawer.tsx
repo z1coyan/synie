@@ -8,7 +8,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, toast } from '@heroui/react'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import { isLocalRow } from '~/components/synie-editable-table/editable'
+import { useDocItems } from '~/components/synie-editable-table/use-doc-items'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
@@ -16,16 +16,17 @@ import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { formatQty } from '~/lib/amount'
 import {
+  outputClient,
+  outputItemClient,
+  workOrderClient,
+} from '~/lib/resources/manufacturing'
+import {
   auditMaterialCell,
   type AuditDocConfig,
 } from '../../scm/-audit-doc'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { WorkOrderProgressCell } from '../-work-order-progress-cell'
-import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
-import { readResourceRowsBounded } from '~/lib/resources/bounded-reader'
-import { workOrderOutputCandidateFilter } from '~/lib/resources/candidate-query'
-
-const outputDraft = aggregateDraftFor('mfgOutputs')
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 /**
  * 生产入库共享抽屉:入库条目与入库单两个列表共用同一份整单录入界面。
@@ -90,7 +91,7 @@ function OutputQtyField({
     queryKey: ['mfgWorkOrder', 'remaining-hint', id],
     enabled: id != null,
     staleTime: 15_000,
-    queryFn: () => resourceBindingFor('mfgWorkOrders').reader.get(id!),
+    queryFn: () => workOrderClient.get(id!),
   })
   const remaining = remainingInItemUnit(woQuery.data)
 
@@ -124,16 +125,27 @@ function OutputQtyField({
   )
 }
 
-function itemInput(row: Row) {
-  return {
-    ...(isLocalRow(row) ? {} : { id: row.id }),
+// 入库条目脚手架(取数/持久化)走共用 useDocItems
+const ITEMS = {
+  label: '入库条目',
+  docIdField: 'outputId',
+  client: outputItemClient,
+  itemInput: (row: Row) => ({
     idx: row.idx,
     workOrderId: row.workOrderId,
     unitId: row.unitId,
     qty: row.qty,
     warehouseId: row.warehouseId,
     remarks: row.remarks ?? null,
-  }
+  }),
+  itemKeys: [
+    'idx',
+    'workOrderId',
+    'unitId',
+    'qty',
+    'warehouseId',
+    'remarks',
+  ] as const,
 }
 
 // 「审核整单」确认弹窗配置(同 scm 单据先例:只取行快照字段)
@@ -143,15 +155,21 @@ export const outputAuditConfig = {
   commandKey: 'audit',
   itemsResource: 'mfgOutputItems',
   loadItems: (docId) =>
-    readResourceRowsBounded(
-      resourceBindingFor('mfgOutputItems').reader,
-      {
-        profile: 'default',
-        fixedFilter: { outputId: docId },
+    outputItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        filter: {
+          outputId: {
+            kind: 'fk',
+            op: 'in',
+            values: [docId],
+            labels: [],
+          },
+        },
         sort: { column: 'idx', direction: 'ascending' },
-      },
-      200,
-    ),
+      })
+      .then((result) => result.results),
   columns: [
     { key: 'materialName', label: '物料', render: auditMaterialCell() },
     { key: 'unitName', label: '单位' },
@@ -173,38 +191,16 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
     mode: DrawerMode
     output: OutputRef | null
   } | null>(null)
-  const [items, setItems] = useState<Row[]>([])
-  const [itemsLoaded, setItemsLoaded] = useState(false)
+  const { items, setItems, itemsLoaded, load, persistItems } =
+    useDocItems(ITEMS)
   const queryClient = useQueryClient()
   // 行表单最近一次选中的工单整行:effects 写表单草稿时 collectValues 会剥掉
   // 非字段键(物料快照在 exclude),transformItem 从这里取快照并入本地行
   const pickedWorkOrderRef = useRef<Row | null>(null)
-  const requestRef = useRef(0)
-
-  const loadItems = async (id: string) => {
-    const request = ++requestRef.current
-    setItemsLoaded(false)
-    try {
-      const draft = await outputDraft.loadDraft(id) as Row
-      if (request !== requestRef.current) return
-      setItems((draft.items as Row[] | undefined) ?? [])
-      setItemsLoaded(true)
-    } catch (error) {
-      if (request !== requestRef.current) return
-      setItems([])
-      toast.danger('入库条目加载失败', { description: (error as Error).message })
-    }
-  }
 
   const openDrawer: OpenOutputDrawer = (mode, output) => {
     setDrawer({ mode, output })
-    if (mode === 'create' || !output) {
-      ++requestRef.current
-      setItems([])
-      setItemsLoaded(true)
-    } else {
-      void loadItems(output.id)
-    }
+    load(mode === 'create' || !output ? null : output.id)
   }
 
   const draftOnly = !drawer?.output || drawer.output.status === 'DRAFT'
@@ -228,7 +224,7 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
                 )
             : undefined
         }
-        extraContent={(mode, _row, values) => (
+        extraContent={(mode) => (
           <SynieEditableTable
             resource="mfgOutputItems"
             label="入库条目"
@@ -275,7 +271,6 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
                 dialog: {
                   dialogTitle: '选择生产工单',
                   dialogClassName: 'max-w-6xl',
-                  gridFilter: workOrderOutputCandidateFilter(values.companyId),
                   gridColumns: [
                     'workOrderNo',
                     'companyId',
@@ -422,15 +417,18 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
         onSubmit={async (values, mode) => {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
-          const input = { ...values, items: items.map(itemInput) }
           if (mode === 'create') {
-            const created = await outputDraft.createDraft(input) as Row
+            const created = await outputClient.create(values)
             const id = created.id
+            const lineErrors = await persistItems(id)
+            if (lineErrors.length) throw new Error(lineErrors.join('; '))
             toast.success('生产入库单已创建')
             savedId = id
           } else {
+            await outputClient.update(drawer!.output!.id, values)
             if (draftOnly) {
-              await outputDraft.replaceDraft(drawer!.output!.id, input)
+              const lineErrors = await persistItems(drawer!.output!.id)
+              if (lineErrors.length) throw new Error(lineErrors.join('; '))
             }
             toast.success('生产入库单已更新')
             savedId = drawer!.output!.id

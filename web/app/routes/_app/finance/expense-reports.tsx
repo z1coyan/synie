@@ -10,20 +10,31 @@ import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { ExpenseRoleSelect, expenseRoleLabel, findRoleAccounts } from './-expense-role'
-import { vatInvoiceClient } from '~/lib/resources/finance-operations'
-import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
-import { buildExpenseReportDraft } from '~/lib/resources/expense-report-draft'
-import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
 import {
-  loadExpenseDetailForRequest,
-  type ExpenseDetailRequest,
-} from './-expense-report-detail-loader'
+  expenseReportClient,
+  queryExpenseReportItems,
+  saveExpenseReportItems,
+  vatInvoiceClient,
+} from '~/lib/resources/finance-operations'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/finance/expense-reports')({
   component: ExpenseReportsPage,
 })
 
-const expenseReportDraft = aggregateDraftFor('accExpenseReports')
+/** 提交 mutation:两类行互斥槽位在此归一(后端 KindRules 同口径);展示用发票字段不带 */
+function itemInput(row: Row) {
+  const invoiced = row.kind === 'INVOICED'
+  return {
+    idx: row.idx,
+    kind: row.kind,
+    invoiceId: invoiced ? row.invoiceId : null,
+    summary: invoiced ? null : (row.summary ?? null),
+    amount: invoiced ? null : (row.amount ?? null),
+    expenseAccountId: invoiced ? null : (row.expenseAccountId ?? null),
+    remarks: row.remarks ?? null,
+  }
+}
 
 // 科目候选限：本公司、非汇总、启用。
 function accountFilter(companyId: string | null): FilterState | undefined {
@@ -212,48 +223,60 @@ const ACTION_VISIBLE = {
 function ExpenseReportsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
-  // edit/view 态靠聚合 loadDraft 异步拉完整行树，未就绪前表格只读。
+  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
+  // edit/view 态行靠 FETCH_ITEMS 异步拉取,未就绪前表格只读(同发票页 itemsLoaded 纪律)
   const [detailLoaded, setDetailLoaded] = useState(false)
   // 挂票发票缓存:选择时写入完整行,行表单核对提示与表格金额列共用
   const invoiceCacheRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
-  const activeDetailRequestRef = useRef<ExpenseDetailRequest | null>(null)
 
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
     const my = ++reqIdRef.current
-    const request =
-      mode !== 'create' && row != null
-        ? { generation: my, documentId: String(row.id) }
-        : null
-    activeDetailRequestRef.current = request
     setDrawer({ mode, row })
     invoiceCacheRef.current = new Map()
     if (mode === 'create' || row == null) {
       setItems([])
+      setItemsSnapshot([])
       setDetailLoaded(true)
       return
     }
     setDetailLoaded(false)
-    if (!request) return
-    void loadExpenseDetailForRequest({
-      request,
-      activeRequest: () => activeDetailRequestRef.current,
-      loadDraft: (documentId) => expenseReportDraft.loadDraft(documentId),
-      loadInvoice: (invoiceId) => vatInvoiceClient.get(invoiceId),
-      onLoaded: ({ rows, invoiceCache }) => {
-        invoiceCacheRef.current = invoiceCache
+    queryExpenseReportItems(row.id)
+      .then(async (result) => {
+        if (my !== reqIdRef.current) return
+        // REST 行不做 relationship join；只对挂票行按公开发票 get 补展示信息。
+        const invoices = await Promise.all(
+          result.map((item) =>
+            item.invoiceId
+              ? vatInvoiceClient.get(String(item.invoiceId)).catch(() => null)
+              : Promise.resolve(null),
+          ),
+        )
+        const rows = result.map((item, index) => {
+          const invoice = invoices[index]
+          if (invoice && item.invoiceId) {
+            invoiceCacheRef.current.set(String(item.invoiceId), invoice)
+          }
+          return {
+            ...item,
+            invoice,
+            invoiceGrossTotal: invoice?.grossTotal ?? null,
+          }
+        })
         setItems(rows)
+        setItemsSnapshot(rows)
         setDetailLoaded(true)
-      },
-      onError: (e) => {
+      })
+      .catch((e) => {
+        if (my !== reqIdRef.current) return
         toast.danger('报销行加载失败', { description: (e as Error).message })
-        // detailLoaded 继续为 false，整单替换守卫会阻止暂态空数组误删原行。
+        // 加载失败保持空快照:提交不会误删后端原行(同对账抽屉语义)
         setItems([])
-      },
-    })
+        setItemsSnapshot([])
+      })
   }
 
   return (
@@ -283,9 +306,9 @@ function ExpenseReportsPage() {
         onOpenChange={(open) => {
           if (open) return
           reqIdRef.current++
-          activeDetailRequestRef.current = null
           setDrawer(null)
           setItems([])
+          setItemsSnapshot([])
           invoiceCacheRef.current = new Map()
         }}
         // 表格列是白名单子集(备注/付款科目等不在其中),行数据不全;走 rowId 自查完整记录
@@ -491,25 +514,43 @@ function ExpenseReportsPage() {
           )
         }}
         onSubmit={async (values, mode) => {
-          assertAggregateDraftReady(mode, detailLoaded, '报销行')
-          const draft = buildExpenseReportDraft(values, items)
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          let saved: Row
+          let savedId: string
           if (mode === 'create') {
-            saved = await expenseReportDraft.createDraft(draft)
-            toast.success('报销单已创建')
-          } else {
-            saved = await expenseReportDraft.replaceDraft(
-              drawer!.row!.id,
-              draft,
+            const reportId = (await expenseReportClient.create(values)).id
+            const itemErrors = await saveExpenseReportItems(
+              reportId,
+              items,
+              [],
+              itemInput,
             )
-            toast.success('报销单已更新')
+            if (itemErrors.length > 0) {
+              toast.danger('报销单已创建,但部分报销行保存失败', { description: itemErrors.join('; ') })
+            } else {
+              toast.success('报销单已创建')
+            }
+            savedId = reportId
+          } else {
+            const reportId = drawer!.row!.id
+            await expenseReportClient.update(reportId, values)
+            const itemErrors = await saveExpenseReportItems(
+              reportId,
+              items,
+              itemsSnapshot,
+              itemInput,
+            )
+            if (itemErrors.length > 0) {
+              toast.danger('报销单已更新,但部分报销行保存失败', { description: itemErrors.join('; ') })
+            } else {
+              toast.success('报销单已更新')
+            }
+            savedId = reportId
           }
           await Promise.all([
             resourceBindingFor('accExpenseReports').cache.invalidateAll(queryClient),
             resourceBindingFor('accExpenseReportItems').cache.invalidateGrid(queryClient),
           ])
-          return String(saved.id)
+          return savedId
         }}
       />
     </>

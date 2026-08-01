@@ -10,23 +10,20 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextField, toast } from '@heroui/react'
 import { companyClient } from '~/lib/resources/companies'
-import { purchaseOutsourcedReceiptItemClient } from '~/lib/resources/fulfillment'
+import {
+  purchaseOutsourcedReceiptClient,
+  purchaseOutsourcedReceiptItemByproductClient,
+  purchaseOutsourcedReceiptItemClient,
+  purchaseOutsourcedReceiptItemMaterialClient,
+} from '~/lib/resources/fulfillment'
 import { queryOutsourcedWarehouses } from '~/lib/resources/inventory'
 import {
   purchaseOrderItemByproductClient,
   purchaseOrderItemClient,
   purchaseOrderItemMaterialClient,
 } from '~/lib/resources/orders'
-import {
-  aggregateDraftFor,
-  resourceBindingFor,
-} from '~/lib/resources/registry'
-import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
-import {
-  buildOutsourcedReceiptDraft,
-  decodeOutsourcedReceiptSavedDraft,
-  type OutsourcedReceiptSavedDraft,
-} from '~/lib/resources/scm-aggregate-draft'
+import type { ResourceClient } from '~/lib/resources/types'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -39,19 +36,6 @@ import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../-stock-doc'
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
-
-const outsourcedReceiptBinding = resourceBindingFor('purOutsourcedReceipts')
-const outsourcedReceiptItemBinding = resourceBindingFor(
-  'purOutsourcedReceiptItems',
-)
-const outsourcedReceiptMaterialBinding = resourceBindingFor(
-  'purOutsourcedReceiptItemMaterials',
-)
-const outsourcedReceiptByproductBinding = resourceBindingFor(
-  'purOutsourcedReceiptItemByproducts',
-)
-const purchaseOrderItemBinding = resourceBindingFor('purOrderItems')
-const outsourcedReceiptDraft = aggregateDraftFor('purOutsourcedReceipts')
 
 export interface ReceiptRef {
   id: string
@@ -100,6 +84,111 @@ function todayLocal(): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** 提交 mutation:物料/单位由订单条目锁定带出,后端再快照与折算 */
+function itemInput(row: Row) {
+  return {
+    idx: row.idx,
+    orderItemId: row.orderItemId,
+    materialId: row.materialId,
+    unitId: row.unitId,
+    qty: row.qty,
+    warehouseId: row.warehouseId,
+    remarks: row.remarks ?? null,
+  }
+}
+
+function materialRowInput(row: Row) {
+  return {
+    idx: row.idx,
+    receiptItemId: row.receiptItemId,
+    orderItemMaterialId: row.orderItemMaterialId,
+    qty: row.qty,
+    outsourcedWarehouseId: row.outsourcedWarehouseId ?? null,
+    remarks: row.remarks ?? null,
+  }
+}
+
+function byproductRowInput(row: Row) {
+  return {
+    idx: row.idx,
+    receiptItemId: row.receiptItemId,
+    orderItemByproductId: row.orderItemByproductId,
+    qty: row.qty,
+    warehouseId: row.warehouseId ?? null,
+    remarks: row.remarks ?? null,
+  }
+}
+
+const ITEM_COMPARE_KEYS = [
+  'idx',
+  'orderItemId',
+  'materialId',
+  'unitId',
+  'qty',
+  'warehouseId',
+  'remarks',
+] as const
+const MATERIAL_ROW_COMPARE_KEYS = ['idx', 'orderItemMaterialId', 'qty', 'outsourcedWarehouseId', 'remarks'] as const
+const BYPRODUCT_ROW_COMPARE_KEYS = ['idx', 'orderItemByproductId', 'qty', 'warehouseId', 'remarks'] as const
+
+function changedBy(keys: readonly string[]) {
+  return (before: Row, after: Row): boolean =>
+    keys.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
+}
+
+const itemChanged = changedBy(ITEM_COMPARE_KEYS)
+const materialRowChanged = changedBy(MATERIAL_ROW_COMPARE_KEYS)
+const byproductRowChanged = changedBy(BYPRODUCT_ROW_COMPARE_KEYS)
+
+/**
+ * 行持久化通用件:先删(跳过将随父条目级联删的行)、再增、后改。
+ * deletedItemIds=本次被删的入库条目 id——其扣减/副产物行由 DB 级联清理,不必(也不能)逐行删。
+ */
+async function persistRows(opts: {
+  current: Row[]
+  snapshot: Row[]
+  deletedItemIds: Set<string>
+  inputOf: (row: Row) => Record<string, unknown>
+  changed: (before: Row, after: Row) => boolean
+  client: ResourceClient
+}): Promise<string[]> {
+  const errors: string[] = []
+  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
+    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
+  }
+  const currentIds = new Set(opts.current.filter((r) => !isLocalRow(r)).map((r) => r.id))
+
+  for (const old of opts.snapshot) {
+    if (currentIds.has(old.id)) continue
+    if (opts.deletedItemIds.has(String(old.receiptItemId ?? ''))) continue
+    try {
+      await opts.client.delete(String(old.id))
+    } catch (error) {
+      collect(old.idx, [{ message: (error as Error).message }])
+    }
+  }
+
+  for (const row of opts.current) {
+    if (isLocalRow(row)) {
+      try {
+        await opts.client.create(opts.inputOf(row))
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
+      continue
+    }
+    const old = opts.snapshot.find((s) => s.id === row.id)
+    if (old && opts.changed(old, row)) {
+      try {
+        await opts.client.update(String(row.id), opts.inputOf(row))
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
+    }
+  }
+  return errors
 }
 
 /** 科目候选使用结构化 REST FilterState。 */
@@ -353,8 +442,11 @@ function ItemsResetGuard({
 export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: ReceiptRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
+  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [materialRows, setMaterialRows] = useState<Row[]>([])
+  const [materialRowsSnapshot, setMaterialRowsSnapshot] = useState<Row[]>([])
   const [byproductRows, setByproductRows] = useState<Row[]>([])
+  const [byproductRowsSnapshot, setByproductRowsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
   const [filters] = useState<FilterState>({})
   // 订单条目缓存:选择时写入完整行,transformItem 带出快照名
@@ -363,7 +455,6 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
   const linesRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
-  const draftHeadRef = useRef<OutsourcedReceiptSavedDraft | null>(null)
 
   const companies = useQuery({
     queryKey: ['purOutsourcedReceipts', 'companies'],
@@ -379,33 +470,20 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 
-  const changeItems = useCallback((next: Row[]) => {
-    const ids = new Set(next.map((row) => String(row.id)))
-    setItems(next)
-    setMaterialRows((current) =>
-      current.filter((row) => ids.has(String(row.receiptItemId))),
-    )
-    setByproductRows((current) =>
-      current.filter((row) => ids.has(String(row.receiptItemId))),
-    )
-  }, [])
-
-  const resetItems = useCallback(() => {
-    setItems([])
-    setMaterialRows([])
-    setByproductRows([])
-  }, [])
+  const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
   const openDrawer = useCallback<OpenReceiptDrawer>((mode, receipt) => {
     const my = ++reqIdRef.current
     setDrawer({ mode, row: receipt })
     orderItemsRef.current = new Map()
     linesRef.current = new Map()
-    draftHeadRef.current = null
     if (mode === 'create') {
       setItems([])
+      setItemsSnapshot([])
       setMaterialRows([])
+      setMaterialRowsSnapshot([])
       setByproductRows([])
+      setByproductRowsSnapshot([])
       setDetailLoaded(true)
       return
     }
@@ -414,21 +492,48 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
     if (receiptId == null || receiptId === '' || receiptId === 'undefined') {
       toast.danger('无法打开入库单', { description: '缺少入库单 id' })
       setItems([])
+      setItemsSnapshot([])
       setMaterialRows([])
+      setMaterialRowsSnapshot([])
       setByproductRows([])
-      setDetailLoaded(false)
+      setByproductRowsSnapshot([])
+      setDetailLoaded(true)
       return
     }
     setDetailLoaded(false)
-    outsourcedReceiptDraft
-      .loadDraft(receiptId)
-      .then((value) => {
+    purchaseOutsourcedReceiptItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          receiptId: { kind: 'fk', op: 'in', values: [receiptId], labels: [] },
+        },
+      })
+      .then(async (itemResult) => {
+        const itemIds = itemResult.results.map((item) => String(item.id))
+        const childFilter: FilterState = {
+          receiptItemId: { kind: 'fk', op: 'in', values: itemIds, labels: [] },
+        }
+        const [materialResult, byproductResult] =
+          itemIds.length === 0
+            ? [{ results: [] as Row[] }, { results: [] as Row[] }]
+            : await Promise.all([
+                purchaseOutsourcedReceiptItemMaterialClient.query({
+                  limit: 200,
+                  offset: 0,
+                  sort: { column: 'idx', direction: 'ascending' },
+                  filter: childFilter,
+                }),
+                purchaseOutsourcedReceiptItemByproductClient.query({
+                  limit: 200,
+                  offset: 0,
+                  sort: { column: 'idx', direction: 'ascending' },
+                  filter: childFilter,
+                }),
+              ])
         if (my !== reqIdRef.current) return
-        const draft = decodeOutsourcedReceiptSavedDraft(value)
-        draftHeadRef.current = draft
-        const rows = draft.items
-        const materialRowList = rows.flatMap((item) => item.materialLines)
-        const byproductRowList = rows.flatMap((item) => item.byproductLines)
+        const rows = itemResult.results
         // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
         for (const r of rows) {
           if (r.orderItemId != null) {
@@ -446,6 +551,8 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             } as Row)
           }
         }
+        const materialRowList = materialResult.results
+        const byproductRowList = byproductResult.results
         // 扣减/副产物行的清单行缓存预热(材料/单位快照名回显用)
         for (const r of [...materialRowList, ...byproductRowList]) {
           const lineId = r.orderItemMaterialId ?? r.orderItemByproductId
@@ -462,17 +569,22 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
           }
         }
         setItems(rows)
+        setItemsSnapshot(rows)
         setMaterialRows(materialRowList)
+        setMaterialRowsSnapshot(materialRowList)
         setByproductRows(byproductRowList)
+        setByproductRowsSnapshot(byproductRowList)
         setDetailLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
-        draftHeadRef.current = null
         toast.danger('入库条目加载失败', { description: (e as Error).message })
         setItems([])
+        setItemsSnapshot([])
         setMaterialRows([])
+        setMaterialRowsSnapshot([])
         setByproductRows([])
+        setByproductRowsSnapshot([])
       })
   }, [])
 
@@ -548,17 +660,18 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        isSubmitDisabled={drawer?.mode === 'edit' && !detailLoaded}
         onOpenChange={(open) => {
           if (open) return
           reqIdRef.current++
           setDrawer(null)
           setItems([])
+          setItemsSnapshot([])
           setMaterialRows([])
+          setMaterialRowsSnapshot([])
           setByproductRows([])
+          setByproductRowsSnapshot([])
           orderItemsRef.current = new Map()
           linesRef.current = new Map()
-          draftHeadRef.current = null
         }}
         rowId={drawer?.row?.id}
         onEdit={
@@ -674,7 +787,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                     unitName: { label: '单位' },
                     remainingBaseQty: { label: '未入库数量' },
                   }}
-                  gridDefaultSort={{ column: 'orderDate', direction: 'ascending' }}
+                  gridDefaultSort={{ column: 'orderDate', direction: 'descending' }}
                   gridExtraFields={['materialId', 'unitId']}
                   dialogClassName="max-w-5xl"
                   renderValue={(r) => orderItemDisplay(r)}
@@ -1044,7 +1157,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                 resource="purOutsourcedReceiptItems"
                 label="入库条目"
                 items={items}
-                onChange={changeItems}
+                onChange={setItems}
                 readOnly={tablesReadOnly}
                 canCreate={headerReady}
                 toolbar={
@@ -1272,33 +1385,118 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
           )
         }}
         onSubmit={async (values, mode) => {
-          assertAggregateDraftReady(mode, detailLoaded, '委外入库完整明细')
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          const draft = buildOutsourcedReceiptDraft(
-            { ...draftHeadRef.current, ...values },
-            items,
-            materialRows,
-            byproductRows,
+          let savedId: string
+          const deletedItemIds = new Set(
+            itemsSnapshot
+              .filter((old) => !items.some((r) => !isLocalRow(r) && r.id === old.id))
+              .map((old) => String(old.id)),
           )
-          let saved: unknown
+          const persistSideRows = () =>
+            Promise.all([
+              persistRows({
+                current: materialRows,
+                snapshot: materialRowsSnapshot,
+                deletedItemIds,
+                inputOf: materialRowInput,
+                changed: materialRowChanged,
+                client: purchaseOutsourcedReceiptItemMaterialClient,
+              }),
+              persistRows({
+                current: byproductRows,
+                snapshot: byproductRowsSnapshot,
+                deletedItemIds,
+                inputOf: byproductRowInput,
+                changed: byproductRowChanged,
+                client: purchaseOutsourcedReceiptItemByproductClient,
+              }),
+            ]).then(([a, b]) => [...a, ...b])
+
+          const persistItemRows = async (receiptId: string, current: Row[], snapshot: Row[]) => {
+            const errors: string[] = []
+            const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
+              if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
+            }
+            const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
+            for (const old of snapshot) {
+              if (currentIds.has(old.id)) continue
+              try {
+                await purchaseOutsourcedReceiptItemClient.delete(String(old.id))
+              } catch (error) {
+                collect(old.idx, [{ message: (error as Error).message }])
+              }
+            }
+            for (const row of current) {
+              if (isLocalRow(row)) {
+                try {
+                  await purchaseOutsourcedReceiptItemClient.create({
+                    receiptId,
+                    ...itemInput(row),
+                  })
+                } catch (error) {
+                  collect(row.idx, [{ message: (error as Error).message }])
+                }
+                continue
+              }
+              const old = snapshot.find((s) => s.id === row.id)
+              if (old && itemChanged(old, row)) {
+                try {
+                  await purchaseOutsourcedReceiptItemClient.update(
+                    String(row.id),
+                    itemInput(row),
+                  )
+                } catch (error) {
+                  collect(row.idx, [{ message: (error as Error).message }])
+                }
+              }
+            }
+            return errors
+          }
+
           if (mode === 'create') {
-            saved = await outsourcedReceiptDraft.createDraft(draft)
-            toast.success('委外入库单已创建')
+            const saved = await purchaseOutsourcedReceiptClient.create(values)
+            const receiptId = String(saved.id)
+            const itemErrors = await persistItemRows(receiptId, items, [])
+            if (itemErrors.length > 0) {
+              toast.danger('入库单已创建,但部分条目保存失败', {
+                description: itemErrors.join('; '),
+              })
+            } else {
+              toast.success('委外入库单已创建')
+            }
+            savedId = receiptId
           } else {
-            saved = await outsourcedReceiptDraft.replaceDraft(
-              drawer!.row!.id,
-              draft,
-            )
-            toast.success('委外入库单已更新')
+            await purchaseOutsourcedReceiptClient.update(drawer!.row!.id, values)
+            const itemErrors = await persistItemRows(drawer!.row!.id, items, itemsSnapshot)
+            const rowErrors = await persistSideRows()
+            const allErrors = [...itemErrors, ...rowErrors]
+            if (allErrors.length > 0) {
+              toast.danger('入库单已更新,但部分行保存失败', {
+                description: allErrors.join('; '),
+              })
+            } else {
+              toast.success('委外入库单已更新')
+            }
+            savedId = drawer!.row!.id
           }
           await Promise.all([
-            outsourcedReceiptBinding.cache.invalidateAll(queryClient),
-            outsourcedReceiptItemBinding.cache.invalidateGrid(queryClient),
-            outsourcedReceiptMaterialBinding.cache.invalidateGrid(queryClient),
-            outsourcedReceiptByproductBinding.cache.invalidateGrid(queryClient),
-            purchaseOrderItemBinding.cache.invalidateGrid(queryClient),
+            resourceBindingFor(
+              'purOutsourcedReceipts',
+            ).cache.invalidateAll(queryClient),
+            resourceBindingFor(
+              'purOutsourcedReceiptItems',
+            ).cache.invalidateGrid(queryClient),
+            resourceBindingFor(
+              'purOutsourcedReceiptItemMaterials',
+            ).cache.invalidateGrid(queryClient),
+            resourceBindingFor(
+              'purOutsourcedReceiptItemByproducts',
+            ).cache.invalidateGrid(queryClient),
+            resourceBindingFor('purOrderItems').cache.invalidateGrid(
+              queryClient,
+            ),
           ])
-          return String(decodeOutsourcedReceiptSavedDraft(saved).id)
+          return savedId
         }}
       />
     </ReceiptDrawerContext.Provider>

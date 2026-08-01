@@ -1,8 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
-import { hasPermission } from '~/lib/permissions'
-import { useCurrentPermissions } from '~/lib/actor-context'
+import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
 import { deleteAttachment, fileClient } from '~/lib/resources/files'
 import { blobUrl, fetchFileBlob, uploadFile } from '~/lib/files'
 import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
@@ -35,19 +34,21 @@ export function SynieImageAttachment({ ownerType, ownerId, category, label, read
   const [zoomed, setZoomed] = useState(false)
 
   // 与 SynieAttachmentPanel 同一套权限自查,queryKey 共享只发一次
-  const permissions = useCurrentPermissions()
-  const canRead = hasPermission(permissions, 'sys.file:read')
+  const perms = useQuery({
+    queryKey: ['myPermissions'],
+    queryFn: fetchMyPermissions,
+  })
   const canCreate =
-    hasPermission(permissions, 'sys.file:create') && !readonly
+    hasPermission(perms.data, 'sys.file:create') && !readonly
   const canDelete =
-    hasPermission(permissions, 'sys.file:delete') && !readonly
+    hasPermission(perms.data, 'sys.file:delete') && !readonly
 
   // listKey 与 SynieAttachmentPanel 同构,同宿主的失效互相可见
   const listKey = attachmentListKey(ownerType, ownerId, category)
 
   const list = useQuery({
     queryKey: listKey,
-    enabled: !!ownerId && canRead,
+    enabled: !!ownerId,
     queryFn: () => fetchAttachmentList(ownerType, ownerId!, category),
   })
   // 槽位语义:只呈现最新一张;历史残留(替换失败留下的旧图)不展示
@@ -135,8 +136,6 @@ export function SynieImageAttachment({ ownerType, ownerId, category, label, read
       <div className="flex aspect-[8/5] w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-default/30">
         {!ownerId ? (
           <span className="px-4 text-center text-sm text-muted">保存后即可上传</span>
-        ) : !canRead ? (
-          <span className="px-4 text-center text-sm text-muted">无权查看{label}</span>
         ) : list.isLoading || (current && blob.isLoading) ? (
           <Spinner size="sm" />
         ) : list.isError ? (

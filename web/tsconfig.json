@@ -22,13 +22,23 @@
     "noEmit": true,
     "paths": {
       "~/*": [
-        "./app/*"
+        "./app/*",
+        "../server/src/*"
       ],
       "@synie/shared": [
         "../packages/shared/src/index.ts"
       ],
       "@synie/shared/*": [
         "../packages/shared/src/*"
+      ],
+      "@synie/server": [
+        "../server/src/client.ts"
+      ],
+      "@synie/server/*": [
+        "../server/src/*"
+      ],
+      "@synie/server/client": [
+        "../server/src/client.ts"
       ]
     }
   },

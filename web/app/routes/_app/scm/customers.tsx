@@ -6,7 +6,7 @@ import {
   createCustomerPresentation,
   submitCustomerForm,
 } from '~/lib/resources/presentation'
-import { useResourceBinding } from '~/lib/resources/resource-context'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -29,7 +29,7 @@ function CustomersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
   // Presentation Extension 由 binding 构造，不二次解析写能力
-  const binding = useResourceBinding(RESOURCE)
+  const binding = resourceBindingFor(RESOURCE)
   const presentation = createCustomerPresentation(binding)
 
   const invalidate = () =>

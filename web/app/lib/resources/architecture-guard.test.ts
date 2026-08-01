@@ -8,6 +8,7 @@ const WEB_LIB_ROOT = join(WEB_APP_ROOT, 'lib')
 const WEB_ROUTES_ROOT = join(WEB_APP_ROOT, 'routes')
 
 const RETIRED_PATHS = [
+  'server/src/platform/meta/legacy-normalize.ts',
   'web/app/lib/resources/meta.ts',
   'web/app/components/synie-record-drawer/registry.tsx',
 ] as const

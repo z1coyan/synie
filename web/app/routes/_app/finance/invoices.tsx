@@ -14,7 +14,7 @@ import {
   toast,
 } from '@heroui/react'
 import { amountInWords, formatAmount } from '~/lib/amount'
-import { isOpaqueResourceId } from '~/components/synie-data-grid/query'
+import { UUID_RE } from '~/components/synie-data-grid/query'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer, type DrawerExtraContent } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
@@ -188,7 +188,7 @@ function ReconciliationLinkInput({ value, onChange, isDisabled, values }: FieldI
   // 选中/回显的对账单合计:编辑态初值无行数据,按 id 自查一次(RemoteSelect 只回 labelField 集)
   const recQuery = useQuery({
     queryKey: ['salReconciliations', 'linkHint', id],
-    enabled: isOpaqueResourceId(id),
+    enabled: id != null && UUID_RE.test(id),
     queryFn: () => salesReconciliationClient.get(id!),
   })
 
@@ -232,7 +232,7 @@ function PurReconciliationLinkInput({ value, onChange, isDisabled, values }: Fie
   // 选中/回显的对账单合计:编辑态初值无行数据,按 id 自查一次(RemoteSelect 只回 labelField 集)
   const recQuery = useQuery({
     queryKey: ['purReconciliations', 'linkHint', id],
-    enabled: isOpaqueResourceId(id),
+    enabled: id != null && UUID_RE.test(id),
     queryFn: () => purchaseReconciliationClient.get(id!),
   })
 

@@ -104,6 +104,7 @@ const EXPECTED_RESOURCES = [
   'sysPrintTemplates',
   'sysRoles',
   'sysSettings',
+  'sysStorages',
   'sysUsers',
 ] as const
 
@@ -149,23 +150,61 @@ const COMPLEX_DRAWER_CACHE_RESOURCES = [
   'salOrderItems',
 ] as const
 
-const DIRECT_CONVEX_TRANSPORTS = new Set(['sysFiles', 'sysPrintTemplates'])
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.toString()
+  return input.url
+}
+
+function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
+  if (init?.method) return init.method
+  return input instanceof Request ? input.method : 'GET'
+}
 
 describe('生产 ResourceBinding interface 契约', () => {
-  test('资源从同一 binding seam 到达各自唯一 Convex transport', () => {
+  test('96 个资源从同一 binding seam 到达类型化 REST Adapter', async () => {
     expect(listResourceBindingKeys()).toEqual([...EXPECTED_RESOURCES])
 
-    for (const resource of EXPECTED_RESOURCES) {
-      const binding = resourceBindingFor(resource)
-      const transport = resourceTransportFor(resource)
-      const remote = resolveSource({ resource })
-      const transportId = DIRECT_CONVEX_TRANSPORTS.has(resource)
-        ? `convex:${resource}`
-        : `convex-unbound:${resource}`
-      expect(binding.resource).toBe(resource)
-      expect(transport.id).toBe(transportId)
-      expect(binding.cache.gridScope).toEqual(['gridRows', transportId, resource])
-      expect(remote?.client.id).toBe(transportId)
+    const requests: Array<{ url: string; method: string }> = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: requestUrl(input),
+        method: requestMethod(input, init),
+      })
+      return Response.json({ count: 0, results: [] })
+    }) as typeof fetch
+
+    try {
+      for (const resource of EXPECTED_RESOURCES) {
+        const binding = resourceBindingFor(resource)
+        const transport = resourceTransportFor(resource)
+        const remote = resolveSource({ resource })
+
+        expect(binding.resource).toBe(resource)
+        expect(transport.id).toBe(`rest:${resource}`)
+        expect(binding.cache.gridScope).toEqual([
+          'gridRows',
+          `rest:${resource}`,
+          resource,
+        ])
+        expect(remote?.client.id).toBe(`rest:${resource}`)
+        const result = await binding.reader.query({ limit: 1, offset: 0 })
+        expect(typeof result.count, resource).toBe('number')
+        expect(Array.isArray(result.results), resource).toBe(true)
+      }
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+
+    expect(requests).toHaveLength(EXPECTED_RESOURCES.length)
+    expect(new Set(requests.map(({ url }) => url)).size).toBe(
+      EXPECTED_RESOURCES.length,
+    )
+    for (const request of requests) {
+      expect(request.url).toStartWith('/api/v1/')
+      expect(request.url).not.toContain('/graphql')
+      expect(['GET', 'POST']).toContain(request.method)
     }
   })
 
@@ -202,7 +241,7 @@ describe('生产 ResourceBinding interface 契约', () => {
     expect(invalidated).toEqual(
       COMPLEX_DRAWER_CACHE_RESOURCES.map((resource) => [
         'gridRows',
-        `convex-unbound:${resource}`,
+        `rest:${resource}`,
         resource,
       ]),
     )
@@ -212,12 +251,12 @@ describe('生产 ResourceBinding interface 契约', () => {
       queryClient,
     )
     expect(invalidated).toEqual([
-      ['gridRows', 'convex-unbound:purOutsourcedReceipts', 'purOutsourcedReceipts'],
-      ['rowById', 'convex-unbound:purOutsourcedReceipts', 'purOutsourcedReceipts'],
+      ['gridRows', 'rest:purOutsourcedReceipts', 'purOutsourcedReceipts'],
+      ['rowById', 'rest:purOutsourcedReceipts', 'purOutsourcedReceipts'],
     ])
     expect(
       resourceBindingFor('salDeliveries').cache.rowKey('delivery-1'),
-    ).toEqual(['rowById', 'convex-unbound:salDeliveries', 'salDeliveries', 'delivery-1'])
+    ).toEqual(['rowById', 'rest:salDeliveries', 'salDeliveries', 'delivery-1'])
   })
 
   test('远程选择器不维护第二份默认表，未知资源 fail-closed', () => {

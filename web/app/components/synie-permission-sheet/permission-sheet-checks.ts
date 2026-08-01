@@ -109,7 +109,7 @@ eq(
 
 // 目录外陈旧码:初态不会含它;即便 checked 被污染,flatMap catalog 构造也天然排除
 eq(
-  buildSubmit(catalog, [{ id: 's1', permission: 'retired.thing:read' }], new Set(['retired.thing:read'])),
+  buildSubmit(catalog, [{ id: 's1', permission: 'legacy.thing:read' }], new Set(['legacy.thing:read'])),
   [],
   'buildSubmit 目录外码不进提交集(fail-safe)'
 )

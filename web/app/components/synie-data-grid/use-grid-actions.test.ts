@@ -25,7 +25,7 @@ function bindingWithCommands(
   return {
     resource: 'demo',
     reader: {
-      query: async () => ({ results: [], pageInfo: { continueCursor: null, isDone: true } }),
+      query: async () => ({ count: 0, results: [] }),
       get: async () => null,
     },
     cache: createResourceQueryCache('demo', 'memory:demo'),

@@ -2,7 +2,6 @@ import { useQueries } from '@tanstack/react-query'
 import { Chip, Spinner } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import type { ResourceBinding } from '~/lib/resources/catalog'
-import { readResourceRowsBounded } from '~/lib/resources/bounded-reader'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { useGridMeta } from '../synie-data-grid/meta'
 import type { Row } from '../synie-data-grid/types'
@@ -25,8 +24,6 @@ export interface DocumentPreviewDrawerProps {
 export type DocumentPreviewBindingResolver = (
   resource: string,
 ) => Pick<ResourceBinding, 'reader' | 'cache'>
-
-const DEFAULT_DOCUMENT_PREVIEW_LIMIT = 200
 
 /**
  * Preview 子表查询的唯一 runtime seam：Reader、query key 与失效 scope 来自同一 binding。
@@ -54,28 +51,23 @@ export function documentPreviewLineQuery(
           ),
         }
       }
-      const limit = table.limit ?? DEFAULT_DOCUMENT_PREVIEW_LIMIT
-      return {
-        results: await readResourceRowsBounded(
-          binding.reader,
-          {
-            profile: 'default',
-            sort: {
-              column: table.sortColumn ?? 'idx',
-              direction: 'ascending',
-            },
-            fixedFilter: {
-              [table.parentIdField]: {
-                kind: 'fk',
-                op: 'in',
-                values: [documentId],
-                labels: [],
-              },
-            },
+      const result = await binding.reader.query({
+        limit: table.limit ?? 200,
+        offset: 0,
+        sort: {
+          column: table.sortColumn ?? 'idx',
+          direction: 'ascending',
+        },
+        fixedFilter: {
+          [table.parentIdField]: {
+            kind: 'fk',
+            op: 'in',
+            values: [documentId],
+            labels: [],
           },
-          limit,
-        ),
-      }
+        },
+      })
+      return { results: result.results }
     },
   }
 }

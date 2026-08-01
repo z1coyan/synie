@@ -2,32 +2,28 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Outlet,
-  createRootRouteWithContext,
+  createRootRoute,
   HeadContent,
   Scripts,
 } from '@tanstack/react-router'
-import {
-  ConvexBetterAuthProvider,
-  type AuthClient as ConvexProviderAuthClient,
-} from '@convex-dev/better-auth/react'
 import { Toast } from '@heroui/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { APPEARANCE_FOUC_SCRIPT } from '~/lib/appearance'
-import { authClient } from '~/lib/auth-client'
-import { getConvexAuthToken } from '~/lib/auth-server'
-import type { SynieRouterContext } from '~/lib/convex'
 import '../../app.css'
 
-export const Route = createRootRouteWithContext<SynieRouterContext>()({
-  beforeLoad: async ({ context }) => {
-    const authToken = await getConvexAuthToken()
-    if (authToken) {
-      // SSR 查询与浏览器 Provider 使用同一个 cookie 派生 token；每次请求的
-      // ConvexHttpClient 独立设置，绝不跨用户复用。
-      context.convexQueryClient?.serverHttpClient?.setAuth(authToken)
-    }
-    return { authToken }
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // ERP 数据录入场景:切窗口不应触发全表重取;写操作后由页面显式 invalidate 刷新
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
   },
+})
+
+export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
@@ -39,29 +35,13 @@ export const Route = createRootRouteWithContext<SynieRouterContext>()({
 })
 
 function RootComponent() {
-  const { authToken, convexClient } = Route.useRouteContext()
-  const content = (
-    <>
-      <Toast.Provider placement="top" />
-      <BootSplash />
-      <Outlet />
-    </>
-  )
-
-  if (!convexClient) throw new Error('缺少 ConvexReactClient')
-
   return (
     <RootDocument>
-      <ConvexBetterAuthProvider
-          client={convexClient}
-          // @convex-dev/better-auth 0.12.5's public AuthClient type loses the
-          // username plugin's inferred session shape, although the runtime
-          // client is exactly the documented convexClient composition.
-          authClient={authClient as unknown as ConvexProviderAuthClient}
-          initialToken={authToken}
-      >
-        {content}
-      </ConvexBetterAuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <Toast.Provider placement="top" />
+        <BootSplash />
+        <Outlet />
+      </QueryClientProvider>
     </RootDocument>
   )
 }
@@ -70,13 +50,6 @@ function RootComponent() {
 function BootSplash() {
   const [show, setShow] = useState(true)
   const reduced = useReducedMotion()
-
-  useEffect(() => {
-    document.documentElement.dataset.synieHydrated = 'true'
-    return () => {
-      delete document.documentElement.dataset.synieHydrated
-    }
-  }, [])
 
   useEffect(() => {
     const timer = setTimeout(() => setShow(false), reduced ? 0 : 1700)
@@ -151,7 +124,6 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
       <head>
         {/* 阻塞式防闪:在 hydrate 前按本机外观模式挂 class/data-theme */}
         <script dangerouslySetInnerHTML={{ __html: APPEARANCE_FOUC_SCRIPT }} />
-        {import.meta.env.PROD ? <script src="/_synie/runtime-config.js" /> : null}
         <HeadContent />
       </head>
       <body>

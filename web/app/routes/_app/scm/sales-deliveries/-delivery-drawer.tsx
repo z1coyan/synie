@@ -11,7 +11,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Input, Label, ListBox, Modal, NumberField, Select, TextField, toast } from '@heroui/react'
 import { companyClient } from '~/lib/resources/companies'
-import { ConvexAppError } from '~/lib/convex-errors'
+import { APIError } from '~/lib/api/client'
 import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import {
   aggregateDraftFor,
@@ -1481,7 +1481,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
                     shippedQty: { label: '已发数量' },
                     remainingBaseQty: { label: '未发数量' },
                   }}
-                  gridDefaultSort={{ column: 'orderDate', direction: 'ascending' }}
+                  gridDefaultSort={{ column: 'orderDate', direction: 'descending' }}
                   gridExtraFields={['materialId', 'unitId']}
                   dialogClassName="max-w-5xl"
                   renderValue={(r) => orderItemDisplay(r)}
@@ -1821,7 +1821,7 @@ export function DeliveryDrawerProvider({ children }: { children: ReactNode }) {
             toast.success(`销售发货单已${mode === 'create' ? '创建' : '更新'}`)
             return String(saved.id)
           } catch (error) {
-            if (error instanceof ConvexAppError && error.fields) {
+            if (error instanceof APIError && error.fields) {
               setDraftErrors(error.fields)
               setDraftErrorIndex(request.index)
             }

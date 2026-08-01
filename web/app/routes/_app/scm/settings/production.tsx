@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
-import { useResourceBinding } from '~/lib/resources/resource-context'
-import type { ManufacturingSetting } from '~/lib/resources/settings'
+import { getManufacturingSetting, updateManufacturingSetting } from '~/lib/resources/settings'
 
 export const Route = createFileRoute('/_app/scm/settings/production')({
   component: ScmProductionSettingsTab,
@@ -11,10 +10,9 @@ export const Route = createFileRoute('/_app/scm/settings/production')({
 
 function ScmProductionSettingsTab() {
   const queryClient = useQueryClient()
-  const binding = useResourceBinding('mfgSettings')
   const query = useQuery({
-    queryKey: binding.cache.gridKey('singleton'),
-    queryFn: () => binding.reader.query({ profile: 'default', numItems: 1, cursor: null }).then((page) => page.results[0] as unknown as ManufacturingSetting),
+    queryKey: ['mfgSettings'],
+    queryFn: getManufacturingSetting,
   })
 
   // 界面按百分比录入(0–100),落库小数 0–1;null=设置尚未载入
@@ -35,13 +33,11 @@ function ScmProductionSettingsTab() {
     }
     setSaving(true)
     try {
-      if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) throw new Error('生产设置不支持 update')
-      await binding.writer.update(String(query.data.id), {
+      await updateManufacturingSetting({
         outputOverreceiveRatio: String(overreceivePct / 100),
       })
       toast.success('生产设置已保存')
       queryClient.invalidateQueries({ queryKey: ['mfgSettings'] })
-      await binding.cache.invalidateAll(queryClient)
     } catch (e) {
       toast.danger('保存失败', { description: (e as Error).message })
     } finally {

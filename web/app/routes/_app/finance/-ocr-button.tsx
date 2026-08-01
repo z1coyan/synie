@@ -87,7 +87,7 @@ export function FinanceOcrButton({
       </Button>
       {configured.data === false && (
         <span className="text-xs text-muted">
-          OCR 未配置，请联系管理员
+          未配置 OCR 凭证,请到「财务→财务设置」配置
         </span>
       )}
     </div>

@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ResourceDocument } from '@synie/shared'
-import { useOptionalResourceBinding } from '../resource-context'
+import { resourceBindingFor } from '../registry'
 
 /** 经 ResourceBinding 加载并缓存 ResourceDocument v2 */
 export function useResourceDocument(resource: string, enabled = true) {
-  const binding = useOptionalResourceBinding(resource, enabled)
+  const binding = enabled ? resourceBindingFor(resource) : null
   return useQuery<ResourceDocument>({
     queryKey: ['resourceDocument', resource],
     queryFn: () => binding!.loadDocument(),

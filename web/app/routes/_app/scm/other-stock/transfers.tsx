@@ -4,37 +4,31 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, Label, NumberField, Spinner, toast } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import { companyClient } from '~/lib/resources/companies'
-import { warehouseClient } from '~/lib/resources/inventory'
+import {
+  stockTransferClient,
+  stockTransferItemClient,
+  warehouseClient,
+} from '~/lib/resources/inventory'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
+import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { MaterialUnitSelect } from '~/components/synie-material-unit-select/MaterialUnitSelect'
 import {
   CompanyDefaultSync,
   WarehouseRemoteSelect,
   defaultCompanyId,
-  warehouseFilterState,
 } from '../-stock-doc'
-import {
-  assertAggregateDraftReady,
-  submitAggregateDraft,
-} from '~/lib/resources/aggregate-draft-submit'
-import {
-  aggregateDraftRows,
-  stockMovementDraftRow,
-} from '~/lib/resources/aggregate-draft-rows'
 import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
-import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 export const Route = createFileRoute('/_app/scm/other-stock/transfers')({
   component: StockTransfersTab,
 })
-
-const stockTransferDraft = aggregateDraftFor('invStockTransfers')
 
 /**
  * 手工调拨单(其他库存单 → 调拨 tab):同公司三仓走在途,一单两动作。
@@ -79,6 +73,53 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
+function itemInput(row: Row) {
+  return {
+    idx: row.idx,
+    materialId: row.materialId,
+    unitId: row.unitId,
+    qty: row.qty,
+    remark: row.remark ?? null,
+  }
+}
+
+const ITEM_COMPARE_KEYS = ['idx', 'materialId', 'unitId', 'qty', 'remark'] as const
+
+function itemChanged(before: Row, after: Row): boolean {
+  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
+}
+
+async function persistItems(docId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
+  const errors: string[] = []
+  const run = async (idx: unknown, operation: () => Promise<unknown>) => {
+    try {
+      await operation()
+    } catch (error) {
+      errors.push(`第${idx}行:${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
+
+  for (const old of snapshot) {
+    if (currentIds.has(old.id)) continue
+    await run(old.idx, () => stockTransferItemClient.delete(old.id))
+  }
+
+  for (const row of current) {
+    if (isLocalRow(row)) {
+      await run(row.idx, () =>
+        stockTransferItemClient.create({ stockTransferId: docId, ...itemInput(row) }),
+      )
+      continue
+    }
+    const old = snapshot.find((s) => s.id === row.id)
+    if (old && itemChanged(old, row)) {
+      await run(row.idx, () => stockTransferItemClient.update(row.id, itemInput(row)))
+    }
+  }
+  return errors
+}
+
 /** create 态按公司查叶子仓,命中种子名「{公司编号} - 在途」且在途仓未填时预填 */
 function TransitWarehouseSync({
   mode,
@@ -102,7 +143,10 @@ function TransitWarehouseSync({
         .query({
           limit: 200,
           offset: 0,
-          filter: warehouseFilterState(companyId),
+          filter: {
+            companyId: { kind: 'fk', op: 'in', values: [companyId!], labels: [] },
+            isLeaf: { kind: 'bool', eq: true },
+          },
         })
         .then((result) =>
           result.results.find((warehouse) => warehouse.name === String(companyCode) + ' - 在途')?.id ?? null,
@@ -124,6 +168,7 @@ function StockTransfersTab() {
   const [filters, setFilters] = useState<FilterState>({})
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
+  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
   const [receiveDoc, setReceiveDoc] = useState<Row | null>(null)
   const [receipts, setReceipts] = useState<Record<string, number>>({})
@@ -152,31 +197,47 @@ function StockTransfersTab() {
     setDrawer({ mode, row })
     if (mode === 'create') {
       setItems([])
+      setItemsSnapshot([])
       setDetailLoaded(true)
       return
     }
     setDetailLoaded(false)
-    stockTransferDraft
-      .loadDraft(row!.id)
-      .then((saved) => {
+    stockTransferItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          stockTransferId: { kind: 'fk', op: 'in', values: [row!.id], labels: [] },
+        },
+      })
+      .then((result) => {
         if (my !== reqIdRef.current) return
-        const rows = aggregateDraftRows(saved, 'items', '调拨单')
+        const rows = result.results
         setItems(rows)
+        setItemsSnapshot(rows)
         setDetailLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
         toast.danger('调拨单行加载失败', { description: (e as Error).message })
         setItems([])
+        setItemsSnapshot([])
       })
   }, [])
 
   const receiveItems = useQuery({
     queryKey: ['transferReceiveItems', receiveDoc?.id],
     enabled: receiveDoc != null,
-    queryFn: () => stockTransferDraft
-      .loadDraft(receiveDoc!.id)
-      .then((saved) => aggregateDraftRows(saved, 'items', '调拨单')),
+    queryFn: () =>
+      stockTransferItemClient.query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        fixedFilter: {
+          stockTransferId: { kind: 'fk', op: 'in', values: [receiveDoc!.id], labels: [] },
+        },
+      }).then((result) => result.results),
   })
 
   useEffect(() => {
@@ -185,10 +246,9 @@ function StockTransfersTab() {
     }
   }, [receiveItems.data])
 
-  const invalidateGrids = () => Promise.all([
-    resourceBindingFor('invStockTransfers').cache.invalidateAll(queryClient),
-    resourceBindingFor('invStockTransferItems').cache.invalidateAll(queryClient),
-  ])
+  const invalidateGrids = () => {
+    void resourceBindingFor('invStockTransfers').cache.invalidateAll(queryClient)
+  }
 
   const submitReceive = async () => {
     if (!receiveDoc || !receiveItems.data) return
@@ -361,6 +421,7 @@ function StockTransfersTab() {
           reqIdRef.current++
           setDrawer(null)
           setItems([])
+          setItemsSnapshot([])
         }}
         rowId={drawer?.row?.id}
         onEdit={
@@ -445,24 +506,30 @@ function StockTransfersTab() {
           )
         }}
         onSubmit={async (values, mode) => {
-          assertAggregateDraftReady(mode, detailLoaded, '调拨单行')
           const warehouses = [values.fromWarehouseId, values.toWarehouseId, values.transitWarehouseId].filter(
             (v) => v != null && v !== ''
           )
           if (new Set(warehouses.map(String)).size !== warehouses.length) {
             throw new Error('调出、调入与在途仓库必须两两不同')
           }
-          const input = { ...values, items: items.map(stockMovementDraftRow) }
-          const savedId = await submitAggregateDraft(
-            stockTransferDraft,
-            mode,
-            drawer?.row?.id,
-            input,
-            '调拨单',
-          )
-          toast.success(`调拨单已${mode === 'create' ? '创建' : '更新'}`)
-          await invalidateGrids()
-          return savedId
+          if (mode === 'create') {
+            const saved = await stockTransferClient.create(values)
+            const itemErrors = await persistItems(saved.id, items, [])
+            if (itemErrors.length > 0) {
+              toast.danger('调拨单已创建,但部分调拨行保存失败', { description: itemErrors.join('; ') })
+            } else {
+              toast.success('调拨单已创建')
+            }
+          } else {
+            await stockTransferClient.update(drawer!.row!.id, values)
+            const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
+            if (itemErrors.length > 0) {
+              toast.danger('调拨单已更新,但部分调拨行保存失败', { description: itemErrors.join('; ') })
+            } else {
+              toast.success('调拨单已更新')
+            }
+          }
+          invalidateGrids()
         }}
       />
 

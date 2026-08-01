@@ -16,51 +16,195 @@ import { MaterialUnitSelect } from '~/components/synie-material-unit-select/Mate
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import {
   applyRouteTemplate as applyBomRouteTemplate,
-  createWorkOrderInlineBom,
-  type WorkOrderInlineBomInput,
+  bomByproductClient,
+  bomClient,
+  bomComponentClient,
+  bomRouteClient,
 } from '~/lib/resources/manufacturing'
 import type { Row } from '~/components/synie-data-grid/types'
-import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
-
-const bomDraft = aggregateDraftFor('mfgBoms')
+import { resourceBindingFor } from '~/lib/resources/registry'
 
 // mutation input 只收行自身字段,行上挂的 material/unit/operation join 对象不进 payload
-function componentInput(row: Row): NonNullable<WorkOrderInlineBomInput['components']>[number] {
+function componentInput(row: Row) {
   return {
-    materialId: String(row.materialId),
-    unitId: String(row.unitId),
-    quantity: String(row.quantity),
-    lossRate: row.lossRate == null ? null : String(row.lossRate),
-    note: row.note == null ? null : String(row.note),
+    materialId: row.materialId,
+    unitId: row.unitId,
+    quantity: row.quantity,
+    lossRate: row.lossRate ?? null,
+    note: row.note ?? null,
   }
 }
 
-function routeInput(row: Row): NonNullable<WorkOrderInlineBomInput['routes']>[number] {
+function routeInput(row: Row) {
   return {
-    operationId: String(row.operationId),
-    seq: Number(row.seq),
-    requirement: row.requirement == null ? null : String(row.requirement),
-    isOutsourced: Boolean(row.isOutsourced),
+    operationId: row.operationId,
+    seq: row.seq,
+    requirement: row.requirement ?? null,
+    isOutsourced: row.isOutsourced,
   }
 }
 
-function byproductInput(row: Row): NonNullable<WorkOrderInlineBomInput['byproducts']>[number] {
+function byproductInput(row: Row) {
   return {
-    materialId: String(row.materialId),
-    unitId: String(row.unitId),
-    quantity: String(row.quantity),
-    note: row.note == null ? null : String(row.note),
+    materialId: row.materialId,
+    unitId: row.unitId,
+    quantity: row.quantity,
+    note: row.note ?? null,
   }
 }
 
-function aggregateRows<T extends Record<string, unknown>>(
-  rows: Row[],
-  input: (row: Row) => T,
-): Array<T & { id?: string }> {
-  return rows.map((row) => ({
-    ...(isLocalRow(row) ? {} : { id: row.id }),
-    ...input(row),
-  }))
+const COMPONENT_COMPARE_KEYS = [
+  'materialId',
+  'unitId',
+  'quantity',
+  'lossRate',
+  'note',
+] as const
+const ROUTE_COMPARE_KEYS = [
+  'operationId',
+  'seq',
+  'requirement',
+  'isOutsourced',
+] as const
+const BYPRODUCT_COMPARE_KEYS = [
+  'materialId',
+  'unitId',
+  'quantity',
+  'note',
+] as const
+
+const rowChanged = (keys: readonly string[]) => (before: Row, after: Row) =>
+  keys.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
+
+const componentChanged = rowChanged(COMPONENT_COMPARE_KEYS)
+const routeChanged = rowChanged(ROUTE_COMPARE_KEYS)
+const byproductChanged = rowChanged(BYPRODUCT_COMPARE_KEYS)
+
+const componentLabel = (row: Row) =>
+  (row.material as Row | undefined)?.name ?? '配料行'
+const routeLabel = (row: Row) =>
+  (row.operation as Row | undefined)?.name ?? '路线行'
+const byproductLabel = (row: Row) =>
+  (row.material as Row | undefined)?.name ?? '副产品行'
+
+async function persistComponents(
+  bomId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  const errors: string[] = []
+  const currentIds = new Set(
+    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
+  )
+
+  for (const old of snapshot) {
+    if (currentIds.has(old.id)) continue
+    try {
+      await bomComponentClient.delete(old.id)
+    } catch (error) {
+      errors.push(`${componentLabel(old)}:${(error as Error).message}`)
+    }
+  }
+
+  for (const row of current) {
+    if (isLocalRow(row)) {
+      try {
+        await bomComponentClient.create({ bomId, ...componentInput(row) })
+      } catch (error) {
+        errors.push(`${componentLabel(row)}:${(error as Error).message}`)
+      }
+      continue
+    }
+    const old = snapshot.find((s) => s.id === row.id)
+    if (old && componentChanged(old, row)) {
+      try {
+        await bomComponentClient.update(row.id, componentInput(row))
+      } catch (error) {
+        errors.push(`${componentLabel(row)}:${(error as Error).message}`)
+      }
+    }
+  }
+  return errors
+}
+
+async function persistRoutes(
+  bomId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  const errors: string[] = []
+  const currentIds = new Set(
+    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
+  )
+
+  for (const old of snapshot) {
+    if (currentIds.has(old.id)) continue
+    try {
+      await bomRouteClient.delete(old.id)
+    } catch (error) {
+      errors.push(`${routeLabel(old)}:${(error as Error).message}`)
+    }
+  }
+
+  for (const row of current) {
+    if (isLocalRow(row)) {
+      try {
+        await bomRouteClient.create({ bomId, ...routeInput(row) })
+      } catch (error) {
+        errors.push(`${routeLabel(row)}:${(error as Error).message}`)
+      }
+      continue
+    }
+    const old = snapshot.find((s) => s.id === row.id)
+    if (old && routeChanged(old, row)) {
+      try {
+        await bomRouteClient.update(row.id, routeInput(row))
+      } catch (error) {
+        errors.push(`${routeLabel(row)}:${(error as Error).message}`)
+      }
+    }
+  }
+  return errors
+}
+
+async function persistByproducts(
+  bomId: string,
+  current: Row[],
+  snapshot: Row[],
+): Promise<string[]> {
+  const errors: string[] = []
+  const currentIds = new Set(
+    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
+  )
+
+  for (const old of snapshot) {
+    if (currentIds.has(old.id)) continue
+    try {
+      await bomByproductClient.delete(old.id)
+    } catch (error) {
+      errors.push(`${byproductLabel(old)}:${(error as Error).message}`)
+    }
+  }
+
+  for (const row of current) {
+    if (isLocalRow(row)) {
+      try {
+        await bomByproductClient.create({ bomId, ...byproductInput(row) })
+      } catch (error) {
+        errors.push(`${byproductLabel(row)}:${(error as Error).message}`)
+      }
+      continue
+    }
+    const old = snapshot.find((s) => s.id === row.id)
+    if (old && byproductChanged(old, row)) {
+      try {
+        await bomByproductClient.update(row.id, byproductInput(row))
+      } catch (error) {
+        errors.push(`${byproductLabel(row)}:${(error as Error).message}`)
+      }
+    }
+  }
+  return errors
 }
 
 export interface OpenBomDrawerOptions {
@@ -72,12 +216,8 @@ export interface OpenBomDrawerOptions {
    * create 时 BOM 状态。工单引用需 ACTIVE；主数据页默认草稿。
    */
   createStatus?: 'DRAFT' | 'ACTIVE'
-  /** 已持久化工单内嵌创建时，在同一事务内创建、启用并选入 BOM。 */
-  workOrderId?: string
-  /** create 成功后回调，供尚未持久化的工单表单回填 bomId */
+  /** create 成功（头+明细已尽量落库）后回调，供工单 form 回填 bomId */
   onCreated?: (bom: Row) => void
-  /** 工单内嵌创建完成后的权威聚合快照。 */
-  onInlineCreated?: (result: { workOrder: Row; bom: Row }) => void
 }
 
 export type OpenBomDrawer = (
@@ -103,8 +243,11 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
     options?: OpenBomDrawerOptions
   } | null>(null)
   const [components, setComponents] = useState<Row[]>([])
+  const [componentsSnapshot, setComponentsSnapshot] = useState<Row[]>([])
   const [routes, setRoutes] = useState<Row[]>([])
+  const [routesSnapshot, setRoutesSnapshot] = useState<Row[]>([])
   const [byproducts, setByproducts] = useState<Row[]>([])
+  const [byproductsSnapshot, setByproductsSnapshot] = useState<Row[]>([])
   const [linesLoaded, setLinesLoaded] = useState(false)
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [templateId, setTemplateId] = useState<string | null>(null)
@@ -117,27 +260,52 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
     setDrawer({ mode, row, options })
     if (mode === 'create' || !row) {
       setComponents([])
+      setComponentsSnapshot([])
       setRoutes([])
+      setRoutesSnapshot([])
       setByproducts([])
+      setByproductsSnapshot([])
       setLinesLoaded(true)
       return
     }
     setLinesLoaded(false)
-    bomDraft.loadDraft(row.id)
-      .then((draft) => {
+    const filter = {
+      bomId: {
+        kind: 'fk' as const,
+        op: 'in' as const,
+        values: [row.id],
+        labels: [],
+      },
+    }
+    Promise.all([
+      bomComponentClient.query({ limit: 200, offset: 0, filter }),
+      bomRouteClient.query({
+        limit: 200,
+        offset: 0,
+        filter,
+        sort: { column: 'seq', direction: 'ascending' },
+      }),
+      bomByproductClient.query({ limit: 200, offset: 0, filter }),
+    ])
+      .then(([componentResult, routeResult, byproductResult]) => {
         if (my !== reqIdRef.current) return
-        const aggregate = draft as Row
-        setComponents((aggregate.components as Row[] | undefined) ?? [])
-        setRoutes((aggregate.routes as Row[] | undefined) ?? [])
-        setByproducts((aggregate.byproducts as Row[] | undefined) ?? [])
+        setComponents(componentResult.results)
+        setComponentsSnapshot(componentResult.results)
+        setRoutes(routeResult.results)
+        setRoutesSnapshot(routeResult.results)
+        setByproducts(byproductResult.results)
+        setByproductsSnapshot(byproductResult.results)
         setLinesLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
         toast.danger('BOM 明细加载失败', { description: (e as Error).message })
         setComponents([])
+        setComponentsSnapshot([])
         setRoutes([])
+        setRoutesSnapshot([])
         setByproducts([])
+        setByproductsSnapshot([])
       })
   }
 
@@ -146,11 +314,22 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
     if (!bomId || templateId == null) return
     setApplying(true)
     try {
-      const result = await applyBomRouteTemplate(bomId, templateId)
-      const nextRoutes = Array.isArray(result)
-        ? result as Row[]
-        : ((await bomDraft.loadDraft(bomId) as Row).routes as Row[] | undefined) ?? []
-      setRoutes(nextRoutes)
+      await applyBomRouteTemplate(bomId, templateId)
+      const result = await bomRouteClient.query({
+        limit: 200,
+        offset: 0,
+        filter: {
+          bomId: {
+            kind: 'fk',
+            op: 'in',
+            values: [bomId],
+            labels: [],
+          },
+        },
+        sort: { column: 'seq', direction: 'ascending' },
+      })
+      setRoutes(result.results)
+      setRoutesSnapshot(result.results)
       toast.success('已从模板带入工艺路线')
       setTemplatePickerOpen(false)
       setTemplateId(null)
@@ -359,47 +538,58 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
           ),
         }}
         onSubmit={async (values, mode) => {
-          const input = {
-            ...values,
-            // 锁定物料时表单可能只读，确保写入。
-            materialId: lockedMaterialId ?? values.materialId,
-            components: aggregateRows(components, componentInput),
-            routes: aggregateRows(routes, routeInput),
-            byproducts: aggregateRows(byproducts, byproductInput),
-          }
           if (mode === 'create') {
             const createStatus = opts?.createStatus ?? 'DRAFT'
-            let created: Row
-            if (opts?.workOrderId) {
-              const result = await createWorkOrderInlineBom(
-                opts.workOrderId,
-                input,
-              ) as { workOrder: Row; bom: Row }
-              created = result.bom
-              opts.onInlineCreated?.(result)
+            const created = (await bomClient.create({
+              ...values,
+              // 锁定物料时表单可能只读，确保写入
+              materialId: lockedMaterialId ?? values.materialId,
+              status: createStatus,
+            })) as Row
+            const bomId = String(created.id)
+            const lineErrors = [
+              ...(await persistComponents(bomId, components, [])),
+              ...(await persistRoutes(bomId, routes, [])),
+              ...(await persistByproducts(bomId, byproducts, [])),
+            ]
+            if (lineErrors.length > 0) {
+              toast.danger('BOM 已创建,但部分明细行保存失败', {
+                description: lineErrors.join('; '),
+              })
             } else {
-              created = await bomDraft.createDraft(input) as Row
-              if (createStatus === 'ACTIVE') {
-                const commands = resourceBindingFor('mfgBoms').commands
-                if (!commands) throw new Error('BOM 启用命令未注册')
-                created = await commands.execute('activate', { id: created.id }) as Row
-              }
-              opts?.onCreated?.(created)
+              toast.success(
+                createStatus === 'ACTIVE'
+                  ? 'BOM 已创建并启用'
+                  : 'BOM 已创建',
+              )
             }
-            toast.success(createStatus === 'ACTIVE' ? 'BOM 已创建并启用' : 'BOM 已创建')
-            await resourceBindingFor('mfgBoms').cache.invalidateAll(queryClient)
-            if (opts?.workOrderId) {
-              await resourceBindingFor('mfgWorkOrders').cache.invalidateAll(queryClient)
-            }
+            opts?.onCreated?.(created)
             setDrawer(null)
-            return created.id
           } else {
             const bomId = drawer!.row!.id
-            await bomDraft.replaceDraft(bomId, input)
-            toast.success('BOM 已更新')
-            await resourceBindingFor('mfgBoms').cache.invalidateAll(queryClient)
-            return bomId
+            await bomClient.update(bomId, values)
+            const lineErrors = [
+              ...(await persistComponents(
+                bomId,
+                components,
+                componentsSnapshot,
+              )),
+              ...(await persistRoutes(bomId, routes, routesSnapshot)),
+              ...(await persistByproducts(
+                bomId,
+                byproducts,
+                byproductsSnapshot,
+              )),
+            ]
+            if (lineErrors.length > 0) {
+              toast.danger('BOM 已更新,但部分明细行保存失败', {
+                description: lineErrors.join('; '),
+              })
+            } else {
+              toast.success('BOM 已更新')
+            }
           }
+          await resourceBindingFor('mfgBoms').cache.invalidateAll(queryClient)
         }}
       />
 

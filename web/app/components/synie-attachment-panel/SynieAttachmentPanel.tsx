@@ -1,8 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, Spinner, toast } from '@heroui/react'
-import { hasPermission } from '~/lib/permissions'
-import { useCurrentPermissions } from '~/lib/actor-context'
+import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
 import { deleteAttachment, fileClient } from '~/lib/resources/files'
 import { downloadFile, uploadFile, type UploadedFile } from '~/lib/files'
 import { attachmentListKey, fetchAttachmentList, type AttachmentRow } from './attachments'
@@ -66,18 +65,20 @@ export function SynieAttachmentPanel({
   const pendingMode = !ownerId && !!pending
 
   // 无共享权限 hook,面板自查;queryKey 共享,多实例只发一次。fail-closed:拉不到=无权限
-  const permissions = useCurrentPermissions()
-  const canRead = hasPermission(permissions, 'sys.file:read')
+  const perms = useQuery({
+    queryKey: ['myPermissions'],
+    queryFn: fetchMyPermissions,
+  })
   const canCreate =
-    hasPermission(permissions, 'sys.file:create') && !readonly
+    hasPermission(perms.data, 'sys.file:create') && !readonly
   const canDelete =
-    hasPermission(permissions, 'sys.file:delete') && !readonly
+    hasPermission(perms.data, 'sys.file:delete') && !readonly
 
   const listKey = attachmentListKey(ownerType, ownerId, category)
 
   const list = useQuery({
     queryKey: listKey,
-    enabled: !!ownerId && canRead,
+    enabled: !!ownerId,
     queryFn: () => fetchAttachmentList(ownerType, ownerId!, category),
   })
 
@@ -170,9 +171,7 @@ export function SynieAttachmentPanel({
         )}
       </div>
 
-      {!pendingMode && ownerId && !canRead ? (
-        <p className="text-sm text-muted">无权查看{label}</p>
-      ) : !ownerId && !pendingMode ? (
+      {!ownerId && !pendingMode ? (
         <p className="text-sm text-muted">保存后即可上传{label}</p>
       ) : !pendingMode && list.isLoading ? (
         <div className="flex justify-center py-4">

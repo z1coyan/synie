@@ -101,13 +101,6 @@ export interface ResolvedField {
   remote?: Partial<RemoteSourceConfig>
 }
 
-/** 只给可写公司字段回填授权公司默认值；来源带入的只读公司必须保持空。 */
-export function hasWritableCompanyField(
-  fields: ReadonlyArray<Pick<ResolvedField, 'name' | 'edit'>>,
-): boolean {
-  return fields.some((field) => field.name === 'companyId' && field.edit !== 'readOnly')
-}
-
 /** 时间戳系统字段:view 显示,create/edit 剔除;id 三态都不显示(与表格过滤 id 对齐)。下轮 GridMeta 扩表单元数据后由后端 accept 列表推导 */
 const SYSTEM_FIELDS = ['insertedAt', 'updatedAt']
 

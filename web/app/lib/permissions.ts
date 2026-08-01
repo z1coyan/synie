@@ -1,7 +1,4 @@
-export interface PermissionActor {
-  permissions: readonly string[]
-  superAdmin: boolean
-}
+import { fetchMe, type MeResponse } from './api/session'
 
 /**
  * 前端权限匹配与服务端 authz/permission 保持同一口径：
@@ -32,10 +29,15 @@ export function hasPermission(
 }
 
 export function permissionSetFromMe(
-  me: PermissionActor,
+  me: Pick<MeResponse, 'permissions' | 'superAdmin'>,
 ): ReadonlySet<string> {
   const permissions = new Set(me.permissions)
   // 超级管理员由服务端布尔位旁路鉴权；放入全域通配使前端入口保持一致。
   if (me.superAdmin) permissions.add('*')
   return permissions
+}
+
+/** 所有 `myPermissions` 查询共用同一 queryFn，避免同 key 缓存不同数据形状。 */
+export function fetchMyPermissions(): Promise<ReadonlySet<string>> {
+  return fetchMe().then(permissionSetFromMe)
 }

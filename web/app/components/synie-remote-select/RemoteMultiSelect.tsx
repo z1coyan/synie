@@ -5,7 +5,6 @@ import type { Row } from '../synie-data-grid/types'
 import { RemoteOptionsPopover } from './options-popover'
 import { optionLabel, resolveSource, type RemoteSourceConfig } from './remote-query'
 import { useRemoteOptions, useRemoteRecords } from './use-remote'
-import { useResourceBinding } from '~/lib/resources/resource-context'
 
 export interface RemoteMultiSelectProps extends RemoteSourceConfig {
   value: string[]
@@ -19,8 +18,7 @@ export interface RemoteMultiSelectProps extends RemoteSourceConfig {
 }
 
 export function RemoteMultiSelect(props: RemoteMultiSelectProps) {
-  const binding = useResourceBinding(props.resource)
-  const src = resolveSource(props, undefined, binding)
+  const src = resolveSource(props)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [draft, setDraft] = useDraft(search, setSearch)

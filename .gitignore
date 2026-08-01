@@ -1,9 +1,5 @@
 .env
-.env.local
-.env.*.local
-.env.local.tmp
 node_modules/
 dist/
 *.log
 .turbo/
-infra/convex/backups/

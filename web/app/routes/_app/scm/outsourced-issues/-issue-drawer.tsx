@@ -10,32 +10,22 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Input, Label, ListBox, NumberField, Select, TextField, toast } from '@heroui/react'
 import { companyClient } from '~/lib/resources/companies'
-import { purchaseOutsourcedIssueItemClient } from '~/lib/resources/fulfillment'
+import {
+  purchaseOutsourcedIssueClient,
+  purchaseOutsourcedIssueItemClient,
+} from '~/lib/resources/fulfillment'
 import { queryOutsourcedWarehouses } from '~/lib/resources/inventory'
 import { purchaseOrderItemMaterialClient } from '~/lib/resources/orders'
-import {
-  aggregateDraftFor,
-  resourceBindingFor,
-} from '~/lib/resources/registry'
-import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
-import {
-  buildOutsourcedIssueDraft,
-  decodeFlatSavedDraft,
-  type FlatSavedDraft,
-} from '~/lib/resources/scm-aggregate-draft'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
+import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { RemoteDialogSelect } from '~/components/synie-remote-select/RemoteDialogSelect'
 import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../-stock-doc'
-
-const outsourcedIssueBinding = resourceBindingFor('purOutsourcedIssues')
-const outsourcedIssueItemBinding = resourceBindingFor('purOutsourcedIssueItems')
-const orderItemMaterialBinding = resourceBindingFor('purOrderItemMaterials')
-const outsourcedIssueDraft = aggregateDraftFor('purOutsourcedIssues')
 
 export interface IssueRef {
   id: string
@@ -80,6 +70,68 @@ function todayLocal(): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** 提交 mutation:材料/单位由发料清单行锁定带出,后端再快照与折算 */
+function itemInput(row: Row) {
+  return {
+    idx: row.idx,
+    orderItemMaterialId: row.orderItemMaterialId,
+    qty: row.qty,
+    fromWarehouseId: row.fromWarehouseId,
+    outsourcedWarehouseId: row.outsourcedWarehouseId,
+    remarks: row.remarks ?? null,
+  }
+}
+
+const ITEM_COMPARE_KEYS = [
+  'idx',
+  'orderItemMaterialId',
+  'qty',
+  'fromWarehouseId',
+  'outsourcedWarehouseId',
+  'remarks',
+] as const
+
+function itemChanged(before: Row, after: Row): boolean {
+  return ITEM_COMPARE_KEYS.some((k) => String(before[k] ?? '') !== String(after[k] ?? ''))
+}
+
+async function persistItems(issueId: string, current: Row[], snapshot: Row[]): Promise<string[]> {
+  const errors: string[] = []
+  const collect = (idx: unknown, msgs: { message: string }[] | null | undefined) => {
+    if (msgs?.length) errors.push(...msgs.map((e) => `第${idx}行:${e.message}`))
+  }
+  const currentIds = new Set(current.filter((r) => !isLocalRow(r)).map((r) => r.id))
+
+  for (const old of snapshot) {
+    if (currentIds.has(old.id)) continue
+    try {
+      await purchaseOutsourcedIssueItemClient.delete(String(old.id))
+    } catch (error) {
+      collect(old.idx, [{ message: (error as Error).message }])
+    }
+  }
+
+  for (const row of current) {
+    if (isLocalRow(row)) {
+      try {
+        await purchaseOutsourcedIssueItemClient.create({ issueId, ...itemInput(row) })
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
+      continue
+    }
+    const old = snapshot.find((s) => s.id === row.id)
+    if (old && itemChanged(old, row)) {
+      try {
+        await purchaseOutsourcedIssueItemClient.update(String(row.id), itemInput(row))
+      } catch (error) {
+        collect(row.idx, [{ message: (error as Error).message }])
+      }
+    }
+  }
+  return errors
 }
 
 /**
@@ -227,13 +279,13 @@ function ItemsResetGuard({
 export function IssueDrawerProvider({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: IssueRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
+  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
   const [filters] = useState<FilterState>({})
   // 发料清单行缓存:选择时写入完整行,transformItem 带出快照名
   const linesRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
-  const draftHeadRef = useRef<FlatSavedDraft | null>(null)
 
   const companies = useQuery({
     queryKey: ['purOutsourcedIssues', 'companies'],
@@ -255,9 +307,9 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
     const my = ++reqIdRef.current
     setDrawer({ mode, row: issue })
     linesRef.current = new Map()
-    draftHeadRef.current = null
     if (mode === 'create') {
       setItems([])
+      setItemsSnapshot([])
       setDetailLoaded(true)
       return
     }
@@ -266,17 +318,23 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
     if (issueId == null || issueId === '' || issueId === 'undefined') {
       toast.danger('无法打开发料单', { description: '缺少发料单 id' })
       setItems([])
-      setDetailLoaded(false)
+      setItemsSnapshot([])
+      setDetailLoaded(true)
       return
     }
     setDetailLoaded(false)
-    outsourcedIssueDraft
-      .loadDraft(issueId)
-      .then((value) => {
+    purchaseOutsourcedIssueItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          issueId: { kind: 'fk', op: 'in', values: [issueId], labels: [] },
+        },
+      })
+      .then((result) => {
         if (my !== reqIdRef.current) return
-        const draft = decodeFlatSavedDraft(value, '委外发料草稿')
-        draftHeadRef.current = draft
-        const rows = draft.items
+        const rows = result.results
         // 编辑态预热缓存:存量行不必再点选清单行也能过校验/回填(快照即显示源)
         for (const r of rows) {
           if (r.orderItemMaterialId != null) {
@@ -291,13 +349,14 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
           }
         }
         setItems(rows)
+        setItemsSnapshot(rows)
         setDetailLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
-        draftHeadRef.current = null
         toast.danger('发料条目加载失败', { description: (e as Error).message })
         setItems([])
+        setItemsSnapshot([])
       })
   }, [])
 
@@ -368,14 +427,13 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
         {...drawerCfg}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        isSubmitDisabled={drawer?.mode === 'edit' && !detailLoaded}
         onOpenChange={(open) => {
           if (open) return
           reqIdRef.current++
           setDrawer(null)
           setItems([])
+          setItemsSnapshot([])
           linesRef.current = new Map()
-          draftHeadRef.current = null
         }}
         rowId={drawer?.row?.id}
         onEdit={
@@ -708,29 +766,44 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
           )
         }}
         onSubmit={async (values, mode) => {
-          assertAggregateDraftReady(mode, detailLoaded, '委外发料明细')
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          const draft = buildOutsourcedIssueDraft(
-            { ...draftHeadRef.current, ...values },
-            items,
-          )
-          let saved: unknown
+          let savedId: string
           if (mode === 'create') {
-            saved = await outsourcedIssueDraft.createDraft(draft)
-            toast.success('委外发料单已创建')
+            const saved = await purchaseOutsourcedIssueClient.create(values)
+            const issueId = String(saved.id)
+            const itemErrors = await persistItems(issueId, items, [])
+            if (itemErrors.length > 0) {
+              toast.danger('发料单已创建,但部分条目保存失败', {
+                description: itemErrors.join('; '),
+              })
+            } else {
+              toast.success('委外发料单已创建')
+            }
+            savedId = issueId
           } else {
-            saved = await outsourcedIssueDraft.replaceDraft(
-              drawer!.row!.id,
-              draft,
-            )
-            toast.success('委外发料单已更新')
+            await purchaseOutsourcedIssueClient.update(drawer!.row!.id, values)
+            const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
+            if (itemErrors.length > 0) {
+              toast.danger('发料单已更新,但部分条目保存失败', {
+                description: itemErrors.join('; '),
+              })
+            } else {
+              toast.success('委外发料单已更新')
+            }
+            savedId = drawer!.row!.id
           }
           await Promise.all([
-            outsourcedIssueBinding.cache.invalidateAll(queryClient),
-            outsourcedIssueItemBinding.cache.invalidateGrid(queryClient),
-            orderItemMaterialBinding.cache.invalidateGrid(queryClient),
+            resourceBindingFor('purOutsourcedIssues').cache.invalidateAll(
+              queryClient,
+            ),
+            resourceBindingFor(
+              'purOutsourcedIssueItems',
+            ).cache.invalidateGrid(queryClient),
+            resourceBindingFor(
+              'purOrderItemMaterials',
+            ).cache.invalidateGrid(queryClient),
           ])
-          return String(decodeFlatSavedDraft(saved, '委外发料草稿').id)
+          return savedId
         }}
       />
     </IssueDrawerContext.Provider>

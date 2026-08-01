@@ -21,10 +21,10 @@ import { EmptyState, Sheet } from '@heroui-pro/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { defaultCompanyId, useAuthorizedCompanies } from '~/lib/form-defaults'
 import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
+import { resourceBindingFor } from '~/lib/resources/registry'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
-import { isOpaqueResourceId } from '../synie-data-grid/query'
-import { useOptionalResourceBinding } from '~/lib/resources/resource-context'
+import { UUID_RE } from '../synie-data-grid/query'
 import type { GridColumnMeta, LocalGridMeta, Row } from '../synie-data-grid/types'
 import { RemoteDialogSelect } from '../synie-remote-select/RemoteDialogSelect'
 import { RemoteSelect } from '../synie-remote-select/RemoteSelect'
@@ -38,7 +38,6 @@ import {
   missingRequiredFields,
   renderableFields,
   resolveFields,
-  hasWritableCompanyField,
   type DrawerMode,
   type FieldOverride,
   type ResolvedField,
@@ -161,8 +160,7 @@ const DISABLED_LOCAL_ROW_QUERY_KEY = ['disabledLocalRecord'] as const
 export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const { resource, mode, isOpen, exclude, label = '', contentClassName = 'w-full lg:w-[480px]' } = props
   // 本地 Meta 可以使用未注册的展示资源，因此只在远程 Meta 模式解析 binding。
-  const resolvedBinding = useOptionalResourceBinding(resource, !props.meta)
-  const binding = resolvedBinding ?? undefined
+  const binding = !props.meta ? resourceBindingFor(resource) : undefined
   const remoteMeta = useGridMeta(resource, !props.meta) // 本地模式不发请求
   const columns = props.meta?.columns ?? remoteMeta.data?.columns ?? EMPTY_COLUMNS
   const metaPending = !props.meta && remoteMeta.isPending
@@ -173,7 +171,7 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   // 本地 meta 模式下该自查路径不适用(无远程 meta 可拼列/查询),wantsFetch 直接置 false:
   // disabled query 永远 isPending,若只挡 enabled 不挡 wantsFetch,rowPending 会恒 true 卡死 spinner。
   const wantsFetch = !props.meta && !props.row && !!props.rowId
-  const validId = isOpaqueResourceId(props.rowId)
+  const validId = !!props.rowId && UUID_RE.test(props.rowId)
   const byId = useQuery({
     queryKey:
       binding?.cache.rowKey(props.rowId) ?? DISABLED_LOCAL_ROW_QUERY_KEY,
@@ -203,8 +201,8 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
   const [saving, setSaving] = useState(false)
   const queryClient = useQueryClient()
 
-  // 新建态可写公司默认:授权列表第一家；只读派生公司保持空，等待来源选择 effects 带入。
-  const hasCompanyField = hasWritableCompanyField(fields)
+  // 新建态公司默认:授权列表第一家(字段 defaultValue / 列筛优先;异步到达后补丁)
+  const hasCompanyField = fields.some((f) => f.name === 'companyId')
   const companiesQuery = useAuthorizedCompanies(isOpen && mode === 'create' && hasCompanyField)
   const autoCompanyId = defaultCompanyId(undefined, companiesQuery.data ?? [])
 

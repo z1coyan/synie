@@ -72,10 +72,7 @@ function BankImportTemplatesPage() {
                   value={value == null ? null : String(value)}
                   onChange={(id) => onChange(id)}
                   isDisabled={isDisabled || companyId == null}
-                  filterState={{
-                    companyId: { kind: 'fk', values: [companyId!], labels: [] },
-                    active: { kind: 'bool', eq: true },
-                  }}
+                  filterState={{ companyId: { kind: 'fk', values: [companyId!], labels: [] } }}
                 />
               )
             },

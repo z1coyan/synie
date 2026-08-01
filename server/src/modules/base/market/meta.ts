@@ -1,0 +1,360 @@
+import type { ResourceMeta } from '~/platform/meta/types.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+
+export const INSTRUMENT_RESOURCE_NAME = 'basMarketInstruments'
+export const PRICE_POINT_RESOURCE_NAME = 'basMarketPricePoints'
+export const INSTRUMENT_PERMISSION_PREFIX = 'base.market_instrument'
+export const PRICE_POINT_PERMISSION_PREFIX = 'base.market_price'
+/** @deprecated 兼容旧 import */
+export const PERMISSION_PREFIX = INSTRUMENT_PERMISSION_PREFIX
+
+const SOURCE_TYPES = [
+  { value: 'EXCHANGE', label: '交易所序列' },
+  { value: 'SPOT_INDEX', label: '现货指数' },
+  { value: 'OTHER', label: '其他' },
+] as const
+
+const PRICE_KINDS = [
+  { value: 'SETTLEMENT', label: '结算价' },
+  { value: 'AVERAGE', label: '均价' },
+  { value: 'LAST', label: '最新价' },
+] as const
+
+const PRICE_SOURCES = [
+  { value: 'MANUAL', label: '手工' },
+  { value: 'FETCH', label: '拉取' },
+] as const
+
+export function instrumentResourceMeta(): ResourceMeta {
+  return {
+    name: INSTRUMENT_RESOURCE_NAME,
+    permissionPrefix: INSTRUMENT_PERMISSION_PREFIX,
+    permissionLabel: '行情品种',
+    table: 'bas_market_instrument',
+    fields: [
+      {
+        name: 'id',
+        apiName: 'id',
+        dbColumn: 'id',
+        type: 'uuid',
+        label: 'id',
+        readonly: true,
+        sortable: true,
+      },
+      {
+        name: 'code',
+        apiName: 'code',
+        dbColumn: 'code',
+        type: 'string',
+        label: '编码',
+        required: true,
+        createOnly: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'name',
+        apiName: 'name',
+        dbColumn: 'name',
+        type: 'string',
+        label: '名称',
+        required: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'source_type',
+        apiName: 'sourceType',
+        dbColumn: 'source_type',
+        type: 'enum',
+        label: '来源类型',
+        required: true,
+        createOnly: true,
+        enumOptions: [...SOURCE_TYPES],
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'default_price_kind',
+        apiName: 'defaultPriceKind',
+        dbColumn: 'default_price_kind',
+        type: 'enum',
+        label: '默认价类',
+        required: true,
+        enumOptions: [...PRICE_KINDS],
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'active',
+        apiName: 'active',
+        dbColumn: 'active',
+        type: 'boolean',
+        label: '启用',
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'fetch_enabled',
+        apiName: 'fetchEnabled',
+        dbColumn: 'fetch_enabled',
+        type: 'boolean',
+        label: '启用拉取',
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'external_last_code',
+        apiName: 'externalLastCode',
+        dbColumn: 'external_last_code',
+        type: 'string',
+        label: '外部最新价代码(如 CU0 主连)',
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'external_product_group',
+        apiName: 'externalProductGroup',
+        dbColumn: 'external_product_group',
+        type: 'string',
+        label: '外部品种组(如上期所日数据 cu)',
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'note',
+        apiName: 'note',
+        dbColumn: 'note',
+        type: 'string',
+        label: '备注',
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'inserted_at',
+        apiName: 'insertedAt',
+        dbColumn: 'inserted_at',
+        type: 'datetime',
+        label: '创建时间',
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'updated_at',
+        apiName: 'updatedAt',
+        dbColumn: 'updated_at',
+        type: 'datetime',
+        label: '更新时间',
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'currency_id',
+        apiName: 'currencyId',
+        dbColumn: 'currency_id',
+        type: 'fk',
+        label: '币种',
+        required: true,
+        createOnly: true,
+        filterable: true,
+        ref: {
+          resource: 'basCurrencies',
+          relation: 'currency',
+          labelField: 'name',
+        },
+      },
+      {
+        name: 'unit_id',
+        apiName: 'unitId',
+        dbColumn: 'unit_id',
+        type: 'fk',
+        label: '计量单位',
+        required: true,
+        createOnly: true,
+        filterable: true,
+        ref: {
+          resource: 'basUnits',
+          relation: 'unit',
+          labelField: 'name',
+        },
+      },
+    ],
+    actions: [
+      { key: 'read', label: '查看', scope: 'both' },
+      { key: 'create', label: '新增', scope: 'both' },
+      { key: 'update', label: '编辑', scope: 'row' },
+      { key: 'delete', label: '删除', scope: 'row', isDanger: true },
+    ],
+    form: { exclude: ['id', 'insertedAt', 'updatedAt'] },
+    print: true,
+    audit: { enabled: true },
+
+  }
+}
+
+export function pricePointResourceMeta(): ResourceMeta {
+  return {
+    name: PRICE_POINT_RESOURCE_NAME,
+    permissionPrefix: PRICE_POINT_PERMISSION_PREFIX,
+    permissionLabel: '行情价点',
+    table: 'bas_market_price_point',
+    fields: [
+      {
+        name: 'id',
+        apiName: 'id',
+        dbColumn: 'id',
+        type: 'uuid',
+        label: 'id',
+        readonly: true,
+        sortable: true,
+      },
+      {
+        name: 'observed_at',
+        apiName: 'observedAt',
+        dbColumn: 'observed_at',
+        type: 'datetime',
+        label: '观测时刻',
+        required: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'price',
+        apiName: 'price',
+        dbColumn: 'price',
+        type: 'decimal',
+        label: '价格',
+        required: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'price_kind',
+        apiName: 'priceKind',
+        dbColumn: 'price_kind',
+        type: 'enum',
+        label: '价类',
+        required: true,
+        enumOptions: [...PRICE_KINDS],
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'source',
+        apiName: 'source',
+        dbColumn: 'source',
+        type: 'enum',
+        label: '来源',
+        required: true,
+        enumOptions: [...PRICE_SOURCES],
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'is_voided',
+        apiName: 'isVoided',
+        dbColumn: 'is_voided',
+        type: 'boolean',
+        label: '已作废',
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'note',
+        apiName: 'note',
+        dbColumn: 'note',
+        type: 'string',
+        label: '备注',
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'inserted_at',
+        apiName: 'insertedAt',
+        dbColumn: 'inserted_at',
+        type: 'datetime',
+        label: '创建时间',
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'updated_at',
+        apiName: 'updatedAt',
+        dbColumn: 'updated_at',
+        type: 'datetime',
+        label: '更新时间',
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      },
+      {
+        name: 'instrument_id',
+        apiName: 'instrumentId',
+        dbColumn: 'instrument_id',
+        type: 'fk',
+        label: '行情品种',
+        required: true,
+        filterable: true,
+        ref: {
+          resource: INSTRUMENT_RESOURCE_NAME,
+          relation: 'instrument',
+          labelField: 'name',
+        },
+      },
+      {
+        name: 'currency_id',
+        apiName: 'currencyId',
+        dbColumn: 'currency_id',
+        type: 'fk',
+        label: '币种',
+        required: true,
+        readonly: true,
+        filterable: true,
+        ref: {
+          resource: 'basCurrencies',
+          relation: 'currency',
+          labelField: 'name',
+        },
+      },
+      {
+        name: 'unit_id',
+        apiName: 'unitId',
+        dbColumn: 'unit_id',
+        type: 'fk',
+        label: '计量单位',
+        required: true,
+        readonly: true,
+        filterable: true,
+        ref: {
+          resource: 'basUnits',
+          relation: 'unit',
+          labelField: 'name',
+        },
+      },
+    ],
+    actions: [
+      { key: 'read', label: '查看', scope: 'both' },
+      { key: 'create', label: '新增', scope: 'both' },
+      {
+        key: 'void',
+        label: '作废',
+        scope: 'row',
+        isDanger: true,
+      },
+    ],
+    form: {
+      exclude: ['id', 'isVoided', 'currencyId', 'unitId', 'insertedAt', 'updatedAt'],
+    },
+    print: true,
+    audit: { enabled: true },
+  }
+}
+
+export function registerMarketResources(registry: Registry): void {
+  registry.register(instrumentResourceMeta())
+  registry.register(pricePointResourceMeta())
+}

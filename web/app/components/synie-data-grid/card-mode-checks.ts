@@ -103,8 +103,9 @@ eq(mergeLoadedRows(page1, [row('b'), row('c')], 2), [row('a'), row('b'), row('c'
 // 空累积追加(极端:进入卡片模式时已在第 N 页,上层已先重置回第 1 页,此处兜底语义为追加)
 eq(mergeLoadedRows([], page2, 3), page2, '空累积追加')
 
-eq(hasMoreRows(false), true, 'cursor 未结束')
-eq(hasMoreRows(true), false, 'cursor 已结束')
+eq(hasMoreRows(20, 132), true, '未加载完')
+eq(hasMoreRows(132, 132), false, '恰好加载完')
+eq(hasMoreRows(140, 132), false, '超总数(批量删除后总数收缩)')
 
 // ---- 排序选择器(ticket 03):新列顺序 → 逆序 → 取消,换列重新顺序 ----
 eq(toggleSort(null, 'code'), { column: 'code', direction: 'ascending' }, '空→顺序')

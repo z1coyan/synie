@@ -1,0 +1,59 @@
+import type { Kysely } from 'kysely'
+import type { DB as Database } from '~/db/types.ts'
+import { createInventoryEngine } from '~/engines/inventory/index.ts'
+import type { OwnerRegistry } from '~/platform/files/owner-registry.ts'
+import type { NumberingService } from '~/platform/numbering/service.ts'
+import type { Registry } from '~/platform/meta/registry.ts'
+import { createDemandService } from './demand-service.ts'
+import { adjustDemandOrdered, adjustDemandReceived } from './helpers.ts'
+import { createMasterService } from './master-service.ts'
+import { allManufacturingResourceMetas } from './meta.ts'
+import { createOutputService } from './output-service.ts'
+import { createWorkOrderService } from './work-order-service.ts'
+import { registerManufacturingSettingResources } from './settings.ts'
+
+export { manufacturingRoutes, type ManufacturingRouteDeps } from './routes.ts'
+export { allManufacturingResourceMetas } from './meta.ts'
+export {
+  createWorkOrderDocBuilder,
+  registerWorkOrderDocBuilder,
+} from './work-order-docbuilder.ts'
+export { adjustDemandOrdered, adjustDemandReceived }
+export {
+  createManufacturingSettingService,
+  manufacturingSettingResourceMeta,
+  registerManufacturingSettingResources,
+  type ManufacturingSettingService,
+  type ManufacturingSetting,
+  type ManufacturingUpdate,
+} from './settings.ts'
+
+export function registerManufacturingResources(registry: Registry): void {
+  for (const meta of allManufacturingResourceMetas()) {
+    registry.register(meta)
+  }
+  registerManufacturingSettingResources(registry)
+}
+
+/** 工单图纸只读展示：列表附件 API 不强制 resolveOwner，注册后上传/挂接路径可校验宿主 */
+export function registerManufacturingFileOwners(owners: OwnerRegistry): void {
+  owners.register('mfg_work_order', {
+    table: 'mfg_work_order',
+    permissionPrefix: 'mfg.work_order',
+    companyScoped: true,
+  })
+}
+
+export function createManufacturingServices(
+  db: Kysely<Database>,
+  numbering: NumberingService,
+) {
+  const inventory = createInventoryEngine()
+  const master = createMasterService(db, numbering)
+  const demands = createDemandService(db, numbering)
+  const workOrders = createWorkOrderService(db, numbering)
+  const outputs = createOutputService(db, numbering, inventory)
+  return { master, demands, workOrders, outputs }
+}
+
+export type ManufacturingServices = ReturnType<typeof createManufacturingServices>

@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
-import { useResourceBinding } from '~/lib/resources/resource-context'
-import type { SalesSetting } from '~/lib/resources/settings'
+import { getSalesSetting, updateSalesSetting } from '~/lib/resources/settings'
 import { CompanyAccountDefaultsCard } from './-company-account-defaults'
 
 export const Route = createFileRoute('/_app/scm/settings/sales')({
@@ -12,11 +11,10 @@ export const Route = createFileRoute('/_app/scm/settings/sales')({
 
 function ScmSalesSettingsTab() {
   const queryClient = useQueryClient()
-  const binding = useResourceBinding('salSettings')
   const query = useQuery({
     // 与采购 tab / 订单抽屉分 key,避免不同表单草稿互相污染缓存
-    queryKey: binding.cache.gridKey('sales-tab'),
-    queryFn: () => binding.reader.query({ profile: 'default', numItems: 1, cursor: null }).then((page) => page.results[0] as unknown as SalesSetting),
+    queryKey: ['salSetting', 'sales'],
+    queryFn: getSalesSetting,
   })
 
   const [maxQty, setMaxQty] = useState<number>(NaN)
@@ -43,14 +41,12 @@ function ScmSalesSettingsTab() {
     }
     setSaving(true)
     try {
-      if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) throw new Error('供应链设置不支持 update')
-      await binding.writer.update(String(query.data.id), {
+      await updateSalesSetting({
         sampleItemMaxQty: maxQty,
         deliveryOvershipRatio: String(overshipPct / 100),
       })
       toast.success('销售设置已保存')
       queryClient.invalidateQueries({ queryKey: ['salSetting'] })
-      await binding.cache.invalidateAll(queryClient)
     } catch (e) {
       toast.danger('保存失败', { description: (e as Error).message })
     } finally {

@@ -6,9 +6,8 @@ import type { Selection } from 'react-aria-components'
 import { isForbidden } from '~/lib/errors'
 import { useMediaQuery } from '~/lib/use-media-query'
 import { createResourceQueryCache } from '~/lib/resources/catalog'
-import { useResourceBinding } from '~/lib/resources/resource-context'
-import { readerFromResourceTransport } from '~/lib/resources/catalog'
-import type { ResourceQuery, ResourceTransport } from '~/lib/resources/types'
+import { resourceBindingFor } from '~/lib/resources/registry'
+import type { ResourceTransport } from '~/lib/resources/types'
 import { AttachmentImagesCell } from './attachment-images-cell'
 import { cardFields } from './card-fields'
 import { CardList, type CardSelection } from './card-list'
@@ -166,10 +165,10 @@ export function selectedRows(selection: Selection, rows: Row[]): Row[] {
 
 export function SynieDataGrid(props: SynieDataGridProps) {
   const { resource, exclude = EMPTY_EXCLUDE, overrides = EMPTY_OVERRIDES } = props
-  const binding = useResourceBinding(resource)
+  const binding = resourceBindingFor(resource)
   // 显式 client 只服务测试/本地 Adapter 这一真实第二 Adapter；即使覆盖 Reader，
   // 缓存身份仍在本模块内构造，调用者不需要知道 key 中包含 Adapter id。
-  const reader = props.client ? readerFromResourceTransport(props.client) : binding.reader
+  const reader = props.client ?? binding.reader
   const queryCache = props.client
     ? createResourceQueryCache(resource, props.client.id)
     : binding.cache
@@ -180,7 +179,6 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const isMobile = useMediaQuery(CARD_MODE_QUERY)
   const cardMode = isMobile
   const [page, setPage] = useState(1)
-  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null])
   const [pageSize, setPageSize] = useState(20)
   const [sort, setSort] = useState<SortState | null>(props.defaultSort ?? null)
   const [filters, setFilters] = useState<FilterState>(props.defaultFilters ?? {})
@@ -189,10 +187,6 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   // 卡片模式筛选/排序底部弹层
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [sortSheetOpen, setSortSheetOpen] = useState(false)
-  const resetCursorPagination = () => {
-    setPage(1)
-    setCursorStack([null])
-  }
 
   // 筛变通知页面(建单默认公司等);不把回调放进 deps 以免父组件未 memo 时循环
   useEffect(() => {
@@ -242,15 +236,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     setExpanded(new Set())
     setChildrenByParent(new Map())
     setLoadingParents(new Set())
-    resetCursorPagination()
+    setPage(1)
   }, [fixedFilterKey])
 
-  const profile = treeActive ? 'treeChildren' : search.trim() ? 'search' : 'default'
-  const currentCursor = treeActive ? null : (cursorStack[page - 1] ?? null)
   const rowsQuery = useQuery({
     queryKey: queryCache.gridKey(
-      profile,
-      currentCursor,
       treeActive,
       page,
       pageSize,
@@ -263,13 +253,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     ),
     enabled: !!meta.data,
     placeholderData: keepPreviousData,
-    queryFn: async () => {
-      const query: ResourceQuery = {
-        profile,
-        numItems: treeActive ? TREE_LEVEL_LIMIT : pageSize,
-        cursor: currentCursor,
+    queryFn: () =>
+      reader.query({
+        limit: treeActive ? TREE_LEVEL_LIMIT : pageSize,
+        offset: treeActive ? 0 : (page - 1) * pageSize,
         search: treeActive ? undefined : search,
-        args: treeActive ? { parentId: null } : undefined,
         sort: treeActive && props.tree?.sort
           ? { column: props.tree.sort.field, direction: props.tree.sort.order === 'ASC' ? 'ascending' : 'descending' }
           : sort,
@@ -279,40 +267,12 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         fixedFilter: props.fixedFilter,
         extraFields: queryExtraFieldsOrUndef,
         joinFields: props.joinFields,
-      }
-      if (treeActive) {
-        const { numItems: _numItems, cursor: _cursor, ...allQuery } = query
-        const results = await fetchAllRows(reader, {
-          ...allQuery,
-          profile: 'treeChildren',
-        })
-        return { results, pageInfo: { continueCursor: null, isDone: true } }
-      }
-      const result = await reader.query(query)
-      if (!result.pageInfo.isDone) {
-        const next = result.pageInfo.continueCursor
-        if (!next || next === currentCursor || cursorStack.slice(0, page).includes(next)) {
-          throw new Error('分页 cursor 重复或缺失,已中止加载')
-        }
-      }
-      return result
-    },
+      }),
   })
 
   const rows = rowsQuery.data?.results ?? []
-  const totalCount = rowsQuery.data?.totalCount
-  const isDone = rowsQuery.data?.pageInfo.isDone ?? true
-
-  useEffect(() => {
-    const info = rowsQuery.data?.pageInfo
-    if (!info || info.isDone || !info.continueCursor) return
-    setCursorStack((previous) => {
-      const next = previous.slice(0, page)
-      if (next.includes(info.continueCursor)) return previous
-      next.push(info.continueCursor)
-      return next
-    })
-  }, [page, rowsQuery.data?.pageInfo])
+  const count = rowsQuery.data?.count ?? 0
+  const totalPages = Math.max(1, Math.ceil(count / pageSize))
 
   // 卡片模式「加载更多」:page 语义=已加载页数,数据按页累积;
   // 查询条件(搜索/筛选/排序/fixedFilter)变更时各处理器已 setPage(1),第 1 页抵达即整体替换
@@ -324,7 +284,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   }, [cardMode, rowsQuery.data])
   // 桌面→卡片切换时页码可能停在 N>1,重置回第 1 页从头累积(搜索/筛选/排序状态保留)
   useEffect(() => {
-    if (cardMode) resetCursorPagination()
+    if (cardMode) setPage(1)
   }, [cardMode])
   // 追加页失败:保留已加载卡片、toast 报错,加载更多按钮可重试(非幂等读操作给反馈)
   useEffect(() => {
@@ -336,9 +296,10 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   // 展开某节点时按 parentField eq 拉它的直接子层,结果进缓存;getChildren 从缓存读,折叠不清缓存
   const fetchChildren = (parentId: string) => {
     setLoadingParents((prev) => new Set(prev).add(parentId))
-    fetchAllRows(reader, {
-        profile: 'treeChildren',
-        args: { parentId },
+    reader
+      .query({
+        limit: TREE_LEVEL_LIMIT,
+        offset: 0,
         sort: props.tree?.sort
           ? { column: props.tree.sort.field, direction: props.tree.sort.order === 'ASC' ? 'ascending' : 'descending' }
           : null,
@@ -347,7 +308,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
         extraFields: queryExtraFieldsOrUndef,
         joinFields: props.joinFields,
       })
-      .then((data) => setChildrenByParent((prev) => new Map(prev).set(parentId, data)))
+      .then((data) => setChildrenByParent((prev) => new Map(prev).set(parentId, data.results)))
       .catch((e) => toast.danger('加载下级失败', { description: (e as Error).message }))
       .finally(() =>
         setLoadingParents((prev) => {
@@ -378,6 +339,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       if (!childrenByParent.has(id) && !loadingParents.has(id)) fetchChildren(id)
     }
   }
+
+  // 批量删除清空最后一页后 count 缩小、totalPages 跟着变小,但 page 仍停在越界空页——收敛回最后一页
+  useEffect(() => {
+    if (rowsQuery.data && page > totalPages) setPage(totalPages)
+  }, [rowsQuery.data, page, totalPages])
 
   const attachmentImages = props.attachmentImages
   // 筛选代理:override.filterField 将该列筛选改按同行另一字段(如物料列按 materialId 外键),
@@ -475,11 +441,11 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       else next[name] = f
       return next
     })
-    resetCursorPagination()
+    setPage(1)
   }
   const clearAllFilters = () => {
     setFilters({})
-    resetCursorPagination()
+    setPage(1)
   }
 
   const [exporting, setExporting] = useState(false)
@@ -502,7 +468,6 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     const id = toast(`正在导出…`, { isLoading: true, timeout: 0 })
     try {
       const all = await fetchAllRows(reader, {
-        profile: search.trim() ? 'search' : 'default',
         search,
         sort,
         filter: filters,
@@ -692,7 +657,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             value={search}
             onCommit={(v) => {
               setSearch(v)
-              resetCursorPagination()
+              setPage(1)
             }}
           />
         )}
@@ -830,7 +795,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             ? undefined
             : (d) => {
                 setSort((prev) => nextSort(prev, String(d.column), d.direction))
-                resetCursorPagination()
+                setPage(1)
               }
         }
         renderEmptyState={() => (
@@ -848,28 +813,19 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       {props.pageSummary && <div className="px-4 py-2 text-sm text-muted">{props.pageSummary(rows)}</div>}
 
       {/* 卡片模式:加载更多取代数字分页(追加式浏览);加载完毕给终点提示 */}
-      {cardMode && !treeActive && (loadedRows.length > 0 || totalCount !== 0) && (
+      {cardMode && !treeActive && count > 0 && (
         <div className="flex justify-center">
-          {hasMoreRows(isDone) ? (
+          {hasMoreRows(loadedRows.length, count) ? (
             <Button
               variant="secondary"
               isPending={rowsQuery.isFetching && page > 1}
               // 追加失败重试当前页(refetch),而非页码+1 跳过失败页
-              onPress={() => {
-                if (rowsQuery.isError) void rowsQuery.refetch()
-                else if (cursorStack[page]) setPage((value) => value + 1)
-              }}
+              onPress={() => (rowsQuery.isError ? rowsQuery.refetch() : setPage((p) => p + 1))}
             >
-              {rowsQuery.isError
-                ? '加载失败，点击重试'
-                : totalCount === undefined
-                  ? `加载更多（已加载 ${loadedRows.length} 条）`
-                  : `加载更多（${loadedRows.length}/${totalCount} 条）`}
+              {rowsQuery.isError ? '加载失败，点击重试' : `加载更多（${loadedRows.length}/${count} 条）`}
             </Button>
           ) : (
-            <span className="text-sm text-muted">
-              {totalCount === undefined ? `已加载全部 ${loadedRows.length} 条` : `已加载全部 ${totalCount} 条`}
-            </span>
+            <span className="text-sm text-muted">已加载全部 {count} 条</span>
           )}
         </div>
       )}
@@ -877,9 +833,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       {/* 树形懒加载下总数/分页无意义,隐藏整条分页栏;卡片模式走上方加载更多 */}
       {!treeActive && !cardMode && (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-sm text-muted">
-            {totalCount === undefined ? `第 ${page} 页 · 本页 ${rows.length} 条` : `共 ${totalCount} 条`}
-          </span>
+          <span className="text-sm text-muted">共 {count} 条</span>
           <div className="flex items-center gap-3">
             <InlineSelect
               aria-label="每页条数"
@@ -887,7 +841,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
               onChange={(v) => {
                 if (v != null) {
                   setPageSize(Number(v))
-                  resetCursorPagination()
+                  setPage(1)
                 }
               }}
             >
@@ -906,14 +860,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
                 </ListBox>
               </InlineSelect.Popover>
             </InlineSelect>
-            <Pager
-              page={page}
-              canNext={!isDone && Boolean(cursorStack[page])}
-              onPrevious={() => setPage((value) => Math.max(1, value - 1))}
-              onNext={() => {
-                if (!isDone && cursorStack[page]) setPage((value) => value + 1)
-              }}
-            />
+            <Pager page={page} totalPages={totalPages} onChange={setPage} />
           </div>
         </div>
       )}
@@ -967,7 +914,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             sort={sort}
             onSortChange={(next) => {
               setSort(next)
-              resetCursorPagination()
+              setPage(1)
             }}
           />
         </>
@@ -1011,30 +958,40 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   )
 }
 
-function Pager({
-  page,
-  canNext,
-  onPrevious,
-  onNext,
-}: {
-  page: number
-  canNext: boolean
-  onPrevious: () => void
-  onNext: () => void
-}) {
+/** >7 页时:首尾 + 当前±1 + 省略号 */
+function pageNumbers(page: number, total: number): (number | 'ellipsis')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const middle = [page - 1, page, page + 1].filter((p) => p > 1 && p < total)
+  const out: (number | 'ellipsis')[] = [1]
+  if (middle[0] !== undefined && middle[0] > 2) out.push('ellipsis')
+  out.push(...middle)
+  if (middle.length > 0 && middle[middle.length - 1] < total - 1) out.push('ellipsis')
+  out.push(total)
+  return out
+}
+
+function Pager({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
   return (
     <Pagination size="sm">
       <Pagination.Content>
         <Pagination.Item>
-          <Pagination.Previous isDisabled={page <= 1} onPress={onPrevious}>
+          <Pagination.Previous isDisabled={page <= 1} onPress={() => onChange(page - 1)}>
             <Pagination.PreviousIcon />
           </Pagination.Previous>
         </Pagination.Item>
+        {pageNumbers(page, totalPages).map((p, i) => (
+          <Pagination.Item key={`${p}-${i}`}>
+            {p === 'ellipsis' ? (
+              <Pagination.Ellipsis />
+            ) : (
+              <Pagination.Link isActive={p === page} onPress={() => onChange(p)}>
+                {p}
+              </Pagination.Link>
+            )}
+          </Pagination.Item>
+        ))}
         <Pagination.Item>
-          <Pagination.Link isActive>{page}</Pagination.Link>
-        </Pagination.Item>
-        <Pagination.Item>
-          <Pagination.Next isDisabled={!canNext} onPress={onNext}>
+          <Pagination.Next isDisabled={page >= totalPages} onPress={() => onChange(page + 1)}>
             <Pagination.NextIcon />
           </Pagination.Next>
         </Pagination.Item>

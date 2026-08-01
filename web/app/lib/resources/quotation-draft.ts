@@ -1,3 +1,4 @@
+import { api, apiData } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import type { AggregateDraftAdapter } from './catalog/types'
@@ -99,17 +100,70 @@ export function buildQuotationDraft(
   }
 }
 
-function unavailableQuotationDraft(
-  side: QuotationSide,
-): AggregateDraftAdapter<QuotationDraft, QuotationSavedDraft> {
-  const unavailable = async (): Promise<never> => {
-    throw new Error(`${side === 'sales' ? '销售' : '采购'}报价草稿尚未由 Convex 应用壳装配`)
+function wireDraft(input: QuotationDraft): QuotationDraft {
+  return {
+    ...input,
+    items: input.items.map((item) => ({
+      ...item,
+      price: item.price == null ? null : String(item.price),
+      taxRate: String(item.taxRate),
+      tiers: item.tiers.map((tier) => ({
+        ...tier,
+        minQty: String(tier.minQty),
+        price: String(tier.price),
+      })),
+    })),
   }
-  return { loadDraft: unavailable, createDraft: unavailable, replaceDraft: unavailable }
 }
 
-export const salesQuotationDraftAdapter = unavailableQuotationDraft('sales')
-export const purchaseQuotationDraftAdapter = unavailableQuotationDraft('purchase')
+/** production Hono Adapters：销售与采购各占一个明确的聚合 seam。 */
+export const salesQuotationDraftAdapter: AggregateDraftAdapter<
+  QuotationDraft,
+  QuotationSavedDraft
+> = {
+  async loadDraft(id) {
+    return apiData(
+      api.sales.quotations[':id'].draft.$get({ param: { id } }),
+    )
+  },
+  async createDraft(input) {
+    return apiData(
+      api.sales.quotations.$post({ json: wireDraft(input) as never }),
+    )
+  },
+  async replaceDraft(id, input) {
+    return apiData(
+      api.sales.quotations[':id'].$put({
+        param: { id },
+        json: wireDraft(input) as never,
+      }),
+    )
+  },
+}
+
+export const purchaseQuotationDraftAdapter: AggregateDraftAdapter<
+  QuotationDraft,
+  QuotationSavedDraft
+> = {
+  async loadDraft(id) {
+    return apiData(
+      api.purchase.quotations[':id'].draft.$get({ param: { id } }),
+    )
+  },
+  async createDraft(input) {
+    return apiData(
+      api.purchase.quotations.$post({ json: wireDraft(input) as never }),
+    )
+  },
+  async replaceDraft(id, input) {
+    return apiData(
+      api.purchase.quotations[':id'].$put({
+        param: { id },
+        json: wireDraft(input) as never,
+      }),
+    )
+  },
+}
 
 function clone<T>(value: T): T {
   return structuredClone(value)

@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-07-31T15:25:53.457Z",
+  "generatedAt": "2026-07-30T05:58:36.276Z",
   "commitHint": "run at implement time; re-run after each resource-catalog ticket",
   "summary": {
-    "serverResourceCount": 100,
-    "fieldTotal": 1416,
-    "actionTotal": 315,
+    "serverResourceCount": 97,
+    "fieldTotal": 1383,
+    "actionTotal": 307,
     "formDeclared": 62,
     "transportCount": 96,
-    "drawerKeyCount": 0,
+    "drawerKeyCount": 21,
     "remoteDefaultCount": 0,
-    "missingClientCount": 4,
+    "missingClientCount": 1,
     "extraClientCount": 0,
-    "missingDrawerCount": 100,
+    "missingDrawerCount": 76,
     "extraDrawerCount": 0,
-    "normalizedResources": 100,
+    "normalizedResources": 97,
     "legacyNormalizerCalls": 0,
     "unclassifiedCount": 0,
     "unexplainedMissingClientCount": 0,
@@ -22,9 +22,6 @@
   },
   "gaps": {
     "missingClients": [
-      "mfgWorkOrderByproducts",
-      "mfgWorkOrderComponents",
-      "mfgWorkOrderRoutes",
       "sysRolePermissions"
     ],
     "extraClients": [],
@@ -37,7 +34,6 @@
       "accBankTransactions",
       "accBillHoldings",
       "accBillTransactions",
-      "accBills",
       "accExpenseReportItems",
       "accExpenseReports",
       "accGlEntries",
@@ -58,65 +54,43 @@
       "hrEmployeeLoans",
       "hrEmployees",
       "hrPayrollPayments",
-      "hrPayrolls",
       "invMaterialCategories",
       "invMaterialUnits",
       "invMaterials",
       "invStockCountItems",
-      "invStockCounts",
       "invStockDocItems",
-      "invStockDocs",
       "invStockEntries",
       "invStockTransferItems",
-      "invStockTransfers",
       "invWarehouses",
       "mfgBomByproducts",
       "mfgBomComponents",
       "mfgBomRoutes",
-      "mfgBoms",
       "mfgDemandItems",
-      "mfgDemands",
       "mfgOperations",
       "mfgOutputItems",
-      "mfgOutputs",
       "mfgProcessTemplateItems",
-      "mfgProcessTemplates",
       "mfgSettings",
-      "mfgWorkOrderByproducts",
-      "mfgWorkOrderComponents",
-      "mfgWorkOrderRoutes",
-      "mfgWorkOrders",
       "purOrderItemByproducts",
       "purOrderItemMaterials",
       "purOrderItems",
-      "purOrders",
       "purOutsourcedIssueItems",
-      "purOutsourcedIssues",
       "purOutsourcedReceiptItemByproducts",
       "purOutsourcedReceiptItemMaterials",
       "purOutsourcedReceiptItems",
-      "purOutsourcedReceipts",
       "purQuotationItems",
       "purQuotationTiers",
-      "purQuotations",
       "purReceiptItems",
-      "purReceipts",
       "purReconciliationItems",
-      "purReconciliations",
       "purSuppliers",
       "salCompanyAccountDefaults",
       "salCustomers",
-      "salDeliveries",
       "salDeliveryItems",
       "salDeliveryPackBoxes",
       "salDeliveryPackLines",
       "salOrderItems",
-      "salOrders",
       "salQuotationItems",
       "salQuotationTiers",
-      "salQuotations",
       "salReconciliationItems",
-      "salReconciliations",
       "salSettings",
       "scmOrderFlowItems",
       "sysAuditLogs",
@@ -125,7 +99,6 @@
       "sysNumberingRules",
       "sysPrintTemplates",
       "sysRolePermissions",
-      "sysRoles",
       "sysSettings",
       "sysStorages",
       "sysUsers"
@@ -135,9 +108,6 @@
     "remoteDefaults": [],
     "unclassified": [],
     "explainedMissingClients": [
-      "mfgWorkOrderByproducts",
-      "mfgWorkOrderComponents",
-      "mfgWorkOrderRoutes",
       "sysRolePermissions"
     ],
     "unexplainedMissingClients": [],
@@ -150,7 +120,6 @@
       "accBankTransactions",
       "accBillHoldings",
       "accBillTransactions",
-      "accBills",
       "accExpenseReportItems",
       "accExpenseReports",
       "accGlEntries",
@@ -171,65 +140,43 @@
       "hrEmployeeLoans",
       "hrEmployees",
       "hrPayrollPayments",
-      "hrPayrolls",
       "invMaterialCategories",
       "invMaterialUnits",
       "invMaterials",
       "invStockCountItems",
-      "invStockCounts",
       "invStockDocItems",
-      "invStockDocs",
       "invStockEntries",
       "invStockTransferItems",
-      "invStockTransfers",
       "invWarehouses",
       "mfgBomByproducts",
       "mfgBomComponents",
       "mfgBomRoutes",
-      "mfgBoms",
       "mfgDemandItems",
-      "mfgDemands",
       "mfgOperations",
       "mfgOutputItems",
-      "mfgOutputs",
       "mfgProcessTemplateItems",
-      "mfgProcessTemplates",
       "mfgSettings",
-      "mfgWorkOrderByproducts",
-      "mfgWorkOrderComponents",
-      "mfgWorkOrderRoutes",
-      "mfgWorkOrders",
       "purOrderItemByproducts",
       "purOrderItemMaterials",
       "purOrderItems",
-      "purOrders",
       "purOutsourcedIssueItems",
-      "purOutsourcedIssues",
       "purOutsourcedReceiptItemByproducts",
       "purOutsourcedReceiptItemMaterials",
       "purOutsourcedReceiptItems",
-      "purOutsourcedReceipts",
       "purQuotationItems",
       "purQuotationTiers",
-      "purQuotations",
       "purReceiptItems",
-      "purReceipts",
       "purReconciliationItems",
-      "purReconciliations",
       "purSuppliers",
       "salCompanyAccountDefaults",
       "salCustomers",
-      "salDeliveries",
       "salDeliveryItems",
       "salDeliveryPackBoxes",
       "salDeliveryPackLines",
       "salOrderItems",
-      "salOrders",
       "salQuotationItems",
       "salQuotationTiers",
-      "salQuotations",
       "salReconciliationItems",
-      "salReconciliations",
       "salSettings",
       "scmOrderFlowItems",
       "sysAuditLogs",
@@ -238,7 +185,6 @@
       "sysNumberingRules",
       "sysPrintTemplates",
       "sysRolePermissions",
-      "sysRoles",
       "sysSettings",
       "sysStorages",
       "sysUsers"
@@ -253,8 +199,8 @@
     ]
   },
   "extensible": {
-    "declaredCommands": 55,
-    "adapterCommands": 55,
+    "declaredCommands": 53,
+    "adapterCommands": 53,
     "adapterResources": [
       "accBankTransactions",
       "accBillTransactions",
@@ -266,7 +212,6 @@
       "invStockCounts",
       "invStockDocs",
       "invStockTransfers",
-      "mfgBoms",
       "mfgDemands",
       "mfgOutputs",
       "mfgWorkOrders",
@@ -331,16 +276,16 @@
       "sysUsers"
     ],
     "unconsumedBasicFormResources": [],
-    "normalizedResources": 100,
+    "normalizedResources": 97,
     "formKindCounts": {
       "basic": 17,
-      "none": 48,
+      "none": 45,
       "extension": 35
     },
     "presentationCounts": {
       "basic": 17,
       "extension": 35,
-      "none": 48,
+      "none": 45,
       "reference-only": 0
     },
     "notes": "实测 gaps：adapterCommands=SEMANTIC_COMMAND_ADAPTERS 覆盖的 catalog 命令数；proxyActionHooks=资源实现中的 new Proxy/action transport；legacyUsages=basic 资源 drawer/页面仍手写 required|edit|placeholder；writeStubs=伪造写方法并抛「不支持」的代码点；unconsumedBasicFormResources=未由 useCatalogBasicForm 消费的 basic 资源"
@@ -408,7 +353,7 @@
       "interactive": true,
       "note": "票面影像附件",
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "accBillTransactions",
@@ -584,7 +529,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "invMaterialCategories",
@@ -624,7 +569,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "invStockDocItems",
@@ -640,7 +585,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "invStockEntries",
@@ -664,7 +609,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "invWarehouses",
@@ -704,7 +649,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "mfgDemandItems",
@@ -720,7 +665,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "mfgOperations",
@@ -744,7 +689,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "mfgProcessTemplateItems",
@@ -760,7 +705,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "mfgSettings",
@@ -771,36 +716,12 @@
       "hasDrawer": false
     },
     {
-      "name": "mfgWorkOrderByproducts",
-      "presentation": "none",
-      "interactive": false,
-      "note": "工单副产品快照；打印循环区",
-      "hasTransport": false,
-      "hasDrawer": false
-    },
-    {
-      "name": "mfgWorkOrderComponents",
-      "presentation": "none",
-      "interactive": false,
-      "note": "工单 BOM 配料快照；打印循环区",
-      "hasTransport": false,
-      "hasDrawer": false
-    },
-    {
-      "name": "mfgWorkOrderRoutes",
-      "presentation": "none",
-      "interactive": false,
-      "note": "工单工艺路线快照；打印循环区",
-      "hasTransport": false,
-      "hasDrawer": false
-    },
-    {
       "name": "mfgWorkOrders",
       "presentation": "extension",
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "purOrderItemByproducts",
@@ -832,7 +753,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "purOutsourcedIssueItems",
@@ -848,7 +769,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "purOutsourcedReceiptItemByproducts",
@@ -880,7 +801,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "purQuotationItems",
@@ -896,7 +817,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "purQuotationTiers",
@@ -920,7 +841,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "purReconciliationItems",
@@ -936,7 +857,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "purSuppliers",
@@ -968,7 +889,7 @@
       "interactive": true,
       "note": "AggregateDraftAdapter + 装箱",
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "salDeliveryItems",
@@ -1008,7 +929,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "salQuotationItems",
@@ -1024,7 +945,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "salQuotationTiers",
@@ -1048,7 +969,7 @@
       "interactive": true,
       "note": null,
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "salSettings",
@@ -1120,7 +1041,7 @@
       "interactive": true,
       "note": "builtin 动态隐藏 + 权限矩阵",
       "hasTransport": true,
-      "hasDrawer": false
+      "hasDrawer": true
     },
     {
       "name": "sysSettings",
@@ -1859,7 +1780,7 @@
       "name": "invStockEntries",
       "permissionPrefix": "inv.stock_entry",
       "permissionLabel": "库存分录",
-      "fieldCount": 18,
+      "fieldCount": 14,
       "actionCount": 1,
       "actionKeys": [
         "read"
@@ -1982,40 +1903,26 @@
       "name": "mfgBoms",
       "permissionPrefix": "mfg.bom",
       "permissionLabel": "BOM",
-      "fieldCount": 8,
-      "actionCount": 6,
+      "fieldCount": 7,
+      "actionCount": 4,
       "actionKeys": [
         "read",
         "create",
         "update",
-        "delete",
-        "activate",
-        "deactivate"
+        "delete"
       ],
       "hasForm": true,
-      "formFieldHints": 6,
+      "formFieldHints": 5,
       "formHasSections": false,
       "formHasTabs": false,
-      "extendedActionKeys": [
-        "activate",
-        "deactivate"
-      ],
-      "permissionActionMismatches": [
-        {
-          "key": "activate",
-          "permissionAction": "update"
-        },
-        {
-          "key": "deactivate",
-          "permissionAction": "update"
-        }
-      ]
+      "extendedActionKeys": [],
+      "permissionActionMismatches": []
     },
     {
       "name": "mfgDemandItems",
       "permissionPrefix": "mfg.demand",
       "permissionLabel": "履约需求单",
-      "fieldCount": 26,
+      "fieldCount": 23,
       "actionCount": 1,
       "actionKeys": [
         "read"
@@ -2038,7 +1945,7 @@
         "create",
         "update",
         "delete",
-        "audit",
+        "confirm",
         "close",
         "void"
       ],
@@ -2047,16 +1954,11 @@
       "formHasSections": false,
       "formHasTabs": false,
       "extendedActionKeys": [
-        "audit",
+        "confirm",
         "close",
         "void"
       ],
-      "permissionActionMismatches": [
-        {
-          "key": "audit",
-          "permissionAction": "confirm"
-        }
-      ]
+      "permissionActionMismatches": []
     },
     {
       "name": "mfgOperations",
@@ -2081,7 +1983,7 @@
       "name": "mfgOutputItems",
       "permissionPrefix": "mfg.output",
       "permissionLabel": "生产入库单",
-      "fieldCount": 20,
+      "fieldCount": 17,
       "actionCount": 1,
       "actionKeys": [
         "read"
@@ -2170,68 +2072,17 @@
       "permissionActionMismatches": []
     },
     {
-      "name": "mfgWorkOrderByproducts",
-      "permissionPrefix": "mfg.work_order",
-      "permissionLabel": "生产工单",
-      "fieldCount": 7,
-      "actionCount": 1,
-      "actionKeys": [
-        "read"
-      ],
-      "hasForm": false,
-      "formFieldHints": 0,
-      "formHasSections": false,
-      "formHasTabs": false,
-      "extendedActionKeys": [],
-      "permissionActionMismatches": []
-    },
-    {
-      "name": "mfgWorkOrderComponents",
-      "permissionPrefix": "mfg.work_order",
-      "permissionLabel": "生产工单",
-      "fieldCount": 8,
-      "actionCount": 1,
-      "actionKeys": [
-        "read"
-      ],
-      "hasForm": false,
-      "formFieldHints": 0,
-      "formHasSections": false,
-      "formHasTabs": false,
-      "extendedActionKeys": [],
-      "permissionActionMismatches": []
-    },
-    {
-      "name": "mfgWorkOrderRoutes",
-      "permissionPrefix": "mfg.work_order",
-      "permissionLabel": "生产工单",
-      "fieldCount": 6,
-      "actionCount": 1,
-      "actionKeys": [
-        "read"
-      ],
-      "hasForm": false,
-      "formFieldHints": 0,
-      "formHasSections": false,
-      "formHasTabs": false,
-      "extendedActionKeys": [],
-      "permissionActionMismatches": []
-    },
-    {
       "name": "mfgWorkOrders",
       "permissionPrefix": "mfg.work_order",
       "permissionLabel": "生产工单",
-      "fieldCount": 21,
-      "actionCount": 8,
+      "fieldCount": 20,
+      "actionCount": 5,
       "actionKeys": [
         "read",
         "create",
         "update",
         "delete",
-        "void",
-        "print",
-        "export",
-        "batch_print"
+        "void"
       ],
       "hasForm": true,
       "formFieldHints": 0,

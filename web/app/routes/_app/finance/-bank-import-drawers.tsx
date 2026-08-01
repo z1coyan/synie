@@ -9,11 +9,9 @@ import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import {
-  createBankImport,
+  bankImportClient,
+  bankImportItemClient,
   importBankImport,
-  removeBankImport,
-  removeBankImportItem,
-  updateBankImportItem,
   type BankImportRow,
 } from '~/lib/resources/finance-operations'
 import { resourceBindingFor } from '~/lib/resources/registry'
@@ -204,7 +202,7 @@ export function FinanceBankImportDrawers(props: Props) {
           if (!file) throw new Error('请上传导入文件(xlsx / xls)')
           // 文件上传与业务记录创建保持旧契约的非原子边界。
           const uploaded = await uploadFile(file)
-          const result = (await createBankImport({
+          const result = (await bankImportClient.create({
             ...values,
             fileId: uploaded.file.id,
           })) as BankImportRow
@@ -365,7 +363,7 @@ export function FinanceBankImportDrawers(props: Props) {
           )
         }
         onSubmit={async (values) => {
-          await updateBankImportItem(itemDrawer!.row.id, values)
+          await bankImportItemClient.update(itemDrawer!.row.id, values)
           toast.success('导入行已保存')
           refreshRecord()
         }}
@@ -393,7 +391,7 @@ export function FinanceBankImportDrawers(props: Props) {
                   if (!deleteBatch) return
                   setRunning(true)
                   try {
-                    await removeBankImport(deleteBatch.id)
+                    await bankImportClient.delete(deleteBatch.id)
                     setDeleteBatch(null)
                     props.onChanged()
                     toast.success('导入记录已删除')
@@ -436,7 +434,7 @@ export function FinanceBankImportDrawers(props: Props) {
                   if (!deleteItem) return
                   setRunning(true)
                   try {
-                    await removeBankImportItem(deleteItem.id)
+                    await bankImportItemClient.delete(deleteItem.id)
                     setDeleteItem(null)
                     refreshRecord()
                   } finally {

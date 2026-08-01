@@ -1,10 +1,7 @@
 import type { ReactNode } from 'react'
 import type { FilterState, GridColumnRef, Row } from '../synie-data-grid/types'
-import { MAX_RESOURCE_PAGE_SIZE } from '@synie/shared'
-import type { ResourceQuery, ResourceTransport } from '~/lib/resources/types'
-import { resourceBindingFor } from '~/lib/resources/registry'
-import { readerFromResourceTransport, resourceTransportFromBinding } from '~/lib/resources/catalog'
-import type { ResourceBinding, ResourceReader } from '~/lib/resources/catalog'
+import type { ResourceTransport } from '~/lib/resources/types'
+import { resourceTransportFromResourceBinding } from '~/lib/resources/registry'
 import { resolveResourceLookup } from '~/lib/resources/catalog/lookups'
 import { createReferencePresentation } from '~/lib/resources/catalog/reference-presentation'
 
@@ -22,7 +19,7 @@ export interface RemoteSourceConfig {
   sortField?: string
   /** 远程搜索字段，默认目标资源 lookup.searchFields。 */
   searchFields?: string[]
-  /** 组件 transport 使用的结构化固定筛选。 */
+  /** REST ResourceClient 使用的结构化固定筛选。 */
   filterState?: FilterState
   /** 额外取回字段（renderItem/renderValue 使用）。 */
   fields?: string[]
@@ -38,16 +35,11 @@ export interface RemoteSourceConfig {
 export interface ResolvedSource {
   resource: string
   /** 供远程选项查询使用的最终 Adapter。 */
-  reader: ResourceReader
-  adapterId: string
-  /** @deprecated 仅保留旧调用/测试；选项查询只走 reader。 */
   client: ResourceTransport
   /** 仅调用者确实注入 Adapter 时存在；内嵌 DataGrid 据此保留测试 seam。 */
   explicitClient?: ResourceTransport
   labelField: string
   sortField: string
-  /** 只有显式排序或 Catalog defaultSort 才会进入 lookup query。 */
-  querySort?: ResourceQuery['sort']
   searchFields: string[]
   filterState?: FilterState
   fields: string[]
@@ -58,11 +50,7 @@ export interface ResolvedSource {
 // contract：无 resource-key remote defaults；lookup 归 Catalog，渲染归 ReferencePresentation。
 
 /** gridMeta ref 提供默认，页面 config 覆盖；lookup 归目标资源 Catalog。 */
-export function resolveSource(
-  cfg: Partial<RemoteSourceConfig>,
-  ref?: GridColumnRef | null,
-  injectedBinding?: ResourceBinding,
-): ResolvedSource | null {
+export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumnRef | null): ResolvedSource | null {
   const resource = cfg.resource ?? ref?.resource
   if (!resource) return null
   const lookup = resolveResourceLookup(resource, ref?.labelField ?? 'name')
@@ -73,55 +61,25 @@ export function resolveSource(
   const itemSubtitleFields = cfg.renderItem
     ? []
     : (cfg.itemSubtitleFields ?? lookup.subtitleFields ?? [])
-  const querySort = cfg.sortField
-    ? { column: cfg.sortField, direction: 'ascending' as const }
-    : lookup.defaultSort
-  const sortField = querySort?.column ?? labelField
-  const pageSize = cfg.pageSize ?? 20
-  if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > MAX_RESOURCE_PAGE_SIZE) {
-    throw new Error(`RemoteSelect pageSize 必须是 1..${MAX_RESOURCE_PAGE_SIZE} 的整数`)
-  }
+  const sortField =
+    cfg.sortField ?? lookup.defaultSort?.column ?? labelField
   // 确保 subtitle 字段被取回
   const extraFields = new Set([
     ...(cfg.fields ?? []),
     ...itemSubtitleFields,
     ...searchFields.filter((f) => f !== labelField),
   ])
-  const binding = injectedBinding ?? resourceBindingFor(resource)
   return {
     resource,
-    reader: cfg.client ? readerFromResourceTransport(cfg.client) : binding.reader,
-    adapterId: cfg.client?.id ?? binding.cache.adapterId,
-    client: cfg.client ?? resourceTransportFromBinding(binding),
+    client: cfg.client ?? resourceTransportFromResourceBinding(resource),
     ...(cfg.client ? { explicitClient: cfg.client } : {}),
     labelField,
     sortField,
-    ...(querySort ? { querySort } : {}),
     searchFields: searchFields.length > 0 ? searchFields : [labelField],
     filterState: cfg.filterState,
     fields: [...extraFields],
-    pageSize,
+    pageSize: cfg.pageSize ?? 20,
     itemSubtitleFields,
-  }
-}
-
-/**
- * RemoteSelect 只把服务端已声明的排序发给 lookup。labelField 仅是
- * 显示回退，不代表后端存在该排序 profile；search index 也自行决定顺序。
- */
-export function buildRemoteOptionsQuery(
-  src: ResolvedSource,
-  search: string,
-  cursor: string | null,
-): ResourceQuery {
-  const term = search.trim()
-  return {
-    profile: term ? 'search' : 'lookup',
-    numItems: src.pageSize,
-    cursor,
-    ...(term ? { search: term } : {}),
-    ...(!term && src.querySort ? { sort: src.querySort } : {}),
-    ...(src.filterState ? { filter: src.filterState } : {}),
   }
 }
 

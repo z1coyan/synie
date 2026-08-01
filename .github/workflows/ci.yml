@@ -1,200 +1,107 @@
 name: CI
 
+# 每次 push 与 pull_request 都跑:后端测试+类型,前端自检+类型+构建。
 on:
   push:
   pull_request:
 
-env:
-  CONVEX_VERSION: 19431ea0dd90bc55ae58dbbd06d9aa045f97336f
-
 jobs:
-  static:
-    name: Shared / Convex / Web static gates
+  server:
+    name: Bun server (typecheck + test + codegen freshness)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # PG 集成测试门控变量;指向下方 PostgreSQL service。
+    env:
+      SYNIE_TEST_DATABASE_URL: postgres://synie:synie@localhost:5432/synie_test?sslmode=disable
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: synie
+          POSTGRES_PASSWORD: synie
+          POSTGRES_DB: synie_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U synie -d synie_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
 
+      # monorepo:在仓库根安装全部 workspace(server 不需要 HeroUI 凭证)
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # 迁移测试库(Bun 迁移器)
+      - name: Migrate test database
+        run: bun run db:migrate
+        working-directory: server
+        env:
+          DATABASE_URL: ${{ env.SYNIE_TEST_DATABASE_URL }}
+
+      # 全部测试:单测 + PG 集成(门控变量已设置)
+      - name: Test
+        run: bun test
+        working-directory: server
+
+      - name: Typecheck
+        run: bun run typecheck
+        working-directory: server
+
+      # Kysely 类型新鲜度:改了 schema/迁移却未重新生成即失败
+      - name: Verify DB types are fresh
+        run: |
+          bun run db:codegen
+          git diff --exit-code -- src/db/types.d.ts || {
+            echo "DB 类型不是最新的:请运行 bun run db:codegen 并提交生成物"
+            exit 1
+          }
+        working-directory: server
+        env:
+          DATABASE_URL: ${{ env.SYNIE_TEST_DATABASE_URL }}
+
+  frontend:
+    name: Frontend (checks + typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      # @heroui-pro/react 是私有包,postinstall 需 HEROUI_AUTH_TOKEN 才能拉到真包;
+      # 未配置该 secret 时只会装占位包,下面的 tsc / build 会失败(check 步骤不受影响)。
       - name: Install dependencies
         run: bun install --frozen-lockfile
         env:
           HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
 
-      - name: Reject committed private keys
-        run: |
-          if git grep -nE 'BEGIN (RSA|OPENSSH|EC|DSA) PRIVATE KEY|AKIA[0-9A-Z]{16}' -- .; then
-            echo '检测到疑似私钥或长期云密钥'
-            exit 1
-          fi
-
-      - name: Architecture and generated-source gates
+      # 纯逻辑自检:不依赖 @heroui-pro,无 token 也能跑。
+      - name: Run pure-logic checks
         run: bun run check
 
-      - name: Build Web artifact
+      # 纯函数单测(金额大写等):不依赖 @heroui-pro,无 token 也能跑。
+      - name: Run unit tests
+        run: bun test
+
+      # build / tsc 依赖 @heroui-pro/react 真包 —— 需在仓库配置 HEROUI_AUTH_TOKEN secret,
+      # 否则 Pro 仍是占位包,以下两步会失败。
+      # build 必须在 tsc 之前:routeTree.gen.ts 是 gitignore 的生成物,由 bun run build
+      # (TanStack Router vite 插件)生成,fresh checkout 里不存在;vite/esbuild 只剥类型不做
+      # 类型检查,故 build 先跑不会吞掉类型错误,tsc 仍是独立类型门禁。
+      - name: Build
         run: bun run build
-        env:
-          VITE_CONVEX_URL: http://127.0.0.1:3210
-          VITE_CONVEX_SITE_URL: http://127.0.0.1:3211
-          VITE_SITE_URL: http://127.0.0.1:3000
 
       - name: Typecheck
         run: bun run typecheck
-
-      - name: Unit tests
-        run: bun run test
-
-  convex-infra:
-    name: Self-hosted Convex infrastructure
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      COMPOSE_PROJECT_NAME: synie-convex-ci
-      AWS_ACCESS_KEY_ID: synie-ci
-      AWS_SECRET_ACCESS_KEY: synie-ci-development-only
-      CONVEX_POSTGRES_PASSWORD: convex-ci-development-only
-      SYNIE_PRODUCT_FILES_CORS_ORIGIN: http://localhost:3000
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-
-      - run: bun install --frozen-lockfile
-
-      - name: Validate Compose
-        run: docker compose config --quiet
-
-      - name: Start and verify target infrastructure
-        run: bun run infra:up
-
-      - name: Verify idempotent MinIO bootstrap
-        run: |
-          docker compose run --rm --no-deps minio-init init
-          bun run infra:health
-
-      - name: Verify MinIO fail-closed checks
-        run: |
-          if docker compose run --rm --no-deps \
-            -e MINIO_ROOT_PASSWORD=definitely-wrong \
-            minio-init verify; then
-            echo '错误凭据不应通过 bucket 验证'
-            exit 1
-          fi
-
-      - name: Verify log sanitizer
-        run: |
-          printf '%s\n' \
-            'AWS_SECRET_ACCESS_KEY=synie-ci-development-only' \
-            'CONVEX_SELF_HOSTED_ADMIN_KEY=convex-self-hosted|secret-secret-secret-secret' \
-            | bun infra/convex/sanitize-logs.ts > sanitized.log
-          ! grep -q 'synie-ci-development-only' sanitized.log
-          ! grep -q 'secret-secret-secret-secret' sanitized.log
-
-      - name: Confirm PostgreSQL and S3 backends
-        run: |
-          logs="$(docker compose logs --no-color convex-backend)"
-          test "$(printf '%s' "$logs" | grep -c 'Connected to Postgres database: convex-self-hosted')" -ge 1
-          test "$(printf '%s' "$logs" | grep -c 'S3 .* storage is configured')" -ge 1
-          if printf '%s' "$logs" | grep -Eqi 'falling back to local storage|SQLite'; then
-            echo 'Convex 意外回退到 local storage/SQLite'
-            exit 1
-          fi
-
-      - name: Capture sanitized logs
-        if: failure()
-        run: docker compose logs --no-color | bun infra/convex/sanitize-logs.ts > convex-compose.log
-
-      - name: Upload sanitized logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: convex-infra-logs
-          path: convex-compose.log
-
-      - name: Stop infrastructure without deleting volumes
-        if: always()
-        run: docker compose down --remove-orphans
-
-  convex-auth:
-    name: Self-hosted auth and IAM smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      - run: bun install --frozen-lockfile
-      - run: bun run test:self-hosted-auth
-
-  convex-resources:
-    name: Self-hosted resource plane smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      - run: bun install --frozen-lockfile
-        env:
-          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
-      - run: bunx playwright install --with-deps chromium
-      - run: bun run test:self-hosted-resources
-
-  convex-engines:
-    name: Ledger / inventory / projection smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      - run: bun install --frozen-lockfile
-      - run: bun run test:self-hosted-engines
-
-  storage-restore:
-    name: S3 compatibility and restore drill
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      COMPOSE_PROJECT_NAME: synie-restore-source-ci
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      - run: bun install --frozen-lockfile
-      - run: bun run test:s3-compat
-      - name: Prepare restore source deployment
-        run: |
-          bun run infra:up
-          bun run convex:bootstrap
-      - name: Run portable restore drill
-        run: bun run test:self-hosted-restore
-      - name: Stop restore source deployment without deleting volumes
-        if: always()
-        run: bun run infra:down
-
-  printing:
-    name: Production Web / LibreOffice printing smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      - run: bun install --frozen-lockfile
-        env:
-          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
-      - run: bunx playwright install --with-deps chromium
-      - run: bun run test:printing-self-hosted
-        env:
-          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}

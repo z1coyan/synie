@@ -10,7 +10,7 @@ export function mergeLoadedRows(prev: Row[], incoming: Row[], page: number): Row
   return [...prev, ...incoming.filter((r) => !seen.has(r.id))]
 }
 
-/** 是否还有下一页可加载；游标 isDone 是权威，total 仅供显示。 */
-export function hasMoreRows(isDone: boolean): boolean {
-  return !isDone
+/** 是否还有下一页可加载(已加载 < 总数) */
+export function hasMoreRows(loaded: number, total: number): boolean {
+  return loaded < total
 }

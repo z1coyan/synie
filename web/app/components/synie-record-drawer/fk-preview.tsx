@@ -3,7 +3,6 @@ import { Link } from '@heroui/react'
 import type { GridColumnMeta, Row } from '../synie-data-grid/types'
 import { resolveFkTarget, resolveSource } from '../synie-remote-select/remote-query'
 import { useRemoteRecords } from '../synie-remote-select/use-remote'
-import { useOptionalResourceBinding } from '~/lib/resources/resource-context'
 
 /**
  * fk 速览:openPreview(resource, id) 压栈打开一层 view 态 SynieRecordDrawer,
@@ -22,10 +21,9 @@ export function FkText({ col, row }: { col: GridColumnMeta; row: Row }) {
   const id = row[col.name] == null ? null : String(row[col.name])
   const rel = ref.relation ? ((row[ref.relation] as Row | null | undefined) ?? null) : null
   const target = resolveFkTarget(ref, row)
-  const binding = useOptionalResourceBinding(target?.resource ?? '', target !== null)
   // ponytail: 多态 fk 无 join,逐单元格按 id 反查(有 5min 缓存);量大再上批量反查/后端计算字段
   const resolved = useRemoteRecords(
-    target && binding ? resolveSource(target, undefined, binding) : null,
+    target ? resolveSource(target) : null,
     rel || !id ? [] : [id],
   )
   if (!id) return <span className="text-muted">—</span>

@@ -32,7 +32,7 @@ export interface SortState {
   direction: 'ascending' | 'descending'
 }
 
-/** ResourceBinding 列表查询输入。 */
+/** 列表查询请求体：POST /api/v1/{domain}/{resources}/query */
 export interface ListQuery {
   limit: number
   offset: number
