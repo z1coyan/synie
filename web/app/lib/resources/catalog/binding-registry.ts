@@ -13,6 +13,23 @@ import type {
 } from './types'
 import { createResourceQueryCache } from './query-cache'
 
+const TRANSPORT_CURSOR_PREFIX = 'transport-offset:'
+
+function encodeTransportCursor(offset: number): string {
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('transport offset 非法')
+  return `${TRANSPORT_CURSOR_PREFIX}${offset}`
+}
+
+function decodeTransportCursor(cursor: string | null | undefined): number {
+  if (cursor == null) return 0
+  if (!cursor.startsWith(TRANSPORT_CURSOR_PREFIX)) {
+    throw new Error('cursor 不属于 transport adapter')
+  }
+  const offset = Number(cursor.slice(TRANSPORT_CURSOR_PREFIX.length))
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('transport cursor 非法')
+  return offset
+}
+
 const bindings = new Map<string, ResourceBinding>()
 
 /**
@@ -32,10 +49,7 @@ export function bindingFromResourceTransport(
   const canUpdate = options?.canUpdate ?? true
   const canDelete = options?.canDelete ?? true
 
-  const reader: ResourceReader = {
-    query: (input) => transport.query(input),
-    get: (id) => transport.get(id),
-  }
+  const reader = readerFromResourceTransport(transport)
 
   const hasWriter =
     (canCreate && transport.create != null) ||
@@ -68,6 +82,26 @@ export function bindingFromResourceTransport(
     cache: createResourceQueryCache(resource, transport.id),
     writer,
     loadDocument: () => fetchResourceDocument(resource),
+  }
+}
+
+export function readerFromResourceTransport(transport: ResourceTransport): ResourceReader {
+  return {
+    query: async (input) => {
+      const offset = decodeTransportCursor(input.cursor)
+      const result = await transport.query({ ...input, offset })
+      const nextOffset = offset + result.results.length
+      const isDone = result.results.length === 0 || nextOffset >= result.count
+      return {
+        results: result.results,
+        pageInfo: {
+          continueCursor: isDone ? null : encodeTransportCursor(nextOffset),
+          isDone,
+        },
+        totalCount: result.count,
+      }
+    },
+    get: (id) => transport.get(id),
   }
 }
 
@@ -128,7 +162,18 @@ export function resourceTransportFromBinding(binding: ResourceBinding): Resource
     // 兼容 transport 必须复用 binding 的真实 Adapter identity，否则 custom/memory
     // Reader 产生的查询 key 会与 binding.cache 的失效 scope 永久错位。
     id: binding.cache.adapterId,
-    query: (input) => binding.reader.query(input),
+    query: async (input) => {
+      const page = await binding.reader.query({
+        ...input,
+        profile: input.profile ?? 'default',
+        numItems: input.numItems ?? input.limit ?? 20,
+        cursor: input.cursor ?? (input.offset ? encodeTransportCursor(input.offset) : null),
+      })
+      return {
+        count: page.totalCount ?? page.results.length,
+        results: page.results,
+      }
+    },
     get: (id) => binding.reader.get(id),
     ...(writer && 'create' in writer && writer.create
       ? {

@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from 'react'
 import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import { Tabs } from '@heroui/react'
-import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
+import { useCurrentActor } from '~/lib/actor-context'
+import { hasPermission, permissionSetFromMe } from '~/lib/permissions'
 
 export const Route = createFileRoute('/_app/scm/other-stock')({
   component: OtherStockLayout,
@@ -25,28 +25,27 @@ function OtherStockLayout() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
 
-  const perms = useQuery({
-    queryKey: ['myPermissions'],
-    queryFn: fetchMyPermissions,
-    staleTime: 60_000,
-  })
+  const actor = useCurrentActor()
+  const permissions = useMemo(
+    () => permissionSetFromMe(actor),
+    [actor.permissions, actor.superAdmin],
+  )
 
   // 权限未到前 fail-open 展示全部 tab,避免首屏空白闪;落地后按 read 隐藏
   const tabs = useMemo(() => {
-    if (!perms.data) return [...ALL_TABS]
-    return ALL_TABS.filter((t) => hasPermission(perms.data, t.read))
-  }, [perms.data])
+    return ALL_TABS.filter((t) => hasPermission(permissions, t.read))
+  }, [permissions])
 
   const selected: TabId =
     ALL_TABS.find((t) => pathname.includes(`/scm/other-stock/${t.id}`))?.id ?? 'docs'
 
   // 当前 tab 无权限(或权限落地后当前 tab 被藏):静默落到第一个可访问 tab
   useEffect(() => {
-    if (!perms.data || tabs.length === 0) return
+    if (tabs.length === 0) return
     if (!tabs.some((t) => t.id === selected)) {
       navigate({ to: tabs[0].path, replace: true })
     }
-  }, [perms.data, tabs, selected, navigate])
+  }, [tabs, selected, navigate])
 
   return (
     <>

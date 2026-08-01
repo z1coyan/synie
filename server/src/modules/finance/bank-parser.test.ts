@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseBankImport } from './bank-parser.ts'
+import { parseBankImport } from '@synie/shared'
 
 // fixture 取自归档 Elixir 后端（backend-elixir-final），已收进仓内 testdata
 const samplePath = join(import.meta.dir, 'testdata/bank_import_sample.xls')

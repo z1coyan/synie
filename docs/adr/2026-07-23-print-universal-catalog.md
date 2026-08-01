@@ -1,5 +1,10 @@
 # ADR：打印模板全资源自动接入（字段清单内省派生）
 
+> “仅进入权限目录即自动可打印”已被
+> [Convex 打印 Worker ADR](2026-07-31-convex-print-worker.md) 取代。当前字段仍从 sealed
+> Resource Catalog 派生，但只对已完成一致读取、DocBuilder、权限与 golden test 的显式
+> printable resources 开放。
+
 2026-07-23，拷问访谈定案。本 ADR **修订** [2026-07-23-print-template.md](2026-07-23-print-template.md) 的字段清单部分；初版其余条款（上传即校验、版式主权在 Excel、一条引擎两个产物、批量不碰 PDF 合并、降级切割、模板全局主数据不留痕、权限与入口复用标准动作）全部继承，不再复述。
 
 ## 背景

@@ -14,9 +14,13 @@ function eq(actual: unknown, expected: unknown, label: string) {
 const ref = { resource: 'basCompanies', relation: 'parent', labelField: 'name' }
 
 // resolveSource：ref 提供默认，config 覆盖；都无 resource 为 null。
-eq(resolveSource({}, ref), {
+const defaultSource = resolveSource({}, ref)!
+const { reader: _reader, adapterId, ...defaultShape } = defaultSource
+eq(typeof _reader.query, 'function', 'ref 默认 Reader')
+eq(adapterId, 'convex-unbound:basCompanies', 'ref 默认 Adapter identity')
+eq(defaultShape, {
   resource: 'basCompanies',
-  client: { id: 'rest:basCompanies' },
+  client: { id: 'convex-unbound:basCompanies' },
   labelField: 'name',
   sortField: 'name',
   searchFields: ['name'],

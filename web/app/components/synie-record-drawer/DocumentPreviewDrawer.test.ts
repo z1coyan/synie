@@ -3,7 +3,7 @@ import type { ResourceDocument } from '@synie/shared'
 import type { ResourceBinding } from '~/lib/resources/catalog'
 import { createResourceQueryCache } from '~/lib/resources/catalog'
 import { presentationFor } from '~/lib/resources/presentation'
-import type { ResourceQuery } from '~/lib/resources/types'
+import type { ResourceList, ResourceQuery } from '~/lib/resources/types'
 import type { Row } from '../synie-data-grid/types'
 import {
   documentPreviewLineQuery,
@@ -13,7 +13,7 @@ import type { DocumentPreviewLineTable } from './document-preview'
 
 function memoryBinding(
   resource: string,
-  query: (input: ResourceQuery) => Promise<{ count: number; results: Row[] }>,
+  query: (input: ResourceQuery) => Promise<ResourceList>,
 ): ResourceBinding {
   return {
     resource,
@@ -25,6 +25,11 @@ function memoryBinding(
     loadDocument: async () => ({}) as ResourceDocument,
   }
 }
+
+const done = (results: Row[]): ResourceList => ({
+  results,
+  pageInfo: { continueCursor: null, isDone: true },
+})
 
 function resolver(
   bindings: Record<string, ResourceBinding>,
@@ -41,7 +46,7 @@ describe('Document Preview ResourceBinding seam', () => {
     const calls: ResourceQuery[] = []
     const lineBinding = memoryBinding('invStockDocItems', async (input) => {
       calls.push(input)
-      return { count: 1, results: [{ id: 'line-1', qty: '2' }] }
+      return done([{ id: 'line-1', qty: '2' }])
     })
     const table: DocumentPreviewLineTable = {
       title: '出入库行',
@@ -69,8 +74,9 @@ describe('Document Preview ResourceBinding seam', () => {
     })
     expect(calls).toEqual([
       {
-        limit: 200,
-        offset: 0,
+        profile: 'default',
+        numItems: 200,
+        cursor: null,
         sort: { column: 'idx', direction: 'ascending' },
         fixedFilter: {
           stockDocId: {
@@ -85,10 +91,7 @@ describe('Document Preview ResourceBinding seam', () => {
   })
 
   test('binding.invalidateGrid 的 scope 能命中 preview query key', async () => {
-    const lineBinding = memoryBinding('mfgOutputItems', async () => ({
-      count: 0,
-      results: [],
-    }))
+    const lineBinding = memoryBinding('mfgOutputItems', async () => done([]))
     const query = documentPreviewLineQuery(
       {
         title: '入库条目',
@@ -116,23 +119,20 @@ describe('Document Preview ResourceBinding seam', () => {
     const calls: Array<{ resource: string; input: ResourceQuery }> = []
     const items = memoryBinding('purOutsourcedReceiptItems', async (input) => {
       calls.push({ resource: 'purOutsourcedReceiptItems', input })
-      return {
-        count: 2,
-        results: [{ id: 'item-1' }, { id: 'item-2' }],
-      }
+      return done([{ id: 'item-1' }, { id: 'item-2' }])
     })
     const materials = memoryBinding(
       'purOutsourcedReceiptItemMaterials',
       async (input) => {
         calls.push({ resource: 'purOutsourcedReceiptItemMaterials', input })
-        return { count: 1, results: [{ id: 'material-1' }] }
+        return done([{ id: 'material-1' }])
       },
     )
     const byproducts = memoryBinding(
       'purOutsourcedReceiptItemByproducts',
       async (input) => {
         calls.push({ resource: 'purOutsourcedReceiptItemByproducts', input })
-        return { count: 1, results: [{ id: 'byproduct-1' }] }
+        return done([{ id: 'byproduct-1' }])
       },
     )
     const resolve = resolver({

@@ -36,6 +36,7 @@ export {
   replaceBinding,
   resourceBindingFor,
   resourceTransportFromBinding,
+  readerFromResourceTransport,
 } from './binding-registry'
 export {
   createCommandAdapter,

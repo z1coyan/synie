@@ -6,23 +6,27 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "start": "bun runtime-server.ts",
     "preview": "vite preview",
     "check": "bun app/components/run-checks.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "e2e": "./e2e/run-smoke.sh",
-    "e2e:test": "playwright test",
-    "e2e:api": "playwright test --config=playwright.api.config.ts"
+    "e2e": "playwright test",
+    "e2e:test": "playwright test"
   },
   "dependencies": {
+    "@convex-dev/better-auth": "0.12.5",
+    "@convex-dev/react-query": "0.1.0",
     "@fontsource/noto-serif-sc": "^5.2.8",
     "@heroui-pro/react": "1.0.0-beta.6",
     "@heroui/react": "^3.2.2",
     "@heroui/styles": "^3.2.2",
     "@internationalized/date": "^3.12.2",
     "@number-flow/react": ">=0.5.0",
+    "@synie/shared": "workspace:*",
     "@tanstack/react-query": "^5.101.2",
     "@tanstack/react-router": "^1.0.0",
+    "@tanstack/react-router-ssr-query": "1.167.1",
     "@tanstack/react-start": "^1.0.0",
     "@tiptap/core": ">=3.23.6",
     "@tiptap/extension-link": ">=3.23.6",
@@ -32,6 +36,8 @@
     "@tiptap/react": ">=3.23.6",
     "@tiptap/starter-kit": ">=3.23.6",
     "@tiptap/suggestion": ">=3.23.6",
+    "better-auth": "1.6.25",
+    "convex": "1.42.3",
     "embla-carousel": ">=8.6.0",
     "embla-carousel-react": ">=8.6.0",
     "framer-motion": "^12.42.2",
@@ -50,10 +56,7 @@
     "streamdown": ">=2.5.0",
     "tailwind-merge": ">=3.4.0",
     "tailwind-variants": ">=3.2.0",
-    "tailwindcss": "^4.3.3",
-    "@synie/server": "workspace:*",
-    "@synie/shared": "workspace:*",
-    "hono": "^4.10.7"
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

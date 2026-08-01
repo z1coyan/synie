@@ -14,9 +14,10 @@ import {
 import { resourceLabel } from '~/components/synie-permission-sheet/permission-labels'
 import {
   listNumberableResources,
-  numberingCounterClient,
 } from '~/lib/resources/numbering'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { useResourceBinding } from '~/lib/resources/resource-context'
+import type { ResourceBinding } from '~/lib/resources/catalog'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -38,13 +39,14 @@ function parseSegments(value: unknown): NumberSegment[] {
     .filter((segment): segment is NumberSegment => segment != null)
 }
 
-async function persistCounters(current: Row[], snapshot: Row[]): Promise<string[]> {
+async function persistCounters(binding: ResourceBinding, current: Row[], snapshot: Row[]): Promise<string[]> {
   const errors: string[] = []
   for (const row of current) {
     const old = snapshot.find((item) => item.id === row.id)
     if (!old || String(old.value) === String(row.value)) continue
     try {
-      await numberingCounterClient.update(row.id, { value: Number(row.value) })
+      if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) throw new Error('编号计数器不支持 update')
+      await binding.writer.update(String(row.id), { value: Number(row.value) })
     } catch (error) {
       errors.push(`${String(row.scopeKey)}:${(error as Error).message}`)
     }
@@ -74,10 +76,13 @@ function NumberingPage() {
     'sysNumberingRules',
     '编号规则',
   )
+  const counterBinding = useResourceBinding('sysNumberingCounters')
 
   const numberables = useQuery({
     queryKey: ['numberableResources', client.id],
-    queryFn: listNumberableResources,
+    queryFn: async () => binding.commands
+      ? ((await binding.commands.execute('listNumberables', {})) as { resources: Awaited<ReturnType<typeof listNumberableResources>> }).resources
+      : listNumberableResources(),
     staleTime: 5 * 60_000,
   })
   const fieldsFor = (prefix: unknown) =>
@@ -91,10 +96,9 @@ function NumberingPage() {
       setCountersSnapshot([])
       return
     }
-    numberingCounterClient
+    counterBinding.reader
       .query({
-        limit: 200,
-        offset: 0,
+        profile: 'default', numItems: 200, cursor: null,
         fixedFilter: {
           ruleId: { kind: 'fk', values: [row.id], labels: [] },
         },
@@ -252,7 +256,7 @@ function NumberingPage() {
               throw new Error('编号规则不支持 update')
             }
             await binding.writer.update(drawer!.row!.id, input)
-            const counterErrors = await persistCounters(counters, countersSnapshot)
+            const counterErrors = await persistCounters(counterBinding, counters, countersSnapshot)
             if (counterErrors.length > 0) {
               toast.danger('规则已更新,但部分计数器保存失败', {
                 description: counterErrors.join('; '),

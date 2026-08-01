@@ -4,8 +4,10 @@ import { Button, Checkbox, Modal, Spinner, Table } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
 import { localRowId } from '~/components/synie-editable-table/editable'
 import type { Row } from '~/components/synie-data-grid/types'
-import { apiData, api } from '~/lib/api/client'
-import { salesOrderItemClient } from '~/lib/resources/orders'
+import {
+  getSalesItemCandidates,
+  getSalesItemOccupancies,
+} from '~/lib/resources/manufacturing'
 
 /**
  * 「从销售订单选择」多选对话框(US 2/6):条目池 = 同公司、订单已审核未关闭、
@@ -26,13 +28,23 @@ interface Occupancy {
 }
 
 function parseOccupancies(raw: unknown): Map<string, Occupancy> {
-  const list = Array.isArray(raw) ? raw : []
+  const nested = raw && typeof raw === 'object' && 'results' in raw
+    ? (raw as { results: unknown }).results
+    : raw
+  const list = Array.isArray(nested) ? nested : []
   const map = new Map<string, Occupancy>()
   for (const r of list) {
     const o = (typeof r === 'string' ? JSON.parse(r) : r) as Occupancy
     map.set(o.salesOrderItemId, o)
   }
   return map
+}
+
+function parseCandidates(raw: unknown): Row[] {
+  const nested = raw && typeof raw === 'object' && 'results' in raw
+    ? (raw as { results: unknown }).results
+    : raw
+  return Array.isArray(nested) ? nested as Row[] : []
 }
 
 // 数量是 6 位小数定点:去尾零展示,避免科学计数法与长串零(同库存余额表)
@@ -68,23 +80,7 @@ export function SalesItemPicker(props: {
   const candidates = useQuery({
     queryKey: ['salesItemPool', props.companyId],
     enabled: open && !!props.companyId,
-    queryFn: () =>
-      salesOrderItemClient
-        .query({
-          limit: 200,
-          offset: 0,
-          sort: { column: 'orderDate', direction: 'descending' },
-          filter: {
-            companyId: {
-              kind: 'fk',
-              op: 'in',
-              values: [props.companyId!],
-              labels: [],
-            },
-            orderStatus: { kind: 'enum', values: ['AUDITED'] },
-          },
-        })
-        .then((result) => result.results),
+    queryFn: () => getSalesItemCandidates(props.companyId!).then(parseCandidates),
   })
 
   const ids = useMemo(
@@ -94,12 +90,7 @@ export function SalesItemPicker(props: {
   const occupancies = useQuery({
     queryKey: ['mfgSalesItemOccupancies', ids],
     enabled: open && ids.length > 0,
-    queryFn: () =>
-      apiData(
-        api.manufacturing['sales-item-occupancies'].$post({
-          json: { salesOrderItemIds: ids },
-        }),
-      ).then((result) => parseOccupancies(result.results)),
+    queryFn: () => getSalesItemOccupancies(ids).then(parseOccupancies),
   })
 
   // 条目池:剩余可占用 > 0 且不在本单已纳来源里(占用只认已确认需求单,草稿不占)

@@ -14,7 +14,7 @@ import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { parseBankImport, type ParseTemplate } from './bank-parser.ts'
+import { parseBankImport, type ParseTemplate } from '@synie/shared'
 import { validateOwnBankAccount } from './banking-accounts.ts'
 import { validateTxnShape, type BankTransaction } from './banking-shared.ts'
 import {

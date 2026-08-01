@@ -21,7 +21,7 @@ function binding(resource: string): ResourceBinding {
   return {
     resource,
     reader: {
-      query: async () => ({ count: 0, results: [] }),
+      query: async () => ({ results: [], pageInfo: { continueCursor: null, isDone: true } }),
       get: async () => null,
     },
     cache: createResourceQueryCache(resource, `test:${resource}`),

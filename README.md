@@ -5,8 +5,10 @@ Synie 是一个多公司财务 ERP，**纯 TypeScript monorepo**（Bun workspace
 - `server/`：产品后端 —— Bun + Hono + Kysely + PostgreSQL；`hono/client` 全链路类型契约（`ApiType` 为事实源）。
 - `web/`：TanStack Start 前端 —— React 19、HeroUI Pro、Tailwind v4、TanStack Query、`@synie/server` hono/client。
 - `packages/shared`：前后端共享 TS 契约（Filter DSL、Meta DTO、错误模型、decimal 纪律）。
+- `infra/convex`：迁移目标的自托管 Convex、PostgreSQL 17、MinIO、备份与恢复工具。
 
-前端所有产品请求只访问 `/api/v1`（Vite 代理至 `server`）。
+业务仍默认走 `/api/v1`（Vite 代理至 `server`）；迁移期间本地同时启动目标 Convex 基础设施，
+按事务闭包验收后才在最终阶段删除旧后端，禁止 REST/Convex 双写。
 
 > **登录提示：**JWT HS256 与历史 Phoenix.Token 不兼容。若旧会话无法正常退出，请清除浏览器 `localStorage` 中的 `synie:token` 后重新登录。
 
@@ -29,6 +31,7 @@ Synie 是一个多公司财务 ERP，**纯 TypeScript monorepo**（Bun workspace
 │   ├── app/lib/api/            # hono/client 与 Resource Client
 │   ├── app/lib/resources/      # ResourceClient registry
 │   └── app/routes/             # 页面与路由
+├── infra/convex/               # self-host infra、bucket bootstrap、备份/恢复 smoke
 ├── contracts/                  # 历史 fixtures（authz 等）；HTTP 类型源为 ApiType
 ├── CONTEXT.md                  # 领域术语（ubiquitous language）
 ├── docs/
@@ -47,6 +50,9 @@ Synie 是一个多公司财务 ERP，**纯 TypeScript monorepo**（Bun workspace
 - TypeScript `7.0.2`（固定版本的原生编译器）
 - PostgreSQL 17（推荐使用根目录 Compose）
 - Docker / Docker Compose（推荐开发路径）
+- 固定版本的 self-hosted Convex backend/dashboard（由 Compose 拉取）
+- 本地 MinIO（仅内部开发替身）及 product-only CORS loopback proxy；生产使用第三方
+  S3-compatible provider
 
 VS Code 请安装仓库推荐的 “TypeScript 7” extension（extension id
 `TypeScriptTeam.native-preview`）；工作区配置会启用原生语言服务并使用根目录安装的
@@ -56,7 +62,13 @@ TypeScript 7.0 尚无稳定 Compiler API。未来引入 lint、codegen 或 edito
 若工具会直接导入 `typescript`，必须先评估 TS 7 兼容性，不应默认增加 TypeScript 6
 alias。
 
-Compose 默认把 PostgreSQL 暴露在 `localhost:5441`，数据库、用户和密码均为 `synie`。主要环境变量：
+先复制本地配置；`CONVEX_VERSION` 是 backend/dashboard 共用的完整、不可变 tag：
+
+```bash
+cp .env.example .env
+```
+
+Compose 默认把端口全部绑定在 `127.0.0.1`。主要环境变量：
 
 ```text
 PORT=8080
@@ -64,6 +76,10 @@ HOST=0.0.0.0
 DATABASE_URL=postgres://synie:synie@localhost:5441/synie?sslmode=disable
 AUTH_SECRET=<至少 32 字节的随机值>
 AUTH_TOKEN_TTL=168h
+CONVEX_VERSION=19431ea0dd90bc55ae58dbbd06d9aa045f97336f
+CONVEX_SELF_HOSTED_URL=http://127.0.0.1:3210       # bootstrap 写入 .env.local
+SYNIE_S3_INTERNAL_ENDPOINT=http://minio:9000
+SYNIE_S3_PUBLIC_ENDPOINT=http://localhost:9000
 ```
 
 DDL 由 SQL 迁移唯一管理（`server/db/migrations/` + `server/db/migrate.ts`），不再用 Ecto/Ash 迁移产品数据库。
@@ -77,12 +93,13 @@ bun install
 
 ## 本地启动（一键）
 
-根目录用 **Turborepo** 编排。默认一条命令：起 Postgres → 迁移 → 并行跑 API + 前端。
+根目录用 **Turborepo** 编排。迁移期默认一条命令：启动 legacy PostgreSQL 与目标
+Convex PostgreSQL/MinIO/backend/dashboard → 迁移旧 SQL → 并行跑 API + 前端。
 
 ```bash
 bun install
-bun run dev                 # 一键：docker postgres + migrate + server + web（不 seed）
-bun run dev -- --no-docker  # 跳过 compose，使用已有 DATABASE_URL
+bun run dev                 # 一键：完整迁移期 infra + migrate + server + web（不 seed）
+bun run dev -- --no-docker  # 跳过 compose；要求显式提供 PG、Convex 与 S3
 bun run db:reset            # 开发库复位到未 setup（仅 localhost 等 dev DSN）
 ```
 
@@ -91,10 +108,20 @@ bun run db:reset            # 开发库复位到未 setup（仅 localhost 等 de
 | API | http://localhost:8080 |
 | healthz | http://localhost:8080/api/v1/healthz |
 | 前端 | http://localhost:3000（`/api/v1` 代理到 8080） |
+| Legacy PostgreSQL | `localhost:5441` |
+| Convex PostgreSQL | `localhost:5442` |
+| 产品 S3 API proxy / MinIO console | http://localhost:9000 / http://localhost:9001 |
+| Convex backend / HTTP actions | http://localhost:3210 / http://localhost:3211 |
+| Convex dashboard | http://localhost:6791 |
 
 分项命令（可选）：
 
 ```bash
+bun run dev:infra        # 只启动 legacy PG + Convex/MinIO 基础设施并跑健康门禁
+bun run infra:health     # 镜像/PG/S3/六桶/product-only CORS/backend/dashboard 对拍
+bun run convex:bootstrap # admin key 静默写入 gitignored .env.local（0600）
+bun run infra:logs
+bun run infra:down       # 不带 -v，不删除 volume
 bun run db:up            # 仅 postgres
 bun run db:migrate
 bun run db:reset         # 清空业务数据 → 未 setup（dev only）
@@ -109,6 +136,18 @@ Docker 全容器后端（不跑本机 hot reload）：
 ```bash
 docker compose up --build server
 ```
+
+备份与隔离恢复演练：
+
+```bash
+bun run convex:backup -- /explicit/safe/output-directory
+bun run test:self-hosted-restore -- /explicit/output synie-restore-YYYYMMDD
+```
+
+恢复工具使用包含 Convex file storage 的 portable snapshot，目标栈必须是从未存在过的独立
+project/ports/volumes；它会从源/目标实际读回同一数据库记录与文件并按字节 SHA-256 对拍，不比较 ZIP
+文件本身。演练结束只停止临时容器，不删除 volume。生产责任、升级与告警见
+[`docs/runbooks/convex-self-hosted.md`](docs/runbooks/convex-self-hosted.md)。
 
 ## 常用命令
 
@@ -183,5 +222,11 @@ HEROUI_AUTH_TOKEN=xxx node node_modules/@heroui-pro/react/dist/postinstall/index
 - 使用 `bun run db:migrate` 执行并审查数据库迁移。
 - 通过 seed 或初始化向导创建首个管理员，不在日志或代码中保存口令。
 - 验证 `/api/v1/healthz`、后端测试、前端检查/构建与 Playwright e2e。
+- Convex backend 与 PostgreSQL 17 同 region；backend/dashboard 固定同一 image tag，升级前先 export。
+- Convex 3210/3211 只经 TLS reverse proxy 暴露，dashboard、数据库与 S3 internal endpoint 不公开。
+- 使用通过 SigV4/private/presigned/checksum/CORS 测试的第三方 S3-compatible provider；本地 MinIO
+  只在容器网络提供存储，浏览器经 product-only loopback proxy 访问，不得部署到生产。
+- 配对备份 Convex portable snapshot、PostgreSQL、六个 S3 bucket、函数 Git SHA 与 env secret reference，
+  并按 runbook 定期在全新环境恢复。
 
 历史 Elixir（`backend/`）与 Go（`server-go/`）实现已移出工作树；考古见 git tag `backend-elixir-final` / `server-go-final`。

@@ -11,7 +11,7 @@ const memoryCompanies: ResourceTransport = {
 describe('Remote source Adapter seam', () => {
   test('标准路径只解析 binding，显式测试 Adapter 才发布给内嵌 DataGrid', () => {
     const standard = resolveSource({ resource: 'basCompanies' })
-    expect(standard?.client.id).toBe('rest:basCompanies')
+    expect(standard?.client.id).toBe('convex-unbound:basCompanies')
     expect(standard?.explicitClient).toBeUndefined()
 
     const substituted = resolveSource({

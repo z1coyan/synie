@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Checkbox, Chip, SearchField, Spinner, Table, toast } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
-import { fetchPermissionCatalog, fetchRolePermissions, syncRolePermissions } from '~/lib/resources/iam'
 import {
   CANONICAL_ACTIONS,
   buildSubmit,
@@ -22,6 +21,10 @@ export interface SyniePermissionSheetProps {
   onOpenChange: (open: boolean) => void
   /** 页面按 myPermissions 判后传入:true 时矩阵只读、无保存钮 */
   readOnly?: boolean
+  adapter?: {
+    load(roleId: string): Promise<{ catalog: CatalogGroup[]; rows: GrantedRow[] }>
+    sync(roleId: string, permissions: string[]): Promise<unknown>
+  }
 }
 
 interface Loaded {
@@ -191,11 +194,12 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
     let cancelled = false
     setData(null)
     setError(null)
-    Promise.all([fetchPermissionCatalog(), fetchRolePermissions(roleId)])
-      .then(([catalogResponse, permissionResponse]) => {
+    const load = props.adapter
+      ? props.adapter.load(roleId)
+      : Promise.reject(new Error('权限矩阵未绑定 Convex 命令'))
+    load
+      .then(({ catalog, rows }) => {
         if (cancelled) return
-        const catalog = catalogResponse.groups as CatalogGroup[]
-        const rows = permissionResponse.rows as unknown as GrantedRow[]
         setData({ roleId, catalog, rows })
         setChecked(initialChecked(catalog, rows))
         // 换角色后视图状态归零:搜索、选中域、"更多"展开行
@@ -209,7 +213,7 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
     return () => {
       cancelled = true
     }
-  }, [isOpen, roleId, reloadKey])
+  }, [isOpen, roleId, reloadKey, props.adapter])
 
   // 换角色时 props.roleId 先于 setData(null) 生效的那一帧,data 仍是上一个角色的:isOpen 为
   // true 时用 data.roleId === roleId 兜底,不匹配就当未加载(走 Spinner 分支),避免闪出上一
@@ -248,7 +252,9 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
     if (!loaded || !roleId) return
     setSaving(true)
     try {
-      await syncRolePermissions(roleId, buildSubmit(loaded.catalog, loaded.rows, checked))
+      const permissions = buildSubmit(loaded.catalog, loaded.rows, checked)
+      if (!props.adapter) throw new Error('权限矩阵未绑定 Convex 命令')
+      await props.adapter.sync(roleId, permissions)
       toast.success('权限已保存')
       props.onOpenChange(false)
     } catch (e) {

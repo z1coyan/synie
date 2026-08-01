@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Chip, toast } from '@heroui/react'
-import { fetchMe } from '~/lib/api/session'
-import { roleClient } from '~/lib/resources/iam'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import { useResourceBinding } from '~/lib/resources/resource-context'
+import { useCurrentActor } from '~/lib/actor-context'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
+import { createSystemPresentation } from '~/lib/resources/presentation/system-presentations'
+import type { CatalogGroup, GrantedRow } from '~/components/synie-permission-sheet/matrix'
 import { SyniePermissionSheet } from '~/components/synie-permission-sheet/SyniePermissionSheet'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -40,18 +40,23 @@ function RolesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
   const [permRole, setPermRole] = useState<Row | null>(null)
-  const [myPerms, setMyPerms] = useState<Set<string>>(new Set())
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
-
-  // 权限配置入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
-  useEffect(() => {
-    fetchMe()
-      .then((d) => {
-        setMyPerms(new Set(d.permissions))
-        setIsSuperAdmin(d.superAdmin)
-      })
-      .catch((e) => toast.danger('权限信息加载失败', { description: (e as Error).message }))
-  }, [])
+  const actor = useCurrentActor()
+  const myPerms = new Set(actor.permissions)
+  const isSuperAdmin = actor.superAdmin
+  const binding = useResourceBinding('sysRoles')
+  const presentation = createSystemPresentation(binding)
+  const permissionAdapter = useMemo(() => binding.commands ? ({
+    async load(roleId: string) {
+      const value = await binding.commands!.execute('loadPermissions', { id: roleId }) as {
+        catalog: { groups: CatalogGroup[] }
+        rows: GrantedRow[]
+      }
+      return { catalog: value.catalog.groups, rows: value.rows }
+    },
+    sync(roleId: string, permissions: string[]) {
+      return binding.commands!.execute('syncPermissions', { id: roleId, permissions })
+    },
+  }) : undefined, [binding])
 
   const canConfigure = isSuperAdmin || myPerms.has('sys.role_permission:read')
   const canWrite = isSuperAdmin || (myPerms.has('sys.role_permission:create') && myPerms.has('sys.role_permission:delete'))
@@ -87,9 +92,12 @@ function RolesPage() {
             // 停用角色即收回其全部权限贡献,状态翻转走行动作不进表单(规范)
             ...statusToggleActions({
               field: 'enabled',
-              update: roleClient.update.bind(roleClient),
+              update: (id, input) => {
+                if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) throw new Error('角色不支持 update')
+                return binding.writer.update(id, input)
+              },
               onDone: () =>
-                resourceBindingFor('sysRoles').cache.invalidateGrid(queryClient),
+                binding.cache.invalidateGrid(queryClient),
             }),
           ]}
         />
@@ -97,7 +105,9 @@ function RolesPage() {
 
       <SynieRecordDrawer
         resource="sysRoles"
-        {...drawerConfig('sysRoles')}
+        label={presentation.label}
+        exclude={presentation.exclude}
+        fields={presentation.fields}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(open) => !open && setDrawer(null)}
@@ -109,13 +119,16 @@ function RolesPage() {
             : () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
         }
         onSubmit={async (values, mode) => {
+          if (!binding.writer) throw new Error('角色不支持写入')
           if (mode === 'create') {
-            await roleClient.create(values)
+            if (!('create' in binding.writer) || !binding.writer.create) throw new Error('角色不支持 create')
+            await binding.writer.create(values)
           } else {
-            await roleClient.update(drawer!.row!.id, values)
+            if (!('update' in binding.writer) || !binding.writer.update) throw new Error('角色不支持 update')
+            await binding.writer.update(String(drawer!.row!.id), values)
           }
           toast.success(mode === 'create' ? '角色已创建' : '角色已更新')
-          await resourceBindingFor('sysRoles').cache.invalidateGrid(queryClient)
+          await binding.cache.invalidateGrid(queryClient)
         }}
       />
 
@@ -125,6 +138,7 @@ function RolesPage() {
         isOpen={permRole !== null}
         onOpenChange={(open) => !open && setPermRole(null)}
         readOnly={permReadOnly}
+        adapter={permissionAdapter}
       />
     </>
   )

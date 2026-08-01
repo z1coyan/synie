@@ -6,6 +6,122 @@ on:
   pull_request:
 
 jobs:
+  convex-resources:
+    name: Self-hosted Convex resource plane smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CONVEX_VERSION: 19431ea0dd90bc55ae58dbbd06d9aa045f97336f
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run fresh self-hosted resource plane smoke
+        run: bun run test:self-hosted-resources
+
+  convex-auth:
+    name: Self-hosted Convex auth and IAM smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CONVEX_VERSION: 19431ea0dd90bc55ae58dbbd06d9aa045f97336f
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run fresh self-hosted auth and IAM smoke
+        run: bun run test:self-hosted-auth
+
+  convex-infra:
+    name: Self-hosted Convex infrastructure
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      COMPOSE_PROJECT_NAME: synie-convex-ci
+      CONVEX_VERSION: 19431ea0dd90bc55ae58dbbd06d9aa045f97336f
+      AWS_ACCESS_KEY_ID: synie-ci
+      AWS_SECRET_ACCESS_KEY: synie-ci-development-only
+      CONVEX_POSTGRES_PASSWORD: convex-ci-development-only
+      SYNIE_PRODUCT_FILES_CORS_ORIGIN: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Validate Compose
+        run: docker compose config --quiet
+
+      - name: Start and verify Convex infrastructure
+        run: bun run dev:infra -- --convex-only
+
+      - name: Verify idempotent MinIO bootstrap
+        run: |
+          docker compose run --rm --no-deps minio-init init
+          bun run infra:health -- --convex-only
+
+      - name: Verify MinIO fail-closed checks
+        run: |
+          if docker compose run --rm --no-deps \
+            -e MINIO_ROOT_PASSWORD=definitely-wrong \
+            minio-init verify; then
+            echo '错误凭据不应通过 bucket 验证'
+            exit 1
+          fi
+
+      - name: Verify log sanitizer
+        run: |
+          printf '%s\n' \
+            'AWS_SECRET_ACCESS_KEY=synie-ci-development-only' \
+            'CONVEX_SELF_HOSTED_ADMIN_KEY=convex-self-hosted|secret-secret-secret-secret' \
+            | bun infra/convex/sanitize-logs.ts > sanitized.log
+          ! grep -q 'synie-ci-development-only' sanitized.log
+          ! grep -q 'secret-secret-secret-secret' sanitized.log
+
+      - name: Confirm PostgreSQL and S3 backends
+        run: |
+          logs="$(docker compose logs --no-color convex-backend)"
+          test "$(printf '%s' "$logs" | grep -c 'Connected to Postgres database: convex-self-hosted')" -ge 1
+          test "$(printf '%s' "$logs" | grep -c 'S3 .* storage is configured')" -ge 1
+          if printf '%s' "$logs" | grep -Eqi 'falling back to local storage|SQLite'; then
+            echo 'Convex 意外回退到 local storage/SQLite'
+            exit 1
+          fi
+
+      - name: Capture sanitized logs
+        if: failure()
+        run: docker compose logs --no-color | bun infra/convex/sanitize-logs.ts > convex-compose.log
+
+      - name: Upload sanitized logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: convex-infra-logs
+          path: convex-compose.log
+
+      - name: Stop infrastructure without deleting volumes
+        if: always()
+        run: docker compose down --remove-orphans
+
   server:
     name: Bun server (typecheck + test + codegen freshness)
     runs-on: ubuntu-latest

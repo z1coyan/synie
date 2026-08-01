@@ -1,0 +1,29 @@
+# 本地无下载凭据时，可从先前已合法构建的同 lockfile 镜像复用依赖与
+# LibreOffice 层，再用当前源码重建 dist。正式 CI 仍使用 web/Dockerfile。
+ARG SYNIE_WEB_LICENSED_BASE_IMAGE=synie-web-print:plan007-final
+FROM ${SYNIE_WEB_LICENSED_BASE_IMAGE} AS build
+
+USER root
+COPY --chown=bun:bun . /app
+RUN rm -rf /app/web/dist \
+  && mkdir -p /app/web/node_modules/.vite-temp \
+  && chown -R bun:bun /app/web/node_modules/.vite-temp
+USER bun
+WORKDIR /app/web
+ARG VITE_CONVEX_URL=http://127.0.0.1:3210
+ARG VITE_CONVEX_SITE_URL=http://127.0.0.1:3211
+ARG VITE_SITE_URL=http://127.0.0.1:3000
+ENV VITE_CONVEX_URL=$VITE_CONVEX_URL \
+    VITE_CONVEX_SITE_URL=$VITE_CONVEX_SITE_URL \
+    VITE_SITE_URL=$VITE_SITE_URL
+RUN bun run build
+
+ARG SYNIE_WEB_LICENSED_BASE_IMAGE=synie-web-print:plan007-final
+FROM ${SYNIE_WEB_LICENSED_BASE_IMAGE} AS runtime
+
+USER root
+COPY --from=build --chown=bun:bun /app/web/dist /app/web/dist
+COPY --from=build --chown=bun:bun /app/web/runtime-server.ts /app/web/runtime-server.ts
+COPY --from=build --chown=bun:bun /app/web/package.json /app/web/package.json
+USER bun
+WORKDIR /app/web

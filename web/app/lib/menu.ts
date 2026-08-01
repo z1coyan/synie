@@ -28,7 +28,7 @@ export interface MenuModule {
   groups: MenuGroup[]
 }
 
-export const menuModules: MenuModule[] = [
+const allMenuModules: MenuModule[] = [
   {
     key: 'dashboard',
     label: '工作台',
@@ -214,13 +214,7 @@ export const menuModules: MenuModule[] = [
           { label: '打印模板', path: '/system/print-templates' },
         ],
       },
-      {
-        label: '文件存储',
-        items: [
-          { label: '存储接入', path: '/system/storages' },
-          { label: '文件管理', path: '/system/files' },
-        ],
-      },
+      { label: '文件存储', items: [{ label: '文件管理', path: '/system/files' }] },
       {
         label: '审计',
         items: [{ label: '操作日志', path: '/system/logs' }],
@@ -228,6 +222,8 @@ export const menuModules: MenuModule[] = [
     ],
   },
 ]
+
+export const menuModules: MenuModule[] = allMenuModules
 
 export function isPathActive(pathname: string, itemPath: string): boolean {
   if (itemPath === '/') return pathname === '/'

@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -8,17 +9,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Button, toast } from '@heroui/react'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
-import { useDocItems } from '~/components/synie-editable-table/use-doc-items'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import { aggregateDraftFor, resourceBindingFor } from '~/lib/resources/registry'
 import { hasPermission } from '~/lib/permissions'
-import {
-  demandClient,
-  demandItemClient,
-} from '~/lib/resources/manufacturing'
 import {
   auditMaterialCell,
   type AuditDocConfig,
@@ -59,12 +55,11 @@ export function useDemandDrawer(): OpenDemandDrawer {
   return useContext(DemandDrawerContext)
 }
 
-// 需求行脚手架（取数/持久化）走共用 useDocItems。
-const ITEMS = {
-  label: '需求行',
-  docIdField: 'demandId',
-  client: demandItemClient,
-  itemInput: (row: Row) => ({
+const demandDraft = aggregateDraftFor('mfgDemands')
+
+function itemInput(row: Row) {
+  return {
+    ...(isLocalRow(row) ? {} : { id: row.id }),
     idx: row.idx,
     materialId: row.materialId,
     unitId: row.unitId,
@@ -72,16 +67,7 @@ const ITEMS = {
     needDate: row.needDate ?? null,
     salesOrderItemId: row.salesOrderItemId || null,
     remarks: row.remarks ?? null,
-  }),
-  itemKeys: [
-    'idx',
-    'materialId',
-    'unitId',
-    'qty',
-    'needDate',
-    'salesOrderItemId',
-    'remarks',
-  ] as const,
+  }
 }
 
 export const DEMAND_AUDIT_CONFIG = {
@@ -90,18 +76,12 @@ export const DEMAND_AUDIT_CONFIG = {
   commandKey: 'audit',
   itemsResource: 'mfgDemandItems',
   loadItems: (demandId) =>
-    demandItemClient
+    resourceBindingFor('mfgDemandItems').reader
       .query({
-        limit: 200,
-        offset: 0,
-        filter: {
-          demandId: {
-            kind: 'fk',
-            op: 'in',
-            values: [demandId],
-            labels: [],
-          },
-        },
+        profile: 'default',
+        numItems: 200,
+        cursor: null,
+        fixedFilter: { demandId },
         sort: { column: 'idx', direction: 'ascending' },
       })
       .then((result) => result.results),
@@ -126,14 +106,15 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
     mode: DrawerMode
     demand: DemandRef | null
   } | null>(null)
-  const { items, setItems, itemsLoaded, load, persistItems } =
-    useDocItems(ITEMS)
+  const [items, setItems] = useState<Row[]>([])
+  const [itemsLoaded, setItemsLoaded] = useState(false)
+  const requestRef = useRef(0)
   const queryClient = useQueryClient()
   const perms = useMyPermissions()
 
   // 行级操作后重拉抽屉里的需求行（行状态已变）。
   const itemActions = useDemandItemActions(() => {
-    if (drawer?.demand) load(drawer.demand.id)
+    if (drawer?.demand) void loadItems(drawer.demand.id)
   })
 
   const canCreateWorkOrder = hasPermission(
@@ -141,9 +122,30 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
     'mfg.work_order:create',
   )
 
+  const loadItems = async (id: string) => {
+    const request = ++requestRef.current
+    setItemsLoaded(false)
+    try {
+      const draft = await demandDraft.loadDraft(id) as Row
+      if (request !== requestRef.current) return
+      setItems((draft.items as Row[] | undefined) ?? [])
+      setItemsLoaded(true)
+    } catch (error) {
+      if (request !== requestRef.current) return
+      setItems([])
+      toast.danger('需求行加载失败', { description: (error as Error).message })
+    }
+  }
+
   const openDrawer: OpenDemandDrawer = (mode, demand) => {
     setDrawer({ mode, demand })
-    load(mode === 'create' || !demand ? null : demand.id)
+    if (mode === 'create' || !demand) {
+      ++requestRef.current
+      setItems([])
+      setItemsLoaded(true)
+    } else {
+      void loadItems(demand.id)
+    }
   }
 
   const draftOnly =
@@ -295,18 +297,15 @@ export function DemandDrawerProvider({ children }: { children: ReactNode }) {
         onSubmit={async (values, mode) => {
           // 返回值供抽屉「保存并审核」取 id 调审核命令。
           let savedId: string
+          const input = { ...values, items: items.map(itemInput) }
           if (mode === 'create') {
-            const created = await demandClient.create(values)
+            const created = await demandDraft.createDraft(input) as Row
             savedId = String(created.id)
-            const lineErrors = await persistItems(savedId)
-            if (lineErrors.length) throw new Error(lineErrors.join('; '))
             toast.success('需求单已创建')
           } else {
             savedId = drawer!.demand!.id
-            await demandClient.update(savedId, values)
             if (draftOnly) {
-              const lineErrors = await persistItems(savedId)
-              if (lineErrors.length) throw new Error(lineErrors.join('; '))
+              await demandDraft.replaceDraft(savedId, input)
             }
             toast.success('需求单已更新')
           }

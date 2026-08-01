@@ -61,7 +61,7 @@ function inMemoryResourceAdapter(
   let rows = initial.map((row) => ({ ...row })) as Array<{ id: string } & Record<string, unknown>>
   return {
     id: `memory:${resource}`,
-    query: async ({ limit, offset }) => ({
+    query: async ({ limit = 20, offset = 0 }) => ({
       count: rows.length,
       results: rows.slice(offset, offset + limit),
     }),
@@ -156,7 +156,7 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     ])
   })
 
-  test('生产 Hono Adapter 与测试 in-memory Adapter 在同一 seam 下隔离缓存身份', () => {
+  test('生产 Convex 绑定占位与测试 in-memory Adapter 隔离缓存身份', () => {
     const production = bindingFromResourceTransport(
       'basCurrencies',
       currencyClient,
@@ -173,7 +173,7 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
     expect(production.cache.gridScope).not.toEqual(memory.cache.gridScope)
     expect(production.cache.gridScope).toEqual([
       'gridRows',
-      'rest:basCurrencies',
+      'convex-unbound:basCurrencies',
       'basCurrencies',
     ])
     for (const binding of [production, memory, custom]) {

@@ -9,7 +9,6 @@ import {
   defineCommand,
   executeSingleRowCommand,
 } from './commands'
-import { storageCommandAdapter } from '../files'
 import { attendanceDayCommandAdapter } from '../hr-operations'
 import { bankTransactionCommandAdapter } from '../finance-operations'
 import { glJournalCommandAdapter } from '../accounting'
@@ -93,15 +92,6 @@ describe('已迁移语义 CommandAdapter 契约', () => {
     expect(received).toEqual(['saved-order-id', 'legacy:old-handler-id'])
     expect(adapter.commands.audit.affectedResources).toEqual(['orderItems'])
     expect(adapter.commands.legacy.affectedResources).toBeUndefined()
-  })
-
-  test('setDefault：row target，语义 key 与 capability 分离', async () => {
-    expect(storageCommandAdapter.commands.setDefault.target).toBe('row')
-    expect(Object.keys(storageCommandAdapter.commands)).toEqual(['setDefault'])
-    // 非法 target 在 execute 边界失败（不发起 transport）
-    await expect(
-      storageCommandAdapter.execute('setDefault', { ids: ['a'] } as never),
-    ).rejects.toThrow(/不接受 ids/)
   })
 
   test('recalc：collection target，不要求记录 ID', async () => {

@@ -2,11 +2,8 @@
  * Catalog client：解码并缓存完整 ResourceDocument v2。
  * Meta 响应即 ResourceDocument（无 v1 grid/form envelope）。
  */
-import {
-  decodeResourceDocument,
-  type ResourceDocument,
-} from '@synie/shared'
-import { api, apiData } from '~/lib/api/client'
+import type { ResourceDocument } from '@synie/shared'
+import { resourceBindingFor } from './binding-registry'
 import {
   getCachedDocument,
   setCachedDocument,
@@ -16,11 +13,7 @@ export async function fetchResourceDocument(resource: string): Promise<ResourceD
   const cached = getCachedDocument(resource)
   if (cached) return cached
 
-  const raw = await apiData(
-    api.meta.resources[':name'].$get({ param: { name: resource } }),
-  )
-
-  const document = decodeResourceDocument(raw)
+  const document = await resourceBindingFor(resource).loadDocument()
   setCachedDocument(resource, document)
   return document
 }

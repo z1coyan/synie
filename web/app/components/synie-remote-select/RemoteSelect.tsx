@@ -5,6 +5,7 @@ import type { Row } from '../synie-data-grid/types'
 import { RemoteOptionsPopover } from './options-popover'
 import { optionLabel, resolveSource, type RemoteSourceConfig } from './remote-query'
 import { useRemoteOptions, useRemoteRecords } from './use-remote'
+import { useResourceBinding } from '~/lib/resources/resource-context'
 
 export interface RemoteSelectProps extends RemoteSourceConfig {
   value: string | null
@@ -18,7 +19,8 @@ export interface RemoteSelectProps extends RemoteSourceConfig {
 }
 
 export function RemoteSelect(props: RemoteSelectProps) {
-  const src = resolveSource(props)
+  const binding = useResourceBinding(props.resource)
+  const src = resolveSource(props, undefined, binding)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   // 草稿即时回显,停稳 300ms 才发请求(useDraft 先例)

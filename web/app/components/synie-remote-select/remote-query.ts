@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react'
 import type { FilterState, GridColumnRef, Row } from '../synie-data-grid/types'
 import type { ResourceTransport } from '~/lib/resources/types'
-import { resourceTransportFromResourceBinding } from '~/lib/resources/registry'
+import { resourceBindingFor } from '~/lib/resources/registry'
+import { readerFromResourceTransport, resourceTransportFromBinding } from '~/lib/resources/catalog'
+import type { ResourceBinding, ResourceReader } from '~/lib/resources/catalog'
 import { resolveResourceLookup } from '~/lib/resources/catalog/lookups'
 import { createReferencePresentation } from '~/lib/resources/catalog/reference-presentation'
 
@@ -19,7 +21,7 @@ export interface RemoteSourceConfig {
   sortField?: string
   /** 远程搜索字段，默认目标资源 lookup.searchFields。 */
   searchFields?: string[]
-  /** REST ResourceClient 使用的结构化固定筛选。 */
+  /** 组件 transport 使用的结构化固定筛选。 */
   filterState?: FilterState
   /** 额外取回字段（renderItem/renderValue 使用）。 */
   fields?: string[]
@@ -35,6 +37,9 @@ export interface RemoteSourceConfig {
 export interface ResolvedSource {
   resource: string
   /** 供远程选项查询使用的最终 Adapter。 */
+  reader: ResourceReader
+  adapterId: string
+  /** @deprecated 仅保留旧调用/测试；选项查询只走 reader。 */
   client: ResourceTransport
   /** 仅调用者确实注入 Adapter 时存在；内嵌 DataGrid 据此保留测试 seam。 */
   explicitClient?: ResourceTransport
@@ -50,7 +55,11 @@ export interface ResolvedSource {
 // contract：无 resource-key remote defaults；lookup 归 Catalog，渲染归 ReferencePresentation。
 
 /** gridMeta ref 提供默认，页面 config 覆盖；lookup 归目标资源 Catalog。 */
-export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumnRef | null): ResolvedSource | null {
+export function resolveSource(
+  cfg: Partial<RemoteSourceConfig>,
+  ref?: GridColumnRef | null,
+  injectedBinding?: ResourceBinding,
+): ResolvedSource | null {
   const resource = cfg.resource ?? ref?.resource
   if (!resource) return null
   const lookup = resolveResourceLookup(resource, ref?.labelField ?? 'name')
@@ -69,9 +78,12 @@ export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumn
     ...itemSubtitleFields,
     ...searchFields.filter((f) => f !== labelField),
   ])
+  const binding = injectedBinding ?? resourceBindingFor(resource)
   return {
     resource,
-    client: cfg.client ?? resourceTransportFromResourceBinding(resource),
+    reader: cfg.client ? readerFromResourceTransport(cfg.client) : binding.reader,
+    adapterId: cfg.client?.id ?? binding.cache.adapterId,
+    client: cfg.client ?? resourceTransportFromBinding(binding),
     ...(cfg.client ? { explicitClient: cfg.client } : {}),
     labelField,
     sortField,

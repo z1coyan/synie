@@ -1,6 +1,7 @@
-import { api, apiData } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
-import type { ResourceTransport } from './types'
+import type { ResourceClient } from './types'
+import { financeOcrConfigured } from './finance-operations'
+import { unboundResourceClient } from './unbound'
 
 export interface SalesSetting {
   id: string
@@ -20,12 +21,7 @@ export interface ManufacturingSetting {
   updatedAt: string
 }
 
-export interface AccountingSetting {
-  id: string
-  ocrAccessKeyId?: string | null
-  insertedAt: string
-  updatedAt: string
-}
+export interface AccountingSetting { id: string; insertedAt: string; updatedAt: string }
 
 export interface SystemSetting {
   id: string
@@ -38,86 +34,34 @@ export interface SystemSetting {
   updatedAt: string
 }
 
-type SingletonGetter = () => Promise<Row>
-type SingletonUpdater = (input: Record<string, unknown>) => Promise<Row>
+export const salesSettingClient = unboundResourceClient('salSettings')
+export const manufacturingSettingClient = unboundResourceClient('mfgSettings')
+export const accountingSettingClient = unboundResourceClient('accSettings')
+export const systemSettingClient = unboundResourceClient('sysSettings')
 
-function singletonClient(
-  resource: string,
-  get: SingletonGetter,
-  update: SingletonUpdater,
-): ResourceTransport {
-  return {
-    id: `rest:${resource}`,
-    async query() {
-      const value = await get()
-      return { count: 1, results: [value] }
-    },
-    async get(id) {
-      const value = await get()
-      return value.id === id ? value : null
-    },
-    update(_id, input) {
-      return update(input)
-    },
-  }
+async function singleton<T>(client: ResourceClient): Promise<T> {
+  const page = await client.query({ profile: 'default', numItems: 1, cursor: null })
+  const row = page.results[0]
+  if (!row) throw new Error('设置尚未初始化')
+  return row as T
 }
 
-export function getSalesSetting() {
-  return apiData(api.settings['supply-chain'].$get())
+async function updateSingleton<T>(client: ResourceClient, input: Record<string, unknown>): Promise<T> {
+  const current = await singleton<Row>(client)
+  if (!client.update) throw new Error('设置不支持更新')
+  return await client.update(current.id, input) as T
 }
 
-export function updateSalesSetting(input: Record<string, unknown>) {
-  return apiData(api.settings['supply-chain'].$patch({ json: input as never }))
-}
-
-export function getManufacturingSetting() {
-  return apiData(api.settings.production.$get())
-}
-
-export function updateManufacturingSetting(input: Record<string, unknown>) {
-  return apiData(api.settings.production.$patch({ json: input as never }))
-}
-
-export function getAccountingSetting() {
-  return apiData(api.settings.finance.$get())
-}
-
-export function updateAccountingSetting(input: Record<string, unknown>) {
-  return apiData(api.settings.finance.$patch({ json: input as never }))
-}
-
-export function getAccountingOCRConfigured() {
-  return apiData(api.settings.finance['ocr-configured'].$get())
-}
-
-export function getSystemSetting() {
-  return apiData(api.settings.system.$get())
-}
-
-export function updateSystemSetting(input: Record<string, unknown>) {
-  return apiData(api.settings.system.$patch({ json: input as never }))
-}
-
-export const salesSettingClient = singletonClient(
-  'salSettings',
-  async () => (await getSalesSetting()) as unknown as Row,
-  async (input) => (await updateSalesSetting(input)) as unknown as Row,
-)
-
-export const manufacturingSettingClient = singletonClient(
-  'mfgSettings',
-  async () => (await getManufacturingSetting()) as unknown as Row,
-  async (input) => (await updateManufacturingSetting(input)) as unknown as Row,
-)
-
-export const accountingSettingClient = singletonClient(
-  'accSettings',
-  async () => (await getAccountingSetting()) as unknown as Row,
-  async (input) => (await updateAccountingSetting(input)) as unknown as Row,
-)
-
-export const systemSettingClient = singletonClient(
-  'sysSettings',
-  async () => (await getSystemSetting()) as unknown as Row,
-  async (input) => (await updateSystemSetting(input)) as unknown as Row,
-)
+export const getSalesSetting = () => singleton<SalesSetting>(salesSettingClient)
+export const updateSalesSetting = (input: Record<string, unknown>) =>
+  updateSingleton<SalesSetting>(salesSettingClient, input)
+export const getManufacturingSetting = () => singleton<ManufacturingSetting>(manufacturingSettingClient)
+export const updateManufacturingSetting = (input: Record<string, unknown>) =>
+  updateSingleton<ManufacturingSetting>(manufacturingSettingClient, input)
+export const getAccountingSetting = () => singleton<AccountingSetting>(accountingSettingClient)
+export const updateAccountingSetting = (input: Record<string, unknown>) =>
+  updateSingleton<AccountingSetting>(accountingSettingClient, input)
+export const getSystemSetting = () => singleton<SystemSetting>(systemSettingClient)
+export const updateSystemSetting = (input: Record<string, unknown>) =>
+  updateSingleton<SystemSetting>(systemSettingClient, input)
+export const getAccountingOCRConfigured = () => financeOcrConfigured()

@@ -4,7 +4,7 @@ import { Button, Card, Spinner, toast } from '@heroui/react'
 import type { FilterState } from '~/components/synie-data-grid/types'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { fetchSalesCompanyAccountDefaults } from '~/lib/resources/fulfillment'
-import { companyAccountDefaultClient } from '~/lib/resources/reconciliations'
+import { useResourceBinding } from '~/lib/resources/resource-context'
 
 type CompanyDefaultRow = {
   id: string
@@ -38,12 +38,13 @@ export function CompanyAccountDefaultsCard({ side }: { side: CompanyAccountSide 
   const [creditId, setCreditId] = useState<string | null>(null)
   const [rowId, setRowId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const binding = useResourceBinding('salCompanyAccountDefaults')
 
   const defaultsQuery = useQuery({
-    queryKey: ['salCompanyAccountDefaults', companyId],
+    queryKey: binding.cache.gridKey('company', companyId),
     enabled: companyId != null && companyId !== '',
     queryFn: () =>
-      fetchSalesCompanyAccountDefaults(String(companyId)) as Promise<CompanyDefaultRow | null>,
+      binding.reader.query({ profile: 'default', numItems: 1, cursor: null, fixedFilter: { companyId: String(companyId) } }).then((page) => (page.results[0] as CompanyDefaultRow | undefined) ?? null),
   })
 
   useEffect(() => {
@@ -84,7 +85,8 @@ export function CompanyAccountDefaultsCard({ side }: { side: CompanyAccountSide 
                 receiptDebitAccountId: debitId,
                 receiptCreditAccountId: creditId,
               }
-        await companyAccountDefaultClient.update?.(rowId, input)
+        if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) throw new Error('默认科目不支持 update')
+        await binding.writer.update(rowId, input)
       } else {
         const input =
           side === 'delivery'
@@ -98,10 +100,12 @@ export function CompanyAccountDefaultsCard({ side }: { side: CompanyAccountSide 
                 receiptDebitAccountId: debitId,
                 receiptCreditAccountId: creditId,
               }
-        await companyAccountDefaultClient.create?.(input)
+        if (!binding.writer || !('create' in binding.writer) || !binding.writer.create) throw new Error('默认科目不支持 create')
+        await binding.writer.create(input)
       }
       toast.success(side === 'delivery' ? '发货默认科目已保存' : '入库默认科目已保存')
       queryClient.invalidateQueries({ queryKey: ['salCompanyAccountDefaults'] })
+      await binding.cache.invalidateGrid(queryClient)
     } catch (e) {
       toast.danger('保存失败', { description: (e as Error).message })
     } finally {

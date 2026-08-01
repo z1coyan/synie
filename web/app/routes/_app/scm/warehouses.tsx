@@ -1,18 +1,17 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Label, Link, ListBox, Select, toast } from '@heroui/react'
+import { Button, Label, Link, ListBox, Select, toast } from '@heroui/react'
 import { EmptyState } from '@heroui-pro/react'
-import { companyClient } from '~/lib/resources/companies'
-import { warehouseClient } from '~/lib/resources/inventory'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
-import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
-import { resourceBindingFor } from '~/lib/resources/registry'
+import type { Row } from '~/components/synie-data-grid/types'
+import { useResourceBinding } from '~/lib/resources/resource-context'
+import { useWarehouseSupport } from '~/lib/resources/warehouse-support'
+import { useResourceDocument } from '~/lib/resources/catalog/use-resource-document'
 
 export const Route = createFileRoute('/_app/scm/warehouses')({
   component: WarehousesPage,
@@ -57,44 +56,36 @@ const GRID_OVERRIDES: Record<string, ColumnOverride> = {
 
 function WarehousesPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
-  const [companyRow, setCompanyRow] = useState<Row | null>(null)
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   // 树的子层缓存在表格组件本地,写后 invalidate 只能刷新根层——一并 remount 清空子层与展开态
   const [reloadKey, setReloadKey] = useState(0)
+  const [seeding, setSeeding] = useState(false)
   const queryClient = useQueryClient()
+  const binding = useResourceBinding('invWarehouses')
+  const support = useWarehouseSupport()
+  const document = useResourceDocument('invWarehouses')
+  const canSeedDefaults = document.data?.commands.some((command) => command.key === 'seedDefaults') === true
 
   // 公司列表:默认第一家,并作为选择器回显数据(同科目表页先例)
-  const companies = useQuery({
-    queryKey: ['warehouseCompanies'],
-    queryFn: () =>
-      companyClient.query({
-        limit: 50,
-        offset: 0,
-        sort: { column: 'code', direction: 'ascending' },
-      }),
+  const context = useQuery({
+    queryKey: ['warehouseContext', support.id, companyId],
+    queryFn: () => support.load(companyId),
   })
 
   useEffect(() => {
-    if (companyId == null && (companies.data?.results?.length ?? 0) >= 1) {
-      const first = companies.data!.results[0]
+    if (companyId == null && (context.data?.companies.length ?? 0) >= 1) {
+      const first = context.data!.companies[0]
       setCompanyId(first.id)
-      setCompanyRow(first)
     }
-  }, [companies.data, companyId])
+  }, [context.data, companyId])
 
-  // 上级候选：同公司、非叶子；循环关系由后端校验兜底。
-  const companyFilterState: FilterState = {
-    companyId: { kind: 'fk', op: 'in', values: companyId ? [companyId] : [], labels: [] },
+  const companyFilterState = {
+    companyId: { kind: 'fk' as const, op: 'in' as const, values: companyId ? [companyId] : [], labels: [] },
   }
-  const parentFilterState: FilterState = {
-    companyId: { kind: 'fk', op: 'in', values: companyId ? [companyId] : [], labels: [] },
-    isLeaf: { kind: 'bool', eq: false },
-  }
-  // 关联科目候选：本公司、非汇总、本币（未指定币种）科目。
-  const accountFilterState: FilterState = {
-    companyId: { kind: 'fk', op: 'in', values: companyId ? [companyId] : [], labels: [] },
-    isGroup: { kind: 'bool', eq: false },
-    currencyId: { kind: 'fk', op: 'isNil', values: [], labels: [] },
+
+  const updateWarehouse = (id: string, input: Record<string, unknown>) => {
+    if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) throw new Error('仓库不支持 update')
+    return binding.writer.update(id, input)
   }
 
   return (
@@ -104,18 +95,41 @@ function WarehousesPage() {
         按公司维护仓库树;外协仓必挂一个协作方(供应商/内部公司),其结存即协作方处的我方材料结存。
       </p>
 
-      <div className="mt-6 max-w-xs">
-        <RemoteSelect
-          resource="basCompanies"
-          label="公司"
-          placeholder="选择公司…"
-          value={companyId}
-          initialRows={companyRow ? [companyRow] : (companies.data?.results ?? [])}
-          onChange={(id, row) => {
-            setCompanyId(id)
-            setCompanyRow(row)
+      <div className="mt-6 flex max-w-xl items-end gap-3">
+        <div className="min-w-0 flex-1">
+        <Select value={companyId} onChange={(value) => {
+          const id = value == null || value === '' ? null : String(value)
+          setCompanyId(id)
+        }}>
+          <Label>公司</Label>
+          <Select.Trigger><Select.Value>{({ isPlaceholder, defaultChildren }) => isPlaceholder ? '选择公司…' : defaultChildren}</Select.Value><Select.Indicator /></Select.Trigger>
+          <Select.Popover><ListBox>{(context.data?.companies ?? []).map((item) => <ListBox.Item key={item.id} id={item.id} textValue={item.name}>{item.code ? `${item.code} - ${item.name}` : item.name}<ListBox.ItemIndicator /></ListBox.Item>)}</ListBox></Select.Popover>
+        </Select>
+        </div>
+        {canSeedDefaults && <Button
+          variant="secondary"
+          isDisabled={!companyId}
+          isPending={seeding}
+          onPress={async () => {
+            if (!companyId || !binding.commands?.commands.seedDefaults) return
+            setSeeding(true)
+            try {
+              const count = await binding.commands.execute('seedDefaults', { companyId })
+              toast.success(count > 0 ? '默认仓库已初始化' : '默认仓库已经存在')
+              await binding.cache.invalidateAll(queryClient)
+              await context.refetch()
+              setReloadKey((key) => key + 1)
+            } catch (error) {
+              toast.danger('初始化默认仓库失败', {
+                description: error instanceof Error ? error.message : '请稍后重试',
+              })
+            } finally {
+              setSeeding(false)
+            }
           }}
-        />
+        >
+          初始化默认仓库
+        </Button>}
       </div>
 
       <div className="mt-6">
@@ -140,7 +154,7 @@ function WarehousesPage() {
             onEdit={(row) => setDrawer({ mode: 'edit', row })}
             rowActions={statusToggleActions({
               field: 'active',
-              update: warehouseClient.update,
+              update: updateWarehouse,
               // 树的子层缓存在组件本地,refetch 只刷根层,remount 一并清子层
               onDone: () => setReloadKey((k) => k + 1),
             })}
@@ -157,13 +171,18 @@ function WarehousesPage() {
         // 表格列是白名单子集(无时间戳),行数据不全;不传 row,走 rowId 自查完整记录
         rowId={drawer?.row?.id}
         // 启用是状态不是表单字段(规范):新建默认启用,启停走列表行动作;叶子是固有属性留在表单
-        exclude={['active']}
+        exclude={['active', 'companyId']}
         fields={{
           name: { order: 0, required: true, placeholder: '如 原材料仓' },
           parentId: {
             order: 1,
             label: '上级仓库',
-            remote: { filterState: parentFilterState },
+            input: ({ value, onChange, isDisabled }) => (
+              <Select isDisabled={isDisabled} value={value == null ? null : String(value)} onChange={(next) => onChange(next === '' ? null : next)}>
+                <Label>上级仓库</Label><Select.Trigger><Select.Value>{({ isPlaceholder, defaultChildren }) => isPlaceholder ? '请选择…' : defaultChildren}</Select.Value><Select.Indicator /></Select.Trigger>
+                <Select.Popover><ListBox>{(context.data?.parents ?? []).map((item) => <ListBox.Item key={item.id} id={item.id} textValue={item.name}>{item.name}<ListBox.ItemIndicator /></ListBox.Item>)}</ListBox></Select.Popover>
+              </Select>
+            ),
           },
           // 默认叶子;要建归集节点(挂子仓)手动关掉,与物料分类同语义
           isLeaf: { order: 2, cols: 6, defaultValue: true },
@@ -171,11 +190,12 @@ function WarehousesPage() {
             order: 3,
             cols: 6,
             label: '关联科目',
-            remote: {
-              filterState: accountFilterState,
-              searchFields: ['name', 'code'],
-              itemSubtitleFields: ['code'],
-            },
+            input: ({ value, onChange, isDisabled }) => (
+              <Select isDisabled={isDisabled} value={value == null ? null : String(value)} onChange={(next) => onChange(next === '' ? null : next)}>
+                <Label>关联科目</Label><Select.Trigger><Select.Value>{({ isPlaceholder, defaultChildren }) => isPlaceholder ? '请选择…' : defaultChildren}</Select.Value><Select.Indicator /></Select.Trigger>
+                <Select.Popover><ListBox>{(context.data?.accounts ?? []).map((item) => <ListBox.Item key={item.id} id={item.id} textValue={item.name}>{item.code ? `${item.code} - ${item.name}` : item.name}<ListBox.ItemIndicator /></ListBox.Item>)}</ListBox></Select.Popover>
+              </Select>
+            ),
           },
           // 外协仓开关:关掉时一并清空协作方绑定(后端要求非外协仓协作方为空)
           isOutsourced: {
@@ -234,31 +254,26 @@ function WarehousesPage() {
             input: ({ value, onChange, isDisabled, values }) => {
               const isCompany = values.partyType === 'COMPANY'
               return (
-                <RemoteSelect
-                  resource={isCompany ? 'basCompanies' : 'purSuppliers'}
-                  label="协作方"
-                  placeholder={isCompany ? '选择内部公司…' : '选择供应商…'}
-                  value={value == null ? null : String(value)}
-                  onChange={(id) => onChange(id)}
-                  isDisabled={isDisabled}
-                />
+                <Select isDisabled={isDisabled} value={value == null ? null : String(value)} onChange={(next) => onChange(next === '' ? null : next)}>
+                  <Label>协作方</Label><Select.Trigger><Select.Value>{({ isPlaceholder, defaultChildren }) => isPlaceholder ? (isCompany ? '选择内部公司…' : '选择供应商…') : defaultChildren}</Select.Value><Select.Indicator /></Select.Trigger>
+                  <Select.Popover><ListBox>{(isCompany ? (context.data?.companies ?? []).filter((item) => item.id !== companyId) : (context.data?.suppliers ?? [])).map((item) => <ListBox.Item key={item.id} id={item.id} textValue={item.name}>{item.name}<ListBox.ItemIndicator /></ListBox.Item>)}</ListBox></Select.Popover>
+                </Select>
               )
             },
           },
           allowNegative: { order: 7, cols: 6, label: '允许负库存', defaultValue: false },
-          // 公司由页面顶部选定,表单不显示,提交时注入
-          companyId: { visible: () => false },
         }}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            await warehouseClient.create({ ...values, companyId })
+            if (!binding.writer || !('create' in binding.writer) || !binding.writer.create) throw new Error('仓库不支持 create')
+            await binding.writer.create({ ...values, companyId })
           } else {
-            await warehouseClient.update(drawer!.row!.id, values)
+            await updateWarehouse(drawer!.row!.id, values)
           }
           toast.success(mode === 'create' ? '仓库已创建' : '仓库已更新')
           // 抽屉走 rowId 自查,编辑后一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          await resourceBindingFor('invWarehouses').cache.invalidateAll(queryClient)
+          await binding.cache.invalidateAll(queryClient)
           setReloadKey((k) => k + 1)
         }}
       />

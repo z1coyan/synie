@@ -2,29 +2,26 @@
 /**
  * 一键本地开发启动：
  * 1. 确保 server/.env
- * 2. docker compose up -d postgres 并等待就绪
+ * 2. 启动 legacy PostgreSQL + Convex PostgreSQL + MinIO + Convex backend/dashboard
  * 3. 执行 SQL 迁移（不 seed）
  * 4. turbo 并行启动 @synie/server + synie-web
  *
  * 用法：
  *   bun run dev
- *   bun run dev -- --no-docker   # 已有本机 PG 时跳过 compose
+ *   bun run dev -- --no-docker   # 所有外部依赖均由操作者提供
  *
  * 管理员 / 示例数据请走初始化向导；开发复位：bun run db:reset
  */
 import { copyFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { $ } from 'bun'
+import { checkInfra } from '../infra/convex/health.ts'
+import { runCompose, waitForHttp } from '../infra/convex/lib.ts'
 
 const root = join(import.meta.dir, '..')
 process.chdir(root)
 
 const args = new Set(process.argv.slice(2))
 const noDocker = args.has('--no-docker')
-
-const DEFAULT_DATABASE_URL =
-  process.env.DATABASE_URL ??
-  'postgres://synie:synie@localhost:5441/synie?sslmode=disable'
 
 function log(msg: string) {
   console.log(`[synie:dev] ${msg}`)
@@ -42,50 +39,72 @@ function ensureServerEnv() {
   }
 }
 
-async function waitPostgres(maxAttempts = 60) {
-  for (let i = 1; i <= maxAttempts; i++) {
-    const r =
-      await $`docker compose exec -T postgres pg_isready -U synie -d synie`.quiet().nothrow()
-    if (r.exitCode === 0) {
-      log('PostgreSQL 就绪')
-      return
-    }
-    if (i === maxAttempts) {
-      throw new Error('等待 PostgreSQL 超时，请检查 docker compose logs postgres')
-    }
-    await Bun.sleep(500)
-  }
-}
-
 async function main() {
   log(`仓库根目录 ${root}`)
   ensureServerEnv()
 
-  process.env.DATABASE_URL = DEFAULT_DATABASE_URL
   process.env.AUTH_SECRET ??= 'local-development-secret-change-me-32-bytes'
 
   if (!noDocker) {
-    log('启动 PostgreSQL（docker compose up -d postgres）…')
-    const up = await $`docker compose up -d postgres`.nothrow()
-    if (up.exitCode !== 0) {
+    process.env.DATABASE_URL ??=
+      `postgres://synie:synie@127.0.0.1:${process.env.SYNIE_POSTGRES_PORT ?? '5441'}/synie?sslmode=disable`
+    log('启动 PostgreSQL、MinIO 与自托管 Convex…')
+    await runCompose([
+      'up',
+      '-d',
+      'postgres',
+      'convex-postgres',
+      'minio',
+      'minio-public',
+      'minio-init',
+      'convex-backend',
+      'convex-dashboard',
+    ])
+    await checkInfra({ includeLegacyPostgres: true })
+  } else {
+    const convexUrl = process.env.CONVEX_SELF_HOSTED_URL
+    const convexSiteUrl = process.env.CONVEX_SELF_HOSTED_SITE_URL
+    const s3InternalEndpoint = process.env.SYNIE_S3_INTERNAL_ENDPOINT
+    const s3PublicEndpoint = process.env.SYNIE_S3_PUBLIC_ENDPOINT
+    const missing = [
+      ['DATABASE_URL', process.env.DATABASE_URL],
+      ['CONVEX_SELF_HOSTED_URL', convexUrl],
+      ['CONVEX_SELF_HOSTED_SITE_URL', convexSiteUrl],
+      ['SYNIE_S3_INTERNAL_ENDPOINT', s3InternalEndpoint],
+      ['SYNIE_S3_PUBLIC_ENDPOINT', s3PublicEndpoint],
+      ['AWS_ACCESS_KEY_ID', process.env.AWS_ACCESS_KEY_ID],
+      ['AWS_SECRET_ACCESS_KEY', process.env.AWS_SECRET_ACCESS_KEY],
+    ].filter(([, value]) => !value).map(([name]) => name)
+    if (missing.length > 0) {
       throw new Error(
-        'docker compose 启动 postgres 失败。确认 Docker 已运行，或使用: bun run dev -- --no-docker',
+        `--no-docker 缺少显式外部依赖配置：${missing.join('、')}`,
       )
     }
-    await waitPostgres()
-  } else {
-    log('跳过 Docker（--no-docker），使用已有 DATABASE_URL')
+    if (!convexUrl || !s3PublicEndpoint) {
+      throw new Error('--no-docker 外部依赖校验出现内部不一致')
+    }
+    log('跳过 Docker（--no-docker），检查操作者提供的 Convex 与 S3')
+    await waitForHttp('外部 Convex', `${convexUrl.replace(/\/$/, '')}/version`)
+    await waitForHttp('外部 S3', s3PublicEndpoint)
   }
 
   log('执行数据库迁移（不 seed）…')
-  const mig = await $`bun run --filter @synie/server db:migrate`.nothrow()
-  if (mig.exitCode !== 0) {
+  const mig = Bun.spawn(['bun', 'run', '--filter', '@synie/server', 'db:migrate'], {
+    cwd: root,
+    env: process.env,
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+  if ((await mig.exited) !== 0) {
     throw new Error('迁移失败，请检查 DATABASE_URL 与 Postgres')
   }
 
   log('Turbo 并行启动 server(:8080) + web(:3000)…')
   log('  API healthz → http://localhost:8080/api/v1/healthz')
   log('  前端        → http://localhost:3000  （/api/v1 代理到 8080）')
+  log('  Convex      → http://localhost:3210  （HTTP actions: 3211）')
+  log('  Dashboard   → http://localhost:6791')
+  log('  MinIO       → http://localhost:9000  （console: 9001）')
   log('  停止：Ctrl+C')
 
   // turbo 负责常驻 dev；继承当前 env（DATABASE_URL / AUTH_SECRET）

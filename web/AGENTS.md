@@ -1,6 +1,9 @@
 # Synie
 
-项目使用 TanStack Start + HeroUI + **Bun/Hono REST**（`@synie/server` hono/client + ResourceBinding/ResourceTransport）为产品技术栈。不引入 GraphQL / OpenAPI codegen。
+项目使用 TanStack Start + HeroUI。后端迁移期间由进程级
+`VITE_SYNIE_BACKEND=legacy|convex` 二选一：`legacy` 使用 Bun/Hono REST，`convex`
+只开放已经完成迁移并验收的闭包。一次运行中禁止跨后端 fallback 或双写，不引入 GraphQL /
+OpenAPI codegen。
 
 ## 项目守则
 
@@ -8,9 +11,13 @@
 - 所有请求均要进行错误处理，有合适的报错信息方便排查
 - 尽可能使用组件库已有的组件进行开发而不是自己使用html+tailwindcss搭建
 - 表单/筛选控件一律用 HeroUI(Pro) 现成组件（日期用 DatePicker/DateRangePicker、数值用 NumberField、下拉用 Select 等），不要包装浏览器原生 input；有已封装的业务组件时优先复用业务组件
-- 业务数据请求走 `~/lib/api`（hono/client）或 `~/lib/resources` registry；禁止新增 GraphQL / `gqlFetch` / openapi-fetch 路径
+- legacy 模式业务数据请求走 `~/lib/api`（hono/client）或 `~/lib/resources` registry；Convex
+  模式走 `@convex-dev/react-query` 与生成的 Convex API。页面不得自行混用两种 transport；禁止新增
+  GraphQL / `gqlFetch` / openapi-fetch 路径。
 - 生产页面的 `SynieDataGrid` / `SynieRecordDrawer` / 远程选择器只传 `resource`，由 `ResourceBinding.reader` 解析规范生产 Adapter；不要显式传 `client`。显式 Adapter 只用于 custom/in-memory 局部读模型与 interface 测试。列表与单条缓存键、失效一律经 `resourceBindingFor(resource).cache`，不得手写 `['gridRows', ...]` / `['rowById', ...]` 或依赖 transport id。
-- Vite 仅代理 `/api/v1` → Bun server（`SYNIE_API_PORT`/`GO_API_PORT`，默认 8080）；认证为 JWT
+- legacy 模式由 Vite 代理 `/api/v1` → Bun server（`SYNIE_API_PORT`/`GO_API_PORT`，默认
+  8080），认证为 JWT；Convex 模式的认证只走 TanStack Start 同源 `/api/auth/*` cookie proxy，
+  不读写 `synie:token` localStorage。
 
 ## 业务数据页标准组件
 

@@ -78,6 +78,23 @@ describe('Aggregate Draft ResourceBinding 能力边界', () => {
     }
   })
 
+  test('五个制造聚合头同样只经 draft 创建/替换', () => {
+    for (const resource of [
+      'mfgProcessTemplates',
+      'mfgBoms',
+      'mfgDemands',
+      'mfgWorkOrders',
+      'mfgOutputs',
+    ] as const) {
+      const binding = resourceBindingFor(resource)
+      expect(binding.draft).toBeDefined()
+      expect(aggregateDraftFor(resource)).toBe(binding.draft!)
+      expect(binding.writer?.create).toBeUndefined()
+      expect(binding.writer?.update).toBeUndefined()
+      expect(typeof binding.writer?.delete).toBe('function')
+    }
+  })
+
   test('挂载 draft 不替换既有语义命令适配器', () => {
     for (const [resource, expected] of Object.entries(aggregateResources)) {
       const key = resource as keyof typeof aggregateResources

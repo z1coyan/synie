@@ -601,8 +601,9 @@ async function loadOutsourcedChildRows(
   resolveReader: DocumentPreviewReaderResolver,
 ): Promise<Row[]> {
   const items = await resolveReader('purOutsourcedReceiptItems').query({
-    limit: 200,
-    offset: 0,
+    profile: 'default',
+    numItems: 200,
+    cursor: null,
     sort: { column: 'idx', direction: 'ascending' },
     filter: {
       receiptId: {
@@ -620,8 +621,9 @@ async function loadOutsourcedChildRows(
       ? 'purOutsourcedReceiptItemMaterials'
       : 'purOutsourcedReceiptItemByproducts'
   const result = await resolveReader(resource).query({
-    limit: 200,
-    offset: 0,
+    profile: 'default',
+    numItems: 200,
+    cursor: null,
     sort: { column: 'idx', direction: 'ascending' },
     filter: {
       receiptItemId: {

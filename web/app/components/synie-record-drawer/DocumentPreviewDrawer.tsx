@@ -52,8 +52,9 @@ export function documentPreviewLineQuery(
         }
       }
       const result = await binding.reader.query({
-        limit: table.limit ?? 200,
-        offset: 0,
+        profile: 'default',
+        numItems: table.limit ?? 200,
+        cursor: null,
         sort: {
           column: table.sortColumn ?? 'idx',
           direction: 'ascending',

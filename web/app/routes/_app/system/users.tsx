@@ -1,15 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, toast } from '@heroui/react'
-import { fetchMe } from '~/lib/api/session'
-import { createUser, fetchUserAccess, resetUserPassword, userClient } from '~/lib/resources/iam'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteMultiSelect } from '~/components/synie-remote-select/RemoteMultiSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { useCurrentActor } from '~/lib/actor-context'
 
 export const Route = createFileRoute('/_app/system/users')({
   component: UsersPage,
@@ -17,9 +16,13 @@ export const Route = createFileRoute('/_app/system/users')({
 
 /** 一条已存在的关联行:id 是关联表主键,targetId 是角色/公司 id */
 type JoinRow = { id: string; targetId: string; name: string }
+type UserAccess = {
+  roles: Array<{ id: string; name: string }>
+  companies: Array<{ id: string; name: string }>
+}
 
 // ponytail: execCommand 已废弃,但 HTTP 环境(如 Tailscale IP 访问)下 clipboard API 不可用,只有这条路
-function legacyCopy(text: string) {
+function copyText(text: string) {
   const ta = document.createElement('textarea')
   ta.value = text
   ta.style.position = 'fixed'
@@ -45,8 +48,9 @@ function UsersPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
   const userForm = useCatalogBasicForm('sysUsers', '用户')
-  const [myPerms, setMyPerms] = useState<Set<string>>(new Set())
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const actor = useCurrentActor()
+  const myPerms = new Set(actor.permissions)
+  const isSuperAdmin = actor.superAdmin
   // 一次性密码:仅存在于本次响应与此弹窗,关闭后无法再次查看
   const [oneTime, setOneTime] = useState<{ username: string; password: string } | null>(null)
   const [resetTarget, setResetTarget] = useState<Row | null>(null)
@@ -58,16 +62,6 @@ function UsersPage() {
   const [names, setNames] = useState<Map<string, string>>(new Map())
   // 请求守卫:每次开抽屉自增,await 回来后比对最新序号——防止先发的慢请求(A)覆盖已切到 B 的关联/勾选
   const reqIdRef = useRef(0)
-
-  // 重置密码入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
-  useEffect(() => {
-    fetchMe()
-      .then((d) => {
-        setMyPerms(new Set(d.permissions))
-        setIsSuperAdmin(d.superAdmin)
-      })
-      .catch((e) => toast.danger('权限信息加载失败', { description: (e as Error).message }))
-  }, [])
 
   const canReset = isSuperAdmin || myPerms.has('sys.user:update')
 
@@ -91,7 +85,11 @@ function UsersPage() {
       return
     }
     try {
-      const d = await fetchUserAccess(String(row.id))
+      if (!userForm.binding.commands) throw new Error('用户未绑定访问范围命令')
+      const d = await userForm.binding.commands.execute(
+        'getAccess',
+        { id: String(row.id) },
+      ) as UserAccess
       // 抽屉已切走(开了别的单据/关了):丢弃过期响应,不写 joins/勾选,避免覆盖当前单据
       if (my !== reqIdRef.current) return
       const roles = d.roles.map((r) => ({
@@ -118,7 +116,11 @@ function UsersPage() {
     if (!resetTarget) return
     setResetting(true)
     try {
-      const d = await resetUserPassword(resetTarget.id)
+      if (!userForm.binding.commands) throw new Error('用户未绑定重置密码命令')
+      const d = await userForm.binding.commands.execute(
+        'resetPassword',
+        { id: String(resetTarget.id) },
+      ) as { password: string }
       setOneTime({ username: String(resetTarget.username ?? ''), password: d.password })
       setResetTarget(null)
       toast.success('密码已重置')
@@ -135,7 +137,7 @@ function UsersPage() {
       if (window.isSecureContext && navigator.clipboard) {
         await navigator.clipboard.writeText(oneTime.password)
       } else {
-        legacyCopy(oneTime.password)
+        copyText(oneTime.password)
       }
       toast.success('已复制到剪贴板')
     } catch {
@@ -213,18 +215,25 @@ function UsersPage() {
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
-            const data = await createUser({
+            const input = {
               username: String(values.username),
               name: (values.name as string) || null,
               roleIds: roleSel,
               companyIds: companySel,
-            })
+            }
+            if (!userForm.binding.commands) throw new Error('用户未绑定创建命令')
+            const data = await userForm.binding.commands.execute(
+              'createManaged',
+              input,
+            ) as { user: { username: string }; password: string }
             setOneTime({
               username: String(data.user.username),
               password: String(data.password ?? ''),
             })
           } else {
-            await userClient.update(drawer!.row!.id, {
+            const writer = userForm.binding.writer
+            if (!writer || !('update' in writer) || !writer.update) throw new Error('用户不支持 update')
+            await writer.update(String(drawer!.row!.id), {
               name: (values.name as string) || null,
               roleIds: roleSel,
               companyIds: companySel,

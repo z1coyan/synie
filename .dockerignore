@@ -8,4 +8,6 @@ docs
 uploads
 **/*.log
 **/.env
+**/.env.*
+!**/.env.example
 web/test-results

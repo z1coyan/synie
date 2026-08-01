@@ -8,12 +8,13 @@ import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import {
-  processTemplateClient,
-  processTemplateItemClient,
-} from '~/lib/resources/manufacturing'
+  aggregateDraftFor,
+  resourceBindingFor,
+} from '~/lib/resources/registry'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { resourceBindingFor } from '~/lib/resources/registry'
+
+const processTemplateDraft = aggregateDraftFor('mfgProcessTemplates')
 
 export const Route = createFileRoute('/_app/mfg/process-templates')({
   component: ProcessTemplatesPage,
@@ -29,63 +30,11 @@ function itemInput(row: Row) {
   }
 }
 
-const ITEM_COMPARE_KEYS = [
-  'operationId',
-  'seq',
-  'requirement',
-  'isOutsourced',
-] as const
-
-function itemChanged(before: Row, after: Row): boolean {
-  return ITEM_COMPARE_KEYS.some(
-    (k) => String(before[k] ?? '') !== String(after[k] ?? ''),
-  )
-}
-
-/** 工艺步骤差异持久化:本地草稿行 create;存量行有变 update;快照有、当前无 destroy(同物料单位转换先例) */
-async function persistItems(
-  templateId: string,
-  current: Row[],
-  snapshot: Row[],
-): Promise<string[]> {
-  const errors: string[] = []
-  const itemLabel = (row: Row) =>
-    (row.operation as Row | undefined)?.name ?? '工艺步骤'
-  const currentIds = new Set(
-    current.filter((r) => !isLocalRow(r)).map((r) => r.id),
-  )
-
-  for (const old of snapshot) {
-    if (currentIds.has(old.id)) continue
-    try {
-      await processTemplateItemClient.delete(old.id)
-    } catch (error) {
-      errors.push(`${itemLabel(old)}:${(error as Error).message}`)
-    }
-  }
-
-  for (const row of current) {
-    if (isLocalRow(row)) {
-      try {
-        await processTemplateItemClient.create({
-          templateId,
-          ...itemInput(row),
-        })
-      } catch (error) {
-        errors.push(`${itemLabel(row)}:${(error as Error).message}`)
-      }
-      continue
-    }
-    const old = snapshot.find((s) => s.id === row.id)
-    if (old && itemChanged(old, row)) {
-      try {
-        await processTemplateItemClient.update(row.id, itemInput(row))
-      } catch (error) {
-        errors.push(`${itemLabel(row)}:${(error as Error).message}`)
-      }
-    }
-  }
-  return errors
+function draftItems(rows: Row[]) {
+  return rows.map((row) => ({
+    ...(isLocalRow(row) ? {} : { id: row.id }),
+    ...itemInput(row),
+  }))
 }
 
 // 列白名单:时间戳不进表格
@@ -97,7 +46,6 @@ function ProcessTemplatesPage() {
     row: Row | null
   } | null>(null)
   const [items, setItems] = useState<Row[]>([])
-  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   // edit/view 态工艺步骤靠 FETCH_ITEMS 异步拉取,未完成前禁止编辑,防回填覆盖在输行
   const [itemsLoaded, setItemsLoaded] = useState(false)
   const queryClient = useQueryClient()
@@ -110,36 +58,21 @@ function ProcessTemplatesPage() {
     setDrawer({ mode, row })
     if (mode === 'create' || !row) {
       setItems([])
-      setItemsSnapshot([])
       setItemsLoaded(true)
       return
     }
     setItemsLoaded(false)
-    processTemplateItemClient
-      .query({
-        limit: 200,
-        offset: 0,
-        filter: {
-          templateId: {
-            kind: 'fk',
-            op: 'in',
-            values: [row.id],
-            labels: [],
-          },
-        },
-        sort: { column: 'seq', direction: 'ascending' },
-      })
+    processTemplateDraft
+      .loadDraft(row.id)
       .then((d) => {
         if (my !== reqIdRef.current) return
-        setItems(d.results)
-        setItemsSnapshot(d.results)
+        setItems(((d as Row).items as Row[] | undefined) ?? [])
         setItemsLoaded(true)
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
         toast.danger('工艺步骤加载失败', { description: (e as Error).message })
         setItems([])
-        setItemsSnapshot([])
       })
   }
 
@@ -201,35 +134,19 @@ function ProcessTemplatesPage() {
           ),
         }}
         onSubmit={async (values, mode) => {
+          const input = { ...values, items: draftItems(items) }
           if (mode === 'create') {
-            const created = await processTemplateClient.create(values)
-            const templateId = created.id
-            const itemErrors = await persistItems(templateId, items, [])
-            if (itemErrors.length > 0) {
-              toast.danger('工艺模板已创建,但部分工艺步骤保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('工艺模板已创建')
-            }
+            const created = await processTemplateDraft.createDraft(input) as Row
+            toast.success('工艺模板已创建')
+            await resourceBindingFor('mfgProcessTemplates').cache.invalidateAll(queryClient)
+            return created.id
           } else {
             const templateId = drawer!.row!.id
-            await processTemplateClient.update(templateId, values)
-            const itemErrors = await persistItems(
-              templateId,
-              items,
-              itemsSnapshot,
-            )
-            if (itemErrors.length > 0) {
-              toast.danger('工艺模板已更新,但部分工艺步骤保存失败', {
-                description: itemErrors.join('; '),
-              })
-            } else {
-              toast.success('工艺模板已更新')
-            }
+            await processTemplateDraft.replaceDraft(templateId, input)
+            toast.success('工艺模板已更新')
+            await resourceBindingFor('mfgProcessTemplates').cache.invalidateAll(queryClient)
+            return templateId
           }
-          // 抽屉走 rowId 自查,一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          await resourceBindingFor('mfgProcessTemplates').cache.invalidateAll(queryClient)
         }}
       />
     </>
