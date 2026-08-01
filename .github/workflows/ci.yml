@@ -36,6 +36,10 @@ jobs:
 
       - name: Build Web artifact
         run: bun run build
+        env:
+          VITE_CONVEX_URL: http://127.0.0.1:3210
+          VITE_CONVEX_SITE_URL: http://127.0.0.1:3211
+          VITE_SITE_URL: http://127.0.0.1:3000
 
       - name: Typecheck
         run: bun run typecheck
@@ -138,6 +142,8 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+        env:
+          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
       - run: bunx playwright install --with-deps chromium
       - run: bun run test:self-hosted-resources
 
@@ -157,6 +163,8 @@ jobs:
     name: S3 compatibility and restore drill
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: synie-restore-source-ci
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -164,7 +172,15 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
       - run: bun run test:s3-compat
-      - run: bun run test:self-hosted-restore
+      - name: Prepare restore source deployment
+        run: |
+          bun run infra:up
+          bun run convex:bootstrap
+      - name: Run portable restore drill
+        run: bun run test:self-hosted-restore
+      - name: Stop restore source deployment without deleting volumes
+        if: always()
+        run: bun run infra:down
 
   printing:
     name: Production Web / LibreOffice printing smoke
