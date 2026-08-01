@@ -70,6 +70,37 @@ export type RunResult = {
   stderr: string
 }
 
+const CONVEX_CLOUD_SELECTION_ENV = [
+  'CONVEX_DEPLOY_KEY',
+  'CONVEX_DEPLOYMENT_TOKEN',
+  'CONVEX_DEPLOYMENT',
+  'CONVEX_OVERRIDE_ACCESS_TOKEN',
+] as const
+
+/** Convex CLI 会让 cloud deploy key 优先于 self-hosted admin key，必须提前拒绝。 */
+export function assertNoConvexCloudSelection(env: NodeJS.ProcessEnv): void {
+  const configured = CONVEX_CLOUD_SELECTION_ENV.filter(
+    (name) => Boolean(env[name]?.trim()),
+  )
+  if (configured.length > 0) {
+    throw new Error(
+      `本地 self-hosted 操作拒绝 Convex Cloud 选择变量：${configured.join('、')}`,
+    )
+  }
+}
+
+export function selfHostedConvexCliEnv(
+  env: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  assertNoConvexCloudSelection(env)
+  if (!env.CONVEX_SELF_HOSTED_URL?.trim() || !env.CONVEX_SELF_HOSTED_ADMIN_KEY?.trim()) {
+    throw new Error('本地 Convex CLI 缺少 self-hosted URL/admin key')
+  }
+  const sanitized = { ...env }
+  for (const name of CONVEX_CLOUD_SELECTION_ENV) delete sanitized[name]
+  return sanitized
+}
+
 export async function run(
   command: readonly string[],
   options: {

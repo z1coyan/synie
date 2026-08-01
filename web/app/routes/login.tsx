@@ -2,13 +2,14 @@ import { convexQuery } from '@convex-dev/react-query'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { ConvexLoginPage } from '~/components/convex-login-page'
 import { api } from '~/lib/convex-api'
+import { shouldRedirectLoginToSetup } from '~/lib/setup-navigation'
 
 export const Route = createFileRoute('/login')({
   beforeLoad: async ({ context }) => {
     const status = await context.queryClient.ensureQueryData(
       convexQuery(api.setup.status.get, {}),
     )
-    if (!status.initialized) throw redirect({ to: '/setup' })
+    if (shouldRedirectLoginToSetup(status)) throw redirect({ to: '/setup' })
 
     if (context.authToken) {
       let hasActor = false

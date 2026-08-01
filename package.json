@@ -16,6 +16,8 @@
     "infra:health": "bun infra/convex/health.ts",
     "infra:down": "bun infra/convex/compose.ts down --remove-orphans",
     "infra:logs": "bun infra/convex/compose.ts logs --no-color convex-postgres minio minio-public minio-init convex-backend convex-dashboard",
+    "reset": "bun infra/convex/reset.ts",
+    "db:reset": "bun infra/convex/reset.ts",
     "convex:bootstrap": "bun infra/convex/bootstrap.ts",
     "convex:backup": "bun infra/convex/backup.ts",
     "convex:restore": "bun infra/convex/restore.ts",

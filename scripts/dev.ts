@@ -14,10 +14,18 @@
 import { checkInfra } from '../infra/convex/health.ts'
 import { hostWebEnv } from '../infra/convex/host-web-env.ts'
 import {
+  applyDeploymentEnv,
+  buildLocalDeploymentEnv,
+  captureDeploymentEnv,
+  localDeploymentInputs,
+  type DeploymentComposeConfig,
+} from '../infra/convex/deployment-env.ts'
+import {
   localConvexEnv,
   log as infraLog,
   run,
   runCompose,
+  selfHostedConvexCliEnv,
   waitForHttp,
 } from '../infra/convex/lib.ts'
 
@@ -70,6 +78,23 @@ async function ensureLocalCredentials(): Promise<NodeJS.ProcessEnv> {
   return env
 }
 
+async function ensureLocalDeploymentEnvironment(
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const rendered = await runCompose(['config', '--format', 'json'], {
+    capture: true,
+    sensitiveOutput: true,
+  })
+  const config = JSON.parse(rendered.stdout) as DeploymentComposeConfig
+  const captured = await captureDeploymentEnv(env)
+  const source = buildLocalDeploymentEnv(
+    captured,
+    localDeploymentInputs(config, env),
+    { env },
+  )
+  await applyDeploymentEnv(source, env)
+}
+
 async function main() {
   if (!noDocker) {
     log('启动自托管 Convex、PostgreSQL 与 MinIO…')
@@ -87,6 +112,7 @@ async function main() {
   }
 
   const env = noDocker ? localConvexEnv() : await ensureLocalCredentials()
+  const convexCliEnv = selfHostedConvexCliEnv(env)
   if (noDocker) {
     const missing = requiredExternalEnvironment(env)
     if (missing.length > 0) {
@@ -98,6 +124,9 @@ async function main() {
       `${env.CONVEX_SELF_HOSTED_URL!.replace(/\/$/, '')}/version`,
     )
     await assertExternalS3Reachable(env.SYNIE_S3_PUBLIC_ENDPOINT!)
+  } else {
+    log('校准本地 deployment env（Auth、S3、Print Worker）…')
+    await ensureLocalDeploymentEnvironment(convexCliEnv)
   }
 
   const webPort = env.WEB_PORT ?? '3000'
@@ -125,7 +154,7 @@ async function main() {
     {
       name: 'Convex watcher',
       process: Bun.spawn(['bunx', 'convex', 'dev'], {
-        env,
+        env: convexCliEnv,
         stdin: 'inherit',
         stdout: 'inherit',
         stderr: 'inherit',

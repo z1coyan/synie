@@ -37,17 +37,25 @@
 
 ## 本地启动与健康检查
 
-首次启动：
+全新工作树首次准备为可浏览器初始化的空部署：
 
 ```bash
 cp .env.example .env
 bun install --frozen-lockfile
+bun reset
+```
+
+按提示输入命令显示的 Compose project 名。成功条件不是“容器已启动”，而是 deployment env、admin key
+与当前 functions 已重建，公开 Setup 查询返回 `initialized=false, hasUsers=false`，且默认 Web 的 `/setup`
+可访问。`convex:bootstrap` 仍只负责把 self-host URL/site/admin key 写入权限为 `0600` 的 `.env.local`；
+不要把 key 复制到 `.env.example`、issue、日志或 CI artifact。
+
+已有 deployment 的日常非破坏性启动仍使用：
+
+```bash
 bun run dev:infra
 bun run convex:bootstrap
 ```
-
-`convex:bootstrap` 只在 `.env.local` 写入 self-host URL/site/admin key，文件权限为 `0600`，终端不显示
-key。不要复制到 `.env.example`、issue、日志或 CI artifact。
 
 跨设备 Tailscale 验证时，先用 `tailscale ip -4` 获取地址，再在 `.env` 设置
 `SYNIE_BIND_HOST=0.0.0.0`，并将 `CONVEX_CLOUD_ORIGIN`、`SYNIE_CONVEX_PUBLIC_SITE_URL`、三个
@@ -87,7 +95,68 @@ docker compose ps -a
 docker compose logs convex-postgres minio minio-public minio-init convex-backend convex-dashboard
 ```
 
-停止服务使用 `bun run infra:down`。该命令不带 `-v`；不得把删除 volume 当作日常故障恢复。
+停止服务使用 `bun run infra:down`。该命令不带 `-v`，始终保留 volume；不得把本地开发复位当作日常
+停机或故障恢复。
+
+## 本地开发复位（破坏性）
+
+正式入口是 `bun reset`；`bun db:reset` 仅为旧命令兼容别名，两者必须进入同一个 runner。用途只有两种：
+
+- 全新本地工作树建立 setup-ready deployment；
+- 开发者明确放弃当前本地数据，重新从浏览器验证真实首次 `/setup` 流程。
+
+交互执行先只解析目标并要求逐字输入 Compose project 名：
+
+```bash
+bun reset
+```
+
+其他模式：
+
+```bash
+bun reset --dry-run          # 只报告 project、三卷和计划步骤，不停止或删除任何资源
+bun reset --yes              # 仅供 CI/自动化跳过输入；所有环境与归属检查仍执行
+bun reset --yes --no-web     # 准备空 deployment，但不启动 Web
+bun reset --discard-deployment-env # 旧栈无法健康启动时明确放弃旧 deployment env
+bun db:reset --dry-run       # 兼容入口同样接受全部参数
+```
+
+`--yes` 不是放宽安全边界。runner 必须在任何删除前完成全部检查：
+
+1. 拒绝 `NODE_ENV`、`SYNIE_ENV` 或 `APP_ENV` 的 production 标识。
+2. 拒绝远程 Docker daemon/context，只接受本机 Docker Engine。
+3. 拒绝 `CONVEX_DEPLOY_KEY`、`CONVEX_DEPLOYMENT_TOKEN`、`CONVEX_DEPLOYMENT` 等 Convex Cloud
+   deployment 选择变量，全部 CLI 调用只接受新生成的 self-hosted URL/admin key。
+4. 由当前工作树的 Compose config 解析 project；已有 container、network、volume 必须带该 project 的
+   预期 Compose label，container 的 config path 与 working directory 必须归属当前工作树。出现外来或
+   无法证明归属的同名资源立即停止。
+5. 删除集合固定为该 project 的 `convex-postgres`、`synie-minio`、`convex-backend-data` 三个 volume；
+   不接受任意路径、通配符、全局 `docker volume prune`，也不删除镜像或其他 project。
+
+确认后按以下顺序执行：停止当前 project → 删除三卷及 project 容器/网络 → 重建 PostgreSQL、六个
+MinIO private bucket、backend credential 与 dashboard → 生成新 admin key → 以 `0600` 临时文件注入
+Better Auth、S3 和 PDF Worker deployment env → 部署当前 functions → 查询公开 Setup 状态并断言
+`initialized=false, hasUsers=false` → 默认重建当前工作树 Web 镜像、等待健康检查并确认 `/setup` 可访问。
+`--no-web` 只省略最后的 Web 构建、启动与页面探测，空 deployment 和状态断言仍必须完成。
+
+复位会永久删除当前本地 deployment 的业务数据、Convex file storage、产品文件对象、Better Auth
+身份/session 和 backend credential；旧 ERP 用户、密码、Cookie 与 `.env.local` 中的 admin key 都不再
+有效。`infra/convex/backups/` 中已生成的 snapshot/产品对象备份不在三个 volume 内，runner 不删除它们，
+但也不会自动为本次复位创建新恢复点。需要回退时应先执行 `bun run convex:backup -- <目录>` 并确认
+配对备份完整。生产清数、生产恢复或远程环境重建必须走独立变更流程，绝不使用本命令。
+
+默认模式必须先从健康的旧 deployment 导出 env，避免静默丢失 OCR 等可选 provider 配置。若旧
+PostgreSQL、MinIO 或 backend 已损坏到无法通过健检，操作者可在看清三卷目标后显式传
+`--discard-deployment-env`；它跳过旧值导出，只从当前 Compose/`.env` 重建 Setup、Auth、S3 与打印所需
+值，可选 provider secret 不会保留。该开关仍不绕过 project、卷归属、production、远程 Docker 或
+Convex Cloud selector 检查。
+
+删除前 runner 会把当前 deployment env 静默保存为 gitignored、`0600` 的 reset recovery；成功后立即删除，
+破坏阶段失败时保留路径但不输出内容。直接重跑同一命令会复用该文件并跳过可能已损坏的旧 deployment
+健检；恢复完成后同样删除。该文件含 secret，不得上传、放宽权限或当作长期备份。
+
+本边界的决策记录见
+[`../adr/2026-08-01-local-convex-development-reset.md`](../adr/2026-08-01-local-convex-development-reset.md)。
 
 ## 备份责任
 

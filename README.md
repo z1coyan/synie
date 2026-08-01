@@ -44,6 +44,16 @@ cp .env.example .env
 bun install --frozen-lockfile
 ```
 
+全新工作树可直接运行正式的本地复位入口，把当前工作树的 Compose project 建成可打开 `/setup` 的
+空部署：
+
+```bash
+bun reset
+```
+
+命令会要求输入解析后的 Compose project 名确认；它不是 seed 命令，而是只面向本地开发的破坏性
+重建。历史兼容入口 `bun db:reset` 与其行为完全相同。
+
 本地默认端口均只绑定 `127.0.0.1`：
 
 | 服务 | 默认地址 |
@@ -76,8 +86,8 @@ secure context；依赖 Web Crypto 的附件校验/打印应继续从 localhost 
 
 ## 本地开发
 
-一条命令启动基础设施，首次静默创建 `.env.local` admin key，然后并行运行 Convex watcher 与
-TanStack Start：
+已有 setup-ready deployment 的日常开发用一条命令启动基础设施，必要时静默创建 `.env.local`
+admin key，然后并行运行 Convex watcher 与 TanStack Start：
 
 ```bash
 bun run dev
@@ -93,6 +103,8 @@ bun run dev -- --no-docker
 常用分项命令：
 
 ```bash
+bun reset                 # 破坏性重建当前本地 project，最终开放 /setup
+bun db:reset              # 兼容别名，行为与 bun reset 相同
 bun run infra:up          # 启动并健检 PostgreSQL/MinIO/Convex/dashboard
 bun run convex:bootstrap  # admin key 写入 .env.local（0600，不输出 key）
 bun run dev:convex        # 单独运行 function watcher
@@ -102,16 +114,21 @@ bun run infra:logs
 bun run infra:down        # 不带 -v，不删除 volume
 ```
 
-全容器栈首次启动流程：
+需要先核对目标而不改动任何状态，或在自动化中跳过交互时：
 
 ```bash
-docker compose up -d convex-postgres minio minio-public minio-init convex-backend convex-dashboard
-bun run convex:bootstrap
-bunx convex dev --once --typecheck-components
-docker compose up -d --build
-docker compose ps
-bun run infra:health
+bun reset --dry-run
+bun reset --yes             # 仅 CI/自动化；不会绕过安全检查
+bun reset --no-web          # 完成空 deployment，但不启动 Web
+bun reset --discard-deployment-env # 旧栈已损坏时明确放弃无法导出的旧 deployment env
 ```
+
+`bun reset` 只允许本地 Docker daemon 和非 production 环境。它精确删除当前工作树 Compose project 的
+Convex PostgreSQL、MinIO 与 Convex backend credential 三个 volume，随后重建 deployment env、admin
+key 和 functions，并断言 Setup 状态为 `initialized=false, hasUsers=false`；默认还会重建当前工作树的 Web
+镜像，再等待 `/setup` 可访问。旧 ERP 用户以及 Better Auth user/account/session 会被清空，旧 Cookie 和
+admin key 全部失效；已有快照备份不删除，但命令不会自动替你创建新的恢复点。需要保留当前数据时先运行
+`bun run convex:backup`，不要执行 reset。`infra:down` 始终保留 volume，与 reset 的用途严格不同。
 
 标准 `web/Dockerfile` 用 BuildKit secret 读取 `HEROUI_AUTH_TOKEN`。如当前机器已有同一依赖版本下合法构建的
 Web/LibreOffice 镜像，可在本地显式选择 `web/Dockerfile.cached-licensed-base`；该路径会先清空基座中的
@@ -148,6 +165,9 @@ bun run test:self-hosted-restore
 备份由 Convex portable snapshot（含 Convex file storage）与六个 S3 bucket 组成。恢复只允许全新的独立 project/ports/volumes，
 并对数据库记录和对象 bytes 做 SHA-256 对拍。演练清理不删除 volumes 或备份。生产职责、升级与告警见
 [`docs/runbooks/convex-self-hosted.md`](docs/runbooks/convex-self-hosted.md)。
+
+本地破坏性复位的安全边界见
+[`docs/adr/2026-08-01-local-convex-development-reset.md`](docs/adr/2026-08-01-local-convex-development-reset.md)。
 
 ## 运行边界
 
