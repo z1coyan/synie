@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
-import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { useCatalogBasicForm,
+  requireWriter,} from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -39,10 +40,7 @@ function MaterialCategoriesPage() {
           rowActions={statusToggleActions({
             field: 'active',
             update: (id, input) => {
-              if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) {
-                throw new Error('物料分类不支持 update')
-              }
-              return binding.writer.update(id, input)
+              return requireWriter(binding, 'update', '物料分类')(id, input)
             },
             // 树的子层缓存在组件本地,refetch 只刷根层,remount 一并清子层
             onDone: () => setReloadKey((k) => k + 1),
@@ -61,17 +59,10 @@ function MaterialCategoriesPage() {
         fields={formProps.fields}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          if (!binding.writer) throw new Error('物料分类不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('物料分类不支持 create')
-            }
-            await binding.writer.create(values)
+            await requireWriter(binding, 'create', '物料分类')(values)
           } else {
-            if (!('update' in binding.writer) || !binding.writer.update) {
-              throw new Error('物料分类不支持 update')
-            }
-            await binding.writer.update(String(drawer!.row!.id), values)
+            await requireWriter(binding, 'update', '物料分类')(String(drawer!.row!.id), values)
           }
           toast.success(mode === 'create' ? '分类已创建' : '分类已更新')
           await binding.cache.invalidateAll(queryClient)

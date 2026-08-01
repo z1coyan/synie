@@ -10,7 +10,8 @@ import { fetchPermissionCatalog } from '~/lib/resources/iam'
 import {
   listPrintResources,
 } from '~/lib/resources/printing'
-import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { useCatalogBasicForm,
+  requireWriter,} from '~/lib/resources/catalog'
 import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -373,10 +374,7 @@ function PrintTemplatesPage() {
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             if (!fileId) throw new Error('请上传模板文件')
-            if (!binding.writer || !('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('打印模板不支持 create')
-            }
-            const created = await binding.writer.create({
+            const created = await requireWriter(binding, 'create', '打印模板')({
               name: values.name,
               resource: resourcePick,
               fileId,
@@ -391,10 +389,7 @@ function PrintTemplatesPage() {
               remarks: values.remarks ?? null,
             }
             if (fileId) input.fileId = fileId
-            if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) {
-              throw new Error('打印模板不支持 update')
-            }
-            await binding.writer.update(String(drawer.row.id), input)
+            await requireWriter(binding, 'update', '打印模板')(String(drawer.row.id), input)
             await binding.cache.invalidateGrid(queryClient)
           }
         }}

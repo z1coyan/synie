@@ -6,7 +6,8 @@ import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { useCatalogBasicForm,
+  requireWriter,} from '~/lib/resources/catalog'
 import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 
 export const Route = createFileRoute('/_app/system/storages')({
@@ -149,21 +150,14 @@ function StoragesPage() {
             accessKeyId: optionalString(values.accessKeyId),
             ...(secret.trim() === '' ? {} : { secretAccessKey: secret }),
           }
-          if (!binding.writer) throw new Error('存储接入不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('存储接入不支持 create')
-            }
-            await binding.writer.create({
+            await requireWriter(binding, 'create', '存储接入')({
               ...common,
               name: String(values.name ?? ''),
               kind: String(values.kind ?? ''),
             })
           } else {
-            if (!('update' in binding.writer) || !binding.writer.update) {
-              throw new Error('存储接入不支持 update')
-            }
-            await binding.writer.update(drawer!.row!.id, common)
+            await requireWriter(binding, 'update', '存储接入')(drawer!.row!.id, common)
           }
           toast.success(mode === 'create' ? '存储接入已创建' : '存储接入已更新')
           await invalidateGrid()

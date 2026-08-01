@@ -6,7 +6,7 @@ import {
   decodeCurrencyCreate,
   decodeCurrencyUpdate,
   useCatalogBasicForm,
-} from '~/lib/resources/catalog'
+  requireWriter,} from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -43,10 +43,7 @@ function CurrenciesPage() {
           rowActions={statusToggleActions({
             field: 'active',
             update: (id, input) => {
-              if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) {
-                throw new Error('币种不支持 update')
-              }
-              return binding.writer.update(id, input)
+              return requireWriter(binding, 'update', '币种')(id, input)
             },
             rowLabel: (row) => String(row.name ?? row.isoCode ?? ''),
             onDone: invalidate,
@@ -65,22 +62,15 @@ function CurrenciesPage() {
         fields={formProps.fields}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          if (!binding.writer) throw new Error('币种不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('币种不支持 create')
-            }
             const input = decodeCurrencyCreate(values)
-            const saved = await binding.writer.create({ ...input })
+            const saved = await requireWriter(binding, 'create', '币种')({ ...input })
             toast.success('货币已创建')
             invalidate()
             return saved.id as string
           }
-          if (!('update' in binding.writer) || !binding.writer.update) {
-            throw new Error('币种不支持 update')
-          }
           const input = decodeCurrencyUpdate(values)
-          const saved = await binding.writer.update(String(drawer!.row!.id), { ...input })
+          const saved = await requireWriter(binding, 'update', '币种')(String(drawer!.row!.id), { ...input })
           toast.success('货币已更新')
           invalidate()
           return saved.id as string

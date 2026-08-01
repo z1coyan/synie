@@ -1,8 +1,9 @@
 import { apiData, api } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
 import { createRowCommandAdapter } from './catalog/commands'
+import { restTransport } from './rest-transport'
 import { strictResourceListBody } from './resource-wire'
-import type { ResourceClient, ResourceTransport } from './types'
+import type { ResourceTransport } from './types'
 
 export interface MarketChartInstrument {
   id: string
@@ -40,54 +41,17 @@ export interface MarketRefreshResult {
 }
 export type MarketSeriesPriceKind = string
 
-type MarketInstrumentCreate = Record<string, unknown>
-type MarketInstrumentUpdate = Record<string, unknown>
-type MarketPricePointCreate = Record<string, unknown>
 type MarketPriceKind = string
 
 function wirePriceKind(value: MarketSeriesPriceKind): MarketPriceKind {
   return value.toUpperCase() as never
 }
 
-export const marketInstrumentClient: ResourceClient = {
-  id: 'rest:basMarketInstruments',
-
-
-  async query(input) {
-    const result = await apiData(
-      api.base['market-instruments'].query.$post({
-        json: strictResourceListBody(input, '行情品种'),
-      }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-
-  async get(id) {
-    return (await apiData(
-      api.base['market-instruments'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-
-  async create(input) {
-    return (await apiData(
-      api.base['market-instruments'].$post({ json: input as never }),
-    )) as Row
-  },
-
-  async update(id, input) {
-    return (await apiData(
-      api.base['market-instruments'][':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-
-  async delete(id) {
-    await apiData(
-      api.base['market-instruments'][':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const marketInstrumentClient = restTransport(
+  'basMarketInstruments',
+  api.base['market-instruments'],
+  { strictListLabel: '行情品种' },
+)
 
 export async function voidMarketPricePoint(id: string) {
   return apiData(
@@ -101,9 +65,9 @@ export const marketPricePointCommandAdapter = createRowCommandAdapter({
   void: voidMarketPricePoint,
 })
 
+// 偏离标准形状：create 只允许五个字段的封闭集合，继续手写。
 export const marketPricePointClient: ResourceTransport = {
   id: 'rest:basMarketPricePoints',
-
 
   async query(input) {
     const result = await apiData(
@@ -127,7 +91,6 @@ export const marketPricePointClient: ResourceTransport = {
       api.base['market-price-points'].$post({ json: body }),
     )) as Row
   },
-
 }
 
 export function getMarketChartInstruments(): Promise<MarketChartInstrument[]> {

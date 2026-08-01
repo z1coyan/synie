@@ -6,7 +6,7 @@ import {
   decodeSupplierCreate,
   decodeSupplierUpdate,
   useCatalogBasicForm,
-} from '~/lib/resources/catalog'
+  requireWriter,} from '~/lib/resources/catalog'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -59,22 +59,15 @@ function SuppliersPage() {
         fields={formProps.fields}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          if (!binding.writer) throw new Error('供应商不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('供应商不支持 create')
-            }
             const input = decodeSupplierCreate(values)
-            const saved = await binding.writer.create({ ...input })
+            const saved = await requireWriter(binding, 'create', '供应商')({ ...input })
             toast.success('供应商已创建')
             invalidate()
             return saved.id as string
           }
-          if (!('update' in binding.writer) || !binding.writer.update) {
-            throw new Error('供应商不支持 update')
-          }
           const input = decodeSupplierUpdate(values)
-          const saved = await binding.writer.update(String(drawer!.row!.id), { ...input })
+          const saved = await requireWriter(binding, 'update', '供应商')(String(drawer!.row!.id), { ...input })
           toast.success('供应商已更新')
           invalidate()
           return saved.id as string

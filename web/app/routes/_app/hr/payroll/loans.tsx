@@ -7,7 +7,8 @@ import {
   fetchEmployeeLoanBalances,
   type EmployeeLoanBalance,
 } from '~/lib/resources/hr-operations'
-import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { useCatalogBasicForm,
+  requireWriter,} from '~/lib/resources/catalog'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -133,17 +134,10 @@ function EmployeeLoansPage() {
             remarks: values.remarks,
           }
 
-          if (!binding.writer) throw new Error('员工借款不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('员工借款不支持 create')
-            }
-            await binding.writer.create(input)
+            await requireWriter(binding, 'create', '员工借款')(input)
           } else {
-            if (!('update' in binding.writer) || !binding.writer.update) {
-              throw new Error('员工借款不支持 update')
-            }
-            await binding.writer.update(drawer!.row!.id, input)
+            await requireWriter(binding, 'update', '员工借款')(drawer!.row!.id, input)
           }
           toast.success(mode === 'create' ? '台账已记账' : '台账已更新')
           invalidateAll()

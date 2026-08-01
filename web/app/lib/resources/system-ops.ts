@@ -1,8 +1,6 @@
 import { api, apiData } from '../api/client'
 import { isForbidden } from '../errors'
-import type { Row } from '~/components/synie-data-grid/types'
-import { resourceListBody } from './resource-wire'
-import type { ResourceTransport } from './types'
+import { restTransport } from './rest-transport'
 
 export type TodoTab = 'active' | 'history' | 'recent'
 export type TodoType = string
@@ -18,7 +16,7 @@ export interface SysTodo {
   partyType: string
   partyId: string
   partyName: string
-    company?: { name?: string | null; shortName?: string | null } | null
+  company?: { name?: string | null; shortName?: string | null } | null
   amount: string
   status: TodoStatus
   closedReason: TodoClosedReason
@@ -36,33 +34,18 @@ export interface TodoList {
   results: SysTodo[]
 }
 
-const listWireOptions = {
-  resourceLabel: '审计日志',
-  extraFields: 'reject',
-  joinFields: 'reject',
-} as const
-
-export const auditLogClient: ResourceTransport = {
-  id: 'rest:sysAuditLogs',
-
-  async query(input) {
-    const result = await apiData(
-      api.system['audit-logs'].query.$post({
-        json: resourceListBody(input, listWireOptions),
-      }),
-    )
-    return { count: result.count, results: result.results }
+export const auditLogClient = restTransport(
+  'sysAuditLogs',
+  api.system['audit-logs'],
+  {
+    capabilities: { create: false, update: false, delete: false },
+    listOptions: {
+      resourceLabel: '审计日志',
+      extraFields: 'reject',
+      joinFields: 'reject',
+    },
   },
-
-  async get(id) {
-    return (await apiData(
-      api.system['audit-logs'][':id'].$get({
-        param: { id },
-      }),
-    )) as Row
-  },
-
-}
+)
 
 export async function fetchTodos(
   tab: TodoTab,

@@ -6,7 +6,7 @@ import {
   decodeCompanyCreate,
   decodeCompanyUpdate,
   useCatalogBasicForm,
-} from '~/lib/resources/catalog'
+  requireWriter,} from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -51,21 +51,14 @@ function CompaniesPage() {
         fields={formProps.fields}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          if (!binding.writer) throw new Error('公司不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('公司不支持 create')
-            }
             const input = decodeCompanyCreate(values)
-            await binding.writer.create({ ...input })
+            await requireWriter(binding, 'create', '公司')({ ...input })
             toast.success('公司已创建,并初始化 3 个默认仓库')
             invalidate()
             return
           }
-          if (!('update' in binding.writer) || !binding.writer.update) {
-            throw new Error('公司不支持 update')
-          }
-          await binding.writer.update(String(drawer!.row!.id), {
+          await requireWriter(binding, 'update', '公司')(String(drawer!.row!.id), {
             ...decodeCompanyUpdate(values),
           })
           toast.success('公司已更新')

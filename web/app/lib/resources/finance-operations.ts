@@ -6,38 +6,12 @@ import {
   decodeRowTarget,
   defineCommand,
 } from './catalog/commands'
-import {
-  decimalWireInput,
-  resourceListBody,
-} from './resource-wire'
-import type { ResourceQuery, ResourceTransport } from './types'
+import { restTransport } from './rest-transport'
 
-type BankAccountCreate = Record<string, unknown>
-type BankAccountUpdate = Record<string, unknown>
-type BankTransactionCreate = Record<string, unknown>
-type BankTransactionUpdate = Record<string, unknown>
-type BankImportTemplateCreate =
-  Record<string, unknown>
-type BankImportTemplateUpdate =
-  Record<string, unknown>
-type BankImportCreate = Record<string, unknown>
-type BankImportItemUpdate = Record<string, unknown>
-type BankReconciliationCreate =
-  Record<string, unknown>
+
 type BankReconciliationQuickCreate =
   Record<string, unknown>
-type VatInvoiceCreate = Record<string, unknown>
-type VatInvoiceUpdate = Record<string, unknown>
 type VatInvoiceReverse = Record<string, unknown>
-type ExpenseReportCreate = Record<string, unknown>
-type ExpenseReportUpdate = Record<string, unknown>
-type ExpenseReportItemCreate =
-  Record<string, unknown>
-type ExpenseReportItemUpdate =
-  Record<string, unknown>
-type BillUpdate = Record<string, unknown>
-type BillTransactionCreate = Record<string, unknown>
-type BillTransactionUpdate = Record<string, unknown>
 
 export type BankImportRow = Record<string, unknown> & {
   id: string
@@ -59,179 +33,37 @@ export type BankReconciliationRow = Record<string, unknown> & { id: string }
 export type FinanceOCRResult = Record<string, unknown>
 export type ExpenseReportItemRow = Record<string, unknown> & { id: string }
 
-const metaNames = [
-  'accBankAccounts',
-  'accBankTransactions',
-  'accBankImportTemplates',
-  'accBankImports',
-  'accBankImportItems',
-  'accBankReconciliations',
-  'accVatInvoices',
-  'accExpenseReports',
-  'accExpenseReportItems',
-  'accBills',
-  'accBillTransactions',
-  'accBillHoldings',
-] as const
-
-type FinanceMetaName = (typeof metaNames)[number]
-
 const listWireOptions = {
   resourceLabel: '财务',
   extraFields: 'reject',
   joinFields: 'reject',
 } as const
 
-type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
-  Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
-
-function resourceClient<const TOperations extends ResourceOperations>(
-  resource: FinanceMetaName,
-  operations: TOperations,
-): { id: string } & TOperations {
-  return {
-    id: `rest:${resource}`,
-    ...operations,
-  }
-}
-
 const bankAmountFields = ['income', 'expense', 'balance'] as const
 
-export const bankAccountClient = resourceClient('accBankAccounts', {
-  async query(input) {
-    const result = await apiData(
-      api.finance['bank-accounts'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.finance['bank-accounts'][':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.finance['bank-accounts'].$post({
-        json: input as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.finance['bank-accounts'][':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.finance['bank-accounts'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
-
-export const bankTransactionClient = resourceClient('accBankTransactions', {
-  async query(input) {
-    const result = await apiData(
-      api.finance['bank-transactions'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.finance['bank-transactions'][':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.finance['bank-transactions'].$post({
-        json: decimalWireInput(input, bankAmountFields) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.finance['bank-transactions'][':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, bankAmountFields) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.finance['bank-transactions'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
-
-export const bankImportTemplateClient = resourceClient(
-  'accBankImportTemplates',
-  {
-    async query(input) {
-      const result = await apiData(
-        api.finance['bank-import-templates'].query.$post({
-          json: resourceListBody(input, listWireOptions)}),
-      )
-      return { count: result.count, results: result.results as Row[] }
-    },
-    async get(id) {
-      return (await apiData(
-        api.finance['bank-import-templates'][':id'].$get({
-          param: { id }}),
-      )) as Row
-    },
-    async create(input) {
-      return (await apiData(
-        api.finance['bank-import-templates'].$post({
-          json: input as never}),
-      )) as Row
-    },
-    async update(id, input) {
-      return (await apiData(
-        api.finance['bank-import-templates'][':id'].$patch({
-          param: { id },
-          json: input as never}),
-      )) as Row
-    },
-    async delete(id) {
-      await apiData(
-        api.finance['bank-import-templates'][':id'].$delete({
-          param: { id }}),
-      )
-    },
-  },
+export const bankAccountClient = restTransport(
+  'accBankAccounts',
+  api.finance['bank-accounts'],
+  { listOptions: listWireOptions },
 )
 
-export const bankImportClient = resourceClient('accBankImports', {
-  async query(input) {
-    const result = await apiData(
-      api.finance['bank-imports'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.finance['bank-imports'][':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.finance['bank-imports'].$post({
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.finance['bank-imports'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
+export const bankTransactionClient = restTransport(
+  'accBankTransactions',
+  api.finance['bank-transactions'],
+  { listOptions: listWireOptions, decimalFields: bankAmountFields },
+)
+
+export const bankImportTemplateClient = restTransport(
+  'accBankImportTemplates',
+  api.finance['bank-import-templates'],
+  { listOptions: listWireOptions },
+)
+
+export const bankImportClient = restTransport(
+  'accBankImports',
+  api.finance['bank-imports'],
+  { capabilities: { update: false }, listOptions: listWireOptions },
+)
 
 export async function importBankImport(id: string): Promise<BankImportRow> {
   return apiData(
@@ -240,63 +72,23 @@ export async function importBankImport(id: string): Promise<BankImportRow> {
   )
 }
 
-export const bankImportItemClient = resourceClient('accBankImportItems', {
-  async query(input) {
-    const result = await apiData(
-      api.finance['bank-import-items'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.finance['bank-import-items'][':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.finance['bank-import-items'][':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, bankAmountFields) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.finance['bank-import-items'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
-
-export const bankReconciliationClient = resourceClient(
-  'accBankReconciliations',
+export const bankImportItemClient = restTransport(
+  'accBankImportItems',
+  api.finance['bank-import-items'],
   {
-    async query(input) {
-      const result = await apiData(
-        api.finance['bank-reconciliations'].query.$post({
-          json: resourceListBody(input, listWireOptions)}),
-      )
-      return { count: result.count, results: result.results as Row[] }
-    },
-    async get(id) {
-      return (await apiData(
-        api.finance['bank-reconciliations'][':id'].$get({
-          param: { id }}),
-      )) as Row
-    },
-    async create(input) {
-      return (await apiData(
-        api.finance['bank-reconciliations'].$post({
-          json: decimalWireInput(input, ['amount']) as never}),
-      )) as Row
-    },
-    async delete(id) {
-      await apiData(
-        api.finance['bank-reconciliations'][':id'].$delete({
-          param: { id }}),
-      )
-    },
+    capabilities: { create: false },
+    listOptions: listWireOptions,
+    decimalFields: bankAmountFields,
+  },
+)
+
+export const bankReconciliationClient = restTransport(
+  'accBankReconciliations',
+  api.finance['bank-reconciliations'],
+  {
+    capabilities: { update: false },
+    listOptions: listWireOptions,
+    decimalFields: ['amount'],
   },
 )
 
@@ -364,40 +156,11 @@ export const bankTransactionCommandAdapter = createCommandAdapter({
 
 const invoiceAmounts = ['netTotal', 'taxTotal', 'grossTotal'] as const
 
-export const vatInvoiceClient = resourceClient('accVatInvoices', {
-  async query(input) {
-    const result = await apiData(
-      api.finance['vat-invoices'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.finance['vat-invoices'][':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.finance['vat-invoices'].$post({
-        json: decimalWireInput(input, invoiceAmounts) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.finance['vat-invoices'][':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, invoiceAmounts) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.finance['vat-invoices'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
+export const vatInvoiceClient = restTransport(
+  'accVatInvoices',
+  api.finance['vat-invoices'],
+  { listOptions: listWireOptions, decimalFields: invoiceAmounts },
+)
 
 export function auditVatInvoice(id: string, postingDate?: string) {
   return apiData(
@@ -456,40 +219,11 @@ export function ocrVatInvoice(fileId: string): Promise<FinanceOCRResult> {
   )
 }
 
-export const expenseReportClient = resourceClient('accExpenseReports', {
-  async query(input) {
-    const result = await apiData(
-      api.finance['expense-reports'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.finance['expense-reports'][':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.finance['expense-reports'].$post({
-        json: input as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.finance['expense-reports'][':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.finance['expense-reports'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
+export const expenseReportClient = restTransport(
+  'accExpenseReports',
+  api.finance['expense-reports'],
+  { listOptions: listWireOptions },
+)
 
 export function auditExpenseReport(id: string, postingDate?: string) {
   return apiData(
@@ -512,42 +246,10 @@ export const expenseReportCommandAdapter = createRowCommandAdapter({
   void: voidExpenseReport,
 })
 
-export const expenseReportItemClient = resourceClient(
+export const expenseReportItemClient = restTransport(
   'accExpenseReportItems',
-  {
-    async query(input) {
-      const result = await apiData(
-        api.finance['expense-report-items'].query.$post({
-          json: resourceListBody(input, listWireOptions)}),
-      )
-      return { count: result.count, results: result.results as Row[] }
-    },
-    async get(id) {
-      return (await apiData(
-        api.finance['expense-report-items'][':id'].$get({
-          param: { id }}),
-      )) as Row
-    },
-    async create(input) {
-      return (await apiData(
-        api.finance['expense-report-items'].$post({
-          json: decimalWireInput(input, ['amount']) as never}),
-      )) as Row
-    },
-    async update(id, input) {
-      return (await apiData(
-        api.finance['expense-report-items'][':id'].$patch({
-          param: { id },
-          json: decimalWireInput(input, ['amount']) as never}),
-      )) as Row
-    },
-    async delete(id) {
-      await apiData(
-        api.finance['expense-report-items'][':id'].$delete({
-          param: { id }}),
-      )
-    },
-  },
+  api.finance['expense-report-items'],
+  { listOptions: listWireOptions, decimalFields: ['amount'] },
 )
 
 export async function queryExpenseReportItems(
@@ -599,32 +301,10 @@ export async function saveExpenseReportItems(
   return errors
 }
 
-export const billClient = resourceClient('accBills', {
-  async query(input) {
-    const result = await apiData(
-      api.finance.bills.query.$post({ json: resourceListBody(input, listWireOptions) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.finance.bills[':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.finance.bills[':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, ['faceAmount']) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.finance.bills[':id'].$delete({
-        param: { id }}),
-    )
-  },
+export const billClient = restTransport('accBills', api.finance.bills, {
+  capabilities: { create: false },
+  listOptions: listWireOptions,
+  decimalFields: ['faceAmount'],
 })
 
 const billAmounts = [
@@ -634,40 +314,11 @@ const billAmounts = [
   'netAmount',
 ] as const
 
-export const billTransactionClient = resourceClient('accBillTransactions', {
-  async query(input) {
-    const result = await apiData(
-      api.finance['bill-transactions'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.finance['bill-transactions'][':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.finance['bill-transactions'].$post({
-        json: decimalWireInput(input, billAmounts) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.finance['bill-transactions'][':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, billAmounts) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.finance['bill-transactions'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
+export const billTransactionClient = restTransport(
+  'accBillTransactions',
+  api.finance['bill-transactions'],
+  { listOptions: listWireOptions, decimalFields: billAmounts },
+)
 
 export function auditBillTransaction(id: string, postingDate?: string) {
   return apiData(
@@ -696,18 +347,11 @@ export function ocrBillTransaction(fileId: string): Promise<FinanceOCRResult> {
   )
 }
 
-export const billHoldingClient = resourceClient('accBillHoldings', {
-  async query(input) {
-    const result = await apiData(
-      api.finance['bill-holdings'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return { count: result.count, results: result.results as Row[] }
+export const billHoldingClient = restTransport(
+  'accBillHoldings',
+  api.finance['bill-holdings'],
+  {
+    capabilities: { create: false, update: false, delete: false },
+    listOptions: listWireOptions,
   },
-  async get(id) {
-    return (await apiData(
-      api.finance['bill-holdings'][':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-})
+)

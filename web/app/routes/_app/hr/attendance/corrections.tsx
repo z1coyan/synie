@@ -3,7 +3,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseTime } from '@internationalized/date'
 import { Button, DateField, Label, TimeField, toast } from '@heroui/react'
-import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { useCatalogBasicForm,
+  requireWriter,} from '~/lib/resources/catalog'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
@@ -149,17 +150,10 @@ function AttendanceCorrectionsPage() {
           if (times.length === 0) throw new Error('至少需要一个补卡时刻')
           const input = { ...values, times }
 
-          if (!binding.writer) throw new Error('补卡单不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('补卡单不支持 create')
-            }
-            await binding.writer.create(input)
+            await requireWriter(binding, 'create', '补卡单')(input)
           } else {
-            if (!('update' in binding.writer) || !binding.writer.update) {
-              throw new Error('补卡单不支持 update')
-            }
-            await binding.writer.update(drawer!.row!.id, input)
+            await requireWriter(binding, 'update', '补卡单')(drawer!.row!.id, input)
           }
           toast.success(mode === 'create' ? '补卡单已保存,当天日考勤已重算' : '补卡单已更新,当天日考勤已重算')
           invalidateAll()

@@ -1,19 +1,10 @@
 import { apiData, api } from '../api/client'
-import type { Row } from '~/components/synie-data-grid/types'
 import {
   createCommandAdapter,
   decodeRowTarget,
   defineCommand,
 } from './catalog/commands'
-import {
-  decimalWireInput,
-  resourceListBody,
-} from './resource-wire'
-import type { ResourceClient, ResourceTransport } from './types'
-type GLJournalCreate = Record<string, unknown>
-type GLJournalUpdate = Record<string, unknown>
-type GLJournalLineCreate = Record<string, unknown>
-type GLJournalLineUpdate = Record<string, unknown>
+import { restTransport } from './rest-transport'
 
 export interface ARAPRoleAccount {
   id: string
@@ -40,26 +31,11 @@ export interface ARAPReport {
   rows: ARAPReportRow[]
 }
 
-export const glEntryClient: ResourceTransport = {
-  id: 'rest:accGlEntries',
-
-
-  async query(input) {
-    const result = await apiData(
-      api.accounting['gl-entries'].query.$post({
-        json: resourceListBody(input),
-      }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-
-  async get(id) {
-    return (await apiData(
-      api.accounting['gl-entries'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-
-}
+export const glEntryClient = restTransport(
+  'accGlEntries',
+  api.accounting['gl-entries'],
+  { capabilities: { create: false, update: false, delete: false } },
+)
 
 async function auditGlJournal(id: string, postingDate?: string) {
   return apiData(
@@ -99,96 +75,16 @@ export const glJournalCommandAdapter = createCommandAdapter({
   ),
 })
 
-export const glJournalClient: ResourceClient = {
-  id: 'rest:accGlJournals',
+export const glJournalClient = restTransport(
+  'accGlJournals',
+  api.accounting['gl-journals'],
+)
 
-
-  async query(input) {
-    const result = await apiData(
-      api.accounting['gl-journals'].query.$post({
-        json: resourceListBody(input),
-      }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-
-  async get(id) {
-    return (await apiData(
-      api.accounting['gl-journals'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-
-  async create(input) {
-    return (await apiData(
-      api.accounting['gl-journals'].$post({ json: input as never }),
-    )) as Row
-  },
-
-  async update(id, input) {
-    return (await apiData(
-      api.accounting['gl-journals'][':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-
-  async delete(id) {
-    await apiData(
-      api.accounting['gl-journals'][':id'].$delete({ param: { id } }),
-    )
-  },
-
-}
-
-export const glJournalLineClient: ResourceClient = {
-  id: 'rest:accGlJournalLines',
-
-
-  async query(input) {
-    const result = await apiData(
-      api.accounting['gl-journal-lines'].query.$post({
-        json: resourceListBody(input),
-      }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-
-  async get(id) {
-    return (await apiData(
-      api.accounting['gl-journal-lines'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-
-  async create(input) {
-    return (await apiData(
-      api.accounting['gl-journal-lines'].$post({
-        json: decimalWireInput(
-          input,
-          ['debit', 'credit'],
-          { empty: '0' },
-        ) as never}),
-    )) as Row
-  },
-
-  async update(id, input) {
-    return (await apiData(
-      api.accounting['gl-journal-lines'][':id'].$patch({
-        param: { id },
-        json: decimalWireInput(
-          input,
-          ['debit', 'credit'],
-          { empty: '0' },
-        ) as never}),
-    )) as Row
-  },
-
-  async delete(id) {
-    await apiData(
-      api.accounting['gl-journal-lines'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-}
+export const glJournalLineClient = restTransport(
+  'accGlJournalLines',
+  api.accounting['gl-journal-lines'],
+  { decimalFields: ['debit', 'credit'], decimalOptions: { empty: '0' } },
+)
 
 export function fetchARAPReport(companyId: string, asOf: string): Promise<ARAPReport> {
   return apiData(

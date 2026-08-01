@@ -5,9 +5,11 @@ import {
   decodeRowTarget,
   defineCommand,
 } from './catalog/commands'
+import { restTransport } from './rest-transport'
 import { resourceListBody } from './resource-wire'
-import type { ResourceClient, ResourceTransport } from './types'
+import type { ResourceTransport } from './types'
 
+// 偏离标准形状：单条读取走 :id/metadata 而非 :id，继续手写。
 export const fileClient = {
   id: 'rest:sysFiles',
   async query(input) {
@@ -30,40 +32,7 @@ export const fileClient = {
   },
 } satisfies ResourceTransport
 
-export const storageClient: ResourceClient = {
-  id: 'rest:sysStorages',
-  async query(input) {
-    const result = await apiData(
-      api.system.storages.query.$post({
-        json: resourceListBody(input),
-      }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.system.storages[':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.system.storages.$post({
-        json: input as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.system.storages[':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.system.storages[':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const storageClient = restTransport('sysStorages', api.system.storages)
 
 export async function setDefaultStorage(id: string): Promise<void> {
   await apiData(

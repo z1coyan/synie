@@ -5,21 +5,9 @@ import {
   decodeCollectionTarget,
   defineCommand,
 } from './catalog/commands'
-import {
-  decimalWireInput,
-  resourceListBody,
-} from './resource-wire'
-import type { ResourceQuery, ResourceTransport } from './types'
-
-type AttendanceCorrectionCreate =
-  Record<string, unknown>
-type AttendanceCorrectionUpdate =
-  Record<string, unknown>
-type PayrollCreate = Record<string, unknown>
-type PayrollUpdate = Record<string, unknown>
-type PayrollPaymentCreate = Record<string, unknown>
-type EmployeeLoanCreate = Record<string, unknown>
-type EmployeeLoanUpdate = Record<string, unknown>
+import { restTransport } from './rest-transport'
+import { decimalWireInput } from './resource-wire'
+import type { ResourceClient } from './types'
 
 export interface AttendanceMonthSummary {
   employeeId: string
@@ -97,68 +85,23 @@ const listWireOptions = {
   joinFields: 'reject',
 } as const
 
-type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
-  Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
+export const attendancePunchClient = restTransport(
+  'hrAttendancePunches',
+  api.hr['attendance-punches'],
+  {
+    capabilities: { create: false, update: false, delete: false },
+    listOptions: listWireOptions,
+  },
+)
 
-function resourceClient<const TOperations extends ResourceOperations>(
-  resource: string,
-  operations: TOperations,
-): { id: string } & TOperations {
-  return {
-    id: `rest:${resource}`,
-    ...operations,
-  }
-}
-
-export const attendancePunchClient = resourceClient('hrAttendancePunches', {
-  async query(input) {
-    const result = await apiData(
-      api.hr['attendance-punches'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return {
-      count: result.count,
-      results: result.results as unknown as Row[],
-    }
+export const attendanceImportClient = restTransport(
+  'hrAttendanceImports',
+  api.hr['attendance-imports'],
+  {
+    capabilities: { update: false },
+    listOptions: listWireOptions,
   },
-  async get(id) {
-    return (await apiData(
-      api.hr['attendance-punches'][':id'].$get({
-        param: { id }}),
-    )) as unknown as Row
-  },
-})
-
-export const attendanceImportClient = resourceClient('hrAttendanceImports', {
-  async query(input) {
-    const result = await apiData(
-      api.hr['attendance-imports'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return {
-      count: result.count,
-      results: result.results as unknown as Row[],
-    }
-  },
-  async get(id) {
-    return (await apiData(
-      api.hr['attendance-imports'][':id'].$get({
-        param: { id }}),
-    )) as unknown as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.hr['attendance-imports'].$post({
-        json: input as never}),
-    )) as unknown as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.hr['attendance-imports'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
+)
 
 export async function createAttendanceImport(
   fileId: string,
@@ -181,24 +124,14 @@ export async function importAttendanceImport(
   return result as AttendanceImportExecution
 }
 
-export const attendanceDayClient = resourceClient('hrAttendanceDays', {
-  async query(input) {
-    const result = await apiData(
-      api.hr['attendance-days'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return {
-      count: result.count,
-      results: result.results as unknown as Row[],
-    }
+export const attendanceDayClient = restTransport(
+  'hrAttendanceDays',
+  api.hr['attendance-days'],
+  {
+    capabilities: { create: false, update: false, delete: false },
+    listOptions: listWireOptions,
   },
-  async get(id) {
-    return (await apiData(
-      api.hr['attendance-days'][':id'].$get({
-        param: { id }}),
-    )) as unknown as Row
-  },
-})
+)
 
 export async function recalcAttendanceDays(
   dateFrom: string,
@@ -237,45 +170,10 @@ export function fetchAttendanceMonthSummary(month: string) {
   )
 }
 
-export const attendanceCorrectionClient = resourceClient(
+export const attendanceCorrectionClient = restTransport(
   'hrAttendanceCorrections',
-  {
-    async query(input) {
-      const result = await apiData(
-        api.hr['attendance-corrections'].query.$post({
-          json: resourceListBody(input, listWireOptions)}),
-      )
-      return {
-        count: result.count,
-        results: result.results as unknown as Row[],
-      }
-    },
-    async get(id) {
-      return (await apiData(
-        api.hr['attendance-corrections'][':id'].$get({
-          param: { id }}),
-      )) as unknown as Row
-    },
-    async create(input) {
-      return (await apiData(
-        api.hr['attendance-corrections'].$post({
-          json: input as never}),
-      )) as unknown as Row
-    },
-    async update(id, input) {
-      return (await apiData(
-        api.hr['attendance-corrections'][':id'].$patch({
-          param: { id },
-          json: input as never}),
-      )) as unknown as Row
-    },
-    async delete(id) {
-      await apiData(
-        api.hr['attendance-corrections'][':id'].$delete({
-          param: { id }}),
-      )
-    },
-  },
+  api.hr['attendance-corrections'],
+  { listOptions: listWireOptions },
 )
 
 export async function saveAttendanceCorrection(
@@ -299,7 +197,7 @@ const payrollDecimals = [
 
 function payrollCreateInput(
   input: Record<string, unknown>,
-): PayrollCreate {
+): Record<string, unknown> {
   const result = decimalWireInput(input, payrollDecimals)
   for (const field of payrollDecimals) {
     if (result[field] == null) result[field] = '0'
@@ -307,45 +205,24 @@ function payrollCreateInput(
   for (const field of ['attendanceDays', 'missingDays'] as const) {
     if (result[field] == null || result[field] === '') result[field] = 0
   }
-  return result as unknown as never
+  return result
 }
 
-export const payrollClient = resourceClient('hrPayrolls', {
-  async query(input) {
-    const result = await apiData(
-      api.hr.payrolls.query.$post({ json: resourceListBody(input, listWireOptions) }),
-    )
-    return {
-      count: result.count,
-      results: result.results as unknown as Row[],
-    }
-  },
-  async get(id) {
-    return (await apiData(
-      api.hr.payrolls[':id'].$get({
-        param: { id }}),
-    )) as unknown as Row
-  },
+const payrollTransport = restTransport('hrPayrolls', api.hr.payrolls, {
+  listOptions: listWireOptions,
+  decimalFields: payrollDecimals,
+})
+
+export const payrollClient: ResourceClient = {
+  ...payrollTransport,
+  // 偏离标准形状：create 对 decimal 字段做零值回填并对天数列兜底 0。
   async create(input) {
     return (await apiData(
       api.hr.payrolls.$post({
         json: payrollCreateInput(input) as never}),
     )) as unknown as Row
   },
-  async update(id, input) {
-    return (await apiData(
-      api.hr.payrolls[':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, payrollDecimals) as never}),
-    )) as unknown as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.hr.payrolls[':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
+}
 
 export async function savePayroll(
   id: string | null,
@@ -381,36 +258,15 @@ export function fetchPayrollMonthStats(
   )
 }
 
-export const payrollPaymentClient = resourceClient('hrPayrollPayments', {
-  async query(input) {
-    const result = await apiData(
-      api.hr['payroll-payments'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return {
-      count: result.count,
-      results: result.results as unknown as Row[],
-    }
+export const payrollPaymentClient = restTransport(
+  'hrPayrollPayments',
+  api.hr['payroll-payments'],
+  {
+    capabilities: { update: false },
+    listOptions: listWireOptions,
+    decimalFields: ['amount'],
   },
-  async get(id) {
-    return (await apiData(
-      api.hr['payroll-payments'][':id'].$get({
-        param: { id }}),
-    )) as unknown as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.hr['payroll-payments'].$post({
-        json: decimalWireInput(input, ['amount']) as never as unknown as never}),
-    )) as unknown as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.hr['payroll-payments'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
+)
 
 export async function queryPayrollPayments(
   payrollId: string,
@@ -450,43 +306,11 @@ export function payRemainingPayroll(
   )
 }
 
-export const employeeLoanClient = resourceClient('hrEmployeeLoans', {
-  async query(input) {
-    const result = await apiData(
-      api.hr['employee-loans'].query.$post({
-        json: resourceListBody(input, listWireOptions)}),
-    )
-    return {
-      count: result.count,
-      results: result.results as unknown as Row[],
-    }
-  },
-  async get(id) {
-    return (await apiData(
-      api.hr['employee-loans'][':id'].$get({
-        param: { id }}),
-    )) as unknown as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.hr['employee-loans'].$post({
-        json: decimalWireInput(input, ['amount']) as never as unknown as never}),
-    )) as unknown as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.hr['employee-loans'][':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, ['amount']) as never}),
-    )) as unknown as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.hr['employee-loans'][':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
+export const employeeLoanClient = restTransport(
+  'hrEmployeeLoans',
+  api.hr['employee-loans'],
+  { listOptions: listWireOptions, decimalFields: ['amount'] },
+)
 
 export async function saveEmployeeLoan(
   id: string | null,

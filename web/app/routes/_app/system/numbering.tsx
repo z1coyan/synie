@@ -16,7 +16,8 @@ import {
   listNumberableResources,
   numberingCounterClient,
 } from '~/lib/resources/numbering'
-import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { useCatalogBasicForm,
+  requireWriter,} from '~/lib/resources/catalog'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -132,10 +133,7 @@ function NumberingPage() {
           rowActions={statusToggleActions({
             field: 'enabled',
             update: (id, input) => {
-              if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) {
-                throw new Error('编号规则不支持 update')
-              }
-              return binding.writer.update(id, input)
+              return requireWriter(binding, 'update', '编号规则')(id, input)
             },
             onDone: () =>
               binding.cache.invalidateGrid(queryClient),
@@ -240,18 +238,11 @@ function NumberingPage() {
             throw new Error('编号段不能为空,且必须恰好包含一个序号段')
           }
           const input = { ...values, segments }
-          if (!binding.writer) throw new Error('编号规则不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('编号规则不支持 create')
-            }
-            await binding.writer.create(input)
+            await requireWriter(binding, 'create', '编号规则')(input)
             toast.success('编号规则已创建')
           } else {
-            if (!('update' in binding.writer) || !binding.writer.update) {
-              throw new Error('编号规则不支持 update')
-            }
-            await binding.writer.update(drawer!.row!.id, input)
+            await requireWriter(binding, 'update', '编号规则')(drawer!.row!.id, input)
             const counterErrors = await persistCounters(counters, countersSnapshot)
             if (counterErrors.length > 0) {
               toast.danger('规则已更新,但部分计数器保存失败', {

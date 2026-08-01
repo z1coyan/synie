@@ -6,7 +6,7 @@ import {
   decodeUnitCreate,
   decodeUnitUpdate,
   useCatalogBasicForm,
-} from '~/lib/resources/catalog'
+  requireWriter,} from '~/lib/resources/catalog'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -51,22 +51,15 @@ function UnitsPage() {
         fields={formProps.fields}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          if (!binding.writer) throw new Error('单位不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('单位不支持 create')
-            }
             const input = decodeUnitCreate(values)
-            const saved = await binding.writer.create({ ...input })
+            const saved = await requireWriter(binding, 'create', '单位')({ ...input })
             toast.success('单位已创建')
             invalidate()
             return saved.id as string
           }
-          if (!('update' in binding.writer) || !binding.writer.update) {
-            throw new Error('单位不支持 update')
-          }
           const input = decodeUnitUpdate(values)
-          const saved = await binding.writer.update(String(drawer!.row!.id), { ...input })
+          const saved = await requireWriter(binding, 'update', '单位')(String(drawer!.row!.id), { ...input })
           toast.success('单位已更新')
           invalidate()
           return saved.id as string

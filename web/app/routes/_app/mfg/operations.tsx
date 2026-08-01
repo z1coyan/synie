@@ -4,7 +4,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { useCatalogBasicForm,
+  requireWriter,} from '~/lib/resources/catalog'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -54,17 +55,10 @@ function OperationsPage() {
         row={drawer?.row}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          if (!binding.writer) throw new Error('工序不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('工序不支持 create')
-            }
-            await binding.writer.create(values)
+            await requireWriter(binding, 'create', '工序')(values)
           } else {
-            if (!('update' in binding.writer) || !binding.writer.update) {
-              throw new Error('工序不支持 update')
-            }
-            await binding.writer.update(drawer!.row!.id, values)
+            await requireWriter(binding, 'update', '工序')(drawer!.row!.id, values)
           }
           toast.success(mode === 'create' ? '工序已创建' : '工序已更新')
           invalidate()

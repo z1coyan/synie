@@ -9,7 +9,8 @@ import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordD
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
-import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { useCatalogBasicForm,
+  requireWriter,} from '~/lib/resources/catalog'
 
 export const Route = createFileRoute('/_app/finance/bank-accounts')({
   component: BankAccountsPage,
@@ -58,10 +59,7 @@ function BankAccountsPage() {
           rowActions={statusToggleActions({
             field: 'active',
             update: (id, input) => {
-              if (!binding.writer || !('update' in binding.writer) || !binding.writer.update) {
-                throw new Error('银行账户不支持 update')
-              }
-              return binding.writer.update(id, input)
+              return requireWriter(binding, 'update', '银行账户')(id, input)
             },
             rowLabel: (row) => String(row.alias ?? ''),
             onDone: () => binding.cache.invalidateRow(queryClient),
@@ -114,17 +112,10 @@ function BankAccountsPage() {
         )}
         onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
         onSubmit={async (values, mode) => {
-          if (!binding.writer) throw new Error('银行账户不支持写入')
           if (mode === 'create') {
-            if (!('create' in binding.writer) || !binding.writer.create) {
-              throw new Error('银行账户不支持 create')
-            }
-            await binding.writer.create(values)
+            await requireWriter(binding, 'create', '银行账户')(values)
           } else {
-            if (!('update' in binding.writer) || !binding.writer.update) {
-              throw new Error('银行账户不支持 update')
-            }
-            await binding.writer.update(drawer!.row!.id, values)
+            await requireWriter(binding, 'update', '银行账户')(drawer!.row!.id, values)
           }
           toast.success(mode === 'create' ? '银行账户已创建' : '银行账户已更新')
           await binding.cache.invalidateGrid(queryClient)

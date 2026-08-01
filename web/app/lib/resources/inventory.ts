@@ -6,219 +6,41 @@ import {
   decodeRowTarget,
   defineCommand,
 } from './catalog/commands'
-import {
-  dateTimeWireInput,
-  resourceListBody,
-} from './resource-wire'
-import type { ResourceClient, ResourceTransport } from './types'
+import { restTransport } from './rest-transport'
+import { dateTimeWireInput } from './resource-wire'
 
-type MaterialCategoryCreate = Record<string, unknown>
-type MaterialCategoryUpdate = Record<string, unknown>
-type MaterialCreate = Record<string, unknown>
-type MaterialUpdate = Record<string, unknown>
-type MaterialUnitCreate = Record<string, unknown>
-type MaterialUnitUpdate = Record<string, unknown>
-type WarehouseCreate = Record<string, unknown>
-type WarehouseUpdate = Record<string, unknown>
 type WarehouseOutsourcedQuery = Record<string, unknown>
-type StockDocCreate = Record<string, unknown>
-type StockDocUpdate = Record<string, unknown>
-type StockDocItemCreate = Record<string, unknown>
-type StockDocItemUpdate = Record<string, unknown>
-type StockTransferCreate = Record<string, unknown>
-type StockTransferUpdate = Record<string, unknown>
-type StockTransferItemCreate = Record<string, unknown>
-type StockTransferItemUpdate = Record<string, unknown>
 type StockTransferReceive = Record<string, unknown>
-type StockCountCreate = Record<string, unknown>
-type StockCountUpdate = Record<string, unknown>
-type StockCountItemCreate = Record<string, unknown>
-type StockCountItemUpdate = Record<string, unknown>
 type StockBalanceQuery = Record<string, unknown>
 
-export const materialCategoryClient: ResourceClient = {
-  id: 'rest:invMaterialCategories',
-  async query(input) {
-    const result = await apiData(
-      api.inventory['material-categories'].query.$post({
-        json: resourceListBody(input),
-      }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory['material-categories'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.inventory['material-categories'].$post({ json: input as never }),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.inventory['material-categories'][':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.inventory['material-categories'][':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const materialCategoryClient = restTransport(
+  'invMaterialCategories',
+  api.inventory['material-categories'],
+)
 
-export const materialClient: ResourceClient = {
-  id: 'rest:invMaterials',
-  async query(input) {
-    const result = await apiData(
-      api.inventory.materials.query.$post({
-        json: resourceListBody(input),
-      }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory.materials[':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.inventory.materials.$post({ json: input as never }),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.inventory.materials[':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.inventory.materials[':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const materialClient = restTransport('invMaterials', api.inventory.materials)
 
-export const materialUnitClient: ResourceClient = {
-  id: 'rest:invMaterialUnits',
-  async query(input) {
-    const result = await apiData(
-      api.inventory['material-units'].query.$post({
-        json: resourceListBody(input),
-      }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory['material-units'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.inventory['material-units'].$post({ json: input as never }),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.inventory['material-units'][':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.inventory['material-units'][':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const materialUnitClient = restTransport(
+  'invMaterialUnits',
+  api.inventory['material-units'],
+)
 
-export const warehouseClient: ResourceClient = {
-  id: 'rest:invWarehouses',
-  async query(input) {
-    const result = await apiData(
-      api.inventory.warehouses.query.$post({
-        json: resourceListBody(input),
-      }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory.warehouses[':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.inventory.warehouses.$post({ json: input as never }),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.inventory.warehouses[':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.inventory.warehouses[':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const warehouseClient = restTransport(
+  'invWarehouses',
+  api.inventory.warehouses,
+)
 
-export const stockEntryClient: ResourceTransport = {
-  id: 'rest:invStockEntries',
-  async query(input) {
-    const result = await apiData(
-      api.inventory['stock-entries'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory['stock-entries'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-}
+export const stockEntryClient = restTransport(
+  'invStockEntries',
+  api.inventory['stock-entries'],
+  { capabilities: { create: false, update: false, delete: false } },
+)
 
-export const stockDocClient: ResourceClient = {
-  id: 'rest:invStockDocs',
-  async query(input) {
-    const result = await apiData(
-      api.inventory['stock-docs'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory['stock-docs'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.inventory['stock-docs'].$post({
-        json: dateTimeWireInput(input, ['docDate']) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.inventory['stock-docs'][':id'].$patch({
-        param: { id },
-        json: dateTimeWireInput(input, ['docDate']) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.inventory['stock-docs'][':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const stockDocClient = restTransport(
+  'invStockDocs',
+  api.inventory['stock-docs'],
+  { dateTimeFields: ['docDate'] },
+)
 
 async function auditStockDoc(id: string) {
   return apiData(api.inventory['stock-docs'][':id'].audit.$post({ param: { id } }))
@@ -239,70 +61,16 @@ export const stockDocCommandAdapter = createRowCommandAdapter({
   },
 })
 
-export const stockDocItemClient: ResourceClient = {
-  id: 'rest:invStockDocItems',
-  async query(input) {
-    const result = await apiData(
-      api.inventory['stock-doc-items'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory['stock-doc-items'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.inventory['stock-doc-items'].$post({ json: input as never }),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.inventory['stock-doc-items'][':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.inventory['stock-doc-items'][':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const stockDocItemClient = restTransport(
+  'invStockDocItems',
+  api.inventory['stock-doc-items'],
+)
 
-export const stockTransferClient: ResourceClient = {
-  id: 'rest:invStockTransfers',
-  async query(input) {
-    const result = await apiData(
-      api.inventory['stock-transfers'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory['stock-transfers'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.inventory['stock-transfers'].$post({
-        json: dateTimeWireInput(input, ['docDate']) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.inventory['stock-transfers'][':id'].$patch({
-        param: { id },
-        json: dateTimeWireInput(input, ['docDate']) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.inventory['stock-transfers'][':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const stockTransferClient = restTransport(
+  'invStockTransfers',
+  api.inventory['stock-transfers'],
+  { dateTimeFields: ['docDate'] },
+)
 
 async function shipStockTransfer(id: string) {
   return apiData(api.inventory['stock-transfers'][':id'].ship.$post({ param: { id } }))
@@ -327,70 +95,16 @@ export const stockTransferCommandAdapter = createCommandAdapter({
   ),
 })
 
-export const stockTransferItemClient: ResourceClient = {
-  id: 'rest:invStockTransferItems',
-  async query(input) {
-    const result = await apiData(
-      api.inventory['stock-transfer-items'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory['stock-transfer-items'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.inventory['stock-transfer-items'].$post({ json: input as never }),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.inventory['stock-transfer-items'][':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.inventory['stock-transfer-items'][':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const stockTransferItemClient = restTransport(
+  'invStockTransferItems',
+  api.inventory['stock-transfer-items'],
+)
 
-export const stockCountClient: ResourceClient = {
-  id: 'rest:invStockCounts',
-  async query(input) {
-    const result = await apiData(
-      api.inventory['stock-counts'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory['stock-counts'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.inventory['stock-counts'].$post({
-        json: dateTimeWireInput(input, ['postingDate']) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.inventory['stock-counts'][':id'].$patch({
-        param: { id },
-        json: dateTimeWireInput(input, ['postingDate']) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.inventory['stock-counts'][':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const stockCountClient = restTransport(
+  'invStockCounts',
+  api.inventory['stock-counts'],
+  { dateTimeFields: ['postingDate'] },
+)
 
 async function approveStockCount(id: string) {
   return apiData(api.inventory['stock-counts'][':id'].approve.$post({ param: { id } }))
@@ -411,37 +125,10 @@ export const stockCountCommandAdapter = createRowCommandAdapter({
   },
 })
 
-export const stockCountItemClient: ResourceClient = {
-  id: 'rest:invStockCountItems',
-  async query(input) {
-    const result = await apiData(
-      api.inventory['stock-count-items'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.inventory['stock-count-items'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.inventory['stock-count-items'].$post({ json: input as never }),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.inventory['stock-count-items'][':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.inventory['stock-count-items'][':id'].$delete({ param: { id } }),
-    )
-  },
-}
+export const stockCountItemClient = restTransport(
+  'invStockCountItems',
+  api.inventory['stock-count-items'],
+)
 
 export async function queryStockBalance(input: StockBalanceQuery) {
   return apiData(

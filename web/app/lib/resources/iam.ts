@@ -1,61 +1,26 @@
 import { apiData, api } from '../api/client'
 import type { Row } from '~/components/synie-data-grid/types'
-import { strictResourceListBody } from './resource-wire'
+import { restTransport } from './rest-transport'
 import type { ResourceClient } from './types'
 
-type UserCreate = Record<string, unknown>
-type UserUpdate = Record<string, unknown>
-type RoleCreate = Record<string, unknown>
-type RoleUpdate = Record<string, unknown>
+const userTransport = restTransport('sysUsers', api.system.users, {
+  strictListLabel: 'IAM',
+})
 
 export const userClient: ResourceClient = {
-  id: 'rest:sysUsers',
-  async query(input) {
-    const result = await apiData(api.system.users.query.$post({
-      json: strictResourceListBody(input, 'IAM'),
-    }))
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return await apiData(api.system.users[':id'].$get({ param: { id } })) as Row
-  },
-  async create(values) {
-    const result = await createUser(values as never)
+  ...userTransport,
+  // 偏离标准形状：创建响应为 { user } 包装，须解包后再交给调用方。
+  async create(input) {
+    const result = await createUser(input as never)
     return result.user as Row
   },
-  async update(id, values) {
-    return await apiData(api.system.users[':id'].$patch({
-      param: { id }, json: values as never})) as never
-  },
-  async delete(id) {
-    await apiData(api.system.users[':id'].$delete({ param: { id } }))
-  },
 }
 
-export const roleClient: ResourceClient = {
-  id: 'rest:sysRoles',
-  async query(input) {
-    const result = await apiData(api.system.roles.query.$post({
-      json: strictResourceListBody(input, 'IAM'),
-    }))
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return await apiData(api.system.roles[':id'].$get({ param: { id } })) as Row
-  },
-  async create(values) {
-    return await apiData(api.system.roles.$post({ json: values as never })) as never
-  },
-  async update(id, values) {
-    return await apiData(api.system.roles[':id'].$patch({
-      param: { id }, json: values as never})) as never
-  },
-  async delete(id) {
-    await apiData(api.system.roles[':id'].$delete({ param: { id } }))
-  },
-}
+export const roleClient = restTransport('sysRoles', api.system.roles, {
+  strictListLabel: 'IAM',
+})
 
-export const createUser = (body: UserCreate) =>
+export const createUser = (body: Record<string, unknown>) =>
   apiData(api.system.users.$post({ json: body as never }))
 export const fetchUserAccess = (id: string) =>
   apiData(api.system.users[':id'].access.$get({ param: { id } }))

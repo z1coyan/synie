@@ -1,21 +1,6 @@
 import { apiData, api } from '../api/client'
-import type { Row } from '~/components/synie-data-grid/types'
 import { createRowCommandAdapter } from './catalog/commands'
-import { decimalWireInput, resourceListBody } from './resource-wire'
-import type { ResourceTransport } from './types'
-
-type ResourceOperations = Pick<ResourceTransport, 'query' | 'get'> &
-  Partial<Pick<ResourceTransport, 'create' | 'update' | 'delete'>>
-
-function resourceClient<const TOperations extends ResourceOperations>(
-  resource: string,
-  operations: TOperations,
-): { id: string } & TOperations {
-  return {
-    id: `rest:${resource}`,
-    ...operations,
-  }
-}
+import { restTransport } from './rest-transport'
 
 async function salesAction(
   id: string,
@@ -137,196 +122,36 @@ export const purchaseReconciliationCommandAdapter = createRowCommandAdapter({
   },
 })
 
-export const salesReconciliationClient = resourceClient('salReconciliations', {
-  async query(input) {
-    const result = await apiData(
-      api.sales.reconciliations.query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.sales.reconciliations[':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.sales.reconciliations.$post({ json: input as never }),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.sales.reconciliations[':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.sales.reconciliations[':id'].$delete({
-        param: { id }}),
-    )
-  },
-})
+export const salesReconciliationClient = restTransport(
+  'salReconciliations',
+  api.sales.reconciliations,
+)
 
-export const salesReconciliationItemClient = resourceClient(
+export const salesReconciliationItemClient = restTransport(
   'salReconciliationItems',
-  {
-    async query(input) {
-      const result = await apiData(
-        api.sales['reconciliation-items'].query.$post({
-          json: resourceListBody(input)}),
-      )
-      return { count: result.count, results: result.results as Row[] }
-    },
-    async get(id) {
-      return (await apiData(
-        api.sales['reconciliation-items'][':id'].$get({
-          param: { id }}),
-      )) as Row
-    },
-    async create(input) {
-      return (await apiData(
-        api.sales['reconciliation-items'].$post({
-          json: decimalWireInput(input, ['qty']) as never}),
-      )) as Row
-    },
-    async update(id, input) {
-      return (await apiData(
-        api.sales['reconciliation-items'][':id'].$patch({
-          param: { id },
-          json: decimalWireInput(input, ['qty']) as never}),
-      )) as Row
-    },
-    async delete(id) {
-      await apiData(
-        api.sales['reconciliation-items'][':id'].$delete({
-          param: { id }}),
-      )
-    },
-  },
+  api.sales['reconciliation-items'],
+  { decimalFields: ['qty'] },
 )
 
-export const purchaseReconciliationClient = resourceClient(
+export const purchaseReconciliationClient = restTransport(
   'purReconciliations',
-  {
-    async query(input) {
-      const result = await apiData(
-        api.purchase.reconciliations.query.$post({
-          json: resourceListBody(input)}),
-      )
-      return { count: result.count, results: result.results as Row[] }
-    },
-    async get(id) {
-      return (await apiData(
-        api.purchase.reconciliations[':id'].$get({
-          param: { id }}),
-      )) as Row
-    },
-    async create(input) {
-      return (await apiData(
-        api.purchase.reconciliations.$post({ json: input as never }),
-      )) as Row
-    },
-    async update(id, input) {
-      return (await apiData(
-        api.purchase.reconciliations[':id'].$patch({
-          param: { id },
-          json: input as never}),
-      )) as Row
-    },
-    async delete(id) {
-      await apiData(
-        api.purchase.reconciliations[':id'].$delete({
-          param: { id }}),
-      )
-    },
-  },
+  api.purchase.reconciliations,
 )
 
-export const purchaseReconciliationItemClient = resourceClient(
+export const purchaseReconciliationItemClient = restTransport(
   'purReconciliationItems',
-  {
-    async query(input) {
-      const result = await apiData(
-        api.purchase['reconciliation-items'].query.$post({
-          json: resourceListBody(input)}),
-      )
-      return { count: result.count, results: result.results as Row[] }
-    },
-    async get(id) {
-      return (await apiData(
-        api.purchase['reconciliation-items'][':id'].$get({
-          param: { id }}),
-      )) as Row
-    },
-    async create(input) {
-      return (await apiData(
-        api.purchase['reconciliation-items'].$post({
-          json: decimalWireInput(input, ['qty']) as never}),
-      )) as Row
-    },
-    async update(id, input) {
-      return (await apiData(
-        api.purchase['reconciliation-items'][':id'].$patch({
-          param: { id },
-          json: decimalWireInput(input, ['qty']) as never}),
-      )) as Row
-    },
-    async delete(id) {
-      await apiData(
-        api.purchase['reconciliation-items'][':id'].$delete({
-          param: { id }}),
-      )
-    },
-  },
+  api.purchase['reconciliation-items'],
+  { decimalFields: ['qty'] },
 )
 
-export const companyAccountDefaultClient = resourceClient(
+export const companyAccountDefaultClient = restTransport(
   'salCompanyAccountDefaults',
-  {
-    async query(input) {
-      const result = await apiData(
-        api.sales['company-account-defaults'].query.$post({
-          json: resourceListBody(input)}),
-      )
-      return { count: result.count, results: result.results as Row[] }
-    },
-    async get(id) {
-      return (await apiData(
-        api.sales['company-account-defaults'][':id'].$get({
-          param: { id }}),
-      )) as Row
-    },
-    async create(input) {
-      return (await apiData(
-        api.sales['company-account-defaults'].$post({
-          json: input as never}),
-      )) as Row
-    },
-    async update(id, input) {
-      return (await apiData(
-        api.sales['company-account-defaults'][':id'].$patch({
-          param: { id },
-          json: input as never}),
-      )) as Row
-    },
-  },
+  api.sales['company-account-defaults'],
+  { capabilities: { delete: false } },
 )
 
-export const orderFlowItemClient = resourceClient('scmOrderFlowItems', {
-  async query(input) {
-    const result = await apiData(
-      api.scm['order-flow-items'].query.$post({
-        json: resourceListBody(input)}),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.scm['order-flow-items'][':id'].$get({
-        param: { id }}),
-    )) as Row
-  },
-})
+export const orderFlowItemClient = restTransport(
+  'scmOrderFlowItems',
+  api.scm['order-flow-items'],
+  { capabilities: { create: false, update: false, delete: false } },
+)

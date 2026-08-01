@@ -1,26 +1,6 @@
 import { apiData, api } from '../api/client'
-import type { Row } from '~/components/synie-data-grid/types'
 import { createRowCommandAdapter } from './catalog/commands'
-import { decimalWireInput, resourceListBody } from './resource-wire'
-import type { ResourceClient, ResourceQuery } from './types'
-
-interface ClientOperations {
-  query(input: ResourceQuery): Promise<{ count: number; results: Row[] }>
-  get(id: string): Promise<Row>
-  create(input: Record<string, unknown>): Promise<Row>
-  update(id: string, input: Record<string, unknown>): Promise<Row>
-  delete(id: string): Promise<void>
-}
-
-function resourceClient(
-  resource: string,
-  operations: ClientOperations,
-): ResourceClient {
-  return {
-    id: `rest:${resource}`,
-        ...operations,
-  }
-}
+import { restTransport } from './rest-transport'
 
 export async function auditSalesQuotation(id: string) {
   return apiData(
@@ -72,192 +52,36 @@ export const purchaseQuotationCommandAdapter = createRowCommandAdapter({
   },
 })
 
-export const salesQuotationClient = resourceClient('salQuotations', {
-  async query(input) {
-    const result = await apiData(
-      api.sales.quotations.query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.sales.quotations[':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.sales.quotations.$post({ json: input as never }),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.sales.quotations[':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.sales.quotations[':id'].$delete({ param: { id } }),
-    )
-  },
-})
+export const salesQuotationClient = restTransport(
+  'salQuotations',
+  api.sales.quotations,
+)
 
-export const salesQuotationItemClient = resourceClient('salQuotationItems', {
-  async query(input) {
-    const result = await apiData(
-      api.sales['quotation-items'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.sales['quotation-items'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.sales['quotation-items'].$post({
-        json: decimalWireInput(input, ['price', 'taxRate']) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.sales['quotation-items'][':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, ['price', 'taxRate']) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.sales['quotation-items'][':id'].$delete({ param: { id } }),
-    )
-  },
-})
+export const salesQuotationItemClient = restTransport(
+  'salQuotationItems',
+  api.sales['quotation-items'],
+  { decimalFields: ['price', 'taxRate'] },
+)
 
-export const salesQuotationTierClient = resourceClient('salQuotationTiers', {
-  async query(input) {
-    const result = await apiData(
-      api.sales['quotation-tiers'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.sales['quotation-tiers'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.sales['quotation-tiers'].$post({
-        json: decimalWireInput(input, ['minQty', 'price']) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.sales['quotation-tiers'][':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, ['minQty', 'price']) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.sales['quotation-tiers'][':id'].$delete({ param: { id } }),
-    )
-  },
-})
+export const salesQuotationTierClient = restTransport(
+  'salQuotationTiers',
+  api.sales['quotation-tiers'],
+  { decimalFields: ['minQty', 'price'] },
+)
 
-export const purchaseQuotationClient = resourceClient('purQuotations', {
-  async query(input) {
-    const result = await apiData(
-      api.purchase.quotations.query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.purchase.quotations[':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.purchase.quotations.$post({ json: input as never }),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.purchase.quotations[':id'].$patch({
-        param: { id },
-        json: input as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.purchase.quotations[':id'].$delete({ param: { id } }),
-    )
-  },
-})
+export const purchaseQuotationClient = restTransport(
+  'purQuotations',
+  api.purchase.quotations,
+)
 
-export const purchaseQuotationItemClient = resourceClient('purQuotationItems', {
-  async query(input) {
-    const result = await apiData(
-      api.purchase['quotation-items'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.purchase['quotation-items'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.purchase['quotation-items'].$post({
-        json: decimalWireInput(input, ['price', 'taxRate']) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.purchase['quotation-items'][':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, ['price', 'taxRate']) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.purchase['quotation-items'][':id'].$delete({ param: { id } }),
-    )
-  },
-})
+export const purchaseQuotationItemClient = restTransport(
+  'purQuotationItems',
+  api.purchase['quotation-items'],
+  { decimalFields: ['price', 'taxRate'] },
+)
 
-export const purchaseQuotationTierClient = resourceClient('purQuotationTiers', {
-  async query(input) {
-    const result = await apiData(
-      api.purchase['quotation-tiers'].query.$post({ json: resourceListBody(input) }),
-    )
-    return { count: result.count, results: result.results as Row[] }
-  },
-  async get(id) {
-    return (await apiData(
-      api.purchase['quotation-tiers'][':id'].$get({ param: { id } }),
-    )) as Row
-  },
-  async create(input) {
-    return (await apiData(
-      api.purchase['quotation-tiers'].$post({
-        json: decimalWireInput(input, ['minQty', 'price']) as never}),
-    )) as Row
-  },
-  async update(id, input) {
-    return (await apiData(
-      api.purchase['quotation-tiers'][':id'].$patch({
-        param: { id },
-        json: decimalWireInput(input, ['minQty', 'price']) as never}),
-    )) as Row
-  },
-  async delete(id) {
-    await apiData(
-      api.purchase['quotation-tiers'][':id'].$delete({ param: { id } }),
-    )
-  },
-})
+export const purchaseQuotationTierClient = restTransport(
+  'purQuotationTiers',
+  api.purchase['quotation-tiers'],
+  { decimalFields: ['minQty', 'price'] },
+)
