@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, Checkbox, Chip, SearchField, Spinner, Table, toast } from '@heroui/react'
+import { Button, Checkbox, Chip, SearchField, Table, toast } from '@heroui/react'
 import { EmptyState, Sheet } from '@heroui-pro/react'
+import { QueryState } from '../synie-query-state/QueryState'
 import { fetchPermissionCatalog, fetchRolePermissions, syncRolePermissions } from '~/lib/resources/iam'
 import {
   CANONICAL_ACTIONS,
@@ -281,21 +282,14 @@ export function SyniePermissionSheet(props: SyniePermissionSheetProps) {
             </Sheet.Header>
             <Sheet.Body>
               {error ? (
-                <EmptyState size="md" className="h-64 justify-center">
-                  <EmptyState.Header>
-                    <EmptyState.Title>权限数据加载失败</EmptyState.Title>
-                    <EmptyState.Description>{error}</EmptyState.Description>
-                  </EmptyState.Header>
-                  <EmptyState.Content>
-                    <Button variant="secondary" onPress={() => setReloadKey((k) => k + 1)}>
-                      重试
-                    </Button>
-                  </EmptyState.Content>
-                </EmptyState>
+                // error 只存 message 字符串(403 不触发 QueryState 的 AppError 识别,维持原有通用失败态)
+                <QueryState
+                  error={{ message: error }}
+                  errorTitle="权限数据加载失败"
+                  onRetry={() => setReloadKey((k) => k + 1)}
+                />
               ) : !loaded ? (
-                <div className="flex h-32 items-center justify-center">
-                  <Spinner />
-                </div>
+                <QueryState isPending />
               ) : (
                 <div className="flex flex-col gap-4">
                   <SearchField aria-label="搜索资源" value={keyword} onChange={setKeyword} className="w-full lg:w-72">

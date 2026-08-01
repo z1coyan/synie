@@ -11,7 +11,6 @@ import {
   ListBox,
   NumberField,
   Select,
-  Spinner,
   Switch,
   Tabs,
   TextField,
@@ -22,6 +21,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { defaultCompanyId, useAuthorizedCompanies } from '~/lib/form-defaults'
 import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { QueryState } from '../synie-query-state/QueryState'
 import { cellText } from '../synie-data-grid/format'
 import { useGridMeta } from '../synie-data-grid/meta'
 import { UUID_RE } from '../synie-data-grid/query'
@@ -414,24 +414,14 @@ export function SynieRecordDrawer(props: SynieRecordDrawerProps) {
             <Sheet.Body>
               {metaError || byId.isError ? (
                 // GridMeta/rowId 取数失败:展示报错并可重试(与 SynieDataGrid 同一套失败态)。
-                // 错误分支在 spinner 之前:meta 失败时 byId 因 enabled 门控永远 isPending,反序会卡死转圈
-                <EmptyState size="md" className="h-64 justify-center">
-                  <EmptyState.Header>
-                    <EmptyState.Title>数据加载失败</EmptyState.Title>
-                    <EmptyState.Description>
-                      {((remoteMeta.error ?? byId.error) as Error).message}
-                    </EmptyState.Description>
-                  </EmptyState.Header>
-                  <EmptyState.Content>
-                    <Button variant="secondary" onPress={() => (metaError ? remoteMeta.refetch() : byId.refetch())}>
-                      重试
-                    </Button>
-                  </EmptyState.Content>
-                </EmptyState>
+                // 错误分支在 spinner 之前:meta 失败时 byId 因 enabled 门控永远 isPending,反序会卡死转圈。
+                // 403 由 QueryState 渲染「无权限访问」专属态(与 grid 对齐;此前混在通用失败态里)
+                <QueryState
+                  error={(remoteMeta.error ?? byId.error) as Error}
+                  onRetry={() => (metaError ? remoteMeta.refetch() : byId.refetch())}
+                />
               ) : metaPending || rowPending ? (
-                <div className="flex h-32 items-center justify-center">
-                  <Spinner />
-                </div>
+                <QueryState isPending />
               ) : rowMissing ? (
                 <EmptyState size="md" className="h-64 justify-center">
                   <EmptyState.Header>

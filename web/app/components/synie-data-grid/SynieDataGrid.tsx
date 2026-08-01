@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
-import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, Spinner, toast } from '@heroui/react'
+import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, toast } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
-import { isForbidden } from '~/lib/errors'
 import { useMediaQuery } from '~/lib/use-media-query'
 import { createResourceQueryCache } from '~/lib/resources/catalog'
 import { resourceBindingFor } from '~/lib/resources/registry'
@@ -25,6 +24,7 @@ import { printRows } from './print'
 import { nextSort } from './query'
 import type { ActionContext, BulkAction, ColumnFilter, EnumChipColor, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
 import type { ResolvedAction } from './use-grid-actions'
+import { QueryState } from '../synie-query-state/QueryState'
 import { FkLink } from '../synie-record-drawer/fk-preview'
 import { FileThumb } from '../synie-preview/FileThumb'
 import { SyniePreview, type SyniePreviewItem } from '../synie-preview/SyniePreview'
@@ -607,40 +607,19 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const hasSortable = columns.some((c) => c.sortable)
   const activeFilterCount = Object.keys(filters).length
 
-  if (meta.isPending || (rowsQuery.isPending && !rowsQuery.data)) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Spinner size="lg" />
-      </div>
-    )
-  }
-
+  // 加载/失败/403 三态走统一 QueryState(403 由 QueryState 识别 AppError forbidden 渲染专属态)
+  const queryPending = meta.isPending || (rowsQuery.isPending && !rowsQuery.data)
   // 卡片模式追加页失败不整屏报错:已加载卡片保留,错误走 toast,重试点「加载更多」
-  if (meta.isError || (rowsQuery.isError && !(cardMode && loadedRows.length > 0))) {
-    const err = (meta.error ?? rowsQuery.error) as Error
-    // 无权限单独成态:醒目提示且不给重试(重试对权限问题无意义)
-    if (isForbidden(err)) {
-      return (
-        <EmptyState size="md" className="h-64 justify-center">
-          <EmptyState.Header>
-            <EmptyState.Title className="text-danger">无权限访问</EmptyState.Title>
-            <EmptyState.Description>当前账号没有查看这些数据的权限,请联系管理员分配。</EmptyState.Description>
-          </EmptyState.Header>
-        </EmptyState>
-      )
-    }
+  const queryFailed = meta.isError || (rowsQuery.isError && !(cardMode && loadedRows.length > 0))
+  if (queryPending || queryFailed) {
     return (
-      <EmptyState size="md" className="h-64 justify-center">
-        <EmptyState.Header>
-          <EmptyState.Title>数据加载失败</EmptyState.Title>
-          <EmptyState.Description>{err.message}</EmptyState.Description>
-        </EmptyState.Header>
-        <EmptyState.Content>
-          <Button variant="secondary" onPress={() => (meta.isError ? meta.refetch() : rowsQuery.refetch())}>
-            重试
-          </Button>
-        </EmptyState.Content>
-      </EmptyState>
+      <QueryState
+        isPending={queryPending}
+        error={queryFailed ? ((meta.error ?? rowsQuery.error) as Error) : null}
+        onRetry={() => (meta.isError ? meta.refetch() : rowsQuery.refetch())}
+        pendingClassName="h-64"
+        spinnerSize="lg"
+      />
     )
   }
 

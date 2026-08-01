@@ -1,16 +1,14 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, ListBox, Select, toast } from '@heroui/react'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import {
-  SegmentsEditor,
-  segmentsPreview,
-  type NumberSegment,
-} from '~/components/synie-numbering-segments/SegmentsEditor'
+import { SegmentsEditor, segmentsPreview, type NumberSegment } from './-segments-editor'
 import { resourceLabel } from '~/components/synie-permission-sheet/permission-labels'
 import {
   listNumberableResources,
@@ -70,7 +68,7 @@ function NumberingPage() {
   const [counters, setCounters] = useState<Row[]>([])
   const [countersSnapshot, setCountersSnapshot] = useState<Row[]>([])
   const queryClient = useQueryClient()
-  const requestID = useRef(0)
+  const guard = useRequestGuard()
   const { binding, client, formProps } = useCatalogBasicForm(
     'sysNumberingRules',
     '编号规则',
@@ -85,7 +83,7 @@ function NumberingPage() {
     numberables.data?.find((resource) => resource.prefix === prefix)?.fields ?? null
 
   const openDrawer = (mode: DrawerMode, row: Row | null) => {
-    const currentRequest = ++requestID.current
+    const currentRequest = guard.begin()
     setDrawer({ mode, row })
     if (mode === 'create' || row == null) {
       setCounters([])
@@ -101,13 +99,13 @@ function NumberingPage() {
         },
       })
       .then((result) => {
-        if (currentRequest !== requestID.current) return
+        if (!guard.isCurrent(currentRequest)) return
         setCounters(result.results)
         setCountersSnapshot(result.results)
       })
       .catch((error) => {
-        if (currentRequest !== requestID.current) return
-        toast.danger('计数器加载失败', { description: (error as Error).message })
+        if (!guard.isCurrent(currentRequest)) return
+        toastError('计数器加载失败')(error)
         setCounters([])
         setCountersSnapshot([])
       })
@@ -148,7 +146,7 @@ function NumberingPage() {
         isOpen={drawer !== null}
         onOpenChange={(open) => {
           if (open) return
-          requestID.current++
+          guard.invalidate()
           setDrawer(null)
           setCounters([])
           setCountersSnapshot([])
