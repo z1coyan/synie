@@ -6,17 +6,23 @@ import {
   decodeUnitCreate,
   decodeUnitUpdate,
   useCatalogBasicForm,
-  requireWriter,} from '~/lib/resources/catalog'
+  requireWriter,
+} from '~/lib/resources/catalog'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
+const RESOURCE = 'basUnits'
+
 export const Route = createFileRoute('/_app/base/units')({
+  // 首屏列表预取：与 DataGrid 默认 page/filters 对齐，组件 useQuery 同 key 无缝衔接
+  // SSR 内 ensureDefaultGridPage 直接跳过（鉴权数据不在本轮 SSR 发出）
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: UnitsPage,
 })
-
-const RESOURCE = 'basUnits'
 
 function UnitsPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
