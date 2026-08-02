@@ -18,7 +18,7 @@ function PurchaseReceiptsLayout() {
     TABS.find((t) => pathname.includes(`/scm/purchase-receipts/${t.id}`))?.id ?? 'items'
 
   return (
-    <ReceiptDrawerProvider>
+    <ReceiptDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">采购入库</h1>
       <p className="mt-2 text-sm text-ink-500">
         履约入库单据：审核后增加库存、回写订单已收数量，有金额时按未开票应付科目过账。

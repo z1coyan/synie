@@ -4,7 +4,7 @@ import {
   SynieDataGrid,
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
-import type { Row } from '~/components/synie-data-grid/types'
+import { docActionVisible, RECONCILIATION_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import { useReconciliationDrawer } from './-reconciliation-drawer'
 
 export const Route = createFileRoute(
@@ -20,12 +20,7 @@ const GRID_OVERRIDES = {
   reconciliationStatus: {
     label: '对账单状态',
     mobileRole: 'summary',
-    enumColors: {
-      DRAFT: 'default',
-      CONFIRMED: 'accent',
-      CLOSED: 'success',
-      VOIDED: 'danger',
-    },
+    enumColors: RECONCILIATION_DOC_STATUS_ENUM_COLORS,
   },
   receiptNo: { label: '入库单号' },
   orderCurrencyCode: { label: '币种' },
@@ -59,9 +54,7 @@ const GRID_COLUMNS = [
 ]
 
 // 行编辑仅草稿单放行(后端权威校验兜底,这里做体验层);删除不进条目视图
-const ACTION_VISIBLE = {
-  edit: (row: Row) => row.reconciliationStatus === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = docActionVisible({ edit: ['DRAFT'] }, 'reconciliationStatus')
 
 function ReconciliationItemsTab() {
   const openDrawer = useReconciliationDrawer()

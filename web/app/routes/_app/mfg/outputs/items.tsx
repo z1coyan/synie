@@ -4,8 +4,11 @@ import {
   SynieDataGrid,
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
-import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
+import {
+  AUDIT_DOC_STATUS_ENUM_COLORS,
+  docActionVisible,
+} from '~/lib/doc-status'
 import { useAuditDoc } from '../../scm/-audit-doc'
 import { outputAuditConfig, useOutputDrawer } from './-output-drawer'
 
@@ -19,7 +22,7 @@ const GRID_OVERRIDES = {
   outputStatus: {
     label: '入库状态',
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+    enumColors: AUDIT_DOC_STATUS_ENUM_COLORS,
   },
   outputNo: { mobileRole: 'summary' },
   workOrderId: { mobileRole: 'subtitle' },
@@ -58,10 +61,10 @@ const GRID_COLUMNS = [
 ]
 
 // 行编辑/审核整单仅草稿单放行;删除不进条目视图
-const ACTION_VISIBLE = {
-  edit: (row: Row) => row.outputStatus === 'DRAFT',
-  auditDoc: (row: Row) => row.outputStatus === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = docActionVisible(
+  { edit: ['DRAFT'], auditDoc: ['DRAFT'] },
+  'outputStatus',
+)
 
 function OutputItemsTab() {
   const openDrawer = useOutputDrawer()

@@ -313,9 +313,15 @@ function MarketPage() {
   useEffect(() => {
     if (permissionsPending) return
     if (tab === 'prices' && !canPriceRead && canInstrumentRead) {
-      navigate({ search: { tab: 'instruments' }, replace: true })
+      navigate({
+        search: (prev) => ({ ...prev, tab: 'instruments' }),
+        replace: true,
+      })
     } else if (tab === 'instruments' && !canInstrumentRead && canPriceRead) {
-      navigate({ search: { tab: 'prices' }, replace: true })
+      navigate({
+        search: (prev) => ({ ...prev, tab: 'prices' }),
+        replace: true,
+      })
     }
   }, [permissionsPending, canPriceRead, canInstrumentRead, tab, navigate])
 
@@ -586,7 +592,7 @@ function MarketPage() {
       instrumentId: { kind: 'fk', values: selectedIds, labels },
     })
     setGridFilterKey((k) => k + 1)
-    navigate({ search: { tab: 'prices' } })
+    navigate({ search: (prev) => ({ ...prev, tab: 'prices' }) })
     toast.success('已按勾选品种筛选价点表')
   }
 
@@ -1064,7 +1070,8 @@ function MarketPage() {
           onSelectionChange={(key) => {
             const k = String(key)
             if (k === 'prices' || k === 'instruments') {
-              navigate({ search: { tab: k } })
+              // 函数式 merge：保留网格 q/page/f 与抽屉 record/mode 等未知键
+              navigate({ search: (prev) => ({ ...prev, tab: k }) })
             }
           }}
           className="mt-6"
@@ -1105,6 +1112,8 @@ function MarketPage() {
               <SynieDataGrid
                 resource="basMarketInstruments"
                 columns={INSTRUMENT_COLUMNS}
+                // 同页双网格：仅价点表持有 URL；品种表关 URL 避免争用 q/page/f
+                urlState={false}
                 onView={(row) => setInstrumentDrawer({ mode: 'view', row })}
                 onCreate={() => setInstrumentDrawer({ mode: 'create', row: null })}
                 onEdit={(row) => setInstrumentDrawer({ mode: 'edit', row })}

@@ -56,6 +56,8 @@ const roleUpdateSchema = z
 
 const permissionsSchema = z.object({ permissions: z.array(z.string()) }).strict()
 
+const menusSchema = z.object({ menuCodes: z.array(z.string()) }).strict()
+
 export function iamUserRoutes(deps: { auth: AuthService; iam: IamService }) {
   const { auth, iam } = deps
   return new Hono<AppEnv>()
@@ -141,6 +143,23 @@ export function iamRoleRoutes(deps: { auth: AuthService; iam: IamService }) {
           c.req.valid('json').permissions,
         )
         return c.json({ permissions })
+      },
+    )
+    .get('/:id/menus', zValidator('param', idParam, validationHook), async (c) => {
+      const menuCodes = await iam.roleMenus(c.get('actor'), c.req.valid('param').id)
+      return c.json({ menuCodes })
+    })
+    .put(
+      '/:id/menus',
+      zValidator('param', idParam, validationHook),
+      zValidator('json', menusSchema, validationHook),
+      async (c) => {
+        const menuCodes = await iam.syncRoleMenus(
+          c.get('actor'),
+          c.req.valid('param').id,
+          c.req.valid('json').menuCodes,
+        )
+        return c.json({ menuCodes })
       },
     )
     .patch(

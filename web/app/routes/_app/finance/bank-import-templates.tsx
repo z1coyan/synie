@@ -1,29 +1,31 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
-import { useCatalogBasicForm,
-  requireWriter,} from '~/lib/resources/catalog'
+import {
+  useCatalogBasicForm,
+  requireWriter,
+} from '~/lib/resources/catalog'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 
 export const Route = createFileRoute('/_app/finance/bank-import-templates')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: BankImportTemplatesPage,
 })
+
+const RESOURCE = 'accBankImportTemplates'
 
 // 概览列;列配置细节抽屉里看(有序白名单,兼当 exclude)
 const GRID_COLUMNS = ['companyId', 'name', 'bankAccountId', 'startRow', 'datetimeCol', 'dateCol', 'amountCol']
 
 function BankImportTemplatesPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
-  const { binding, formProps } = useCatalogBasicForm(
-    'accBankImportTemplates',
-    '导入模板',
-  )
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '导入模板')
 
   return (
     <>
@@ -34,22 +36,22 @@ function BankImportTemplatesPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="accBankImportTemplates"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
         />
       </div>
 
       <SynieRecordDrawer
-        resource="accBankImportTemplates"
+        resource={RESOURCE}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        // 表格列是白名单子集(无各列号明细),行数据不全;不传 row,走 rowId 自查完整记录
-        rowId={drawer?.row?.id}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        // 表格列是白名单子集(无各列号明细),行数据不全;走 rowId 自查完整记录
+        rowId={drawer?.recordId ?? undefined}
         exclude={formProps.exclude}
         fields={{
           ...formProps.fields,
@@ -79,12 +81,12 @@ function BankImportTemplatesPage() {
             },
           },
         }}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             await requireWriter(binding, 'create', '导入模板')(values)
           } else {
-            await requireWriter(binding, 'update', '导入模板')(drawer!.row!.id, values)
+            await requireWriter(binding, 'update', '导入模板')(String(drawer!.recordId), values)
           }
           toast.success(mode === 'create' ? '导入模板已创建' : '导入模板已更新')
           await binding.cache.invalidateGrid(queryClient)

@@ -18,7 +18,7 @@ function OutsourcedIssuesLayout() {
     TABS.find((t) => pathname.includes(`/scm/outsourced-issues/${t.id}`))?.id ?? 'items'
 
   return (
-    <IssueDrawerProvider>
+    <IssueDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">委外发料</h1>
       <p className="mt-2 text-sm text-ink-500">
         发给协作方的委外材料：审核后材料从调出仓移入外协仓并累加发料清单已发料量；无金额不过总账。

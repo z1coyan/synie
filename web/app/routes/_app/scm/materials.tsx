@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, toast } from '@heroui/react'
@@ -10,6 +10,7 @@ import {
   submitMaterialForm,
 } from '~/lib/resources/presentation'
 import { attachFile, type UploadedFile } from '~/lib/files'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
 import { MaterialCell } from '~/components/synie-material-cell/MaterialCell'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
@@ -18,10 +19,14 @@ import { SynieEditableTable } from '~/components/synie-editable-table/SynieEdita
 import { isLocalRow } from '~/components/synie-editable-table/editable'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
+
+const RESOURCE = 'invMaterials'
 
 export const Route = createFileRoute('/_app/scm/materials')({
+  // extraFields 非默认首屏,跳过 loader
   component: MaterialsPage,
 })
 
@@ -97,18 +102,18 @@ function CategoryCell({ row }: { row: Row }) {
 }
 
 function MaterialsPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const [units, setUnits] = useState<Row[]>([])
   const [unitsSnapshot, setUnitsSnapshot] = useState<Row[]>([])
-  // edit/view 态单位转换靠 FETCH_UNITS 异步拉取,未完成前禁止编辑,防回填覆盖在输行
+  // edit/view 态单位转换靠异步拉取,未完成前禁止编辑,防回填覆盖在输行
   const [unitsLoaded, setUnitsLoaded] = useState(false)
   // 创建态暂存附件(图纸/其他文件两槽位分开):先传裸文件,创建成功后统一挂接;抽屉重开即清空
   const [pendingDrawings, setPendingDrawings] = useState<UploadedFile[]>([])
   const [pendingOthers, setPendingOthers] = useState<UploadedFile[]>([])
   const queryClient = useQueryClient()
   // 请求守卫:防止慢响应把上一条物料的转换行回填到当前物料(同凭证页先例)
-  const reqIdRef = useRef(0)
-  const materialPresentation = createMaterialPresentation(resourceBindingFor('invMaterials'))
+  const guard = useRequestGuard()
+  const materialPresentation = createMaterialPresentation(resourceBindingFor(RESOURCE))
 
   // 单位名称表:单位转换 tab 的「基准单位」提示按默认单位 id 反查名称
   const { data: unitNames } = useQuery({
@@ -123,11 +128,18 @@ function MaterialsPage() {
     staleTime: 60_000,
   })
 
-  // 打开抽屉:create 清空转换行与暂存附件;view/edit 按物料 id 拉行(快照留作提交时 diff 基准)
-  const openDrawer = (mode: DrawerMode, row: Row | null) => {
-    const my = ++reqIdRef.current
-    setDrawer({ mode, row })
-    if (mode === 'create' || !row) {
+  // 深链/点击开抽屉:按 materialId 拉单位转换;create 清空;关闭清空
+  useEffect(() => {
+    const my = guard.begin()
+    if (!drawer) {
+      setUnits([])
+      setUnitsSnapshot([])
+      setPendingDrawings([])
+      setPendingOthers([])
+      setUnitsLoaded(false)
+      return
+    }
+    if (drawer.mode === 'create' || drawer.recordId == null) {
       setUnits([])
       setUnitsSnapshot([])
       setPendingDrawings([])
@@ -136,25 +148,27 @@ function MaterialsPage() {
       return
     }
     setUnitsLoaded(false)
-    materialUnitClient.query({
-      limit: 200,
-      offset: 0,
-      sort: { column: 'insertedAt', direction: 'ascending' },
-      filter: { materialId: { kind: 'fk', op: 'in', values: [row.id], labels: [] } },
-    })
+    materialUnitClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'insertedAt', direction: 'ascending' },
+        filter: { materialId: { kind: 'fk', op: 'in', values: [drawer.recordId], labels: [] } },
+      })
       .then((result) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         setUnits(result.results)
         setUnitsSnapshot(result.results)
         setUnitsLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('单位转换加载失败', { description: (e as Error).message })
+        if (!guard.isCurrent(my)) return
+        toastError('单位转换加载失败')(e)
         setUnits([])
         setUnitsSnapshot([])
       })
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅抽屉身份变化时响应
+  }, [drawer?.recordId, drawer?.mode])
 
   return (
     <>
@@ -164,8 +178,9 @@ function MaterialsPage() {
       </p>
 
       <div className="mt-6">
+        {/* 页面级网格：urlState 默认开启（搜索/筛选/分页/排序进 URL）；本页作 url-grid-state 试点 */}
         <SynieDataGrid
-          resource="invMaterials"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           joinFields={{ category: ['code'] }}
           overrides={{
@@ -195,21 +210,21 @@ function MaterialsPage() {
           }}
           // 富单元格渲染所需的名称/规格/客户料:列已撤,经 extraFields 继续取回
           extraFields={['name', 'spec', 'customerPartNo']}
-          onView={(row) => openDrawer('view', row)}
-          onCreate={() => openDrawer('create', null)}
-          onEdit={(row) => openDrawer('edit', row)}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
           rowActions={statusToggleActions({
             field: 'active',
             update: materialClient.update,
             // 抽屉走 rowId 自查,状态翻转后一并失效行缓存
             onDone: () =>
-              resourceBindingFor('invMaterials').cache.invalidateRow(queryClient),
+              resourceBindingFor(RESOURCE).cache.invalidateRow(queryClient),
           })}
         />
       </div>
 
       <SynieRecordDrawer
-        resource="invMaterials"
+        resource={RESOURCE}
         label={materialPresentation.label}
         exclude={materialPresentation.exclude}
         fields={materialPresentation.fields}
@@ -217,10 +232,10 @@ function MaterialsPage() {
         tabs={materialPresentation.tabs}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
+        onOpenChange={(isOpen) => !isOpen && close()}
         // 表格列是白名单子集,行数据不全;不传 row,走 rowId 自查完整记录
-        rowId={drawer?.row?.id}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        rowId={drawer?.recordId ?? undefined}
+        onEdit={() => setMode('edit')}
         extraContent={(mode, row) => (
           // 图纸与其他文件两组附件槽位并排,同 hrEmployees 证件照先例
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -323,10 +338,10 @@ function MaterialsPage() {
             } else if (failed.length === 0) {
               toast.success('物料已创建')
             }
-            await resourceBindingFor('invMaterials').cache.invalidateAll(queryClient)
+            await resourceBindingFor(RESOURCE).cache.invalidateAll(queryClient)
             return materialId
           }
-          const materialId = String(drawer!.row!.id)
+          const materialId = String(drawer!.recordId)
           await submitMaterialForm(materialPresentation, values, mode, materialId)
           const unitErrors = await persistUnits(materialId, units, unitsSnapshot)
           if (unitErrors.length > 0) {
@@ -334,7 +349,7 @@ function MaterialsPage() {
           } else {
             toast.success('物料已更新')
           }
-          await resourceBindingFor('invMaterials').cache.invalidateAll(queryClient)
+          await resourceBindingFor(RESOURCE).cache.invalidateAll(queryClient)
           return materialId
         }}
       />

@@ -27,6 +27,11 @@ import { materialCellRender } from '~/components/synie-material-cell/MaterialCel
 const orderItemMaterialCell = materialCellRender({ drawingOwnerType: 'sal_order_item' })
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { OrderFlowHistory } from '../-order-flow-history'
+import { ItemsResetGuard } from '~/components/items-reset-guard'
+import { todayLocal } from '~/lib/form-defaults'
+import { toastError } from '~/lib/toast'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useRequestGuard } from '~/lib/use-request-guard'
 
 const salesOrderBinding = resourceBindingFor('salOrders')
 const salesOrderItemBinding = resourceBindingFor('salOrderItems')
@@ -147,58 +152,27 @@ function CompanyCurrencySync({
 }
 
 /**
- * 头字段变更清行守卫(渲染为 null 的表单伴生组件):订单类型/公司/对手类型/对手/订单日期/币种
+ * 头字段变更清行守卫(ItemsResetGuard)的指纹字段:订单类型/公司/对手类型/对手/订单日期/币种
  * 任一变化即清空条目草稿(已落库行由提交时的快照 diff 走删除,与手动逐行删除同路径)。
- * create 态以首个草稿指纹为基线;edit 态等草稿回填成行值(行到达且指纹一致)才布防,
- * 防「条目先到、行主数据后到」的加载竞态把刚拉回的存量条目误判为变更清掉。
  */
-function ItemsResetGuard({
-  mode,
-  row,
-  values,
-  onReset,
+const ITEMS_RESET_FIELDS = ['orderType', 'companyId', 'partyType', 'partyId', 'orderDate', 'currencyId'] as const
+
+/**
+ * 销售订单创建/编辑抽屉(头+条目+条款)。
+ * 订单/订单条目两 tab 共用;列表 layout 传 urlSync,开/关/模式走 URL。
+ *
+ * @param urlSync 列表页传 true:抽屉开/关/模式写 ?record=&mode=,深链/刷新/后退可寻址。
+ */
+export function OrderDrawerProvider({
+  children,
+  urlSync = false,
 }: {
-  mode: DrawerMode
-  row: Row | null | undefined
-  values: Record<string, unknown>
-  onReset: () => void
+  children: ReactNode
+  urlSync?: boolean
 }) {
-  const armedRef = useRef(false)
-  const baselineRef = useRef('')
-  const fpOf = (v: Record<string, unknown>) =>
-    [v.orderType, v.companyId, v.partyType, v.partyId, v.orderDate, v.currencyId].map((x) => String(x ?? '')).join('|')
-  const fp = fpOf(values)
-  const rowFp = row != null ? fpOf(row) : null
-
-  useEffect(() => {
-    if (mode === 'view') return
-    if (!armedRef.current) {
-      if (mode === 'create' || (rowFp != null && fp === rowFp)) {
-        baselineRef.current = fp
-        armedRef.current = true
-      }
-      return
-    }
-    if (fp !== baselineRef.current) {
-      baselineRef.current = fp
-      onReset()
-    }
-    // fpOf 每次渲染重建不进依赖;onReset 是 useCallback 稳定引用
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fp, rowFp, mode, onReset])
-
-  return null
-}
-
-// 本地日期 YYYY-MM-DD(不用 toISOString:UTC 串在 UTC+8 凌晨会差一天)
-function todayLocal(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
-export function OrderDrawerProvider({ children }: { children: ReactNode }) {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; order: OrderRef | null } | null>(null)
+  // URL 源(列表 layout)与本地态二选一;明细/条款始终本地
+  const url = useRecordDrawerUrl('salOrders', { enabled: urlSync })
+  const [localDrawer, setLocalDrawer] = useState<{ mode: DrawerMode; order: OrderRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
   // 交易条款不走抽屉字段(要排在条目表之下,抽屉 extraContent 固定在字段后渲染),由页面自持
   const [terms, setTerms] = useState('')
@@ -211,13 +185,25 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   const quotationItemsRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张订单的行回填到当前订单
-  const reqIdRef = useRef(0)
+  const guard = useRequestGuard()
   const draftHeadRef = useRef<Row | null>(null)
+  // 已为哪张订单拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
+  const mode: DrawerMode = urlSync
+    ? (url.drawer?.mode ?? 'view')
+    : (localDrawer?.mode ?? 'view')
+  const rowId: string | undefined = urlSync
+    ? (url.drawer?.recordId ?? undefined)
+    : (localDrawer?.order?.id != null ? String(localDrawer.order.id) : undefined)
+  // 编辑入口:urlSync 用 hook 自查行 status;本地态用 open 传入的 order.status
+  const orderStatus = urlSync ? url.row?.status : localDrawer?.order?.status
 
   // 样品单行数量上限:抽屉打开时查一次(5 分钟 stale);无权限/失败按 null 降级(跳过客户端校验,后端兜底)
   const salSettingQuery = useQuery({
     queryKey: ['salSetting'],
-    enabled: drawer !== null,
+    enabled: isOpen,
     staleTime: 300_000,
     retry: false,
     queryFn: () =>
@@ -231,23 +217,23 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
   // 头四要素/币种变化清空条目草稿;空集合并保留原引用,避免无谓重渲染
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
-  // 打开头抽屉:create 行与条款清空;view/edit 按订单 id 拉详情(条款+行,快照留作提交时 diff 基准)。
-  // useCallback 稳定引用:context 值不变,两个 tab 的 grid overrides 不会因父级重渲染而失效
-  const openDrawer: OpenOrderDrawer = useCallback((mode, order) => {
-    const my = ++reqIdRef.current
-    setDrawer({ mode, order })
+  function resetDetail() {
+    loadedIdRef.current = null
     draftHeadRef.current = null
-    if (mode === 'create') {
-      setItems([])
-      setTerms('')
-      setDetailLoaded(true)
-      return
-    }
+    setItems([])
+    setTerms('')
+    setDetailLoaded(true)
+  }
+
+  function loadDetail(orderId: string) {
+    const my = guard.begin()
+    loadedIdRef.current = orderId
+    draftHeadRef.current = null
     setDetailLoaded(false)
     salesOrderDraft
-      .loadDraft(order!.id)
+      .loadDraft(orderId)
       .then((draft) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         draftHeadRef.current = draft
         // 报价条目定价模式摊平到行(价格/金额列的梯度展示判定),并回填缓存供行表单只读派生;
         // 与选择时写入的完整行合并,不覆盖已有的快照名
@@ -269,13 +255,48 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
         setDetailLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         draftHeadRef.current = null
-        toast.danger('订单详情加载失败', { description: (e as Error).message })
+        toastError('订单详情加载失败')(e)
         setTerms('')
         setItems([])
       })
-  }, [])
+  }
+
+  // 打开头抽屉:create 行与条款清空;view/edit 按订单 id 拉详情(条款+行,快照留作提交时 diff 基准)
+  const openDrawer: OpenOrderDrawer = (nextMode, order) => {
+    if (urlSync) {
+      url.open(nextMode, order?.id != null ? String(order.id) : null)
+    } else {
+      setLocalDrawer({ mode: nextMode, order })
+    }
+    if (nextMode === 'create' || !order) {
+      resetDetail()
+      return
+    }
+    loadDetail(String(order.id))
+  }
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    if (!urlSync) return
+    const d = url.drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        guard.invalidate()
+        resetDetail()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetDetail()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadDetail(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   // 抽屉配置:registry 一份;terms 从字段排除(改由 extraContent 底部渲染,提交时并入 values)
   const baseCfg = drawerConfig('salOrders')
@@ -347,21 +368,30 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
       <SynieRecordDrawer
         resource="salOrders"
         {...drawerCfg}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        isSubmitDisabled={drawer?.mode === 'edit' && !detailLoaded}
+        mode={mode}
+        isOpen={isOpen}
+        isSubmitDisabled={mode === 'edit' && !detailLoaded}
         onOpenChange={(open) => {
           if (open) return
           // 关闭即作废在途请求并清空本地草稿,防止慢响应回填到下一张订单
-          reqIdRef.current++
-          setDrawer(null)
+          guard.invalidate()
+          if (urlSync) url.close()
+          else setLocalDrawer(null)
           setItems([])
           setTerms('')
           draftHeadRef.current = null
+          loadedIdRef.current = null
         }}
         // 表格列是白名单子集,行数据不全(缺交易条款/备注);不传 row,走 rowId 自查完整记录
-        rowId={drawer?.order?.id}
-        onEdit={drawer?.order?.status === 'DRAFT' ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d)) : undefined}
+        rowId={rowId}
+        onEdit={
+          orderStatus === 'DRAFT'
+            ? () => {
+                if (urlSync) url.setMode('edit')
+                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+              }
+            : undefined
+        }
         // 首 tab 为现有单页内容(字段+条目表+交易条款,经 extraContent 自动归入);收发货历史只读展示
         tabs={[
           { key: 'basic', label: '基本信息' },
@@ -643,7 +673,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
               patchValues={patchValues}
               onBaseCurrency={setBaseCurrencyId}
             />
-            <ItemsResetGuard mode={mode} row={row} values={values} onReset={resetItems} />
+            <ItemsResetGuard mode={mode} row={row} values={values} fields={ITEMS_RESET_FIELDS} onReset={resetItems} />
             <SynieEditableTable
               resource="salOrderItems"
             label="订单条目"
@@ -658,7 +688,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
               ) : undefined
             }
             // 行表单物料/数量/单价双列排布,默认 420px 局促,加宽一档
-            drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+            drawerClassName="w-full lg:w-[560px]"
             exclude={[
               'orderId',
               'companyId',
@@ -784,7 +814,7 @@ export function OrderDrawerProvider({ children }: { children: ReactNode }) {
             toast.success('销售订单已创建')
           } else {
             saved = await salesOrderDraft.replaceDraft(
-              drawer!.order!.id,
+              rowId!,
               draft,
             )
             toast.success('销售订单已更新')

@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
 import { getSalesSetting, updateSalesSetting } from '~/lib/resources/settings'
 import { CompanyAccountDefaultsCard } from './-company-account-defaults'
+import { toastError } from '~/lib/toast'
 
 export const Route = createFileRoute('/_app/scm/settings/purchase')({
   component: ScmPurchaseSettingsTab,
@@ -56,7 +57,7 @@ function ScmPurchaseSettingsTab() {
       toast.success('采购设置已保存')
       queryClient.invalidateQueries({ queryKey: ['salSetting'] })
     } catch (e) {
-      toast.danger('保存失败', { description: (e as Error).message })
+      toastError('保存失败')(e)
     } finally {
       setSaving(false)
     }

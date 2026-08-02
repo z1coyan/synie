@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
@@ -6,20 +5,25 @@ import {
   decodeUnitCreate,
   decodeUnitUpdate,
   useCatalogBasicForm,
-  requireWriter,} from '~/lib/resources/catalog'
+  requireWriter,
+} from '~/lib/resources/catalog'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
-
-export const Route = createFileRoute('/_app/base/units')({
-  component: UnitsPage,
-})
 
 const RESOURCE = 'basUnits'
 
+export const Route = createFileRoute('/_app/base/units')({
+  // 首屏列表预取：与 DataGrid 默认 page/filters 对齐，组件 useQuery 同 key 无缝衔接
+  // SSR 内 ensureDefaultGridPage 直接跳过（鉴权数据不在本轮 SSR 发出）
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
+  component: UnitsPage,
+})
+
 function UnitsPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
   const { binding, formProps } = useCatalogBasicForm(RESOURCE, '单位')
 
@@ -34,9 +38,9 @@ function UnitsPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource={RESOURCE}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
         />
       </div>
 
@@ -45,11 +49,11 @@ function UnitsPage() {
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        row={drawer?.row}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
         exclude={formProps.exclude}
         fields={formProps.fields}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const input = decodeUnitCreate(values)
@@ -59,7 +63,9 @@ function UnitsPage() {
             return saved.id as string
           }
           const input = decodeUnitUpdate(values)
-          const saved = await requireWriter(binding, 'update', '单位')(String(drawer!.row!.id), { ...input })
+          const saved = await requireWriter(binding, 'update', '单位')(String(drawer!.recordId), {
+            ...input,
+          })
           toast.success('单位已更新')
           invalidate()
           return saved.id as string

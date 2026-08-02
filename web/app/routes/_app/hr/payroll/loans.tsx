@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Spinner, Table, toast } from '@heroui/react'
@@ -11,10 +10,13 @@ import { useCatalogBasicForm,
   requireWriter,} from '~/lib/resources/catalog'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
+import { PAYROLL_LOAN_KIND_ENUM_COLORS } from '~/lib/doc-status'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'hrEmployeeLoans'
 
 export const Route = createFileRoute('/_app/hr/payroll/loans')({
+  // defaultSort + 余额汇总多请求:跳过默认首屏 loader
   component: EmployeeLoansPage,
 })
 
@@ -27,19 +29,17 @@ const GRID_OVERRIDES = {
   employeeId: { mobileRole: 'title' },
   kind: {
     mobileRole: 'subtitle',
-    enumColors: { BORROW: 'warning', REPAY: 'success' },
+    enumColors: PAYROLL_LOAN_KIND_ENUM_COLORS,
   },
   amount: { mobileRole: 'summary' },
   occurredOn: { mobileRole: 'summary' },
 } satisfies Record<string, ColumnOverride>
 
 function EmployeeLoansPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close, row: drawerRow } =
+    useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
-  const { binding, formProps } = useCatalogBasicForm(
-    'hrEmployeeLoans',
-    '员工借款',
-  )
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '员工借款')
 
   const balances = useQuery({
     queryKey: ['loanBalances'],
@@ -102,27 +102,33 @@ function EmployeeLoansPage() {
 
       <div className="mt-4">
         <SynieDataGrid
-          resource="hrEmployeeLoans"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'occurredOn', direction: 'descending' }}
           createLabel="记一笔"
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
           // 发放联动行不可改:直接进只读详情
-          onEdit={(row) => setDrawer({ mode: row.payrollId ? 'view' : 'edit', row })}
+          onEdit={(row) =>
+            open(row.payrollId ? 'view' : 'edit', String(row.id))
+          }
           onMutated={invalidateAll}
         />
       </div>
 
       <SynieRecordDrawer
-        resource="hrEmployeeLoans"
+        resource={RESOURCE}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        rowId={drawer?.row?.id}
-        onEdit={() => setDrawer((d) => (d && !d.row?.payrollId ? { ...d, mode: 'edit' } : d))}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
+        onEdit={() => {
+          // 发放联动行不可改
+          if (drawerRow?.payrollId) return
+          setMode('edit')
+        }}
         exclude={formProps.exclude}
         fields={formProps.fields}
         onSubmit={async (values, mode) => {
@@ -137,7 +143,10 @@ function EmployeeLoansPage() {
           if (mode === 'create') {
             await requireWriter(binding, 'create', '员工借款')(input)
           } else {
-            await requireWriter(binding, 'update', '员工借款')(drawer!.row!.id, input)
+            await requireWriter(binding, 'update', '员工借款')(
+              String(drawer!.recordId),
+              input,
+            )
           }
           toast.success(mode === 'create' ? '台账已记账' : '台账已更新')
           invalidateAll()

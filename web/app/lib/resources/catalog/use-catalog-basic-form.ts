@@ -21,9 +21,6 @@ export function useCatalogBasicForm(resource: string, fallbackLabel?: string) {
   return {
     binding,
     client,
-    documentQuery,
     formProps,
-    /** document 已加载且 form.kind=basic */
-    ready: Boolean(documentQuery.data && documentQuery.data.form.kind === 'basic'),
   }
 }

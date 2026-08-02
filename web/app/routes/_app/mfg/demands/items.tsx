@@ -6,6 +6,7 @@ import {
 } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
+import { DEMAND_ITEM_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import { hasPermission } from '~/lib/permissions'
 import {
   canGenerateWorkOrder,
@@ -56,11 +57,7 @@ const GRID_OVERRIDES = {
   },
   status: {
     mobileRole: 'subtitle',
-    enumColors: {
-      PENDING: 'default',
-      SCHEDULED: 'accent',
-      COMPLETED: 'success',
-    },
+    enumColors: DEMAND_ITEM_STATUS_ENUM_COLORS,
   },
   needDate: { mobileRole: 'summary' },
   remainingArrangeableQty: { mobileRole: 'summary', label: '剩余可安排' },

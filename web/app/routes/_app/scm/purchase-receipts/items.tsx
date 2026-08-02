@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
-import type { Row } from '~/components/synie-data-grid/types'
+import { AUDIT_DOC_STATUS_ENUM_COLORS, docActionVisible } from '~/lib/doc-status'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useAuditDoc } from '../-audit-doc'
 import { receiptAuditConfig, useReceiptDrawer } from './-receipt-drawer'
@@ -16,7 +16,7 @@ const GRID_OVERRIDES = {
   receiptStatus: {
     label: '入库状态',
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+    enumColors: AUDIT_DOC_STATUS_ENUM_COLORS,
   },
   receiptNo: { mobileRole: 'summary' },
   orderNo: { label: '订单号' },
@@ -51,10 +51,7 @@ const GRID_COLUMNS = [
 ]
 
 // 行编辑/审核整单仅草稿单放行(后端权威校验兜底,这里做体验层);删除不进条目视图
-const ACTION_VISIBLE = {
-  edit: (row: Row) => row.receiptStatus === 'DRAFT',
-  auditDoc: (row: Row) => row.receiptStatus === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = docActionVisible({ edit: ['DRAFT'], auditDoc: ['DRAFT'] }, 'receiptStatus')
 
 function ReceiptItemsTab() {
   const openDrawer = useReceiptDrawer()

@@ -3,11 +3,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { EmptyState, InlineSelect } from '@heroui-pro/react'
 import { Button, ListBox, Spinner, toast } from '@heroui/react'
+import { toastError } from '~/lib/toast'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { accountClient, initializeAccountTemplate } from '~/lib/resources/accounts'
 import { companyClient } from '~/lib/resources/companies'
@@ -16,8 +16,12 @@ import {
   createAccountPresentation,
   submitAccountForm,
 } from '~/lib/resources/presentation'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'basAccounts'
 
 export const Route = createFileRoute('/_app/base/accounts')({
+  // 树形 + fixedFilter 非默认首屏,只迁抽屉,跳过 loader
   component: AccountsPage,
 })
 
@@ -37,11 +41,11 @@ function companyFilter(companyId: string): FilterState {
 
 function AccountsPage() {
   const queryClient = useQueryClient()
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [companyRow, setCompanyRow] = useState<Row | null>(null)
   const [template, setTemplate] = useState<Template>('CAS')
   const [initializing, setInitializing] = useState(false)
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   const companies = useQuery({
@@ -77,7 +81,7 @@ function AccountsPage() {
   })
 
   const refresh = () => {
-    void resourceBindingFor('basAccounts').cache.invalidateGrid(queryClient)
+    void resourceBindingFor(RESOURCE).cache.invalidateGrid(queryClient)
     setReloadKey((key) => key + 1)
   }
 
@@ -92,7 +96,7 @@ function AccountsPage() {
       refresh()
     } catch (error) {
       toast.close(id)
-      toast.danger('初始化失败', { description: (error as Error).message })
+      toastError('初始化失败')(error)
     } finally {
       setInitializing(false)
     }
@@ -168,13 +172,13 @@ function AccountsPage() {
         ) : (
           <SynieDataGrid
             key={`${companyId}-${reloadKey}`}
-            resource="basAccounts"
+            resource={RESOURCE}
             exclude={['parentId', 'companyId', 'hasChildren']}
             tree={{ hasChildrenField: 'hasChildren', sort: { field: 'code', order: 'ASC' } }}
             fixedFilter={fixedFilter}
-            onView={(row) => setDrawer({ mode: 'view', row })}
-            onCreate={() => setDrawer({ mode: 'create', row: null })}
-            onEdit={(row) => setDrawer({ mode: 'edit', row })}
+            onView={(row) => open('view', String(row.id))}
+            onCreate={() => open('create')}
+            onEdit={(row) => open('edit', String(row.id))}
             rowActions={statusToggleActions({
               field: 'active',
               update: accountClient.update,
@@ -186,9 +190,11 @@ function AccountsPage() {
 
       <AccountDrawer
         companyId={companyId}
-        drawer={drawer}
-        onClose={() => setDrawer(null)}
-        onEdit={() => setDrawer((current) => (current ? { ...current, mode: 'edit' } : current))}
+        mode={drawer?.mode ?? 'view'}
+        isOpen={drawer !== null}
+        recordId={drawer?.recordId ?? undefined}
+        onClose={close}
+        onEdit={() => setMode('edit')}
         onSaved={refresh}
       />
     </>
@@ -197,12 +203,14 @@ function AccountsPage() {
 
 function AccountDrawer(props: {
   companyId: string | null
-  drawer: { mode: DrawerMode; row: Row | null } | null
+  mode: 'view' | 'edit' | 'create'
+  isOpen: boolean
+  recordId: string | undefined
   onClose: () => void
   onEdit: () => void
   onSaved: () => void
 }) {
-  const binding = resourceBindingFor('basAccounts')
+  const binding = resourceBindingFor(RESOURCE)
   const presentation = createAccountPresentation(binding, {
     companyId: props.companyId,
     companyFilter:
@@ -211,12 +219,12 @@ function AccountDrawer(props: {
 
   return (
     <SynieRecordDrawer
-      resource="basAccounts"
+      resource={RESOURCE}
       label={presentation.label}
-      mode={props.drawer?.mode ?? 'view'}
-      isOpen={props.drawer !== null}
+      mode={props.mode}
+      isOpen={props.isOpen}
       onOpenChange={(open) => !open && props.onClose()}
-      row={props.drawer?.row}
+      rowId={props.recordId}
       exclude={presentation.exclude}
       fields={presentation.fields}
       onEdit={props.onEdit}
@@ -225,7 +233,7 @@ function AccountDrawer(props: {
           presentation,
           values,
           mode,
-          props.drawer?.row?.id as string | undefined,
+          props.recordId,
           props.companyId,
         )
         toast.success(mode === 'create' ? '科目已创建' : '科目已更新')

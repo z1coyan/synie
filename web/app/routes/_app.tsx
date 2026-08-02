@@ -85,6 +85,7 @@ function AppLayout() {
   return (
     <AppShell
       user={data ? { ...data.user, name: data.user.name ?? null } : null}
+      menuCodes={data?.menuCodes}
       onLogout={logout}
     >
       <FkPreviewProvider>

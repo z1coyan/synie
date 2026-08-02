@@ -13,6 +13,7 @@ import { hashPassword } from '~/platform/auth/password.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
+import { isMenuCode } from '~/platform/menu/catalog.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
 import { roleResourceMeta, userResourceMeta } from './meta.ts'
@@ -405,6 +406,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
       if (item.builtin) throw new ApiError('conflict', '内置角色不可修改或删除')
       try {
         await trx.deleteFrom('sys_role_permission').where('role_id', '=', id).execute()
+        await trx.deleteFrom('sys_role_menu').where('role_id', '=', id).execute()
         await trx.deleteFrom('sys_user_role').where('role_id', '=', id).execute()
         await trx.deleteFrom('sys_role').where('id', '=', id).execute()
       } catch (err) {
@@ -517,6 +519,83 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     })
   }
 
+  async function roleMenus(actor: Actor, roleId: string): Promise<string[]> {
+    requirePermission(actor, 'sys.role_menu:read')
+    const role = await db
+      .selectFrom('sys_role')
+      .select('id')
+      .where('id', '=', roleId)
+      .executeTakeFirst()
+    if (!role) throw new ApiError('not_found', '角色不存在')
+    const rows = await db
+      .selectFrom('sys_role_menu')
+      .select('menu_code')
+      .where('role_id', '=', roleId)
+      .orderBy('menu_code')
+      .execute()
+    return rows.map((r) => r.menu_code)
+  }
+
+  async function syncRoleMenus(actor: Actor, roleId: string, desired: string[]): Promise<string[]> {
+    requirePermission(actor, 'sys.role_menu:update')
+    const wanted = uniqueStrings(desired)
+    const unknown = wanted.filter((code) => !isMenuCode(code))
+    if (unknown.length > 0) {
+      throw ApiError.validation('菜单码不合法', {
+        menuCodes: unknown.map((code) => `目录外菜单码: ${code}`),
+      })
+    }
+    return withTx(db, async (trx) => {
+      const locked = await trx
+        .selectFrom('sys_role')
+        .selectAll()
+        .where('id', '=', roleId)
+        .forUpdate()
+        .executeTakeFirst()
+      if (!locked) throw new ApiError('not_found', '角色不存在')
+      if (locked.builtin) throw new ApiError('conflict', '内置角色的菜单授权不可增删')
+      const existing = await trx
+        .selectFrom('sys_role_menu')
+        .select('menu_code')
+        .where('role_id', '=', roleId)
+        .execute()
+      const before = existing.map((r) => r.menu_code).sort()
+      const wantedSet = new Set(wanted)
+      const remove = existing.filter((r) => !wantedSet.has(r.menu_code)).map((r) => r.menu_code)
+      if (remove.length > 0) {
+        await trx
+          .deleteFrom('sys_role_menu')
+          .where('role_id', '=', roleId)
+          .where('menu_code', 'in', remove)
+          .execute()
+      }
+      for (const menuCode of wanted) {
+        await trx
+          .insertInto('sys_role_menu')
+          .values({ role_id: roleId, menu_code: menuCode })
+          .onConflict((oc) => oc.columns(['role_id', 'menu_code']).doNothing())
+          .execute()
+      }
+      const finalRows = await trx
+        .selectFrom('sys_role_menu')
+        .select('menu_code')
+        .where('role_id', '=', roleId)
+        .execute()
+      const final = finalRows.map((r) => r.menu_code).sort()
+      if (before.join('\0') !== final.join('\0')) {
+        await writeAudit(trx, actor, {
+          resource: 'sys_role_menu',
+          recordId: roleId,
+          recordLabel: locked.name,
+          actionType: 'update',
+          actionName: 'sync',
+          changes: { menu_codes: { from: before, to: final } },
+        })
+      }
+      return final
+    })
+  }
+
   return {
     getUser,
     listUsers,
@@ -532,6 +611,8 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     deleteRole,
     rolePermissions,
     syncRolePermissions,
+    roleMenus,
+    syncRoleMenus,
   }
 }
 

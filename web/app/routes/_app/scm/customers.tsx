@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
@@ -7,12 +6,14 @@ import {
   submitCustomerForm,
 } from '~/lib/resources/presentation'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
 
 export const Route = createFileRoute('/_app/scm/customers')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: CustomersPage,
 })
 
@@ -26,7 +27,7 @@ const GRID_OVERRIDES = {
 const RESOURCE = 'salCustomers'
 
 function CustomersPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
   // Presentation Extension 由 binding 构造，不二次解析写能力
   const binding = resourceBindingFor(RESOURCE)
@@ -44,9 +45,9 @@ function CustomersPage() {
         <SynieDataGrid
           resource={RESOURCE}
           overrides={GRID_OVERRIDES}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
         />
       </div>
 
@@ -55,18 +56,18 @@ function CustomersPage() {
         label={presentation.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        row={drawer?.row}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
         exclude={presentation.exclude}
         fields={presentation.fields}
         extraContent={presentation.extraContent}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           const id = await submitCustomerForm(
             presentation,
             values,
             mode,
-            drawer?.row?.id != null ? String(drawer.row.id) : undefined,
+            drawer?.recordId ?? undefined,
           )
           toast.success(mode === 'create' ? '客户已创建' : '客户已更新')
           invalidate()

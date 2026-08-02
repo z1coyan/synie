@@ -7,6 +7,7 @@
 import { Label, TextArea, TextField } from '@heroui/react'
 import type { ResourceBinding } from '../catalog/types'
 import {
+  AUDIT_TRAIL_EXCLUDE,
   BASE_QTY_OVERRIDE,
   LINE_REMARK_OVERRIDE,
   ORDER_NO_OVERRIDE,
@@ -56,16 +57,7 @@ const DEFINITIONS = {
   salOrders: {
     label: '销售订单',
     contentClassName: 'w-full lg:w-[880px]',
-    exclude: [
-      'status',
-      'auditedAt',
-      'auditedById',
-      'createdById',
-      'grossTotal',
-      'baseGrossTotal',
-      'insertedAt',
-      'updatedAt',
-    ],
+    exclude: [...AUDIT_TRAIL_EXCLUDE, 'grossTotal', 'baseGrossTotal'],
     fields: {
       companyId: {
         required: true,
@@ -110,14 +102,7 @@ const DEFINITIONS = {
   salQuotations: {
     label: '销售报价单',
     contentClassName: 'w-full lg:w-[880px]',
-    exclude: [
-      'status',
-      'auditedAt',
-      'auditedById',
-      'createdById',
-      'insertedAt',
-      'updatedAt',
-    ],
+    exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
         required: true,
@@ -162,14 +147,7 @@ const DEFINITIONS = {
   salDeliveries: {
     label: '销售发货单',
     contentClassName: 'w-full lg:w-[960px]',
-    exclude: [
-      'status',
-      'auditedAt',
-      'auditedById',
-      'createdById',
-      'insertedAt',
-      'updatedAt',
-    ],
+    exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: {
         required: true,

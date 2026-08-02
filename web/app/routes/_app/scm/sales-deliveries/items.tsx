@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { formatQty } from '~/lib/amount'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
-import type { Row } from '~/components/synie-data-grid/types'
+import { AUDIT_DOC_STATUS_ENUM_COLORS, docActionVisible } from '~/lib/doc-status'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { useAuditDoc } from '../-audit-doc'
 import { deliveryAuditConfig, useDeliveryDrawer } from './-delivery-drawer'
@@ -17,7 +17,7 @@ const GRID_OVERRIDES = {
   deliveryStatus: {
     label: '发货状态',
     mobileRole: 'summary',
-    enumColors: { DRAFT: 'default', AUDITED: 'success', VOIDED: 'danger' },
+    enumColors: AUDIT_DOC_STATUS_ENUM_COLORS,
   },
   deliveryNo: { mobileRole: 'summary' },
   orderNo: { label: '订单号' },
@@ -56,10 +56,7 @@ const GRID_COLUMNS = [
 ]
 
 // 行编辑/审核整单仅草稿单放行(后端权威校验兜底,这里做体验层);删除不进条目视图
-const ACTION_VISIBLE = {
-  edit: (row: Row) => row.deliveryStatus === 'DRAFT',
-  auditDoc: (row: Row) => row.deliveryStatus === 'DRAFT',
-} satisfies Record<string, (row: Row) => boolean>
+const ACTION_VISIBLE = docActionVisible({ edit: ['DRAFT'], auditDoc: ['DRAFT'] }, 'deliveryStatus')
 
 function DeliveryItemsTab() {
   const openDrawer = useDeliveryDrawer()

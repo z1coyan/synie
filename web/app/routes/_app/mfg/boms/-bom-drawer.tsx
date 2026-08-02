@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -23,6 +24,9 @@ import {
 } from '~/lib/resources/manufacturing'
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { toastError } from '~/lib/toast'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useRequestGuard } from '~/lib/use-request-guard'
 
 // mutation input 只收行自身字段,行上挂的 material/unit/operation join 对象不进 payload
 function componentInput(row: Row) {
@@ -235,13 +239,24 @@ export function useBomDrawer(): OpenBomDrawer {
 /**
  * 完整 BOM 创建/编辑抽屉（配料/路线/副产品 + 模板带入）。
  * BOM 列表页与生产工单「新建 BOM」共用，避免工单侧再实现一套表单。
+ *
+ * @param urlSync 列表页传 true:抽屉开/关/模式走 URL search(?record=&mode=),
+ *   深链/刷新/后退可寻址。工单页内嵌创建保持默认 false(纯本地态,不写宿主 URL)。
  */
-export function BomDrawerProvider({ children }: { children: ReactNode }) {
-  const [drawer, setDrawer] = useState<{
+export function BomDrawerProvider({
+  children,
+  urlSync = false,
+}: {
+  children: ReactNode
+  urlSync?: boolean
+}) {
+  // URL 源(列表页)与本地态(工单内嵌)二选一;options 始终本地(不可 URL 化)
+  const url = useRecordDrawerUrl('mfgBoms', { enabled: urlSync })
+  const [localDrawer, setLocalDrawer] = useState<{
     mode: DrawerMode
     row: Row | null
-    options?: OpenBomDrawerOptions
   } | null>(null)
+  const [options, setOptions] = useState<OpenBomDrawerOptions | undefined>()
   const [components, setComponents] = useState<Row[]>([])
   const [componentsSnapshot, setComponentsSnapshot] = useState<Row[]>([])
   const [routes, setRoutes] = useState<Row[]>([])
@@ -253,27 +268,39 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
   const [templateId, setTemplateId] = useState<string | null>(null)
   const [applying, setApplying] = useState(false)
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
+  // 请求守卫:防慢响应把上一张 BOM 的明细回填到当前抽屉
+  const guard = useRequestGuard()
+  // 已为哪张 BOM 拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedBomIdRef = useRef<string | null>(null)
 
-  const openDrawer: OpenBomDrawer = (mode, row, options) => {
-    const my = ++reqIdRef.current
-    setDrawer({ mode, row, options })
-    if (mode === 'create' || !row) {
-      setComponents([])
-      setComponentsSnapshot([])
-      setRoutes([])
-      setRoutesSnapshot([])
-      setByproducts([])
-      setByproductsSnapshot([])
-      setLinesLoaded(true)
-      return
-    }
+  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
+  const mode: DrawerMode = urlSync
+    ? (url.drawer?.mode ?? 'view')
+    : (localDrawer?.mode ?? 'view')
+  const rowId: string | undefined = urlSync
+    ? (url.drawer?.recordId ?? undefined)
+    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
+
+  function resetLines() {
+    loadedBomIdRef.current = null
+    setComponents([])
+    setComponentsSnapshot([])
+    setRoutes([])
+    setRoutesSnapshot([])
+    setByproducts([])
+    setByproductsSnapshot([])
+    setLinesLoaded(true)
+  }
+
+  function loadLinesForBom(bomId: string) {
+    const my = guard.begin()
+    loadedBomIdRef.current = bomId
     setLinesLoaded(false)
     const filter = {
       bomId: {
         kind: 'fk' as const,
         op: 'in' as const,
-        values: [row.id],
+        values: [bomId],
         labels: [],
       },
     }
@@ -288,7 +315,7 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
       bomByproductClient.query({ limit: 200, offset: 0, filter }),
     ])
       .then(([componentResult, routeResult, byproductResult]) => {
-        if (my !== reqIdRef.current) return
+        if (!guard.isCurrent(my)) return
         setComponents(componentResult.results)
         setComponentsSnapshot(componentResult.results)
         setRoutes(routeResult.results)
@@ -298,8 +325,8 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
         setLinesLoaded(true)
       })
       .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toast.danger('BOM 明细加载失败', { description: (e as Error).message })
+        if (!guard.isCurrent(my)) return
+        toastError('BOM 明细加载失败')(e)
         setComponents([])
         setComponentsSnapshot([])
         setRoutes([])
@@ -309,8 +336,49 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
       })
   }
 
+  const closeDrawer = () => {
+    setOptions(undefined)
+    if (urlSync) url.close()
+    else setLocalDrawer(null)
+    resetLines()
+  }
+
+  const openDrawer: OpenBomDrawer = (nextMode, row, nextOptions) => {
+    setOptions(nextOptions)
+    if (urlSync) {
+      url.open(nextMode, row?.id != null ? String(row.id) : null)
+    } else {
+      setLocalDrawer({ mode: nextMode, row })
+    }
+    if (nextMode === 'create' || !row) {
+      resetLines()
+      return
+    }
+    loadLinesForBom(String(row.id))
+  }
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    if (!urlSync) return
+    const d = url.drawer
+    if (!d) {
+      // 后退关抽屉:清本地 options 与明细
+      setOptions(undefined)
+      if (loadedBomIdRef.current != null) resetLines()
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedBomIdRef.current != null) resetLines()
+      return
+    }
+    if (loadedBomIdRef.current !== d.recordId) {
+      loadLinesForBom(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
+
   async function applyRouteTemplate() {
-    const bomId = drawer?.row?.id
+    const bomId = rowId
     if (!bomId || templateId == null) return
     setApplying(true)
     try {
@@ -334,13 +402,13 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
       setTemplatePickerOpen(false)
       setTemplateId(null)
     } catch (e) {
-      toast.danger('从模板带入失败', { description: (e as Error).message })
+      toastError('从模板带入失败')(e)
     } finally {
       setApplying(false)
     }
   }
 
-  const opts = drawer?.options
+  const opts = options
   const lockedMaterialId =
     opts?.lockMaterial && opts.materialId
       ? String(opts.materialId)
@@ -374,19 +442,25 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
         resource="mfgBoms"
         {...baseConfig}
         fields={fields}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        rowId={drawer?.row?.id}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        mode={mode}
+        isOpen={isOpen}
+        onOpenChange={(open) => {
+          if (!open) closeDrawer()
+        }}
+        rowId={rowId}
+        onEdit={() => {
+          if (urlSync) url.setMode('edit')
+          else
+            setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+        }}
         tabExtraContent={{
-          components: (mode) => (
+          components: (m) => (
             <SynieEditableTable
               resource="mfgBomComponents"
               label="配料"
               items={components}
               onChange={setComponents}
-              readOnly={mode === 'view' || (mode !== 'create' && !linesLoaded)}
+              readOnly={m === 'view' || (m !== 'create' && !linesLoaded)}
               exclude={['bomId']}
               columns={['materialId', 'unitId', 'quantity', 'lossRate', 'note']}
               fields={{
@@ -437,13 +511,13 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
               }}
             />
           ),
-          routes: (mode) => (
+          routes: (m) => (
             <SynieEditableTable
               resource="mfgBomRoutes"
               label="工艺路线"
               items={routes}
               onChange={setRoutes}
-              readOnly={mode === 'view' || (mode !== 'create' && !linesLoaded)}
+              readOnly={m === 'view' || (m !== 'create' && !linesLoaded)}
               exclude={['bomId']}
               columns={['seq', 'operationId', 'requirement', 'isOutsourced']}
               fields={{
@@ -457,7 +531,7 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
                 isOutsourced: { order: 3, label: '外协', defaultValue: false },
               }}
               toolbar={
-                mode === 'edit' ? (
+                m === 'edit' ? (
                   <Button
                     size="sm"
                     variant="secondary"
@@ -469,7 +543,7 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
                   >
                     从模板带入
                   </Button>
-                ) : mode === 'create' ? (
+                ) : m === 'create' ? (
                   <span className="self-center text-xs text-muted">
                     保存 BOM 后可从模板带入
                   </span>
@@ -486,13 +560,13 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
               }}
             />
           ),
-          byproducts: (mode) => (
+          byproducts: (m) => (
             <SynieEditableTable
               resource="mfgBomByproducts"
               label="副产品"
               items={byproducts}
               onChange={setByproducts}
-              readOnly={mode === 'view' || (mode !== 'create' && !linesLoaded)}
+              readOnly={m === 'view' || (m !== 'create' && !linesLoaded)}
               exclude={['bomId']}
               columns={['materialId', 'unitId', 'quantity', 'note']}
               fields={{
@@ -537,8 +611,8 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
             />
           ),
         }}
-        onSubmit={async (values, mode) => {
-          if (mode === 'create') {
+        onSubmit={async (values, submitMode) => {
+          if (submitMode === 'create') {
             const createStatus = opts?.createStatus ?? 'DRAFT'
             const created = (await bomClient.create({
               ...values,
@@ -564,9 +638,12 @@ export function BomDrawerProvider({ children }: { children: ReactNode }) {
               )
             }
             opts?.onCreated?.(created)
-            setDrawer(null)
+            // 抽屉由 onOpenChange(false) 关;此处只清本地 options,避免双写 URL
+            setOptions(undefined)
+            loadedBomIdRef.current = null
           } else {
-            const bomId = drawer!.row!.id
+            const bomId = rowId
+            if (!bomId) throw new Error('缺少 BOM id,无法更新')
             await bomClient.update(bomId, values)
             const lineErrors = [
               ...(await persistComponents(

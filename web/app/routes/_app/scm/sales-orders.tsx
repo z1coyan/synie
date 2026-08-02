@@ -19,7 +19,7 @@ function SalesOrdersLayout() {
   const selected = TABS.find((t) => pathname.includes(`/scm/sales-orders/${t.id}`))?.id ?? 'items'
 
   return (
-    <OrderDrawerProvider>
+    <OrderDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">销售订单</h1>
       <p className="mt-2 text-sm text-ink-500">
         公司向客户承诺供货的订货单据:草稿态可自由增删改行,审核后锁死(无反审核),仅可关闭或作废。

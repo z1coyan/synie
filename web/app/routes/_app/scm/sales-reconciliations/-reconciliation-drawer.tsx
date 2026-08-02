@@ -42,6 +42,9 @@ import { materialCellRender } from '~/components/synie-material-cell/MaterialCel
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { CompanyDefaultSync, defaultCompanyId } from '../-stock-doc'
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
+import { ItemsResetGuard } from '~/components/items-reset-guard'
+import { toastError } from '~/lib/toast'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 
 export interface ReconciliationRef {
   id: string
@@ -392,47 +395,9 @@ function LockedNumber({ label, value }: { label: string; value: unknown }) {
 }
 
 /**
- * 头关键字段变更清行:公司/对手类型/对手/对账类型任一变则清空条目草稿
- * (与发货抽屉 ItemsResetGuard 同构;edit 等行主数据回填后再布防)。
+ * 头关键字段变更清行(ItemsResetGuard)的指纹字段:公司/对手类型/对手/对账类型任一变则清空条目草稿。
  */
-function ItemsResetGuard({
-  mode,
-  row,
-  values,
-  onReset,
-}: {
-  mode: DrawerMode
-  row: Row | null | undefined
-  values: Record<string, unknown>
-  onReset: () => void
-}) {
-  const armedRef = useRef(false)
-  const baselineRef = useRef('')
-  const fpOf = (v: Record<string, unknown>) =>
-    [v.companyId, v.partyType, v.partyId, v.reconciliationType]
-      .map((x) => String(x ?? ''))
-      .join('|')
-  const fp = fpOf(values)
-  const rowFp = row != null ? fpOf(row) : null
-
-  useEffect(() => {
-    if (mode === 'view') return
-    if (!armedRef.current) {
-      if (mode === 'create' || (rowFp != null && fp === rowFp)) {
-        baselineRef.current = fp
-        armedRef.current = true
-      }
-      return
-    }
-    if (fp !== baselineRef.current) {
-      baselineRef.current = fp
-      onReset()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fp, rowFp, mode, onReset])
-
-  return null
-}
+const ITEMS_RESET_FIELDS = ['companyId', 'partyType', 'partyId', 'reconciliationType'] as const
 
 /** 数量(2 位)预览:与后端金额链同形(qty×快照单价),仅草稿展示,落库以后端为准 */
 function previewAmount(qty: unknown, price: unknown): number | null {
@@ -442,12 +407,22 @@ function previewAmount(qty: unknown, price: unknown): number | null {
   return Math.round(q * p * 100) / 100
 }
 
+/**
+ * 销售对账创建/编辑抽屉(头+对账条目)。
+ * 对账单/对账条目两 tab 共用;列表 layout 传 urlSync,开/关/模式走 URL。
+ *
+ * @param urlSync 列表页传 true:抽屉开/关/模式写 ?record=&mode=,深链/刷新/后退可寻址。
+ */
 export function ReconciliationDrawerProvider({
   children,
+  urlSync = false,
 }: {
   children: ReactNode
+  urlSync?: boolean
 }) {
-  const [drawer, setDrawer] = useState<{
+  // URL 源(列表 layout)与本地态二选一;明细始终本地
+  const url = useRecordDrawerUrl('salReconciliations', { enabled: urlSync })
+  const [localDrawer, setLocalDrawer] = useState<{
     mode: DrawerMode
     row: ReconciliationRef | null
   } | null>(null)
@@ -460,6 +435,17 @@ export function ReconciliationDrawerProvider({
   const deliveryItemsRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
+  // 已为哪张对账单拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
+  const mode: DrawerMode = urlSync
+    ? (url.drawer?.mode ?? 'view')
+    : (localDrawer?.mode ?? 'view')
+  const rowId: string | undefined = urlSync
+    ? (url.drawer?.recordId ?? undefined)
+    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
+  const reconciliationStatus = urlSync ? url.row?.status : localDrawer?.row?.status
 
   const companies = useQuery({
     queryKey: ['salReconciliations', 'companies'],
@@ -480,101 +466,130 @@ export function ReconciliationDrawerProvider({
     [],
   )
 
-  const openDrawer = useCallback<OpenReconciliationDrawer>(
-    (mode, reconciliation) => {
-      const my = ++reqIdRef.current
-      setDrawer({ mode, row: reconciliation })
-      deliveryItemsRef.current = new Map()
-      if (mode === 'create') {
-        setItems([])
-        setItemsSnapshot([])
-        setDetailLoaded(true)
-        return
-      }
-      const reconciliationId = reconciliation?.id
-      // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
-      if (
-        reconciliationId == null ||
-        reconciliationId === '' ||
-        reconciliationId === 'undefined'
-      ) {
-        toast.danger('无法打开销售对账单', { description: '缺少对账单 id' })
-        setItems([])
-        setItemsSnapshot([])
-        setDetailLoaded(true)
-        return
-      }
-      setDetailLoaded(false)
-      salesReconciliationItemClient
-        .query({
-          limit: 200,
-          offset: 0,
-          sort: { column: 'idx', direction: 'ascending' },
-          filter: {
-            reconciliationId: {
-              kind: 'fk',
-              op: 'in',
-              values: [reconciliationId],
-              labels: [],
-            },
+  function resetDetail() {
+    loadedIdRef.current = null
+    deliveryItemsRef.current = new Map()
+    setItems([])
+    setItemsSnapshot([])
+    setDetailLoaded(true)
+  }
+
+  function loadDetail(reconciliationId: string) {
+    const my = ++reqIdRef.current
+    loadedIdRef.current = reconciliationId
+    deliveryItemsRef.current = new Map()
+    setDetailLoaded(false)
+    salesReconciliationItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          reconciliationId: {
+            kind: 'fk',
+            op: 'in',
+            values: [reconciliationId],
+            labels: [],
           },
-        })
-        .then(async (d) => {
-          if (my !== reqIdRef.current) return
-          const rows = d.results
-          // 编辑态预热缓存:按行上发货条目 id 取剩余可对账量/快照价/币种
-          const ids = [
-            ...new Set(
-              rows
-                .map((r) =>
-                  r.deliveryItemId == null ? null : String(r.deliveryItemId),
-                )
-                .filter((v): v is string => v != null),
-            ),
-          ]
-          if (ids.length > 0) {
-            try {
-              const data = await Promise.all(
-                ids.map((id) => salesDeliveryItemClient.get(id)),
+        },
+      })
+      .then(async (d) => {
+        if (my !== reqIdRef.current) return
+        const rows = d.results
+        // 编辑态预热缓存:按行上发货条目 id 取剩余可对账量/快照价/币种
+        const ids = [
+          ...new Set(
+            rows
+              .map((r) =>
+                r.deliveryItemId == null ? null : String(r.deliveryItemId),
               )
-              if (my !== reqIdRef.current) return
-              for (const di of data.filter((row): row is Row => row != null)) {
-                deliveryItemsRef.current.set(String(di.id), di)
-              }
-            } catch {
-              /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
+              .filter((v): v is string => v != null),
+          ),
+        ]
+        if (ids.length > 0) {
+          try {
+            const data = await Promise.all(
+              ids.map((id) => salesDeliveryItemClient.get(id)),
+            )
+            if (my !== reqIdRef.current) return
+            for (const di of data.filter((row): row is Row => row != null)) {
+              deliveryItemsRef.current.set(String(di.id), di)
             }
+          } catch {
+            /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
           }
-          if (my !== reqIdRef.current) return
-          // 行上缺的物料编号/规格/客户料号从预热缓存补齐(表格多行展示用)
-          const enriched = rows.map((r) => {
-            const di =
-              r.deliveryItemId != null
-                ? deliveryItemsRef.current.get(String(r.deliveryItemId))
-                : undefined
-            if (!di) return r
-            return {
-              ...r,
-              materialCode: r.materialCode ?? di.materialCode ?? null,
-              materialSpec: r.materialSpec ?? di.materialSpec ?? null,
-              customerPartNo: r.customerPartNo ?? di.customerPartNo ?? null,
-            }
-          })
-          setItems(enriched)
-          setItemsSnapshot(enriched)
-          setDetailLoaded(true)
+        }
+        if (my !== reqIdRef.current) return
+        // 行上缺的物料编号/规格/客户料号从预热缓存补齐(表格多行展示用)
+        const enriched = rows.map((r) => {
+          const di =
+            r.deliveryItemId != null
+              ? deliveryItemsRef.current.get(String(r.deliveryItemId))
+              : undefined
+          if (!di) return r
+          return {
+            ...r,
+            materialCode: r.materialCode ?? di.materialCode ?? null,
+            materialSpec: r.materialSpec ?? di.materialSpec ?? null,
+            customerPartNo: r.customerPartNo ?? di.customerPartNo ?? null,
+          }
         })
-        .catch((e) => {
-          if (my !== reqIdRef.current) return
-          toast.danger('对账条目加载失败', {
-            description: (e as Error).message,
-          })
-          setItems([])
-          setItemsSnapshot([])
-        })
-    },
-    [],
-  )
+        setItems(enriched)
+        setItemsSnapshot(enriched)
+        setDetailLoaded(true)
+      })
+      .catch((e) => {
+        if (my !== reqIdRef.current) return
+        toastError('对账条目加载失败')(e)
+        setItems([])
+        setItemsSnapshot([])
+      })
+  }
+
+  const openDrawer: OpenReconciliationDrawer = (nextMode, reconciliation) => {
+    if (urlSync) {
+      url.open(nextMode, reconciliation?.id != null ? String(reconciliation.id) : null)
+    } else {
+      setLocalDrawer({ mode: nextMode, row: reconciliation })
+    }
+    if (nextMode === 'create' || !reconciliation) {
+      resetDetail()
+      return
+    }
+    const reconciliationId = reconciliation.id
+    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
+    if (
+      reconciliationId == null ||
+      reconciliationId === '' ||
+      reconciliationId === 'undefined'
+    ) {
+      toast.danger('无法打开销售对账单', { description: '缺少对账单 id' })
+      resetDetail()
+      return
+    }
+    loadDetail(String(reconciliationId))
+  }
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    if (!urlSync) return
+    const d = url.drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        reqIdRef.current++
+        resetDetail()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetDetail()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadDetail(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   const baseCfg = drawerConfig('salReconciliations')
   const drawerCfg = {
@@ -595,20 +610,25 @@ export function ReconciliationDrawerProvider({
       <SynieRecordDrawer
         resource="salReconciliations"
         {...drawerCfg}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
+        mode={mode}
+        isOpen={isOpen}
         onOpenChange={(open) => {
           if (open) return
           reqIdRef.current++
-          setDrawer(null)
+          if (urlSync) url.close()
+          else setLocalDrawer(null)
           setItems([])
           setItemsSnapshot([])
           deliveryItemsRef.current = new Map()
+          loadedIdRef.current = null
         }}
-        rowId={drawer?.row?.id}
+        rowId={rowId}
         onEdit={
-          drawer?.row?.status === 'DRAFT'
-            ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+          reconciliationStatus === 'DRAFT'
+            ? () => {
+                if (urlSync) url.setMode('edit')
+                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+              }
             : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
@@ -698,9 +718,7 @@ export function ReconciliationDrawerProvider({
               setItems((cur) => [...cur, ...imported])
               toast.success(`已导入 ${imported.length} 条未对账发货条目`)
             } catch (e) {
-              toast.danger('导入未对账条目失败', {
-                description: (e as Error).message,
-              })
+              toastError('导入未对账条目失败')(e)
             } finally {
               setImporting(false)
             }
@@ -937,17 +955,18 @@ export function ReconciliationDrawerProvider({
                 defaultId={createDefaultCompany}
               />
               <ReconciliationAccountDefaultSync
-                key={`acct-${drawer?.row?.id ?? 'create'}-${reqIdRef.current}`}
+                key={`acct-${rowId ?? 'create'}-${reqIdRef.current}`}
                 mode={mode}
                 companyId={(values.companyId as string | null) ?? null}
                 patchValues={patchValues}
               />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${drawer?.row?.id ?? 'create'}-${reqIdRef.current}`}
+                key={`${rowId ?? 'create'}-${reqIdRef.current}`}
                 mode={mode}
                 row={row}
                 values={values}
+                fields={ITEMS_RESET_FIELDS}
                 onReset={resetItems}
               />
               <SynieEditableTable
@@ -976,7 +995,7 @@ export function ReconciliationDrawerProvider({
                     </div>
                   )
                 }
-                drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+                drawerClassName="w-full lg:w-[560px]"
                 exclude={[
                   'reconciliationId',
                   'companyId',
@@ -1159,9 +1178,9 @@ export function ReconciliationDrawerProvider({
             }
             savedId = reconciliationId
           } else {
-            await salesReconciliationClient.update(drawer!.row!.id, values)
+            await salesReconciliationClient.update(rowId!, values)
             const itemErrors = await persistItems(
-              drawer!.row!.id,
+              rowId!,
               items,
               itemsSnapshot,
             )
@@ -1172,7 +1191,7 @@ export function ReconciliationDrawerProvider({
             } else {
               toast.success('销售对账单已更新')
             }
-            savedId = drawer!.row!.id
+            savedId = rowId!
           }
           await Promise.all([
             resourceBindingFor('salReconciliations').cache.invalidateAll(

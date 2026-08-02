@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertDialog, Button, toast } from '@heroui/react'
+import { AlertDialog, Button, Label, ListBox, Select, toast } from '@heroui/react'
 import { formatAmount } from '~/lib/amount'
+import { PAYROLL_SLIP_STATUS_ENUM_COLORS } from '~/lib/doc-status'
+import { todayLocal } from '~/lib/form-defaults'
+import { toastError } from '~/lib/toast'
 import {
   fetchPayrollMonthStats,
   generatePayrolls,
   payRemainingPayroll,
-  payrollPaymentClient,
   refreshPayroll,
   savePayroll,
 } from '~/lib/resources/hr-operations'
@@ -15,15 +17,56 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
-import { MonthSelect, monthOptions, today } from './-shared'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { PaymentsSection } from './-payments-section'
 
+const RESOURCE = 'hrPayrolls'
+
 export const Route = createFileRoute('/_app/hr/payroll/slips')({
+  // fixedFilter(月份锁定):跳过默认首屏 loader
   component: PayrollSlipsPage,
 })
+
+// 近 24 个月候选(照考勤月汇总先例;薪资数据从上线月起,更早无意义)
+function monthOptions(): { value: string; label: string }[] {
+  const now = new Date()
+  return Array.from({ length: 24 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    return { value, label: `${d.getFullYear()} 年 ${d.getMonth() + 1} 月` }
+  })
+}
+
+function MonthSelect(props: { value: string; onChange: (v: string) => void }) {
+  const options = monthOptions()
+
+  return (
+    <Select
+      className="w-full lg:w-44"
+      value={props.value}
+      onChange={(v) => v != null && props.onChange(String(v))}
+      aria-label="选择月份"
+    >
+      <Label>月份</Label>
+      <Select.Trigger>
+        <Select.Value />
+        <Select.Indicator />
+      </Select.Trigger>
+      <Select.Popover>
+        <ListBox>
+          {options.map((o) => (
+            <ListBox.Item key={o.value} id={o.value} textValue={o.label}>
+              {o.label}
+              <ListBox.ItemIndicator />
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </Select.Popover>
+    </Select>
+  )
+}
 
 // 未发差额(以行数据估算,仅作展示;实发金额由后端锁内权威计算)
 const remainingOf = (row: Row) => Number(row.payable || 0) - Number(row.paidTotal || 0)
@@ -52,7 +95,7 @@ const GRID_OVERRIDES = {
   payable: { mobileRole: 'subtitle' },
   status: {
     mobileRole: 'summary',
-    enumColors: { PENDING: 'warning', PAID: 'success' },
+    enumColors: PAYROLL_SLIP_STATUS_ENUM_COLORS,
   },
   paidTotal: { mobileRole: 'summary' },
   missingDays: {
@@ -72,7 +115,8 @@ const READONLY_FIELDS = {
 function PayrollSlipsPage() {
   const options = monthOptions()
   const [month, setMonth] = useState(options[0].value)
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close, row: drawerRow } =
+    useRecordDrawerUrl(RESOURCE)
   const [generating, setGenerating] = useState(false)
   const [payDialog, setPayDialog] = useState<Row[] | null>(null)
   const [paying, setPaying] = useState(false)
@@ -90,7 +134,7 @@ function PayrollSlipsPage() {
 
   // 发放/借款联动跨资源,一律广播失效(staleTime 下重挂不重取,必须显式失效)
   const invalidateAll = () => {
-    for (const resource of ['hrPayrolls', 'hrPayrollPayments', 'hrEmployeeLoans']) {
+    for (const resource of [RESOURCE, 'hrPayrollPayments', 'hrEmployeeLoans']) {
       void resourceBindingFor(resource).cache.invalidateAll(queryClient)
     }
     void queryClient.invalidateQueries({ queryKey: ['payrollMonthStats'] })
@@ -106,7 +150,7 @@ function PayrollSlipsPage() {
       })
       invalidateAll()
     } catch (e) {
-      toast.danger('生成失败', { description: (e as Error).message })
+      toastError('生成失败')(e)
     } finally {
       setGenerating(false)
     }
@@ -121,7 +165,7 @@ function PayrollSlipsPage() {
 
     for (const row of targets) {
       try {
-        await payRemainingPayroll(row.id, today())
+        await payRemainingPayroll(row.id, todayLocal())
         done += 1
       } catch (e) {
         failures.push((e as Error).message)
@@ -142,7 +186,7 @@ function PayrollSlipsPage() {
       toast.success('已按当前考勤与员工档案重取快照')
       invalidateAll()
     } catch (e) {
-      toast.danger('重取快照失败', { description: (e as Error).message })
+      toastError('重取快照失败')(e)
     }
   }
 
@@ -174,16 +218,18 @@ function PayrollSlipsPage() {
 
       <div className="mt-4">
         <SynieDataGrid
-          resource="hrPayrolls"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           fixedFilter={{
             month: { kind: 'text', op: 'eq', value: month },
           }}
           createLabel="手工建单"
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: row.status === 'PENDING' ? 'edit' : 'view', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) =>
+            open(row.status === 'PENDING' ? 'edit' : 'view', String(row.id))
+          }
           rowActions={[
             // 发放按 hr_payroll_payment:create 门控,不能用本表 capability 字段(那是 hr.payroll 的码)
             ...(canPay
@@ -206,17 +252,20 @@ function PayrollSlipsPage() {
       </div>
 
       <SynieRecordDrawer
-        {...drawerConfig('hrPayrolls')}
-        resource="hrPayrolls"
+        {...drawerConfig(RESOURCE)}
+        resource={RESOURCE}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        rowId={drawer?.row?.id}
-        onEdit={() => setDrawer((d) => (d && d.row?.status === 'PENDING' ? { ...d, mode: 'edit' } : d))}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
+        onEdit={() => {
+          if (drawerRow?.status !== 'PENDING') return
+          setMode('edit')
+        }}
         contentClassName="w-full lg:w-[720px]"
         exclude={['createdById']}
         fields={{
-          ...drawerConfig('hrPayrolls').fields,
+          ...drawerConfig(RESOURCE).fields,
           ...READONLY_FIELDS,
           // 员工与月份是单据身份,建单后不可改(错了删单重建)
           employeeId: { required: true, order: -2, cols: 6, edit: 'createOnly' },
@@ -245,7 +294,7 @@ function PayrollSlipsPage() {
           }
 
           await savePayroll(
-            mode === 'create' ? null : drawer!.row!.id,
+            mode === 'create' ? null : String(drawer!.recordId),
             mode === 'create'
               ? { ...base, employeeId: values.employeeId, month: values.month }
               : base,

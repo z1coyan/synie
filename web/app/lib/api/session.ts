@@ -14,6 +14,8 @@ export interface MeResponse {
   allCompanies: boolean
   permissions: string[]
   companyIds: string[]
+  /** 有效菜单码集合（启用角色白名单并集）；空数组 = 不限制 = 全可见 */
+  menuCodes: string[]
 }
 
 export interface LoginResponse {

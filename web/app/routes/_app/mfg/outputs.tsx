@@ -26,7 +26,7 @@ function OutputsLayout() {
     TABS.find((t) => pathname.includes(`/mfg/outputs/${t.id}`))?.id ?? 'items'
 
   return (
-    <OutputDrawerProvider>
+    <OutputDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">生产入库</h1>
       <p className="mt-2 text-sm text-ink-500">
         对生产工单成品入账：行挂工单、可分次；审核写库存分录并累加工单已入，满量后工单完工。

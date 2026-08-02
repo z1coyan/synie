@@ -5,6 +5,7 @@ import {
   type ColumnOverride,
 } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
+import { RECONCILIATION_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import { useAuditDoc } from '../-audit-doc'
 import {
   reconciliationAuditConfig,
@@ -27,12 +28,7 @@ const GRID_OVERRIDES = {
   partyType: { label: '对手类型', mobileRole: 'hide' },
   status: {
     mobileRole: 'summary',
-    enumColors: {
-      DRAFT: 'default',
-      CONFIRMED: 'accent',
-      CLOSED: 'success',
-      VOIDED: 'danger',
-    },
+    enumColors: RECONCILIATION_DOC_STATUS_ENUM_COLORS,
   },
   grossTotal: {
     label: '原币含税合计',

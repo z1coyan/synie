@@ -6,6 +6,7 @@
  */
 import type { ResourceBinding } from '../catalog/types'
 import { ocrVatInvoice } from '../finance-operations'
+import { AUDIT_TRAIL_EXCLUDE } from './document-preview-helpers'
 import type { PresentationExtension } from './types'
 
 export const VAT_INVOICE_RESOURCE = 'accVatInvoices'
@@ -26,16 +27,7 @@ export function createInvoicePresentation(
     kind: 'extension',
     label: '增值税发票',
     // 完整字段布局与动态 input 由发票页面 form controller 拥有（本 PE 拥有边界与 OCR seam）
-    exclude: [
-      'id',
-      'status',
-      'postingDate',
-      'auditedAt',
-      'auditedById',
-      'createdById',
-      'insertedAt',
-      'updatedAt',
-    ],
+    exclude: ['id', 'postingDate', ...AUDIT_TRAIL_EXCLUDE],
     fields: {},
     binding,
   }

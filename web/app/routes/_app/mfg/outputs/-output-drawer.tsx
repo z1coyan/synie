@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -25,6 +26,7 @@ import {
   type AuditDocConfig,
 } from '../../scm/-audit-doc'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { WorkOrderProgressCell } from '../-work-order-progress-cell'
 import { resourceBindingFor } from '~/lib/resources/registry'
 
@@ -186,8 +188,22 @@ const hasMaterialSnapshot = (row: Row) =>
   (row.materialCode != null && row.materialCode !== '') ||
   (row.materialName != null && row.materialName !== '')
 
-export function OutputDrawerProvider({ children }: { children: ReactNode }) {
-  const [drawer, setDrawer] = useState<{
+/**
+ * 生产入库创建/编辑抽屉(头+入库条目)。
+ * 入库单/入库条目两 tab 共用;列表 layout 传 urlSync,开/关/模式走 URL。
+ *
+ * @param urlSync 列表页传 true:抽屉开/关/模式写 ?record=&mode=,深链/刷新/后退可寻址。
+ */
+export function OutputDrawerProvider({
+  children,
+  urlSync = false,
+}: {
+  children: ReactNode
+  urlSync?: boolean
+}) {
+  // URL 源(列表 layout)与本地态二选一;明细始终本地
+  const url = useRecordDrawerUrl('mfgOutputs', { enabled: urlSync })
+  const [localDrawer, setLocalDrawer] = useState<{
     mode: DrawerMode
     output: OutputRef | null
   } | null>(null)
@@ -197,13 +213,61 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
   // 行表单最近一次选中的工单整行:effects 写表单草稿时 collectValues 会剥掉
   // 非字段键(物料快照在 exclude),transformItem 从这里取快照并入本地行
   const pickedWorkOrderRef = useRef<Row | null>(null)
+  // 已为哪张入库单拉过明细;深链 effect 与 openDrawer 去重
+  const loadedIdRef = useRef<string | null>(null)
 
-  const openDrawer: OpenOutputDrawer = (mode, output) => {
-    setDrawer({ mode, output })
-    load(mode === 'create' || !output ? null : output.id)
+  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
+  const mode: DrawerMode = urlSync
+    ? (url.drawer?.mode ?? 'view')
+    : (localDrawer?.mode ?? 'view')
+  const rowId: string | undefined = urlSync
+    ? (url.drawer?.recordId ?? undefined)
+    : localDrawer?.output?.id != null
+      ? String(localDrawer.output.id)
+      : undefined
+  // 编辑入口:urlSync 用 hook 自查行 status;本地态用 open 传入的 output.status
+  const outputStatus = urlSync
+    ? url.row?.status
+    : localDrawer?.output?.status
+
+  const loadItems = (docId: string | null) => {
+    loadedIdRef.current = docId
+    load(docId)
   }
 
-  const draftOnly = !drawer?.output || drawer.output.status === 'DRAFT'
+  const openDrawer: OpenOutputDrawer = (nextMode, output) => {
+    if (urlSync) {
+      url.open(nextMode, output?.id != null ? String(output.id) : null)
+    } else {
+      setLocalDrawer({ mode: nextMode, output })
+    }
+    if (nextMode === 'create' || !output) {
+      loadItems(null)
+      return
+    }
+    loadItems(String(output.id))
+  }
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    if (!urlSync) return
+    const d = url.drawer
+    if (!d) {
+      if (loadedIdRef.current != null) loadItems(null)
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) loadItems(null)
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadItems(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
+
+  const draftOnly =
+    mode === 'create' || !outputStatus || outputStatus === 'DRAFT'
 
   return (
     <OutputDrawerContext.Provider value={openDrawer}>
@@ -212,28 +276,36 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
       <SynieRecordDrawer
         resource="mfgOutputs"
         {...drawerConfig('mfgOutputs')}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        rowId={drawer?.output?.id}
+        mode={mode}
+        isOpen={isOpen}
+        onOpenChange={(open) => {
+          if (open) return
+          if (urlSync) url.close()
+          else setLocalDrawer(null)
+          loadedIdRef.current = null
+        }}
+        rowId={rowId}
         onEdit={
-          drawer?.output?.status === 'DRAFT'
-            ? () =>
-                setDrawer((current) =>
-                  current ? { ...current, mode: 'edit' } : current,
-                )
+          outputStatus === 'DRAFT'
+            ? () => {
+                if (urlSync) url.setMode('edit')
+                else
+                  setLocalDrawer((current) =>
+                    current ? { ...current, mode: 'edit' } : current,
+                  )
+              }
             : undefined
         }
-        extraContent={(mode) => (
+        extraContent={(m) => (
           <SynieEditableTable
             resource="mfgOutputItems"
             label="入库条目"
             items={items}
             onChange={setItems}
             readOnly={
-              mode === 'view' ||
+              m === 'view' ||
               !draftOnly ||
-              (mode !== 'create' && !itemsLoaded)
+              (m !== 'create' && !itemsLoaded)
             }
             exclude={[
               'outputId',
@@ -414,10 +486,10 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
             }}
           />
         )}
-        onSubmit={async (values, mode) => {
+        onSubmit={async (values, submitMode) => {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           let savedId: string
-          if (mode === 'create') {
+          if (submitMode === 'create') {
             const created = await outputClient.create(values)
             const id = created.id
             const lineErrors = await persistItems(id)
@@ -425,13 +497,13 @@ export function OutputDrawerProvider({ children }: { children: ReactNode }) {
             toast.success('生产入库单已创建')
             savedId = id
           } else {
-            await outputClient.update(drawer!.output!.id, values)
+            savedId = String(rowId)
+            await outputClient.update(savedId, values)
             if (draftOnly) {
-              const lineErrors = await persistItems(drawer!.output!.id)
+              const lineErrors = await persistItems(savedId)
               if (lineErrors.length) throw new Error(lineErrors.join('; '))
             }
             toast.success('生产入库单已更新')
-            savedId = drawer!.output!.id
           }
           await Promise.all([
             resourceBindingFor('mfgOutputs').cache.invalidateGrid(queryClient),

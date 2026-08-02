@@ -4,13 +4,19 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Input, Label, TextField, toast } from '@heroui/react'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
-import { useCatalogBasicForm,
-  requireWriter,} from '~/lib/resources/catalog'
+import {
+  useCatalogBasicForm,
+  requireWriter,
+} from '~/lib/resources/catalog'
 import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'sysStorages'
 
 export const Route = createFileRoute('/_app/system/storages')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: StoragesPage,
 })
 
@@ -24,15 +30,11 @@ function optionalString(value: unknown): string | null {
 }
 
 function StoragesPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const [secret, setSecret] = useState('')
   const queryClient = useQueryClient()
-  const { binding, formProps } = useCatalogBasicForm(
-    'sysStorages',
-    '存储接入',
-  )
-  const invalidateGrid = () =>
-    binding.cache.invalidateGrid(queryClient)
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '存储接入')
+  const invalidateGrid = () => binding.cache.invalidateGrid(queryClient)
 
   return (
     <>
@@ -43,11 +45,11 @@ function StoragesPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="sysStorages"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
           rowActions={[
             {
               key: 'setDefault',
@@ -79,17 +81,17 @@ function StoragesPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="sysStorages"
+        resource={RESOURCE}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDrawer(null)
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            close()
             setSecret('')
           }
         }}
-        row={drawer?.row}
+        rowId={drawer?.recordId ?? undefined}
         exclude={formProps.exclude}
         fields={{
           ...formProps.fields,
@@ -127,7 +129,7 @@ function StoragesPage() {
             visible: isObjectStore,
           },
         }}
-        onEdit={() => setDrawer((value) => (value ? { ...value, mode: 'edit' } : value))}
+        onEdit={() => setMode('edit')}
         extraContent={(mode, _row, values) =>
           mode !== 'view' && isObjectStore(values) ? (
             <TextField value={secret} onChange={setSecret} isRequired={mode === 'create'}>
@@ -157,9 +159,10 @@ function StoragesPage() {
               kind: String(values.kind ?? ''),
             })
           } else {
-            await requireWriter(binding, 'update', '存储接入')(drawer!.row!.id, common)
+            await requireWriter(binding, 'update', '存储接入')(String(drawer!.recordId), common)
           }
           toast.success(mode === 'create' ? '存储接入已创建' : '存储接入已更新')
+          setSecret('')
           await invalidateGrid()
         }}
       />

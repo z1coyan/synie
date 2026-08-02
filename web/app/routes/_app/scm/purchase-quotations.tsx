@@ -19,7 +19,7 @@ function PurchaseQuotationsLayout() {
   const selected = TABS.find((t) => pathname.includes(`/scm/purchase-quotations/${t.id}`))?.id ?? 'items'
 
   return (
-    <QuotationDrawerProvider>
+    <QuotationDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">采购报价</h1>
       <p className="mt-2 text-sm text-ink-500">
         供应商/内部公司向本公司的价格承诺清单:条目只报单价不含数量,支持固定价与数量梯度;审核后锁死(无反审核),截止日过后视为已过期,可作废撤回。

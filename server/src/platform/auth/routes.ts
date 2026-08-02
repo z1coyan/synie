@@ -26,14 +26,16 @@ export function authRoutes(auth: AuthService) {
         user: result.user,
       })
     })
-    .get('/me', requireAuth(auth), (c) => {
+    .get('/me', requireAuth(auth), async (c) => {
       const actor = c.get('actor')
+      const menuCodes = await auth.menuCodes(actor)
       return c.json({
         user: { id: actor.userId, username: actor.username, name: actor.name },
         superAdmin: actor.superAdmin,
         allCompanies: actor.allCompanies,
         permissions: [...actor.permissions].sort(),
         companyIds: actor.companyIds,
+        menuCodes,
       })
     })
 }

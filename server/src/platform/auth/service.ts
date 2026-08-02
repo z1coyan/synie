@@ -54,7 +54,13 @@ export async function createAuthService(deps: {
     return actor
   }
 
-  return { login, authenticate }
+  /** 有效菜单码集合；超管恒空数组（= 不限制，对齐绕过一切权限检查先例） */
+  async function menuCodes(actor: Actor): Promise<string[]> {
+    if (actor.superAdmin) return []
+    return store.menuCodesByUserId(actor.userId)
+  }
+
+  return { login, authenticate, menuCodes }
 }
 
 export type AuthService = Awaited<ReturnType<typeof createAuthService>>

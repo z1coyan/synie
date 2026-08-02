@@ -9,6 +9,7 @@ import {
 import type { ResourceBinding } from '~/lib/resources/catalog'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
+import { toastError } from '~/lib/toast'
 
 /** 审核确认弹窗的条目列定义(render 缺省时按文本原样展示) */
 export interface AuditItemColumn {
@@ -90,7 +91,7 @@ export function useAuditDoc(cfg: AuditDocConfig) {
       pending.refetch()
       setPending(null)
     } catch (e) {
-      toast.danger(`${cfg.docLabel}审核失败`, { description: (e as Error).message })
+      toastError(`${cfg.docLabel}审核失败`)(e)
     } finally {
       setRunning(false)
     }

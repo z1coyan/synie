@@ -1,14 +1,16 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Button, toast } from '@heroui/react'
 import { downloadFile } from '~/lib/files'
 import { queryAttachments } from '~/lib/resources/files'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { Row } from '~/components/synie-data-grid/types'
+
+const RESOURCE = 'sysFiles'
 
 export const Route = createFileRoute('/_app/system/files')({
+  // defaultSort 非默认首屏,跳过 loader
   component: FilesPage,
 })
 
@@ -49,7 +51,8 @@ function FileAttachments({ fileId }: { fileId: string }) {
 }
 
 function FilesPage() {
-  const [drawer, setDrawer] = useState<Row | null>(null)
+  // 只读详情抽屉:无 create/edit 入口,mode 固定 view
+  const { drawer, open, close } = useRecordDrawerUrl(RESOURCE)
 
   return (
     <>
@@ -60,7 +63,7 @@ function FilesPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="sysFiles"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={{
             filename: {
@@ -73,17 +76,17 @@ function FilesPage() {
             key: { width: 220 },
           }}
           defaultSort={{ column: 'insertedAt', direction: 'descending' }}
-          onView={setDrawer}
+          onView={(row) => open('view', String(row.id))}
         />
       </div>
 
       <SynieRecordDrawer
-        resource="sysFiles"
+        resource={RESOURCE}
         label="文件"
         mode="view"
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        row={drawer}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
         fields={{ size: { render: formatSize } }}
         extraContent={(_mode, row) => (row?.id ? <FileAttachments fileId={String(row.id)} /> : null)}
         footerActions={(_mode, row) =>
@@ -92,7 +95,7 @@ function FilesPage() {
               variant="secondary"
               onPress={() => {
                 downloadFile(String(row.id), String(row.filename ?? 'file')).catch((error) =>
-                  toast.danger(error instanceof Error ? error.message : '下载失败')
+                  toast.danger(error instanceof Error ? error.message : '下载失败'),
                 )
               }}
             >

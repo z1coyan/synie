@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
 import { getManufacturingSetting, updateManufacturingSetting } from '~/lib/resources/settings'
+import { toastError } from '~/lib/toast'
 
 export const Route = createFileRoute('/_app/scm/settings/production')({
   component: ScmProductionSettingsTab,
@@ -39,7 +40,7 @@ function ScmProductionSettingsTab() {
       toast.success('生产设置已保存')
       queryClient.invalidateQueries({ queryKey: ['mfgSettings'] })
     } catch (e) {
-      toast.danger('保存失败', { description: (e as Error).message })
+      toastError('保存失败')(e)
     } finally {
       setSaving(false)
     }

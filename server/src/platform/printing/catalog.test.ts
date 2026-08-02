@@ -299,7 +299,7 @@ describe('FieldCatalog', () => {
     const resources = catalog.resources()
     expect(resources).toContain('sales.order')
     expect(resources).toContain('sys.print_template')
-    expect(resources.length).toBe(60)
+    expect(resources.length).toBe(61)
     const order = catalog.get('sales.order')
     expect(order?.fields.length).toBe(25)
     expect(order?.loops.length).toBe(1)

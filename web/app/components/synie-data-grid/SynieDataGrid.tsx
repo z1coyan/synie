@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ActionBar, DataGrid, EmptyState, InlineSelect, type DataGridColumn, type DataGridSortDescriptor } from '@heroui-pro/react'
-import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, Spinner, toast } from '@heroui/react'
+import { Button, Chip, CloseButton, Dropdown, Label, ListBox, Pagination, SearchField, Separator, toast } from '@heroui/react'
 import type { Selection } from 'react-aria-components'
-import { isForbidden } from '~/lib/errors'
 import { useMediaQuery } from '~/lib/use-media-query'
 import { createResourceQueryCache } from '~/lib/resources/catalog'
 import { resourceBindingFor } from '~/lib/resources/registry'
@@ -25,11 +24,13 @@ import { printRows } from './print'
 import { nextSort } from './query'
 import type { ActionContext, BulkAction, ColumnFilter, EnumChipColor, FilterState, GridColumnMeta, Row, RowAction, SortState } from './types'
 import type { ResolvedAction } from './use-grid-actions'
+import { QueryState } from '../synie-query-state/QueryState'
 import { FkLink } from '../synie-record-drawer/fk-preview'
 import { FileThumb } from '../synie-preview/FileThumb'
 import { SyniePreview, type SyniePreviewItem } from '../synie-preview/SyniePreview'
 import { useDraft } from './use-debounced'
 import { useGridActions } from './use-grid-actions'
+import { resolveUrlStateEnabled, useUrlGridState } from './use-url-grid-state'
 
 // 单元格渲染与列 override 类型已迁入 cells.tsx(表格/卡片/编辑表三处共用);
 // 此处 re-export 保持既有 import 路径(页面与 SynieEditableTable)不破
@@ -117,6 +118,12 @@ export interface SynieDataGridProps {
   defaultFilters?: FilterState
   /** 列筛选变更回调(如建单时按公司列筛唯一值预填公司);不控 filter 状态 */
   onFiltersChange?: (filters: FilterState) => void
+  /**
+   * 是否把搜索/筛选/分页/排序同步到 URL search。
+   * 缺省：页面级网格开启、pick 选择器关闭。内嵌网格（弹窗/抽屉/远程选择）必须显式 `urlState={false}`。
+   * 读写 search 只补丁 q/page/ps/sort/f，与 record/mode 等同页共存。
+   */
+  urlState?: boolean
   /** 本页汇总行:表格下方、分页上方渲染(如金额本页合计);rows 为当前页数据 */
   pageSummary?: (rows: Row[]) => ReactNode
   /** 附件图片列:行记录的图片附件(sys_attachment 多态挂接)以缩略图列呈现,
@@ -141,11 +148,16 @@ const isLoadingRow = (row: Row) => row.id.startsWith(LOADING_ROW_PREFIX)
 // 模块级稳定默认值:默认参数若写成内联 []/{}, 不传 props 时每次渲染都是新引用,useMemo 永远失效
 const EMPTY_EXCLUDE: string[] = []
 const EMPTY_OVERRIDES: Record<string, ColumnOverride> = {}
+const EMPTY_FILTERS: FilterState = {}
 const getRowId = (r: Row) => r.id
 
 /** 搜索框草稿化:打字即时回显,停稳 300ms 才提交给父级,避免每键重渲染整表+发请求 */
 function GridSearch({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
   const [draft, setDraft] = useDraft(value, onCommit)
+  // URL 前进/后退或外部重置 q 时对齐草稿(useDraft 本身不跟 committed 回写)
+  useEffect(() => {
+    setDraft(value)
+  }, [value, setDraft])
   return (
     <SearchField aria-label="搜索" value={draft} onChange={setDraft} className="w-64">
       <SearchField.Group>
@@ -178,11 +190,24 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   // 卡片模式:<lg 视口全资源生效;树形资源在卡片模式常驻平铺(treeActive 恒 false)
   const isMobile = useMediaQuery(CARD_MODE_QUERY)
   const cardMode = isMobile
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
-  const [sort, setSort] = useState<SortState | null>(props.defaultSort ?? null)
-  const [filters, setFilters] = useState<FilterState>(props.defaultFilters ?? {})
-  const [search, setSearch] = useState('')
+  // 页面网格默认 URL 同步；pick / 显式 urlState={false} 走本地状态
+  const urlStateEnabled = resolveUrlStateEnabled(props.urlState, props.pick)
+  const {
+    page,
+    pageSize,
+    sort,
+    filters,
+    search,
+    setPage,
+    setPageSize,
+    setSort,
+    setFilters,
+    setSearch,
+  } = useUrlGridState({
+    enabled: urlStateEnabled,
+    defaultSort: props.defaultSort ?? null,
+    defaultFilters: props.defaultFilters ?? EMPTY_FILTERS,
+  })
   const [selection, setSelection] = useState<Selection>(new Set())
   // 卡片模式筛选/排序底部弹层
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
@@ -433,7 +458,7 @@ export function SynieDataGrid(props: SynieDataGridProps) {
     | DataGridSortDescriptor
     | undefined
 
-  // 筛选变更处理器:列筛选弹层/Chips/筛选 Sheet 共用(变更即回第 1 页)
+  // 筛选变更处理器:列筛选弹层/Chips/筛选 Sheet 共用(URL/本地 setFilters 内已回第 1 页)
   const applyFilter = (name: string, f: ColumnFilter | null) => {
     setFilters((prev) => {
       const next = { ...prev }
@@ -441,11 +466,9 @@ export function SynieDataGrid(props: SynieDataGridProps) {
       else next[name] = f
       return next
     })
-    setPage(1)
   }
   const clearAllFilters = () => {
     setFilters({})
-    setPage(1)
   }
 
   const [exporting, setExporting] = useState(false)
@@ -607,40 +630,19 @@ export function SynieDataGrid(props: SynieDataGridProps) {
   const hasSortable = columns.some((c) => c.sortable)
   const activeFilterCount = Object.keys(filters).length
 
-  if (meta.isPending || (rowsQuery.isPending && !rowsQuery.data)) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Spinner size="lg" />
-      </div>
-    )
-  }
-
+  // 加载/失败/403 三态走统一 QueryState(403 由 QueryState 识别 AppError forbidden 渲染专属态)
+  const queryPending = meta.isPending || (rowsQuery.isPending && !rowsQuery.data)
   // 卡片模式追加页失败不整屏报错:已加载卡片保留,错误走 toast,重试点「加载更多」
-  if (meta.isError || (rowsQuery.isError && !(cardMode && loadedRows.length > 0))) {
-    const err = (meta.error ?? rowsQuery.error) as Error
-    // 无权限单独成态:醒目提示且不给重试(重试对权限问题无意义)
-    if (isForbidden(err)) {
-      return (
-        <EmptyState size="md" className="h-64 justify-center">
-          <EmptyState.Header>
-            <EmptyState.Title className="text-danger">无权限访问</EmptyState.Title>
-            <EmptyState.Description>当前账号没有查看这些数据的权限,请联系管理员分配。</EmptyState.Description>
-          </EmptyState.Header>
-        </EmptyState>
-      )
-    }
+  const queryFailed = meta.isError || (rowsQuery.isError && !(cardMode && loadedRows.length > 0))
+  if (queryPending || queryFailed) {
     return (
-      <EmptyState size="md" className="h-64 justify-center">
-        <EmptyState.Header>
-          <EmptyState.Title>数据加载失败</EmptyState.Title>
-          <EmptyState.Description>{err.message}</EmptyState.Description>
-        </EmptyState.Header>
-        <EmptyState.Content>
-          <Button variant="secondary" onPress={() => (meta.isError ? meta.refetch() : rowsQuery.refetch())}>
-            重试
-          </Button>
-        </EmptyState.Content>
-      </EmptyState>
+      <QueryState
+        isPending={queryPending}
+        error={queryFailed ? ((meta.error ?? rowsQuery.error) as Error) : null}
+        onRetry={() => (meta.isError ? meta.refetch() : rowsQuery.refetch())}
+        pendingClassName="h-64"
+        spinnerSize="lg"
+      />
     )
   }
 
@@ -656,8 +658,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           <GridSearch
             value={search}
             onCommit={(v) => {
+              // setSearch 内已回第 1 页（URL/本地）
               setSearch(v)
-              setPage(1)
             }}
           />
         )}
@@ -794,8 +796,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
           treeMode
             ? undefined
             : (d) => {
+                // setSort 内已回第 1 页
                 setSort((prev) => nextSort(prev, String(d.column), d.direction))
-                setPage(1)
               }
         }
         renderEmptyState={() => (
@@ -839,10 +841,8 @@ export function SynieDataGrid(props: SynieDataGridProps) {
               aria-label="每页条数"
               value={String(pageSize)}
               onChange={(v) => {
-                if (v != null) {
-                  setPageSize(Number(v))
-                  setPage(1)
-                }
+                // setPageSize 内已回第 1 页
+                if (v != null) setPageSize(Number(v))
               }}
             >
               <InlineSelect.Trigger>
@@ -914,7 +914,6 @@ export function SynieDataGrid(props: SynieDataGridProps) {
             sort={sort}
             onSortChange={(next) => {
               setSort(next)
-              setPage(1)
             }}
           />
         </>

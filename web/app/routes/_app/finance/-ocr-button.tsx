@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button, toast } from '@heroui/react'
+import { toastError } from '~/lib/toast'
 import { uploadFile, type UploadedFile } from '~/lib/files'
 import { getAccountingOCRConfigured } from '~/lib/resources/settings'
 
@@ -54,9 +55,7 @@ export function FinanceOcrButton({
       toast.success('识别完成,请核对回填内容')
     } catch (error) {
       if (mountedRef.current) {
-        toast.danger('识别失败', {
-          description: (error as Error).message,
-        })
+        toastError('识别失败')(error)
       }
     } finally {
       toast.close(toastId)

@@ -1,17 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button, Modal, toast } from '@heroui/react'
-import { fetchMe } from '~/lib/api/session'
 import { createUser, fetchUserAccess, resetUserPassword, userClient } from '~/lib/resources/iam'
+import { toastError } from '~/lib/toast'
+import { useMyPerms } from '~/lib/use-my-perms'
+import { useRequestGuard } from '~/lib/use-request-guard'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteMultiSelect } from '~/components/synie-remote-select/RemoteMultiSelect'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
+const RESOURCE = 'sysUsers'
+
 export const Route = createFileRoute('/_app/system/users')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: UsersPage,
 })
 
@@ -42,11 +49,11 @@ function JoinText({ label, items }: { label: string; items: string[] }) {
 }
 
 function UsersPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
-  const userForm = useCatalogBasicForm('sysUsers', '用户')
-  const [myPerms, setMyPerms] = useState<Set<string>>(new Set())
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const userForm = useCatalogBasicForm(RESOURCE, '用户')
+  // 重置密码入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
+  const { myPerms, isSuperAdmin } = useMyPerms()
   // 一次性密码:仅存在于本次响应与此弹窗,关闭后无法再次查看
   const [oneTime, setOneTime] = useState<{ username: string; password: string } | null>(null)
   const [resetTarget, setResetTarget] = useState<Row | null>(null)
@@ -57,17 +64,7 @@ function UsersPage() {
   const [companySel, setCompanySel] = useState<string[]>([])
   const [names, setNames] = useState<Map<string, string>>(new Map())
   // 请求守卫:每次开抽屉自增,await 回来后比对最新序号——防止先发的慢请求(A)覆盖已切到 B 的关联/勾选
-  const reqIdRef = useRef(0)
-
-  // 重置密码入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
-  useEffect(() => {
-    fetchMe()
-      .then((d) => {
-        setMyPerms(new Set(d.permissions))
-        setIsSuperAdmin(d.superAdmin)
-      })
-      .catch((e) => toast.danger('权限信息加载失败', { description: (e as Error).message }))
-  }, [])
+  const guard = useRequestGuard()
 
   const canReset = isSuperAdmin || myPerms.has('sys.user:update')
 
@@ -78,41 +75,47 @@ function UsersPage() {
       return next
     })
 
-  // 先拉关联再开抽屉,避免表单已开、回显未到的中间态
-  const openDrawer = async (mode: DrawerMode, row: Row | null) => {
-    // 每次开抽屉先占号:create 同步回填也占号,作废上一张单据可能还在途的慢请求
-    const my = ++reqIdRef.current
-    if (mode === 'create' || !row) {
+  // 深链/点击开抽屉:按 recordId 拉角色与公司;create 清空;关抽屉清空
+  useEffect(() => {
+    const my = guard.begin()
+    if (!drawer) {
+      setJoins(null)
+      setRoleSel([])
+      setCompanySel([])
+      setNames(new Map())
+      return
+    }
+    if (drawer.mode === 'create' || drawer.recordId == null) {
       setJoins({ roles: [], companies: [] })
       setRoleSel([])
       setCompanySel([])
       setNames(new Map())
-      setDrawer({ mode: 'create', row: null })
       return
     }
-    try {
-      const d = await fetchUserAccess(String(row.id))
-      // 抽屉已切走(开了别的单据/关了):丢弃过期响应,不写 joins/勾选,避免覆盖当前单据
-      if (my !== reqIdRef.current) return
-      const roles = d.roles.map((r) => ({
-        id: r.id,
-        targetId: r.id,
-        name: r.name,
-      }))
-      const companies = d.companies.map((c) => ({
-        id: c.id,
-        targetId: c.id,
-        name: c.name,
-      }))
-      setJoins({ roles, companies })
-      setRoleSel(roles.map((r) => r.targetId))
-      setCompanySel(companies.map((c) => c.targetId))
-      setNames(new Map([...roles, ...companies].map((r) => [r.targetId, r.name])))
-      setDrawer({ mode, row })
-    } catch (e) {
-      toast.danger('用户角色/公司加载失败', { description: (e as Error).message })
-    }
-  }
+    void fetchUserAccess(drawer.recordId)
+      .then((d) => {
+        if (!guard.isCurrent(my)) return
+        const roles = d.roles.map((r) => ({
+          id: r.id,
+          targetId: r.id,
+          name: r.name,
+        }))
+        const companies = d.companies.map((c) => ({
+          id: c.id,
+          targetId: c.id,
+          name: c.name,
+        }))
+        setJoins({ roles, companies })
+        setRoleSel(roles.map((r) => r.targetId))
+        setCompanySel(companies.map((c) => c.targetId))
+        setNames(new Map([...roles, ...companies].map((r) => [r.targetId, r.name])))
+      })
+      .catch((e) => {
+        if (!guard.isCurrent(my)) return
+        toastError('用户角色/公司加载失败')(e)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅抽屉身份变化时响应
+  }, [drawer?.recordId, drawer?.mode])
 
   const doReset = async () => {
     if (!resetTarget) return
@@ -123,7 +126,7 @@ function UsersPage() {
       setResetTarget(null)
       toast.success('密码已重置')
     } catch (e) {
-      toast.danger('重置密码失败', { description: (e as Error).message })
+      toastError('重置密码失败')(e)
     } finally {
       setResetting(false)
     }
@@ -150,10 +153,10 @@ function UsersPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="sysUsers"
-          onView={(row) => void openDrawer('view', row)}
-          onCreate={() => void openDrawer('create', null)}
-          onEdit={(row) => void openDrawer('edit', row)}
+          resource={RESOURCE}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
           rowActions={
             canReset
               ? [{ key: 'reset-password', label: '重置密码', onAction: (row) => setResetTarget(row) }]
@@ -163,12 +166,12 @@ function UsersPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="sysUsers"
+        resource={RESOURCE}
         label={userForm.formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        row={drawer?.row}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
         exclude={userForm.formProps.exclude}
         // username/name 的 required/edit/placeholder 由 Catalog Basic Form 投影；
         // 角色/公司 multi-select 为 Presentation Extension（extraContent）
@@ -210,7 +213,7 @@ function UsersPage() {
             </div>
           )
         }
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const data = await createUser({
@@ -224,7 +227,7 @@ function UsersPage() {
               password: String(data.password ?? ''),
             })
           } else {
-            await userClient.update(drawer!.row!.id, {
+            await userClient.update(String(drawer!.recordId), {
               name: (values.name as string) || null,
               roleIds: roleSel,
               companyIds: companySel,
@@ -236,7 +239,7 @@ function UsersPage() {
       />
 
       {/* 重置确认 */}
-      <Modal.Backdrop isOpen={resetTarget !== null} onOpenChange={(open) => !open && setResetTarget(null)}>
+      <Modal.Backdrop isOpen={resetTarget !== null} onOpenChange={(isOpen) => !isOpen && setResetTarget(null)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>
@@ -261,7 +264,7 @@ function UsersPage() {
       </Modal.Backdrop>
 
       {/* 一次性密码展示:关闭即丢弃,无任何地方可再查 */}
-      <Modal.Backdrop isOpen={oneTime !== null} onOpenChange={(open) => !open && setOneTime(null)}>
+      <Modal.Backdrop isOpen={oneTime !== null} onOpenChange={(isOpen) => !isOpen && setOneTime(null)}>
         <Modal.Container>
           <Modal.Dialog>
             <Modal.Header>

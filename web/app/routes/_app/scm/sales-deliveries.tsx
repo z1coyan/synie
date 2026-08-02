@@ -18,7 +18,7 @@ function SalesDeliveriesLayout() {
     TABS.find((t) => pathname.includes(`/scm/sales-deliveries/${t.id}`))?.id ?? 'items'
 
   return (
-    <DeliveryDrawerProvider>
+    <DeliveryDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">销售发货</h1>
       <p className="mt-2 text-sm text-ink-500">
         履约出库单据：审核后扣减库存、回写订单已发数量，有金额时按未开票应收科目过账。

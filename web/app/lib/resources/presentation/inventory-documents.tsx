@@ -5,10 +5,15 @@
  * 只负责把本 module 返回的配置接到通用呈现入口。Catalog 继续只拥有静态字段事实。
  */
 import type { ResourceBinding } from '../catalog/types'
+import {
+  AUDIT_TRAIL_EXCLUDE,
+  BASE_QTY_OVERRIDE,
+  LINE_REMARK_OVERRIDE,
+  UNIT_ID_SNAPSHOT_OVERRIDE,
+  materialCodeOverride,
+  previewHead,
+} from './document-preview-helpers'
 import type { DocumentPreviewConfig, PresentationExtension } from './types'
-import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
-import type { Row } from '~/components/synie-data-grid/types'
-import type { EditableColumnOverride } from '~/components/synie-editable-table/SynieEditableTable'
 
 export const INVENTORY_DOCUMENT_RESOURCES = [
   'invStockDocs',
@@ -32,53 +37,13 @@ const MATERIAL_AUXILIARY_EXCLUDE = [
   'unitName',
 ] as const
 
-const UNIT_ID_SNAPSHOT_OVERRIDE = {
-  render: (_value: unknown, row: Row) =>
-    row.unitName != null && row.unitName !== ''
-      ? String(row.unitName)
-      : undefined,
-} satisfies EditableColumnOverride
-
-const BASE_QTY_OVERRIDE = {
-  label: '折算数量',
-} satisfies EditableColumnOverride
-
-const LINE_REMARK_OVERRIDE = {
-  label: '行备注',
-} satisfies EditableColumnOverride
-
-const MATERIAL_CODE_OVERRIDE = {
-  label: '物料',
-  render: materialCellRender(),
-} satisfies EditableColumnOverride
-
-function previewHead(
-  presentation: Pick<
-    PresentationExtension,
-    'exclude' | 'fields' | 'contentClassName'
-  >,
-): DocumentPreviewConfig['head'] {
-  return {
-    exclude: presentation.exclude,
-    fields: presentation.fields,
-    contentClassName: presentation.contentClassName,
-  }
-}
-
 function stockDocumentPresentation(
   binding: ResourceBinding,
 ): InventoryDocumentPresentation {
   const drawer = {
     label: '手工出入库单',
     contentClassName: 'w-full lg:w-[880px]',
-    exclude: [
-      'status',
-      'auditedAt',
-      'auditedById',
-      'createdById',
-      'insertedAt',
-      'updatedAt',
-    ],
+    exclude: AUDIT_TRAIL_EXCLUDE,
     fields: {
       companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
       direction: {
@@ -127,7 +92,7 @@ function stockDocumentPresentation(
           ],
           exclude: ['stockDocId', 'companyId', ...MATERIAL_AUXILIARY_EXCLUDE],
           overrides: {
-            materialCode: MATERIAL_CODE_OVERRIDE,
+            materialCode: materialCodeOverride(),
             unitId: UNIT_ID_SNAPSHOT_OVERRIDE,
             baseQty: BASE_QTY_OVERRIDE,
             remark: LINE_REMARK_OVERRIDE,
@@ -213,7 +178,7 @@ function stockTransferPresentation(
             ...MATERIAL_AUXILIARY_EXCLUDE,
           ],
           overrides: {
-            materialCode: MATERIAL_CODE_OVERRIDE,
+            materialCode: materialCodeOverride(),
             unitId: UNIT_ID_SNAPSHOT_OVERRIDE,
             baseQty: BASE_QTY_OVERRIDE,
             receivedQty: { label: '实收数量' },
@@ -231,15 +196,7 @@ function stockCountPresentation(
   const drawer = {
     label: '库存盘点单',
     contentClassName: 'w-full lg:w-[880px]',
-    exclude: [
-      'status',
-      'snapshotTakenAt',
-      'auditedAt',
-      'auditedById',
-      'createdById',
-      'insertedAt',
-      'updatedAt',
-    ],
+    exclude: ['status', 'snapshotTakenAt', ...AUDIT_TRAIL_EXCLUDE.slice(1)],
     fields: {
       companyId: { required: true, order: -1, cols: 6, edit: 'createOnly' },
       docNo: { order: 0, cols: 6, placeholder: '留空自动编号' },
@@ -283,7 +240,7 @@ function stockCountPresentation(
             'convertedCounted',
           ],
           overrides: {
-            materialCode: MATERIAL_CODE_OVERRIDE,
+            materialCode: materialCodeOverride(),
             unitId: UNIT_ID_SNAPSHOT_OVERRIDE,
             countedQuantity: { label: '实盘数量' },
             bookQuantity: { label: '账面数量' },

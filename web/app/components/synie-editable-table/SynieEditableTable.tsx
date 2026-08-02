@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
-import { Button, Spinner, Table } from '@heroui/react'
-import { EmptyState } from '@heroui-pro/react'
+import { Button, Table } from '@heroui/react'
+import { QueryState } from '../synie-query-state/QueryState'
 import { defaultCell } from '../synie-data-grid/SynieDataGrid'
 import { useGridMeta } from '../synie-data-grid/meta'
 import type { EnumChipColor, GridColumnMeta, LocalGridMeta, Row } from '../synie-data-grid/types'
@@ -64,8 +64,8 @@ export interface SynieEditableTableProps<T extends Row = Row> {
   /** 标题区,缺省用 label;右上角新增按钮左侧的附加内容用 toolbar */
   title?: ReactNode
   toolbar?: ReactNode
-  /** 透传二级抽屉宽度等;默认比父抽屉窄一档(lg:w-[420px]) */
-  drawerProps?: Pick<SynieRecordDrawerProps, 'contentClassName'>
+  /** 二级录入抽屉的宽度类名(透传 contentClassName);默认比父抽屉窄一档(lg:w-[420px]) */
+  drawerClassName?: string
   /**
    * 透传二级抽屉的 extraContent(字段栅格末尾的附加内容),签名同 SynieRecordDrawer:
    * 行内子表(如报价条目的价格档)等场景用。注意 collectValues 会剥离非字段键,
@@ -115,22 +115,14 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
         </div>
       </div>
 
-      {!props.meta && remote.isPending ? (
-        <div className="flex h-24 items-center justify-center">
-          <Spinner />
-        </div>
-      ) : !props.meta && remote.isError ? (
-        <EmptyState size="sm" className="h-32 justify-center">
-          <EmptyState.Header>
-            <EmptyState.Title>数据加载失败</EmptyState.Title>
-            <EmptyState.Description>{(remote.error as Error).message}</EmptyState.Description>
-          </EmptyState.Header>
-          <EmptyState.Content>
-            <Button size="sm" variant="secondary" onPress={() => remote.refetch()}>
-              重试
-            </Button>
-          </EmptyState.Content>
-        </EmptyState>
+      {!props.meta && (remote.isPending || remote.isError) ? (
+        <QueryState
+          isPending={remote.isPending}
+          error={remote.isError ? (remote.error as Error) : null}
+          onRetry={() => remote.refetch()}
+          size="sm"
+          pendingClassName="h-24"
+        />
       ) : (
         <Table>
           <Table.ScrollContainer>
@@ -206,7 +198,7 @@ export function SynieEditableTable<T extends Row = Row>(props: SynieEditableTabl
         fields={props.fields}
         meta={props.meta}
         extraContent={props.extraContent}
-        contentClassName={props.drawerProps?.contentClassName ?? 'w-full lg:w-[420px]'}
+        contentClassName={props.drawerClassName ?? 'w-full lg:w-[420px]'}
         onSubmit={submit}
       />
     </div>

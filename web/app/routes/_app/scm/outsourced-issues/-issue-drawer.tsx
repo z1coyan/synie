@@ -26,6 +26,10 @@ import type { DrawerMode, FieldOverride } from '~/components/synie-record-drawer
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../-stock-doc'
+import { ItemsResetGuard } from '~/components/items-reset-guard'
+import { todayLocal } from '~/lib/form-defaults'
+import { toastError } from '~/lib/toast'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 
 export interface IssueRef {
   id: string
@@ -64,12 +68,6 @@ const IssueDrawerContext = createContext<OpenIssueDrawer>(() => {})
 
 export function useIssueDrawer(): OpenIssueDrawer {
   return useContext(IssueDrawerContext)
-}
-
-function todayLocal(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
 /** 提交 mutation:材料/单位由发料清单行锁定带出,后端再快照与折算 */
@@ -236,48 +234,26 @@ function LockedText({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * 头关键字段变更清行:公司/对手类型/对手任一变则清空条目草稿
- * (与采购入库 ItemsResetGuard 同构;edit 等行主数据回填后再布防)。
+ * 头关键字段变更清行(ItemsResetGuard)的指纹字段:公司/对手类型/对手任一变则清空条目草稿。
  */
-function ItemsResetGuard({
-  mode,
-  row,
-  values,
-  onReset,
+const ITEMS_RESET_FIELDS = ['companyId', 'partyType', 'partyId'] as const
+
+/**
+ * 委外发料创建/编辑抽屉(头+条目)。
+ * 发料单/发料条目两 tab 共用;列表 layout 传 urlSync,开/关/模式走 URL。
+ *
+ * @param urlSync 列表页传 true:抽屉开/关/模式写 ?record=&mode=,深链/刷新/后退可寻址。
+ */
+export function IssueDrawerProvider({
+  children,
+  urlSync = false,
 }: {
-  mode: DrawerMode
-  row: Row | null | undefined
-  values: Record<string, unknown>
-  onReset: () => void
+  children: ReactNode
+  urlSync?: boolean
 }) {
-  const armedRef = useRef(false)
-  const baselineRef = useRef('')
-  const fpOf = (v: Record<string, unknown>) =>
-    [v.companyId, v.partyType, v.partyId].map((x) => String(x ?? '')).join('|')
-  const fp = fpOf(values)
-  const rowFp = row != null ? fpOf(row) : null
-
-  useEffect(() => {
-    if (mode === 'view') return
-    if (!armedRef.current) {
-      if (mode === 'create' || (rowFp != null && fp === rowFp)) {
-        baselineRef.current = fp
-        armedRef.current = true
-      }
-      return
-    }
-    if (fp !== baselineRef.current) {
-      baselineRef.current = fp
-      onReset()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fp, rowFp, mode, onReset])
-
-  return null
-}
-
-export function IssueDrawerProvider({ children }: { children: ReactNode }) {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: IssueRef | null } | null>(null)
+  // URL 源(列表 layout)与本地态二选一;明细始终本地
+  const url = useRecordDrawerUrl('purOutsourcedIssues', { enabled: urlSync })
+  const [localDrawer, setLocalDrawer] = useState<{ mode: DrawerMode; row: IssueRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
@@ -286,6 +262,17 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
   const linesRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
+  // 已为哪张发料单拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
+  const mode: DrawerMode = urlSync
+    ? (url.drawer?.mode ?? 'view')
+    : (localDrawer?.mode ?? 'view')
+  const rowId: string | undefined = urlSync
+    ? (url.drawer?.recordId ?? undefined)
+    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
+  const issueStatus = urlSync ? url.row?.status : localDrawer?.row?.status
 
   const companies = useQuery({
     queryKey: ['purOutsourcedIssues', 'companies'],
@@ -303,25 +290,18 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
 
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
-  const openDrawer = useCallback<OpenIssueDrawer>((mode, issue) => {
-    const my = ++reqIdRef.current
-    setDrawer({ mode, row: issue })
+  function resetDetail() {
+    loadedIdRef.current = null
     linesRef.current = new Map()
-    if (mode === 'create') {
-      setItems([])
-      setItemsSnapshot([])
-      setDetailLoaded(true)
-      return
-    }
-    const issueId = issue?.id
-    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
-    if (issueId == null || issueId === '' || issueId === 'undefined') {
-      toast.danger('无法打开发料单', { description: '缺少发料单 id' })
-      setItems([])
-      setItemsSnapshot([])
-      setDetailLoaded(true)
-      return
-    }
+    setItems([])
+    setItemsSnapshot([])
+    setDetailLoaded(true)
+  }
+
+  function loadDetail(issueId: string) {
+    const my = ++reqIdRef.current
+    loadedIdRef.current = issueId
+    linesRef.current = new Map()
     setDetailLoaded(false)
     purchaseOutsourcedIssueItemClient
       .query({
@@ -354,11 +334,52 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
       })
       .catch((e) => {
         if (my !== reqIdRef.current) return
-        toast.danger('发料条目加载失败', { description: (e as Error).message })
+        toastError('发料条目加载失败')(e)
         setItems([])
         setItemsSnapshot([])
       })
-  }, [])
+  }
+
+  const openDrawer: OpenIssueDrawer = (nextMode, issue) => {
+    if (urlSync) {
+      url.open(nextMode, issue?.id != null ? String(issue.id) : null)
+    } else {
+      setLocalDrawer({ mode: nextMode, row: issue })
+    }
+    if (nextMode === 'create' || !issue) {
+      resetDetail()
+      return
+    }
+    const issueId = issue.id
+    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
+    if (issueId == null || issueId === '' || issueId === 'undefined') {
+      toast.danger('无法打开发料单', { description: '缺少发料单 id' })
+      resetDetail()
+      return
+    }
+    loadDetail(String(issueId))
+  }
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    if (!urlSync) return
+    const d = url.drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        reqIdRef.current++
+        resetDetail()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetDetail()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadDetail(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   const baseCfg = drawerConfig('purOutsourcedIssues')
   const drawerCfg = {
@@ -425,20 +446,25 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
       <SynieRecordDrawer
         resource="purOutsourcedIssues"
         {...drawerCfg}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
+        mode={mode}
+        isOpen={isOpen}
         onOpenChange={(open) => {
           if (open) return
           reqIdRef.current++
-          setDrawer(null)
+          if (urlSync) url.close()
+          else setLocalDrawer(null)
           setItems([])
           setItemsSnapshot([])
           linesRef.current = new Map()
+          loadedIdRef.current = null
         }}
-        rowId={drawer?.row?.id}
+        rowId={rowId}
         onEdit={
-          drawer?.row?.status === 'DRAFT'
-            ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+          issueStatus === 'DRAFT'
+            ? () => {
+                if (urlSync) url.setMode('edit')
+                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+              }
             : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
@@ -639,10 +665,11 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
               />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${drawer?.row?.id ?? 'create'}-${reqIdRef.current}`}
+                key={`${rowId ?? 'create'}-${reqIdRef.current}`}
                 mode={mode}
                 row={row}
                 values={values}
+                fields={ITEMS_RESET_FIELDS}
                 onReset={resetItems}
               />
               <SynieEditableTable
@@ -661,7 +688,7 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
                     <span className="text-xs text-muted">先选齐公司、对手类型与对手</span>
                   ) : undefined
                 }
-                drawerProps={{ contentClassName: 'w-full lg:w-[560px]' }}
+                drawerClassName="w-full lg:w-[560px]"
                 exclude={[
                   'issueId',
                   'companyId',
@@ -781,8 +808,8 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
             }
             savedId = issueId
           } else {
-            await purchaseOutsourcedIssueClient.update(drawer!.row!.id, values)
-            const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
+            await purchaseOutsourcedIssueClient.update(rowId!, values)
+            const itemErrors = await persistItems(rowId!, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('发料单已更新,但部分条目保存失败', {
                 description: itemErrors.join('; '),
@@ -790,7 +817,7 @@ export function IssueDrawerProvider({ children }: { children: ReactNode }) {
             } else {
               toast.success('委外发料单已更新')
             }
-            savedId = drawer!.row!.id
+            savedId = rowId!
           }
           await Promise.all([
             resourceBindingFor('purOutsourcedIssues').cache.invalidateAll(

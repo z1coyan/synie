@@ -7,8 +7,11 @@ import {
   decodeRowOrBulkTarget,
   decodeRowTarget,
   defineCommand,
-  executeSingleRowCommand,
 } from './commands'
+import { bindingFromResourceTransport } from './binding-registry'
+import type { QueryInvalidationAdapter } from './query-cache'
+import type { ResourceBinding } from './types'
+import { executeSingleRowCommandWithInvalidation } from '../command-invalidation'
 import { storageCommandAdapter } from '../files'
 import { attendanceDayCommandAdapter } from '../hr-operations'
 import { bankTransactionCommandAdapter } from '../finance-operations'
@@ -87,8 +90,48 @@ describe('已迁移语义 CommandAdapter 契约', () => {
       legacy: async (id) => received.push(`legacy:${id}`),
     })
 
-    await executeSingleRowCommand(adapter, 'audit', 'saved-order-id')
-    await executeSingleRowCommand(adapter, 'legacy', 'old-handler-id')
+    // 走生产实际使用的 executeSingleRowCommandWithInvalidation 路径
+    const bindings = new Map<string, ResourceBinding>()
+    const register = (
+      resource: string,
+      commands?: ReturnType<typeof createRowCommandAdapter>,
+    ) =>
+      bindings.set(resource, {
+        ...bindingFromResourceTransport(resource, {
+          id: `memory:${resource}`,
+          query: async () => ({ count: 0, results: [] }),
+          get: async () => null,
+        }),
+        ...(commands ? { commands } : {}),
+      })
+    register('orders', adapter)
+    register('sysAuditLogs')
+    register('orderItems')
+    const cache: QueryInvalidationAdapter = {
+      invalidateQueries: async () => {},
+    }
+    const resolve = (resource: string): ResourceBinding => {
+      const binding = bindings.get(resource)
+      if (!binding) {
+        throw new Error(`资源「${resource}」未注册 ResourceBinding`)
+      }
+      return binding
+    }
+
+    await executeSingleRowCommandWithInvalidation(
+      'orders',
+      'audit',
+      'saved-order-id',
+      cache,
+      resolve,
+    )
+    await executeSingleRowCommandWithInvalidation(
+      'orders',
+      'legacy',
+      'old-handler-id',
+      cache,
+      resolve,
+    )
 
     expect(received).toEqual(['saved-order-id', 'legacy:old-handler-id'])
     expect(adapter.commands.audit.affectedResources).toEqual(['orderItems'])

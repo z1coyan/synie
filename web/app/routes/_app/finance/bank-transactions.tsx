@@ -7,15 +7,18 @@ import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieA
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { Row } from '~/components/synie-data-grid/types'
 import { bankTransactionClient } from '~/lib/resources/finance-operations'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { FinanceBankImportDrawers } from './-bank-import-drawers'
 import { FinanceReconcileDrawer } from './-reconcile-drawer'
 
+const RESOURCE = 'accBankTransactions'
+
 export const Route = createFileRoute('/_app/finance/bank-transactions')({
+  // defaultSort 与默认首屏 key 不一致,跳过 loader 预取
   component: BankTransactionsPage,
 })
 
@@ -82,11 +85,12 @@ const GRID_OVERRIDES = {
 } satisfies Record<string, ColumnOverride>
 
 function BankTransactionsPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  // 主抽屉 URL 化;导入/对账二级抽屉保持本地(不写 record URL)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const [reconcileTxn, setReconcileTxn] = useState<Row | null>(null)
   const queryClient = useQueryClient()
   // 语义 command key=reconcile（非 export）；row target 在打开抽屉前校验
-  const binding = resourceBindingFor('accBankTransactions')
+  const binding = resourceBindingFor(RESOURCE)
 
   // 导入三件套:新增导入 / 导入记录(解析结果与执行)/ 导入历史;historyKey 让历史列表跟着变更刷新
   const [importCreateOpen, setImportCreateOpen] = useState(false)
@@ -101,13 +105,13 @@ function BankTransactionsPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="accBankTransactions"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           attachmentImages={{ ownerType: 'acc_bank_transaction', label: '回单' }}
           defaultSort={{ column: 'occurredAt', direction: 'descending' }}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
           importMenu={[
             { key: 'history', label: '导入历史', onAction: () => setHistoryOpen(true) },
             { key: 'new', label: '新增导入', onAction: () => setImportCreateOpen(true) },
@@ -140,18 +144,18 @@ function BankTransactionsPage() {
         onImportIdChange={setImportRecordId}
         onChanged={() => {
           setHistoryKey((key) => key + 1)
-          void resourceBindingFor('accBankTransactions').cache.invalidateGrid(queryClient)
+          void binding.cache.invalidateGrid(queryClient)
         }}
       />
 
       <SynieRecordDrawer
-        resource="accBankTransactions"
+        resource={RESOURCE}
         label="银行流水"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
+        onOpenChange={(isOpen) => !isOpen && close()}
         // 表格列是白名单子集(无对方账号/备注),行数据不全;不传 row,走 rowId 自查完整记录
-        rowId={drawer?.row?.id}
+        rowId={drawer?.recordId ?? undefined}
         // 派生列是系统维护字段,不进表单;view 态在对账抽屉里看
         exclude={['reconcileStatus', 'reconciledAmount', 'unreconciledAmount']}
         fields={{
@@ -210,25 +214,23 @@ function BankTransactionsPage() {
             readonly={mode === 'view'}
           />
         )}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             await bankTransactionClient.create(values)
           } else {
-            await bankTransactionClient.update(drawer!.row!.id, values)
+            await bankTransactionClient.update(String(drawer!.recordId), values)
           }
           toast.success(mode === 'create' ? '银行流水已登记' : '银行流水已更新')
-          await resourceBindingFor('accBankTransactions').cache.invalidateGrid(queryClient)
+          await binding.cache.invalidateGrid(queryClient)
         }}
       />
 
       <FinanceReconcileDrawer
         txn={reconcileTxn}
-        onOpenChange={(open) => !open && setReconcileTxn(null)}
+        onOpenChange={(isOpen) => !isOpen && setReconcileTxn(null)}
         // 对账增删改变派生列:失效列表查询即可,分页/筛选状态得以保留(main 的 query 失效范式)
-        onChanged={() =>
-          resourceBindingFor('accBankTransactions').cache.invalidateGrid(queryClient)
-        }
+        onChanged={() => binding.cache.invalidateGrid(queryClient)}
       />
     </>
   )

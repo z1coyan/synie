@@ -3,6 +3,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertDialog, Button, toast } from '@heroui/react'
 import { attendanceImportClient } from '~/lib/resources/hr-operations'
+import { ATTENDANCE_IMPORT_STATUS_ENUM_COLORS } from '~/lib/doc-status'
+import { toastError } from '~/lib/toast'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import type { ActionContext, Row } from '~/components/synie-data-grid/types'
@@ -29,7 +31,7 @@ const GRID_COLUMNS = [
 
 // 状态胶囊配色:已解析蓝、解析失败红、已导入绿(照银行导入)
 const GRID_OVERRIDES = {
-  status: { enumColors: { PARSED: 'accent', FAILED: 'danger', IMPORTED: 'success' } },
+  status: { enumColors: ATTENDANCE_IMPORT_STATUS_ENUM_COLORS },
   unmatchedRows: {
     render: (v: unknown) => (Number(v) > 0 ? <span className="text-danger">{String(v)}</span> : String(v ?? 0)),
   },
@@ -59,7 +61,7 @@ function AttendanceImportsPage() {
       void resourceBindingFor('hrAttendancePunches').cache.invalidateGrid(queryClient)
       setDeleteAsk(null)
     } catch (e) {
-      toast.danger('删除失败', { description: (e as Error).message })
+      toastError('删除失败')(e)
     } finally {
       setRunning(false)
     }

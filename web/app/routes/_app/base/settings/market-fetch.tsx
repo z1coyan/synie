@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Checkbox, Label, ListBox, Select, Spinner, toast } from '@heroui/react'
+import { toastError } from '~/lib/toast'
 import { getSystemSetting, updateSystemSetting } from '~/lib/resources/settings'
 
 export const Route = createFileRoute('/_app/base/settings/market-fetch')({
@@ -70,7 +71,7 @@ function MarketFetchSettingsTab() {
       toast.success('行情拉取设置已保存')
       queryClient.invalidateQueries({ queryKey: ['sysSetting'] })
     } catch (e) {
-      toast.danger('保存失败', { description: (e as Error).message })
+      toastError('保存失败')(e)
     } finally {
       setSaving(false)
     }

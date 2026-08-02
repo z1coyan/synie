@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { FilterState, GridColumnRef, Row } from '../synie-data-grid/types'
 import type { ResourceTransport } from '~/lib/resources/types'
-import { resourceTransportFromResourceBinding } from '~/lib/resources/registry'
+import { resourceTransportFor } from '~/lib/resources/registry'
 import { resolveResourceLookup } from '~/lib/resources/catalog/lookups'
 import { createReferencePresentation } from '~/lib/resources/catalog/reference-presentation'
 
@@ -71,7 +71,7 @@ export function resolveSource(cfg: Partial<RemoteSourceConfig>, ref?: GridColumn
   ])
   return {
     resource,
-    client: cfg.client ?? resourceTransportFromResourceBinding(resource),
+    client: cfg.client ?? resourceTransportFor(resource),
     ...(cfg.client ? { explicitClient: cfg.client } : {}),
     labelField,
     sortField,

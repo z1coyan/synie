@@ -1,27 +1,29 @@
-import { useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, ListBox, Select, toast } from '@heroui/react'
+import { toastError } from '~/lib/toast'
+import { useRequestGuard } from '~/lib/use-request-guard'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
-import {
-  SegmentsEditor,
-  segmentsPreview,
-  type NumberSegment,
-} from '~/components/synie-numbering-segments/SegmentsEditor'
+import { SegmentsEditor, segmentsPreview, type NumberSegment } from './-segments-editor'
 import { resourceLabel } from '~/components/synie-permission-sheet/permission-labels'
 import {
   listNumberableResources,
   numberingCounterClient,
 } from '~/lib/resources/numbering'
-import { useCatalogBasicForm,
-  requireWriter,} from '~/lib/resources/catalog'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
+import { useCatalogBasicForm, requireWriter } from '~/lib/resources/catalog'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import type { Row } from '~/components/synie-data-grid/types'
 
+const RESOURCE = 'sysNumberingRules'
+
 export const Route = createFileRoute('/_app/system/numbering')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: NumberingPage,
 })
 
@@ -66,15 +68,12 @@ const GRID_OVERRIDES = {
 } satisfies Record<string, ColumnOverride>
 
 function NumberingPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const [counters, setCounters] = useState<Row[]>([])
   const [countersSnapshot, setCountersSnapshot] = useState<Row[]>([])
   const queryClient = useQueryClient()
-  const requestID = useRef(0)
-  const { binding, client, formProps } = useCatalogBasicForm(
-    'sysNumberingRules',
-    '编号规则',
-  )
+  const guard = useRequestGuard()
+  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '编号规则')
 
   const numberables = useQuery({
     queryKey: ['numberableResources', client.id],
@@ -84,10 +83,16 @@ function NumberingPage() {
   const fieldsFor = (prefix: unknown) =>
     numberables.data?.find((resource) => resource.prefix === prefix)?.fields ?? null
 
-  const openDrawer = (mode: DrawerMode, row: Row | null) => {
-    const currentRequest = ++requestID.current
-    setDrawer({ mode, row })
-    if (mode === 'create' || row == null) {
+  // 深链/点击开抽屉:按 ruleId 拉计数器;create/关闭清空
+  useEffect(() => {
+    const currentRequest = guard.begin()
+    if (!drawer) {
+      guard.invalidate()
+      setCounters([])
+      setCountersSnapshot([])
+      return
+    }
+    if (drawer.mode === 'create' || drawer.recordId == null) {
       setCounters([])
       setCountersSnapshot([])
       return
@@ -97,21 +102,22 @@ function NumberingPage() {
         limit: 200,
         offset: 0,
         fixedFilter: {
-          ruleId: { kind: 'fk', values: [row.id], labels: [] },
+          ruleId: { kind: 'fk', values: [drawer.recordId], labels: [] },
         },
       })
       .then((result) => {
-        if (currentRequest !== requestID.current) return
+        if (!guard.isCurrent(currentRequest)) return
         setCounters(result.results)
         setCountersSnapshot(result.results)
       })
       .catch((error) => {
-        if (currentRequest !== requestID.current) return
-        toast.danger('计数器加载失败', { description: (error as Error).message })
+        if (!guard.isCurrent(currentRequest)) return
+        toastError('计数器加载失败')(error)
         setCounters([])
         setCountersSnapshot([])
       })
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅抽屉身份变化时响应
+  }, [drawer?.recordId, drawer?.mode])
 
   return (
     <>
@@ -123,37 +129,30 @@ function NumberingPage() {
       </p>
 
       <div className="mt-6">
-          <SynieDataGrid
-            resource="sysNumberingRules"
+        <SynieDataGrid
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
-          onView={(row) => openDrawer('view', row)}
-          onCreate={() => openDrawer('create', null)}
-          onEdit={(row) => openDrawer('edit', row)}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
           rowActions={statusToggleActions({
             field: 'enabled',
             update: (id, input) => {
               return requireWriter(binding, 'update', '编号规则')(id, input)
             },
-            onDone: () =>
-              binding.cache.invalidateGrid(queryClient),
+            onDone: () => binding.cache.invalidateGrid(queryClient),
           })}
         />
       </div>
 
       <SynieRecordDrawer
-        resource="sysNumberingRules"
+        resource={RESOURCE}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => {
-          if (open) return
-          requestID.current++
-          setDrawer(null)
-          setCounters([])
-          setCountersSnapshot([])
-        }}
-        row={drawer?.row}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
         contentClassName="w-full lg:w-[640px]"
         exclude={[...formProps.exclude, 'enabled']}
         fields={{
@@ -212,7 +211,7 @@ function NumberingPage() {
             ),
           },
         }}
-        onEdit={() => setDrawer((current) => (current ? { ...current, mode: 'edit' } : current))}
+        onEdit={() => setMode('edit')}
         extraContent={(mode, row) =>
           row == null ? null : (
             <SynieEditableTable
@@ -242,7 +241,7 @@ function NumberingPage() {
             await requireWriter(binding, 'create', '编号规则')(input)
             toast.success('编号规则已创建')
           } else {
-            await requireWriter(binding, 'update', '编号规则')(drawer!.row!.id, input)
+            await requireWriter(binding, 'update', '编号规则')(String(drawer!.recordId), input)
             const counterErrors = await persistCounters(counters, countersSnapshot)
             if (counterErrors.length > 0) {
               toast.danger('规则已更新,但部分计数器保存失败', {

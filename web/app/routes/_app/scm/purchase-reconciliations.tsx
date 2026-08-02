@@ -18,7 +18,7 @@ function PurchaseReconciliationsLayout() {
     TABS.find((t) => pathname.includes(`/scm/purchase-reconciliations/${t.id}`))?.id ?? 'items'
 
   return (
-    <ReconciliationDrawerProvider>
+    <ReconciliationDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">采购对账</h1>
       <p className="mt-2 text-sm text-ink-500">
         入库与收票之间的勾稽:常规单供应商确认后由开入发票关联结单;赠送/样品单结单审核即过账,兼任超收尾差核销。

@@ -18,7 +18,7 @@ function SalesReconciliationsLayout() {
     TABS.find((t) => pathname.includes(`/scm/sales-reconciliations/${t.id}`))?.id ?? 'items'
 
   return (
-    <ReconciliationDrawerProvider>
+    <ReconciliationDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">销售对账</h1>
       <p className="mt-2 text-sm text-ink-500">
         发货与开票之间的勾稽:常规单客户确认后由开出发票关联结单;赠送/样品单审核即结单过账,兼任超发尾差核销。
