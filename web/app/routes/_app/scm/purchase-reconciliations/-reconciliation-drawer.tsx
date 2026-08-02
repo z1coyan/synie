@@ -47,6 +47,7 @@ import { CompanyDefaultSync, defaultCompanyId } from '../-stock-doc'
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { toastError } from '~/lib/toast'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 
 export interface ReconciliationRef {
   id: string
@@ -416,12 +417,22 @@ function previewAmount(qty: unknown, price: unknown): number | null {
   return Math.round(q * p * 100) / 100
 }
 
+/**
+ * 采购对账创建/编辑抽屉(头+对账条目)。
+ * 对账单/对账条目两 tab 共用;列表 layout 传 urlSync,开/关/模式走 URL。
+ *
+ * @param urlSync 列表页传 true:抽屉开/关/模式写 ?record=&mode=,深链/刷新/后退可寻址。
+ */
 export function ReconciliationDrawerProvider({
   children,
+  urlSync = false,
 }: {
   children: ReactNode
+  urlSync?: boolean
 }) {
-  const [drawer, setDrawer] = useState<{
+  // URL 源(列表 layout)与本地态二选一;明细始终本地
+  const url = useRecordDrawerUrl('purReconciliations', { enabled: urlSync })
+  const [localDrawer, setLocalDrawer] = useState<{
     mode: DrawerMode
     row: ReconciliationRef | null
   } | null>(null)
@@ -434,6 +445,17 @@ export function ReconciliationDrawerProvider({
   const receiptItemsRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
+  // 已为哪张对账单拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
+  const mode: DrawerMode = urlSync
+    ? (url.drawer?.mode ?? 'view')
+    : (localDrawer?.mode ?? 'view')
+  const rowId: string | undefined = urlSync
+    ? (url.drawer?.recordId ?? undefined)
+    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
+  const reconciliationStatus = urlSync ? url.row?.status : localDrawer?.row?.status
 
   const companies = useQuery({
     queryKey: ['purReconciliations', 'companies'],
@@ -454,122 +476,153 @@ export function ReconciliationDrawerProvider({
     [],
   )
 
-  const openDrawer = useCallback<OpenReconciliationDrawer>(
-    (mode, reconciliation) => {
-      const my = ++reqIdRef.current
-      setDrawer({ mode, row: reconciliation })
-      receiptItemsRef.current = new Map()
-      if (mode === 'create') {
-        setItems([])
-        setItemsSnapshot([])
-        setDetailLoaded(true)
-        return
-      }
-      const reconciliationId = reconciliation?.id
-      // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
-      if (
-        reconciliationId == null ||
-        reconciliationId === '' ||
-        reconciliationId === 'undefined'
-      ) {
-        toast.danger('无法打开采购对账单', { description: '缺少对账单 id' })
-        setItems([])
-        setItemsSnapshot([])
-        setDetailLoaded(true)
-        return
-      }
-      setDetailLoaded(false)
-      purchaseReconciliationItemClient
-        .query({
-          limit: 200,
-          offset: 0,
-          sort: { column: 'idx', direction: 'ascending' },
-          filter: {
-            reconciliationId: {
-              kind: 'fk',
-              op: 'in',
-              values: [reconciliationId],
-              labels: [],
-            },
+  function resetDetail() {
+    loadedIdRef.current = null
+    receiptItemsRef.current = new Map()
+    setItems([])
+    setItemsSnapshot([])
+    setDetailLoaded(true)
+  }
+
+  function loadDetail(reconciliationId: string) {
+    const my = ++reqIdRef.current
+    loadedIdRef.current = reconciliationId
+    receiptItemsRef.current = new Map()
+    setDetailLoaded(false)
+    purchaseReconciliationItemClient
+      .query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          reconciliationId: {
+            kind: 'fk',
+            op: 'in',
+            values: [reconciliationId],
+            labels: [],
           },
-        })
-        .then(async (d) => {
+        },
+      })
+      .then(async (d) => {
+        if (my !== reqIdRef.current) return
+        const rows = d.results
+        // 编辑态预热缓存:按行上入库条目 id 取剩余可对账量/快照价/币种(双来源各自拉取)
+        const receiptIds = [
+          ...new Set(
+            rows
+              .map((r) =>
+                r.receiptItemId == null ? null : String(r.receiptItemId),
+              )
+              .filter((v): v is string => v != null),
+          ),
+        ]
+        const outsourcedIds = [
+          ...new Set(
+            rows
+              .map((r) =>
+                r.outsourcedReceiptItemId == null
+                  ? null
+                  : String(r.outsourcedReceiptItemId),
+              )
+              .filter((v): v is string => v != null),
+          ),
+        ]
+        try {
+          const [normal, outsourced] = await Promise.all([
+            receiptIds.length > 0
+              ? Promise.all(
+                  receiptIds.map((id) => purchaseReceiptItemClient.get(id)),
+                )
+              : Promise.resolve([] as Row[]),
+            outsourcedIds.length > 0
+              ? Promise.all(
+                  outsourcedIds.map((id) =>
+                    purchaseOutsourcedReceiptItemClient.get(id),
+                  ),
+                )
+              : Promise.resolve([] as Row[]),
+          ])
           if (my !== reqIdRef.current) return
-          const rows = d.results
-          // 编辑态预热缓存:按行上入库条目 id 取剩余可对账量/快照价/币种(双来源各自拉取)
-          const receiptIds = [
-            ...new Set(
-              rows
-                .map((r) =>
-                  r.receiptItemId == null ? null : String(r.receiptItemId),
-                )
-                .filter((v): v is string => v != null),
-            ),
-          ]
-          const outsourcedIds = [
-            ...new Set(
-              rows
-                .map((r) =>
-                  r.outsourcedReceiptItemId == null
-                    ? null
-                    : String(r.outsourcedReceiptItemId),
-                )
-                .filter((v): v is string => v != null),
-            ),
-          ]
-          try {
-            const [normal, outsourced] = await Promise.all([
-              receiptIds.length > 0
-                ? Promise.all(
-                    receiptIds.map((id) => purchaseReceiptItemClient.get(id)),
-                  )
-                : Promise.resolve([] as Row[]),
-              outsourcedIds.length > 0
-                ? Promise.all(
-                    outsourcedIds.map((id) =>
-                      purchaseOutsourcedReceiptItemClient.get(id),
-                    ),
-                  )
-                : Promise.resolve([] as Row[]),
-            ])
-            if (my !== reqIdRef.current) return
-            for (const ri of [...normal, ...outsourced].filter(
-              (row): row is Row => row != null,
-            )) {
-              receiptItemsRef.current.set(String(ri.id), ri)
-            }
-          } catch {
-            /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
+          for (const ri of [...normal, ...outsourced].filter(
+            (row): row is Row => row != null,
+          )) {
+            receiptItemsRef.current.set(String(ri.id), ri)
           }
-          if (my !== reqIdRef.current) return
-          // 行上缺的物料编号/规格/客户料号从预热缓存补齐(表格多行展示用)
-          const enriched = rows.map((r) => {
-            const refId = r.receiptItemId ?? r.outsourcedReceiptItemId
-            const ri =
-              refId != null
-                ? receiptItemsRef.current.get(String(refId))
-                : undefined
-            if (!ri) return r
-            return {
-              ...r,
-              materialCode: r.materialCode ?? ri.materialCode ?? null,
-              materialSpec: r.materialSpec ?? ri.materialSpec ?? null,
-              customerPartNo: r.customerPartNo ?? ri.customerPartNo ?? null,
-            }
-          })
-          setItems(enriched)
-          setItemsSnapshot(enriched)
-          setDetailLoaded(true)
+        } catch {
+          /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
+        }
+        if (my !== reqIdRef.current) return
+        // 行上缺的物料编号/规格/客户料号从预热缓存补齐(表格多行展示用)
+        const enriched = rows.map((r) => {
+          const refId = r.receiptItemId ?? r.outsourcedReceiptItemId
+          const ri =
+            refId != null
+              ? receiptItemsRef.current.get(String(refId))
+              : undefined
+          if (!ri) return r
+          return {
+            ...r,
+            materialCode: r.materialCode ?? ri.materialCode ?? null,
+            materialSpec: r.materialSpec ?? ri.materialSpec ?? null,
+            customerPartNo: r.customerPartNo ?? ri.customerPartNo ?? null,
+          }
         })
-        .catch((e) => {
-          if (my !== reqIdRef.current) return
-          toastError('对账条目加载失败')(e)
-          setItems([])
-          setItemsSnapshot([])
-        })
-    },
-    [],
-  )
+        setItems(enriched)
+        setItemsSnapshot(enriched)
+        setDetailLoaded(true)
+      })
+      .catch((e) => {
+        if (my !== reqIdRef.current) return
+        toastError('对账条目加载失败')(e)
+        setItems([])
+        setItemsSnapshot([])
+      })
+  }
+
+  const openDrawer: OpenReconciliationDrawer = (nextMode, reconciliation) => {
+    if (urlSync) {
+      url.open(nextMode, reconciliation?.id != null ? String(reconciliation.id) : null)
+    } else {
+      setLocalDrawer({ mode: nextMode, row: reconciliation })
+    }
+    if (nextMode === 'create' || !reconciliation) {
+      resetDetail()
+      return
+    }
+    const reconciliationId = reconciliation.id
+    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
+    if (
+      reconciliationId == null ||
+      reconciliationId === '' ||
+      reconciliationId === 'undefined'
+    ) {
+      toast.danger('无法打开采购对账单', { description: '缺少对账单 id' })
+      resetDetail()
+      return
+    }
+    loadDetail(String(reconciliationId))
+  }
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    if (!urlSync) return
+    const d = url.drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        reqIdRef.current++
+        resetDetail()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetDetail()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadDetail(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   const baseCfg = drawerConfig('purReconciliations')
   const drawerCfg = {
@@ -590,20 +643,25 @@ export function ReconciliationDrawerProvider({
       <SynieRecordDrawer
         resource="purReconciliations"
         {...drawerCfg}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
+        mode={mode}
+        isOpen={isOpen}
         onOpenChange={(open) => {
           if (open) return
           reqIdRef.current++
-          setDrawer(null)
+          if (urlSync) url.close()
+          else setLocalDrawer(null)
           setItems([])
           setItemsSnapshot([])
           receiptItemsRef.current = new Map()
+          loadedIdRef.current = null
         }}
-        rowId={drawer?.row?.id}
+        rowId={rowId}
         onEdit={
-          drawer?.row?.status === 'DRAFT'
-            ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+          reconciliationStatus === 'DRAFT'
+            ? () => {
+                if (urlSync) url.setMode('edit')
+                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+              }
             : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
@@ -988,14 +1046,14 @@ export function ReconciliationDrawerProvider({
                 defaultId={createDefaultCompany}
               />
               <ReconciliationAccountDefaultSync
-                key={`acct-${drawer?.row?.id ?? 'create'}-${reqIdRef.current}`}
+                key={`acct-${rowId ?? 'create'}-${reqIdRef.current}`}
                 mode={mode}
                 companyId={(values.companyId as string | null) ?? null}
                 patchValues={patchValues}
               />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${drawer?.row?.id ?? 'create'}-${reqIdRef.current}`}
+                key={`${rowId ?? 'create'}-${reqIdRef.current}`}
                 mode={mode}
                 row={row}
                 values={values}
@@ -1215,9 +1273,9 @@ export function ReconciliationDrawerProvider({
             }
             savedId = reconciliationId
           } else {
-            await purchaseReconciliationClient.update(drawer!.row!.id, values)
+            await purchaseReconciliationClient.update(rowId!, values)
             const itemErrors = await persistItems(
-              drawer!.row!.id,
+              rowId!,
               items,
               itemsSnapshot,
             )
@@ -1228,7 +1286,7 @@ export function ReconciliationDrawerProvider({
             } else {
               toast.success('采购对账单已更新')
             }
-            savedId = drawer!.row!.id
+            savedId = rowId!
           }
           await Promise.all([
             resourceBindingFor('purReconciliations').cache.invalidateAll(

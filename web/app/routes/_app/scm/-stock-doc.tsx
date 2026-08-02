@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, toast } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
@@ -24,6 +24,7 @@ import {
   AUDIT_DOC_STATUS_ENUM_COLORS,
 } from '~/lib/doc-status'
 import { toastError } from '~/lib/toast'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { useRequestGuard } from '~/lib/use-request-guard'
 
 export { CompanyDefaultSync, defaultCompanyId, todayLocal }
@@ -169,7 +170,14 @@ async function persistItems(cfg: StockDocConfig, docId: string, current: Row[], 
 
 export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
   const [filters, setFilters] = useState<FilterState>({})
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  // 页面级主抽屉:开/关/模式走 URL(?record=&mode=)
+  const {
+    drawer,
+    open,
+    setMode,
+    close,
+    row: drawerRow,
+  } = useRecordDrawerUrl(cfg.resource)
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
@@ -177,6 +185,13 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
   const guard = useRequestGuard()
   // 物料选择缓存:选中整行按 id 暂存,transformItem 带出 code/name/spec 供行内物料富单元格展示
   const materialPickRef = useRef(new Map<string, Row>())
+  // 已为哪张单据拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = drawer !== null
+  const mode: DrawerMode = drawer?.mode ?? 'view'
+  const rowId = drawer?.recordId ?? undefined
+  const docStatus = drawerRow?.status
 
   const companies = useQuery({
     queryKey: [cfg.resource, 'companies'],
@@ -190,15 +205,16 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
 
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
 
-  const openDrawer = useCallback((mode: DrawerMode, row: Row | null) => {
+  function resetDetail() {
+    loadedIdRef.current = null
+    setItems([])
+    setItemsSnapshot([])
+    setDetailLoaded(true)
+  }
+
+  function loadDetail(docId: string) {
     const my = guard.begin()
-    setDrawer({ mode, row })
-    if (mode === 'create') {
-      setItems([])
-      setItemsSnapshot([])
-      setDetailLoaded(true)
-      return
-    }
+    loadedIdRef.current = docId
     setDetailLoaded(false)
     cfg.itemClient
       .query({
@@ -206,7 +222,7 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
         offset: 0,
         sort: { column: 'idx', direction: 'ascending' },
         fixedFilter: {
-          [cfg.docIdField]: { kind: 'fk', op: 'in', values: [row!.id], labels: [] },
+          [cfg.docIdField]: { kind: 'fk', op: 'in', values: [docId], labels: [] },
         },
       })
       .then((result) => {
@@ -222,7 +238,36 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
         setItems([])
         setItemsSnapshot([])
       })
-  }, [cfg])
+  }
+
+  const openDrawer = useCallback((nextMode: DrawerMode, row: Row | null) => {
+    open(nextMode, row?.id != null ? String(row.id) : null)
+    if (nextMode === 'create' || !row) {
+      resetDetail()
+      return
+    }
+    loadDetail(String(row.id))
+  }, [cfg, open])
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    const d = drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        guard.invalidate()
+        resetDetail()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetDetail()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadDetail(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [drawer?.recordId, drawer?.mode])
 
   const baseCfg = drawerConfig(cfg.resource)
   const drawerCfg = {
@@ -320,18 +365,19 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
       <SynieRecordDrawer
         resource={cfg.resource}
         {...drawerCfg}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        onOpenChange={(open) => {
-          if (open) return
+        mode={mode}
+        isOpen={isOpen}
+        onOpenChange={(isDrawerOpen) => {
+          if (isDrawerOpen) return
           guard.invalidate()
-          setDrawer(null)
+          close()
           setItems([])
           setItemsSnapshot([])
+          loadedIdRef.current = null
         }}
-        rowId={drawer?.row?.id}
+        rowId={rowId}
         onEdit={
-          drawer?.row?.status === 'DRAFT' ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d)) : undefined
+          docStatus === 'DRAFT' ? () => setMode('edit') : undefined
         }
         extraContent={(mode, row, values, patchValues) => (
           <>
@@ -411,14 +457,14 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
             }
             savedId = docId
           } else {
-            await cfg.docClient.update(drawer!.row!.id, values)
-            const itemErrors = await persistItems(cfg, drawer!.row!.id, items, itemsSnapshot)
+            await cfg.docClient.update(rowId!, values)
+            const itemErrors = await persistItems(cfg, rowId!, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger(`${cfg.label}已更新,但部分单据行保存失败`, { description: itemErrors.join('; ') })
             } else {
               toast.success(`${cfg.label}已更新`)
             }
-            savedId = drawer!.row!.id
+            savedId = rowId!
           }
           await resourceBindingFor(cfg.resource).cache.invalidateAll(queryClient)
           return savedId

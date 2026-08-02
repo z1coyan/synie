@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Label, NumberField, Switch, toast } from '@heroui/react'
@@ -26,6 +26,7 @@ import { resourceBindingFor } from '~/lib/resources/registry'
 import { COUNT_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import { todayLocal } from '~/lib/form-defaults'
 import { toastError } from '~/lib/toast'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { useRequestGuard } from '~/lib/use-request-guard'
 
 export const Route = createFileRoute('/_app/scm/other-stock/counts')({
@@ -108,7 +109,14 @@ async function persistItems(docId: string, current: Row[], snapshot: Row[]): Pro
 
 function StockCountsTab() {
   const [filters, setFilters] = useState<FilterState>({})
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  // 页面级主抽屉:开/关/模式走 URL(?record=&mode=)
+  const {
+    drawer,
+    open,
+    setMode,
+    close,
+    row: drawerRow,
+  } = useRecordDrawerUrl('invStockCounts')
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
@@ -118,6 +126,13 @@ function StockCountsTab() {
   const guard = useRequestGuard()
   // 物料选择缓存:选中整行按 id 暂存,transformItem 带出 code/name/spec 供行内物料富单元格展示
   const materialPickRef = useRef(new Map<string, Row>())
+  // 已为哪张盘点单拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = drawer !== null
+  const mode: DrawerMode = drawer?.mode ?? 'view'
+  const rowId = drawer?.recordId ?? undefined
+  const docStatus = drawerRow?.status
 
   const companies = useQuery({
     queryKey: ['stockCountCompanies'],
@@ -143,41 +158,72 @@ function StockCountsTab() {
     return result.results
   }, [])
 
-  const openDrawer = useCallback(
-    (mode: DrawerMode, row: Row | null) => {
-      const my = guard.begin()
-      setDrawer({ mode, row })
-      setLoadAll(false)
-      if (mode === 'create') {
+  function resetDetail() {
+    loadedIdRef.current = null
+    setLoadAll(false)
+    setItems([])
+    setItemsSnapshot([])
+    setDetailLoaded(true)
+  }
+
+  function loadDetail(docId: string) {
+    const my = guard.begin()
+    loadedIdRef.current = docId
+    setLoadAll(false)
+    setDetailLoaded(false)
+    fetchItems(docId)
+      .then((rows) => {
+        if (!guard.isCurrent(my)) return
+        setItems(rows)
+        setItemsSnapshot(rows)
+        setDetailLoaded(true)
+      })
+      .catch((e) => {
+        if (!guard.isCurrent(my)) return
+        toastError('库存盘点单行加载失败')(e)
         setItems([])
         setItemsSnapshot([])
-        setDetailLoaded(true)
+      })
+  }
+
+  const openDrawer = useCallback(
+    (nextMode: DrawerMode, row: Row | null) => {
+      open(nextMode, row?.id != null ? String(row.id) : null)
+      if (nextMode === 'create' || !row) {
+        resetDetail()
         return
       }
-      setDetailLoaded(false)
-      fetchItems(row!.id)
-        .then((rows) => {
-          if (!guard.isCurrent(my)) return
-          setItems(rows)
-          setItemsSnapshot(rows)
-          setDetailLoaded(true)
-        })
-        .catch((e) => {
-          if (!guard.isCurrent(my)) return
-          toastError('库存盘点单行加载失败')(e)
-          setItems([])
-          setItemsSnapshot([])
-        })
+      loadDetail(String(row.id))
     },
-    [fetchItems]
+    [fetchItems, open]
   )
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    const d = drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        guard.invalidate()
+        resetDetail()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetDetail()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadDetail(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [drawer?.recordId, drawer?.mode])
 
   const invalidateGrids = () => {
     void resourceBindingFor('invStockCounts').cache.invalidateAll(queryClient)
   }
 
   const refreshBook = async () => {
-    const docId = drawer?.row?.id
+    const docId = rowId
     if (!docId) return
     setRefreshing(true)
     try {
@@ -307,18 +353,19 @@ function StockCountsTab() {
       <SynieRecordDrawer
         resource="invStockCounts"
         {...drawerCfg}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        onOpenChange={(open) => {
-          if (open) return
+        mode={mode}
+        isOpen={isOpen}
+        onOpenChange={(isDrawerOpen) => {
+          if (isDrawerOpen) return
           guard.invalidate()
-          setDrawer(null)
+          close()
           setItems([])
           setItemsSnapshot([])
+          loadedIdRef.current = null
         }}
-        rowId={drawer?.row?.id}
+        rowId={rowId}
         onEdit={
-          drawer?.row?.status === 'DRAFT' ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d)) : undefined
+          docStatus === 'DRAFT' ? () => setMode('edit') : undefined
         }
         footerActions={(mode, row) =>
           mode === 'view' && row?.status === 'DRAFT' ? (
@@ -438,8 +485,8 @@ function StockCountsTab() {
             })
             toast.success('库存盘点单已创建')
           } else {
-            await stockCountClient.update(drawer!.row!.id, values)
-            const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
+            await stockCountClient.update(rowId!, values)
+            const itemErrors = await persistItems(rowId!, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('库存盘点单已更新,但部分盘点行保存失败', { description: itemErrors.join('; ') })
             } else {

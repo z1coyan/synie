@@ -28,6 +28,7 @@ import { resourceBindingFor } from '~/lib/resources/registry'
 import { TRANSFER_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
 import { todayLocal } from '~/lib/form-defaults'
 import { toastError } from '~/lib/toast'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { useRequestGuard } from '~/lib/use-request-guard'
 
 export const Route = createFileRoute('/_app/scm/other-stock/transfers')({
@@ -164,7 +165,14 @@ function TransitWarehouseSync({
 
 function StockTransfersTab() {
   const [filters, setFilters] = useState<FilterState>({})
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  // 页面级主抽屉:开/关/模式走 URL(?record=&mode=)
+  const {
+    drawer,
+    open,
+    setMode,
+    close,
+    row: drawerRow,
+  } = useRecordDrawerUrl('invStockTransfers')
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [detailLoaded, setDetailLoaded] = useState(false)
@@ -175,6 +183,13 @@ function StockTransfersTab() {
   const guard = useRequestGuard()
   // 物料选择缓存:选中整行按 id 暂存,transformItem 带出 code/name/spec 供行内物料富单元格展示
   const materialPickRef = useRef(new Map<string, Row>())
+  // 已为哪张调拨单拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = drawer !== null
+  const mode: DrawerMode = drawer?.mode ?? 'view'
+  const rowId = drawer?.recordId ?? undefined
+  const docStatus = drawerRow?.status
 
   // code 用于在途仓种子名匹配
   const companies = useQuery({
@@ -190,15 +205,16 @@ function StockTransfersTab() {
   const createDefaultCompany = defaultCompanyId(filters, companies.data ?? [])
   const codeById = new Map((companies.data ?? []).map((c) => [c.id, String(c.code ?? '')]))
 
-  const openDrawer = useCallback((mode: DrawerMode, row: Row | null) => {
+  function resetDetail() {
+    loadedIdRef.current = null
+    setItems([])
+    setItemsSnapshot([])
+    setDetailLoaded(true)
+  }
+
+  function loadDetail(docId: string) {
     const my = guard.begin()
-    setDrawer({ mode, row })
-    if (mode === 'create') {
-      setItems([])
-      setItemsSnapshot([])
-      setDetailLoaded(true)
-      return
-    }
+    loadedIdRef.current = docId
     setDetailLoaded(false)
     stockTransferItemClient
       .query({
@@ -206,7 +222,7 @@ function StockTransfersTab() {
         offset: 0,
         sort: { column: 'idx', direction: 'ascending' },
         fixedFilter: {
-          stockTransferId: { kind: 'fk', op: 'in', values: [row!.id], labels: [] },
+          stockTransferId: { kind: 'fk', op: 'in', values: [docId], labels: [] },
         },
       })
       .then((result) => {
@@ -222,7 +238,36 @@ function StockTransfersTab() {
         setItems([])
         setItemsSnapshot([])
       })
-  }, [])
+  }
+
+  const openDrawer = useCallback((nextMode: DrawerMode, row: Row | null) => {
+    open(nextMode, row?.id != null ? String(row.id) : null)
+    if (nextMode === 'create' || !row) {
+      resetDetail()
+      return
+    }
+    loadDetail(String(row.id))
+  }, [open])
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    const d = drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        guard.invalidate()
+        resetDetail()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetDetail()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadDetail(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [drawer?.recordId, drawer?.mode])
 
   const receiveItems = useQuery({
     queryKey: ['transferReceiveItems', receiveDoc?.id],
@@ -412,18 +457,19 @@ function StockTransfersTab() {
       <SynieRecordDrawer
         resource="invStockTransfers"
         {...drawerCfg}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        onOpenChange={(open) => {
-          if (open) return
+        mode={mode}
+        isOpen={isOpen}
+        onOpenChange={(isDrawerOpen) => {
+          if (isDrawerOpen) return
           guard.invalidate()
-          setDrawer(null)
+          close()
           setItems([])
           setItemsSnapshot([])
+          loadedIdRef.current = null
         }}
-        rowId={drawer?.row?.id}
+        rowId={rowId}
         onEdit={
-          drawer?.row?.status === 'DRAFT' ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d)) : undefined
+          docStatus === 'DRAFT' ? () => setMode('edit') : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
           const formCompanyId = (values.companyId as string | null) ?? null
@@ -519,8 +565,8 @@ function StockTransfersTab() {
               toast.success('调拨单已创建')
             }
           } else {
-            await stockTransferClient.update(drawer!.row!.id, values)
-            const itemErrors = await persistItems(drawer!.row!.id, items, itemsSnapshot)
+            await stockTransferClient.update(rowId!, values)
+            const itemErrors = await persistItems(rowId!, items, itemsSnapshot)
             if (itemErrors.length > 0) {
               toast.danger('调拨单已更新,但部分调拨行保存失败', { description: itemErrors.join('; ') })
             } else {

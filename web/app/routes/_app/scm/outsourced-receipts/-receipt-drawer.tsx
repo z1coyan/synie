@@ -39,6 +39,7 @@ import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaul
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
 import { toastError } from '~/lib/toast'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 
 export interface ReceiptRef {
   id: string
@@ -400,8 +401,22 @@ function OutsourcedWarehouseSelect({
  */
 const ITEMS_RESET_FIELDS = ['companyId', 'partyType', 'partyId'] as const
 
-export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: ReceiptRef | null } | null>(null)
+/**
+ * 委外入库创建/编辑抽屉(头+成品条目+材料扣减+副产物)。
+ * 入库单/入库条目两 tab 共用;列表 layout 传 urlSync,开/关/模式走 URL。
+ *
+ * @param urlSync 列表页传 true:抽屉开/关/模式写 ?record=&mode=,深链/刷新/后退可寻址。
+ */
+export function ReceiptDrawerProvider({
+  children,
+  urlSync = false,
+}: {
+  children: ReactNode
+  urlSync?: boolean
+}) {
+  // URL 源(列表 layout)与本地态二选一;明细始终本地
+  const url = useRecordDrawerUrl('purOutsourcedReceipts', { enabled: urlSync })
+  const [localDrawer, setLocalDrawer] = useState<{ mode: DrawerMode; row: ReceiptRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [materialRows, setMaterialRows] = useState<Row[]>([])
@@ -416,6 +431,17 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
   const linesRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
   const reqIdRef = useRef(0)
+  // 已为哪张入库单拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
+  const mode: DrawerMode = urlSync
+    ? (url.drawer?.mode ?? 'view')
+    : (localDrawer?.mode ?? 'view')
+  const rowId: string | undefined = urlSync
+    ? (url.drawer?.recordId ?? undefined)
+    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
+  const receiptStatus = urlSync ? url.row?.status : localDrawer?.row?.status
 
   const companies = useQuery({
     queryKey: ['purOutsourcedReceipts', 'companies'],
@@ -433,34 +459,24 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
 
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
-  const openDrawer = useCallback<OpenReceiptDrawer>((mode, receipt) => {
-    const my = ++reqIdRef.current
-    setDrawer({ mode, row: receipt })
+  function resetDetail() {
+    loadedIdRef.current = null
     orderItemsRef.current = new Map()
     linesRef.current = new Map()
-    if (mode === 'create') {
-      setItems([])
-      setItemsSnapshot([])
-      setMaterialRows([])
-      setMaterialRowsSnapshot([])
-      setByproductRows([])
-      setByproductRowsSnapshot([])
-      setDetailLoaded(true)
-      return
-    }
-    const receiptId = receipt?.id
-    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
-    if (receiptId == null || receiptId === '' || receiptId === 'undefined') {
-      toast.danger('无法打开入库单', { description: '缺少入库单 id' })
-      setItems([])
-      setItemsSnapshot([])
-      setMaterialRows([])
-      setMaterialRowsSnapshot([])
-      setByproductRows([])
-      setByproductRowsSnapshot([])
-      setDetailLoaded(true)
-      return
-    }
+    setItems([])
+    setItemsSnapshot([])
+    setMaterialRows([])
+    setMaterialRowsSnapshot([])
+    setByproductRows([])
+    setByproductRowsSnapshot([])
+    setDetailLoaded(true)
+  }
+
+  function loadDetail(receiptId: string) {
+    const my = ++reqIdRef.current
+    loadedIdRef.current = receiptId
+    orderItemsRef.current = new Map()
+    linesRef.current = new Map()
     setDetailLoaded(false)
     purchaseOutsourcedReceiptItemClient
       .query({
@@ -547,7 +563,48 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
         setByproductRows([])
         setByproductRowsSnapshot([])
       })
-  }, [])
+  }
+
+  const openDrawer: OpenReceiptDrawer = (nextMode, receipt) => {
+    if (urlSync) {
+      url.open(nextMode, receipt?.id != null ? String(receipt.id) : null)
+    } else {
+      setLocalDrawer({ mode: nextMode, row: receipt })
+    }
+    if (nextMode === 'create' || !receipt) {
+      resetDetail()
+      return
+    }
+    const receiptId = receipt.id
+    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
+    if (receiptId == null || receiptId === '' || receiptId === 'undefined') {
+      toast.danger('无法打开入库单', { description: '缺少入库单 id' })
+      resetDetail()
+      return
+    }
+    loadDetail(String(receiptId))
+  }
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    if (!urlSync) return
+    const d = url.drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        reqIdRef.current++
+        resetDetail()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetDetail()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadDetail(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   const baseCfg = drawerConfig('purOutsourcedReceipts')
   const drawerCfg = {
@@ -619,12 +676,13 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
       <SynieRecordDrawer
         resource="purOutsourcedReceipts"
         {...drawerCfg}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
+        mode={mode}
+        isOpen={isOpen}
         onOpenChange={(open) => {
           if (open) return
           reqIdRef.current++
-          setDrawer(null)
+          if (urlSync) url.close()
+          else setLocalDrawer(null)
           setItems([])
           setItemsSnapshot([])
           setMaterialRows([])
@@ -633,11 +691,15 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
           setByproductRowsSnapshot([])
           orderItemsRef.current = new Map()
           linesRef.current = new Map()
+          loadedIdRef.current = null
         }}
-        rowId={drawer?.row?.id}
+        rowId={rowId}
         onEdit={
-          drawer?.row?.status === 'DRAFT'
-            ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+          receiptStatus === 'DRAFT'
+            ? () => {
+                if (urlSync) url.setMode('edit')
+                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+              }
             : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
@@ -1101,14 +1163,14 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
                 defaultId={createDefaultCompany}
               />
               <ReceiptAccountDefaultSync
-                key={`acct-${drawer?.row?.id ?? 'create'}-${reqIdRef.current}`}
+                key={`acct-${rowId ?? 'create'}-${reqIdRef.current}`}
                 mode={mode}
                 companyId={companyId}
                 patchValues={patchValues}
               />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${drawer?.row?.id ?? 'create'}-${reqIdRef.current}`}
+                key={`${rowId ?? 'create'}-${reqIdRef.current}`}
                 mode={mode}
                 row={row}
                 values={values}
@@ -1428,8 +1490,8 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             }
             savedId = receiptId
           } else {
-            await purchaseOutsourcedReceiptClient.update(drawer!.row!.id, values)
-            const itemErrors = await persistItemRows(drawer!.row!.id, items, itemsSnapshot)
+            await purchaseOutsourcedReceiptClient.update(rowId!, values)
+            const itemErrors = await persistItemRows(rowId!, items, itemsSnapshot)
             const rowErrors = await persistSideRows()
             const allErrors = [...itemErrors, ...rowErrors]
             if (allErrors.length > 0) {
@@ -1439,7 +1501,7 @@ export function ReceiptDrawerProvider({ children }: { children: ReactNode }) {
             } else {
               toast.success('委外入库单已更新')
             }
-            savedId = drawer!.row!.id
+            savedId = rowId!
           }
           await Promise.all([
             resourceBindingFor(

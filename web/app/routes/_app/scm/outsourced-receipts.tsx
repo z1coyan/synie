@@ -18,7 +18,7 @@ function OutsourcedReceiptsLayout() {
     TABS.find((t) => pathname.includes(`/scm/outsourced-receipts/${t.id}`))?.id ?? 'items'
 
   return (
-    <ReceiptDrawerProvider>
+    <ReceiptDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">委外入库</h1>
       <p className="mt-2 text-sm text-ink-500">
         登记协作方送回的成品：审核同事务成品入仓＋按比例扣外协仓材料＋副产物入仓，加工费过未开票应付。

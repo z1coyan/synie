@@ -19,7 +19,7 @@ function PurchaseOrdersLayout() {
   const selected = TABS.find((t) => pathname.includes(`/scm/purchase/${t.id}`))?.id ?? 'items'
 
   return (
-    <OrderDrawerProvider>
+    <OrderDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">采购订单</h1>
       <p className="mt-2 text-sm text-ink-500">
         公司向供应商承诺采购的订货单据:常规订单条目只能从有效采购报价挑选,零星订单自由录价受单行上限约束;审核后锁死(无反审核),仅可关闭或作废。

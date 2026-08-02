@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Label, NumberField, TextArea, TextField, toast } from '@heroui/react'
 import { formatPrice } from '~/lib/amount'
@@ -20,6 +20,7 @@ import { materialCellRender } from '~/components/synie-material-cell/MaterialCel
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { todayLocal } from '~/lib/form-defaults'
 import { toastError } from '~/lib/toast'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { useRequestGuard } from '~/lib/use-request-guard'
 
 const purchaseQuotationBinding = resourceBindingFor('purQuotations')
@@ -199,8 +200,22 @@ function TierEditor({
   )
 }
 
-export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; quotation: QuotationRef | null } | null>(null)
+/**
+ * 采购报价创建/编辑抽屉(头+条目+条款)。
+ * 报价单/报价条目两 tab 共用;列表 layout 传 urlSync,开/关/模式走 URL。
+ *
+ * @param urlSync 列表页传 true:抽屉开/关/模式写 ?record=&mode=,深链/刷新/后退可寻址。
+ */
+export function QuotationDrawerProvider({
+  children,
+  urlSync = false,
+}: {
+  children: ReactNode
+  urlSync?: boolean
+}) {
+  // URL 源(列表 layout)与本地态二选一;明细/条款始终本地
+  const url = useRecordDrawerUrl('purQuotations', { enabled: urlSync })
+  const [localDrawer, setLocalDrawer] = useState<{ mode: DrawerMode; quotation: QuotationRef | null } | null>(null)
   const [items, setItems] = useState<Row[]>([])
   // 报价条款不走抽屉字段(要排在条目表之下,抽屉 extraContent 固定在字段后渲染),由页面自持
   const [terms, setTerms] = useState('')
@@ -212,20 +227,33 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张单的行回填到当前单
   const guard = useRequestGuard()
   const draftHeadRef = useRef<Row | null>(null)
+  // 已为哪张报价单拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
 
-  const openDrawer: OpenQuotationDrawer = useCallback((mode, quotation) => {
-    const my = guard.begin()
-    setDrawer({ mode, quotation })
+  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
+  const mode: DrawerMode = urlSync
+    ? (url.drawer?.mode ?? 'view')
+    : (localDrawer?.mode ?? 'view')
+  const rowId: string | undefined = urlSync
+    ? (url.drawer?.recordId ?? undefined)
+    : (localDrawer?.quotation?.id != null ? String(localDrawer.quotation.id) : undefined)
+  const quotationStatus = urlSync ? url.row?.status : localDrawer?.quotation?.status
+
+  function resetDetail() {
+    loadedIdRef.current = null
     draftHeadRef.current = null
-    if (mode === 'create') {
-      setItems([])
-      setTerms('')
-      setDetailLoaded(true)
-      return
-    }
+    setItems([])
+    setTerms('')
+    setDetailLoaded(true)
+  }
+
+  function loadDetail(quotationId: string) {
+    const my = guard.begin()
+    loadedIdRef.current = quotationId
+    draftHeadRef.current = null
     setDetailLoaded(false)
     purchaseQuotationDraft
-      .loadDraft(quotation!.id)
+      .loadDraft(quotationId)
       .then((draft) => {
         if (!guard.isCurrent(my)) return
         draftHeadRef.current = draft
@@ -240,7 +268,41 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
         setTerms('')
         setItems([])
       })
-  }, [])
+  }
+
+  const openDrawer: OpenQuotationDrawer = (nextMode, quotation) => {
+    if (urlSync) {
+      url.open(nextMode, quotation?.id != null ? String(quotation.id) : null)
+    } else {
+      setLocalDrawer({ mode: nextMode, quotation })
+    }
+    if (nextMode === 'create' || !quotation) {
+      resetDetail()
+      return
+    }
+    loadDetail(String(quotation.id))
+  }
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  useEffect(() => {
+    if (!urlSync) return
+    const d = url.drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        guard.invalidate()
+        resetDetail()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetDetail()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadDetail(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   // 抽屉配置:registry 一份;terms 从字段排除(改由 extraContent 底部渲染,提交时并入 values)
   const baseCfg = drawerConfig('purQuotations')
@@ -262,23 +324,28 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
       <SynieRecordDrawer
         resource="purQuotations"
         {...drawerCfg}
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        isSubmitDisabled={drawer?.mode === 'edit' && !detailLoaded}
+        mode={mode}
+        isOpen={isOpen}
+        isSubmitDisabled={mode === 'edit' && !detailLoaded}
         onOpenChange={(open) => {
           if (open) return
           // 关闭即作废在途请求并清空本地草稿,防止慢响应回填到下一张报价单
           guard.invalidate()
-          setDrawer(null)
+          if (urlSync) url.close()
+          else setLocalDrawer(null)
           setItems([])
           setTerms('')
           draftHeadRef.current = null
+          loadedIdRef.current = null
         }}
         // 表格列是白名单子集,行数据不全(缺条款/备注);不传 row,走 rowId 自查完整记录
-        rowId={drawer?.quotation?.id}
+        rowId={rowId}
         onEdit={
-          drawer?.quotation?.status === 'DRAFT'
-            ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+          quotationStatus === 'DRAFT'
+            ? () => {
+                if (urlSync) url.setMode('edit')
+                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
+              }
             : undefined
         }
         extraContent={(mode, row, values, patchValues) => (
@@ -467,7 +534,7 @@ export function QuotationDrawerProvider({ children }: { children: ReactNode }) {
             toast.success('采购报价单已创建')
           } else {
             saved = await purchaseQuotationDraft.replaceDraft(
-              drawer!.quotation!.id,
+              rowId!,
               draft,
             )
             toast.success('采购报价单已更新')
