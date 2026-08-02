@@ -166,6 +166,7 @@ function MaterialsPage() {
       </p>
 
       <div className="mt-6">
+        {/* 页面级网格：urlState 默认开启（搜索/筛选/分页/排序进 URL）；本页作 url-grid-state 试点 */}
         <SynieDataGrid
           resource="invMaterials"
           columns={GRID_COLUMNS}
