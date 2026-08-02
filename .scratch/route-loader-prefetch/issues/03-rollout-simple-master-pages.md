@@ -34,7 +34,7 @@
 
 ## Answer
 
-本轮已挂 `ensureDefaultGridPage` loader 的简单主数据页：
+本轮已挂 `ensureDefaultGridPage` loader 的简单主数据页（`rg -l ensureDefaultGridPage web/app/routes` → **18** 文件）：
 
 | 路由 | RESOURCE |
 | --- | --- |
@@ -42,13 +42,21 @@
 | `base/currencies` | basCurrencies |
 | `system/companies` | basCompanies |
 | `system/roles` | sysRoles |
+| `system/users` | sysUsers |
+| `system/storages` | sysStorages |
+| `system/print-templates` | sysPrintTemplates |
+| `system/numbering` | sysNumberingRules |
 | `scm/customers` | salCustomers |
 | `scm/suppliers` | purSuppliers |
 | `mfg/operations` | mfgOperations |
+| `mfg/process-templates` | mfgProcessTemplates |
 | `finance/bank-accounts` | accBankAccounts |
 | `finance/bank-import-templates` | accBankImportTemplates |
+| `finance/journals` | accGlJournals |
+| `finance/expense-reports` | accExpenseReports |
+| `finance/invoices` | accVatInvoices |
 | `hr/employees` | hrEmployees |
 
-**未挂**（归 04 或非「默认首屏」同构）：market（tab/双网格）、accounts/warehouses/material-categories（树+fixedFilter）、materials（extraFields/join）、单据列表（defaultSort/筛选）、users/storages/print-templates 等带额外开抽屉逻辑页。
+**未挂**（归 04 或非「默认首屏」同构）：market（tab/双网格）、accounts/warehouses/material-categories（树+fixedFilter）、materials（extraFields/join）、单据列表（defaultSort/筛选）、files 等带额外逻辑页；以及复杂/URL 驱动筛选页。
 
-验证：`rg ensureDefaultGridPage web/app/routes` ≥10 页；无手写 gridRows；`tsc` / test / check 全过。人工悬停预取冒烟未在本轮浏览器执行（保持 partial）。
+验证（2026-08-02）：`tsc` / `bun test`（277）/ `check` 全过；无手写 gridRows。**人工悬停预取冒烟仍未在浏览器执行** → 保持 **partial**（勿标 resolved）。
