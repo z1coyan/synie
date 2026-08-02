@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { toastError } from '~/lib/toast'
 import { useRequestGuard } from '~/lib/use-request-guard'
@@ -35,7 +35,9 @@ import {
   invoiceOcrRecognize,
   submitInvoiceForm,
 } from '~/lib/resources/presentation'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import {
   purchaseReconciliationClient,
   salesReconciliationClient,
@@ -50,7 +52,11 @@ import { findRoleAccounts } from '~/lib/resources/accounts'
 import type { DrawerMode, FieldInputProps } from '~/components/synie-record-drawer/fields'
 import type { FilterState, LocalGridMeta, Row } from '~/components/synie-data-grid/types'
 
+const RESOURCE = 'accVatInvoices'
+
 export const Route = createFileRoute('/_app/finance/invoices')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: InvoicesPage,
 })
 
@@ -392,19 +398,32 @@ const safeParseDate = (v: string | null) => {
 }
 
 function InvoicesPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  // 页面级主抽屉:开/关/模式走 URL(?record=&mode=);销售清单本地 + 深链补拉
+  const {
+    drawer,
+    open,
+    setMode,
+    close,
+    row: drawerRow,
+  } = useRecordDrawerUrl(RESOURCE)
   // Presentation Extension：OCR/动态联动与 binding 共置；ResourceDocument 无脚本
-  const invoicePresentation = createInvoicePresentation(resourceBindingFor('accVatInvoices'))
+  const invoicePresentation = createInvoicePresentation(resourceBindingFor(RESOURCE))
   const recognizeInvoice = invoiceOcrRecognize(invoicePresentation)
-  // 退场动画期间冻结最后打开的抽屉态(承兑抽屉 lastRef 先例):fields/headerContent 闭包
+  // 退场动画期间冻结最后打开的 mode(承兑抽屉 lastRef 先例):fields/headerContent 闭包
   // 读 isCreate/createType,关闭瞬间 drawer 已置 null,不冻结会闪回非创建态排布
-  const lastDrawerRef = useRef(drawer)
-  if (drawer) lastDrawerRef.current = drawer
-  const isCreate = (drawer ?? lastDrawerRef.current)?.mode === 'create'
+  const lastModeRef = useRef<DrawerMode | null>(null)
+  if (drawer) lastModeRef.current = drawer.mode
+  const isCreate = (drawer?.mode ?? lastModeRef.current) === 'create'
   // 新增发票类型(仅 create 态顶部选择卡);开抽屉时重置,关闭不清(配合上方冻结不闪)
   const [createType, setCreateType] = useState<InvoiceCreateType | null>(null)
   // create 态暂存附件:先传裸文件进父级状态,创建成功后统一 attachFile(同承兑交易抽屉先例)
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[]>([])
+  // 已为哪张发票拉过清单;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = drawer !== null
+  const mode: DrawerMode = drawer?.mode ?? 'view'
+  const rowId = drawer?.recordId ?? undefined
 
   // 字段布局(order/section)按态二分:create 态「OCR 优先」——手工字段(公司/对手/关联对账单/
   // 三科目)置顶「基本信息」,票面等 OCR 填充后核对,金额与清单收尾;edit/view 态保持五组现状
@@ -623,21 +642,20 @@ function InvoicesPage() {
     }
   }
 
-  // 打开抽屉:create 清空清单;view/edit 按发票 id 拉 items(表单字段本身走 rowId 自查完整记录,
-  // 见下方 SynieRecordDrawer——表格列是白名单子集,行数据不全,不能直接传 row)
-  const openDrawer = (mode: DrawerMode, row: Row | null) => {
-    const my = guard.begin()
-    setDrawer({ mode, row })
+  function resetItems() {
+    loadedIdRef.current = null
+    setItems([])
+    setItemsLoaded(true)
     setCreateType(null)
     setPendingFiles([])
-    if (mode === 'create' || row == null) {
-      setItems([])
-      setItemsLoaded(true)
-      return
-    }
+  }
+
+  function loadItems(invoiceId: string) {
+    const my = guard.begin()
+    loadedIdRef.current = invoiceId
     setItemsLoaded(false)
     vatInvoiceClient
-      .get(row.id)
+      .get(invoiceId)
       .then((record) => {
         if (!guard.isCurrent(my)) return
         setItems(parseItems(record?.items))
@@ -651,6 +669,47 @@ function InvoicesPage() {
       })
   }
 
+  // 打开抽屉:create 清空清单;view/edit 按发票 id 拉 items(表单字段本身走 rowId 自查完整记录,
+  // 见下方 SynieRecordDrawer——表格列是白名单子集,行数据不全,不能直接传 row)
+  const openDrawer = useCallback(
+    (nextMode: DrawerMode, row: Row | null) => {
+      open(nextMode, row?.id != null ? String(row.id) : null)
+      setCreateType(null)
+      setPendingFiles([])
+      if (nextMode === 'create' || row == null) {
+        loadedIdRef.current = null
+        setItems([])
+        setItemsLoaded(true)
+        return
+      }
+      loadItems(String(row.id))
+    },
+    [open],
+  )
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉销售清单
+  useEffect(() => {
+    const d = drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        guard.invalidate()
+        ocrFileRef.current = null
+        resetItems()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetItems()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      setCreateType(null)
+      setPendingFiles([])
+      loadItems(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [drawer?.recordId, drawer?.mode])
+
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">增值税发票</h1>
@@ -660,7 +719,7 @@ function InvoicesPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="accVatInvoices"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           attachmentImages={{ ownerType: 'acc_vat_invoice', category: 'original', label: '票面' }}
@@ -675,21 +734,22 @@ function InvoicesPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="accVatInvoices"
+        resource={RESOURCE}
         label="发票"
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        onOpenChange={(open) => {
-          if (open) return
+        mode={mode}
+        isOpen={isOpen}
+        onOpenChange={(isDrawerOpen) => {
+          if (isDrawerOpen) return
           guard.invalidate()
           ocrFileRef.current = null
-          setDrawer(null)
+          close()
           setItems([])
           setItemsLoaded(false)
+          loadedIdRef.current = null
         }}
         // 表格列是白名单子集(卖方/买方/金额/科目等大量字段不在其中),行数据不全;
         // 不传 row,走 rowId 自查完整记录(同 bank-accounts 先例)
-        rowId={drawer?.row?.id}
+        rowId={rowId}
         contentClassName="w-full lg:w-[880px]"
         exclude={[
           'status',
@@ -814,9 +874,7 @@ function InvoicesPage() {
           remarks: { ...lay('remarks') },
         }}
         onEdit={
-          drawer?.row?.status === 'DRAFT'
-            ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
-            : undefined
+          drawerRow?.status === 'DRAFT' ? () => setMode('edit') : undefined
         }
         // 新增先选类型:方向/对手类型随类型写入草稿(direction/partyType 创建态隐藏);
         // 编辑/查看态不显示此选择(direction 由记录本身决定)
@@ -945,8 +1003,8 @@ function InvoicesPage() {
             }
             savedId = createdId
           } else {
-            const invoiceId = drawer!.row!.id
-            await submitInvoiceForm(invoicePresentation, input, 'edit', String(invoiceId))
+            const invoiceId = String(drawer!.recordId)
+            await submitInvoiceForm(invoicePresentation, input, 'edit', invoiceId)
             toast.success(omitItems ? '发票已更新(销售清单未加载,本次未修改)' : '发票已更新')
             await invoicePresentation.binding.cache.invalidateGrid(queryClient)
             savedId = invoiceId

@@ -19,13 +19,17 @@ import {
   auditBillTransaction,
 } from '~/lib/resources/finance-operations'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import {
   AcceptanceTransactionDrawer,
   safeParseDate,
   type TransactionDrawerState,
 } from './-transaction-drawer'
 
+const RESOURCE = 'accBillTransactions'
+
 export const Route = createFileRoute('/_app/finance/acceptance/transactions')({
+  // defaultSort 与默认首屏 key 不一致,跳过 loader 预取
   component: BillTransactionsPage,
 })
 
@@ -57,7 +61,14 @@ const GRID_OVERRIDES = {
 } satisfies Record<string, ColumnOverride>
 
 function BillTransactionsPage() {
-  const [drawer, setDrawer] = useState<TransactionDrawerState | null>(null)
+  // 交易列表页主抽屉:开/关/模式走 URL;本页 create 仅接收(RECEIVE),create 选项不进 URL
+  const {
+    drawer: urlDrawer,
+    open,
+    setMode,
+    close,
+    row: drawerRow,
+  } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
 
   // 两视图同页联动:审核/作废驱动持有重放,接收顺带建档票据——写后统一显式失效兄弟缓存,
@@ -67,8 +78,41 @@ function BillTransactionsPage() {
     void resourceBindingFor('accBills').cache.invalidateGrid(queryClient)
   }
   const invalidateAcceptance = () => {
-    void resourceBindingFor('accBillTransactions').cache.invalidateGrid(queryClient)
+    void resourceBindingFor(RESOURCE).cache.invalidateGrid(queryClient)
     invalidateSiblings()
+  }
+
+  // 桥接既有受控抽屉 API:URL → TransactionDrawerState;create 定型 RECEIVE
+  const drawerState: TransactionDrawerState | null =
+    urlDrawer == null
+      ? null
+      : urlDrawer.mode === 'create'
+        ? { mode: 'create', txType: 'RECEIVE' }
+        : {
+            mode: urlDrawer.mode === 'edit' ? 'edit' : 'view',
+            // hook 自查完整行;深链加载中先用 id 占位,行到齐后 layoutType/status 再齐
+            row: (drawerRow ?? { id: urlDrawer.recordId! }) as Row,
+          }
+
+  const onDrawerStateChange = (next: TransactionDrawerState | null) => {
+    if (next == null) {
+      close()
+      return
+    }
+    if (next.mode === 'create') {
+      open('create')
+      return
+    }
+    // view→edit 同 id 只切 mode,避免压栈
+    if (
+      urlDrawer?.recordId != null &&
+      String(next.row.id) === urlDrawer.recordId &&
+      next.mode === 'edit'
+    ) {
+      setMode('edit')
+      return
+    }
+    open(next.mode, String(next.row.id))
   }
 
   // 审核过账确认框(非调拨,需过账日期)
@@ -128,23 +172,27 @@ function BillTransactionsPage() {
 
       <div className="mt-4">
         <SynieDataGrid
-          resource="accBillTransactions"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           attachmentImages={{ ownerType: 'acc_bill_transaction', label: '票面' }}
           defaultSort={{ column: 'occurredOn', direction: 'descending' }}
-          onView={(row) => setDrawer({ mode: 'view', row })}
+          onView={(row) => open('view', String(row.id))}
           // 其余交易类型都基于已有承兑(从持有段行发起),唯一的凭空创建入口就是接收
-          onCreate={() => setDrawer({ mode: 'create', txType: 'RECEIVE' })}
+          onCreate={() => open('create')}
           createLabel="新增承兑接收"
-          onEdit={(row) => setDrawer({ mode: row.status === 'DRAFT' ? 'edit' : 'view', row })}
+          onEdit={(row) => open(row.status === 'DRAFT' ? 'edit' : 'view', String(row.id))}
           actionHandlers={{ audit: (rows) => openAudit(rows[0]!) }}
           // 作废走内建确认流程(refetch 只刷本表),持有/票据靠 onMutated 联动失效
           onMutated={invalidateSiblings}
         />
       </div>
 
-      <AcceptanceTransactionDrawer state={drawer} onStateChange={setDrawer} onMutated={invalidateAcceptance} />
+      <AcceptanceTransactionDrawer
+        state={drawerState}
+        onStateChange={onDrawerStateChange}
+        onMutated={invalidateAcceptance}
+      />
 
       <AlertDialog.Backdrop isOpen={auditDialog !== null} onOpenChange={(open) => !open && setAuditDialog(null)}>
         <AlertDialog.Container>

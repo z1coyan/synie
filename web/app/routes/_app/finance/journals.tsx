@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseDate } from '@internationalized/date'
@@ -18,9 +18,15 @@ import { accountClient } from '~/lib/resources/accounts'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { executeCommandWithInvalidation } from '~/lib/resources/command-invalidation'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'accGlJournals'
 
 export const Route = createFileRoute('/_app/finance/journals')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: JournalsPage,
 })
 
@@ -113,7 +119,14 @@ const GRID_COLUMNS = [
 ]
 
 function JournalsPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  // 页面级主抽屉:开/关/模式走 URL(?record=&mode=);分录明细本地 + 深链补拉
+  const {
+    drawer,
+    open,
+    setMode,
+    close,
+    row: drawerRow,
+  } = useRecordDrawerUrl(RESOURCE)
   const [lines, setLines] = useState<Row[]>([])
   const [linesSnapshot, setLinesSnapshot] = useState<Row[]>([])
   // edit/view 态分录行靠 REST 异步拉取,未完成前禁止编辑,防回填覆盖在输行
@@ -121,6 +134,12 @@ function JournalsPage() {
   const queryClient = useQueryClient()
   // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张凭证的行回填到当前凭证
   const guard = useRequestGuard()
+  // 已为哪张凭证拉过分录;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = drawer !== null
+  const mode: DrawerMode = drawer?.mode ?? 'view'
+  const rowId = drawer?.recordId ?? undefined
 
   // 行内「审核」确认框允许补填/修正过账日期(草稿可不填,审核时必填);
   // 抽屉「保存并审核」由标准组件在保存成功后调用同一 REST client action
@@ -139,7 +158,7 @@ function JournalsPage() {
     setAuditing(true)
     try {
       await executeCommandWithInvalidation(
-        resourceBindingFor('accGlJournals'),
+        resourceBindingFor(RESOURCE),
         'audit',
         { id: auditDialog.id, postingDate: auditDate },
         queryClient,
@@ -153,23 +172,23 @@ function JournalsPage() {
     }
   }
 
-  // 打开头抽屉:create 行清空;view/edit 按凭证 id 拉行(快照留作提交时 diff 基准)
-  const openDrawer = (mode: DrawerMode, row: Row | null) => {
+  function resetLines() {
+    loadedIdRef.current = null
+    setLines([])
+    setLinesSnapshot([])
+    setLinesLoaded(true)
+  }
+
+  function loadLines(journalId: string) {
     const my = guard.begin()
-    setDrawer({ mode, row })
-    if (mode === 'create') {
-      setLines([])
-      setLinesSnapshot([])
-      setLinesLoaded(true)
-      return
-    }
+    loadedIdRef.current = journalId
     setLinesLoaded(false)
     glJournalLineClient
       .query({
         limit: 200,
         offset: 0,
         sort: { column: 'idx', direction: 'ascending' },
-        filter: { journalId: { kind: 'fk', values: [row!.id], labels: [] } },
+        filter: { journalId: { kind: 'fk', values: [journalId], labels: [] } },
       })
       .then((d) => {
         if (!guard.isCurrent(my)) return
@@ -185,6 +204,39 @@ function JournalsPage() {
       })
   }
 
+  // 打开头抽屉:create 行清空;view/edit 按凭证 id 拉行(快照留作提交时 diff 基准)
+  const openDrawer = useCallback(
+    (nextMode: DrawerMode, row: Row | null) => {
+      open(nextMode, row?.id != null ? String(row.id) : null)
+      if (nextMode === 'create' || !row) {
+        resetLines()
+        return
+      }
+      loadLines(String(row.id))
+    },
+    [open],
+  )
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉分录
+  useEffect(() => {
+    const d = drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        guard.invalidate()
+        resetLines()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetLines()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadLines(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [drawer?.recordId, drawer?.mode])
+
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">会计凭证</h1>
@@ -192,7 +244,7 @@ function JournalsPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="accGlJournals"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
@@ -209,19 +261,21 @@ function JournalsPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="accGlJournals"
+        resource={RESOURCE}
         label="凭证"
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        onOpenChange={(open) => {
-          if (open) return
+        mode={mode}
+        isOpen={isOpen}
+        onOpenChange={(isDrawerOpen) => {
+          if (isDrawerOpen) return
           // 关闭即作废在途请求并清空快照,防止残留快照被下次提交按差异写误用到别的凭证
           guard.invalidate()
-          setDrawer(null)
+          close()
           setLines([])
           setLinesSnapshot([])
+          loadedIdRef.current = null
         }}
-        row={drawer?.row}
+        // 表格列是白名单子集,行数据不全;不传 row,走 rowId 自查完整记录
+        rowId={rowId}
         // 分录行表 7 列,默认 480px 太挤,凭证抽屉加宽(移动端仍全宽)
         contentClassName="w-full lg:w-[880px]"
         // 状态/提交时间/编写人/提交人是系统内部字段,不给用户看;借贷合计是行聚合(只在表格展示),
@@ -244,7 +298,7 @@ function JournalsPage() {
           // 过账日期草稿可留空,审核时填入;新增时填了保存后会提示直接审核过账
           postingDate: { cols: 6 },
         }}
-        onEdit={drawer?.row?.status === 'DRAFT' ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d)) : undefined}
+        onEdit={drawerRow?.status === 'DRAFT' ? () => setMode('edit') : undefined}
         extraContent={(mode, row, values) => {
           // 凭证公司:存量凭证取行数据(建后不可改),新建取表单草稿;未选公司前不能录行
           const journalCompanyId = (row?.companyId ?? values.companyId ?? null) as string | null
@@ -351,7 +405,7 @@ function JournalsPage() {
             }
             savedId = journalId
           } else {
-            const journalId = drawer!.row!.id
+            const journalId = String(drawer!.recordId)
             await glJournalClient.update(journalId, values)
             const lineErrors = await persistLines(journalId, lines, linesSnapshot)
             if (lineErrors.length > 0) {
@@ -361,7 +415,7 @@ function JournalsPage() {
             }
             savedId = journalId
           }
-          await resourceBindingFor('accGlJournals').cache.invalidateGrid(queryClient)
+          await resourceBindingFor(RESOURCE).cache.invalidateGrid(queryClient)
           return savedId
         }}
       />

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
@@ -22,9 +22,15 @@ import {
   saveExpenseReportItems,
   vatInvoiceClient,
 } from '~/lib/resources/finance-operations'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'accExpenseReports'
 
 export const Route = createFileRoute('/_app/finance/expense-reports')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: ExpenseReportsPage,
 })
 
@@ -180,7 +186,14 @@ const GRID_OVERRIDES = {
 const ACTION_VISIBLE = AUDIT_DOC_EDIT_ACTION_VISIBLE
 
 function ExpenseReportsPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  // 页面级主抽屉:开/关/模式走 URL(?record=&mode=);报销行本地 + 深链补拉
+  const {
+    drawer,
+    open,
+    setMode,
+    close,
+    row: drawerRow,
+  } = useRecordDrawerUrl(RESOURCE)
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   // edit/view 态行靠 FETCH_ITEMS 异步拉取,未就绪前表格只读(同发票页 itemsLoaded 纪律)
@@ -191,22 +204,30 @@ function ExpenseReportsPage() {
   const guard = useRequestGuard()
   // ItemsResetGuard 的 key 需随开抽屉世代变(守卫序号不外暴露,开抽屉时同步 begin() 返回值)
   const genRef = useRef(0)
+  // 已为哪张报销单拉过明细;深链 effect 与 openDrawer 去重,避免双发
+  const loadedIdRef = useRef<string | null>(null)
+
+  const isOpen = drawer !== null
+  const mode: DrawerMode = drawer?.mode ?? 'view'
+  const rowId = drawer?.recordId ?? undefined
 
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
-  const openDrawer = (mode: DrawerMode, row: Row | null) => {
+  function resetDetail() {
+    loadedIdRef.current = null
+    invoiceCacheRef.current = new Map()
+    setItems([])
+    setItemsSnapshot([])
+    setDetailLoaded(true)
+  }
+
+  function loadDetail(reportId: string) {
     const my = guard.begin()
     genRef.current = my
-    setDrawer({ mode, row })
+    loadedIdRef.current = reportId
     invoiceCacheRef.current = new Map()
-    if (mode === 'create' || row == null) {
-      setItems([])
-      setItemsSnapshot([])
-      setDetailLoaded(true)
-      return
-    }
     setDetailLoaded(false)
-    queryExpenseReportItems(row.id)
+    queryExpenseReportItems(reportId)
       .then(async (result) => {
         if (!guard.isCurrent(my)) return
         // REST 行不做 relationship join；只对挂票行按公开发票 get 补展示信息。
@@ -241,6 +262,40 @@ function ExpenseReportsPage() {
       })
   }
 
+  const openDrawer = useCallback(
+    (nextMode: DrawerMode, row: Row | null) => {
+      const my = guard.begin()
+      genRef.current = my
+      open(nextMode, row?.id != null ? String(row.id) : null)
+      if (nextMode === 'create' || row == null) {
+        resetDetail()
+        return
+      }
+      loadDetail(String(row.id))
+    },
+    [open],
+  )
+
+  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉报销行
+  useEffect(() => {
+    const d = drawer
+    if (!d) {
+      if (loadedIdRef.current != null) {
+        guard.invalidate()
+        resetDetail()
+      }
+      return
+    }
+    if (d.mode === 'create' || d.recordId == null) {
+      if (loadedIdRef.current != null) resetDetail()
+      return
+    }
+    if (loadedIdRef.current !== d.recordId) {
+      loadDetail(d.recordId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
+  }, [drawer?.recordId, drawer?.mode])
+
   return (
     <>
       <h1 className="font-brand text-3xl tracking-wide">报销单</h1>
@@ -250,7 +305,7 @@ function ExpenseReportsPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="accExpenseReports"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           onView={(row) => openDrawer('view', row)}
@@ -261,20 +316,21 @@ function ExpenseReportsPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="accExpenseReports"
+        resource={RESOURCE}
         label="报销单"
-        mode={drawer?.mode ?? 'view'}
-        isOpen={drawer !== null}
-        onOpenChange={(open) => {
-          if (open) return
+        mode={mode}
+        isOpen={isOpen}
+        onOpenChange={(isDrawerOpen) => {
+          if (isDrawerOpen) return
           guard.invalidate()
-          setDrawer(null)
+          close()
           setItems([])
           setItemsSnapshot([])
           invoiceCacheRef.current = new Map()
+          loadedIdRef.current = null
         }}
         // 表格列是白名单子集(备注/付款科目等不在其中),行数据不全;走 rowId 自查完整记录
-        rowId={drawer?.row?.id}
+        rowId={rowId}
         contentClassName="w-full lg:w-[880px]"
         exclude={['status', 'auditedAt', 'auditedById', 'createdById', 'insertedAt', 'updatedAt']}
         fields={{
@@ -317,9 +373,7 @@ function ExpenseReportsPage() {
           remarks: { order: 6, label: '备注' },
         }}
         onEdit={
-          drawer?.row?.status === 'DRAFT'
-            ? () => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
-            : undefined
+          drawerRow?.status === 'DRAFT' ? () => setMode('edit') : undefined
         }
         extraContent={(mode, row, values, _patchValues) => {
           const companyId = (values.companyId ?? null) as string | null
@@ -401,7 +455,7 @@ function ExpenseReportsPage() {
             <>
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${drawer?.row?.id ?? 'create'}-${genRef.current}`}
+                key={`${rowId ?? 'create'}-${genRef.current}`}
                 mode={mode}
                 row={row}
                 values={values}
@@ -494,7 +548,7 @@ function ExpenseReportsPage() {
             }
             savedId = reportId
           } else {
-            const reportId = drawer!.row!.id
+            const reportId = String(drawer!.recordId)
             await expenseReportClient.update(reportId, values)
             const itemErrors = await saveExpenseReportItems(
               reportId,
@@ -510,7 +564,7 @@ function ExpenseReportsPage() {
             savedId = reportId
           }
           await Promise.all([
-            resourceBindingFor('accExpenseReports').cache.invalidateAll(queryClient),
+            resourceBindingFor(RESOURCE).cache.invalidateAll(queryClient),
             resourceBindingFor('accExpenseReportItems').cache.invalidateGrid(queryClient),
           ])
           return savedId

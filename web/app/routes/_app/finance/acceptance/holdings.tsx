@@ -12,6 +12,7 @@ import {
   billClient,
 } from '~/lib/resources/finance-operations'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import {
   AcceptanceTransactionDrawer,
   TX_TYPE_LABEL,
@@ -19,7 +20,10 @@ import {
   type TxType,
 } from './-transaction-drawer'
 
+const RESOURCE = 'accBillHoldings'
+
 export const Route = createFileRoute('/_app/finance/acceptance/holdings')({
+  // defaultSort 与默认首屏 key 不一致,跳过 loader 预取
   component: BillHoldingsPage,
 })
 
@@ -54,7 +58,8 @@ const GRID_OVERRIDES = {
 const HOLDING_TX_TYPES: TxType[] = ['ENDORSE', 'SETTLE', 'DISCOUNT', 'REALLOCATE']
 
 function BillHoldingsPage() {
-  const [viewRow, setViewRow] = useState<Row | null>(null)
+  // 持有段查看主抽屉 URL 化;发起交易/票面修正二级抽屉保持本地(不写 record URL)
+  const { drawer, open, close } = useRecordDrawerUrl(RESOURCE)
   const [txDrawer, setTxDrawer] = useState<TransactionDrawerState | null>(null)
   // 票面修正:持有段行 → 票据主档 edit 抽屉(建档随接收交易完成,需要更正票面的票必然还在持有中)
   const [billEdit, setBillEdit] = useState<{ billId: string } | null>(null)
@@ -88,7 +93,7 @@ function BillHoldingsPage() {
 
   const invalidateAcceptance = () => {
     void resourceBindingFor('accBillTransactions').cache.invalidateGrid(queryClient)
-    void resourceBindingFor('accBillHoldings').cache.invalidateGrid(queryClient)
+    void resourceBindingFor(RESOURCE).cache.invalidateGrid(queryClient)
     void resourceBindingFor('accBills').cache.invalidateGrid(queryClient)
   }
 
@@ -100,11 +105,11 @@ function BillHoldingsPage() {
 
       <div className="mt-4">
         <SynieDataGrid
-          resource="accBillHoldings"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'dueDate', direction: 'ascending' }}
-          onView={(row) => setViewRow(row)}
+          onView={(row) => open('view', String(row.id))}
           rowActions={rowActions}
           pageSummary={(rows) => (
             <span>
@@ -115,24 +120,27 @@ function BillHoldingsPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="accBillHoldings"
+        resource={RESOURCE}
         label="持有承兑"
         mode="view"
-        isOpen={viewRow !== null}
-        onOpenChange={(open) => !open && setViewRow(null)}
-        row={viewRow}
+        isOpen={drawer !== null}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        // 表格列是白名单子集,行数据不全;不传 row,走 rowId 自查完整记录
+        rowId={drawer?.recordId ?? undefined}
         // billNo/insertedAt 表格未取、行数据不带(只会显示占位);billId fk 链接已表意票号
         exclude={['billNo', 'insertedAt']}
       />
 
+      {/* 发起转让/兑付/贴现/调拨:二级创建抽屉,保持本地(urlSync 默认 false 语义) */}
       <AcceptanceTransactionDrawer state={txDrawer} onStateChange={setTxDrawer} onMutated={invalidateAcceptance} />
 
+      {/* 票面修正:二级编辑抽屉,保持本地 */}
       <SynieRecordDrawer
         {...drawerConfig('accBills')}
         resource="accBills"
         mode="edit"
         isOpen={billEdit !== null}
-        onOpenChange={(open) => !open && setBillEdit(null)}
+        onOpenChange={(isOpen) => !isOpen && setBillEdit(null)}
         rowId={billEdit?.billId}
         onSubmit={async (values) => {
           await billClient.update(billEdit!.billId, values)
@@ -140,7 +148,7 @@ function BillHoldingsPage() {
           // 持有段冗余票号/到期日取自票据主档,一并失效
           await Promise.all([
             resourceBindingFor('accBills').cache.invalidateGrid(queryClient),
-            resourceBindingFor('accBillHoldings').cache.invalidateGrid(queryClient),
+            resourceBindingFor(RESOURCE).cache.invalidateGrid(queryClient),
           ])
         }}
       />

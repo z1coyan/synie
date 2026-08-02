@@ -1,10 +1,13 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { FilterState, Row } from '~/components/synie-data-grid/types'
+import type { FilterState } from '~/components/synie-data-grid/types'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'accGlEntries'
 
 // 应收应付报表下钻参数:预置列筛选打开本页(全部可选,普通访问不带)
+// record/mode:抽屉 URL 键,validateSearch 必须透传,否则会落掉(useRecordDrawerUrl 写 search 用函数式 merge 保留下钻键)
 interface EntriesSearch {
   companyId?: string
   companyLabel?: string
@@ -16,6 +19,8 @@ interface EntriesSearch {
   accountIds?: string[]
   accountLabels?: string[]
   asOf?: string
+  record?: string
+  mode?: string
 }
 
 const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined)
@@ -23,6 +28,7 @@ const strArr = (v: unknown) =>
   Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string') ? (v as string[]) : undefined
 
 export const Route = createFileRoute('/_app/finance/entries')({
+  // defaultFilters 与默认首屏 key 不一致,跳过 loader 预取
   validateSearch: (search: Record<string, unknown>): EntriesSearch => ({
     companyId: str(search.companyId),
     companyLabel: str(search.companyLabel),
@@ -33,6 +39,8 @@ export const Route = createFileRoute('/_app/finance/entries')({
     accountIds: strArr(search.accountIds),
     accountLabels: strArr(search.accountLabels),
     asOf: str(search.asOf),
+    record: str(search.record),
+    mode: str(search.mode),
   }),
   component: EntriesPage,
 })
@@ -93,7 +101,20 @@ function drillFilters(s: EntriesSearch): FilterState {
 
 function EntriesPage() {
   const search = Route.useSearch()
-  const [viewRow, setViewRow] = useState<Row | null>(null)
+  // 只读查看抽屉:URL 化并与下钻参数共存(open/close 函数式 merge 透传 companyId 等)
+  const { drawer, open, close } = useRecordDrawerUrl(RESOURCE)
+  // grid key 仅跟下钻维,不含 record/mode,避免开抽屉重挂表格
+  const drillKey = JSON.stringify({
+    companyId: search.companyId,
+    companyLabel: search.companyLabel,
+    partyType: search.partyType,
+    partyId: search.partyId,
+    partyLabel: search.partyLabel,
+    partyNil: search.partyNil,
+    accountIds: search.accountIds,
+    accountLabels: search.accountLabels,
+    asOf: search.asOf,
+  })
 
   return (
     <>
@@ -103,22 +124,23 @@ function EntriesPage() {
       <div className="mt-6">
         {/* key 随下钻参数重挂:defaultFilters 仅作初值,报表再次跳转要换新条件 */}
         <SynieDataGrid
-          key={JSON.stringify(search)}
-          resource="accGlEntries"
+          key={drillKey}
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultFilters={drillFilters(search)}
-          onView={(row) => setViewRow(row)}
+          onView={(row) => open('view', String(row.id))}
         />
       </div>
 
       <SynieRecordDrawer
-        resource="accGlEntries"
+        resource={RESOURCE}
         label="分录"
         mode="view"
-        isOpen={viewRow !== null}
-        onOpenChange={(open) => !open && setViewRow(null)}
-        row={viewRow}
+        isOpen={drawer !== null}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        // 表格列是白名单子集,行数据不全;不传 row,走 rowId 自查完整记录
+        rowId={drawer?.recordId ?? undefined}
         // voucherNo/时间列表格未取、行数据不带(只会显示占位);voucherType 原始类型码,来源单据链接已表意
         exclude={['voucherNo', 'voucherType', 'insertedAt', 'updatedAt']}
       />
