@@ -730,22 +730,11 @@ export interface MfgBom {
   material_id: string;
   note: string | null;
   plan_name: string | null;
+  /**
+   * draft|active|inactive；仅 active 可被新工单/委外选入；仅 draft 可物理删除
+   */
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
-}
-
-export interface MfgDemandArrangement {
-  arrangement_type: string;
-  base_qty: Generated<Numeric>;
-  company_id: string;
-  demand_item_id: string;
-  id: Generated<string>;
-  inserted_at: Generated<Timestamp>;
-  purchase_order_item_id: string | null;
-  qty: Numeric;
-  remarks: string | null;
-  updated_at: Generated<Timestamp>;
-  work_order_id: string | null;
 }
 
 export interface MfgBomByproduct {
@@ -792,6 +781,20 @@ export interface MfgDemand {
   remarks: string | null;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface MfgDemandArrangement {
+  arrangement_type: string;
+  base_qty: Generated<Numeric>;
+  company_id: string;
+  demand_item_id: string;
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  purchase_order_item_id: string | null;
+  qty: Numeric;
+  remarks: string | null;
+  updated_at: Generated<Timestamp>;
+  work_order_id: string | null;
 }
 
 export interface MfgDemandItem {
@@ -914,40 +917,40 @@ export interface MfgWorkOrder {
   work_order_no: string;
 }
 
-export interface MfgWorkOrderComponent {
+export interface MfgWorkOrderByproduct {
   id: Generated<string>;
-  work_order_id: string;
-  material_id: string;
-  unit_id: string;
-  quantity: Numeric;
-  loss_rate: Numeric | null;
-  note: string | null;
   idx: Generated<Int8>;
   inserted_at: Generated<Timestamp>;
+  material_id: string;
+  note: string | null;
+  quantity: Numeric;
+  unit_id: string;
   updated_at: Generated<Timestamp>;
+  work_order_id: string;
+}
+
+export interface MfgWorkOrderComponent {
+  id: Generated<string>;
+  idx: Generated<Int8>;
+  inserted_at: Generated<Timestamp>;
+  loss_rate: Numeric | null;
+  material_id: string;
+  note: string | null;
+  quantity: Numeric;
+  unit_id: string;
+  updated_at: Generated<Timestamp>;
+  work_order_id: string;
 }
 
 export interface MfgWorkOrderRoute {
   id: Generated<string>;
-  work_order_id: string;
-  operation_id: string;
-  seq: Int8;
-  requirement: string | null;
+  inserted_at: Generated<Timestamp>;
   is_outsourced: Generated<boolean>;
-  inserted_at: Generated<Timestamp>;
+  operation_id: string;
+  requirement: string | null;
+  seq: Int8;
   updated_at: Generated<Timestamp>;
-}
-
-export interface MfgWorkOrderByproduct {
-  id: Generated<string>;
   work_order_id: string;
-  material_id: string;
-  unit_id: string;
-  quantity: Numeric;
-  note: string | null;
-  idx: Generated<Int8>;
-  inserted_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
 }
 
 export interface PurOrder {
@@ -1641,6 +1644,13 @@ export interface SysRole {
   updated_at: Generated<Timestamp>;
 }
 
+export interface SysRoleMenu {
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  menu_code: string;
+  role_id: string;
+}
+
 export interface SysRolePermission {
   id: Generated<string>;
   inserted_at: Generated<Timestamp>;
@@ -1834,6 +1844,7 @@ export interface DB {
   sys_numbering_rule: SysNumberingRule;
   sys_print_template: SysPrintTemplate;
   sys_role: SysRole;
+  sys_role_menu: SysRoleMenu;
   sys_role_permission: SysRolePermission;
   sys_setting: SysSetting;
   sys_storage: SysStorage;

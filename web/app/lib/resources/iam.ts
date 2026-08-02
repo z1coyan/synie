@@ -43,3 +43,12 @@ export const fetchPermissionCatalog = () =>
   apiData(
     api.meta['permission-catalog'].$get(),
   )
+export const fetchRoleMenus = (id: string) =>
+  apiData(api.system.roles[':id'].menus.$get({ param: { id } }))
+export const syncRoleMenus = (id: string, menuCodes: string[]) =>
+  apiData(
+    api.system.roles[':id'].menus.$put({
+      param: { id },
+      json: { menuCodes },
+    }),
+  )

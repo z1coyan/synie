@@ -251,6 +251,11 @@ export const RESOURCE_CLASSIFICATION: Record<string, ResourceClassification> = {
     interactive: false,
     note: 'catalog-only：嵌于角色 PE，无独立 Client/抽屉',
   },
+  sysRoleMenus: {
+    presentation: 'none',
+    interactive: false,
+    note: 'catalog-only：嵌于角色「配置菜单」Sheet，无独立 Client/抽屉',
+  },
   sysFiles: {
     presentation: 'none',
     interactive: true,

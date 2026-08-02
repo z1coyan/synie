@@ -13,6 +13,7 @@ function field(
 export const USER_RESOURCE = 'sysUsers'
 export const ROLE_RESOURCE = 'sysRoles'
 export const ROLE_PERM_RESOURCE = 'sysRolePermissions'
+export const ROLE_MENU_RESOURCE = 'sysRoleMenus'
 
 export function userResourceMeta(): ResourceMeta {
   return {
@@ -156,6 +157,38 @@ export function rolePermissionResourceMeta(): ResourceMeta {
   }
 }
 
+export function roleMenuResourceMeta(): ResourceMeta {
+  return {
+    name: ROLE_MENU_RESOURCE,
+    permissionPrefix: 'sys.role_menu',
+    permissionLabel: '角色菜单',
+    table: 'sys_role_menu',
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
+      field('role_id', 'roleId', 'fk', '角色', {
+        required: true,
+        filterable: true,
+        sortable: true,
+        ref: { resource: ROLE_RESOURCE, relation: 'role', labelField: 'name' },
+      }),
+      field('menu_code', 'menuCode', 'string', '菜单码', {
+        required: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
+        readonly: true,
+        sortable: true,
+      }),
+    ],
+    actions: [
+      { key: 'read', label: '查看', scope: 'both' },
+      { key: 'update', label: '配置', scope: 'both' },
+    ],
+    audit: { enabled: true },
+  }
+}
+
 export function allIamResourceMetas(): ResourceMeta[] {
-  return [userResourceMeta(), roleResourceMeta(), rolePermissionResourceMeta()]
+  return [userResourceMeta(), roleResourceMeta(), rolePermissionResourceMeta(), roleMenuResourceMeta()]
 }

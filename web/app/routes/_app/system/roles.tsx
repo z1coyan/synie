@@ -11,6 +11,7 @@ import { statusToggleActions } from '~/components/synie-data-grid/status-actions
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import { SyniePermissionSheet } from '~/components/synie-permission-sheet/SyniePermissionSheet'
+import { SynieMenuSheet } from '~/components/synie-menu-sheet/SynieMenuSheet'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 
@@ -40,16 +41,23 @@ function RolesPage() {
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
   const queryClient = useQueryClient()
   const [permRole, setPermRole] = useState<Row | null>(null)
+  const [menuRole, setMenuRole] = useState<Row | null>(null)
   // 权限配置入口按当前用户权限门控;拉取失败按无权限处理(fail-closed)并提示
   const { myPerms, isSuperAdmin } = useMyPerms()
 
   const canConfigure = isSuperAdmin || myPerms.has('sys.role_permission:read')
   const canWrite = isSuperAdmin || (myPerms.has('sys.role_permission:create') && myPerms.has('sys.role_permission:delete'))
+  // 菜单配置入口与功能权限分离(sys.role_menu 独立资源):查看要 read、编辑要 update
+  const canViewMenus = isSuperAdmin || myPerms.has('sys.role_menu:read')
+  const canWriteMenus = isSuperAdmin || myPerms.has('sys.role_menu:update')
 
   // 关闭动画期间冻结 builtin:permRole 置空后 readOnly 不能当场翻回 false(同 roleName 的 lastOpenRef 模式)
   const builtinRef = useRef(false)
   if (permRole) builtinRef.current = permRole.builtin === true
   const permReadOnly = !canWrite || (permRole ? permRole.builtin === true : builtinRef.current)
+  const menuBuiltinRef = useRef(false)
+  if (menuRole) menuBuiltinRef.current = menuRole.builtin === true
+  const menuReadOnly = !canWriteMenus || (menuRole ? menuRole.builtin === true : menuBuiltinRef.current)
 
   return (
     <>
@@ -73,6 +81,9 @@ function RolesPage() {
           rowActions={[
             ...(canConfigure
               ? [{ key: 'permissions', label: '配置权限', onAction: (row: Row) => setPermRole(row) }]
+              : []),
+            ...(canViewMenus
+              ? [{ key: 'menus', label: '配置菜单', onAction: (row: Row) => setMenuRole(row) }]
               : []),
             // 停用角色即收回其全部权限贡献,状态翻转走行动作不进表单(规范)
             ...statusToggleActions({
@@ -115,6 +126,14 @@ function RolesPage() {
         isOpen={permRole !== null}
         onOpenChange={(open) => !open && setPermRole(null)}
         readOnly={permReadOnly}
+      />
+
+      <SynieMenuSheet
+        roleId={menuRole?.id ?? ''}
+        roleName={String(menuRole?.name ?? '')}
+        isOpen={menuRole !== null}
+        onOpenChange={(open) => !open && setMenuRole(null)}
+        readOnly={menuReadOnly}
       />
     </>
   )

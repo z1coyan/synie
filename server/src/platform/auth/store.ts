@@ -61,7 +61,26 @@ export function createAuthStore(db: Kysely<Database>) {
     }
   }
 
-  return { credentialsByUsername, actorByUserId }
+  /**
+   * 当前用户的有效菜单码集合：所有启用角色菜单白名单的去重并集（字典序）。
+   * 空数组 = 所有角色均未配置 = 不限制（全可见）。
+   */
+  async function menuCodesByUserId(userId: string): Promise<string[]> {
+    const rows = await db
+      .selectFrom('sys_user_role as ur')
+      .innerJoin('sys_role as r', (join) =>
+        join.onRef('r.id', '=', 'ur.role_id').on('r.enabled', '=', true),
+      )
+      .innerJoin('sys_role_menu as rm', 'rm.role_id', 'r.id')
+      .select('rm.menu_code')
+      .where('ur.user_id', '=', userId)
+      .distinct()
+      .orderBy('rm.menu_code')
+      .execute()
+    return rows.map((row) => row.menu_code)
+  }
+
+  return { credentialsByUsername, actorByUserId, menuCodesByUserId }
 }
 
 export type AuthStore = ReturnType<typeof createAuthStore>

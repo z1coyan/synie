@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import {
@@ -22,6 +22,7 @@ import {
   menuModules,
   moduleForPath,
 } from '~/lib/menu'
+import { filterMenuModules } from '~/lib/menu-filter'
 
 interface ShellUser {
   username: string
@@ -30,6 +31,8 @@ interface ShellUser {
 
 interface AppShellProps {
   user: ShellUser | null
+  /** 有效菜单码集合；undefined = 会话加载中（维持全显），空数组 = 不限制 */
+  menuCodes?: string[]
   onLogout: () => void
   children: ReactNode
 }
@@ -37,13 +40,21 @@ interface AppShellProps {
 /**
  * 双列菜单布局:左侧模块图标栏 + 二级菜单面板 + 顶栏 + 内容区。
  * lg 以下收起两列,顶栏汉堡按钮打开抽屉菜单。
+ * 菜单可见性按角色白名单裁剪（纯呈现层，URL 直达不受限）；
+ * active 判定仍走全量菜单树，面包屑/高亮不受裁剪影响。
  */
-export function AppShell({ user, onLogout, children }: AppShellProps) {
+export function AppShell({ user, menuCodes, onLogout, children }: AppShellProps) {
   const pathname = useLocation({ select: (l) => l.pathname })
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const visibleModules = useMemo(
+    () => filterMenuModules(menuModules, menuCodes ?? []),
+    [menuCodes],
+  )
   const activeModule = moduleForPath(pathname) ?? menuModules[0]
   const activeItem = itemForPath(pathname)
+  // 二级面板展示裁剪后的当前模块（模块被整裁时为 undefined，面板只留头部）
+  const panelModule = visibleModules.find((m) => m.key === activeModule.key)
   const displayName = user ? (user.name ?? user.username) : '…'
 
   const crumbs =
@@ -69,7 +80,7 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
         </Link>
 
         <div className="mt-8 flex flex-col items-center gap-2">
-          {menuModules.map((m) => {
+          {visibleModules.map((m) => {
             const active = m.key === activeModule.key
             return (
               <Tooltip key={m.key} delay={0}>
@@ -118,7 +129,7 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
           <p className="mt-1 text-xs text-ink-500/70">{activeModule.description}</p>
         </div>
         <ScrollShadow className="flex-1 px-3 pb-6">
-          {activeModule.groups.map((g, i) => (
+          {(panelModule?.groups ?? []).map((g, i) => (
             <div key={g.label ?? i} className="mt-5 first:mt-3">
               {g.label && (
                 <p className="px-3 pb-2 text-[11px] tracking-[0.2em] text-ink-500/60">
@@ -194,7 +205,7 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
             <Drawer.Body>
               <nav aria-label="全部菜单">
                 <Accordion hideSeparator defaultExpandedKeys={[activeModule.key]}>
-                  {menuModules.map((m) => (
+                  {visibleModules.map((m) => (
                     <Accordion.Item key={m.key} id={m.key}>
                       <Accordion.Heading>
                         <Accordion.Trigger className="text-sm">

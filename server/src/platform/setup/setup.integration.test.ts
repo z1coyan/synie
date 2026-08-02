@@ -27,7 +27,7 @@ import {
   seedMaterialCategories,
   seedSampleData,
 } from '~/modules/setup/index.ts'
-import { createSetupService, SALES_ROLE_PERMISSIONS } from './service.ts'
+import { createSetupService, SALES_ROLE_MENUS, SALES_ROLE_PERMISSIONS } from './service.ts'
 
 const url = testDatabaseUrl()
 const run = url ? describe : describe.skip
@@ -118,6 +118,7 @@ run('PG 集成（setup 向导）', () => {
           bas_company,
           sys_user,
           sys_role_permission,
+          sys_role_menu,
           sys_role,
           inv_material_category,
           bas_unit,
@@ -257,6 +258,25 @@ run('PG 集成（setup 向导）', () => {
     expect(salesSet.size).toBe(SALES_ROLE_PERMISSIONS.length)
     for (const code of SALES_ROLE_PERMISSIONS) {
       expect(salesSet.has(code)).toBe(true)
+    }
+
+    // 内置角色菜单白名单：admin 恒空（不限制）；sales 逐码种子（与菜单目录对齐）
+    const adminMenus = await sql<{ menu_code: string }>`
+      SELECT rm.menu_code
+      FROM sys_role_menu rm JOIN sys_role r ON r.id = rm.role_id
+      WHERE r.code = 'admin'
+    `.execute(db)
+    expect(adminMenus.rows).toEqual([])
+
+    const salesMenus = await sql<{ menu_code: string }>`
+      SELECT rm.menu_code
+      FROM sys_role_menu rm JOIN sys_role r ON r.id = rm.role_id
+      WHERE r.code = 'sales'
+    `.execute(db)
+    const salesMenuSet = new Set(salesMenus.rows.map((r) => r.menu_code))
+    expect(salesMenuSet.size).toBe(SALES_ROLE_MENUS.length)
+    for (const code of SALES_ROLE_MENUS) {
+      expect(salesMenuSet.has(code)).toBe(true)
     }
   })
 

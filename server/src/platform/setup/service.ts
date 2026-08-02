@@ -692,9 +692,36 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
 ]
 
 /**
+ * 内置销售业务员角色（sales）的菜单白名单（ADR 2026-08-01 角色菜单白名单）。
+ * 与 SALES_ROLE_PERMISSIONS 对应的销售链导航入口；admin 不种子（空 = 不限制）。
+ * 仅随初始化完成动作种子（幂等）；老环境不写行，内置角色菜单维持全可见。
+ */
+export const SALES_ROLE_MENUS: ReadonlyArray<string> = [
+  // 工作台：着陆页
+  'menu.dashboard.home',
+  // 供应链·交易：销售链
+  'menu.scm.quotations',
+  'menu.scm.sales-orders',
+  'menu.scm.sales-reconciliations',
+  // 供应链·库存：销售发货 + 库存只读视图
+  'menu.scm.sales-deliveries',
+  'menu.scm.inventory',
+  'menu.scm.stock-entries',
+  // 供应链·计划：履约需求单
+  'menu.scm.demands',
+  // 基础数据：客户完整 + 主数据只读
+  'menu.base.customers',
+  'menu.base.materials',
+  'menu.base.warehouses',
+  'menu.base.accounts',
+  'menu.base.currencies',
+  'menu.base.units',
+]
+
+/**
  * 预置内置角色（幂等；ADR 2026-07-29 由迁移种子改归 setup 完成动作）：
- * - admin：全域通配 `*` 授权，新权限点自动覆盖；
- * - sales：销售业务员，逐码授权（SALES_ROLE_PERMISSIONS）。
+ * - admin：全域通配 `*` 授权，新权限点自动覆盖；菜单白名单恒空（不限制）；
+ * - sales：销售业务员，逐码授权（SALES_ROLE_PERMISSIONS）+ 菜单白名单（SALES_ROLE_MENUS）。
  * 授权仅补 builtin 角色行，界面创建的同名普通角色不被接管。
  */
 async function seedBuiltinRoles(trx: DbHandle): Promise<void> {
@@ -728,6 +755,18 @@ async function seedBuiltinRoles(trx: DbHandle): Promise<void> {
           AND NOT EXISTS (
             SELECT 1 FROM sys_role_permission rp
             WHERE rp.role_id = r.id AND rp.permission = ${permission}
+          )
+      `.execute(trx)
+    }
+    for (const menuCode of SALES_ROLE_MENUS) {
+      await sql`
+        INSERT INTO sys_role_menu (role_id, menu_code)
+        SELECT r.id, ${menuCode}
+        FROM sys_role r
+        WHERE r.code = 'sales' AND r.builtin
+          AND NOT EXISTS (
+            SELECT 1 FROM sys_role_menu rm
+            WHERE rm.role_id = r.id AND rm.menu_code = ${menuCode}
           )
       `.execute(trx)
     }
