@@ -10,7 +10,6 @@ import {
   fetchPayrollMonthStats,
   generatePayrolls,
   payRemainingPayroll,
-  payrollPaymentClient,
   refreshPayroll,
   savePayroll,
 } from '~/lib/resources/hr-operations'
@@ -18,12 +17,15 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import { useGridMeta } from '~/components/synie-data-grid/meta'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { PaymentsSection } from './-payments-section'
 
+const RESOURCE = 'hrPayrolls'
+
 export const Route = createFileRoute('/_app/hr/payroll/slips')({
+  // fixedFilter(月份锁定):跳过默认首屏 loader
   component: PayrollSlipsPage,
 })
 
@@ -113,7 +115,8 @@ const READONLY_FIELDS = {
 function PayrollSlipsPage() {
   const options = monthOptions()
   const [month, setMonth] = useState(options[0].value)
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close, row: drawerRow } =
+    useRecordDrawerUrl(RESOURCE)
   const [generating, setGenerating] = useState(false)
   const [payDialog, setPayDialog] = useState<Row[] | null>(null)
   const [paying, setPaying] = useState(false)
@@ -131,7 +134,7 @@ function PayrollSlipsPage() {
 
   // 发放/借款联动跨资源,一律广播失效(staleTime 下重挂不重取,必须显式失效)
   const invalidateAll = () => {
-    for (const resource of ['hrPayrolls', 'hrPayrollPayments', 'hrEmployeeLoans']) {
+    for (const resource of [RESOURCE, 'hrPayrollPayments', 'hrEmployeeLoans']) {
       void resourceBindingFor(resource).cache.invalidateAll(queryClient)
     }
     void queryClient.invalidateQueries({ queryKey: ['payrollMonthStats'] })
@@ -215,16 +218,18 @@ function PayrollSlipsPage() {
 
       <div className="mt-4">
         <SynieDataGrid
-          resource="hrPayrolls"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           fixedFilter={{
             month: { kind: 'text', op: 'eq', value: month },
           }}
           createLabel="手工建单"
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: row.status === 'PENDING' ? 'edit' : 'view', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) =>
+            open(row.status === 'PENDING' ? 'edit' : 'view', String(row.id))
+          }
           rowActions={[
             // 发放按 hr_payroll_payment:create 门控,不能用本表 capability 字段(那是 hr.payroll 的码)
             ...(canPay
@@ -247,17 +252,20 @@ function PayrollSlipsPage() {
       </div>
 
       <SynieRecordDrawer
-        {...drawerConfig('hrPayrolls')}
-        resource="hrPayrolls"
+        {...drawerConfig(RESOURCE)}
+        resource={RESOURCE}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        rowId={drawer?.row?.id}
-        onEdit={() => setDrawer((d) => (d && d.row?.status === 'PENDING' ? { ...d, mode: 'edit' } : d))}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
+        onEdit={() => {
+          if (drawerRow?.status !== 'PENDING') return
+          setMode('edit')
+        }}
         contentClassName="w-full lg:w-[720px]"
         exclude={['createdById']}
         fields={{
-          ...drawerConfig('hrPayrolls').fields,
+          ...drawerConfig(RESOURCE).fields,
           ...READONLY_FIELDS,
           // 员工与月份是单据身份,建单后不可改(错了删单重建)
           employeeId: { required: true, order: -2, cols: 6, edit: 'createOnly' },
@@ -286,7 +294,7 @@ function PayrollSlipsPage() {
           }
 
           await savePayroll(
-            mode === 'create' ? null : drawer!.row!.id,
+            mode === 'create' ? null : String(drawer!.recordId),
             mode === 'create'
               ? { ...base, employeeId: values.employeeId, month: values.month }
               : base,

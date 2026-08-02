@@ -26,7 +26,7 @@ function DemandsLayout() {
     TABS.find((t) => pathname.includes(`/mfg/demands/${t.id}`))?.id ?? 'items'
 
   return (
-    <DemandDrawerProvider>
+    <DemandDrawerProvider urlSync>
       <h1 className="font-brand text-3xl tracking-wide">需求单</h1>
       <p className="mt-2 text-sm text-ink-500">
         履约需求单：计划从销售勾选或手工建独立需求；确认后按安排子表混排生产/采购/委外/库存/关闭，行完成由已安排与已完成双投影自动判定。

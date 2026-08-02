@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, toast } from '@heroui/react'
@@ -14,7 +14,6 @@ import {
   workOrderClient,
 } from '~/lib/resources/manufacturing'
 import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
 import { WORK_ORDER_STATUS_ENUM_COLORS } from '~/lib/doc-status'
@@ -23,8 +22,12 @@ import { materialCellRender } from '~/components/synie-material-cell/MaterialCel
 import { BomDrawerProvider, useBomDrawer } from './boms/-bom-drawer'
 import { WorkOrderProgressCell } from './-work-order-progress-cell'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'mfgWorkOrders'
 
 export const Route = createFileRoute('/_app/mfg/work-orders')({
+  // extraFields:跳过默认首屏 loader
   component: WorkOrdersPage,
 })
 
@@ -87,6 +90,7 @@ function bomGridFilter(materialId: string) {
 }
 
 function WorkOrdersPage() {
+  // 内嵌 BOM 抽屉保持 urlSync 默认 false:不写宿主工单页 ?record=
   return (
     <BomDrawerProvider>
       <WorkOrdersPageInner />
@@ -95,10 +99,9 @@ function WorkOrdersPage() {
 }
 
 function WorkOrdersPageInner() {
-  const [drawer, setDrawer] = useState<{
-    mode: DrawerMode
-    row: Row | null
-  } | null>(null)
+  // 工单主抽屉 URL 同步;内嵌 BOM 仍走本地 Provider
+  const { drawer, open, setMode, close, row: drawerRow } =
+    useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
   const openBomDrawer = useBomDrawer()
   const { start: startPrint, dialog: printDialog } =
@@ -112,8 +115,10 @@ function WorkOrdersPageInner() {
   const canCreateBom = hasPermission(perms.data, 'mfg.bom:create')
   const canUpdateWo = hasPermission(perms.data, 'mfg.work_order:update')
 
-  const rowId = drawer?.row?.id ? String(drawer.row.id) : null
-  const woStatus = drawer?.row?.status != null ? String(drawer.row.status) : ''
+  const rowId = drawer?.recordId ?? null
+  // status 与 hook 自查行同缓存键(binding.cache.rowKey),不另发请求
+  const woStatus =
+    drawerRow?.status != null ? String(drawerRow.status) : ''
   const canEditBomOnExisting =
     canUpdateWo &&
     drawer?.mode !== 'create' &&
@@ -126,13 +131,20 @@ function WorkOrdersPageInner() {
     enabled: rowId != null && drawer?.mode !== 'create',
   })
 
-  const baseDrawer = drawerConfig('mfgWorkOrders')
+  const baseDrawer = drawerConfig(RESOURCE)
 
   const invalidateWorkOrderLists = () => {
     // 建单占安排，工单与来源需求投影都要刷新；缓存身份由各 binding 拥有。
-    for (const resource of ['mfgWorkOrders', 'mfgDemandItems', 'mfgDemands']) {
+    for (const resource of [RESOURCE, 'mfgDemandItems', 'mfgDemands']) {
       void resourceBindingFor(resource).cache.invalidateAll(queryClient)
     }
+  }
+
+  const refreshWoRow = (id: string) => {
+    void resourceBindingFor(RESOURCE).cache.invalidateRow(queryClient, id)
+    void queryClient.invalidateQueries({
+      queryKey: ['workOrderBomSnapshot', id],
+    })
   }
 
   /** 打开完整 BOM 创建 drawer；成功后回填 bomId / 已有工单则 apply */
@@ -169,16 +181,11 @@ function WorkOrdersPageInner() {
         }
         void (async () => {
           try {
-            const updated = (await applyWorkOrderBom(rowId, id)) as Row
+            await applyWorkOrderBom(rowId, id)
             patchValues({ bomId: id })
-            setDrawer((d) =>
-              d ? { ...d, row: { ...d.row, ...updated } } : d,
-            )
             toast.success(`BOM ${String(bom.code ?? '')} 已创建并选入工单`)
             invalidateWorkOrderLists()
-            queryClient.invalidateQueries({
-              queryKey: ['workOrderBomSnapshot', rowId],
-            })
+            refreshWoRow(rowId)
           } catch (e) {
             toastError('BOM 已创建但选入工单失败')(e)
             patchValues({ bomId: id })
@@ -232,14 +239,9 @@ function WorkOrdersPageInner() {
                             ? null
                             : String(updated.bomId),
                         )
-                        setDrawer((d) =>
-                          d ? { ...d, row: { ...d.row, ...updated } } : d,
-                        )
                         toast.success(id ? '已选入 BOM 并快照' : '已清空 BOM')
                         invalidateWorkOrderLists()
-                        queryClient.invalidateQueries({
-                          queryKey: ['workOrderBomSnapshot', rowId],
-                        })
+                        refreshWoRow(rowId)
                       } catch (e) {
                         toastError('更新 BOM 失败')(e)
                       }
@@ -263,7 +265,7 @@ function WorkOrdersPageInner() {
                     column: 'code',
                     direction: 'ascending',
                   }}
-                  // 行菜单「查看」→ 完整 BOM 只读抽屉(配料/路线/副产品)
+                  // 行菜单「查看」→ 完整 BOM 只读抽屉(配料/路线/副产品);不写工单 URL
                   onView={(row) => openBomDrawer('view', row)}
                 />
               </div>
@@ -312,11 +314,7 @@ function WorkOrdersPageInner() {
 
   const refreshWo = () => {
     invalidateWorkOrderLists()
-    if (rowId) {
-      queryClient.invalidateQueries({
-        queryKey: ['workOrderBomSnapshot', rowId],
-      })
-    }
+    if (rowId) refreshWoRow(rowId)
   }
 
   return (
@@ -329,14 +327,14 @@ function WorkOrdersPageInner() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="mfgWorkOrders"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           // 物料富单元格所需快照字段与物料外键(撤列后仍随查询取回;工单无 customerPartNo 快照)
           extraFields={['materialId', 'materialName', 'materialSpec']}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
           // 模板打印覆盖默认列表 HTML 打印（无模板时弹窗提示去上传）
           onPrint={(rows) => void startPrint('print', rows)}
           rowActions={[
@@ -359,14 +357,14 @@ function WorkOrdersPageInner() {
       </div>
 
       <SynieRecordDrawer
-        resource="mfgWorkOrders"
+        resource={RESOURCE}
         {...baseDrawer}
         fields={drawerFields}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        rowId={drawer?.row?.id}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
+        onEdit={() => setMode('edit')}
         extraContent={(mode, row) => {
           if (mode === 'create' || !row) return null
           const id = String(row.id)
@@ -405,15 +403,7 @@ function WorkOrdersPageInner() {
                       onPress={() => {
                         void (async () => {
                           try {
-                            const updated = (await applyWorkOrderBom(
-                              id,
-                              null,
-                            )) as Row
-                            setDrawer((d) =>
-                              d
-                                ? { ...d, row: { ...d.row, ...updated } }
-                                : d,
-                            )
+                            await applyWorkOrderBom(id, null)
                             toast.success('已清空 BOM 快照')
                             refreshWo()
                           } catch (e) {
@@ -459,7 +449,7 @@ function WorkOrdersPageInner() {
             })
             toast.success('生产工单已生成')
           } else {
-            await workOrderClient.update(drawer!.row!.id, {
+            await workOrderClient.update(String(drawer!.recordId), {
               workOrderNo: values.workOrderNo,
             })
             toast.success('生产工单已更新')

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { parseTime } from '@internationalized/date'
@@ -8,10 +7,12 @@ import { useCatalogBasicForm,
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'hrAttendanceCorrections'
 
 export const Route = createFileRoute('/_app/hr/attendance/corrections')({
+  // defaultSort:跳过默认首屏 loader
   component: AttendanceCorrectionsPage,
 })
 
@@ -94,12 +95,9 @@ function TimesEditor(props: { value: unknown; onChange: (v: unknown) => void; is
 }
 
 function AttendanceCorrectionsPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
-  const { binding, formProps } = useCatalogBasicForm(
-    'hrAttendanceCorrections',
-    '补卡单',
-  )
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '补卡单')
 
   // 补卡增删改都会触发后端重算,日考勤一并失效
   const invalidateAll = () => {
@@ -115,25 +113,25 @@ function AttendanceCorrectionsPage() {
 
       <div className="mt-4">
         <SynieDataGrid
-          resource="hrAttendanceCorrections"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'insertedAt', direction: 'descending' }}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
           onMutated={invalidateAll}
         />
       </div>
 
       <SynieRecordDrawer
-        resource="hrAttendanceCorrections"
+        resource={RESOURCE}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        rowId={drawer?.row?.id}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
+        onEdit={() => setMode('edit')}
         exclude={formProps.exclude}
         fields={{
           ...formProps.fields,
@@ -153,7 +151,10 @@ function AttendanceCorrectionsPage() {
           if (mode === 'create') {
             await requireWriter(binding, 'create', '补卡单')(input)
           } else {
-            await requireWriter(binding, 'update', '补卡单')(drawer!.row!.id, input)
+            await requireWriter(binding, 'update', '补卡单')(
+              String(drawer!.recordId),
+              input,
+            )
           }
           toast.success(mode === 'create' ? '补卡单已保存,当天日考勤已重算' : '补卡单已更新,当天日考勤已重算')
           invalidateAll()

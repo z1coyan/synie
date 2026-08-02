@@ -1,14 +1,16 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { Row } from '~/components/synie-data-grid/types'
 import { useCatalogBasicForm } from '~/lib/resources/catalog'
 import { PAYROLL_PAYMENT_KIND_ENUM_COLORS } from '~/lib/doc-status'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'hrPayrollPayments'
 
 export const Route = createFileRoute('/_app/hr/payroll/payments')({
+  // defaultSort:跳过默认首屏 loader
   component: PayrollPaymentsPage,
 })
 
@@ -27,13 +29,14 @@ const GRID_OVERRIDES = {
 } satisfies Record<string, ColumnOverride>
 
 function PayrollPaymentsPage() {
-  const [viewRow, setViewRow] = useState<Row | null>(null)
+  // 只读详情抽屉;mode 固定 view(无 create/edit)
+  const { drawer, open, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
-  const paymentForm = useCatalogBasicForm('hrPayrollPayments', '工资发放')
+  const paymentForm = useCatalogBasicForm(RESOURCE, '工资发放')
 
   // 删除发放会翻转工资单状态并联动借款台账,一并失效
   const invalidateAll = () => {
-    for (const resource of ['hrPayrolls', 'hrPayrollPayments', 'hrEmployeeLoans']) {
+    for (const resource of ['hrPayrolls', RESOURCE, 'hrEmployeeLoans']) {
       void resourceBindingFor(resource).cache.invalidateAll(queryClient)
     }
     void queryClient.invalidateQueries({ queryKey: ['payrollMonthStats'] })
@@ -50,22 +53,22 @@ function PayrollPaymentsPage() {
 
       <div className="mt-4">
         <SynieDataGrid
-          resource="hrPayrollPayments"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'paidOn', direction: 'descending' }}
-          onView={(row) => setViewRow(row)}
+          onView={(row) => open('view', String(row.id))}
           onMutated={invalidateAll}
         />
       </div>
 
       <SynieRecordDrawer
-        resource="hrPayrollPayments"
+        resource={RESOURCE}
         label={paymentForm.formProps.label}
         mode="view"
-        isOpen={viewRow !== null}
-        onOpenChange={(open) => !open && setViewRow(null)}
-        rowId={viewRow?.id}
+        isOpen={drawer !== null}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
       />
     </>
   )
