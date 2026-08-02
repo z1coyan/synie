@@ -91,6 +91,8 @@ export function RemoteDialogSelect(props: RemoteDialogSelectProps) {
                 defaultSort={props.gridDefaultSort}
                 extraFields={props.gridExtraFields}
                 pick="single"
+                // pick 默认已关 URL；显式 false 作为契约文档，避免污染宿主页
+                urlState={false}
                 pickedRows={draft}
                 onPickChange={setDraft}
                 // 空 capabilities:行菜单仅保留 onView,不露出编辑/删除/启停

@@ -1,6 +1,6 @@
 # 04 — 内嵌网格显式关闭 URL 状态
 
-Status: ready-for-agent
+Status: resolved
 
 ## 背景
 
@@ -25,3 +25,16 @@ Status: ready-for-agent
 - 打开银行流水「导入历史」并搜索时，宿主 `accBankTransactions` 列表 URL（若有）不被改写
 - `pick` 弹窗内翻页/搜索不出现 `q`/`page`/`f` 写入地址栏
 - `cd web && bunx tsc --noEmit` 与 `bun run check` 通过
+
+## Answer
+
+已全部落地：
+
+| 文件 | 点位 |
+| --- | --- |
+| `finance/-bank-import-drawers.tsx` | 导入历史 Sheet、`accBankImportItems` 明细 |
+| `finance/-reconcile-drawer.tsx` | 对账列表 + 关联凭证 pick 网格（显式 false） |
+| `RemoteDialogSelect.tsx` | pick 弹窗内网格（契约文档） |
+| `base/market.tsx` | 品种 Tab 网格（同页双网格较弱侧关 URL） |
+
+验证：`rg 'urlState=\{false\}'` 覆盖上述点；`tsc` / `bun test` / `check` 全过。

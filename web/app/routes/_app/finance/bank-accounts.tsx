@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
@@ -7,12 +6,16 @@ import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
-import { useCatalogBasicForm,
-  requireWriter,} from '~/lib/resources/catalog'
+import {
+  useCatalogBasicForm,
+  requireWriter,
+} from '~/lib/resources/catalog'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 
 export const Route = createFileRoute('/_app/finance/bank-accounts')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: BankAccountsPage,
 })
 
@@ -39,7 +42,7 @@ const GRID_OVERRIDES: Record<string, ColumnOverride> = {
 }
 
 function BankAccountsPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
   const { binding, formProps } = useCatalogBasicForm(RESOURCE, '银行账户')
 
@@ -53,9 +56,9 @@ function BankAccountsPage() {
           resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
           rowActions={statusToggleActions({
             field: 'active',
             update: (id, input) => {
@@ -72,8 +75,8 @@ function BankAccountsPage() {
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        rowId={drawer?.row?.id}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
         exclude={[...formProps.exclude, 'active']}
         fields={{
           ...formProps.fields,
@@ -110,12 +113,12 @@ function BankAccountsPage() {
             readonly={mode === 'view'}
           />
         )}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             await requireWriter(binding, 'create', '银行账户')(values)
           } else {
-            await requireWriter(binding, 'update', '银行账户')(drawer!.row!.id, values)
+            await requireWriter(binding, 'update', '银行账户')(String(drawer!.recordId), values)
           }
           toast.success(mode === 'create' ? '银行账户已创建' : '银行账户已更新')
           await binding.cache.invalidateGrid(queryClient)

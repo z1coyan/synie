@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
@@ -6,15 +5,17 @@ import { formatAmount } from '~/lib/amount'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import type { ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import {
   createEmployeePresentation,
   submitEmployeeForm,
 } from '~/lib/resources/presentation'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 
 export const Route = createFileRoute('/_app/hr/employees')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: EmployeesPage,
 })
 
@@ -46,7 +47,7 @@ const GRID_OVERRIDES = {
 } satisfies Record<string, ColumnOverride>
 
 function EmployeesPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
   const binding = resourceBindingFor(RESOURCE)
   const presentation = createEmployeePresentation(binding)
@@ -61,9 +62,9 @@ function EmployeesPage() {
           resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={GRID_OVERRIDES}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
         />
       </div>
 
@@ -76,16 +77,16 @@ function EmployeesPage() {
         contentClassName="w-full lg:w-[640px]"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        // 表格列是白名单子集(无户籍/现居住地),行数据不全;不传 row,走 rowId 自查完整记录
-        rowId={drawer?.row?.id}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        // 表格列是白名单子集(无户籍/现居住地),行数据不全;走 rowId 自查完整记录
+        rowId={drawer?.recordId ?? undefined}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           const id = await submitEmployeeForm(
             presentation,
             values,
             mode,
-            drawer?.row?.id as string | undefined,
+            drawer?.recordId ?? undefined,
           )
           toast.success(mode === 'create' ? '员工已创建,进入详情可上传身份证照片' : '员工已更新')
           await binding.cache.invalidateAll(queryClient)

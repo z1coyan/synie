@@ -6,7 +6,7 @@
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent
+**Status:** partial
 
 **Parent:** [.scratch/route-loader-prefetch/spec.md](../spec.md)
 
@@ -26,8 +26,29 @@
 
 ## 验收标准
 
-- [ ] 列入清单的每一页都有 loader 预取，resource 与 DataGrid 一致
-- [ ] 无手写 `gridRows` / `rowById` key
-- [ ] `cd web && bunx tsc --noEmit` 零错误
+- [x] 列入清单的每一页都有 loader 预取，resource 与 DataGrid 一致（本轮清单见 Answer）
+- [x] 无手写 `gridRows` / `rowById` key
+- [x] `cd web && bunx tsc --noEmit` 零错误
 - [ ] 至少抽 1 个页面人工或既有 e2e 冒烟：悬停菜单后进入，网络面板可见预取、
       首屏不出现「Meta 完成前列表 enabled=false 的空等」可感瀑布（允许仍有短 loading）
+
+## Answer
+
+本轮已挂 `ensureDefaultGridPage` loader 的简单主数据页：
+
+| 路由 | RESOURCE |
+| --- | --- |
+| `base/units`（试点） | basUnits |
+| `base/currencies` | basCurrencies |
+| `system/companies` | basCompanies |
+| `system/roles` | sysRoles |
+| `scm/customers` | salCustomers |
+| `scm/suppliers` | purSuppliers |
+| `mfg/operations` | mfgOperations |
+| `finance/bank-accounts` | accBankAccounts |
+| `finance/bank-import-templates` | accBankImportTemplates |
+| `hr/employees` | hrEmployees |
+
+**未挂**（归 04 或非「默认首屏」同构）：market（tab/双网格）、accounts/warehouses/material-categories（树+fixedFilter）、materials（extraFields/join）、单据列表（defaultSort/筛选）、users/storages/print-templates 等带额外开抽屉逻辑页。
+
+验证：`rg ensureDefaultGridPage web/app/routes` ≥10 页；无手写 gridRows；`tsc` / test / check 全过。人工悬停预取冒烟未在本轮浏览器执行（保持 partial）。

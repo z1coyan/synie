@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
@@ -6,21 +5,24 @@ import {
   decodeCurrencyCreate,
   decodeCurrencyUpdate,
   useCatalogBasicForm,
-  requireWriter,} from '~/lib/resources/catalog'
+  requireWriter,
+} from '~/lib/resources/catalog'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { statusToggleActions } from '~/components/synie-data-grid/status-actions'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
-
-export const Route = createFileRoute('/_app/base/currencies')({
-  component: CurrenciesPage,
-})
 
 const RESOURCE = 'basCurrencies'
 
+export const Route = createFileRoute('/_app/base/currencies')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
+  component: CurrenciesPage,
+})
+
 function CurrenciesPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
   const { binding, formProps } = useCatalogBasicForm(RESOURCE, '货币')
 
@@ -37,9 +39,9 @@ function CurrenciesPage() {
       <div className="mt-6">
         <SynieDataGrid
           resource={RESOURCE}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
           rowActions={statusToggleActions({
             field: 'active',
             update: (id, input) => {
@@ -56,11 +58,11 @@ function CurrenciesPage() {
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        row={drawer?.row}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
         exclude={formProps.exclude}
         fields={formProps.fields}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const input = decodeCurrencyCreate(values)
@@ -70,7 +72,9 @@ function CurrenciesPage() {
             return saved.id as string
           }
           const input = decodeCurrencyUpdate(values)
-          const saved = await requireWriter(binding, 'update', '币种')(String(drawer!.row!.id), { ...input })
+          const saved = await requireWriter(binding, 'update', '币种')(String(drawer!.recordId), {
+            ...input,
+          })
           toast.success('货币已更新')
           invalidate()
           return saved.id as string

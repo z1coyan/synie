@@ -1,15 +1,18 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { useCatalogBasicForm,
-  requireWriter,} from '~/lib/resources/catalog'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
+import {
+  useCatalogBasicForm,
+  requireWriter,
+} from '~/lib/resources/catalog'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 
 export const Route = createFileRoute('/_app/mfg/operations')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: OperationsPage,
 })
 
@@ -17,10 +20,7 @@ const RESOURCE = 'mfgOperations'
 const GRID_COLUMNS = ['code', 'name', 'note']
 
 function OperationsPage() {
-  const [drawer, setDrawer] = useState<{
-    mode: DrawerMode
-    row: Row | null
-  } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
   const { binding, formProps } = useCatalogBasicForm(RESOURCE, '工序')
 
@@ -38,9 +38,9 @@ function OperationsPage() {
         <SynieDataGrid
           resource={RESOURCE}
           columns={GRID_COLUMNS}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
         />
       </div>
 
@@ -51,14 +51,14 @@ function OperationsPage() {
         fields={formProps.fields}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        row={drawer?.row}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             await requireWriter(binding, 'create', '工序')(values)
           } else {
-            await requireWriter(binding, 'update', '工序')(drawer!.row!.id, values)
+            await requireWriter(binding, 'update', '工序')(String(drawer!.recordId), values)
           }
           toast.success(mode === 'create' ? '工序已创建' : '工序已更新')
           invalidate()

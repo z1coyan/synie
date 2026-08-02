@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
@@ -6,13 +5,16 @@ import {
   decodeSupplierCreate,
   decodeSupplierUpdate,
   useCatalogBasicForm,
-  requireWriter,} from '~/lib/resources/catalog'
+  requireWriter,
+} from '~/lib/resources/catalog'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
 
 export const Route = createFileRoute('/_app/scm/suppliers')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: SuppliersPage,
 })
 
@@ -26,7 +28,7 @@ const GRID_OVERRIDES = {
 const RESOURCE = 'purSuppliers'
 
 function SuppliersPage() {
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
   const { binding, formProps } = useCatalogBasicForm(RESOURCE, '供应商')
 
@@ -42,9 +44,9 @@ function SuppliersPage() {
         <SynieDataGrid
           resource={RESOURCE}
           overrides={GRID_OVERRIDES}
-          onView={(row) => setDrawer({ mode: 'view', row })}
-          onCreate={() => setDrawer({ mode: 'create', row: null })}
-          onEdit={(row) => setDrawer({ mode: 'edit', row })}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
         />
       </div>
 
@@ -53,11 +55,11 @@ function SuppliersPage() {
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
-        row={drawer?.row}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
         exclude={formProps.exclude}
         fields={formProps.fields}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const input = decodeSupplierCreate(values)
@@ -67,7 +69,9 @@ function SuppliersPage() {
             return saved.id as string
           }
           const input = decodeSupplierUpdate(values)
-          const saved = await requireWriter(binding, 'update', '供应商')(String(drawer!.row!.id), { ...input })
+          const saved = await requireWriter(binding, 'update', '供应商')(String(drawer!.recordId), {
+            ...input,
+          })
           toast.success('供应商已更新')
           invalidate()
           return saved.id as string

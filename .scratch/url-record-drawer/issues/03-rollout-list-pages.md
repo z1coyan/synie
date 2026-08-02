@@ -4,7 +4,7 @@
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent
+**Status:** partial
 
 **Parent:** [.scratch/url-record-drawer/spec.md](../spec.md)
 
@@ -25,3 +25,35 @@
 3. 深链非法 id / 403 有明确 UI（经 rowId + QueryState）
 4. `cd web && bunx tsc --noEmit` 零错误；相关单测通过
 5. 二级抽屉（EditableTable）URL 无 `record` 变化
+
+## Answer
+
+本轮已迁移（`useRecordDrawerUrl` + `rowId` 自查，不再本地 `useState` 抽屉态）：
+
+| 路由 | resource |
+| --- | --- |
+| `mfg/boms`（试点，既有） | mfgBoms（Provider `urlSync`） |
+| `base/units` | basUnits |
+| `base/currencies` | basCurrencies |
+| `system/companies` | basCompanies |
+| `system/roles` | sysRoles |
+| `scm/customers` | salCustomers |
+| `scm/suppliers` | purSuppliers |
+| `mfg/operations` | mfgOperations |
+| `finance/bank-accounts` | accBankAccounts |
+| `finance/bank-import-templates` | accBankImportTemplates |
+| `hr/employees` | hrEmployees |
+
+**未迁移**（仍本地 state；含异步开抽屉副作用 / 聚合 Provider / 复杂多抽屉，归后续批次）：
+
+- `scm/materials`（单位转换异步 + 暂存附件）
+- `system/users`（角色/公司关联预拉）
+- `system/storages`、`print-templates`、`numbering`、`files`
+- `scm/material-categories`、`warehouses`、`accounts`（树）
+- `base/market`（双资源抽屉）
+- 全部单据聚合页（销售/采购订单/发货/入库/对账/工单/需求/凭证/发票等 `-*-drawer` Provider）
+- FkPreview（issue 04）、聚合深链（issue 05）
+
+约定：二级 EditableTable 抽屉、对话框内嵌抽屉本轮均未接 URL（正确）。
+
+验证：`rg -l useRecordDrawerUrl web/app/routes` 12 文件；`tsc` / `bun test` / `check` 全过。

@@ -126,6 +126,8 @@ function FinanceReconcileSection({
       <SynieDataGrid
         resource="accBankReconciliations"
         columns={['journalId', 'amount', 'insertedAt']}
+        // 内嵌于对账抽屉：禁止写 URL，避免污染宿主流水列表
+        urlState={false}
         fixedFilter={{
           bankTransactionId: {
             kind: 'fk',
@@ -239,6 +241,8 @@ function LinkJournalModal({
                 'debitTotal',
                 'creditTotal',
               ]}
+              // pick 默认已关 URL；显式 false 作为契约文档
+              urlState={false}
               fixedFilter={{
                 companyId: {
                   kind: 'fk',

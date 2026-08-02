@@ -240,6 +240,8 @@ export function FinanceBankImportDrawers(props: Props) {
                   key={props.historyKey}
                   resource="accBankImports"
                   columns={historyColumns}
+                  // 内嵌于 Sheet：禁止写 URL，避免污染宿主流水列表的 q/page/f
+                  urlState={false}
                   defaultSort={{
                     column: 'insertedAt',
                     direction: 'descending',
@@ -293,6 +295,8 @@ export function FinanceBankImportDrawers(props: Props) {
               key={itemsKey}
               resource="accBankImportItems"
               columns={itemColumns}
+              // 内嵌于导入详情抽屉：禁止写 URL
+              urlState={false}
               fixedFilter={{
                 importId: {
                   kind: 'fk',

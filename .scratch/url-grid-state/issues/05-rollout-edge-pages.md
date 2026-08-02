@@ -1,6 +1,6 @@
 # 05 — 边缘页面验收与并存约定
 
-Status: ready-for-agent
+Status: resolved
 
 ## 背景
 
@@ -38,11 +38,11 @@ Status: ready-for-agent
 - 代码库无 `navigate({ search: { ...固定对象 } })` 抹掉网格或抽屉键的新增用法（存量 market 整包 tab 写入需改为 merge，见下）
 - 存量 `base/market.tsx` 中 `navigate({ search: { tab } })` 改为函数式 merge（否则会抹掉网格键）——**优先修**
 
-## 建议修复示例
+## Answer
 
-```ts
-navigate({
-  search: (prev) => ({ ...prev, tab: 'prices' }),
-  replace: true,
-})
-```
+- **优先修已落地**：`base/market.tsx` 四处 `navigate({ search: { tab } })` 全部改为  
+  `search: (prev) => ({ ...prev, tab })`，保留 `q/page/ps/sort/f` 与未来的 `record/mode`。
+- **双网格**：品种 Tab `basMarketInstruments` 显式 `urlState={false}`，仅价点表持有网格 URL 键。
+- **entries**：下钻键与 `f` 并存策略沿用现有实现（`f` 在场以 `f` 为准）；代码侧无需改 prop。
+- **并存**：网格线 `mergeGridUrlSearch`、抽屉线 `useRecordDrawerUrl` 均为函数式 patch。
+- 验证：`rg 'search:\s*\{\s*tab'` 在 market 无匹配；`tsc` / test / check 全过。
