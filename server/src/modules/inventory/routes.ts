@@ -1200,6 +1200,11 @@ function entryDto(item: Awaited<ReturnType<StockEntryService['get']>>) {
     companyId: item.companyId,
     warehouseId: item.warehouseId,
     materialId: item.materialId,
+    // 物料主数据投影(list/get 均 join inv_material):前端物料富单元格四字段
+    materialCode: item.materialCode,
+    materialName: item.materialName,
+    materialSpec: item.materialSpec,
+    customerPartNo: item.customerPartNo,
     insertedAt: item.insertedAt.toISOString(),
   }
 }
