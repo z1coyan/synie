@@ -2,28 +2,18 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Outlet,
-  createRootRoute,
+  createRootRouteWithContext,
   HeadContent,
   Scripts,
 } from '@tanstack/react-router'
 import { Toast } from '@heroui/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { APPEARANCE_FOUC_SCRIPT } from '~/lib/appearance'
+import type { AppRouterContext } from '~/lib/query-client'
 import '../../app.css'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // ERP 数据录入场景:切窗口不应触发全表重取;写操作后由页面显式 invalidate 刷新
-      staleTime: 30_000,
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-})
-
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<AppRouterContext>()({
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
@@ -35,6 +25,8 @@ export const Route = createRootRoute({
 })
 
 function RootComponent() {
+  // 与 getRouter() 注入的 context.queryClient 为同一实例（浏览器单例）
+  const { queryClient } = Route.useRouteContext()
   return (
     <RootDocument>
       <QueryClientProvider client={queryClient}>
