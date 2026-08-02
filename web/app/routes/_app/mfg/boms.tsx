@@ -50,8 +50,9 @@ const GRID_OVERRIDES: Record<string, ColumnOverride> = {
 }
 
 function BomsPage() {
+  // urlSync:抽屉开/关/模式写入 ?record=&mode=,深链与刷新可寻址(见 useRecordDrawerUrl)
   return (
-    <BomDrawerProvider>
+    <BomDrawerProvider urlSync>
       <BomsPageInner />
     </BomDrawerProvider>
   )
