@@ -10,11 +10,14 @@ import { statusToggleActions } from '~/components/synie-data-grid/status-actions
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { FilterState, Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'invWarehouses'
 
 export const Route = createFileRoute('/_app/scm/warehouses')({
+  // 树形 + fixedFilter + joinFields,跳过默认首屏 loader
   component: WarehousesPage,
 })
 
@@ -58,7 +61,7 @@ const GRID_OVERRIDES: Record<string, ColumnOverride> = {
 function WarehousesPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [companyRow, setCompanyRow] = useState<Row | null>(null)
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   // 树的子层缓存在表格组件本地,写后 invalidate 只能刷新根层——一并 remount 清空子层与展开态
   const [reloadKey, setReloadKey] = useState(0)
   const queryClient = useQueryClient()
@@ -129,15 +132,15 @@ function WarehousesPage() {
         ) : (
           <SynieDataGrid
             key={`${companyId}-${reloadKey}`}
-            resource="invWarehouses"
+            resource={RESOURCE}
             columns={GRID_COLUMNS}
             tree={{ hasChildrenField: 'hasChildren', sort: { field: 'name', order: 'ASC' } }}
             fixedFilter={companyFilterState}
             joinFields={{ account: ['code'] }}
             overrides={GRID_OVERRIDES}
-            onView={(row) => setDrawer({ mode: 'view', row })}
-            onCreate={() => setDrawer({ mode: 'create', row: null })}
-            onEdit={(row) => setDrawer({ mode: 'edit', row })}
+            onView={(row) => open('view', String(row.id))}
+            onCreate={() => open('create')}
+            onEdit={(row) => open('edit', String(row.id))}
             rowActions={statusToggleActions({
               field: 'active',
               update: warehouseClient.update,
@@ -149,13 +152,13 @@ function WarehousesPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="invWarehouses"
+        resource={RESOURCE}
         label="仓库"
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
+        onOpenChange={(isOpen) => !isOpen && close()}
         // 表格列是白名单子集(无时间戳),行数据不全;不传 row,走 rowId 自查完整记录
-        rowId={drawer?.row?.id}
+        rowId={drawer?.recordId ?? undefined}
         // 启用是状态不是表单字段(规范):新建默认启用,启停走列表行动作;叶子是固有属性留在表单
         exclude={['active']}
         fields={{
@@ -249,16 +252,16 @@ function WarehousesPage() {
           // 公司由页面顶部选定,表单不显示,提交时注入
           companyId: { visible: () => false },
         }}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             await warehouseClient.create({ ...values, companyId })
           } else {
-            await warehouseClient.update(drawer!.row!.id, values)
+            await warehouseClient.update(String(drawer!.recordId), values)
           }
           toast.success(mode === 'create' ? '仓库已创建' : '仓库已更新')
           // 抽屉走 rowId 自查,编辑后一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          await resourceBindingFor('invWarehouses').cache.invalidateAll(queryClient)
+          await resourceBindingFor(RESOURCE).cache.invalidateAll(queryClient)
           setReloadKey((k) => k + 1)
         }}
       />

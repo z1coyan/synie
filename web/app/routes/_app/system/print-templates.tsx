@@ -7,18 +7,19 @@ import { apiData, api } from '~/lib/api/client'
 import { uploadFile, downloadFile } from '~/lib/files'
 import { fetchFieldCatalog, type FieldCatalog } from '~/lib/print'
 import { fetchPermissionCatalog } from '~/lib/resources/iam'
-import {
-  listPrintResources,
-} from '~/lib/resources/printing'
-import { useCatalogBasicForm,
-  requireWriter,} from '~/lib/resources/catalog'
+import { listPrintResources } from '~/lib/resources/printing'
+import { useCatalogBasicForm, requireWriter } from '~/lib/resources/catalog'
 import { executeSingleRowCommandWithInvalidation } from '~/lib/resources/command-invalidation'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
-import type { Row } from '~/components/synie-data-grid/types'
+
+const RESOURCE = 'sysPrintTemplates'
 
 export const Route = createFileRoute('/_app/system/print-templates')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: PrintTemplatesPage,
 })
 
@@ -47,7 +48,7 @@ const GRID_COLUMNS = ['name', 'resource', 'isDefault', 'remarks', 'updatedAt']
 
 function PrintTemplatesPage() {
   const queryClient = useQueryClient()
-  const [drawer, setDrawer] = useState<{ mode: DrawerMode; row: Row | null } | null>(null)
+  const { drawer, open, setMode, close, row: drawerRow } = useRecordDrawerUrl(RESOURCE)
   const [fileId, setFileId] = useState<string | null>(null)
   const [fileName, setFileName] = useState('')
   const [catalog, setCatalog] = useState<FieldCatalog | null>(null)
@@ -55,10 +56,7 @@ function PrintTemplatesPage() {
   const [resources, setResources] = useState<ResourceOption[]>([])
   const [currentFile, setCurrentFile] = useState<{ id: string; filename: string } | null>(null)
   const [uploading, setUploading] = useState(false)
-  const { binding, formProps } = useCatalogBasicForm(
-    'sysPrintTemplates',
-    '打印模板',
-  )
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '打印模板')
 
   useEffect(() => {
     void Promise.all([listPrintResources(), fetchPermissionCatalog()])
@@ -85,33 +83,50 @@ function PrintTemplatesPage() {
     }
   }, [resources, resourcePick])
 
+  // 抽屉身份变化:清空本次上传草稿;create 重置资源选择
+  useEffect(() => {
+    if (!drawer) {
+      setFileId(null)
+      setFileName('')
+      setCurrentFile(null)
+      setCatalog(null)
+      return
+    }
+    setFileId(null)
+    setFileName('')
+    if (drawer.mode === 'create') {
+      setResourcePick(resources[0]?.prefix ?? 'sales.order')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅抽屉身份变化时重置上传草稿
+  }, [drawer?.recordId, drawer?.mode])
+
+  // 深链/打开既有记录:按 fileId 拉模板文件元数据
   useEffect(() => {
     const currentFileId =
-      drawer && drawer.mode !== 'create' && typeof drawer.row?.fileId === 'string'
-        ? drawer.row.fileId
+      drawer && drawer.mode !== 'create' && typeof drawerRow?.fileId === 'string'
+        ? drawerRow.fileId
         : null
     if (!currentFileId) {
       setCurrentFile(null)
       return
     }
-    void apiData(
-      api.files[':id'].metadata.$get({ param: { id: currentFileId } }),
-    )
+    void apiData(api.files[':id'].metadata.$get({ param: { id: currentFileId } }))
       .then((file) => setCurrentFile({ id: file.id, filename: file.filename }))
       .catch((error: unknown) => {
         setCurrentFile(null)
         toast.danger(error instanceof Error ? error.message : '加载模板文件失败')
       })
-  }, [drawer])
+  }, [drawer, drawerRow?.fileId])
 
+  // 字段清单:create 用 resourcePick,既有记录用行上 resource
   useEffect(() => {
     if (!drawer) return
     const resource =
-      drawer.mode === 'create' ? resourcePick : String(drawer.row?.resource ?? resourcePick)
+      drawer.mode === 'create' ? resourcePick : String(drawerRow?.resource ?? resourcePick)
     void fetchFieldCatalog(resource)
       .then(setCatalog)
       .catch(() => setCatalog(null))
-  }, [drawer, resourcePick])
+  }, [drawer, drawerRow?.resource, resourcePick])
 
   const onPickFile = async (file: File | null) => {
     if (!file || uploading) return
@@ -142,7 +157,7 @@ function PrintTemplatesPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="sysPrintTemplates"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
           overrides={{
             resource: {
@@ -152,22 +167,9 @@ function PrintTemplatesPage() {
                 String(value ?? ''),
             },
           }}
-          onView={(row) => {
-            setFileId(null)
-            setFileName('')
-            setDrawer({ mode: 'view', row })
-          }}
-          onCreate={() => {
-            setFileId(null)
-            setFileName('')
-            setResourcePick(resources[0]?.prefix ?? 'sales.order')
-            setDrawer({ mode: 'create', row: null })
-          }}
-          onEdit={(row) => {
-            setFileId(null)
-            setFileName('')
-            setDrawer({ mode: 'edit', row })
-          }}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
           actionVisible={{
             setDefault: (row) => !row.isDefault,
             unsetDefault: (row) => Boolean(row.isDefault),
@@ -218,17 +220,12 @@ function PrintTemplatesPage() {
       </div>
 
       <SynieRecordDrawer
-        resource="sysPrintTemplates"
+        resource={RESOURCE}
         label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => {
-          if (open) return
-          setDrawer(null)
-          setFileId(null)
-          setFileName('')
-        }}
-        row={drawer?.row}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        rowId={drawer?.recordId ?? undefined}
         fields={{
           ...formProps.fields,
           resource: {
@@ -371,6 +368,7 @@ function PrintTemplatesPage() {
             )}
           </div>
         )}
+        onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             if (!fileId) throw new Error('请上传模板文件')
@@ -383,13 +381,13 @@ function PrintTemplatesPage() {
             await binding.cache.invalidateGrid(queryClient)
             return String(created.id)
           }
-          if (mode === 'edit' && drawer?.row) {
+          if (mode === 'edit' && drawer?.recordId) {
             const input: Record<string, unknown> = {
               name: values.name,
               remarks: values.remarks ?? null,
             }
             if (fileId) input.fileId = fileId
-            await requireWriter(binding, 'update', '打印模板')(String(drawer.row.id), input)
+            await requireWriter(binding, 'update', '打印模板')(String(drawer.recordId), input)
             await binding.cache.invalidateGrid(queryClient)
           }
         }}

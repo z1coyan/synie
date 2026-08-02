@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
@@ -11,13 +11,18 @@ import {
   processTemplateClient,
   processTemplateItemClient,
 } from '~/lib/resources/manufacturing'
-import type { DrawerMode } from '~/components/synie-record-drawer/fields'
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { toastError } from '~/lib/toast'
 import { useRequestGuard } from '~/lib/use-request-guard'
+import { ensureDefaultGridPage } from '~/lib/route-prefetch'
+import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+
+const RESOURCE = 'mfgProcessTemplates'
 
 export const Route = createFileRoute('/_app/mfg/process-templates')({
+  loader: ({ context: { queryClient } }) =>
+    ensureDefaultGridPage(queryClient, RESOURCE),
   component: ProcessTemplatesPage,
 })
 
@@ -94,23 +99,25 @@ async function persistItems(
 const GRID_COLUMNS = ['code', 'name', 'note']
 
 function ProcessTemplatesPage() {
-  const [drawer, setDrawer] = useState<{
-    mode: DrawerMode
-    row: Row | null
-  } | null>(null)
+  const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
-  // edit/view 态工艺步骤靠 FETCH_ITEMS 异步拉取,未完成前禁止编辑,防回填覆盖在输行
+  // edit/view 态工艺步骤靠异步拉取,未完成前禁止编辑,防回填覆盖在输行
   const [itemsLoaded, setItemsLoaded] = useState(false)
   const queryClient = useQueryClient()
   // 请求守卫:防止慢响应把上一个模板的步骤行回填到当前模板(同物料先例)
   const guard = useRequestGuard()
 
-  // 打开抽屉:create 清空步骤行;view/edit 按模板 id 拉行(快照留作提交时 diff 基准)
-  const openDrawer = (mode: DrawerMode, row: Row | null) => {
+  // 深链/点击开抽屉:按 templateId 拉工艺步骤;create 清空;关闭清空
+  useEffect(() => {
     const my = guard.begin()
-    setDrawer({ mode, row })
-    if (mode === 'create' || !row) {
+    if (!drawer) {
+      setItems([])
+      setItemsSnapshot([])
+      setItemsLoaded(false)
+      return
+    }
+    if (drawer.mode === 'create' || drawer.recordId == null) {
       setItems([])
       setItemsSnapshot([])
       setItemsLoaded(true)
@@ -125,7 +132,7 @@ function ProcessTemplatesPage() {
           templateId: {
             kind: 'fk',
             op: 'in',
-            values: [row.id],
+            values: [drawer.recordId],
             labels: [],
           },
         },
@@ -143,7 +150,8 @@ function ProcessTemplatesPage() {
         setItems([])
         setItemsSnapshot([])
       })
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅抽屉身份变化时响应
+  }, [drawer?.recordId, drawer?.mode])
 
   return (
     <>
@@ -155,23 +163,23 @@ function ProcessTemplatesPage() {
 
       <div className="mt-6">
         <SynieDataGrid
-          resource="mfgProcessTemplates"
+          resource={RESOURCE}
           columns={GRID_COLUMNS}
-          onView={(row) => openDrawer('view', row)}
-          onCreate={() => openDrawer('create', null)}
-          onEdit={(row) => openDrawer('edit', row)}
+          onView={(row) => open('view', String(row.id))}
+          onCreate={() => open('create')}
+          onEdit={(row) => open('edit', String(row.id))}
         />
       </div>
 
       <SynieRecordDrawer
-        resource="mfgProcessTemplates"
-        {...drawerConfig('mfgProcessTemplates')}
+        resource={RESOURCE}
+        {...drawerConfig(RESOURCE)}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
-        onOpenChange={(open) => !open && setDrawer(null)}
+        onOpenChange={(isOpen) => !isOpen && close()}
         // 表格列是白名单子集,行数据不全;不传 row,走 rowId 自查完整记录
-        rowId={drawer?.row?.id}
-        onEdit={() => setDrawer((d) => (d ? { ...d, mode: 'edit' } : d))}
+        rowId={drawer?.recordId ?? undefined}
+        onEdit={() => setMode('edit')}
         tabExtraContent={{
           items: (mode) => (
             <SynieEditableTable
@@ -215,7 +223,7 @@ function ProcessTemplatesPage() {
               toast.success('工艺模板已创建')
             }
           } else {
-            const templateId = drawer!.row!.id
+            const templateId = String(drawer!.recordId)
             await processTemplateClient.update(templateId, values)
             const itemErrors = await persistItems(
               templateId,
@@ -231,7 +239,7 @@ function ProcessTemplatesPage() {
             }
           }
           // 抽屉走 rowId 自查,一并失效行缓存,重开详情不吃 30s staleTime 的旧行
-          await resourceBindingFor('mfgProcessTemplates').cache.invalidateAll(queryClient)
+          await resourceBindingFor(RESOURCE).cache.invalidateAll(queryClient)
         }}
       />
     </>
