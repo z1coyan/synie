@@ -1,14 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Link } from '@heroui/react'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
-import { useGridMeta } from '~/components/synie-data-grid/meta'
-import type { GridColumnMeta, Row } from '~/components/synie-data-grid/types'
+import type { Row } from '~/components/synie-data-grid/types'
 import { dateOnlyText } from '~/components/synie-data-grid/format'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
-import { useFkPreview } from '~/components/synie-record-drawer/fk-preview'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
-import { resolveVoucherPreviewTarget } from './-stock-entry-preview'
 
 export const Route = createFileRoute('/_app/scm/stock-entries')({
   component: StockEntriesPage,
@@ -22,6 +18,8 @@ export const Route = createFileRoute('/_app/scm/stock-entries')({
  */
 
 // 列白名单:公司首列(对齐总账分录);seq/时间戳不进表格;
+// voucherId 多态 fk 链接列(文本=来源单号,点击开来源单据速览),冗余的 voucherNo/voucherType
+// 字符串列不进表格(同总账分录先例);
 // 物料按全站约定合并为单个富单元格列(materialCode 列承载,分录无快照,后端 join 物料主数据投影)
 const GRID_COLUMNS = [
   'companyId',
@@ -30,38 +28,13 @@ const GRID_COLUMNS = [
   'materialCode',
   'quantity',
   'voucherId',
-  'voucherNo',
   'remarks',
   'isCancelled',
 ]
 
-function VoucherNoLink({
-  row,
-  voucherIdColumn,
-}: {
-  row: Row
-  voucherIdColumn: GridColumnMeta | undefined
-}) {
-  const openPreview = useFkPreview()
-  const raw = row.voucherNo
-  const text = raw == null || raw === '' ? null : String(raw)
-  if (!text) return <span className="text-muted">—</span>
-  const id = row.voucherId != null && row.voucherId !== '' ? String(row.voucherId) : null
-  const target = resolveVoucherPreviewTarget(voucherIdColumn, row)
-  if (!id || !target) return <>{text}</>
-  return (
-    <Link
-      onPress={() => openPreview(target.resource, id)}
-      className="inline-block max-w-80 cursor-pointer truncate align-bottom text-inherit underline-offset-2 hover:underline"
-    >
-      {text}
-    </Link>
-  )
-}
-
 // 数量带符号:入库正数、出库负数(红字);空值回落默认渲染
-// 卡片:物料标题、业务日副标题、数量/仓/来源单号摘要
-const BASE_GRID_OVERRIDES: Record<string, ColumnOverride> = {
+// 卡片:物料标题、业务日副标题、数量/仓/来源单据摘要
+const GRID_OVERRIDES: Record<string, ColumnOverride> = {
   companyId: { mobileRole: 'hide' },
   // 物料列:全站统一富单元格(分录无图纸挂接,缩略图回退物料当前图纸);筛选按 materialId 外键
   materialCode: {
@@ -84,26 +57,12 @@ const BASE_GRID_OVERRIDES: Record<string, ColumnOverride> = {
     },
   },
   warehouseId: { mobileRole: 'summary' },
+  voucherId: { mobileRole: 'summary' },
   remarks: { label: '摘要', width: 240 },
 }
 
 function StockEntriesPage() {
   const [viewRow, setViewRow] = useState<Row | null>(null)
-  const gridMeta = useGridMeta('invStockEntries')
-  const voucherIdColumn = gridMeta.data?.columns.find((column) => column.name === 'voucherId')
-  const gridOverrides = useMemo<Record<string, ColumnOverride>>(
-    () => ({
-      ...BASE_GRID_OVERRIDES,
-      voucherNo: {
-        label: '来源单号',
-        mobileRole: 'summary',
-        render: (_value, row) => (
-          <VoucherNoLink row={row} voucherIdColumn={voucherIdColumn} />
-        ),
-      },
-    }),
-    [voucherIdColumn],
-  )
 
   return (
     <>
@@ -117,7 +76,7 @@ function StockEntriesPage() {
         <SynieDataGrid
           resource="invStockEntries"
           columns={GRID_COLUMNS}
-          overrides={gridOverrides}
+          overrides={GRID_OVERRIDES}
           defaultSort={{ column: 'postingDate', direction: 'descending' }}
           onView={setViewRow}
         />
@@ -130,8 +89,8 @@ function StockEntriesPage() {
         isOpen={viewRow !== null}
         onOpenChange={(open) => !open && setViewRow(null)}
         row={viewRow}
-        // voucherType 原始类型码,来源单据链接已表意
-        exclude={['voucherType', 'insertedAt']}
+        // voucherNo 与来源单据链接列文本重复;voucherType 原始类型码,链接已表意
+        exclude={['voucherNo', 'voucherType', 'insertedAt']}
       />
     </>
   )

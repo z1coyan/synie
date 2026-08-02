@@ -134,3 +134,36 @@ html {
 .number-field__group:not(:has([slot="decrement"])):has([slot="increment"]) {
   grid-template-columns: 1fr 40px;
 }
+
+/*
+ * HeroUI Pro Sheet 变体类兜底:tailwind-variants 3.x 的 slots 解析器在所有组件
+ * 实例间共享一个可变 currentProps 闭包,而 Sheet 各部件把 slots 对象缓存在
+ * useMemo 里跨渲染复用——首次关闭抽屉时,content/dialog 的 placement 变体类
+ * 可能被读成默认的 --bottom(实测 direction 属性 data-sheet-drawer-direction /
+ * data-placement 始终正确,只有类名错乱),抽屉瞬间塌成底部通栏再侧向退出。
+ * 这里以恒正确的方向属性为准钉住 right 几何与圆角,取值与
+ * .sheet__content--right / .sheet__dialog--right 完全一致,正常时无视觉差异;
+ * 升级 @heroui-pro/react 后可复核删除。
+ */
+.sheet__content[data-sheet-drawer-direction='right'] {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: auto;
+  height: 100dvh;
+  max-height: none;
+  max-width: 96vw;
+  border-top-left-radius: calc(var(--radius) * 2);
+  border-bottom-left-radius: calc(var(--radius) * 2);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.sheet__dialog[data-placement='right'] {
+  height: 100%;
+  max-height: none;
+  border-top-left-radius: calc(var(--radius) * 2);
+  border-bottom-left-radius: calc(var(--radius) * 2);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
