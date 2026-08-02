@@ -2,10 +2,11 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@heroui/react'
 import {
-  createCustomerPresentation,
-  submitCustomerForm,
-} from '~/lib/resources/presentation'
-import { resourceBindingFor } from '~/lib/resources/registry'
+  decodeCustomerCreate,
+  decodeCustomerUpdate,
+  useCatalogBasicForm,
+  requireWriter,
+} from '~/lib/resources/catalog'
 import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
@@ -29,9 +30,7 @@ const RESOURCE = 'salCustomers'
 function CustomersPage() {
   const { drawer, open, setMode, close } = useRecordDrawerUrl(RESOURCE)
   const queryClient = useQueryClient()
-  // Presentation Extension 由 binding 构造，不二次解析写能力
-  const binding = resourceBindingFor(RESOURCE)
-  const presentation = createCustomerPresentation(binding)
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '客户')
 
   const invalidate = () =>
     binding.cache.invalidateGrid(queryClient)
@@ -53,25 +52,29 @@ function CustomersPage() {
 
       <SynieRecordDrawer
         resource={RESOURCE}
-        label={presentation.label}
+        label={formProps.label}
         mode={drawer?.mode ?? 'view'}
         isOpen={drawer !== null}
         onOpenChange={(isOpen) => !isOpen && close()}
         rowId={drawer?.recordId ?? undefined}
-        exclude={presentation.exclude}
-        fields={presentation.fields}
-        extraContent={presentation.extraContent}
+        exclude={formProps.exclude}
+        fields={formProps.fields}
         onEdit={() => setMode('edit')}
         onSubmit={async (values, mode) => {
-          const id = await submitCustomerForm(
-            presentation,
-            values,
-            mode,
-            drawer?.recordId ?? undefined,
-          )
-          toast.success(mode === 'create' ? '客户已创建' : '客户已更新')
+          if (mode === 'create') {
+            const input = decodeCustomerCreate(values)
+            const saved = await requireWriter(binding, 'create', '客户')({ ...input })
+            toast.success('客户已创建')
+            invalidate()
+            return saved.id as string
+          }
+          const input = decodeCustomerUpdate(values)
+          const saved = await requireWriter(binding, 'update', '客户')(String(drawer!.recordId), {
+            ...input,
+          })
+          toast.success('客户已更新')
           invalidate()
-          return id
+          return saved.id as string
         }}
       />
     </>

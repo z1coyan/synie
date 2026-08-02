@@ -51,13 +51,9 @@ export const RESOURCE_CLASSIFICATION: Record<string, ResourceClassification> = {
     note: 'create-only + void 命令；无 update',
   },
 
-  // —— Party：供应商 basic；客户/员工 extension（附件）——
+  // —— Party：供应商/客户 basic；员工 extension（证件照）——
   purSuppliers: { presentation: 'basic', interactive: true },
-  salCustomers: {
-    presentation: 'extension',
-    interactive: true,
-    note: '附件面板 Presentation Extension',
-  },
+  salCustomers: { presentation: 'basic', interactive: true },
   hrEmployees: {
     presentation: 'extension',
     interactive: true,

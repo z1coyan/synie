@@ -8,6 +8,7 @@ import {
   decodeUnitUpdate,
   decodeSupplierCreate,
   decodeSupplierUpdate,
+  decodeCustomerCreate,
   decodeCompanyCreate,
   decodeCompanyUpdate,
 } from './basic-form'
@@ -485,6 +486,27 @@ describe('supplier codec', () => {
     expect(decodeSupplierCreate({ code: 'S1', name: '甲', shortName: '' })).toEqual({
       code: 'S1',
       name: '甲',
+      shortName: null,
+    })
+  })
+})
+
+describe('customer codec', () => {
+  test('create 解码纯标量', () => {
+    expect(
+      decodeCustomerCreate({ code: ' C1 ', name: ' 乙 ', shortName: ' 乙简称 ' }),
+    ).toEqual({ code: 'C1', name: '乙', shortName: '乙简称' })
+  })
+
+  test('编号与名称必填', () => {
+    expect(() => decodeCustomerCreate({ code: '', name: '乙' })).toThrow(/客户编号必填/)
+    expect(() => decodeCustomerCreate({ code: 'C1', name: ' ' })).toThrow(/客户名称必填/)
+  })
+
+  test('shortName 空串转 null', () => {
+    expect(decodeCustomerCreate({ code: 'C1', name: '乙', shortName: '' })).toEqual({
+      code: 'C1',
+      name: '乙',
       shortName: null,
     })
   })

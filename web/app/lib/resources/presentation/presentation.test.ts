@@ -15,15 +15,12 @@ import type { AggregateDraftAdapter, ResourceBinding } from '../catalog/types'
 import type { ResourceClient } from '../types'
 import {
   createAccountPresentation,
-  createCustomerPresentation,
   createEmployeePresentation,
   createInvoicePresentation,
   createMaterialPresentation,
-  CUSTOMER_RESOURCE,
   EMPLOYEE_RESOURCE,
   invoiceOcrRecognize,
   MATERIAL_RESOURCE,
-  submitCustomerForm,
   VAT_INVOICE_RESOURCE,
 } from './index'
 import { salesDeliveryDraftAdapter } from '../fulfillment'
@@ -67,37 +64,6 @@ function extensionDoc(name: string, label: string): ResourceDocument {
 }
 
 describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
-  test('客户 PE：完整 form controller + 附件 extraContent；由 binding 构造', async () => {
-    clearBindingsForTests()
-    const client = mockClient(CUSTOMER_RESOURCE)
-    const binding = bindingFromResourceTransport(CUSTOMER_RESOURCE, client)
-    registerBinding(binding)
-
-    const pe = createCustomerPresentation(resourceBindingFor(CUSTOMER_RESOURCE))
-    expect(pe.kind).toBe('extension')
-    expect(pe.resource).toBe(CUSTOMER_RESOURCE)
-    expect(pe.binding).toBe(resourceBindingFor(CUSTOMER_RESOURCE))
-    expect(pe.fields.code?.required).toBe(true)
-    expect(pe.fields.name?.required).toBe(true)
-    expect(typeof pe.extraContent).toBe('function')
-
-    // create/edit 经 binding.writer
-    const id = await submitCustomerForm(
-      pe,
-      { code: 'C1', name: '测试客户', shortName: '测' },
-      'create',
-      undefined,
-    )
-    expect(id).toBe('new-id')
-
-    // 错误 resource 的 binding 拒绝
-    const wrong = bindingFromResourceTransport(
-      'purSuppliers',
-      mockClient('purSuppliers'),
-    )
-    expect(() => createCustomerPresentation(wrong)).toThrow(/salCustomers/)
-  })
-
   test('发票 PE：OCR seam 共置；ResourceDocument 不含可执行代码', () => {
     clearBindingsForTests()
     registerBinding(
@@ -172,14 +138,6 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
     expect(typeof acc.fields.role?.visible).toBe('function')
   })
 
-  test('客户 Catalog 投影 form.kind=extension 且无脚本字段', () => {
-    const doc = extensionDoc(CUSTOMER_RESOURCE, '客户')
-    expect(doc.form).toEqual({ kind: 'extension' })
-    for (const key of Object.keys(doc.form as object)) {
-      expect(key).toBe('kind')
-    }
-  })
-
   test('销售发货 binding：拥有 AggregateDraftAdapter，表单不暴露 RecordWriter create/update', () => {
     clearBindingsForTests()
     const client = mockClient('salDeliveries')
@@ -251,21 +209,21 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
     clearBindingsForTests()
     const binding: ResourceBinding = {
       ...bindingFromResourceTransport(
-        CUSTOMER_RESOURCE,
-        mockClient(CUSTOMER_RESOURCE),
+        EMPLOYEE_RESOURCE,
+        mockClient(EMPLOYEE_RESOURCE),
       ),
     }
     registerBinding(binding)
-    const pe = createCustomerPresentation(resourceBindingFor(CUSTOMER_RESOURCE))
+    const pe = createEmployeePresentation(resourceBindingFor(EMPLOYEE_RESOURCE))
 
     // Catalog 文档无 transport
-    const catalog = extensionDoc(CUSTOMER_RESOURCE, '客户')
+    const catalog = extensionDoc(EMPLOYEE_RESOURCE, '员工')
     expect('draft' in catalog).toBe(false)
     expect('writer' in catalog).toBe(false)
     expect('reader' in catalog).toBe(false)
 
     // PE 持 binding 引用，不自建 client
-    expect(pe.binding.resource).toBe(CUSTOMER_RESOURCE)
+    expect(pe.binding.resource).toBe(EMPLOYEE_RESOURCE)
     expect(pe.binding.reader).toBeDefined()
 
     // Adapter 是 transport，不是 Meta
@@ -274,9 +232,9 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
 
     // replaceBinding 可覆盖 draft 而不改 Catalog
     replaceBinding({
-      ...resourceBindingFor(CUSTOMER_RESOURCE),
+      ...resourceBindingFor(EMPLOYEE_RESOURCE),
       draft: undefined,
     })
-    expect(resourceBindingFor(CUSTOMER_RESOURCE).draft).toBeUndefined()
+    expect(resourceBindingFor(EMPLOYEE_RESOURCE).draft).toBeUndefined()
   })
 })

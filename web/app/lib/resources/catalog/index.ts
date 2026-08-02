@@ -60,6 +60,8 @@ export {
   decodeUnitUpdate,
   decodeSupplierCreate,
   decodeSupplierUpdate,
+  decodeCustomerCreate,
+  decodeCustomerUpdate,
   decodeCompanyCreate,
   decodeCompanyUpdate,
   type BasicFormDrawerProps,
@@ -70,6 +72,8 @@ export {
   type UnitUpdateInput,
   type SupplierCreateInput,
   type SupplierUpdateInput,
+  type CustomerCreateInput,
+  type CustomerUpdateInput,
   type CompanyCreateInput,
   type CompanyUpdateInput,
 } from './basic-form'

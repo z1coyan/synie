@@ -7,11 +7,6 @@ export type {
   ResourceDrawerConfig,
 } from './types'
 export {
-  CUSTOMER_RESOURCE,
-  createCustomerPresentation,
-  submitCustomerForm,
-} from './customer'
-export {
   VAT_INVOICE_RESOURCE,
   createInvoicePresentation,
   invoiceOcrRecognize,

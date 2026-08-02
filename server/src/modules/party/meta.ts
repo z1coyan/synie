@@ -41,13 +41,12 @@ export function customerResourceMeta(): ResourceMeta {
       }),
     ],
     actions: crud,
-    // 附件面板：明确为 Presentation Extension，不走 Basic Form 通用渲染
     form: {
-      kind: 'extension',
+      kind: 'basic',
       exclude: ['id', 'insertedAt', 'updatedAt'],
       fields: {
-        code: { required: true, placeholder: '如 C0001' },
-        name: { required: true, placeholder: '客户全称' },
+        code: { placeholder: '如 C0001' },
+        name: { placeholder: '客户全称' },
         shortName: { placeholder: '如 华为' },
       },
     },

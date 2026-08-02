@@ -231,11 +231,16 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     }
   })
 
-  test('客户 catalog：form.kind=extension（附件 Presentation Extension）', () => {
+  test('客户 catalog：form.kind=basic（同供应商先例）', () => {
     const registry = createSealedResourceRegistry()
     const catalog = decodeResourceDocument(registry.buildDocument('salCustomers', superAdmin))
     expect(catalog.label).toBe('客户')
-    expect(catalog.form.kind).toBe('extension')
+    expect(catalog.form.kind).toBe('basic')
+    if (catalog.form.kind === 'basic') {
+      const placed = catalog.form.layout.fields?.map((p) => p.field) ?? []
+      expect(placed).toEqual(expect.arrayContaining(['code', 'name', 'shortName']))
+      expect(placed).not.toContain('id')
+    }
   })
 
   test('发票 catalog：form.kind=extension（OCR Presentation Extension）', () => {

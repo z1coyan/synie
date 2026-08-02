@@ -279,6 +279,40 @@ export function decodeSupplierUpdate(values: Record<string, unknown>): SupplierU
   return out
 }
 
+// —— 客户 RecordFormCodec（纯标量 Party，同供应商先例）——
+
+export interface CustomerCreateInput {
+  code: string
+  name: string
+  shortName?: string | null
+}
+
+export interface CustomerUpdateInput {
+  code?: string
+  name?: string
+  shortName?: string | null
+}
+
+export function decodeCustomerCreate(values: Record<string, unknown>): CustomerCreateInput {
+  const code = String(values.code ?? '').trim()
+  const name = String(values.name ?? '').trim()
+  if (!code) throw new Error('客户编号必填')
+  if (!name) throw new Error('客户名称必填')
+  return {
+    code,
+    name,
+    shortName: optionalTrimmed(values.shortName),
+  }
+}
+
+export function decodeCustomerUpdate(values: Record<string, unknown>): CustomerUpdateInput {
+  const out: CustomerUpdateInput = {}
+  if (values.code !== undefined) out.code = String(values.code).trim()
+  if (values.name !== undefined) out.name = String(values.name).trim()
+  if (values.shortName !== undefined) out.shortName = optionalTrimmed(values.shortName)
+  return out
+}
+
 // —— 公司 RecordFormCodec（币种外键 + 自引用外键）——
 
 export interface CompanyCreateInput {
