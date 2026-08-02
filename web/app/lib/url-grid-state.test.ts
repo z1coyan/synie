@@ -4,15 +4,20 @@ import {
   DEFAULT_PAGE,
   DEFAULT_PAGE_SIZE,
   SORT_NONE,
+  encodeFiltersCompact,
   encodeGridUrlPatch,
   encodeSort,
+  escapeFilterAtom,
   mergeGridUrlSearch,
   parseColumnFilter,
+  parseFiltersCompact,
+  parseFiltersParam,
   parseGridUrlSearch,
   parsePage,
   parsePageSize,
   parseSort,
   parseFilterState,
+  unescapeFilterAtom,
 } from './url-grid-state'
 
 const emptyDefaults = { sort: null as SortState | null, filters: {} as FilterState }
@@ -49,10 +54,20 @@ describe('parsePage / parsePageSize', () => {
   })
 })
 
-describe('FilterState 编解码', () => {
+describe('紧凑 filter DSL', () => {
+  test('text contains 最短形态：code~1', () => {
+    expect(encodeFiltersCompact({ code: { kind: 'text', op: 'contains', value: '1' } })).toBe(
+      'code~1',
+    )
+    expect(parseFiltersCompact('code~1')).toEqual({
+      code: { kind: 'text', op: 'contains', value: '1' },
+    })
+  })
+
   test('各 kind 往返', () => {
     const filters: FilterState = {
       name: { kind: 'text', op: 'contains', value: '钢' },
+      codeEq: { kind: 'text', op: 'eq', value: 'A-1' },
       active: { kind: 'bool', eq: true },
       status: { kind: 'enum', values: ['DRAFT', 'AUDITED'] },
       tags: { kind: 'enumArray', op: 'hasAny', values: ['A'] },
@@ -68,13 +83,44 @@ describe('FilterState 编解码', () => {
       },
       emptyParty: { kind: 'polyFk', op: 'isNil' },
     }
-    const encoded = encodeGridUrlPatch(
+    const encoded = encodeFiltersCompact(filters)
+    // 应远短于 JSON
+    expect(encoded.length).toBeLessThan(JSON.stringify(filters).length)
+    expect(parseFiltersCompact(encoded)).toEqual(filters)
+
+    const patch = encodeGridUrlPatch(
       { search: '', page: 1, pageSize: 20, sort: null, filters },
       emptyDefaults,
     )
-    expect(typeof encoded.f).toBe('string')
-    const round = parseGridUrlSearch({ f: encoded.f }, emptyDefaults)
+    expect(typeof patch.f).toBe('string')
+    expect(patch.f).not.toMatch(/^\{/)
+    const round = parseGridUrlSearch({ f: patch.f }, emptyDefaults)
     expect(round.filters).toEqual(filters)
+  })
+
+  test('特殊字符转义往返', () => {
+    const filters: FilterState = {
+      'weird;field': { kind: 'text', op: 'contains', value: 'a~b;c,d:e\\f' },
+      fk: { kind: 'fk', values: ['id:1'], labels: ['名,称'] },
+    }
+    const encoded = encodeFiltersCompact(filters)
+    expect(parseFiltersCompact(encoded)).toEqual(filters)
+  })
+
+  test('escape / unescape 原子', () => {
+    const raw = 'a~b;c,d:e\\f'
+    expect(unescapeFilterAtom(escapeFilterAtom(raw))).toBe(raw)
+  })
+
+  test('旧 JSON 书签仍可读', () => {
+    const json = JSON.stringify({
+      code: { kind: 'text', op: 'contains', value: '1' },
+      active: { kind: 'bool', eq: true },
+    })
+    expect(parseFiltersParam(json)).toEqual({
+      code: { kind: 'text', op: 'contains', value: '1' },
+      active: { kind: 'bool', eq: true },
+    })
   })
 
   test('f 缺席用 defaultFilters；f={} 表示显式清空', () => {
@@ -90,6 +136,10 @@ describe('FilterState 编解码', () => {
     expect(parseColumnFilter({ kind: 'nope' })).toBeNull()
     expect(parseFilterState({ a: { kind: 'bool', eq: true }, b: 1 })).toEqual({
       a: { kind: 'bool', eq: true },
+    })
+    // 紧凑串非法条目被跳过
+    expect(parseFiltersCompact('good~1;bad~zz~x')).toEqual({
+      good: { kind: 'text', op: 'contains', value: '1' },
     })
   })
 })
@@ -131,7 +181,7 @@ describe('encodeGridUrlPatch / mergeGridUrlSearch', () => {
     expect(merged.page).toBe(2)
     expect(merged.ps).toBe(50)
     expect(merged.sort).toBe('-code')
-    expect(merged.f).toBe(JSON.stringify({ active: { kind: 'bool', eq: true } }))
+    expect(merged.f).toBe('active~b~1')
   })
 
   test('清搜索时删除 q，不碰 record', () => {

@@ -31,9 +31,21 @@
 | `page` | 页码 | `1` |
 | `ps` | 每页条数 | `20` |
 | `sort` | 排序 | 等于 `defaultSort` 或（无 default 时）无排序；用户清除有 default 的排序时写 `none` |
-| `f` | `FilterState` JSON | 空且无 `defaultFilters`；有 default 时用户清空写 `{}` |
+| `f` | 筛选（紧凑 DSL） | 空且无 `defaultFilters`；有 default 时用户清空写 `{}` |
 
-`FilterState` 与 `@synie/shared` wire 同构（含 fk/polyFk 的 `labels`），保证 URL 恢复后 Chips 可读、可改、可清——与 `entries.tsx` 下钻进入普通筛选状态的口径一致。
+`f` 使用紧凑 DSL（非 JSON），读写在 `~/lib/url-grid-state`：
+
+| 形态 | 示例 |
+|------|------|
+| text contains（默认、最短） | `code~1` |
+| text 其它 op | `code~eq~A-1` / `code~nc~x` |
+| bool | `active~b~1` |
+| enum / enumArray | `status~e~DRAFT,AUDITED` / `tags~a~A,B` |
+| number / date | `qty~nb~1,10` / `day~d~2026-08-01` |
+| fk / polyFk | `companyId~f~u1:甲公司` / `partyId~p~CUSTOMER~c1:客户甲` |
+| 多条件 | `code~1;active~b~1` |
+
+值内 `~ ; , : \` 反斜杠转义。旧 JSON 书签（`f` 以 `{` 开头）仍可读。Chips 所需的 fk `labels` 仍进 URL，保证恢复后可读可改可清。
 
 ### 3. 与另外两个 slug 的边界
 
@@ -60,11 +72,12 @@
 - **每路由 validateSearch + 页面受控状态**（拒）：100+ 路由重复样板，FilterState 富对象难进 zod，与「组件收敛」方向相反。
 - **sessionStorage / 全局 store 记筛选**（拒）：不可分享、多标签不一致、无浏览器历史。
 - **仅同步 search 文本、不同步筛选**（拒）：列筛选才是 ERP 列表的主查询条件。
-- **压缩二进制 / base64 单参数**（缓）：可读性差；JSON 同构已够紧凑，且与 wire 一致便于调试。
+- **JSON 同构落 f**（已弃）：`code contains 1` 即膨胀为整段 URL 编码 JSON；改为紧凑 DSL 后同类条件约 `f=code~1`。
+- **压缩二进制 / base64 单参数**（拒）：不可读、不可手改；DSL 已够短且人类可读。
 
 ## 后果
 
-- 地址栏会出现较长的 `f=` JSON（多条件 fk 时）；可接受，换可读标签与可分享性。
+- 多条件 + 多 fk labels 时 `f` 仍会变长，但远短于 JSON；`labels` 换可读 Chips，不省略。
 - 存量 `navigate({ search: { tab } })` 一类整包写入会抹掉网格键——边缘工单要求改为 merge（`market.tsx` 优先）。
 - 未打 `urlState={false}` 的非 pick 内嵌网格会暂时写 URL（已知：银行导入抽屉、对账抽屉列表）；须在 issue 04 收口。
 - 同页双主网格争用同一键空间：罕见，争用时只留一个启用 URL。
