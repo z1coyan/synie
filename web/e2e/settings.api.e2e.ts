@@ -133,7 +133,7 @@ test('四类设置通过 Go REST 保存，Settings GraphQL=0', async ({ page }) 
     // 行情状态 REST 受 canPriceRead（旧 myPermissions GraphQL）门控；Go-only 环境只断言页面可达，
     // System Setting 的 GET/PATCH 由后续行情拉取设置页覆盖。
 
-    await page.goto('/scm/purchase/orders')
+    await page.goto('/purchase/orders/orders')
     await expect(page.getByRole('heading', { name: '采购订单', exact: true })).toBeVisible()
     // purOrders DataGrid Meta 仍走旧 GraphQL 授权，Go JWT 环境不保证渲染新增入口；
     // 抽屉 Settings 迁移由静态扫描与类型/构建门禁覆盖。

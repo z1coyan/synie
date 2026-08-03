@@ -88,51 +88,86 @@ export const menuCatalog: MenuCatalogModule[] = [
     ],
   },
   {
-    key: 'scm',
-    label: '供应链',
+    key: 'sales',
+    label: '销售管理',
     groups: [
       {
         label: '交易',
         items: [
-          { code: 'menu.scm.purchase-quotations', label: '采购报价' },
-          { code: 'menu.scm.purchase', label: '采购订单' },
-          { code: 'menu.scm.purchase-reconciliations', label: '采购对账' },
-          { code: 'menu.scm.quotations', label: '销售报价' },
-          { code: 'menu.scm.sales-orders', label: '销售订单' },
-          { code: 'menu.scm.sales-reconciliations', label: '销售对账' },
+          { code: 'menu.sales.quotations', label: '销售报价' },
+          { code: 'menu.sales.orders', label: '销售订单' },
+          { code: 'menu.sales.deliveries', label: '销售发货' },
+          { code: 'menu.sales.reconciliations', label: '销售对账' },
         ],
       },
       {
-        label: '库存',
+        label: '设置',
+        items: [{ code: 'menu.sales.sales', label: '销售设置' }],
+      },
+    ],
+  },
+  {
+    key: 'purchase',
+    label: '采购管理',
+    groups: [
+      {
+        label: '交易',
         items: [
-          { code: 'menu.scm.purchase-receipts', label: '采购入库' },
-          { code: 'menu.scm.outsourced-issues', label: '委外发料' },
-          { code: 'menu.scm.outsourced-receipts', label: '委外入库' },
-          { code: 'menu.scm.sales-deliveries', label: '销售发货' },
-          { code: 'menu.scm.other-stock', label: '其他库存单' },
-          { code: 'menu.scm.inventory', label: '库存余额' },
-          { code: 'menu.scm.stock-entries', label: '库存分录' },
+          { code: 'menu.purchase.quotations', label: '采购报价' },
+          { code: 'menu.purchase.orders', label: '采购订单' },
+          { code: 'menu.purchase.receipts', label: '采购入库' },
+          { code: 'menu.purchase.reconciliations', label: '采购对账' },
         ],
       },
+      {
+        label: '委外',
+        items: [
+          { code: 'menu.purchase.outsourced-issues', label: '委外发料' },
+          { code: 'menu.purchase.outsourced-receipts', label: '委外入库' },
+        ],
+      },
+      {
+        label: '设置',
+        items: [{ code: 'menu.purchase.purchase', label: '采购设置' }],
+      },
+    ],
+  },
+  {
+    key: 'inv',
+    label: '库存管理',
+    groups: [
+      {
+        items: [
+          { code: 'menu.inv.other-stock', label: '其他库存单' },
+          { code: 'menu.inv.balance', label: '库存余额' },
+          { code: 'menu.inv.stock-entries', label: '库存分录' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'mfg',
+    label: '生产管理',
+    groups: [
       {
         label: '计划',
         items: [
-          { code: 'menu.scm.demands', label: '履约需求单' },
-          { code: 'menu.scm.boms', label: 'BOM' },
-          { code: 'menu.scm.operations', label: '工序' },
-          { code: 'menu.scm.process-templates', label: '工艺模板' },
+          { code: 'menu.mfg.demands', label: '履约需求单' },
+          { code: 'menu.mfg.boms', label: 'BOM' },
+          { code: 'menu.mfg.operations', label: '工序' },
+          { code: 'menu.mfg.process-templates', label: '工艺模板' },
         ],
       },
       {
         label: '生产',
         items: [
-          { code: 'menu.scm.work-orders', label: '生产工单' },
-          { code: 'menu.scm.outputs', label: '生产入库' },
+          { code: 'menu.mfg.work-orders', label: '生产工单' },
+          { code: 'menu.mfg.outputs', label: '生产入库' },
         ],
       },
       {
         label: '设置',
-        items: [{ code: 'menu.scm.settings', label: '供应链设置' }],
+        items: [{ code: 'menu.mfg.production', label: '生产设置' }],
       },
     ],
   },

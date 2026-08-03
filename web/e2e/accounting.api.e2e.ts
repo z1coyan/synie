@@ -243,7 +243,7 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
     const customer = await apiJSON<{ id: string }>(
       request,
       "post",
-      "/api/v1/sales/customers",
+      "/api/v1/base/customers",
       {
         code: `${prefix}C`,
         name: customerName,

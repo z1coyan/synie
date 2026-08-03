@@ -19,8 +19,8 @@ describe('菜单 Sheet 纯逻辑', () => {
       'menu.dashboard.todos',
     ])
     expect(moduleLeafCodes(dashboard)).toHaveLength(2)
-    // 全树 54 项（契约测试保唯一性，这里只锚定规模防手滑）
-    expect(allLeafCodes(menuModules)).toHaveLength(54)
+    // 全树 56 项（契约测试保唯一性，这里只锚定规模防手滑）
+    expect(allLeafCodes(menuModules)).toHaveLength(56)
   })
 
   test('已失效项识别：勾选集有而目录无的 code，字典序', () => {

@@ -10,7 +10,7 @@ const supplierCode = `E2E_S_${suffix}`;
 const employeeCode = `E2E_E_${suffix}`;
 
 type CreatedRecord = {
-  path: "/sales/customers" | "/purchase/suppliers" | "/hr/employees";
+  path: "/base/customers" | "/base/suppliers" | "/hr/employees";
   resource: "sal_customer" | "pur_supplier" | "hr_employee";
   id: string;
 };
@@ -79,7 +79,7 @@ async function createAndEditSimpleParty(args: {
   heading: string;
   resource: "salCustomers" | "purSuppliers";
   label: "客户" | "供应商";
-  apiPath: "/sales/customers" | "/purchase/suppliers";
+  apiPath: "/base/customers" | "/base/suppliers";
   auditResource: "sal_customer" | "pur_supplier";
   code: string;
   name: string;
@@ -187,8 +187,8 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
       });
     }
     if (
-      pathname.startsWith("/api/v1/sales/customers") ||
-      pathname.startsWith("/api/v1/purchase/suppliers") ||
+      pathname.startsWith("/api/v1/base/customers") ||
+      pathname.startsWith("/api/v1/base/suppliers") ||
       pathname.startsWith("/api/v1/hr/employees") ||
       /\/api\/v1\/meta\/resources\/(?:salCustomers|purSuppliers|hrEmployees)$/.test(
         pathname,
@@ -205,7 +205,7 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
       heading: "客户管理",
       resource: "salCustomers",
       label: "客户",
-      apiPath: "/sales/customers",
+      apiPath: "/base/customers",
       auditResource: "sal_customer",
       code: customerCode,
       name: `浏览器测试客户-${suffix}`,
@@ -219,7 +219,7 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
       heading: "供应商管理",
       resource: "purSuppliers",
       label: "供应商",
-      apiPath: "/purchase/suppliers",
+      apiPath: "/base/suppliers",
       auditResource: "pur_supplier",
       code: supplierCode,
       name: `浏览器测试供应商-${suffix}`,
@@ -354,15 +354,15 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
     expect(restRequests).toEqual(
       expect.arrayContaining([
         "GET /api/v1/meta/resources/salCustomers",
-        "POST /api/v1/sales/customers/query",
-        "POST /api/v1/sales/customers",
-        `PATCH /api/v1/sales/customers/${customerID}`,
-        `DELETE /api/v1/sales/customers/${customerID}`,
+        "POST /api/v1/base/customers/query",
+        "POST /api/v1/base/customers",
+        `PATCH /api/v1/base/customers/${customerID}`,
+        `DELETE /api/v1/base/customers/${customerID}`,
         "GET /api/v1/meta/resources/purSuppliers",
-        "POST /api/v1/purchase/suppliers/query",
-        "POST /api/v1/purchase/suppliers",
-        `PATCH /api/v1/purchase/suppliers/${supplierID}`,
-        `DELETE /api/v1/purchase/suppliers/${supplierID}`,
+        "POST /api/v1/base/suppliers/query",
+        "POST /api/v1/base/suppliers",
+        `PATCH /api/v1/base/suppliers/${supplierID}`,
+        `DELETE /api/v1/base/suppliers/${supplierID}`,
         "GET /api/v1/meta/resources/hrEmployees",
         "POST /api/v1/hr/employees/query",
         "POST /api/v1/hr/employees",

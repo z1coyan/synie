@@ -36,10 +36,10 @@ describe('菜单白名单过滤派生', () => {
   })
 
   test('模块默认跳转页重算为首个可见项', () => {
-    // scm 原 entry = /scm/purchase（采购订单）；只留销售订单 → entry 重算
-    const visible = filterMenuModules(menuModules, ['menu.scm.sales-orders'])
-    const scm = visible.find((m) => m.key === 'scm')
-    expect(scm?.entry).toBe('/scm/sales-orders')
+    // sales 原 entry = /sales/orders（销售订单）；只留销售报价 → entry 重算
+    const visible = filterMenuModules(menuModules, ['menu.sales.quotations'])
+    const sales = visible.find((m) => m.key === 'sales')
+    expect(sales?.entry).toBe('/sales/quotations')
   })
 
   test('未命中任何 code 时整树为空', () => {

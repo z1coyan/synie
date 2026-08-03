@@ -15,6 +15,7 @@ import { createStockTransferService } from './stock-transfer-service.ts'
 import { createWarehouseService } from './warehouse-service.ts'
 
 export { inventoryRoutes } from './routes.ts'
+export { inventoryMasterRoutes } from './master-routes.ts'
 export { allInventoryResourceMetas } from './meta.ts'
 export type { MaterialCategoryService } from './category-service.ts'
 export type { MaterialService } from './material-service.ts'

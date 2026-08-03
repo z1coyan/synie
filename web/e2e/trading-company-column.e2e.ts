@@ -5,14 +5,14 @@ import type { DemoContext } from './helpers/admin-flow'
 
 const TOKEN_KEY = 'synie:token'
 const ROUTES = [
-  '/scm/purchase/items',
-  '/scm/purchase/orders',
-  '/scm/purchase-quotations/items',
-  '/scm/purchase-quotations/quotations',
-  '/scm/quotations/items',
-  '/scm/quotations/quotations',
-  '/scm/sales-orders/items',
-  '/scm/sales-orders/orders',
+  '/purchase/orders/items',
+  '/purchase/orders/orders',
+  '/purchase/quotations/items',
+  '/purchase/quotations/quotations',
+  '/sales/quotations/items',
+  '/sales/quotations/quotations',
+  '/sales/orders/items',
+  '/sales/orders/orders',
 ] as const
 
 let demo: DemoContext

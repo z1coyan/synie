@@ -15,19 +15,19 @@ type StockBalanceQuery = Record<string, unknown>
 
 export const materialCategoryClient = restTransport(
   'invMaterialCategories',
-  api.inventory['material-categories'],
+  api.base['material-categories'],
 )
 
-export const materialClient = restTransport('invMaterials', api.inventory.materials)
+export const materialClient = restTransport('invMaterials', api.base.materials)
 
 export const materialUnitClient = restTransport(
   'invMaterialUnits',
-  api.inventory['material-units'],
+  api.base['material-units'],
 )
 
 export const warehouseClient = restTransport(
   'invWarehouses',
-  api.inventory.warehouses,
+  api.base.warehouses,
 )
 
 export const stockEntryClient = restTransport(
@@ -155,7 +155,7 @@ export async function refreshStockCount(id: string) {
 
 export async function seedWarehouseDefaults(companyId: string) {
   return apiData(
-    api.inventory.warehouses['seed-defaults'].$post({
+    api.base.warehouses['seed-defaults'].$post({
       json: { companyId }}),
   )
 }
@@ -164,7 +164,7 @@ export async function queryOutsourcedWarehouses(
   partyId: string,
 ) {
   const result = await apiData(
-    api.inventory.warehouses.outsourced.query.$post({
+    api.base.warehouses.outsourced.query.$post({
       json: {
         limit: 100,
         offset: 0,

@@ -42,7 +42,7 @@ import type {
 } from './modules/party/party-service.ts'
 import { companyAccountDefaultRoutes } from './modules/sales/index.ts'
 import type { CompanyAccountDefaultService } from './modules/sales/company-account-default.ts'
-import { inventoryRoutes } from './modules/inventory/index.ts'
+import { inventoryMasterRoutes, inventoryRoutes } from './modules/inventory/index.ts'
 import type {
   MaterialCategoryService,
   MaterialService,
@@ -242,8 +242,8 @@ export function buildApp(deps: AppDeps) {
     )
     .route('/system/users', iamUserRoutes({ auth: deps.auth, iam: deps.iam }))
     .route('/system/roles', iamRoleRoutes({ auth: deps.auth, iam: deps.iam }))
-    .route('/sales/customers', customerRoutes({ auth: deps.auth, customers: deps.customers }))
-    .route('/purchase/suppliers', supplierRoutes({ auth: deps.auth, suppliers: deps.suppliers }))
+    .route('/base/customers', customerRoutes({ auth: deps.auth, customers: deps.customers }))
+    .route('/base/suppliers', supplierRoutes({ auth: deps.auth, suppliers: deps.suppliers }))
     .route(
       '/base/party-addresses',
       partyAddressRoutes({ auth: deps.auth, addresses: deps.partyAddresses }),
@@ -282,13 +282,19 @@ export function buildApp(deps: AppDeps) {
       }),
     )
     .route(
-      '/inventory',
-      inventoryRoutes({
+      '/base',
+      inventoryMasterRoutes({
         auth: deps.auth,
         categories: deps.invCategories,
         materials: deps.invMaterials,
         materialUnits: deps.invMaterialUnits,
         warehouses: deps.invWarehouses,
+      }),
+    )
+    .route(
+      '/inventory',
+      inventoryRoutes({
+        auth: deps.auth,
         stockDocs: deps.invStockDocs,
         stockTransfers: deps.invStockTransfers,
         stockCounts: deps.invStockCounts,
@@ -393,7 +399,7 @@ export function buildApp(deps: AppDeps) {
     .route('/sales/reconciliation-items', t.salesReconciliationItems)
     .route('/purchase/reconciliations', t.purchaseReconciliations)
     .route('/purchase/reconciliation-items', t.purchaseReconciliationItems)
-    .route('/scm/order-flow-items', s.orderFlowItems)
+    .route('/base/order-flow-items', s.orderFlowItems)
 
   app2.onError(onError)
   app2.notFound(notFound)

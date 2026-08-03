@@ -538,7 +538,7 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
       destination.push(line.id);
     }
 
-    await page.goto("/scm/sales-orders/orders");
+    await page.goto("/sales/orders/orders");
     await expect(
       page.getByRole("grid", { name: "salOrders 数据表格" }),
     ).toBeVisible();
@@ -593,7 +593,7 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
     );
     await expect(await orderRow(page, salesNo)).toContainText("已关闭");
 
-    await page.goto("/scm/purchase/orders");
+    await page.goto("/purchase/orders/orders");
     await expect(
       page.getByRole("grid", { name: "purOrders 数据表格" }),
     ).toBeVisible();

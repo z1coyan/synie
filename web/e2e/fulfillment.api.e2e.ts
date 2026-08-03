@@ -115,7 +115,7 @@ async function openDeliveryEdit(
   page: Page,
   deliveryNo: string,
 ): Promise<Locator> {
-  await page.goto("/scm/sales-deliveries/deliveries");
+  await page.goto("/sales/deliveries/deliveries");
   const grid = page.getByRole("grid", { name: "salDeliveries 数据表格" });
   await expect(grid).toBeVisible();
   await page.getByRole("searchbox", { name: "搜索" }).fill(deliveryNo);
@@ -296,11 +296,11 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
     created.push(...documents.map((document) => document.id));
 
     for (const [path, resource, number] of [
-      ["/scm/sales-deliveries/deliveries", "salDeliveries", `${prefix}-SD`],
-      ["/scm/purchase-receipts/receipts", "purReceipts", `${prefix}-PR`],
-      ["/scm/outsourced-issues/issues", "purOutsourcedIssues", `${prefix}-OI`],
+      ["/sales/deliveries/deliveries", "salDeliveries", `${prefix}-SD`],
+      ["/purchase/receipts/receipts", "purReceipts", `${prefix}-PR`],
+      ["/purchase/outsourced-issues/issues", "purOutsourcedIssues", `${prefix}-OI`],
       [
-        "/scm/outsourced-receipts/receipts",
+        "/purchase/outsourced-receipts/receipts",
         "purOutsourcedReceipts",
         `${prefix}-OR`,
       ],
@@ -320,7 +320,7 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
     const auditRoute = `**${auditPath}`;
 
     await test.step("新建抽屉只发送一次整单创建", async () => {
-      await page.goto("/scm/sales-deliveries/deliveries");
+      await page.goto("/sales/deliveries/deliveries");
       await expect(
         page.getByRole("grid", { name: "salDeliveries 数据表格" }),
       ).toBeVisible();

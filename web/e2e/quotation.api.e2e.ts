@@ -363,7 +363,7 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
       }
     }
 
-    await page.goto("/scm/quotations/quotations");
+    await page.goto("/sales/quotations/quotations");
     await expect(
       page.getByRole("heading", { name: "销售报价", exact: true }),
     ).toBeVisible();
@@ -433,7 +433,7 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
       0, 2,
     ]);
 
-    await page.goto("/scm/purchase-quotations/quotations");
+    await page.goto("/purchase/quotations/quotations");
     await expect(
       page.getByRole("heading", { name: "采购报价", exact: true }),
     ).toBeVisible();

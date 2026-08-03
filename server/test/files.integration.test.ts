@@ -36,7 +36,7 @@ run('PG 集成（files / storages）', () => {
   const owners = createOwnerRegistry()
   owners.register('sal_customer', {
     table: 'sal_customers',
-    permissionPrefix: 'sales.customer',
+    permissionPrefix: 'base.customer',
   })
   owners.register('acc_gl_journal', {
     table: 'acc_gl_journal',
@@ -94,7 +94,7 @@ run('PG 集成（files / storages）', () => {
           'sys.file:create',
           'sys.file:read',
           'sys.file:delete',
-          'sales.customer:read',
+          'base.customer:read',
         ]),
         companyIds: [],
       }

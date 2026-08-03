@@ -1,10 +1,13 @@
 import type { ComponentType, SVGProps } from 'react'
 import {
   IconDatabase,
+  IconFactory,
   IconGrid,
   IconLandmark,
   IconPackage,
+  IconShoppingCart,
   IconSliders,
+  IconTruck,
   IconUsers,
 } from '~/components/icons'
 
@@ -186,125 +189,185 @@ export const menuModules: MenuModule[] = [
     ],
   },
   {
-    key: 'scm',
-    label: '供应链',
-    description: '采购、销售、库存与生产',
-    icon: IconPackage,
-    entry: '/scm/purchase',
+    key: 'sales',
+    label: '销售管理',
+    description: '报价、订单、发货与对账',
+    icon: IconShoppingCart,
+    entry: '/sales/orders',
     groups: [
       {
         label: '交易',
         items: [
           {
-            code: 'menu.scm.purchase-quotations',
-            label: '采购报价',
-            path: '/scm/purchase-quotations',
-            relatedPermissions: ['purchase.quotation'],
-          },
-          {
-            code: 'menu.scm.purchase',
-            label: '采购订单',
-            path: '/scm/purchase',
-            relatedPermissions: ['purchase.order'],
-          },
-          {
-            code: 'menu.scm.purchase-reconciliations',
-            label: '采购对账',
-            path: '/scm/purchase-reconciliations',
-            relatedPermissions: ['purchase.reconciliation'],
-          },
-          {
-            code: 'menu.scm.quotations',
+            code: 'menu.sales.quotations',
             label: '销售报价',
-            path: '/scm/quotations',
+            path: '/sales/quotations',
             relatedPermissions: ['sales.quotation'],
           },
           {
-            code: 'menu.scm.sales-orders',
+            code: 'menu.sales.orders',
             label: '销售订单',
-            path: '/scm/sales-orders',
+            path: '/sales/orders',
             relatedPermissions: ['sales.order'],
           },
           {
-            code: 'menu.scm.sales-reconciliations',
+            code: 'menu.sales.deliveries',
+            label: '销售发货',
+            path: '/sales/deliveries',
+            relatedPermissions: ['sales.delivery'],
+          },
+          {
+            code: 'menu.sales.reconciliations',
             label: '销售对账',
-            path: '/scm/sales-reconciliations',
+            path: '/sales/reconciliations',
             relatedPermissions: ['sales.reconciliation'],
           },
         ],
       },
       {
-        label: '库存',
+        label: '设置',
+        // 供应链设置页内分销售/采购/生产三 Tab,本入口直达销售 Tab
         items: [
           {
-            code: 'menu.scm.purchase-receipts',
+            code: 'menu.sales.sales',
+            label: '销售设置',
+            path: '/scm/settings/sales',
+            relatedPermissions: ['sales.setting'],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'purchase',
+    label: '采购管理',
+    description: '报价、订单、入库、委外与对账',
+    icon: IconTruck,
+    entry: '/purchase/orders',
+    groups: [
+      {
+        label: '交易',
+        items: [
+          {
+            code: 'menu.purchase.quotations',
+            label: '采购报价',
+            path: '/purchase/quotations',
+            relatedPermissions: ['purchase.quotation'],
+          },
+          {
+            code: 'menu.purchase.orders',
+            label: '采购订单',
+            path: '/purchase/orders',
+            relatedPermissions: ['purchase.order'],
+          },
+          {
+            code: 'menu.purchase.receipts',
             label: '采购入库',
-            path: '/scm/purchase-receipts',
+            path: '/purchase/receipts',
             relatedPermissions: ['purchase.receipt'],
           },
           {
-            code: 'menu.scm.outsourced-issues',
-            label: '委外发料',
-            path: '/scm/outsourced-issues',
-            relatedPermissions: ['purchase.outsourced_issue'],
-          },
-          {
-            code: 'menu.scm.outsourced-receipts',
-            label: '委外入库',
-            path: '/scm/outsourced-receipts',
-            relatedPermissions: ['purchase.outsourced_receipt'],
-          },
-          {
-            code: 'menu.scm.sales-deliveries',
-            label: '销售发货',
-            path: '/scm/sales-deliveries',
-            relatedPermissions: ['sales.delivery'],
-          },
-          // 其他库存单页内三 tab:出入库/调拨/盘点(非领域实体入口,无独立资源)
-          {
-            code: 'menu.scm.other-stock',
-            label: '其他库存单',
-            path: '/scm/other-stock',
-            relatedPermissions: ['inv.stock_doc', 'inv.stock_transfer', 'inv.stock_count'],
-          },
-          // 库存余额是分录只读聚合视图,复用库存分录 read 权限码
-          {
-            code: 'menu.scm.inventory',
-            label: '库存余额',
-            path: '/scm/inventory',
-            relatedPermissions: ['inv.stock_entry'],
-          },
-          {
-            code: 'menu.scm.stock-entries',
-            label: '库存分录',
-            path: '/scm/stock-entries',
-            relatedPermissions: ['inv.stock_entry'],
+            code: 'menu.purchase.reconciliations',
+            label: '采购对账',
+            path: '/purchase/reconciliations',
+            relatedPermissions: ['purchase.reconciliation'],
           },
         ],
       },
       {
+        label: '委外',
+        items: [
+          {
+            code: 'menu.purchase.outsourced-issues',
+            label: '委外发料',
+            path: '/purchase/outsourced-issues',
+            relatedPermissions: ['purchase.outsourced_issue'],
+          },
+          {
+            code: 'menu.purchase.outsourced-receipts',
+            label: '委外入库',
+            path: '/purchase/outsourced-receipts',
+            relatedPermissions: ['purchase.outsourced_receipt'],
+          },
+        ],
+      },
+      {
+        label: '设置',
+        // 采购 Tab 复用 sales.setting 资源(供应链设置单行存 sal_setting)
+        items: [
+          {
+            code: 'menu.purchase.purchase',
+            label: '采购设置',
+            path: '/scm/settings/purchase',
+            relatedPermissions: ['sales.setting'],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'inv',
+    label: '库存管理',
+    description: '库存单据、余额与分录',
+    icon: IconPackage,
+    entry: '/inventory/balance',
+    groups: [
+      {
+        items: [
+          // 其他库存单页内三 tab:出入库/调拨/盘点(非领域实体入口,无独立资源)
+          {
+            code: 'menu.inv.other-stock',
+            label: '其他库存单',
+            path: '/inventory/other-stock',
+            relatedPermissions: ['inv.stock_doc', 'inv.stock_transfer', 'inv.stock_count'],
+          },
+          // 库存余额是分录只读聚合视图,复用库存分录 read 权限码
+          {
+            code: 'menu.inv.balance',
+            label: '库存余额',
+            path: '/inventory/balance',
+            relatedPermissions: ['inv.stock_entry'],
+          },
+          {
+            code: 'menu.inv.stock-entries',
+            label: '库存分录',
+            path: '/inventory/stock-entries',
+            relatedPermissions: ['inv.stock_entry'],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'mfg',
+    label: '生产管理',
+    description: '需求、BOM、工单与生产入库',
+    icon: IconFactory,
+    entry: '/mfg/work-orders',
+    groups: [
+      {
         label: '计划',
         items: [
           {
-            code: 'menu.scm.demands',
+            code: 'menu.mfg.demands',
             label: '履约需求单',
             path: '/mfg/demands',
             relatedPermissions: ['mfg.demand'],
           },
           {
-            code: 'menu.scm.boms',
+            code: 'menu.mfg.boms',
             label: 'BOM',
             path: '/mfg/boms',
             relatedPermissions: ['mfg.bom'],
           },
           {
-            code: 'menu.scm.operations',
+            code: 'menu.mfg.operations',
             label: '工序',
             path: '/mfg/operations',
             relatedPermissions: ['mfg.operation'],
           },
           {
-            code: 'menu.scm.process-templates',
+            code: 'menu.mfg.process-templates',
             label: '工艺模板',
             path: '/mfg/process-templates',
             relatedPermissions: ['mfg.route_template'],
@@ -315,13 +378,13 @@ export const menuModules: MenuModule[] = [
         label: '生产',
         items: [
           {
-            code: 'menu.scm.work-orders',
+            code: 'menu.mfg.work-orders',
             label: '生产工单',
             path: '/mfg/work-orders',
             relatedPermissions: ['mfg.work_order'],
           },
           {
-            code: 'menu.scm.outputs',
+            code: 'menu.mfg.outputs',
             label: '生产入库',
             path: '/mfg/outputs',
             relatedPermissions: ['mfg.output'],
@@ -330,13 +393,12 @@ export const menuModules: MenuModule[] = [
       },
       {
         label: '设置',
-        // 供应链设置页内分销售/采购/生产三 Tab,对应两个权限资源
         items: [
           {
-            code: 'menu.scm.settings',
-            label: '供应链设置',
-            path: '/scm/settings',
-            relatedPermissions: ['sales.setting', 'mfg.setting'],
+            code: 'menu.mfg.production',
+            label: '生产设置',
+            path: '/scm/settings/production',
+            relatedPermissions: ['mfg.setting'],
           },
         ],
       },
@@ -385,31 +447,32 @@ export const menuModules: MenuModule[] = [
             code: 'menu.base.materials',
             label: '物料管理',
             path: '/scm/materials',
-            relatedPermissions: ['inv.material'],
+            relatedPermissions: ['base.material'],
           },
           {
             code: 'menu.base.material-categories',
             label: '物料分类',
             path: '/scm/material-categories',
-            relatedPermissions: ['inv.material_category'],
+            relatedPermissions: ['base.material_category'],
           },
           {
             code: 'menu.base.warehouses',
             label: '仓库管理',
             path: '/scm/warehouses',
-            relatedPermissions: ['inv.warehouse'],
+            relatedPermissions: ['base.warehouse'],
           },
           {
             code: 'menu.base.customers',
             label: '客户管理',
             path: '/scm/customers',
-            relatedPermissions: ['sales.customer'],
+            // 地址在客户抽屉内维护,无独立菜单
+            relatedPermissions: ['base.customer', 'base.party_address'],
           },
           {
             code: 'menu.base.suppliers',
             label: '供应商管理',
             path: '/scm/suppliers',
-            relatedPermissions: ['purchase.supplier'],
+            relatedPermissions: ['base.supplier'],
           },
         ],
       },

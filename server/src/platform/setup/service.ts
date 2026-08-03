@@ -668,10 +668,10 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
   'sales.quotation:audit',
   'sales.quotation:void',
   // 客户：完整权限
-  'sales.customer:create',
-  'sales.customer:read',
-  'sales.customer:update',
-  'sales.customer:delete',
+  'base.customer:create',
+  'base.customer:read',
+  'base.customer:update',
+  'base.customer:delete',
   // 地址：客户抽屉内维护收发货/办公地址
   'base.party_address:create',
   'base.party_address:read',
@@ -686,11 +686,11 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
   'mfg.demand:close',
   'mfg.demand:void',
   // 物料：只读
-  'inv.material:read',
+  'base.material:read',
   // 库存分录：只读（库存余额视图复用同一码）
   'inv.stock_entry:read',
   // 仓库：只读
-  'inv.warehouse:read',
+  'base.warehouse:read',
   // 会计科目：只读
   'base.account:read',
   // 币种：只读
@@ -707,16 +707,16 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
 export const SALES_ROLE_MENUS: ReadonlyArray<string> = [
   // 工作台：着陆页
   'menu.dashboard.home',
-  // 供应链·交易：销售链
-  'menu.scm.quotations',
-  'menu.scm.sales-orders',
-  'menu.scm.sales-reconciliations',
-  // 供应链·库存：销售发货 + 库存只读视图
-  'menu.scm.sales-deliveries',
-  'menu.scm.inventory',
-  'menu.scm.stock-entries',
-  // 供应链·计划：履约需求单
-  'menu.scm.demands',
+  // 销售管理·交易：销售链
+  'menu.sales.quotations',
+  'menu.sales.orders',
+  'menu.sales.deliveries',
+  'menu.sales.reconciliations',
+  // 库存管理：库存只读视图
+  'menu.inv.balance',
+  'menu.inv.stock-entries',
+  // 生产管理·计划：履约需求单
+  'menu.mfg.demands',
   // 基础数据：客户完整 + 主数据只读
   'menu.base.customers',
   'menu.base.materials',

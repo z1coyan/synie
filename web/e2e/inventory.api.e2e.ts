@@ -102,7 +102,7 @@ test('库存主数据、流水、余额与三类单据页面全程使用 Go REST
       (response) =>
         response.request().method() === 'POST' &&
         new URL(response.url()).pathname ===
-          '/api/v1/inventory/material-categories',
+          '/api/v1/base/material-categories',
     )
     await drawer.getByRole('button', { name: '保存', exact: true }).click()
     const created = await expectOK(createResponse)
@@ -147,7 +147,7 @@ test('库存主数据、流水、余额与三类单据页面全程使用 Go REST
     }
     await expect(warehouseGrid).toBeVisible()
 
-    await page.goto('/scm/stock-entries')
+    await page.goto('/inventory/stock-entries')
     await expect(
       page.getByRole('heading', { name: '库存分录流水', exact: true }),
     ).toBeVisible()
@@ -155,7 +155,7 @@ test('库存主数据、流水、余额与三类单据页面全程使用 Go REST
       page.getByRole('grid', { name: 'invStockEntries 数据表格' }),
     ).toBeVisible()
 
-    await page.goto('/scm/inventory')
+    await page.goto('/inventory/balance')
     await expect(
       page.getByRole('heading', { name: '库存余额', exact: true }),
     ).toBeVisible()
@@ -176,17 +176,17 @@ test('库存主数据、流水、余额与三类单据页面全程使用 Go REST
 
     for (const tab of [
       {
-        route: '/scm/other-stock/docs',
+        route: '/inventory/other-stock/docs',
         resource: 'invStockDocs',
         label: '出入库',
       },
       {
-        route: '/scm/other-stock/transfers',
+        route: '/inventory/other-stock/transfers',
         resource: 'invStockTransfers',
         label: '调拨',
       },
       {
-        route: '/scm/other-stock/counts',
+        route: '/inventory/other-stock/counts',
         resource: 'invStockCounts',
         label: '盘点',
       },
@@ -225,10 +225,10 @@ test('库存主数据、流水、余额与三类单据页面全程使用 Go REST
       `实际库存 REST 请求:\n${restRequests.join('\n')}`,
     ).toEqual(
       expect.arrayContaining([
-        'POST /api/v1/inventory/material-categories/query',
-        'POST /api/v1/inventory/material-categories',
-        'POST /api/v1/inventory/materials/query',
-        'POST /api/v1/inventory/warehouses/query',
+        'POST /api/v1/base/material-categories/query',
+        'POST /api/v1/base/material-categories',
+        'POST /api/v1/base/materials/query',
+        'POST /api/v1/base/warehouses/query',
         'POST /api/v1/inventory/stock-entries/query',
         'POST /api/v1/inventory/stock-balance/query',
         'POST /api/v1/inventory/stock-docs/query',

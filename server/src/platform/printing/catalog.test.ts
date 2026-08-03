@@ -39,7 +39,7 @@ function newTestCatalog() {
   })
   registry.register({
     name: 'invMaterials',
-    permissionPrefix: 'inv.material',
+    permissionPrefix: 'base.material',
     permissionLabel: '物料',
     table: 'inv_material',
     fields: [scalar('id'), scalar('code'), scalar('name')],

@@ -1,0 +1,464 @@
+/**
+ * 库存域主数据 REST：物料分类/物料/物料单位转换/仓库。
+ * 挂载于 /base（供应链主数据归入基础资料前缀；库存单据仍挂 /inventory）。
+ */
+import { zValidator } from '@hono/zod-validator'
+import { Hono } from 'hono'
+import { z } from 'zod'
+import type { ListQuery } from '@synie/shared'
+import { requireAuth } from '~/platform/auth/middleware.ts'
+import type { AuthService } from '~/platform/auth/service.ts'
+import type { AppEnv } from '~/platform/http/context.ts'
+import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import type { MaterialCategoryService } from './category-service.ts'
+import type { MaterialService } from './material-service.ts'
+import type { MaterialUnitService } from './material-unit-service.ts'
+import type { WarehouseService } from './warehouse-service.ts'
+
+const idParam = z.object({ id: z.string().uuid() })
+
+function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
+  return {
+    limit: body.limit,
+    offset: body.offset,
+    search: body.search,
+    sort: body.sort,
+    filter: body.filter as ListQuery['filter'],
+  }
+}
+
+export interface InventoryMasterRouteDeps {
+  auth: AuthService
+  categories: MaterialCategoryService
+  materials: MaterialService
+  materialUnits: MaterialUnitService
+  warehouses: WarehouseService
+}
+
+export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
+  const { auth, categories, materials, materialUnits, warehouses } = deps
+
+  return (
+    new Hono<AppEnv>()
+      .use('*', requireAuth(auth))
+      // —— 物料分类 ——
+      .post(
+        '/material-categories/query',
+        zValidator('json', listQuerySchema, validationHook),
+        async (c) => {
+          const result = await categories.list(c.get('actor')!, toList(c.req.valid('json')))
+          return c.json({ count: result.count, results: result.results.map(categoryDto) })
+        },
+      )
+      .post(
+        '/material-categories',
+        zValidator(
+          'json',
+          z
+            .object({
+              code: z.string().min(1),
+              name: z.string().min(1),
+              isLeaf: z.boolean().optional(),
+              active: z.boolean().optional(),
+              parentId: z.string().uuid().nullable().optional(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const item = await categories.create(c.get('actor')!, c.req.valid('json'))
+          return c.json(categoryDto(item), 201)
+        },
+      )
+      .get(
+        '/material-categories/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          const item = await categories.get(c.get('actor')!, c.req.valid('param').id)
+          return c.json(categoryDto(item))
+        },
+      )
+      .patch(
+        '/material-categories/:id',
+        zValidator('param', idParam, validationHook),
+        zValidator(
+          'json',
+          z
+            .object({
+              code: z.string().min(1).optional(),
+              name: z.string().min(1).optional(),
+              isLeaf: z.boolean().optional(),
+              active: z.boolean().optional(),
+              parentId: z.string().uuid().nullable().optional(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const body = c.req.valid('json')
+          const raw = (await c.req.json()) as Record<string, unknown>
+          const item = await categories.update(c.get('actor')!, c.req.valid('param').id, {
+            ...body,
+            parentIdPresent: Object.prototype.hasOwnProperty.call(raw, 'parentId'),
+          })
+          return c.json(categoryDto(item))
+        },
+      )
+      .delete(
+        '/material-categories/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          await categories.remove(c.get('actor')!, c.req.valid('param').id)
+          return c.body(null, 204)
+        },
+      )
+      // —— 物料 ——
+      .post(
+        '/materials/query',
+        zValidator('json', listQuerySchema, validationHook),
+        async (c) => {
+          const result = await materials.list(c.get('actor')!, toList(c.req.valid('json')))
+          return c.json({ count: result.count, results: result.results.map(materialDto) })
+        },
+      )
+      .post(
+        '/materials',
+        zValidator(
+          'json',
+          z
+            .object({
+              name: z.string().min(1),
+              spec: z.string().nullable().optional(),
+              customerPartNo: z.string().nullable().optional(),
+              isCustomerMaterial: z.boolean().optional(),
+              active: z.boolean().optional(),
+              categoryId: z.string().uuid(),
+              defaultUnitId: z.string().uuid(),
+              customerId: z.string().uuid().nullable().optional(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const item = await materials.create(c.get('actor')!, c.req.valid('json'))
+          return c.json(materialDto(item), 201)
+        },
+      )
+      .get(
+        '/materials/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          const item = await materials.get(c.get('actor')!, c.req.valid('param').id)
+          return c.json(materialDto(item))
+        },
+      )
+      .patch(
+        '/materials/:id',
+        zValidator('param', idParam, validationHook),
+        zValidator(
+          'json',
+          z
+            .object({
+              name: z.string().min(1).optional(),
+              spec: z.string().nullable().optional(),
+              customerPartNo: z.string().nullable().optional(),
+              isCustomerMaterial: z.boolean().optional(),
+              active: z.boolean().optional(),
+              categoryId: z.string().uuid().optional(),
+              defaultUnitId: z.string().uuid().optional(),
+              customerId: z.string().uuid().nullable().optional(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const body = c.req.valid('json')
+          const raw = (await c.req.json()) as Record<string, unknown>
+          const item = await materials.update(c.get('actor')!, c.req.valid('param').id, {
+            ...body,
+            specPresent: Object.prototype.hasOwnProperty.call(raw, 'spec'),
+            customerPartNoPresent: Object.prototype.hasOwnProperty.call(raw, 'customerPartNo'),
+            customerIdPresent: Object.prototype.hasOwnProperty.call(raw, 'customerId'),
+          })
+          return c.json(materialDto(item))
+        },
+      )
+      .delete(
+        '/materials/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          await materials.remove(c.get('actor')!, c.req.valid('param').id)
+          return c.body(null, 204)
+        },
+      )
+      // —— 物料单位转换 ——
+      .post(
+        '/material-units/query',
+        zValidator('json', listQuerySchema, validationHook),
+        async (c) => {
+          const result = await materialUnits.list(c.get('actor')!, toList(c.req.valid('json')))
+          return c.json({ count: result.count, results: result.results.map(materialUnitDto) })
+        },
+      )
+      .post(
+        '/material-units',
+        zValidator(
+          'json',
+          z
+            .object({
+              materialId: z.string().uuid(),
+              unitId: z.string().uuid(),
+              factor: z.string().min(1),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const item = await materialUnits.create(c.get('actor')!, c.req.valid('json'))
+          return c.json(materialUnitDto(item), 201)
+        },
+      )
+      .get(
+        '/material-units/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          const item = await materialUnits.get(c.get('actor')!, c.req.valid('param').id)
+          return c.json(materialUnitDto(item))
+        },
+      )
+      .patch(
+        '/material-units/:id',
+        zValidator('param', idParam, validationHook),
+        zValidator(
+          'json',
+          z
+            .object({
+              unitId: z.string().uuid().optional(),
+              factor: z.string().min(1).optional(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const item = await materialUnits.update(
+            c.get('actor')!,
+            c.req.valid('param').id,
+            c.req.valid('json'),
+          )
+          return c.json(materialUnitDto(item))
+        },
+      )
+      .delete(
+        '/material-units/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          await materialUnits.remove(c.get('actor')!, c.req.valid('param').id)
+          return c.body(null, 204)
+        },
+      )
+      // —— 仓库 ——
+      .post(
+        '/warehouses/query',
+        zValidator('json', listQuerySchema, validationHook),
+        async (c) => {
+          const result = await warehouses.list(c.get('actor')!, toList(c.req.valid('json')))
+          return c.json({ count: result.count, results: result.results.map(warehouseDto) })
+        },
+      )
+      // 静态路径须先于 /warehouses/:id
+      .post(
+        '/warehouses/outsourced/query',
+        zValidator(
+          'json',
+          z
+            .object({
+              limit: z.number().int().min(0).max(200).optional(),
+              offset: z.number().int().min(0).optional(),
+              search: z.string().optional(),
+              sort: z
+                .object({
+                  column: z.string(),
+                  direction: z.enum(['ascending', 'descending']),
+                })
+                .optional(),
+              filter: z.record(z.string(), z.unknown()).optional(),
+              partyType: z.enum(['SUPPLIER', 'COMPANY']),
+              partyId: z.string().uuid(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const body = c.req.valid('json')
+          const result = await warehouses.listOutsourced(
+            c.get('actor')!,
+            body.partyType,
+            body.partyId,
+            toList(body),
+          )
+          return c.json({ count: result.count, results: result.results.map(warehouseDto) })
+        },
+      )
+      .post(
+        '/warehouses/seed-defaults',
+        zValidator(
+          'json',
+          z.object({ companyId: z.string().uuid() }).strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const count = await warehouses.seedDefaults(
+            c.get('actor')!,
+            c.req.valid('json').companyId,
+          )
+          return c.json({ count })
+        },
+      )
+      .post(
+        '/warehouses',
+        zValidator(
+          'json',
+          z
+            .object({
+              name: z.string().min(1),
+              isLeaf: z.boolean().optional(),
+              active: z.boolean().optional(),
+              isOutsourced: z.boolean().optional(),
+              partyType: z.string().nullable().optional(),
+              partyId: z.string().uuid().nullable().optional(),
+              allowNegative: z.boolean().optional(),
+              companyId: z.string().uuid(),
+              parentId: z.string().uuid().nullable().optional(),
+              accountId: z.string().uuid().nullable().optional(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const item = await warehouses.create(c.get('actor')!, c.req.valid('json'))
+          return c.json(warehouseDto(item), 201)
+        },
+      )
+      .get(
+        '/warehouses/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          const item = await warehouses.get(c.get('actor')!, c.req.valid('param').id)
+          return c.json(warehouseDto(item))
+        },
+      )
+      .patch(
+        '/warehouses/:id',
+        zValidator('param', idParam, validationHook),
+        zValidator(
+          'json',
+          z
+            .object({
+              name: z.string().min(1).optional(),
+              isLeaf: z.boolean().optional(),
+              active: z.boolean().optional(),
+              isOutsourced: z.boolean().optional(),
+              partyType: z.string().nullable().optional(),
+              partyId: z.string().uuid().nullable().optional(),
+              allowNegative: z.boolean().optional(),
+              parentId: z.string().uuid().nullable().optional(),
+              accountId: z.string().uuid().nullable().optional(),
+            })
+            .strict(),
+          validationHook,
+        ),
+        async (c) => {
+          const body = c.req.valid('json')
+          const raw = (await c.req.json()) as Record<string, unknown>
+          const item = await warehouses.update(c.get('actor')!, c.req.valid('param').id, {
+            ...body,
+            partyTypePresent: Object.prototype.hasOwnProperty.call(raw, 'partyType'),
+            partyIdPresent: Object.prototype.hasOwnProperty.call(raw, 'partyId'),
+            parentIdPresent: Object.prototype.hasOwnProperty.call(raw, 'parentId'),
+            accountIdPresent: Object.prototype.hasOwnProperty.call(raw, 'accountId'),
+          })
+          return c.json(warehouseDto(item))
+        },
+      )
+      .delete(
+        '/warehouses/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          await warehouses.remove(c.get('actor')!, c.req.valid('param').id)
+          return c.body(null, 204)
+        },
+      )
+  )
+}
+
+// ─── DTOs ───────────────────────────────────────────────────
+
+function categoryDto(item: Awaited<ReturnType<MaterialCategoryService['get']>>) {
+  return {
+    id: item.id,
+    code: item.code,
+    name: item.name,
+    isLeaf: item.isLeaf,
+    active: item.active,
+    hasChildren: item.hasChildren,
+    parentId: item.parentId,
+    parent: item.parent,
+    insertedAt: item.insertedAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  }
+}
+
+function materialDto(item: Awaited<ReturnType<MaterialService['get']>>) {
+  return {
+    id: item.id,
+    code: item.code,
+    name: item.name,
+    spec: item.spec,
+    customerPartNo: item.customerPartNo,
+    isCustomerMaterial: item.isCustomerMaterial,
+    active: item.active,
+    categoryId: item.categoryId,
+    defaultUnitId: item.defaultUnitId,
+    customerId: item.customerId,
+    category: item.category,
+    defaultUnit: item.defaultUnit,
+    customer: item.customer,
+    insertedAt: item.insertedAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  }
+}
+
+function materialUnitDto(item: Awaited<ReturnType<MaterialUnitService['get']>>) {
+  return {
+    id: item.id,
+    factor: item.factor,
+    materialId: item.materialId,
+    unitId: item.unitId,
+    material: item.material,
+    unit: item.unit,
+    insertedAt: item.insertedAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  }
+}
+
+function warehouseDto(item: Awaited<ReturnType<WarehouseService['get']>>) {
+  return {
+    id: item.id,
+    name: item.name,
+    isLeaf: item.isLeaf,
+    active: item.active,
+    isOutsourced: item.isOutsourced,
+    partyType: item.partyType,
+    partyId: item.partyId,
+    allowNegative: item.allowNegative,
+    companyId: item.companyId,
+    parentId: item.parentId,
+    accountId: item.accountId,
+    company: item.company,
+    parent: item.parent,
+    account: item.account,
+    hasChildren: item.hasChildren,
+    insertedAt: item.insertedAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  }
+}

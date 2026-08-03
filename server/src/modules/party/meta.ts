@@ -20,7 +20,7 @@ const crud = [
 export function customerResourceMeta(): ResourceMeta {
   return {
     name: 'salCustomers',
-    permissionPrefix: 'sales.customer',
+    permissionPrefix: 'base.customer',
     permissionLabel: '客户',
     label: '客户',
     table: 'sal_customers',
@@ -59,7 +59,7 @@ export function customerResourceMeta(): ResourceMeta {
 export function supplierResourceMeta(): ResourceMeta {
   return {
     name: 'purSuppliers',
-    permissionPrefix: 'purchase.supplier',
+    permissionPrefix: 'base.supplier',
     permissionLabel: '供应商',
     label: '供应商',
     table: 'pur_supplier',

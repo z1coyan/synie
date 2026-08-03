@@ -33,7 +33,7 @@ function f(
 export function orderFlowItemMeta(): ResourceMeta {
   return {
     name: 'scmOrderFlowItems',
-    permissionPrefix: 'scm.order_flow',
+    permissionPrefix: 'base.order_flow',
     permissionLabel: '订单收发货历史',
     table: 'scm_order_flow_item',
     readPermissionsAny: [...ORDER_FLOW_SOURCE_READ_PERMISSIONS],

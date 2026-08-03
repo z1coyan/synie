@@ -106,10 +106,10 @@ run('PG 集成（角色菜单白名单）', () => {
   test('目录外菜单码拒绝且逐个点名', async () => {
     const roleId = await mkRole('menus-unknown')
     const err = await iam
-      .syncRoleMenus(adminActor, roleId, [menuA, 'menu.scm.no-such-page', 'menu.bogus.x'])
+      .syncRoleMenus(adminActor, roleId, [menuA, 'menu.sales.no-such-page', 'menu.bogus.x'])
       .catch((e) => e)
     expect(err).toMatchObject({ code: 'validation' })
-    expect(err.fields.menuCodes.join(' ')).toContain('menu.scm.no-such-page')
+    expect(err.fields.menuCodes.join(' ')).toContain('menu.sales.no-such-page')
     // 校验失败不落任何行
     expect(await iam.roleMenus(adminActor, roleId)).toEqual([])
   })

@@ -1,0 +1,144 @@
+import { useMemo } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
+import { Link } from '@heroui/react'
+import { formatAmount, formatPrice } from '~/lib/amount'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
+import type { Row } from '~/components/synie-data-grid/types'
+import { docActionVisible, ORDER_DOC_STATUS_ENUM_COLORS } from '~/lib/doc-status'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
+import { useOrderDrawer, salesOrderAuditConfig, type OpenOrderDrawer } from './-order-drawer'
+import { useAuditDoc } from '../../scm/-audit-doc'
+import { QtyProgressCell } from '../../scm/-qty-progress-cell'
+
+export const Route = createFileRoute('/_app/sales/orders/items')({
+  component: SalesOrderItemsTab,
+})
+
+// 行级明细列白名单:头信息(orderDate/partyId/orderStatus/currencyCode 由后端 gridMeta 以
+// calc/多态 fk 列下发,判别列 partyType 不出列也随查询取回,对手列照常解析)
+// + 行自身字段;行号/税率与客户料号不进网格(行号对跨单浏览无意义,税率进抽屉看),
+// companyId 作单据归属公司首列;insertedAt/updatedAt 不进表格(兼当 exclude)。
+// 物料/单位走快照文本列(下单时落库,防主数据改名/换码影响历史单显示);
+// 物料按全站约定合并为单个富单元格列(materialCode 列承载,其余快照字段经 extraFields 取回)。
+// 跨订单混合行,双币金额恒全列展示(本币单两套同值;简化只在订单抽屉内,ADR 双币)
+const GRID_COLUMNS = [
+  'companyId',
+  'orderId',
+  'orderDate',
+  'partyId',
+  'orderStatus',
+  'materialCode',
+  'unitName',
+  // 数量/已发/未发并一列:列本体是未发数量计算列(筛选/排序即未发口径),
+  // 单元格进度条渲染,行数量与已发由 extraFields 补取
+  'remainingBaseQty',
+  'currencyCode',
+  'basePrice',
+  'price',
+  'baseAmount',
+  'amount',
+  'remarks',
+]
+
+// 行编辑/审核整单仅草稿单放行(后端权威校验兜底,这里做体验层);关闭/作废/删除不进条目视图
+const ACTION_VISIBLE = docActionVisible({ edit: ['DRAFT'], auditDoc: ['DRAFT'] }, 'orderStatus')
+
+// orderId 列覆盖默认 FkLink(速览抽屉):点击开共享完整订单抽屉,与点行的「查看」一致。
+// fk label 读取资源返回的 order 关系标签，拿不到时退回截断 id。
+function buildOverrides(openDrawer: OpenOrderDrawer) {
+  return {
+    // 卡片:物料作标题、客户作副标题、状态/进度/金额作摘要;公司首列桌面保留筛选,卡片藏
+    companyId: { mobileRole: 'hide' },
+    // 物料列:全站统一富单元格(图纸缩略图+快照四字段,编号点开物料速览);行图纸挂接优先
+    materialCode: {
+      label: '物料',
+      mobileRole: 'title',
+      filterField: 'materialId',
+      render: materialCellRender({ drawingOwnerType: 'sal_order_item' }),
+    },
+    partyId: { mobileRole: 'subtitle' },
+    orderId: {
+      render: (_v: unknown, row: Row) => {
+        const order = row.order as Row | null | undefined
+        const orderNo = order?.orderNo
+        return (
+          <Link
+            onPress={() => openDrawer('view', { id: String(row.orderId), status: row.orderStatus })}
+            className="inline-block max-w-80 cursor-pointer truncate align-bottom text-inherit underline-offset-2 hover:underline"
+          >
+            {orderNo != null ? String(orderNo) : String(row.orderId).slice(0, 8)}
+          </Link>
+        )
+      },
+    },
+    // 与订单 tab 同一套状态胶囊配色:草稿灰、已审核绿、已关闭黄、已作废红
+    orderStatus: {
+      label: '状态',
+      mobileRole: 'summary',
+      enumColors: ORDER_DOC_STATUS_ENUM_COLORS,
+    },
+    // 合并列:进度条展示 已发/数量·未发(折回行单位,见 QtyProgressCell);列筛选/排序=未发数量
+    remainingBaseQty: {
+      label: '发货进度',
+      mobileRole: 'summary',
+      align: 'start',
+      render: (_v: unknown, row: Row) => (
+        <QtyProgressCell row={row} doneField="shippedQty" labels={{ done: '已发', remaining: '未发' }} />
+      ),
+    },
+    // 双币金额列(定案顺序:本币单价、原币单价、本币金额、原币金额);本币单价 4 位精度
+    basePrice: { label: '本币单价', render: (v: unknown) => formatPrice(v) },
+    price: { label: '原币单价', render: (v: unknown) => formatPrice(v) },
+    baseAmount: { label: '本币金额', mobileRole: 'summary', render: (v: unknown) => formatAmount(v) },
+    amount: { label: '原币金额', render: (v: unknown) => formatAmount(v) },
+  } satisfies Record<string, ColumnOverride>
+}
+
+function SalesOrderItemsTab() {
+  const openDrawer = useOrderDrawer()
+  const { requestAudit, auditDialog } = useAuditDoc(salesOrderAuditConfig)
+  // openDrawer 是 context 稳定引用,overrides 不会因网格重渲染反复重建列定义
+  const overrides = useMemo(() => buildOverrides(openDrawer), [openDrawer])
+
+  return (
+    <>
+      <SynieDataGrid
+        resource="salOrderItems"
+        columns={GRID_COLUMNS}
+        overrides={overrides}
+        // 合并进度列(qty/baseQty/shippedQty)+物料列富单元格所需快照字段与物料外键的取数
+        extraFields={[
+          'qty',
+          'baseQty',
+          'shippedQty',
+          'materialId',
+          'materialName',
+          'materialSpec',
+          'customerPartNo',
+        ]}
+        // 默认订单日期倒序(新单在前);calc 列排序后端已验证支持
+        defaultSort={{ column: 'orderDate', direction: 'descending' }}
+        // salOrderItems 复用 sales.order 权限码,meta capabilities 为空:显式声明本视图可用动作
+        // (整单「新建订单」+ 草稿单「编辑/审核整单」),不声明 delete,删除不进条目视图
+        capabilities={['create', 'update', 'audit']}
+        createLabel="新建订单"
+        onCreate={() => openDrawer('create', null)}
+        onView={(row) => openDrawer('view', { id: String(row.orderId), status: row.orderStatus })}
+        onEdit={(row) => openDrawer('edit', { id: String(row.orderId), status: row.orderStatus })}
+        rowActions={[
+          {
+            key: 'auditDoc',
+            label: '审核整单',
+            capability: 'audit',
+            onAction: (row, ctx) => {
+              if (row.orderId == null || row.orderId === '') return
+              requestAudit(String(row.orderId), ctx.refetch)
+            },
+          },
+        ]}
+        actionVisible={ACTION_VISIBLE}
+      />
+      {auditDialog}
+    </>
+  )
+}

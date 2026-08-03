@@ -112,7 +112,7 @@ const companyId = String(company.id)
 console.log('[verify] customer + sales quotation → order chain')
 const customer = asRecord(
   (
-    await call('POST', '/sales/customers', {
+    await call('POST', '/base/customers', {
       token,
       body: { code: `C${suffix.slice(0, 6)}`, name: `客户-${suffix}`, shortName: '客户' },
       expectStatus: 201,

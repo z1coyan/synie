@@ -197,7 +197,7 @@ async function installPreviewFixtures(page: Page, previews: PreviewCase[]): Prom
     }
   }
 
-  await page.route(`**/api/v1/inventory/materials/${materialId}`, (route) =>
+  await page.route(`**/api/v1/base/materials/${materialId}`, (route) =>
     fulfillJSON(route, {
       id: materialId,
       code: 'E2E-MAT',
@@ -212,7 +212,7 @@ test.setTimeout(180_000)
 test('库存分录八类来源的单号与单据链接打开同一只读头+行速览', async ({ page }) => {
   await loginViaUI(page)
   await installPreviewFixtures(page, PREVIEWS)
-  await page.goto('/scm/stock-entries')
+  await page.goto('/inventory/stock-entries')
   const grid = page.getByRole('grid', { name: 'invStockEntries 数据表格' })
   await expect(grid).toBeVisible()
 
@@ -270,7 +270,7 @@ test('来源资源变体被权限裁剪时来源单号与来源单据均退为�
     await fulfillJSON(route, document)
   })
 
-  await page.goto('/scm/stock-entries')
+  await page.goto('/inventory/stock-entries')
   const row = page.getByRole('row').filter({ hasText: purchase.voucherNo })
   await expect(row).toBeVisible()
   await expect(row.getByText(purchase.voucherNo, { exact: true })).toBeVisible()

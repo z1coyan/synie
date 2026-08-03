@@ -53,7 +53,7 @@ const partyTypeOptions = [
 export function materialCategoryResourceMeta(): ResourceMeta {
   return {
     name: 'invMaterialCategories',
-    permissionPrefix: 'inv.material_category',
+    permissionPrefix: 'base.material_category',
     permissionLabel: '物料分类',
     table: 'inv_material_category',
     fields: [
@@ -114,7 +114,7 @@ export function materialCategoryResourceMeta(): ResourceMeta {
 export function materialResourceMeta(): ResourceMeta {
   return {
     name: 'invMaterials',
-    permissionPrefix: 'inv.material',
+    permissionPrefix: 'base.material',
     permissionLabel: '物料',
     table: 'inv_material',
     fields: [
@@ -191,7 +191,7 @@ export function materialResourceMeta(): ResourceMeta {
 export function materialUnitResourceMeta(): ResourceMeta {
   return {
     name: 'invMaterialUnits',
-    permissionPrefix: 'inv.material',
+    permissionPrefix: 'base.material',
     permissionLabel: '物料',
     table: 'inv_material_unit',
     fields: [
@@ -240,7 +240,7 @@ export function materialUnitResourceMeta(): ResourceMeta {
 export function warehouseResourceMeta(): ResourceMeta {
   return {
     name: 'invWarehouses',
-    permissionPrefix: 'inv.warehouse',
+    permissionPrefix: 'base.warehouse',
     permissionLabel: '仓库',
     table: 'inv_warehouse',
     fields: [

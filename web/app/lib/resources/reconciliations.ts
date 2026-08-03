@@ -152,6 +152,6 @@ export const companyAccountDefaultClient = restTransport(
 
 export const orderFlowItemClient = restTransport(
   'scmOrderFlowItems',
-  api.scm['order-flow-items'],
+  api.base['order-flow-items'],
   { capabilities: { create: false, update: false, delete: false } },
 )

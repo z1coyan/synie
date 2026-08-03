@@ -183,7 +183,7 @@ function supplierDoc(): ResourceDocument {
     schemaVersion: 2,
     name: 'purSuppliers',
     label: '供应商',
-    permissionPrefix: 'purchase.supplier',
+    permissionPrefix: 'base.supplier',
     capabilities: ['create', 'update', 'delete'],
     fields: [
       {

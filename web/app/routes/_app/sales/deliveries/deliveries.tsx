@@ -1,0 +1,80 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
+import {
+  AUDIT_DOC_ACTION_VISIBLE,
+  AUDIT_DOC_STATUS_ENUM_COLORS,
+} from '~/lib/doc-status'
+import { useTemplatePrint } from '~/components/synie-print/TemplatePrintDialog'
+import { useAuditDoc } from '../../scm/-audit-doc'
+import { deliveryAuditConfig, useDeliveryDrawer } from './-delivery-drawer'
+
+export const Route = createFileRoute('/_app/sales/deliveries/deliveries')({
+  component: DeliveriesTab,
+})
+
+const GRID_OVERRIDES = {
+  // 卡片:单号标题、客户副标题、日期/状态摘要
+  companyId: { mobileRole: 'hide' },
+  deliveryNo: { mobileRole: 'title' },
+  partyId: { mobileRole: 'subtitle' },
+  partyType: { label: '对手类型', mobileRole: 'hide' },
+  deliveryDate: { mobileRole: 'summary' },
+  status: {
+    mobileRole: 'summary',
+    enumColors: AUDIT_DOC_STATUS_ENUM_COLORS,
+  },
+} satisfies Record<string, ColumnOverride>
+
+const GRID_COLUMNS = [
+  'companyId',
+  'deliveryNo',
+  'deliveryDate',
+  'partyType',
+  'partyId',
+  'status',
+  'postingDate',
+]
+
+const ACTION_VISIBLE = AUDIT_DOC_ACTION_VISIBLE
+
+function DeliveriesTab() {
+  const openDrawer = useDeliveryDrawer()
+  const { requestAudit, auditDialog } = useAuditDoc(deliveryAuditConfig)
+  const { start: startPrint, dialog: printDialog } = useTemplatePrint('sales.delivery')
+
+  return (
+    <>
+      <SynieDataGrid
+        resource="salDeliveries"
+        columns={GRID_COLUMNS}
+        overrides={GRID_OVERRIDES}
+        defaultSort={{ column: 'deliveryDate', direction: 'descending' }}
+        onView={(row) => openDrawer('view', row)}
+        onCreate={() => openDrawer('create', null)}
+        onEdit={(row) => openDrawer(row.status === 'DRAFT' ? 'edit' : 'view', row)}
+        onPrint={(rows) => void startPrint('print', rows)}
+        // 审核改走「列出全部条目核对」的确认弹窗(与条目页「审核整单」同一套)
+        actionHandlers={{ audit: (rows, ctx) => requestAudit(String(rows[0].id), ctx.refetch) }}
+        actionVisible={ACTION_VISIBLE}
+        rowActions={[
+          {
+            key: 'exportExcel',
+            label: '导出 Excel',
+            capability: 'export',
+            onAction: (row) => void startPrint('export', [row]),
+          },
+        ]}
+        bulkActions={[
+          {
+            key: 'batchExportExcel',
+            label: '批量导出 Excel',
+            capability: 'export',
+            onAction: (rows) => void startPrint('export', rows),
+          },
+        ]}
+      />
+      {auditDialog}
+      {printDialog}
+    </>
+  )
+}

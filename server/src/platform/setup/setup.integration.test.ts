@@ -439,8 +439,8 @@ run('PG 集成（setup 向导）', () => {
         expect(res.status).toBe(200)
         return ((await res.json()) as { count: number }).count
       }
-      expect(await listCount('/api/v1/sales/customers/query')).toBeGreaterThanOrEqual(1)
-      expect(await listCount('/api/v1/purchase/suppliers/query')).toBeGreaterThanOrEqual(1)
+      expect(await listCount('/api/v1/base/customers/query')).toBeGreaterThanOrEqual(1)
+      expect(await listCount('/api/v1/base/suppliers/query')).toBeGreaterThanOrEqual(1)
       expect(await listCount('/api/v1/sales/orders/query')).toBeGreaterThanOrEqual(1)
       expect(await listCount('/api/v1/purchase/orders/query')).toBeGreaterThanOrEqual(1)
       expect(await listCount('/api/v1/sales/deliveries/query')).toBeGreaterThanOrEqual(1)

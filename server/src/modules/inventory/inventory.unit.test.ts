@@ -12,9 +12,9 @@ describe('inventory meta 注册', () => {
     }
     const catalog = registry.permissionCatalog()
     const prefixes = catalog.map((g) => g.prefix)
-    expect(prefixes).toContain('inv.material_category')
-    expect(prefixes).toContain('inv.material')
-    expect(prefixes).toContain('inv.warehouse')
+    expect(prefixes).toContain('base.material_category')
+    expect(prefixes).toContain('base.material')
+    expect(prefixes).toContain('base.warehouse')
     expect(prefixes).toContain('inv.stock_entry')
     expect(prefixes).toContain('inv.stock_doc')
     expect(prefixes).toContain('inv.stock_transfer')
