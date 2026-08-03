@@ -12,10 +12,11 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requireCompanyAccess, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { utcToday } from '~/db/dates.ts'
 import {
   requirePermission,
   actorUserId,
@@ -26,8 +27,6 @@ import {
   mfgWriteError,
   normalizeList,
   numStr,
-  requireCompanyAccess,
-  todayUTC,
   toDateOnly,
   validateNo,
   validateRemarks,
@@ -99,7 +98,7 @@ export function createDemandService(db: Kysely<Database>, numbering: NumberingSe
     requireCompanyAccess(actor, input.companyId)
     validateRemarks(input.remarks)
     return withTx(db, async (trx) => {
-      const demandDate = input.demandDate ? toDateOnly(input.demandDate) : todayUTC()
+      const demandDate = input.demandDate ? toDateOnly(input.demandDate) : utcToday()
       let no = (input.demandNo ?? '').trim()
       if (!no) {
         no = await numbering.nextInTx(trx, {

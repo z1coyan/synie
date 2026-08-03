@@ -1,13 +1,9 @@
 import { decimal, isDecimalString, roundBaseQty, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
-import { toDateOnly, utcToday } from '~/db/dates.ts'
+import { toDateOnly } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
-import {
-  canAccessCompany,
-  hasPermission,
-  requirePermission,
-} from '~/platform/authz/actor.ts'
+import { hasPermission, requirePermission } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError, type PgWriteMapping } from '~/db/dberr.ts'
 
@@ -49,12 +45,6 @@ export function mfgWriteError(fallback: string, err: unknown, extra: readonly Pg
   return mapWriteError(err, fallback, [...extra, ...MFG_WRITE_MAPPINGS])
 }
 
-export function requireCompanyAccess(actor: Actor, companyId: string): void {
-  if (!canAccessCompany(actor, companyId)) {
-    throw new ApiError('forbidden', '无权访问该公司数据')
-  }
-}
-
 /** 空串/非法 UUID 写 null，避免 created_by_id FK 与 UUID 语法错误 */
 export function actorUserId(actor: Actor | null | undefined): string | null {
   const id = actor?.userId?.trim()
@@ -82,10 +72,6 @@ export function validateRemarks(remarks: string | null | undefined, max = 512): 
   if (remarks != null && runeCount(remarks) > max) {
     throw ApiError.validation('备注参数不合法', { remarks: [`最多 ${max} 个字符`] })
   }
-}
-
-export function todayUTC(): string {
-  return utcToday()
 }
 
 export function parsePositiveQty(raw: string, field = 'qty'): string {

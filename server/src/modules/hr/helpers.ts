@@ -1,7 +1,7 @@
 /**
  * HR service 共享小工具（日期/金额/写错映射）。
  */
-import { decimal, isDecimalString } from '@synie/shared'
+import { decimal, isDecimalString, toDecimalString } from '@synie/shared'
 import { sql } from 'kysely'
 import { mapWriteError } from '~/db/dberr.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -17,7 +17,7 @@ export function writeErr(err: unknown, message: string): ApiError {
 
 export function numStr(value: unknown): string {
   if (value == null) return '0'
-  return decimal(String(value)).toFixed()
+  return toDecimalString(decimal(String(value)))
 }
 
 export function nullableNumStr(value: unknown): string | null {

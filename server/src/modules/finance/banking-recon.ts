@@ -10,7 +10,7 @@ import type { JournalService } from '~/modules/accounting/journal-service.ts'
 import {
   auditCreated, auditDestroyed, writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -18,8 +18,8 @@ import {
   loadTransaction, reconcileStatus, txnAmount, type BankTransaction,
 } from './banking-shared.ts'
 import {
-  asIso, conflict, lower, notFound, requireCompanyAccess,
-  requirePerm, validateOptionalText, validation, wireDecRequired,
+  asIso, conflict, lower, notFound,
+  validateOptionalText, validation, wireDecRequired,
 } from './common.ts'
 import { bankReconciliationResourceMeta } from './meta.ts'
 import { ACC_BANK_TRANSACTION } from './permissions.ts'
@@ -178,7 +178,7 @@ export function createReconOps(
 ) {
   const { journals } = deps
   async function listReconciliations(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, ACC_BANK_TRANSACTION.read, '无权限执行银行业务操作')
+    requirePermission(actor, ACC_BANK_TRANSACTION.read, '无权限执行银行业务操作')
     const scope = companyScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] as BankReconciliation[] }
     return listFromSource({
@@ -190,9 +190,9 @@ export function createReconOps(
   }
 
   async function getReconciliation(actor: Actor, id: string) {
-    requirePerm(actor, ACC_BANK_TRANSACTION.read, '无权限执行银行业务操作')
+    requirePermission(actor, ACC_BANK_TRANSACTION.read, '无权限执行银行业务操作')
     const item = await loadRecon(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '银行对账记录')
+    requireCompanyAccess(actor, item.companyId, '银行对账记录不存在')
     return item
   }
 
@@ -260,19 +260,19 @@ export function createReconOps(
   async function createReconciliation(actor: Actor, input: {
     bankTransactionId: string; journalId: string; amount: string
   }) {
-    requirePerm(actor, ACC_BANK_TRANSACTION.reconcile, '无权限执行银行业务操作')
+    requirePermission(actor, ACC_BANK_TRANSACTION.reconcile, '无权限执行银行业务操作')
     return withTx(db, async (trx) => {
       const transaction = await loadTransaction(trx, input.bankTransactionId, true)
-      requireCompanyAccess(actor, transaction.companyId, '银行流水')
+      requireCompanyAccess(actor, transaction.companyId, '银行流水不存在')
       return createReconciliationLocked(trx, actor, transaction, input.journalId, input.amount)
     })
   }
 
   async function remaining(actor: Actor, bankTransactionId: string, journalId: string) {
-    requirePerm(actor, ACC_BANK_TRANSACTION.read, '无权限执行银行业务操作')
-    requirePerm(actor, 'acc.gl_journal:read', '无权限执行银行业务操作')
+    requirePermission(actor, ACC_BANK_TRANSACTION.read, '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.gl_journal:read', '无权限执行银行业务操作')
     const transaction = await loadTransaction(db, bankTransactionId, false)
-    requireCompanyAccess(actor, transaction.companyId, '银行流水或凭证')
+    requireCompanyAccess(actor, transaction.companyId, '银行流水或凭证不存在')
     const journalRows = await sql<{ id: string; company_id: string }>`
       SELECT id,company_id FROM acc_gl_journal WHERE id=${journalId}::uuid
     `.execute(db)
@@ -329,7 +329,7 @@ export function createReconOps(
     summary?: string | null; postingDate: string
   }) {
     // 业务能力码：快速对账在银行语境下隐含创建+审核凭证；不要求 gl_journal 双码
-    requirePerm(actor, ACC_BANK_TRANSACTION.reconcile, '无权限执行银行业务操作')
+    requirePermission(actor, ACC_BANK_TRANSACTION.reconcile, '无权限执行银行业务操作')
     const fields: Record<string, string[]> = {}
     const amount = decimal(input.amount)
     if (!amount.gt(0)) fields.amount = ['对账金额必须大于零']
@@ -338,7 +338,7 @@ export function createReconOps(
     if (Object.keys(fields).length) throw validation('快速对账', fields)
     return withTx(db, async (trx) => {
       const transaction = await loadTransaction(trx, input.bankTransactionId, true)
-      requireCompanyAccess(actor, transaction.companyId, '银行流水')
+      requireCompanyAccess(actor, transaction.companyId, '银行流水不存在')
       const ledgerAccountId = await bankLedgerAccount(trx, transaction, true)
       if (input.counterAccountId === ledgerAccountId) {
         throw validation('快速对账', { counterAccountId: ['对方科目不能是银行账户绑定的科目'] })
@@ -368,11 +368,11 @@ export function createReconOps(
   }
 
   async function deleteReconciliation(actor: Actor, id: string) {
-    requirePerm(actor, ACC_BANK_TRANSACTION.reconcile, '无权限执行银行业务操作')
+    requirePermission(actor, ACC_BANK_TRANSACTION.reconcile, '无权限执行银行业务操作')
     return withTx(db, async (trx) => {
       const seed = await loadRecon(trx, id, false)
       const transaction = await loadTransaction(trx, seed.bankTransactionId, true)
-      requireCompanyAccess(actor, transaction.companyId, '银行对账记录')
+      requireCompanyAccess(actor, transaction.companyId, '银行对账记录不存在')
       const item = await loadRecon(trx, id, true)
       if (item.bankTransactionId !== transaction.id) throw conflict('银行对账记录已被并发修改')
       try {

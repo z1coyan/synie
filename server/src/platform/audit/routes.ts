@@ -5,23 +5,8 @@ import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
 import type { AppEnv } from '../http/context.ts'
-import { validationHook } from '../http/zod.ts'
+import { listQuerySchema, validationHook } from '../http/zod.ts'
 import type { AuditService } from './service.ts'
-
-const listQuerySchema = z
-  .object({
-    limit: z.number().int().min(0).max(200).optional(),
-    offset: z.number().int().min(0).optional(),
-    search: z.string().optional(),
-    sort: z
-      .object({
-        column: z.string(),
-        direction: z.enum(['ascending', 'descending']),
-      })
-      .optional(),
-    filter: z.record(z.string(), z.unknown()).optional(),
-  })
-  .strict()
 
 const idParam = z.object({ id: z.string().uuid() })
 

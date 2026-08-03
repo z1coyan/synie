@@ -10,15 +10,15 @@ import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
 import {
   auditCreated, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { auditGlDocInTx, voidGlDocInTx } from '~/modules/trading/posting.ts'
+import { auditGlDocInTx, voidGlDocInTx } from '~/platform/posting/skeleton.ts'
 import {
   actorUserId, asDateOnly, asDateOnlyOrNull, asIso, asIsoOrNull, conflict, lower,
-  notFound, parseDecimal, requireCompanyAccess, requireDate, requirePerm, upper,
+  notFound, parseDecimal, requireDate, upper,
   wireDec, wireEnum,
 } from './common.ts'
 import { expenseReportItemResourceMeta, expenseReportResourceMeta } from './meta.ts'
@@ -135,7 +135,7 @@ export function createExpenseService(
   gl: GlEngine,
 ) {
   async function listReports(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'acc.expense_report:read')
+    requirePermission(actor, 'acc.expense_report:read')
     const scope = companyScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] as ExpenseReport[] }
     return listFromSource({
@@ -148,9 +148,9 @@ export function createExpenseService(
   }
 
   async function getReport(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.expense_report:read')
+    requirePermission(actor, 'acc.expense_report:read')
     const item = await loadReport(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '费用报销单')
+    requireCompanyAccess(actor, item.companyId, '费用报销单不存在')
     return item
   }
 
@@ -159,8 +159,8 @@ export function createExpenseService(
     postingDate?: string | null; remarks?: string | null
     employeeId: string; paymentAccountId: string
   }) {
-    requirePerm(actor, 'acc.expense_report:create')
-    requireCompanyAccess(actor, input.companyId, '费用报销单')
+    requirePermission(actor, 'acc.expense_report:create')
+    requireCompanyAccess(actor, input.companyId, '费用报销单不存在')
     const expenseDate = requireDate(input.expenseDate, 'expenseDate')
     if (!input.employeeId || !input.paymentAccountId) {
       throw ApiError.validation('费用报销单参数不合法', { references: ['员工与付款科目必填'] })
@@ -203,10 +203,10 @@ export function createExpenseService(
     remarks?: string | null; remarksPresent?: boolean
     employeeId?: string; paymentAccountId?: string
   }) {
-    requirePerm(actor, 'acc.expense_report:update')
+    requirePermission(actor, 'acc.expense_report:update')
     return withTx(db, async (trx) => {
       const before = await loadReport(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '费用报销单')
+      requireCompanyAccess(actor, before.companyId, '费用报销单不存在')
       if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可修改或删除')
       let docNo = before.docNo
       let expenseDate = before.expenseDate
@@ -250,10 +250,10 @@ export function createExpenseService(
   }
 
   async function deleteReport(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.expense_report:delete')
+    requirePermission(actor, 'acc.expense_report:delete')
     return withTx(db, async (trx) => {
       const before = await loadReport(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '费用报销单')
+      requireCompanyAccess(actor, before.companyId, '费用报销单不存在')
       if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可修改或删除')
       try {
         await sql`DELETE FROM acc_expense_report WHERE id=${id}::uuid`.execute(trx)
@@ -315,7 +315,7 @@ export function createExpenseService(
   }
 
   async function auditReport(actor: Actor, id: string, postingDate: string) {
-    requirePerm(actor, 'acc.expense_report:audit')
+    requirePermission(actor, 'acc.expense_report:audit')
     const posting = requireDate(postingDate, 'postingDate')
     return withTx(db, async (trx) =>
       auditGlDocInTx(trx, actor, gl, {
@@ -324,7 +324,7 @@ export function createExpenseService(
         conflictMessage: '报销单已被并发处理',
         lockDraft: async (t) => {
           const before = await loadReport(t, id, true)
-          requireCompanyAccess(actor, before.companyId, '费用报销单')
+          requireCompanyAccess(actor, before.companyId, '费用报销单不存在')
           if (before.status !== 'DRAFT') throw conflict('仅草稿报销单可审核')
           return before
         },
@@ -345,14 +345,14 @@ export function createExpenseService(
   }
 
   async function voidReport(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.expense_report:void')
+    requirePermission(actor, 'acc.expense_report:void')
     return withTx(db, async (trx) =>
       voidGlDocInTx(trx, actor, gl, {
         voucherType: VOUCHER,
         headTable: 'acc_expense_report',
         lockAudited: async (t) => {
           const before = await loadReport(t, id, true)
-          requireCompanyAccess(actor, before.companyId, '费用报销单')
+          requireCompanyAccess(actor, before.companyId, '费用报销单不存在')
           if (before.status !== 'AUDITED') throw conflict('仅已审核报销单可作废')
           return before
         },
@@ -416,7 +416,7 @@ export function createExpenseService(
   }
 
   async function listItems(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'acc.expense_report:read')
+    requirePermission(actor, 'acc.expense_report:read')
     const scope = companyScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] as ExpenseReportItem[] }
     return listFromSource({
@@ -428,9 +428,9 @@ export function createExpenseService(
   }
 
   async function getItem(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.expense_report:read')
+    requirePermission(actor, 'acc.expense_report:read')
     const item = await loadItem(db, id)
-    requireCompanyAccess(actor, item.companyId, '报销行')
+    requireCompanyAccess(actor, item.companyId, '报销行不存在')
     return item
   }
 
@@ -439,10 +439,10 @@ export function createExpenseService(
     summary?: string | null; amount?: string | null; remarks?: string | null
     invoiceId?: string | null; expenseAccountId?: string | null
   }) {
-    requirePerm(actor, 'acc.expense_report:create')
+    requirePermission(actor, 'acc.expense_report:create')
     return withTx(db, async (trx) => {
       const report = await loadReport(trx, input.reportId, true)
-      requireCompanyAccess(actor, report.companyId, '费用报销单')
+      requireCompanyAccess(actor, report.companyId, '费用报销单不存在')
       if (report.status !== 'DRAFT') throw conflict('仅草稿报销单可增删改行')
       const normalized = await validateExpenseItem(trx, report, input, null)
       try {
@@ -476,11 +476,11 @@ export function createExpenseService(
     invoiceId?: string | null; invoiceIdPresent?: boolean
     expenseAccountId?: string | null; expenseAccountIdPresent?: boolean
   }) {
-    requirePerm(actor, 'acc.expense_report:update')
+    requirePermission(actor, 'acc.expense_report:update')
     return withTx(db, async (trx) => {
       const before = await loadItem(trx, id)
       const report = await loadReport(trx, before.reportId, true)
-      requireCompanyAccess(actor, report.companyId, '费用报销单')
+      requireCompanyAccess(actor, report.companyId, '费用报销单不存在')
       if (report.status !== 'DRAFT') throw conflict('仅草稿报销单可增删改行')
       const merged = {
         idx: input.idx ?? before.idx,
@@ -515,11 +515,11 @@ export function createExpenseService(
   }
 
   async function deleteItem(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.expense_report:delete')
+    requirePermission(actor, 'acc.expense_report:delete')
     return withTx(db, async (trx) => {
       const before = await loadItem(trx, id)
       const report = await loadReport(trx, before.reportId, true)
-      requireCompanyAccess(actor, report.companyId, '费用报销单')
+      requireCompanyAccess(actor, report.companyId, '费用报销单不存在')
       if (report.status !== 'DRAFT') throw conflict('仅草稿报销单可增删改行')
       try {
         await sql`DELETE FROM acc_expense_report_item WHERE id=${id}::uuid`.execute(trx)

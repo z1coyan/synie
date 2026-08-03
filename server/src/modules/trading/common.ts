@@ -2,12 +2,13 @@
  * 销售/采购交易链共用工具（金额 wire、日期、对手校验、权限）。
  */
 import { decimal, toDecimalString, type Decimal } from '@synie/shared'
-import { sql, type RawBuilder } from 'kysely'
-import { toDateOnly, utcToday } from '~/db/dates.ts'
+import { sql } from 'kysely'
+import { toDateOnly } from '~/db/dates.ts'
 import type { DbHandle } from '~/db/tx.ts'
-import { canAccessCompany, hasPermission, type Actor } from '~/platform/authz/actor.ts'
+import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 
+export { ident } from '~/db/ident.ts'
 export { toDateOnly }
 
 export type TradingSide = 'sales' | 'purchase'
@@ -25,10 +26,6 @@ export function wireDecimal(value: Decimal | string | number | null | undefined)
 
 export function wireRequiredDecimal(value: Decimal | string | number): string {
   return toDecimalString(decimal(value))
-}
-
-export function todayUTC(): string {
-  return utcToday()
 }
 
 export function asDate(value: unknown): string {
@@ -57,23 +54,7 @@ export function lowerParty(value: string): string {
 }
 
 export function requirePerm(actor: Actor, prefix: string, action: string, message: string): void {
-  if (!hasPermission(actor, `${prefix}:${action}`)) {
-    throw new ApiError('forbidden', message)
-  }
-}
-
-export function requireCompanyAccess(actor: Actor, companyId: string, notFoundMessage: string): void {
-  if (!canAccessCompany(actor, companyId)) {
-    throw new ApiError('not_found', notFoundMessage)
-  }
-}
-
-/** 白名单表名进 SQL 标识符（仅内部常量） */
-export function ident(name: string): RawBuilder<unknown> {
-  if (!/^[a-z][a-z0-9_]*$/.test(name)) {
-    throw new Error(`非法 SQL 标识符: ${name}`)
-  }
-  return sql.raw(name)
+  requirePermission(actor, `${prefix}:${action}`, message)
 }
 
 export async function partyExists(

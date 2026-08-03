@@ -6,21 +6,9 @@ import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { validationHook } from '~/platform/http/zod.ts'
+import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
 import type { EntryService } from './entry-service.ts'
 import type { Journal, JournalLine, JournalService } from './journal-service.ts'
-
-const listQuerySchema = z
-  .object({
-    limit: z.number().int().min(0).max(200).optional(),
-    offset: z.number().int().min(0).optional(),
-    search: z.string().optional(),
-    sort: z
-      .object({ column: z.string(), direction: z.enum(['ascending', 'descending']) })
-      .optional(),
-    filter: z.record(z.string(), z.unknown()).optional(),
-  })
-  .strict()
 
 const idParam = z.object({ id: z.string().uuid() })
 

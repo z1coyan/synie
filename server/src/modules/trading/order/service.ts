@@ -35,12 +35,12 @@ import {
   requirePerm,
   runeLen,
   syncDrawingAttachments,
-  todayUTC,
   toDateOnly,
   type TradingSide,
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
+import { utcToday } from '~/db/dates.ts'
 import type { QuotationService } from '../quotation/service.ts'
 import { deriveItemAmounts } from './amounts.ts'
 import {
@@ -302,7 +302,7 @@ export function createOrderService(
     const { currencyId, exchangeRate } = await normalizeCurrency(
       trx, input.companyId, input.currencyId ?? null, input.exchangeRate ?? null,
     )
-    const orderDate = input.orderDate ? toDateOnly(input.orderDate) : todayUTC()
+    const orderDate = input.orderDate ? toDateOnly(input.orderDate) : utcToday()
     const orderType = (input.orderType ?? 'REGULAR').toUpperCase()
     if (orderType !== 'REGULAR' && orderType !== spec.nonRegularType) {
       throw ApiError.validation(`${spec.label}参数不合法`, { orderType: ['订单类型不合法'] })

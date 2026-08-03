@@ -14,14 +14,15 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requireCompanyAccess, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { utcToday } from '~/db/dates.ts'
 import {
   auditInventoryDocInTx,
   voidInventoryDocInTx,
-} from '~/modules/trading/posting.ts'
+} from '~/platform/posting/skeleton.ts'
 import {
   requirePermission,
   actorUserId,
@@ -31,9 +32,6 @@ import {
   mfgWriteError,
   normalizeList,
   numStr,
-  requireCompanyAccess,
-
-  todayUTC,
   toDateOnly,
   validateNo,
   validateRemarks,
@@ -102,7 +100,7 @@ export function createOutputService(
     validateRemarks(input.remarks)
     return withTx(db, async (trx) => {
       await validateWarehouse(trx, input.warehouseId, input.companyId)
-      const outputDate = input.outputDate ? toDateOnly(input.outputDate) : todayUTC()
+      const outputDate = input.outputDate ? toDateOnly(input.outputDate) : utcToday()
       let no = (input.outputNo ?? '').trim()
       if (!no) {
         no = await numbering.nextInTx(trx, {

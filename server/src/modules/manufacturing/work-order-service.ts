@@ -12,10 +12,11 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requireCompanyAccess, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
+import { utcToday } from '~/db/dates.ts'
 import { syncDrawingAttachments } from '~/modules/trading/common.ts'
 import { loadDemand, loadDemandItem } from './demand-service.ts'
 import {
@@ -28,9 +29,7 @@ import {
   normalizeList,
   numStr,
   parsePositiveQty,
-  requireCompanyAccess,
   runeCount,
-  todayUTC,
   trimOptional,
   validateNo,
 } from './helpers.ts'
@@ -104,7 +103,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
           ? decimal(qty)
           : decimal(qty).mul(decimal(item.baseQty).div(decimal(item.qty))),
       )
-      const needDate = item.needDate ?? todayUTC()
+      const needDate = item.needDate ?? utcToday()
       let no = (input.workOrderNo ?? '').trim()
       if (!no) {
         no = await numbering.nextInTx(trx, {

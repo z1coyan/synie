@@ -31,16 +31,15 @@ import {
   lowerParty,
   namedRef,
   partyExists,
-  requireCompanyAccess,
   requirePerm,
   runeLen,
-  todayUTC,
   toDateOnly,
   type TradingSide,
   upperStatus,
   wireDecimal,
   wireRequiredDecimal,
 } from '../common.ts'
+import { utcToday } from '~/db/dates.ts'
 import {
   quotationHeadMeta,
   quotationItemMeta,
@@ -48,6 +47,7 @@ import {
   quotationTierMeta,
   type QuotationSideSpec,
 } from './spec.ts'
+import { flipDocStatusInTx } from '~/platform/posting/skeleton.ts'
 
 const HEAD_AUDIT = [
   'quotation_no',
@@ -306,7 +306,7 @@ export function createQuotationService(db: Kysely<Database>, numberer: Numberer)
       throw ApiError.validation('报价参数不合法', { companyId: ['公司不存在'] })
     }
     const currencyId = input.currencyId ?? company.base_currency_id
-    const quotationDate = input.quotationDate ? toDateOnly(input.quotationDate) : todayUTC()
+    const quotationDate = input.quotationDate ? toDateOnly(input.quotationDate) : utcToday()
     let quotationNo = (input.quotationNo ?? '').trim()
     if (!quotationNo) {
       quotationNo = await numberer.nextInTx(trx, {
@@ -486,49 +486,46 @@ export function createQuotationService(db: Kysely<Database>, numberer: Numberer)
     const spec = quotationSpec(side)
     requirePerm(actor, spec.prefix, 'audit', '无权限执行该报价操作')
     return withTx(db, async (trx) => {
-      const locked = await lockHead(trx, actor, spec, id)
-      if (String(locked.status).toLowerCase() !== 'draft') {
-        throw new ApiError('conflict', '仅草稿报价单可审核')
-      }
-      const count = await sql<{ c: string }>`
-        SELECT count(*)::text AS c FROM ${ident(spec.itemTable)} WHERE quotation_id=${id}::uuid
-      `.execute(trx)
-      if (Number(count.rows[0]?.c ?? 0) === 0) {
-        throw new ApiError('conflict', '审核前必须至少填写一行条目')
-      }
-      const missing = await sql<{ e: boolean }>`
-        SELECT EXISTS(
-          SELECT 1 FROM ${ident(spec.itemTable)} i
-          WHERE i.quotation_id=${id}::uuid AND i.pricing_mode='qty_tiered'
-            AND NOT EXISTS(SELECT 1 FROM ${ident(spec.tierTable)} t WHERE t.item_id=i.id)
-        ) AS e
-      `.execute(trx)
-      if (missing.rows[0]?.e) {
-        throw new ApiError('conflict', '数量梯度条目必须至少填写一个价格档')
-      }
-      const before = mapHead(locked)
-      const auditedById = actor.userId || null
       try {
-        await sql`
-          UPDATE ${ident(spec.headTable)} SET
-            status='audited',
-            audited_at=(now() AT TIME ZONE 'utc'),
-            audited_by_id=${auditedById}::uuid,
-            updated_at=(now() AT TIME ZONE 'utc')
-          WHERE id=${id}::uuid
-        `.execute(trx)
-        const row = await loadHeadRow(trx, spec, id)
-        const item = mapHead(row!)
-        await writeAudit(trx, actor, {
-          resource: spec.headAudit,
-          recordId: id,
-          recordLabel: item.quotationNo,
-          companyId: item.companyId,
-          actionType: 'update',
+        const after = await flipDocStatusInTx(trx, actor, {
+          headTable: spec.headTable,
+          targetStatus: 'audited',
           actionName: 'audit',
-          changes: auditDiff(headSnap(before), headSnap(item), HEAD_AUDIT),
+          stampAuditor: true,
+          lock: async (t) => {
+            const locked = await lockHead(t, actor, spec, id)
+            if (String(locked.status).toLowerCase() !== 'draft') {
+              throw new ApiError('conflict', '仅草稿报价单可审核')
+            }
+            return locked
+          },
+          validate: async (t) => {
+            const count = await sql<{ c: string }>`
+              SELECT count(*)::text AS c FROM ${ident(spec.itemTable)} WHERE quotation_id=${id}::uuid
+            `.execute(t)
+            if (Number(count.rows[0]?.c ?? 0) === 0) {
+              throw new ApiError('conflict', '审核前必须至少填写一行条目')
+            }
+            const missing = await sql<{ e: boolean }>`
+              SELECT EXISTS(
+                SELECT 1 FROM ${ident(spec.itemTable)} i
+                WHERE i.quotation_id=${id}::uuid AND i.pricing_mode='qty_tiered'
+                  AND NOT EXISTS(SELECT 1 FROM ${ident(spec.tierTable)} t WHERE t.item_id=i.id)
+              ) AS e
+            `.execute(t)
+            if (missing.rows[0]?.e) {
+              throw new ApiError('conflict', '数量梯度条目必须至少填写一个价格档')
+            }
+          },
+          voucherOf: (row) => {
+            const h = mapHead(row)
+            return { id: h.id, no: h.quotationNo, companyId: h.companyId }
+          },
+          reload: async (t, headId) => (await loadHeadRow(t, spec, headId))!,
+          snapshot: (row) => headSnap(mapHead(row)),
+          auditFields: HEAD_AUDIT,
         })
-        return item
+        return mapHead(after)
       } catch (err) {
         throw mapQuotationWrite('审核报价单失败', err)
       }
@@ -539,29 +536,27 @@ export function createQuotationService(db: Kysely<Database>, numberer: Numberer)
     const spec = quotationSpec(side)
     requirePerm(actor, spec.prefix, 'void', '无权限执行该报价操作')
     return withTx(db, async (trx) => {
-      const locked = await lockHead(trx, actor, spec, id)
-      if (String(locked.status).toLowerCase() !== 'audited') {
-        throw new ApiError('conflict', '仅已审核报价单可作废')
-      }
-      const before = mapHead(locked)
       try {
-        await sql`
-          UPDATE ${ident(spec.headTable)} SET
-            status='voided', updated_at=(now() AT TIME ZONE 'utc')
-          WHERE id=${id}::uuid
-        `.execute(trx)
-        const row = await loadHeadRow(trx, spec, id)
-        const item = mapHead(row!)
-        await writeAudit(trx, actor, {
-          resource: spec.headAudit,
-          recordId: id,
-          recordLabel: item.quotationNo,
-          companyId: item.companyId,
-          actionType: 'update',
+        const after = await flipDocStatusInTx(trx, actor, {
+          headTable: spec.headTable,
+          targetStatus: 'voided',
           actionName: 'void',
-          changes: auditDiff(headSnap(before), headSnap(item), HEAD_AUDIT),
+          lock: async (t) => {
+            const locked = await lockHead(t, actor, spec, id)
+            if (String(locked.status).toLowerCase() !== 'audited') {
+              throw new ApiError('conflict', '仅已审核报价单可作废')
+            }
+            return locked
+          },
+          voucherOf: (row) => {
+            const h = mapHead(row)
+            return { id: h.id, no: h.quotationNo, companyId: h.companyId }
+          },
+          reload: async (t, headId) => (await loadHeadRow(t, spec, headId))!,
+          snapshot: (row) => headSnap(mapHead(row)),
+          auditFields: HEAD_AUDIT,
         })
-        return item
+        return mapHead(after)
       } catch (err) {
         throw mapQuotationWrite('作废报价单失败', err)
       }
@@ -1847,5 +1842,4 @@ function mapQuotationWrite(message: string, err: unknown): ApiError {
 }
 
 // silence unused import if any
-void requireCompanyAccess
 void wireDecimal

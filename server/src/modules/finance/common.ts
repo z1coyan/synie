@@ -2,7 +2,7 @@
  * 财务运营公共辅助：校验/大小写/日期/金额/审计快照。
  */
 import { decimal, isDecimalString, toDecimalString } from '@synie/shared'
-import { hasPermission, canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
+import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 
 export function lower(value: string): string {
@@ -15,22 +15,6 @@ export function upper(value: string): string {
 
 export function actorUserId(actor: Actor): string | null {
   return actor.userId && actor.userId !== '' ? actor.userId : null
-}
-
-export function requirePerm(actor: Actor, code: string, message = '无权限执行此操作'): void {
-  if (!hasPermission(actor, code)) {
-    throw new ApiError('forbidden', message)
-  }
-}
-
-export function requireCompanyAccess(
-  actor: Actor,
-  companyId: string,
-  label: string,
-): void {
-  if (!canAccessCompany(actor, companyId)) {
-    throw new ApiError('not_found', `${label}不存在`)
-  }
 }
 
 export function requireCompanyWrite(actor: Actor, companyId: string): void {

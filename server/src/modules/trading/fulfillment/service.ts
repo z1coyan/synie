@@ -33,17 +33,17 @@ import {
   requirePerm,
   runeLen,
   syncDrawingAttachments,
-  todayUTC,
   toDateOnly,
   type TradingSide,
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
+import { utcToday } from '~/db/dates.ts'
 import {
   postFulfillment,
   reverseFulfillment,
 } from '../order/projection.ts'
-import { auditFulfillmentInTx, voidFulfillmentInTx } from '../posting.ts'
+import { auditFulfillmentInTx, voidFulfillmentInTx } from '~/platform/posting/skeleton.ts'
 import {
   fulfillmentHeadMeta,
   fulfillmentItemListMeta,
@@ -276,7 +276,7 @@ export function createFulfillmentService(
     input: FulfillmentHeadDraftInput,
   ) {
     const spec = fulfillmentSpec(side)
-    const documentDate = input.documentDate ? toDateOnly(input.documentDate) : todayUTC()
+    const documentDate = input.documentDate ? toDateOnly(input.documentDate) : utcToday()
     let no = (input.no ?? '').trim()
     if (!no) {
       no = await numberer.nextInTx(trx, {

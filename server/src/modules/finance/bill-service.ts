@@ -11,16 +11,16 @@ import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
 import {
   auditCreated, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
-import { companyFilter, type Actor } from '~/platform/authz/actor.ts'
+import { companyFilter, requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { mapWriteError } from '~/db/dberr.ts'
-import { auditGlDocInTx, voidGlDocInTx } from '~/modules/trading/posting.ts'
+import { auditGlDocInTx, voidGlDocInTx } from '~/platform/posting/skeleton.ts'
 import {
   actorUserId, asDateOnly, asDateOnlyOrNull, asIso, asIsoOrNull, conflict, lower,
-  notFound, parseDecimal, requireCompanyAccess, requireDate, requirePerm, upper,
+  notFound, parseDecimal, requireDate, upper,
   wireDec, wireDecRequired, wireEnum,
 } from './common.ts'
 import {
@@ -377,7 +377,7 @@ export function createBillService(
   const files = deps.files ?? null
 
   async function listBills(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'acc.bill:read')
+    requirePermission(actor, 'acc.bill:read')
     const scope = billScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] as Bill[] }
     return listFromSource({
@@ -392,7 +392,7 @@ export function createBillService(
   }
 
   async function getBill(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.bill:read')
+    requirePermission(actor, 'acc.bill:read')
     const scope = companyFilter(actor)
     if (!scope.bypass) {
       if (scope.ids.length === 0) throw notFound('承兑票据')
@@ -407,7 +407,7 @@ export function createBillService(
   }
 
   async function updateBill(actor: Actor, id: string, input: Record<string, unknown>) {
-    requirePerm(actor, 'acc.bill:update')
+    requirePermission(actor, 'acc.bill:update')
     return withTx(db, async (trx) => {
       const before = await lockBillForActor(trx, id, actor)
       const attrs: BillAttrs = {
@@ -491,7 +491,7 @@ export function createBillService(
   }
 
   async function deleteBill(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.bill:delete')
+    requirePermission(actor, 'acc.bill:delete')
     return withTx(db, async (trx) => {
       const before = await lockBillForActor(trx, id, actor)
       const exists = await sql<{ e: boolean }>`
@@ -637,7 +637,7 @@ export function createBillService(
   }
 
   async function listTransactions(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'acc.bill_transaction:read')
+    requirePermission(actor, 'acc.bill_transaction:read')
     const scope = companyScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] as BillTransaction[] }
     return listFromSource({
@@ -652,9 +652,9 @@ export function createBillService(
   }
 
   async function getTransaction(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.bill_transaction:read')
+    requirePermission(actor, 'acc.bill_transaction:read')
     const item = await loadTx(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '承兑交易')
+    requireCompanyAccess(actor, item.companyId, '承兑交易不存在')
     return item
   }
 
@@ -670,8 +670,8 @@ export function createBillService(
     billAccountId?: string | null; settleAccountId?: string | null
     interestAccountId?: string | null
   }) {
-    requirePerm(actor, 'acc.bill_transaction:create')
-    requireCompanyAccess(actor, input.companyId, '承兑交易')
+    requirePermission(actor, 'acc.bill_transaction:create')
+    requireCompanyAccess(actor, input.companyId, '承兑交易不存在')
     return withTx(db, async (trx) => {
       const type = upper(input.transactionType)
       let billId = input.billId ?? null
@@ -742,10 +742,10 @@ export function createBillService(
   }
 
   async function updateTransaction(actor: Actor, id: string, input: Record<string, unknown>) {
-    requirePerm(actor, 'acc.bill_transaction:update')
+    requirePermission(actor, 'acc.bill_transaction:update')
     return withTx(db, async (trx) => {
       const before = await loadTx(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '承兑交易')
+      requireCompanyAccess(actor, before.companyId, '承兑交易不存在')
       if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可修改或删除')
       const has = (k: string) => Object.prototype.hasOwnProperty.call(input, k)
       const merged = {
@@ -811,10 +811,10 @@ export function createBillService(
   }
 
   async function deleteTransaction(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.bill_transaction:delete')
+    requirePermission(actor, 'acc.bill_transaction:delete')
     return withTx(db, async (trx) => {
       const before = await loadTx(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '承兑交易')
+      requireCompanyAccess(actor, before.companyId, '承兑交易不存在')
       if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可修改或删除')
       try {
         await sql`DELETE FROM acc_bill_transaction WHERE id=${id}::uuid`.execute(trx)
@@ -892,7 +892,7 @@ export function createBillService(
   }
 
   async function auditTransaction(actor: Actor, id: string, postingDate?: string | null) {
-    requirePerm(actor, 'acc.bill_transaction:audit')
+    requirePermission(actor, 'acc.bill_transaction:audit')
     return withTx(db, async (trx) => {
       let billId = ''
       return auditGlDocInTx(trx, actor, gl, {
@@ -901,7 +901,7 @@ export function createBillService(
         conflictMessage: '承兑交易已被并发处理',
         lockDraft: async (t) => {
           const before = await loadTx(t, id, true)
-          requireCompanyAccess(actor, before.companyId, '承兑交易')
+          requireCompanyAccess(actor, before.companyId, '承兑交易不存在')
           if (before.status !== 'DRAFT') throw conflict('仅草稿承兑交易可审核')
           return before
         },
@@ -954,14 +954,14 @@ export function createBillService(
   }
 
   async function voidTransaction(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.bill_transaction:void')
+    requirePermission(actor, 'acc.bill_transaction:void')
     return withTx(db, async (trx) =>
       voidGlDocInTx(trx, actor, gl, {
         voucherType: VOUCHER,
         headTable: 'acc_bill_transaction',
         lockAudited: async (t) => {
           const before = await loadTx(t, id, true)
-          requireCompanyAccess(actor, before.companyId, '承兑交易')
+          requireCompanyAccess(actor, before.companyId, '承兑交易不存在')
           if (before.status !== 'AUDITED') throw conflict('仅已审核承兑交易可作废')
           await loadBill(t, before.billId, true)
           return before
@@ -981,7 +981,7 @@ export function createBillService(
   }
 
   async function listHoldings(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'acc.bill_holding:read')
+    requirePermission(actor, 'acc.bill_holding:read')
     const scope = companyScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] as BillHolding[] }
     return listFromSource({
@@ -994,7 +994,7 @@ export function createBillService(
   }
 
   async function getHolding(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.bill_holding:read')
+    requirePermission(actor, 'acc.bill_holding:read')
     const rows = await sql<Record<string, unknown>>`
       SELECT id,bill_no,sub_start,sub_end,amount,due_date,acquired_on,inserted_at,
         company_id,bank_account_id,bill_id,source_transaction_id
@@ -1002,12 +1002,12 @@ export function createBillService(
     `.execute(db)
     if (!rows.rows[0]) throw notFound('持有承兑')
     const item = mapHolding(rows.rows[0])
-    requireCompanyAccess(actor, item.companyId, '持有承兑')
+    requireCompanyAccess(actor, item.companyId, '持有承兑不存在')
     return item
   }
 
   async function ocrBill(actor: Actor, fileId: string): Promise<OcrPrefill> {
-    requirePerm(actor, 'acc.bill_transaction:create')
+    requirePermission(actor, 'acc.bill_transaction:create')
     if (!files) {
       throw ApiError.validation('OCR 未配置', { fileId: ['文件服务未配置'] })
     }

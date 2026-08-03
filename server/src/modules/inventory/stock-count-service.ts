@@ -22,14 +22,13 @@ import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import {
   auditInventoryDocInTx,
   voidInventoryDocInTx,
-} from '~/modules/trading/posting.ts'
+} from '~/platform/posting/skeleton.ts'
 import {
   requirePermission,
   currentBookQty,
   dateWire,
   projectStockItem,
   runeLen,
-  todayUTC,
   toDate,
   trimOrNull,
   upperStatus,
@@ -37,6 +36,7 @@ import {
   validateOptionalText,
   wireDecimal,
 } from './helpers.ts'
+import { utcToday } from '~/db/dates.ts'
 import { stockCountItemResourceMeta, stockCountResourceMeta } from './meta.ts'
 
 export type CountStatus = 'DRAFT' | 'AUDITED' | 'CANCELLED'
@@ -177,7 +177,7 @@ export function createStockCountService(
     }
     return withTx(db, async (trx) => {
       await validateLeafWarehouse(trx, input.companyId, input.warehouseId, LABEL)
-      const postingDate = input.postingDate ? dateWire(input.postingDate) : todayUTC()
+      const postingDate = input.postingDate ? dateWire(input.postingDate) : utcToday()
       let docNo = input.docNo?.trim() ?? ''
       if (!docNo) {
         docNo = await numbering.nextInTx(trx, {

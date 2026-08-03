@@ -32,8 +32,19 @@ export function canAccessCompany(actor: Actor | null, companyId: string): boolea
 }
 
 /** 无权限时抛出 403（供 handler/中间件使用）；保持 fail-closed */
-export function requirePermission(actor: Actor | null, code: string): asserts actor is Actor {
+export function requirePermission(
+  actor: Actor | null,
+  code: string,
+  message = '无权限执行该操作',
+): asserts actor is Actor {
   if (!hasPermission(actor, code)) {
-    throw new ApiError('forbidden', '无权限执行该操作')
+    throw new ApiError('forbidden', message)
+  }
+}
+
+/** 公司数据权限闸门：无权限一律按 not_found 处理（fail-closed，不泄露公司存在性） */
+export function requireCompanyAccess(actor: Actor | null, companyId: string, message = '公司不存在'): void {
+  if (!canAccessCompany(actor, companyId)) {
+    throw new ApiError('not_found', message)
   }
 }

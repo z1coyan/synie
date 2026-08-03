@@ -47,6 +47,7 @@ src/
 │   ├── auth/           # 登录/JWT/限流/Actor 装配
 │   ├── authz/          # 权限码通配匹配、公司数据范围
 │   ├── meta/           # ResourceMeta 权威模型 + Registry + meta 端点
+│   ├── posting/        # 过账编排骨架（四形状 skeleton + 单据形状登记表 shapes）
 │   ├── audit|numbering|settings|files|printing|todo|setup/
 ├── engines/            # gl / inventory
 ├── modules/            # 业务域

@@ -9,13 +9,13 @@ import type { DB as Database } from '~/db/types.ts'
 import {
   auditCreated, auditDestroyed, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
-import type { Actor } from '~/platform/authz/actor.ts'
+import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import {
-  asIso, conflict, lower, notFound, requireCompanyAccess, requireCompanyWrite,
-  requirePerm, upper, validateOptionalText, validateRequiredText, validation,
+  asIso, conflict, lower, notFound, requireCompanyWrite,
+  upper, validateOptionalText, validateRequiredText, validation,
 } from './common.ts'
 import { bankAccountResourceMeta, bankTransactionResourceMeta } from './meta.ts'
 import {
@@ -141,7 +141,7 @@ export async function validateAccountRefs(
 
 export function createAccountAndTxnOps(db: Kysely<Database>) {
   async function listAccounts(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'acc.bank_account:read', '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.bank_account:read', '无权限执行银行业务操作')
     const scope = companyScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] as BankAccount[] }
     return listFromSource({
@@ -154,9 +154,9 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
   }
 
   async function getAccount(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.bank_account:read', '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.bank_account:read', '无权限执行银行业务操作')
     const item = await loadAccount(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '银行账户')
+    requireCompanyAccess(actor, item.companyId, '银行账户不存在')
     return item
   }
 
@@ -165,7 +165,7 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     branchName?: string | null; note?: string | null; active?: boolean | null
     companyId: string; currencyId: string; accountId?: string | null
   }) {
-    requirePerm(actor, 'acc.bank_account:create', '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.bank_account:create', '无权限执行银行业务操作')
     requireCompanyWrite(actor, input.companyId)
     const fields: Record<string, string[]> = {}
     const alias = validateRequiredText(fields, 'alias', input.alias, 64)
@@ -208,10 +208,10 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     active?: boolean; currencyId?: string
     accountId?: string | null; accountIdPresent?: boolean
   }) {
-    requirePerm(actor, 'acc.bank_account:update', '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.bank_account:update', '无权限执行银行业务操作')
     return withTx(db, async (trx) => {
       const before = await loadAccount(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '银行账户')
+      requireCompanyAccess(actor, before.companyId, '银行账户不存在')
       const after = { ...before }
       if (input.alias !== undefined) after.alias = input.alias
       if (input.bankName !== undefined) after.bankName = input.bankName
@@ -261,10 +261,10 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
   }
 
   async function deleteAccount(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.bank_account:delete', '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.bank_account:delete', '无权限执行银行业务操作')
     return withTx(db, async (trx) => {
       const item = await loadAccount(trx, id, true)
-      requireCompanyAccess(actor, item.companyId, '银行账户')
+      requireCompanyAccess(actor, item.companyId, '银行账户不存在')
       try {
         await sql`DELETE FROM acc_bank_account WHERE id=${id}::uuid`.execute(trx)
         await writeAudit(trx, actor, {
@@ -280,7 +280,7 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
   }
 
   async function listTransactions(actor: Actor, query: Partial<ListQuery>) {
-    requirePerm(actor, 'acc.bank_transaction:read', '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.bank_transaction:read', '无权限执行银行业务操作')
     const scope = companyScopeWhere(actor)
     if (scope.empty) return { count: 0, results: [] as BankTransaction[] }
     return listFromSource({
@@ -293,9 +293,9 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
   }
 
   async function getTransaction(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.bank_transaction:read', '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.bank_transaction:read', '无权限执行银行业务操作')
     const item = await loadTransaction(db, id, false)
-    requireCompanyAccess(actor, item.companyId, '银行流水')
+    requireCompanyAccess(actor, item.companyId, '银行流水不存在')
     return item
   }
 
@@ -341,7 +341,7 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
   }
 
   async function createTransaction(actor: Actor, input: Parameters<typeof createTransactionInTx>[2]) {
-    requirePerm(actor, 'acc.bank_transaction:create', '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.bank_transaction:create', '无权限执行银行业务操作')
     requireCompanyWrite(actor, input.companyId)
     return withTx(db, (trx) => createTransactionInTx(trx, actor, input, true))
   }
@@ -357,10 +357,10 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
     note?: string | null; notePresent?: boolean
     bankAccountId?: string
   }) {
-    requirePerm(actor, 'acc.bank_transaction:update', '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.bank_transaction:update', '无权限执行银行业务操作')
     return withTx(db, async (trx) => {
       const before = await loadTransaction(trx, id, true)
-      requireCompanyAccess(actor, before.companyId, '银行流水')
+      requireCompanyAccess(actor, before.companyId, '银行流水不存在')
       const after = { ...before }
       if (input.occurredAt !== undefined) after.occurredAt = new Date(input.occurredAt).toISOString()
       if (input.incomePresent) after.income = input.income ?? null
@@ -408,10 +408,10 @@ export function createAccountAndTxnOps(db: Kysely<Database>) {
   }
 
   async function deleteTransaction(actor: Actor, id: string) {
-    requirePerm(actor, 'acc.bank_transaction:delete', '无权限执行银行业务操作')
+    requirePermission(actor, 'acc.bank_transaction:delete', '无权限执行银行业务操作')
     return withTx(db, async (trx) => {
       const item = await loadTransaction(trx, id, true)
-      requireCompanyAccess(actor, item.companyId, '银行流水')
+      requireCompanyAccess(actor, item.companyId, '银行流水不存在')
       if (await hasReconForTransaction(trx, id)) {
         throw conflict('流水已有对账记录,请先解除对账后再删除')
       }

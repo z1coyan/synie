@@ -29,12 +29,12 @@ import {
   partyExists,
   requirePerm,
   runeLen,
-  todayUTC,
   toDateOnly,
   type TradingSide,
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
+import { utcToday } from '~/db/dates.ts'
 import {
   reconciliationHeadMeta,
   reconciliationItemMeta,
@@ -182,7 +182,7 @@ export function createReconciliationService(
       if (!no) {
         no = await numberer.nextInTx(trx, {
           resource: spec.prefix,
-          values: { company_id: input.companyId, posting_date: todayUTC() },
+          values: { company_id: input.companyId, posting_date: utcToday() },
         })
       }
       try {
@@ -399,7 +399,7 @@ export function createReconciliationService(
       }
       await requireItems(trx, spec, id)
       await adjustProjection(trx, spec, id, 1)
-      const posting = input.postingDate ? toDateOnly(input.postingDate) : todayUTC()
+      const posting = input.postingDate ? toDateOnly(input.postingDate) : utcToday()
       const baseGross = decimal(String(before.base_gross_total ?? 0))
       if (baseGross.gt(0)) {
         await postGiftGL(trx, gl, spec, before, posting)

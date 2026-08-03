@@ -6,26 +6,11 @@ import { requireAuth } from '../auth/middleware.ts'
 import type { AuthService } from '../auth/service.ts'
 import type { AppEnv } from '../http/context.ts'
 import { ApiError } from '../http/errors.ts'
-import { validationHook } from '../http/zod.ts'
+import { listQuerySchema, validationHook } from '../http/zod.ts'
 import { canUseTemplates, type PrintingService } from './service.ts'
 import type { Template } from './types.ts'
 
 const UUID = z.string().uuid()
-
-const listQuerySchema = z
-  .object({
-    limit: z.number().int().min(0).max(200).optional(),
-    offset: z.number().int().min(0).optional(),
-    search: z.string().optional(),
-    sort: z
-      .object({
-        column: z.string(),
-        direction: z.enum(['ascending', 'descending']),
-      })
-      .optional(),
-    filter: z.record(z.string(), z.unknown()).optional(),
-  })
-  .strict()
 
 const createSchema = z
   .object({

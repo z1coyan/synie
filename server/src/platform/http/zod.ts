@@ -24,6 +24,19 @@ export const dateOnlySchema = z.string().refine(isDateOnly, {
   message: '必须是有效的 YYYY-MM-DD 日期',
 })
 
+/** 列表查询通用 query schema（limit/offset/search/sort/filter） */
+export const listQuerySchema = z
+  .object({
+    limit: z.number().int().min(0).max(200).optional(),
+    offset: z.number().int().min(0).optional(),
+    search: z.string().optional(),
+    sort: z
+      .object({ column: z.string(), direction: z.enum(['ascending', 'descending']) })
+      .optional(),
+    filter: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict()
+
 /**
  * zValidator 的统一失败钩子：zod issues → validation 错误模型
  * { fields: { "items.0.qty": ["必填"] } }，路径用点号连接。

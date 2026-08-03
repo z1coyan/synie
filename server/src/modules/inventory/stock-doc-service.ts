@@ -22,14 +22,13 @@ import { companyScopeWhere, listFromSource } from '~/db/list.ts'
 import {
   auditInventoryDocInTx,
   voidInventoryDocInTx,
-} from '~/modules/trading/posting.ts'
+} from '~/platform/posting/skeleton.ts'
 import {
   requirePermission,
   dateWire,
   lowerStatus,
   projectStockItem,
   runeLen,
-  todayUTC,
   toDate,
   trimOrNull,
   upperStatus,
@@ -37,6 +36,7 @@ import {
   validateOptionalText,
   wireDecimal,
 } from './helpers.ts'
+import { utcToday } from '~/db/dates.ts'
 import { stockDocItemResourceMeta, stockDocResourceMeta } from './meta.ts'
 
 export type StockDocDirection = 'IN' | 'OUT'
@@ -172,7 +172,7 @@ export function createStockDocService(
     }
     return withTx(db, async (trx) => {
       await validateLeafWarehouse(trx, input.companyId, input.warehouseId, LABEL)
-      const docDate = input.docDate ? dateWire(input.docDate) : todayUTC()
+      const docDate = input.docDate ? dateWire(input.docDate) : utcToday()
       let docNo = input.docNo?.trim() ?? ''
       if (!docNo) {
         docNo = await numbering.nextInTx(trx, {

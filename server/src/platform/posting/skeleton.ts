@@ -1,41 +1,40 @@
 /**
- * 过账编排骨架（B 收尾）。
+ * 过账编排骨架（平台层）。
  *
- * ## 履约三方（已迁）
- * `auditFulfillmentInTx` / `voidFulfillmentInTx`：
- * 销售发货 / 采购入库 / 委外入库
- * 「锁头 → collect → 订单投影 → 库存 →（金额>0）总账双分录 → 状态翻转 → 审计」。
+ * 审核/作废的「锁头 → collect → 引擎 → 状态翻转 → 审计」编排与单据形状无关，
+ * 领域差异以 spec 钩子注入；骨架只编排顺序、引擎调用与状态翻转。
+ * 调用方持有 trx（withTx 包裹），骨架不自起事务。
  *
- * ## 库存单据（本工单）
- * `auditInventoryDocInTx` / `voidInventoryDocInTx`：
- * 手工出入库 / 盘点 / 生产入库 —— 无总账段；投影可选；空库存行跳过引擎。
+ * ## 四种单据形状
+ * - **履约** `auditFulfillmentInTx` / `voidFulfillmentInTx`：
+ *   库存 + 条件总账双分录 + 订单投影。
+ *   「锁头 → collect → 订单投影 → 库存 →（金额>0）总账 → 状态翻转 → 审计」。
+ * - **库存单据** `auditInventoryDocInTx` / `voidInventoryDocInTx`：
+ *   仅库存引擎；投影可选；空库存行跳过引擎；无总账段。
+ * - **总账单据** `auditGlDocInTx` / `voidGlDocInTx`：
+ *   仅 GL 引擎；多行 GL 由 collect 产出；
+ *   领域副作用（对账结单、replayBill、红冲）走 after* 钩子。
+ * - **状态翻转** `flipDocStatusInTx`：
+ *   无引擎段；纯状态机迁移 + 领域校验/副作用钩子 + 审计。
  *
- * ## 总账单据（本工单）
- * `auditGlDocInTx` / `voidGlDocInTx`：
- * 报销单 / 承兑交易 / 增值税发票 —— 无库存段；多行 GL 由 collect 产出；
- * 领域副作用（对账结单、replayBill、红冲）走 after* 钩子。
- *
- * ## 形状不合、不硬套（记录原因）
- * - **手工凭证 journal**：已是 `createAndAuditJournal` / `auditJournalInTx` seam，
- *   生命周期（建头+行+审核）与单据审核不同，保持 seam 形态。
- * - **手工调拨 stock-transfer**：发货/收货两段状态机（draft→shipped→received），
- *   非「草稿→已审核→作废」；字段 shipped_at/received_at，收货还写行 received_qty；
- *   与单段 audit/void 骨架不合，保留手写。
- * - **委外发料 outsourced issue**：库存+发料投影、无总账、无 posting_date 列，
- *   形状接近库存骨架，但投影行键为 orderItemMaterialId（非履约 PostingProjectionLine），
- *   且本工单清单未列；可后续再迁 inventory 骨架。
- *
- * 领域差异以钩子注入；骨架不感知单据形状，只编排顺序、引擎调用与状态翻转。
+ * 每种单据落在哪种形状、以及不合骨架的例外与原因，登记在 `./shapes.ts`——
+ * 新单据类型出现时先查登记表选落点，不要按文件名考古抄实现。
  */
 import { decimal, roundAmount, type Decimal } from '@synie/shared'
 import { sql } from 'kysely'
+import { toDateOnly } from '~/db/dates.ts'
+import { ident } from '~/db/ident.ts'
+import type { TrxHandle } from '~/db/tx.ts'
 import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
 import type { InventoryEngine, StockLine } from '~/engines/inventory/index.ts'
-import type { TrxHandle } from '~/db/tx.ts'
 import { auditDiff, writeAudit } from '~/platform/audit/write.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { ident, lowerParty, toDateOnly } from './common.ts'
+
+/** 对手类型落库口径（小写），与 trading/common 的 lowerParty 同语义 */
+function lowerPartyType(value: string): string {
+  return value.trim().toLowerCase()
+}
 
 // ---------------------------------------------------------------------------
 // 履约过账（库存 + 条件总账双分录 + 订单投影）
@@ -112,7 +111,6 @@ export interface PostingEngines {
 
 /**
  * 审核过账：投影 → 库存 →（金额>0）总账 → 状态翻转 → 审计。
- * 调用方持有 trx（withTx 包裹），骨架不自起事务。
  */
 export async function auditFulfillmentInTx<Head>(
   trx: TrxHandle,
@@ -152,10 +150,10 @@ export async function auditFulfillmentInTx<Head>(
       credit: amount,
     }
     if (spec.partySide === 'debit') {
-      debit.partyType = lowerParty(v.partyType)
+      debit.partyType = lowerPartyType(v.partyType)
       debit.partyId = v.partyId
     } else {
-      credit.partyType = lowerParty(v.partyType)
+      credit.partyType = lowerPartyType(v.partyType)
       credit.partyId = v.partyId
     }
     await engines.gl.post(
@@ -191,7 +189,6 @@ export async function auditFulfillmentInTx<Head>(
 
 /**
  * 作废：投影回滚 → 库存分录作废 → 总账分录作废 → 状态翻转 → 审计。
- * 调用方持有 trx，骨架不自起事务。
  */
 export async function voidFulfillmentInTx<Head>(
   trx: TrxHandle,
@@ -594,6 +591,94 @@ export async function voidGlDocInTx<Head>(
     companyId: label.companyId,
     actionType: 'update',
     actionName: spec.actionName ?? 'void',
+    changes: auditDiff(spec.snapshot(before), spec.snapshot(after), spec.auditFields),
+  })
+  return after
+}
+
+// ---------------------------------------------------------------------------
+// 状态翻转单据（无引擎段；纯状态机迁移 + 审计）
+// ---------------------------------------------------------------------------
+
+export interface FlipDocVoucher {
+  id: string
+  no: string
+  companyId: string
+}
+
+export interface FlipDocSpec<Head> {
+  /** 状态翻转 UPDATE 目标表，同时作为审计 resource（经 ident 白名单） */
+  headTable: string
+  /** 写入 status 列的目标值（如 audited / voided / confirmed / closed） */
+  targetStatus: string
+  /** 审计 actionName（如 audit / void / confirm / close） */
+  actionName: string
+  /** 翻转时同时写 audited_at/audited_by_id；默认 false，审核类迁移置 true */
+  stampAuditor?: boolean
+  /** 锁头 + 来源状态门 + 公司范围校验 */
+  lock: (trx: TrxHandle) => Promise<Head>
+  /** 领域校验（行非空、梯度完整、可作废性等） */
+  validate?: (trx: TrxHandle, head: Head) => Promise<void>
+  /** 翻转前领域副作用（占量调整等），同事务 */
+  beforeFlip?: (trx: TrxHandle, head: Head) => Promise<void>
+  /** 翻转并重载后、写审计前的副作用；提供则执行后骨架再重载一次 */
+  afterFlip?: (trx: TrxHandle, before: Head, after: Head) => Promise<void>
+  voucherOf: (head: Head) => FlipDocVoucher
+  reload: (trx: TrxHandle, id: string) => Promise<Head>
+  snapshot: (head: Head) => Record<string, unknown>
+  auditFields: readonly string[]
+}
+
+/**
+ * 状态翻转：lock → validate → beforeFlip → 状态翻转 →（afterFlip）→ 审计。
+ */
+export async function flipDocStatusInTx<Head>(
+  trx: TrxHandle,
+  actor: Actor,
+  spec: FlipDocSpec<Head>,
+): Promise<Head> {
+  const before = await spec.lock(trx)
+  if (spec.validate) {
+    await spec.validate(trx, before)
+  }
+  if (spec.beforeFlip) {
+    await spec.beforeFlip(trx, before)
+  }
+  const v = spec.voucherOf(before)
+
+  const auditedById = actor.userId || null
+  if (spec.stampAuditor) {
+    await sql`
+      UPDATE ${ident(spec.headTable)} SET
+        status=${spec.targetStatus},
+        audited_at=(now() AT TIME ZONE 'utc'),
+        audited_by_id=${auditedById}::uuid,
+        updated_at=(now() AT TIME ZONE 'utc')
+      WHERE id=${v.id}::uuid
+    `.execute(trx)
+  } else {
+    await sql`
+      UPDATE ${ident(spec.headTable)} SET
+        status=${spec.targetStatus},
+        updated_at=(now() AT TIME ZONE 'utc')
+      WHERE id=${v.id}::uuid
+    `.execute(trx)
+  }
+
+  let after = await spec.reload(trx, v.id)
+  if (spec.afterFlip) {
+    await spec.afterFlip(trx, before, after)
+    after = await spec.reload(trx, v.id)
+  }
+
+  const label = spec.voucherOf(after)
+  await writeAudit(trx, actor, {
+    resource: spec.headTable,
+    recordId: v.id,
+    recordLabel: label.no,
+    companyId: label.companyId,
+    actionType: 'update',
+    actionName: spec.actionName,
     changes: auditDiff(spec.snapshot(before), spec.snapshot(after), spec.auditFields),
   })
   return after

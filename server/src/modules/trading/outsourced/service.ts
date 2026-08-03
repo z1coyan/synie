@@ -38,11 +38,11 @@ import {
   partyExists,
   requirePerm,
   runeLen,
-  todayUTC,
   toDateOnly,
   upperStatus,
   wireRequiredDecimal,
 } from '../common.ts'
+import { utcToday } from '~/db/dates.ts'
 import {
   postFulfillment,
   postOutsourcedIssue,
@@ -51,9 +51,11 @@ import {
 } from '../order/projection.ts'
 import {
   auditFulfillmentInTx,
+  auditInventoryDocInTx,
   voidFulfillmentInTx,
+  voidInventoryDocInTx,
   type PostingProjectionLine,
-} from '../posting.ts'
+} from '~/platform/posting/skeleton.ts'
 import {
   outsourcedIssueItemMeta,
   outsourcedIssueMeta,
@@ -236,7 +238,7 @@ export function createOutsourcedService(
       throw new ApiError('forbidden', '无权在该公司创建委外发料单')
     }
     return withTx(db, async (trx) => {
-      const issueDate = input.issueDate ? toDateOnly(input.issueDate) : todayUTC()
+      const issueDate = input.issueDate ? toDateOnly(input.issueDate) : utcToday()
       let issueNo = (input.issueNo ?? '').trim()
       if (!issueNo) {
         issueNo = await numberer.nextInTx(trx, {
@@ -390,119 +392,96 @@ export function createOutsourcedService(
   async function auditIssue(actor: Actor, id: string) {
     requirePerm(actor, ISSUE_PREFIX, 'audit', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const beforeRow = await lockDraftIssue(trx, actor, id)
-      const before = mapIssue(beforeRow)
-      const items = await loadIssueActionItems(trx, id)
-      if (items.length === 0) {
-        throw new ApiError('conflict', '委外发料单至少需要一条发料行')
-      }
-      const stockLines: StockLine[] = []
-      const projection: Array<{ orderItemMaterialId: string; baseQty: string }> = []
-      for (const item of items) {
-        await deriveIssueItem(trx, before, {
-          orderItemMaterialId: item.orderItemMaterialId,
-          qty: decimal(item.qty),
-          fromWarehouseId: item.fromWarehouseId,
-          outsourcedWarehouseId: item.outsourcedWarehouseId,
-          remarks: item.remarks,
-        })
-        projection.push({
-          orderItemMaterialId: item.orderItemMaterialId,
-          baseQty: item.baseQty,
-        })
-        stockLines.push(
-          {
-            warehouseId: item.fromWarehouseId,
-            materialId: item.materialId,
-            quantity: wireRequiredDecimal(item.baseQty),
-            direction: 'out' as const,
-            remarks: item.remarks,
-          },
-          {
-            warehouseId: item.outsourcedWarehouseId,
-            materialId: item.materialId,
-            quantity: wireRequiredDecimal(item.baseQty),
-            direction: 'in' as const,
-            remarks: item.remarks,
-          },
-        )
-      }
-      await postOutsourcedIssue(trx, {
-        companyId: before.companyId,
-        partyType: before.partyType,
-        partyId: before.partyId,
-        lines: projection,
-      })
-      await inventory.post(
-        trx,
-        {
-          type: ISSUE_PREFIX,
-          id: before.id,
-          no: before.issueNo,
-          companyId: before.companyId,
-          postingDate: before.issueDate,
+      // collect 的闭包产物：发料投影行（键为 orderItemMaterialId，非履约 PostingProjectionLine）
+      let projection: Array<{ orderItemMaterialId: string; baseQty: string }> = []
+      return auditInventoryDocInTx(trx, actor, inventory, {
+        voucherType: ISSUE_PREFIX,
+        headTable: ISSUE_TABLE,
+        lockDraft: async (t) => mapIssue(await lockDraftIssue(t, actor, id)),
+        collect: async (t, before) => {
+          const items = await loadIssueActionItems(t, id)
+          if (items.length === 0) {
+            throw new ApiError('conflict', '委外发料单至少需要一条发料行')
+          }
+          const stockLines: StockLine[] = []
+          projection = []
+          for (const item of items) {
+            await deriveIssueItem(t, before, {
+              orderItemMaterialId: item.orderItemMaterialId,
+              qty: decimal(item.qty),
+              fromWarehouseId: item.fromWarehouseId,
+              outsourcedWarehouseId: item.outsourcedWarehouseId,
+              remarks: item.remarks,
+            })
+            projection.push({
+              orderItemMaterialId: item.orderItemMaterialId,
+              baseQty: item.baseQty,
+            })
+            stockLines.push(
+              {
+                warehouseId: item.fromWarehouseId,
+                materialId: item.materialId,
+                quantity: wireRequiredDecimal(item.baseQty),
+                direction: 'out' as const,
+                remarks: item.remarks,
+              },
+              {
+                warehouseId: item.outsourcedWarehouseId,
+                materialId: item.materialId,
+                quantity: wireRequiredDecimal(item.baseQty),
+                direction: 'in' as const,
+                remarks: item.remarks,
+              },
+            )
+          }
+          return { stockLines, postingDate: before.issueDate }
         },
-        stockLines,
-      )
-      const auditedById = actor.userId || null
-      await sql`
-        UPDATE pur_outsourced_issue SET
-          status='audited',
-          audited_at=(now() AT TIME ZONE 'utc'),
-          audited_by_id=${auditedById}::uuid,
-          updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
-      const row = await loadIssue(trx, id)
-      const after = mapIssue(row!)
-      await writeAudit(trx, actor, {
-        resource: ISSUE_TABLE,
-        recordId: id,
-        recordLabel: after.issueNo,
-        companyId: after.companyId,
-        actionType: 'update',
-        actionName: 'audit',
-        changes: auditDiff(issueSnap(before), issueSnap(after), ISSUE_AUDIT),
+        postProjection: async (t, before) => {
+          await postOutsourcedIssue(t, {
+            companyId: before.companyId,
+            partyType: before.partyType,
+            partyId: before.partyId,
+            lines: projection,
+          })
+        },
+        voucherOf: (h) => ({ id: h.id, no: h.issueNo, companyId: h.companyId }),
+        reload: async (t, headId) => mapIssue((await loadIssue(t, headId))!),
+        snapshot: issueSnap,
+        auditFields: ISSUE_AUDIT,
       })
-      return after
     })
   }
 
   async function voidIssue(actor: Actor, id: string) {
     requirePerm(actor, ISSUE_PREFIX, 'void', '无权限执行该委外操作')
     return withTx(db, async (trx) => {
-      const beforeRow = await lockIssue(trx, actor, id)
-      const before = mapIssue(beforeRow)
-      if (before.status !== 'AUDITED') {
-        throw new ApiError('conflict', '仅已审核委外发料单可作废')
-      }
-      const items = await loadIssueActionItems(trx, id)
-      await reverseOutsourcedIssue(trx, {
-        companyId: before.companyId,
-        partyType: before.partyType,
-        partyId: before.partyId,
-        lines: items.map((i) => ({
-          orderItemMaterialId: i.orderItemMaterialId,
-          baseQty: i.baseQty,
-        })),
+      return voidInventoryDocInTx(trx, actor, inventory, {
+        voucherType: ISSUE_PREFIX,
+        headTable: ISSUE_TABLE,
+        lockAudited: async (t) => {
+          const before = mapIssue(await lockIssue(t, actor, id))
+          if (before.status !== 'AUDITED') {
+            throw new ApiError('conflict', '仅已审核委外发料单可作废')
+          }
+          return before
+        },
+        reverseProjection: async (t, before) => {
+          const items = await loadIssueActionItems(t, id)
+          await reverseOutsourcedIssue(t, {
+            companyId: before.companyId,
+            partyType: before.partyType,
+            partyId: before.partyId,
+            lines: items.map((i) => ({
+              orderItemMaterialId: i.orderItemMaterialId,
+              baseQty: i.baseQty,
+            })),
+          })
+        },
+        voucherOf: (h) => ({ id: h.id, no: h.issueNo, companyId: h.companyId }),
+        reload: async (t, headId) => mapIssue((await loadIssue(t, headId))!),
+        snapshot: issueSnap,
+        auditFields: ISSUE_AUDIT,
       })
-      await inventory.cancel(trx, { type: ISSUE_PREFIX, id: before.id })
-      await sql`
-        UPDATE pur_outsourced_issue SET status='voided', updated_at=(now() AT TIME ZONE 'utc')
-        WHERE id=${id}::uuid
-      `.execute(trx)
-      const row = await loadIssue(trx, id)
-      const after = mapIssue(row!)
-      await writeAudit(trx, actor, {
-        resource: ISSUE_TABLE,
-        recordId: id,
-        recordLabel: after.issueNo,
-        companyId: after.companyId,
-        actionType: 'update',
-        actionName: 'void',
-        changes: auditDiff(issueSnap(before), issueSnap(after), ISSUE_AUDIT),
-      })
-      return after
     })
   }
 
@@ -736,7 +715,7 @@ export function createOutsourcedService(
       throw new ApiError('forbidden', '无权在该公司创建委外入库单')
     }
     return withTx(db, async (trx) => {
-      const receiptDate = input.receiptDate ? toDateOnly(input.receiptDate) : todayUTC()
+      const receiptDate = input.receiptDate ? toDateOnly(input.receiptDate) : utcToday()
       let receiptNo = (input.receiptNo ?? '').trim()
       if (!receiptNo) {
         receiptNo = await numberer.nextInTx(trx, {

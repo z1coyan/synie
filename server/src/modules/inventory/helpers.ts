@@ -1,7 +1,7 @@
 /**
  * 库存域共享工具：日期/状态 wire、单位折算、叶子仓校验、鉴权辅助。
  */
-import { decimal, roundBaseQty, type Decimal } from '@synie/shared'
+import { decimal, roundBaseQty, toDecimalString, type Decimal } from '@synie/shared'
 import { sql } from 'kysely'
 import type { DbHandle } from '~/db/tx.ts'
 import {
@@ -26,14 +26,6 @@ export function requireAnyPermission(
 export function toDate(value: unknown): Date {
   if (value instanceof Date) return value
   return new Date(String(value))
-}
-
-export function todayUTC(): string {
-  const now = new Date()
-  const y = now.getUTCFullYear()
-  const m = String(now.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(now.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
 }
 
 /** 业务日 wire：YYYY-MM-DD */
@@ -66,12 +58,8 @@ export function lowerStatus(value: string): string {
 }
 
 export function wireDecimal(value: Decimal | string | number | null | undefined): string | null {
-  if (value == null) return null
-  const d = decimal(value)
-  // 对齐 shopspring Decimal.String()：去掉无意义尾零
-  const fixed = d.toFixed()
-  if (!fixed.includes('.')) return fixed
-  return fixed.replace(/\.?0+$/, '') === '' ? '0' : fixed.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
+  if (value === null || value === undefined) return null
+  return toDecimalString(decimal(value))
 }
 
 export function trimOrNull(value: string | null | undefined): string | null {

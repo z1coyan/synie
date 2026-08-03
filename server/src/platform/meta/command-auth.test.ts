@@ -9,7 +9,6 @@ import { SYS_STORAGE } from '../files/permissions.ts'
 import { HR_ATTENDANCE_DAY } from '~/modules/hr/permissions.ts'
 import { ACC_BANK_TRANSACTION } from '~/modules/finance/permissions.ts'
 import { requirePermission } from '../authz/actor.ts'
-import { requirePerm } from '~/modules/finance/common.ts'
 import { createSealedResourceRegistry } from './register-all.ts'
 
 function actor(permissions: string[]): Actor {
@@ -85,9 +84,9 @@ describe('语义 command 鉴权与 Catalog 对齐', () => {
     ).toBe(ACC_BANK_TRANSACTION.reconcile)
 
     const denied = actor([ACC_BANK_TRANSACTION.read])
-    expect(() => requirePerm(denied, ACC_BANK_TRANSACTION.reconcile)).toThrow()
+    expect(() => requirePermission(denied, ACC_BANK_TRANSACTION.reconcile)).toThrow()
     try {
-      requirePerm(denied, ACC_BANK_TRANSACTION.reconcile)
+      requirePermission(denied, ACC_BANK_TRANSACTION.reconcile)
     } catch (e) {
       expect(e).toMatchObject({ code: 'forbidden' })
     }

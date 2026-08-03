@@ -24,7 +24,6 @@ import {
   dateWire,
   projectStockItem,
   runeLen,
-  todayUTC,
   toDate,
   trimOrNull,
   upperStatus,
@@ -32,6 +31,7 @@ import {
   validateOptionalText,
   wireDecimal,
 } from './helpers.ts'
+import { utcToday } from '~/db/dates.ts'
 import { stockTransferItemResourceMeta, stockTransferResourceMeta } from './meta.ts'
 
 export type TransferStatus = 'DRAFT' | 'SHIPPED' | 'RECEIVED'
@@ -187,7 +187,7 @@ export function createStockTransferService(
         input.transitWarehouseId,
         true,
       )
-      const docDate = input.docDate ? dateWire(input.docDate) : todayUTC()
+      const docDate = input.docDate ? dateWire(input.docDate) : utcToday()
       let docNo = input.docNo?.trim() ?? ''
       if (!docNo) {
         docNo = await numbering.nextInTx(trx, {

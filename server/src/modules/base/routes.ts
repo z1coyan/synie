@@ -5,26 +5,11 @@ import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
-import { validationHook } from '~/platform/http/zod.ts'
+import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
 import type { AccountService } from './account-service.ts'
 import type { CompanyService } from './company-service.ts'
 import type { CurrencyService } from './currency-service.ts'
 import type { UnitService } from './unit-service.ts'
-
-const listQuerySchema = z
-  .object({
-    limit: z.number().int().min(0).max(200).optional(),
-    offset: z.number().int().min(0).optional(),
-    search: z.string().optional(),
-    sort: z
-      .object({
-        column: z.string(),
-        direction: z.enum(['ascending', 'descending']),
-      })
-      .optional(),
-    filter: z.record(z.string(), z.unknown()).optional(),
-  })
-  .strict()
 
 const idParam = z.object({ id: z.string().uuid() })
 
