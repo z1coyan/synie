@@ -292,9 +292,9 @@ test("销售采购对账 Grid、Drawer 与默认科目设置全程使用 Go REST
     );
 
     const companyName = `${prefix}验收公司`;
-    await page.goto("/scm/settings/sales");
+    await page.goto("/sales/settings");
     await expect(
-      page.getByRole("heading", { name: "供应链设置", exact: true }),
+      page.getByRole("heading", { name: "销售设置", exact: true }),
     ).toBeVisible();
     await expect(
       page.getByText("销售发货默认科目", { exact: true }),
@@ -307,7 +307,7 @@ test("销售采购对账 Grid、Drawer 与默认科目设置全程使用 Go REST
       page.getByText(`${prefix}销售借方`, { exact: true }),
     ).toBeVisible();
 
-    await page.goto("/scm/settings/purchase");
+    await page.goto("/purchase/settings");
     await expect(
       page.getByText("采购入库默认科目", { exact: true }),
     ).toBeVisible();

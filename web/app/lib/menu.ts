@@ -226,12 +226,12 @@ export const menuModules: MenuModule[] = [
       },
       {
         label: '设置',
-        // 供应链设置页内分销售/采购/生产三 Tab,本入口直达销售 Tab
+        // 销售设置独立页(原供应链设置页销售 Tab 拆出)
         items: [
           {
-            code: 'menu.sales.sales',
+            code: 'menu.sales.settings',
             label: '销售设置',
-            path: '/scm/settings/sales',
+            path: '/sales/settings',
             relatedPermissions: ['sales.setting'],
           },
         ],
@@ -293,12 +293,12 @@ export const menuModules: MenuModule[] = [
       },
       {
         label: '设置',
-        // 采购 Tab 复用 sales.setting 资源(供应链设置单行存 sal_setting)
+        // 采购设置复用 sales.setting 资源(全局标量单行存 sal_setting)
         items: [
           {
-            code: 'menu.purchase.purchase',
+            code: 'menu.purchase.settings',
             label: '采购设置',
-            path: '/scm/settings/purchase',
+            path: '/purchase/settings',
             relatedPermissions: ['sales.setting'],
           },
         ],
@@ -395,9 +395,9 @@ export const menuModules: MenuModule[] = [
         label: '设置',
         items: [
           {
-            code: 'menu.mfg.production',
+            code: 'menu.mfg.settings',
             label: '生产设置',
-            path: '/scm/settings/production',
+            path: '/mfg/settings',
             relatedPermissions: ['mfg.setting'],
           },
         ],

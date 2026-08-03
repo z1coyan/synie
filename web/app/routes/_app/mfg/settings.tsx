@@ -5,11 +5,11 @@ import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
 import { getManufacturingSetting, updateManufacturingSetting } from '~/lib/resources/settings'
 import { toastError } from '~/lib/toast'
 
-export const Route = createFileRoute('/_app/scm/settings/production')({
-  component: ScmProductionSettingsTab,
+export const Route = createFileRoute('/_app/mfg/settings')({
+  component: MfgSettingsPage,
 })
 
-function ScmProductionSettingsTab() {
+function MfgSettingsPage() {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: ['mfgSettings'],
@@ -47,7 +47,10 @@ function ScmProductionSettingsTab() {
   }
 
   return (
-    <Card className="mt-6 max-w-2xl">
+    <>
+      <h1 className="font-brand text-3xl tracking-wide">生产设置</h1>
+      <p className="mt-2 text-sm text-ink-500">生产全局配置（非公司维度）。</p>
+      <Card className="mt-4 max-w-2xl">
       <Card.Header>
         <Card.Title>生产入库容差</Card.Title>
         <Card.Description>
@@ -92,5 +95,6 @@ function ScmProductionSettingsTab() {
         </Button>
       </Card.Footer>
     </Card>
+    </>
   )
 }

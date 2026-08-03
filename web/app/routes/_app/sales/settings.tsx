@@ -3,14 +3,14 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Label, NumberField, Spinner, toast } from '@heroui/react'
 import { getSalesSetting, updateSalesSetting } from '~/lib/resources/settings'
-import { CompanyAccountDefaultsCard } from './-company-account-defaults'
+import { CompanyAccountDefaultsCard } from '~/components/company-account-defaults'
 import { toastError } from '~/lib/toast'
 
-export const Route = createFileRoute('/_app/scm/settings/sales')({
-  component: ScmSalesSettingsTab,
+export const Route = createFileRoute('/_app/sales/settings')({
+  component: SalesSettingsPage,
 })
 
-function ScmSalesSettingsTab() {
+function SalesSettingsPage() {
   const queryClient = useQueryClient()
   const query = useQuery({
     // 与采购 tab / 订单抽屉分 key,避免不同表单草稿互相污染缓存
@@ -57,7 +57,9 @@ function ScmSalesSettingsTab() {
 
   return (
     <>
-      <Card className="max-w-2xl">
+      <h1 className="font-brand text-3xl tracking-wide">销售设置</h1>
+      <p className="mt-2 text-sm text-ink-500">销售全局配置（非公司维度）。</p>
+      <Card className="mt-4 max-w-2xl">
         <Card.Header>
           <Card.Title>样品订单</Card.Title>
           <Card.Description>

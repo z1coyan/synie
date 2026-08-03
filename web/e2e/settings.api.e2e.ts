@@ -138,7 +138,7 @@ test('四类设置通过 Go REST 保存，Settings GraphQL=0', async ({ page }) 
     // purOrders DataGrid Meta 仍走旧 GraphQL 授权，Go JWT 环境不保证渲染新增入口；
     // 抽屉 Settings 迁移由静态扫描与类型/构建门禁覆盖。
 
-    await page.goto('/scm/settings/sales')
+    await page.goto('/sales/settings')
     const sampleMax = page.getByLabel('样品条目数量上限')
     await expect(sampleMax).toBeVisible()
     await sampleMax.fill(String(sales.sampleItemMaxQty === 91 ? 92 : 91))
@@ -146,7 +146,7 @@ test('四类设置通过 Go REST 保存，Settings GraphQL=0', async ({ page }) 
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await expect(page.getByText('销售设置已保存')).toBeVisible()
 
-    await page.goto('/scm/settings/purchase')
+    await page.goto('/purchase/settings')
     const spotMax = page.getByLabel('零星条目数量上限')
     await expect(spotMax).toBeVisible()
     await spotMax.fill(String(sales.spotItemMaxQty === 93 ? 94 : 93))
@@ -155,7 +155,7 @@ test('四类设置通过 Go REST 保存，Settings GraphQL=0', async ({ page }) 
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await expect(page.getByText('采购设置已保存')).toBeVisible()
 
-    await page.goto('/scm/settings/production')
+    await page.goto('/mfg/settings')
     const outputRatio = page.getByLabel('生产入库超入比例 (%)')
     await expect(outputRatio).toBeVisible()
     await outputRatio.fill('4')

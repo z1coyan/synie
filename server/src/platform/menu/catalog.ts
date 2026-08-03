@@ -102,7 +102,7 @@ export const menuCatalog: MenuCatalogModule[] = [
       },
       {
         label: '设置',
-        items: [{ code: 'menu.sales.sales', label: '销售设置' }],
+        items: [{ code: 'menu.sales.settings', label: '销售设置' }],
       },
     ],
   },
@@ -128,7 +128,7 @@ export const menuCatalog: MenuCatalogModule[] = [
       },
       {
         label: '设置',
-        items: [{ code: 'menu.purchase.purchase', label: '采购设置' }],
+        items: [{ code: 'menu.purchase.settings', label: '采购设置' }],
       },
     ],
   },
@@ -167,7 +167,7 @@ export const menuCatalog: MenuCatalogModule[] = [
       },
       {
         label: '设置',
-        items: [{ code: 'menu.mfg.production', label: '生产设置' }],
+        items: [{ code: 'menu.mfg.settings', label: '生产设置' }],
       },
     ],
   },

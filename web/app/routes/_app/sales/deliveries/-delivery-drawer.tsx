@@ -49,7 +49,7 @@ import {
   WarehouseRemoteSelect,
   defaultCompanyId,
 } from '../../scm/-stock-doc'
-import { fetchCompanyAccountDefaults } from '../../scm/settings/-company-account-defaults'
+import { fetchCompanyAccountDefaults } from '~/components/company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
 import { toastError } from '~/lib/toast'
