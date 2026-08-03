@@ -7,6 +7,7 @@ import {
 } from './accounting'
 import { companyClient } from './companies'
 import { customerClient } from './customers'
+import { partyAddressClient } from './party-addresses'
 import { currencyClient } from './currencies'
 import { employeeClient } from './employees'
 import { fileClient, storageClient, storageCommandAdapter } from './files'
@@ -177,6 +178,7 @@ const transports: Record<string, ResourceTransport> = {
   basAccounts: accountClient,
   basCompanies: companyClient,
   basCurrencies: currencyClient,
+  basPartyAddresses: partyAddressClient,
   basMarketInstruments: marketInstrumentClient,
   basMarketPricePoints: marketPricePointClient,
   basUnits: unitClient,

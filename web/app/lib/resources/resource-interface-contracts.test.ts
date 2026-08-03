@@ -31,6 +31,7 @@ const EXPECTED_RESOURCES = [
   'basCurrencies',
   'basMarketInstruments',
   'basMarketPricePoints',
+  'basPartyAddresses',
   'basUnits',
   'hrAttendanceCorrections',
   'hrAttendanceDays',

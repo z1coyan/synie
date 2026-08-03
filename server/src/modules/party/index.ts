@@ -3,6 +3,7 @@ import type { DB as Database } from '~/db/types.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { TodoSourceRegistry } from '~/platform/todo/source-registry.ts'
+import { createPartyAddressService } from './address-service.ts'
 import { allPartyResourceMetas } from './meta.ts'
 import {
   createCustomerService,
@@ -18,8 +19,18 @@ export {
   type SupplierService,
   type EmployeeService,
 } from './party-service.ts'
-export { customerRoutes, supplierRoutes, employeeRoutes } from './routes.ts'
-export { allPartyResourceMetas } from './meta.ts'
+export {
+  createPartyAddressService,
+  deleteAddressesForParty,
+  type PartyAddressService,
+} from './address-service.ts'
+export {
+  customerRoutes,
+  supplierRoutes,
+  employeeRoutes,
+  partyAddressRoutes,
+} from './routes.ts'
+export { allPartyResourceMetas, partyAddressResourceMeta } from './meta.ts'
 
 export function registerPartyResources(registry: Registry): void {
   for (const meta of allPartyResourceMetas()) {
@@ -38,5 +49,6 @@ export function createPartyServices(db: Kysely<Database>, numbering: NumberingSe
     customers: createCustomerService(db),
     suppliers: createSupplierService(db),
     employees: createEmployeeService(db, numbering),
+    addresses: createPartyAddressService(db),
   }
 }

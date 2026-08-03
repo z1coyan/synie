@@ -179,8 +179,129 @@ export function employeeResourceMeta(): ResourceMeta {
   }
 }
 
+const partyAddressPartyTypes = [
+  { value: 'CUSTOMER', label: '客户' },
+  { value: 'SUPPLIER', label: '供应商' },
+  { value: 'COMPANY', label: '内部公司' },
+]
+
+const partyAddressPurposes = [
+  { value: 'SHIPPING', label: '收发货' },
+  { value: 'OFFICE', label: '通信办公' },
+  { value: 'OTHER', label: '其他' },
+]
+
+/** 对手地址：从属客户/供应商/内部公司；无独立菜单，主体抽屉维护 */
+export function partyAddressResourceMeta(): ResourceMeta {
+  return {
+    name: 'basPartyAddresses',
+    permissionPrefix: 'base.party_address',
+    permissionLabel: '地址',
+    label: '地址',
+    table: 'bas_party_address',
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
+      field('party_type', 'partyType', 'enum', '主体类型', {
+        required: true,
+        createOnly: true,
+        enumOptions: partyAddressPartyTypes,
+        filterable: true,
+        sortable: true,
+      }),
+      field('party_id', 'partyId', 'uuid', '主体', {
+        required: true,
+        createOnly: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('name', 'name', 'string', '地址名称', {
+        required: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('purpose', 'purpose', 'enum', '用途', {
+        required: true,
+        enumOptions: partyAddressPurposes,
+        filterable: true,
+        sortable: true,
+      }),
+      field('contact_name', 'contactName', 'string', '联系人', {
+        filterable: true,
+        sortable: true,
+      }),
+      field('contact_phone', 'contactPhone', 'string', '电话', {
+        filterable: true,
+        sortable: true,
+      }),
+      field('province', 'province', 'string', '省/直辖市', {
+        required: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('city', 'city', 'string', '市', {
+        required: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('district', 'district', 'string', '区/县', {
+        required: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('address', 'address', 'string', '街道门牌', {
+        required: true,
+        filterable: true,
+      }),
+      field('is_default', 'isDefault', 'boolean', '默认', {
+        filterable: true,
+        sortable: true,
+      }),
+      field('active', 'active', 'boolean', '启用', {
+        filterable: true,
+        sortable: true,
+      }),
+      field('remarks', 'remarks', 'string', '备注'),
+      field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('updated_at', 'updatedAt', 'datetime', '更新时间', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
+    ],
+    actions: crud,
+    form: {
+      kind: 'basic',
+      exclude: ['id', 'insertedAt', 'updatedAt'],
+      fields: {
+        // required / createOnly 已在字段层声明，form 只放呈现提示
+        name: { placeholder: '如 上海仓收货' },
+        purpose: { defaultValue: 'SHIPPING' },
+        contactName: { placeholder: '收货/联系人' },
+        contactPhone: { placeholder: '手机或座机' },
+        province: { placeholder: '省/直辖市' },
+        city: { placeholder: '市' },
+        district: { placeholder: '区/县' },
+        address: { placeholder: '街道、门牌号等' },
+        isDefault: { defaultValue: false },
+        active: { defaultValue: true },
+        remarks: {},
+      },
+    },
+    audit: { enabled: true },
+  }
+}
+
 export function allPartyResourceMetas(): ResourceMeta[] {
-  return [customerResourceMeta(), supplierResourceMeta(), employeeResourceMeta()]
+  return [
+    customerResourceMeta(),
+    supplierResourceMeta(),
+    employeeResourceMeta(),
+    partyAddressResourceMeta(),
+  ]
 }
 
 export const INSURANCE_WIRE = new Set(insuranceOptions.map((o) => o.value))

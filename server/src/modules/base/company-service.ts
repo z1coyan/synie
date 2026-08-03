@@ -221,6 +221,12 @@ inserted_at, updated_at, parent_name, base_currency_name`,
         parentId: locked.parent_id,
         baseCurrencyId: locked.base_currency_id,
       }
+      // 公司作为内部公司主体时的从属地址（多态无 FK；库内小写）
+      await trx
+        .deleteFrom('bas_party_address')
+        .where('party_type', '=', 'company')
+        .where('party_id', '=', id)
+        .execute()
       try {
         await trx.deleteFrom('bas_company').where('id', '=', id).execute()
       } catch (err) {

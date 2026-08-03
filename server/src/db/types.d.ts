@@ -371,6 +371,25 @@ export interface BasCompany {
   updated_at: Generated<Timestamp>;
 }
 
+export interface BasPartyAddress {
+  active: Generated<boolean>;
+  address: string;
+  city: string;
+  contact_name: string | null;
+  contact_phone: string | null;
+  district: string;
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  is_default: Generated<boolean>;
+  name: string;
+  party_id: string;
+  party_type: string;
+  province: string;
+  purpose: string;
+  remarks: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface BasCurrency {
   active: Generated<boolean>;
   id: Generated<string>;
@@ -1764,6 +1783,7 @@ export interface DB {
   bas_account: BasAccount;
   bas_company: BasCompany;
   bas_currency: BasCurrency;
+  bas_party_address: BasPartyAddress;
   bas_market_instrument: BasMarketInstrument;
   bas_market_price_point: BasMarketPricePoint;
   bas_unit: BasUnit;

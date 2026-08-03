@@ -14,6 +14,7 @@ import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { mapWriteError } from '~/db/dberr.ts'
 import { listFromSource } from '~/db/list.ts'
+import { deleteAddressesForParty } from './address-service.ts'
 import {
   customerResourceMeta,
   employeeResourceMeta,
@@ -71,6 +72,7 @@ export function createCustomerService(db: Kysely<Database>) {
     meta: customerResourceMeta(),
     notFound: '客户不存在',
     materialCheck: true,
+    addressPartyType: 'CUSTOMER',
   })
 }
 
@@ -83,6 +85,7 @@ export function createSupplierService(db: Kysely<Database>) {
     meta: supplierResourceMeta(),
     notFound: '供应商不存在',
     materialCheck: false,
+    addressPartyType: 'SUPPLIER',
   })
 }
 
@@ -96,6 +99,7 @@ function createPartyKind(
     meta: ReturnType<typeof customerResourceMeta>
     notFound: string
     materialCheck: boolean
+    addressPartyType: 'CUSTOMER' | 'SUPPLIER'
   },
 ) {
   async function get(actor: Actor, id: string): Promise<Party> {
@@ -234,6 +238,7 @@ function createPartyKind(
         if (linked) throw new ApiError('conflict', '存在关联物料,不能删除')
       }
       const item = mapParty(locked)
+      await deleteAddressesForParty(trx, opts.addressPartyType, id)
       try {
         await trx.deleteFrom(opts.table).where('id', '=', id).execute()
       } catch (err) {

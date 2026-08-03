@@ -243,6 +243,7 @@ export async function buildTestApp(
     customers: customersSvc,
     suppliers: suppliersSvc,
     employees: employeesSvc,
+    partyAddresses: party.addresses,
     hr: hrSvc,
     companyAccountDefaults: companyAccountDefaultsSvc,
     invCategories,

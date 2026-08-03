@@ -28,7 +28,13 @@ import {
 } from './modules/hr/index.ts'
 import { iamRoleRoutes, iamUserRoutes } from './modules/iam/index.ts'
 import type { IamService } from './modules/iam/service.ts'
-import { customerRoutes, employeeRoutes, supplierRoutes } from './modules/party/index.ts'
+import {
+  customerRoutes,
+  employeeRoutes,
+  partyAddressRoutes,
+  supplierRoutes,
+} from './modules/party/index.ts'
+import type { PartyAddressService } from './modules/party/address-service.ts'
 import type {
   CustomerService,
   EmployeeService,
@@ -114,6 +120,7 @@ export interface AppDeps {
   customers: CustomerService
   suppliers: SupplierService
   employees: EmployeeService
+  partyAddresses: PartyAddressService
   hr: HrServices
   companyAccountDefaults: CompanyAccountDefaultService
   // 工单 04 库存
@@ -232,6 +239,10 @@ export function buildApp(deps: AppDeps) {
     .route('/system/roles', iamRoleRoutes({ auth: deps.auth, iam: deps.iam }))
     .route('/sales/customers', customerRoutes({ auth: deps.auth, customers: deps.customers }))
     .route('/purchase/suppliers', supplierRoutes({ auth: deps.auth, suppliers: deps.suppliers }))
+    .route(
+      '/base/party-addresses',
+      partyAddressRoutes({ auth: deps.auth, addresses: deps.partyAddresses }),
+    )
     .route('/hr/employees', employeeRoutes({ auth: deps.auth, employees: deps.employees }))
     .route(
       '/hr/attendance-punches',

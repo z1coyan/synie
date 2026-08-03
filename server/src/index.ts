@@ -174,6 +174,7 @@ const app = buildApp({
   customers: party.customers,
   suppliers: party.suppliers,
   employees: party.employees,
+  partyAddresses: party.addresses,
   hr,
   companyAccountDefaults,
   invCategories: inv.categories,

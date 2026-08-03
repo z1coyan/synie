@@ -6,6 +6,7 @@ import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
+import type { PartyAddressService } from './address-service.ts'
 import type { CustomerService, EmployeeService, SupplierService } from './party-service.ts'
 
 const listQuerySchema = z
@@ -181,6 +182,114 @@ export function supplierRoutes(deps: { auth: AuthService; suppliers: SupplierSer
     )
     .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
       await suppliers.remove(c.get('actor'), c.req.valid('param').id)
+      return c.body(null, 204)
+    })
+}
+
+const partyAddressPartyType = z.enum(['CUSTOMER', 'SUPPLIER', 'COMPANY'])
+const partyAddressPurpose = z.enum(['SHIPPING', 'OFFICE', 'OTHER'])
+
+const partyAddressCreate = z
+  .object({
+    partyType: partyAddressPartyType,
+    partyId: z.string().uuid(),
+    name: z.string().min(1),
+    purpose: partyAddressPurpose,
+    contactName: z.string().nullable().optional(),
+    contactPhone: z.string().nullable().optional(),
+    province: z.string().min(1),
+    city: z.string().min(1),
+    district: z.string().min(1),
+    address: z.string().min(1),
+    isDefault: z.boolean().optional(),
+    active: z.boolean().optional(),
+    remarks: z.string().nullable().optional(),
+  })
+  .strict()
+
+const partyAddressUpdate = z
+  .object({
+    name: z.string().min(1).optional(),
+    purpose: partyAddressPurpose.optional(),
+    contactName: z.string().nullable().optional(),
+    contactPhone: z.string().nullable().optional(),
+    province: z.string().min(1).optional(),
+    city: z.string().min(1).optional(),
+    district: z.string().min(1).optional(),
+    address: z.string().min(1).optional(),
+    isDefault: z.boolean().optional(),
+    active: z.boolean().optional(),
+    remarks: z.string().nullable().optional(),
+  })
+  .strict()
+
+function partyAddressDto(a: Awaited<ReturnType<PartyAddressService['get']>>) {
+  return {
+    id: a.id,
+    partyType: a.partyType,
+    partyId: a.partyId,
+    name: a.name,
+    purpose: a.purpose,
+    contactName: a.contactName,
+    contactPhone: a.contactPhone,
+    province: a.province,
+    city: a.city,
+    district: a.district,
+    address: a.address,
+    isDefault: a.isDefault,
+    active: a.active,
+    remarks: a.remarks,
+    insertedAt: a.insertedAt.toISOString(),
+    updatedAt: a.updatedAt.toISOString(),
+  }
+}
+
+export function partyAddressRoutes(deps: {
+  auth: AuthService
+  addresses: PartyAddressService
+}) {
+  const { auth, addresses } = deps
+  return new Hono<AppEnv>()
+    .use('*', requireAuth(auth))
+    .post('/query', zValidator('json', listQuerySchema, validationHook), async (c) => {
+      const result = await addresses.list(c.get('actor'), toList(c.req.valid('json')))
+      return c.json({ count: result.count, results: result.results.map(partyAddressDto) })
+    })
+    .post('/', zValidator('json', partyAddressCreate, validationHook), async (c) => {
+      const item = await addresses.create(c.get('actor'), c.req.valid('json'))
+      return c.json(partyAddressDto(item), 201)
+    })
+    .get('/:id', zValidator('param', idParam, validationHook), async (c) => {
+      return c.json(partyAddressDto(await addresses.get(c.get('actor'), c.req.valid('param').id)))
+    })
+    .patch(
+      '/:id',
+      zValidator('param', idParam, validationHook),
+      zValidator('json', partyAddressUpdate, validationHook),
+      async (c) => {
+        const raw = (await c.req.json()) as Record<string, unknown>
+        const body = c.req.valid('json')
+        const item = await addresses.update(c.get('actor'), c.req.valid('param').id, {
+          name: body.name,
+          purpose: body.purpose,
+          contactName: body.contactName,
+          contactNamePresent: present(raw, 'contactName'),
+          contactPhone: body.contactPhone,
+          contactPhonePresent: present(raw, 'contactPhone'),
+          province: body.province,
+          city: body.city,
+          district: body.district,
+          address: body.address,
+          isDefault: body.isDefault,
+          active: body.active,
+          remarks: body.remarks,
+          remarksPresent: present(raw, 'remarks'),
+        })
+        return c.json(partyAddressDto(item))
+      },
+    )
+    .delete('/:id', zValidator('param', idParam, validationHook), async (c) => {
+      await addresses.remove(c.get('actor'), c.req.valid('param').id)
       return c.body(null, 204)
     })
 }

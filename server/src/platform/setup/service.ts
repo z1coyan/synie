@@ -669,6 +669,11 @@ export const SALES_ROLE_PERMISSIONS: ReadonlyArray<string> = [
   'sales.customer:read',
   'sales.customer:update',
   'sales.customer:delete',
+  // 地址：客户抽屉内维护收发货/办公地址
+  'base.party_address:create',
+  'base.party_address:read',
+  'base.party_address:update',
+  'base.party_address:delete',
   // 履约需求单：完整权限
   'mfg.demand:create',
   'mfg.demand:read',

@@ -11,6 +11,10 @@ import { ensureDefaultGridPage } from '~/lib/route-prefetch'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
 import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
+import {
+  PARTY_ADDRESS_DRAWER_TABS,
+  PartyAddressesSection,
+} from '~/components/party-addresses/PartyAddressesSection'
 
 export const Route = createFileRoute('/_app/system/companies')({
   loader: ({ context: { queryClient } }) =>
@@ -51,7 +55,17 @@ function CompaniesPage() {
         rowId={drawer?.recordId ?? undefined}
         exclude={formProps.exclude}
         fields={formProps.fields}
+        tabs={[...PARTY_ADDRESS_DRAWER_TABS]}
         onEdit={() => setMode('edit')}
+        tabExtraContent={{
+          addresses: (mode, row) => (
+            <PartyAddressesSection
+              partyType="COMPANY"
+              partyId={row?.id ? String(row.id) : drawer?.recordId ?? undefined}
+              readonly={mode === 'view'}
+            />
+          ),
+        }}
         onSubmit={async (values, mode) => {
           if (mode === 'create') {
             const input = decodeCompanyCreate(values)
