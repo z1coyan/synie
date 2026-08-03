@@ -1,4 +1,4 @@
-import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
 import { Tabs } from '@heroui/react'
 import { ReconciliationDrawerProvider } from './purchase-reconciliations/-reconciliation-drawer'
 
@@ -26,9 +26,9 @@ function PurchaseReconciliationsLayout() {
       <Tabs
         variant="secondary"
         selectedKey={selected}
-        onSelectionChange={(key) =>
-          navigate({ to: `/scm/purchase-reconciliations/${String(key)}` })
-        }
+        onSelectionChange={(key) => {
+          if (key !== selected) navigate({ to: `/scm/purchase-reconciliations/${String(key)}` })
+        }}
         className="mt-4"
       >
         <Tabs.ListContainer>
@@ -37,9 +37,7 @@ function PurchaseReconciliationsLayout() {
               <Tabs.Tab
                 key={t.id}
                 id={t.id}
-                render={(domProps) => (
-                  <Link {...(domProps as object)} to={`/scm/purchase-reconciliations/${t.id}`} />
-                )}
+                href={`/scm/purchase-reconciliations/${t.id}`}
               >
                 {t.label}
                 <Tabs.Indicator />

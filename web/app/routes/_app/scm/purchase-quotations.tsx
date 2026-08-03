@@ -1,4 +1,4 @@
-import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
 import { Tabs } from '@heroui/react'
 import { QuotationDrawerProvider } from './purchase-quotations/-quotation-drawer'
 
@@ -27,8 +27,10 @@ function PurchaseQuotationsLayout() {
       <Tabs
         variant="secondary"
         selectedKey={selected}
-        // 鼠标点击由 Link 自己导航(保留中键新开等锚点语义),这里兜底键盘方向键切换
-        onSelectionChange={(key) => navigate({ to: `/scm/purchase-quotations/${String(key)}` })}
+        // 鼠标点击由 href 经 RAC RouterProvider 客户端导航(保留中键新开等锚点语义),这里兜底键盘方向键切换
+        onSelectionChange={(key) => {
+          if (key !== selected) navigate({ to: `/scm/purchase-quotations/${String(key)}` })
+        }}
         className="mt-4"
       >
         <Tabs.ListContainer>
@@ -38,7 +40,7 @@ function PurchaseQuotationsLayout() {
               <Tabs.Tab
                 key={t.id}
                 id={t.id}
-                render={(domProps) => <Link {...(domProps as object)} to={`/scm/purchase-quotations/${t.id}`} />}
+                href={`/scm/purchase-quotations/${t.id}`}
               >
                 {t.label}
                 <Tabs.Indicator />

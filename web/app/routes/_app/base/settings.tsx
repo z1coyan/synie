@@ -1,4 +1,4 @@
-import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
 import { Tabs } from '@heroui/react'
 
 export const Route = createFileRoute('/_app/base/settings')({
@@ -23,7 +23,9 @@ function BaseSettingsLayout() {
       <Tabs
         variant="secondary"
         selectedKey={selected}
-        onSelectionChange={(key) => navigate({ to: `/base/settings/${String(key)}` })}
+        onSelectionChange={(key) => {
+          if (key !== selected) navigate({ to: `/base/settings/${String(key)}` })
+        }}
         className="mt-4"
       >
         <Tabs.ListContainer>
@@ -32,9 +34,7 @@ function BaseSettingsLayout() {
               <Tabs.Tab
                 key={t.id}
                 id={t.id}
-                render={(domProps) => (
-                  <Link {...(domProps as object)} to={`/base/settings/${t.id}`} />
-                )}
+                href={`/base/settings/${t.id}`}
               >
                 {t.label}
                 <Tabs.Indicator />

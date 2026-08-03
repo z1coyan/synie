@@ -1,5 +1,4 @@
 import {
-  Link,
   Outlet,
   createFileRoute,
   useLocation,
@@ -34,9 +33,9 @@ function OutputsLayout() {
       <Tabs
         variant="secondary"
         selectedKey={selected}
-        onSelectionChange={(key) =>
-          navigate({ to: `/mfg/outputs/${String(key)}` })
-        }
+        onSelectionChange={(key) => {
+          if (key !== selected) navigate({ to: `/mfg/outputs/${String(key)}` })
+        }}
         className="mt-4"
       >
         <Tabs.ListContainer>
@@ -45,9 +44,7 @@ function OutputsLayout() {
               <Tabs.Tab
                 key={t.id}
                 id={t.id}
-                render={(domProps) => (
-                  <Link {...(domProps as object)} to={`/mfg/outputs/${t.id}`} />
-                )}
+                href={`/mfg/outputs/${t.id}`}
               >
                 {t.label}
                 <Tabs.Indicator />

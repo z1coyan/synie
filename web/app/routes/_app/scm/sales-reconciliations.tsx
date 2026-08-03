@@ -1,4 +1,4 @@
-import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
 import { Tabs } from '@heroui/react'
 import { ReconciliationDrawerProvider } from './sales-reconciliations/-reconciliation-drawer'
 
@@ -26,7 +26,9 @@ function SalesReconciliationsLayout() {
       <Tabs
         variant="secondary"
         selectedKey={selected}
-        onSelectionChange={(key) => navigate({ to: `/scm/sales-reconciliations/${String(key)}` })}
+        onSelectionChange={(key) => {
+          if (key !== selected) navigate({ to: `/scm/sales-reconciliations/${String(key)}` })
+        }}
         className="mt-4"
       >
         <Tabs.ListContainer>
@@ -35,9 +37,7 @@ function SalesReconciliationsLayout() {
               <Tabs.Tab
                 key={t.id}
                 id={t.id}
-                render={(domProps) => (
-                  <Link {...(domProps as object)} to={`/scm/sales-reconciliations/${t.id}`} />
-                )}
+                href={`/scm/sales-reconciliations/${t.id}`}
               >
                 {t.label}
                 <Tabs.Indicator />

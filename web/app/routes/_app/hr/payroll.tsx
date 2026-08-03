@@ -1,4 +1,4 @@
-import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
 import { Tabs } from '@heroui/react'
 
 export const Route = createFileRoute('/_app/hr/payroll')({
@@ -24,8 +24,11 @@ function PayrollLayout() {
       <Tabs
         variant="secondary"
         selectedKey={selected}
-        // 鼠标点击由 Link 自己导航(保留中键新开等锚点语义),这里兜底键盘方向键切换
-        onSelectionChange={(key) => navigate({ to: `/hr/payroll/${String(key)}` })}
+        // 鼠标点击由 href 经 RAC RouterProvider 客户端导航(保留中键新开等锚点语义),这里兜底键盘方向键切换;
+        // 受控 selectedKey 下 RAC 点击后会用当前 key 回放一次选择复位,与当前相同则跳过
+        onSelectionChange={(key) => {
+          if (key !== selected) navigate({ to: `/hr/payroll/${String(key)}` })
+        }}
         className="mt-4"
       >
         <Tabs.ListContainer>
@@ -35,7 +38,7 @@ function PayrollLayout() {
               <Tabs.Tab
                 key={t.id}
                 id={t.id}
-                render={(domProps) => <Link {...(domProps as object)} to={`/hr/payroll/${t.id}`} />}
+                href={`/hr/payroll/${t.id}`}
               >
                 {t.label}
                 <Tabs.Indicator />

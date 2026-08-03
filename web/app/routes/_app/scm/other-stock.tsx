@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Tabs } from '@heroui/react'
 import { fetchMyPermissions, hasPermission } from '~/lib/permissions'
@@ -58,6 +58,7 @@ function OtherStockLayout() {
         variant="secondary"
         selectedKey={selected}
         onSelectionChange={(key) => {
+          if (key === selected) return
           const tab = tabs.find((t) => t.id === String(key))
           if (tab) navigate({ to: tab.path })
         }}
@@ -69,7 +70,7 @@ function OtherStockLayout() {
               <Tabs.Tab
                 key={t.id}
                 id={t.id}
-                render={(domProps) => <Link {...(domProps as object)} to={t.path} />}
+                href={t.path}
               >
                 {t.label}
                 <Tabs.Indicator />

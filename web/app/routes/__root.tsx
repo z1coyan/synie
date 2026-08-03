@@ -3,9 +3,11 @@ import type { ReactNode } from 'react'
 import {
   Outlet,
   createRootRouteWithContext,
+  useNavigate,
   HeadContent,
   Scripts,
 } from '@tanstack/react-router'
+import { RouterProvider } from 'react-aria-components'
 import { Toast } from '@heroui/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
@@ -27,12 +29,17 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
 function RootComponent() {
   // 与 getRouter() 注入的 context.queryClient 为同一实例（浏览器单例）
   const { queryClient } = Route.useRouteContext()
+  // RAC RouterProvider:带 href 的组件(Tabs.Tab 等)点击时走 TanStack 客户端导航,
+  // 修键/中键仍由 RAC 放行浏览器默认锚点行为
+  const navigate = useNavigate()
   return (
     <RootDocument>
       <QueryClientProvider client={queryClient}>
-        <Toast.Provider placement="top" />
-        <BootSplash />
-        <Outlet />
+        <RouterProvider navigate={(path) => void navigate({ href: path })}>
+          <Toast.Provider placement="top" />
+          <BootSplash />
+          <Outlet />
+        </RouterProvider>
       </QueryClientProvider>
     </RootDocument>
   )

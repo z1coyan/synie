@@ -1,4 +1,4 @@
-import { Link, Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
+import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/react-router'
 import { Tabs } from '@heroui/react'
 import { ReceiptDrawerProvider } from './purchase-receipts/-receipt-drawer'
 
@@ -26,7 +26,9 @@ function PurchaseReceiptsLayout() {
       <Tabs
         variant="secondary"
         selectedKey={selected}
-        onSelectionChange={(key) => navigate({ to: `/scm/purchase-receipts/${String(key)}` })}
+        onSelectionChange={(key) => {
+          if (key !== selected) navigate({ to: `/scm/purchase-receipts/${String(key)}` })
+        }}
         className="mt-4"
       >
         <Tabs.ListContainer>
@@ -35,9 +37,7 @@ function PurchaseReceiptsLayout() {
               <Tabs.Tab
                 key={t.id}
                 id={t.id}
-                render={(domProps) => (
-                  <Link {...(domProps as object)} to={`/scm/purchase-receipts/${t.id}`} />
-                )}
+                href={`/scm/purchase-receipts/${t.id}`}
               >
                 {t.label}
                 <Tabs.Indicator />

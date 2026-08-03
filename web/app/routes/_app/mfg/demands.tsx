@@ -1,5 +1,4 @@
 import {
-  Link,
   Outlet,
   createFileRoute,
   useLocation,
@@ -34,10 +33,10 @@ function DemandsLayout() {
       <Tabs
         variant="secondary"
         selectedKey={selected}
-        // 鼠标点击由 Link 自己导航(保留中键新开等锚点语义),这里兜底键盘方向键切换
-        onSelectionChange={(key) =>
-          navigate({ to: `/mfg/demands/${String(key)}` })
-        }
+        // 鼠标点击由 href 经 RAC RouterProvider 客户端导航(保留中键新开等锚点语义),这里兜底键盘方向键切换
+        onSelectionChange={(key) => {
+          if (key !== selected) navigate({ to: `/mfg/demands/${String(key)}` })
+        }}
         className="mt-4"
       >
         <Tabs.ListContainer>
@@ -47,9 +46,7 @@ function DemandsLayout() {
               <Tabs.Tab
                 key={t.id}
                 id={t.id}
-                render={(domProps) => (
-                  <Link {...(domProps as object)} to={`/mfg/demands/${t.id}`} />
-                )}
+                href={`/mfg/demands/${t.id}`}
               >
                 {t.label}
                 <Tabs.Indicator />
