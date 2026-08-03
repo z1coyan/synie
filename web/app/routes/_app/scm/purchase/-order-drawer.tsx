@@ -7,7 +7,7 @@ import {
   expandPurchaseOrderBom,
   purchaseOrderItemClient,
 } from '~/lib/resources/orders'
-import { buildOrderDraft } from '~/lib/resources/order-draft'
+import { buildOrderDraft, type OrderSavedDraft } from '~/lib/resources/order-draft'
 import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import {
   aggregateDraftFor,
@@ -30,8 +30,7 @@ import { DemandLinePicker } from './-demand-line-picker'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
 import { toastError } from '~/lib/toast'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
-import { useRequestGuard } from '~/lib/use-request-guard'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 const purchaseOrderBinding = resourceBindingFor('purOrders')
 const purchaseOrderItemBinding = resourceBindingFor('purOrderItems')
@@ -313,14 +312,18 @@ export function OrderDrawerProvider({
   children: ReactNode
   urlSync?: boolean
 }) {
-  // URL 源(列表 layout)与本地态二选一;明细/条款始终本地
-  const url = useRecordDrawerUrl('purOrders', { enabled: urlSync })
-  const [localDrawer, setLocalDrawer] = useState<{ mode: DrawerMode; order: OrderRef | null } | null>(null)
+  // 单据抽屉骨架:双态状态机、URL 身份→整单草稿装载(竞态安全)、深链补拉全部收口进 hook
+  const drawer = useDocumentDrawer<OrderSavedDraft>({
+    resource: 'purOrders',
+    urlSync,
+    loadDraft: (id) => purchaseOrderDraft.loadDraft(id),
+  })
+  const { isOpen, mode, rowId } = drawer
+  // 编辑入口:urlSync 用 hook 自查行 status;本地态用 open 传入的 order.status
+  const orderStatus = drawer.row?.status
   const [items, setItems] = useState<Row[]>([])
   // 交易条款不走抽屉字段(要排在条目表之下,抽屉 extraContent 固定在字段后渲染),由页面自持
   const [terms, setTerms] = useState('')
-  // edit/view 态条目与条款靠订单 REST 异步拉取,未完成前禁止编辑,防回填覆盖在输行
-  const [detailLoaded, setDetailLoaded] = useState(false)
   // 单据公司本币(CompanyCurrencySync 上报):汇率显隐、币种默认、条目表双币列都依赖它
   const [baseCurrencyId, setBaseCurrencyId] = useState<string | null>(null)
   // 报价条目缓存(id → 行):选择时写入完整行(物料快照名等即时带出),存量行由 REST 详情回填定价模式;
@@ -331,21 +334,7 @@ export function OrderDrawerProvider({
   // 查看态「委外配置」弹窗:只读展示该行的 BOM 与两清单(行抽屉只在编辑态存在,查看态走这里)
   const [linesView, setLinesView] = useState<Row | null>(null)
   const queryClient = useQueryClient()
-  // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张订单的行回填到当前订单
-  const guard = useRequestGuard()
   const draftHeadRef = useRef<Row | null>(null)
-  // 已为哪张订单拉过明细;深链 effect 与 openDrawer 去重,避免双发
-  const loadedIdRef = useRef<string | null>(null)
-
-  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
-  const mode: DrawerMode = urlSync
-    ? (url.drawer?.mode ?? 'view')
-    : (localDrawer?.mode ?? 'view')
-  const rowId: string | undefined = urlSync
-    ? (url.drawer?.recordId ?? undefined)
-    : (localDrawer?.order?.id != null ? String(localDrawer.order.id) : undefined)
-  // 编辑入口:urlSync 用 hook 自查行 status;本地态用 open 传入的 order.status
-  const orderStatus = urlSync ? url.row?.status : localDrawer?.order?.status
 
   // 零星单行数量上限:抽屉打开时查一次(5 分钟 stale);无权限/失败按 null 降级(跳过客户端校验,后端兜底)
   const salSettingQuery = useQuery({
@@ -364,95 +353,41 @@ export function OrderDrawerProvider({
   // 头四要素/币种变化清空条目草稿;空集合并保留原引用,避免无谓重渲染
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
-  function resetDetail() {
-    loadedIdRef.current = null
-    draftHeadRef.current = null
-    setItems([])
-    setTerms('')
-    setDetailLoaded(true)
-  }
-
-  function loadDetail(orderId: string) {
-    const my = guard.begin()
-    loadedIdRef.current = orderId
-    draftHeadRef.current = null
-    setDetailLoaded(false)
-    purchaseOrderDraft
-      .loadDraft(orderId)
-      .then((draft) => {
-        if (!guard.isCurrent(my)) return
-        draftHeadRef.current = draft
-        // 报价条目定价模式摊平到行(价格/金额列的梯度展示判定),并回填缓存供行表单只读派生;
-        // 与选择时写入的完整行合并,不覆盖已有的快照名
-        const rows = draft.items.map((r) => {
-          const quotationItemId =
-            r.quotationItemId == null ? null : String(r.quotationItemId)
-          if (quotationItemId && r.pricingMode) {
-            const prev = quotationItemsRef.current.get(quotationItemId) ?? ({} as Row)
-            quotationItemsRef.current.set(quotationItemId, {
-              ...prev,
-              id: quotationItemId,
-              pricingMode: r.pricingMode,
-            })
-          }
-          return {
-            ...r,
-            bom:
-              r.bomId == null
-                ? null
-                : { id: r.bomId, code: r.bomCode, planName: r.bomPlanName },
-            pricingMode: r.pricingMode ?? null,
-            issueLines: r.issueLines,
-            byproductLines: r.byproductLines,
-          }
+  // 草稿 → 条目/条款状态派生:draft 变化(含关闭/新建清空为 null)时初始化条目与条款,
+  // 并把报价条目定价模式摊平到行(价格/金额列的梯度展示判定)、回填缓存供行表单只读派生;
+  // 与选择时写入的完整行合并,不覆盖已有的快照名
+  useEffect(() => {
+    draftHeadRef.current = drawer.draft
+    const rows = (drawer.draft?.items ?? []).map((r) => {
+      const quotationItemId =
+        r.quotationItemId == null ? null : String(r.quotationItemId)
+      if (quotationItemId && r.pricingMode) {
+        const prev = quotationItemsRef.current.get(quotationItemId) ?? ({} as Row)
+        quotationItemsRef.current.set(quotationItemId, {
+          ...prev,
+          id: quotationItemId,
+          pricingMode: r.pricingMode,
         })
-        setTerms(String(draft.terms ?? ''))
-        setItems(rows)
-        setDetailLoaded(true)
-      })
-      .catch((e) => {
-        if (!guard.isCurrent(my)) return
-        draftHeadRef.current = null
-        toastError('订单详情加载失败')(e)
-        setTerms('')
-        setItems([])
-      })
-  }
+      }
+      return {
+        ...r,
+        bom:
+          r.bomId == null
+            ? null
+            : { id: r.bomId, code: r.bomCode, planName: r.bomPlanName },
+        pricingMode: r.pricingMode ?? null,
+        issueLines: r.issueLines,
+        byproductLines: r.byproductLines,
+      }
+    })
+    setTerms(String(drawer.draft?.terms ?? ''))
+    setItems(rows)
+  }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
   // 打开头抽屉:create 行与条款清空;view/edit 按订单 id 拉详情(条款+行,快照留作提交时 diff 基准)
   const openDrawer: OpenOrderDrawer = (nextMode, order) => {
-    if (urlSync) {
-      url.open(nextMode, order?.id != null ? String(order.id) : null)
-    } else {
-      setLocalDrawer({ mode: nextMode, order })
-    }
-    if (nextMode === 'create' || !order) {
-      resetDetail()
-      return
-    }
-    loadDetail(String(order.id))
+    drawer.open(nextMode, order)
   }
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
-  useEffect(() => {
-    if (!urlSync) return
-    const d = url.drawer
-    if (!d) {
-      if (loadedIdRef.current != null) {
-        guard.invalidate()
-        resetDetail()
-      }
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) resetDetail()
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      loadDetail(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   // 抽屉配置:registry 一份;terms 从字段排除(改由 extraContent 底部渲染,提交时并入 values)
   const baseCfg = drawerConfig('purOrders')
@@ -529,27 +464,14 @@ export function OrderDrawerProvider({
         {...drawerCfg}
         mode={mode}
         isOpen={isOpen}
-        isSubmitDisabled={mode === 'edit' && !detailLoaded}
+        isSubmitDisabled={mode === 'edit' && !drawer.detailLoaded}
         onOpenChange={(open) => {
-          if (open) return
-          // 关闭即作废在途请求并清空本地草稿,防止慢响应回填到下一张订单
-          guard.invalidate()
-          if (urlSync) url.close()
-          else setLocalDrawer(null)
-          setItems([])
-          setTerms('')
-          draftHeadRef.current = null
-          loadedIdRef.current = null
+          if (!open) drawer.close()
         }}
         // 表格列是白名单子集,行数据不全(缺交易条款/备注);不传 row,走 rowId 自查完整记录
         rowId={rowId}
         onEdit={
-          orderStatus === 'DRAFT'
-            ? () => {
-                if (urlSync) url.setMode('edit')
-                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
-              }
-            : undefined
+          orderStatus === 'DRAFT' ? () => drawer.setMode('edit') : undefined
         }
         // 首 tab 为现有单页内容(字段+条目表+交易条款,经 extraContent 自动归入);收发货历史只读展示
         tabs={[
@@ -859,7 +781,7 @@ export function OrderDrawerProvider({
                 },
           }
           // 条目表只读口径(查看态/非草稿/详情未加载完):行抽屉与委外配置编辑同此闸
-          const itemsReadOnly = mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)
+          const itemsReadOnly = mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !drawer.detailLoaded)
           return (
           <>
             <CompanyCurrencySync
@@ -1042,7 +964,7 @@ export function OrderDrawerProvider({
           />
           {/* 交易条款置表单底部(条目表之下);值由页面自持,提交时并入 values */}
           <div className="mt-4">
-            <TextField value={terms} onChange={setTerms} isDisabled={mode === 'view' || (mode !== 'create' && !detailLoaded)}>
+            <TextField value={terms} onChange={setTerms} isDisabled={mode === 'view' || (mode !== 'create' && !drawer.detailLoaded)}>
               <Label>交易条款</Label>
               <TextArea rows={4} placeholder="对供应商展示的交易条款,如交付、付款、验收约定" />
             </TextField>
@@ -1051,7 +973,7 @@ export function OrderDrawerProvider({
           )
         }}
         onSubmit={async (values, mode) => {
-          assertAggregateDraftReady(mode, detailLoaded, '采购订单明细')
+          assertAggregateDraftReady(mode, drawer.detailLoaded, '采购订单明细')
           const draft = buildOrderDraft(
             'purchase',
             { ...draftHeadRef.current, ...values },

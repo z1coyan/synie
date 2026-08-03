@@ -28,8 +28,7 @@ import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../-stock-doc'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
-import { toastError } from '~/lib/toast'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 export interface IssueRef {
   id: string
@@ -251,28 +250,30 @@ export function IssueDrawerProvider({
   children: ReactNode
   urlSync?: boolean
 }) {
-  // URL 源(列表 layout)与本地态二选一;明细始终本地
-  const url = useRecordDrawerUrl('purOutsourcedIssues', { enabled: urlSync })
-  const [localDrawer, setLocalDrawer] = useState<{ mode: DrawerMode; row: IssueRef | null } | null>(null)
+  // 单据抽屉骨架:双态状态机、URL 身份→明细装载(竞态安全)、深链补拉全部收口进 hook
+  const drawer = useDocumentDrawer<Row[]>({
+    resource: 'purOutsourcedIssues',
+    urlSync,
+    loadDraft: (issueId) =>
+      purchaseOutsourcedIssueItemClient
+        .query({
+          limit: 200,
+          offset: 0,
+          sort: { column: 'idx', direction: 'ascending' },
+          filter: {
+            issueId: { kind: 'fk', op: 'in', values: [issueId], labels: [] },
+          },
+        })
+        .then((result) => result.results),
+  })
+  const { isOpen, mode, rowId } = drawer
+  const issueStatus = drawer.row?.status
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
-  const [detailLoaded, setDetailLoaded] = useState(false)
   const [filters] = useState<FilterState>({})
   // 发料清单行缓存:选择时写入完整行,transformItem 带出快照名
   const linesRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
-  // 已为哪张发料单拉过明细;深链 effect 与 openDrawer 去重,避免双发
-  const loadedIdRef = useRef<string | null>(null)
-
-  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
-  const mode: DrawerMode = urlSync
-    ? (url.drawer?.mode ?? 'view')
-    : (localDrawer?.mode ?? 'view')
-  const rowId: string | undefined = urlSync
-    ? (url.drawer?.recordId ?? undefined)
-    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
-  const issueStatus = urlSync ? url.row?.status : localDrawer?.row?.status
 
   const companies = useQuery({
     queryKey: ['purOutsourcedIssues', 'companies'],
@@ -290,96 +291,31 @@ export function IssueDrawerProvider({
 
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
-  function resetDetail() {
-    loadedIdRef.current = null
-    linesRef.current = new Map()
-    setItems([])
-    setItemsSnapshot([])
-    setDetailLoaded(true)
-  }
-
-  function loadDetail(issueId: string) {
-    const my = ++reqIdRef.current
-    loadedIdRef.current = issueId
-    linesRef.current = new Map()
-    setDetailLoaded(false)
-    purchaseOutsourcedIssueItemClient
-      .query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        filter: {
-          issueId: { kind: 'fk', op: 'in', values: [issueId], labels: [] },
-        },
-      })
-      .then((result) => {
-        if (my !== reqIdRef.current) return
-        const rows = result.results
-        // 编辑态预热缓存:存量行不必再点选清单行也能过校验/回填(快照即显示源)
-        for (const r of rows) {
-          if (r.orderItemMaterialId != null) {
-            linesRef.current.set(String(r.orderItemMaterialId), {
-              id: String(r.orderItemMaterialId),
-              materialCode: r.materialCode,
-              materialName: r.materialName,
-              materialSpec: r.materialSpec,
-              unitName: r.unitName,
-              orderNo: r.orderNo,
-            } as Row)
-          }
-        }
-        setItems(rows)
-        setItemsSnapshot(rows)
-        setDetailLoaded(true)
-      })
-      .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toastError('发料条目加载失败')(e)
-        setItems([])
-        setItemsSnapshot([])
-      })
-  }
+  // 草稿 → 条目状态派生:draft 变化(含关闭/新建清空为 null)时初始化条目+快照基线并预热清单行缓存
+  useEffect(() => {
+    const rows = drawer.draft ?? []
+    const cache = new Map<string, Row>()
+    // 编辑态预热缓存:存量行不必再点选清单行也能过校验/回填(快照即显示源)
+    for (const r of rows) {
+      if (r.orderItemMaterialId != null) {
+        cache.set(String(r.orderItemMaterialId), {
+          id: String(r.orderItemMaterialId),
+          materialCode: r.materialCode,
+          materialName: r.materialName,
+          materialSpec: r.materialSpec,
+          unitName: r.unitName,
+          orderNo: r.orderNo,
+        } as Row)
+      }
+    }
+    linesRef.current = cache
+    setItems(rows)
+    setItemsSnapshot(rows)
+  }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
   const openDrawer: OpenIssueDrawer = (nextMode, issue) => {
-    if (urlSync) {
-      url.open(nextMode, issue?.id != null ? String(issue.id) : null)
-    } else {
-      setLocalDrawer({ mode: nextMode, row: issue })
-    }
-    if (nextMode === 'create' || !issue) {
-      resetDetail()
-      return
-    }
-    const issueId = issue.id
-    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
-    if (issueId == null || issueId === '' || issueId === 'undefined') {
-      toast.danger('无法打开发料单', { description: '缺少发料单 id' })
-      resetDetail()
-      return
-    }
-    loadDetail(String(issueId))
+    drawer.open(nextMode, issue)
   }
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
-  useEffect(() => {
-    if (!urlSync) return
-    const d = url.drawer
-    if (!d) {
-      if (loadedIdRef.current != null) {
-        reqIdRef.current++
-        resetDetail()
-      }
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) resetDetail()
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      loadDetail(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   const baseCfg = drawerConfig('purOutsourcedIssues')
   const drawerCfg = {
@@ -449,23 +385,11 @@ export function IssueDrawerProvider({
         mode={mode}
         isOpen={isOpen}
         onOpenChange={(open) => {
-          if (open) return
-          reqIdRef.current++
-          if (urlSync) url.close()
-          else setLocalDrawer(null)
-          setItems([])
-          setItemsSnapshot([])
-          linesRef.current = new Map()
-          loadedIdRef.current = null
+          if (!open) drawer.close()
         }}
         rowId={rowId}
         onEdit={
-          issueStatus === 'DRAFT'
-            ? () => {
-                if (urlSync) url.setMode('edit')
-                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
-              }
-            : undefined
+          issueStatus === 'DRAFT' ? () => drawer.setMode('edit') : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
           const companyId = (values.companyId as string | null) ?? null
@@ -665,7 +589,7 @@ export function IssueDrawerProvider({
               />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${rowId ?? 'create'}-${reqIdRef.current}`}
+                key={`${rowId ?? 'create'}-${drawer.generation}`}
                 mode={mode}
                 row={row}
                 values={values}
@@ -680,7 +604,7 @@ export function IssueDrawerProvider({
                 readOnly={
                   mode === 'view' ||
                   (row != null && row.status !== 'DRAFT') ||
-                  (mode !== 'create' && !detailLoaded)
+                  (mode !== 'create' && !drawer.detailLoaded)
                 }
                 canCreate={headerReady}
                 toolbar={

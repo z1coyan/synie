@@ -47,7 +47,7 @@ import { CompanyDefaultSync, defaultCompanyId } from '../-stock-doc'
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { toastError } from '~/lib/toast'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 export interface ReconciliationRef {
   id: string
@@ -417,6 +417,12 @@ function previewAmount(qty: unknown, price: unknown): number | null {
   return Math.round(q * p * 100) / 100
 }
 
+/** 对账条目的装载快照(骨架 loadDraft 的返回形):条目 + 预热的入库条目缓存 */
+interface ReconciliationLinesDraft {
+  items: Row[]
+  receiptItems: Map<string, Row>
+}
+
 /**
  * 采购对账创建/编辑抽屉(头+对账条目)。
  * 对账单/对账条目两 tab 共用;列表 layout 传 urlSync,开/关/模式走 URL。
@@ -430,32 +436,94 @@ export function ReconciliationDrawerProvider({
   children: ReactNode
   urlSync?: boolean
 }) {
-  // URL 源(列表 layout)与本地态二选一;明细始终本地
-  const url = useRecordDrawerUrl('purReconciliations', { enabled: urlSync })
-  const [localDrawer, setLocalDrawer] = useState<{
-    mode: DrawerMode
-    row: ReconciliationRef | null
-  } | null>(null)
+  // 单据抽屉骨架:双态状态机、URL 身份→对账条目装载(竞态安全)、深链补拉全部收口进 hook
+  const drawer = useDocumentDrawer<ReconciliationLinesDraft>({
+    resource: 'purReconciliations',
+    urlSync,
+    loadDraft: async (reconciliationId) => {
+      const d = await purchaseReconciliationItemClient.query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          reconciliationId: {
+            kind: 'fk',
+            op: 'in',
+            values: [reconciliationId],
+            labels: [],
+          },
+        },
+      })
+      const rows = d.results
+      // 编辑态预热缓存:按行上入库条目 id 取剩余可对账量/快照价/币种(双来源各自拉取)
+      const receiptIds = [
+        ...new Set(
+          rows
+            .map((r) =>
+              r.receiptItemId == null ? null : String(r.receiptItemId),
+            )
+            .filter((v): v is string => v != null),
+        ),
+      ]
+      const outsourcedIds = [
+        ...new Set(
+          rows
+            .map((r) =>
+              r.outsourcedReceiptItemId == null
+                ? null
+                : String(r.outsourcedReceiptItemId),
+            )
+            .filter((v): v is string => v != null),
+        ),
+      ]
+      const receiptItems = new Map<string, Row>()
+      try {
+        const [normal, outsourced] = await Promise.all([
+          receiptIds.length > 0
+            ? Promise.all(
+                receiptIds.map((id) => purchaseReceiptItemClient.get(id)),
+              )
+            : Promise.resolve([] as Row[]),
+          outsourcedIds.length > 0
+            ? Promise.all(
+                outsourcedIds.map((id) =>
+                  purchaseOutsourcedReceiptItemClient.get(id),
+                ),
+              )
+            : Promise.resolve([] as Row[]),
+        ])
+        for (const ri of [...normal, ...outsourced].filter(
+          (row): row is Row => row != null,
+        )) {
+          receiptItems.set(String(ri.id), ri)
+        }
+      } catch {
+        /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
+      }
+      // 行上缺的物料编号/规格/客户料号从预热缓存补齐(表格多行展示用)
+      const enriched = rows.map((r) => {
+        const refId = r.receiptItemId ?? r.outsourcedReceiptItemId
+        const ri = refId != null ? receiptItems.get(String(refId)) : undefined
+        if (!ri) return r
+        return {
+          ...r,
+          materialCode: r.materialCode ?? ri.materialCode ?? null,
+          materialSpec: r.materialSpec ?? ri.materialSpec ?? null,
+          customerPartNo: r.customerPartNo ?? ri.customerPartNo ?? null,
+        }
+      })
+      return { items: enriched, receiptItems }
+    },
+  })
+  const { isOpen, mode, rowId } = drawer
+  const reconciliationStatus = drawer.row?.status
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
-  const [detailLoaded, setDetailLoaded] = useState(false)
   const [importing, setImporting] = useState(false)
   const [filters] = useState<FilterState>({})
   // 入库条目缓存:选择时写入完整行,validateItem/transformItem 带剩余量与快照价
   const receiptItemsRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
-  // 已为哪张对账单拉过明细;深链 effect 与 openDrawer 去重,避免双发
-  const loadedIdRef = useRef<string | null>(null)
-
-  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
-  const mode: DrawerMode = urlSync
-    ? (url.drawer?.mode ?? 'view')
-    : (localDrawer?.mode ?? 'view')
-  const rowId: string | undefined = urlSync
-    ? (url.drawer?.recordId ?? undefined)
-    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
-  const reconciliationStatus = urlSync ? url.row?.status : localDrawer?.row?.status
 
   const companies = useQuery({
     queryKey: ['purReconciliations', 'companies'],
@@ -476,153 +544,17 @@ export function ReconciliationDrawerProvider({
     [],
   )
 
-  function resetDetail() {
-    loadedIdRef.current = null
-    receiptItemsRef.current = new Map()
-    setItems([])
-    setItemsSnapshot([])
-    setDetailLoaded(true)
-  }
-
-  function loadDetail(reconciliationId: string) {
-    const my = ++reqIdRef.current
-    loadedIdRef.current = reconciliationId
-    receiptItemsRef.current = new Map()
-    setDetailLoaded(false)
-    purchaseReconciliationItemClient
-      .query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        filter: {
-          reconciliationId: {
-            kind: 'fk',
-            op: 'in',
-            values: [reconciliationId],
-            labels: [],
-          },
-        },
-      })
-      .then(async (d) => {
-        if (my !== reqIdRef.current) return
-        const rows = d.results
-        // 编辑态预热缓存:按行上入库条目 id 取剩余可对账量/快照价/币种(双来源各自拉取)
-        const receiptIds = [
-          ...new Set(
-            rows
-              .map((r) =>
-                r.receiptItemId == null ? null : String(r.receiptItemId),
-              )
-              .filter((v): v is string => v != null),
-          ),
-        ]
-        const outsourcedIds = [
-          ...new Set(
-            rows
-              .map((r) =>
-                r.outsourcedReceiptItemId == null
-                  ? null
-                  : String(r.outsourcedReceiptItemId),
-              )
-              .filter((v): v is string => v != null),
-          ),
-        ]
-        try {
-          const [normal, outsourced] = await Promise.all([
-            receiptIds.length > 0
-              ? Promise.all(
-                  receiptIds.map((id) => purchaseReceiptItemClient.get(id)),
-                )
-              : Promise.resolve([] as Row[]),
-            outsourcedIds.length > 0
-              ? Promise.all(
-                  outsourcedIds.map((id) =>
-                    purchaseOutsourcedReceiptItemClient.get(id),
-                  ),
-                )
-              : Promise.resolve([] as Row[]),
-          ])
-          if (my !== reqIdRef.current) return
-          for (const ri of [...normal, ...outsourced].filter(
-            (row): row is Row => row != null,
-          )) {
-            receiptItemsRef.current.set(String(ri.id), ri)
-          }
-        } catch {
-          /* 预热失败不挡开单:行仍可看,剩余量校验由后端兜底 */
-        }
-        if (my !== reqIdRef.current) return
-        // 行上缺的物料编号/规格/客户料号从预热缓存补齐(表格多行展示用)
-        const enriched = rows.map((r) => {
-          const refId = r.receiptItemId ?? r.outsourcedReceiptItemId
-          const ri =
-            refId != null
-              ? receiptItemsRef.current.get(String(refId))
-              : undefined
-          if (!ri) return r
-          return {
-            ...r,
-            materialCode: r.materialCode ?? ri.materialCode ?? null,
-            materialSpec: r.materialSpec ?? ri.materialSpec ?? null,
-            customerPartNo: r.customerPartNo ?? ri.customerPartNo ?? null,
-          }
-        })
-        setItems(enriched)
-        setItemsSnapshot(enriched)
-        setDetailLoaded(true)
-      })
-      .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toastError('对账条目加载失败')(e)
-        setItems([])
-        setItemsSnapshot([])
-      })
-  }
+  // 草稿 → 条目状态派生:draft 变化(含关闭/新建清空为 null)时初始化条目与入库条目缓存
+  useEffect(() => {
+    receiptItemsRef.current = drawer.draft?.receiptItems ?? new Map()
+    const rows = drawer.draft?.items ?? []
+    setItems(rows)
+    setItemsSnapshot(rows)
+  }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
   const openDrawer: OpenReconciliationDrawer = (nextMode, reconciliation) => {
-    if (urlSync) {
-      url.open(nextMode, reconciliation?.id != null ? String(reconciliation.id) : null)
-    } else {
-      setLocalDrawer({ mode: nextMode, row: reconciliation })
-    }
-    if (nextMode === 'create' || !reconciliation) {
-      resetDetail()
-      return
-    }
-    const reconciliationId = reconciliation.id
-    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
-    if (
-      reconciliationId == null ||
-      reconciliationId === '' ||
-      reconciliationId === 'undefined'
-    ) {
-      toast.danger('无法打开采购对账单', { description: '缺少对账单 id' })
-      resetDetail()
-      return
-    }
-    loadDetail(String(reconciliationId))
+    drawer.open(nextMode, reconciliation)
   }
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
-  useEffect(() => {
-    if (!urlSync) return
-    const d = url.drawer
-    if (!d) {
-      if (loadedIdRef.current != null) {
-        reqIdRef.current++
-        resetDetail()
-      }
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) resetDetail()
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      loadDetail(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   const baseCfg = drawerConfig('purReconciliations')
   const drawerCfg = {
@@ -646,22 +578,12 @@ export function ReconciliationDrawerProvider({
         mode={mode}
         isOpen={isOpen}
         onOpenChange={(open) => {
-          if (open) return
-          reqIdRef.current++
-          if (urlSync) url.close()
-          else setLocalDrawer(null)
-          setItems([])
-          setItemsSnapshot([])
-          receiptItemsRef.current = new Map()
-          loadedIdRef.current = null
+          if (!open) drawer.close()
         }}
         rowId={rowId}
         onEdit={
           reconciliationStatus === 'DRAFT'
-            ? () => {
-                if (urlSync) url.setMode('edit')
-                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
-              }
+            ? () => drawer.setMode('edit')
             : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
@@ -1035,7 +957,7 @@ export function ReconciliationDrawerProvider({
           const itemsReadOnly =
             mode === 'view' ||
             (row != null && row.status !== 'DRAFT') ||
-            (mode !== 'create' && !detailLoaded)
+            (mode !== 'create' && !drawer.detailLoaded)
 
           return (
             <>
@@ -1046,14 +968,14 @@ export function ReconciliationDrawerProvider({
                 defaultId={createDefaultCompany}
               />
               <ReconciliationAccountDefaultSync
-                key={`acct-${rowId ?? 'create'}-${reqIdRef.current}`}
+                key={`acct-${rowId ?? 'create'}-${drawer.generation}`}
                 mode={mode}
                 companyId={(values.companyId as string | null) ?? null}
                 patchValues={patchValues}
               />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${rowId ?? 'create'}-${reqIdRef.current}`}
+                key={`${rowId ?? 'create'}-${drawer.generation}`}
                 mode={mode}
                 row={row}
                 values={values}
@@ -1111,7 +1033,7 @@ export function ReconciliationDrawerProvider({
                 overrides={{
                   receiptNo: { label: '入库单号' },
                   // 物料列:全站统一富单元格。materialCode 不是对账条目 meta 字段,列载体仍用
-                  // materialName;编号/规格/客户料号由入库条目缓存补齐(见 openDrawer 的 enriched)
+                  // materialName;编号/规格/客户料号由入库条目缓存补齐(见 loadDraft 的 enriched)
                   materialName: {
                     label: '物料',
                     className: 'min-w-[12rem] max-w-[18rem]',

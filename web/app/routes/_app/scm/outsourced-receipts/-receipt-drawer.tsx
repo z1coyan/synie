@@ -38,8 +38,7 @@ import { CompanyDefaultSync, WarehouseRemoteSelect, defaultCompanyId } from '../
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
-import { toastError } from '~/lib/toast'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 export interface ReceiptRef {
   id: string
@@ -401,6 +400,13 @@ function OutsourcedWarehouseSelect({
  */
 const ITEMS_RESET_FIELDS = ['companyId', 'partyType', 'partyId'] as const
 
+/** 三类行集合的装载快照(骨架 loadDraft 的返回形) */
+interface ReceiptLinesDraft {
+  items: Row[]
+  materialRows: Row[]
+  byproductRows: Row[]
+}
+
 /**
  * 委外入库创建/编辑抽屉(头+成品条目+材料扣减+副产物)。
  * 入库单/入库条目两 tab 共用;列表 layout 传 urlSync,开/关/模式走 URL。
@@ -414,34 +420,61 @@ export function ReceiptDrawerProvider({
   children: ReactNode
   urlSync?: boolean
 }) {
-  // URL 源(列表 layout)与本地态二选一;明细始终本地
-  const url = useRecordDrawerUrl('purOutsourcedReceipts', { enabled: urlSync })
-  const [localDrawer, setLocalDrawer] = useState<{ mode: DrawerMode; row: ReceiptRef | null } | null>(null)
+  // 单据抽屉骨架:双态状态机、URL 身份→行集合装载(竞态安全)、深链补拉全部收口进 hook
+  const drawer = useDocumentDrawer<ReceiptLinesDraft>({
+    resource: 'purOutsourcedReceipts',
+    urlSync,
+    loadDraft: async (receiptId) => {
+      const itemResult = await purchaseOutsourcedReceiptItemClient.query({
+        limit: 200,
+        offset: 0,
+        sort: { column: 'idx', direction: 'ascending' },
+        filter: {
+          receiptId: { kind: 'fk', op: 'in', values: [receiptId], labels: [] },
+        },
+      })
+      const itemIds = itemResult.results.map((item) => String(item.id))
+      const childFilter: FilterState = {
+        receiptItemId: { kind: 'fk', op: 'in', values: itemIds, labels: [] },
+      }
+      const [materialResult, byproductResult] =
+        itemIds.length === 0
+          ? [{ results: [] as Row[] }, { results: [] as Row[] }]
+          : await Promise.all([
+              purchaseOutsourcedReceiptItemMaterialClient.query({
+                limit: 200,
+                offset: 0,
+                sort: { column: 'idx', direction: 'ascending' },
+                filter: childFilter,
+              }),
+              purchaseOutsourcedReceiptItemByproductClient.query({
+                limit: 200,
+                offset: 0,
+                sort: { column: 'idx', direction: 'ascending' },
+                filter: childFilter,
+              }),
+            ])
+      return {
+        items: itemResult.results,
+        materialRows: materialResult.results,
+        byproductRows: byproductResult.results,
+      }
+    },
+  })
+  const { isOpen, mode, rowId } = drawer
+  const receiptStatus = drawer.row?.status
   const [items, setItems] = useState<Row[]>([])
   const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const [materialRows, setMaterialRows] = useState<Row[]>([])
   const [materialRowsSnapshot, setMaterialRowsSnapshot] = useState<Row[]>([])
   const [byproductRows, setByproductRows] = useState<Row[]>([])
   const [byproductRowsSnapshot, setByproductRowsSnapshot] = useState<Row[]>([])
-  const [detailLoaded, setDetailLoaded] = useState(false)
   const [filters] = useState<FilterState>({})
   // 订单条目缓存:选择时写入完整行,transformItem 带出快照名
   const orderItemsRef = useRef(new Map<string, Row>())
   // 清单行缓存(材料/副产物共用):选择时写入完整行,带出材料/单位快照名
   const linesRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
-  // 已为哪张入库单拉过明细;深链 effect 与 openDrawer 去重,避免双发
-  const loadedIdRef = useRef<string | null>(null)
-
-  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
-  const mode: DrawerMode = urlSync
-    ? (url.drawer?.mode ?? 'view')
-    : (localDrawer?.mode ?? 'view')
-  const rowId: string | undefined = urlSync
-    ? (url.drawer?.recordId ?? undefined)
-    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
-  const receiptStatus = urlSync ? url.row?.status : localDrawer?.row?.status
 
   const companies = useQuery({
     queryKey: ['purOutsourcedReceipts', 'companies'],
@@ -459,152 +492,59 @@ export function ReceiptDrawerProvider({
 
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
-  function resetDetail() {
-    loadedIdRef.current = null
-    orderItemsRef.current = new Map()
-    linesRef.current = new Map()
-    setItems([])
-    setItemsSnapshot([])
-    setMaterialRows([])
-    setMaterialRowsSnapshot([])
-    setByproductRows([])
-    setByproductRowsSnapshot([])
-    setDetailLoaded(true)
-  }
-
-  function loadDetail(receiptId: string) {
-    const my = ++reqIdRef.current
-    loadedIdRef.current = receiptId
-    orderItemsRef.current = new Map()
-    linesRef.current = new Map()
-    setDetailLoaded(false)
-    purchaseOutsourcedReceiptItemClient
-      .query({
-        limit: 200,
-        offset: 0,
-        sort: { column: 'idx', direction: 'ascending' },
-        filter: {
-          receiptId: { kind: 'fk', op: 'in', values: [receiptId], labels: [] },
-        },
-      })
-      .then(async (itemResult) => {
-        const itemIds = itemResult.results.map((item) => String(item.id))
-        const childFilter: FilterState = {
-          receiptItemId: { kind: 'fk', op: 'in', values: itemIds, labels: [] },
-        }
-        const [materialResult, byproductResult] =
-          itemIds.length === 0
-            ? [{ results: [] as Row[] }, { results: [] as Row[] }]
-            : await Promise.all([
-                purchaseOutsourcedReceiptItemMaterialClient.query({
-                  limit: 200,
-                  offset: 0,
-                  sort: { column: 'idx', direction: 'ascending' },
-                  filter: childFilter,
-                }),
-                purchaseOutsourcedReceiptItemByproductClient.query({
-                  limit: 200,
-                  offset: 0,
-                  sort: { column: 'idx', direction: 'ascending' },
-                  filter: childFilter,
-                }),
-              ])
-        if (my !== reqIdRef.current) return
-        const rows = itemResult.results
-        // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
-        for (const r of rows) {
-          if (r.orderItemId != null) {
-            orderItemsRef.current.set(String(r.orderItemId), {
-              id: String(r.orderItemId),
-              materialId: r.materialId,
-              unitId: r.unitId,
-              materialCode: r.materialCode,
-              materialName: r.materialName,
-              materialSpec: r.materialSpec,
-              customerPartNo: r.customerPartNo,
-              unitName: r.unitName,
-              qty: r.orderQty,
-              order: r.orderNo != null ? { id: '', orderNo: r.orderNo } : undefined,
-            } as Row)
-          }
-        }
-        const materialRowList = materialResult.results
-        const byproductRowList = byproductResult.results
-        // 扣减/副产物行的清单行缓存预热(材料/单位快照名回显用)
-        for (const r of [...materialRowList, ...byproductRowList]) {
-          const lineId = r.orderItemMaterialId ?? r.orderItemByproductId
-          if (lineId != null) {
-            linesRef.current.set(String(lineId), {
-              id: String(lineId),
-              materialId: r.materialId,
-              materialCode: r.materialCode,
-              materialName: r.materialName,
-              materialSpec: r.materialSpec,
-              unitName: r.unitName,
-              orderNo: r.orderNo,
-            } as Row)
-          }
-        }
-        setItems(rows)
-        setItemsSnapshot(rows)
-        setMaterialRows(materialRowList)
-        setMaterialRowsSnapshot(materialRowList)
-        setByproductRows(byproductRowList)
-        setByproductRowsSnapshot(byproductRowList)
-        setDetailLoaded(true)
-      })
-      .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toastError('入库条目加载失败')(e)
-        setItems([])
-        setItemsSnapshot([])
-        setMaterialRows([])
-        setMaterialRowsSnapshot([])
-        setByproductRows([])
-        setByproductRowsSnapshot([])
-      })
-  }
+  // 草稿 → 行集合派生:draft 变化(含关闭/新建清空为 null)时初始化三类行集合、
+  // 各自保存比对基线,并预热订单条目/清单行缓存
+  useEffect(() => {
+    const rows = drawer.draft?.items ?? []
+    const materialList = drawer.draft?.materialRows ?? []
+    const byproductList = drawer.draft?.byproductRows ?? []
+    // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
+    const orderCache = new Map<string, Row>()
+    for (const r of rows) {
+      if (r.orderItemId != null) {
+        orderCache.set(String(r.orderItemId), {
+          id: String(r.orderItemId),
+          materialId: r.materialId,
+          unitId: r.unitId,
+          materialCode: r.materialCode,
+          materialName: r.materialName,
+          materialSpec: r.materialSpec,
+          customerPartNo: r.customerPartNo,
+          unitName: r.unitName,
+          qty: r.orderQty,
+          order: r.orderNo != null ? { id: '', orderNo: r.orderNo } : undefined,
+        } as Row)
+      }
+    }
+    orderItemsRef.current = orderCache
+    // 扣减/副产物行的清单行缓存预热(材料/单位快照名回显用)
+    const linesCache = new Map<string, Row>()
+    for (const r of [...materialList, ...byproductList]) {
+      const lineId = r.orderItemMaterialId ?? r.orderItemByproductId
+      if (lineId != null) {
+        linesCache.set(String(lineId), {
+          id: String(lineId),
+          materialId: r.materialId,
+          materialCode: r.materialCode,
+          materialName: r.materialName,
+          materialSpec: r.materialSpec,
+          unitName: r.unitName,
+          orderNo: r.orderNo,
+        } as Row)
+      }
+    }
+    linesRef.current = linesCache
+    setItems(rows)
+    setItemsSnapshot(rows)
+    setMaterialRows(materialList)
+    setMaterialRowsSnapshot(materialList)
+    setByproductRows(byproductList)
+    setByproductRowsSnapshot(byproductList)
+  }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
   const openDrawer: OpenReceiptDrawer = (nextMode, receipt) => {
-    if (urlSync) {
-      url.open(nextMode, receipt?.id != null ? String(receipt.id) : null)
-    } else {
-      setLocalDrawer({ mode: nextMode, row: receipt })
-    }
-    if (nextMode === 'create' || !receipt) {
-      resetDetail()
-      return
-    }
-    const receiptId = receipt.id
-    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
-    if (receiptId == null || receiptId === '' || receiptId === 'undefined') {
-      toast.danger('无法打开入库单', { description: '缺少入库单 id' })
-      resetDetail()
-      return
-    }
-    loadDetail(String(receiptId))
+    drawer.open(nextMode, receipt)
   }
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
-  useEffect(() => {
-    if (!urlSync) return
-    const d = url.drawer
-    if (!d) {
-      if (loadedIdRef.current != null) {
-        reqIdRef.current++
-        resetDetail()
-      }
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) resetDetail()
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      loadDetail(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   const baseCfg = drawerConfig('purOutsourcedReceipts')
   const drawerCfg = {
@@ -679,28 +619,11 @@ export function ReceiptDrawerProvider({
         mode={mode}
         isOpen={isOpen}
         onOpenChange={(open) => {
-          if (open) return
-          reqIdRef.current++
-          if (urlSync) url.close()
-          else setLocalDrawer(null)
-          setItems([])
-          setItemsSnapshot([])
-          setMaterialRows([])
-          setMaterialRowsSnapshot([])
-          setByproductRows([])
-          setByproductRowsSnapshot([])
-          orderItemsRef.current = new Map()
-          linesRef.current = new Map()
-          loadedIdRef.current = null
+          if (!open) drawer.close()
         }}
         rowId={rowId}
         onEdit={
-          receiptStatus === 'DRAFT'
-            ? () => {
-                if (urlSync) url.setMode('edit')
-                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
-              }
-            : undefined
+          receiptStatus === 'DRAFT' ? () => drawer.setMode('edit') : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
           const companyId = (values.companyId as string | null) ?? null
@@ -713,7 +636,7 @@ export function ReceiptDrawerProvider({
           const tablesReadOnly =
             mode === 'view' ||
             (row != null && row.status !== 'DRAFT') ||
-            (mode !== 'create' && !detailLoaded)
+            (mode !== 'create' && !drawer.detailLoaded)
           // 已持久化的入库条目(扣减/副产物行只能挂服务端已存在的条目)
           const persistedItems = items.filter((r) => !isLocalRow(r))
           const itemById = new Map(persistedItems.map((r) => [String(r.id), r]))
@@ -1163,14 +1086,14 @@ export function ReceiptDrawerProvider({
                 defaultId={createDefaultCompany}
               />
               <ReceiptAccountDefaultSync
-                key={`acct-${rowId ?? 'create'}-${reqIdRef.current}`}
+                key={`acct-${rowId ?? 'create'}-${drawer.generation}`}
                 mode={mode}
                 companyId={companyId}
                 patchValues={patchValues}
               />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${rowId ?? 'create'}-${reqIdRef.current}`}
+                key={`${rowId ?? 'create'}-${drawer.generation}`}
                 mode={mode}
                 row={row}
                 values={values}

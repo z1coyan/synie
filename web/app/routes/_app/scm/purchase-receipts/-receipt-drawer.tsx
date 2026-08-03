@@ -13,7 +13,10 @@ import { companyClient } from '~/lib/resources/companies'
 import {
   purchaseReceiptItemClient,
 } from '~/lib/resources/fulfillment'
-import { buildPurchaseReceiptDraft } from '~/lib/resources/purchase-receipt-draft'
+import {
+  buildPurchaseReceiptDraft,
+  type PurchaseReceiptSavedDraft,
+} from '~/lib/resources/purchase-receipt-draft'
 import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import { purchaseOrderItemClient } from '~/lib/resources/orders'
 import {
@@ -37,8 +40,7 @@ import {
 import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaults'
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
-import { toastError } from '~/lib/toast'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 const purchaseReceiptBinding = resourceBindingFor('purReceipts')
 const purchaseReceiptItemBinding = resourceBindingFor('purReceiptItems')
@@ -244,28 +246,20 @@ export function ReceiptDrawerProvider({
   children: ReactNode
   urlSync?: boolean
 }) {
-  // URL 源(列表 layout)与本地态二选一;明细始终本地
-  const url = useRecordDrawerUrl('purReceipts', { enabled: urlSync })
-  const [localDrawer, setLocalDrawer] = useState<{ mode: DrawerMode; row: ReceiptRef | null } | null>(null)
+  // 单据抽屉骨架:双态状态机、URL 身份→整单草稿装载(竞态安全)、深链补拉全部收口进 hook
+  const drawer = useDocumentDrawer<PurchaseReceiptSavedDraft>({
+    resource: 'purReceipts',
+    urlSync,
+    loadDraft: (id) => purchaseReceiptDraft.loadDraft(id),
+  })
+  const { isOpen, mode, rowId } = drawer
+  const receiptStatus = drawer.row?.status
   const [items, setItems] = useState<Row[]>([])
-  const [detailLoaded, setDetailLoaded] = useState(false)
   const [filters] = useState<FilterState>({})
   // 订单条目缓存:选择时写入完整行,transformItem 带出快照名
   const orderItemsRef = useRef(new Map<string, Row>())
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
   const draftHeadRef = useRef<Row | null>(null)
-  // 已为哪张入库单拉过明细;深链 effect 与 openDrawer 去重,避免双发
-  const loadedIdRef = useRef<string | null>(null)
-
-  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
-  const mode: DrawerMode = urlSync
-    ? (url.drawer?.mode ?? 'view')
-    : (localDrawer?.mode ?? 'view')
-  const rowId: string | undefined = urlSync
-    ? (url.drawer?.recordId ?? undefined)
-    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
-  const receiptStatus = urlSync ? url.row?.status : localDrawer?.row?.status
 
   const companies = useQuery({
     queryKey: ['purReceipts', 'companies'],
@@ -283,94 +277,35 @@ export function ReceiptDrawerProvider({
 
   const resetItems = useCallback(() => setItems((cur) => (cur.length === 0 ? cur : [])), [])
 
-  function resetDetail() {
-    loadedIdRef.current = null
-    orderItemsRef.current = new Map()
-    draftHeadRef.current = null
-    setItems([])
-    setDetailLoaded(true)
-  }
-
-  function loadDetail(receiptId: string) {
-    const my = ++reqIdRef.current
-    loadedIdRef.current = receiptId
-    orderItemsRef.current = new Map()
-    draftHeadRef.current = null
-    setDetailLoaded(false)
-    purchaseReceiptDraft
-      .loadDraft(receiptId)
-      .then((draft) => {
-        if (my !== reqIdRef.current) return
-        draftHeadRef.current = draft
-        const rows = draft.items
-        // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
-        for (const r of rows) {
-          if (r.orderItemId != null) {
-            orderItemsRef.current.set(String(r.orderItemId), {
-              id: String(r.orderItemId),
-              materialId: r.materialId,
-              unitId: r.unitId,
-              materialCode: r.materialCode,
-              materialName: r.materialName,
-              materialSpec: r.materialSpec,
-              customerPartNo: r.customerPartNo,
-              unitName: r.unitName,
-              qty: r.orderQty,
-              order: r.orderNo != null ? { id: '', orderNo: r.orderNo } : undefined,
-            } as Row)
-          }
-        }
-        setItems(rows)
-        setDetailLoaded(true)
-      })
-      .catch((e) => {
-        if (my !== reqIdRef.current) return
-        draftHeadRef.current = null
-        toastError('入库条目加载失败')(e)
-        setItems([])
-      })
-  }
+  // 草稿 → 条目状态派生:draft 变化(含关闭/新建清空为 null)时初始化条目并预热订单条目缓存
+  useEffect(() => {
+    draftHeadRef.current = drawer.draft
+    const rows = drawer.draft?.items ?? []
+    const cache = new Map<string, Row>()
+    // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
+    for (const r of rows) {
+      if (r.orderItemId != null) {
+        cache.set(String(r.orderItemId), {
+          id: String(r.orderItemId),
+          materialId: r.materialId,
+          unitId: r.unitId,
+          materialCode: r.materialCode,
+          materialName: r.materialName,
+          materialSpec: r.materialSpec,
+          customerPartNo: r.customerPartNo,
+          unitName: r.unitName,
+          qty: r.orderQty,
+          order: r.orderNo != null ? { id: '', orderNo: r.orderNo } : undefined,
+        } as Row)
+      }
+    }
+    orderItemsRef.current = cache
+    setItems(rows)
+  }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
   const openDrawer: OpenReceiptDrawer = (nextMode, receipt) => {
-    if (urlSync) {
-      url.open(nextMode, receipt?.id != null ? String(receipt.id) : null)
-    } else {
-      setLocalDrawer({ mode: nextMode, row: receipt })
-    }
-    if (nextMode === 'create' || !receipt) {
-      resetDetail()
-      return
-    }
-    const receiptId = receipt.id
-    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
-    if (receiptId == null || receiptId === '' || receiptId === 'undefined') {
-      toast.danger('无法打开入库单', { description: '缺少入库单 id' })
-      resetDetail()
-      return
-    }
-    loadDetail(String(receiptId))
+    drawer.open(nextMode, receipt)
   }
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
-  useEffect(() => {
-    if (!urlSync) return
-    const d = url.drawer
-    if (!d) {
-      if (loadedIdRef.current != null) {
-        reqIdRef.current++
-        resetDetail()
-      }
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) resetDetail()
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      loadDetail(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   const baseCfg = drawerConfig('purReceipts')
   const drawerCfg = {
@@ -419,25 +354,13 @@ export function ReceiptDrawerProvider({
         {...drawerCfg}
         mode={mode}
         isOpen={isOpen}
-        isSubmitDisabled={mode === 'edit' && !detailLoaded}
+        isSubmitDisabled={mode === 'edit' && !drawer.detailLoaded}
         onOpenChange={(open) => {
-          if (open) return
-          reqIdRef.current++
-          if (urlSync) url.close()
-          else setLocalDrawer(null)
-          setItems([])
-          orderItemsRef.current = new Map()
-          draftHeadRef.current = null
-          loadedIdRef.current = null
+          if (!open) drawer.close()
         }}
         rowId={rowId}
         onEdit={
-          receiptStatus === 'DRAFT'
-            ? () => {
-                if (urlSync) url.setMode('edit')
-                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
-              }
-            : undefined
+          receiptStatus === 'DRAFT' ? () => drawer.setMode('edit') : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
           const companyId = (values.companyId as string | null) ?? null
@@ -634,14 +557,14 @@ export function ReceiptDrawerProvider({
                 defaultId={createDefaultCompany}
               />
               <ReceiptAccountDefaultSync
-                key={`acct-${rowId ?? 'create'}-${reqIdRef.current}`}
+                key={`acct-${rowId ?? 'create'}-${drawer.generation}`}
                 mode={mode}
                 companyId={companyId}
                 patchValues={patchValues}
               />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${rowId ?? 'create'}-${reqIdRef.current}`}
+                key={`${rowId ?? 'create'}-${drawer.generation}`}
                 mode={mode}
                 row={row}
                 values={values}
@@ -656,7 +579,7 @@ export function ReceiptDrawerProvider({
                 readOnly={
                   mode === 'view' ||
                   (row != null && row.status !== 'DRAFT') ||
-                  (mode !== 'create' && !detailLoaded)
+                  (mode !== 'create' && !drawer.detailLoaded)
                 }
                 canCreate={headerReady}
                 toolbar={
@@ -779,7 +702,7 @@ export function ReceiptDrawerProvider({
           )
         }}
         onSubmit={async (values, mode) => {
-          assertAggregateDraftReady(mode, detailLoaded, '采购入库明细')
+          assertAggregateDraftReady(mode, drawer.detailLoaded, '采购入库明细')
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
           const draft = buildPurchaseReceiptDraft(
             { ...draftHeadRef.current, ...values },

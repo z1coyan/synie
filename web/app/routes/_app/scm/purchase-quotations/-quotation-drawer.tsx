@@ -4,7 +4,7 @@ import { Label, NumberField, TextArea, TextField, toast } from '@heroui/react'
 import { formatPrice } from '~/lib/amount'
 import { companyClient } from '~/lib/resources/companies'
 import { purchaseQuotationItemClient } from '~/lib/resources/quotations'
-import { buildQuotationDraft } from '~/lib/resources/quotation-draft'
+import { buildQuotationDraft, type QuotationSavedDraft } from '~/lib/resources/quotation-draft'
 import { assertAggregateDraftReady } from '~/lib/resources/aggregate-draft-submit'
 import {
   aggregateDraftFor,
@@ -19,9 +19,7 @@ import type { Row } from '~/components/synie-data-grid/types'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { auditMaterialCell, type AuditDocConfig } from '../-audit-doc'
 import { todayLocal } from '~/lib/form-defaults'
-import { toastError } from '~/lib/toast'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
-import { useRequestGuard } from '~/lib/use-request-guard'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 const purchaseQuotationBinding = resourceBindingFor('purQuotations')
 const purchaseQuotationItemBinding = resourceBindingFor('purQuotationItems')
@@ -213,96 +211,32 @@ export function QuotationDrawerProvider({
   children: ReactNode
   urlSync?: boolean
 }) {
-  // URL 源(列表 layout)与本地态二选一;明细/条款始终本地
-  const url = useRecordDrawerUrl('purQuotations', { enabled: urlSync })
-  const [localDrawer, setLocalDrawer] = useState<{ mode: DrawerMode; quotation: QuotationRef | null } | null>(null)
+  // 单据抽屉骨架:双态状态机、URL 身份→整单草稿装载(竞态安全)、深链补拉全部收口进 hook
+  const drawer = useDocumentDrawer<QuotationSavedDraft>({
+    resource: 'purQuotations',
+    urlSync,
+    loadDraft: (id) => purchaseQuotationDraft.loadDraft(id),
+  })
+  const { isOpen, mode, rowId } = drawer
+  const quotationStatus = drawer.row?.status
   const [items, setItems] = useState<Row[]>([])
   // 报价条款不走抽屉字段(要排在条目表之下,抽屉 extraContent 固定在字段后渲染),由页面自持
   const [terms, setTerms] = useState('')
-  // edit/view 态条目与条款靠 REST 异步拉取,未完成前禁止编辑,防回填覆盖在输行
-  const [detailLoaded, setDetailLoaded] = useState(false)
   // 条目二级抽屉在编条目的价格档草稿(collectValues 剥离非字段键,不能进抽屉 values)
   const [tierDraft, setTierDraft] = useState<Row[]>([])
   const queryClient = useQueryClient()
-  // 请求守卫:每次开/关抽屉自增,异步回填前比对最新序号——防止慢响应把上一张单的行回填到当前单
-  const guard = useRequestGuard()
   const draftHeadRef = useRef<Row | null>(null)
-  // 已为哪张报价单拉过明细;深链 effect 与 openDrawer 去重,避免双发
-  const loadedIdRef = useRef<string | null>(null)
 
-  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
-  const mode: DrawerMode = urlSync
-    ? (url.drawer?.mode ?? 'view')
-    : (localDrawer?.mode ?? 'view')
-  const rowId: string | undefined = urlSync
-    ? (url.drawer?.recordId ?? undefined)
-    : (localDrawer?.quotation?.id != null ? String(localDrawer.quotation.id) : undefined)
-  const quotationStatus = urlSync ? url.row?.status : localDrawer?.quotation?.status
-
-  function resetDetail() {
-    loadedIdRef.current = null
-    draftHeadRef.current = null
-    setItems([])
-    setTerms('')
-    setDetailLoaded(true)
-  }
-
-  function loadDetail(quotationId: string) {
-    const my = guard.begin()
-    loadedIdRef.current = quotationId
-    draftHeadRef.current = null
-    setDetailLoaded(false)
-    purchaseQuotationDraft
-      .loadDraft(quotationId)
-      .then((draft) => {
-        if (!guard.isCurrent(my)) return
-        draftHeadRef.current = draft
-        setTerms(String(draft.terms ?? ''))
-        setItems(draft.items)
-        setDetailLoaded(true)
-      })
-      .catch((e) => {
-        if (!guard.isCurrent(my)) return
-        draftHeadRef.current = null
-        toastError('报价单详情加载失败')(e)
-        setTerms('')
-        setItems([])
-      })
-  }
+  // 草稿 → 条目/条款状态派生:draft 变化(含关闭/新建清空为 null)时初始化集合并写 draftHeadRef
+  useEffect(() => {
+    draftHeadRef.current = drawer.draft
+    setTerms(String(drawer.draft?.terms ?? ''))
+    setItems(drawer.draft?.items ?? [])
+  }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
   const openDrawer: OpenQuotationDrawer = (nextMode, quotation) => {
-    if (urlSync) {
-      url.open(nextMode, quotation?.id != null ? String(quotation.id) : null)
-    } else {
-      setLocalDrawer({ mode: nextMode, quotation })
-    }
-    if (nextMode === 'create' || !quotation) {
-      resetDetail()
-      return
-    }
-    loadDetail(String(quotation.id))
+    drawer.open(nextMode, quotation)
   }
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
-  useEffect(() => {
-    if (!urlSync) return
-    const d = url.drawer
-    if (!d) {
-      if (loadedIdRef.current != null) {
-        guard.invalidate()
-        resetDetail()
-      }
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) resetDetail()
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      loadDetail(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   // 抽屉配置:registry 一份;terms 从字段排除(改由 extraContent 底部渲染,提交时并入 values)
   const baseCfg = drawerConfig('purQuotations')
@@ -326,27 +260,14 @@ export function QuotationDrawerProvider({
         {...drawerCfg}
         mode={mode}
         isOpen={isOpen}
-        isSubmitDisabled={mode === 'edit' && !detailLoaded}
+        isSubmitDisabled={mode === 'edit' && !drawer.detailLoaded}
         onOpenChange={(open) => {
-          if (open) return
-          // 关闭即作废在途请求并清空本地草稿,防止慢响应回填到下一张报价单
-          guard.invalidate()
-          if (urlSync) url.close()
-          else setLocalDrawer(null)
-          setItems([])
-          setTerms('')
-          draftHeadRef.current = null
-          loadedIdRef.current = null
+          if (!open) drawer.close()
         }}
         // 表格列是白名单子集,行数据不全(缺条款/备注);不传 row,走 rowId 自查完整记录
         rowId={rowId}
         onEdit={
-          quotationStatus === 'DRAFT'
-            ? () => {
-                if (urlSync) url.setMode('edit')
-                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
-              }
-            : undefined
+          quotationStatus === 'DRAFT' ? () => drawer.setMode('edit') : undefined
         }
         extraContent={(mode, row, values, patchValues) => (
           <>
@@ -356,7 +277,7 @@ export function QuotationDrawerProvider({
               label="报价条目"
               items={items}
               onChange={setItems}
-              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !detailLoaded)}
+              readOnly={mode === 'view' || (row != null && row.status !== 'DRAFT') || (mode !== 'create' && !drawer.detailLoaded)}
               // 行表单物料/模式/单价双列排布,默认 420px 局促,加宽一档
               drawerClassName="w-full lg:w-[560px]"
               exclude={[
@@ -512,7 +433,7 @@ export function QuotationDrawerProvider({
               <TextField
                 value={terms}
                 onChange={setTerms}
-                isDisabled={mode === 'view' || (mode !== 'create' && !detailLoaded)}
+                isDisabled={mode === 'view' || (mode !== 'create' && !drawer.detailLoaded)}
               >
                 <Label>报价条款</Label>
                 <TextArea rows={4} placeholder="对供应商展示的报价条款,如付款、交付、有效条件约定" />
@@ -521,7 +442,7 @@ export function QuotationDrawerProvider({
           </>
         )}
         onSubmit={async (values, mode) => {
-          assertAggregateDraftReady(mode, detailLoaded, '采购报价明细')
+          assertAggregateDraftReady(mode, drawer.detailLoaded, '采购报价明细')
           const draft = buildQuotationDraft(
             { ...draftHeadRef.current, ...values },
             terms,

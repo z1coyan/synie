@@ -53,7 +53,7 @@ import { fetchCompanyAccountDefaults } from '../settings/-company-account-defaul
 import { ItemsResetGuard } from '~/components/items-reset-guard'
 import { todayLocal } from '~/lib/form-defaults'
 import { toastError } from '~/lib/toast'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 const salesDeliveryBinding = resourceBindingFor('salDeliveries')
 const salesDeliveryDraft = aggregateDraftFor('salDeliveries')
@@ -1106,36 +1106,35 @@ export function DeliveryDrawerProvider({
   children: ReactNode
   urlSync?: boolean
 }) {
-  // URL 源(列表 layout)与本地态二选一;明细/装箱始终本地
-  const url = useRecordDrawerUrl('salDeliveries', { enabled: urlSync })
-  const [localDrawer, setLocalDrawer] = useState<{ mode: DrawerMode; row: DeliveryRef | null } | null>(null)
+  // 订单条目缓存:选择时写入完整行,transformItem 带出快照名
+  const orderItemsRef = useRef(new Map<string, Row>())
+  const draftHeadRef = useRef<Record<string, unknown>>({})
+  // 保存后身份切换占号:acceptSavedDraft 先写缓存再切 recordId,骨架装载直取,不双发 loadDraft
+  const savedDraftsRef = useRef(new Map<string, SalesDeliverySavedDraft>())
+  // 单据抽屉骨架:双态状态机、URL 身份→整单草稿装载(竞态安全)、深链补拉全部收口进 hook
+  const drawer = useDocumentDrawer<SalesDeliverySavedDraft>({
+    resource: 'salDeliveries',
+    urlSync,
+    loadDraft: (id) => {
+      const cached = savedDraftsRef.current.get(id)
+      if (cached) {
+        savedDraftsRef.current.delete(id)
+        return Promise.resolve(cached)
+      }
+      return salesDeliveryDraft.loadDraft(id)
+    },
+  })
+  const { isOpen, mode, rowId } = drawer
   const [items, setItems] = useState<Row[]>([])
   const [packBoxes, setPackBoxes] = useState<Row[]>([])
   const [packLines, setPackLines] = useState<Row[]>([])
   const [draftErrors, setDraftErrors] = useState<Record<string, string[]>>({})
   const [draftErrorIndex, setDraftErrorIndex] = useState<DeliveryDraftIndex | null>(null)
-  const [authoritativeDraft, setAuthoritativeDraft] = useState<Row | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [detailLoaded, setDetailLoaded] = useState(false)
   const [filters] = useState<FilterState>({})
-  // 订单条目缓存:选择时写入完整行,transformItem 带出快照名
-  const orderItemsRef = useRef(new Map<string, Row>())
-  const draftHeadRef = useRef<Record<string, unknown>>({})
   const queryClient = useQueryClient()
-  const reqIdRef = useRef(0)
-  // 已为哪张发货单拉过明细;深链 effect 与 openDrawer 去重,避免双发
-  const loadedIdRef = useRef<string | null>(null)
-
-  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
-  const mode: DrawerMode = urlSync
-    ? (url.drawer?.mode ?? 'view')
-    : (localDrawer?.mode ?? 'view')
-  const rowId: string | undefined = urlSync
-    ? (url.drawer?.recordId ?? undefined)
-    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
   // 编辑入口:权威草稿优先(保存后立即有 status),其次 URL 自查行 / 本地 open 入参
-  const deliveryStatus = authoritativeDraft?.status
-    ?? (urlSync ? url.row?.status : localDrawer?.row?.status)
+  const deliveryStatus = drawer.draft?.status ?? drawer.row?.status
 
   const companies = useQuery({
     queryKey: ['salDeliveries', 'companies'],
@@ -1159,146 +1158,51 @@ export function DeliveryDrawerProvider({
     setPackLines((cur) => (cur.length === 0 ? cur : []))
   }, [])
 
-  function resetDetail() {
-    loadedIdRef.current = null
-    setDraftErrors({})
-    setAuthoritativeDraft(null)
-    orderItemsRef.current = new Map()
-    draftHeadRef.current = {}
-    setItems([])
-    setPackBoxes([])
-    setPackLines([])
-    setDetailLoaded(true)
-  }
-
-  function loadDetail(deliveryId: string) {
-    const my = ++reqIdRef.current
-    loadedIdRef.current = deliveryId
-    setDraftErrors({})
-    setAuthoritativeDraft(null)
-    orderItemsRef.current = new Map()
-    draftHeadRef.current = {}
-    setDetailLoaded(false)
-    salesDeliveryDraft
-      .loadDraft(deliveryId)
-      .then((saved) => {
-        if (my !== reqIdRef.current) return
-        const itemRows = saved.items
-        const boxRows = saved.packBoxes
-        const lineRows = boxRows.flatMap((box) =>
-          box.lines.map((line) => ({ ...line, packBoxId: box.id })),
-        )
-        // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
-        for (const r of itemRows) {
-          if (r.orderItemId != null) {
-            orderItemsRef.current.set(String(r.orderItemId), {
-              id: String(r.orderItemId),
-              materialId: r.materialId,
-              unitId: r.unitId,
-              materialCode: r.materialCode,
-              materialName: r.materialName,
-              materialSpec: r.materialSpec,
-              customerPartNo: r.customerPartNo,
-              unitName: r.unitName,
-              qty: r.orderQty,
-              order: r.orderNo != null ? { id: '', orderNo: r.orderNo } : undefined,
-            } as Row)
-          }
-        }
-        setItems(itemRows)
-        setPackBoxes(boxRows)
-        setPackLines(lineRows)
-        setAuthoritativeDraft(saved)
-        draftHeadRef.current = saved
-        setDetailLoaded(true)
-      })
-      .catch((e) => {
-        if (my !== reqIdRef.current) return
-        toastError('发货明细加载失败')(e)
-        setItems([])
-        setPackBoxes([])
-        setPackLines([])
-      })
-  }
-
-  const openDrawer: OpenDeliveryDrawer = (nextMode, delivery) => {
-    if (urlSync) {
-      url.open(nextMode, delivery?.id != null ? String(delivery.id) : null)
-    } else {
-      setLocalDrawer({ mode: nextMode, row: delivery })
-    }
-    if (nextMode === 'create' || !delivery) {
-      resetDetail()
-      return
-    }
-    const deliveryId = delivery.id
-    // 防前端把 String(undefined) 当成 uuid 过滤(Invalid filter value "undefined")
-    if (deliveryId == null || deliveryId === '' || deliveryId === 'undefined') {
-      toast.danger('无法打开发货单', { description: '缺少发货单 id' })
-      resetDetail()
-      return
-    }
-    loadDetail(String(deliveryId))
-  }
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
+  // 草稿 → 条目/装箱集合派生:draft 变化(含关闭/新建清空为 null)时初始化三个集合,
+  // 预热订单条目缓存并写 draftHeadRef(onSubmit 合并头字段用)
   useEffect(() => {
-    if (!urlSync) return
-    const d = url.drawer
-    if (!d) {
-      if (loadedIdRef.current != null) {
-        reqIdRef.current++
-        resetDetail()
-      }
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) resetDetail()
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      loadDetail(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
-
-  const acceptSavedDraft = (saved: SalesDeliverySavedDraft) => {
-    const savedItems = saved.items
-    const savedBoxes = saved.packBoxes
-    const savedLines = savedBoxes.flatMap((box) =>
+    const saved = drawer.draft
+    draftHeadRef.current = saved ?? {}
+    const itemRows = saved?.items ?? []
+    const boxRows = saved?.packBoxes ?? []
+    const lineRows = boxRows.flatMap((box) =>
       box.lines.map((line) => ({ ...line, packBoxId: box.id })),
     )
-    setItems(savedItems)
-    setPackBoxes(savedBoxes)
-    setPackLines(savedLines)
+    // 编辑态预热缓存:存量行不必再点选订单条目也能过校验/回填
+    const cache = new Map<string, Row>()
+    for (const r of itemRows) {
+      if (r.orderItemId != null) {
+        cache.set(String(r.orderItemId), {
+          id: String(r.orderItemId),
+          materialId: r.materialId,
+          unitId: r.unitId,
+          materialCode: r.materialCode,
+          materialName: r.materialName,
+          materialSpec: r.materialSpec,
+          customerPartNo: r.customerPartNo,
+          unitName: r.unitName,
+          qty: r.orderQty,
+          order: r.orderNo != null ? { id: '', orderNo: r.orderNo } : undefined,
+        } as Row)
+      }
+    }
+    orderItemsRef.current = cache
+    setDraftErrors({})
+    setItems(itemRows)
+    setPackBoxes(boxRows)
+    setPackLines(lineRows)
+  }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
+
+  const openDrawer: OpenDeliveryDrawer = (nextMode, delivery) => {
+    drawer.open(nextMode, delivery)
+  }
+
+  const acceptSavedDraft = (saved: SalesDeliverySavedDraft) => {
     setDraftErrors({})
     setDraftErrorIndex(null)
-    setAuthoritativeDraft(saved)
-    draftHeadRef.current = saved
-    orderItemsRef.current = new Map()
-    for (const item of savedItems) {
-      if (item.orderItemId == null) continue
-      orderItemsRef.current.set(String(item.orderItemId), {
-        id: String(item.orderItemId),
-        materialId: item.materialId,
-        unitId: item.unitId,
-        materialCode: item.materialCode,
-        materialName: item.materialName,
-        materialSpec: item.materialSpec,
-        customerPartNo: item.customerPartNo,
-        unitName: item.unitName,
-        qty: item.orderQty,
-        order: item.orderNo != null ? { id: '', orderNo: item.orderNo } : undefined,
-      } as Row)
-    }
-    setDetailLoaded(true)
-    // 先记 loaded,再写 URL,避免深链 effect 双发 loadDraft
-    loadedIdRef.current = String(saved.id)
-    if (urlSync) {
-      url.open('edit', String(saved.id))
-    } else {
-      setLocalDrawer({ mode: 'edit', row: saved })
-    }
+    // 先写占号缓存,再切身份:骨架按 recordId 装载时命中缓存,避免深链 effect 双发 loadDraft
+    savedDraftsRef.current.set(String(saved.id), saved)
+    drawer.open('edit', saved)
   }
 
   const fieldErrors = headerFieldErrors(draftErrors)
@@ -1391,33 +1295,19 @@ export function DeliveryDrawerProvider({
         {...drawerCfg}
         mode={mode}
         isOpen={isOpen}
-        isSubmitDisabled={mode === 'edit' && !detailLoaded}
+        isSubmitDisabled={mode === 'edit' && !drawer.detailLoaded}
         onOpenChange={(open) => {
           if (open) return
-          reqIdRef.current++
-          if (urlSync) url.close()
-          else setLocalDrawer(null)
-          setItems([])
+          drawer.close()
           setDraftErrors({})
-          setAuthoritativeDraft(null)
-          setPackLines([])
-          setPackBoxes([])
-          orderItemsRef.current = new Map()
-          draftHeadRef.current = {}
-          loadedIdRef.current = null
         }}
         rowId={rowId}
-        row={authoritativeDraft}
+        row={drawer.draft}
         fieldErrors={fieldErrors}
         submissionErrorTab={submissionErrorTab}
         keepOpenOnAuditFailure
         onEdit={
-          deliveryStatus === 'DRAFT'
-            ? () => {
-                if (urlSync) url.setMode('edit')
-                else setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
-              }
-            : undefined
+          deliveryStatus === 'DRAFT' ? () => drawer.setMode('edit') : undefined
         }
         extraContent={(mode, row, values, patchValues) => {
           draftHeadRef.current = values
@@ -1619,14 +1509,14 @@ export function DeliveryDrawerProvider({
                 defaultId={createDefaultCompany}
               />
               <DeliveryAccountDefaultSync
-                key={`acct-${rowId ?? 'create'}-${reqIdRef.current}`}
+                key={`acct-${rowId ?? 'create'}-${drawer.generation}`}
                 mode={mode}
                 companyId={companyId}
                 patchValues={patchValues}
               />
               {/* key 随开抽屉世代变,保证每次打开重新布防基线 */}
               <ItemsResetGuard
-                key={`${rowId ?? 'create'}-${reqIdRef.current}`}
+                key={`${rowId ?? 'create'}-${drawer.generation}`}
                 mode={mode}
                 row={row}
                 values={values}
@@ -1646,7 +1536,7 @@ export function DeliveryDrawerProvider({
                   submitting ||
                   mode === 'view' ||
                   (row != null && row.status !== 'DRAFT') ||
-                  (mode !== 'create' && !detailLoaded)
+                  (mode !== 'create' && !drawer.detailLoaded)
                 }
                 canCreate={headerReady}
                 toolbar={
@@ -1787,7 +1677,7 @@ export function DeliveryDrawerProvider({
                 mode={mode}
                 row={row}
                 values={values}
-                detailLoaded={detailLoaded}
+                detailLoaded={drawer.detailLoaded}
                 submitting={submitting}
                 packBoxes={packBoxes}
                 packLines={packLines}
@@ -1807,7 +1697,7 @@ export function DeliveryDrawerProvider({
         }}
         onSubmit={async (values, mode) => {
           // 返回值供抽屉「保存并审核」取 id 调审核 mutation(通用约定)
-          assertAggregateDraftReady(mode, detailLoaded, '发货明细')
+          assertAggregateDraftReady(mode, drawer.detailLoaded, '发货明细')
           // 表单只经 AggregateDraftAdapter；binding 不挂 create/update writer
           const writerBag = salesDeliveryBinding.writer as
             | Partial<{ create: unknown; update: unknown }>

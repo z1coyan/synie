@@ -2,7 +2,6 @@ import {
   createContext,
   useContext,
   useEffect,
-  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -25,8 +24,7 @@ import {
 import type { Row } from '~/components/synie-data-grid/types'
 import { resourceBindingFor } from '~/lib/resources/registry'
 import { toastError } from '~/lib/toast'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
-import { useRequestGuard } from '~/lib/use-request-guard'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 
 // mutation input 只收行自身字段,行上挂的 material/unit/operation join 对象不进 payload
 function componentInput(row: Row) {
@@ -236,6 +234,13 @@ export function useBomDrawer(): OpenBomDrawer {
   return useContext(BomDrawerContext)
 }
 
+/** 三个子表行集合的装载快照(骨架 loadDraft 的返回形) */
+interface BomLinesDraft {
+  components: Row[]
+  routes: Row[]
+  byproducts: Row[]
+}
+
 /**
  * 完整 BOM 创建/编辑抽屉（配料/路线/副产品 + 模板带入）。
  * BOM 列表页与生产工单「新建 BOM」共用，避免工单侧再实现一套表单。
@@ -250,12 +255,38 @@ export function BomDrawerProvider({
   children: ReactNode
   urlSync?: boolean
 }) {
-  // URL 源(列表页)与本地态(工单内嵌)二选一;options 始终本地(不可 URL 化)
-  const url = useRecordDrawerUrl('mfgBoms', { enabled: urlSync })
-  const [localDrawer, setLocalDrawer] = useState<{
-    mode: DrawerMode
-    row: Row | null
-  } | null>(null)
+  // 单据抽屉骨架:双态状态机、URL 身份→行集合装载(竞态安全)、深链补拉全部收口进 hook
+  const drawer = useDocumentDrawer<BomLinesDraft>({
+    resource: 'mfgBoms',
+    urlSync,
+    loadDraft: async (bomId) => {
+      const filter = {
+        bomId: {
+          kind: 'fk' as const,
+          op: 'in' as const,
+          values: [bomId],
+          labels: [],
+        },
+      }
+      const [componentResult, routeResult, byproductResult] = await Promise.all([
+        bomComponentClient.query({ limit: 200, offset: 0, filter }),
+        bomRouteClient.query({
+          limit: 200,
+          offset: 0,
+          filter,
+          sort: { column: 'seq', direction: 'ascending' },
+        }),
+        bomByproductClient.query({ limit: 200, offset: 0, filter }),
+      ])
+      return {
+        components: componentResult.results,
+        routes: routeResult.results,
+        byproducts: byproductResult.results,
+      }
+    },
+  })
+  const { isOpen, mode, rowId } = drawer
+  // options 不可 URL 化,始终本地(骨架只收管道,options 属 BOM 声明)
   const [options, setOptions] = useState<OpenBomDrawerOptions | undefined>()
   const [components, setComponents] = useState<Row[]>([])
   const [componentsSnapshot, setComponentsSnapshot] = useState<Row[]>([])
@@ -263,119 +294,40 @@ export function BomDrawerProvider({
   const [routesSnapshot, setRoutesSnapshot] = useState<Row[]>([])
   const [byproducts, setByproducts] = useState<Row[]>([])
   const [byproductsSnapshot, setByproductsSnapshot] = useState<Row[]>([])
-  const [linesLoaded, setLinesLoaded] = useState(false)
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [templateId, setTemplateId] = useState<string | null>(null)
   const [applying, setApplying] = useState(false)
   const queryClient = useQueryClient()
-  // 请求守卫:防慢响应把上一张 BOM 的明细回填到当前抽屉
-  const guard = useRequestGuard()
-  // 已为哪张 BOM 拉过明细;深链 effect 与 openDrawer 去重,避免双发
-  const loadedBomIdRef = useRef<string | null>(null)
 
-  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
-  const mode: DrawerMode = urlSync
-    ? (url.drawer?.mode ?? 'view')
-    : (localDrawer?.mode ?? 'view')
-  const rowId: string | undefined = urlSync
-    ? (url.drawer?.recordId ?? undefined)
-    : (localDrawer?.row?.id != null ? String(localDrawer.row.id) : undefined)
-
-  function resetLines() {
-    loadedBomIdRef.current = null
-    setComponents([])
-    setComponentsSnapshot([])
-    setRoutes([])
-    setRoutesSnapshot([])
-    setByproducts([])
-    setByproductsSnapshot([])
-    setLinesLoaded(true)
-  }
-
-  function loadLinesForBom(bomId: string) {
-    const my = guard.begin()
-    loadedBomIdRef.current = bomId
-    setLinesLoaded(false)
-    const filter = {
-      bomId: {
-        kind: 'fk' as const,
-        op: 'in' as const,
-        values: [bomId],
-        labels: [],
-      },
+  // 草稿 → 行集合派生:draft 变化(含关闭/新建清空)时初始化三个子表及其保存比对基线
+  useEffect(() => {
+    const lines: BomLinesDraft = drawer.draft ?? {
+      components: [],
+      routes: [],
+      byproducts: [],
     }
-    Promise.all([
-      bomComponentClient.query({ limit: 200, offset: 0, filter }),
-      bomRouteClient.query({
-        limit: 200,
-        offset: 0,
-        filter,
-        sort: { column: 'seq', direction: 'ascending' },
-      }),
-      bomByproductClient.query({ limit: 200, offset: 0, filter }),
-    ])
-      .then(([componentResult, routeResult, byproductResult]) => {
-        if (!guard.isCurrent(my)) return
-        setComponents(componentResult.results)
-        setComponentsSnapshot(componentResult.results)
-        setRoutes(routeResult.results)
-        setRoutesSnapshot(routeResult.results)
-        setByproducts(byproductResult.results)
-        setByproductsSnapshot(byproductResult.results)
-        setLinesLoaded(true)
-      })
-      .catch((e) => {
-        if (!guard.isCurrent(my)) return
-        toastError('BOM 明细加载失败')(e)
-        setComponents([])
-        setComponentsSnapshot([])
-        setRoutes([])
-        setRoutesSnapshot([])
-        setByproducts([])
-        setByproductsSnapshot([])
-      })
-  }
+    setComponents(lines.components)
+    setComponentsSnapshot(lines.components)
+    setRoutes(lines.routes)
+    setRoutesSnapshot(lines.routes)
+    setByproducts(lines.byproducts)
+    setByproductsSnapshot(lines.byproducts)
+  }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
+
+  // URL 后退关抽屉时清本地 options
+  useEffect(() => {
+    if (!isOpen) setOptions(undefined)
+  }, [isOpen])
 
   const closeDrawer = () => {
     setOptions(undefined)
-    if (urlSync) url.close()
-    else setLocalDrawer(null)
-    resetLines()
+    drawer.close()
   }
 
   const openDrawer: OpenBomDrawer = (nextMode, row, nextOptions) => {
     setOptions(nextOptions)
-    if (urlSync) {
-      url.open(nextMode, row?.id != null ? String(row.id) : null)
-    } else {
-      setLocalDrawer({ mode: nextMode, row })
-    }
-    if (nextMode === 'create' || !row) {
-      resetLines()
-      return
-    }
-    loadLinesForBom(String(row.id))
+    drawer.open(nextMode, row)
   }
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
-  useEffect(() => {
-    if (!urlSync) return
-    const d = url.drawer
-    if (!d) {
-      // 后退关抽屉:清本地 options 与明细
-      setOptions(undefined)
-      if (loadedBomIdRef.current != null) resetLines()
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedBomIdRef.current != null) resetLines()
-      return
-    }
-    if (loadedBomIdRef.current !== d.recordId) {
-      loadLinesForBom(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   async function applyRouteTemplate() {
     const bomId = rowId
@@ -448,11 +400,7 @@ export function BomDrawerProvider({
           if (!open) closeDrawer()
         }}
         rowId={rowId}
-        onEdit={() => {
-          if (urlSync) url.setMode('edit')
-          else
-            setLocalDrawer((d) => (d ? { ...d, mode: 'edit' } : d))
-        }}
+        onEdit={() => drawer.setMode('edit')}
         tabExtraContent={{
           components: (m) => (
             <SynieEditableTable
@@ -460,7 +408,7 @@ export function BomDrawerProvider({
               label="配料"
               items={components}
               onChange={setComponents}
-              readOnly={m === 'view' || (m !== 'create' && !linesLoaded)}
+              readOnly={m === 'view' || (m !== 'create' && !drawer.detailLoaded)}
               exclude={['bomId']}
               columns={['materialId', 'unitId', 'quantity', 'lossRate', 'note']}
               fields={{
@@ -517,7 +465,7 @@ export function BomDrawerProvider({
               label="工艺路线"
               items={routes}
               onChange={setRoutes}
-              readOnly={m === 'view' || (m !== 'create' && !linesLoaded)}
+              readOnly={m === 'view' || (m !== 'create' && !drawer.detailLoaded)}
               exclude={['bomId']}
               columns={['seq', 'operationId', 'requirement', 'isOutsourced']}
               fields={{
@@ -535,7 +483,7 @@ export function BomDrawerProvider({
                   <Button
                     size="sm"
                     variant="secondary"
-                    isDisabled={!linesLoaded || routes.length > 0}
+                    isDisabled={!drawer.detailLoaded || routes.length > 0}
                     onPress={() => {
                       setTemplateId(null)
                       setTemplatePickerOpen(true)
@@ -566,7 +514,7 @@ export function BomDrawerProvider({
               label="副产品"
               items={byproducts}
               onChange={setByproducts}
-              readOnly={m === 'view' || (m !== 'create' && !linesLoaded)}
+              readOnly={m === 'view' || (m !== 'create' && !drawer.detailLoaded)}
               exclude={['bomId']}
               columns={['materialId', 'unitId', 'quantity', 'note']}
               fields={{
@@ -640,7 +588,6 @@ export function BomDrawerProvider({
             opts?.onCreated?.(created)
             // 抽屉由 onOpenChange(false) 关;此处只清本地 options,避免双写 URL
             setOptions(undefined)
-            loadedBomIdRef.current = null
           } else {
             const bomId = rowId
             if (!bomId) throw new Error('缺少 BOM id,无法更新')

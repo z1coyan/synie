@@ -10,7 +10,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Button, toast } from '@heroui/react'
 import { SynieEditableTable } from '~/components/synie-editable-table/SynieEditableTable'
 import { isLocalRow } from '~/components/synie-editable-table/editable'
-import { useDocItems } from '~/components/synie-editable-table/use-doc-items'
 import { SynieRecordDrawer } from '~/components/synie-record-drawer/SynieRecordDrawer'
 import { drawerConfig } from '~/components/synie-record-drawer/extension-drawer-props'
 import type { DrawerMode } from '~/components/synie-record-drawer/fields'
@@ -27,7 +26,7 @@ import {
   type AuditDocConfig,
 } from '../../scm/-audit-doc'
 import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
-import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
+import { useDocumentDrawer } from '~/lib/use-document-drawer'
 import { SalesItemPicker } from './-sales-item-picker'
 import {
   canGenerateWorkOrder,
@@ -56,7 +55,8 @@ export function useDemandDrawer(): OpenDemandDrawer {
   return useContext(DemandDrawerContext)
 }
 
-// 需求行脚手架（取数/持久化）走共用 useDocItems。
+// 需求行脚手架:取数走骨架 loadDraft(下方 loadDemandItems);
+// 持久化按 snapshot 比对做 删→增→改(见组件内 persistItems)。
 const ITEMS = {
   label: '需求行',
   docIdField: 'demandId',
@@ -80,6 +80,24 @@ const ITEMS = {
     'remarks',
   ] as const,
 }
+
+/** 需求行整单取数:骨架 loadDraft 与行级操作后重拉共用(纯函数,不写 state/ref) */
+const loadDemandItems = (demandId: string): Promise<Row[]> =>
+  demandItemClient
+    .query({
+      limit: 200,
+      offset: 0,
+      filter: {
+        demandId: {
+          kind: 'fk',
+          op: 'in',
+          values: [demandId],
+          labels: [],
+        },
+      },
+      sort: { column: 'idx', direction: 'ascending' },
+    })
+    .then((d) => d.results ?? [])
 
 export const DEMAND_AUDIT_CONFIG = {
   docLabel: '履约需求单',
@@ -131,41 +149,88 @@ export function DemandDrawerProvider({
   children: ReactNode
   urlSync?: boolean
 }) {
-  // URL 源(列表 layout)与本地态二选一;明细始终本地
-  const url = useRecordDrawerUrl('mfgDemands', { enabled: urlSync })
-  const [localDrawer, setLocalDrawer] = useState<{
-    mode: DrawerMode
-    demand: DemandRef | null
-  } | null>(null)
-  const { items, setItems, itemsLoaded, load, persistItems } =
-    useDocItems(ITEMS)
+  // 单据抽屉骨架:双态状态机、URL 身份→整单草稿装载(竞态安全)、深链补拉全部收口进 hook
+  const drawer = useDocumentDrawer<Row[]>({
+    resource: 'mfgDemands',
+    urlSync,
+    loadDraft: loadDemandItems,
+  })
+  const { isOpen, mode, rowId } = drawer
+  // 编辑入口:urlSync 用 URL 自查行 status;本地态用 open 传入行的 status
+  const demandStatus = drawer.row?.status
+  const [items, setItems] = useState<Row[]>([])
+  const [itemsSnapshot, setItemsSnapshot] = useState<Row[]>([])
   const queryClient = useQueryClient()
   const perms = useMyPermissions()
-  // 已为哪张需求单拉过明细;深链 effect 与 openDrawer 去重
-  const loadedIdRef = useRef<string | null>(null)
+  // 行级操作后重拉的竞态守卫:世代随开/关抽屉自增,过期回填丢弃(同骨架语义)
+  const generationRef = useRef(0)
+  generationRef.current = drawer.generation
 
-  const isOpen = urlSync ? url.drawer !== null : localDrawer !== null
-  const mode: DrawerMode = urlSync
-    ? (url.drawer?.mode ?? 'view')
-    : (localDrawer?.mode ?? 'view')
-  const rowId: string | undefined = urlSync
-    ? (url.drawer?.recordId ?? undefined)
-    : localDrawer?.demand?.id != null
-      ? String(localDrawer.demand.id)
-      : undefined
-  // 编辑入口:urlSync 用 hook 自查行 status;本地态用 open 传入的 demand.status
-  const demandStatus = urlSync
-    ? url.row?.status
-    : localDrawer?.demand?.status
+  // 草稿 → 条目状态派生:draft 变化(含关闭/新建清空为 null)时初始化需求行及其保存比对基线
+  useEffect(() => {
+    const rows = drawer.draft ?? []
+    setItems(rows)
+    setItemsSnapshot(rows)
+  }, [drawer.draft, drawer.generation]) // generation 覆盖 create/关闭的 null→null(draft 引用不变也需重置)
 
-  const loadItems = (docId: string | null) => {
-    loadedIdRef.current = docId
-    load(docId)
+  // 提交:删除消失的存量行 → 新建本地行 → 更新变更行;返回逐行错误(空数组 = 全成功)
+  const persistItems = async (demandId: string): Promise<string[]> => {
+    const errors: string[] = []
+    const currentIds = new Set(
+      items.filter((r) => !isLocalRow(r)).map((r) => r.id),
+    )
+
+    for (const old of itemsSnapshot) {
+      if (currentIds.has(old.id)) continue
+      try {
+        await ITEMS.client.delete(old.id)
+      } catch (error) {
+        errors.push(`${String(old.idx ?? '行')}:${(error as Error).message}`)
+      }
+    }
+
+    for (const row of items) {
+      if (isLocalRow(row)) {
+        try {
+          const input = { [ITEMS.docIdField]: demandId, ...ITEMS.itemInput(row) }
+          await ITEMS.client.create(input)
+        } catch (error) {
+          errors.push(`${String(row.idx ?? '行')}:${(error as Error).message}`)
+        }
+        continue
+      }
+      const old = itemsSnapshot.find((s) => s.id === row.id)
+      if (
+        old &&
+        ITEMS.itemKeys.some((k) => String(old[k] ?? '') !== String(row[k] ?? ''))
+      ) {
+        try {
+          await ITEMS.client.update(row.id, ITEMS.itemInput(row))
+        } catch (error) {
+          errors.push(`${String(row.idx ?? '行')}:${(error as Error).message}`)
+        }
+      }
+    }
+    return errors
   }
 
   // 行级操作后重拉抽屉里的需求行（行状态已变）。
   const itemActions = useDemandItemActions(() => {
-    if (rowId) load(rowId)
+    if (!rowId) return
+    const gen = drawer.generation
+    loadDemandItems(rowId).then(
+      (rows) => {
+        if (generationRef.current !== gen) return
+        setItems(rows)
+        setItemsSnapshot(rows)
+      },
+      (e: unknown) => {
+        if (generationRef.current !== gen) return
+        toast.danger(`${ITEMS.label}加载失败`, {
+          description: (e as Error).message,
+        })
+      },
+    )
   })
 
   const canCreateWorkOrder = hasPermission(
@@ -174,35 +239,8 @@ export function DemandDrawerProvider({
   )
 
   const openDrawer: OpenDemandDrawer = (nextMode, demand) => {
-    if (urlSync) {
-      url.open(nextMode, demand?.id != null ? String(demand.id) : null)
-    } else {
-      setLocalDrawer({ mode: nextMode, demand })
-    }
-    if (nextMode === 'create' || !demand) {
-      loadItems(null)
-      return
-    }
-    loadItems(String(demand.id))
+    drawer.open(nextMode, demand)
   }
-
-  // 深链/前进后退:URL 驱动打开时 openDrawer 未走,按 recordId 补拉明细
-  useEffect(() => {
-    if (!urlSync) return
-    const d = url.drawer
-    if (!d) {
-      if (loadedIdRef.current != null) loadItems(null)
-      return
-    }
-    if (d.mode === 'create' || d.recordId == null) {
-      if (loadedIdRef.current != null) loadItems(null)
-      return
-    }
-    if (loadedIdRef.current !== d.recordId) {
-      loadItems(d.recordId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 URL 抽屉身份变化时响应
-  }, [urlSync, url.drawer?.recordId, url.drawer?.mode])
 
   const draftOnly =
     mode === 'create' || !demandStatus || demandStatus === 'DRAFT'
@@ -230,28 +268,17 @@ export function DemandDrawerProvider({
         mode={mode}
         isOpen={isOpen}
         onOpenChange={(open) => {
-          if (open) return
-          if (urlSync) url.close()
-          else setLocalDrawer(null)
-          loadedIdRef.current = null
+          if (!open) drawer.close()
         }}
         rowId={rowId}
         onEdit={
-          demandStatus === 'DRAFT'
-            ? () => {
-                if (urlSync) url.setMode('edit')
-                else
-                  setLocalDrawer((current) =>
-                    current ? { ...current, mode: 'edit' } : current,
-                  )
-              }
-            : undefined
+          demandStatus === 'DRAFT' ? () => drawer.setMode('edit') : undefined
         }
         extraContent={(m, row, values) => {
           const editable =
             m !== 'view' &&
             (!row || row.status === 'DRAFT') &&
-            (m === 'create' || itemsLoaded)
+            (m === 'create' || drawer.detailLoaded)
           // create 态公司取自表单草稿，edit/view 态取自行数据。
           const companyId = (row?.companyId ?? values.companyId) as
             | string
