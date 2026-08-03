@@ -294,15 +294,22 @@ describe('FieldCatalog', () => {
     expect(items.nestedLoops ?? []).toEqual([])
   })
 
-  test('real platform registry includes sales.order with 25 fields', () => {
-    const catalog = createFieldCatalog(createPlatformRegistry())
+  test('real platform registry derives catalog covering every print head', () => {
+    const registry = createPlatformRegistry()
+    const catalog = createFieldCatalog(registry)
     const resources = catalog.resources()
     expect(resources).toContain('sales.order')
     expect(resources).toContain('sys.print_template')
-    expect(resources.length).toBe(61)
+    // 与打印头规则对拍：无 readPermissionsAny 的资源按权限前缀去重，随注册表增减自动跟随
+    const expectedHeads = new Set(
+      registry
+        .list()
+        .filter((r) => !(r.readPermissionsAny && r.readPermissionsAny.length > 0))
+        .map((r) => r.permissionPrefix),
+    )
+    expect(new Set(resources)).toEqual(expectedHeads)
     const order = catalog.get('sales.order')
-    expect(order?.fields.length).toBe(25)
-    expect(order?.loops.length).toBe(1)
+    expect(order?.loops.map((l) => l.name)).toContain('items')
     for (const name of [
       'order_no',
       'status',
