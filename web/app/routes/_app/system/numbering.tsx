@@ -73,10 +73,10 @@ function NumberingPage() {
   const [countersSnapshot, setCountersSnapshot] = useState<Row[]>([])
   const queryClient = useQueryClient()
   const guard = useRequestGuard()
-  const { binding, client, formProps } = useCatalogBasicForm(RESOURCE, '编号规则')
+  const { binding, formProps } = useCatalogBasicForm(RESOURCE, '编号规则')
 
   const numberables = useQuery({
-    queryKey: ['numberableResources', client.id],
+    queryKey: ['numberableResources', binding.cache.adapterId],
     queryFn: listNumberableResources,
     staleTime: 5 * 60_000,
   })

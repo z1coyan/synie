@@ -2,13 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import {
   createCommandAdapter,
   createRowCommandAdapter,
-  decodeBulkTarget,
   decodeCollectionTarget,
-  decodeRowOrBulkTarget,
   decodeRowTarget,
   defineCommand,
 } from './commands'
-import { bindingFromResourceTransport } from './binding-registry'
+import { bindingFromResourceTransport } from './binding'
 import type { QueryInvalidationAdapter } from './query-cache'
 import type { ResourceBinding } from './types'
 import { executeSingleRowCommandWithInvalidation } from '../command-invalidation'
@@ -51,19 +49,6 @@ describe('Command target 解码 fail-closed', () => {
     expect(() => decodeRowTarget({ id: '' })).toThrow(/非空/)
     expect(() => decodeRowTarget(null)).toThrow(/对象/)
     expect(() => decodeRowTarget({})).toThrow(/非空/)
-  })
-
-  test('bulk：非空 ids；空数组失败', () => {
-    expect(decodeBulkTarget({ ids: ['a', 'b'] })).toEqual(['a', 'b'])
-    expect(() => decodeBulkTarget({ ids: [] })).toThrow(/不可为空/)
-    expect(() => decodeBulkTarget({ id: 'a' })).toThrow(/非空 ids/)
-    expect(() => decodeBulkTarget({})).toThrow(/非空 ids/)
-  })
-
-  test('rowOrBulk：至少一个 id', () => {
-    expect(decodeRowOrBulkTarget({ id: 'x' })).toEqual(['x'])
-    expect(decodeRowOrBulkTarget({ ids: ['x'] })).toEqual(['x'])
-    expect(() => decodeRowOrBulkTarget({ ids: [] })).toThrow(/不可为空/)
   })
 
   test('collection：不接受伪造记录 target；允许领域 payload', () => {

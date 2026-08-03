@@ -5,10 +5,6 @@
 import type { CommandAdapter, CommandMap, CommandSpec, CommandTarget } from './types'
 
 export type RowCommandInput = { id: string }
-/** bulk：非空 ID 集合 */
-export type BulkCommandInput = { ids: string[] }
-/** rowOrBulk：至少一个 ID（恰好一个时等价 row） */
-export type RowOrBulkCommandInput = { ids: string[] }
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -33,36 +29,6 @@ export function decodeRowTarget(input: unknown): string {
     throw new Error('row command 不接受 ids；请传恰好一个 id')
   }
   return asNonEmptyString(input.id, 'row command id')
-}
-
-/**
- * bulk：非空 ID 集合。空数组与非数组均失败。
- */
-export function decodeBulkTarget(input: unknown): string[] {
-  if (!isObject(input)) {
-    throw new Error('bulk command 输入须为对象且包含非空 ids')
-  }
-  if (!Array.isArray(input.ids)) {
-    throw new Error('bulk command 需要非空 ids 数组')
-  }
-  if (input.ids.length === 0) {
-    throw new Error('bulk command 的 ids 不可为空')
-  }
-  return input.ids.map((id, i) => asNonEmptyString(id, `bulk command ids[${i}]`))
-}
-
-/**
- * rowOrBulk：至少一个 ID。
- */
-export function decodeRowOrBulkTarget(input: unknown): string[] {
-  if (!isObject(input)) {
-    throw new Error('rowOrBulk command 输入须为对象且包含非空 ids')
-  }
-  // 兼容单条 { id }
-  if ('id' in input && !('ids' in input)) {
-    return [asNonEmptyString(input.id, 'rowOrBulk command id')]
-  }
-  return decodeBulkTarget(input)
 }
 
 /**

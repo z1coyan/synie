@@ -28,27 +28,16 @@ export {
 export { fetchResourceDocument } from './client'
 export {
   bindingFromResourceTransport,
-  clearBindingsForTests,
-  hasBinding,
-  listBoundResources,
-  registerBinding,
-  registerBindings,
-  replaceBinding,
-  resourceBindingFor,
   resourceTransportFromBinding,
-} from './binding-registry'
+} from './binding'
 export {
   createCommandAdapter,
   createRowCommandAdapter,
-  decodeBulkTarget,
   decodeCollectionTarget,
-  decodeRowOrBulkTarget,
   decodeRowTarget,
   defineCommand,
-  type BulkCommandInput,
   type RowCommandDefinition,
   type RowCommandInput,
-  type RowOrBulkCommandInput,
 } from './commands'
 export { gridMetaFromDocument } from './grid-from-document'
 export { requireWriter } from './require-writer'

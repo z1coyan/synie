@@ -1,13 +1,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import type { ResourceDocument } from '@synie/shared'
 import {
-  clearBindingsForTests,
   clearCatalogCache,
   getCatalogActor,
-  resourceBindingFor,
   setCatalogActor,
   bindingFromResourceTransport,
-  registerBinding,
   resourceTransportFromBinding,
   catalogCacheSize,
   setCachedDocument,
@@ -85,18 +82,11 @@ function inMemoryResourceAdapter(
 describe('Resource Catalog 前端 binding 与缓存', () => {
   beforeEach(() => {
     clearCatalogCache()
-    clearBindingsForTests()
-  })
-
-  test('unknown binding 显式失败', () => {
-    expect(() => resourceBindingFor('noSuchResource')).toThrow(/未注册 ResourceBinding/)
   })
 
   test('known binding 可取得 reader/writer', async () => {
     const client = mockClient()
-    const binding = bindingFromResourceTransport('basCurrencies', client)
-    registerBinding(binding)
-    const got = resourceBindingFor('basCurrencies')
+    const got = bindingFromResourceTransport('basCurrencies', client)
     expect(got.resource).toBe('basCurrencies')
     expect(got.reader).toBeDefined()
     expect(got.writer).toBeDefined()
@@ -190,8 +180,7 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
   test('单位/供应商/公司 binding 闭环 create', async () => {
     for (const resource of ['basUnits', 'purSuppliers', 'basCompanies'] as const) {
       const client = mockClient(`rest:${resource}`)
-      registerBinding(bindingFromResourceTransport(resource, client))
-      const binding = resourceBindingFor(resource)
+      const binding = bindingFromResourceTransport(resource, client)
       expect(binding.resource).toBe(resource)
       expect(binding.writer && 'create' in binding.writer).toBe(true)
       const saved = await binding.writer!.create!({ name: 'x' } as never)
@@ -206,7 +195,6 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
       canUpdate: false,
       canDelete: false,
     })
-    registerBinding(binding)
     const writer = binding.writer as Record<string, unknown> | undefined
     expect(writer && 'create' in writer && writer.create).toBeFalsy()
     expect(writer && 'update' in writer && writer.update).toBeFalsy()
@@ -300,11 +288,10 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
         expect(input.id).toBe('sid')
       }),
     })
-    registerBinding({
+    const got = {
       ...bindingFromResourceTransport('sysStorages', client),
       commands,
-    })
-    const got = resourceBindingFor('sysStorages')
+    }
     expect(got.commands).toBeDefined()
     await got.commands!.execute('setDefault', { id: 'sid' })
     // Writer 仍管 CRUD，不进 commands
@@ -314,29 +301,28 @@ describe('Resource Catalog 前端 binding 与缓存', () => {
 
   test('binding 可挂载 AggregateDraftAdapter；Draft 与 Saved 类型分离', async () => {
     const client = mockClient()
-    registerBinding({
+    const got = {
       ...bindingFromResourceTransport('salDeliveries', client, {
         canCreate: false,
         canUpdate: false,
         canDelete: true,
       }),
       draft: {
-        loadDraft: async (id) => ({ id, items: [{ id: 'i1' }], packBoxes: [] }),
+        loadDraft: async (id: string) => ({ id, items: [{ id: 'i1' }], packBoxes: [] }),
         createDraft: async (input: { companyId: string }) => ({
           id: 'd1',
           companyId: input.companyId,
           items: [],
           packBoxes: [],
         }),
-        replaceDraft: async (id, input: { companyId: string }) => ({
+        replaceDraft: async (id: string, input: { companyId: string }) => ({
           id,
           companyId: input.companyId,
           items: [],
           packBoxes: [],
         }),
       },
-    })
-    const got = resourceBindingFor('salDeliveries')
+    }
     expect(got.draft).toBeDefined()
     expect(got.writer && 'create' in got.writer && (got.writer as { create?: unknown }).create).toBeFalsy()
     const saved = await got.draft!.loadDraft('x')

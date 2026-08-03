@@ -151,8 +151,6 @@ import { unitClient } from './units'
 import type { ResourceTransport } from './types'
 import {
   bindingFromResourceTransport,
-  registerBinding,
-  replaceBinding,
   resourceTransportFromBinding,
   type CommandAdapter,
   type AggregateDraftAdapter,
@@ -339,13 +337,11 @@ for (const [resource, transport] of Object.entries(transports)) {
     ...(draft ? { draft } : {}),
   }
   productionBindings.set(resource, productionBinding)
-  registerBinding(productionBinding)
 }
 
 /**
  * 类型安全 ResourceBinding 入口（唯一资源解析）。未知资源显式失败。
- * 纯读路径，无副作用；测试在 clearBindingsForTests 后如需把生产 binding
- * 恢复到 Catalog 注册表，应显式调用 restoreProductionBindingsForTests。
+ * 纯读路径，无副作用；生产与测试共读本注册表。
  */
 export function resourceBindingFor(resource: string): ResourceBinding {
   const binding = productionBindings.get(resource)
@@ -353,16 +349,6 @@ export function resourceBindingFor(resource: string): ResourceBinding {
     throw new Error(`资源「${resource}」未注册 ResourceBinding`)
   }
   return binding
-}
-
-/**
- * 测试专用：clearBindingsForTests 清空 Catalog 注册表后，
- * 把模块装配时创建的全部生产 binding 显式恢复回去。
- */
-export function restoreProductionBindingsForTests(): void {
-  for (const binding of productionBindings.values()) {
-    replaceBinding(binding)
-  }
 }
 
 /** 已注册 Aggregate Draft 的类型恢复入口；未知或漏挂能力显式失败。 */

@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  resolveSource,
-  listRemoteDefaultKeys,
-} from '~/components/synie-remote-select/remote-query'
+import { resolveSource } from '~/components/synie-remote-select/remote-query'
 import {
   listResourceBindingKeys,
   resourceBindingFor,
@@ -260,8 +257,7 @@ describe('生产 ResourceBinding interface 契约', () => {
     ).toEqual(['rowById', 'rest:salDeliveries', 'salDeliveries', 'delivery-1'])
   })
 
-  test('远程选择器不维护第二份默认表，未知资源 fail-closed', () => {
-    expect(listRemoteDefaultKeys()).toEqual([])
+  test('远程选择器未知资源 fail-closed', () => {
     expect(resolveSource({})).toBeNull()
     expect(() => resourceBindingFor('__missing_resource__')).toThrow(
       /未注册 ResourceBinding/,

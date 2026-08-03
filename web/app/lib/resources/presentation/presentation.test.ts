@@ -4,13 +4,7 @@
  */
 import { describe, expect, test } from 'bun:test'
 import type { ResourceDocument } from '@synie/shared'
-import {
-  bindingFromResourceTransport,
-  clearBindingsForTests,
-  registerBinding,
-  replaceBinding,
-  resourceBindingFor,
-} from '../catalog'
+import { bindingFromResourceTransport } from '../catalog'
 import type { AggregateDraftAdapter, ResourceBinding } from '../catalog/types'
 import type { ResourceClient } from '../types'
 import {
@@ -65,15 +59,11 @@ function extensionDoc(name: string, label: string): ResourceDocument {
 
 describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
   test('发票 PE：OCR seam 共置；ResourceDocument 不含可执行代码', () => {
-    clearBindingsForTests()
-    registerBinding(
+    const pe = createInvoicePresentation(
       bindingFromResourceTransport(
         VAT_INVOICE_RESOURCE,
         mockClient(VAT_INVOICE_RESOURCE),
       ),
-    )
-    const pe = createInvoicePresentation(
-      resourceBindingFor(VAT_INVOICE_RESOURCE),
     )
     expect(pe.kind).toBe('extension')
     expect(pe.resource).toBe(VAT_INVOICE_RESOURCE)
@@ -92,25 +82,11 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
   })
 
   test('员工 PE：身份证影像 extraContent；物料 PE：tabs+effects 静态面', () => {
-    clearBindingsForTests()
-    registerBinding(
+    const emp = createEmployeePresentation(
       bindingFromResourceTransport(
         EMPLOYEE_RESOURCE,
         mockClient(EMPLOYEE_RESOURCE),
       ),
-    )
-    registerBinding(
-      bindingFromResourceTransport(
-        MATERIAL_RESOURCE,
-        mockClient(MATERIAL_RESOURCE),
-      ),
-    )
-    registerBinding(
-      bindingFromResourceTransport('basAccounts', mockClient('basAccounts')),
-    )
-
-    const emp = createEmployeePresentation(
-      resourceBindingFor(EMPLOYEE_RESOURCE),
     )
     expect(emp.kind).toBe('extension')
     expect(typeof emp.extraContent).toBe('function')
@@ -122,7 +98,10 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
     expect(emp.fields.code?.edit).toBeUndefined()
 
     const mat = createMaterialPresentation(
-      resourceBindingFor(MATERIAL_RESOURCE),
+      bindingFromResourceTransport(
+        MATERIAL_RESOURCE,
+        mockClient(MATERIAL_RESOURCE),
+      ),
     )
     expect(mat.kind).toBe('extension')
     expect(mat.tabs.map((t) => t.key)).toEqual(['basic', 'units'])
@@ -132,14 +111,15 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
       active: { kind: 'bool', eq: true },
     })
 
-    const acc = createAccountPresentation(resourceBindingFor('basAccounts'))
+    const acc = createAccountPresentation(
+      bindingFromResourceTransport('basAccounts', mockClient('basAccounts')),
+    )
     expect(acc.kind).toBe('extension')
     expect(typeof acc.fields.isGroup?.effects).toBe('function')
     expect(typeof acc.fields.role?.visible).toBe('function')
   })
 
   test('销售发货 binding：拥有 AggregateDraftAdapter，表单不暴露 RecordWriter create/update', () => {
-    clearBindingsForTests()
     const client = mockClient('salDeliveries')
     // 与 registry 一致：无 create/update writer，挂 draft
     const base = bindingFromResourceTransport('salDeliveries', client, {
@@ -176,9 +156,7 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
         packBoxes: [],
       }),
     }
-    registerBinding({ ...base, draft })
-
-    const binding = resourceBindingFor('salDeliveries')
+    const binding: ResourceBinding = { ...base, draft }
     expect(binding.draft).toBeDefined()
     expect(
       binding.writer &&
@@ -206,15 +184,13 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
   })
 
   test('所有权分离：Catalog 不持 Adapter；PE 持 binding；Adapter 不声明 form.kind', () => {
-    clearBindingsForTests()
     const binding: ResourceBinding = {
       ...bindingFromResourceTransport(
         EMPLOYEE_RESOURCE,
         mockClient(EMPLOYEE_RESOURCE),
       ),
     }
-    registerBinding(binding)
-    const pe = createEmployeePresentation(resourceBindingFor(EMPLOYEE_RESOURCE))
+    const pe = createEmployeePresentation(binding)
 
     // Catalog 文档无 transport
     const catalog = extensionDoc(EMPLOYEE_RESOURCE, '员工')
@@ -229,12 +205,5 @@ describe('Presentation Extension 与 AggregateDraftAdapter 契约', () => {
     // Adapter 是 transport，不是 Meta
     expect(salesDeliveryDraftAdapter).not.toHaveProperty('form')
     expect(salesDeliveryDraftAdapter).not.toHaveProperty('schemaVersion')
-
-    // replaceBinding 可覆盖 draft 而不改 Catalog
-    replaceBinding({
-      ...resourceBindingFor(EMPLOYEE_RESOURCE),
-      draft: undefined,
-    })
-    expect(resourceBindingFor(EMPLOYEE_RESOURCE).draft).toBeUndefined()
   })
 })

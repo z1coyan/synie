@@ -1,6 +1,7 @@
 /**
- * ResourceBinding 注册表：known key 恢复类型；unknown 显式失败。
- * contract 后 binding 是唯一资源→Adapter 关联；无独立 ResourceClient registry 入口。
+ * ResourceBinding 构造与适配：known key 恢复类型；unknown 显式失败（在 registry.ts）。
+ * contract 后 binding 是唯一资源→Adapter 关联；唯一注册表为 ../registry.ts 的
+ * productionBindings，本文件不再持有任何可变注册状态。
  */
 import type { ResourceDocument } from '@synie/shared'
 import type { Row } from '~/components/synie-data-grid/types'
@@ -12,8 +13,6 @@ import type {
   RecordWriter,
 } from './types'
 import { createResourceQueryCache } from './query-cache'
-
-const bindings = new Map<string, ResourceBinding>()
 
 /**
  * 从传输实现生成 ResourceBinding。
@@ -69,46 +68,6 @@ export function bindingFromResourceTransport(
     writer,
     loadDocument: () => fetchResourceDocument(resource),
   }
-}
-
-export function registerBinding(binding: ResourceBinding): void {
-  if (bindings.has(binding.resource)) {
-    throw new Error(`重复 ResourceBinding: ${binding.resource}`)
-  }
-  bindings.set(binding.resource, binding)
-}
-
-/** 覆盖已注册 binding（挂语义 CommandAdapter / draft） */
-export function replaceBinding(binding: ResourceBinding): void {
-  bindings.set(binding.resource, binding)
-}
-
-export function registerBindings(items: ResourceBinding[]): void {
-  for (const item of items) registerBinding(item)
-}
-
-/**
- * 按资源键取 binding；未知键显式失败（禁止空 drawer / label fallback）。
- */
-export function resourceBindingFor(resource: string): ResourceBinding {
-  const binding = bindings.get(resource)
-  if (!binding) {
-    throw new Error(`资源「${resource}」未注册 ResourceBinding`)
-  }
-  return binding
-}
-
-export function hasBinding(resource: string): boolean {
-  return bindings.has(resource)
-}
-
-export function listBoundResources(): string[] {
-  return [...bindings.keys()].sort()
-}
-
-/** 测试用 */
-export function clearBindingsForTests(): void {
-  bindings.clear()
 }
 
 /**

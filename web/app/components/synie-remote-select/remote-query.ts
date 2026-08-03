@@ -92,11 +92,6 @@ export function defaultReferenceRenderers(resource: string, labelField?: string)
   }
 }
 
-/** 基线报告：remote defaults 键（应为空） */
-export function listRemoteDefaultKeys(): string[] {
-  return []
-}
-
 /** fk 目标解析：多态 fk 按行判别值选变体，普通 fk 取自身资源配置。 */
 export function resolveFkTarget(ref: GridColumnRef, row: Row): { resource: string; labelField: string } | null {
   if (ref.discriminator) {

@@ -2,13 +2,12 @@
  * Catalog Basic Form 页面接线：document + drawer props + binding。
  * basic 资源页面应经本 hook 取表单事实，禁止再手写 required/edit/placeholder。
  */
-import { resourceBindingFor, resourceTransportFor } from '../registry'
+import { resourceBindingFor } from '../registry'
 import { basicFormDrawerProps, type BasicFormDrawerProps } from './basic-form'
 import { useResourceDocument } from './use-resource-document'
 
 export function useCatalogBasicForm(resource: string, fallbackLabel?: string) {
   const binding = resourceBindingFor(resource)
-  const client = resourceTransportFor(resource)
   const documentQuery = useResourceDocument(resource)
   const formProps: BasicFormDrawerProps = documentQuery.data
     ? basicFormDrawerProps(documentQuery.data)
@@ -20,7 +19,6 @@ export function useCatalogBasicForm(resource: string, fallbackLabel?: string) {
 
   return {
     binding,
-    client,
     formProps,
   }
 }
