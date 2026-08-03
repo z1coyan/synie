@@ -37,7 +37,8 @@ bun run db:codegen          # 从开发库重新生成 src/db/types.d.ts
 
 ```
 src/
-├── index.ts            # 入口：env → db → 依赖装配 → Bun.serve
+├── index.ts            # 入口：env → db → auth/registry → composition 装配 → Bun.serve
+├── composition.ts      # 服务装配组合根（生产与测试共用，全量服务图唯一来源）
 ├── app.ts              # Hono 装配 + ApiType（hc 类型源）
 ├── client.ts           # hono/client 工厂（web/e2e/测试共用）
 ├── env.ts              # zod 解析的环境配置
@@ -60,7 +61,7 @@ db/
 
 1. **惯用 TS，拒绝机械 1:1 翻译**：模块用 **工厂闭包**（`createXxx(deps) => ({...})`），
    不用 class（异常：`ApiError extends Error`）；数据形状用 interface/type；
-   依赖显式注入，禁止全局单例（registry/db 由 index.ts 装配）。
+   依赖显式注入，禁止全局单例（registry/db 由 index.ts 入口创建，服务图由 composition.ts 装配）。
 2. **金额纪律**：计算只走 `@synie/shared` 的 decimal；`number` 出现金额即评审驳回。
 3. **事务纪律**：两层规则——service 入口自起事务（`withTx` 是唯一产生 `TrxHandle`
    的地方）；读路径函数接 `DbHandle`；事实引擎的**写方法只收 `TrxHandle`**

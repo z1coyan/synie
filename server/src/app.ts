@@ -114,8 +114,6 @@ export interface AppDeps {
   units: UnitService
   accounts: AccountService
   market: MarketService
-  /** @deprecated 使用 market */
-  marketInstruments?: MarketService
   iam: IamService
   customers: CustomerService
   suppliers: SupplierService
@@ -179,9 +177,6 @@ const accessLog: MiddlewareHandler<AppEnv> = async (c, next) => {
 }
 
 export function buildApp(deps: AppDeps) {
-  const market = deps.market ?? deps.marketInstruments
-  if (!market) throw new Error('AppDeps.market 未装配')
-
   const app = new Hono<AppEnv>()
     .basePath('/api/v1')
     .use('*', requestId())
@@ -225,14 +220,14 @@ export function buildApp(deps: AppDeps) {
       '/base/market-instruments',
       marketInstrumentRoutes({
         auth: deps.auth,
-        market,
+        market: deps.market,
       }),
     )
     .route(
       '/base/market-price-points',
       marketPricePointRoutes({
         auth: deps.auth,
-        market,
+        market: deps.market,
       }),
     )
     .route('/system/users', iamUserRoutes({ auth: deps.auth, iam: deps.iam }))
