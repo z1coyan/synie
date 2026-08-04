@@ -117,6 +117,8 @@ export function createBetterAuth(deps: {
     secret: deps.secret,
     telemetry: { enabled: false },
     database: { db: deps.db, type: 'postgres' },
+    // OAuth/回调失败不落 better-auth 默认 HTML 错误页，回登录页由前端 toast 展示
+    onAPIError: { errorURL: '/login' },
     advanced: {
       cookiePrefix: 'synie',
       // Vite 代理 / 反代：按 x-forwarded-host 还原浏览器入口，避免 redirect_uri 落到 :8080

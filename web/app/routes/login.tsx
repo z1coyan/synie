@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -12,11 +12,23 @@ import {
 } from '@heroui/react'
 import { AppearanceSwitch } from '~/components/appearance-switch'
 import { meEnsureQuery } from '~/lib/api/session'
-import { authClient, signInErrorMessage } from '~/lib/auth-client'
+import { authClient, oauthErrorMessage, signInErrorMessage } from '~/lib/auth-client'
 import { clearCatalogCache } from '~/lib/resources/catalog'
 import { fetchSetupStatus, setupStatusEnsureQuery } from '~/lib/setup'
 
+type LoginSearch = {
+  error?: string
+  error_description?: string
+}
+
 export const Route = createFileRoute('/login')({
+  validateSearch: (search: Record<string, unknown>): LoginSearch => ({
+    error: typeof search.error === 'string' && search.error ? search.error : undefined,
+    error_description:
+      typeof search.error_description === 'string' && search.error_description
+        ? search.error_description
+        : undefined,
+  }),
   beforeLoad: async ({ context: { queryClient } }) => {
     // 未初始化:登录页让位给初始化向导(向导第 1 步自带登录续作);查询失败 fail-open
     const status = await queryClient
@@ -33,9 +45,19 @@ export const Route = createFileRoute('/login')({
 function LoginPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { error: oauthError, error_description: oauthErrorDescription } = Route.useSearch()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+
+  // OAuth 回调失败:服务端 302 回 /login?error=…,在登录页 toast 后清 query 防刷新重复弹
+  useEffect(() => {
+    if (!oauthError) return
+    toast.danger('登录失败', {
+      description: oauthErrorMessage(oauthError, oauthErrorDescription),
+    })
+    void navigate({ to: '/login', search: {}, replace: true })
+  }, [oauthError, oauthErrorDescription, navigate])
 
   // 门控(未初始化/已登录弹回)已上移 beforeLoad;此查询只为 logtoEnabled 展示
   const { data: setupStatus } = useQuery({ queryKey: ['setupStatus'], queryFn: fetchSetupStatus })
@@ -67,6 +89,8 @@ function LoginPage() {
       const { error } = await authClient.signIn.oauth2({
         providerId: 'logto',
         callbackURL: '/',
+        // 与服务端 onAPIError.errorURL 一致:失败回登录页而非 /api/v1/auth/error
+        errorCallbackURL: '/login',
       })
       if (error) throw new Error(error.message || '请稍后再试')
     },
