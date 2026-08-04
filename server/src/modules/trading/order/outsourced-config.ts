@@ -8,6 +8,13 @@ import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
 import { withTx, type DbHandle, type TrxHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
+import {
+  auditCreated,
+  auditDestroyed,
+  auditDiff,
+  writeAudit,
+} from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
@@ -22,6 +29,10 @@ import {
   wireRequiredDecimal,
 } from '../common.ts'
 import { orderByproductMeta, orderMaterialMeta } from './spec.ts'
+
+const MATERIAL_AUDIT = auditFieldsOf(orderMaterialMeta())
+
+const BYPRODUCT_AUDIT = auditFieldsOf(orderByproductMeta())
 
 export interface OutsourcedDraftLineInput {
   id?: string
@@ -161,7 +172,17 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
       JOIN bas_unit u ON u.id=m.unit_id
       WHERE m.id=${id}::uuid
     `.execute(trx)
-    return mapMaterial(rows.rows[0]!)
+    const dto = mapMaterial(rows.rows[0]!)
+    await writeAudit(trx, actor, {
+      resource: 'pur_order_item_material',
+      recordId: dto.id,
+      recordLabel: dto.materialCode,
+      companyId: dto.companyId,
+      actionType: 'create',
+      actionName: 'create',
+      changes: auditCreated(materialSnap(dto), MATERIAL_AUDIT),
+    })
+    return dto
   })
 }
 
@@ -212,7 +233,20 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
       JOIN bas_unit u ON u.id=m.unit_id
       WHERE m.id=${id}::uuid
     `.execute(trx)
-    return mapMaterial(rows.rows[0]!)
+    const dto = mapMaterial(rows.rows[0]!)
+    const changes = auditDiff(materialSnap(before), materialSnap(dto), MATERIAL_AUDIT)
+    if (Object.keys(changes).length > 0) {
+      await writeAudit(trx, actor, {
+        resource: 'pur_order_item_material',
+        recordId: dto.id,
+        recordLabel: dto.materialCode,
+        companyId: dto.companyId,
+        actionType: 'update',
+        actionName: 'update',
+        changes,
+      })
+    }
+    return dto
   })
 }
 
@@ -224,6 +258,17 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     `.execute(trx)
     if (!cur.rows[0]) throw new ApiError('not_found', '发料清单行不存在')
     await lockPurchaseItemParent(trx, actor, cur.rows[0].order_item_id)
+    const before = (await loadIssueLines(trx, 'id', id))[0]
+    if (!before) throw new ApiError('not_found', '发料清单行不存在')
+    await writeAudit(trx, actor, {
+      resource: 'pur_order_item_material',
+      recordId: before.id,
+      recordLabel: before.materialCode,
+      companyId: before.companyId,
+      actionType: 'destroy',
+      actionName: 'destroy',
+      changes: auditDestroyed(materialSnap(before), MATERIAL_AUDIT),
+    })
     await sql`DELETE FROM pur_order_item_material WHERE id=${id}::uuid`.execute(trx)
   })
 }
@@ -310,7 +355,17 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
       JOIN bas_unit u ON u.id=b.unit_id
       WHERE b.id=${id}::uuid
     `.execute(trx)
-    return mapByproduct(rows.rows[0]!)
+    const dto = mapByproduct(rows.rows[0]!)
+    await writeAudit(trx, actor, {
+      resource: 'pur_order_item_byproduct',
+      recordId: dto.id,
+      recordLabel: dto.materialCode,
+      companyId: dto.companyId,
+      actionType: 'create',
+      actionName: 'create',
+      changes: auditCreated(byproductSnap(dto), BYPRODUCT_AUDIT),
+    })
+    return dto
   })
 }
 
@@ -345,7 +400,22 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
         updated_at=(now() AT TIME ZONE 'utc')
       WHERE id=${id}::uuid
     `.execute(trx)
-    return getByproduct(actor, id)
+    // 事务内重读：审计 diff 与返回值都取更新后权威状态
+    const dto = (await loadByproductLines(trx, 'id', id))[0]
+    if (!dto) throw new ApiError('not_found', '副产物清单行不存在')
+    const changes = auditDiff(byproductSnap(before), byproductSnap(dto), BYPRODUCT_AUDIT)
+    if (Object.keys(changes).length > 0) {
+      await writeAudit(trx, actor, {
+        resource: 'pur_order_item_byproduct',
+        recordId: dto.id,
+        recordLabel: dto.materialCode,
+        companyId: dto.companyId,
+        actionType: 'update',
+        actionName: 'update',
+        changes,
+      })
+    }
+    return dto
   })
 }
 
@@ -357,6 +427,17 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     `.execute(trx)
     if (!cur.rows[0]) throw new ApiError('not_found', '副产物清单行不存在')
     await lockPurchaseItemParent(trx, actor, cur.rows[0].order_item_id)
+    const before = (await loadByproductLines(trx, 'id', id))[0]
+    if (!before) throw new ApiError('not_found', '副产物清单行不存在')
+    await writeAudit(trx, actor, {
+      resource: 'pur_order_item_byproduct',
+      recordId: before.id,
+      recordLabel: before.materialCode,
+      companyId: before.companyId,
+      actionType: 'destroy',
+      actionName: 'destroy',
+      changes: auditDestroyed(byproductSnap(before), BYPRODUCT_AUDIT),
+    })
     await sql`DELETE FROM pur_order_item_byproduct WHERE id=${id}::uuid`.execute(trx)
   })
 }
@@ -525,6 +606,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
 
     await replaceDraftLineKind(
       trx,
+      actor,
       'issue',
       orderItemId,
       parent.companyId,
@@ -532,6 +614,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     )
     await replaceDraftLineKind(
       trx,
+      actor,
       'byproduct',
       orderItemId,
       parent.companyId,
@@ -565,21 +648,19 @@ type DraftLineKind = 'issue' | 'byproduct'
 
 async function replaceDraftLineKind(
   trx: TrxHandle,
+  actor: Actor,
   kind: DraftLineKind,
   orderItemId: string,
   companyId: string,
   input: OutsourcedDraftLineInput[],
 ): Promise<void> {
-  const existing = kind === 'issue'
-    ? await sql<{ id: string }>`
-        SELECT id FROM pur_order_item_material
-        WHERE order_item_id=${orderItemId}::uuid
-      `.execute(trx)
-    : await sql<{ id: string }>`
-        SELECT id FROM pur_order_item_byproduct
-        WHERE order_item_id=${orderItemId}::uuid
-      `.execute(trx)
-  const existingIds = new Set(existing.rows.map((line) => line.id))
+  const resource = kind === 'issue' ? 'pur_order_item_material' : 'pur_order_item_byproduct'
+  const allowed = kind === 'issue' ? MATERIAL_AUDIT : BYPRODUCT_AUDIT
+  const existingLines = kind === 'issue'
+    ? await loadIssueLines(trx, 'order_item_id', orderItemId)
+    : await loadByproductLines(trx, 'order_item_id', orderItemId)
+  const existingById = new Map(existingLines.map((line) => [line.id, line]))
+  const existingIds = new Set(existingById.keys())
   const seenIds = new Set<string>()
   const seenMaterialUnits = new Set<string>()
   const fields: Record<string, string[]> = {}
@@ -626,37 +707,61 @@ async function replaceDraftLineKind(
   const requestedIds = new Set(
     input.flatMap((line) => (line.id === undefined ? [] : [line.id])),
   )
-  for (const id of existingIds) {
-    if (requestedIds.has(id)) continue
+  for (const line of existingLines) {
+    if (requestedIds.has(line.id)) continue
+    await writeAudit(trx, actor, {
+      resource,
+      recordId: line.id,
+      recordLabel: line.materialCode,
+      companyId: line.companyId,
+      actionType: 'destroy',
+      actionName: 'destroy',
+      changes: auditDestroyed(lineSnap(kind, line), allowed),
+    })
     if (kind === 'issue') {
-      await sql`DELETE FROM pur_order_item_material WHERE id=${id}::uuid`.execute(trx)
+      await sql`DELETE FROM pur_order_item_material WHERE id=${line.id}::uuid`.execute(trx)
     } else {
-      await sql`DELETE FROM pur_order_item_byproduct WHERE id=${id}::uuid`.execute(trx)
+      await sql`DELETE FROM pur_order_item_byproduct WHERE id=${line.id}::uuid`.execute(trx)
     }
   }
 
   for (const line of input) {
     const quantity = wireRequiredDecimal(decimal(line.quantity))
     if (line.id === undefined) {
+      let createdId: string
       if (kind === 'issue') {
-        await sql`
+        const ins = await sql<{ id: string }>`
           INSERT INTO pur_order_item_material (
             quantity,remarks,order_item_id,company_id,material_id,unit_id
           ) VALUES (
             ${quantity},${line.remarks ?? null},${orderItemId}::uuid,${companyId}::uuid,
             ${line.materialId}::uuid,${line.unitId}::uuid
-          )
+          ) RETURNING id
         `.execute(trx)
+        createdId = ins.rows[0]!.id
       } else {
-        await sql`
+        const ins = await sql<{ id: string }>`
           INSERT INTO pur_order_item_byproduct (
             quantity,remarks,order_item_id,company_id,material_id,unit_id
           ) VALUES (
             ${quantity},${line.remarks ?? null},${orderItemId}::uuid,${companyId}::uuid,
             ${line.materialId}::uuid,${line.unitId}::uuid
-          )
+          ) RETURNING id
         `.execute(trx)
+        createdId = ins.rows[0]!.id
       }
+      const created = kind === 'issue'
+        ? (await loadIssueLines(trx, 'id', createdId))[0]!
+        : (await loadByproductLines(trx, 'id', createdId))[0]!
+      await writeAudit(trx, actor, {
+        resource,
+        recordId: created.id,
+        recordLabel: created.materialCode,
+        companyId: created.companyId,
+        actionType: 'create',
+        actionName: 'create',
+        changes: auditCreated(lineSnap(kind, created), allowed),
+      })
       continue
     }
     if (kind === 'issue') {
@@ -675,6 +780,22 @@ async function replaceDraftLineKind(
           updated_at=(now() AT TIME ZONE 'utc')
         WHERE id=${line.id}::uuid
       `.execute(trx)
+    }
+    const before = existingById.get(line.id)!
+    const after = kind === 'issue'
+      ? (await loadIssueLines(trx, 'id', line.id))[0]!
+      : (await loadByproductLines(trx, 'id', line.id))[0]!
+    const changes = auditDiff(lineSnap(kind, before), lineSnap(kind, after), allowed)
+    if (Object.keys(changes).length > 0) {
+      await writeAudit(trx, actor, {
+        resource,
+        recordId: after.id,
+        recordLabel: after.materialCode,
+        companyId: after.companyId,
+        actionType: 'update',
+        actionName: 'update',
+        changes,
+      })
     }
   }
 
@@ -710,6 +831,76 @@ async function lockPurchaseItemParent(
     status: row.status,
   }
 }
+/** 事务内权威重读（无权限门）：审计 before/after 快照与 delete 留痕共用 */
+async function loadIssueLines(
+  handle: DbHandle,
+  col: 'id' | 'order_item_id',
+  value: string,
+): Promise<OutsourcedSavedIssueLine[]> {
+  const rows = await sql<Record<string, unknown>>`
+    SELECT m.id,m.quantity,m.issued_qty,m.remarks,m.inserted_at,m.updated_at,m.order_item_id,
+      m.company_id,m.material_id,mat.code AS material_code,mat.name AS material_name,
+      mat.spec AS material_spec,m.unit_id,u.name AS unit_name,
+      o.order_no,o.status AS order_status,o.is_outsourced AS order_is_outsourced,
+      o.party_type,o.party_id,(m.quantity - m.issued_qty) AS remaining_issue_qty
+    FROM pur_order_item_material m
+    JOIN pur_order_item oi ON oi.id=m.order_item_id
+    JOIN pur_order o ON o.id=oi.order_id
+    JOIN inv_material mat ON mat.id=m.material_id
+    JOIN bas_unit u ON u.id=m.unit_id
+    WHERE ${sql.raw(col === 'id' ? 'm.id' : 'm.order_item_id')}=${value}::uuid
+    ORDER BY m.inserted_at, m.id
+  `.execute(handle)
+  return rows.rows.map(mapMaterial)
+}
+
+async function loadByproductLines(
+  handle: DbHandle,
+  col: 'id' | 'order_item_id',
+  value: string,
+): Promise<OutsourcedSavedLine[]> {
+  const rows = await sql<Record<string, unknown>>`
+    SELECT b.id,b.quantity,b.remarks,b.inserted_at,b.updated_at,b.order_item_id,b.company_id,
+      b.material_id,mat.code AS material_code,mat.name AS material_name,
+      mat.spec AS material_spec,b.unit_id,u.name AS unit_name
+    FROM pur_order_item_byproduct b
+    JOIN inv_material mat ON mat.id=b.material_id
+    JOIN bas_unit u ON u.id=b.unit_id
+    WHERE ${sql.raw(col === 'id' ? 'b.id' : 'b.order_item_id')}=${value}::uuid
+    ORDER BY b.inserted_at, b.id
+  `.execute(handle)
+  return rows.rows.map(mapByproduct)
+}
+
+function materialSnap(line: OutsourcedSavedIssueLine): Record<string, unknown> {
+  return {
+    quantity: line.quantity,
+    issued_qty: line.issuedQty,
+    remarks: line.remarks,
+    order_item_id: line.orderItemId,
+    company_id: line.companyId,
+    material_id: line.materialId,
+    unit_id: line.unitId,
+  }
+}
+
+function byproductSnap(line: OutsourcedSavedLine): Record<string, unknown> {
+  return {
+    quantity: line.quantity,
+    remarks: line.remarks,
+    order_item_id: line.orderItemId,
+    company_id: line.companyId,
+    material_id: line.materialId,
+    unit_id: line.unitId,
+  }
+}
+
+function lineSnap(kind: DraftLineKind, line: OutsourcedSavedLine): Record<string, unknown> {
+  return kind === 'issue'
+    ? materialSnap(line as OutsourcedSavedIssueLine)
+    : byproductSnap(line)
+}
+
 function mapMaterial(row: Record<string, unknown>): OutsourcedSavedIssueLine {
   return {
     id: String(row.id),

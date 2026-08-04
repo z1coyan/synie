@@ -74,6 +74,10 @@ const ITEM_AUDIT = mergeAuditFields(
   ),
 )
 
+const PACK_BOX_AUDIT = auditFieldsOf(packBoxMeta())
+
+const PACK_LINE_AUDIT = auditFieldsOf(packLineMeta())
+
 export interface FulfillmentHead {
   id: string
   no: string
@@ -794,7 +798,17 @@ export function createFulfillmentService(
       VALUES (${next.rows[0]!.n}::bigint, ${deliveryId}::uuid, ${parent.companyId}::uuid)
       RETURNING id
     `.execute(trx)
-    return readPackBox(trx, actor, ins.rows[0]!.id)
+    const dto = await readPackBox(trx, actor, ins.rows[0]!.id)
+    await writeAudit(trx, actor, {
+      resource: 'sal_delivery_pack_box',
+      recordId: dto.id,
+      recordLabel: dto.boxNo,
+      companyId: dto.companyId,
+      actionType: 'create',
+      actionName: 'create',
+      changes: auditCreated(packBoxSnap(dto), PACK_BOX_AUDIT),
+    })
+    return dto
   }
 
   // ---- pack lines (sales only) ----
@@ -864,7 +878,17 @@ export function createFulfillmentService(
         ${input.materialId}::uuid,${resolvedUnit}::uuid
       ) RETURNING id
     `.execute(trx)
-    return readPackLine(trx, actor, ins.rows[0]!.id)
+    const dto = await readPackLine(trx, actor, ins.rows[0]!.id)
+    await writeAudit(trx, actor, {
+      resource: 'sal_delivery_pack_line',
+      recordId: dto.id,
+      recordLabel: String(dto.idx),
+      companyId: dto.companyId,
+      actionType: 'create',
+      actionName: 'create',
+      changes: auditCreated(packLineSnap(dto), PACK_LINE_AUDIT),
+    })
+    return dto
   }
 
   async function updatePackLineInTx(
@@ -908,7 +932,20 @@ export function createFulfillmentService(
         updated_at=(now() AT TIME ZONE 'utc')
       WHERE id=${id}::uuid
     `.execute(trx)
-    return readPackLine(trx, actor, id)
+    const after = await readPackLine(trx, actor, id)
+    const changes = auditDiff(packLineSnap(before), packLineSnap(after), PACK_LINE_AUDIT)
+    if (Object.keys(changes).length > 0) {
+      await writeAudit(trx, actor, {
+        resource: 'sal_delivery_pack_line',
+        recordId: id,
+        recordLabel: String(after.idx),
+        companyId: after.companyId,
+        actionType: 'update',
+        actionName: 'update',
+        changes,
+      })
+    }
+    return after
   }
 
   async function loadSalesDraft(
@@ -1145,11 +1182,31 @@ export function createFulfillmentService(
       }
       for (const oldId of existingLineIds) {
         if (!requestedLines.has(oldId)) {
+          const line = await readPackLine(trx, actor, oldId)
+          await writeAudit(trx, actor, {
+            resource: 'sal_delivery_pack_line',
+            recordId: oldId,
+            recordLabel: String(line.idx),
+            companyId: line.companyId,
+            actionType: 'destroy',
+            actionName: 'destroy',
+            changes: auditDestroyed(packLineSnap(line), PACK_LINE_AUDIT),
+          })
           await trx.deleteFrom('sal_delivery_pack_line').where('id', '=', oldId).execute()
         }
       }
       for (const oldId of existingBoxIds) {
         if (!requestedBoxes.has(oldId)) {
+          const box = await readPackBox(trx, actor, oldId)
+          await writeAudit(trx, actor, {
+            resource: 'sal_delivery_pack_box',
+            recordId: oldId,
+            recordLabel: box.boxNo,
+            companyId: box.companyId,
+            actionType: 'destroy',
+            actionName: 'destroy',
+            changes: auditDestroyed(packBoxSnap(box), PACK_BOX_AUDIT),
+          })
           await trx.deleteFrom('sal_delivery_pack_box').where('id', '=', oldId).execute()
         }
       }
@@ -1857,6 +1914,33 @@ function mapPackDto(row: Record<string, unknown>) {
     companyId: String(row.company_id),
     materialId: String(row.material_id),
     unitId: String(row.unit_id),
+  }
+}
+
+function packBoxSnap(box: ReturnType<typeof mapPackBoxDto>): Record<string, unknown> {
+  return {
+    box_no: box.boxNo,
+    delivery_id: box.deliveryId,
+    company_id: box.companyId,
+  }
+}
+
+function packLineSnap(line: ReturnType<typeof mapPackDto>): Record<string, unknown> {
+  return {
+    idx: line.idx,
+    pack_box_id: line.packBoxId,
+    qty: line.qty,
+    base_qty: line.baseQty,
+    material_code: line.materialCode,
+    material_name: line.materialName,
+    material_spec: line.materialSpec,
+    customer_part_no: line.customerPartNo,
+    unit_name: line.unitName,
+    remarks: line.remarks,
+    delivery_id: line.deliveryId,
+    company_id: line.companyId,
+    material_id: line.materialId,
+    unit_id: line.unitId,
   }
 }
 

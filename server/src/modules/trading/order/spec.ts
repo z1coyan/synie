@@ -520,7 +520,8 @@ export function orderMaterialMeta(): ResourceMeta {
       }),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // party_id 是订单头 join 投影（多态 fk 不标 calculated），非本表物理列，不进审计面
+    audit: { enabled: true, exclude: ['party_id'] },
 
   }
 }
