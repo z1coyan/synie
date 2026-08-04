@@ -74,6 +74,7 @@ import {
   type ExpenseService,
   type BillService,
 } from './modules/finance/index.ts'
+import type { SynieBetterAuth } from './platform/auth/better-auth.ts'
 import { authRoutes } from './platform/auth/routes.ts'
 import type { AuthService } from './platform/auth/service.ts'
 import type { AppEnv } from './platform/http/context.ts'
@@ -102,6 +103,10 @@ import { setupRoutes, type SetupService } from './platform/setup/index.ts'
 export interface AppDeps {
   db: Kysely<Database>
   auth: AuthService
+  /** better-auth 实例（cookie 会话通道；/auth/* 具体路由之外的兜底 handler） */
+  betterAuth: SynieBetterAuth
+  /** Logto OIDC 是否启用（env 三件套齐备）；透出到 setup status 供登录页判断 */
+  logtoEnabled: boolean
   registry: Registry
   settings: SettingsService
   numbering: NumberingService
@@ -193,8 +198,13 @@ export function buildApp(deps: AppDeps) {
         return c.json({ error: { code: 'internal', message: '数据库不可用' } }, 503)
       }
     })
-    .route('/setup', setupRoutes({ auth: deps.auth, setup: deps.setup }))
+    .route(
+      '/setup',
+      setupRoutes({ auth: deps.auth, setup: deps.setup, logtoEnabled: deps.logtoEnabled }),
+    )
+    // 具体路由（/auth/login、/auth/me，旧契约）先注册先匹配；其余 /auth/* 兜底给 better-auth
     .route('/auth', authRoutes(deps.auth))
+    .on(['GET', 'POST'], '/auth/*', (c) => deps.betterAuth.handler(c.req.raw))
     .route('/meta', metaRoutes(deps.registry, deps.auth))
     .route('/settings', settingsRoutes({ auth: deps.auth, settings: deps.settings }))
     .route('/system/numbering', numberingRoutes({ auth: deps.auth, numbering: deps.numbering }))

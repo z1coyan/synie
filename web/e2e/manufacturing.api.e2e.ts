@@ -5,10 +5,8 @@ import {
   type APIRequestContext,
   type Page,
 } from '@playwright/test'
+import { loginViaUI } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const pgContainer = process.env.SYNIE_PG_CONTAINER ?? 'synie-postgres-1'
 const suffix = Date.now().toString(36).toUpperCase()
 const prefix = `E2EMFG${suffix}`
@@ -118,39 +116,14 @@ function createFixture(): Fixture {
   }
 }
 
-async function login(page: Page): Promise<string> {
-  await page.goto('/login')
-  const user = page.getByRole('textbox', { name: '用户名', exact: true })
-  const pass = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect
-    .poll(() =>
-      user.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-      ),
-    )
-    .toBe(true)
-  await user.pressSequentially(username)
-  await pass.pressSequentially(password)
-  await page.getByRole('button', { name: /登\s*录|正在登录/ }).click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
-  const token = await page.evaluate(() =>
-    window.localStorage.getItem('synie:token'),
-  )
-  expect(token).toBeTruthy()
-  return token!
-}
-
 async function post<T>(
   request: APIRequestContext,
   path: string,
-  token: string,
   data: Record<string, unknown> = {},
   expected = 201,
 ): Promise<T> {
-  const response = await request.post(path, {
-    headers: { Authorization: `Bearer ${token}` },
-    data,
-  })
+  // 调用侧传 page.request:与浏览器同 context,自动携带会话 cookie
+  const response = await request.post(path, { data })
   const text = await response.text()
   expect(response.status(), `POST ${path}: ${response.status()} ${text}`).toBe(
     expected,
@@ -214,8 +187,9 @@ test.setTimeout(180_000)
 
 test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求', async ({
   page,
-  request,
 }) => {
+  // page.request 与浏览器同 context,自动携带会话 cookie(request fixture 不共享 cookie)
+  const request = page.request
   let fixture: Fixture | null = null
   const graphql: string[] = []
   const manufacturingREST: string[] = []
@@ -233,26 +207,23 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
 
   try {
     fixture = createFixture()
-    const token = await login(page)
+    await loginViaUI(page)
 
     const operationCode = `${prefix}OP`
     const operation = await post<Row>(
       request,
       '/api/v1/manufacturing/operations',
-      token,
       { code: operationCode, name: `${prefix}冲压` },
     )
     const templateCode = `${prefix}RT`
     const template = await post<Row>(
       request,
       '/api/v1/manufacturing/process-templates',
-      token,
       { code: templateCode, name: `${prefix}标准工艺` },
     )
     await post<Row>(
       request,
       '/api/v1/manufacturing/process-template-items',
-      token,
       {
         templateId: template.id,
         operationId: operation.id,
@@ -263,12 +234,12 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
     )
 
     const bomCode = `${prefix}BOM`
-    const bom = await post<Row>(request, '/api/v1/manufacturing/boms', token, {
+    const bom = await post<Row>(request, '/api/v1/manufacturing/boms', {
       code: bomCode,
       materialId: fixture.materialId,
       planName: `${prefix}内制方案`,
     })
-    await post<Row>(request, '/api/v1/manufacturing/bom-components', token, {
+    await post<Row>(request, '/api/v1/manufacturing/bom-components', {
       bomId: bom.id,
       materialId: fixture.componentId,
       unitId: fixture.unitId,
@@ -281,7 +252,6 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
     const demand = await post<Row>(
       request,
       '/api/v1/manufacturing/demands',
-      token,
       {
         companyId: fixture.companyId,
         demandNo,
@@ -291,7 +261,6 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
     const demandItem = await post<Row>(
       request,
       '/api/v1/manufacturing/demand-items',
-      token,
       {
         demandId: demand.id,
         materialId: fixture.materialId,
@@ -306,14 +275,13 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
     const uiDemand = await post<Row>(
       request,
       '/api/v1/manufacturing/demands',
-      token,
       {
         companyId: fixture.companyId,
         demandNo: uiDemandNo,
         demandDate: '2026-07-26',
       },
     )
-    await post<Row>(request, '/api/v1/manufacturing/demand-items', token, {
+    await post<Row>(request, '/api/v1/manufacturing/demand-items', {
       demandId: uiDemand.id,
       materialId: fixture.materialId,
       unitId: fixture.unitId,
@@ -324,7 +292,6 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
     await post<Row>(
       request,
       `/api/v1/manufacturing/demands/${demand.id}/confirm`,
-      token,
       {},
       200,
     )
@@ -332,14 +299,12 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
     const workOrder = await post<Row>(
       request,
       '/api/v1/manufacturing/work-orders',
-      token,
       { demandItemId: demandItem.id, workOrderNo },
     )
     const outputNo = `${prefix}OUT`
     const output = await post<Row>(
       request,
       '/api/v1/manufacturing/outputs',
-      token,
       {
         companyId: fixture.companyId,
         outputNo,
@@ -347,7 +312,7 @@ test('六个制造页面以 Go REST 加载 Grid、Drawer、子表并确认需求
         warehouseId: fixture.warehouseId,
       },
     )
-    await post<Row>(request, '/api/v1/manufacturing/output-items', token, {
+    await post<Row>(request, '/api/v1/manufacturing/output-items', {
       outputId: output.id,
       workOrderId: workOrder.id,
       unitId: fixture.unitId,

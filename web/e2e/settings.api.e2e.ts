@@ -1,8 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext } from '@playwright/test'
+import { loginViaUI, sessionCookieHeader } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const goAPIURL = process.env.SYNIE_API_URL ?? process.env.GO_API_URL ?? 'http://127.0.0.1:8080/api/v1'
 
 type SalesSetting = {
@@ -31,48 +30,24 @@ type SystemSetting = {
   marketFetchSettlementEnabled: boolean
 }
 
-async function login(page: Page): Promise<string> {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', { name: '用户名', exact: true })
-  const passwordInput = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect
-    .poll(() =>
-      usernameInput.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-      ),
-    )
-    .toBe(true)
-  await usernameInput.pressSequentially(username)
-  await passwordInput.pressSequentially(password)
-  await page.getByRole('button', { name: /登\s*录|正在登录/ }).click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
-  const token = await page.evaluate(() => window.localStorage.getItem('synie:token'))
-  expect(token).toBeTruthy()
-  return token!
-}
-
-async function api<T>(
-  request: APIRequestContext,
-  token: string,
-  path: string,
-): Promise<T> {
-  const response = await request.get(`/api/v1${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
+async function api<T>(request: APIRequestContext, path: string): Promise<T> {
+  // page.request 与浏览器同 context,自动携带会话 cookie
+  const response = await request.get(`/api/v1${path}`)
   const text = await response.text()
   expect(response.ok(), `${path}: ${response.status()} ${text}`).toBeTruthy()
   return JSON.parse(text) as T
 }
 
 async function restorePatch(
-  token: string,
+  cookie: { Cookie: string },
   path: string,
   data: unknown,
 ): Promise<void> {
+  // 直连 API origin,cookie 域是前端 origin,需显式带 Cookie 头
   const response = await fetch(`${goAPIURL}${path}`, {
     method: 'PATCH',
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...cookie,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(data),
@@ -117,14 +92,15 @@ function graphqlDocument(body: string | null): string {
 
 test.setTimeout(180_000)
 
-test('四类设置通过 Go REST 保存，Settings GraphQL=0', async ({ page, request }) => {
+test('四类设置通过 Go REST 保存，Settings GraphQL=0', async ({ page }) => {
   const startedAt = new Date()
-  const token = await login(page)
+  await loginViaUI(page)
+  const cookie = await sessionCookieHeader(page.context())
   const [sales, manufacturing, accounting, system] = await Promise.all([
-    api<SalesSetting>(request, token, '/settings/supply-chain'),
-    api<ManufacturingSetting>(request, token, '/settings/production'),
-    api<AccountingSetting>(request, token, '/settings/finance'),
-    api<SystemSetting>(request, token, '/settings/system'),
+    api<SalesSetting>(page.request, '/settings/supply-chain'),
+    api<ManufacturingSetting>(page.request, '/settings/production'),
+    api<AccountingSetting>(page.request, '/settings/finance'),
+    api<SystemSetting>(page.request, '/settings/system'),
   ])
 
   const settingsGraphQL: string[] = []
@@ -209,20 +185,20 @@ test('四类设置通过 Go REST 保存，Settings GraphQL=0', async ({ page, re
   } finally {
     try {
       const restored = await Promise.allSettled([
-        restorePatch(token, '/settings/supply-chain', {
+        restorePatch(cookie, '/settings/supply-chain', {
           sampleItemMaxQty: sales.sampleItemMaxQty,
           deliveryOvershipRatio: sales.deliveryOvershipRatio,
           spotItemMaxQty: sales.spotItemMaxQty,
           receiptOverreceiveRatio: sales.receiptOverreceiveRatio,
           demandOverorderRatio: sales.demandOverorderRatio,
         }),
-        restorePatch(token, '/settings/production', {
+        restorePatch(cookie, '/settings/production', {
           outputOverreceiveRatio: manufacturing.outputOverreceiveRatio,
         }),
-        restorePatch(token, '/settings/finance', {
+        restorePatch(cookie, '/settings/finance', {
           ocrAccessKeyId: accounting.ocrAccessKeyId ?? null,
         }),
-        restorePatch(token, '/settings/system', {
+        restorePatch(cookie, '/settings/system', {
           marketFetchScheduleEnabled: system.marketFetchScheduleEnabled,
           marketFetchLastIntervalMinutes: system.marketFetchLastIntervalMinutes,
           marketFetchSettlementEnabled: system.marketFetchSettlementEnabled,

@@ -1,9 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
+import { loginViaUI, sessionCookieHeader } from "./fixtures/session";
 
-const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const goAPIURL = process.env.SYNIE_API_URL ?? process.env.GO_API_URL ?? 'http://127.0.0.1:8080/api/v1'
 const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
@@ -16,36 +14,6 @@ type CreatedRecord = {
   resource: "sal_customer" | "pur_supplier" | "hr_employee";
   id: string;
 };
-
-async function login(page: Page): Promise<string> {
-  await page.goto("/login");
-  const usernameInput = page.getByRole("textbox", {
-    name: "用户名",
-    exact: true,
-  });
-  const passwordInput = page.getByRole("textbox", {
-    name: "密码",
-    exact: true,
-  });
-  await expect
-    .poll(() =>
-      usernameInput.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith("__reactProps$")),
-      ),
-    )
-    .toBe(true);
-  await usernameInput.pressSequentially(username);
-  await passwordInput.pressSequentially(password);
-  await page.getByRole("button", { name: /登\s*录|正在登录/ }).click();
-  await expect(
-    page.getByRole("navigation", { name: "模块导航" }),
-  ).toBeVisible();
-  const token = await page.evaluate(() =>
-    window.localStorage.getItem("synie:token"),
-  );
-  expect(token).toBeTruthy();
-  return token!;
-}
 
 async function expectOK(
   responsePromise: Promise<import("@playwright/test").Response>,
@@ -64,12 +32,13 @@ async function expectOK(
 }
 
 async function cleanupRecord(
-  token: string,
+  cookie: { Cookie: string },
   record: CreatedRecord,
 ): Promise<void> {
+  // 直连 API origin,cookie 域是前端 origin,需显式带 Cookie 头
   const response = await fetch(`${goAPIURL}${record.path}/${record.id}`, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: cookie,
   });
   if (!response.ok && response.status !== 404) {
     throw new Error(
@@ -203,7 +172,8 @@ async function createAndEditSimpleParty(args: {
 test.setTimeout(180_000);
 
 test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ page }) => {
-  const token = await login(page);
+  await loginViaUI(page);
+  const cookie = await sessionCookieHeader(page.context());
   const graphqlRequests: Array<{ url: string; body: string | null }> = [];
   const restRequests: string[] = [];
   const created: CreatedRecord[] = [];
@@ -404,7 +374,7 @@ test("客户、供应商、员工 Grid/Drawer 全程使用 Go REST", async ({ pa
     expect(graphqlRequests).toEqual([]);
   } finally {
     const cleanup = await Promise.allSettled(
-      created.map((record) => cleanupRecord(token, record)),
+      created.map((record) => cleanupRecord(cookie, record)),
     );
     const failures = cleanup.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",

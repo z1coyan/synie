@@ -5,10 +5,8 @@ import {
   type APIRequestContext,
   type Page,
 } from "@playwright/test";
+import { loginViaUI } from "./fixtures/session";
 
-const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const pgContainer = process.env.SYNIE_PG_CONTAINER ?? "synie-postgres-1";
 const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
@@ -174,38 +172,15 @@ function createFixture(): Fixture {
   };
 }
 
-async function login(page: Page): Promise<string> {
-  await page.goto("/login");
-  const user = page.getByRole("textbox", { name: "用户名", exact: true });
-  const pass = page.getByRole("textbox", { name: "密码", exact: true });
-  await expect
-    .poll(() =>
-      user.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith("__reactProps$")),
-      ),
-    )
-    .toBe(true);
-  await user.pressSequentially(username);
-  await pass.pressSequentially(password);
-  await page.getByRole("button", { name: /登\s*录|正在登录/ }).click();
-  await expect(page.getByRole("navigation", { name: "模块导航" })).toBeVisible();
-  const token = await page.evaluate(() =>
-    window.localStorage.getItem("synie:token"),
-  );
-  expect(token).toBeTruthy();
-  return token!;
-}
-
 async function apiJSON<T>(
   request: APIRequestContext,
   method: "get" | "post" | "patch",
   path: string,
-  token: string,
   data?: Record<string, unknown>,
   expected = 200,
 ): Promise<T> {
+  // 调用侧传 page.request:与浏览器同 context,自动携带会话 cookie
   const response = await request[method](path, {
-    headers: { Authorization: `Bearer ${token}` },
     ...(data === undefined ? {} : { data }),
   });
   const text = await response.text();
@@ -327,8 +302,9 @@ test.setTimeout(240_000);
 
 test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关闭与作废", async ({
   page,
-  request,
 }) => {
+  // page.request 与浏览器同 context,自动携带会话 cookie(request fixture 不共享 cookie)
+  const request = page.request;
   const created: Created = {
     salesOrderId: null,
     purchaseOrderId: null,
@@ -364,7 +340,7 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
 
   try {
     fixture = createFixture();
-    const token = await login(page);
+    await loginViaUI(page);
     const quoteInputs = [
       {
         side: "sales",
@@ -385,7 +361,6 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
         request,
         "post",
         `/api/v1/${quoteInput.side}/quotations`,
-        token,
         {
           quotationNo: `${prefix}-${quoteInput.side === "sales" ? "SQ" : "PQ"}`,
           quotationDate: "2026-07-01",
@@ -402,7 +377,6 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
         request,
         "post",
         `/api/v1/${quoteInput.side}/quotation-items`,
-        token,
         {
           quotationId: quotation.id,
           idx: 1,
@@ -425,7 +399,6 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
             request,
             "post",
             `/api/v1/${quoteInput.side}/quotation-tiers`,
-            token,
             { itemId: quotationItem.id, minQty, price },
             201,
           );
@@ -436,7 +409,6 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
         request,
         "post",
         `/api/v1/${quoteInput.side}/quotations/${quotation.id}/audit`,
-        token,
       );
     }
 
@@ -445,7 +417,6 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
       request,
       "post",
       "/api/v1/sales/orders",
-      token,
       {
         orderNo: salesNo,
         orderDate: "2026-07-26",
@@ -466,7 +437,6 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
       request,
       "post",
       "/api/v1/sales/order-items",
-      token,
       {
         orderId: sales.id,
         idx: 1,
@@ -487,7 +457,6 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
       request,
       "post",
       "/api/v1/purchase/orders",
-      token,
       {
         orderNo: purchaseNo,
         orderDate: "2026-07-26",
@@ -510,7 +479,6 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
       request,
       "post",
       "/api/v1/purchase/order-items",
-      token,
       {
         orderId: purchase.id,
         idx: 1,
@@ -537,7 +505,6 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
       request,
       "post",
       "/api/v1/purchase/order-bom/expand",
-      token,
       { bomId: fixture.bomId, qty: "12" },
     );
     expect(Number(expansion.materials[0]!.quantity)).toBe(13.2);
@@ -560,7 +527,6 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
         request,
         "post",
         path,
-        token,
         {
           orderItemId: purchaseItem.id,
           materialId,
@@ -587,7 +553,7 @@ test("销售/采购订单以 Go REST 完成报价、BOM、需求、审核、关�
     const pool = await apiJSON<{
       count: number;
       results: Array<{ id: string; remainingBaseQty: string; currencyCode: string }>;
-    }>(request, "post", "/api/v1/sales/order-items/query", token, {
+    }>(request, "post", "/api/v1/sales/order-items/query", {
       limit: 10,
       offset: 0,
       sort: { column: "orderDate", direction: "ascending" },

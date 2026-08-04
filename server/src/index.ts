@@ -3,6 +3,7 @@ import { buildApp } from './app.ts'
 import { createServices, toAppDeps } from './composition.ts'
 import { createDb } from './db/index.ts'
 import { loadEnv } from './env.ts'
+import { createBetterAuth } from './platform/auth/better-auth.ts'
 import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
@@ -16,10 +17,12 @@ const env = loadEnv()
 const db = createDb(env.databaseUrl)
 
 const tokens = createTokenManager({ secret: env.authSecret, ttlSeconds: env.tokenTtlSeconds })
+const betterAuth = createBetterAuth({ db, secret: env.authSecret, logto: env.logto })
 const auth = await createAuthService({
   store: createAuthStore(db),
   tokens,
   limiter: createRateLimiter(),
+  betterAuth,
 })
 
 const registry = createRegistry()
@@ -43,6 +46,8 @@ const services = createServices(db, {
 const app = buildApp({
   db,
   auth,
+  betterAuth,
+  logtoEnabled: Boolean(env.logto),
   registry,
   ...toAppDeps(services),
 })

@@ -95,11 +95,17 @@ run('PG 集成（履约聚合草稿）', () => {
       permissions: new Set(actions.map((action) => `${prefix}:${action}`)),
     }
   }
+  const byToken = (token: string | null) => {
+    if (token === 'read-only') return readOnlyActor
+    if (token === 'no-read') return noReadActor
+    return actor
+  }
   const auth = {
-    authenticate: async (token: string) => {
-      if (token === 'read-only') return readOnlyActor
-      if (token === 'no-read') return noReadActor
-      return actor
+    authenticate: async (token: string) => byToken(token),
+    authenticateRequest: async (headers: Headers) => {
+      const header = headers.get('authorization')
+      const token = header?.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : null
+      return byToken(token)
     },
   } as unknown as AuthService
   const http = new Hono<AppEnv>()

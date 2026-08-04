@@ -2,7 +2,8 @@
  * 路由 loader 预取辅助。
  *
  * 约定：
- * - 鉴权数据仅在浏览器预取（`typeof window === 'undefined'` 时直接返回）
+ * - SSR 与客户端导航同一条路径：SSR 经同构 api client 转发请求 cookie 真预取，
+ *   结果脱水进 HTML；客户端注水后 staleTime 内不重取
  * - 列表/单条缓存键一律经 `resourceBindingFor(resource).cache`，禁止手写 gridRows/rowById
  * - 默认维度与 SynieDataGrid 组件内初始 state 对齐，保证 ensureQueryData 与 useQuery 命中同一 key
  */
@@ -78,16 +79,15 @@ export function defaultGridQueryKey(
 }
 
 /**
- * 预取 Grid Meta + 默认首屏列表。
- * SSR 阶段跳过（token 在 localStorage、API 相对路径，与 _app beforeLoad 先例一致）。
+ * 预取 Grid Meta + 默认首屏列表（SSR/客户端导航同路径）。
+ * 预取失败不阻断进页：403/网络错误吞掉，由页面内 QueryState 呈现
+ * （表格 forbidden 空态等），组件级 useQuery 挂载后自行重试。
  */
 export async function ensureDefaultGridPage(
   queryClient: QueryClient,
   resource: string,
   options: DefaultGridPrefetchOptions = {},
 ): Promise<void> {
-  if (typeof window === 'undefined') return
-
   const binding = resourceBindingFor(resource)
   const p = defaultGridKeyParts(options)
   const extraFields =
@@ -125,5 +125,5 @@ export async function ensureDefaultGridPage(
           joinFields: options.joinFields,
         }),
     }),
-  ])
+  ]).catch(() => undefined)
 }

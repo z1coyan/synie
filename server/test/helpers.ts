@@ -2,6 +2,7 @@ import type { Kysely } from 'kysely'
 import { buildApp, type ApiType } from '~/app.ts'
 import { createServices, toAppDeps, type Services } from '~/composition.ts'
 import type { DB as Database } from '~/db/types.ts'
+import { createBetterAuth, type SynieBetterAuth } from '~/platform/auth/better-auth.ts'
 import { createRateLimiter } from '~/platform/auth/limiter.ts'
 import { createAuthService, type AuthService } from '~/platform/auth/service.ts'
 import { createAuthStore } from '~/platform/auth/store.ts'
@@ -17,12 +18,21 @@ export function testDatabaseUrl(): string | undefined {
   return process.env.SYNIE_TEST_DATABASE_URL
 }
 
-/** 与生产同构的测试 AuthService（固定 secret / 1h TTL / 进程内限流） */
-export async function createTestAuth(db: Kysely<Database>): Promise<AuthService> {
+/** 与生产同构的 better-auth 实例（固定 secret；Logto 不注册） */
+export function createTestBetterAuth(db: Kysely<Database>): SynieBetterAuth {
+  return createBetterAuth({ db, secret: TEST_AUTH_SECRET })
+}
+
+/** 与生产同构的测试 AuthService（固定 secret / 1h TTL / 进程内限流；可挂 cookie 轨） */
+export async function createTestAuth(
+  db: Kysely<Database>,
+  betterAuth?: SynieBetterAuth,
+): Promise<AuthService> {
   return createAuthService({
     store: createAuthStore(db),
     tokens: createTokenManager({ secret: TEST_AUTH_SECRET, ttlSeconds: 3600 }),
     limiter: createRateLimiter(),
+    betterAuth,
   })
 }
 
@@ -33,6 +43,7 @@ export function createPlatformRegistry(): Registry {
 
 export interface TestAppOptions {
   auth?: AuthService
+  betterAuth?: SynieBetterAuth
   registry?: Registry
   deps?: Partial<Services>
 }
@@ -42,12 +53,20 @@ export async function buildTestApp(
   db: Kysely<Database>,
   options: TestAppOptions = {},
 ): Promise<ApiType> {
-  const auth = options.auth ?? (await createTestAuth(db))
+  const betterAuth = options.betterAuth ?? createTestBetterAuth(db)
+  const auth = options.auth ?? (await createTestAuth(db, betterAuth))
   const registry = options.registry ?? createPlatformRegistry()
   const services = createServices(db, {
     registry,
     tokens: createTokenManager({ secret: TEST_AUTH_SECRET, ttlSeconds: 3600 }),
     overrides: options.deps,
   })
-  return buildApp({ db, auth, registry, ...toAppDeps(services) })
+  return buildApp({
+    db,
+    auth,
+    betterAuth,
+    logtoEnabled: false,
+    registry,
+    ...toAppDeps(services),
+  })
 }

@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { loginViaUI } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const suffix = Date.now().toString(36)
 const storageName = `e2e-local-${suffix}`
 const storageLabel = `浏览器测试存储-${suffix}`
@@ -9,22 +8,11 @@ const filename = `浏览器文件-${suffix}.txt`
 
 test.setTimeout(90_000)
 
-test('存储 Grid/Drawer、multipart 文件与文件详情只使用 Go REST', async ({ page, request }) => {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', { name: '用户名', exact: true })
-  const passwordInput = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect.poll(() => usernameInput.evaluate((node) =>
-    Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-  )).toBe(true)
-  await usernameInput.pressSequentially(username)
-  await passwordInput.pressSequentially(password)
-  await page.getByRole('button', { name: /登\s*录|正在登录/ }).click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
+test('存储 Grid/Drawer、multipart 文件与文件详情只使用 Go REST', async ({ page }) => {
+  await loginViaUI(page)
 
-  const token = await page.evaluate(() => window.localStorage.getItem('synie:token'))
-  const headers = { Authorization: `Bearer ${token}` }
-  const baselineQuery = await request.post('/api/v1/system/storages/query', {
-    headers,
+  // page.request 与浏览器同 context,自动携带会话 cookie
+  const baselineQuery = await page.request.post('/api/v1/system/storages/query', {
     data: {
       limit: 20,
       offset: 0,
@@ -72,8 +60,7 @@ test('存储 Grid/Drawer、multipart 文件与文件详情只使用 Go REST', as
     await page.getByRole('menuitem', { name: '设为默认', exact: true }).click()
     await expect(page.getByText(`已将「${storageLabel}」设为默认存储`)).toBeVisible()
 
-    const storageQuery = await request.post('/api/v1/system/storages/query', {
-      headers,
+    const storageQuery = await page.request.post('/api/v1/system/storages/query', {
       data: {
         limit: 20,
         offset: 0,
@@ -88,9 +75,9 @@ test('存储 Grid/Drawer、multipart 文件与文件详情只使用 Go REST', as
     const upload = await page.evaluate(async ({ filename }) => {
       const form = new FormData()
       form.append('file', new File(['浏览器上传字节'], filename, { type: 'text/plain' }))
+      // 浏览器内同源 fetch 自动携带会话 cookie
       const response = await fetch('/api/v1/files', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${window.localStorage.getItem('synie:token')}` },
         body: form,
       })
       return { ok: response.ok, status: response.status, body: await response.json() }
@@ -122,11 +109,11 @@ test('存储 Grid/Drawer、multipart 文件与文件详情只使用 Go REST', as
     expect(graphqlRequests).toEqual([])
   } finally {
     if (fileId) {
-      await request.delete(`/api/v1/files/${fileId}`, { headers })
+      await page.request.delete(`/api/v1/files/${fileId}`)
     }
-    await request.post(`/api/v1/system/storages/${baselineId}/set-default`, { headers })
+    await page.request.post(`/api/v1/system/storages/${baselineId}/set-default`)
     if (storageId) {
-      await request.delete(`/api/v1/system/storages/${storageId}`, { headers })
+      await page.request.delete(`/api/v1/system/storages/${storageId}`)
     }
   }
 })

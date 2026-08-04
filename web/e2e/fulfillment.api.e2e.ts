@@ -6,12 +6,10 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
+import { loginViaUI } from "./fixtures/session";
 
 test.setTimeout(90_000);
 
-const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const pgContainer = process.env.SYNIE_PG_CONTAINER ?? "synie-postgres-1";
 const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
@@ -98,39 +96,14 @@ function createFixture(): Fixture {
   };
 }
 
-async function login(page: Page): Promise<string> {
-  await page.goto("/login");
-  const user = page.getByRole("textbox", { name: "用户名", exact: true });
-  const pass = page.getByRole("textbox", { name: "密码", exact: true });
-  await expect
-    .poll(() =>
-      user.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith("__reactProps$")),
-      ),
-    )
-    .toBe(true);
-  await user.pressSequentially(username);
-  await pass.pressSequentially(password);
-  await page.getByRole("button", { name: /登\s*录|正在登录/ }).click();
-  await expect(page.getByRole("navigation", { name: "模块导航" })).toBeVisible();
-  const token = await page.evaluate(() =>
-    window.localStorage.getItem("synie:token"),
-  );
-  expect(token).toBeTruthy();
-  return token!;
-}
-
 async function post<T>(
   request: APIRequestContext,
   path: string,
-  token: string,
   data: Record<string, unknown>,
   expected = 201,
 ): Promise<T> {
-  const response = await request.post(path, {
-    headers: { Authorization: `Bearer ${token}` },
-    data,
-  });
+  // 调用侧传 page.request:与浏览器同 context,自动携带会话 cookie
+  const response = await request.post(path, { data });
   const text = await response.text();
   expect(response.status(), `POST ${path}: ${response.status()} ${text}`).toBe(
     expected,
@@ -231,8 +204,9 @@ function cleanup(ids: string[]): void {
 
 test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async ({
   page,
-  request,
 }) => {
+  // page.request 与浏览器同 context,自动携带会话 cookie(request fixture 不共享 cookie)
+  const request = page.request;
   let fixture: Fixture | null = null;
   const created: string[] = [];
   const graphql: string[] = [];
@@ -272,7 +246,7 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
 
   try {
     fixture = createFixture();
-    const token = await login(page);
+    await loginViaUI(page);
     const common = {
       companyId: fixture.companyId,
       receiptDate: "2026-07-26",
@@ -285,7 +259,6 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
       await post<{ id: string }>(
         request,
         "/api/v1/sales/deliveries",
-        token,
         {
           deliveryNo: `${prefix}-SD`,
           deliveryDate: "2026-07-26",
@@ -301,13 +274,11 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
       await post<{ id: string }>(
         request,
         "/api/v1/purchase/receipts",
-        token,
         { ...common, receiptNo: `${prefix}-PR` },
       ),
       await post<{ id: string }>(
         request,
         "/api/v1/purchase/outsourced-issues",
-        token,
         {
           issueNo: `${prefix}-OI`,
           issueDate: "2026-07-26",
@@ -319,7 +290,6 @@ test("标准与委外履约页面使用 Go REST 且业务 GraphQL 为零", async
       await post<{ id: string }>(
         request,
         "/api/v1/purchase/outsourced-receipts",
-        token,
         { ...common, receiptNo: `${prefix}-OR` },
       ),
     ];

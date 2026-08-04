@@ -1,27 +1,13 @@
 import { expect, test } from '@playwright/test'
+import { loginViaUI } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 const sequence = Date.now() % (alphabet.length * alphabet.length)
 const isoCode = `Q${alphabet[Math.floor(sequence / alphabet.length)]}${alphabet[sequence % alphabet.length]}`
 const name = `浏览器测试币种-${isoCode}`
 
-test('Go 登录与币种 CRUD 不经过 GraphQL', async ({ page, request }) => {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', { name: '用户名', exact: true })
-  const passwordInput = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect.poll(() => usernameInput.evaluate((node) =>
-    Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-  )).toBe(true)
-  await usernameInput.pressSequentially(username)
-  await expect(usernameInput).toHaveValue(username)
-  await passwordInput.pressSequentially(password)
-  await expect(passwordInput).toHaveValue(password)
-  const loginButton = page.getByRole('button', { name: /登\s*录|正在登录/ })
-  await expect(loginButton).toBeEnabled()
-  await loginButton.click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
+test('Go 登录与币种 CRUD 不经过 GraphQL', async ({ page }) => {
+  await loginViaUI(page)
 
   await page.goto('/base/currencies')
   await expect(page.getByRole('heading', { name: '货币管理' })).toBeVisible()
@@ -47,18 +33,15 @@ test('Go 登录与币种 CRUD 不经过 GraphQL', async ({ page, request }) => {
   expect(graphqlRequests).toEqual([])
 
   // 用同一 REST API 清理测试数据；删除本身也必须没有 GraphQL 请求。
-  const token = await page.evaluate(() => window.localStorage.getItem('synie:token'))
-  const query = await request.post('/api/v1/base/currencies/query', {
-    headers: { Authorization: `Bearer ${token}` },
+  // page.request 与浏览器同 context,自动携带会话 cookie
+  const query = await page.request.post('/api/v1/base/currencies/query', {
     data: { limit: 10, offset: 0, search: isoCode },
   })
   const queryBody = await query.text()
   expect(query.ok(), `${query.status()} ${queryBody}`).toBeTruthy()
   const body = JSON.parse(queryBody) as { results: Array<{ id: string }> }
   expect(body.results).toHaveLength(1)
-  const deleted = await request.delete(`/api/v1/base/currencies/${body.results[0].id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
+  const deleted = await page.request.delete(`/api/v1/base/currencies/${body.results[0].id}`)
   expect(deleted.ok()).toBeTruthy()
   expect(graphqlRequests).toEqual([])
 })

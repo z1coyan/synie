@@ -5,10 +5,8 @@ import {
   type APIRequestContext,
   type Page,
 } from "@playwright/test";
+import { loginViaUI } from "./fixtures/session";
 
-const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const pgContainer = process.env.SYNIE_PG_CONTAINER ?? "synie-postgres-1";
 const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
@@ -140,41 +138,14 @@ function createFixture(): Fixture {
   };
 }
 
-async function login(page: Page): Promise<string> {
-  await page.goto("/login");
-  const user = page.getByRole("textbox", { name: "用户名", exact: true });
-  const pass = page.getByRole("textbox", { name: "密码", exact: true });
-  await expect
-    .poll(() =>
-      user.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith("__reactProps$")),
-      ),
-    )
-    .toBe(true);
-  await user.pressSequentially(username);
-  await pass.pressSequentially(password);
-  await page.getByRole("button", { name: /登\s*录|正在登录/ }).click();
-  await expect(
-    page.getByRole("navigation", { name: "模块导航" }),
-  ).toBeVisible();
-  const token = await page.evaluate(() =>
-    window.localStorage.getItem("synie:token"),
-  );
-  expect(token).toBeTruthy();
-  return token!;
-}
-
 async function post<T>(
   request: APIRequestContext,
   path: string,
-  token: string,
   data: Record<string, unknown>,
   expected = 201,
 ): Promise<T> {
-  const response = await request.post(path, {
-    headers: { Authorization: `Bearer ${token}` },
-    data,
-  });
+  // 调用侧传 page.request:与浏览器同 context,自动携带会话 cookie
+  const response = await request.post(path, { data });
   const text = await response.text();
   expect(response.status(), `POST ${path}: ${response.status()} ${text}`).toBe(
     expected,
@@ -240,8 +211,9 @@ test.setTimeout(120_000);
 
 test("销售采购对账 Grid、Drawer 与默认科目设置全程使用 Go REST", async ({
   page,
-  request,
 }) => {
+  // page.request 与浏览器同 context,自动携带会话 cookie(request fixture 不共享 cookie)
+  const request = page.request;
   let fixture: Fixture | null = null;
   const graphql: string[] = [];
   const reconciliationREST: string[] = [];
@@ -264,11 +236,10 @@ test("销售采购对账 Grid、Drawer 与默认科目设置全程使用 Go REST
 
   try {
     fixture = createFixture();
-    const token = await login(page);
+    await loginViaUI(page);
     const defaults = await post<{ id: string }>(
       request,
       "/api/v1/sales/company-account-defaults",
-      token,
       {
         companyId: fixture.companyId,
         deliveryDebitAccountId: fixture.salesCreditId,
@@ -285,7 +256,7 @@ test("销售采购对账 Grid、Drawer 与默认科目设置全程使用 Go REST
       reconciliationType: "REGULAR",
       companyId: fixture.companyId,
     };
-    await post(request, "/api/v1/sales/reconciliations", token, {
+    await post(request, "/api/v1/sales/reconciliations", {
       ...common,
       reconciliationNo: salesNo,
       partyType: "CUSTOMER",
@@ -293,7 +264,7 @@ test("销售采购对账 Grid、Drawer 与默认科目设置全程使用 Go REST
       debitAccountId: fixture.salesDebitId,
       creditAccountId: fixture.salesCreditId,
     });
-    await post(request, "/api/v1/purchase/reconciliations", token, {
+    await post(request, "/api/v1/purchase/reconciliations", {
       ...common,
       reconciliationNo: purchaseNo,
       partyType: "SUPPLIER",

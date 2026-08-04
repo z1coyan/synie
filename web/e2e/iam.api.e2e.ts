@@ -1,26 +1,12 @@
 import { expect, test } from '@playwright/test'
+import { loginViaUI } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const suffix = Date.now().toString(36)
 const roleCode = `e2e_${suffix}`
 const roleName = `浏览器测试角色-${suffix}`
 
-test('角色 Grid/Drawer 使用 Go REST 且不请求 GraphQL', async ({ page, request }) => {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', { name: '用户名', exact: true })
-  const passwordInput = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect.poll(() => usernameInput.evaluate((node) =>
-    Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-  )).toBe(true)
-  await usernameInput.pressSequentially(username)
-  await expect(usernameInput).toHaveValue(username)
-  await passwordInput.pressSequentially(password)
-  await expect(passwordInput).toHaveValue(password)
-  const loginButton = page.getByRole('button', { name: /登\s*录|正在登录/ })
-  await expect(loginButton).toBeEnabled()
-  await loginButton.click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
+test('角色 Grid/Drawer 使用 Go REST 且不请求 GraphQL', async ({ page }) => {
+  await loginViaUI(page)
 
   await page.goto('/system/roles')
   await expect(page.getByRole('grid', { name: 'sysRoles 数据表格' })).toBeVisible()
@@ -42,18 +28,15 @@ test('角色 Grid/Drawer 使用 Go REST 且不请求 GraphQL', async ({ page, re
   await expect(page.getByRole('row').filter({ hasText: roleCode })).toBeVisible()
   expect(graphqlRequests).toEqual([])
 
-  const token = await page.evaluate(() => window.localStorage.getItem('synie:token'))
-  const query = await request.post('/api/v1/system/roles/query', {
-    headers: { Authorization: `Bearer ${token}` },
+  // page.request 与浏览器同 context,自动携带会话 cookie
+  const query = await page.request.post('/api/v1/system/roles/query', {
     data: { limit: 10, offset: 0, search: roleCode },
   })
   const queryText = await query.text()
   expect(query.ok(), `${query.status()} ${queryText}`).toBeTruthy()
   const body = JSON.parse(queryText) as { results: Array<{ id: string }> }
   expect(body.results).toHaveLength(1)
-  const deleted = await request.delete(`/api/v1/system/roles/${body.results[0].id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
+  const deleted = await page.request.delete(`/api/v1/system/roles/${body.results[0].id}`)
   expect(deleted.ok()).toBeTruthy()
   expect(graphqlRequests).toEqual([])
 })

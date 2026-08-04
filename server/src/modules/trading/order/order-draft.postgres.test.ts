@@ -60,6 +60,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
   }
   const auth = {
     authenticate: async () => actor,
+    authenticateRequest: async () => actor,
   } as unknown as AuthService
   const http = new Hono<AppEnv>()
     .route(

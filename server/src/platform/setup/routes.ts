@@ -47,12 +47,17 @@ function requireSuperAdmin() {
   }
 }
 
-export function setupRoutes(deps: { auth: AuthService; setup: SetupService }) {
-  const { auth, setup } = deps
+export function setupRoutes(deps: {
+  auth: AuthService
+  setup: SetupService
+  /** Logto OIDC 是否启用（env 门控）；前端据此决定登录页是否显示 Logto 按钮 */
+  logtoEnabled: boolean
+}) {
+  const { auth, setup, logtoEnabled } = deps
   return new Hono<AppEnv>()
     .get('/status', async (c) => {
       const status = await setup.getStatus()
-      return c.json(status)
+      return c.json({ ...status, logtoEnabled })
     })
     .post(
       '/first-user',

@@ -5,10 +5,8 @@ import {
   type APIRequestContext,
   type Page,
 } from "@playwright/test";
+import { loginViaUI } from "./fixtures/session";
 
-const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const pgContainer = process.env.SYNIE_PG_CONTAINER ?? "synie-postgres-1";
 const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
@@ -127,46 +125,15 @@ function createFixture(): Fixture {
   };
 }
 
-async function login(page: Page): Promise<string> {
-  await page.goto("/login");
-  const usernameInput = page.getByRole("textbox", {
-    name: "用户名",
-    exact: true,
-  });
-  const passwordInput = page.getByRole("textbox", {
-    name: "密码",
-    exact: true,
-  });
-  await expect
-    .poll(() =>
-      usernameInput.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith("__reactProps$")),
-      ),
-    )
-    .toBe(true);
-  await usernameInput.pressSequentially(username);
-  await passwordInput.pressSequentially(password);
-  await page.getByRole("button", { name: /登\s*录|正在登录/ }).click();
-  await expect(
-    page.getByRole("navigation", { name: "模块导航" }),
-  ).toBeVisible();
-  const token = await page.evaluate(() =>
-    window.localStorage.getItem("synie:token"),
-  );
-  expect(token).toBeTruthy();
-  return token!;
-}
-
 async function apiJSON<T>(
   request: APIRequestContext,
   method: "get" | "post" | "patch",
   path: string,
-  token: string,
   data?: Record<string, unknown>,
   expected = 200,
 ): Promise<T> {
+  // 调用侧传 page.request:与浏览器同 context,自动携带会话 cookie
   const response = await request[method](path, {
-    headers: { Authorization: `Bearer ${token}` },
     ...(data === undefined ? {} : { data }),
   });
   const text = await response.text();
@@ -239,8 +206,9 @@ test.setTimeout(240_000);
 
 test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取消", async ({
   page,
-  request,
 }) => {
+  // page.request 与浏览器同 context,自动携带会话 cookie(request fixture 不共享 cookie)
+  const request = page.request;
   const created: Created = {
     customerId: null,
     journalId: null,
@@ -271,12 +239,11 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
 
   try {
     const f = createFixture();
-    const token = await login(page);
+    await loginViaUI(page);
     const customer = await apiJSON<{ id: string }>(
       request,
       "post",
       "/api/v1/sales/customers",
-      token,
       {
         code: `${prefix}C`,
         name: customerName,
@@ -291,7 +258,6 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
       request,
       "post",
       "/api/v1/accounting/gl-journals",
-      token,
       {
         voucherNo,
         date: postingDate,
@@ -328,7 +294,6 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
         request,
         "post",
         "/api/v1/accounting/gl-journal-lines",
-        token,
         input,
         201,
       );
@@ -338,7 +303,7 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
     const lineList = await apiJSON<{
       count: number;
       results: Array<{ id: string; idx: number }>;
-    }>(request, "post", "/api/v1/accounting/gl-journal-lines/query", token, {
+    }>(request, "post", "/api/v1/accounting/gl-journal-lines/query", {
       limit: 20,
       offset: 0,
       sort: { column: "idx", direction: "ascending" },
@@ -388,7 +353,7 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
         voucherId: string;
         isCancelled: boolean;
       }>;
-    }>(request, "post", "/api/v1/accounting/gl-entries/query", token, {
+    }>(request, "post", "/api/v1/accounting/gl-entries/query", {
       limit: 20,
       offset: 0,
       filter: {
@@ -472,7 +437,6 @@ test("财务三页面以 Go REST 完成两行凭证审核、报表下钻与取�
       request,
       "get",
       `/api/v1/accounting/ar-ap-report?companyId=${f.companyId}&asOf=${asOf}`,
-      token,
     );
     expect(
       reportAfterCancel.rows.some(

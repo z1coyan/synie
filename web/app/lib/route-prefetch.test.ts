@@ -78,9 +78,15 @@ describe('route-prefetch 默认 key 与 SynieDataGrid 首屏对齐', () => {
     ])
   })
 
-  test('SSR 守卫：ensureDefaultGridPage 在无 window 时为 no-op', async () => {
-    // bun test 环境有 window 时跳过语义断言；此用例只验证导出存在与类型可调用
+  test('预取失败不阻断进页：ensureDefaultGridPage 吞掉查询错误', async () => {
+    // bun test 下 api client 指向本机端口,无服务时 fetch 必败;预取应 resolve 而非抛错
     const { ensureDefaultGridPage } = await import('~/lib/route-prefetch')
-    expect(typeof ensureDefaultGridPage).toBe('function')
+    const { QueryClient } = await import('@tanstack/react-query')
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    await expect(
+      ensureDefaultGridPage(queryClient, 'basUnits'),
+    ).resolves.toBeUndefined()
   })
 })

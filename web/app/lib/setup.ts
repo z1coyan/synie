@@ -3,6 +3,8 @@ import { api, apiData } from './api/client'
 export interface SetupStatus {
   initialized: boolean
   hasUsers: boolean
+  /** Logto OIDC 是否启用（服务端 env 门控）；登录页据此显示 Logto 按钮 */
+  logtoEnabled: boolean
 }
 
 export interface SetupFirstUserInput {
@@ -12,12 +14,6 @@ export interface SetupFirstUserInput {
 }
 
 export type SetupLanguage = 'zh-CN' | 'en-US'
-
-export interface SetupFirstUserResult {
-  token: string
-  expiresAt: string
-  user: { id: string; username: string; name: string | null }
-}
 
 // 完成旗标落库后永不回退:true 可永久缓存,省得每次路由切换都重查;
 // false 不缓存——向导完成初始化后的首次检查必须看到最新值
@@ -29,6 +25,16 @@ export async function fetchSetupStatus(): Promise<SetupStatus> {
   const status = await apiData(api.setup.status.$get())
   if (status.initialized) initializedCache = status
   return status
+}
+
+/**
+ * beforeLoad 用 setupStatus 查询定义:与页面内 useQuery(['setupStatus']) 同 key 共缓存。
+ * 调用方失败时一律 fail-open(不据此弹 /setup),避免与向导互弹死循环
+ */
+export const setupStatusEnsureQuery = {
+  queryKey: ['setupStatus'] as const,
+  queryFn: fetchSetupStatus,
+  retry: false as const,
 }
 
 /** 创建首个超级管理员并取得登录态(仅未初始化且没有用户时可用) */

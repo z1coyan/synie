@@ -9,25 +9,49 @@ import { z } from 'zod'
 const TTL_RE = /^(\d+)([smhd])$/
 const TTL_UNIT_SECONDS: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 }
 
-const envSchema = z.object({
-  PORT: z.coerce.number().int().min(1).max(65535).default(8080),
-  HOST: z.string().min(1).default('0.0.0.0'),
-  DATABASE_URL: z.string().min(1).optional(),
-  PGHOST: z.string().default('localhost'),
-  PGPORT: z.coerce.number().int().min(1).max(65535).default(5432),
-  PGUSER: z.string().default('postgres'),
-  PGPASSWORD: z.string().optional(),
-  PGDATABASE: z.string().optional(),
-  AUTH_SECRET: z.string().min(32, 'AUTH_SECRET 至少需要 32 字节'),
-  AUTH_TOKEN_TTL: z.string().regex(TTL_RE, 'AUTH_TOKEN_TTL 必须是 数字+单位（s/m/h/d），如 168h').default('168h'),
-  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
-  /** LibreOffice soffice 可执行路径；空则走 PATH 中的 soffice */
-  SOFFICE_PATH: z.string().optional(),
-  /** PDF 转换超时（毫秒），默认 120000 */
-  SOFFICE_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
-  /** soffice 最大并发，默认 2 */
-  SOFFICE_MAX_CONCURRENCY: z.coerce.number().int().positive().optional(),
-})
+const envSchema = z
+  .object({
+    PORT: z.coerce.number().int().min(1).max(65535).default(8080),
+    HOST: z.string().min(1).default('0.0.0.0'),
+    DATABASE_URL: z.string().min(1).optional(),
+    PGHOST: z.string().default('localhost'),
+    PGPORT: z.coerce.number().int().min(1).max(65535).default(5432),
+    PGUSER: z.string().default('postgres'),
+    PGPASSWORD: z.string().optional(),
+    PGDATABASE: z.string().optional(),
+    AUTH_SECRET: z.string().min(32, 'AUTH_SECRET 至少需要 32 字节'),
+    AUTH_TOKEN_TTL: z.string().regex(TTL_RE, 'AUTH_TOKEN_TTL 必须是 数字+单位（s/m/h/d），如 168h').default('168h'),
+    LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+    /** LibreOffice soffice 可执行路径；空则走 PATH 中的 soffice */
+    SOFFICE_PATH: z.string().optional(),
+    /** PDF 转换超时（毫秒），默认 120000 */
+    SOFFICE_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+    /** soffice 最大并发，默认 2 */
+    SOFFICE_MAX_CONCURRENCY: z.coerce.number().int().positive().optional(),
+    /** Logto OIDC（三项要么全有要么全无；缺省即不启用 Logto 登录） */
+    LOGTO_ISSUER: z.string().url().optional(),
+    LOGTO_CLIENT_ID: z.string().min(1).optional(),
+    LOGTO_CLIENT_SECRET: z.string().min(1).optional(),
+  })
+  .superRefine((raw, ctx) => {
+    const present = [raw.LOGTO_ISSUER, raw.LOGTO_CLIENT_ID, raw.LOGTO_CLIENT_SECRET].filter(
+      (v) => v !== undefined,
+    ).length
+    if (present !== 0 && present !== 3) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['LOGTO_ISSUER'],
+        message: 'LOGTO_ISSUER / LOGTO_CLIENT_ID / LOGTO_CLIENT_SECRET 必须同时设置或同时缺省',
+      })
+    }
+  })
+
+/** Logto OIDC 配置（env 三件套齐备时存在） */
+export interface LogtoEnv {
+  issuer: string
+  clientId: string
+  clientSecret: string
+}
 
 export interface Env {
   port: number
@@ -39,6 +63,7 @@ export interface Env {
   sofficePath?: string
   sofficeTimeoutMs?: number
   sofficeMaxConcurrency?: number
+  logto?: LogtoEnv
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
@@ -73,5 +98,13 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     sofficePath: raw.SOFFICE_PATH,
     sofficeTimeoutMs: raw.SOFFICE_TIMEOUT_MS,
     sofficeMaxConcurrency: raw.SOFFICE_MAX_CONCURRENCY,
+    logto:
+      raw.LOGTO_ISSUER && raw.LOGTO_CLIENT_ID && raw.LOGTO_CLIENT_SECRET
+        ? {
+            issuer: raw.LOGTO_ISSUER,
+            clientId: raw.LOGTO_CLIENT_ID,
+            clientSecret: raw.LOGTO_CLIENT_SECRET,
+          }
+        : undefined,
   }
 }

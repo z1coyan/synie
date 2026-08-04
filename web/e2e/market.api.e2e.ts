@@ -4,10 +4,8 @@ import {
   type APIRequestContext,
   type Page,
 } from "@playwright/test";
+import { loginViaUI, sessionCookieHeader } from "./fixtures/session";
 
-const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const goAPIURL = process.env.SYNIE_API_URL ?? process.env.GO_API_URL ?? 'http://127.0.0.1:8080/api/v1'
 const suffix = Date.now().toString(36);
 const code = `E2E_MKT_${suffix}`;
@@ -18,46 +16,13 @@ type Currency = { id: string; isoCode: string; name: string };
 type Unit = { id: string; name: string };
 type List<T> = { count: number; results: T[] };
 
-async function login(page: Page): Promise<string> {
-  await page.goto("/login");
-  const usernameInput = page.getByRole("textbox", {
-    name: "用户名",
-    exact: true,
-  });
-  const passwordInput = page.getByRole("textbox", {
-    name: "密码",
-    exact: true,
-  });
-  await expect
-    .poll(() =>
-      usernameInput.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith("__reactProps$")),
-      ),
-    )
-    .toBe(true);
-  await usernameInput.pressSequentially(username);
-  await passwordInput.pressSequentially(password);
-  await page.getByRole("button", { name: /登\s*录|正在登录/ }).click();
-  await expect(
-    page.getByRole("navigation", { name: "模块导航" }),
-  ).toBeVisible();
-  const token = await page.evaluate(() =>
-    window.localStorage.getItem("synie:token"),
-  );
-  expect(token).toBeTruthy();
-  return token!;
-}
-
 async function queryFirst<T>(
   request: APIRequestContext,
-  token: string,
   path: string,
   data: Record<string, unknown>,
 ): Promise<T> {
-  const response = await request.post(`/api/v1${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    data,
-  });
+  // page.request 与浏览器同 context,自动携带会话 cookie
+  const response = await request.post(`/api/v1${path}`, { data });
   const text = await response.text();
   expect(response.ok(), `${path}: ${response.status()} ${text}`).toBeTruthy();
   const body = JSON.parse(text) as List<T>;
@@ -68,10 +33,14 @@ async function queryFirst<T>(
   return body.results[0]!;
 }
 
-async function cleanupInstrument(token: string, id: string): Promise<void> {
+async function cleanupInstrument(
+  cookie: { Cookie: string },
+  id: string,
+): Promise<void> {
+  // 直连 API origin,cookie 域是前端 origin,需显式带 Cookie 头
   const response = await fetch(`${goAPIURL}/base/market-instruments/${id}`, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: cookie,
   });
   if (!response.ok && response.status !== 404) {
     throw new Error(
@@ -105,17 +74,17 @@ test.setTimeout(120_000);
 
 test("行情 Grid、Drawer、图表与远程选择器全程使用 Go REST", async ({
   page,
-  request,
 }) => {
-  const token = await login(page);
+  await loginViaUI(page);
+  const cookie = await sessionCookieHeader(page.context());
   const [currency, unit] = await Promise.all([
-    queryFirst<Currency>(request, token, "/base/currencies/query", {
+    queryFirst<Currency>(page.request, "/base/currencies/query", {
       limit: 1,
       offset: 0,
       sort: { column: "isoCode", direction: "ascending" },
       filter: { active: { kind: "bool", eq: true } },
     }),
-    queryFirst<Unit>(request, token, "/base/units/query", {
+    queryFirst<Unit>(page.request, "/base/units/query", {
       limit: 1,
       offset: 0,
       sort: { column: "name", direction: "ascending" },
@@ -313,7 +282,7 @@ test("行情 Grid、Drawer、图表与远程选择器全程使用 Go REST", asyn
     expect(graphqlRequests).toEqual([]);
   } finally {
     if (createdId) {
-      await cleanupInstrument(token, createdId);
+      await cleanupInstrument(cookie, createdId);
     }
   }
 });

@@ -21,6 +21,16 @@ export function createAuthStore(db: Kysely<Database>) {
     return row ?? null
   }
 
+  /** better-auth 会话的 auth_user id → sys_user id（未关联返回 null） */
+  async function userIdByAuthUserId(authUserId: string): Promise<string | null> {
+    const row = await db
+      .selectFrom('sys_user')
+      .select('id')
+      .where('auth_user_id', '=', authUserId)
+      .executeTakeFirst()
+    return row?.id ?? null
+  }
+
   async function actorByUserId(userId: string): Promise<Actor | null> {
     const base = await db
       .selectFrom('sys_user')
@@ -80,7 +90,7 @@ export function createAuthStore(db: Kysely<Database>) {
     return rows.map((row) => row.menu_code)
   }
 
-  return { credentialsByUsername, actorByUserId, menuCodesByUserId }
+  return { credentialsByUsername, userIdByAuthUserId, actorByUserId, menuCodesByUserId }
 }
 
 export type AuthStore = ReturnType<typeof createAuthStore>

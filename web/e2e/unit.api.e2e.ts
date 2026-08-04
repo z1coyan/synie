@@ -1,22 +1,12 @@
 import { expect, test } from '@playwright/test'
+import { loginViaUI } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const suffix = Date.now().toString(36)
 const symbol = `e2e-${suffix}`
 const name = `浏览器测试单位-${suffix}`
 
-test('单位 Grid 与 Drawer CRUD 不经过 GraphQL', async ({ page, request }) => {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', { name: '用户名', exact: true })
-  const passwordInput = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect.poll(() => usernameInput.evaluate((node) =>
-    Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-  )).toBe(true)
-  await usernameInput.pressSequentially(username)
-  await passwordInput.pressSequentially(password)
-  await page.getByRole('button', { name: /登\s*录|正在登录/ }).click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
+test('单位 Grid 与 Drawer CRUD 不经过 GraphQL', async ({ page }) => {
+  await loginViaUI(page)
 
   const graphqlRequests: Array<{ url: string; body: string | null }> = []
   page.on('request', (req) => {
@@ -44,18 +34,15 @@ test('单位 Grid 与 Drawer CRUD 不经过 GraphQL', async ({ page, request }) 
   await expect(page.getByRole('row').filter({ hasText: symbol })).toBeVisible()
   expect(graphqlRequests).toEqual([])
 
-  const token = await page.evaluate(() => window.localStorage.getItem('synie:token'))
-  const query = await request.post('/api/v1/base/units/query', {
-    headers: { Authorization: `Bearer ${token}` },
+  // page.request 与浏览器同 context,自动携带会话 cookie
+  const query = await page.request.post('/api/v1/base/units/query', {
     data: { limit: 10, offset: 0, search: symbol },
   })
   const queryBody = await query.text()
   expect(query.ok(), `${query.status()} ${queryBody}`).toBeTruthy()
   const body = JSON.parse(queryBody) as { results: Array<{ id: string }> }
   expect(body.results).toHaveLength(1)
-  const deleted = await request.delete(`/api/v1/base/units/${body.results[0].id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
+  const deleted = await page.request.delete(`/api/v1/base/units/${body.results[0].id}`)
   expect(deleted.ok()).toBeTruthy()
   expect(graphqlRequests).toEqual([])
 })
