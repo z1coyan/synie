@@ -1,7 +1,6 @@
 import type { Kysely } from 'kysely'
 import type { DB as Database } from '~/db/types.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
-import type { OwnerRegistry } from '~/platform/files/owner-registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
 import { createDemandService } from './demand-service.ts'
@@ -34,15 +33,6 @@ export function registerManufacturingResources(registry: Registry): void {
     registry.register(meta)
   }
   registerManufacturingSettingResources(registry)
-}
-
-/** 工单图纸只读展示：列表附件 API 不强制 resolveOwner，注册后上传/挂接路径可校验宿主 */
-export function registerManufacturingFileOwners(owners: OwnerRegistry): void {
-  owners.register('mfg_work_order', {
-    table: 'mfg_work_order',
-    permissionPrefix: 'mfg.work_order',
-    companyScoped: true,
-  })
 }
 
 export function createManufacturingServices(

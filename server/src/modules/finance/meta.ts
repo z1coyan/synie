@@ -61,6 +61,8 @@ export const VAT_INVOICE_RESOURCE_NAME = 'accVatInvoices'
 export function vatInvoiceResourceMeta(): ResourceMeta {
   return {
     name: VAT_INVOICE_RESOURCE_NAME,
+    classification: { presentation: 'extension', interactive: true, note: 'OCR Presentation Extension' },
+    attachments: { companyScoped: true },
     permissionPrefix: 'acc.vat_invoice',
     numbering: true,
     permissionLabel: '增值税发票',
@@ -367,6 +369,8 @@ const crudActions = [
 export function bankAccountResourceMeta(): ResourceMeta {
   return {
     name: 'accBankAccounts',
+    classification: { presentation: 'basic', interactive: true },
+    attachments: { companyScoped: true },
     permissionPrefix: 'acc.bank_account',
     permissionLabel: '银行账户',
     table: 'acc_bank_account',
@@ -411,6 +415,8 @@ export function bankAccountResourceMeta(): ResourceMeta {
 export function bankTransactionResourceMeta(): ResourceMeta {
   return {
     name: 'accBankTransactions',
+    classification: { presentation: 'extension', interactive: true, note: '对账 reconcile 命令 + 导入' },
+    attachments: { companyScoped: true },
     permissionPrefix: ACC_BANK_TRANSACTION.prefix,
     permissionLabel: '银行流水',
     table: 'acc_bank_transaction',
@@ -463,6 +469,7 @@ export function bankTransactionResourceMeta(): ResourceMeta {
 export function bankImportTemplateResourceMeta(): ResourceMeta {
   return {
     name: 'accBankImportTemplates',
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'acc.bank_import_template',
     permissionLabel: '流水导入模板',
     table: 'acc_bank_import_template',
@@ -535,6 +542,7 @@ export function bankImportTemplateResourceMeta(): ResourceMeta {
 export function bankImportResourceMeta(): ResourceMeta {
   return {
     name: 'accBankImports',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'acc.bank_transaction',
     permissionLabel: '银行流水',
     table: 'acc_bank_import',
@@ -584,6 +592,7 @@ export function bankImportResourceMeta(): ResourceMeta {
 export function bankImportItemResourceMeta(): ResourceMeta {
   return {
     name: 'accBankImportItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'acc.bank_transaction',
     permissionLabel: '银行流水',
     table: 'acc_bank_import_item',
@@ -623,6 +632,7 @@ export function bankImportItemResourceMeta(): ResourceMeta {
 export function bankReconciliationResourceMeta(): ResourceMeta {
   return {
     name: 'accBankReconciliations',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'acc.bank_transaction',
     permissionLabel: '银行流水',
     table: 'acc_bank_reconciliation',
@@ -653,6 +663,7 @@ export function bankReconciliationResourceMeta(): ResourceMeta {
 export function expenseReportResourceMeta(): ResourceMeta {
   return {
     name: 'accExpenseReports',
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: 'acc.expense_report',
     numbering: true,
     permissionLabel: '费用报销单',
@@ -710,6 +721,7 @@ export function expenseReportResourceMeta(): ResourceMeta {
 export function expenseReportItemResourceMeta(): ResourceMeta {
   return {
     name: 'accExpenseReportItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'acc.expense_report',
     permissionLabel: '费用报销单',
     table: 'acc_expense_report_item',
@@ -752,6 +764,9 @@ export function expenseReportItemResourceMeta(): ResourceMeta {
 export function billResourceMeta(): ResourceMeta {
   return {
     name: 'accBills',
+    classification: { presentation: 'extension', interactive: true, note: '票面影像附件' },
+    /** 票面影像宿主：acc_bill 无 company_id（全局宿主） */
+    attachments: { companyScoped: false },
     permissionPrefix: 'acc.bill',
     permissionLabel: '承兑票据',
     table: 'acc_bill',
@@ -815,6 +830,8 @@ export function billResourceMeta(): ResourceMeta {
 export function billTransactionResourceMeta(): ResourceMeta {
   return {
     name: 'accBillTransactions',
+    classification: { presentation: 'extension', interactive: true },
+    attachments: { companyScoped: true },
     permissionPrefix: 'acc.bill_transaction',
     numbering: true,
     permissionLabel: '承兑交易',
@@ -906,6 +923,7 @@ export function billTransactionResourceMeta(): ResourceMeta {
 export function billHoldingResourceMeta(): ResourceMeta {
   return {
     name: 'accBillHoldings',
+    classification: { presentation: 'none', interactive: false, note: '只读持有投影' },
     permissionPrefix: 'acc.bill_holding',
     permissionLabel: '持有承兑',
     table: 'acc_bill_holding',

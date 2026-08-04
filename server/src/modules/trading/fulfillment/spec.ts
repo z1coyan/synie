@@ -156,6 +156,8 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
   if (sales) printLoops.push({ name: 'pack_lines', resource: 'salDeliveryPackLines' })
   return {
     name: spec.headResource,
+    // salDeliveries 侧走 AggregateDraftAdapter + 装箱（Presentation Extension）
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: spec.prefix,
     numbering: true,
     permissionLabel: spec.label,
@@ -234,6 +236,7 @@ export function fulfillmentItemMeta(side: TradingSide): ResourceMeta {
       ]
   return {
     name: spec.itemResource,
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
@@ -342,6 +345,7 @@ export function fulfillmentItemListMeta(side: TradingSide): ResourceMeta {
 export function packBoxMeta(): ResourceMeta {
   return {
     name: 'salDeliveryPackBoxes',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.delivery',
     permissionLabel: '销售发货单',
     table: 'sal_delivery_pack_box',
@@ -367,6 +371,7 @@ export function packBoxMeta(): ResourceMeta {
 export function packLineMeta(): ResourceMeta {
   return {
     name: 'salDeliveryPackLines',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.delivery',
     permissionLabel: '销售发货单',
     table: 'sal_delivery_pack_line',

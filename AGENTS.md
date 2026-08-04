@@ -7,6 +7,7 @@
 - 产品文档在 `docs/产品文档/`（功能说明书，按业务模块分篇，模板与维护约定见其中 README）。
 - 交付新功能或变更业务规则时，必须同步更新 `docs/产品文档/` 对应篇及根目录 `CONTEXT.md`。
 - 术语唯一定义在 `CONTEXT.md`；架构取舍在 `docs/adr/`；活跃规格与工单在 `.scratch/`。
+- 新增资源的前后端接入点清单见 `docs/architecture/resource-onboarding.md`。
 
 ## Agent skills
 

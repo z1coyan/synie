@@ -16,7 +16,10 @@ import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
  * （sys.role_permission/sys.role_menu 挂在「角色权限」菜单下，sys.setting 挂在「基础设置」下）。
  * 将来出现真正无界面的权限资源时在此补一行并写明原因，勿为消红而放宽断言。
  */
-export const UNLINKED_PERMISSION_PREFIXES: ReadonlyArray<string> = []
+export const UNLINKED_PERMISSION_PREFIXES: ReadonlyArray<string> = [
+  // 从属地址无独立菜单：嵌客户/供应商/公司抽屉维护（见 basPartyAddresses classification）
+  'base.party_address',
+]
 
 const catalogPrefixes = new Set(
   createSealedResourceRegistry()

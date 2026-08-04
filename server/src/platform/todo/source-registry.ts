@@ -1,5 +1,6 @@
 import { sql, type RawBuilder } from 'kysely'
 import { ApiError } from '../http/errors.ts'
+import type { ResourceMeta } from '../meta/types.ts'
 
 const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/
 
@@ -164,5 +165,54 @@ export function buildDraftLinkedCase(registry: TodoSourceRegistry): RawBuilder<u
 export function assertSourcesRegistered(registry: TodoSourceRegistry): void {
   if (registry.allSources().size === 0) {
     throw new ApiError('internal', '待办源未注册')
+  }
+}
+
+/**
+ * 启动期一致性断言（组合根调用）：
+ * 1. 双向镜像：meta.todoSource 声明的 source_type 与 registerSource 注册项必须一一对应，
+ *    抓「开待办的资源忘了配权限 spec」与「注册了 spec 却没人开待办」两个方向；
+ * 2. 有效性：draftLink / party 引用的表与列必须存在于 Meta Registry（防手抄表名漂移）。
+ */
+export function assertTodoSourcesConsistent(
+  resources: ResourceMeta[],
+  registry: TodoSourceRegistry,
+): void {
+  const declared = new Set(
+    resources.filter((r) => r.todoSource).map((r) => r.todoSource as string),
+  )
+  const registered = new Set(registry.allSources().keys())
+  const missing = [...declared].filter((s) => !registered.has(s))
+  const extra = [...registered].filter((s) => !declared.has(s))
+  if (missing.length || extra.length) {
+    throw new Error(
+      `todo: 待办源声明与注册不一致: 声明未注册=[${missing.join(',')}] 注册未声明=[${extra.join(',')}]`,
+    )
+  }
+
+  const byTable = new Map(resources.map((r) => [r.table, r]))
+  const hasColumn = (meta: ResourceMeta, column: string) =>
+    meta.fields.some((f) => f.dbColumn === column)
+
+  for (const [sourceType, spec] of registry.allSources()) {
+    if (!spec.draftLink) continue
+    const target = byTable.get(spec.draftLink.table)
+    if (!target) {
+      throw new Error(`todo: 源 ${sourceType} 的 draftLink.table ${spec.draftLink.table} 不在 Meta Registry`)
+    }
+    for (const column of [spec.draftLink.fkColumn, spec.draftLink.statusColumn ?? 'status']) {
+      if (!hasColumn(target, column)) {
+        throw new Error(`todo: 源 ${sourceType} 的 draftLink 列 ${column} 不在 ${target.name} 字段中`)
+      }
+    }
+  }
+  for (const [partyType, spec] of registry.allParties()) {
+    const target = byTable.get(spec.table)
+    if (!target) {
+      throw new Error(`todo: 对手类型 ${partyType} 的表 ${spec.table} 不在 Meta Registry`)
+    }
+    if (!hasColumn(target, spec.nameColumn)) {
+      throw new Error(`todo: 对手类型 ${partyType} 的列 ${spec.nameColumn} 不在 ${target.name} 字段中`)
+    }
   }
 }

@@ -74,6 +74,7 @@ describe('编号字段目录 fail-closed', () => {
     const registry = createRegistry()
     registry.register({
       name: 'demoHeads',
+      classification: { presentation: 'none', interactive: false },
       permissionPrefix: 'demo.doc',
       permissionLabel: '演示单据',
       table: 'demo_head',
@@ -83,6 +84,7 @@ describe('编号字段目录 fail-closed', () => {
     })
     registry.register({
       name: 'demoItems',
+      classification: { presentation: 'none', interactive: false },
       permissionPrefix: 'demo.doc',
       permissionLabel: '演示单据',
       table: 'demo_item',
@@ -98,6 +100,7 @@ describe('编号字段目录 fail-closed', () => {
     const registry = createRegistry()
     registry.register({
       name: 'demoEmpties',
+      classification: { presentation: 'none', interactive: false },
       permissionPrefix: 'demo.empty',
       permissionLabel: '演示空单',
       table: 'demo_empty',
@@ -113,6 +116,7 @@ describe('编号字段目录 fail-closed', () => {
     const registry = createRegistry()
     registry.register({
       name: 'demoCompanies',
+      classification: { presentation: 'none', interactive: false },
       permissionPrefix: 'demo.company',
       permissionLabel: '演示公司',
       table: 'demo_company',
@@ -121,6 +125,7 @@ describe('编号字段目录 fail-closed', () => {
     })
     registry.register({
       name: 'demoDocs',
+      classification: { presentation: 'none', interactive: false },
       permissionPrefix: 'demo.doc',
       permissionLabel: '演示单据',
       table: 'demo_doc',

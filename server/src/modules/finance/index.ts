@@ -14,7 +14,6 @@ import { createBankingService } from './banking-service.ts'
 import { createExpenseService } from './expense-service.ts'
 import { createBillService } from './bill-service.ts'
 import { allFinanceResourceMetas } from './meta.ts'
-import type { OwnerRegistry } from '~/platform/files/owner-registry.ts'
 import type { TodoSourceRegistry } from '~/platform/todo/source-registry.ts'
 import { registerFinanceSettingResources } from './settings.ts'
 
@@ -55,19 +54,6 @@ export function registerFinanceResources(registry: Registry): void {
     registry.register(meta)
   }
   registerFinanceSettingResources(registry)
-}
-
-export function registerFinanceFileOwners(owners: OwnerRegistry): void {
-  owners.register('acc_bank_account', {
-    table: 'acc_bank_account',
-    permissionPrefix: 'acc.bank_account',
-    companyScoped: true,
-  })
-  owners.register('acc_bank_transaction', {
-    table: 'acc_bank_transaction',
-    permissionPrefix: 'acc.bank_transaction',
-    companyScoped: true,
-  })
 }
 
 /**

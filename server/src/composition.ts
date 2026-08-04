@@ -12,11 +12,10 @@ import { createBaseServices } from './modules/base/index.ts'
 import { createMarketService } from './modules/base/market/index.ts'
 import { createHrServices } from './modules/hr/index.ts'
 import { createIamService } from './modules/iam/index.ts'
-import { createInventoryServices, registerInventoryFileOwners } from './modules/inventory/index.ts'
+import { createInventoryServices } from './modules/inventory/index.ts'
 import {
   createManufacturingServices,
   createManufacturingSettingService,
-  registerManufacturingFileOwners,
   registerWorkOrderDocBuilder,
 } from './modules/manufacturing/index.ts'
 import { createPartyServices, registerPartyTodoSources } from './modules/party/index.ts'
@@ -30,7 +29,6 @@ import {
 import {
   createAccountingSettingService,
   createFinanceServices,
-  registerFinanceFileOwners,
   registerFinanceTodoSources,
 } from './modules/finance/index.ts'
 import { isJournalLinkedToBankRecon } from './modules/finance/banking-recon.ts'
@@ -38,8 +36,8 @@ import { seedMaterialCategories, seedSampleData } from './modules/setup/index.ts
 import type { TokenManager } from './platform/auth/token.ts'
 import { createAuditService } from './platform/audit/index.ts'
 import {
+  buildOwnerRegistryFromMeta,
   createFileService,
-  createOwnerRegistry,
   createStorageService,
 } from './platform/files/index.ts'
 import type { Registry } from './platform/meta/registry.ts'
@@ -48,12 +46,15 @@ import {
   buildPrintingCatalog,
   createPrintingService,
   createSofficeConverter,
-  registerPrintingFileOwners,
 } from './platform/printing/index.ts'
 import type { PDFConverter } from './platform/printing/pdf.ts'
 import { createSettingsService } from './platform/settings/index.ts'
 import { createSetupService, type SetupService } from './platform/setup/index.ts'
-import { createTodoService, createTodoSourceRegistry } from './platform/todo/index.ts'
+import {
+  assertTodoSourcesConsistent,
+  createTodoService,
+  createTodoSourceRegistry,
+} from './platform/todo/index.ts'
 
 export interface CreateServicesOptions {
   registry: Registry
@@ -75,11 +76,8 @@ function assembleDomain(
     accounting: createAccountingSettingService(db),
   })
   const numbering = createNumberingService(db, buildNumberingCatalog(opts.registry))
-  const owners = createOwnerRegistry()
-  registerPrintingFileOwners(owners)
-  registerFinanceFileOwners(owners)
-  registerManufacturingFileOwners(owners)
-  registerInventoryFileOwners(owners)
+  // 附件宿主从 Meta Registry 派生（meta.attachments 即声明即注册，启动期 fail-closed）
+  const owners = buildOwnerRegistryFromMeta(opts.registry.list())
   const files = createFileService({ db, owners })
   const storages = createStorageService({ db })
   const audit = createAuditService(db)
@@ -113,6 +111,8 @@ function assembleDomain(
   const todoSources = createTodoSourceRegistry()
   registerFinanceTodoSources(todoSources)
   registerPartyTodoSources(todoSources)
+  // 启动期 fail-closed：meta.todoSource 声明与注册互为镜像，draftLink/party 表列必须存在
+  assertTodoSourcesConsistent(opts.registry.list(), todoSources)
   const todos = createTodoService(db, todoSources)
   const scm = createScmServices(db)
   const manufacturing = createManufacturingServices(db, numbering)

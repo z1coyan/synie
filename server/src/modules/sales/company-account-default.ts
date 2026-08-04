@@ -38,6 +38,7 @@ export function companyAccountDefaultMeta(): ResourceMeta {
   const nameField = 'name'
   return {
     name: 'salCompanyAccountDefaults',
+    classification: { presentation: 'none', interactive: false, note: '公司科目默认只读投影 / 嵌入设置' },
     permissionPrefix: 'sales.setting',
     permissionLabel: '供应链设置',
     table: 'sal_company_account_default',

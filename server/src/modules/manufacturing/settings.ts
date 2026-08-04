@@ -31,6 +31,7 @@ const MFG_AUDIT = auditFieldsOf(manufacturingSettingResourceMeta())
 export function manufacturingSettingResourceMeta(): ResourceMeta {
   return {
     name: MFG_RESOURCE_NAME,
+    classification: { presentation: 'extension', interactive: true, note: 'update-only 单行设置卡片；含百分比显示转换' },
     permissionPrefix: 'mfg.setting',
     permissionLabel: '生产设置',
     table: 'mfg_setting',

@@ -32,6 +32,7 @@ export const ACCOUNT_RESOURCE_NAME = 'basAccounts'
 export function currencyResourceMeta(): ResourceMeta {
   return {
     name: CURRENCY_RESOURCE_NAME,
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'base.currency',
     permissionLabel: '币种',
     /** 界面显示「货币」，与历史 drawer 标签一致；权限组仍为「币种」 */
@@ -87,6 +88,7 @@ export function companyResourceMeta(): ResourceMeta {
   const currencyRelation = 'baseCurrency'
   return {
     name: COMPANY_RESOURCE_NAME,
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'base.company',
     permissionLabel: '公司',
     label: '公司',
@@ -145,6 +147,7 @@ const unitTypes = [
 export function unitResourceMeta(): ResourceMeta {
   return {
     name: UNIT_RESOURCE_NAME,
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'base.unit',
     permissionLabel: '计量单位',
     /** 界面显示「单位」，与历史 drawer 标签一致；权限组仍为「计量单位」 */
@@ -235,6 +238,7 @@ export function accountResourceMeta(): ResourceMeta {
   const currencyRelation = 'currency'
   return {
     name: ACCOUNT_RESOURCE_NAME,
+    classification: { presentation: 'extension', interactive: true, note: '汇总科目 effects + role 动态可见 + 公司上下文 parent 筛选' },
     permissionPrefix: 'base.account',
     permissionLabel: '会计科目',
     table: 'bas_account',

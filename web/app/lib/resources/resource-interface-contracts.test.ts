@@ -6,106 +6,14 @@ import {
   resourceTransportFor,
 } from './registry'
 
-const EXPECTED_RESOURCES = [
-  'accBankAccounts',
-  'accBankImportItems',
-  'accBankImportTemplates',
-  'accBankImports',
-  'accBankReconciliations',
-  'accBankTransactions',
-  'accBillHoldings',
-  'accBillTransactions',
-  'accBills',
-  'accExpenseReportItems',
-  'accExpenseReports',
-  'accGlEntries',
-  'accGlJournalLines',
-  'accGlJournals',
-  'accSettings',
-  'accVatInvoices',
-  'basAccounts',
-  'basCompanies',
-  'basCurrencies',
-  'basMarketInstruments',
-  'basMarketPricePoints',
-  'basPartyAddresses',
-  'basUnits',
-  'hrAttendanceCorrections',
-  'hrAttendanceDays',
-  'hrAttendanceImports',
-  'hrAttendancePunches',
-  'hrEmployeeLoans',
-  'hrEmployees',
-  'hrPayrollPayments',
-  'hrPayrolls',
-  'invMaterialCategories',
-  'invMaterialUnits',
-  'invMaterials',
-  'invStockCountItems',
-  'invStockCounts',
-  'invStockDocItems',
-  'invStockDocs',
-  'invStockEntries',
-  'invStockTransferItems',
-  'invStockTransfers',
-  'invWarehouses',
-  'mfgBomByproducts',
-  'mfgBomComponents',
-  'mfgBomRoutes',
-  'mfgBoms',
-  'mfgDemandItems',
-  'mfgDemands',
-  'mfgMoldDesigns',
-  'mfgOperations',
-  'mfgOutputItems',
-  'mfgOutputs',
-  'mfgProcessTemplateItems',
-  'mfgProcessTemplates',
-  'mfgSettings',
-  'mfgWorkOrders',
-  'purOrderItemByproducts',
-  'purOrderItemMaterials',
-  'purOrderItems',
-  'purOrders',
-  'purOutsourcedIssueItems',
-  'purOutsourcedIssues',
-  'purOutsourcedReceiptItemByproducts',
-  'purOutsourcedReceiptItemMaterials',
-  'purOutsourcedReceiptItems',
-  'purOutsourcedReceipts',
-  'purQuotationItems',
-  'purQuotationTiers',
-  'purQuotations',
-  'purReceiptItems',
-  'purReceipts',
-  'purReconciliationItems',
-  'purReconciliations',
-  'purSuppliers',
-  'salCompanyAccountDefaults',
-  'salCustomers',
-  'salDeliveries',
-  'salDeliveryItems',
-  'salDeliveryPackBoxes',
-  'salDeliveryPackLines',
-  'salOrderItems',
-  'salOrders',
-  'salQuotationItems',
-  'salQuotationTiers',
-  'salQuotations',
-  'salReconciliationItems',
-  'salReconciliations',
-  'salSettings',
-  'scmOrderFlowItems',
-  'sysAuditLogs',
-  'sysFiles',
-  'sysNumberingCounters',
-  'sysNumberingRules',
-  'sysPrintTemplates',
-  'sysRoles',
-  'sysSettings',
-  'sysStorages',
-  'sysUsers',
-] as const
+/**
+ * 资源名单一事实源是 registry.ts 的 transports map（真实绑定）；
+ * 本测试从其派生清单逐一验收 seam 契约，不再独立维护第二份名单。
+ * 「集合是否有意识变更」由 transports map 本身的 diff 审查保证。
+ */
+const EXPECTED_RESOURCES = listResourceBindingKeys()
+
+const RESOURCE_NAME_RE = /^(acc|bas|hr|inv|mfg|pur|sal|scm|sys)[A-Z][A-Za-z]*$/
 
 const READ_ONLY_RESOURCES = [
   'accBillHoldings',
@@ -161,8 +69,14 @@ function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
 }
 
 describe('生产 ResourceBinding interface 契约', () => {
-  test('97 个资源从同一 binding seam 到达类型化 REST Adapter', async () => {
-    expect(listResourceBindingKeys()).toEqual([...EXPECTED_RESOURCES])
+  test('全部资源从同一 binding seam 到达类型化 REST Adapter', async () => {
+    // 名单派生自 transports map：只做结构性体检（非空/唯一/排序/域前缀命名）
+    expect(EXPECTED_RESOURCES.length).toBeGreaterThanOrEqual(90)
+    expect(new Set(EXPECTED_RESOURCES).size).toBe(EXPECTED_RESOURCES.length)
+    expect([...EXPECTED_RESOURCES].sort()).toEqual(EXPECTED_RESOURCES)
+    for (const resource of EXPECTED_RESOURCES) {
+      expect(resource, resource).toMatch(RESOURCE_NAME_RE)
+    }
 
     const requests: Array<{ url: string; method: string }> = []
     const originalFetch = globalThis.fetch

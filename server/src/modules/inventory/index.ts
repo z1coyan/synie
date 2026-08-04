@@ -2,7 +2,6 @@ import type { Kysely } from 'kysely'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { DB as Database } from '~/db/types.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
-import type { OwnerRegistry } from '~/platform/files/owner-registry.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { createMaterialCategoryService } from './category-service.ts'
 import { createMaterialService } from './material-service.ts'
@@ -31,15 +30,6 @@ export function registerInventoryResources(registry: Registry): void {
   for (const meta of allInventoryResourceMetas()) {
     registry.register(meta)
   }
-}
-
-/** 物料图纸/其他文件挂接：物料全局共享不分公司,companyScoped=false（见 .scratch/attachment-owner-whitelist 01） */
-export function registerInventoryFileOwners(owners: OwnerRegistry): void {
-  owners.register('inv_material', {
-    table: 'inv_material',
-    permissionPrefix: 'base.material',
-    companyScoped: false,
-  })
 }
 
 /** 装配库存域全部服务（主数据 + 单据 + 分录/余额） */

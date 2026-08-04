@@ -37,6 +37,7 @@ const SALES_AUDIT = auditFieldsOf(salesResourceMeta())
 export function salesResourceMeta(): ResourceMeta {
   return {
     name: SALES_RESOURCE_NAME,
+    classification: { presentation: 'extension', interactive: true, note: 'update-only 单行设置卡片' },
     permissionPrefix: 'sales.setting',
     permissionLabel: '供应链设置',
     table: 'sal_setting',

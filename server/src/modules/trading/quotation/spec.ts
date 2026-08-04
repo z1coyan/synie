@@ -125,6 +125,7 @@ export function quotationHeadMeta(side: TradingSide): ResourceMeta {
   const discriminatorType = 'enum'
   return {
     name: spec.headResource,
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: spec.prefix,
     numbering: true,
     permissionLabel: spec.label,
@@ -235,6 +236,7 @@ export function quotationItemMeta(side: TradingSide): ResourceMeta {
   const discriminatorType = 'enum'
   return {
     name: spec.itemResource,
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
@@ -388,6 +390,7 @@ export function quotationTierMeta(side: TradingSide): ResourceMeta {
   const spec = quotationSpec(side)
   return {
     name: spec.tierResource,
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.tierTable,

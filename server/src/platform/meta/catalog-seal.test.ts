@@ -4,10 +4,6 @@ import { createSealedResourceRegistry, registerAllResources } from './register-a
 import { currencyResourceMeta, companyResourceMeta } from '~/modules/base/meta.ts'
 import type { Actor } from '../authz/actor.ts'
 import { decodeResourceDocument } from '@synie/shared'
-import {
-  assertClassificationCoverage,
-  RESOURCE_CLASSIFICATION,
-} from './resource-classification.ts'
 
 const superAdmin: Actor = {
   userId: 'u',
@@ -257,12 +253,22 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     expect(catalog.form.kind).toBe('extension')
   })
 
-  test('分类表覆盖全部资源；无 legacy normalizer 模块', () => {
+  test('缺少 classification 的资源注册即失败（新资源必须被有意识分类）', () => {
+    const registry = createRegistry()
+    const broken = currencyResourceMeta()
+    delete broken.classification
+    expect(() => registry.register(broken)).toThrow(/缺少 classification/)
+  })
+
+  test('分类自 meta 自带并覆盖全部资源；无 legacy normalizer 模块', () => {
     const registry = createRegistry()
     registerAllResources(registry)
     registry.seal()
-    assertClassificationCoverage(registry.list().map((r) => r.name))
-    expect(Object.keys(RESOURCE_CLASSIFICATION).length).toBe(103)
+    const all = registry.list()
+    expect(all.length).toBe(103)
+    for (const resource of all) {
+      expect(resource.classification, resource.name).toBeDefined()
+    }
 
     for (const [name, expected] of [
       ['hrEmployees', ['name', 'code', 'attendanceNo']],

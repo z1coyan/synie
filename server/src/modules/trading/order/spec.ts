@@ -227,6 +227,7 @@ export function orderHeadMeta(side: TradingSide): ResourceMeta {
   }
   return {
     name: spec.headResource,
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: spec.prefix,
     numbering: true,
     permissionLabel: spec.label,
@@ -428,6 +429,7 @@ export function orderItemMeta(side: TradingSide): ResourceMeta {
   )
   return {
     name: spec.itemResource,
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
@@ -441,6 +443,7 @@ export function orderItemMeta(side: TradingSide): ResourceMeta {
 export function orderMaterialMeta(): ResourceMeta {
   return {
     name: 'purOrderItemMaterials',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'purchase.order',
     permissionLabel: '采购订单',
     table: 'pur_order_item_material',
@@ -525,6 +528,7 @@ export function orderMaterialMeta(): ResourceMeta {
 export function orderByproductMeta(): ResourceMeta {
   return {
     name: 'purOrderItemByproducts',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'purchase.order',
     permissionLabel: '采购订单',
     table: 'pur_order_item_byproduct',

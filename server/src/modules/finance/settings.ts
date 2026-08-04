@@ -30,6 +30,7 @@ const ACC_AUDIT_SPEC = auditSpecOf(accountingSettingResourceMeta())
 export function accountingSettingResourceMeta(): ResourceMeta {
   const meta: ResourceMeta = {
     name: ACC_RESOURCE_NAME,
+    classification: { presentation: 'extension', interactive: true, note: 'update-only 单行设置卡片；含 OCR 密钥只写交互' },
     permissionPrefix: 'acc.setting',
     permissionLabel: '财务设置',
     table: 'acc_setting',

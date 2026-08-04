@@ -7,6 +7,7 @@ export const STORAGE_RESOURCE_NAME = 'sysStorages'
 export function fileResourceMeta(): ResourceMeta {
   return {
     name: FILE_RESOURCE_NAME,
+    classification: { presentation: 'none', interactive: true, note: '上传创建、只读详情与删除；无普通 create/edit Form' },
     permissionPrefix: 'sys.file',
     permissionLabel: '附件',
     table: 'sys_file',
@@ -113,6 +114,7 @@ export function storageResourceMeta(): ResourceMeta {
   ]
   return {
     name: STORAGE_RESOURCE_NAME,
+    classification: { presentation: 'basic', interactive: true, note: 'setDefault 命令' },
     permissionPrefix: SYS_STORAGE.prefix,
     permissionLabel: '存储接入',
     table: 'sys_storage',

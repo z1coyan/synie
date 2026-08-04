@@ -40,6 +40,7 @@ export function journalResourceMeta(): ResourceMeta {
   const name = 'name'
   return {
     name: JOURNAL_RESOURCE_NAME,
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: 'acc.gl_journal',
     numbering: true,
     permissionLabel: '会计凭证',
@@ -125,6 +126,7 @@ export function journalLineResourceMeta(): ResourceMeta {
   const name = 'name'
   return {
     name: JOURNAL_LINE_RESOURCE_NAME,
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'acc.gl_journal',
     permissionLabel: '会计凭证',
     table: 'acc_gl_journal_line',
@@ -202,6 +204,7 @@ export function glEntryResourceMeta(): ResourceMeta {
   const name = 'name'
   return {
     name: GL_ENTRY_RESOURCE_NAME,
+    classification: { presentation: 'none', interactive: false, note: '只读总账分录' },
     permissionPrefix: 'acc.gl_entry',
     permissionLabel: '总账分录',
     table: 'acc_gl_entry',

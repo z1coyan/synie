@@ -24,6 +24,7 @@ function newTestCatalog() {
   const registry = createRegistry()
   registry.register({
     name: 'basCompanies',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'base.company',
     permissionLabel: '公司',
     table: 'bas_company',
@@ -39,6 +40,7 @@ function newTestCatalog() {
   })
   registry.register({
     name: 'invMaterials',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'base.material',
     permissionLabel: '物料',
     table: 'inv_material',
@@ -47,6 +49,7 @@ function newTestCatalog() {
   })
   registry.register({
     name: 'salOrders',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.order',
     permissionLabel: '销售订单',
     table: 'sal_order',
@@ -102,6 +105,7 @@ function newTestCatalog() {
   })
   registry.register({
     name: 'salOrderItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.order',
     permissionLabel: '销售订单',
     table: 'sal_order_item',
@@ -140,6 +144,7 @@ function newTestCatalog() {
   })
   registry.register({
     name: 'salQuotations',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.quotation',
     permissionLabel: '销售报价',
     table: 'sal_quotation',
@@ -161,6 +166,7 @@ function newTestCatalog() {
   })
   registry.register({
     name: 'salQuotationItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.quotation',
     permissionLabel: '销售报价',
     table: 'sal_quotation_item',
@@ -170,6 +176,7 @@ function newTestCatalog() {
   })
   registry.register({
     name: 'salQuotationTiers',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'sales.quotation',
     permissionLabel: '销售报价',
     table: 'sal_quotation_tier',
@@ -178,6 +185,7 @@ function newTestCatalog() {
   })
   registry.register({
     name: 'xProjection',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'x.projection',
     permissionLabel: '投影',
     table: 'x_projection',
