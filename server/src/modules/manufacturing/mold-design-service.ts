@@ -1,7 +1,7 @@
 /**
  * 模具设计（mfg_mold_design）：生产域独立实体，1:1 挂物料。
  * 创建时同事务自动建资产类物料（material_type='ASSET'，分类取生产设置「模具物料分类」，
- * 编号走 inv.material 既有规则）；编辑同步物料名称/规格/单位；删除级联删物料。
+ * 编号走 base.material 既有规则）；编辑同步物料名称/规格/单位；删除级联删物料。
  */
 import { sql } from 'kysely'
 import type { Kysely } from 'kysely'
@@ -100,7 +100,7 @@ export function createMoldDesignService(db: Kysely<Database>, numbering: Numberi
       }
       const code = (
         await numbering.nextInTx(trx, {
-          resource: 'inv.material',
+          resource: 'base.material',
           values: {
             name: normalized.name,
             spec: normalized.spec,

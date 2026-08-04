@@ -110,7 +110,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
       await validateRelations(trx, normalized)
       const code = (
         await numbering.nextInTx(trx, {
-          resource: 'inv.material',
+          resource: 'base.material',
           values: {
             name: normalized.name,
             spec: normalized.spec,

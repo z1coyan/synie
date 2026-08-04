@@ -124,9 +124,7 @@ export function materialResourceMeta(): ResourceMeta {
     classification: { presentation: 'extension', interactive: true, note: '单位转换 tab + 客户料 effects + 图纸附件' },
     /** 图纸等附件宿主：物料全局共享，不固化公司 */
     attachments: { companyScoped: false },
-    // 编号 prefix 破例：权限码已改名 base.material，但 DB 编号规则/计数器仍绑 inv.material
-    // （material/mold 服务取号也传 'inv.material'）。若将来统一改名，需一次显式 DB 规则迁移。
-    numbering: { prefix: 'inv.material' },
+    numbering: true,
     permissionPrefix: 'base.material',
     permissionLabel: '物料',
     table: 'inv_material',

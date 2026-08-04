@@ -2,8 +2,7 @@
  * 编号字段目录：自 meta.Registry 派生（对齐 printing/catalog.ts 先例）。
  * 声明 numbering 的资源按字段声明顺序产出目录：普通字段直取，
  * 普通 fk 一层展开为 lookup 字段，多态 fk 保留原始 ID 列。
- * DB 中的编号规则按 (prefix, path) 引用目录字段，派生结果须保持旧目录超集
- * （见 catalog.test.ts 特征化测试）。
+ * DB 中的编号规则按 (prefix, path) 引用目录字段，prefix 恒等于 permissionPrefix。
  */
 import type { Registry } from '../meta/registry.ts'
 import type { FieldMeta, ResourceMeta } from '../meta/types.ts'
@@ -48,11 +47,7 @@ export function buildNumberingCatalog(registry: Registry): {
 
   for (const meta of registry.list()) {
     if (!meta.numbering) continue
-    // prefix 缺省取 permissionPrefix；DB 规则绑旧串未迁移时可对象形态显式钉住（如 invMaterials）
-    const prefix =
-      typeof meta.numbering === 'object' && meta.numbering.prefix
-        ? meta.numbering.prefix
-        : meta.permissionPrefix
+    const prefix = meta.permissionPrefix
     const existing = byPrefix.get(prefix)
     if (existing) {
       throw new Error(

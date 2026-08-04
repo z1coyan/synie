@@ -851,7 +851,7 @@ export function outputItemResourceMeta(): ResourceMeta {
 export function moldDesignResourceMeta(): ResourceMeta {
   return {
     name: 'mfgMoldDesigns',
-    // 附件（图纸）挂物料宿主 inv_material 而非模具自身；编号走 inv.material 规则——均不在此声明
+    // 附件（图纸）挂物料宿主 inv_material 而非模具自身；编号走 base.material 规则——均不在此声明
     classification: {
       presentation: 'extension',
       interactive: true,

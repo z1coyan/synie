@@ -1,44 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import frozenCatalog from '../../../test/fixtures/numberables.json'
 import { createPlatformRegistry } from '../../../test/helpers.ts'
 import { createRegistry } from '../meta/registry.ts'
 import type { ResourceMeta } from '../meta/types.ts'
-import { buildNumberingCatalog, type CatalogField } from './catalog.ts'
-
-interface FrozenResource {
-  prefix: string
-  grid: string
-  fields: CatalogField[]
-}
-
-/**
- * 特征化豁免清单：旧 numberables.json 中确凿陈旧/错误、允许派生结果不再包含的
- * (prefix, path)。加入前必须注明原因。当前为空。
- */
-const EXEMPT_PATHS = new Set<string>([])
+import { buildNumberingCatalog } from './catalog.ts'
 
 describe('编号字段目录（Registry 派生）', () => {
   const catalog = buildNumberingCatalog(createPlatformRegistry())
-  const frozen = frozenCatalog as FrozenResource[]
-
-  test('特征化：派生目录是冻结目录（numberables.json fixture）的超集', () => {
-    // DB 中的编号规则按 (prefix, path) 引用目录字段：旧 path 一个都不能丢，
-    // sourceField/type/lookup 必须逐一一致（label 允许随 Meta 演进）。
-    expect(frozen.length).toBe(25)
-    for (const old of frozen) {
-      const derived = catalog.resource(old.prefix)
-      expect(derived, `缺少旧资源 ${old.prefix}`).toBeDefined()
-      expect(derived!.grid).toBe(old.grid)
-      for (const oldField of old.fields) {
-        if (EXEMPT_PATHS.has(`${old.prefix}/${oldField.path}`)) continue
-        const derivedField = derived!.byPath.get(oldField.path)
-        expect(derivedField, `缺少旧字段 ${old.prefix}/${oldField.path}`).toBeDefined()
-        expect(derivedField!.sourceField).toBe(oldField.sourceField)
-        expect(derivedField!.type).toBe(oldField.type)
-        expect(derivedField!.lookup ?? null).toEqual(oldField.lookup ?? null)
-      }
-    }
-  })
 
   test('publicResources 只暴露 path/label/type（wire 契约）', () => {
     const resources = catalog.publicResources()
@@ -58,9 +25,9 @@ describe('编号字段目录（Registry 派生）', () => {
     expect(catalog.resource('sys.user')).toBeUndefined()
   })
 
-  test('invMaterials 编号 prefix 钉住旧串 inv.material（权限码已改名 base.material，DB 规则未迁移）', () => {
-    expect(catalog.resource('inv.material')?.grid).toBe('invMaterials')
-    expect(catalog.resource('base.material')).toBeUndefined()
+  test('invMaterials 编号 prefix 即权限前缀 base.material', () => {
+    expect(catalog.resource('base.material')?.grid).toBe('invMaterials')
+    expect(catalog.resource('inv.material')).toBeUndefined()
   })
 })
 

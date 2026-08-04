@@ -84,16 +84,16 @@ run('PG 集成（模具设计）', () => {
         active: true,
       })
       .execute()
-    // inv.material 编号规则：启用规则全局唯一;残留启用规则可能是按公司计数（物料无公司），
+    // base.material 编号规则：启用规则全局唯一;残留启用规则可能是按公司计数（物料无公司），
     // 统一停用后建本测试的非公司计数规则
     await db
       .updateTable('sys_numbering_rule')
       .set({ enabled: false })
-      .where('resource', '=', 'inv.material')
+      .where('resource', '=', 'base.material')
       .where('enabled', '=', true)
       .execute()
     const rule = await numbering.create(actor, {
-      resource: 'inv.material',
+      resource: 'base.material',
       name: `模具测试物料号-${suffix}`,
       segments: [
         { type: 'text', value: `M${suffix}-` },

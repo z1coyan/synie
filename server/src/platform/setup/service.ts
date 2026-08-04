@@ -380,7 +380,7 @@ interface NumberingRuleSeed {
 async function seedNumberingRules(trx: DbHandle): Promise<void> {
   const rules: NumberingRuleSeed[] = [
     {
-      resource: 'inv.material',
+      resource: 'base.material',
       name: '物料编号',
       perCompany: false,
       segments: `[{"type":"field","field":"category.code","label":"物料分类·分类编号"},{"type":"field","field":"customer.code","label":"所属客户(仅客户物料)·客户编号"},{"type":"text","value":"-"},{"type":"seq","padding":0}]`,
