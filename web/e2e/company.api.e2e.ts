@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { loginViaUI } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 const sequence = Date.now() % (alphabet.length * alphabet.length)
 const isoCode = `R${alphabet[Math.floor(sequence / alphabet.length)]}${alphabet[sequence % alphabet.length]}`
@@ -18,25 +17,11 @@ async function waitInViewport(page: import('@playwright/test').Page, locator: im
   }).toBe(true)
 }
 
-test('公司页及用户公司授权选择器只使用 Go REST', async ({ page, request }) => {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', { name: '用户名', exact: true })
-  const passwordInput = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect.poll(() => usernameInput.evaluate((node) =>
-    Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-  )).toBe(true)
-  await usernameInput.pressSequentially(username)
-  await expect(usernameInput).toHaveValue(username)
-  await passwordInput.pressSequentially(password)
-  await expect(passwordInput).toHaveValue(password)
-  const loginButton = page.getByRole('button', { name: /登\s*录|正在登录/ })
-  await expect(loginButton).toBeEnabled()
-  await loginButton.click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
+test('公司页及用户公司授权选择器只使用 Go REST', async ({ page }) => {
+  await loginViaUI(page)
 
-  const token = await page.evaluate(() => window.localStorage.getItem('synie:token'))
-  const created = await request.post('/api/v1/base/currencies', {
-    headers: { Authorization: `Bearer ${token}` },
+  // page.request 与浏览器同 context,自动携带会话 cookie
+  const created = await page.request.post('/api/v1/base/currencies', {
     data: { name: currencyName, isoCode, symbol: 'R', active: true },
   })
   const createdText = await created.text()
@@ -83,9 +68,7 @@ test('公司页及用户公司授权选择器只使用 Go REST', async ({ page, 
 
   expect(graphqlRequests).toEqual([])
   } finally {
-    const deleted = await request.delete(`/api/v1/base/currencies/${currency.id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const deleted = await page.request.delete(`/api/v1/base/currencies/${currency.id}`)
     expect(deleted.ok()).toBeTruthy()
   }
 })

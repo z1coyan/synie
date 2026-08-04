@@ -5,10 +5,8 @@ import {
   type APIRequestContext,
   type Page,
 } from "@playwright/test";
+import { loginViaUI } from "./fixtures/session";
 
-const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const pgContainer = process.env.SYNIE_PG_CONTAINER ?? "synie-postgres-1";
 const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
@@ -144,46 +142,15 @@ function createFixture(): Fixture {
   };
 }
 
-async function login(page: Page): Promise<string> {
-  await page.goto("/login");
-  const usernameInput = page.getByRole("textbox", {
-    name: "用户名",
-    exact: true,
-  });
-  const passwordInput = page.getByRole("textbox", {
-    name: "密码",
-    exact: true,
-  });
-  await expect
-    .poll(() =>
-      usernameInput.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith("__reactProps$")),
-      ),
-    )
-    .toBe(true);
-  await usernameInput.pressSequentially(username);
-  await passwordInput.pressSequentially(password);
-  await page.getByRole("button", { name: /登\s*录|正在登录/ }).click();
-  await expect(
-    page.getByRole("navigation", { name: "模块导航" }),
-  ).toBeVisible();
-  const token = await page.evaluate(() =>
-    window.localStorage.getItem("synie:token"),
-  );
-  expect(token).toBeTruthy();
-  return token!;
-}
-
 async function apiJSON<T>(
   request: APIRequestContext,
   method: "get" | "post" | "patch",
   path: string,
-  token: string,
   data?: Record<string, unknown>,
   expected = 200,
 ): Promise<T> {
+  // 调用侧传 page.request:与浏览器同 context,自动携带会话 cookie
   const response = await request[method](path, {
-    headers: { Authorization: `Bearer ${token}` },
     ...(data === undefined ? {} : { data }),
   });
   const text = await response.text();
@@ -278,8 +245,9 @@ test.setTimeout(240_000);
 
 test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候选与作废", async ({
   page,
-  request,
 }) => {
+  // page.request 与浏览器同 context,自动携带会话 cookie(request fixture 不共享 cookie)
+  const request = page.request;
   const created: Created = {
     salesQuotationId: null,
     purchaseQuotationId: null,
@@ -303,7 +271,7 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
   const purchaseNo = `${prefix}-PUR`;
   try {
     const fixture = createFixture();
-    const token = await login(page);
+    await loginViaUI(page);
     const sideInputs = [
       {
         side: "sales",
@@ -328,7 +296,6 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
         request,
         "post",
         `/api/v1/${input.side}/quotations`,
-        token,
         {
           quotationNo: input.quotationNo,
           quotationDate: input.quotationDate,
@@ -349,7 +316,6 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
         request,
         "post",
         `/api/v1/${input.side}/quotation-items`,
-        token,
         {
           quotationId: quotation.id,
           idx: 1,
@@ -368,7 +334,6 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
         request,
         "post",
         `/api/v1/${input.side}/quotation-items`,
-        token,
         {
           quotationId: quotation.id,
           idx: 2,
@@ -391,7 +356,6 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
           request,
           "post",
           `/api/v1/${input.side}/quotation-tiers`,
-          token,
           { itemId: tiered.id, ...tierInput },
           201,
         );
@@ -421,7 +385,6 @@ test("销售/采购报价以 Go REST 完成混合定价、审核、过期、候�
       request,
       "post",
       "/api/v1/sales/quotation-items/query",
-      token,
       {
         limit: 20,
         offset: 0,

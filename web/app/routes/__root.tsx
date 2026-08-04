@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Outlet,
@@ -38,13 +38,36 @@ function RootComponent() {
   )
 }
 
-/** 全局加载动效:玄蓝幕布上词标晕开,金线延展,随后幕布上下拉开露出页面 */
+const BOOT_SPLASH_SEEN_KEY = 'synie:boot-splash-seen'
+
+/**
+ * 全局加载动效:玄蓝幕布上词标晕开,金线延展,随后幕布上下拉开露出页面。
+ * 只在本会话首次完整加载播放。hydration 安全:服务端与客户端初始渲染一致
+ * (都渲染幕布),mount 后查 sessionStorage——看过则立即隐藏(无动画),
+ * 没看过才播 1.7s 并落标记。
+ */
 function BootSplash() {
-  const [show, setShow] = useState(true)
+  // boot: SSR/客户端首帧一致渲染幕布;playing: 本会话首播;done: 隐藏
+  const [phase, setPhase] = useState<'boot' | 'playing' | 'done'>('boot')
+  // 是否真的播过:决定隐藏时走幕布拉开动画还是直接消失
+  const played = useRef(false)
   const reduced = useReducedMotion()
 
   useEffect(() => {
-    const timer = setTimeout(() => setShow(false), reduced ? 0 : 1700)
+    let seen = false
+    try {
+      seen = sessionStorage.getItem(BOOT_SPLASH_SEEN_KEY) === '1'
+      if (!seen) sessionStorage.setItem(BOOT_SPLASH_SEEN_KEY, '1')
+    } catch {
+      // 隐私模式等 sessionStorage 不可用:按未看过处理,照常播
+    }
+    if (seen) {
+      setPhase('done')
+      return
+    }
+    played.current = true
+    setPhase('playing')
+    const timer = setTimeout(() => setPhase('done'), reduced ? 0 : 1700)
     return () => clearTimeout(timer)
   }, [reduced])
 
@@ -53,9 +76,12 @@ function BootSplash() {
     ease: [0.76, 0, 0.24, 1] as const,
   }
 
+  // 本会话已看过:不进 AnimatePresence,立即消失不播出场动画
+  if (phase === 'done' && !played.current) return null
+
   return (
     <AnimatePresence>
-      {show && (
+      {phase !== 'done' && (
         <motion.div
           aria-hidden
           className="fixed inset-0 z-50 overflow-hidden"

@@ -1,9 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { expect, test, type Page } from "@playwright/test";
+import { loginViaUI } from "./fixtures/session";
 
-const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const pgContainer = process.env.SYNIE_PG_CONTAINER ?? "synie-postgres-1";
 const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
@@ -176,25 +174,6 @@ function createFixture(): Fixture {
   };
 }
 
-async function login(page: Page): Promise<void> {
-  await page.goto("/login");
-  const user = page.getByRole("textbox", { name: "用户名", exact: true });
-  const pass = page.getByRole("textbox", { name: "密码", exact: true });
-  await expect
-    .poll(() =>
-      user.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith("__reactProps$")),
-      ),
-    )
-    .toBe(true);
-  await user.pressSequentially(username);
-  await pass.pressSequentially(password);
-  await page.getByRole("button", { name: /登\s*录|正在登录/ }).click();
-  await expect(
-    page.getByRole("navigation", { name: "模块导航" }),
-  ).toBeVisible();
-}
-
 function cleanup(fixture: Fixture | null): void {
   if (!fixture) return;
   postgres(`
@@ -239,7 +218,7 @@ test("操作日志、待办页与铃铛全程使用 Go REST", async ({ page }) =
 
   try {
     fixture = createFixture();
-    await login(page);
+    await loginViaUI(page);
 
     const bell = page.getByRole("button", { name: /^待办(?:,\d+ 条未读)?$/ });
     await expect(bell).toBeVisible();

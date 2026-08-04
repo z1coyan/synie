@@ -7,6 +7,7 @@
 import { sql, type Kysely } from 'kysely'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
+import { syncUserCredential } from '../auth/credentials.ts'
 import { hashPassword } from '../auth/password.ts'
 import type { TokenManager } from '../auth/token.ts'
 import type { Actor } from '../authz/actor.ts'
@@ -162,6 +163,8 @@ export function createSetupService(deps: SetupServiceDeps) {
           })
           .returning(['id', 'username', 'name'])
           .executeTakeFirstOrThrow()
+        // 同事务补建 better-auth 账号（cookie 通道可直接用首个管理员登录）
+        await syncUserCredential(trx, { userId: inserted.id, hashedPassword: hash })
         return {
           id: inserted.id,
           username: String(inserted.username),

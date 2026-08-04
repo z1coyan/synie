@@ -14,7 +14,12 @@ export default defineConfig({
     proxy: {
       '/api/v1': {
         target: `http://localhost:${process.env.SYNIE_API_PORT || process.env.GO_API_PORT || 8080}`,
-        changeOrigin: true
+        changeOrigin: true,
+        // better-auth 对带 cookie 的写请求严格校验 Origin(须与 API host 同源);
+        // dev 代理下浏览器 Origin 是前端口,统一改写为 target。生产同源部署无此问题
+        headers: {
+          origin: `http://localhost:${process.env.SYNIE_API_PORT || process.env.GO_API_PORT || 8080}`
+        }
       }
     },
     fs: {

@@ -12,7 +12,7 @@
 - 生产页面的 `SynieDataGrid` / `SynieRecordDrawer` / 远程选择器只传 `resource`，由 `ResourceBinding.reader` 解析规范生产 Adapter；不要显式传 `client`。显式 Adapter 只用于 custom/in-memory 局部读模型与 interface 测试。列表与单条缓存键、失效一律经 `resourceBindingFor(resource).cache`，不得手写 `['gridRows', ...]` / `['rowById', ...]` 或依赖 transport id。
 - 资源 transport 一律用 `restTransport(resource, api..., options)` 工厂（`~/lib/resources/rest-transport.ts`）：标准五方法、严格列表、decimal/datetime 字段、能力子集都走 options；只有偏离标准形状（单例、非 `:id` 读取路径、封闭创建集合等）才手写或 `{...restTransport(...), create(...)}` 组合覆盖，并标注「偏离标准形状」注释。不要新增逐方法手写的资源 client 样板。
 - 页面消费 binding 写能力一律 `requireWriter(binding, 'create' | 'update' | 'delete', 中文标签)`，不再写 `in` 收窄或 `if (!binding.writer) throw` 守卫。
-- Vite 仅代理 `/api/v1` → Bun server（`SYNIE_API_PORT`/`GO_API_PORT`，默认 8080）；认证为 JWT
+- Vite 仅代理 `/api/v1` → Bun server（`SYNIE_API_PORT`/`GO_API_PORT`，默认 8080）；认证为 httpOnly cookie 会话（better-auth，`~/lib/auth-client`），不得往 localStorage 存凭证
 
 ## 业务数据页标准组件
 

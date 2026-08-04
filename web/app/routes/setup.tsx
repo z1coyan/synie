@@ -14,14 +14,14 @@ import {
   toast,
 } from '@heroui/react'
 import { AppearanceSwitch } from '~/components/appearance-switch'
-import { login as loginSession } from '~/lib/api/session'
-import { setToken } from '~/lib/auth'
+import { authClient, signInErrorMessage } from '~/lib/auth-client'
 import {
   activateSetupBaseCurrency,
   completeSetup,
   createSetupFirstUser,
   fetchSetupStatus,
   seedSetupCommonCurrencies,
+  setupStatusEnsureQuery,
 } from '~/lib/setup'
 import type { SetupLanguage } from '~/lib/setup'
 import { toastError } from '~/lib/toast'
@@ -71,10 +71,11 @@ const SAMPLE_DEFAULTS = {
 const COMPANY_CODE_RE = /^[A-Za-z]{2}$/
 
 export const Route = createFileRoute('/setup')({
-  beforeLoad: async () => {
-    // SSR 首屏发不了相对路径 fetch,客户端在组件内再兜底一次(同 login.tsx 模式)
-    if (typeof window === 'undefined') return
-    const status = await fetchSetupStatus().catch(() => null)
+  beforeLoad: async ({ context: { queryClient } }) => {
+    // 已完成初始化:向导永久关闭,回工作台;查询失败 fail-open 留在向导(页内有重试)
+    const status = await queryClient
+      .ensureQueryData(setupStatusEnsureQuery)
+      .catch(() => null)
     if (status?.initialized) throw redirect({ to: '/' })
   },
   component: SetupPage,
@@ -90,7 +91,7 @@ function SetupPage() {
 
   const status = useQuery({ queryKey: ['setupStatus'], queryFn: fetchSetupStatus })
 
-  // 已完成初始化:向导永久关闭,回工作台(beforeLoad 在 SSR 读不到时的客户端兜底)
+  // 已完成初始化:向导永久关闭,回工作台(beforeLoad 已裁决首访;此处兜底会话期内翻转)
   useEffect(() => {
     if (status.data?.initialized) {
       navigate({ to: '/', replace: true })
@@ -277,25 +278,33 @@ function StepAdmin(props: {
     }
   }, [props.path, props.hasUsers])
 
-  const onAuthed = (
-    result: Awaited<ReturnType<typeof loginSession>>,
-    message: string,
-  ) => {
-    setToken(result.token)
-    // 清掉可能缓存的 me:null,否则进入下一步后布局会误判登录态失效(同 login.tsx)
+  const onAuthed = (message: string) => {
+    // 清掉可能缓存的 me 失败态,否则进入下一步后布局会误判登录态失效(同 login.tsx)
     queryClient.removeQueries({ queryKey: ['me'] })
     toast.success(message)
     props.onDone()
   }
 
+  // cookie 会话统一经 better-auth 登录端点建立(first-user 返回的旧 JWT 不再落地)
+  const signIn = async () => {
+    const { data, error } = await authClient.signIn.username({ username, password })
+    if (error) throw new Error(signInErrorMessage(error))
+    return data
+  }
+
   const createUser = useMutation({
-    mutationFn: () => createSetupFirstUser({
-      username,
-      name: name.trim() === '' ? null : name.trim(),
-      password,
-    }),
+    mutationFn: async () => {
+      const created = await createSetupFirstUser({
+        username,
+        name: name.trim() === '' ? null : name.trim(),
+        password,
+      })
+      // 建号后立即登录拿 cookie 会话,后续步骤的受保护接口才可用
+      await signIn()
+      return created
+    },
     onSuccess: (data) =>
-      onAuthed(data, `管理员 ${data.user.name ?? data.user.username} 已创建`),
+      onAuthed(`管理员 ${data.user.name ?? data.user.username} 已创建`),
     onError: (error) => {
       toast.danger('创建管理员失败', {
         description: error instanceof Error ? error.message : '请稍后再试',
@@ -304,9 +313,8 @@ function StepAdmin(props: {
   })
 
   const login = useMutation({
-    mutationFn: () => loginSession(username, password),
-    onSuccess: (data) =>
-      onAuthed(data, `欢迎回来,${data.user.name ?? data.user.username}`),
+    mutationFn: signIn,
+    onSuccess: (data) => onAuthed(`欢迎回来,${data?.user.name || username}`),
     onError: (error) => {
       toast.danger('登录失败', {
         description: error instanceof Error ? error.message : '请稍后再试',

@@ -1,8 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { loginViaUI } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const suffix = Date.now().toString(36)
 const ruleName = `浏览器编号规则-${suffix}`
 const scopeKey = `E2E|${suffix}`
@@ -23,26 +22,11 @@ function postgres(sql: string): string {
 
 test.setTimeout(90_000)
 
-test('编号规则与计数器通过 Grid/Drawer REST 完成且 GraphQL=0', async ({ page, request }) => {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', { name: '用户名', exact: true })
-  const passwordInput = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect
-    .poll(() =>
-      usernameInput.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-      ),
-    )
-    .toBe(true)
-  await usernameInput.pressSequentially(username)
-  await passwordInput.pressSequentially(password)
-  await page.getByRole('button', { name: /登\s*录|正在登录/ }).click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
+test('编号规则与计数器通过 Grid/Drawer REST 完成且 GraphQL=0', async ({ page }) => {
+  await loginViaUI(page)
 
-  const token = await page.evaluate(() => window.localStorage.getItem('synie:token'))
-  const headers = { Authorization: `Bearer ${token}` }
-  const existingResponse = await request.post('/api/v1/system/numbering/rules/query', {
-    headers,
+  // page.request 与浏览器同 context,自动携带会话 cookie
+  const existingResponse = await page.request.post('/api/v1/system/numbering/rules/query', {
     data: { limit: 200, offset: 0 },
   })
   expect(existingResponse.ok()).toBeTruthy()
@@ -90,8 +74,7 @@ test('编号规则与计数器通过 Grid/Drawer REST 完成且 GraphQL=0', asyn
     await createDrawer.getByRole('button', { name: '保存', exact: true }).click()
     await expect(createDrawer).toBeHidden()
 
-    const ruleQuery = await request.post('/api/v1/system/numbering/rules/query', {
-      headers,
+    const ruleQuery = await page.request.post('/api/v1/system/numbering/rules/query', {
       data: { limit: 20, offset: 0, search: ruleName },
     })
     expect(ruleQuery.ok()).toBeTruthy()
@@ -131,9 +114,8 @@ test('编号规则与计数器通过 Grid/Drawer REST 完成且 GraphQL=0', asyn
     await editDrawer.getByRole('button', { name: '保存', exact: true }).click()
     await expect(editDrawer).toBeHidden()
 
-    const counterResponse = await request.get(
+    const counterResponse = await page.request.get(
       `/api/v1/system/numbering/counters/${counterID}`,
-      { headers },
     )
     expect(counterResponse.ok()).toBeTruthy()
     const counter = (await counterResponse.json()) as { value: number }
@@ -158,7 +140,7 @@ test('编号规则与计数器通过 Grid/Drawer REST 完成且 GraphQL=0', asyn
     expect(graphqlRequests).toEqual([])
   } finally {
     if (ruleID) {
-      await request.delete(`/api/v1/system/numbering/rules/${ruleID}`, { headers })
+      await page.request.delete(`/api/v1/system/numbering/rules/${ruleID}`)
       postgres(`
         DELETE FROM sys_audit_log
         WHERE record_id = '${ruleID}'::uuid

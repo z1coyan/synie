@@ -23,6 +23,7 @@ const actor: Actor = {
 
 const auth = {
   authenticate: async () => actor,
+  authenticateRequest: async () => actor,
 } as unknown as AuthService
 
 const calls = {

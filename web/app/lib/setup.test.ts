@@ -34,7 +34,7 @@ describe('Setup REST facade', () => {
       })
 
       if (url.endsWith('/status')) {
-        return Response.json({ initialized: false, hasUsers: false })
+        return Response.json({ initialized: false, hasUsers: false, logtoEnabled: false })
       }
       if (url.endsWith('/first-user')) {
         return Response.json({
@@ -53,6 +53,7 @@ describe('Setup REST facade', () => {
       await expect(fetchSetupStatus()).resolves.toEqual({
         initialized: false,
         hasUsers: false,
+        logtoEnabled: false,
       })
       await expect(
         createSetupFirstUser({ username: 'admin', password: 'secret' }),

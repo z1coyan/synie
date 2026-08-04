@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { syncUserCredential } from '~/platform/auth/credentials.ts'
 import { hashPassword } from '~/platform/auth/password.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -105,6 +106,8 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
           .returningAll()
           .executeTakeFirstOrThrow()
         const user = mapUser(row)
+        // 同事务补建 better-auth 账号（auth_user + credential auth_account）
+        await syncUserCredential(trx, { userId: user.id, hashedPassword: hashed })
         await replaceAccess(trx, user.id, roleIds, companyIds)
         await writeAudit(trx, actor, {
           resource: 'sys_user',
@@ -226,11 +229,8 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
         .forUpdate()
         .executeTakeFirst()
       if (!locked) throw new ApiError('not_found', '用户不存在')
-      await trx
-        .updateTable('sys_user')
-        .set({ hashed_password: hashed, updated_at: sql`(now() AT TIME ZONE 'utc')` })
-        .where('id', '=', id)
-        .execute()
+      // 双写 sys_user.hashed_password 与 auth_account.password（收口见 credentials.ts）
+      await syncUserCredential(trx, { userId: id, hashedPassword: hashed })
       await writeAudit(trx, actor, {
         resource: 'sys_user',
         recordId: id,
@@ -259,6 +259,10 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
         await trx.deleteFrom('sys_user_role').where('user_id', '=', id).execute()
         await trx.deleteFrom('sys_user_company').where('user_id', '=', id).execute()
         await trx.deleteFrom('sys_user').where('id', '=', id).execute()
+        // 同事务清 better-auth 账号（级联删 session/account，登录态随删即失效）
+        if (locked.auth_user_id) {
+          await trx.deleteFrom('auth_user').where('id', '=', locked.auth_user_id).execute()
+        }
       } catch (err) {
         throw mapWriteError(err, '删除用户失败', [
           { code: '23503', message: '记录已被引用或关联目标不存在' },

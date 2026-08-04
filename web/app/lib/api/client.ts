@@ -1,5 +1,7 @@
 import { createApiClient, type ApiClient } from '@synie/server/client'
+import type { ApiType } from '@synie/server/app'
 import type { ApiErrorBody, ApiErrorCode } from '@synie/shared'
+import { hc } from 'hono/client'
 import type {
   ClientResponse,
   InferResponseType,
@@ -9,7 +11,6 @@ import type {
   StatusCode,
   SuccessStatusCode,
 } from 'hono/utils/http-status'
-import { getToken } from '../auth'
 import { AppError } from '../errors'
 
 /**
@@ -33,14 +34,49 @@ export class APIError extends AppError {
   }
 }
 
+/** SSR 直连后端的 origin：环境变量优先，缺省拼本机端口 */
+function ssrApiOrigin(): string {
+  return (
+    process.env.SYNIE_API_ORIGIN ??
+    `http://127.0.0.1:${process.env.SYNIE_API_PORT || 8080}`
+  )
+}
+
 /**
- * hono/client 实例。baseUrl 为空串 → 相对路径 `/api/v1/...`，
- * 经 Vite 代理到 Bun server（开发）或同源反向代理（生产）。
- * token 闭包每次请求读取，登录后无需重建 client。
+ * SSR 每次 fetch 从**当前请求**上下文（AsyncLocalStorage）动态取 cookie 转发。
+ * 安全红线：client 是模块级单例，cookie 绝不能在实例化时捕获，
+ * 否则并发 SSR 请求之间会串会话。
+ * 非请求上下文（构建期/预热）取不到 headers 时优雅降级为不带 cookie。
  */
-export const apiClient: ApiClient = createApiClient('', {
-  token: () => getToken(),
-})
+async function ssrForwardedHeaders(): Promise<Record<string, string>> {
+  // Vite 客户端构建将 import.meta.env.SSR 静态替换为 false，
+  // 本分支连同下方动态 import 一起被摇掉，不会把 node 依赖打进浏览器包；
+  // bun test 下 import.meta.env 是 process.env 别名，测试显式设 SSR=1 走通本分支
+  if (!import.meta.env.SSR) return {}
+  try {
+    const { getRequestHeader } = await import('@tanstack/react-start/server')
+    const cookie = getRequestHeader('cookie')
+    return cookie ? { cookie } : {}
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * hono/client 实例（同构）：
+ * - 浏览器：baseUrl 空串 → 相对路径 `/api/v1/...`，经 Vite 代理（开发）或
+ *   同源反向代理（生产）；httpOnly cookie 会话由同源 fetch 自动携带，无需注头。
+ * - SSR（Vite SSR 运行时）：绝对 URL 直连后端，cookie 逐请求经
+ *   ssrForwardedHeaders 从请求上下文转发。
+ * - bun test 等无 window 的非 SSR 运行时：保持相对路径（既有测试按此断言 URL），
+ *   headers 函数仍挂载，SSR 契约测试可注入上下文验证。
+ */
+export const apiClient: ApiClient =
+  typeof window === 'undefined'
+    ? hc<ApiType>(import.meta.env.SSR ? ssrApiOrigin() : '', {
+        headers: ssrForwardedHeaders,
+      })
+    : createApiClient('')
 
 /** `/api/v1` 下的类型化路由树（契约即 ApiType） */
 export const api = apiClient.api.v1

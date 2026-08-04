@@ -1,9 +1,8 @@
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { loginViaUI } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const suffix = Date.now().toString(36)
 const templateName = `浏览器打印模板-${suffix}`
 const updatedName = `${templateName}-已更新`
@@ -19,24 +18,9 @@ function postgres(sql: string): void {
 
 test.setTimeout(90_000)
 
-test('打印模板通过 Grid/Drawer REST 完成且 GraphQL=0', async ({ page, request }) => {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', { name: '用户名', exact: true })
-  const passwordInput = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect
-    .poll(() =>
-      usernameInput.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-      ),
-    )
-    .toBe(true)
-  await usernameInput.pressSequentially(username)
-  await passwordInput.pressSequentially(password)
-  await page.getByRole('button', { name: /登\s*录|正在登录/ }).click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
+test('打印模板通过 Grid/Drawer REST 完成且 GraphQL=0', async ({ page }) => {
+  await loginViaUI(page)
 
-  const token = await page.evaluate(() => window.localStorage.getItem('synie:token'))
-  const headers = { Authorization: `Bearer ${token}` }
   const graphqlRequests: string[] = []
   const printingRequests: string[] = []
   page.on('request', (request) => {
@@ -69,8 +53,8 @@ test('打印模板通过 Grid/Drawer REST 完成且 GraphQL=0', async ({ page, r
     await createDrawer.getByRole('button', { name: '保存', exact: true }).click()
     await expect(createDrawer).toBeHidden()
 
-    const query = await request.post('/api/v1/system/printing/templates/query', {
-      headers,
+    // page.request 与浏览器同 context,自动携带会话 cookie
+    const query = await page.request.post('/api/v1/system/printing/templates/query', {
       data: { limit: 20, offset: 0, search: templateName },
     })
     expect(query.ok()).toBeTruthy()
@@ -114,10 +98,10 @@ test('打印模板通过 Grid/Drawer REST 完成且 GraphQL=0', async ({ page, r
     expect(graphqlRequests).toEqual([])
   } finally {
     if (templateID) {
-      await request.delete(`/api/v1/system/printing/templates/${templateID}`, { headers })
+      await page.request.delete(`/api/v1/system/printing/templates/${templateID}`)
     }
     if (fileID) {
-      await request.delete(`/api/v1/files/${fileID}`, { headers })
+      await page.request.delete(`/api/v1/files/${fileID}`)
     }
     const recordIDs = [templateID, fileID].filter(Boolean)
     if (recordIDs.length > 0) {

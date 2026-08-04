@@ -345,6 +345,54 @@ export interface AccVatInvoice {
   updated_at: Generated<Timestamp>;
 }
 
+export interface AuthAccount {
+  access_token: string | null;
+  access_token_expires_at: Timestamp | null;
+  account_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  id_token: string | null;
+  password: string | null;
+  provider_id: string;
+  refresh_token: string | null;
+  refresh_token_expires_at: Timestamp | null;
+  scope: string | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
+export interface AuthSession {
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: string;
+  ip_address: string | null;
+  token: string;
+  updated_at: Generated<Timestamp>;
+  user_agent: string | null;
+  user_id: string;
+}
+
+export interface AuthUser {
+  created_at: Generated<Timestamp>;
+  display_username: string | null;
+  email: string;
+  email_verified: Generated<boolean>;
+  id: string;
+  image: string | null;
+  name: string;
+  updated_at: Generated<Timestamp>;
+  username: string | null;
+}
+
+export interface AuthVerification {
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: string;
+  identifier: string;
+  updated_at: Generated<Timestamp>;
+  value: string;
+}
+
 export interface BasAccount {
   active: Generated<boolean>;
   code: string;
@@ -1739,6 +1787,8 @@ export interface SysTodoState {
 
 export interface SysUser {
   all_companies: Generated<boolean>;
+  auth_user_id: string | null;
+  email: string | null;
   hashed_password: string;
   id: Generated<string>;
   inserted_at: Generated<Timestamp>;
@@ -1780,6 +1830,10 @@ export interface DB {
   acc_gl_journal_line: AccGlJournalLine;
   acc_setting: AccSetting;
   acc_vat_invoice: AccVatInvoice;
+  auth_account: AuthAccount;
+  auth_session: AuthSession;
+  auth_user: AuthUser;
+  auth_verification: AuthVerification;
   bas_account: BasAccount;
   bas_company: BasCompany;
   bas_currency: BasCurrency;

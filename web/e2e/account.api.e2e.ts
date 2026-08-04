@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { loginViaUI } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password = process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const suffix = Date.now().toString(36)
 const code = `E2E-${suffix}`
 const originalName = `浏览器测试科目-${suffix}`
@@ -9,30 +8,18 @@ const updatedName = `浏览器测试科目已更新-${suffix}`
 
 test.setTimeout(90_000)
 
-test('科目树、模板、Drawer 与状态动作只使用 Go REST', async ({ page, request }) => {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', { name: '用户名', exact: true })
-  const passwordInput = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect.poll(() => usernameInput.evaluate((node) =>
-    Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-  )).toBe(true)
-  await usernameInput.pressSequentially(username)
-  await passwordInput.pressSequentially(password)
-  await page.getByRole('button', { name: /登\s*录|正在登录/ }).click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
+test('科目树、模板、Drawer 与状态动作只使用 Go REST', async ({ page }) => {
+  await loginViaUI(page)
 
-  const token = await page.evaluate(() => window.localStorage.getItem('synie:token'))
-  const headers = { Authorization: `Bearer ${token}` }
-  const companiesResponse = await request.post('/api/v1/base/companies/query', {
-    headers,
+  // page.request 与浏览器同 context,自动携带会话 cookie
+  const companiesResponse = await page.request.post('/api/v1/base/companies/query', {
     data: { limit: 50, offset: 0, sort: { column: 'code', direction: 'ascending' } },
   })
   expect(companiesResponse.ok()).toBeTruthy()
   const companies = await companiesResponse.json() as { results: Array<{ id: string; name: string }> }
   let company: { id: string; name: string } | undefined
   for (const candidate of companies.results) {
-    const response = await request.post('/api/v1/base/accounts/query', {
-      headers,
+    const response = await page.request.post('/api/v1/base/accounts/query', {
       data: {
         limit: 1,
         offset: 0,
@@ -51,8 +38,7 @@ test('科目树、模板、Drawer 与状态动作只使用 Go REST', async ({ pa
 
   const cleanup = async () => {
     for (let round = 0; round < 5; round++) {
-      const response = await request.post('/api/v1/base/accounts/query', {
-        headers,
+      const response = await page.request.post('/api/v1/base/accounts/query', {
         data: {
           limit: 200,
           offset: 0,
@@ -67,7 +53,7 @@ test('科目树、模板、Drawer 与状态动作只使用 Go REST', async ({ pa
       const leaves = body.results.filter((item) => !item.hasChildren)
       if (leaves.length === 0) return
       for (const item of leaves) {
-        await request.delete(`/api/v1/base/accounts/${item.id}`, { headers })
+        await page.request.delete(`/api/v1/base/accounts/${item.id}`)
       }
     }
   }

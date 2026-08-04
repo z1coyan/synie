@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -11,20 +11,21 @@ import {
   toast,
 } from '@heroui/react'
 import { AppearanceSwitch } from '~/components/appearance-switch'
-import { login as loginSession } from '~/lib/api/session'
-import { getToken, setToken } from '~/lib/auth'
-import { clearCatalogCache, setCatalogActor } from '~/lib/resources/catalog'
-import { fetchSetupStatus } from '~/lib/setup'
+import { meEnsureQuery } from '~/lib/api/session'
+import { authClient, signInErrorMessage } from '~/lib/auth-client'
+import { clearCatalogCache } from '~/lib/resources/catalog'
+import { fetchSetupStatus, setupStatusEnsureQuery } from '~/lib/setup'
 
 export const Route = createFileRoute('/login')({
-  beforeLoad: async () => {
-    if (typeof window === 'undefined') return
-    // 未初始化:登录页让位给初始化向导(向导第 1 步自带登录续作)
-    const status = await fetchSetupStatus().catch(() => null)
+  beforeLoad: async ({ context: { queryClient } }) => {
+    // 未初始化:登录页让位给初始化向导(向导第 1 步自带登录续作);查询失败 fail-open
+    const status = await queryClient
+      .ensureQueryData(setupStatusEnsureQuery)
+      .catch(() => null)
     if (status && !status.initialized) throw redirect({ to: '/setup' })
-    if (getToken()) {
-      throw redirect({ to: '/' })
-    }
+    // 已登录访问登录页 → 弹回工作台;401/网络错误留在本页
+    const me = await queryClient.ensureQueryData(meEnsureQuery).catch(() => null)
+    if (me) throw redirect({ to: '/' })
   },
   component: LoginPage,
 })
@@ -36,34 +37,41 @@ function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
+  // 门控(未初始化/已登录弹回)已上移 beforeLoad;此查询只为 logtoEnabled 展示
   const { data: setupStatus } = useQuery({ queryKey: ['setupStatus'], queryFn: fetchSetupStatus })
 
-  // beforeLoad 在 SSR 首屏时读不到 localStorage 也发不了 fetch,客户端再兜底一次;
-  // 同样要等 setupStatus 落定:未初始化先去向导,不把登录页亮出来
-  useEffect(() => {
-    if (setupStatus && !setupStatus.initialized) {
-      navigate({ to: '/setup', replace: true })
-      return
-    }
-    if (setupStatus?.initialized && getToken()) {
-      navigate({ to: '/', replace: true })
-    }
-  }, [setupStatus, navigate])
-
   const login = useMutation({
-    mutationFn: () => loginSession(username, password),
+    mutationFn: async () => {
+      const { data, error } = await authClient.signIn.username({ username, password })
+      if (error) throw new Error(signInErrorMessage(error))
+      return data
+    },
     onSuccess: (data) => {
-      // 先清旧 Actor 的 Catalog 缓存，再绑定新用户，防止同标签页串号
+      // 清旧 Actor 的 Catalog 缓存,防止同标签页串号;新 Actor 由 _app 的 me 查询绑定
       clearCatalogCache()
-      setToken(data.token)
-      setCatalogActor(data.user.id)
-      // 清掉登录前可能缓存的 me:null,否则回到布局会被误判为登录态失效
+      // 清掉登录前缓存的 me 失败态,否则回到布局会被误判为登录态失效
       queryClient.removeQueries({ queryKey: ['me'] })
-      toast.success(`欢迎回来,${data.user.name ?? data.user.username}`)
+      toast.success(`欢迎回来,${data?.user.name || username}`)
       navigate({ to: '/' })
     },
     onError: (error) => {
       toast.danger('登录失败', {
+        description: error instanceof Error ? error.message : '请稍后再试',
+      })
+    },
+  })
+
+  const logtoLogin = useMutation({
+    // redirectPlugin 拿到授权 URL 后自动整页跳转,回调落 cookie 后回到 '/'
+    mutationFn: async () => {
+      const { error } = await authClient.signIn.oauth2({
+        providerId: 'logto',
+        callbackURL: '/',
+      })
+      if (error) throw new Error(error.message || '请稍后再试')
+    },
+    onError: (error) => {
+      toast.danger('Logto 登录失败', {
         description: error instanceof Error ? error.message : '请稍后再试',
       })
     },
@@ -178,6 +186,25 @@ function LoginPage() {
               {login.isPending ? '正在登录' : '登 录'}
             </Button>
           </form>
+
+          {setupStatus?.logtoEnabled && (
+            <div className="mt-6 flex flex-col gap-5">
+              <div className="flex items-center gap-4 text-xs text-ink-500/60" aria-hidden>
+                <span className="h-px flex-1 bg-ink-500/20" />
+                <span className="tracking-[0.3em]">或</span>
+                <span className="h-px flex-1 bg-ink-500/20" />
+              </div>
+              <Button
+                size="lg"
+                variant="secondary"
+                isPending={logtoLogin.isPending}
+                onPress={() => logtoLogin.mutate()}
+                className="w-full rounded-sm tracking-[0.2em]"
+              >
+                使用 Logto 登录
+              </Button>
+            </div>
+          )}
 
           <p className="mt-16 text-xs text-ink-500/60">
             © 2026 Synie · 企业内部系统,如需账号请联系管理员

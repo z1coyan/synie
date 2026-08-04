@@ -1,8 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { loginViaUI } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const materialId = '00000000-0000-4000-8000-000000000099'
 
 interface PreviewCase {
@@ -132,23 +130,6 @@ function previewCase(
   }
 }
 
-async function login(page: Page): Promise<void> {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', { name: '用户名', exact: true })
-  const passwordInput = page.getByRole('textbox', { name: '密码', exact: true })
-  await expect
-    .poll(() =>
-      usernameInput.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-      ),
-    )
-    .toBe(true)
-  await usernameInput.pressSequentially(username)
-  await passwordInput.pressSequentially(password)
-  await page.getByRole('button', { name: /登\s*录|正在登录/ }).click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
-}
-
 async function fulfillJSON(route: Route, body: unknown): Promise<void> {
   await route.fulfill({
     status: 200,
@@ -229,7 +210,7 @@ async function installPreviewFixtures(page: Page, previews: PreviewCase[]): Prom
 test.setTimeout(180_000)
 
 test('库存分录八类来源的单号与单据链接打开同一只读头+行速览', async ({ page }) => {
-  await login(page)
+  await loginViaUI(page)
   await installPreviewFixtures(page, PREVIEWS)
   await page.goto('/scm/stock-entries')
   const grid = page.getByRole('grid', { name: 'invStockEntries 数据表格' })
@@ -274,7 +255,7 @@ test('库存分录八类来源的单号与单据链接打开同一只读头+行�
 })
 
 test('来源资源变体被权限裁剪时来源单号与来源单据均退为纯文本', async ({ page }) => {
-  await login(page)
+  await loginViaUI(page)
   const purchase = PREVIEWS.find((item) => item.voucherType === 'purchase.receipt')!
   await installPreviewFixtures(page, [purchase])
   await page.route('**/api/v1/meta/resources/invStockEntries', async (route) => {

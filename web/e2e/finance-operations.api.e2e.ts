@@ -1,9 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { loginViaUI } from "./fixtures/session";
 
-const username = process.env.E2E_ADMIN_USERNAME ?? "admin";
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? "admin123";
 const pgContainer = process.env.SYNIE_PG_CONTAINER ?? "synie-postgres-1";
 const pgDb = process.env.SYNIE_PG_DB ?? "synie";
 const suffix = Date.now().toString(36).toUpperCase();
@@ -330,25 +328,6 @@ function cleanup(fixture: Fixture | null): void {
   expect(Number(remaining), "Finance E2E fixture 必须 cleanup=0").toBe(0);
 }
 
-async function login(page: Page): Promise<void> {
-  await page.goto("/login");
-  const user = page.getByRole("textbox", { name: "用户名", exact: true });
-  const pass = page.getByRole("textbox", { name: "密码", exact: true });
-  await expect
-    .poll(() =>
-      user.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith("__reactProps$")),
-      ),
-    )
-    .toBe(true);
-  await user.pressSequentially(username);
-  await pass.pressSequentially(password);
-  await page.getByRole("button", { name: /登\s*录|正在登录/ }).click();
-  await expect(
-    page.getByRole("navigation", { name: "模块导航" }),
-  ).toBeVisible();
-}
-
 async function grid(page: Page, resource: string): Promise<Locator> {
   const result = page.getByRole("grid", { name: `${resource} 数据表格` });
   await expect(result).toBeVisible();
@@ -404,7 +383,7 @@ test("Finance 九页及操作 drawer 仅以 Go REST 消费并保持零页面错�
   try {
     await test.step("准备独立 Finance fixture 并登录", async () => {
       fixture = createFixture();
-      await login(page);
+      await loginViaUI(page);
     });
 
     // 财务菜单九页（设置页不属于 PR-2.20 业务操作面）。

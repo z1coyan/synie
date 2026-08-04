@@ -1,41 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+import { loginViaUI, sessionCookieHeader } from './fixtures/session'
 
-const username = process.env.E2E_ADMIN_USERNAME ?? 'admin'
-const password =
-  process.env.E2E_ADMIN_PASSWORD ?? 'admin123'
 const goAPIURL = process.env.SYNIE_API_URL ?? process.env.GO_API_URL ?? 'http://127.0.0.1:8080/api/v1'
 const suffix = Date.now().toString(36).toUpperCase()
 const categoryCode = `E2E_INV_${suffix}`
 const categoryName = `浏览器库存分类-${suffix}`
-
-async function login(page: Page): Promise<string> {
-  await page.goto('/login')
-  const usernameInput = page.getByRole('textbox', {
-    name: '用户名',
-    exact: true,
-  })
-  const passwordInput = page.getByRole('textbox', {
-    name: '密码',
-    exact: true,
-  })
-  await expect
-    .poll(() =>
-      usernameInput.evaluate((node) =>
-        Object.keys(node).some((key) => key.startsWith('__reactProps$')),
-      ),
-    )
-    .toBe(true)
-  await usernameInput.pressSequentially(username)
-  await passwordInput.pressSequentially(password)
-  await page.getByRole('button', { name: /登\s*录|正在登录/ }).click()
-  await expect(page.getByRole('navigation', { name: '模块导航' })).toBeVisible()
-  const token = await page.evaluate(() =>
-    window.localStorage.getItem('synie:token'),
-  )
-  expect(token).toBeTruthy()
-  return token!
-}
 
 async function expectOK(
   responsePromise: Promise<import('@playwright/test').Response>,
@@ -69,12 +39,16 @@ function postgres(sql: string): string {
   ).trim()
 }
 
-async function cleanupCategory(token: string, id: string): Promise<void> {
+async function cleanupCategory(
+  cookie: { Cookie: string },
+  id: string,
+): Promise<void> {
+  // 直连 API origin,cookie 域是前端 origin,需显式带 Cookie 头
   const response = await fetch(
     `${goAPIURL}/inventory/material-categories/${id}`,
     {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: cookie,
     },
   )
   if (!response.ok && response.status !== 404) {
@@ -89,7 +63,8 @@ test.setTimeout(180_000)
 test('库存主数据、流水、余额与三类单据页面全程使用 Go REST', async ({
   page,
 }) => {
-  const token = await login(page)
+  await loginViaUI(page)
+  const cookie = await sessionCookieHeader(page.context())
   const graphqlRequests: Array<{ url: string; body: string | null }> = []
   const restRequests: string[] = []
   let categoryID: string | null = null
@@ -265,7 +240,7 @@ test('库存主数据、流水、余额与三类单据页面全程使用 Go REST
     expect(graphqlRequests).toEqual([])
   } finally {
     if (categoryID) {
-      await cleanupCategory(token, categoryID)
+      await cleanupCategory(cookie, categoryID)
       postgres(`
         DELETE FROM sys_audit_log
         WHERE record_id = '${categoryID}'::uuid

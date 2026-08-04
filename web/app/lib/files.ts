@@ -1,5 +1,3 @@
-import { getToken } from './auth'
-
 export interface UploadedFile {
   id: string
   storage: string
@@ -25,11 +23,6 @@ export interface UploadedAttachment {
 export interface UploadResult {
   file: UploadedFile
   attachment?: UploadedAttachment | null
-}
-
-function authHeaders(): Record<string, string> {
-  const token = getToken()
-  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 async function errorMessage(res: Response): Promise<string> {
@@ -59,9 +52,9 @@ export async function uploadFile(
   if (opts?.ownerId) form.append('ownerId', opts.ownerId)
   if (opts?.category) form.append('category', opts.category)
 
+  // 认证走 httpOnly cookie:同源 fetch 自动携带,无需注头
   const res = await fetch('/api/v1/files', {
     method: 'POST',
-    headers: authHeaders(),
     body: form,
   })
   if (!res.ok) throw new Error(await errorMessage(res))
@@ -80,13 +73,13 @@ export function blobUrl(blob: Blob): string {
 }
 
 export async function fetchFileBlob(fileId: string): Promise<Blob> {
-  const res = await fetch(`/api/v1/files/${fileId}`, { headers: authHeaders() })
+  const res = await fetch(`/api/v1/files/${fileId}`)
   if (!res.ok) throw new Error(await errorMessage(res))
   return res.blob()
 }
 
 export async function downloadFile(fileId: string, filename: string): Promise<void> {
-  const res = await fetch(`/api/v1/files/${fileId}`, { headers: authHeaders() })
+  const res = await fetch(`/api/v1/files/${fileId}`)
   if (!res.ok) throw new Error(await errorMessage(res))
 
   const blob = await res.blob()
@@ -105,7 +98,7 @@ export async function attachFile(
 ): Promise<UploadedAttachment> {
   const res = await fetch(`/api/v1/files/${fileId}/attachments`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(opts),
   })
   if (!res.ok) throw new Error(await errorMessage(res))
