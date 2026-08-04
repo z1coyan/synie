@@ -9,6 +9,7 @@ import type { Registry } from '~/platform/meta/registry.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createSingleRowSetting } from '~/platform/settings/single-row.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 
 export const SALES_RESOURCE_NAME = 'salSettings'
 
@@ -31,17 +32,12 @@ export interface SalesUpdate {
   demandOverorderRatio?: string
 }
 
-const SALES_AUDIT = [
-  'sample_item_max_qty',
-  'delivery_overship_ratio',
-  'spot_item_max_qty',
-  'receipt_overreceive_ratio',
-  'demand_overorder_ratio',
-] as const
+const SALES_AUDIT = auditFieldsOf(salesResourceMeta())
 
 export function salesResourceMeta(): ResourceMeta {
   return {
     name: SALES_RESOURCE_NAME,
+    classification: { presentation: 'extension', interactive: true, note: 'update-only 单行设置卡片' },
     permissionPrefix: 'sales.setting',
     permissionLabel: '供应链设置',
     table: 'sal_setting',

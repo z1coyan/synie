@@ -12,6 +12,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requireCompanyAccess, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -41,24 +42,7 @@ import {
 import { workOrderResourceMeta } from './meta.ts'
 import type { Bom, ListQueryInput, WorkOrder, WorkOrderStatus } from './types.ts'
 
-const WO_AUDIT = [
-  'work_order_no',
-  'qty',
-  'base_qty',
-  'received_base_qty',
-  'need_date',
-  'material_code',
-  'material_name',
-  'material_spec',
-  'unit_name',
-  'status',
-  'company_id',
-  'demand_id',
-  'demand_item_id',
-  'material_id',
-  'unit_id',
-  'created_by_id',
-] as const
+const WO_AUDIT = auditFieldsOf(workOrderResourceMeta())
 
 export function createWorkOrderService(db: Kysely<Database>, numbering: NumberingService) {
   async function createWorkOrder(

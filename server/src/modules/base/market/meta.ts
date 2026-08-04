@@ -28,6 +28,7 @@ const PRICE_SOURCES = [
 export function instrumentResourceMeta(): ResourceMeta {
   return {
     name: INSTRUMENT_RESOURCE_NAME,
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: INSTRUMENT_PERMISSION_PREFIX,
     permissionLabel: '行情品种',
     table: 'bas_market_instrument',
@@ -197,6 +198,7 @@ export function instrumentResourceMeta(): ResourceMeta {
 export function pricePointResourceMeta(): ResourceMeta {
   return {
     name: PRICE_POINT_RESOURCE_NAME,
+    classification: { presentation: 'basic', interactive: true, note: 'create-only + void 命令；无 update' },
     permissionPrefix: PRICE_POINT_PERMISSION_PREFIX,
     permissionLabel: '行情价点',
     table: 'bas_market_price_point',

@@ -7,6 +7,9 @@ export function printTemplateResourceMeta(): ResourceMeta {
   const destroy = 'destroySysPrintTemplate'
   return {
     name: RESOURCE_NAME,
+    classification: { presentation: 'basic', interactive: true },
+    /** 模板源文件宿主（全局宿主，无公司隔离） */
+    attachments: { companyScoped: false },
     permissionPrefix: PERMISSION_PREFIX,
     permissionLabel: '打印模板',
     table: 'sys_print_template',

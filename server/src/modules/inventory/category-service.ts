@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -29,7 +30,7 @@ export interface MaterialCategory {
   hasChildren: boolean
 }
 
-const AUDIT = ['code', 'name', 'is_leaf', 'active', 'parent_id'] as const
+const AUDIT = auditFieldsOf(materialCategoryResourceMeta())
 const META = materialCategoryResourceMeta()
 
 const SOURCE = sql`

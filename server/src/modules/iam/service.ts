@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf, auditSpecOf } from '~/platform/audit/spec.ts'
 import { syncAuthUserEmail, syncUserCredential } from '~/platform/auth/credentials.ts'
 import { hashPassword } from '~/platform/auth/password.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
@@ -50,8 +51,9 @@ export interface UserAccess {
   companies: AccessItem[]
 }
 
-const USER_AUDIT = ['username', 'name', 'email', 'preferred_language', 'role_ids', 'company_ids'] as const
-const ROLE_AUDIT = ['code', 'name', 'enabled', 'builtin'] as const
+const USER_AUDIT_SPEC = auditSpecOf(userResourceMeta())
+const USER_AUDIT = USER_AUDIT_SPEC.fields
+const ROLE_AUDIT = auditFieldsOf(roleResourceMeta())
 
 /** 邮箱规范化：trim + lower；空串视为 null；格式校验 */
 function normalizeEmail(raw: string | null | undefined): string | null {
@@ -138,7 +140,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
           actionType: 'create',
           actionName: 'create',
           changes: auditCreated(userSnap(user, roleIds, companyIds), USER_AUDIT),
-          sensitiveFields: ['hashed_password'],
+          sensitiveFields: USER_AUDIT_SPEC.sensitiveFields,
         })
         return { user, password }
       } catch (err) {
@@ -233,7 +235,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
             actionType: 'update',
             actionName: 'update',
             changes,
-            sensitiveFields: ['hashed_password'],
+            sensitiveFields: USER_AUDIT_SPEC.sensitiveFields,
           })
         }
         return after
@@ -275,7 +277,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
         actionType: 'update',
         actionName: 'reset_password',
         changes: {},
-        sensitiveFields: ['hashed_password'],
+        sensitiveFields: USER_AUDIT_SPEC.sensitiveFields,
       })
       return password
     })
@@ -311,6 +313,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
         recordLabel: item.username,
         actionType: 'destroy',
         actionName: 'destroy',
+        // destroy 只审物理字段（角色/公司关联已随删，不再进 changes）
         changes: auditDestroyed(
           {
             username: item.username,
@@ -318,7 +321,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
             email: item.email,
             preferred_language: item.preferredLanguage,
           },
-          ['username', 'name', 'email', 'preferred_language'],
+          USER_AUDIT_SPEC.metaFields,
         ),
       })
     })

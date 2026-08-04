@@ -125,7 +125,9 @@ export function quotationHeadMeta(side: TradingSide): ResourceMeta {
   const discriminatorType = 'enum'
   return {
     name: spec.headResource,
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: spec.prefix,
+    numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
     fields: [
@@ -234,6 +236,7 @@ export function quotationItemMeta(side: TradingSide): ResourceMeta {
   const discriminatorType = 'enum'
   return {
     name: spec.itemResource,
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
@@ -378,7 +381,8 @@ export function quotationItemMeta(side: TradingSide): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     printLoops: [{ name: 'tiers', resource: spec.tierResource }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：头冗余对手不进审计 diff
+    audit: { enabled: true, exclude: ['party_id'] },
   }
 }
 
@@ -386,6 +390,7 @@ export function quotationTierMeta(side: TradingSide): ResourceMeta {
   const spec = quotationSpec(side)
   return {
     name: spec.tierResource,
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.tierTable,

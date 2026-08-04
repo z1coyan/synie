@@ -5,6 +5,7 @@ export const AUDIT_LOG_RESOURCE_NAME = 'sysAuditLogs'
 export function auditLogResourceMeta(): ResourceMeta {
   return {
     name: AUDIT_LOG_RESOURCE_NAME,
+    classification: { presentation: 'none', interactive: false, note: '只读审计' },
     permissionPrefix: 'sys.audit_log',
     permissionLabel: '审计日志',
     table: 'sys_audit_log',

@@ -9,7 +9,8 @@ import { withTx } from '~/db/tx.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createReconciliationService } from '~/modules/trading/reconciliation/service.ts'
 import { createVatInvoiceService } from './invoice-service.ts'
 
@@ -18,7 +19,7 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（增值税发票）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const gl = createGlEngine()
   const reconciliations = createReconciliationService(db, numbering, gl)
   const svc = createVatInvoiceService(db, numbering, { gl, reconciliations })

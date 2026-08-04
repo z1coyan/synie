@@ -4,7 +4,8 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createCompanyService } from '../base/company-service.ts'
 import { createInventoryServices } from './index.ts'
 
@@ -42,7 +43,7 @@ async function allocCompanyCode(
 
 run('PG 集成（库存单据状态机与引擎）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const companies = createCompanyService(db)
   const inv = createInventoryServices(db, numbering)
   let actor: Actor = {
@@ -218,12 +219,12 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     const existingMaterialRule = await db
       .selectFrom('sys_numbering_rule')
       .select(['id', 'enabled'])
-      .where('resource', '=', 'inv.material')
+      .where('resource', '=', 'base.material')
       .where('enabled', '=', true)
       .executeTakeFirst()
     if (!existingMaterialRule) {
       const rule = await numbering.create(actor, {
-        resource: 'inv.material',
+        resource: 'base.material',
         name: `T${suffix}物料`,
         segments: [
           { type: 'text', value: `T${suffix}M-` },
@@ -367,12 +368,12 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     const existingRule = await db
       .selectFrom('sys_numbering_rule')
       .select('id')
-      .where('resource', '=', 'inv.material')
+      .where('resource', '=', 'base.material')
       .where('enabled', '=', true)
       .executeTakeFirst()
     if (!existingRule) {
       const rule = await numbering.create(actor, {
-        resource: 'inv.material',
+        resource: 'base.material',
         name: `B${edgeSuffix}物料`,
         segments: [
           { type: 'text', value: `B${edgeSuffix}-` },

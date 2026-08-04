@@ -5,10 +5,11 @@ import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database, Json } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/write.ts'
+import { auditFieldsOf } from '../audit/spec.ts'
 import type { Actor } from '../authz/actor.ts'
 import { requirePermission } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
-import { loadCatalog, type NumberingCatalog } from './catalog.ts'
+import type { NumberingCatalog } from './catalog.ts'
 import { counterResourceMeta, ruleResourceMeta } from './meta.ts'
 
 /** 编号规则/计数器管理权限前缀；next/nextInTx 为跨域取号基础设施，不检此码 */
@@ -70,11 +71,11 @@ export interface UpdateRuleInput {
   enabled?: boolean
 }
 
-const RULE_AUDIT = ['resource', 'name', 'segments', 'per_company', 'enabled'] as const
-const COUNTER_AUDIT = ['value'] as const
+const RULE_AUDIT = auditFieldsOf(ruleResourceMeta())
+const COUNTER_AUDIT = auditFieldsOf(counterResourceMeta())
 const DATE_FORMAT_RE = /^(?:YYYY|YY|MM|DD)+$/
 
-export function createNumberingService(db: Kysely<Database>, catalog: NumberingCatalog = loadCatalog()) {
+export function createNumberingService(db: Kysely<Database>, catalog: NumberingCatalog) {
   async function numberableResources(actor: Actor) {
     requirePermission(actor, `${PERM}:read`)
     return catalog.publicResources()

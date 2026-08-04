@@ -39,6 +39,7 @@ function enumOpts(values: Array<{ value: string; label: string }>) {
 export function attendancePunchResourceMeta(): ResourceMeta {
   return {
     name: 'hrAttendancePunches',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'hr.attendance_punch',
     permissionLabel: '打卡记录',
     table: 'hr_attendance_punch',
@@ -80,6 +81,7 @@ export function attendancePunchResourceMeta(): ResourceMeta {
 export function attendanceImportResourceMeta(): ResourceMeta {
   return {
     name: 'hrAttendanceImports',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'hr.attendance_punch',
     permissionLabel: '打卡记录',
     // 旧 GridMeta 对拍：仅 punch:read 仍可拿批次列定义，实际 action 要求 import
@@ -196,6 +198,7 @@ export function attendanceImportResourceMeta(): ResourceMeta {
 export function attendanceDayResourceMeta(): ResourceMeta {
   return {
     name: 'hrAttendanceDays',
+    classification: { presentation: 'none', interactive: false, note: '列表 + collection recalc，无表单' },
     permissionPrefix: HR_ATTENDANCE_DAY.prefix,
     permissionLabel: '日考勤',
     table: 'hr_attendance_day',
@@ -270,6 +273,7 @@ export function attendanceDayResourceMeta(): ResourceMeta {
 export function attendanceCorrectionResourceMeta(): ResourceMeta {
   return {
     name: 'hrAttendanceCorrections',
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'hr.attendance_correction',
     permissionLabel: '补卡单',
     table: 'hr_attendance_correction',
@@ -321,6 +325,7 @@ export function attendanceCorrectionResourceMeta(): ResourceMeta {
 export function payrollResourceMeta(): ResourceMeta {
   return {
     name: 'hrPayrolls',
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: 'hr.payroll',
     permissionLabel: '工资单',
     table: 'hr_payroll',
@@ -427,6 +432,7 @@ export function payrollResourceMeta(): ResourceMeta {
 export function payrollPaymentResourceMeta(): ResourceMeta {
   return {
     name: 'hrPayrollPayments',
+    classification: { presentation: 'basic', interactive: true, note: 'create+delete，无 update' },
     permissionPrefix: 'hr.payroll_payment',
     permissionLabel: '工资发放',
     table: 'hr_payroll_payment',
@@ -508,6 +514,7 @@ export function payrollPaymentResourceMeta(): ResourceMeta {
 export function employeeLoanResourceMeta(): ResourceMeta {
   return {
     name: 'hrEmployeeLoans',
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'hr.employee_loan',
     permissionLabel: '员工借款',
     table: 'hr_employee_loan',

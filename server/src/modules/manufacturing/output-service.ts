@@ -14,6 +14,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requireCompanyAccess, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -48,34 +49,9 @@ import type {
   WorkOrderStatus,
 } from './types.ts'
 
-const OUT_AUDIT = [
-  'output_no',
-  'output_date',
-  'remarks',
-  'status',
-  'audited_at',
-  'company_id',
-  'warehouse_id',
-  'created_by_id',
-  'audited_by_id',
-] as const
+const OUT_AUDIT = auditFieldsOf(outputResourceMeta())
 
-const ITEM_AUDIT = [
-  'idx',
-  'qty',
-  'base_qty',
-  'material_code',
-  'material_name',
-  'material_spec',
-  'unit_name',
-  'remarks',
-  'output_id',
-  'company_id',
-  'work_order_id',
-  'material_id',
-  'unit_id',
-  'warehouse_id',
-] as const
+const ITEM_AUDIT = auditFieldsOf(outputItemResourceMeta())
 
 export function createOutputService(
   db: Kysely<Database>,

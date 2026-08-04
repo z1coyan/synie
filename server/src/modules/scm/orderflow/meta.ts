@@ -33,6 +33,7 @@ function f(
 export function orderFlowItemMeta(): ResourceMeta {
   return {
     name: 'scmOrderFlowItems',
+    classification: { presentation: 'none', interactive: false, note: '订单流只读投影' },
     permissionPrefix: 'base.order_flow',
     permissionLabel: '订单收发货历史',
     table: 'scm_order_flow_item',

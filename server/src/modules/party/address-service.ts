@@ -11,6 +11,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { partyAddressResourceMeta } from './meta.ts'
@@ -43,21 +44,7 @@ export interface PartyAddress {
 
 const PARTY_TYPES = new Set<string>(['CUSTOMER', 'SUPPLIER', 'COMPANY'])
 const PURPOSES = new Set<string>(['SHIPPING', 'OFFICE', 'OTHER'])
-const AUDIT = [
-  'party_type',
-  'party_id',
-  'name',
-  'purpose',
-  'contact_name',
-  'contact_phone',
-  'province',
-  'city',
-  'district',
-  'address',
-  'is_default',
-  'active',
-  'remarks',
-] as const
+const AUDIT = auditFieldsOf(partyAddressResourceMeta())
 const AUDIT_RESOURCE = 'bas_party_address'
 const PERM = 'base.party_address'
 const META = partyAddressResourceMeta()

@@ -13,6 +13,7 @@ import {
   auditDiff,
   writeAudit,
 } from '../audit/write.ts'
+import { auditFieldsOf } from '../audit/spec.ts'
 import { hasPermission, requirePermission, type Actor } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 import type { FieldCatalog } from './catalog.ts'
@@ -43,13 +44,7 @@ import {
 } from './types.ts'
 import { extractPlaceholders } from './xlsx.ts'
 
-const TEMPLATE_AUDIT_FIELDS = [
-  'name',
-  'resource',
-  'is_default',
-  'remarks',
-  'file_id',
-] as const
+const TEMPLATE_AUDIT_FIELDS = auditFieldsOf(printTemplateResourceMeta())
 
 export interface PrintingServiceDeps {
   db: Kysely<Database>

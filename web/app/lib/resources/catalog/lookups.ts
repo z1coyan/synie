@@ -1,12 +1,12 @@
 /**
  * 目标资源 lookup 的前端消费。
- * 优先用已缓存的 ResourceDocument.lookup；否则使用与服务端分类表对齐的种子，
+ * 优先用已缓存的 ResourceDocument.lookup；否则使用与服务端模块 meta.lookup 对齐的种子，
  * 保证 RemoteSelect 在 Meta 尚未拉取时行为不退化。
  */
 import type { ResourceLookupMeta, SortState } from '@synie/shared'
 import { getCachedDocument } from './cache'
 
-/** 与 server resource-classification / 模块 meta.lookup 对齐的种子 */
+/** 与 server 各模块 meta.lookup 对齐的种子 */
 export const LOOKUP_SEEDS: Record<string, ResourceLookupMeta> = {
   hrEmployees: {
     labelField: 'name',

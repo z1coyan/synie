@@ -1,5 +1,4 @@
 import type { Registry } from '../meta/registry.ts'
-import type { OwnerRegistry } from '../files/owner-registry.ts'
 import { createFieldCatalog } from './catalog.ts'
 import { printTemplateResourceMeta } from './meta.ts'
 
@@ -16,13 +15,6 @@ export type * from './types.ts'
 /** Meta + 附件宿主（业务资源 Meta 由各域 register*Resources 注册；打印目录 fail-closed 派生） */
 export function registerPrintingResources(registry: Registry): void {
   registry.register(printTemplateResourceMeta())
-}
-
-export function registerPrintingFileOwners(owners: OwnerRegistry): void {
-  owners.register('sys_print_template', {
-    table: 'sys_print_template',
-    permissionPrefix: 'sys.print_template',
-  })
 }
 
 /** 从当前 Registry 构建打印字段目录（启动期调用） */

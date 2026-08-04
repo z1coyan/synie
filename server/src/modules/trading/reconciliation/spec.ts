@@ -117,7 +117,11 @@ export function reconciliationHeadMeta(side: TradingSide): ResourceMeta {
   const confirmLabel = sales ? '客户确认' : '供应商确认'
   return {
     name: spec.headResource,
+    classification: { presentation: 'extension', interactive: true },
+    // 对账确认开出开票/收票待办；spec 与 finance registerFinanceTodoSources 镜像（composition 断言）
+    todoSource: spec.voucher,
     permissionPrefix: spec.prefix,
+    numbering: true,
     permissionLabel: spec.label,
     table: spec.table,
     fields: [
@@ -288,6 +292,7 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
       })
   return {
     name: spec.itemResource,
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
@@ -366,6 +371,18 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
       }),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：头/来源单据快照列不进审计 diff
+    audit: {
+      enabled: true,
+      exclude: [
+        'reconciliation_no',
+        'reconciliation_status',
+        sales ? 'delivery_no' : 'receipt_no',
+        sales ? 'delivery_date' : 'receipt_date',
+        'material_name',
+        'unit_name',
+        'order_currency_code',
+      ],
+    },
   }
 }

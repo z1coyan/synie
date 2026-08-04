@@ -16,6 +16,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
 import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -84,104 +85,23 @@ const RECEIPT_ITEM_TABLE = 'pur_outsourced_receipt_item'
 const MATERIAL_TABLE = 'pur_outsourced_receipt_item_material'
 const BYPRODUCT_TABLE = 'pur_outsourced_receipt_item_byproduct'
 
-const ISSUE_AUDIT = [
-  'issue_no',
-  'issue_date',
-  'party_type',
-  'party_id',
-  'remarks',
-  'status',
-  'audited_at',
-  'company_id',
-  'from_warehouse_id',
-  'outsourced_warehouse_id',
-  'created_by_id',
-  'audited_by_id',
-] as const
+const ISSUE_AUDIT = auditFieldsOf(outsourcedIssueMeta())
 
-const RECEIPT_AUDIT = [
-  'receipt_no',
-  'receipt_date',
-  'posting_date',
-  'party_type',
-  'party_id',
-  'remarks',
-  'status',
-  'audited_at',
-  'company_id',
-  'warehouse_id',
-  'outsourced_warehouse_id',
-  'debit_account_id',
-  'credit_account_id',
-  'created_by_id',
-  'audited_by_id',
-] as const
+const RECEIPT_AUDIT = auditFieldsOf(outsourcedReceiptMeta())
 
-const ISSUE_ITEM_AUDIT = [
-  'idx',
-  'qty',
-  'base_qty',
-  'material_code',
-  'material_name',
-  'material_spec',
-  'unit_name',
-  'order_no',
-  'remarks',
-  'issue_id',
-  'company_id',
-  'order_item_material_id',
-  'material_id',
-  'unit_id',
-  'from_warehouse_id',
-  'outsourced_warehouse_id',
-] as const
+const ISSUE_ITEM_AUDIT = auditFieldsOf(outsourcedIssueItemMeta())
 
-const RECEIPT_ITEM_AUDIT = [
-  'idx',
-  'qty',
-  'base_qty',
-  'material_code',
-  'material_name',
-  'material_spec',
-  'customer_part_no',
-  'unit_name',
-  'order_no',
-  'order_qty',
-  'order_base_qty',
-  'order_unit_name',
-  'order_price',
-  'order_amount',
-  'order_base_price',
-  'order_base_amount',
-  'order_tax_rate',
-  'order_currency_code',
-  'reconciled_qty',
-  'remarks',
-  'receipt_id',
-  'company_id',
-  'order_item_id',
-  'material_id',
-  'unit_id',
-  'warehouse_id',
-] as const
+const RECEIPT_ITEM_AUDIT = auditFieldsOf(outsourcedReceiptItemMeta())
 
-const CHILD_AUDIT = [
-  'idx',
-  'qty',
-  'base_qty',
-  'material_code',
-  'material_name',
-  'material_spec',
-  'unit_name',
-  'order_no',
-  'remarks',
-  'receipt_item_id',
-  'company_id',
-  'source_id',
-  'material_id',
-  'unit_id',
-  'warehouse_id',
-] as const
+// 材料/副产物子行共用引擎：来源行外键/仓库列经 rename 映射为通用审计键 source_id/warehouse_id
+const CHILD_AUDIT = mergeAuditFields(
+  auditFieldsOf(outsourcedReceiptItemMaterialMeta(), {
+    rename: { order_item_material_id: 'source_id', outsourced_warehouse_id: 'warehouse_id' },
+  }),
+  auditFieldsOf(outsourcedReceiptItemByproductMeta(), {
+    rename: { order_item_byproduct_id: 'source_id' },
+  }),
+)
 
 type Numberer = Pick<NumberingService, 'nextInTx'>
 

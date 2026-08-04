@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { canAccessCompany } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -38,18 +39,7 @@ export interface Warehouse {
   hasChildren: boolean
 }
 
-const AUDIT = [
-  'name',
-  'is_leaf',
-  'active',
-  'is_outsourced',
-  'party_type',
-  'party_id',
-  'allow_negative',
-  'company_id',
-  'parent_id',
-  'account_id',
-] as const
+const AUDIT = auditFieldsOf(warehouseResourceMeta())
 
 const META = warehouseResourceMeta()
 

@@ -5,6 +5,7 @@
 export { createTodoService, type TodoService, type Todo } from './service.ts'
 export { todoRoutes } from './routes.ts'
 export {
+  assertTodoSourcesConsistent,
   createTodoSourceRegistry,
   type TodoSourceRegistry,
   type TodoSourceSpec,

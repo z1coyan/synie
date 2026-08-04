@@ -16,6 +16,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
 import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -55,20 +56,23 @@ import {
   type FulfillmentSideSpec,
 } from './spec.ts'
 
-const HEAD_AUDIT = [
-  'number', 'document_date', 'posting_date', 'party_type', 'party_id', 'remarks',
-  'status', 'audited_at', 'company_id', 'warehouse_id', 'debit_account_id',
-  'credit_account_id', 'created_by_id', 'audited_by_id',
-] as const
+// 双侧共用引擎：白名单取两侧 meta 派生并集；单号/日期列经 spec 映射为通用审计键
+const HEAD_AUDIT = mergeAuditFields(
+  ...(['sales', 'purchase'] as const).map((s) => {
+    const spec = fulfillmentSpec(s)
+    return auditFieldsOf(fulfillmentHeadMeta(s), {
+      rename: { [spec.numberCol]: 'number', [spec.dateCol]: 'document_date' },
+    })
+  }),
+)
 
-const ITEM_AUDIT = [
-  'idx', 'qty', 'base_qty', 'material_code', 'material_name', 'material_spec',
-  'customer_part_no', 'unit_name', 'order_no', 'order_qty', 'order_base_qty',
-  'order_unit_name', 'order_price', 'order_amount', 'order_base_price',
-  'order_base_amount', 'order_tax_rate', 'order_currency_code', 'reconciled_qty',
-  'remarks', 'head_id', 'company_id', 'order_item_id', 'material_id', 'unit_id',
-  'warehouse_id',
-] as const
+const ITEM_AUDIT = mergeAuditFields(
+  ...(['sales', 'purchase'] as const).map((s) =>
+    auditFieldsOf(fulfillmentItemMeta(s), {
+      rename: { [fulfillmentSpec(s).parentCol]: 'head_id' },
+    }),
+  ),
+)
 
 export interface FulfillmentHead {
   id: string

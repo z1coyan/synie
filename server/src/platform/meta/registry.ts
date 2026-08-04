@@ -4,6 +4,7 @@ import type {
   ResourceDocument,
   ResourceSummary,
 } from '@synie/shared'
+import { assertValidAuditDeclaration } from '../audit/spec.ts'
 import { hasPermission, type Actor } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 import {
@@ -344,4 +345,6 @@ function validate(resource: ResourceMeta): void {
     }
     actions.add(action.key)
   }
+  // 审计声明自洽（exclude/extra 对得上字段清单）；注册期 fail-closed
+  assertValidAuditDeclaration(resource)
 }

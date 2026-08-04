@@ -14,7 +14,9 @@ function f(
 export function outsourcedIssueMeta(): ResourceMeta {
   return {
     name: 'purOutsourcedIssues',
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: 'purchase.outsourced_issue',
+    numbering: true,
     permissionLabel: '委外发料单',
     table: 'pur_outsourced_issue',
     printHead: true,
@@ -51,6 +53,7 @@ export function outsourcedIssueMeta(): ResourceMeta {
 export function outsourcedIssueItemMeta(): ResourceMeta {
   return {
     name: 'purOutsourcedIssueItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'purchase.outsourced_issue',
     permissionLabel: '委外发料单',
     table: 'pur_outsourced_issue_item',
@@ -81,7 +84,11 @@ export function outsourcedIssueItemMeta(): ResourceMeta {
       f('party_id', 'partyId', 'fk', '对手', {"filterable": true, "ref": {"resource": null, "relation": null, "labelField": null, "discriminator": "partyType", "discriminatorType": "enum", "variants": [{"label": "内部公司", "labelField": "name", "resource": "basCompanies", "value": "COMPANY"}, {"label": "供应商", "labelField": "name", "resource": "purSuppliers", "value": "SUPPLIER"}]}}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：发料单头快照列不进审计 diff
+    audit: {
+      enabled: true,
+      exclude: ['issue_no', 'issue_date', 'issue_status', 'party_type', 'party_id'],
+    },
 
   }
 }
@@ -89,7 +96,9 @@ export function outsourcedIssueItemMeta(): ResourceMeta {
 export function outsourcedReceiptMeta(): ResourceMeta {
   return {
     name: 'purOutsourcedReceipts',
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: 'purchase.outsourced_receipt',
+    numbering: true,
     permissionLabel: '委外入库单',
     table: 'pur_outsourced_receipt',
     printHead: true,
@@ -129,6 +138,7 @@ export function outsourcedReceiptMeta(): ResourceMeta {
 export function outsourcedReceiptItemMeta(): ResourceMeta {
   return {
     name: 'purOutsourcedReceiptItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'purchase.outsourced_receipt',
     permissionLabel: '委外入库单',
     table: 'pur_outsourced_receipt_item',
@@ -170,7 +180,18 @@ export function outsourcedReceiptItemMeta(): ResourceMeta {
       f('remaining_reconcilable_qty', 'remainingReconcilableQty', 'decimal', '剩余可对账量(默认单位)', {"sortable": true, "filterable": true}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：入库单头快照列与对账派生量不进审计 diff
+    audit: {
+      enabled: true,
+      exclude: [
+        'receipt_no',
+        'receipt_date',
+        'receipt_status',
+        'party_type',
+        'party_id',
+        'remaining_reconcilable_qty',
+      ],
+    },
 
   }
 }
@@ -178,6 +199,7 @@ export function outsourcedReceiptItemMeta(): ResourceMeta {
 export function outsourcedReceiptItemMaterialMeta(): ResourceMeta {
   return {
     name: 'purOutsourcedReceiptItemMaterials',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'purchase.outsourced_receipt',
     permissionLabel: '委外入库单',
     table: 'pur_outsourced_receipt_item_material',
@@ -203,7 +225,8 @@ export function outsourcedReceiptItemMaterialMeta(): ResourceMeta {
       f('receipt_no', 'receiptNo', 'string', '入库单号', {"sortable": true, "filterable": true}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：头快照列不进审计 diff
+    audit: { enabled: true, exclude: ['receipt_no'] },
 
   }
 }
@@ -211,6 +234,7 @@ export function outsourcedReceiptItemMaterialMeta(): ResourceMeta {
 export function outsourcedReceiptItemByproductMeta(): ResourceMeta {
   return {
     name: 'purOutsourcedReceiptItemByproducts',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'purchase.outsourced_receipt',
     permissionLabel: '委外入库单',
     table: 'pur_outsourced_receipt_item_byproduct',
@@ -236,7 +260,8 @@ export function outsourcedReceiptItemByproductMeta(): ResourceMeta {
       f('receipt_no', 'receiptNo', 'string', '入库单号', {"sortable": true, "filterable": true}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：头快照列不进审计 diff
+    audit: { enabled: true, exclude: ['receipt_no'] },
 
   }
 }

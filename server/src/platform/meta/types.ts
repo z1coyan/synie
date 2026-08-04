@@ -65,6 +65,34 @@ export interface PrintLoopMeta {
   resource: string
 }
 
+/** 服务端资源呈现分类 */
+export type PresentationClass = 'basic' | 'extension' | 'none' | 'reference-only'
+
+/**
+ * 呈现分类声明：每个注册进 Catalog 的资源必须有明确归宿（注册期强制）。
+ * Registry 据此补齐 form.kind（规范化逻辑见 resource-classification.ts）。
+ */
+export interface ResourceClassification {
+  presentation: PresentationClass
+  /**
+   * 是否有独立交互表单/抽屉（Grid 行打开编辑或专用页）。
+   * false：catalog-only / 列表子行 / 只读投影，无 ResourceBinding 写表单要求。
+   */
+  interactive: boolean
+  note?: string
+}
+
+/**
+ * 附件宿主声明：composition 由此派生 files OwnerRegistry（声明与注册互为镜像）。
+ * ownerType 缺省取 table；companyScoped=true 时宿主表必须有 company_id 字段。
+ */
+export interface AttachmentsMeta {
+  /** sys_attachment.owner_type 取值；缺省取 table（员工历史取 hr_employee 单数） */
+  ownerType?: string
+  /** 附件挂接固化 company_id 并按公司范围鉴权；缺省 false（全局宿主） */
+  companyScoped?: boolean
+}
+
 /**
  * 目标资源规范 lookup（label/search/subtitle/default sort）。
  * 引用字段不得重复声明这些事实；缺省时由字段推导。
@@ -82,6 +110,11 @@ export interface ResourceMeta {
   name: string
   permissionPrefix: string
   permissionLabel: string
+  /**
+   * 呈现分类（注册期强制）：register 时缺失即抛错。
+   * 类型上可选仅为豁免内部投影 meta（todo 查询 meta 等不进 Catalog 的构造）。
+   */
+  classification?: ResourceClassification
   /**
    * 独立显示标签（列表/表单/选择器）。缺省取 permissionLabel。
    * 例：币种权限组为「币种」，界面显示「货币」。
@@ -101,7 +134,35 @@ export interface ResourceMeta {
   print?: boolean
   printHead?: boolean
   printLoops?: PrintLoopMeta[]
-  audit?: { enabled: boolean; sensitiveFields?: string[] }
+  /**
+   * 编号字段目录：单据头资源声明可绑定自动编号规则。
+   * prefix 恒等于 permissionPrefix，字段自 fields 派生（含 fk 一层展开），见 numbering/catalog.ts。
+   */
+  numbering?: boolean
+  /**
+   * 附件宿主声明（唯一事实源）：声明后本资源可挂 sys_attachment，
+   * composition 由 Registry 派生 OwnerRegistry，见 files/owner-registry.ts。
+   */
+  attachments?: AttachmentsMeta
+  /**
+   * 待办源声明：本资源开出的待办 source_type（如 sales.reconciliation）。
+   * 权限/草稿关联 spec 由消费域 registerSource 注册；
+   * composition 断言声明与注册互为镜像，见 todo/source-registry.ts。
+   */
+  todoSource?: string
+  /**
+   * 审计声明（唯一事实源）：service 经 platform/audit/spec.ts 派生审计字段白名单，
+   * 派生规则 = 非 calculated 物理字段 − id/inserted_at/updated_at − exclude + extra。
+   */
+  audit?: {
+    enabled: boolean
+    /** 写审计前脱敏为 [FILTERED] 的键（可为非 meta 字段的写专列，如 hashed_password） */
+    sensitiveFields?: string[]
+    /** 显式排除出审计白名单的物理字段（派生/投影/密钥列等，保留历史审计面） */
+    exclude?: string[]
+    /** 附加进审计白名单的非物理字段（如 join 数组 role_ids、写专列 ocr_access_key_secret） */
+    extra?: string[]
+  }
 }
 
 /** 标准十件套（permission catalog 与 capabilities 的基准） */

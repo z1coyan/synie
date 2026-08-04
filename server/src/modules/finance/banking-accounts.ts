@@ -9,6 +9,7 @@ import type { DB as Database } from '~/db/types.ts'
 import {
   auditCreated, auditDestroyed, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
@@ -52,14 +53,8 @@ export interface BankAccount {
   accountId: string | null
 }
 
-const ACCOUNT_AUDIT = [
-  'alias','bank_name','branch_name','holder_name','account_no',
-  'active','note','company_id','currency_id','account_id',
-] as const
-const TXN_AUDIT = [
-  'occurred_at','income','expense','balance','counterparty_name',
-  'counterparty_account','summary','note','company_id','bank_account_id',
-] as const
+const ACCOUNT_AUDIT = auditFieldsOf(bankAccountResourceMeta())
+const TXN_AUDIT = auditFieldsOf(bankTransactionResourceMeta())
 const WRITE_MAP = [
   { code: '23505', message: '银行业务记录冲突' },
   { code: '23503', message: '银行业务引用不存在' },

@@ -14,6 +14,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import {
   canAccessCompany,
   hasPermission,
@@ -148,30 +149,9 @@ export interface UpdateLineInput {
   remarksPresent?: boolean
 }
 
-const JOURNAL_AUDIT = [
-  'voucher_no',
-  'date',
-  'posting_date',
-  'remarks',
-  'status',
-  'submitted_at',
-  'company_id',
-  'created_by_id',
-  'submitted_by_id',
-] as const
+const JOURNAL_AUDIT = auditFieldsOf(journalResourceMeta())
 
-const LINE_AUDIT = [
-  'idx',
-  'debit',
-  'credit',
-  'party_type',
-  'party_id',
-  'remarks',
-  'journal_id',
-  'company_id',
-  'account_id',
-  'currency_id',
-] as const
+const LINE_AUDIT = auditFieldsOf(journalLineResourceMeta())
 
 const PARTY_KINDS = new Set(['supplier', 'customer', 'company', 'employee'])
 const VOUCHER_TYPE = 'acc.gl_journal'

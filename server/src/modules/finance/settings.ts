@@ -7,6 +7,7 @@ import type { Registry } from '~/platform/meta/registry.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createSingleRowSetting } from '~/platform/settings/single-row.ts'
+import { auditSpecOf } from '~/platform/audit/spec.ts'
 import { sql } from 'kysely'
 
 export const ACC_RESOURCE_NAME = 'accSettings'
@@ -24,11 +25,12 @@ export interface AccountingUpdate {
   ocrAccessKeySecret?: string
 }
 
-const ACC_AUDIT = ['ocr_access_key_id', 'ocr_access_key_secret'] as const
+const ACC_AUDIT_SPEC = auditSpecOf(accountingSettingResourceMeta())
 
 export function accountingSettingResourceMeta(): ResourceMeta {
   const meta: ResourceMeta = {
     name: ACC_RESOURCE_NAME,
+    classification: { presentation: 'extension', interactive: true, note: 'update-only 单行设置卡片；含 OCR 密钥只写交互' },
     permissionPrefix: 'acc.setting',
     permissionLabel: '财务设置',
     table: 'acc_setting',
@@ -71,7 +73,12 @@ export function accountingSettingResourceMeta(): ResourceMeta {
       },
     ],
     print: true,
-    audit: { enabled: true, sensitiveFields: ['ocr_access_key_secret'] },
+    // extra：OCR 密钥为写专列（不进 Grid/Form 字段），仍要审计（sensitiveFields 脱敏）
+    audit: {
+      enabled: true,
+      sensitiveFields: ['ocr_access_key_secret'],
+      extra: ['ocr_access_key_secret'],
+    },
     actions: [
       { key: 'read', label: '查看', scope: 'both' },
       { key: 'update', label: '编辑', scope: 'row' },
@@ -92,8 +99,8 @@ export function createAccountingSettingService(db: Kysely<Database>) {
     notFoundMessage: '财务设置不存在',
     permissionPrefix: 'acc.setting',
     mapRow: mapAcc,
-    auditFields: ACC_AUDIT,
-    sensitiveFields: ['ocr_access_key_secret'],
+    auditFields: ACC_AUDIT_SPEC.fields,
+    sensitiveFields: ACC_AUDIT_SPEC.sensitiveFields,
     merge(before, input, lockedRow) {
       let keyId = before.ocrAccessKeyId
       let secret = (lockedRow.ocr_access_key_secret as string | null) ?? null

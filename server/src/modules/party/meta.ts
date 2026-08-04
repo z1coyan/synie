@@ -20,6 +20,7 @@ const crud = [
 export function customerResourceMeta(): ResourceMeta {
   return {
     name: 'salCustomers',
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'base.customer',
     permissionLabel: '客户',
     label: '客户',
@@ -59,6 +60,7 @@ export function customerResourceMeta(): ResourceMeta {
 export function supplierResourceMeta(): ResourceMeta {
   return {
     name: 'purSuppliers',
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'base.supplier',
     permissionLabel: '供应商',
     label: '供应商',
@@ -117,7 +119,11 @@ const insuranceOptions = [
 export function employeeResourceMeta(): ResourceMeta {
   return {
     name: 'hrEmployees',
+    classification: { presentation: 'extension', interactive: true, note: '身份证影像 extraContent' },
+    /** 证件照等影像宿主；owner_type 历史取单数 hr_employee，表无 company_id（全局宿主） */
+    attachments: { ownerType: 'hr_employee' },
     permissionPrefix: 'hr.employee',
+    numbering: true,
     permissionLabel: '员工',
     table: 'hr_employees',
     fields: [
@@ -195,6 +201,7 @@ const partyAddressPurposes = [
 export function partyAddressResourceMeta(): ResourceMeta {
   return {
     name: 'basPartyAddresses',
+    classification: { presentation: 'basic', interactive: true, note: '无独立菜单；嵌客户/供应商/公司抽屉维护' },
     permissionPrefix: 'base.party_address',
     permissionLabel: '地址',
     label: '地址',

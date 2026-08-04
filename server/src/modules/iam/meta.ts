@@ -18,6 +18,7 @@ export const ROLE_MENU_RESOURCE = 'sysRoleMenus'
 export function userResourceMeta(): ResourceMeta {
   return {
     name: USER_RESOURCE,
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'sys.user',
     permissionLabel: '用户',
     table: 'sys_user',
@@ -64,7 +65,8 @@ export function userResourceMeta(): ResourceMeta {
         email: { placeholder: '如 zhangsan@example.com（Logto 登录匹配用）' },
       },
     },
-    audit: { enabled: true, sensitiveFields: ['hashed_password'] },
+    // extra：角色/公司关联并入用户审计面（join 数组，非物理列）
+    audit: { enabled: true, sensitiveFields: ['hashed_password'], extra: ['role_ids', 'company_ids'] },
 
   }
 }
@@ -72,6 +74,7 @@ export function userResourceMeta(): ResourceMeta {
 export function roleResourceMeta(): ResourceMeta {
   return {
     name: ROLE_RESOURCE,
+    classification: { presentation: 'extension', interactive: true, note: 'builtin 动态隐藏 + 权限矩阵' },
     permissionPrefix: 'sys.role',
     permissionLabel: '角色',
     table: 'sys_role',
@@ -131,6 +134,7 @@ export function roleResourceMeta(): ResourceMeta {
 export function rolePermissionResourceMeta(): ResourceMeta {
   return {
     name: ROLE_PERM_RESOURCE,
+    classification: { presentation: 'none', interactive: false, note: 'catalog-only：嵌于角色 PE，无独立 Client/抽屉' },
     permissionPrefix: 'sys.role_permission',
     permissionLabel: '角色权限',
     table: 'sys_role_permission',
@@ -165,6 +169,7 @@ export function rolePermissionResourceMeta(): ResourceMeta {
 export function roleMenuResourceMeta(): ResourceMeta {
   return {
     name: ROLE_MENU_RESOURCE,
+    classification: { presentation: 'none', interactive: false, note: 'catalog-only：嵌于角色「配置菜单」Sheet，无独立 Client/抽屉' },
     permissionPrefix: 'sys.role_menu',
     permissionLabel: '角色菜单',
     table: 'sys_role_menu',

@@ -10,6 +10,7 @@ import type { JournalService } from '~/modules/accounting/journal-service.ts'
 import {
   auditCreated, auditDestroyed, writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { companyScopeWhere, listFromSource } from '~/db/list.ts'
@@ -29,7 +30,7 @@ export interface BankReconciliation {
   companyId: string; bankTransactionId: string; journalId: string
 }
 
-const RECON_AUDIT = ['amount', 'company_id', 'bank_transaction_id', 'journal_id'] as const
+const RECON_AUDIT = auditFieldsOf(bankReconciliationResourceMeta())
 const WRITE_MAP = [
   { code: '23505', message: '银行业务记录冲突' },
   { code: '23503', message: '银行业务引用不存在' },

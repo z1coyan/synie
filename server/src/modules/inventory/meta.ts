@@ -59,6 +59,7 @@ export const materialTypeOptions = [
 export function materialCategoryResourceMeta(): ResourceMeta {
   return {
     name: 'invMaterialCategories',
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'base.material_category',
     permissionLabel: '物料分类',
     table: 'inv_material_category',
@@ -120,6 +121,10 @@ export function materialCategoryResourceMeta(): ResourceMeta {
 export function materialResourceMeta(): ResourceMeta {
   return {
     name: 'invMaterials',
+    classification: { presentation: 'extension', interactive: true, note: '单位转换 tab + 客户料 effects + 图纸附件' },
+    /** 图纸等附件宿主：物料全局共享，不固化公司 */
+    attachments: { companyScoped: false },
+    numbering: true,
     permissionPrefix: 'base.material',
     permissionLabel: '物料',
     table: 'inv_material',
@@ -204,6 +209,7 @@ export function materialResourceMeta(): ResourceMeta {
 export function materialUnitResourceMeta(): ResourceMeta {
   return {
     name: 'invMaterialUnits',
+    classification: { presentation: 'none', interactive: false, note: '嵌于物料 PE 子表，无独立抽屉' },
     permissionPrefix: 'base.material',
     permissionLabel: '物料',
     table: 'inv_material_unit',
@@ -253,6 +259,7 @@ export function materialUnitResourceMeta(): ResourceMeta {
 export function warehouseResourceMeta(): ResourceMeta {
   return {
     name: 'invWarehouses',
+    classification: { presentation: 'extension', interactive: true, note: '协作方多态外键，Basic Form fail-closed' },
     permissionPrefix: 'base.warehouse',
     permissionLabel: '仓库',
     table: 'inv_warehouse',
@@ -346,6 +353,7 @@ export function warehouseResourceMeta(): ResourceMeta {
 export function stockEntryResourceMeta(): ResourceMeta {
   return {
     name: 'invStockEntries',
+    classification: { presentation: 'none', interactive: false, note: '只读库存分录' },
     permissionPrefix: 'inv.stock_entry',
     permissionLabel: '库存分录',
     table: 'inv_stock_entry',
@@ -483,6 +491,8 @@ export function stockEntryResourceMeta(): ResourceMeta {
 export function stockDocResourceMeta(): ResourceMeta {
   return {
     name: 'invStockDocs',
+    classification: { presentation: 'extension', interactive: true },
+    numbering: true,
     permissionPrefix: 'inv.stock_doc',
     permissionLabel: '手工出入库单',
     table: 'inv_stock_doc',
@@ -568,6 +578,7 @@ export function stockDocResourceMeta(): ResourceMeta {
 export function stockDocItemResourceMeta(): ResourceMeta {
   return {
     name: 'invStockDocItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'inv.stock_doc',
     permissionLabel: '手工出入库单',
     table: 'inv_stock_doc_item',
@@ -658,6 +669,8 @@ export function stockDocItemResourceMeta(): ResourceMeta {
 export function stockTransferResourceMeta(): ResourceMeta {
   return {
     name: 'invStockTransfers',
+    classification: { presentation: 'extension', interactive: true },
+    numbering: true,
     permissionPrefix: 'inv.stock_transfer',
     permissionLabel: '手工调拨单',
     table: 'inv_stock_transfer',
@@ -767,6 +780,7 @@ export function stockTransferResourceMeta(): ResourceMeta {
 export function stockTransferItemResourceMeta(): ResourceMeta {
   return {
     name: 'invStockTransferItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'inv.stock_transfer',
     permissionLabel: '手工调拨单',
     table: 'inv_stock_transfer_item',
@@ -863,6 +877,8 @@ export function stockTransferItemResourceMeta(): ResourceMeta {
 export function stockCountResourceMeta(): ResourceMeta {
   return {
     name: 'invStockCounts',
+    classification: { presentation: 'extension', interactive: true },
+    numbering: true,
     permissionPrefix: 'inv.stock_count',
     permissionLabel: '库存盘点单',
     table: 'inv_stock_count',
@@ -940,6 +956,7 @@ export function stockCountResourceMeta(): ResourceMeta {
 export function stockCountItemResourceMeta(): ResourceMeta {
   return {
     name: 'invStockCountItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'inv.stock_count',
     permissionLabel: '库存盘点单',
     table: 'inv_stock_count_item',

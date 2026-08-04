@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -27,7 +28,7 @@ export interface MaterialUnit {
   unit: { id: string; name: string; symbol?: string | null }
 }
 
-const AUDIT = ['factor', 'material_id', 'unit_id'] as const
+const AUDIT = auditFieldsOf(materialUnitResourceMeta())
 const META = materialUnitResourceMeta()
 
 const SOURCE = sql`

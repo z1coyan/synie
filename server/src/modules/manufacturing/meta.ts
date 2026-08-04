@@ -91,6 +91,7 @@ function headMeta(
     permissionPrefix: permission,
     permissionLabel: label,
     table,
+    numbering: true,
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', codeLabel, {
@@ -149,7 +150,7 @@ function routeFields(): ResourceMeta['fields'] {
 }
 
 export function operationResourceMeta(): ResourceMeta {
-  return headMeta(
+  const meta = headMeta(
     'mfgOperations',
     'mfg.operation',
     '工序',
@@ -157,6 +158,8 @@ export function operationResourceMeta(): ResourceMeta {
     '工序编号',
     '工序名称',
   )
+  meta.classification = { presentation: 'basic', interactive: true }
+  return meta
 }
 
 export function processTemplateResourceMeta(): ResourceMeta {
@@ -168,6 +171,7 @@ export function processTemplateResourceMeta(): ResourceMeta {
     '模板编号',
     '模板名称',
   )
+  meta.classification = { presentation: 'extension', interactive: true }
   meta.printHead = true
   meta.printLoops = [{ name: 'items', resource: 'mfgProcessTemplateItems' }]
   return meta
@@ -176,6 +180,7 @@ export function processTemplateResourceMeta(): ResourceMeta {
 export function processTemplateItemResourceMeta(): ResourceMeta {
   return {
     name: 'mfgProcessTemplateItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.route_template',
     permissionLabel: '工艺模板',
     table: 'mfg_process_template_item',
@@ -206,7 +211,9 @@ export function processTemplateItemResourceMeta(): ResourceMeta {
 export function bomResourceMeta(): ResourceMeta {
   return {
     name: 'mfgBoms',
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: 'mfg.bom',
+    numbering: true,
     permissionLabel: 'BOM',
     table: 'mfg_bom',
     fields: [
@@ -267,6 +274,7 @@ export function bomResourceMeta(): ResourceMeta {
 export function bomComponentResourceMeta(): ResourceMeta {
   return {
     name: 'mfgBomComponents',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.bom',
     permissionLabel: 'BOM',
     table: 'mfg_bom_component',
@@ -316,6 +324,7 @@ export function bomComponentResourceMeta(): ResourceMeta {
 export function bomRouteResourceMeta(): ResourceMeta {
   return {
     name: 'mfgBomRoutes',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.bom',
     permissionLabel: 'BOM',
     table: 'mfg_bom_route',
@@ -343,6 +352,7 @@ export function bomRouteResourceMeta(): ResourceMeta {
 export function bomByproductResourceMeta(): ResourceMeta {
   return {
     name: 'mfgBomByproducts',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.bom',
     permissionLabel: 'BOM',
     table: 'mfg_bom_byproduct',
@@ -388,6 +398,8 @@ export function bomByproductResourceMeta(): ResourceMeta {
 export function demandResourceMeta(): ResourceMeta {
   return {
     name: 'mfgDemands',
+    classification: { presentation: 'extension', interactive: true },
+    numbering: true,
     permissionPrefix: 'mfg.demand',
     permissionLabel: '履约需求单',
     table: 'mfg_demand',
@@ -436,6 +448,7 @@ export function demandResourceMeta(): ResourceMeta {
 export function demandItemResourceMeta(): ResourceMeta {
   return {
     name: 'mfgDemandItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.demand',
     permissionLabel: '履约需求单',
     table: 'mfg_demand_item',
@@ -550,6 +563,10 @@ export function demandItemResourceMeta(): ResourceMeta {
 export function workOrderResourceMeta(): ResourceMeta {
   return {
     name: 'mfgWorkOrders',
+    classification: { presentation: 'extension', interactive: true },
+    /** 工单图纸只读展示宿主：附件固化 company_id */
+    attachments: { companyScoped: true },
+    numbering: true,
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order',
@@ -628,7 +645,8 @@ export function workOrderResourceMeta(): ResourceMeta {
       { name: 'routes', resource: 'mfgWorkOrderRoutes' },
       { name: 'byproducts', resource: 'mfgWorkOrderByproducts' },
     ],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：BOM 引用不进审计 diff
+    audit: { enabled: true, exclude: ['bom_id'] },
 
   }
 }
@@ -637,6 +655,7 @@ export function workOrderResourceMeta(): ResourceMeta {
 export function workOrderComponentResourceMeta(): ResourceMeta {
   return {
     name: 'mfgWorkOrderComponents',
+    classification: { presentation: 'none', interactive: false, note: '工单 BOM 配料快照；打印循环区' },
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order_component',
@@ -661,6 +680,7 @@ export function workOrderComponentResourceMeta(): ResourceMeta {
 export function workOrderRouteResourceMeta(): ResourceMeta {
   return {
     name: 'mfgWorkOrderRoutes',
+    classification: { presentation: 'none', interactive: false, note: '工单工艺路线快照；打印循环区' },
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order_route',
@@ -683,6 +703,7 @@ export function workOrderRouteResourceMeta(): ResourceMeta {
 export function workOrderByproductResourceMeta(): ResourceMeta {
   return {
     name: 'mfgWorkOrderByproducts',
+    classification: { presentation: 'none', interactive: false, note: '工单副产品快照；打印循环区' },
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order_byproduct',
@@ -705,6 +726,8 @@ export function workOrderByproductResourceMeta(): ResourceMeta {
 export function outputResourceMeta(): ResourceMeta {
   return {
     name: 'mfgOutputs',
+    classification: { presentation: 'extension', interactive: true },
+    numbering: true,
     permissionPrefix: 'mfg.output',
     permissionLabel: '生产入库单',
     table: 'mfg_output',
@@ -756,6 +779,7 @@ export function outputResourceMeta(): ResourceMeta {
 export function outputItemResourceMeta(): ResourceMeta {
   return {
     name: 'mfgOutputItems',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'mfg.output',
     permissionLabel: '生产入库单',
     table: 'mfg_output_item',
@@ -827,6 +851,12 @@ export function outputItemResourceMeta(): ResourceMeta {
 export function moldDesignResourceMeta(): ResourceMeta {
   return {
     name: 'mfgMoldDesigns',
+    // 附件（图纸）挂物料宿主 inv_material 而非模具自身；编号走 base.material 规则——均不在此声明
+    classification: {
+      presentation: 'extension',
+      interactive: true,
+      note: '建模具同事务自动建资产物料;自定义抽屉(名称/规格/类型/单位+图纸附件)',
+    },
     permissionPrefix: 'mfg.mold_design',
     permissionLabel: '模具设计',
     table: 'mfg_mold_design',

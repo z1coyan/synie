@@ -9,6 +9,7 @@ import type { DB as Database } from '~/db/types.ts'
 import {
   auditCreated, auditDestroyed, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -53,20 +54,9 @@ export interface BankImportItem {
   transactionId: string | null
 }
 
-const TEMPLATE_AUDIT = [
-  'name','start_row','datetime_col','datetime_format','date_col','date_format',
-  'time_col','time_format','income_col','expense_col','amount_col','balance_col',
-  'counterparty_name_col','counterparty_account_col','summary_col','note_col',
-  'company_id','bank_account_id',
-] as const
-const IMPORT_AUDIT = [
-  'status','error','imported_at','company_id','bank_account_id','template_id',
-  'file_id','created_by_id','imported_by_id',
-] as const
-const ITEM_AUDIT = [
-  'row_no','occurred_at','income','expense','balance','counterparty_name',
-  'counterparty_account','summary','note','error','import_id','company_id','transaction_id',
-] as const
+const TEMPLATE_AUDIT = auditFieldsOf(bankImportTemplateResourceMeta())
+const IMPORT_AUDIT = auditFieldsOf(bankImportResourceMeta())
+const ITEM_AUDIT = auditFieldsOf(bankImportItemResourceMeta())
 const COLUMN_RE = /^[A-Z]{1,2}$/
 const WRITE_MAP = [
   { code: '23505', message: '银行业务记录冲突' },

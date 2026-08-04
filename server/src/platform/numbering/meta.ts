@@ -6,6 +6,7 @@ export const COUNTER_RESOURCE_NAME = 'sysNumberingCounters'
 export function ruleResourceMeta(): ResourceMeta {
   return {
     name: RULE_RESOURCE_NAME,
+    classification: { presentation: 'basic', interactive: true },
     permissionPrefix: 'sys.numbering_rule',
     permissionLabel: '编号规则',
     table: 'sys_numbering_rule',
@@ -105,10 +106,12 @@ export function ruleResourceMeta(): ResourceMeta {
 export function counterResourceMeta(): ResourceMeta {
   return {
     name: COUNTER_RESOURCE_NAME,
+    classification: { presentation: 'none', interactive: false, note: '计数器只读投影' },
     permissionPrefix: 'sys.numbering_rule',
     permissionLabel: '编号规则',
     table: 'sys_numbering_counter',
-    audit: { enabled: true },
+    // exclude 保留历史审计面：计数器只审 value 变化
+    audit: { enabled: true, exclude: ['scope_key', 'rule_id'] },
     fields: [
       { name: 'id', apiName: 'id', dbColumn: 'id', type: 'uuid', label: 'id', readonly: true, sortable: true },
       {

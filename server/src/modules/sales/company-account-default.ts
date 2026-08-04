@@ -8,6 +8,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import {
   canAccessCompany,
   hasPermission,
@@ -29,13 +30,7 @@ export interface CompanyAccountDefault {
   updatedAt: Date
 }
 
-const AUDIT = [
-  'company_id',
-  'delivery_debit_account_id',
-  'delivery_credit_account_id',
-  'receipt_debit_account_id',
-  'receipt_credit_account_id',
-] as const
+const AUDIT = auditFieldsOf(companyAccountDefaultMeta())
 
 export function companyAccountDefaultMeta(): ResourceMeta {
   const companyResource = 'basCompanies'
@@ -43,6 +38,7 @@ export function companyAccountDefaultMeta(): ResourceMeta {
   const nameField = 'name'
   return {
     name: 'salCompanyAccountDefaults',
+    classification: { presentation: 'none', interactive: false, note: '公司科目默认只读投影 / 嵌入设置' },
     permissionPrefix: 'sales.setting',
     permissionLabel: '供应链设置',
     table: 'sal_company_account_default',

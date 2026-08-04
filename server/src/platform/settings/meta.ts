@@ -25,6 +25,7 @@ function field(
 export function systemResourceMeta(): ResourceMeta {
   return {
     name: SYS_RESOURCE_NAME,
+    classification: { presentation: 'extension', interactive: true, note: 'update-only 单行设置卡片；含调度运行状态' },
     permissionPrefix: 'sys.setting',
     permissionLabel: '系统设置',
     table: 'sys_setting',

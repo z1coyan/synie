@@ -227,7 +227,9 @@ export function orderHeadMeta(side: TradingSide): ResourceMeta {
   }
   return {
     name: spec.headResource,
+    classification: { presentation: 'extension', interactive: true },
     permissionPrefix: spec.prefix,
+    numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
     fields,
@@ -427,18 +429,21 @@ export function orderItemMeta(side: TradingSide): ResourceMeta {
   )
   return {
     name: spec.itemResource,
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
     fields,
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：履约投影列与头冗余对手不进审计 diff
+    audit: { enabled: true, exclude: [spec.projectionColumn, 'party_id'] },
   }
 }
 
 export function orderMaterialMeta(): ResourceMeta {
   return {
     name: 'purOrderItemMaterials',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'purchase.order',
     permissionLabel: '采购订单',
     table: 'pur_order_item_material',
@@ -523,6 +528,7 @@ export function orderMaterialMeta(): ResourceMeta {
 export function orderByproductMeta(): ResourceMeta {
   return {
     name: 'purOrderItemByproducts',
+    classification: { presentation: 'none', interactive: false },
     permissionPrefix: 'purchase.order',
     permissionLabel: '采购订单',
     table: 'pur_order_item_byproduct',

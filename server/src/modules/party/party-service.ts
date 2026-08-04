@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf, auditSpecOf } from '~/platform/audit/spec.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -47,21 +48,10 @@ export interface Employee {
   updatedAt: Date
 }
 
-const PARTY_AUDIT = ['code', 'name', 'short_name'] as const
-const EMP_AUDIT = [
-  'code',
-  'name',
-  'attendance_no',
-  'id_number',
-  'household_registration',
-  'phone',
-  'current_address',
-  'daily_wage',
-  'monthly_allowance',
-  'insurance_types',
-] as const
-/** 员工审计敏感字段单点：与 employeeResourceMeta().audit.sensitiveFields 对齐 */
-const EMP_SENSITIVE_FIELDS = ['id_number'] as const
+// 客户/供应商审计白名单同构：任一侧 meta 派生即可（spec.test 断言两侧一致）
+const PARTY_AUDIT = auditFieldsOf(customerResourceMeta())
+const EMP_AUDIT_SPEC = auditSpecOf(employeeResourceMeta())
+const EMP_AUDIT = EMP_AUDIT_SPEC.fields
 
 export function createCustomerService(db: Kysely<Database>) {
   return createPartyKind(db, {
@@ -343,7 +333,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
           actionType: 'create',
           actionName: 'create',
           changes: auditCreated(empSnap(item), EMP_AUDIT),
-          sensitiveFields: EMP_SENSITIVE_FIELDS,
+          sensitiveFields: EMP_AUDIT_SPEC.sensitiveFields,
         })
         return item
       } catch (err) {
@@ -385,7 +375,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
           name: { to: name },
           attendance_no: { to: attendanceNo },
         },
-        sensitiveFields: EMP_SENSITIVE_FIELDS,
+        sensitiveFields: EMP_AUDIT_SPEC.sensitiveFields,
       })
       return { id: emp.id, code, name, attendanceNo }
     } catch (err) {
@@ -482,7 +472,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
           actionType: 'update',
           actionName: 'update',
           changes,
-          sensitiveFields: EMP_SENSITIVE_FIELDS,
+          sensitiveFields: EMP_AUDIT_SPEC.sensitiveFields,
         })
         return item
       } catch (err) {
@@ -520,7 +510,7 @@ daily_wage,monthly_allowance,inserted_at,updated_at,insurance_types`,
         actionType: 'destroy',
         actionName: 'destroy',
         changes: auditDestroyed(empSnap(item), EMP_AUDIT),
-        sensitiveFields: EMP_SENSITIVE_FIELDS,
+        sensitiveFields: EMP_AUDIT_SPEC.sensitiveFields,
       })
     })
   }

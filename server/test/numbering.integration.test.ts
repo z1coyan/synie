@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
@@ -8,7 +9,7 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（numbering）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const actor: Actor = {
     userId: crypto.randomUUID(),
     username: 'numbering-test',
@@ -26,8 +27,10 @@ run('PG 集成（numbering）', () => {
   test('目录规模 + 规则 CRUD + 计数器校正 + 级联删除', async () => {
     const catalog = await numbering.numberableResources(actor)
     const fieldCount = catalog.reduce((n, r) => n + r.fields.length, 0)
-    expect(catalog.length).toBe(25)
-    expect(fieldCount).toBe(695)
+    // 目录自 Registry 派生；旧 numberables.json 的 25 资源 / 695 字段是下限
+    // （超集约束见 src/platform/numbering/catalog.test.ts 特征化测试）
+    expect(catalog.length).toBeGreaterThanOrEqual(25)
+    expect(fieldCount).toBeGreaterThanOrEqual(695)
 
     const current = await numbering.listRules(actor, { limit: 200, offset: 0 })
     const occupied = new Set(current.results.filter((r) => r.enabled).map((r) => r.resource))

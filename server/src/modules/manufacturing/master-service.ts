@@ -13,6 +13,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -50,18 +51,13 @@ import type {
   TemplateItem,
 } from './types.ts'
 
-const OP_AUDIT = ['code', 'name', 'note'] as const
-const BOM_AUDIT = ['code', 'plan_name', 'note', 'material_id', 'status'] as const
-const COMP_AUDIT = ['quantity', 'loss_rate', 'note', 'bom_id', 'material_id', 'unit_id'] as const
-const ROUTE_AUDIT = ['seq', 'requirement', 'is_outsourced', 'bom_id', 'operation_id'] as const
-const TPL_ITEM_AUDIT = [
-  'seq',
-  'requirement',
-  'is_outsourced',
-  'template_id',
-  'operation_id',
-] as const
-const BYP_AUDIT = ['quantity', 'note', 'bom_id', 'material_id', 'unit_id'] as const
+const OP_AUDIT = auditFieldsOf(operationResourceMeta())
+const TPL_AUDIT = auditFieldsOf(processTemplateResourceMeta())
+const BOM_AUDIT = auditFieldsOf(bomResourceMeta())
+const COMP_AUDIT = auditFieldsOf(bomComponentResourceMeta())
+const ROUTE_AUDIT = auditFieldsOf(bomRouteResourceMeta())
+const TPL_ITEM_AUDIT = auditFieldsOf(processTemplateItemResourceMeta())
+const BYP_AUDIT = auditFieldsOf(bomByproductResourceMeta())
 
 export function createMasterService(db: Kysely<Database>, numbering: NumberingService) {
   // —— 工序 ——
@@ -205,7 +201,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
           recordLabel: item.code,
           actionType: 'create',
           actionName: 'create',
-          changes: auditCreated(opSnap(item), OP_AUDIT),
+          changes: auditCreated(opSnap(item), TPL_AUDIT),
         })
         return item
       } catch (err) {
@@ -257,7 +253,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         .returningAll()
         .executeTakeFirstOrThrow()
       const after = mapTemplate(row)
-      const changes = auditDiff(opSnap(before), opSnap(after), OP_AUDIT)
+      const changes = auditDiff(opSnap(before), opSnap(after), TPL_AUDIT)
       if (Object.keys(changes).length > 0) {
         await writeAudit(trx, actor, {
           resource: 'mfg_process_template',
@@ -289,7 +285,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         recordLabel: item.code,
         actionType: 'destroy',
         actionName: 'destroy',
-        changes: auditDestroyed(opSnap(item), OP_AUDIT),
+        changes: auditDestroyed(opSnap(item), TPL_AUDIT),
       })
     })
   }

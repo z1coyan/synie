@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -50,7 +51,7 @@ export interface UpdateCompanyInput {
   baseCurrencyId?: string
 }
 
-const AUDIT = ['code', 'name', 'short_name', 'parent_id', 'base_currency_id'] as const
+const AUDIT = auditFieldsOf(companyResourceMeta())
 const CODE_RE = /^[A-Za-z]{2}$/
 
 const COMPANY_SOURCE = sql`

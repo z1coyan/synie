@@ -10,6 +10,7 @@ import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
 import {
   auditCreated, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -36,14 +37,8 @@ export interface ExpenseReportItem {
   companyId: string; invoiceId: string | null; expenseAccountId: string | null
 }
 
-const REPORT_AUDIT = [
-  'doc_no','expense_date','posting_date','remarks','status','company_id',
-  'employee_id','payment_account_id',
-] as const
-const ITEM_AUDIT = [
-  'idx','kind','summary','amount','remarks','report_id','company_id',
-  'invoice_id','expense_account_id',
-] as const
+const REPORT_AUDIT = auditFieldsOf(expenseReportResourceMeta())
+const ITEM_AUDIT = auditFieldsOf(expenseReportItemResourceMeta())
 const WRITE_MAP = [
   { code: '23505', message: '报销单编号冲突' },
   { code: '23503', message: '报销单引用不存在' },

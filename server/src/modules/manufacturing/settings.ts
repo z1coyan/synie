@@ -8,6 +8,7 @@ import type { Registry } from '~/platform/meta/registry.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createSingleRowSetting } from '~/platform/settings/single-row.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 
 export const MFG_RESOURCE_NAME = 'mfgSettings'
 
@@ -25,11 +26,12 @@ export interface ManufacturingUpdate {
   moldCategoryId?: string | null
 }
 
-const MFG_AUDIT = ['output_overreceive_ratio', 'mold_category_id'] as const
+const MFG_AUDIT = auditFieldsOf(manufacturingSettingResourceMeta())
 
 export function manufacturingSettingResourceMeta(): ResourceMeta {
   return {
     name: MFG_RESOURCE_NAME,
+    classification: { presentation: 'extension', interactive: true, note: 'update-only 单行设置卡片；含百分比显示转换' },
     permissionPrefix: 'mfg.setting',
     permissionLabel: '生产设置',
     table: 'mfg_setting',

@@ -6,7 +6,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { TradingSide } from '../common.ts'
 import { createQuotationService, type QuotationDraftInput } from './service.ts'
@@ -16,7 +17,7 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
   const db = createDb(url!)
-  const quotations = createQuotationService(db, createNumberingService(db))
+  const quotations = createQuotationService(db, createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry())))
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `QA${suffix}`
 
