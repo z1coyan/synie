@@ -10,10 +10,13 @@ import type { IamService } from './service.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
 
+const emailField = z.string().email('请输入有效的邮箱地址').max(254).nullable().optional()
+
 const userCreateSchema = z
   .object({
     username: z.string().min(1),
     name: z.string().nullable().optional(),
+    email: emailField,
     roleIds: z.array(z.string().uuid()).optional(),
     companyIds: z.array(z.string().uuid()).optional(),
   })
@@ -22,6 +25,7 @@ const userCreateSchema = z
 const userUpdateSchema = z
   .object({
     name: z.string().nullable().optional(),
+    email: emailField,
     roleIds: z.array(z.string().uuid()).optional(),
     companyIds: z.array(z.string().uuid()).optional(),
   })
@@ -59,6 +63,7 @@ export function iamUserRoutes(deps: { auth: AuthService; iam: IamService }) {
       const created = await iam.createUser(c.get('actor'), {
         username: body.username,
         name: body.name,
+        email: body.email,
         roleIds: body.roleIds,
         companyIds: body.companyIds,
       })
@@ -86,6 +91,8 @@ export function iamUserRoutes(deps: { auth: AuthService; iam: IamService }) {
         const item = await iam.updateUser(c.get('actor'), c.req.valid('param').id, {
           name: body.name,
           namePresent: Object.prototype.hasOwnProperty.call(raw, 'name'),
+          email: body.email,
+          emailPresent: Object.prototype.hasOwnProperty.call(raw, 'email'),
           roleIds: body.roleIds,
           roleIdsPresent: Object.prototype.hasOwnProperty.call(raw, 'roleIds'),
           companyIds: body.companyIds,
@@ -180,6 +187,7 @@ function userDto(u: Awaited<ReturnType<IamService['getUser']>>) {
     id: u.id,
     username: u.username,
     name: u.name,
+    email: u.email,
     preferredLanguage: u.preferredLanguage,
     insertedAt: u.insertedAt.toISOString(),
     updatedAt: u.updatedAt.toISOString(),

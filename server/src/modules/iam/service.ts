@@ -9,7 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
-import { syncUserCredential } from '~/platform/auth/credentials.ts'
+import { syncAuthUserEmail, syncUserCredential } from '~/platform/auth/credentials.ts'
 import { hashPassword } from '~/platform/auth/password.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -23,6 +23,8 @@ export interface IamUser {
   id: string
   username: string
   name: string | null
+  /** Logto 首登匹配键；可空，非空时库内 lower(email) 唯一 */
+  email: string | null
   preferredLanguage: string | null
   insertedAt: Date
   updatedAt: Date
@@ -48,8 +50,20 @@ export interface UserAccess {
   companies: AccessItem[]
 }
 
-const USER_AUDIT = ['username', 'name', 'preferred_language', 'role_ids', 'company_ids'] as const
+const USER_AUDIT = ['username', 'name', 'email', 'preferred_language', 'role_ids', 'company_ids'] as const
 const ROLE_AUDIT = ['code', 'name', 'enabled', 'builtin'] as const
+
+/** 邮箱规范化：trim + lower；空串视为 null；格式校验 */
+function normalizeEmail(raw: string | null | undefined): string | null {
+  if (raw === undefined || raw === null) return null
+  const t = raw.trim().toLowerCase()
+  if (t === '') return null
+  // 与常见邮箱形态对齐；长度上限 RFC 5321
+  if (t.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) {
+    throw ApiError.validation('用户参数不合法', { email: ['请输入有效的邮箱地址'] })
+  }
+  return t
+}
 
 export function createIamService(db: Kysely<Database>, registry: Registry) {
   async function getUser(actor: Actor, id: string): Promise<IamUser> {
@@ -65,7 +79,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
       db,
       resource: userResourceMeta(),
       source: sql` FROM sys_user`,
-      select: sql`SELECT id, username, name, preferred_language, inserted_at, updated_at`,
+      select: sql`SELECT id, username, name, email, preferred_language, inserted_at, updated_at`,
       defaultOrder: sql`"username" ASC, "id" ASC`,
       query,
       mapRow: (r) =>
@@ -73,6 +87,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
           id: String(r.id),
           username: String(r.username),
           name: r.name == null ? null : String(r.name),
+          email: r.email == null ? null : String(r.email),
           preferred_language: r.preferred_language == null ? null : String(r.preferred_language),
           inserted_at: r.inserted_at as Date,
           updated_at: r.updated_at as Date,
@@ -82,12 +97,19 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
 
   async function createUser(
     actor: Actor,
-    input: { username: string; name?: string | null; roleIds?: string[]; companyIds?: string[] },
+    input: {
+      username: string
+      name?: string | null
+      email?: string | null
+      roleIds?: string[]
+      companyIds?: string[]
+    },
   ): Promise<{ user: IamUser; password: string }> {
     requirePermission(actor, 'sys.user:create')
     const username = input.username.trim()
     let name = input.name === undefined || input.name === null ? null : input.name.trim()
     if (name === '') name = null
+    const email = normalizeEmail(input.email)
     if (!username || [...username].length > 64) {
       throw ApiError.validation('用户参数不合法', { username: ['必填且最多 64 个字符'] })
     }
@@ -102,11 +124,11 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
       try {
         const row = await trx
           .insertInto('sys_user')
-          .values({ username, name, hashed_password: hashed })
+          .values({ username, name, email, hashed_password: hashed })
           .returningAll()
           .executeTakeFirstOrThrow()
         const user = mapUser(row)
-        // 同事务补建 better-auth 账号（auth_user + credential auth_account）
+        // 同事务补建 better-auth 账号（auth_user + credential auth_account；有 email 则写入真实邮箱）
         await syncUserCredential(trx, { userId: user.id, hashedPassword: hashed })
         await replaceAccess(trx, user.id, roleIds, companyIds)
         await writeAudit(trx, actor, {
@@ -120,6 +142,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
         })
         return { user, password }
       } catch (err) {
+        if (err instanceof ApiError) throw err
         throw mapWriteError(err, '创建用户失败', [
           { code: '23505', message: '编码或关联已存在' },
           { code: '23503', message: '记录已被引用或关联目标不存在' },
@@ -134,6 +157,8 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     input: {
       name?: string | null
       namePresent?: boolean
+      email?: string | null
+      emailPresent?: boolean
       roleIds?: string[]
       roleIdsPresent?: boolean
       companyIds?: string[]
@@ -162,6 +187,10 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
           }
         }
       }
+      let email = before.email
+      if (input.emailPresent) {
+        email = normalizeEmail(input.email)
+      }
       const roleIds = input.roleIdsPresent
         ? uniqueIds(input.roleIds ?? [])
         : accessBefore.roles.map((r) => r.id)
@@ -171,10 +200,18 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
       try {
         const updated = await trx
           .updateTable('sys_user')
-          .set({ name, updated_at: sql`(now() AT TIME ZONE 'utc')` })
+          .set({ name, email, updated_at: sql`(now() AT TIME ZONE 'utc')` })
           .where('id', '=', id)
           .returningAll()
           .executeTakeFirstOrThrow()
+        // Logto / accountLinking 读 auth_user.email：有关联账号时与 sys_user 同步
+        if (input.emailPresent && locked.auth_user_id) {
+          await syncAuthUserEmail(trx, {
+            authUserId: locked.auth_user_id,
+            username: locked.username,
+            email,
+          })
+        }
         const after = mapUser(updated)
         if (input.roleIdsPresent || input.companyIdsPresent) {
           await replaceAccess(trx, id, roleIds, companyIds)
@@ -275,8 +312,13 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
         actionType: 'destroy',
         actionName: 'destroy',
         changes: auditDestroyed(
-          { username: item.username, name: item.name, preferred_language: item.preferredLanguage },
-          ['username', 'name', 'preferred_language'],
+          {
+            username: item.username,
+            name: item.name,
+            email: item.email,
+            preferred_language: item.preferredLanguage,
+          },
+          ['username', 'name', 'email', 'preferred_language'],
         ),
       })
     })
@@ -671,6 +713,7 @@ function mapUser(row: {
   id: string
   username: string
   name: string | null
+  email?: string | null
   preferred_language: string | null
   inserted_at: Date | string
   updated_at: Date | string
@@ -679,6 +722,7 @@ function mapUser(row: {
     id: row.id,
     username: row.username,
     name: row.name,
+    email: row.email ?? null,
     preferredLanguage: row.preferred_language,
     insertedAt: toDate(row.inserted_at),
     updatedAt: toDate(row.updated_at),
@@ -709,6 +753,7 @@ function userSnap(u: IamUser, roles: string[], companies: string[]): Record<stri
   return {
     username: u.username,
     name: u.name,
+    email: u.email,
     preferred_language: u.preferredLanguage,
     role_ids: roles,
     company_ids: companies,

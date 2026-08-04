@@ -30,6 +30,10 @@ export function userResourceMeta(): ResourceMeta {
         sortable: true,
       }),
       field('name', 'name', 'string', '姓名', { filterable: true, sortable: true }),
+      field('email', 'email', 'string', '邮箱', {
+        filterable: true,
+        sortable: true,
+      }),
       field('preferred_language', 'preferredLanguage', 'string', '首选语言', {
         readonly: true,
         filterable: true,
@@ -57,6 +61,7 @@ export function userResourceMeta(): ResourceMeta {
       fields: {
         username: { placeholder: '如 zhangsan' },
         name: { placeholder: '如 张三' },
+        email: { placeholder: '如 zhangsan@example.com（Logto 登录匹配用）' },
       },
     },
     audit: { enabled: true, sensitiveFields: ['hashed_password'] },

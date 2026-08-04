@@ -96,4 +96,69 @@ run('PG 集成（IAM）', () => {
     await iam.deleteRole(actor, role.id)
     roleIds.splice(roleIds.indexOf(role.id), 1)
   })
+
+  test('用户邮箱 CRUD + 唯一性 + 同步 auth_user', async () => {
+    const email = `u${suffix}@example.com`
+    const created = await iam.createUser(actor, {
+      username: `em${suffix}`,
+      name: '邮箱用户',
+      email,
+    })
+    userIds.push(created.user.id)
+    expect(created.user.email).toBe(email)
+
+    const got = await iam.getUser(actor, created.user.id)
+    expect(got.email).toBe(email)
+
+    // create 后已建 auth_user，邮箱应写入真实值供 Logto accountLinking
+    const authLinked = await db
+      .selectFrom('sys_user')
+      .select(['auth_user_id', 'email'])
+      .where('id', '=', created.user.id)
+      .executeTakeFirstOrThrow()
+    expect(authLinked.auth_user_id).toBeTruthy()
+    const authUser = await db
+      .selectFrom('auth_user')
+      .select('email')
+      .where('id', '=', authLinked.auth_user_id!)
+      .executeTakeFirstOrThrow()
+    expect(authUser.email).toBe(email)
+
+    const updated = await iam.updateUser(actor, created.user.id, {
+      email: `U${suffix}@Example.COM`,
+      emailPresent: true,
+    })
+    expect(updated.email).toBe(`u${suffix}@example.com`) // 归一化 lower
+
+    // 重复邮箱拒绝
+    const other = await iam.createUser(actor, {
+      username: `em2${suffix}`,
+      email: `other-${suffix}@example.com`,
+    })
+    userIds.push(other.user.id)
+    await expect(
+      iam.updateUser(actor, other.user.id, {
+        email,
+        emailPresent: true,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' })
+
+    // 清空邮箱 → 回落占位
+    const cleared = await iam.updateUser(actor, created.user.id, {
+      email: null,
+      emailPresent: true,
+    })
+    expect(cleared.email).toBeNull()
+    const authAfter = await db
+      .selectFrom('auth_user')
+      .select('email')
+      .where('id', '=', authLinked.auth_user_id!)
+      .executeTakeFirstOrThrow()
+    expect(authAfter.email).toBe(`em${suffix.toLowerCase()}@users.synie.invalid`)
+
+    await iam.deleteUser(actor, other.user.id)
+    userIds.splice(userIds.indexOf(other.user.id), 1)
+    await iam.deleteUser(actor, created.user.id)
+    userIds.splice(userIds.indexOf(created.user.id), 1)
+  })
 })
