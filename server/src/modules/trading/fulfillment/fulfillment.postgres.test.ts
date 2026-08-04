@@ -358,6 +358,70 @@ run('PG 集成（履约聚合草稿）', () => {
     expect(draft.packBoxes[0]?.lines[0]?.packBoxId).toBe(draft.packBoxes[0]?.id)
   })
 
+  test('装箱箱/装箱行写路径落审计：创建、改行、删行删箱', async () => {
+    const no = `${prefix}-PACK-AUDIT`
+    const draft = await fulfillment.createSalesDraft(actor, draftInput(no))
+    const box = draft.packBoxes[0]!
+    const line = box.lines[0]!
+
+    const packAudit = (recordId: string) => sql<{
+      action_name: string
+      record_label: string | null
+      changes: string
+    }>`
+      SELECT action_name, record_label, changes::text AS changes
+      FROM sys_audit_log
+      WHERE resource IN ('sal_delivery_pack_box', 'sal_delivery_pack_line')
+        AND record_id=${recordId}::uuid
+      ORDER BY inserted_at
+    `.execute(db)
+
+    // 整单创建：箱与行各留 create
+    const boxCreated = await packAudit(box.id)
+    expect(boxCreated.rows.map((r) => r.action_name)).toEqual(['create'])
+    expect(boxCreated.rows[0]?.record_label).toBe('1')
+    const lineCreated = await packAudit(line.id)
+    expect(lineCreated.rows.map((r) => r.action_name)).toEqual(['create'])
+    expect(lineCreated.rows[0]?.record_label).toBe('1')
+    const createChanges = JSON.parse(lineCreated.rows[0]!.changes) as Record<
+      string,
+      { to?: unknown }
+    >
+    expect(createChanges.qty?.to).toBe('10')
+    expect(createChanges.pack_box_id?.to).toBe(box.id)
+
+    // 全量替换但快照未变：不追加装箱审计
+    const unchanged = salesReplaceInput(await fulfillment.getSalesDraft(actor, draft.id))
+    await fulfillment.replaceSalesDraft(actor, draft.id, unchanged)
+    expect((await packAudit(line.id)).rows).toHaveLength(1)
+
+    // 替换改行数量：update 留 diff
+    const modified = salesReplaceInput(await fulfillment.getSalesDraft(actor, draft.id))
+    modified.packBoxes[0]!.lines[0]!.qty = '6'
+    await fulfillment.replaceSalesDraft(actor, draft.id, modified)
+    const lineUpdated = await packAudit(line.id)
+    expect(lineUpdated.rows.map((r) => r.action_name)).toEqual(['create', 'update'])
+    const updateChanges = JSON.parse(lineUpdated.rows[1]!.changes) as Record<
+      string,
+      { from?: unknown; to?: unknown }
+    >
+    expect(updateChanges.qty).toEqual({ from: '10', to: '6' })
+
+    // 替换清空装箱：行与箱各留 destroy
+    const cleared = salesReplaceInput(await fulfillment.getSalesDraft(actor, draft.id))
+    cleared.packBoxes = []
+    await fulfillment.replaceSalesDraft(actor, draft.id, cleared)
+    const lineFinal = await packAudit(line.id)
+    expect(lineFinal.rows.map((r) => r.action_name)).toEqual(['create', 'update', 'destroy'])
+    const destroyChanges = JSON.parse(lineFinal.rows[2]!.changes) as Record<
+      string,
+      { from?: unknown }
+    >
+    expect(destroyChanges.qty?.from).toBe('6')
+    const boxFinal = await packAudit(box.id)
+    expect(boxFinal.rows.map((r) => r.action_name)).toEqual(['create', 'destroy'])
+  })
+
   test('采购入库完整草稿经 Hono seam 整单创建、读取与替换', async () => {
     const no = `${prefix}-PUR-DRAFT`
     const serviceInput = purchaseReceiptDraftInput(no)

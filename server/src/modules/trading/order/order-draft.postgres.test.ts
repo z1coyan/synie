@@ -503,4 +503,89 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     )
     expect(withDelete.items[0]?.issueLines).toHaveLength(2)
   })
+
+  test('委外发料/副产物清单写路径落审计：独立增删改与聚合替换', async () => {
+    const created = await orders.createDraft(
+      actor,
+      'purchase',
+      draftInput('purchase', `${prefix}-OC-AUDIT`),
+    )
+    const item = created.items[0]!
+    const mainIssue = item.issueLines.find((line) => line.materialId === rawMaterialId)!
+    const sideIssue = item.issueLines.find((line) => line.materialId === material2Id)!
+    const keptByproduct = item.byproductLines.find((line) => line.materialId === byproductId)!
+    const droppedByproduct = item.byproductLines.find(
+      (line) => line.materialId === material2Id,
+    )!
+
+    const lineAudit = (resource: string, recordId: string) => sql<{
+      action_name: string
+      record_label: string | null
+      changes: string
+    }>`
+      SELECT action_name, record_label, changes::text AS changes
+      FROM sys_audit_log
+      WHERE resource=${resource} AND record_id=${recordId}::uuid
+      ORDER BY inserted_at
+    `.execute(db)
+
+    // 聚合创建：发料/副产物子行各留 create，label 取物料编码
+    const issueCreated = await lineAudit('pur_order_item_material', mainIssue.id)
+    expect(issueCreated.rows.map((r) => r.action_name)).toEqual(['create'])
+    expect(issueCreated.rows[0]?.record_label).toBe('R' + suffix)
+    const byproductCreated = await lineAudit('pur_order_item_byproduct', keptByproduct.id)
+    expect(byproductCreated.rows.map((r) => r.action_name)).toEqual(['create'])
+    expect(byproductCreated.rows[0]?.record_label).toBe('B' + suffix)
+
+    // 独立更新留 diff；同值重放不追加
+    await outsourcedConfig.updateMaterial(actor, mainIssue.id, { quantity: '30' })
+    await outsourcedConfig.updateMaterial(actor, mainIssue.id, { quantity: '30' })
+    const issueUpdated = await lineAudit('pur_order_item_material', mainIssue.id)
+    expect(issueUpdated.rows.map((r) => r.action_name)).toEqual(['create', 'update'])
+    const updateChanges = JSON.parse(issueUpdated.rows[1]!.changes) as Record<
+      string,
+      { from?: unknown; to?: unknown }
+    >
+    expect(updateChanges.quantity).toEqual({ from: '20', to: '30' })
+
+    // 独立删除留 destroy
+    await outsourcedConfig.deleteMaterial(actor, sideIssue.id)
+    const issueDeleted = await lineAudit('pur_order_item_material', sideIssue.id)
+    expect(issueDeleted.rows.map((r) => r.action_name)).toEqual(['create', 'destroy'])
+    const destroyChanges = JSON.parse(issueDeleted.rows[1]!.changes) as Record<
+      string,
+      { from?: unknown }
+    >
+    expect(destroyChanges.quantity?.from).toBe('2')
+
+    // 聚合替换：副产物改量/删行/新增行分别留 update/destroy/create
+    const replaceInput = replaceInputFromSaved(
+      await orders.getDraft(actor, 'purchase', created.id),
+    )
+    const byproducts = replaceInput.items[0]!.byproductLines
+    const keptInput = byproducts.find((line) => line.id === keptByproduct.id)!
+    keptInput.quantity = '3'
+    replaceInput.items[0]!.byproductLines = [
+      keptInput,
+      { materialId, unitId, quantity: '4', remarks: '新副产物' },
+    ]
+    const replaced = await orders.replaceDraft(actor, 'purchase', created.id, replaceInput)
+
+    const byproductUpdated = await lineAudit('pur_order_item_byproduct', keptByproduct.id)
+    expect(byproductUpdated.rows.map((r) => r.action_name)).toEqual(['create', 'update'])
+    expect(
+      (JSON.parse(byproductUpdated.rows[1]!.changes) as Record<
+        string,
+        { from?: unknown; to?: unknown }
+      >).quantity,
+    ).toEqual({ from: '1', to: '3' })
+    const byproductDeleted = await lineAudit('pur_order_item_byproduct', droppedByproduct.id)
+    expect(byproductDeleted.rows.map((r) => r.action_name)).toEqual(['create', 'destroy'])
+    const newLine = replaced.items[0]!.byproductLines.find(
+      (line) => line.remarks === '新副产物',
+    )!
+    const newByproductCreated = await lineAudit('pur_order_item_byproduct', newLine.id)
+    expect(newByproductCreated.rows.map((r) => r.action_name)).toEqual(['create'])
+    expect(newByproductCreated.rows[0]?.record_label).toBe('M' + suffix)
+  })
 })
