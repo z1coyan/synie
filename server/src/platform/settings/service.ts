@@ -26,6 +26,7 @@ export interface SalesSetting {
 export interface ManufacturingSetting {
   id: string
   outputOverreceiveRatio: string
+  moldCategoryId: string | null
   insertedAt: Date
   updatedAt: Date
 }

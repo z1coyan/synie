@@ -389,6 +389,12 @@ export const menuModules: MenuModule[] = [
             path: '/mfg/outputs',
             relatedPermissions: ['mfg.output'],
           },
+          {
+            code: 'menu.mfg.molds',
+            label: '模具管理',
+            path: '/mfg/molds',
+            relatedPermissions: ['mfg.mold_design'],
+          },
         ],
       },
       {

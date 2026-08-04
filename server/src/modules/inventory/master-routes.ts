@@ -128,6 +128,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
           z
             .object({
               name: z.string().min(1),
+              materialType: z.enum(['STOCK', 'VIRTUAL', 'ASSET']).optional(),
               spec: z.string().nullable().optional(),
               customerPartNo: z.string().nullable().optional(),
               isCustomerMaterial: z.boolean().optional(),
@@ -160,6 +161,7 @@ export function inventoryMasterRoutes(deps: InventoryMasterRouteDeps) {
           z
             .object({
               name: z.string().min(1).optional(),
+              materialType: z.enum(['STOCK', 'VIRTUAL', 'ASSET']).optional(),
               spec: z.string().nullable().optional(),
               customerPartNo: z.string().nullable().optional(),
               isCustomerMaterial: z.boolean().optional(),
@@ -412,6 +414,7 @@ function materialDto(item: Awaited<ReturnType<MaterialService['get']>>) {
   return {
     id: item.id,
     code: item.code,
+    materialType: item.materialType,
     name: item.name,
     spec: item.spec,
     customerPartNo: item.customerPartNo,

@@ -8,6 +8,7 @@ import { createDemandService } from './demand-service.ts'
 import { adjustDemandOrdered, adjustDemandReceived } from './helpers.ts'
 import { createMasterService } from './master-service.ts'
 import { allManufacturingResourceMetas } from './meta.ts'
+import { createMoldDesignService } from './mold-design-service.ts'
 import { createOutputService } from './output-service.ts'
 import { createWorkOrderService } from './work-order-service.ts'
 import { registerManufacturingSettingResources } from './settings.ts'
@@ -53,7 +54,8 @@ export function createManufacturingServices(
   const demands = createDemandService(db, numbering)
   const workOrders = createWorkOrderService(db, numbering)
   const outputs = createOutputService(db, numbering, inventory)
-  return { master, demands, workOrders, outputs }
+  const moldDesigns = createMoldDesignService(db, numbering)
+  return { master, demands, workOrders, outputs, moldDesigns }
 }
 
 export type ManufacturingServices = ReturnType<typeof createManufacturingServices>

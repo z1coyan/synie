@@ -287,7 +287,7 @@ export function fulfillmentItemMeta(side: TradingSide): ResourceMeta {
         ref: { resource: 'basUnits', relation: 'unit', labelField: 'name' },
       }),
       f('warehouse_id', 'warehouseId', 'fk', sales ? '出库仓库' : '入库仓库', {
-        required: true, filterable: true,
+        filterable: true,
         ref: { resource: 'invWarehouses', relation: 'warehouse', labelField: 'name' },
       }),
       f(spec.numberCol, spec.numberApi, 'string', sales ? '发货单号' : '入库单号', {

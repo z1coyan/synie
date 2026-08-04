@@ -142,6 +142,11 @@ export const RESOURCE_CLASSIFICATION: Record<string, ResourceClassification> = {
   },
   mfgOutputs: { presentation: 'extension', interactive: true },
   mfgOutputItems: { presentation: 'none', interactive: false },
+  mfgMoldDesigns: {
+    presentation: 'extension',
+    interactive: true,
+    note: '建模具同事务自动建资产物料;自定义抽屉(名称/规格/类型/单位+图纸附件)',
+  },
   mfgSettings: {
     presentation: 'extension',
     interactive: true,

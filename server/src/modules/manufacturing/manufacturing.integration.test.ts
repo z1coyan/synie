@@ -32,6 +32,8 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   const categoryId = crypto.randomUUID()
   const materialId = crypto.randomUUID()
   const componentId = crypto.randomUUID()
+  const virtualMaterialId = crypto.randomUUID()
+  const assetMaterialId = crypto.randomUUID()
   const warehouseId = crypto.randomUUID()
 
   const cleanupIds = {
@@ -159,7 +161,10 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
       await db.deleteFrom('mfg_operation').where('id', '=', id).execute()
     }
     await db.deleteFrom('inv_warehouse').where('id', '=', warehouseId).execute()
-    await db.deleteFrom('inv_material').where('id', 'in', [materialId, componentId]).execute()
+    await db
+      .deleteFrom('inv_material')
+      .where('id', 'in', [materialId, componentId, virtualMaterialId, assetMaterialId])
+      .execute()
     await db.deleteFrom('inv_material_category').where('id', '=', categoryId).execute()
     await db.deleteFrom('bas_unit').where('id', '=', unitId).execute()
     await db.deleteFrom('bas_company').where('id', '=', companyId).execute()
@@ -491,6 +496,71 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     })
   })
 
+  test('生产入库审核复核物料类型：工单建好后改虚拟则拒审', async () => {
+    // 独立物料（无库存分录,类型可改）
+    const matId = crypto.randomUUID()
+    await db
+      .insertInto('inv_material')
+      .values({
+        id: matId,
+        code: `TM${suffix}`,
+        name: `改型料-${suffix}`,
+        category_id: categoryId,
+        default_unit_id: unitId,
+      })
+      .execute()
+    const demand = await mfg.demands.createDemand(actor, {
+      companyId,
+      demandNo: `DTM${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    const line = await mfg.demands.createDemandItem(actor, {
+      demandId: demand.id,
+      idx: 1,
+      materialId: matId,
+      unitId,
+      qty: '5',
+    })
+    await mfg.demands.confirmDemand(actor, demand.id)
+    const wo = await mfg.workOrders.createWorkOrder(actor, {
+      demandItemId: line.id,
+      workOrderNo: `WOTM${suffix}`,
+    })
+    cleanupIds.workOrders.push(wo.id)
+    const output = await mfg.outputs.createOutput(actor, {
+      companyId,
+      outputNo: `OXM${suffix}`,
+      warehouseId,
+    })
+    cleanupIds.outputs.push(output.id)
+    await mfg.outputs.createOutputItem(actor, {
+      outputId: output.id,
+      idx: 1,
+      workOrderId: wo.id,
+      unitId,
+      warehouseId,
+      qty: '5',
+    })
+    // 工单建好后物料被改为虚拟类（尚无库存分录,允许改）
+    await db
+      .updateTable('inv_material')
+      .set({ material_type: 'VIRTUAL' })
+      .where('id', '=', matId)
+      .execute()
+    await expect(mfg.outputs.auditOutput(actor, output.id)).rejects.toMatchObject({
+      code: 'conflict',
+      message: '工单物料类型已变更为非库存类,不能生产入库',
+    })
+    // 审核被拒未落分录;按依赖顺序自清,避免挡住 afterAll 的分类删除
+    await db.deleteFrom('mfg_output_item').where('output_id', '=', output.id).execute()
+    await db.deleteFrom('mfg_output').where('id', '=', output.id).execute()
+    await db.deleteFrom('mfg_demand_arrangement').where('work_order_id', '=', wo.id).execute()
+    await db.deleteFrom('mfg_work_order').where('id', '=', wo.id).execute()
+    await db.deleteFrom('mfg_demand_item').where('id', '=', line.id).execute()
+    await db.deleteFrom('mfg_demand').where('id', '=', demand.id).execute()
+    await db.deleteFrom('inv_material').where('id', '=', matId).execute()
+  })
+
   test('兼容点完成→库存安排；改履约方式已取消', async () => {
     const demand = await mfg.demands.createDemand(actor, {
       companyId,
@@ -792,5 +862,105 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     const arrangements = await mfg.demands.listArrangements(actor, line.id)
     const types = arrangements.map((a) => a.arrangementType).sort()
     expect(types).toEqual(['close', 'make', 'purchase'])
+  })
+
+  test('物料类型准入：BOM/工单限库存类，需求行不限但库存安排限库存类', async () => {
+    await db
+      .insertInto('inv_material')
+      .values([
+        {
+          id: virtualMaterialId,
+          code: `VM${suffix}`,
+          name: `虚拟料-${suffix}`,
+          category_id: categoryId,
+          default_unit_id: unitId,
+          material_type: 'VIRTUAL',
+        },
+        {
+          id: assetMaterialId,
+          code: `AM${suffix}`,
+          name: `资产料-${suffix}`,
+          category_id: categoryId,
+          default_unit_id: unitId,
+          material_type: 'ASSET',
+        },
+      ])
+      .execute()
+
+    // BOM 母物料/配料行/副产品行均限库存类
+    await expect(
+      mfg.master.createBom(actor, {
+        code: `BV${suffix}`,
+        materialId: virtualMaterialId,
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { materialId: ['仅库存类物料可进该单据'] },
+    })
+    const bom = await mfg.master.createBom(actor, {
+      code: `BS${suffix}`,
+      materialId,
+    })
+    cleanupIds.boms.push(bom.id)
+    await expect(
+      mfg.master.createComponent(actor, {
+        bomId: bom.id,
+        materialId: virtualMaterialId,
+        unitId,
+        quantity: '1',
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { materialId: ['仅库存类物料可进该单据'] },
+    })
+    await expect(
+      mfg.master.createByproduct(actor, {
+        bomId: bom.id,
+        materialId: assetMaterialId,
+        unitId,
+        quantity: '1',
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { materialId: ['仅库存类物料可进该单据'] },
+    })
+
+    // 需求行不限类型；但生成工单与库存安排限库存类
+    const demand = await mfg.demands.createDemand(actor, {
+      companyId,
+      demandNo: `DMT${suffix}`,
+    })
+    cleanupIds.demands.push(demand.id)
+    const line = await mfg.demands.createDemandItem(actor, {
+      demandId: demand.id,
+      idx: 1,
+      materialId: virtualMaterialId,
+      unitId,
+      qty: '10',
+    })
+    await mfg.demands.confirmDemand(actor, demand.id)
+    await expect(
+      mfg.workOrders.createWorkOrder(actor, { demandItemId: line.id }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { materialId: ['仅库存类物料可进该单据'] },
+    })
+    await expect(
+      mfg.demands.createArrangement(actor, {
+        demandItemId: line.id,
+        arrangementType: 'stock',
+        qty: '5',
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { materialId: ['仅库存类物料可做库存安排'] },
+    })
+    // 关闭安排不受物料类型限制
+    const closed = await mfg.demands.createArrangement(actor, {
+      demandItemId: line.id,
+      arrangementType: 'close',
+      qty: '5',
+    })
+    expect(closed.arrangedQty).toBe('5')
   })
 })

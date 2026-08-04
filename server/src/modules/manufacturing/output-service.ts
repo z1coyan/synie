@@ -502,6 +502,15 @@ export function createOutputService(
           const items = await loadOutputItemsForUpdate(t, id)
           lockedOrders = await lockOutputWorkOrders(t, items)
           await checkOutput(t, before, items, lockedOrders)
+          // 审核锁内按当前类型复核：工单创建后物料可能被改为非库存类（尚无分录时允许改）
+          const typeRows = await t
+            .selectFrom('inv_material')
+            .select(['id', 'material_type'])
+            .where('id', 'in', items.map((i) => i.materialId))
+            .execute()
+          if (typeRows.some((r) => r.material_type !== 'STOCK')) {
+            throw new ApiError('conflict', '工单物料类型已变更为非库存类,不能生产入库')
+          }
           const stockLines: StockLine[] = items.map((item) => ({
             warehouseId: item.warehouseId,
             materialId: item.materialId,

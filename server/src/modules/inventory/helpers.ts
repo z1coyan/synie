@@ -106,6 +106,7 @@ export async function projectStockItem(
     material_code: string
     material_name: string
     material_spec: string | null
+    material_type: string
     default_unit_id: string
     unit_name: string
     conversion_factor: string | null
@@ -113,6 +114,7 @@ export async function projectStockItem(
     SELECT m.code AS material_code,
            m.name AS material_name,
            m.spec AS material_spec,
+           m.material_type,
            m.default_unit_id,
            u.name AS unit_name,
            mu.factor::text AS conversion_factor
@@ -138,6 +140,12 @@ export async function projectStockItem(
   }
 
   const r = row.rows[0]!
+  // 手工出入库/调拨/盘点等库存单据只接受库存类物料（虚拟/资产不进库存数量账）
+  if (r.material_type !== 'STOCK') {
+    throw ApiError.validation(`${label}参数不合法`, {
+      materialId: ['仅库存类物料可进库存单据'],
+    })
+  }
   let baseQty = qty
   if (r.default_unit_id !== unitId) {
     if (r.conversion_factor == null || !decimal(r.conversion_factor).isPositive()) {

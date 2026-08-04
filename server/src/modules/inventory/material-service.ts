@@ -27,6 +27,7 @@ export interface MaterialRef {
 export interface Material {
   id: string
   code: string
+  materialType: string
   name: string
   spec: string | null
   customerPartNo: string | null
@@ -44,6 +45,7 @@ export interface Material {
 
 const AUDIT = [
   'code',
+  'material_type',
   'name',
   'spec',
   'customer_part_no',
@@ -58,7 +60,7 @@ const META = materialResourceMeta()
 
 const SOURCE = sql`
   FROM (
-    SELECT m.id,m.code,m.name,m.spec,m.customer_part_no,m.is_customer_material,m.active,
+    SELECT m.id,m.code,m.material_type,m.name,m.spec,m.customer_part_no,m.is_customer_material,m.active,
            m.inserted_at,m.updated_at,m.category_id,m.default_unit_id,m.customer_id,
            category.code AS category_code,category.name AS category_name,
            unit.name AS unit_name,unit.symbol AS unit_symbol,
@@ -74,7 +76,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
   async function get(actor: Actor, id: string): Promise<Material> {
     requirePermission(actor, 'base.material:read')
     const rows = await sql<Record<string, unknown>>`
-      SELECT id,code,name,spec,customer_part_no,is_customer_material,active,
+      SELECT id,code,material_type,name,spec,customer_part_no,is_customer_material,active,
              inserted_at,updated_at,category_id,default_unit_id,customer_id,
              category_code,category_name,unit_name,unit_symbol,customer_code,customer_name
       ${SOURCE} WHERE id = ${id}::uuid
@@ -89,7 +91,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
       db,
       resource: META,
       source: SOURCE,
-      select: sql`SELECT id,code,name,spec,customer_part_no,is_customer_material,active,
+      select: sql`SELECT id,code,material_type,name,spec,customer_part_no,is_customer_material,active,
         inserted_at,updated_at,category_id,default_unit_id,customer_id,
         category_code,category_name,unit_name,unit_symbol,customer_code,customer_name`,
       defaultOrder: sql`"code" ASC, "id" ASC`,
@@ -102,6 +104,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
     actor: Actor,
     input: {
       name: string
+      materialType?: string
       spec?: string | null
       customerPartNo?: string | null
       isCustomerMaterial?: boolean
@@ -140,6 +143,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
           .insertInto('inv_material')
           .values({
             code,
+            material_type: normalized.materialType,
             name: normalized.name,
             spec: normalized.spec,
             customer_part_no: normalized.customerPartNo,
@@ -175,6 +179,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
     id: string,
     input: {
       name?: string
+      materialType?: string
       spec?: string | null
       specPresent?: boolean
       customerPartNo?: string | null
@@ -199,6 +204,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
       const before = await getInTx(trx, id)
       const draft = {
         name: input.name ?? before.name,
+        materialType: input.materialType ?? before.materialType,
         spec: input.specPresent ? (input.spec ?? null) : before.spec,
         customerPartNo: input.customerPartNoPresent
           ? (input.customerPartNo ?? null)
@@ -233,6 +239,16 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
           })
         }
       }
+      if (normalized.materialType !== locked.material_type) {
+        const stock = await trx
+          .selectFrom('inv_stock_entry')
+          .select('id')
+          .where('material_id', '=', id)
+          .executeTakeFirst()
+        if (stock) {
+          throw new ApiError('conflict', '物料已有库存分录,物料类型不可修改')
+        }
+      }
       if (
         normalized.isCustomerMaterial !== locked.is_customer_material ||
         normalized.customerId !== (locked.customer_id ?? null)
@@ -256,6 +272,7 @@ export function createMaterialService(db: Kysely<Database>, numbering: Numbering
           .updateTable('inv_material')
           .set({
             name: normalized.name,
+            material_type: normalized.materialType,
             spec: normalized.spec,
             customer_part_no: normalized.customerPartNo,
             is_customer_material: normalized.isCustomerMaterial,
@@ -328,7 +345,7 @@ export type MaterialService = ReturnType<typeof createMaterialService>
 
 async function getInTx(db: DbHandle, id: string): Promise<Material> {
   const rows = await sql<Record<string, unknown>>`
-    SELECT id,code,name,spec,customer_part_no,is_customer_material,active,
+    SELECT id,code,material_type,name,spec,customer_part_no,is_customer_material,active,
            inserted_at,updated_at,category_id,default_unit_id,customer_id,
            category_code,category_name,unit_name,unit_symbol,customer_code,customer_name
     ${SOURCE} WHERE id = ${id}::uuid
@@ -344,6 +361,7 @@ function mapRow(r: Record<string, unknown>): Material {
   return {
     id: String(r.id),
     code: String(r.code),
+    materialType: String(r.material_type),
     name: String(r.name),
     spec: r.spec == null ? null : String(r.spec),
     customerPartNo: r.customer_part_no == null ? null : String(r.customer_part_no),
@@ -377,6 +395,7 @@ function mapRow(r: Record<string, unknown>): Material {
 
 function snap(item: {
   code: string
+  materialType: string
   name: string
   spec: string | null
   customerPartNo: string | null
@@ -388,6 +407,7 @@ function snap(item: {
 }): Record<string, unknown> {
   return {
     code: item.code,
+    material_type: item.materialType,
     name: item.name,
     spec: item.spec,
     customer_part_no: item.customerPartNo,
@@ -401,6 +421,7 @@ function snap(item: {
 
 interface NormalizedMaterial {
   name: string
+  materialType: string
   spec: string | null
   customerPartNo: string | null
   isCustomerMaterial: boolean
@@ -410,8 +431,11 @@ interface NormalizedMaterial {
   customerId: string | null
 }
 
+const MATERIAL_TYPES = ['STOCK', 'VIRTUAL', 'ASSET'] as const
+
 function normalizeCreate(input: {
   name: string
+  materialType?: string
   spec?: string | null
   customerPartNo?: string | null
   isCustomerMaterial?: boolean
@@ -429,6 +453,7 @@ function normalizeCreate(input: {
   }
   const result: NormalizedMaterial = {
     name: input.name.trim(),
+    materialType: (input.materialType ?? 'STOCK').trim().toUpperCase(),
     spec: trimOrNull(input.spec),
     customerPartNo,
     isCustomerMaterial,
@@ -438,6 +463,9 @@ function normalizeCreate(input: {
     customerId,
   }
   const fields: Record<string, string[]> = {}
+  if (!(MATERIAL_TYPES as readonly string[]).includes(result.materialType)) {
+    fields.materialType = ['只能为 STOCK(库存)/VIRTUAL(虚拟)/ASSET(资产)']
+  }
   if (!result.name || runeLen(result.name) > 128) fields.name = ['不能为空且最多 128 个字符']
   if (result.spec && runeLen(result.spec) > 128) fields.spec = ['最多 128 个字符']
   if (result.customerPartNo && runeLen(result.customerPartNo) > 64) {

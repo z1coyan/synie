@@ -118,7 +118,13 @@ const bomOptionLabel = (bom: Row) =>
 // 两子表共用录入字段:材料切换清单位(候选随材料走);已发料量是后端投影,不进表单
 function subLineFields(withIssued: boolean): Record<string, FieldOverride> {
   return {
-    materialId: { order: 0, required: true, effects: () => ({ unitId: null }) },
+    materialId: {
+      order: 0,
+      required: true,
+      // 发料/副产物限库存物料(虚拟/资产无实物);后端权威拦截兜底
+      remote: { filterState: { materialType: { kind: 'enum', values: ['STOCK'] } } },
+      effects: () => ({ unitId: null }),
+    },
     unitId: {
       order: 1,
       cols: 6,

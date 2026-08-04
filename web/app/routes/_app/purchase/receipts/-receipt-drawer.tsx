@@ -651,7 +651,7 @@ export function ReceiptDrawerProvider({
                   const unitId = cached?.unitId ?? editing?.unitId ?? vals.unitId
                   if (!materialId || !unitId) return '请重新选择订单条目以带出物料'
                   if (!(Number(vals.qty) > 0)) return '数量必须大于零'
-                  if (!vals.warehouseId) return '请选择入库仓库'
+                  // 行仓不再前端硬卡:虚拟/资产行不入仓可空;库存类行缺仓由后端保存校验兜底
                 }}
                 transformItem={(vals, editing) => {
                   const oitem =

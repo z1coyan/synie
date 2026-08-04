@@ -27,6 +27,7 @@ import {
   codeNamedRef,
   convertToBaseQty,
   guardCustomerMaterial,
+  guardMaterialType,
   ident,
   loadMaterialSnap,
   lowerParty,
@@ -1629,6 +1630,13 @@ async function deriveAndValidateItem(
   }
   const snap = await loadMaterialSnap(db, materialId, unitId)
   guardCustomerMaterial(spec.side, String(parent.party_type), String(parent.party_id), snap)
+  if (spec.side === 'sales') {
+    // 销售单据条目：库存/虚拟可进，资产不可进
+    guardMaterialType(snap, ['STOCK', 'VIRTUAL'], '订单条目')
+  } else if (Boolean(parent.is_outsourced)) {
+    // 委外采购订单条目仅库存类（普通采购订单三类皆可，不拦）
+    guardMaterialType(snap, ['STOCK'], '委外订单条目')
+  }
   if (spec.side === 'purchase' && draft.bomId) {
     const bom = await sql<{ material_id: string }>`
       SELECT material_id FROM mfg_bom WHERE id=${draft.bomId}::uuid

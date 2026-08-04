@@ -19,7 +19,7 @@ const salesDraftItemSchema = z
     qty: decimalStringSchema,
     orderItemId: z.string().uuid(),
     unitId: z.string().uuid().nullable().optional(),
-    warehouseId: z.string().uuid(),
+    warehouseId: z.string().uuid().nullable(),
     remarks: z.string().nullable().optional(),
   })
   .strict()
@@ -348,7 +348,7 @@ export function purchaseFulfillmentItemRoutes(deps: {
             qty: z.string().min(1),
             orderItemId: z.string().uuid(),
             unitId: z.string().uuid().nullable().optional(),
-            warehouseId: z.string().uuid(),
+            warehouseId: z.string().uuid().nullable(),
             remarks: z.string().nullable().optional(),
           })
           .passthrough(),
@@ -363,7 +363,7 @@ export function purchaseFulfillmentItemRoutes(deps: {
             qty: body.qty as string,
             orderItemId: body.orderItemId as string,
             unitId: body.unitId as string | null | undefined,
-            warehouseId: body.warehouseId as string,
+            warehouseId: body.warehouseId as string | null,
             remarks: body.remarks as string | null | undefined,
           }),
           201,
@@ -384,7 +384,7 @@ export function purchaseFulfillmentItemRoutes(deps: {
             qty: z.string().optional(),
             orderItemId: z.string().uuid().optional(),
             unitId: z.string().uuid().nullable().optional(),
-            warehouseId: z.string().uuid().optional(),
+            warehouseId: z.string().uuid().nullable().optional(),
             remarks: z.string().nullable().optional(),
           })
           .strict(),
@@ -396,6 +396,7 @@ export function purchaseFulfillmentItemRoutes(deps: {
           await fulfillment.updatePurchaseItem(c.get('actor'), c.req.valid('param').id, {
             ...c.req.valid('json'),
             unitIdPresent: presentKey(raw, 'unitId'),
+            warehouseIdPresent: presentKey(raw, 'warehouseId'),
             remarksPresent: presentKey(raw, 'remarks'),
           }),
         )

@@ -64,6 +64,13 @@ const bomStatusOptions = [
   { value: 'INACTIVE', label: '停用' },
 ]
 
+export const moldTypeOptions = [
+  { value: 'STAMPING', label: '冲压' },
+  { value: 'FORMING', label: '变形' },
+  { value: 'POSITIONING', label: '定位' },
+  { value: 'OTHER', label: '其他' },
+]
+
 const headCrud: ResourceMeta['actions'] = [
   { key: 'read', label: '查看', scope: 'both' },
   { key: 'create', label: '新增', scope: 'both' },
@@ -817,6 +824,67 @@ export function outputItemResourceMeta(): ResourceMeta {
   }
 }
 
+export function moldDesignResourceMeta(): ResourceMeta {
+  return {
+    name: 'mfgMoldDesigns',
+    permissionPrefix: 'mfg.mold_design',
+    permissionLabel: '模具设计',
+    table: 'mfg_mold_design',
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
+      // material_code/name/spec/unit_name 为 join 物料的计算列（source 子查询暴露同名别名）
+      field('material_code', 'materialCode', 'string', '模具编号', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('material_name', 'materialName', 'string', '模具名称', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('material_spec', 'materialSpec', 'string', '模具规格', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('mold_type', 'moldType', 'enum', '模具类型', {
+        required: true,
+        filterable: true,
+        sortable: true,
+        enumOptions: moldTypeOptions,
+      }),
+      field('unit_name', 'unitName', 'string', '单位', {
+        readonly: true,
+        calculated: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('material_id', 'materialId', 'fk', '物料', {
+        readonly: true,
+        filterable: true,
+        ref: { resource: 'invMaterials', relation: 'material', labelField: 'name' },
+      }),
+      field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('updated_at', 'updatedAt', 'datetime', '更新时间', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
+    ],
+    actions: headCrud,
+    print: true,
+    audit: { enabled: true },
+  }
+}
+
 export function allManufacturingResourceMetas(): ResourceMeta[] {
   return [
     operationResourceMeta(),
@@ -834,5 +902,6 @@ export function allManufacturingResourceMetas(): ResourceMeta[] {
     workOrderByproductResourceMeta(),
     outputResourceMeta(),
     outputItemResourceMeta(),
+    moldDesignResourceMeta(),
   ]
 }

@@ -26,8 +26,8 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     expect(registry.isSealed()).toBe(false)
     const report = registry.seal()
     expect(registry.isSealed()).toBe(true)
-    expect(report.total).toBe(102)
-    expect(report.normalized).toBe(102)
+    expect(report.total).toBe(103)
+    expect(report.normalized).toBe(103)
   })
 
   test('seal 后禁止继续注册', () => {
@@ -262,7 +262,7 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     registerAllResources(registry)
     registry.seal()
     assertClassificationCoverage(registry.list().map((r) => r.name))
-    expect(Object.keys(RESOURCE_CLASSIFICATION).length).toBe(102)
+    expect(Object.keys(RESOURCE_CLASSIFICATION).length).toBe(103)
 
     for (const [name, expected] of [
       ['hrEmployees', ['name', 'code', 'attendanceNo']],

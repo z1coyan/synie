@@ -1,6 +1,11 @@
 # 01 — 三个附件面板宿主未注册白名单，上传必败
 
-**Status:** needs-triage
+**Status:** partial
+
+## 进展（2026-08-03，随模具设计落地）
+
+- `inv_material` 已补注册（`registerInventoryFileOwners`，`server/src/modules/inventory/index.ts`，`companyScoped: false`，装配于 `server/src/composition.ts`）——物料图纸/其他文件上传链路恢复，模具设计的图纸/附件槽位同此路径。
+- `hr_employee`、`acc_bill` 未处理，验收项（逐宿主结论 + HTTP 集成测试）仍开放。
 
 ## 背景
 

@@ -182,7 +182,8 @@ export interface SalesDeliveryDraftItemInput {
   qty: string
   orderItemId: string
   unitId?: string | null
-  warehouseId: string
+  /** 行仓:库存类物料必填(后端校验),虚拟行可空 */
+  warehouseId: string | null
   remarks?: string | null
 }
 

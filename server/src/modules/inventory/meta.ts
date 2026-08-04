@@ -50,6 +50,12 @@ const partyTypeOptions = [
   { value: 'EMPLOYEE', label: '员工' },
 ]
 
+export const materialTypeOptions = [
+  { value: 'STOCK', label: '库存' },
+  { value: 'VIRTUAL', label: '虚拟' },
+  { value: 'ASSET', label: '资产' },
+]
+
 export function materialCategoryResourceMeta(): ResourceMeta {
   return {
     name: 'invMaterialCategories',
@@ -120,6 +126,12 @@ export function materialResourceMeta(): ResourceMeta {
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '物料编号', { readonly: true, filterable: true, sortable: true }),
+      field('material_type', 'materialType', 'enum', '物料类型', {
+        required: true,
+        filterable: true,
+        sortable: true,
+        enumOptions: materialTypeOptions,
+      }),
       field('name', 'name', 'string', '物料名称', { required: true, filterable: true, sortable: true }),
       field('spec', 'spec', 'string', '物料规格', { filterable: true, sortable: true }),
       field('customer_part_no', 'customerPartNo', 'string', '客户方产品编号(仅客户物料可填)', {
@@ -163,6 +175,7 @@ export function materialResourceMeta(): ResourceMeta {
       exclude: ['active'],
       fields: {
         code: { edit: 'readOnly', placeholder: '保存后自动编号(分类号[客户号]-序号)' },
+        materialType: { required: true, defaultValue: 'STOCK' },
         name: { required: true },
         categoryId: {
           required: true,

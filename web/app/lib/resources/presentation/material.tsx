@@ -30,8 +30,9 @@ export function createMaterialPresentation(
       edit: 'readOnly',
       placeholder: '保存后自动编号(分类号[客户号]-序号)',
     },
+    materialType: { order: 1, cols: 6, required: true, defaultValue: 'STOCK' },
     categoryId: {
-      order: 1,
+      order: 2,
       cols: 6,
       required: true,
       remote: {
@@ -41,28 +42,28 @@ export function createMaterialPresentation(
         },
       },
     },
-    name: { order: 2, cols: 6, required: true },
-    spec: { order: 3, cols: 6, placeholder: '如 M8×30' },
+    name: { order: 3, cols: 6, required: true },
+    spec: { order: 4, cols: 6, placeholder: '如 M8×30' },
     isCustomerMaterial: {
-      order: 4,
+      order: 5,
       cols: 6,
       section: '客户物料',
       defaultValue: false,
       effects: (v) => (v ? {} : { customerId: null, customerPartNo: null }),
     },
     customerId: {
-      order: 5,
-      cols: 6,
-      section: '客户物料',
-      visible: (values) => values.isCustomerMaterial === true,
-    },
-    customerPartNo: {
       order: 6,
       cols: 6,
       section: '客户物料',
       visible: (values) => values.isCustomerMaterial === true,
     },
-    defaultUnitId: { order: 7, cols: 6, required: true, section: '基本信息' },
+    customerPartNo: {
+      order: 7,
+      cols: 6,
+      section: '客户物料',
+      visible: (values) => values.isCustomerMaterial === true,
+    },
+    defaultUnitId: { order: 8, cols: 6, required: true, section: '基本信息' },
   }
 
   return {

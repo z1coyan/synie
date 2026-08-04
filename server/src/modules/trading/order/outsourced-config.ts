@@ -15,6 +15,7 @@ import {
   asDate,
   asDateTime,
   asOptionalString,
+  guardMaterialType,
   loadMaterialSnap,
   requirePerm,
   upperStatus,
@@ -133,6 +134,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
       throw ApiError.validation('发料清单参数不合法', { orderItemId: ['仅委外订单可维护发料清单'] })
     }
     const snap = await loadMaterialSnap(trx, input.materialId, input.unitId)
+    guardMaterialType(snap, ['STOCK'], '发料清单行')
     const qty = decimal(input.quantity)
     if (!qty.isPositive()) {
       throw ApiError.validation('发料清单参数不合法', { quantity: ['必须大于 0'] })
@@ -185,6 +187,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     const materialId = input.materialId ?? before.materialId
     const unitId = input.unitId ?? before.unitId
     const snap = await loadMaterialSnap(trx, materialId, unitId)
+    guardMaterialType(snap, ['STOCK'], '发料清单行')
     const quantity = input.quantity ?? before.quantity
     if (!decimal(quantity).isPositive()) {
       throw ApiError.validation('发料清单参数不合法', { quantity: ['必须大于 0'] })
@@ -284,6 +287,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
       })
     }
     const snap = await loadMaterialSnap(trx, input.materialId, input.unitId)
+    guardMaterialType(snap, ['STOCK'], '副产物清单行')
     const qty = decimal(input.quantity)
     if (!qty.isPositive()) {
       throw ApiError.validation('副产物清单参数不合法', { quantity: ['必须大于 0'] })
@@ -332,6 +336,7 @@ export function createOutsourcedConfigService(db: Kysely<Database>) {
     const materialId = input.materialId ?? before.materialId
     const unitId = input.unitId ?? before.unitId
     const snap = await loadMaterialSnap(trx, materialId, unitId)
+    guardMaterialType(snap, ['STOCK'], '副产物清单行')
     const quantity = input.quantity ?? before.quantity
     await sql`
       UPDATE pur_order_item_byproduct SET
@@ -596,7 +601,8 @@ async function replaceDraftLineKind(
     }
     seenMaterialUnits.add(materialUnit)
     try {
-      await loadMaterialSnap(trx, line.materialId, line.unitId)
+      const snap = await loadMaterialSnap(trx, line.materialId, line.unitId)
+      guardMaterialType(snap, ['STOCK'], kind === 'issue' ? '发料清单行' : '副产物清单行')
     } catch (error) {
       if (error instanceof ApiError && error.code === 'validation' && error.fields) {
         for (const [field, messages] of Object.entries(error.fields)) {

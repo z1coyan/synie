@@ -9,7 +9,8 @@ export interface PurchaseReceiptDraftItem {
   qty: string
   orderItemId: string
   unitId?: string | null
-  warehouseId: string
+  /** 行仓:库存类物料必填(后端校验),虚拟/资产行可空 */
+  warehouseId: string | null
   remarks?: string | null
 }
 
@@ -70,10 +71,7 @@ export function buildPurchaseReceiptDraft(
         `第${String(row.idx)}行订单条目`,
       ),
       unitId: nullableString(row.unitId),
-      warehouseId: requiredString(
-        row.warehouseId,
-        `第${String(row.idx)}行仓库`,
-      ),
+      warehouseId: nullableString(row.warehouseId),
       remarks: nullableString(row.remarks),
     })),
   }

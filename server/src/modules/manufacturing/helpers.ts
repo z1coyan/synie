@@ -158,14 +158,24 @@ export async function deriveItemProjection(
   }
 }
 
-export async function ensureMaterial(db: DbHandle, materialId: string): Promise<void> {
+export async function ensureMaterial(
+  db: DbHandle,
+  materialId: string,
+  allowedTypes: readonly string[] = ['STOCK'],
+  label = 'BOM',
+): Promise<void> {
   const row = await db
     .selectFrom('inv_material')
-    .select('id')
+    .select(['id', 'material_type'])
     .where('id', '=', materialId)
     .executeTakeFirst()
   if (!row) {
-    throw ApiError.validation('BOM参数不合法', { materialId: ['物料不存在'] })
+    throw ApiError.validation(`${label}参数不合法`, { materialId: ['物料不存在'] })
+  }
+  if (!allowedTypes.includes(row.material_type)) {
+    throw ApiError.validation(`${label}参数不合法`, {
+      materialId: ['仅库存类物料可进该单据'],
+    })
   }
 }
 

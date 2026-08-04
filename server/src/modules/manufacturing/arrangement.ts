@@ -161,6 +161,20 @@ export async function createManualArrangement(
 ): Promise<{ id: string; baseQty: string }> {
   const qty = parsePositiveQty(input.qty, 'qty')
   const baseQty = toDecimalString(decimal(qty).mul(decimal(input.unitBaseQtyPerUnit)))
+  if (input.type === 'stock') {
+    // 库存安排=从库存履约，仅库存类物料可做（需求行本身不限类型）
+    const row = await sql<{ material_type: string }>`
+      SELECT m.material_type
+      FROM mfg_demand_item di
+      JOIN inv_material m ON m.id = di.material_id
+      WHERE di.id = ${input.demandItemId}::uuid
+    `.execute(db)
+    if (row.rows[0] && row.rows[0].material_type !== 'STOCK') {
+      throw ApiError.validation('库存安排参数不合法', {
+        materialId: ['仅库存类物料可做库存安排'],
+      })
+    }
+  }
   await assertCanArrange(db, input.demandItemId, baseQty, {
     closeHardCap: input.type === 'close',
   })

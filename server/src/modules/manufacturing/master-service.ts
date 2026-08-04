@@ -665,6 +665,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       const quantity = parseQty(input.quantity)
       const lossRate = parseLossRate(input.lossRate)
       validateLine(bom.materialId, input.materialId, quantity, lossRate)
+      await ensureMaterial(trx, input.materialId, ['STOCK'], 'BOM行')
       await ensureUnitAllowed(trx, input.materialId, input.unitId)
       try {
         const row = await trx
@@ -758,6 +759,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
         : before.lossRate
       const note = input.notePresent ? trimOptional(input.note) : before.note
       validateLine(bom.materialId, materialId, quantity, lossRate)
+      await ensureMaterial(trx, materialId, ['STOCK'], 'BOM行')
       await ensureUnitAllowed(trx, materialId, unitId)
       try {
         const row = await trx
@@ -986,6 +988,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       const bom = await lockBom(trx, input.bomId)
       const quantity = parseQty(input.quantity)
       validateLine(bom.materialId, input.materialId, quantity, null)
+      await ensureMaterial(trx, input.materialId, ['STOCK'], 'BOM行')
       await ensureUnitAllowed(trx, input.materialId, input.unitId)
       try {
         const row = await trx
@@ -1073,6 +1076,7 @@ export function createMasterService(db: Kysely<Database>, numbering: NumberingSe
       const quantity = input.quantity !== undefined ? parseQty(input.quantity) : before.quantity
       const note = input.notePresent ? trimOptional(input.note) : before.note
       validateLine(bom.materialId, materialId, quantity, null)
+      await ensureMaterial(trx, materialId, ['STOCK'], 'BOM行')
       await ensureUnitAllowed(trx, materialId, unitId)
       try {
         const row = await trx

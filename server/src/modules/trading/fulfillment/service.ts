@@ -26,6 +26,7 @@ import {
   asDateTime,
   asOptionalString,
   convertToBaseQty,
+  guardMaterialType,
   ident,
   loadMaterialSnap,
   lowerParty,
@@ -123,7 +124,8 @@ export interface SalesDraftItemInput {
   qty: string
   orderItemId: string
   unitId?: string | null
-  warehouseId: string
+  /** 非库存类（VIRTUAL/ASSET）行可空；STOCK 行保存时强制必填 */
+  warehouseId: string | null
   remarks?: string | null
 }
 
@@ -133,7 +135,8 @@ export interface FulfillmentItemUpdateInput {
   orderItemId?: string
   unitId?: string | null
   unitIdPresent?: boolean
-  warehouseId?: string
+  warehouseId?: string | null
+  warehouseIdPresent?: boolean
   remarks?: string | null
   remarksPresent?: boolean
 }
@@ -474,13 +477,25 @@ export function createFulfillmentService(
             orderItemId: i.orderItemId,
             baseQty: i.baseQty,
           }))
-          const stockLines = items.map((i) => ({
-            warehouseId: i.warehouseId,
-            materialId: i.materialId,
-            quantity: decimal(i.baseQty),
-            direction: (spec.stockDirection < 0 ? 'out' : 'in') as 'in' | 'out',
-            remarks: before.remarks,
-          }))
+          // 库存分录只对审核时点仍为库存类的物料落账；非库存类行投影/金额链照常。
+          // 物料类型在有库存分录后不可改，故这里只会拦到「从未入库、草稿后被改类型」的行。
+          const stockLines = items
+            .filter((i) => i.materialType === 'STOCK')
+            .map((i) => {
+              if (!i.warehouseId) {
+                throw new ApiError(
+                  'conflict',
+                  `物料 ${i.materialCode} ${i.materialName} 已转为库存类,行仓必填后才可审核`,
+                )
+              }
+              return {
+                warehouseId: i.warehouseId,
+                materialId: i.materialId,
+                quantity: decimal(i.baseQty),
+                direction: (spec.stockDirection < 0 ? 'out' : 'in') as 'in' | 'out',
+                remarks: before.remarks,
+              }
+            })
           let amount = decimal(0)
           for (const item of items) {
             if (!decimal(item.orderBaseQty).isZero()) {
@@ -682,7 +697,9 @@ export function createFulfillmentService(
       qty: decimal(input.qty ?? String(beforeDto.qty)),
       orderItemId: input.orderItemId ?? String(beforeDto.orderItemId),
       unitId: input.unitIdPresent ? (input.unitId ?? null) : String(beforeDto.unitId),
-      warehouseId: input.warehouseId ?? String(beforeDto.warehouseId),
+      warehouseId: input.warehouseIdPresent
+        ? (input.warehouseId ?? null)
+        : (beforeDto.warehouseId as string | null),
       remarks: input.remarksPresent ? (input.remarks ?? null) : (beforeDto.remarks as string | null),
     })
     await sql`
@@ -1085,6 +1102,7 @@ export function createFulfillmentService(
               unitId: item.unitId ?? null,
               unitIdPresent: true,
               warehouseId: item.warehouseId,
+              warehouseIdPresent: true,
               remarks: item.remarks ?? null,
               remarksPresent: true,
             }),
@@ -1282,6 +1300,7 @@ export function createFulfillmentService(
               unitId: item.unitId ?? null,
               unitIdPresent: true,
               warehouseId: item.warehouseId,
+              warehouseIdPresent: true,
               remarks: item.remarks ?? null,
               remarksPresent: true,
             }),
@@ -1530,7 +1549,10 @@ interface ActionItem {
   orderItemId: string
   baseQty: string
   materialId: string
-  warehouseId: string
+  /** 非库存类行可空 */
+  warehouseId: string | null
+  /** 审核时点物料当前类型（草稿保存后可能被改） */
+  materialType: string
   materialCode: string
   materialName: string
   orderBaseQty: string
@@ -1540,19 +1562,22 @@ interface ActionItem {
 
 async function loadActionItems(db: DbHandle, spec: FulfillmentSideSpec, headId: string): Promise<ActionItem[]> {
   const rows = await sql<Record<string, unknown>>`
-    SELECT id, order_item_id, base_qty, material_id, warehouse_id, material_code, material_name,
-      order_base_qty, order_base_amount, reconciled_qty
-    FROM ${ident(spec.itemTable)}
-    WHERE ${sql.raw(spec.parentCol)}=${headId}::uuid
-    ORDER BY idx, id
-    FOR UPDATE
+    SELECT i.id, i.order_item_id, i.base_qty, i.material_id, i.warehouse_id, i.material_code,
+      i.material_name, i.order_base_qty, i.order_base_amount, i.reconciled_qty,
+      m.material_type
+    FROM ${ident(spec.itemTable)} i
+    JOIN inv_material m ON m.id=i.material_id
+    WHERE i.${sql.raw(spec.parentCol)}=${headId}::uuid
+    ORDER BY i.idx, i.id
+    FOR UPDATE OF i
   `.execute(db)
   return rows.rows.map((r) => ({
     id: String(r.id),
     orderItemId: String(r.order_item_id),
     baseQty: String(r.base_qty),
     materialId: String(r.material_id),
-    warehouseId: String(r.warehouse_id),
+    warehouseId: r.warehouse_id ? String(r.warehouse_id) : null,
+    materialType: String(r.material_type),
     materialCode: String(r.material_code),
     materialName: String(r.material_name),
     orderBaseQty: String(r.order_base_qty),
@@ -1570,7 +1595,7 @@ async function deriveItem(
     qty: ReturnType<typeof decimal>
     orderItemId: string
     unitId: string | null
-    warehouseId: string
+    warehouseId: string | null
     remarks: string | null
   },
 ) {
@@ -1580,7 +1605,6 @@ async function deriveItem(
   if (draft.remarks && runeLen(draft.remarks) > 512) {
     throw ApiError.validation(`${spec.itemLabel}参数不合法`, { remarks: ['最多 512 个字符'] })
   }
-  await validateWarehouse(db, parent.companyId, draft.warehouseId)
   const oi = await sql<Record<string, unknown>>`
     SELECT oi.*, o.order_no, o.status, o.company_id, o.party_type, o.party_id, o.currency_id,
       cur.iso_code AS currency_code
@@ -1608,6 +1632,20 @@ async function deriveItem(
   }
   const unitId = draft.unitId ?? String(orderItem.unit_id)
   const snap = await loadMaterialSnap(db, String(orderItem.material_id), unitId)
+  if (spec.side === 'sales') {
+    // 销售发货行：库存/虚拟可进，资产不可进（采购入库三类皆可，不拦）
+    guardMaterialType(snap, ['STOCK', 'VIRTUAL'], spec.itemLabel)
+  }
+  // 行仓：库存类物料必填（要写库存分录）；非库存类行可空，给了仍校验合法叶子仓
+  if (!draft.warehouseId) {
+    if (snap.materialType === 'STOCK') {
+      throw ApiError.validation(`${spec.itemLabel}参数不合法`, {
+        warehouseId: ['库存类物料必须填写行仓'],
+      })
+    }
+  } else {
+    await validateWarehouse(db, parent.companyId, draft.warehouseId)
+  }
   const baseQty = convertToBaseQty(draft.qty, unitId, snap)
   return {
     idx: draft.idx,
@@ -1658,6 +1696,8 @@ async function validatePackEquality(db: DbHandle, headId: string, items: ActionI
   const packed = new Map(rows.rows.map((r) => [r.material_id, { label: `${r.code} ${r.name}`, qty: decimal(r.qty) }]))
   const shipped = new Map<string, { label: string; qty: ReturnType<typeof decimal> }>()
   for (const item of items) {
+    // 虚拟/资产行无实物不装箱,不参与「全有或全无」复核(口径同审核跳过库存分录)
+    if (item.materialType !== 'STOCK') continue
     const cur = shipped.get(item.materialId) ?? { label: `${item.materialCode} ${item.materialName}`, qty: decimal(0) }
     cur.qty = cur.qty.add(item.baseQty)
     shipped.set(item.materialId, cur)
@@ -1769,7 +1809,7 @@ function mapItemDto(side: TradingSide, row: Record<string, unknown>) {
     orderItemId: String(row.order_item_id),
     materialId: String(row.material_id),
     unitId: String(row.unit_id),
-    warehouseId: String(row.warehouse_id),
+    warehouseId: row.warehouse_id ? String(row.warehouse_id) : null,
     [parentNoKey]: String(row[side === 'sales' ? 'delivery_no' : 'receipt_no'] ?? ''),
     [parentDateKey]: asDate(row[side === 'sales' ? 'delivery_date' : 'receipt_date']),
     [parentStatusKey]: upperStatus(
@@ -1862,7 +1902,7 @@ function itemSnap(
   headId: string,
   companyId: string,
   orderItemId: string,
-  warehouseId: string,
+  warehouseId: string | null,
 ): Record<string, unknown> {
   return {
     idx: d.idx,

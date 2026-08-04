@@ -310,6 +310,8 @@ export function StockDocPage({ cfg }: { cfg: StockDocConfig }) {
     materialId: {
       order: 0,
       required: true,
+      // 库存单据只选库存物料(虚拟/资产无实物);后端权威拦截兜底
+      remote: { filterState: { materialType: { kind: 'enum', values: ['STOCK'] } } },
       effects: (_value, selectedRow) => {
         if (selectedRow) materialPickRef.current.set(String(selectedRow.id), selectedRow)
         return { unitId: null }

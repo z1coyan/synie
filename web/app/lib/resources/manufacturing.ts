@@ -185,6 +185,11 @@ export const operationClient = restTransport(
   api.manufacturing.operations,
 )
 
+export const moldDesignClient = restTransport(
+  'mfgMoldDesigns',
+  api.manufacturing['mold-designs'],
+)
+
 export const processTemplateClient = restTransport(
   'mfgProcessTemplates',
   api.manufacturing['process-templates'],

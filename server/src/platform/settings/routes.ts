@@ -24,6 +24,7 @@ const salesUpdateSchema = z
 const mfgUpdateSchema = z
   .object({
     outputOverreceiveRatio: decimalString.optional(),
+    moldCategoryId: z.string().uuid().nullable().optional(),
   })
   .strict()
 
@@ -109,6 +110,7 @@ function mfgDto(v: Awaited<ReturnType<SettingsService['getManufacturing']>>) {
   return {
     id: v.id,
     outputOverreceiveRatio: v.outputOverreceiveRatio,
+    moldCategoryId: v.moldCategoryId,
     insertedAt: v.insertedAt.toISOString(),
     updatedAt: v.updatedAt.toISOString(),
   }

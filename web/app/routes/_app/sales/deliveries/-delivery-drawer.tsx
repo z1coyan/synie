@@ -106,7 +106,8 @@ function itemInput(row: Row): SalesDeliveryDraftItemInput {
     orderItemId: requiredString(row.orderItemId, '订单条目'),
     unitId: nullableString(row.unitId),
     qty: requiredString(row.qty, '发货数量'),
-    warehouseId: requiredString(row.warehouseId, '发货仓库'),
+    // 行仓可空:虚拟/资产行不入仓;库存类行缺仓由后端保存校验兜底(「库存类物料必须填写行仓」)
+    warehouseId: nullableString(row.warehouseId),
     remarks: nullableString(row.remarks),
   }
 }
@@ -793,15 +794,45 @@ function PackLinesPanel({
     queryFn: poolQuery.queryFn,
   })
 
+  // 装箱限库存物料(虚拟/资产无实物):条目池行不带类型,按物料逐个取回,仅 STOCK 进候选;
+  // 类型未取到(加载中/失败)不过滤,后端权威拦截兜底
+  const poolMaterialIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (pool.data ?? [])
+            .map((r) => r.materialId)
+            .filter((v) => v != null && v !== '')
+            .map(String),
+        ),
+      ),
+    [pool.data],
+  )
+  const materialTypeQuery = useQuery({
+    queryKey: ['packLineMaterialTypes', poolMaterialIds],
+    enabled: poolMaterialIds.length > 0,
+    staleTime: 300_000,
+    queryFn: () => Promise.all(poolMaterialIds.map((id) => materialClient.get(id))),
+  })
+  const stockMaterialIds = useMemo(() => {
+    if (materialTypeQuery.data == null) return null
+    return new Set(
+      materialTypeQuery.data
+        .filter((m) => m != null && m.materialType === 'STOCK')
+        .map((m) => String(m!.id)),
+    )
+  }, [materialTypeQuery.data])
+
   const materialOptions = useMemo(() => {
     const map = new Map<string, Row>()
     for (const r of pool.data ?? []) {
       if (r.materialId == null || r.materialId === '') continue
       const key = String(r.materialId)
+      if (stockMaterialIds != null && !stockMaterialIds.has(key)) continue
       if (!map.has(key)) map.set(key, r)
     }
     return Array.from(map.values())
-  }, [pool.data])
+  }, [pool.data, stockMaterialIds])
 
   // 箱:本地行(local: id),保存时先落库由服务端按单内自增取号
   const addBox = () => onBoxesChange([...packBoxes, { id: localRowId() } as Row])
@@ -824,7 +855,7 @@ function PackLinesPanel({
       label: '物料',
       input: ({ value, onChange, isDisabled, patchValues: patchLine }) => (
         <Select
-          isDisabled={isDisabled || pool.isPending || materialOptions.length === 0}
+          isDisabled={isDisabled || pool.isPending || materialTypeQuery.isPending || materialOptions.length === 0}
           value={value == null || value === '' ? null : String(value)}
           onChange={(v) => {
             const id = v === '' ? null : String(v)
@@ -849,7 +880,7 @@ function PackLinesPanel({
             <Select.Value>
               {({ isPlaceholder, defaultChildren }) =>
                 isPlaceholder
-                  ? pool.isPending
+                  ? pool.isPending || materialTypeQuery.isPending
                     ? '加载可发货订单条目…'
                     : materialOptions.length === 0
                       ? '无可发货订单条目'
@@ -1618,7 +1649,7 @@ export function DeliveryDrawerProvider({
                   const unitId = cached?.unitId ?? editing?.unitId ?? vals.unitId
                   if (!materialId || !unitId) return '请重新选择订单条目以带出物料'
                   if (!(Number(vals.qty) > 0)) return '数量必须大于零'
-                  if (!vals.warehouseId) return '请选择出库仓库'
+                  // 行仓不再前端硬卡:虚拟行不入仓可空;库存类行缺仓由后端保存校验兜底
                 }}
                 transformItem={(vals, editing) => {
                   const oitem =

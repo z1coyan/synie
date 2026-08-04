@@ -419,25 +419,6 @@ export interface BasCompany {
   updated_at: Generated<Timestamp>;
 }
 
-export interface BasPartyAddress {
-  active: Generated<boolean>;
-  address: string;
-  city: string;
-  contact_name: string | null;
-  contact_phone: string | null;
-  district: string;
-  id: Generated<string>;
-  inserted_at: Generated<Timestamp>;
-  is_default: Generated<boolean>;
-  name: string;
-  party_id: string;
-  party_type: string;
-  province: string;
-  purpose: string;
-  remarks: string | null;
-  updated_at: Generated<Timestamp>;
-}
-
 export interface BasCurrency {
   active: Generated<boolean>;
   id: Generated<string>;
@@ -477,6 +458,25 @@ export interface BasMarketPricePoint {
   price_kind: string;
   source: Generated<string>;
   unit_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface BasPartyAddress {
+  active: Generated<boolean>;
+  address: string;
+  city: Generated<string>;
+  contact_name: string | null;
+  contact_phone: string | null;
+  district: Generated<string>;
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  is_default: Generated<boolean>;
+  name: string;
+  party_id: string;
+  party_type: string;
+  province: Generated<string>;
+  purpose: string;
+  remarks: string | null;
   updated_at: Generated<Timestamp>;
 }
 
@@ -623,6 +623,7 @@ export interface InvMaterial {
   id: Generated<string>;
   inserted_at: Generated<Timestamp>;
   is_customer_material: Generated<boolean>;
+  material_type: Generated<string>;
   name: string;
   spec: string | null;
   updated_at: Generated<Timestamp>;
@@ -890,6 +891,14 @@ export interface MfgDemandItem {
   updated_at: Generated<Timestamp>;
 }
 
+export interface MfgMoldDesign {
+  id: Generated<string>;
+  inserted_at: Generated<Timestamp>;
+  material_id: string;
+  mold_type: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface MfgOperation {
   code: string;
   id: Generated<string>;
@@ -957,6 +966,7 @@ export interface MfgProcessTemplateItem {
 export interface MfgSetting {
   id: Generated<string>;
   inserted_at: Generated<Timestamp>;
+  mold_category_id: string | null;
   output_overreceive_ratio: Generated<Numeric>;
   updated_at: Generated<Timestamp>;
 }
@@ -1328,7 +1338,7 @@ export interface PurReceiptItem {
   unit_id: string;
   unit_name: string;
   updated_at: Generated<Timestamp>;
-  warehouse_id: string;
+  warehouse_id: string | null;
 }
 
 export interface PurReconciliation {
@@ -1442,7 +1452,7 @@ export interface SalDeliveryItem {
   unit_id: string;
   unit_name: string;
   updated_at: Generated<Timestamp>;
-  warehouse_id: string;
+  warehouse_id: string | null;
 }
 
 export interface SalDeliveryPackBox {
@@ -1837,9 +1847,9 @@ export interface DB {
   bas_account: BasAccount;
   bas_company: BasCompany;
   bas_currency: BasCurrency;
-  bas_party_address: BasPartyAddress;
   bas_market_instrument: BasMarketInstrument;
   bas_market_price_point: BasMarketPricePoint;
+  bas_party_address: BasPartyAddress;
   bas_unit: BasUnit;
   hr_attendance_correction: HrAttendanceCorrection;
   hr_attendance_day: HrAttendanceDay;
@@ -1867,6 +1877,7 @@ export interface DB {
   mfg_demand: MfgDemand;
   mfg_demand_arrangement: MfgDemandArrangement;
   mfg_demand_item: MfgDemandItem;
+  mfg_mold_design: MfgMoldDesign;
   mfg_operation: MfgOperation;
   mfg_output: MfgOutput;
   mfg_output_item: MfgOutputItem;

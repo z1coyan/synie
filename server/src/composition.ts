@@ -12,7 +12,7 @@ import { createBaseServices } from './modules/base/index.ts'
 import { createMarketService } from './modules/base/market/index.ts'
 import { createHrServices } from './modules/hr/index.ts'
 import { createIamService } from './modules/iam/index.ts'
-import { createInventoryServices } from './modules/inventory/index.ts'
+import { createInventoryServices, registerInventoryFileOwners } from './modules/inventory/index.ts'
 import {
   createManufacturingServices,
   createManufacturingSettingService,
@@ -79,6 +79,7 @@ function assembleDomain(
   registerPrintingFileOwners(owners)
   registerFinanceFileOwners(owners)
   registerManufacturingFileOwners(owners)
+  registerInventoryFileOwners(owners)
   const files = createFileService({ db, owners })
   const storages = createStorageService({ db })
   const audit = createAuditService(db)

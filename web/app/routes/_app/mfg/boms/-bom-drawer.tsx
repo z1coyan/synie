@@ -374,6 +374,8 @@ export function BomDrawerProvider({
     ...baseConfig.fields,
     materialId: {
       ...baseConfig.fields?.materialId,
+      // BOM 母物料限库存物料(虚拟/资产无实物);后端权威拦截兜底
+      remote: { filterState: { materialType: { kind: 'enum' as const, values: ['STOCK'] } } },
       ...(prefillMaterialId
         ? { defaultValue: prefillMaterialId }
         : {}),
@@ -415,6 +417,8 @@ export function BomDrawerProvider({
                 materialId: {
                   order: 0,
                   required: true,
+                  // 配料/副产品限库存物料(虚拟/资产无实物);后端权威拦截兜底
+                  remote: { filterState: { materialType: { kind: 'enum', values: ['STOCK'] } } },
                   effects: () => ({ unitId: null }),
                 },
                 unitId: {
@@ -521,6 +525,8 @@ export function BomDrawerProvider({
                 materialId: {
                   order: 0,
                   required: true,
+                  // 配料/副产品限库存物料(虚拟/资产无实物);后端权威拦截兜底
+                  remote: { filterState: { materialType: { kind: 'enum', values: ['STOCK'] } } },
                   effects: () => ({ unitId: null }),
                 },
                 unitId: {

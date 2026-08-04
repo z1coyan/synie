@@ -123,11 +123,14 @@ export async function auditFulfillmentInTx<Head>(
   const v = spec.voucherOf(before)
 
   await spec.postProjection(trx, before, collected.projectionLines)
-  await engines.inventory.post(
-    trx,
-    { type: spec.voucherType, id: v.id, no: v.no, companyId: v.companyId, postingDate: v.documentDate },
-    collected.stockLines,
-  )
+  // 非库存类物料行不落库存分录；全单无库存类行时跳过库存引擎（引擎拒绝空行集）
+  if (collected.stockLines.length > 0) {
+    await engines.inventory.post(
+      trx,
+      { type: spec.voucherType, id: v.id, no: v.no, companyId: v.companyId, postingDate: v.documentDate },
+      collected.stockLines,
+    )
+  }
 
   const amount = decimal(roundAmount(collected.amount))
   let postingDate = v.postingDate ?? v.documentDate

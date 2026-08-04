@@ -8,6 +8,7 @@ import type { AppEnv } from '~/platform/http/context.ts'
 import { validationHook } from '~/platform/http/zod.ts'
 import type { DemandService } from './demand-service.ts'
 import type { MasterService } from './master-service.ts'
+import type { MoldDesignService } from './mold-design-service.ts'
 import type { OutputService } from './output-service.ts'
 import type { WorkOrderService } from './work-order-service.ts'
 import {
@@ -18,6 +19,7 @@ import {
   demandItemWire,
   demandWire,
   listWire,
+  moldDesignWire,
   occupancyWire,
   operationWire,
   outputItemWire,
@@ -54,6 +56,24 @@ const headUpdate = z
   .object({
     name: z.string().min(1).max(64).optional(),
     note: z.string().max(255).nullable().optional(),
+  })
+  .strict()
+
+const moldDesignCreate = z
+  .object({
+    name: z.string().min(1).max(128),
+    spec: z.string().max(128).nullable().optional(),
+    moldType: z.enum(['STAMPING', 'FORMING', 'POSITIONING', 'OTHER']),
+    unitId: z.string().uuid(),
+  })
+  .strict()
+
+const moldDesignUpdate = z
+  .object({
+    name: z.string().min(1).max(128).optional(),
+    spec: z.string().max(128).nullable().optional(),
+    moldType: z.enum(['STAMPING', 'FORMING', 'POSITIONING', 'OTHER']).optional(),
+    unitId: z.string().uuid().optional(),
   })
   .strict()
 
@@ -100,11 +120,12 @@ export interface ManufacturingRouteDeps {
   demands: DemandService
   workOrders: WorkOrderService
   outputs: OutputService
+  moldDesigns: MoldDesignService
 }
 
 /** 挂载于 /manufacturing */
 export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
-  const { auth, master, demands, workOrders, outputs } = deps
+  const { auth, master, demands, workOrders, outputs, moldDesigns } = deps
 
   return (
     new Hono<AppEnv>()
@@ -152,6 +173,51 @@ export function manufacturingRoutes(deps: ManufacturingRouteDeps) {
         zValidator('param', idParam, validationHook),
         async (c) => {
           await master.deleteOperation(c.get('actor'), c.req.valid('param').id)
+          return c.body(null, 204)
+        },
+      )
+      // —— 模具设计 ——
+      .post(
+        '/mold-designs/query',
+        zValidator('json', listQuerySchema, validationHook),
+        async (c) => {
+          const result = await moldDesigns.list(c.get('actor'), toList(c.req.valid('json')))
+          return c.json(listWire(result, moldDesignWire))
+        },
+      )
+      .post(
+        '/mold-designs',
+        zValidator('json', moldDesignCreate, validationHook),
+        async (c) => {
+          const item = await moldDesigns.create(c.get('actor'), c.req.valid('json'))
+          return c.json(moldDesignWire(item), 201)
+        },
+      )
+      .get(
+        '/mold-designs/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) =>
+          c.json(moldDesignWire(await moldDesigns.get(c.get('actor'), c.req.valid('param').id))),
+      )
+      .patch(
+        '/mold-designs/:id',
+        zValidator('param', idParam, validationHook),
+        zValidator('json', moldDesignUpdate, validationHook),
+        async (c) => {
+          const raw = (await c.req.json()) as Record<string, unknown>
+          const body = c.req.valid('json')
+          const item = await moldDesigns.update(c.get('actor'), c.req.valid('param').id, {
+            ...body,
+            specPresent: present(raw, 'spec'),
+          })
+          return c.json(moldDesignWire(item))
+        },
+      )
+      .delete(
+        '/mold-designs/:id',
+        zValidator('param', idParam, validationHook),
+        async (c) => {
+          await moldDesigns.remove(c.get('actor'), c.req.valid('param').id)
           return c.body(null, 204)
         },
       )

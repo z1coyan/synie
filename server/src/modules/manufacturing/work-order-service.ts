@@ -93,6 +93,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
       if (!decimal(remBase).gt(0)) {
         throw new ApiError('conflict', '需求行无可安排剩余数量')
       }
+      await ensureMaterial(trx, item.materialId, ['STOCK'], '生产工单')
       const factor = decimal(item.baseQty).eq(0)
         ? decimal(1)
         : decimal(item.qty).div(decimal(item.baseQty))
@@ -517,6 +518,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
           }
           lossRate = toDecimalString(decimal(c.lossRate))
         }
+        await ensureMaterial(trx, c.materialId, ['STOCK'], 'BOM行')
         await ensureUnitAllowed(trx, c.materialId, c.unitId)
         await trx
           .insertInto('mfg_bom_component')
@@ -554,6 +556,7 @@ export function createWorkOrderService(db: Kysely<Database>, numbering: Numberin
         if (!isDecimalString(b.quantity) || !decimal(b.quantity).gt(0)) {
           throw ApiError.validation('BOM行参数不合法', { quantity: ['必须大于 0'] })
         }
+        await ensureMaterial(trx, b.materialId, ['STOCK'], 'BOM行')
         await ensureUnitAllowed(trx, b.materialId, b.unitId)
         await trx
           .insertInto('mfg_bom_byproduct')

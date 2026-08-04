@@ -26,6 +26,7 @@ import {
   asOptionalString,
   codeNamedRef,
   guardCustomerMaterial,
+  guardMaterialType,
   ident,
   loadMaterialSnap,
   lowerParty,
@@ -641,6 +642,7 @@ export function createQuotationService(db: Kysely<Database>, numberer: Numberer)
         String(parent.party_id),
         snap,
       )
+      guardMaterialType(snap, ['STOCK', 'VIRTUAL'], '报价条目')
     }
     try {
       const inserted = await sql<{ id: string }>`
@@ -723,6 +725,7 @@ export function createQuotationService(db: Kysely<Database>, numberer: Numberer)
     const snap = await loadMaterialSnap(trx, materialId, unitId)
     if (spec.customerMaterialGuard) {
       guardCustomerMaterial(side, String(parent.party_type), String(parent.party_id), snap)
+      guardMaterialType(snap, ['STOCK', 'VIRTUAL'], '报价条目')
     }
     const after: QuotationItem = {
       ...before,

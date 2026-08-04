@@ -13,6 +13,23 @@ import type {
   TemplateItem,
   WorkOrder,
 } from './types.ts'
+import type { MoldDesign } from './mold-design-service.ts'
+
+export function moldDesignWire(item: MoldDesign) {
+  return {
+    id: item.id,
+    moldType: item.moldType,
+    materialId: item.materialId,
+    materialCode: item.materialCode,
+    materialName: item.materialName,
+    materialSpec: item.materialSpec,
+    unitId: item.unitId,
+    unitName: item.unitName,
+    categoryId: item.categoryId,
+    insertedAt: item.insertedAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  }
+}
 
 function upper(s: string): string {
   return s.toUpperCase()

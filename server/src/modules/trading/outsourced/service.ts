@@ -33,6 +33,7 @@ import {
   asDateTime,
   asOptionalString,
   convertToBaseQty,
+  guardMaterialType,
   loadMaterialSnap,
   lowerParty,
   partyExists,
@@ -2026,6 +2027,7 @@ async function deriveIssueItem(
     draft.outsourcedWarehouseId!,
   )
   const snap = await loadMaterialSnap(db, source.materialId, source.unitId)
+  guardMaterialType(snap, ['STOCK'], '委外发料行')
   const baseQty = convertToBaseQty(draft.qty, source.unitId, snap)
   return {
     qty: draft.qty,
@@ -2129,6 +2131,7 @@ async function deriveReceiptItem(
   }
   const chosenUnit = draft.unitId && draft.unitId.length > 0 ? draft.unitId : source.orderUnitId
   const snap = await loadMaterialSnap(db, source.materialId, chosenUnit)
+  guardMaterialType(snap, ['STOCK'], '委外入库成品行')
   const baseQty = convertToBaseQty(draft.qty, chosenUnit, snap)
   const cur = excludeId
     ? await sql<{ order_currency_code: string }>`
@@ -2240,6 +2243,7 @@ async function deriveReceiptMaterial(
     )
   }
   const snap = await loadMaterialSnap(db, source.materialId, source.unitId)
+  guardMaterialType(snap, ['STOCK'], '委外入库材料行')
   const baseQty = convertToBaseQty(draft.qty, source.unitId, snap)
   return {
     qty: draft.qty,
@@ -2279,6 +2283,7 @@ async function deriveReceiptByproduct(
     await validateWarehouse(db, receipt.companyId, draft.warehouseId)
   }
   const snap = await loadMaterialSnap(db, source.materialId, source.unitId)
+  guardMaterialType(snap, ['STOCK'], '委外入库副产物行')
   const baseQty = convertToBaseQty(draft.qty, source.unitId, snap)
   return {
     qty: draft.qty,

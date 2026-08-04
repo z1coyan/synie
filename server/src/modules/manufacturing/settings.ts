@@ -14,15 +14,18 @@ export const MFG_RESOURCE_NAME = 'mfgSettings'
 export interface ManufacturingSetting {
   id: string
   outputOverreceiveRatio: string
+  moldCategoryId: string | null
   insertedAt: Date
   updatedAt: Date
 }
 
 export interface ManufacturingUpdate {
   outputOverreceiveRatio?: string
+  /** undefined=不动；null=清除配置 */
+  moldCategoryId?: string | null
 }
 
-const MFG_AUDIT = ['output_overreceive_ratio'] as const
+const MFG_AUDIT = ['output_overreceive_ratio', 'mold_category_id'] as const
 
 export function manufacturingSettingResourceMeta(): ResourceMeta {
   return {
@@ -48,6 +51,16 @@ export function manufacturingSettingResourceMeta(): ResourceMeta {
         label: '生产入库超入比例(小数,0=禁超入,0.05=5%,上限 1)',
         sortable: true,
         filterable: true,
+      },
+      {
+        name: 'mold_category_id',
+        apiName: 'moldCategoryId',
+        dbColumn: 'mold_category_id',
+        type: 'fk',
+        label: '模具物料分类',
+        sortable: false,
+        filterable: false,
+        ref: { resource: 'invMaterialCategories', relation: 'moldCategory', labelField: 'name' },
       },
       {
         name: 'inserted_at',
@@ -94,13 +107,24 @@ export function createManufacturingSettingService(db: Kysely<Database>) {
       const after: ManufacturingSetting = {
         ...before,
         outputOverreceiveRatio: input.outputOverreceiveRatio ?? before.outputOverreceiveRatio,
+        moldCategoryId:
+          input.moldCategoryId === undefined ? before.moldCategoryId : input.moldCategoryId,
       }
       validateRatio('outputOverreceiveRatio', '生产入库超入比例', after.outputOverreceiveRatio)
       return {
         after,
-        set: { output_overreceive_ratio: after.outputOverreceiveRatio },
-        beforeSnap: { output_overreceive_ratio: before.outputOverreceiveRatio },
-        afterSnap: { output_overreceive_ratio: after.outputOverreceiveRatio },
+        set: {
+          output_overreceive_ratio: after.outputOverreceiveRatio,
+          mold_category_id: after.moldCategoryId,
+        },
+        beforeSnap: {
+          output_overreceive_ratio: before.outputOverreceiveRatio,
+          mold_category_id: before.moldCategoryId,
+        },
+        afterSnap: {
+          output_overreceive_ratio: after.outputOverreceiveRatio,
+          mold_category_id: after.moldCategoryId,
+        },
       }
     },
   })
@@ -129,6 +153,7 @@ function mapMfg(row: Record<string, unknown>): ManufacturingSetting {
   return {
     id: String(row.id),
     outputOverreceiveRatio: toDecimalString(decimal(row.output_overreceive_ratio as string | number | Decimal)),
+    moldCategoryId: row.mold_category_id == null ? null : String(row.mold_category_id),
     insertedAt: asDate(row.inserted_at as Date | string),
     updatedAt: asDate(row.updated_at as Date | string),
   }

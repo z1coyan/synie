@@ -163,6 +163,7 @@ export const menuCatalog: MenuCatalogModule[] = [
         items: [
           { code: 'menu.mfg.work-orders', label: '生产工单' },
           { code: 'menu.mfg.outputs', label: '生产入库' },
+          { code: 'menu.mfg.molds', label: '模具管理' },
         ],
       },
       {

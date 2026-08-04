@@ -16,6 +16,8 @@ export interface SalesSetting {
 export interface ManufacturingSetting {
   id: string
   outputOverreceiveRatio: string
+  /** 建模具时自动创建的资产物料归入的分类;null 未配置(建模具会被后端拒绝) */
+  moldCategoryId: string | null
   insertedAt: string
   updatedAt: string
 }

@@ -540,6 +540,205 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     expect(appr.status).toBe('AUDITED')
   })
 
+  test('物料类型准入：非库存类物料不可进手工出入库/调拨/盘点行', async () => {
+    const { currencyId, unitId } = await ensureBaseline()
+    const typeSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
+    const company = await companies.create(actor, {
+      code: await allocCompanyCode(db, `T${typeSuffix}`),
+      name: `类型测公司${typeSuffix}`,
+      shortName: `类${typeSuffix.slice(0, 2)}`,
+      baseCurrencyId: currencyId,
+    })
+    tracked.companyIds.push(company.id)
+
+    const cat = await inv.categories.create(actor, {
+      code: `TC${typeSuffix}`,
+      name: `类型分类${typeSuffix}`,
+      isLeaf: true,
+    })
+    tracked.categoryIds.push(cat.id)
+    const virtualMat = await inv.materials.create(actor, {
+      name: `虚拟料${typeSuffix}`,
+      categoryId: cat.id,
+      defaultUnitId: unitId,
+      materialType: 'VIRTUAL',
+    })
+    const assetMat = await inv.materials.create(actor, {
+      name: `资产料${typeSuffix}`,
+      categoryId: cat.id,
+      defaultUnitId: unitId,
+      materialType: 'ASSET',
+    })
+    tracked.materialIds.push(virtualMat.id, assetMat.id)
+
+    const wh = await inv.warehouses.create(actor, {
+      name: `类型仓${typeSuffix}`,
+      companyId: company.id,
+      isLeaf: true,
+    })
+    tracked.warehouseIds.push(wh.id)
+    const whB = await inv.warehouses.create(actor, {
+      name: `类型仓二${typeSuffix}`,
+      companyId: company.id,
+      isLeaf: true,
+    })
+    tracked.warehouseIds.push(whB.id)
+    const whT = await inv.warehouses.create(actor, {
+      name: `类型仓三${typeSuffix}`,
+      companyId: company.id,
+      isLeaf: true,
+    })
+    tracked.warehouseIds.push(whT.id)
+
+    // 手工出入库行拦 VIRTUAL/ASSET
+    const doc = await inv.stockDocs.create(actor, {
+      docNo: `T${typeSuffix}-IN`,
+      direction: 'IN',
+      companyId: company.id,
+      warehouseId: wh.id,
+    })
+    tracked.docIds.push(doc.id)
+    await expect(
+      inv.stockDocs.createItem(actor, {
+        stockDocId: doc.id,
+        idx: 1,
+        qty: '1',
+        materialId: virtualMat.id,
+        unitId,
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { materialId: ['仅库存类物料可进库存单据'] },
+    })
+    await expect(
+      inv.stockDocs.createItem(actor, {
+        stockDocId: doc.id,
+        idx: 1,
+        qty: '1',
+        materialId: assetMat.id,
+        unitId,
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { materialId: ['仅库存类物料可进库存单据'] },
+    })
+
+    // 手工调拨行拦
+    const transfer = await inv.stockTransfers.create(actor, {
+      docNo: `T${typeSuffix}-TR`,
+      companyId: company.id,
+      fromWarehouseId: wh.id,
+      toWarehouseId: whB.id,
+      transitWarehouseId: whT.id,
+    })
+    tracked.transferIds.push(transfer.id)
+    await expect(
+      inv.stockTransfers.createItem(actor, {
+        stockTransferId: transfer.id,
+        idx: 1,
+        qty: '1',
+        materialId: virtualMat.id,
+        unitId,
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { materialId: ['仅库存类物料可进库存单据'] },
+    })
+
+    // 盘点行拦（实盘与账面两条路径共用同一折算校验）
+    await expect(
+      inv.stockCounts.create(actor, {
+        docNo: `T${typeSuffix}-CT`,
+        companyId: company.id,
+        warehouseId: wh.id,
+        items: [{ materialId: assetMat.id, unitId, countedQuantity: '1' }],
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { materialId: ['仅库存类物料可进库存单据'] },
+    })
+    await expect(
+      inv.stockCounts.create(actor, {
+        docNo: `T${typeSuffix}-CT2`,
+        companyId: company.id,
+        warehouseId: wh.id,
+        items: [{ materialId: virtualMat.id, unitId }],
+      }),
+    ).rejects.toMatchObject({
+      code: 'validation',
+      fields: { materialId: ['仅库存类物料可进库存单据'] },
+    })
+  })
+
+  test('物料类型：默认库存、枚举校验、有库存分录后锁定', async () => {
+    const { currencyId, unitId } = await ensureBaseline()
+    const lockSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()
+    const company = await companies.create(actor, {
+      code: await allocCompanyCode(db, `L${lockSuffix}`),
+      name: `类型锁公司${lockSuffix}`,
+      shortName: `锁${lockSuffix.slice(0, 2)}`,
+      baseCurrencyId: currencyId,
+    })
+    tracked.companyIds.push(company.id)
+
+    const cat = await inv.categories.create(actor, {
+      code: `LC${lockSuffix}`,
+      name: `类型锁分类${lockSuffix}`,
+      isLeaf: true,
+    })
+    tracked.categoryIds.push(cat.id)
+
+    // 不传类型默认 STOCK
+    const mat = await inv.materials.create(actor, {
+      name: `默认料${lockSuffix}`,
+      categoryId: cat.id,
+      defaultUnitId: unitId,
+    })
+    tracked.materialIds.push(mat.id)
+    expect(mat.materialType).toBe('STOCK')
+
+    // 非法枚举值拒绝
+    await expect(
+      inv.materials.create(actor, {
+        name: `非法料${lockSuffix}`,
+        categoryId: cat.id,
+        defaultUnitId: unitId,
+        materialType: 'FOO',
+      }),
+    ).rejects.toMatchObject({ code: 'validation' })
+
+    // 无库存分录时类型可改
+    const changed = await inv.materials.update(actor, mat.id, { materialType: 'VIRTUAL' })
+    expect(changed.materialType).toBe('VIRTUAL')
+    await inv.materials.update(actor, mat.id, { materialType: 'STOCK' })
+
+    // 审核一笔入库产生库存分录后,类型锁定(含已作废分录)
+    const wh = await inv.warehouses.create(actor, {
+      name: `类型锁仓${lockSuffix}`,
+      companyId: company.id,
+      isLeaf: true,
+    })
+    tracked.warehouseIds.push(wh.id)
+    const doc = await inv.stockDocs.create(actor, {
+      docNo: `L${lockSuffix}-IN`,
+      direction: 'IN',
+      companyId: company.id,
+      warehouseId: wh.id,
+    })
+    tracked.docIds.push(doc.id)
+    await inv.stockDocs.createItem(actor, {
+      stockDocId: doc.id,
+      idx: 1,
+      qty: '1',
+      materialId: mat.id,
+      unitId,
+    })
+    await inv.stockDocs.audit(actor, doc.id)
+    await expect(
+      inv.materials.update(actor, mat.id, { materialType: 'ASSET' }),
+    ).rejects.toMatchObject({ code: 'conflict' })
+  })
+
   test('仓库 seedDefaults 幂等 + listOutsourced 按协作方过滤', async () => {
     const { currencyId } = await ensureBaseline()
     const seedSuffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase()

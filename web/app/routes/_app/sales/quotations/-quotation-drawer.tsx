@@ -340,6 +340,8 @@ export function QuotationDrawerProvider({
                 materialId: {
                   order: 0,
                   required: true,
+                  // 报价可售库存/虚拟物料(资产不可售);后端权威拦截兜底
+                  remote: { filterState: { materialType: { kind: 'enum', values: ['STOCK', 'VIRTUAL'] } } },
                   // 切换物料时清掉已选单位,避免单位候选跟着旧物料走
                   effects: () => ({ unitId: null }),
                   // 客户物料适配由资源端校验兜底。

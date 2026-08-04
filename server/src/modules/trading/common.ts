@@ -83,6 +83,7 @@ export interface MaterialSnap {
   factor: Decimal | null
   isCustomerMaterial: boolean
   customerId: string | null
+  materialType: string
 }
 
 export async function loadMaterialSnap(
@@ -100,9 +101,10 @@ export async function loadMaterialSnap(
     customer_id: string | null
     unit_name: string
     factor: string | null
+    material_type: string
   }>`
     SELECT m.code, m.name, m.spec, m.customer_part_no, m.default_unit_id,
-      m.is_customer_material, m.customer_id, u.name AS unit_name, mu.factor::text AS factor
+      m.is_customer_material, m.customer_id, m.material_type, u.name AS unit_name, mu.factor::text AS factor
     FROM inv_material m
     JOIN bas_unit u ON u.id = ${unitId}::uuid
     LEFT JOIN inv_material_unit mu ON mu.material_id = m.id AND mu.unit_id = u.id
@@ -128,7 +130,22 @@ export async function loadMaterialSnap(
     factor,
     isCustomerMaterial: row.is_customer_material,
     customerId: row.customer_id,
+    materialType: row.material_type,
   }
+}
+
+/** 单据行的物料类型准入：不在白名单即拦（行保存时校验，与引用合法性同层）。 */
+export function guardMaterialType(
+  snap: MaterialSnap,
+  allowed: readonly string[],
+  label: string,
+): void {
+  if (allowed.includes(snap.materialType)) return
+  const message =
+    allowed.length === 1 && allowed[0] === 'STOCK'
+      ? '仅库存类物料可进该单据'
+      : '资产类物料不能进该单据'
+  throw ApiError.validation(`${label}参数不合法`, { materialId: [message] })
 }
 
 export function convertToBaseQty(qty: Decimal, unitId: string, snap: MaterialSnap): Decimal {

@@ -55,6 +55,7 @@ const EXPECTED_RESOURCES = [
   'mfgBoms',
   'mfgDemandItems',
   'mfgDemands',
+  'mfgMoldDesigns',
   'mfgOperations',
   'mfgOutputItems',
   'mfgOutputs',
@@ -160,7 +161,7 @@ function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
 }
 
 describe('生产 ResourceBinding interface 契约', () => {
-  test('96 个资源从同一 binding seam 到达类型化 REST Adapter', async () => {
+  test('97 个资源从同一 binding seam 到达类型化 REST Adapter', async () => {
     expect(listResourceBindingKeys()).toEqual([...EXPECTED_RESOURCES])
 
     const requests: Array<{ url: string; method: string }> = []

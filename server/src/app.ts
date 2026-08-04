@@ -363,6 +363,7 @@ export function buildApp(deps: AppDeps) {
         demands: deps.manufacturing.demands,
         workOrders: deps.manufacturing.workOrders,
         outputs: deps.manufacturing.outputs,
+        moldDesigns: deps.manufacturing.moldDesigns,
       }),
     )
 
