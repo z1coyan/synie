@@ -7,7 +7,8 @@ import { createDb } from '~/db/index.ts'
 import { withTx } from '~/db/tx.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createEntryService } from './entry-service.ts'
 import { createJournalService } from './journal-service.ts'
 
@@ -16,7 +17,7 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（手工会计凭证 / 往来报表）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const gl = createGlEngine()
   const journals = createJournalService(db, numbering, gl)
   const entries = createEntryService(db)

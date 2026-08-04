@@ -8,7 +8,7 @@ import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/wr
 import type { Actor } from '../authz/actor.ts'
 import { requirePermission } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
-import { loadCatalog, type NumberingCatalog } from './catalog.ts'
+import type { NumberingCatalog } from './catalog.ts'
 import { counterResourceMeta, ruleResourceMeta } from './meta.ts'
 
 /** 编号规则/计数器管理权限前缀；next/nextInTx 为跨域取号基础设施，不检此码 */
@@ -74,7 +74,7 @@ const RULE_AUDIT = ['resource', 'name', 'segments', 'per_company', 'enabled'] as
 const COUNTER_AUDIT = ['value'] as const
 const DATE_FORMAT_RE = /^(?:YYYY|YY|MM|DD)+$/
 
-export function createNumberingService(db: Kysely<Database>, catalog: NumberingCatalog = loadCatalog()) {
+export function createNumberingService(db: Kysely<Database>, catalog: NumberingCatalog) {
   async function numberableResources(actor: Actor) {
     requirePermission(actor, `${PERM}:read`)
     return catalog.publicResources()

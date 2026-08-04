@@ -9,7 +9,8 @@ import { createDb } from '~/db/index.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createFulfillmentService } from './fulfillment/service.ts'
 import { createOutsourcedConfigService } from './order/outsourced-config.ts'
 import { createOrderService, type OrderDraftInput } from './order/service.ts'
@@ -20,7 +21,7 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（物料类型单据准入）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const quotations = createQuotationService(db, numbering)
   const outsourcedConfig = createOutsourcedConfigService(db)
   const orders = createOrderService(db, numbering, quotations, outsourcedConfig.draft)

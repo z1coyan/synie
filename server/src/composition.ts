@@ -43,7 +43,7 @@ import {
   createStorageService,
 } from './platform/files/index.ts'
 import type { Registry } from './platform/meta/registry.ts'
-import { createNumberingService } from './platform/numbering/index.ts'
+import { buildNumberingCatalog, createNumberingService } from './platform/numbering/index.ts'
 import {
   buildPrintingCatalog,
   createPrintingService,
@@ -74,7 +74,7 @@ function assembleDomain(
     manufacturing: createManufacturingSettingService(db),
     accounting: createAccountingSettingService(db),
   })
-  const numbering = createNumberingService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(opts.registry))
   const owners = createOwnerRegistry()
   registerPrintingFileOwners(owners)
   registerFinanceFileOwners(owners)

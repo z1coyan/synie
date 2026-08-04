@@ -7,7 +7,8 @@ import { sql } from 'kysely'
 import { createDb } from '~/db/index.ts'
 import { createGlEngine } from '~/engines/gl/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createJournalService } from '~/modules/accounting/journal-service.ts'
 import { createBankingService } from './banking-service.ts'
 import { createExpenseService } from './expense-service.ts'
@@ -20,7 +21,7 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（财务运营 12）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const gl = createGlEngine()
   const reconciliations = createReconciliationService(db, numbering, gl)
   const banking = createBankingService(db, numbering, {

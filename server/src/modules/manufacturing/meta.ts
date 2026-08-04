@@ -91,6 +91,7 @@ function headMeta(
     permissionPrefix: permission,
     permissionLabel: label,
     table,
+    numbering: true,
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', codeLabel, {
@@ -207,6 +208,7 @@ export function bomResourceMeta(): ResourceMeta {
   return {
     name: 'mfgBoms',
     permissionPrefix: 'mfg.bom',
+    numbering: true,
     permissionLabel: 'BOM',
     table: 'mfg_bom',
     fields: [
@@ -388,6 +390,7 @@ export function bomByproductResourceMeta(): ResourceMeta {
 export function demandResourceMeta(): ResourceMeta {
   return {
     name: 'mfgDemands',
+    numbering: true,
     permissionPrefix: 'mfg.demand',
     permissionLabel: '履约需求单',
     table: 'mfg_demand',
@@ -550,6 +553,7 @@ export function demandItemResourceMeta(): ResourceMeta {
 export function workOrderResourceMeta(): ResourceMeta {
   return {
     name: 'mfgWorkOrders',
+    numbering: true,
     permissionPrefix: 'mfg.work_order',
     permissionLabel: '生产工单',
     table: 'mfg_work_order',
@@ -705,6 +709,7 @@ export function workOrderByproductResourceMeta(): ResourceMeta {
 export function outputResourceMeta(): ResourceMeta {
   return {
     name: 'mfgOutputs',
+    numbering: true,
     permissionPrefix: 'mfg.output',
     permissionLabel: '生产入库单',
     table: 'mfg_output',

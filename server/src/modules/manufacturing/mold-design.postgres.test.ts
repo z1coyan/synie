@@ -4,7 +4,8 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createManufacturingServices } from './index.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
@@ -12,7 +13,7 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（模具设计）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const mfg = createManufacturingServices(db, numbering)
   const actor: Actor = {
     userId: '',

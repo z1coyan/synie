@@ -11,7 +11,8 @@ import { createGlEngine } from '~/engines/gl/index.ts'
 import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createFulfillmentService } from '../fulfillment/service.ts'
 import { createOrderService } from '../order/service.ts'
 import { createQuotationService } from '../quotation/service.ts'
@@ -22,7 +23,7 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（销售/采购对账）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const gl = createGlEngine()
   const inventory = createInventoryEngine()
   const engines = { inventory, gl }

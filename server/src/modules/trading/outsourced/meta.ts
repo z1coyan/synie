@@ -15,6 +15,7 @@ export function outsourcedIssueMeta(): ResourceMeta {
   return {
     name: 'purOutsourcedIssues',
     permissionPrefix: 'purchase.outsourced_issue',
+    numbering: true,
     permissionLabel: '委外发料单',
     table: 'pur_outsourced_issue',
     printHead: true,
@@ -90,6 +91,7 @@ export function outsourcedReceiptMeta(): ResourceMeta {
   return {
     name: 'purOutsourcedReceipts',
     permissionPrefix: 'purchase.outsourced_receipt',
+    numbering: true,
     permissionLabel: '委外入库单',
     table: 'pur_outsourced_receipt',
     printHead: true,

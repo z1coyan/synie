@@ -12,7 +12,8 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { onError } from '~/platform/http/errors.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import {
   packBoxRoutes,
   packLineRoutes,
@@ -34,7 +35,7 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（履约聚合草稿）', () => {
   const db = createDb(url!)
-  const numbering = createNumberingService(db)
+  const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const fulfillment = createFulfillmentService(db, numbering, {
     inventory: createInventoryEngine(),
     gl: createGlEngine(),

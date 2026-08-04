@@ -101,6 +101,13 @@ export interface ResourceMeta {
   print?: boolean
   printHead?: boolean
   printLoops?: PrintLoopMeta[]
+  /**
+   * 编号字段目录：单据头资源声明可绑定自动编号规则。
+   * prefix 缺省取 permissionPrefix，字段自 fields 派生（含 fk 一层展开），见 numbering/catalog.ts。
+   * DB 编号规则/计数器按 prefix 串存量绑定：权限码改名而规则未迁移时，
+   * 用对象形态显式钉住旧 prefix（当前唯一破例：invMaterials 钉 inv.material）。
+   */
+  numbering?: boolean | { prefix?: string }
   audit?: { enabled: boolean; sensitiveFields?: string[] }
 }
 

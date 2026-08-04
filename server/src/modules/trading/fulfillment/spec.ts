@@ -157,6 +157,7 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
   return {
     name: spec.headResource,
     permissionPrefix: spec.prefix,
+    numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
     fields: [

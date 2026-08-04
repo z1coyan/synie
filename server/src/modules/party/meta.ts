@@ -118,6 +118,7 @@ export function employeeResourceMeta(): ResourceMeta {
   return {
     name: 'hrEmployees',
     permissionPrefix: 'hr.employee',
+    numbering: true,
     permissionLabel: '员工',
     table: 'hr_employees',
     fields: [

@@ -15,11 +15,12 @@ import { createManufacturingServices } from '~/modules/manufacturing/index.ts'
 import { createPartyServices } from '~/modules/party/index.ts'
 import { createCompanyAccountDefaultService } from '~/modules/sales/index.ts'
 import { createTradingServices } from '~/modules/trading/index.ts'
-import { buildTestApp, testDatabaseUrl, TEST_AUTH_SECRET } from '../../../test/helpers.ts'
+import { buildTestApp, createPlatformRegistry, testDatabaseUrl, TEST_AUTH_SECRET } from '../../../test/helpers.ts'
 import { createTokenManager } from '../auth/token.ts'
 import type { Actor } from '../authz/actor.ts'
 import { createOwnerRegistry, createFileService } from '../files/index.ts'
 import { ApiError } from '../http/errors.ts'
+import { buildNumberingCatalog } from '../numbering/catalog.ts'
 import { createNumberingService } from '../numbering/service.ts'
 import {
   MARKER_BANK_ACCOUNT_NO,
@@ -323,7 +324,7 @@ run('PG 集成（setup 向导）', () => {
     '完整路径：公司+科目+示例数据 + C01 幂等 + 登录冒烟',
     async () => {
       await prepareEmptySetup()
-      const numbering = createNumberingService(db)
+      const numbering = createNumberingService(db, buildNumberingCatalog(createPlatformRegistry()))
       const base = createBaseServices(db)
       const party = createPartyServices(db, numbering)
       const owners = createOwnerRegistry()

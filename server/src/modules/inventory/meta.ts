@@ -120,6 +120,9 @@ export function materialCategoryResourceMeta(): ResourceMeta {
 export function materialResourceMeta(): ResourceMeta {
   return {
     name: 'invMaterials',
+    // 编号 prefix 破例：权限码已改名 base.material，但 DB 编号规则/计数器仍绑 inv.material
+    // （material/mold 服务取号也传 'inv.material'）。若将来统一改名，需一次显式 DB 规则迁移。
+    numbering: { prefix: 'inv.material' },
     permissionPrefix: 'base.material',
     permissionLabel: '物料',
     table: 'inv_material',
@@ -483,6 +486,7 @@ export function stockEntryResourceMeta(): ResourceMeta {
 export function stockDocResourceMeta(): ResourceMeta {
   return {
     name: 'invStockDocs',
+    numbering: true,
     permissionPrefix: 'inv.stock_doc',
     permissionLabel: '手工出入库单',
     table: 'inv_stock_doc',
@@ -658,6 +662,7 @@ export function stockDocItemResourceMeta(): ResourceMeta {
 export function stockTransferResourceMeta(): ResourceMeta {
   return {
     name: 'invStockTransfers',
+    numbering: true,
     permissionPrefix: 'inv.stock_transfer',
     permissionLabel: '手工调拨单',
     table: 'inv_stock_transfer',
@@ -863,6 +868,7 @@ export function stockTransferItemResourceMeta(): ResourceMeta {
 export function stockCountResourceMeta(): ResourceMeta {
   return {
     name: 'invStockCounts',
+    numbering: true,
     permissionPrefix: 'inv.stock_count',
     permissionLabel: '库存盘点单',
     table: 'inv_stock_count',

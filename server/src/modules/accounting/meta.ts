@@ -41,6 +41,7 @@ export function journalResourceMeta(): ResourceMeta {
   return {
     name: JOURNAL_RESOURCE_NAME,
     permissionPrefix: 'acc.gl_journal',
+    numbering: true,
     permissionLabel: '会计凭证',
     table: 'acc_gl_journal',
     fields: [

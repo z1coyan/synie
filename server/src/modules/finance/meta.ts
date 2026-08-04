@@ -62,6 +62,7 @@ export function vatInvoiceResourceMeta(): ResourceMeta {
   return {
     name: VAT_INVOICE_RESOURCE_NAME,
     permissionPrefix: 'acc.vat_invoice',
+    numbering: true,
     permissionLabel: '增值税发票',
     table: 'acc_vat_invoice',
     fields: [
@@ -630,6 +631,7 @@ export function expenseReportResourceMeta(): ResourceMeta {
   return {
     name: 'accExpenseReports',
     permissionPrefix: 'acc.expense_report',
+    numbering: true,
     permissionLabel: '费用报销单',
     table: 'acc_expense_report',
     fields: [
@@ -772,6 +774,7 @@ export function billTransactionResourceMeta(): ResourceMeta {
   return {
     name: 'accBillTransactions',
     permissionPrefix: 'acc.bill_transaction',
+    numbering: true,
     permissionLabel: '承兑交易',
     table: 'acc_bill_transaction',
     fields: [

@@ -10,7 +10,8 @@ import type { AuthService } from '~/platform/auth/service.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { onError } from '~/platform/http/errors.ts'
-import { createNumberingService } from '~/platform/numbering/index.ts'
+import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
+import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import type { TradingSide } from '../common.ts'
 import { quotationHeadRoutes } from './routes.ts'
 import {
@@ -24,7 +25,7 @@ const run = url ? describe : describe.skip
 
 run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
   const db = createDb(url!)
-  const quotations = createQuotationService(db, createNumberingService(db))
+  const quotations = createQuotationService(db, createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry())))
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()
   const prefix = `QD${suffix}`
 
