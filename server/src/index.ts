@@ -17,7 +17,13 @@ const env = loadEnv()
 const db = createDb(env.databaseUrl)
 
 const tokens = createTokenManager({ secret: env.authSecret, ttlSeconds: env.tokenTtlSeconds })
-const betterAuth = createBetterAuth({ db, secret: env.authSecret, logto: env.logto })
+const betterAuth = createBetterAuth({
+  db,
+  secret: env.authSecret,
+  baseURL: env.betterAuthUrl,
+  allowedHosts: env.betterAuthAllowedHosts,
+  logto: env.logto,
+})
 const auth = await createAuthService({
   store: createAuthStore(db),
   tokens,

@@ -60,18 +60,68 @@ export function createOAuthProvision(db: Kysely<Database>) {
   }
 }
 
+/**
+ * better-auth 的 baseURL：
+ * - 多 Host（局域网 / Tailscale）→ dynamic + allowedHosts，按请求 Host 拼 OAuth 回调
+ * - 单 Host → 静态字符串
+ * 均信任 Vite/反代的 x-forwarded-host/proto（dev 代理 changeOrigin 后 Host 会变成 API 端口）
+ */
+function resolveBaseURLConfig(deps: {
+  baseURL?: string
+  allowedHosts?: string[]
+}):
+  | string
+  | { allowedHosts: string[]; fallback?: string; protocol: 'http' | 'https' | 'auto' }
+  | undefined {
+  const fallback = deps.baseURL?.replace(/\/+$/, '')
+  const allowedHosts = [...new Set((deps.allowedHosts ?? []).map((h) => h.trim()).filter(Boolean))]
+  if (allowedHosts.length > 1 || (allowedHosts.length === 1 && fallback && !allowedHosts.includes(new URL(fallback).host))) {
+    return {
+      allowedHosts: fallback
+        ? [...new Set([new URL(fallback).host, ...allowedHosts])]
+        : allowedHosts,
+      ...(fallback ? { fallback } : {}),
+      // auto：loopback 走 http，其余按 x-forwarded-proto / 请求推断
+      protocol: 'auto',
+    }
+  }
+  if (fallback) return fallback
+  if (allowedHosts.length === 1) {
+    const host = allowedHosts[0]!
+    // 无完整 URL 时只能按 host 猜协议；loopback 用 http
+    const isLoopback =
+      host.startsWith('localhost') || host.startsWith('127.0.0.1') || host.startsWith('[::1]')
+    return `${isLoopback ? 'http' : 'https'}://${host}`
+  }
+  return undefined
+}
+
 export function createBetterAuth(deps: {
   db: Kysely<Database>
   secret: string
+  /**
+   * 浏览器可达的应用 origin（如 http://localhost:3000）。
+   * 启用 Logto 时必填：fallback / 单 host baseURL。
+   */
+  baseURL?: string
+  /** 额外/全部允许的 Host（host:port 或通配）；多于 1 个时启用 dynamic baseURL */
+  allowedHosts?: string[]
   logto?: LogtoConfig
 }) {
   const provision = createOAuthProvision(deps.db)
+  const baseURL = resolveBaseURLConfig(deps)
+  const useProxyHeaders = Boolean(baseURL)
   return betterAuth({
     basePath: '/api/v1/auth',
+    ...(baseURL ? { baseURL } : {}),
     secret: deps.secret,
     telemetry: { enabled: false },
     database: { db: deps.db, type: 'postgres' },
-    advanced: { cookiePrefix: 'synie' },
+    advanced: {
+      cookiePrefix: 'synie',
+      // Vite 代理 / 反代：按 x-forwarded-host 还原浏览器入口，避免 redirect_uri 落到 :8080
+      ...(useProxyHeaders ? { trustedProxyHeaders: true } : {}),
+    },
     user: {
       modelName: 'auth_user',
       fields: {
@@ -150,6 +200,8 @@ export function createBetterAuth(deps: {
                   clientSecret: deps.logto.clientSecret,
                   scopes: ['openid', 'profile', 'email'],
                   pkce: true,
+                  // redirect_uri 由 baseURL 按请求 Host 推导：
+                  // {origin}/api/v1/auth/oauth2/callback/logto —— 须在 Logto 登记每个入口
                 },
               ],
             }),

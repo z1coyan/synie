@@ -15,11 +15,19 @@ export default defineConfig({
       '/api/v1': {
         target: `http://localhost:${process.env.SYNIE_API_PORT || process.env.GO_API_PORT || 8080}`,
         changeOrigin: true,
-        // better-auth 对带 cookie 的写请求严格校验 Origin(须与 API host 同源);
-        // dev 代理下浏览器 Origin 是前端口,统一改写为 target。生产同源部署无此问题
-        headers: {
-          origin: `http://localhost:${process.env.SYNIE_API_PORT || process.env.GO_API_PORT || 8080}`
-        }
+        // better-auth 依赖 x-forwarded-host/proto 还原浏览器入口（局域网 IP / Tailscale 主机名）。
+        // changeOrigin 会把 Host 改成 API 端口，必须显式转发原 Host，否则 OAuth redirect_uri 错位。
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            const host = req.headers.host
+            if (host) proxyReq.setHeader('x-forwarded-host', host)
+            const proto =
+              (typeof req.headers['x-forwarded-proto'] === 'string' &&
+                req.headers['x-forwarded-proto']) ||
+              'http'
+            proxyReq.setHeader('x-forwarded-proto', proto)
+          })
+        },
       }
     },
     fs: {
