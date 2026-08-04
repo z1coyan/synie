@@ -11,6 +11,7 @@ import type { GlEngine, GlEntry } from '~/engines/gl/index.ts'
 import {
   auditCreated, auditDiff, writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { companyFilter, requireCompanyAccess, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -104,15 +105,8 @@ function normalizeBillAttrs(raw: Record<string, unknown> | BillAttrs): BillAttrs
   }
 }
 
-const BILL_AUDIT = [
-  'bill_no','bill_kind','issue_date','due_date','face_amount','transferable','remarks',
-] as const
-const TX_AUDIT = [
-  'doc_no','transaction_type','occurred_on','sub_start','sub_end','amount','party_type',
-  'party_id','discount_org','discount_rate','interest','net_amount','posting_date','status',
-  'company_id','bank_account_id','to_bank_account_id','bill_id','bill_account_id',
-  'settle_account_id','interest_account_id',
-] as const
+const BILL_AUDIT = auditFieldsOf(billResourceMeta())
+const TX_AUDIT = auditFieldsOf(billTransactionResourceMeta())
 const WRITE_MAP = [
   { code: '23505', message: '票据号码或单据编号冲突' },
   { code: '23503', message: '票据业务引用不存在' },

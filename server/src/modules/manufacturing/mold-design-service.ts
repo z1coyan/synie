@@ -13,10 +13,12 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf, pickAuditFields } from '~/platform/audit/spec.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
 import { listFromSource } from '~/db/list.ts'
+import { materialResourceMeta } from '~/modules/inventory/meta.ts'
 import { requirePermission, mfgWriteError, runeCount, trimOptional } from './helpers.ts'
 import { moldDesignResourceMeta } from './meta.ts'
 import type { ListQueryInput } from './types.ts'
@@ -38,10 +40,18 @@ export interface MoldDesign {
   updatedAt: Date
 }
 
-const MOLD_AUDIT = ['mold_type', 'material_id'] as const
-const MATERIAL_AUDIT = ['code', 'material_type', 'name', 'spec', 'category_id', 'default_unit_id'] as const
-
 const META = moldDesignResourceMeta()
+
+const MOLD_AUDIT = auditFieldsOf(META)
+/** 模具服务写物料的动作级局部审计面（客户物料/启用等列模具流程不触碰） */
+const MATERIAL_AUDIT = pickAuditFields(auditFieldsOf(materialResourceMeta()), [
+  'code',
+  'material_type',
+  'name',
+  'spec',
+  'category_id',
+  'default_unit_id',
+])
 
 const SOURCE = sql`
   FROM (

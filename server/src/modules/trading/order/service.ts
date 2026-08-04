@@ -15,6 +15,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
 import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -58,18 +59,16 @@ import {
   type OrderSideSpec,
 } from './spec.ts'
 
-const HEAD_AUDIT = [
-  'order_no', 'order_date', 'order_type', 'is_outsourced', 'party_type', 'party_id',
-  'exchange_rate', 'terms', 'remarks', 'status', 'audited_at', 'company_id', 'currency_id',
-  'created_by_id', 'audited_by_id',
-] as const
+// 双侧共用引擎：白名单取两侧 meta 派生并集（保留历史共享清单行为）
+const HEAD_AUDIT = mergeAuditFields(
+  auditFieldsOf(orderHeadMeta('sales')),
+  auditFieldsOf(orderHeadMeta('purchase')),
+)
 
-const ITEM_AUDIT = [
-  'idx', 'qty', 'base_qty', 'price', 'amount', 'base_price', 'base_amount', 'tax_rate',
-  'material_code', 'material_name', 'material_spec', 'customer_part_no', 'unit_name',
-  'remarks', 'demand_date', 'order_id', 'company_id', 'material_id', 'unit_id',
-  'quotation_item_id', 'bom_id', 'demand_line_id',
-] as const
+const ITEM_AUDIT = mergeAuditFields(
+  auditFieldsOf(orderItemMeta('sales')),
+  auditFieldsOf(orderItemMeta('purchase')),
+)
 
 export interface Order {
   id: string

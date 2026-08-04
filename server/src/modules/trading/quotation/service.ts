@@ -14,6 +14,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { canAccessCompany } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -50,40 +51,21 @@ import {
 } from './spec.ts'
 import { flipDocStatusInTx } from '~/platform/posting/skeleton.ts'
 
-const HEAD_AUDIT = [
-  'quotation_no',
-  'quotation_date',
-  'valid_until',
-  'party_type',
-  'party_id',
-  'terms',
-  'remarks',
-  'status',
-  'audited_at',
-  'company_id',
-  'currency_id',
-  'created_by_id',
-  'audited_by_id',
-] as const
+// 双侧共用引擎：白名单取两侧 meta 派生并集（保留历史共享清单行为）
+const HEAD_AUDIT = mergeAuditFields(
+  auditFieldsOf(quotationHeadMeta('sales')),
+  auditFieldsOf(quotationHeadMeta('purchase')),
+)
 
-const ITEM_AUDIT = [
-  'idx',
-  'pricing_mode',
-  'price',
-  'tax_rate',
-  'material_code',
-  'material_name',
-  'material_spec',
-  'customer_part_no',
-  'unit_name',
-  'remarks',
-  'quotation_id',
-  'company_id',
-  'material_id',
-  'unit_id',
-] as const
+const ITEM_AUDIT = mergeAuditFields(
+  auditFieldsOf(quotationItemMeta('sales')),
+  auditFieldsOf(quotationItemMeta('purchase')),
+)
 
-const TIER_AUDIT = ['min_qty', 'price', 'item_id', 'company_id'] as const
+const TIER_AUDIT = mergeAuditFields(
+  auditFieldsOf(quotationTierMeta('sales')),
+  auditFieldsOf(quotationTierMeta('purchase')),
+)
 
 export interface Quotation {
   id: string

@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -40,7 +41,7 @@ export interface UpdateCurrencyInput {
   active?: boolean
 }
 
-const AUDIT = ['name', 'iso_code', 'symbol', 'active'] as const
+const AUDIT = auditFieldsOf(currencyResourceMeta())
 const ISO_RE = /^[A-Z]{3}$/
 
 export function createCurrencyService(db: Kysely<Database>) {

@@ -632,7 +632,8 @@ export function workOrderResourceMeta(): ResourceMeta {
       { name: 'routes', resource: 'mfgWorkOrderRoutes' },
       { name: 'byproducts', resource: 'mfgWorkOrderByproducts' },
     ],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：BOM 引用不进审计 diff
+    audit: { enabled: true, exclude: ['bom_id'] },
 
   }
 }

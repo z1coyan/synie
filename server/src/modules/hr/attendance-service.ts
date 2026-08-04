@@ -12,6 +12,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { hasPermission, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import type { FileService } from '~/platform/files/service.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -65,26 +66,9 @@ export type {
   AttendancePunch,
 } from './types.ts'
 
-const CORRECTION_AUDIT = ['date', 'times', 'note', 'employee_id', 'created_by_id'] as const
+const CORRECTION_AUDIT = auditFieldsOf(attendanceCorrectionResourceMeta())
 
-const IMPORT_AUDIT = [
-  'status',
-  'error',
-  'total_rows',
-  'bad_rows',
-  'dup_rows',
-  'matched_rows',
-  'unmatched_rows',
-  'unmatched_detail',
-  'imported_count',
-  'skipped_existing_rows',
-  'skipped_unmatched_rows',
-  'auto_created_count',
-  'imported_at',
-  'file_id',
-  'created_by_id',
-  'imported_by_id',
-] as const
+const IMPORT_AUDIT = auditFieldsOf(attendanceImportResourceMeta())
 
 interface AttendancePair {
   employeeId: string

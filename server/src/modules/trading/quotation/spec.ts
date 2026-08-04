@@ -379,7 +379,8 @@ export function quotationItemMeta(side: TradingSide): ResourceMeta {
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
     printLoops: [{ name: 'tiers', resource: spec.tierResource }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：头冗余对手不进审计 diff
+    audit: { enabled: true, exclude: ['party_id'] },
   }
 }
 

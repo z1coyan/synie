@@ -82,7 +82,11 @@ export function outsourcedIssueItemMeta(): ResourceMeta {
       f('party_id', 'partyId', 'fk', '对手', {"filterable": true, "ref": {"resource": null, "relation": null, "labelField": null, "discriminator": "partyType", "discriminatorType": "enum", "variants": [{"label": "内部公司", "labelField": "name", "resource": "basCompanies", "value": "COMPANY"}, {"label": "供应商", "labelField": "name", "resource": "purSuppliers", "value": "SUPPLIER"}]}}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：发料单头快照列不进审计 diff
+    audit: {
+      enabled: true,
+      exclude: ['issue_no', 'issue_date', 'issue_status', 'party_type', 'party_id'],
+    },
 
   }
 }
@@ -172,7 +176,18 @@ export function outsourcedReceiptItemMeta(): ResourceMeta {
       f('remaining_reconcilable_qty', 'remainingReconcilableQty', 'decimal', '剩余可对账量(默认单位)', {"sortable": true, "filterable": true}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：入库单头快照列与对账派生量不进审计 diff
+    audit: {
+      enabled: true,
+      exclude: [
+        'receipt_no',
+        'receipt_date',
+        'receipt_status',
+        'party_type',
+        'party_id',
+        'remaining_reconcilable_qty',
+      ],
+    },
 
   }
 }
@@ -205,7 +220,8 @@ export function outsourcedReceiptItemMaterialMeta(): ResourceMeta {
       f('receipt_no', 'receiptNo', 'string', '入库单号', {"sortable": true, "filterable": true}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：头快照列不进审计 diff
+    audit: { enabled: true, exclude: ['receipt_no'] },
 
   }
 }
@@ -238,7 +254,8 @@ export function outsourcedReceiptItemByproductMeta(): ResourceMeta {
       f('receipt_no', 'receiptNo', 'string', '入库单号', {"sortable": true, "filterable": true}),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：头快照列不进审计 diff
+    audit: { enabled: true, exclude: ['receipt_no'] },
 
   }
 }

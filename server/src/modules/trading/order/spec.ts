@@ -433,7 +433,8 @@ export function orderItemMeta(side: TradingSide): ResourceMeta {
     table: spec.itemTable,
     fields,
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：履约投影列与头冗余对手不进审计 diff
+    audit: { enabled: true, exclude: [spec.projectionColumn, 'party_id'] },
   }
 }
 

@@ -12,6 +12,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requireCompanyAccess, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -49,37 +50,9 @@ import type {
   SalesOccupancy,
 } from './types.ts'
 
-const DEMAND_AUDIT = [
-  'demand_no',
-  'demand_date',
-  'remarks',
-  'status',
-  'company_id',
-  'created_by_id',
-] as const
+const DEMAND_AUDIT = auditFieldsOf(demandResourceMeta())
 
-const ITEM_AUDIT = [
-  'idx',
-  'qty',
-  'base_qty',
-  'ordered_qty',
-  'received_qty',
-  'arranged_qty',
-  'completed_qty',
-  'need_date',
-  'fulfillment_method',
-  'status',
-  'material_code',
-  'material_name',
-  'material_spec',
-  'unit_name',
-  'remarks',
-  'demand_id',
-  'company_id',
-  'material_id',
-  'unit_id',
-  'sales_order_item_id',
-] as const
+const ITEM_AUDIT = auditFieldsOf(demandItemResourceMeta())
 
 export function createDemandService(db: Kysely<Database>, numbering: NumberingService) {
   async function createDemand(

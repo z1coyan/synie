@@ -1,20 +1,11 @@
 import type { DbHandle } from '~/db/tx.ts'
 import { auditCreated, writeAudit } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
+import { warehouseResourceMeta } from '~/modules/inventory/meta.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 
-const WAREHOUSE_AUDIT = [
-  'name',
-  'is_leaf',
-  'active',
-  'is_outsourced',
-  'allow_negative',
-  'company_id',
-  'parent_id',
-  'account_id',
-  'party_type',
-  'party_id',
-] as const
+const WAREHOUSE_AUDIT = auditFieldsOf(warehouseResourceMeta())
 
 /**
  * 公司新建同事务种子三仓：根「所有仓库」+ 叶「默认仓库」+ 叶「在途」。

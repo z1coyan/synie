@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -45,7 +46,7 @@ export interface UpdateUnitInput {
   ratio?: string
 }
 
-const AUDIT = ['unit_type', 'is_base', 'name', 'symbol', 'ratio'] as const
+const AUDIT = auditFieldsOf(unitResourceMeta())
 
 export function createUnitService(db: Kysely<Database>) {
   async function get(actor: Actor, id: string): Promise<Unit> {

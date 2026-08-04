@@ -15,6 +15,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf, mergeAuditFields } from '~/platform/audit/spec.ts'
 import { canAccessCompany, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -44,33 +45,16 @@ import {
   type ReconciliationStatus,
 } from './spec.ts'
 
-const HEAD_AUDIT = [
-  'reconciliation_no',
-  'reconciliation_type',
-  'party_type',
-  'party_id',
-  'posting_date',
-  'remarks',
-  'status',
-  'company_id',
-  'debit_account_id',
-  'credit_account_id',
-  'created_by_id',
-] as const
+// 双侧共用引擎：白名单取两侧 meta 派生并集（保留历史共享清单行为）
+const HEAD_AUDIT = mergeAuditFields(
+  auditFieldsOf(reconciliationHeadMeta('sales')),
+  auditFieldsOf(reconciliationHeadMeta('purchase')),
+)
 
-const ITEM_AUDIT = [
-  'idx',
-  'qty',
-  'base_qty',
-  'amount',
-  'base_amount',
-  'remarks',
-  'reconciliation_id',
-  'company_id',
-  'delivery_item_id',
-  'receipt_item_id',
-  'outsourced_receipt_item_id',
-] as const
+const ITEM_AUDIT = mergeAuditFields(
+  auditFieldsOf(reconciliationItemMeta('sales')),
+  auditFieldsOf(reconciliationItemMeta('purchase')),
+)
 
 type Numberer = Pick<NumberingService, 'nextInTx'>
 

@@ -117,7 +117,8 @@ export function storageResourceMeta(): ResourceMeta {
     permissionLabel: '存储接入',
     table: 'sys_storage',
     print: true,
-    audit: { enabled: true, sensitiveFields: ['secret_access_key'] },
+    // exclude 保留历史审计面：密钥列从不进审计 diff（sensitiveFields 兜底脱敏）
+    audit: { enabled: true, sensitiveFields: ['secret_access_key'], exclude: ['secret_access_key'] },
     fields: [
       { name: 'id', apiName: 'id', dbColumn: 'id', type: 'uuid', label: 'id', readonly: true, sortable: true },
       {

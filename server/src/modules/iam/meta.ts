@@ -64,7 +64,8 @@ export function userResourceMeta(): ResourceMeta {
         email: { placeholder: '如 zhangsan@example.com（Logto 登录匹配用）' },
       },
     },
-    audit: { enabled: true, sensitiveFields: ['hashed_password'] },
+    // extra：角色/公司关联并入用户审计面（join 数组，非物理列）
+    audit: { enabled: true, sensitiveFields: ['hashed_password'], extra: ['role_ids', 'company_ids'] },
 
   }
 }

@@ -8,6 +8,7 @@ import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, writeAudit } from '../audit/write.ts'
+import { auditFieldsOf } from '../audit/spec.ts'
 import { canAccessCompany, hasPermission, requirePermission, type Actor } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 import { fileResourceMeta } from './meta.ts'
@@ -34,15 +35,9 @@ import type {
 } from './types.ts'
 
 const MAX_UPLOAD_SIZE = 50 << 20
-const FILE_AUDIT_FIELDS = [
-  'storage',
-  'key',
-  'filename',
-  'content_type',
-  'size',
-  'sha256',
-  'uploaded_by_id',
-] as const
+const FILE_AUDIT_FIELDS = auditFieldsOf(fileResourceMeta())
+// sys_attachment 无 ResourceMeta（附件不进 Catalog，挂 owner 资源展示），白名单暂留手抄；
+// 若将来为附件建 meta，此清单应改吃 auditFieldsOf。
 const ATTACHMENT_AUDIT_FIELDS = ['file_id', 'owner_type', 'owner_id', 'category', 'company_id'] as const
 
 export interface FileServiceDeps {

@@ -108,7 +108,8 @@ export function counterResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.numbering_rule',
     permissionLabel: '编号规则',
     table: 'sys_numbering_counter',
-    audit: { enabled: true },
+    // exclude 保留历史审计面：计数器只审 value 变化
+    audit: { enabled: true, exclude: ['scope_key', 'rule_id'] },
     fields: [
       { name: 'id', apiName: 'id', dbColumn: 'id', type: 'uuid', label: 'id', readonly: true, sortable: true },
       {

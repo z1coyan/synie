@@ -13,6 +13,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { canAccessCompany } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
@@ -75,38 +76,9 @@ export interface StockTransferItem {
   unitId: string
 }
 
-const DOC_AUDIT = [
-  'doc_no',
-  'doc_date',
-  'summary',
-  'remarks',
-  'status',
-  'shipped_at',
-  'received_at',
-  'company_id',
-  'from_warehouse_id',
-  'to_warehouse_id',
-  'transit_warehouse_id',
-  'created_by_id',
-  'shipped_by_id',
-  'received_by_id',
-] as const
+const DOC_AUDIT = auditFieldsOf(stockTransferResourceMeta())
 
-const ITEM_AUDIT = [
-  'idx',
-  'qty',
-  'base_qty',
-  'received_qty',
-  'material_code',
-  'material_name',
-  'material_spec',
-  'unit_name',
-  'remark',
-  'stock_transfer_id',
-  'company_id',
-  'material_id',
-  'unit_id',
-] as const
+const ITEM_AUDIT = auditFieldsOf(stockTransferItemResourceMeta())
 
 const DOC_META = stockTransferResourceMeta()
 const ITEM_META = stockTransferItemResourceMeta()

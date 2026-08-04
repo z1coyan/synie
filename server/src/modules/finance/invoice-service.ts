@@ -14,6 +14,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import {
   canAccessCompany,
   hasPermission,
@@ -183,29 +184,7 @@ const KINDS = new Set([
   'DIGITAL_NORMAL',
 ])
 
-const INVOICE_AUDIT = [
-  'doc_no',
-  'direction',
-  'invoice_date',
-  'posting_date',
-  'party_type',
-  'party_id',
-  'invoice_kind',
-  'invoice_code',
-  'invoice_no',
-  'items',
-  'net_total',
-  'tax_total',
-  'gross_total',
-  'remarks',
-  'status',
-  'company_id',
-  'party_account_id',
-  'amount_account_id',
-  'tax_account_id',
-  'sal_reconciliation_id',
-  'pur_reconciliation_id',
-] as const
+const INVOICE_AUDIT = auditFieldsOf(vatInvoiceResourceMeta())
 
 const WRITE_MAPPINGS = [
   { code: '23505', message: '同一公司内发票号码或内部编号冲突' },

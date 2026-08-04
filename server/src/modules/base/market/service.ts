@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { SettingsService } from '~/platform/settings/service.ts'
@@ -144,31 +145,9 @@ export interface RefreshResult {
   count: number
 }
 
-const INSTRUMENT_AUDIT = [
-  'code',
-  'name',
-  'source_type',
-  'default_price_kind',
-  'active',
-  'fetch_enabled',
-  'external_last_code',
-  'external_product_group',
-  'note',
-  'currency_id',
-  'unit_id',
-] as const
+const INSTRUMENT_AUDIT = auditFieldsOf(instrumentResourceMeta())
 
-const POINT_AUDIT = [
-  'observed_at',
-  'price',
-  'price_kind',
-  'source',
-  'is_voided',
-  'note',
-  'instrument_id',
-  'currency_id',
-  'unit_id',
-] as const
+const POINT_AUDIT = auditFieldsOf(pricePointResourceMeta())
 
 const WRITE_MAPPINGS = [
   { code: '23505', constraint: 'market_instrument_unique_code', message: '行情品种编码已存在' },

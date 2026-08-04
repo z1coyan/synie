@@ -17,6 +17,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { listFromSource } from '~/db/list.ts'
@@ -65,44 +66,11 @@ export type {
   PayrollPayment,
 } from './types.ts'
 
-const PAYROLL_AUDIT = [
-  'month',
-  'workdays',
-  'attendance_days',
-  'missing_days',
-  'overtime_hours',
-  'daily_wage',
-  'base_amount',
-  'allowance',
-  'bonus',
-  'fine',
-  'loan_deduction',
-  'payable',
-  'status',
-  'remarks',
-  'employee_id',
-] as const
+const PAYROLL_AUDIT = auditFieldsOf(payrollResourceMeta())
 
-const PAYMENT_AUDIT = [
-  'month',
-  'paid_on',
-  'amount',
-  'kind',
-  'remarks',
-  'payroll_id',
-  'employee_id',
-  'created_by_id',
-] as const
+const PAYMENT_AUDIT = auditFieldsOf(payrollPaymentResourceMeta())
 
-const LOAN_AUDIT = [
-  'kind',
-  'occurred_on',
-  'amount',
-  'remarks',
-  'employee_id',
-  'payroll_id',
-  'created_by_id',
-] as const
+const LOAN_AUDIT = auditFieldsOf(employeeLoanResourceMeta())
 
 export interface PayrollServiceDeps {
   db: Kysely<Database>

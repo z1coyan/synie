@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import { canAccessCompany, requirePermission, type Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { mapWriteError } from '~/db/dberr.ts'
@@ -85,17 +86,7 @@ const ROLES = new Set([
   'other_expense',
 ])
 
-const AUDIT = [
-  'code',
-  'name',
-  'direction',
-  'is_group',
-  'active',
-  'role',
-  'parent_id',
-  'company_id',
-  'currency_id',
-] as const
+const AUDIT = auditFieldsOf(accountResourceMeta())
 
 const ACCOUNT_SOURCE = sql`
  FROM (

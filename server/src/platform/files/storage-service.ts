@@ -5,6 +5,7 @@ import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/write.ts'
+import { auditSpecOf } from '../audit/spec.ts'
 import type { Actor } from '../authz/actor.ts'
 import { requirePermission } from '../authz/actor.ts'
 import { SYS_STORAGE } from './permissions.ts'
@@ -20,19 +21,8 @@ import type {
 } from './types.ts'
 
 const STORAGE_NAME_RE = /^[a-z0-9][a-z0-9_-]*$/
-const STORAGE_AUDIT_FIELDS = [
-  'name',
-  'label',
-  'kind',
-  'root',
-  'endpoint',
-  'region',
-  'bucket',
-  'prefix',
-  'access_key_id',
-  'builtin',
-  'is_default',
-] as const
+const STORAGE_AUDIT_SPEC = auditSpecOf(storageResourceMeta())
+const STORAGE_AUDIT_FIELDS = STORAGE_AUDIT_SPEC.fields
 
 export interface StorageServiceDeps {
   db: Kysely<Database>
@@ -114,7 +104,7 @@ export function createStorageService(deps: StorageServiceDeps) {
         actionType: 'create',
         actionName: 'create',
         changes: auditCreated(storageSnapshot(value), STORAGE_AUDIT_FIELDS),
-        sensitiveFields: ['secret_access_key'],
+        sensitiveFields: STORAGE_AUDIT_SPEC.sensitiveFields,
       })
       return value
     })
@@ -180,7 +170,7 @@ export function createStorageService(deps: StorageServiceDeps) {
           actionType: 'update',
           actionName: 'update',
           changes,
-          sensitiveFields: ['secret_access_key'],
+          sensitiveFields: STORAGE_AUDIT_SPEC.sensitiveFields,
         })
       }
       return after

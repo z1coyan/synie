@@ -108,7 +108,19 @@ export interface ResourceMeta {
    * 用对象形态显式钉住旧 prefix（当前唯一破例：invMaterials 钉 inv.material）。
    */
   numbering?: boolean | { prefix?: string }
-  audit?: { enabled: boolean; sensitiveFields?: string[] }
+  /**
+   * 审计声明（唯一事实源）：service 经 platform/audit/spec.ts 派生审计字段白名单，
+   * 派生规则 = 非 calculated 物理字段 − id/inserted_at/updated_at − exclude + extra。
+   */
+  audit?: {
+    enabled: boolean
+    /** 写审计前脱敏为 [FILTERED] 的键（可为非 meta 字段的写专列，如 hashed_password） */
+    sensitiveFields?: string[]
+    /** 显式排除出审计白名单的物理字段（派生/投影/密钥列等，保留历史审计面） */
+    exclude?: string[]
+    /** 附加进审计白名单的非物理字段（如 join 数组 role_ids、写专列 ocr_access_key_secret） */
+    extra?: string[]
+  }
 }
 
 /** 标准十件套（permission catalog 与 capabilities 的基准） */

@@ -8,6 +8,8 @@ import type { Kysely } from 'kysely'
 import { withTx } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditDiff, writeAudit } from '../audit/write.ts'
+import { auditFieldsOf, pickAuditFields } from '../audit/spec.ts'
+import { systemResourceMeta } from './meta.ts'
 import type { Actor } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 import { createSingleRowSetting } from './single-row.ts'
@@ -73,12 +75,14 @@ export interface SystemUpdate {
   marketFetchSettlementEnabled?: boolean
 }
 
-const SYS_AUDIT = [
-  'market_fetch_schedule_enabled',
-  'market_fetch_last_interval_minutes',
-  'market_fetch_settlement_enabled',
-] as const
-const SYS_RUN_AUDIT = ['market_fetch_last_run_at', 'market_fetch_last_summary'] as const
+const SYS_AUDIT_ALL = auditFieldsOf(systemResourceMeta())
+/** 行情拉取运行记录（record_market_fetch）动作的局部审计面 */
+const SYS_RUN_AUDIT = pickAuditFields(SYS_AUDIT_ALL, [
+  'market_fetch_last_run_at',
+  'market_fetch_last_summary',
+])
+/** 系统设置常规更新审计面 = meta 全量白名单 − 运行记录字段 */
+const SYS_AUDIT = SYS_AUDIT_ALL.filter((name) => !SYS_RUN_AUDIT.includes(name))
 
 /** 业务域设置服务结构（组合根注入；platform 不 import 具体模块） */
 export interface SettingsDomainDeps {

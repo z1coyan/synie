@@ -367,6 +367,18 @@ export function reconciliationItemMeta(side: TradingSide): ResourceMeta {
       }),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：头/来源单据快照列不进审计 diff
+    audit: {
+      enabled: true,
+      exclude: [
+        'reconciliation_no',
+        'reconciliation_status',
+        sales ? 'delivery_no' : 'receipt_no',
+        sales ? 'delivery_date' : 'receipt_date',
+        'material_name',
+        'unit_name',
+        'order_currency_code',
+      ],
+    },
   }
 }

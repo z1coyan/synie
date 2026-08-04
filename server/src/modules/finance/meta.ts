@@ -260,7 +260,28 @@ export function vatInvoiceResourceMeta(): ResourceMeta {
     ],
     // OCR / 动态联动 / 附件：Presentation Extension，不走 Basic Form
     form: { kind: 'extension' },
-    audit: { enabled: true },
+    // exclude 保留历史审计面：OCR 抬头块/红冲镜像/审核落章等不进审计 diff
+    audit: {
+      enabled: true,
+      exclude: [
+        'seller_name',
+        'seller_tax_no',
+        'seller_address_phone',
+        'seller_bank_account',
+        'buyer_name',
+        'buyer_tax_no',
+        'buyer_address_phone',
+        'buyer_bank_account',
+        'issuer',
+        'reviewer',
+        'payee',
+        'red_invoice_no',
+        'audited_at',
+        'mirror_invoice_id',
+        'created_by_id',
+        'audited_by_id',
+      ],
+    },
 
   }
 }
@@ -433,7 +454,8 @@ export function bankTransactionResourceMeta(): ResourceMeta {
     ],
     printHead: true,
     printLoops: [{ name: 'reconciliations', resource: 'accBankReconciliations' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：对账派生列不进审计 diff
+    audit: { enabled: true, exclude: ['reconciled_amount', 'unreconciled_amount', 'reconcile_status'] },
 
   }
 }
@@ -553,7 +575,8 @@ export function bankImportResourceMeta(): ResourceMeta {
       field('error_count', 'errorCount', 'integer', '错误行数', { readonly: true }),
     ],
     actions: [{ key: 'read', label: '查看', scope: 'both' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：聚合计数列不进审计 diff
+    audit: { enabled: true, exclude: ['item_count', 'error_count'] },
 
   }
 }
@@ -678,7 +701,8 @@ export function expenseReportResourceMeta(): ResourceMeta {
     ],
     printHead: true,
     printLoops: [{ name: 'items', resource: 'accExpenseReportItems' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：审核落章/经办人不进审计 diff
+    audit: { enabled: true, exclude: ['audited_at', 'created_by_id', 'audited_by_id'] },
 
   }
 }
@@ -765,7 +789,25 @@ export function billResourceMeta(): ResourceMeta {
     ],
     printHead: true,
     printLoops: [{ name: 'transactions', resource: 'accBillTransactions' }],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：OCR 出票/收款/承兑人块不进审计 diff
+    audit: {
+      enabled: true,
+      exclude: [
+        'drawer_name',
+        'drawer_account',
+        'drawer_bank_name',
+        'drawer_bank_no',
+        'payee_name',
+        'payee_account',
+        'payee_bank_name',
+        'payee_bank_no',
+        'acceptor_name',
+        'acceptor_account',
+        'acceptor_bank_name',
+        'acceptor_bank_no',
+        'acceptance_date',
+      ],
+    },
 
   }
 }
@@ -855,7 +897,8 @@ export function billTransactionResourceMeta(): ResourceMeta {
         key: 'void', label: '作废', scope: 'row', isDanger: true,
       },
     ],
-    audit: { enabled: true },
+    // exclude 保留历史审计面：审核落章/经办人/备注不进审计 diff
+    audit: { enabled: true, exclude: ['audited_at', 'remarks', 'created_by_id', 'audited_by_id'] },
 
   }
 }

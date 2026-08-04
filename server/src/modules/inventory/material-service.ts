@@ -9,6 +9,7 @@ import {
   auditDiff,
   writeAudit,
 } from '~/platform/audit/write.ts'
+import { auditFieldsOf } from '~/platform/audit/spec.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import type { NumberingService } from '~/platform/numbering/service.ts'
@@ -43,18 +44,7 @@ export interface Material {
   customer: MaterialRef | null
 }
 
-const AUDIT = [
-  'code',
-  'material_type',
-  'name',
-  'spec',
-  'customer_part_no',
-  'is_customer_material',
-  'active',
-  'category_id',
-  'default_unit_id',
-  'customer_id',
-] as const
+const AUDIT = auditFieldsOf(materialResourceMeta())
 
 const META = materialResourceMeta()
 

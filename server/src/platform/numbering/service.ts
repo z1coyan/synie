@@ -5,6 +5,7 @@ import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database, Json } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, auditDiff, writeAudit } from '../audit/write.ts'
+import { auditFieldsOf } from '../audit/spec.ts'
 import type { Actor } from '../authz/actor.ts'
 import { requirePermission } from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
@@ -70,8 +71,8 @@ export interface UpdateRuleInput {
   enabled?: boolean
 }
 
-const RULE_AUDIT = ['resource', 'name', 'segments', 'per_company', 'enabled'] as const
-const COUNTER_AUDIT = ['value'] as const
+const RULE_AUDIT = auditFieldsOf(ruleResourceMeta())
+const COUNTER_AUDIT = auditFieldsOf(counterResourceMeta())
 const DATE_FORMAT_RE = /^(?:YYYY|YY|MM|DD)+$/
 
 export function createNumberingService(db: Kysely<Database>, catalog: NumberingCatalog) {
