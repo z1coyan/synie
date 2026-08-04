@@ -94,6 +94,50 @@ export interface AttachmentsMeta {
 }
 
 /**
+ * 行级维度绑定（公司/全局资源可声明；派生资源判定递归宿主故不适用）。
+ * 声明即启用对应范围原子——无 owner 声明则该资源不支持 self，无 dept 声明则不支持 dept/deptTree。
+ */
+export interface AuthzRowBindings {
+  /** 属主列绑定，缺省 `created_by_id`（创建人即初始属主）；声明即启用 self 范围 */
+  owner?: { column?: string }
+  /**
+   * 部门列绑定（每资源恰一列，两形态）：
+   * - stamped：归属部门，创建时按创建人部门盖章、不可手填，缺省列 `owner_dept_id`
+   * - assigned：指派部门，业务字段（如需求单下发车间），填写不受操作者部门约束
+   */
+  dept?: { column?: string; mode: 'stamped' | 'assigned' }
+  /** 记录级授权（预留）：第一期声明即注册期报错，见 spec §9 */
+  recordGrants?: boolean
+}
+
+/**
+ * 授权声明（注册期强制，对齐 classification 先例）。见 ADR 2026-08-04 封闭谓词代数 §5。
+ *
+ * - `company`：公司域资源，公司边界恒定生效、不可授出
+ * - `global`：全局资源，只有码级判定（无公司列）
+ * - `via`：派生/子行/只读投影，行级判定递归到宿主资源自己的 decide()
+ */
+export type ResourceAuthz =
+  | (AuthzRowBindings & {
+      kind: 'company'
+      /** 公司列，缺省 `company_id` */
+      companyColumn?: string
+      /** 公司列可空（附件/审计等全局宿主行）：编译为 `(col IS NULL OR col = ANY(...))` */
+      nullable?: boolean
+      /** read 动作的码级组合子：任一命中即可读（取代 readPermissionsAny，声明即执行） */
+      readAnyOf?: readonly string[]
+    })
+  | (AuthzRowBindings & { kind: 'global'; readAnyOf?: readonly string[] })
+  | {
+      kind: 'via'
+      /** 宿主资源名（须在目录内） */
+      parent: string
+      /** 指向宿主的外键列 */
+      fk: string
+      readAnyOf?: readonly string[]
+    }
+
+/**
  * 目标资源规范 lookup（label/search/subtitle/default sort）。
  * 引用字段不得重复声明这些事实；缺省时由字段推导。
  */
@@ -120,8 +164,11 @@ export interface ResourceMeta {
    * 例：币种权限组为「币种」，界面显示「货币」。
    */
   label?: string
-  /** 无独立权限点的只读投影视图：持任一完整权限码即可读，且不进权限目录 */
-  readPermissionsAny?: string[]
+  /**
+   * 授权声明（注册期强制）：公司域 / 全局 / 派生三形态 + 行级维度绑定。
+   * 类型上可选仅为豁免内部投影 meta（todo 查询 meta 等不进 Catalog 的构造）。
+   */
+  authz?: ResourceAuthz
   table: string
   fields: FieldMeta[]
   actions: ActionMeta[]

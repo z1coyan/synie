@@ -6,12 +6,13 @@ import { createAccountService } from './account-service.ts'
 import { createCompanyService } from './company-service.ts'
 import { createCurrencyService } from './currency-service.ts'
 import { createUnitService } from './unit-service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
 function superActor(username = 'base-test'): Actor {
-  return {
+  return testActor({
     userId: crypto.randomUUID(),
     username,
     name: null,
@@ -19,11 +20,11 @@ function superActor(username = 'base-test'): Actor {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 }
 
 function companyActor(companyIds: string[], username = 'base-scoped'): Actor {
-  return {
+  return testActor({
     userId: crypto.randomUUID(),
     username,
     name: null,
@@ -36,7 +37,7 @@ function companyActor(companyIds: string[], username = 'base-scoped'): Actor {
       'base.account:delete',
     ]),
     companyIds,
-  }
+  })
 }
 
 /** 从任意字符串派生 n 位大写英文字母（避免 ISO/公司编码校验失败） */

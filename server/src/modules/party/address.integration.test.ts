@@ -3,6 +3,7 @@ import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { createPartyAddressService } from './address-service.ts'
 import { createCustomerService } from './party-service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -11,7 +12,7 @@ run('PG 集成（对手地址）', () => {
   const db = createDb(url!)
   const addresses = createPartyAddressService(db)
   const customers = createCustomerService(db)
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: crypto.randomUUID(),
     username: 'address-test',
     name: null,
@@ -19,7 +20,7 @@ run('PG 集成（对手地址）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const customerIds: string[] = []
   const addressIds: string[] = []

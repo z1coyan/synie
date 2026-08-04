@@ -11,6 +11,7 @@ import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createEntryService } from './entry-service.ts'
 import { createJournalService } from './journal-service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -22,7 +23,7 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
   const journals = createJournalService(db, numbering, gl)
   const entries = createEntryService(db)
   // userId 空串：不写 created_by/submitted_by FK（避免伪造不存在的 sys_user）
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'gl-journal-test',
     name: '凭证测试',
@@ -30,7 +31,7 @@ run('PG 集成（手工会计凭证 / 往来报表）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
   const prefix = `GLJ${suffix}`
   const cleanupIds = {

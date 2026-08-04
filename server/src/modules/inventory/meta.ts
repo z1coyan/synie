@@ -63,6 +63,7 @@ export function materialCategoryResourceMeta(): ResourceMeta {
     permissionPrefix: 'base.material_category',
     permissionLabel: '物料分类',
     table: 'inv_material_category',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '分类编号', { required: true, filterable: true, sortable: true }),
@@ -128,6 +129,7 @@ export function materialResourceMeta(): ResourceMeta {
     permissionPrefix: 'base.material',
     permissionLabel: '物料',
     table: 'inv_material',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '物料编号', { readonly: true, filterable: true, sortable: true }),
@@ -213,6 +215,7 @@ export function materialUnitResourceMeta(): ResourceMeta {
     permissionPrefix: 'base.material',
     permissionLabel: '物料',
     table: 'inv_material_unit',
+    authz: { kind: 'via', parent: 'invMaterials', fk: 'material_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('factor', 'factor', 'decimal', '换算系数(1 默认单位 = x 该单位)', {
@@ -263,6 +266,7 @@ export function warehouseResourceMeta(): ResourceMeta {
     permissionPrefix: 'base.warehouse',
     permissionLabel: '仓库',
     table: 'inv_warehouse',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('name', 'name', 'string', '仓库名称', { required: true, filterable: true, sortable: true }),
@@ -357,6 +361,7 @@ export function stockEntryResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_entry',
     permissionLabel: '库存分录',
     table: 'inv_stock_entry',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('seq', 'seq', 'integer', '序号', { readonly: true, filterable: true, sortable: true }),
@@ -496,6 +501,7 @@ export function stockDocResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_doc',
     permissionLabel: '手工出入库单',
     table: 'inv_stock_doc',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单据编号', { required: true, filterable: true, sortable: true }),
@@ -582,6 +588,7 @@ export function stockDocItemResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_doc',
     permissionLabel: '手工出入库单',
     table: 'inv_stock_doc_item',
+    authz: { kind: 'via', parent: 'invStockDocs', fk: 'stock_doc_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
@@ -674,6 +681,7 @@ export function stockTransferResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_transfer',
     permissionLabel: '手工调拨单',
     table: 'inv_stock_transfer',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单据编号', { required: true, filterable: true, sortable: true }),
@@ -784,6 +792,7 @@ export function stockTransferItemResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_transfer',
     permissionLabel: '手工调拨单',
     table: 'inv_stock_transfer_item',
+    authz: { kind: 'via', parent: 'invStockTransfers', fk: 'stock_transfer_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
@@ -882,6 +891,7 @@ export function stockCountResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_count',
     permissionLabel: '库存盘点单',
     table: 'inv_stock_count',
+    authz: { kind: 'company' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('doc_no', 'docNo', 'string', '单据编号', { required: true, filterable: true, sortable: true }),
@@ -960,6 +970,7 @@ export function stockCountItemResourceMeta(): ResourceMeta {
     permissionPrefix: 'inv.stock_count',
     permissionLabel: '库存盘点单',
     table: 'inv_stock_count_item',
+    authz: { kind: 'via', parent: 'invStockCounts', fk: 'count_id' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('counted_quantity', 'countedQuantity', 'decimal', '实盘数量(录入单位口径,审核前可空)', {

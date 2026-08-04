@@ -15,6 +15,7 @@ import { createFulfillmentService } from './fulfillment/service.ts'
 import { createOutsourcedConfigService } from './order/outsourced-config.ts'
 import { createOrderService, type OrderDraftInput } from './order/service.ts'
 import { createQuotationService } from './quotation/service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -54,7 +55,7 @@ run('PG 集成（物料类型单据准入）', () => {
   const purchaseStockItemId = crypto.randomUUID()
   const purchaseAssetItemId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'material-type-test',
     name: '物料类型测试',
@@ -62,7 +63,7 @@ run('PG 集成（物料类型单据准入）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 
   function orderDraftInput(
     side: 'sales' | 'purchase',

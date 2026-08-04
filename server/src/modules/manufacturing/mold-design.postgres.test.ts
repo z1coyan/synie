@@ -7,6 +7,7 @@ import type { Actor } from '~/platform/authz/actor.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createManufacturingServices } from './index.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -15,7 +16,7 @@ run('PG 集成（模具设计）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const mfg = createManufacturingServices(db, numbering)
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'mold-test',
     name: null,
@@ -23,7 +24,7 @@ run('PG 集成（模具设计）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10)
   const unitId = crypto.randomUUID()
   const categoryId = crypto.randomUUID()
@@ -274,7 +275,7 @@ run('PG 集成（模具设计）', () => {
 
   test('权限门控：无 mfg.mold_design 权限拒绝', async () => {
     await seedOnce
-    const restricted: Actor = {
+    const restricted: Actor = testActor({
       userId: '',
       username: 'mold-noauth',
       name: null,
@@ -282,7 +283,7 @@ run('PG 集成（模具设计）', () => {
       allCompanies: true,
       permissions: new Set(),
       companyIds: [],
-    }
+    })
     await expect(
       mfg.moldDesigns.create(restricted, { name: 'x', moldType: 'OTHER', unitId }),
     ).rejects.toMatchObject({ code: 'forbidden' })

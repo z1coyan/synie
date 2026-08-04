@@ -34,6 +34,7 @@ export function accountingSettingResourceMeta(): ResourceMeta {
     permissionPrefix: 'acc.setting',
     permissionLabel: '财务设置',
     table: 'acc_setting',
+    authz: { kind: 'global' },
     fields: [
       {
         name: 'id',

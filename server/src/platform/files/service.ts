@@ -9,7 +9,13 @@ import { withTx, type DbHandle } from '~/db/tx.ts'
 import type { DB as Database } from '~/db/types.ts'
 import { auditCreated, auditDestroyed, writeAudit } from '../audit/write.ts'
 import { auditFieldsOf } from '../audit/spec.ts'
-import { canAccessCompany, hasPermission, requirePermission, type Actor } from '../authz/actor.ts'
+import {
+  canAccessCompany,
+  companyFilter,
+  hasPermission,
+  requirePermission,
+  type Actor,
+} from '../authz/actor.ts'
 import { ApiError } from '../http/errors.ts'
 import { fileResourceMeta } from './meta.ts'
 import {
@@ -248,8 +254,9 @@ export function createFileService(deps: FileServiceDeps) {
     if (query.ownerType) conditions.push(sql`a.owner_type = ${query.ownerType}`)
     if (query.ownerId) conditions.push(sql`a.owner_id = ${query.ownerId}::uuid`)
     if (query.category) conditions.push(sql`a.category = ${query.category}`)
-    if (!actor.superAdmin && !actor.allCompanies) {
-      const ids = actor.companyIds
+    const scope = companyFilter(actor)
+    if (!scope.bypass) {
+      const ids = [...scope.ids]
       conditions.push(sql`(a.company_id IS NULL OR a.company_id = ANY(${ids}::uuid[]))`)
     }
     const where = sql.join(conditions, sql` AND `)

@@ -42,6 +42,7 @@ export function companyAccountDefaultMeta(): ResourceMeta {
     permissionPrefix: 'sales.setting',
     permissionLabel: '供应链设置',
     table: 'sal_company_account_default',
+    authz: { kind: 'company' },
     fields: [
       {
         name: 'id',

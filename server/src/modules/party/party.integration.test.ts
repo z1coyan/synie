@@ -4,6 +4,7 @@ import type { Actor } from '~/platform/authz/actor.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createCustomerService, createEmployeeService, createSupplierService } from './party-service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -14,7 +15,7 @@ run('PG 集成（party 客商员工）', () => {
   const customers = createCustomerService(db)
   const suppliers = createSupplierService(db)
   const employees = createEmployeeService(db, numbering)
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: crypto.randomUUID(),
     username: 'party-test',
     name: null,
@@ -22,7 +23,7 @@ run('PG 集成（party 客商员工）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const customerIds: string[] = []
   const supplierIds: string[] = []

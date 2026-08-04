@@ -1,3 +1,4 @@
+import { testActor } from '~/platform/authz/testing.ts'
 import { afterAll, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
@@ -9,6 +10,7 @@ import type { Kysely } from 'kysely'
 import { createRateLimiter } from '~/platform/auth/limiter.ts'
 import { createAuthService } from '~/platform/auth/service.ts'
 import { createAuthStore } from '~/platform/auth/store.ts'
+import { createActorAssembler, createAuthzStore } from '~/platform/authz/index.ts'
 import { createTokenManager } from '~/platform/auth/token.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { onError, notFound } from '~/platform/http/errors.ts'
@@ -51,6 +53,11 @@ run('PG 集成（files / storages）', () => {
 
   const authPromise = createAuthService({
     store: createAuthStore(db),
+    actors: createActorAssembler({
+      store: createAuthzStore(db),
+      allPermissionCodes: () => registry.allPermissionCodes(),
+      ttlMs: 0,
+    }),
     tokens: createTokenManager({ secret: 'files-integration-secret-32bytes!!', ttlSeconds: 3600 }),
     limiter: createRateLimiter(),
   })
@@ -84,7 +91,7 @@ run('PG 集成（files / storages）', () => {
   test('本地存储：上传/下载/挂接冲突删/元数据/列表路由', async () => {
     const fixture = await createFixture(db)
     try {
-      const actor: Actor = {
+      const actor: Actor = testActor({
         userId: fixture.userId,
         username: 'files-test',
         name: '文件测试',
@@ -97,7 +104,7 @@ run('PG 集成（files / storages）', () => {
           'base.customer:read',
         ]),
         companyIds: [],
-      }
+      })
 
       const payload = new TextEncoder().encode('PDF 内容')
       const uploaded = await files.upload(actor, {
@@ -112,7 +119,7 @@ run('PG 集成（files / storages）', () => {
       expect(uploaded.file.key.endsWith('.pdf')).toBe(true)
       expect(uploaded.file.sha256.length).toBe(64)
 
-      const other: Actor = {
+      const other: Actor = testActor({
         userId: crypto.randomUUID(),
         username: 'other',
         name: null,
@@ -120,7 +127,7 @@ run('PG 集成（files / storages）', () => {
         allCompanies: false,
         permissions: new Set(['sys.file:read']),
         companyIds: [],
-      }
+      })
       await expect(files.download(other, uploaded.file.id)).rejects.toMatchObject({ code: 'forbidden' })
 
       const dl = await files.download(actor, uploaded.file.id)
@@ -153,7 +160,7 @@ run('PG 集成（files / storages）', () => {
   test('未知宿主上传：回滚元数据且不留物理对象', async () => {
     const fixture = await createFixture(db)
     try {
-      const actor: Actor = {
+      const actor: Actor = testActor({
         userId: fixture.userId,
         username: 'files-test',
         name: null,
@@ -161,7 +168,7 @@ run('PG 集成（files / storages）', () => {
         allCompanies: false,
         permissions: new Set(['sys.file:create']),
         companyIds: [],
-      }
+      })
       await expect(
         files.upload(actor, {
           data: new TextEncoder().encode('x'),
@@ -249,7 +256,7 @@ run('PG 集成（files / storages）', () => {
           .executeTakeFirstOrThrow()
       ).id
 
-      const uploader: Actor = {
+      const uploader: Actor = testActor({
         userId: fixture.userId,
         username: 'uploader',
         name: null,
@@ -262,7 +269,7 @@ run('PG 集成（files / storages）', () => {
           'acc.gl_journal:read',
         ]),
         companyIds: [companyA, companyB],
-      }
+      })
       const fileA = await files.upload(uploader, {
         data: new TextEncoder().encode('甲'),
         filename: '甲.txt',
@@ -281,7 +288,7 @@ run('PG 集成（files / storages）', () => {
       if (fileA.attachment) fixture.attachmentIds.push(fileA.attachment.id)
       if (fileB.attachment) fixture.attachmentIds.push(fileB.attachment.id)
 
-      const companyAActor: Actor = {
+      const companyAActor: Actor = testActor({
         userId: fixture.userId,
         username: 'a-only',
         name: null,
@@ -289,7 +296,7 @@ run('PG 集成（files / storages）', () => {
         allCompanies: false,
         permissions: new Set(['sys.file:read', 'acc.gl_journal:read']),
         companyIds: [companyA],
-      }
+      })
       const list = await files.listAttachments(companyAActor, {})
       let sawA = false
       for (const item of list.results) {
@@ -321,7 +328,7 @@ run('PG 集成（files / storages）', () => {
 
   test('存储接入：密钥 write-only、设默认串行、删默认冲突', async () => {
     const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10)
-    const actor: Actor = {
+    const actor: Actor = testActor({
       userId: crypto.randomUUID(),
       username: 'storage-test',
       name: null,
@@ -329,7 +336,7 @@ run('PG 集成（files / storages）', () => {
       allCompanies: true,
       permissions: new Set(),
       companyIds: [],
-    }
+    })
     // actor 需存在于 sys_user 才能写审计外键？审计 actor_id 无 FK 强制
     const ids: string[] = []
     let previousDefaultId: string | null = null

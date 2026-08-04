@@ -1,4 +1,5 @@
 import type {
+  DataScope,
   FieldDocument,
   PermissionGroup,
   ResourceDocument,
@@ -13,9 +14,19 @@ import {
   type NormalizedResource,
 } from './catalog-normalize.ts'
 import { applyResourceClassification } from './resource-classification.ts'
+import {
+  assertAuthzClosure,
+  assertValidAuthzDeclaration,
+  resolveAuthzBinding,
+  supportedScopesOf,
+  type AuthzBinding,
+} from './resource-authz.ts'
 import type { ResourceMeta } from './types.ts'
 
 const IDENTIFIER_RE = /^[a-z_][a-z0-9_]*$/
+
+/** 数据范围呈现顺序（宽 → 窄），目录投影按此稳定排序 */
+const SCOPE_ORDER: readonly DataScope[] = ['all', 'deptTree', 'dept', 'self']
 
 export interface SealReport {
   total: number
@@ -40,6 +51,7 @@ export function createRegistry() {
     }
     const classified = applyResourceClassification(resource)
     validate(classified)
+    assertValidAuthzDeclaration(classified)
     if (resources.has(classified.name)) {
       throw new Error(`重复 Meta 资源: ${classified.name}`)
     }
@@ -82,8 +94,10 @@ export function createRegistry() {
   }
 
   function validateSealClosure(): void {
+    const allCodes = new Set(allPermissionCodes())
     for (const resource of resources.values()) {
       const fieldNames = new Set(resource.fields.map((f) => f.apiName))
+      assertAuthzClosure(resource, { hasResource: (name) => resources.has(name), allCodes })
 
       for (const field of resource.fields) {
         if (field.type === 'enum' || field.type === 'enumArray') {
@@ -160,7 +174,7 @@ export function createRegistry() {
 
   function canRead(resource: ResourceMeta, actor: Actor | null): boolean {
     if (!actor) return false
-    const anyOf = resource.readPermissionsAny
+    const anyOf = resource.authz?.readAnyOf
     if (!anyOf || anyOf.length === 0) {
       return hasPermission(actor, `${resource.permissionPrefix}:read`)
     }
@@ -243,24 +257,56 @@ export function createRegistry() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  /** 权限目录：前缀 → 动作集（ReadPermissionsAny 投影视图不进目录） */
+  /**
+   * 权限目录：前缀 → 动作集 + 支持的数据范围。
+   * 声明了 authz.readAnyOf 的资源无独立权限点（只读投影/导入重载），不进目录。
+   * supportedScopes 取同前缀各资源声明的**交集**（保守：范围只在全部资源都支持时开放）。
+   */
   function permissionCatalog(): PermissionGroup[] {
-    const groups = new Map<string, Set<string>>()
+    const groups = new Map<string, { actions: Set<string>; scopes: Set<DataScope> | null }>()
     for (const resource of resources.values()) {
-      if (resource.readPermissionsAny && resource.readPermissionsAny.length > 0) continue
-      const actions = groups.get(resource.permissionPrefix) ?? new Set<string>()
-      for (const action of resource.actions) {
-        actions.add(action.permissionAction ?? action.key)
+      if (resource.authz?.readAnyOf && resource.authz.readAnyOf.length > 0) continue
+      const group = groups.get(resource.permissionPrefix) ?? {
+        actions: new Set<string>(),
+        scopes: null,
       }
-      groups.set(resource.permissionPrefix, actions)
+      for (const action of resource.actions) {
+        group.actions.add(action.permissionAction ?? action.key)
+      }
+      // via 子行不拥有范围（判定递归宿主），不参与交集
+      const own = supportedScopesOf(resource)
+      if (own.length > 0) {
+        const next = new Set(own as DataScope[])
+        group.scopes =
+          group.scopes === null
+            ? next
+            : new Set([...group.scopes].filter((scope) => next.has(scope)))
+      }
+      groups.set(resource.permissionPrefix, group)
     }
     return [...groups.entries()]
-      .map(([prefix, actions]) => ({
+      .map(([prefix, group]) => ({
         prefix,
         label: permissionLabels.get(prefix) ?? prefix,
-        actions: [...actions].sort(),
+        actions: [...group.actions].sort(),
+        supportedScopes: SCOPE_ORDER.filter((scope) => group.scopes?.has(scope) ?? false),
       }))
       .sort((a, b) => a.prefix.localeCompare(b.prefix))
+  }
+
+  /** 已解析的授权绑定（列名已定）；执行面（guard / compileRowFilter / 盖章）消费 */
+  function authzBinding(name: string): AuthzBinding | undefined {
+    const resource = resources.get(name)
+    return resource ? resolveAuthzBinding(resource) : undefined
+  }
+
+  /**
+   * 全部权限码（目录派生，字典序）：`sys_role.grants_all` 展开与授权 sync 闭包校验的共同基准。
+   */
+  function allPermissionCodes(): string[] {
+    return permissionCatalog()
+      .flatMap((group) => group.actions.map((action) => `${group.prefix}:${action}`))
+      .sort()
   }
 
   function catalogStats(): SealReport {
@@ -276,6 +322,8 @@ export function createRegistry() {
     buildDocument,
     summaries,
     permissionCatalog,
+    authzBinding,
+    allPermissionCodes,
     catalogStats,
   }
 }

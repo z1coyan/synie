@@ -3,7 +3,10 @@ import { sql, type RawBuilder } from 'kysely'
 import { buildListQuery } from '~/db/filterbuild.ts'
 import type { DbHandle } from '~/db/tx.ts'
 import { companyFilter, type Actor } from '~/platform/authz/actor.ts'
+import type { Permit } from '~/platform/authz/core/index.ts'
+import { compileRowFilter, conjunction } from '~/db/authz-sql.ts'
 import { ApiError } from '~/platform/http/errors.ts'
+import type { AuthzTarget } from '~/platform/meta/resource-authz.ts'
 import type { ResourceReadSpec } from '~/platform/meta/read-spec.ts'
 import { toReadSpec } from '~/platform/meta/read-spec.ts'
 import type { ResourceMeta } from '~/platform/meta/types.ts'
@@ -23,7 +26,10 @@ export function normalizeListQuery(query: Partial<ListQuery>): ListQuery {
   }
 }
 
-/** 公司数据范围 WHERE 片段；empty 时调用方应直接返回空列表 / not_found */
+/**
+ * 公司数据范围 WHERE 片段；empty 时调用方应直接返回空列表 / not_found。
+ * @deprecated 扫荡期过渡：改用 listAuthorized（Permit 编译，无 empty 早退义务）
+ */
 export function companyScopeWhere(
   actor: Actor | null,
   column = 'company_id',
@@ -35,6 +41,29 @@ export function companyScopeWhere(
     empty: false,
     where: sql`${sql.raw(column)} = ANY(${[...scope.ids]}::uuid[])`,
   }
+}
+
+/**
+ * 授权列表（v2）：直接收 Permit，行过滤由平台编译并自动 AND。
+ * `empty` 早退义务消失（空行集编译为 `false`），NULL-admitting 手滚变体由 nullable 声明收编。
+ */
+export interface ListAuthorizedOptions<T> extends Omit<ListFromSourceOptions<T>, 'extraWhere'> {
+  permit: Permit
+  target: AuthzTarget
+  /** 目标行在 source 中的表别名（`FROM x` 时即表名，子查询时为其别名） */
+  alias: string
+  /** 领域附加条件（状态过滤等，非授权） */
+  extraWhere?: RawBuilder<unknown> | null
+}
+
+export async function listAuthorized<T>(
+  options: ListAuthorizedOptions<T>,
+): Promise<{ count: number; results: T[] }> {
+  const authzWhere = compileRowFilter(options.permit, options.target, options.alias)
+  return listFromSource({
+    ...options,
+    extraWhere: conjunction([authzWhere, ...(options.extraWhere ? [options.extraWhere] : [])]),
+  })
 }
 
 export interface ListFromSourceOptions<T> {

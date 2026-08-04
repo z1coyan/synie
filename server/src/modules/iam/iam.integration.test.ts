@@ -5,6 +5,7 @@ import type { Actor } from '~/platform/authz/actor.ts'
 import { registerBaseResources } from '../base/index.ts'
 import { createIamService, registerIamResources } from './index.ts'
 import { registerSettingResources } from '~/platform/settings/index.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -16,7 +17,7 @@ run('PG 集成（IAM）', () => {
   registerBaseResources(registry)
   registerIamResources(registry)
   const iam = createIamService(db, registry)
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: crypto.randomUUID(),
     username: 'iam-test',
     name: null,
@@ -24,7 +25,7 @@ run('PG 集成（IAM）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
   const roleIds: string[] = []
   const userIds: string[] = []

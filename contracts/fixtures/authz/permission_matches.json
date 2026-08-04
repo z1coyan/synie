@@ -1,38 +1,51 @@
 {
+  "deprecated": "通配符匹配已随封闭谓词代数取消（ADR 2026-08-04）；本夹具无消费者，工单 15 删除。对拍地位由 decide_cases.json 接替。",
   "cases": [
     {
       "name": "具体权限命中",
-      "permissions": ["sales.order:audit"],
+      "permissions": [
+        "sales.order:audit"
+      ],
       "code": "sales.order:audit",
       "matches": true
     },
     {
       "name": "资源通配命中",
-      "permissions": ["sales.order:*"],
+      "permissions": [
+        "sales.order:*"
+      ],
       "code": "sales.order:audit",
       "matches": true
     },
     {
       "name": "域通配命中",
-      "permissions": ["sales.*"],
+      "permissions": [
+        "sales.*"
+      ],
       "code": "sales.order:audit",
       "matches": true
     },
     {
       "name": "全域通配命中",
-      "permissions": ["*"],
+      "permissions": [
+        "*"
+      ],
       "code": "sales.order:audit",
       "matches": true
     },
     {
       "name": "其他动作不命中",
-      "permissions": ["sales.order:read"],
+      "permissions": [
+        "sales.order:read"
+      ],
       "code": "sales.order:audit",
       "matches": false
     },
     {
       "name": "其他域不命中",
-      "permissions": ["purchase.*"],
+      "permissions": [
+        "purchase.*"
+      ],
       "code": "sales.order:audit",
       "matches": false
     }

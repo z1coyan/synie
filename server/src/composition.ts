@@ -185,10 +185,10 @@ export function createServices(db: Kysely<Database>, opts: CreateServicesOptions
   return { ...merged, setup }
 }
 
-/** 服务图 → AppDeps 机械摊平（db/auth/betterAuth/logtoEnabled/registry 由调用方补） */
+/** 服务图 → AppDeps 机械摊平（db/auth/betterAuth/logtoEnabled/registry/authz 由调用方补） */
 export function toAppDeps(
   services: Services,
-): Omit<AppDeps, 'db' | 'auth' | 'betterAuth' | 'logtoEnabled' | 'registry'> {
+): Omit<AppDeps, 'db' | 'auth' | 'betterAuth' | 'logtoEnabled' | 'registry' | 'authz'> {
   const { base, party, inv, accounting, finance } = services
   return {
     settings: services.settings,

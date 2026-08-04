@@ -22,6 +22,7 @@ export function userResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.user',
     permissionLabel: '用户',
     table: 'sys_user',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('username', 'username', 'string', '用户名', {
@@ -78,6 +79,7 @@ export function roleResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.role',
     permissionLabel: '角色',
     table: 'sys_role',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '角色编码', {
@@ -138,6 +140,7 @@ export function rolePermissionResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.role_permission',
     permissionLabel: '角色权限',
     table: 'sys_role_permission',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('role_id', 'roleId', 'fk', '角色', {
@@ -173,6 +176,7 @@ export function roleMenuResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.role_menu',
     permissionLabel: '角色菜单',
     table: 'sys_role_menu',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('role_id', 'roleId', 'fk', '角色', {

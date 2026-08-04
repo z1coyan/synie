@@ -74,17 +74,25 @@ db/
    `ApiType` 推断断链，web 拿不到类型。
 7. **Meta 注册**：业务资源以代码注册进 Registry（启动期 fail-closed 校验），
    权限码/Grid/打印目录随之自动派生。
-8. **鉴权（方案一 · service 唯一检，面向元数据反射）**：
-   - **运行时唯一 enforcement 点**在 service 方法入口（`requirePerm` /
-     `requirePermission` / 域内等价辅助）。routes **只做** `requireAuth`
-     （身份），禁止与 service **同源双检**同一权限码。
-   - 跨域 seam（如 `createAndAuditJournal`）**不检权限**，文档写明
-     「调用方已鉴权」；调用方用**业务能力码**覆盖（例：快速对账只检
-     `acc.bank_transaction:reconcile`，不叠 `acc.gl_journal:create/audit`）。
-   - 内部 service→service：被调方若是完整公开 API 则仍检自己的码；
-     若是已鉴权 seam 则命名/注释标明，不检。
-   - 新代码优先「prefix/action 来自 registry/spec/meta」，禁止在 routes
-     散落字面量权限码清单。
-   - **反射化后**：enforcement 迁入框架策略层（仍单点，数据源换 meta），
-     禁止回到 route+service 双检。当前约定是过渡期挂点，不是永久教条。
+8. **鉴权（Permit 凭证式 · 平台单点执行）**：见 ADR 2026-08-04（封闭谓词代数 /
+   Permit 凭证式鉴权）。上一版「service 方法入口唯一检 + routes 只做
+   `requireAuth`」的约定已被取代——该版自留的退路（「反射化后 enforcement 迁入
+   框架策略层」）就是现在这套。
+   - **判定唯一入口**是 `platform/authz/core` 的 `decide()`：主体（user/system/
+     superAdmin）× 码级组合子（one/anyOf/allOf）× 行级范围（all/company/deptTree/
+     dept/self/granted）。**词汇表封闭，不得新增谓词。**
+   - **路由挂 `deps.authz.guard(资源名, 动作)`**（在 `requireAuth` 之后），
+     判定通过则 Permit 入 ctx；service 方法收 `Permit` 而不是 `Actor`——
+     绕过鉴权直调 service 在**编译期**不成立。
+   - **三个执行点全部平台所有**：列表 `listAuthorized`、单记录 `loadAuthorized`
+     （统一 `not_found`、折叠 `FOR UPDATE`）、写入 `assertCompanyWritable` +
+     `ownershipStamp`。业务模块**零鉴权代码**，`src/modules/authz-firewall.test.ts` 封路。
+   - **动作码唯一事实源是 meta**：guard 从 sealed registry 解析，禁止 routes 散落
+     字面量权限码，禁止客户端提供 prefix 直接进码。
+   - 跨域 seam / 调度器 / 种子走显式 `systemPermit(资源, 动作)`，不再有匿名
+     「调用方已鉴权」约定与 null-actor 分支。
+   - **错误语义唯一规则**：动作码不满足 → `forbidden`；行级范围不命中（公司/
+     部门/本人）→ `not_found`（不泄露存在性）。
+   - 扫荡期过渡：`platform/authz/actor.ts` 的旧原语全部 `@deprecated`，
+     存量模块在封路豁免清单里逐批清零（工单 09-12）。
 9. 用户可见文案一律中文；代码标识符英文。

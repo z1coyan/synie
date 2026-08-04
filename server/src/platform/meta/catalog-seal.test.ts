@@ -4,8 +4,9 @@ import { createSealedResourceRegistry, registerAllResources } from './register-a
 import { currencyResourceMeta, companyResourceMeta } from '~/modules/base/meta.ts'
 import type { Actor } from '../authz/actor.ts'
 import { decodeResourceDocument } from '@synie/shared'
+import { testActor } from '~/platform/authz/testing.ts'
 
-const superAdmin: Actor = {
+const superAdmin: Actor = testActor({
   userId: 'u',
   username: 'admin',
   name: null,
@@ -13,7 +14,7 @@ const superAdmin: Actor = {
   allCompanies: true,
   permissions: new Set(),
   companyIds: [],
-}
+})
 
 describe('Resource Catalog seal 与 v2 投影', () => {
   test('全部基线资源可规范化并 seal', () => {
@@ -50,7 +51,7 @@ describe('Resource Catalog seal 与 v2 投影', () => {
 
   test('无目标读取权：reference targetUnavailable，basic 布局剔除可编辑外键', () => {
     const registry = createSealedResourceRegistry()
-    const actor: Actor = {
+    const actor: Actor = testActor({
       userId: 'u',
       username: 'co',
       name: null,
@@ -58,7 +59,7 @@ describe('Resource Catalog seal 与 v2 投影', () => {
       allCompanies: true,
       permissions: new Set(['base.company:read', 'base.company:create', 'base.company:update']),
       companyIds: [],
-    }
+    })
     const doc = registry.buildDocument('basCompanies', actor)
     const catField = doc.fields.find((f) => f.name === 'baseCurrencyId')
     expect(catField?.kind).toBe('reference')

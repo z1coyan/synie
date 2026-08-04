@@ -10,6 +10,7 @@ export function ruleResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.numbering_rule',
     permissionLabel: '编号规则',
     table: 'sys_numbering_rule',
+    authz: { kind: 'global' },
     print: true,
     printHead: true,
     audit: { enabled: true },
@@ -110,6 +111,7 @@ export function counterResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.numbering_rule',
     permissionLabel: '编号规则',
     table: 'sys_numbering_counter',
+    authz: { kind: 'via', parent: 'sysNumberingRules', fk: 'rule_id' },
     // exclude 保留历史审计面：计数器只审 value 变化
     audit: { enabled: true, exclude: ['scope_key', 'rule_id'] },
     fields: [

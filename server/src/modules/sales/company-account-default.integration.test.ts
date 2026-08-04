@@ -1,6 +1,7 @@
 /**
  * 工单 02：公司默认过账科目（一公司一行四槽；角色校验；partial upsert）。
  */
+import { testActor } from '~/platform/authz/testing.ts'
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
@@ -18,7 +19,7 @@ const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
 
 function superActor(username = 'cad-test'): Actor {
-  return {
+  return testActor({
     userId: crypto.randomUUID(),
     username,
     name: null,
@@ -26,11 +27,11 @@ function superActor(username = 'cad-test'): Actor {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 }
 
 function limitedActor(companyIds: string[], permissions: string[]): Actor {
-  return {
+  return testActor({
     userId: crypto.randomUUID(),
     username: 'cad-limited',
     name: null,
@@ -38,7 +39,7 @@ function limitedActor(companyIds: string[], permissions: string[]): Actor {
     allCompanies: false,
     permissions: new Set(permissions),
     companyIds,
-  }
+  })
 }
 
 function lettersFrom(seed: string, n: number): string {

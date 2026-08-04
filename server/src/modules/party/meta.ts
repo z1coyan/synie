@@ -25,6 +25,7 @@ export function customerResourceMeta(): ResourceMeta {
     permissionLabel: '客户',
     label: '客户',
     table: 'sal_customers',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '客户编号', { required: true, filterable: true, sortable: true }),
@@ -65,6 +66,7 @@ export function supplierResourceMeta(): ResourceMeta {
     permissionLabel: '供应商',
     label: '供应商',
     table: 'pur_supplier',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '供应商编号', {
@@ -126,6 +128,7 @@ export function employeeResourceMeta(): ResourceMeta {
     numbering: true,
     permissionLabel: '员工',
     table: 'hr_employees',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('code', 'code', 'string', '员工编号', { filterable: true, sortable: true }),
@@ -206,6 +209,7 @@ export function partyAddressResourceMeta(): ResourceMeta {
     permissionLabel: '地址',
     label: '地址',
     table: 'bas_party_address',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       field('party_type', 'partyType', 'enum', '主体类型', {

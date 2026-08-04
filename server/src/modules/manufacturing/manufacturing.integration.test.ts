@@ -8,6 +8,7 @@ import type { Actor } from '~/platform/authz/actor.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createManufacturingServices } from './index.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -16,7 +17,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const mfg = createManufacturingServices(db, numbering)
-  const actor: Actor = {
+  const actor: Actor = testActor({
     // 空 userId → 单据 created_by_id 写 null（避免测试环境无 sys_user 行）
     userId: '',
     username: 'mfg-test',
@@ -25,7 +26,7 @@ run('PG 集成（制造：BOM/需求/工单/入库）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10)
   const currencyId = crypto.randomUUID()
   const companyId = crypto.randomUUID()

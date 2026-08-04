@@ -2,6 +2,7 @@
  * 销售/采购报价 Aggregate Draft PG 集成：完整 HTTP seam 与嵌套写入原子性。
  * 门控 SYNIE_TEST_DATABASE_URL。
  */
+import { testActor } from '~/platform/authz/testing.ts'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { sql } from 'kysely'
@@ -39,7 +40,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
   const materialId = crypto.randomUUID()
   const material2Id = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'quotation-draft-test',
     name: '报价聚合草稿测试',
@@ -47,7 +48,7 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
   const auth = {
     authenticate: async () => actor,
     authenticateRequest: async () => actor,
@@ -106,12 +107,12 @@ run('PG 集成（销售/采购报价 Aggregate Draft）', () => {
   }
 
   function limitedActor(...actions: Array<'update' | 'create' | 'delete'>): Actor {
-    return {
+    return testActor({
       ...actor,
       username: `quotation-${actions.join('-')}`,
       superAdmin: false,
       permissions: new Set(actions.map((action) => `purchase.quotation:${action}`)),
-    }
+    })
   }
 
   function replaceInputFromSaved(saved: QuotationSavedDraft): QuotationDraftInput {

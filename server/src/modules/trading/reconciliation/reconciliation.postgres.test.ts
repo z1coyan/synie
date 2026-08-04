@@ -17,6 +17,7 @@ import { createFulfillmentService } from '../fulfillment/service.ts'
 import { createOrderService } from '../order/service.ts'
 import { createQuotationService } from '../quotation/service.ts'
 import { createReconciliationService } from './service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -56,7 +57,7 @@ run('PG 集成（销售/采购对账）', () => {
   const purchaseReceiptId = crypto.randomUUID()
   const purchaseReceiptItemId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'recon-test',
     name: '对账测试',
@@ -64,9 +65,9 @@ run('PG 集成（销售/采购对账）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 
-  const limited: Actor = {
+  const limited: Actor = testActor({
     userId: '',
     username: 'recon-limited',
     name: null,
@@ -78,7 +79,7 @@ run('PG 集成（销售/采购对账）', () => {
       'sales.reconciliation:confirm',
     ]),
     companyIds: [companyId],
-  }
+  })
 
   beforeAll(async () => {
     await sql`
@@ -472,10 +473,10 @@ run('PG 集成（销售/采购对账）', () => {
     const ok = await svc.getHead(limited, 'sales', head.id)
     expect(ok.id).toBe(head.id)
 
-    const outsider: Actor = {
+    const outsider: Actor = testActor({
       ...limited,
       companyIds: [otherCompanyId],
-    }
+    })
     try {
       await svc.getHead(outsider, 'sales', head.id)
     } catch (e) {

@@ -114,7 +114,7 @@ function printHeads(registry: Registry): ResourceMeta[] {
   const candidates = new Map<string, ResourceMeta[]>()
   const marked = new Map<string, ResourceMeta[]>()
   for (const resource of registry.list()) {
-    if (resource.readPermissionsAny && resource.readPermissionsAny.length > 0) continue
+    if (resource.authz?.readAnyOf && resource.authz.readAnyOf.length > 0) continue
     const group = candidates.get(resource.permissionPrefix) ?? []
     group.push(resource)
     candidates.set(resource.permissionPrefix, group)

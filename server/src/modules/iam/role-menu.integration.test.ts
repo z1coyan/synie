@@ -8,6 +8,7 @@ import { createIamService, registerIamResources } from './index.ts'
 import { createRegistry } from '~/platform/meta/registry.ts'
 import { registerBaseResources } from '../base/index.ts'
 import { registerSettingResources } from '~/platform/settings/index.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = testDatabaseUrl()
 const run = url ? describe : describe.skip
@@ -19,7 +20,7 @@ run('PG 集成（角色菜单白名单）', () => {
   registerBaseResources(registry)
   registerIamResources(registry)
   const iam = createIamService(db, registry)
-  const adminActor: Actor = {
+  const adminActor: Actor = testActor({
     userId: crypto.randomUUID(),
     username: 'role-menu-test',
     name: null,
@@ -27,7 +28,7 @@ run('PG 集成（角色菜单白名单）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
   /** 无任何权限的普通操作者（fail-closed 门控断言用） */
   const plainActor: Actor = { ...adminActor, userId: crypto.randomUUID(), superAdmin: false }
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8)

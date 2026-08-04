@@ -14,6 +14,7 @@ function fixtureMeta(overrides: Partial<ResourceMeta> = {}): ResourceMeta {
     name: 'testThings',
     permissionPrefix: 'test.thing',
     permissionLabel: '测试',
+    authz: { kind: 'global' },
     table: 'test_thing',
     fields: [
       { name: 'id', apiName: 'id', dbColumn: 'id', type: 'uuid', label: 'id' },

@@ -13,6 +13,7 @@ import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createReconciliationService } from '~/modules/trading/reconciliation/service.ts'
 import { createVatInvoiceService } from './invoice-service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -47,7 +48,7 @@ run('PG 集成（增值税发票）', () => {
   const reconItemId = crypto.randomUUID()
   const userId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId,
     username: 'inv-test',
     name: '发票测试',
@@ -55,7 +56,7 @@ run('PG 集成（增值税发票）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 
   const today = '2099-03-15'
 

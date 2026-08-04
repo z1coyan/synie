@@ -10,9 +10,10 @@ import { HR_ATTENDANCE_DAY } from '~/modules/hr/permissions.ts'
 import { ACC_BANK_TRANSACTION } from '~/modules/finance/permissions.ts'
 import { requirePermission } from '../authz/actor.ts'
 import { createSealedResourceRegistry } from './register-all.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 function actor(permissions: string[]): Actor {
-  return {
+  return testActor({
     userId: 'u-no-cmd',
     username: 'no-cmd',
     name: null,
@@ -20,7 +21,7 @@ function actor(permissions: string[]): Actor {
     allCompanies: true,
     permissions: new Set(permissions),
     companyIds: [],
-  }
+  })
 }
 
 describe('语义 command 鉴权与 Catalog 对齐', () => {

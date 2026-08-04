@@ -1,3 +1,4 @@
+import { testActor } from '~/platform/authz/testing.ts'
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
@@ -10,7 +11,7 @@ const run = url ? describe : describe.skip
 run('PG 集成（numbering）', () => {
   const db = createDb(url!)
   const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: crypto.randomUUID(),
     username: 'numbering-test',
     name: null,
@@ -18,7 +19,7 @@ run('PG 集成（numbering）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 
   afterAll(async () => {
     await db.destroy()

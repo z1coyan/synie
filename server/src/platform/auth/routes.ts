@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
+import { topAtom } from '../authz/core/index.ts'
 import type { AppEnv } from '../http/context.ts'
 import { validationHook } from '../http/zod.ts'
 import { requireAuth } from './middleware.ts'
@@ -29,12 +30,20 @@ export function authRoutes(auth: AuthService) {
     .get('/me', requireAuth(auth), async (c) => {
       const actor = c.get('actor')
       const menuCodes = await auth.menuCodes(actor)
+      // Actor v2 投影：精确码（无通配）+ 每码数据范围 + 部门维度。
+      // permissions 仍以纯码数组并存，供前端换代前消费（工单 14 收口后移除）。
+      const grants = [...actor.grants.entries()]
+        .map(([code, scopes]) => ({ code, scope: topAtom(scopes) ?? 'none' }))
+        .sort((a, b) => a.code.localeCompare(b.code))
       return c.json({
         user: { id: actor.userId, username: actor.username, name: actor.name },
         superAdmin: actor.superAdmin,
-        allCompanies: actor.allCompanies,
-        permissions: [...actor.permissions].sort(),
-        companyIds: actor.companyIds,
+        allCompanies: actor.companies.all,
+        permissions: grants.map((g) => g.code),
+        grants,
+        companyIds: actor.companies.ids,
+        departmentId: actor.deptId,
+        departmentSubtreeIds: actor.deptSubtreeIds,
         menuCodes,
       })
     })

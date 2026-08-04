@@ -11,6 +11,7 @@ import { buildNumberingCatalog, createNumberingService } from '~/platform/number
 import type { Actor } from '~/platform/authz/actor.ts'
 import type { TradingSide } from '../common.ts'
 import { createQuotationService, type QuotationDraftInput } from './service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -29,7 +30,7 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
   const categoryId = crypto.randomUUID()
   const materialId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'quotation-audit-test',
     name: '报价审核测试',
@@ -37,7 +38,7 @@ run('PG 集成（报价审核/作废：状态翻转骨架）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 
   function input(side: TradingSide, quotationNo: string): QuotationDraftInput {
     return {

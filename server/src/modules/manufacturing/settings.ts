@@ -35,6 +35,7 @@ export function manufacturingSettingResourceMeta(): ResourceMeta {
     permissionPrefix: 'mfg.setting',
     permissionLabel: '生产设置',
     table: 'mfg_setting',
+    authz: { kind: 'global' },
     fields: [
       {
         name: 'id',

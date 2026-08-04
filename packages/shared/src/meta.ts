@@ -141,9 +141,17 @@ export interface ResourceSummary {
   permissionLabel: string
 }
 
-/** 权限目录分组：前缀 + 中文标签 + 动作集（GET /api/v1/meta/permission-catalog） */
+/** 授权数据范围（封闭集，见 ADR 2026-08-04）；company 为外层边界不入授权维度 */
+export type DataScope = 'all' | 'deptTree' | 'dept' | 'self'
+
+/**
+ * 权限目录分组：前缀 + 中文标签 + 动作集 + 该资源支持的数据范围
+ * （GET /api/v1/meta/permission-catalog）。
+ * supportedScopes 由 ResourceMeta.authz 声明推导：无 owner 声明无 self、无 dept 声明无 dept/deptTree。
+ */
 export interface PermissionGroup {
   prefix: string
   label: string
   actions: string[]
+  supportedScopes: DataScope[]
 }

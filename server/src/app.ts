@@ -94,6 +94,7 @@ import type { SettingsService } from './platform/settings/service.ts'
 import { printingRoutes, systemPrintingRoutes } from './platform/printing/routes.ts'
 import type { PrintingService } from './platform/printing/service.ts'
 import { todoRoutes, type TodoService } from './platform/todo/index.ts'
+import type { AuthzEnforcer } from './platform/authz/enforce.ts'
 import { setupRoutes, type SetupService } from './platform/setup/index.ts'
 
 /**
@@ -108,6 +109,8 @@ export interface AppDeps {
   /** Logto OIDC 是否启用（env 三件套齐备）；透出到 setup status 供登录页判断 */
   logtoEnabled: boolean
   registry: Registry
+  /** 授权执行面（guard / decideFor / targetOf）；由 registry 派生 */
+  authz: AuthzEnforcer
   settings: SettingsService
   numbering: NumberingService
   files: FileService

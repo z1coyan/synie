@@ -8,6 +8,7 @@ import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import { buildNumberingCatalog, createNumberingService } from '~/platform/numbering/index.ts'
 import { createCompanyService } from '../base/company-service.ts'
 import { createInventoryServices } from './index.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -46,7 +47,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
   const numbering = createNumberingService(db, buildNumberingCatalog(createSealedResourceRegistry()))
   const companies = createCompanyService(db)
   const inv = createInventoryServices(db, numbering)
-  let actor: Actor = {
+  let actor: Actor = testActor({
     userId: crypto.randomUUID(),
     username: 'inv-test',
     name: null,
@@ -54,7 +55,7 @@ run('PG 集成（库存单据状态机与引擎）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()
   const tracked: {
     companyIds: string[]

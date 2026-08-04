@@ -10,6 +10,7 @@ import { createInventoryEngine } from '~/engines/inventory/index.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
 import { createOutsourcedConfigService } from '../order/outsourced-config.ts'
 import { createOutsourcedService } from './service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 function expectQty(got: string | undefined, want: string) {
   expect(decimal(got ?? 'NaN').equals(decimal(want))).toBe(true)
@@ -46,7 +47,7 @@ run('PG 集成（委外发料/入库生命周期）', () => {
     gl: createGlEngine(),
   })
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'admin',
     name: 'admin',
@@ -54,7 +55,7 @@ run('PG 集成（委外发料/入库生命周期）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 
   beforeAll(async () => {
     await sql`

@@ -32,6 +32,7 @@ export function instrumentResourceMeta(): ResourceMeta {
     permissionPrefix: INSTRUMENT_PERMISSION_PREFIX,
     permissionLabel: '行情品种',
     table: 'bas_market_instrument',
+    authz: { kind: 'global' },
     fields: [
       {
         name: 'id',
@@ -202,6 +203,7 @@ export function pricePointResourceMeta(): ResourceMeta {
     permissionPrefix: PRICE_POINT_PERMISSION_PREFIX,
     permissionLabel: '行情价点',
     table: 'bas_market_price_point',
+    authz: { kind: 'global' },
     fields: [
       {
         name: 'id',

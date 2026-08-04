@@ -41,6 +41,7 @@ export function salesResourceMeta(): ResourceMeta {
     permissionPrefix: 'sales.setting',
     permissionLabel: '供应链设置',
     table: 'sal_setting',
+    authz: { kind: 'global' },
     fields: [
       field('id', 'id', 'uuid', 'id', true, false),
       field('sample_item_max_qty', 'sampleItemMaxQty', 'integer', '样品订单条目数量上限', true, true),

@@ -6,9 +6,10 @@ import { describe, expect, test } from 'bun:test'
 import type { Actor } from '../authz/actor.ts'
 import { createSealedResourceRegistry } from './register-all.ts'
 import { CURRENCY_RESOURCE_NAME } from '~/modules/base/meta.ts'
+import { testActor, type TestActorInput } from '~/platform/authz/testing.ts'
 
-function actor(partial: Partial<Actor> & Pick<Actor, 'permissions'>): Actor {
-  return {
+function actor(partial: TestActorInput): Actor {
+  return testActor({
     userId: 'u-char',
     username: 'char',
     name: null,
@@ -16,10 +17,10 @@ function actor(partial: Partial<Actor> & Pick<Actor, 'permissions'>): Actor {
     allCompanies: true,
     companyIds: [],
     ...partial,
-  }
+  })
 }
 
-const superAdmin: Actor = {
+const superAdmin: Actor = testActor({
   userId: 'u-admin',
   username: 'admin',
   name: null,
@@ -27,7 +28,7 @@ const superAdmin: Actor = {
   allCompanies: true,
   permissions: new Set(),
   companyIds: [],
-}
+})
 
 describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
   const registry = createSealedResourceRegistry()
@@ -61,24 +62,24 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
   })
 
   test('Actor capability 按 permissionAction 投影，不含无权动作', () => {
-    const readOnly = actor({
+    const readOnly = actor(testActor({
       permissions: new Set(['base.currency:read']),
-    })
+    }))
     const doc = registry.buildDocument(CURRENCY_RESOURCE_NAME, readOnly)
     expect(doc.capabilities).toEqual([])
     expect(doc.commands).toEqual([])
 
-    const editor = actor({
+    const editor = actor(testActor({
       permissions: new Set(['base.currency:read', 'base.currency:update']),
-    })
+    }))
     const editDoc = registry.buildDocument(CURRENCY_RESOURCE_NAME, editor)
     expect(editDoc.capabilities).toEqual(['update'])
   })
 
   test('普通外键：有目标读取权时保留 reference', () => {
-    const withCurrency = actor({
+    const withCurrency = actor(testActor({
       permissions: new Set(['base.company:read', 'base.currency:read']),
-    })
+    }))
     const doc = registry.buildDocument('basCompanies', withCurrency)
     const baseCurrency = doc.fields.find((f) => f.name === 'baseCurrencyId')
     expect(baseCurrency?.kind).toBe('reference')
@@ -89,9 +90,9 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
   })
 
   test('普通外键：无目标读取权时标记 targetUnavailable', () => {
-    const noCurrency = actor({
+    const noCurrency = actor(testActor({
       permissions: new Set(['base.company:read']),
-    })
+    }))
     const doc = registry.buildDocument('basCompanies', noCurrency)
     const baseCurrency = doc.fields.find((f) => f.name === 'baseCurrencyId')
     expect(baseCurrency?.kind).toBe('reference')
@@ -101,9 +102,9 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
   })
 
   test('多态外键：仅保留 Actor 可读的 variants', () => {
-    const onlyCompany = actor({
+    const onlyCompany = actor(testActor({
       permissions: new Set(['acc.gl_entry:read', 'base.company:read']),
-    })
+    }))
     const doc = registry.buildDocument('accGlEntries', onlyCompany)
     const party = doc.fields.find((f) => f.name === 'partyId')
     expect(party?.kind).toBe('polymorphicReference')
@@ -112,9 +113,9 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       expect(party.targetUnavailable).toBeFalsy()
     }
 
-    const noTarget = actor({
+    const noTarget = actor(testActor({
       permissions: new Set(['acc.gl_entry:read']),
-    })
+    }))
     const degraded = registry.buildDocument('accGlEntries', noTarget)
     const partyDegraded = degraded.fields.find((f) => f.name === 'partyId')
     expect(partyDegraded?.kind).toBe('polymorphicReference')
@@ -125,9 +126,9 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
   })
 
   test('自定义 permissionAction：setDefault 贡献 update capability 与 command', () => {
-    const updater = actor({
+    const updater = actor(testActor({
       permissions: new Set(['sys.storage:read', 'sys.storage:update']),
-    })
+    }))
     const doc = registry.buildDocument('sysStorages', updater)
     expect(doc.capabilities).toContain('update')
     const setDefault = doc.commands.find((a) => a.key === 'setDefault')
@@ -142,9 +143,9 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
   })
 
   test('语义 command：banking reconcile 与 attendance recalc', () => {
-    const recon = actor({
+    const recon = actor(testActor({
       permissions: new Set(['acc.bank_transaction:read', 'acc.bank_transaction:reconcile']),
-    })
+    }))
     const reconDoc = registry.buildDocument('accBankTransactions', recon)
     expect(reconDoc.capabilities).toContain('reconcile')
     expect(reconDoc.capabilities).not.toContain('export')
@@ -154,9 +155,9 @@ describe('Resource Catalog 特征：统一注册与 Actor 投影', () => {
       reconMeta.actions.some((a) => a.key === 'export' && a.permissionAction === 'reconcile'),
     ).toBe(true)
 
-    const recalc = actor({
+    const recalc = actor(testActor({
       permissions: new Set(['hr.attendance_day:read', 'hr.attendance_day:recalc']),
-    })
+    }))
     const recalcDoc = registry.buildDocument('hrAttendanceDays', recalc)
     expect(recalcDoc.capabilities).toContain('recalc')
     expect(recalcDoc.capabilities).not.toContain('import')

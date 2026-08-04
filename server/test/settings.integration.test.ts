@@ -1,3 +1,4 @@
+import { testActor } from '~/platform/authz/testing.ts'
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createDb } from '~/db/index.ts'
 import { createAccountingSettingService } from '~/modules/finance/settings.ts'
@@ -16,7 +17,7 @@ run('PG 集成（settings）', () => {
     manufacturing: createManufacturingSettingService(db),
     accounting: createAccountingSettingService(db),
   })
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: crypto.randomUUID(),
     username: 'settings-test',
     name: null,
@@ -24,7 +25,7 @@ run('PG 集成（settings）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 
   afterAll(async () => {
     await db.destroy()

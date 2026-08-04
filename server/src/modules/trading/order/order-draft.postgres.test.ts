@@ -2,6 +2,7 @@
  * 销售/采购订单 Aggregate Draft PG 集成：完整 HTTP seam、采购委外子树与回滚。
  * 门控 SYNIE_TEST_DATABASE_URL。
  */
+import { testActor } from '~/platform/authz/testing.ts'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { sql } from 'kysely'
@@ -50,7 +51,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
   const rawMaterialId = crypto.randomUUID()
   const byproductId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'order-draft-test',
     name: '订单聚合草稿测试',
@@ -58,7 +59,7 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
   const auth = {
     authenticate: async () => actor,
     authenticateRequest: async () => actor,
@@ -141,12 +142,12 @@ run('PG 集成（销售/采购订单 Aggregate Draft）', () => {
   }
 
   function limitedActor(...actions: Array<'update' | 'create' | 'delete'>): Actor {
-    return {
+    return testActor({
       ...actor,
       username: `order-${actions.join('-')}`,
       superAdmin: false,
       permissions: new Set(actions.map((action) => `purchase.order:${action}`)),
-    }
+    })
   }
 
   function replaceInputFromSaved(saved: OrderSavedDraft): OrderDraftInput {

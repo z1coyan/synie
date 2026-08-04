@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { ApiError } from '../http/errors.ts'
 import { createSetupService } from './service.ts'
 import { createTokenManager } from '../auth/token.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 /**
  * 不依赖 PG 的校验路径：通过 stub db 触发 service 层参数校验。
@@ -32,7 +33,7 @@ describe('setup service 参数校验', () => {
   test('complete 非法语言 validation', async () => {
     await expect(
       setup.complete(
-        {
+        testActor({
           userId: crypto.randomUUID(),
           username: 'u',
           name: null,
@@ -40,14 +41,14 @@ describe('setup service 参数校验', () => {
           allCompanies: true,
           permissions: new Set(),
           companyIds: [],
-        },
+        }),
         'fr-FR',
         false,
       ),
     ).rejects.toBeInstanceOf(ApiError)
     try {
       await setup.complete(
-        {
+        testActor({
           userId: crypto.randomUUID(),
           username: 'u',
           name: null,
@@ -55,7 +56,7 @@ describe('setup service 参数校验', () => {
           allCompanies: true,
           permissions: new Set(),
           companyIds: [],
-        },
+        }),
         'fr-FR',
         false,
       )

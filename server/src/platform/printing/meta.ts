@@ -13,6 +13,7 @@ export function printTemplateResourceMeta(): ResourceMeta {
     permissionPrefix: PERMISSION_PREFIX,
     permissionLabel: '打印模板',
     table: 'sys_print_template',
+    authz: { kind: 'global' },
     print: true,
     audit: { enabled: true },
     fields: [

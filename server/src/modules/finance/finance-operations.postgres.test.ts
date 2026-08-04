@@ -15,6 +15,7 @@ import { createExpenseService } from './expense-service.ts'
 import { createBillService } from './bill-service.ts'
 import { createVatInvoiceService } from './invoice-service.ts'
 import { createReconciliationService } from '~/modules/trading/reconciliation/service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -46,7 +47,7 @@ run('PG 集成（财务运营 12）', () => {
   const accountInterest = crypto.randomUUID()
   const userId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId,
     username: 'fo-test',
     name: '财务运营测试',
@@ -54,7 +55,7 @@ run('PG 集成（财务运营 12）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
+  })
 
   const today = '2099-06-15'
   const due = '2099-12-31'
@@ -98,7 +99,7 @@ run('PG 集成（财务运营 12）', () => {
           ${companyId}::uuid, ${currencyId}::uuid, NULL)
     `.execute(db)
     // 取号规则按 resource 全局唯一启用；测试库可能已有，缺失时再补
-    const numberingActor: Actor = {
+    const numberingActor: Actor = testActor({
       userId,
       username: 'fo-test',
       name: '财务运营测试',
@@ -106,7 +107,7 @@ run('PG 集成（财务运营 12）', () => {
       allCompanies: true,
       permissions: new Set(['sys.numbering:create', 'sys.numbering:read']),
       companyIds: [],
-    }
+    })
     for (const resource of [
       'acc.expense_report',
       'acc.bill_transaction',

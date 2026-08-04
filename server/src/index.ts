@@ -8,6 +8,8 @@ import { createRateLimiter } from './platform/auth/limiter.ts'
 import { createAuthService } from './platform/auth/service.ts'
 import { createAuthStore } from './platform/auth/store.ts'
 import { createTokenManager } from './platform/auth/token.ts'
+import { createActorAssembler, createAuthzStore } from './platform/authz/index.ts'
+import { createAuthzEnforcer } from './platform/authz/enforce.ts'
 import { createRegistry } from './platform/meta/registry.ts'
 import { registerAllResources } from './platform/meta/register-all.ts'
 import { createSofficeConverter } from './platform/printing/index.ts'
@@ -24,19 +26,24 @@ const betterAuth = createBetterAuth({
   allowedHosts: env.betterAuthAllowedHosts,
   logto: env.logto,
 })
-const auth = await createAuthService({
-  store: createAuthStore(db),
-  tokens,
-  limiter: createRateLimiter(),
-  betterAuth,
-})
-
+// Registry 先于 Actor 装配：grants_all 展开以 sealed 权限目录为基准
 const registry = createRegistry()
 registerAllResources(registry)
 const sealReport = registry.seal()
 logJson('info', 'meta.catalog.sealed', {
   total: sealReport.total,
   normalized: sealReport.normalized,
+})
+
+const auth = await createAuthService({
+  store: createAuthStore(db),
+  actors: createActorAssembler({
+    store: createAuthzStore(db),
+    allPermissionCodes: () => registry.allPermissionCodes(),
+  }),
+  tokens,
+  limiter: createRateLimiter(),
+  betterAuth,
 })
 
 const services = createServices(db, {
@@ -55,6 +62,7 @@ const app = buildApp({
   betterAuth,
   logtoEnabled: Boolean(env.logto),
   registry,
+  authz: createAuthzEnforcer(registry),
   ...toAppDeps(services),
 })
 

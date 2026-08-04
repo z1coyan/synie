@@ -162,6 +162,7 @@ export function fulfillmentHeadMeta(side: TradingSide): ResourceMeta {
     numbering: true,
     permissionLabel: spec.label,
     table: spec.headTable,
+    authz: { kind: 'company' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f(spec.numberCol, spec.numberApi, 'string', sales ? '发货单号' : '入库单号', {
@@ -240,6 +241,7 @@ export function fulfillmentItemMeta(side: TradingSide): ResourceMeta {
     permissionPrefix: spec.prefix,
     permissionLabel: spec.label,
     table: spec.itemTable,
+    authz: { kind: 'via', parent: spec.headResource, fk: spec.parentCol },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),
@@ -349,6 +351,7 @@ export function packBoxMeta(): ResourceMeta {
     permissionPrefix: 'sales.delivery',
     permissionLabel: '销售发货单',
     table: 'sal_delivery_pack_box',
+    authz: { kind: 'via', parent: 'salDeliveries', fk: 'delivery_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('box_no', 'boxNo', 'integer', '箱号(系统生成)', { readonly: true, filterable: true, sortable: true }),
@@ -375,6 +378,7 @@ export function packLineMeta(): ResourceMeta {
     permissionPrefix: 'sales.delivery',
     permissionLabel: '销售发货单',
     table: 'sal_delivery_pack_line',
+    authz: { kind: 'via', parent: 'salDeliveryPackBoxes', fk: 'pack_box_id' },
     fields: [
       f('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
       f('idx', 'idx', 'integer', '行号', { required: true, filterable: true, sortable: true }),

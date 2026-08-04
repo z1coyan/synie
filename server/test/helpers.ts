@@ -6,6 +6,8 @@ import { createBetterAuth, type SynieBetterAuth } from '~/platform/auth/better-a
 import { createRateLimiter } from '~/platform/auth/limiter.ts'
 import { createAuthService, type AuthService } from '~/platform/auth/service.ts'
 import { createAuthStore } from '~/platform/auth/store.ts'
+import { createActorAssembler, createAuthzStore } from '~/platform/authz/index.ts'
+import { createAuthzEnforcer } from '~/platform/authz/enforce.ts'
 import { createTokenManager } from '~/platform/auth/token.ts'
 import { createSealedResourceRegistry } from '~/platform/meta/register-all.ts'
 import type { Registry } from '~/platform/meta/registry.ts'
@@ -27,9 +29,17 @@ export function createTestBetterAuth(db: Kysely<Database>): SynieBetterAuth {
 export async function createTestAuth(
   db: Kysely<Database>,
   betterAuth?: SynieBetterAuth,
+  registry?: Registry,
 ): Promise<AuthService> {
+  const codes = registry ?? createSealedResourceRegistry()
   return createAuthService({
     store: createAuthStore(db),
+    actors: createActorAssembler({
+      store: createAuthzStore(db),
+      allPermissionCodes: () => codes.allPermissionCodes(),
+      // 测试内多次改授权后立即重读：关掉 TTL 缓存
+      ttlMs: 0,
+    }),
     tokens: createTokenManager({ secret: TEST_AUTH_SECRET, ttlSeconds: 3600 }),
     limiter: createRateLimiter(),
     betterAuth,
@@ -54,8 +64,8 @@ export async function buildTestApp(
   options: TestAppOptions = {},
 ): Promise<ApiType> {
   const betterAuth = options.betterAuth ?? createTestBetterAuth(db)
-  const auth = options.auth ?? (await createTestAuth(db, betterAuth))
   const registry = options.registry ?? createPlatformRegistry()
+  const auth = options.auth ?? (await createTestAuth(db, betterAuth, registry))
   const services = createServices(db, {
     registry,
     tokens: createTokenManager({ secret: TEST_AUTH_SECRET, ttlSeconds: 3600 }),
@@ -67,6 +77,7 @@ export async function buildTestApp(
     betterAuth,
     logtoEnabled: false,
     registry,
+    authz: createAuthzEnforcer(registry),
     ...toAppDeps(services),
   })
 }

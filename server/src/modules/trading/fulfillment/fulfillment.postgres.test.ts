@@ -29,6 +29,7 @@ import {
   type SalesDraftInput,
 } from './service.ts'
 import { fulfillmentItemMeta, packBoxMeta, packLineMeta } from './spec.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -67,7 +68,7 @@ run('PG 集成（履约聚合草稿）', () => {
   const purchaseOrder2Id = crypto.randomUUID()
   const purchaseOrder2ItemId = crypto.randomUUID()
 
-  const actor: Actor = {
+  const actor: Actor = testActor({
     userId: '',
     username: 'packbox-test',
     name: '装箱箱测试',
@@ -75,26 +76,26 @@ run('PG 集成（履约聚合草稿）', () => {
     allCompanies: true,
     permissions: new Set(),
     companyIds: [],
-  }
-  const readOnlyActor: Actor = {
+  })
+  const readOnlyActor: Actor = testActor({
     ...actor,
     username: 'packbox-read-only',
     superAdmin: false,
     permissions: new Set(['sales.delivery:read']),
-  }
-  const noReadActor: Actor = {
+  })
+  const noReadActor: Actor = testActor({
     ...actor,
     username: 'packbox-no-read',
     superAdmin: false,
     permissions: new Set(),
-  }
+  })
   function limitedActor(prefix: string, actions: Array<'read' | 'update' | 'create' | 'delete'>): Actor {
-    return {
+    return testActor({
       ...actor,
       username: `${prefix}-${actions.join('-')}`,
       superAdmin: false,
       permissions: new Set(actions.map((action) => `${prefix}:${action}`)),
-    }
+    })
   }
   const byToken = (token: string | null) => {
     if (token === 'read-only') return readOnlyActor

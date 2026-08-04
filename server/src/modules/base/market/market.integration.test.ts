@@ -9,6 +9,7 @@ import { createSalesSettingService } from '~/modules/trading/settings.ts'
 import { createSettingsService } from '~/platform/settings/service.ts'
 import { buildTestApp, testDatabaseUrl } from '../../../../test/helpers.ts'
 import type { Actor } from '~/platform/authz/actor.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const dbUrl = testDatabaseUrl()
 
@@ -69,7 +70,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
     }
     expect(body).toBeTruthy()
     token = body!.token
-    actor = {
+    actor = testActor({
       userId: body!.user.id,
       username: body!.user.username,
       name: null,
@@ -77,7 +78,7 @@ describe.skipIf(!dbUrl)('market integration', () => {
       allCompanies: true,
       permissions: new Set(['*']),
       companyIds: [],
-    }
+    })
 
     // 共享库可能被 setup 清空后残留 inactive 币种；优先启用已有 CNY/任意币种
     let cur = await db

@@ -1022,7 +1022,8 @@ async function requireAccessibleFile(
   actor: Actor,
   fileId: string,
 ): Promise<void> {
-  if (actor.superAdmin || actor.allCompanies) {
+  const scope = companyFilter(actor)
+  if (scope.bypass) {
     const exists = await sql<{ e: boolean }>`
       SELECT EXISTS(SELECT 1 FROM sys_file WHERE id=${fileId}::uuid) AS e
     `.execute(db)
@@ -1034,7 +1035,7 @@ async function requireAccessibleFile(
       SELECT 1 FROM sys_file f WHERE f.id=${fileId}::uuid AND (
         f.uploaded_by_id=${actor.userId}::uuid OR EXISTS(
           SELECT 1 FROM sys_attachment a WHERE a.file_id=f.id
-            AND a.company_id=ANY(${[...actor.companyIds]}::uuid[])
+            AND a.company_id=ANY(${[...scope.ids]}::uuid[])
         )
       )
     ) AS e

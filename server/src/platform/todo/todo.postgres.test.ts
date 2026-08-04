@@ -9,6 +9,7 @@ import type { Actor } from '~/platform/authz/actor.ts'
 import { ApiError } from '~/platform/http/errors.ts'
 import { createTodoSourceRegistry } from './source-registry.ts'
 import { createTodoService } from './service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
 const url = process.env.SYNIE_TEST_DATABASE_URL
 const run = url ? describe : describe.skip
@@ -57,7 +58,7 @@ run('PG 集成（待办）', () => {
   const historyId = crypto.randomUUID()
   const otherCompanyTodo = crypto.randomUUID()
 
-  const actorA: Actor = {
+  const actorA: Actor = testActor({
     userId: userA,
     username: 'todo-a',
     name: 'A',
@@ -65,8 +66,8 @@ run('PG 集成（待办）', () => {
     allCompanies: false,
     permissions: new Set(['acc.vat_invoice:create', 'acc.vat_invoice:read']),
     companyIds: [companyA],
-  }
-  const actorB: Actor = {
+  })
+  const actorB: Actor = testActor({
     userId: userB,
     username: 'todo-b',
     name: 'B',
@@ -74,8 +75,8 @@ run('PG 集成（待办）', () => {
     allCompanies: false,
     permissions: new Set(['acc.vat_invoice:create', 'acc.vat_invoice:read']),
     companyIds: [companyA],
-  }
-  const readOnly: Actor = {
+  })
+  const readOnly: Actor = testActor({
     userId: userA,
     username: 'todo-ro',
     name: 'RO',
@@ -83,8 +84,8 @@ run('PG 集成（待办）', () => {
     allCompanies: false,
     permissions: new Set(['acc.vat_invoice:read']),
     companyIds: [companyA],
-  }
-  const wrongCompany: Actor = {
+  })
+  const wrongCompany: Actor = testActor({
     userId: userA,
     username: 'todo-wc',
     name: 'WC',
@@ -92,7 +93,7 @@ run('PG 集成（待办）', () => {
     allCompanies: false,
     permissions: new Set(['acc.vat_invoice:create', 'acc.vat_invoice:read']),
     companyIds: [companyB],
-  }
+  })
 
   beforeAll(async () => {
     await sql`

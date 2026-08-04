@@ -10,8 +10,9 @@ import { orderHeadRoutes } from './order/routes.ts'
 import type { OrderService } from './order/service.ts'
 import { quotationHeadRoutes } from './quotation/routes.ts'
 import type { QuotationService } from './quotation/service.ts'
+import { testActor } from '~/platform/authz/testing.ts'
 
-const actor: Actor = {
+const actor: Actor = testActor({
   userId: '',
   username: 'aggregate-route-test',
   name: '聚合路由测试',
@@ -19,7 +20,7 @@ const actor: Actor = {
   allCompanies: true,
   permissions: new Set(),
   companyIds: [],
-}
+})
 
 const auth = {
   authenticate: async () => actor,

@@ -3,6 +3,7 @@ import { createRegistry } from '~/platform/meta/registry.ts'
 import { allInventoryResourceMetas } from './meta.ts'
 import { wireDecimal } from './helpers.ts'
 import { decimal } from '@synie/shared'
+import { testActor } from '~/platform/authz/testing.ts'
 
 describe('inventory meta 注册', () => {
   test('11 个资源可注册且权限前缀标签一致', () => {
@@ -33,7 +34,7 @@ describe('inventory meta 注册', () => {
     for (const meta of allInventoryResourceMetas()) {
       registry.register(meta)
     }
-    const actor = {
+    const actor = testActor({
       userId: 'u',
       username: 'admin',
       name: null,
@@ -41,7 +42,7 @@ describe('inventory meta 注册', () => {
       allCompanies: true,
       permissions: new Set<string>(),
       companyIds: [],
-    }
+    })
     const doc = registry.buildDocument('invStockDocs', actor)
     expect(doc.capabilities).toContain('audit')
     expect(doc.capabilities).toContain('void')

@@ -11,6 +11,7 @@ export function fileResourceMeta(): ResourceMeta {
     permissionPrefix: 'sys.file',
     permissionLabel: '附件',
     table: 'sys_file',
+    authz: { kind: 'global' },
     print: true,
     audit: { enabled: true },
     fields: [
@@ -118,6 +119,7 @@ export function storageResourceMeta(): ResourceMeta {
     permissionPrefix: SYS_STORAGE.prefix,
     permissionLabel: '存储接入',
     table: 'sys_storage',
+    authz: { kind: 'global' },
     print: true,
     // exclude 保留历史审计面：密钥列从不进审计 diff（sensitiveFields 兜底脱敏）
     audit: { enabled: true, sensitiveFields: ['secret_access_key'], exclude: ['secret_access_key'] },
