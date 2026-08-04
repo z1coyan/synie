@@ -10,8 +10,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button, Input, Label, ListBox, Select, TextField, toast } from '@heroui/react'
 import { Sheet } from '@heroui-pro/react'
-import { SynieDataGrid } from '~/components/synie-data-grid/SynieDataGrid'
+import { SynieDataGrid, type ColumnOverride } from '~/components/synie-data-grid/SynieDataGrid'
 import { SynieAttachmentPanel } from '~/components/synie-attachment-panel/SynieAttachmentPanel'
+import { materialCellRender } from '~/components/synie-material-cell/MaterialCell'
 import { RemoteSelect } from '~/components/synie-remote-select/RemoteSelect'
 import { QueryState } from '~/components/synie-query-state/QueryState'
 import { useRecordDrawerUrl } from '~/lib/use-record-drawer-url'
@@ -25,14 +26,21 @@ export const Route = createFileRoute('/_app/mfg/molds')({
 })
 
 const RESOURCE = 'mfgMoldDesigns'
-const GRID_COLUMNS = [
-  'materialCode',
-  'materialName',
-  'materialSpec',
-  'moldType',
-  'unitName',
-  'insertedAt',
-]
+// 物料按全站约定合并为单个富单元格列(materialCode 列承载,名称/规格/外键经 extraFields 取回);
+// 图纸挂在物料上,不传 drawingOwnerType,缩略图回退物料当前图纸
+const GRID_COLUMNS = ['materialCode', 'moldType', 'unitName', 'insertedAt']
+
+const GRID_OVERRIDES = {
+  materialCode: {
+    label: '模具物料',
+    mobileRole: 'title',
+    filterField: 'materialId',
+    render: materialCellRender(),
+  },
+  moldType: { mobileRole: 'summary' },
+  unitName: { mobileRole: 'summary' },
+  insertedAt: { mobileRole: 'summary' },
+} satisfies Record<string, ColumnOverride>
 
 const MOLD_TYPES = [
   { value: 'STAMPING', label: '冲压' },
@@ -180,6 +188,8 @@ function MoldsPage() {
         <SynieDataGrid
           resource={RESOURCE}
           columns={GRID_COLUMNS}
+          overrides={GRID_OVERRIDES}
+          extraFields={['materialId', 'materialName', 'materialSpec']}
           onView={(r) => open('view', String(r.id))}
           onCreate={() => open('create')}
           onEdit={(r) => open('edit', String(r.id))}
