@@ -20,9 +20,11 @@
    - `attachments: { companyScoped }`：附件宿主，OwnerRegistry 由此派生。漏 → 该资源上传/挂接 400，前端用到才暴露 **[静默]**。
    - `todoSource`: 本资源开待办时声明 source_type，与消费域 registerSource 互为镜像断言。漏任一侧 → **[启动红]**。
 4. Service：Kysely + `buildListQuery(toReadSpec(meta))`，动态列表只走 meta 白名单。
-   授权走 Permit 凭证：列表 `listAuthorized({ permit, target, … })`、单记录 `loadAuthorized(…)`、
-   create 用 `assertCompanyWritable` + `ownershipStamp`。模块**不得**再 import
-   `requirePermission`/`companyScopeWhere` 等旧原语（`src/modules/authz-firewall.test.ts` 封路）。
+   授权走 Permit 凭证：`target` 取自 `registry.authzTarget(资源名)`（唯一解析点），
+   列表 `listAuthorized({ permit, target, … })`、单记录 `loadAuthorizedFrom(…)`（带 join 的投影）
+   或 `loadAuthorized({ forUpdate: true })`（裸表 + 行锁），create 用 `assertCompanyWritable` + `ownershipStamp`。
+   模块**不得**再 import `requirePermission`/`companyScopeWhere` 等旧原语
+   （`src/modules/authz-firewall.test.ts` 封路）。参照实现：`modules/iam/department-service.ts`。
 5. Routes：模块 `routes.ts` 定义端点并挂进 `app.ts`；每个端点挂 `deps.authz.guard(资源名, 动作)`，
    handler 用 `permitOf(c)` 取凭证。漏挂 → 服务层取 Permit 即抛 **[测试红]**；
    漏挂进 app.ts → 前端 transport 取不到 ApiType 路由 **[编译红（web）]**。

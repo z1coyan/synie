@@ -4,7 +4,7 @@
  * 取代全库「loadX + 公司闸」组合：统一 `not_found`（不泄露存在性）、折叠 `FOR UPDATE`。
  * update/delete/工作流命令一律经此取行——「只能改本人/本部门单据」零模块代码。
  */
-import { sql } from 'kysely'
+import { sql, type RawBuilder } from 'kysely'
 import { compileRowFilter } from '~/db/authz-sql.ts'
 import { ident } from '~/db/ident.ts'
 import type { DbHandle } from '~/db/tx.ts'
@@ -51,6 +51,46 @@ export async function findAuthorized(
     WHERE ${table}.id = ${options.id}::uuid AND ${where}${lock}
   `.execute(options.db)
   return result.rows[0] ?? null
+}
+
+export interface LoadProjectedOptions<T> {
+  db: DbHandle
+  permit: Permit
+  target: AuthzTarget
+  /** 目标行在 source 中的别名（子查询别名；`FROM x` 时即表名） */
+  alias: string
+  /** 不含 WHERE 的 FROM 子句（与列表共用同一份投影） */
+  source: RawBuilder<unknown>
+  select: RawBuilder<unknown>
+  id: string
+  mapRow: (row: Record<string, unknown>) => T
+  notFoundMessage?: string
+}
+
+/**
+ * 按 Permit 从**投影**（带 join 的 SOURCE 子查询）取一行：
+ * 服务层的 `get` 与列表共用同一份 SQL 投影，无需为鉴权再查一次裸表。
+ * 行锁请用 `loadAuthorized({ forUpdate: true })`（子查询不能加 FOR UPDATE）。
+ */
+export async function loadAuthorizedFrom<T>(options: LoadProjectedOptions<T>): Promise<T> {
+  const row = await findAuthorizedFrom(options)
+  if (row === null) {
+    throw new ApiError('not_found', options.notFoundMessage ?? '记录不存在')
+  }
+  return row
+}
+
+/** 同 loadAuthorizedFrom，但不命中返回 null（本文件内消费；调用方需要时再 export） */
+async function findAuthorizedFrom<T>(
+  options: LoadProjectedOptions<T>,
+): Promise<T | null> {
+  const where = compileRowFilter(options.permit, options.target, options.alias)
+  const result = await sql<Record<string, unknown>>`
+    ${options.select}${options.source}
+    WHERE ${ident(options.alias)}.id = ${options.id}::uuid AND ${where}
+  `.execute(options.db)
+  const row = result.rows[0]
+  return row ? options.mapRow(row) : null
 }
 
 /**

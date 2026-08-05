@@ -14,6 +14,82 @@ export const USER_RESOURCE = 'sysUsers'
 export const ROLE_RESOURCE = 'sysRoles'
 export const ROLE_PERM_RESOURCE = 'sysRolePermissions'
 export const ROLE_MENU_RESOURCE = 'sysRoleMenus'
+export const DEPARTMENT_RESOURCE = 'sysDepartments'
+
+/**
+ * 部门：挂公司的组织树主数据（IAM 拥有），dept/deptTree 数据范围的取值来源。
+ * 自身按公司域判定——本资源即新授权体系（guard + Permit）的首个消费者。
+ */
+export function departmentResourceMeta(): ResourceMeta {
+  return {
+    name: DEPARTMENT_RESOURCE,
+    classification: { presentation: 'basic', interactive: true },
+    permissionPrefix: 'sys.department',
+    permissionLabel: '部门',
+    table: 'sys_department',
+    authz: { kind: 'company' },
+    fields: [
+      field('id', 'id', 'uuid', 'id', { readonly: true, sortable: true }),
+      field('code', 'code', 'string', '部门编码', {
+        required: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('name', 'name', 'string', '部门名称', {
+        required: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('enabled', 'enabled', 'boolean', '启用', { filterable: true, sortable: true }),
+      field('has_children', 'hasChildren', 'boolean', '含下级部门', {
+        calculated: true,
+        printOnly: true,
+      }),
+      field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('updated_at', 'updatedAt', 'datetime', '更新时间', {
+        readonly: true,
+        filterable: true,
+        sortable: true,
+      }),
+      field('company_id', 'companyId', 'fk', '公司', {
+        required: true,
+        createOnly: true,
+        filterable: true,
+        ref: { resource: 'basCompanies', relation: 'company', labelField: 'name' },
+      }),
+      field('parent_id', 'parentId', 'fk', '上级部门', {
+        filterable: true,
+        ref: { resource: DEPARTMENT_RESOURCE, relation: 'parent', labelField: 'name' },
+      }),
+    ],
+    actions: [
+      { key: 'read', label: '查看', scope: 'both' },
+      { key: 'create', label: '新增', scope: 'both' },
+      { key: 'update', label: '编辑', scope: 'row' },
+      { key: 'delete', label: '删除', scope: 'row', isDanger: true },
+    ],
+    form: {
+      kind: 'basic',
+      // enabled 走独立行动作（启停不进表单）；path 是物化实现细节，不投影
+      exclude: ['id', 'enabled', 'hasChildren', 'insertedAt', 'updatedAt'],
+      fields: {
+        code: { placeholder: '如 PROD、PROD-STAMP', span: 6 },
+        name: { placeholder: '如 冲压车间', span: 6 },
+        parentId: { placeholder: '留空即公司下的一级部门' },
+      },
+    },
+    lookup: {
+      labelField: 'name',
+      searchFields: ['name', 'code'],
+      subtitleFields: ['code'],
+    },
+    audit: { enabled: true },
+  }
+}
 
 export function userResourceMeta(): ResourceMeta {
   return {
@@ -41,6 +117,11 @@ export function userResourceMeta(): ResourceMeta {
         filterable: true,
         sortable: true,
       }),
+      // 单部门（兼任需求出现时再演进为关系表）；部门所在公司须在该用户公司授权集内
+      field('department_id', 'departmentId', 'fk', '部门', {
+        filterable: true,
+        ref: { resource: DEPARTMENT_RESOURCE, relation: 'department', labelField: 'name' },
+      }),
       field('inserted_at', 'insertedAt', 'datetime', '创建时间', {
         readonly: true,
         filterable: true,
@@ -64,6 +145,7 @@ export function userResourceMeta(): ResourceMeta {
         username: { placeholder: '如 zhangsan' },
         name: { placeholder: '如 张三' },
         email: { placeholder: '如 zhangsan@example.com（Logto 登录匹配用）' },
+        departmentId: { placeholder: '限所选公司下的部门' },
       },
     },
     // extra：角色/公司关联并入用户审计面（join 数组，非物理列）
@@ -204,5 +286,11 @@ export function roleMenuResourceMeta(): ResourceMeta {
 }
 
 export function allIamResourceMetas(): ResourceMeta[] {
-  return [userResourceMeta(), roleResourceMeta(), rolePermissionResourceMeta(), roleMenuResourceMeta()]
+  return [
+    departmentResourceMeta(),
+    userResourceMeta(),
+    roleResourceMeta(),
+    rolePermissionResourceMeta(),
+    roleMenuResourceMeta(),
+  ]
 }

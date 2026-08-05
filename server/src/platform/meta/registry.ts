@@ -18,8 +18,10 @@ import {
   assertAuthzClosure,
   assertValidAuthzDeclaration,
   resolveAuthzBinding,
+  resolveAuthzTarget,
   supportedScopesOf,
   type AuthzBinding,
+  type AuthzTarget,
 } from './resource-authz.ts'
 import type { ResourceMeta } from './types.ts'
 
@@ -43,6 +45,7 @@ export function createRegistry() {
   const resources = new Map<string, ResourceMeta>()
   const normalized = new Map<string, NormalizedResource>()
   const permissionLabels = new Map<string, string>()
+  const authzTargets = new Map<string, AuthzTarget>()
   let sealed = false
 
   function register(resource: ResourceMeta): void {
@@ -301,6 +304,18 @@ export function createRegistry() {
   }
 
   /**
+   * 已解析的判定归宿（via 链 + 列绑定）：guard 与各服务的 listAuthorized/loadAuthorized
+   * 共用**同一份**解析结果。seal 后记忆化（seal 前不缓存，避免注册中途的半成品被固化）。
+   */
+  function authzTarget(name: string): AuthzTarget {
+    const hit = authzTargets.get(name)
+    if (hit) return hit
+    const target = resolveAuthzTarget(name, (n) => resources.get(n))
+    if (sealed) authzTargets.set(name, target)
+    return target
+  }
+
+  /**
    * 全部权限码（目录派生，字典序）：`sys_role.grants_all` 展开与授权 sync 闭包校验的共同基准。
    */
   function allPermissionCodes(): string[] {
@@ -323,6 +338,7 @@ export function createRegistry() {
     summaries,
     permissionCatalog,
     authzBinding,
+    authzTarget,
     allPermissionCodes,
     catalogStats,
   }

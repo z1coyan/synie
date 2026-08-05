@@ -524,12 +524,11 @@ export const menuModules: MenuModule[] = [
             path: '/system/users',
             relatedPermissions: ['sys.user'],
           },
-          // TODO(另案): 部门管理路由未落地(无 depts.tsx),死菜单项,去留待拍板
           {
             code: 'menu.system.depts',
             label: '部门管理',
             path: '/system/depts',
-            relatedPermissions: [],
+            relatedPermissions: ['sys.department'],
           },
           {
             code: 'menu.system.roles',

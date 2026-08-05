@@ -26,7 +26,8 @@ import {
   payrollRoutes,
   type HrServices,
 } from './modules/hr/index.ts'
-import { iamRoleRoutes, iamUserRoutes } from './modules/iam/index.ts'
+import { iamDepartmentRoutes, iamRoleRoutes, iamUserRoutes } from './modules/iam/index.ts'
+import type { DepartmentService } from './modules/iam/index.ts'
 import type { IamService } from './modules/iam/service.ts'
 import {
   customerRoutes,
@@ -123,6 +124,8 @@ export interface AppDeps {
   accounts: AccountService
   market: MarketService
   iam: IamService
+  /** 部门（组织树主数据）；新授权体系首个 guard/Permit 消费者 */
+  departments: DepartmentService
   customers: CustomerService
   suppliers: SupplierService
   employees: EmployeeService
@@ -244,6 +247,10 @@ export function buildApp(deps: AppDeps) {
       }),
     )
     .route('/system/users', iamUserRoutes({ auth: deps.auth, iam: deps.iam }))
+    .route(
+      '/system/departments',
+      iamDepartmentRoutes({ auth: deps.auth, authz: deps.authz, departments: deps.departments }),
+    )
     .route('/system/roles', iamRoleRoutes({ auth: deps.auth, iam: deps.iam }))
     .route('/base/customers', customerRoutes({ auth: deps.auth, customers: deps.customers }))
     .route('/base/suppliers', supplierRoutes({ auth: deps.auth, suppliers: deps.suppliers }))

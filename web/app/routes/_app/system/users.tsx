@@ -178,7 +178,21 @@ function UsersPage() {
         exclude={userForm.formProps.exclude}
         // username/name 的 required/edit/placeholder 由 Catalog Basic Form 投影；
         // 角色/公司 multi-select 为 Presentation Extension（extraContent）
-        fields={userForm.formProps.fields}
+        fields={{
+          ...userForm.formProps.fields,
+          // 部门候选限「本表单已选公司」下未停用的部门：后端硬校验同一条不变量
+          // （部门所在公司须在该用户公司授权集内），此处只是把它前置到选择环节。
+          // 未选公司时公司维度不收窄（候选仍受操作者自身公司授权约束），保存时按后端校验报错
+          departmentId: {
+            ...userForm.formProps.fields.departmentId,
+            remote: {
+              filterState: {
+                companyId: { kind: 'fk', op: 'in', values: companySel, labels: [] },
+                enabled: { kind: 'bool', eq: true },
+              },
+            },
+          },
+        }}
         extraContent={(mode) =>
           joins && (
             <div className="grid grid-cols-1 gap-4">
@@ -223,11 +237,13 @@ function UsersPage() {
             emailRaw === undefined || emailRaw === null || String(emailRaw).trim() === ''
               ? null
               : String(emailRaw).trim()
+          const departmentId = values.departmentId ? String(values.departmentId) : null
           if (mode === 'create') {
             const data = await createUser({
               username: String(values.username),
               name: (values.name as string) || null,
               email,
+              departmentId,
               roleIds: roleSel,
               companyIds: companySel,
             })
@@ -239,6 +255,7 @@ function UsersPage() {
             await userClient.update(String(drawer!.recordId), {
               name: (values.name as string) || null,
               email,
+              departmentId,
               roleIds: roleSel,
               companyIds: companySel,
             })

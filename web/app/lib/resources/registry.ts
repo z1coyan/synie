@@ -57,7 +57,7 @@ import {
   purchaseOrderDraftAdapter,
   salesOrderDraftAdapter,
 } from './order-draft'
-import { roleClient, userClient } from './iam'
+import { departmentClient, roleClient, userClient } from './iam'
 import {
   attendanceCorrectionClient,
   attendanceDayClient,
@@ -255,6 +255,7 @@ const transports: Record<string, ResourceTransport> = {
   salSettings: salesSettingClient,
   sysSettings: systemSettingClient,
   sysAuditLogs: auditLogClient,
+  sysDepartments: departmentClient,
   sysRoles: roleClient,
   sysStorages: storageClient,
   sysUsers: userClient,

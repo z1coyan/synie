@@ -11,7 +11,7 @@ import { createAccountingServices } from './modules/accounting/index.ts'
 import { createBaseServices } from './modules/base/index.ts'
 import { createMarketService } from './modules/base/market/index.ts'
 import { createHrServices } from './modules/hr/index.ts'
-import { createIamService } from './modules/iam/index.ts'
+import { createDepartmentService, createIamService } from './modules/iam/index.ts'
 import { createInventoryServices } from './modules/inventory/index.ts'
 import {
   createManufacturingServices,
@@ -93,6 +93,7 @@ function assembleDomain(
   const base = createBaseServices(db)
   const market = createMarketService(db, { settings })
   const iam = createIamService(db, opts.registry)
+  const departments = createDepartmentService(db, opts.registry)
   const party = createPartyServices(db, numbering)
   const hr = createHrServices(db, files, {
     employees: party.employees,
@@ -127,6 +128,7 @@ function assembleDomain(
     base,
     market,
     iam,
+    departments,
     party,
     hr,
     companyAccountDefaults,
@@ -203,6 +205,7 @@ export function toAppDeps(
     accounts: base.accounts,
     market: services.market,
     iam: services.iam,
+    departments: services.departments,
     customers: party.customers,
     suppliers: party.suppliers,
     employees: party.employees,

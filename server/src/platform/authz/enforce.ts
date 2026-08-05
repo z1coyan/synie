@@ -10,7 +10,7 @@ import type { Context } from 'hono'
 import type { AppEnv } from '../http/context.ts'
 import { ApiError } from '../http/errors.ts'
 import type { Registry } from '../meta/registry.ts'
-import { resolveAuthzTarget, type AuthzTarget } from '../meta/resource-authz.ts'
+import type { AuthzTarget } from '../meta/resource-authz.ts'
 import {
   allOf,
   anyOf,
@@ -45,14 +45,9 @@ export interface AuthzEnforcer {
 }
 
 export function createAuthzEnforcer(registry: Registry): AuthzEnforcer {
-  const targets = new Map<string, AuthzTarget>()
-
+  /** 解析与记忆化都归 Registry（服务层的 listAuthorized/loadAuthorized 用同一份） */
   function targetOf(resource: string): AuthzTarget {
-    const hit = targets.get(resource)
-    if (hit) return hit
-    const target = resolveAuthzTarget(resource, (name) => registry.get(name))
-    targets.set(resource, target)
-    return target
+    return registry.authzTarget(resource)
   }
 
   /** 动作必须在 sealed registry 的归宿资源上存在（杜绝客户端提供 prefix 的路径） */

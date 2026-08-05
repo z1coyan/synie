@@ -23,8 +23,8 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     expect(registry.isSealed()).toBe(false)
     const report = registry.seal()
     expect(registry.isSealed()).toBe(true)
-    expect(report.total).toBe(103)
-    expect(report.normalized).toBe(103)
+    expect(report.total).toBe(104)
+    expect(report.normalized).toBe(104)
   })
 
   test('seal 后禁止继续注册', () => {
@@ -266,7 +266,7 @@ describe('Resource Catalog seal 与 v2 投影', () => {
     registerAllResources(registry)
     registry.seal()
     const all = registry.list()
-    expect(all.length).toBe(103)
+    expect(all.length).toBe(104)
     for (const resource of all) {
       expect(resource.classification, resource.name).toBeDefined()
     }

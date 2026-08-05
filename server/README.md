@@ -84,9 +84,12 @@ db/
    - **路由挂 `deps.authz.guard(资源名, 动作)`**（在 `requireAuth` 之后），
      判定通过则 Permit 入 ctx；service 方法收 `Permit` 而不是 `Actor`——
      绕过鉴权直调 service 在**编译期**不成立。
-   - **三个执行点全部平台所有**：列表 `listAuthorized`、单记录 `loadAuthorized`
-     （统一 `not_found`、折叠 `FOR UPDATE`）、写入 `assertCompanyWritable` +
-     `ownershipStamp`。业务模块**零鉴权代码**，`src/modules/authz-firewall.test.ts` 封路。
+   - **三个执行点全部平台所有**：列表 `listAuthorized`、单记录 `loadAuthorizedFrom`
+     （投影 SOURCE）/ `loadAuthorized`（裸表，统一 `not_found`、折叠 `FOR UPDATE`）、
+     写入 `assertCompanyWritable` + `ownershipStamp`。判定归宿一律取
+     `registry.authzTarget(资源名)`（唯一解析点，guard 与 service 共用）。
+     业务模块**零鉴权代码**，`src/modules/authz-firewall.test.ts` 封路。
+     参照实现：`modules/iam/department-service.ts` + `iamDepartmentRoutes`。
    - **动作码唯一事实源是 meta**：guard 从 sealed registry 解析，禁止 routes 散落
      字面量权限码，禁止客户端提供 prefix 直接进码。
    - 跨域 seam / 调度器 / 种子走显式 `systemPermit(资源, 动作)`，不再有匿名

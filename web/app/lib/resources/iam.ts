@@ -20,6 +20,12 @@ export const roleClient = restTransport('sysRoles', api.system.roles, {
   strictListLabel: 'IAM',
 })
 
+/**
+ * 部门：公司域组织树（后端走 guard + Permit，前端与其他公司域资源无异）。
+ * 不走 strictListLabel——树页要用 fixedFilter 按公司收窄，严格模式会 fail-closed 拒掉。
+ */
+export const departmentClient = restTransport('sysDepartments', api.system.departments)
+
 export const createUser = (body: Record<string, unknown>) =>
   apiData(api.system.users.$post({ json: body as never }))
 export const fetchUserAccess = (id: string) =>

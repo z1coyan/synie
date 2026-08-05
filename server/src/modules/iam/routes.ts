@@ -4,8 +4,12 @@ import { z } from 'zod'
 import type { ListQuery } from '@synie/shared'
 import { requireAuth } from '~/platform/auth/middleware.ts'
 import type { AuthService } from '~/platform/auth/service.ts'
+import type { AuthzEnforcer } from '~/platform/authz/enforce.ts'
+import { permitOf } from '~/platform/authz/enforce.ts'
 import type { AppEnv } from '~/platform/http/context.ts'
 import { listQuerySchema, validationHook } from '~/platform/http/zod.ts'
+import type { DepartmentService } from './department-service.ts'
+import { DEPARTMENT_RESOURCE } from './meta.ts'
 import type { IamService } from './service.ts'
 
 const idParam = z.object({ id: z.string().uuid() })
@@ -17,6 +21,7 @@ const userCreateSchema = z
     username: z.string().min(1),
     name: z.string().nullable().optional(),
     email: emailField,
+    departmentId: z.string().uuid().nullable().optional(),
     roleIds: z.array(z.string().uuid()).optional(),
     companyIds: z.array(z.string().uuid()).optional(),
   })
@@ -26,8 +31,27 @@ const userUpdateSchema = z
   .object({
     name: z.string().nullable().optional(),
     email: emailField,
+    departmentId: z.string().uuid().nullable().optional(),
     roleIds: z.array(z.string().uuid()).optional(),
     companyIds: z.array(z.string().uuid()).optional(),
+  })
+  .strict()
+
+const departmentCreateSchema = z
+  .object({
+    code: z.string().min(1),
+    name: z.string().min(1),
+    companyId: z.string().uuid(),
+    parentId: z.string().uuid().nullable().optional(),
+  })
+  .strict()
+
+const departmentUpdateSchema = z
+  .object({
+    code: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+    enabled: z.boolean().optional(),
+    parentId: z.string().uuid().nullable().optional(),
   })
   .strict()
 
@@ -64,6 +88,7 @@ export function iamUserRoutes(deps: { auth: AuthService; iam: IamService }) {
         username: body.username,
         name: body.name,
         email: body.email,
+        departmentId: body.departmentId,
         roleIds: body.roleIds,
         companyIds: body.companyIds,
       })
@@ -93,6 +118,8 @@ export function iamUserRoutes(deps: { auth: AuthService; iam: IamService }) {
           namePresent: Object.prototype.hasOwnProperty.call(raw, 'name'),
           email: body.email,
           emailPresent: Object.prototype.hasOwnProperty.call(raw, 'email'),
+          departmentId: body.departmentId,
+          departmentIdPresent: Object.prototype.hasOwnProperty.call(raw, 'departmentId'),
           roleIds: body.roleIds,
           roleIdsPresent: Object.prototype.hasOwnProperty.call(raw, 'roleIds'),
           companyIds: body.companyIds,
@@ -172,6 +199,71 @@ export function iamRoleRoutes(deps: { auth: AuthService; iam: IamService }) {
     })
 }
 
+/**
+ * 部门路由：新授权体系的首个真实消费者。
+ * 每个端点挂 `guard(资源, 动作)`（必须在 requireAuth 之后），handler 用 `permitOf(c)` 取凭证——
+ * 服务层收 Permit，绕过鉴权直调服务在编译期不成立。
+ */
+export function iamDepartmentRoutes(deps: {
+  auth: AuthService
+  authz: AuthzEnforcer
+  departments: DepartmentService
+}) {
+  const { auth, authz, departments } = deps
+  const guard = (action: string) => authz.guard(DEPARTMENT_RESOURCE, action)
+  return new Hono<AppEnv>()
+    .use('*', requireAuth(auth))
+    .post(
+      '/query',
+      guard('read'),
+      zValidator('json', listQuerySchema, validationHook),
+      async (c) => {
+        const result = await departments.list(permitOf(c), toList(c.req.valid('json')))
+        return c.json({ count: result.count, results: result.results.map(departmentDto) })
+      },
+    )
+    .post(
+      '/',
+      guard('create'),
+      zValidator('json', departmentCreateSchema, validationHook),
+      async (c) => {
+        const body = c.req.valid('json')
+        const item = await departments.create(permitOf(c), {
+          code: body.code,
+          name: body.name,
+          companyId: body.companyId,
+          parentId: body.parentId,
+        })
+        return c.json(departmentDto(item), 201)
+      },
+    )
+    .get('/:id', guard('read'), zValidator('param', idParam, validationHook), async (c) => {
+      return c.json(departmentDto(await departments.get(permitOf(c), c.req.valid('param').id)))
+    })
+    .patch(
+      '/:id',
+      guard('update'),
+      zValidator('param', idParam, validationHook),
+      zValidator('json', departmentUpdateSchema, validationHook),
+      async (c) => {
+        const raw = (await c.req.json()) as Record<string, unknown>
+        const body = c.req.valid('json')
+        const item = await departments.update(permitOf(c), c.req.valid('param').id, {
+          code: body.code,
+          name: body.name,
+          enabled: body.enabled,
+          parentId: body.parentId,
+          parentIdPresent: Object.prototype.hasOwnProperty.call(raw, 'parentId'),
+        })
+        return c.json(departmentDto(item))
+      },
+    )
+    .delete('/:id', guard('delete'), zValidator('param', idParam, validationHook), async (c) => {
+      await departments.remove(permitOf(c), c.req.valid('param').id)
+      return c.body(null, 204)
+    })
+}
+
 function toList(body: z.infer<typeof listQuerySchema>): Partial<ListQuery> {
   return {
     limit: body.limit,
@@ -188,9 +280,27 @@ function userDto(u: Awaited<ReturnType<IamService['getUser']>>) {
     username: u.username,
     name: u.name,
     email: u.email,
+    departmentId: u.departmentId,
+    department: u.department,
     preferredLanguage: u.preferredLanguage,
     insertedAt: u.insertedAt.toISOString(),
     updatedAt: u.updatedAt.toISOString(),
+  }
+}
+
+function departmentDto(d: Awaited<ReturnType<DepartmentService['get']>>) {
+  return {
+    id: d.id,
+    code: d.code,
+    name: d.name,
+    enabled: d.enabled,
+    companyId: d.companyId,
+    parentId: d.parentId,
+    company: d.company,
+    parent: d.parent,
+    hasChildren: d.hasChildren,
+    insertedAt: d.insertedAt.toISOString(),
+    updatedAt: d.updatedAt.toISOString(),
   }
 }
 

@@ -28,6 +28,8 @@ export interface IamUser {
   email: string | null
   /** 所属部门（至多一个）；部门所在公司必须在该用户公司授权集内 */
   departmentId: string | null
+  /** 部门名（fk 展示用；无部门为 null） */
+  department: { id: string; name: string } | null
   preferredLanguage: string | null
   insertedAt: Date
   updatedAt: Date
@@ -72,7 +74,13 @@ function normalizeEmail(raw: string | null | undefined): string | null {
 export function createIamService(db: Kysely<Database>, registry: Registry) {
   async function getUser(actor: Actor, id: string): Promise<IamUser> {
     requirePermission(actor, 'sys.user:read')
-    const row = await db.selectFrom('sys_user').selectAll().where('id', '=', id).executeTakeFirst()
+    const row = await db
+      .selectFrom('sys_user as u')
+      .leftJoin('sys_department as d', 'd.id', 'u.department_id')
+      .selectAll('u')
+      .select('d.name as department_name')
+      .where('u.id', '=', id)
+      .executeTakeFirst()
     if (!row) throw new ApiError('not_found', '用户不存在')
     return mapUser(row)
   }
@@ -82,8 +90,17 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
     return listFromSource({
       db,
       resource: userResourceMeta(),
-      source: sql` FROM sys_user`,
-      select: sql`SELECT id, username, name, email, preferred_language, inserted_at, updated_at`,
+      // 子查询暴露部门名：fk 列靠 row.department 显示名称，否则前端只能印 uuid 前缀
+      source: sql`
+        FROM (
+          SELECT u.id, u.username, u.name, u.email, u.department_id,
+                 u.preferred_language, u.inserted_at, u.updated_at,
+                 d.name AS department_name
+          FROM sys_user u
+          LEFT JOIN sys_department d ON d.id = u.department_id
+        ) sys_user
+      `,
+      select: sql`SELECT id, username, name, email, department_id, department_name, preferred_language, inserted_at, updated_at`,
       defaultOrder: sql`"username" ASC, "id" ASC`,
       query,
       mapRow: (r) =>
@@ -92,6 +109,8 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
           username: String(r.username),
           name: r.name == null ? null : String(r.name),
           email: r.email == null ? null : String(r.email),
+          department_id: r.department_id == null ? null : String(r.department_id),
+          department_name: r.department_name == null ? null : String(r.department_name),
           preferred_language: r.preferred_language == null ? null : String(r.preferred_language),
           inserted_at: r.inserted_at as Date,
           updated_at: r.updated_at as Date,
@@ -129,13 +148,18 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
       try {
         const departmentId = input.departmentId ?? null
         // 新建用户 all_companies 恒 false（该旗标仅初始化向导设置）
-        await assertDepartmentWithinCompanies(trx, departmentId, companyIds, false)
+        const department = await resolveUserDepartment(trx, {
+          departmentId,
+          companyIds,
+          allCompanies: false,
+          attaching: true,
+        })
         const row = await trx
           .insertInto('sys_user')
           .values({ username, name, email, department_id: departmentId, hashed_password: hashed })
           .returningAll()
           .executeTakeFirstOrThrow()
-        const user = mapUser(row)
+        const user = mapUser({ ...row, department_name: department?.name ?? null })
         // 同事务补建 better-auth 账号（auth_user + credential auth_account；有 email 则写入真实邮箱）
         await syncUserCredential(trx, { userId: user.id, hashedPassword: hashed })
         await replaceAccess(trx, user.id, roleIds, companyIds)
@@ -211,7 +235,12 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
         ? (input.departmentId ?? null)
         : before.departmentId
       // 一条不变量覆盖两个方向：设部门须持该公司授权，回收公司授权时部门冲突即拦
-      await assertDepartmentWithinCompanies(trx, departmentId, companyIds, locked.all_companies)
+      const department = await resolveUserDepartment(trx, {
+        departmentId,
+        companyIds,
+        allCompanies: locked.all_companies,
+        attaching: departmentId !== before.departmentId,
+      })
       try {
         const updated = await trx
           .updateTable('sys_user')
@@ -227,7 +256,7 @@ export function createIamService(db: Kysely<Database>, registry: Registry) {
             email,
           })
         }
-        const after = mapUser(updated)
+        const after = mapUser({ ...updated, department_name: department?.name ?? null })
         if (input.roleIdsPresent || input.companyIdsPresent) {
           await replaceAccess(trx, id, roleIds, companyIds)
         }
@@ -681,27 +710,38 @@ export type IamService = ReturnType<typeof createIamService>
  * 设置部门时该部门所在公司必须已在用户公司授权集内；回收公司授权时若用户部门
  * 属该公司则拦截。不留「配了但永远编译为空集」的幽灵配置。
  */
-async function assertDepartmentWithinCompanies(
+async function resolveUserDepartment(
   trx: DbHandle,
-  departmentId: string | null,
-  companyIds: readonly string[],
-  allCompanies: boolean,
-): Promise<void> {
-  if (departmentId === null) return
+  input: {
+    departmentId: string | null
+    companyIds: readonly string[]
+    allCompanies: boolean
+    /** 部门挂接发生变化时为 true：停用部门只拦新挂接，存量挂接保留（工单 05） */
+    attaching: boolean
+  },
+): Promise<{ id: string; name: string } | null> {
+  if (input.departmentId === null) return null
   const dept = await trx
     .selectFrom('sys_department')
-    .select(['company_id', 'name'])
-    .where('id', '=', departmentId)
+    .select(['id', 'company_id', 'name', 'enabled'])
+    .where('id', '=', input.departmentId)
     .executeTakeFirst()
   if (!dept) {
     throw ApiError.validation('用户参数不合法', { departmentId: ['部门不存在'] })
   }
-  if (allCompanies || companyIds.includes(dept.company_id)) return
-  throw ApiError.validation('用户参数不合法', {
-    departmentId: [
-      `部门「${dept.name}」所属公司不在该用户的公司授权范围内：请先授权该公司，或先移除部门`,
-    ],
-  })
+  if (input.attaching && !dept.enabled) {
+    throw ApiError.validation('用户参数不合法', {
+      departmentId: [`部门「${dept.name}」已停用，不能再挂用户：请先启用该部门或另选部门`],
+    })
+  }
+  if (!input.allCompanies && !input.companyIds.includes(dept.company_id)) {
+    throw ApiError.validation('用户参数不合法', {
+      departmentId: [
+        `部门「${dept.name}」所属公司不在该用户的公司授权范围内：请先授权该公司，或先移除部门`,
+      ],
+    })
+  }
+  return { id: dept.id, name: dept.name }
 }
 
 async function replaceAccess(
@@ -755,16 +795,20 @@ function mapUser(row: {
   name: string | null
   email?: string | null
   department_id?: string | null
+  department_name?: string | null
   preferred_language: string | null
   inserted_at: Date | string
   updated_at: Date | string
 }): IamUser {
+  const departmentId = row.department_id ?? null
+  const departmentName = row.department_name ?? null
   return {
     id: row.id,
     username: row.username,
     name: row.name,
     email: row.email ?? null,
-    departmentId: row.department_id ?? null,
+    departmentId,
+    department: departmentId && departmentName ? { id: departmentId, name: departmentName } : null,
     preferredLanguage: row.preferred_language,
     insertedAt: toDate(row.inserted_at),
     updatedAt: toDate(row.updated_at),
